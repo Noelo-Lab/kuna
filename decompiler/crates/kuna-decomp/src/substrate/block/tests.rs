@@ -585,3 +585,99 @@ fn w10_build_copy_from_empty_source() {
     dst.build_copy_from(droot, &src, sroot);
     assert_eq!(dst.block(droot).get_list().len(), 0, "empty source -> empty dst");
 }
+
+// ---------------------------------------------------------------------------
+// kuna_flatten_ifelse — the if-else-flattening print-tree splice
+// (angr IfElseFlattener; s8_structure::kuna_ifelseflatten)
+// ---------------------------------------------------------------------------
+
+/// Insert a leaf and parent it under `graph`'s `list`.
+fn push_leaf(g: &mut BlockGraph, parent: BlockId) -> BlockId {
+    let id = g.arena.insert(FlowBlock::new_kind(BlockKind::Plain));
+    g.arena[id].parent = Some(parent);
+    g.arena[parent].list.push(id);
+    id
+}
+
+/// Build a 3-component `BlockIf` `[cond, true, else]` parented under a
+/// `BlockList` that also holds a trailing sibling, returning
+/// `(graph, parent, if_id, else_clause, tail)`.  This is the exact print-tree
+/// shape `ActionIfElseFlatten` edits.
+fn build_ifelse_in_list() -> (BlockGraph, BlockId, BlockId, BlockId, BlockId) {
+    let mut g = BlockGraph::new();
+    let parent = g.arena.insert(FlowBlock::new_kind(BlockKind::Ls));
+    g.root = Some(parent);
+
+    // The 3-component BlockIf, parented under the list.
+    let if_id = g.arena.insert(FlowBlock::new_kind(BlockKind::If { gototype: 0, gototarget: None }));
+    g.arena[if_id].parent = Some(parent);
+    g.arena[parent].list.push(if_id);
+
+    let cond = push_leaf(&mut g, if_id);
+    let true_clause = push_leaf(&mut g, if_id);
+    let else_clause = push_leaf(&mut g, if_id);
+    let _ = (cond, true_clause);
+
+    // The trailing sibling after the if in the parent list.
+    let tail = push_leaf(&mut g, parent);
+    (g, parent, if_id, else_clause, tail)
+}
+
+#[test]
+fn flatten_ifelse_drops_else_and_splices_sibling() {
+    let (mut g, parent, if_id, else_clause, tail) = build_ifelse_in_list();
+    assert_eq!(g.block(if_id).get_size(), 3, "starts as a 3-component if/else");
+    assert_eq!(g.block(parent).get_size(), 2, "parent holds [if, tail]");
+
+    let ok = g.kuna_flatten_ifelse(if_id);
+    assert!(ok, "flatten should succeed for a 3-comp if/else under a list");
+
+    // The `if` is now a 2-component if/then (cond + true-clause).
+    assert_eq!(g.block(if_id).get_size(), 2, "if demoted to if/then");
+    assert_eq!(g.block(if_id).get_type(), BlockType::If);
+
+    // The else-clause is now the `if`'s immediate successor in the parent.
+    assert_eq!(g.block(parent).get_size(), 3, "parent now holds [if, else, tail]");
+    assert_eq!(g.block(parent).get_block(0), if_id);
+    assert_eq!(g.block(parent).get_block(1), else_clause, "else spliced right after if");
+    assert_eq!(g.block(parent).get_block(2), tail);
+    assert_eq!(
+        g.block(else_clause).get_parent(),
+        Some(parent),
+        "moved else is re-parented to the list"
+    );
+}
+
+#[test]
+fn flatten_ifelse_refuses_two_component_if() {
+    // An if/then (2-component) is not flattenable — there is no else to drop.
+    let mut g = BlockGraph::new();
+    let parent = g.arena.insert(FlowBlock::new_kind(BlockKind::Ls));
+    g.root = Some(parent);
+    let if_id = g.arena.insert(FlowBlock::new_kind(BlockKind::If { gototype: 0, gototarget: None }));
+    g.arena[if_id].parent = Some(parent);
+    g.arena[parent].list.push(if_id);
+    let _cond = push_leaf(&mut g, if_id);
+    let _tc = push_leaf(&mut g, if_id);
+
+    assert!(!g.kuna_flatten_ifelse(if_id), "2-component if is not flattenable");
+    assert_eq!(g.block(if_id).get_size(), 2, "unchanged");
+}
+
+#[test]
+fn flatten_ifelse_refuses_non_list_parent() {
+    // A BlockIf whose parent is itself a BlockIf (a clause, not a list) cannot
+    // host a spliced sibling, so the splice is refused (honest-partial).
+    let mut g = BlockGraph::new();
+    let outer = g.arena.insert(FlowBlock::new_kind(BlockKind::If { gototype: 0, gototarget: None }));
+    g.root = Some(outer);
+    let inner = g.arena.insert(FlowBlock::new_kind(BlockKind::If { gototype: 0, gototarget: None }));
+    g.arena[inner].parent = Some(outer);
+    g.arena[outer].list.push(inner);
+    let _c = push_leaf(&mut g, inner);
+    let _t = push_leaf(&mut g, inner);
+    let _e = push_leaf(&mut g, inner);
+
+    assert!(!g.kuna_flatten_ifelse(inner), "non-list parent cannot host the sibling");
+    assert_eq!(g.block(inner).get_size(), 3, "unchanged");
+}

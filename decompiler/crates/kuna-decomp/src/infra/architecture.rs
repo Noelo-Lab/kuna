@@ -373,6 +373,10 @@ pub struct Architecture {
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
     pub reduce_return_gotos: bool,
+    /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a 3-component `if`
+    /// whose true-clause is statement-terminating, re-parenting the else body as
+    /// the `if`'s follower (`flatten_ifelse`).
+    pub flatten_ifelse: bool,
     /// (kuna) angr SAILR `CrossJumpReverter`: revert compiler cross-jumping by
     /// duplicating a small *non-return* cross-jump tail into the `goto` source so
     /// both paths fall straight through (`revert_cross_jumps`, opt-in default-off).
@@ -745,6 +749,7 @@ impl Architecture {
             region_structure: true,
             region_loop_refine: false,
             reduce_return_gotos: false,
+            flatten_ifelse: false,
             revert_cross_jumps: false,
             recover_loop_break: false,
             fold_call_returns: false,
@@ -849,6 +854,7 @@ impl Architecture {
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = false; // (kuna) default-off opt-in (region structurer multi-exit/irreducible loop-successor refinement)
         self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
+        self.flatten_ifelse = false; // (kuna) default-off opt-in (angr IfElseFlattener)
         self.revert_cross_jumps = false; // (kuna) default-off opt-in (angr SAILR CrossJumpReverter)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
@@ -995,6 +1001,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
                 self.reduce_return_gotos = val;
+                Ok(msg)
+            }
+            "ifelseflatten" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_ifelseflatten::OptionIfElseFlatten.apply(p1)?;
+                self.flatten_ifelse = val;
                 Ok(msg)
             }
             "crossjumprevert" => {
@@ -1349,6 +1361,7 @@ impl Architecture {
         seam.region_structure = self.region_structure; // regionstructure
         seam.region_loop_refine = self.region_loop_refine; // regionlooprefine
         seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        seam.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret

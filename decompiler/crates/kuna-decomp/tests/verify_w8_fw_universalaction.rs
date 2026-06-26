@@ -182,18 +182,19 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     let nonblank = lines.iter().filter(|l| !l.is_empty()).count();
 
     // All universalAction passes are ported: the allowlist is empty, so every
-    // one of the 252 C++ leaves renders.  (+3 kuna-only leaves: `branchflip`,
+    // one of the 252 C++ leaves renders.  (+4 kuna-only leaves: `branchflip`,
     // option-gated default-off, registered after the second `prefercomplement`;
-    // `gotoreduce`, option-gated default-off, after `finalstructure`; and
-    // `crossjumprevert`, option-gated default-off, right after `gotoreduce`.)
+    // `gotoreduce`, option-gated default-off, after `finalstructure`;
+    // `ifelseflatten`, option-gated default-off, after `gotoreduce`; and
+    // `crossjumprevert`, option-gated default-off, right after `ifelseflatten`.)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 262,
-        "full universal tree must render 252 C++ leaves + 3 kuna leaves (branchflip + gotoreduce + crossjumprevert) + 7 container headers"
+        nonblank, 263,
+        "full universal tree must render 252 C++ leaves + 4 kuna leaves (branchflip + gotoreduce + ifelseflatten + crossjumprevert) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
@@ -211,13 +212,14 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
 
     // Tail: the S9 fixation/naming/cast suffix, ending at `stop`.
     let tail: Vec<&str> =
-        lines.iter().rev().take(5).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
+        lines.iter().rev().take(6).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
     // (kuna) ActionGotoReduce is registered after ActionFinalStructure, then
-    // ActionCrossJumpReverter right after it, so both kuna leaves sit between
-    // finalstructure and prototypewarnings.
+    // ActionIfElseFlatten, then ActionCrossJumpReverter, so all three kuna leaves
+    // sit between finalstructure and prototypewarnings
+    // (finalstructure -> gotoreduce -> ifelseflatten -> crossjumprevert).
     assert_eq!(
         tail,
-        vec!["finalstructure", "gotoreduce", "crossjumprevert", "prototypewarnings", "stop"]
+        vec!["finalstructure", "gotoreduce", "ifelseflatten", "crossjumprevert", "prototypewarnings", "stop"]
     );
 
     // `directwrite` (protorecovery_b) appears 3x total (protorecovery_a twice +

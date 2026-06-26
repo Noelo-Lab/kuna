@@ -269,6 +269,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "regionstructure",
     "regionlooprefine",
     "gotoreduce",
+    "ifelseflatten",
     "crossjumprevert",
     "foldcallret",
     "stackguard",

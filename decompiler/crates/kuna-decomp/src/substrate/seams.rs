@@ -550,6 +550,10 @@ pub struct Architecture {
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
     pub reduce_return_gotos: bool,
+    /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a terminating-if
+    /// 3-component `if` (`flatten_ifelse`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_ifelseflatten`]'s `ActionIfElseFlatten`.
+    pub flatten_ifelse: bool,
     /// (kuna) angr SAILR `CrossJumpReverter`: duplicate a small *non-return*
     /// cross-jump tail into the `goto` source (`revert_cross_jumps`, opt-in
     /// default-off).  Read by
@@ -769,6 +773,7 @@ impl Architecture {
             region_structure: false,     // regionstructure (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
+            flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)

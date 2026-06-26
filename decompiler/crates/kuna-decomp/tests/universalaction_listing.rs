@@ -116,3 +116,4 @@ fn decompile_tree_dump_is_byte_equal_to_oracle() {
     let total = rust_dump.lines().filter(|l| !l.is_empty()).count();
     eprintln!("decompile tree: {total} actions+rules (byte-equal to the C++ oracle, allowlist empty)");
 }
+

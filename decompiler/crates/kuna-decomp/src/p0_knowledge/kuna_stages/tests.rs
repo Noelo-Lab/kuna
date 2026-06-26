@@ -35,7 +35,7 @@ fn surface_count_is_96() {
 }
 
 #[test]
-fn settable_count_is_59() {
+fn settable_count_is_60() {
     // 32 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -97,9 +97,11 @@ fn settable_count_is_59() {
     // +1 for `switchsharedcase`, the loop-carried-base PIC jump-table recovery S2
     // knob (angr test_switch_case_shared_case_nodes_b2sum_digest), default-off opt-in;
     // +1 for `regionlooprefine`, the region structurer multi-exit/irreducible
-    // loop-successor refinement knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 59);
-    assert_eq!(SETTABLE_TABLE.len(), 59);
+    // loop-successor refinement knob, default-off opt-in;
+    // +1 for `ifelseflatten`, the angr IfElseFlattener S8 terminating-if else-drop
+    // knob, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 60);
+    assert_eq!(SETTABLE_TABLE.len(), 60);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -278,7 +280,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_26_suppressed_for_33() {
+fn option_values_live_value_present_for_26_suppressed_for_34() {
     let ov = OptionValues::default();
     // 26 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -346,6 +348,7 @@ fn option_values_live_value_present_for_26_suppressed_for_33() {
                             | "namestyle"
                             | "foldcallret"
                             | "gotoreduce"
+                            | "ifelseflatten"
                             | "crossjumprevert"
                             | "loopbreak_recovery"
                             | "relocobjects"
@@ -421,14 +424,14 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 59 rows: 58 trailing commas (the last, macho-arm64e, has none;
+    // 60 rows: 59 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, tailcalljump's, noreturn_extern's,
     // and noreturn_externmatch's S2 rows, branchflip's, regionstructure's,
-    // regionlooprefine's, and crossjumprevert's S8 rows, eh_frame_full's S1 row,
-    // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, and
-    // dwarf_lines' S1 row sit mid-table, so they
+    // regionlooprefine's, ifelseflatten's, and crossjumprevert's S8 rows,
+    // eh_frame_full's S1 row, operand_refs's S1 row, funcstart_patterns's S1 row,
+    // aif's S1 row, and dwarf_lines' S1 row sit mid-table, so they
     // do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 58);
+    assert_eq!(json.matches("},\n").count(), 59);
 }
 
 #[test]
