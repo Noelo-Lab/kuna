@@ -1,0 +1,31 @@
+{
+  "opportunity": "test_switch_case_shared_case_nodes_b2sum_digest::main",
+  "test_name": "test_switch_case_shared_case_nodes_b2sum_digest",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/b2sum-digest_shared_switch_nodes.o",
+  "selector": "main",
+  "func_addr": "0x4024b0",
+  "angr_version": "9.2.213",
+  "option": "switchunrolledguard",
+  "flag": "switchunrolledguard",
+  "element_id": null,
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_switch_case_shared_case_nodes_b2sum_digest; angr CFGFast indirect-jump resolution (loop-spanning guard/bound) + structurer shared-case-node fallthrough; main",
+  "scope": "large",
+  "proposal": true,
+  "default_on": false,
+  "ablation_changed": null,
+  "parity": "OK",
+  "duplicate_of": "unrolledguard / proposal PR #50 (check_unrolled_guard SEAM stub)",
+  "decisions": [
+    {
+      "question": "Is closing this gap a small (one gated Action/Rule) or large feature?",
+      "decider_verdict": "large",
+      "owning_stage": "S2 lift / jumptable recovery (JumpBasic guard analysis across the loop phi)",
+      "anchor_files_estimate": 4,
+      "why": "The BRANCHIND sits inside the getopt while-loop, so the block feeding it has size_in>1 (a loop-header MULTIEQUAL); in JumpBasic::analyze_guards (jumptable.rs:~2019) that drives execution into check_unrolled_guard (jumptable.rs:~2201), which is a bare SEAM(structuring) stub, so the sub $0x62/cmp $0x22/ja-default guard is never pulled back into a range bound, find_smallest_normal leaves the index range unbounded, recover_model_basic returns Ok(false), and recover_model produces no model -> truncate_indirect_jump downgrades to CALLIND with 'Treating indirect jump as call' (flow.rs). Fixing it requires porting the real checkUnrolledGuard machinery (BlockBasic::findMultiequal, liftVerifyUnroll, noInterveningStatement, Funcdata::pushBranch) so the guard/index can be reconstructed across the loop phi -- a new infrastructure cluster touching multiple ported-core anchors plus the syntax-tree/structuring surface, not a single default-off early-return. The switchguardbound (kuna_switchguardbound.rs) and switchmodbound (kuna_switchmodbound.rs) seams cannot carry it: they only re-bound an already-recovered-but-too-large model inside recover_model_basic, whereas here no model is ever built, which is why both were tested against this binary and had no effect.",
+      "if_large_reference_pass": "Ghidra JumpBasic::checkUnrolledGuard / BlockBasic::findMultiequal + liftVerifyUnroll (jumptable.cc); angr's equivalent is the jumptable resolver's loop-spanning guard/bound analysis in CFGFast indirect-jump resolution",
+      "recommended_option_name": "switchunrolledguard"
+    }
+  ]
+}

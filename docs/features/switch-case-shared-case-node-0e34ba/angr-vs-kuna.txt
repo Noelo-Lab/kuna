@@ -1,0 +1,510 @@
+==============================================================================
+test_switch_case_shared_case_nodes_b2sum_digest :: main   (angr 9.2.213 @ 0x4024b0)
+==============================================================================
+
+--- angr ---
+typedef struct FILE {
+} FILE;
+
+typedef struct option {
+    char * name;
+    int has_arg;
+    char padding_c[4];
+    int * flag;
+    int val;
+} option;
+
+extern char .LC15;
+extern char Version;
+extern char digest_delim;
+extern unsigned long long digest_hex_bytes;
+extern unsigned long long digest_length;
+extern unsigned long got.close_stdout;
+extern char have_read_stdin;
+extern char ignore_missing;
+extern char long_options;
+extern unsigned long long min_digest_line_length;
+extern unsigned long optarg;
+extern unsigned int optind;
+extern char quiet;
+extern char status_only;
+extern unsigned long stdin;
+extern unsigned long stdout;
+extern char strict;
+extern char warn;
+
+int main(int a0, long long *a1)
+{
+    int v7;  // eax
+    long long v8;  // rax
+    unsigned int v17;  // ebx
+    long long v18;  // r12
+    unsigned long v19;  // r13
+    int v10;  // esi
+    char *v11;  // rdx
+    unsigned long long v12;  // rax
+    char *v13;  // rsi
+    long long *cur;  // rbp
+    unsigned long v15;  // rdx
+    long long *iter;  // r15
+    int v0;  // [bp-0xac], Other Possible Types: unsigned int
+    char v1;  // [bp-0xa5]
+    int v2;  // [bp-0xa4], Other Possible Types: char
+    long long v3;  // [bp-0xa0]
+    char v4;  // [bp-0x89]
+    char v5;  // [bp-0x88]
+
+    set_program_name(*(a1));
+    setlocale(6, &.LC15);
+    bindtextdomain("coreutils", "/usr/local/share/locale");
+    textdomain("coreutils");
+    atexit(got.close_stdout);
+    setvbuf(stdout, NULL, 1, 0);
+    v2 = 0;
+    v3 = &.LC15;
+    v0 = -1;
+    v1 = 0;
+    while (true)
+    {
+        v7 = getopt_long(a0, a1, "l:bctwz", &long_options, NULL);
+        if (v7 == -1)
+            break;
+        if (v7 > 132)
+            goto LABEL_4028c8;
+        if (v7 > 97)
+        {
+            switch (v7)
+            {
+            case 99:
+                v1 = 1;
+                break;
+            case 108:
+                v8 = dcgettext(NULL, "invalid length", 5);
+                digest_length = xdectoumax(optarg, 0, -1, &.LC15, v8, 0);
+                v3 = optarg;
+                if (((char)digest_length & 7))
+                {
+                    quote(optarg);
+                    error(0, 0, dcgettext(NULL, "invalid length: %s", 5));
+                    error(0, 0, dcgettext(NULL, "length is not a multiple of 8", 5));
+                    exit(7); /* do not return */
+                }
+                break;
+            case 116:
+                v0 = 0;
+                break;
+            case 119:
+                status_only = 0;
+                warn = 1;
+                quiet = 0;
+                break;
+            case 122:
+                digest_delim = 0;
+                break;
+            case 128:
+                ignore_missing = 1;
+                break;
+            case 129:
+                status_only = 1;
+                warn = 0;
+                quiet = 0;
+                break;
+            case 130:
+                status_only = 0;
+                warn = 0;
+                quiet = 1;
+                break;
+            case 131:
+                strict = 1;
+                break;
+            case 132:
+                v2 = 1;
+            case 98:
+                v0 = 1;
+                break;
+            default:
+LABEL_4028c8:
+                usage(1); /* do not return */
+            }
+        }
+        else if (v7 == -131)
+        {
+            version_etc(stdout, "b2sum", "GNU coreutils", *((long long *)&Version), "Padraig Brady", "Samuel Neves", 0);
+            exit(0); /* do not return */
+        }
+        else if (v7 == -130)
+        {
+            usage(0); /* do not return */
+        }
+    }
+    v12 = digest_length;
+    min_digest_line_length = 3;
+    if (v12 > 0x200)
+    {
+        quote(v3);
+        error(0, 0, dcgettext(NULL, "invalid length: %s", 5));
+        quote("BLAKE2b");
+        error(0, 0, dcgettext(NULL, "maximum digest length for %s is %d bits", 5));
+        exit(7); /* do not return */
+    }
+    if (!v12)
+    {
+        digest_length = 0x200;
+        v12 = 0x200;
+    }
+    digest_hex_bytes = v12 >> 2;
+    if (v0 || !v2)
+    {
+        if (digest_delim != 10)
+        {
+            v13 = "the --zero option is not supported when verifying checksums";
+            if (!v1 && !ignore_missing)
+            {
+                if (status_only)
+                    goto LABEL_402a3a;
+                goto LABEL_40280e;
+            }
+        }
+        if (v1 && !((v13 = "the --tag option is meaningless when verifying checksums", !v2)) || v0 >= 0 && (v13 = "the --binary and --text options are meaningless when verifying checksums", v1))
+            goto LABEL_4028b3;
+        if (ignore_missing)
+        {
+            if (v1)
+            {
+                if (status_only)
+                    goto LABEL_40288e;
+                goto LABEL_4028e5;
+            }
+            else
+            {
+                v13 = "the --ignore-missing option is meaningful only when verifying checksums";
+                goto LABEL_4028b3;
+            }
+        }
+        if (!status_only)
+        {
+LABEL_40280e:
+            if (!warn)
+            {
+                goto LABEL_4028b3;
+            }
+            else
+            {
+                v13 = "the --warn option is meaningful only when verifying checksums";
+                if (!v1)
+                    goto LABEL_4028b3;
+LABEL_4028e5:
+                cur = &a1[a0];
+                if (optind == a0)
+                {
+                    *(cur) = bad_cast.constprop.0();
+                    cur += 1;
+                }
+            }
+        }
+        else
+        {
+            if (v1)
+            {
+LABEL_40288e:
+                if (warn || !strict || (v13 = "the --strict option is meaningful only when verifying checksums", v1))
+                    goto LABEL_4028e5;
+            }
+            else
+            {
+LABEL_402a3a:
+                v13 = "the --status option is meaningful only when verifying checksums";
+            }
+LABEL_4028b3:
+            error(0, 0, dcgettext(NULL, v13, 5));
+        }
+    }
+    else
+    {
+        v13 = "--tag does not support --text mode";
+        goto LABEL_4028b3;
+    }
+    iter = &a1[v15];
+    if (cur > iter)
+    {
+        v17 = 1;
+        v18 = ptr_align.constprop.0(&v5);
+        v2 = (v0 >= 0 ? v0 : 0);
+        v0 = v2;
+        do
+        {
+            v19 = *(iter);
+            if (v1)
+            {
+                v17 &= digest_check(v19);
+            }
+            else if (!(char)digest_file.constprop.0(v19, v18, &v4))
+            {
+                v17 = 0;
+            }
+            else
+            {
+                output_file.constprop.0(v19, v2, v18, v0, digest_delim);
+            }
+        } while ((iter += 8, cur > iter));
+    }
+    else
+    {
+        v17 = 1;
+    }
+    if (have_read_stdin && !(int)rpl_fclose(stdin) + 1)
+    {
+        v11 = dcgettext(NULL, "standard input", 5);
+        v10 = *(__errno_location());
+        error(0, v10, v11);
+        exit(7); /* do not return */
+    }
+    return (char)v17 ^ 1;
+}
+
+
+--- kuna (name mode) ---
+void * main(uint4 a0,void *a1)
+
+{
+  uint1 v1;
+  void *v10; // rax
+  unsigned long v11; // rax
+  int8 v12;
+  int8 v13; // rdx
+  char v14 [12];
+  void *v15;
+  void *v16; // rsp
+  uint8 *v17;
+  uint8 v19;
+  uint1 v2;
+  uint8 v20; // r14
+  uint8 *v21;
+  int8 v22; // fs_offset
+  unsigned int v23; // stack - 0xac
+  char v24; // stack - 0xa5
+  char v25; // stack - 0xa4
+  unsigned long v26; // stack - 0xa0
+  unsigned long v27; // stack - 0x40
+  unsigned int v3;
+  char v4; // al
+  int4 v5; // eax
+  uint4 v6; // eax
+  void *v7; // rax
+  uint8 v8; // rax
+  uint8 v9; // rax
+  
+label_40288e:
+  if (dat_40171b == '\0') {
+label_402897:
+    if ((dat_401718 != '\0') && (v18 = 0x402230, v15[0x13] == '\0')) goto label_4028b3;
+  }
+  goto label_4028e5;
+  v20 = 0x402b80;
+  v19 = 0x40244d;
+  v9 = (uint8)a0;
+  v15 = v14;
+  v27 = *(void *)(v22 + 0x28);
+  set_program_name(*a1);
+  setlocale(6,0x4022ac);
+  bindtextdomain(0x4022bf,0x4023da);
+  v17 = (uint8 *)0x402ad0;
+  textdomain(0x4022bf);
+  atexit(dat_402534);
+  setvbuf(dat_405000,0,1,0);
+  v25 = 0;
+  v26 = 0x4022ac;
+  v23 = 0xffffffff;
+  v24 = 0;
+label_402570:
+  *(void *)&v15[-8] = 0x402584;
+  v5 = getopt_long(v9 & 0xffffffff,a1,v19,v20,0);
+  if (v5 == -1) {
+    dat_401728 = 3;
+    if (dat_401710 <= 0x200) {
+      Unique1000037d = dat_401710;
+      if (dat_401710 == 0) {
+        dat_401710 = 0x200;
+        RAX = 0x200;
+      }
+      RAX = RAX >> 2;
+      if ((*(int4 *)&v15[0xc] == 0) && (v15[0x14] != '\0')) {
+        v18 = 0x402030;
+        goto label_4028b3;
+      }
+      if (dat_401708 == '\n') {
+        if ((v15[0x13] != '\0') && (v18 = 0x402098, v15[0x14] != '\0')) goto label_4028b3;
+        if ((0 <= *(int4 *)&v15[0xc]) && (v18 = 0x4020d8, v15[0x13] != '\0')) goto label_4028b3;
+        if (dat_40171a == '\0') goto label_402a22;
+        if (v15[0x13] != '\0') {
+          if (dat_40171c == '\0') goto label_4028e5;
+          goto label_40288e;
+        }
+      }
+      else {
+        v18 = 0x402058;
+        if (v15[0x13] != '\0') goto label_4028b3;
+        if (dat_40171a == '\0') {
+          if (dat_40171c != '\0') goto label_402a3a;
+          goto label_40280e;
+        }
+      }
+    }
+    else {
+      *(void *)&v15[-8] = 0x402a55;
+      v18 = quote(*(void *)&v15[0x18]);
+      *(void *)&v15[-8] = 0x402a6b;
+      v11 = dcgettext(0,0x402401,5);
+      *(void *)&v15[-8] = 0x402a7c;
+      error(0,0,v11,v18);
+      *(void *)&v15[-8] = 0x402a88;
+      v9 = quote(0x402270);
+      *(void *)&v15[-8] = 0x402a9e;
+      v18 = dcgettext(0,0x402008,5);
+      *(void *)&v15[-8] = 0x402ab5;
+      error(0,0,v18,v9);
+      *(void *)&v15[-8] = 0x402abf;
+      exit(7);
+    }
+    v18 = 0x402128;
+    goto label_4028b3;
+  }
+  if (v5 <= 0x84) {
+    if (v5 <= 0x61) {
+      if (v5 == -0x83) {
+        v16 = &v15[-0x10];
+        *(void *)&v15[-0x10] = 0;
+        *(void *)&v15[-0x18] = 0x40275e;
+        version_etc(dat_405000,0x40229a,0x40232d,dat_4052a0,0x40243f,0x402432);
+        *(void *)&v15[-0x18] = 0x402765;
+        v5 = exit(0);
+        v15 = v16;
+      }
+      if (v5 == -0x82) {
+        *(void *)&v15[-8] = 0x402777;
+        usage(0);
+        *(void *)&v15[0xc] = 0;
+        goto label_402570;
+      }
+    }
+    else if ((uint4)(v5 - 0x62U) <= 0x22) {
+                    /* WARNING: Treating indirect jump as call */
+      v7 = (void *)(*(code *)((int8)*(int4 *)((int8)v17 + (uint8)(uint4)(v5 - 0x62U) * 4) + (int8)v17))();
+      return v7;
+    }
+  }
+  do {
+    *(void *)&v15[-8] = 0x4028d2;
+    usage(1);
+label_4028d2:
+    v18 = 0x4021b0;
+    if (v15[0x13] != '\0') {
+label_4028e5:
+      v19 = 0;
+      v12 = (int8)dat_4052c0;
+      if (0 <= (int4)*(uint4 *)&v15[0xc]) {
+        v19 = (uint8)*(uint4 *)&v15[0xc];
+      }
+      v21 = &a1[(int4)v9];
+      v17 = v21;
+      if (dat_4052c0 == (int4)v9) {
+        *(void *)&v15[-8] = 0x40290a;
+        bad_cast.constprop.0();
+        v17 = &v21[1];
+        *v21 = v8;
+        v12 = v13;
+      }
+      v21 = &a1[v12];
+      if (v21 < v17) {
+        a1 = (void *)0x1;
+        *(void *)&v15[-8] = 0x402931;
+        v9 = ptr_align.constprop.0(&v15[0x30]);
+        v1 = v15[0x13];
+        v20 = (uint8)v1;
+        v2 = v15[0x14];
+        *(int4 *)&v15[0x14] = (int4)v19;
+        *(uint4 *)&v15[0xc] = (uint4)v2;
+        do {
+          v19 = *v21;
+          if (v1 == 0) {
+            *(void *)&v15[-8] = 0x40297b;
+            v4 = digest_file.constprop.0(v19,v9,&v15[0x2f]);
+            if (v4 == '\0') {
+              a1 = (void *)0x0;
+            }
+            else {
+              *(void *)&v15[-8] = 0x40299e;
+              output_file.constprop.0(v19,*(void *)&v15[0x14],v9,*(void *)&v15[0xc]);
+            }
+          }
+          else {
+            *(void *)&v15[-8] = 0x402958;
+            v6 = digest_check(v19);
+            a1 = (void *)(uint8)((uint4)a1 & v6);
+          }
+          v21 = &v21[1];
+        } while (v21 < v17);
+      }
+      else {
+        a1 = (void *)0x1;
+      }
+      if (dat_401730 != '\0') {
+        *(void *)&v15[-8] = 0x4029e2;
+        v5 = rpl_fclose(dat_4050b0);
+        if (v5 == -1) {
+          *(void *)&v15[-8] = 0x4029fa;
+          v9 = dcgettext(0,0x40235a,5);
+          *(void *)&v15[-8] = 0x402a02;
+          v10 = (void *)__errno_location();
+          v3 = *v10;
+          *(void *)&v15[-8] = 0x402700;
+          error(0,v3,v9);
+          *(void *)&v15[-8] = 0x40270a;
+          exit(7);
+          v15[0x13] = 1;
+          goto label_402570;
+        }
+      }
+      a1 = (void *)(uint8)((uint4)a1 ^ 1);
+      if (*(int8 *)&v15[0x78] == *(int8 *)(v22 + 0x28)) {
+        return a1;
+      }
+      *(void *)&v15[-8] = 0x402a22;
+      __stack_chk_fail();
+label_402a22:
+      if (dat_40171c == '\0') {
+label_40280e:
+        if (dat_40171b == '\0') {
+          if ((dat_401719 != '\x01') || (v18 = 0x4021f0, v15[0x13] != '\0')) goto label_402897;
+          goto label_4028b3;
+        }
+        goto label_4028d2;
+      }
+      if (v15[0x13] != '\0') goto label_40288e;
+label_402a3a:
+      v18 = 0x402170;
+    }
+label_4028b3:
+    *(void *)&v15[-8] = 0x4028ba;
+    v18 = dcgettext(0,v18,5);
+    *(void *)&v15[-8] = 0x4028c8;
+    error(0,0,v18);
+  } while( true );
+}
+
+--- metrics (reference | kuna) ---
+  loc           254 | 225 
+  gotos          11 | 18  
+  labels          6 | 9   
+  switches        1 | 0   
+  cases          11 | 0   
+  ifs            26 | 33  
+  loops           2 | 2   
+  ternaries       1 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (11 vs 18)
+  * ref has fewer labels (6 vs 9)
+  * ref recovered a switch kuna did not (1 vs 0)
+  * kuna emitted a recovery-failure marker
