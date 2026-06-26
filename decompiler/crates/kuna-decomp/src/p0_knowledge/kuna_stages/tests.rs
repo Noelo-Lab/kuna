@@ -34,12 +34,14 @@ fn surface_count_is_94() {
 
 #[test]
 fn settable_count_is_49() {
-    // 31 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+    // 32 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
     // + `tailcalljump`, angr tee-O2 tail-jumps
     // + `branchflip`, angr SAILR negated-guard branch flip, S8 readability
-    // + `regionstructure`, region-based Phoenix/SAILR structurer, Inc 1)
+    // + `regionstructure`, region-based Phoenix/SAILR structurer, Inc 1
+    // + `regionlooprefine`, region structurer multi-exit/irreducible loop-successor
+    //   refinement, default-off opt-in)
     // + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -66,9 +68,11 @@ fn settable_count_is_49() {
     // (+1 for `tailcalljump`, the angr tee-O2 tail-jump S2 flow-classification
     // knob, default-off opt-in; +1 for `branchflip`, the angr SAILR negated-guard
     // S8 branch-flip readability knob, default-off opt-in; +1 for `regionstructure`,
-    // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 49);
-    assert_eq!(SETTABLE_TABLE.len(), 49);
+    // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in;
+    // +1 for `regionlooprefine`, the region structurer multi-exit/irreducible
+    // loop-successor refinement knob, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 50);
+    assert_eq!(SETTABLE_TABLE.len(), 50);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -295,6 +299,7 @@ fn option_values_live_value_present_for_23_suppressed_for_25() {
                         st.option,
                         "loweredswitch"
                             | "regionstructure"
+                            | "regionlooprefine"
                             | "stackguard"
                             | "branchflip"
                             | "namestyle"
@@ -374,10 +379,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 49 rows: 48 trailing commas (the last, macho-arm64e, has none;
+    // 50 rows: 49 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's and tailcalljump's S2 rows, branchflip's S8 row,
-    // and regionstructure's S8 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 48);
+    // and regionstructure's + regionlooprefine's S8 rows sit mid-table, so they
+    // do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 49);
 }
 
 #[test]

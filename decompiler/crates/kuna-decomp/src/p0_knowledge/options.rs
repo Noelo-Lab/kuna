@@ -264,6 +264,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchguardbound",
     "loweredswitch",
     "regionstructure",
+    "regionlooprefine",
     "gotoreduce",
     "foldcallret",
     "stackguard",

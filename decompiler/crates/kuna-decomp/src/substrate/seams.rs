@@ -538,6 +538,14 @@ pub struct Architecture {
     /// primary structuring path; falls back to `CollapseStructure` on irreducible code).
     /// Read by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub region_structure: bool,
+    /// (kuna) region structurer cyclic loop-successor refinement
+    /// (`region_loop_refine`, opt-in default-off).  When set (and
+    /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
+    /// refined (secondary exits & latches virtualized to break/continue gotos) so
+    /// they fold into structured loops instead of falling back to
+    /// `CollapseStructure`.  Read by
+    /// [`crate::s8_structure::region_structurer::run_region_structurer`].
+    pub region_loop_refine: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -745,6 +753,7 @@ impl Architecture {
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
             region_structure: false,     // regionstructure (opt-in default-off)
+            region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
