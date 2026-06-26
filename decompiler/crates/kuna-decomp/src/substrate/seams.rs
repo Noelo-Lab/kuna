@@ -534,7 +534,8 @@ pub struct Architecture {
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::s7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
-    /// Ghidra's `CollapseStructure` (`region_structure`, opt-in default-off).
+    /// Ghidra's `CollapseStructure` (`region_structure`, DIV-12 default-on: the
+    /// primary structuring path; falls back to `CollapseStructure` on irreducible code).
     /// Read by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub region_structure: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a

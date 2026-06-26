@@ -400,3 +400,40 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   argument types `(char *)0x0` and the call resolves to the named `setlocale` (the pre-fix shape
   rendered a bare `0`). `docs/baseline-stages.json` (+3 assertions, 176 → 179).
 - **Date**: 2026-06-25.
+
+---
+
+## DIV-12: the region structurer becomes the default structuring path
+
+- **Flip**: `regionstructure` → **on** (a port of angr's Phoenix/SAILR structurer, built
+  increment by increment over Inc 0–6). kuna's S8 now structures the CFG by walking the
+  `KunaRegionIdentifier` region tree and matching the Phoenix/SAILR acyclic-sequence, ITE,
+  cyclic-loop (Inc 3), and acyclic switch-case (Inc 4) schemas — with Inc 5's short-circuit
+  condition folding (`&&`/`||`) — instead of running Ghidra's `CollapseStructure` unconditionally.
+  When a function cannot be collapsed to a single structured root (irreducible / multi-entry
+  loops) the region structurer falls back to `CollapseStructure`, so it is never *worse* than
+  upstream. `option regionstructure off` restores the unconditional Ghidra `CollapseStructure`
+  path. Like DIV-10, this is **not a correctness fix** — it is a deliberate
+  structure-recovery default (the region-driven structurer is the foundation for the
+  irreducible/SAILR goto-reduction work that later increments build on); it is recorded here
+  because it changes the default *engine* that produces S8 output.
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without regeneration).
+  The full 675-assertion datatest corpus is **byte-identical** with the region structurer on vs
+  off (verified during Inc 5: the last divergence, `elseif.xml` Else-if #14, was closed by Inc
+  5's `&&`/`||` condition folding, so on now reproduces Ghidra's `CollapseStructure` output
+  exactly across the whole corpus). `docs/baseline.json` untouched. `make rust-test` green.
+- **Mechanism**: the per-`Architecture` flag `region_structure` now defaults **on** (set `true`
+  in both the `Architecture` struct-literal ctor and `resetDefaults`, copied into the
+  per-function seam in `build_arch_handle`) and is read by `ActionBlockStructure`, which routes
+  S8 through the region structurer (`s8_structure::region_structurer`) when set, falling back to
+  `CollapseStructure` on an un-collapsible region. No CFG/SSA/type change — it swaps the S8
+  block-structuring engine and is byte-output-equivalent to Ghidra on the reducible corpus.
+- **Speed**: ON-vs-OFF decompile speed is unchanged on the datatest corpus (per Inc 5's
+  verification); the region walk is O(regions) and runs in place of `CollapseStructure`.
+- **Value beyond parity**: on the reducible corpus the output is identical to Ghidra, but the
+  region structurer adds value on irreducible / SAILR cases as the later goto-reduction and
+  region-refinement increments land — it is the primary structuring path those passes extend.
+- **Stage-testcase**: `tests/stages/regionstructure-shortcircuit.xml` (added with Inc 5) already
+  asserts the `&&`-folded form across both passes (off = `CollapseStructure`, on = region
+  structurer); the existing region-structurer stage tests now exercise the default-on path.
+- **Date**: 2026-06-26.
