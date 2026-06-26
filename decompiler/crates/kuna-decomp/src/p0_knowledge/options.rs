@@ -299,6 +299,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "i386_pie_plt",
     "mips_isa",
     "dwarf",
+    // (kuna) DWARF `.debug_line` source-line comments; default-off (output-changing).
+    "dwarf_lines",
     "callfixup",
     "addrtable",
     "operand_refs",
@@ -327,6 +329,16 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // Default-off (a heuristic that can be wrong; also requires `--option listing
     // on` to build the Listing it reads).
     "noreturn_propagate",
+    // (kuna) Aggressive Instruction Finder gap-walk: the kuna analog of Ghidra's
+    // `AggressiveInstructionFinderAnalyzer` (which ships off-by-default with the
+    // warning "IT MAY CREATE A LOT OF BAD CODE!").  Over the undefined gaps between
+    // discovered functions, speculatively decode each gap start and accept it as a
+    // NEW function entry when it (a) disassembles into a valid subroutine and (b)
+    // matches a function-start fingerprint shared by >= 4 already-discovered
+    // functions.  Finds functions reachable ONLY through an indirect/data path that
+    // entry discovery + funcsyms miss.  Default-off (a speculative gap-filler that
+    // can create false positives; also requires `--option listing on`).
+    "aif",
     // (kuna) Go pclntab function-name recovery: parse the embedded pclntab of a Go
     // binary and name each Go function (`main.main`/`runtime.*` instead of
     // `sub_<addr>`).  The kuna analog of Ghidra's `GolangSymbolAnalyzer`

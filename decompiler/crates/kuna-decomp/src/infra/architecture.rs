@@ -429,6 +429,10 @@ pub struct Architecture {
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
     pub analysis_dwarf: bool,
+    /// (kuna) Gate the DWARF `.debug_line` source-line comment pass (`dwarf_lines`);
+    /// default **off** — it changes the decompiled output (adds `/* file:line */`
+    /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
+    pub analysis_dwarf_lines: bool,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
     pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
@@ -482,6 +486,20 @@ pub struct Architecture {
     /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
     /// gate is byte-identical.
     pub analysis_noreturn_propagate: bool,
+    /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
+    /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
+    /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
+    /// with the warning *"IT MAY CREATE A LOT OF BAD CODE!"*): a speculative
+    /// gap-filler that, over the undefined gaps between discovered functions,
+    /// speculatively decodes each gap start and accepts it as a NEW function entry
+    /// when it (a) disassembles into a valid subroutine (a clean RET, > 2
+    /// instructions) AND (b) matches a function-start byte fingerprint shared by ≥ 4
+    /// of the already-discovered functions. Finds functions reachable ONLY through
+    /// an indirect/data path (a `.rodata` function-pointer table) that entry
+    /// discovery + funcsyms miss. Reads the Listing (`--option listing on` builds
+    /// it); a no-op when the Listing is absent. Default-off ⇒ every parity gate is
+    /// byte-identical.
+    pub analysis_aif: bool,
     /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
     /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
     /// **on**, but the pass is registered ONLY for a Go binary
@@ -706,6 +724,7 @@ impl Architecture {
             analysis_i386_pie_plt: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
+            analysis_dwarf_lines: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
@@ -713,6 +732,7 @@ impl Architecture {
             analysis_listing: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
+            analysis_aif: false,
             analysis_gopclntab: false,
             macho_arm64e: false,
 
@@ -818,6 +838,7 @@ impl Architecture {
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
+        self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
@@ -825,6 +846,7 @@ impl Architecture {
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
+        self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
@@ -975,6 +997,9 @@ impl Architecture {
             }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
+            "dwarf_lines" => {
+                on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
+            }
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
             "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
@@ -987,6 +1012,9 @@ impl Architecture {
             }
             "noreturn_propagate" => {
                 on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
+            }
+            "aif" => {
+                on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
             }
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")

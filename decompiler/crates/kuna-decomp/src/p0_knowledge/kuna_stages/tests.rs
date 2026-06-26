@@ -33,17 +33,17 @@ fn surface_count_is_94() {
 }
 
 #[test]
-fn settable_count_is_52() {
+fn settable_count_is_54() {
     // 31 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
     // + `tailcalljump`, angr tee-O2 tail-jumps
     // + `branchflip`, angr SAILR negated-guard branch flip, S8 readability
     // + `regionstructure`, region-based Phoenix/SAILR structurer, Inc 1)
-    // + 18 analysis-tier
-    // gates: 13 per-run analysis-pass
+    // + 20 analysis-tier
+    // gates: 14 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/eh_frame_full/
-    // funcstart_patterns/arm_markers/mips_gp/mips_isa/dwarf/callfixup/addrtable/operand_refs;
+    // funcstart_patterns/arm_markers/mips_gp/mips_isa/dwarf/dwarf_lines/callfixup/addrtable/operand_refs;
     // `eh_frame_full` is the `.eh_frame` LSDA landing-pad discovery sub-feature of the
     // always-on entry_disc pass, GccExceptionAnalyzer, default-off; `funcstart_patterns`
     // is the full Ghidra byte-pattern function-start set, FunctionStartAnalyzer, default-off)
@@ -51,11 +51,13 @@ fn settable_count_is_52() {
     // varargs-typing gate + the `listing` Listing/xref disassembly tier gate +
     // the `noreturn_disc` discovered-no-return Listing consumer gate + the
     // `noreturn_propagate` no-return propagation Listing consumer gate + the
+    // `aif` Aggressive Instruction Finder gap-walk Listing consumer gate + the
     // `gopclntab` Go pclntab function-name recovery gate.
     // (mips_isa added with MIPS16 ISA_MODE painting, Increment 21; mips_gp with
     // MIPS $gp recovery; formatstring with half B; listing with the Listing/xref
     // tier, Increment 29; noreturn_disc with the first Listing consumer, Increment 33;
     // gopclntab with Go pclntab name recovery, Increment 34;
+    // dwarf_lines with DWARF .debug_line source-line comments, default-off opt-in;
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
     // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
     // gotoreduce with the angr SAILR return-tail goto-reduction pass;
@@ -65,7 +67,8 @@ fn settable_count_is_52() {
     // operand_refs with the ScalarOperandAnalyzer scalar-operand reference markup,
     // default-off — Ghidra getDefaultEnablement = !isElf;
     // funcstart_patterns with the FULL Ghidra byte-pattern function-start set
-    //   (FunctionStartAnalyzer), default-off opt-in, output-changing.)
+    //   (FunctionStartAnalyzer), default-off opt-in, output-changing;
+    // aif with the AggressiveInstructionFinder gap-walk consumer.)
     // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
     // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
     // (DIV-9, angr test_decompiling_nl_i386_pie), and the `macho-arm64e` Mach-O
@@ -76,9 +79,11 @@ fn settable_count_is_52() {
     // S8 branch-flip readability knob, default-off opt-in; +1 for `regionstructure`,
     // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in;
     // +1 for `funcstart_patterns`, the full byte-pattern function-start set,
-    // default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 52);
-    assert_eq!(SETTABLE_TABLE.len(), 52);
+    // default-off opt-in; +1 for `aif`, the AggressiveInstructionFinder gap-walk
+    // Listing consumer, default-off opt-in; +1 for `dwarf_lines`, the DWARF
+    // .debug_line source-line mapping, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 54);
+    assert_eq!(SETTABLE_TABLE.len(), 54);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -257,7 +262,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_23_suppressed_for_25() {
+fn option_values_live_value_present_for_23_suppressed_for_26() {
     let ov = OptionValues::default();
     // 23 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -285,6 +290,7 @@ fn option_values_live_value_present_for_23_suppressed_for_25() {
         "mips_gp",
         "mips_isa",
         "dwarf",
+        "dwarf_lines",
         "callfixup",
         "addrtable",
         "operand_refs",
@@ -292,6 +298,7 @@ fn option_values_live_value_present_for_23_suppressed_for_25() {
         "listing",
         "noreturn_disc",
         "noreturn_propagate",
+        "aif",
         "gopclntab",
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
@@ -393,12 +400,13 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 52 rows: 51 trailing commas (the last, macho-arm64e, has none;
+    // 54 rows: 53 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's and tailcalljump's S2 rows, branchflip's S8 row,
-    // regionstructure's S8 row, eh_frame_full's S1 row, operand_refs's S1 row, and
-    // funcstart_patterns's S1 row sit mid-table, so they
+    // regionstructure's S8 row, eh_frame_full's S1 row, operand_refs's S1 row,
+    // funcstart_patterns's S1 row, aif's S1 row, and dwarf_lines' S1 row sit
+    // mid-table, so they
     // do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 51);
+    assert_eq!(json.matches("},\n").count(), 53);
 }
 
 #[test]

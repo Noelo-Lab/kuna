@@ -76,7 +76,7 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_52_settables() {
+fn fixture_has_all_54_settables() {
     // One `"option":` per settable row: 31 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
@@ -86,21 +86,23 @@ fn fixture_has_all_52_settables() {
     // the `tailcalljump` angr -O2 tail-jump S2 flow-classification gate,
     // the `branchflip` angr SAILR negated-guard S8 branch-flip gate,
     // and the `regionstructure` region-based Phoenix/SAILR structurer, Inc 1)
-    // + 18 analysis-tier gates (13 per-run
+    // + 20 analysis-tier gates (14 per-run
     // analysis-pass enablement — including the `mips_gp` $gp recovery gate, the
     // `mips_isa` MIPS16 ISA_MODE painting gate, the `eh_frame_full` `.eh_frame`
     // LSDA landing-pad discovery gate (GccExceptionAnalyzer, default-off), the
-    // `operand_refs` scalar-operand reference-markup gate (default-off, !isElf), and the
+    // `operand_refs` scalar-operand reference-markup gate (default-off, !isElf), the
     // `funcstart_patterns` full byte-pattern function-start gate (Ghidra
-    // FunctionStartAnalyzer, default-off) — plus the `formatstring`
+    // FunctionStartAnalyzer, default-off), and the `dwarf_lines` DWARF .debug_line
+    // source-line comment gate (default-off) — plus the `formatstring`
     // DecompilerDependent varargs-typing gate, the `listing` Listing/xref
     // disassembly tier gate, the `noreturn_disc` discovered-no-return Listing
     // consumer gate, the `noreturn_propagate` no-return propagation Listing consumer
-    // gate, and the `gopclntab` Go pclntab function-name recovery gate)
+    // gate, the `aif` Aggressive Instruction Finder gap-walk Listing consumer gate,
+    // and the `gopclntab` Go pclntab function-name recovery gate)
     // + 3 loader-tier capabilities (the `relocobjects` ET_REL relocatable-object
     // loader, DIV-8; the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9; and
     // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate, PR-8).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 52);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 54);
 }
 
 #[test]

@@ -100,6 +100,12 @@ use kuna_decomp::fspec::PrototypePieces;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, SymFact, SymKind};
 
+/// The `.debug_line` source-line side of the DWARF analyzer (`DwarfLinesPass`,
+/// the kuna analog of `DWARFLineInfoCommentScript`). Separate pass + gate
+/// (`dwarf_lines`, default-off) from the names/types pass below.
+mod lines;
+pub use lines::DwarfLinesPass;
+
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
 type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 
