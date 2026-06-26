@@ -3817,3 +3817,99 @@ catalog probe = 51 > the old 50 bound).
   `stage_catalog.json`, `docs/assertions.md`), `tests/stages/kuna-catalog.xml`
   (count bounds), `kuna-console/tests/verify_eh_frame_full.rs` (e2e), the vendored
   fixture `eh_lsda_x86_64` (+ source + README), `docs/analysis-port-log.md`.
+
+### Increment 48 — scalar/operand reference markup (`ScalarOperandAnalyzer` family, gated off) ✅
+
+Ports the salvageable subset of Ghidra's operand/reference markup family
+(`ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`, `OperandReferenceAnalyzer`,
+`DataOperandReferenceAnalyzer`) as ONE pass, **gated off by default** — clearing
+the buildplan §1.2 item (the "never-for-an-ELF-decompiler as producing passes"
+verdict) by building it so it *exists + is flippable*, rather than leaving it a doc
+note. New module `kuna-analysis/src/s1_operand_refs/` (`OperandRefsPass`, id
+`operand_refs`).
+
+**What it builds (the faithful, salvageable subset).** The one product of the
+family with decompiler relevance: a scalar immediate operand that points into
+allocated **read-only** data is an address, so type the target so it renders. The
+pass linear-decodes the executable sections through the engine `Translate`
+(`one_instruction` + a capturing `PcodeEmit` that keeps every constant-space input —
+the kuna projection of `Instruction.getOpObjects(i)` `Scalar`s), applies
+`ScalarOperandAnalyzer.checkOperands`'s value filter (reject `< 4096` and the
+byte-mask values `0xffff`/`0xff00`/…), accepts the scalar only when it lands in an
+allocated, non-writable, non-exec section (the `.rodata` partition; mirrors
+`program.getMemory().contains` + the readonly check), applies the
+`ElfScalarOperandAnalyzer` `.got`/`.plt` exclusion (those are `elf_plt`-named, never
+data refs), and for a target that begins a NUL-terminated printable run emits a
+`StringFact` (`char[N]`) + `readonly` range through the **existing** strings/readonly
+commit arms — so the printer's pointer-to-readonly-char-array literal route
+(Increment 12) renders the reference as the literal.
+
+**The empirical render result (the headline).** The scalar→string-literal render
+**works** — the printer-shadowing wall the buildplan §1.2 flagged is **gone** since
+Increment 12. On the `operand_refs_x86_64` fixture (`main` materializes the `.rodata`
+string `"hi"`@`0x402004` with `movabs $0x402004,%rax` and passes it to the
+**no-prototype** `mystery`):
+- **default-off:** `mystery(0x402004)` (the bare absolute scalar);
+- **`--option operand_refs on`:** `mystery("hi")` (the literal) — proving the pass's
+  planted `char[3]` promotes the constant into a global SPACEBASE reference that the
+  Increment-12 printer route renders as the literal, NOT the `s_<addr>` name.
+
+`"hi"` is **2 chars** (< 5, so the always-on `StringLiteralPass` skips it) and
+`mystery` has no prototype (no libproto/S5 typing), so the literal renders *only*
+because `operand_refs` typed the operand — isolating this pass's contribution. The
+pass fires only when the address **appears directly in code** as a bare immediate
+(the `movabs` / `-mcmodel=large` case); a RIP-relative `lea 0xNNN(%rip)` surfaces a
+`pc + displacement` computation, not a bare scalar, so no operand is captured —
+faithful to Ghidra's `ADDRESSES_DO_NOT_APPEAR_DIRECTLY_IN_CODE`
+(`getDefaultEnablement2`) gate. So the value-add is the narrow residual the verdict
+predicted: a short / `s1_strings`-missed read-only string operand of a no-prototype
+call where the address is materialized as a direct immediate.
+
+**Documented-as-covered-elsewhere (not built as a no-op).** The listing-cosmetic
+`OperandReferenceAnalyzer`/`DataOperandReferenceAnalyzer` halves (subroutine refs,
+address-table refs, generic xrefs) have no decompiler-relevant commit arm and are
+delivered by other passes — module docs carry the map: subroutine refs → `s1_entry`;
+jump/address tables → the engine `JumpTable::recoverAddresses` (S2) + `s1_addrtable`;
+strings → `s1_strings` + the printer route; `.plt`/`.got` → `elf_plt`.
+
+**Why default-off (the net-negative rationale, unchanged from §1.2).** (a) Ghidra
+ships the producing analyzer `getDefaultEnablement` = `!isElf` — **disabled for every
+ELF**; (b) `ElfScalarOperandAnalyzer` only *removes* bad `.got`/`.plt` refs kuna
+never creates; (c) the one useful product is already covered for the common (≥5-char,
+prototyped-call) case by `s1_strings` + libproto/S5 typing; (d) a per-instruction
+immediate scan over-accepts (the `s1_addrtable` false-positive shape). So it ships
+**ported + flippable** but off.
+
+**Deferred-run requirement (the build-timing finding).** Like the Listing tier
+(PR6), the pass runs **deferred** at the commit point (`read symbols`), NOT in the
+load-time pass list: it decodes through the engine `Translate` whose program
+loadimage is only attached (`set_loader`) *after* the load-time passes run — a
+load-time decode finds no bytes (empirically `decoded_ok=0, decoded_err=357` over the
+fixture). It is driven from `passes::run_operand_refs`, called from
+`engine.rs::commit_pending_analysis` gated on `arch.analysis_operand_refs`, sharing
+the deferred-Listing image stash.
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**194/194 PARITY OK** (the two `kuna-catalog.xml` `use_when`/`change_kind` range
+assertions had their `max` bumped `50`→`60` to admit the +1 settable; the new option
+itself adds no datatest), `make rust-test` **green** (5 `s1_operand_refs` unit tests
++ the new `verify_operand_refs` e2e gate's 2 tests), `kuna catalog --check` **OK**
+(50 settables; `stage_catalog.json` + `docs/assertions.md` regenerated). Decompile
+speed: default-off byte-identical and zero-cost (the deferred decode is skipped); on,
+adds a one-time whole-`.text` linear sweep (~0.3 s on fauxware, within noise).
+
+- **Divergence/LOSS:** none to the parity oracles (all default-off ⇒ byte-identical).
+  The pass is the residual-only producer the buildplan predicted; the listing-cosmetic
+  halves are documented as covered-elsewhere, not built. **`make test-stages`
+  delta:** the `kuna-catalog.xml` `max` bump (range loosening, intent unchanged).
+- **Changed:** new `kuna-analysis/src/s1_operand_refs/mod.rs` + `lib.rs` mod;
+  `kuna-analysis/src/passes.rs` (`run_operand_refs` deferred runner + the load-time
+  registration note); `kuna-console/src/engine.rs` (`analysis_pass_enabled` arm +
+  the deferred run in `commit_pending_analysis`); `kuna-decomp/src/infra/architecture.rs`
+  (`analysis_operand_refs` field + default + `set_kuna_option` arm);
+  `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`);
+  `kuna-decomp/stages.toml` (`[[settable]]` row); the `49`→`50` count tests
+  (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`); `tests/stages/kuna-catalog.xml`
+  (max bump); goldens `stage_catalog.json` + `docs/assertions.md`; new fixture
+  `tests/fixtures/operand_refs_x86_64`(`.c`) + README; new e2e gate
+  `kuna-console/tests/verify_operand_refs.rs`.

@@ -157,6 +157,24 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // application-layer absolute-pointer-table discovery. See docs/analysis-port-log.md.
         // Box::new(crate::s1_addrtable::AddrTablePass { min_run: 2 }),
 
+        // S1 scalar/operand reference markup (OperandRefsPass) is implemented +
+        // tested but **gated off by default** AND runs DEFERRED (not in this
+        // load-time list) — the kuna analog of Ghidra's `ScalarOperandAnalyzer` /
+        // `ElfScalarOperandAnalyzer`. Like the Listing/xref tier (PR6), it must run
+        // at the deferred commit point (`read symbols`) rather than at load: it
+        // linear-decodes the executable sections via the engine `Translate`, and the
+        // program loadimage is only attached to the engine's `Sleigh` AFTER this
+        // load-time pass list runs (`set_loader` in `bootstrap_from_object`), so a
+        // load-time decode finds no bytes. It is therefore driven from
+        // [`run_operand_refs`] in `commit_pending_analysis`, gated on
+        // `analysis_operand_refs` (`--option operand_refs on`). OFF by default
+        // because (a) Ghidra ships the producing analyzer `setDefaultEnablement` =
+        // `!isElf` (disabled for every ELF) and the ELF subclass only *removes* bad
+        // `.got`/`.plt` refs kuna never creates; (b) its one useful product (a
+        // `.rodata` string typed as `char*`) is already delivered by the always-on
+        // `s1_strings` + libproto/S5 typing for the common case; (c) a per-instruction
+        // immediate scan over-accepts. See docs/analysis-port-buildplan.md §1.2.
+
         // DELIBERATELY ABSENT — `AggressiveInstructionFinderAnalyzer` (AIF, + the ARM
         // variant). Not ported: it is a *post-disassembly* speculative gap-filler that
         // requires a fully-populated Listing/FunctionManager (≥20 found functions) +
@@ -284,6 +302,36 @@ pub fn run_listing_consumers(
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
         .collect()
+}
+
+/// Build an [`AnalysisCtx`] and run the **deferred** scalar/operand reference-markup
+/// pass ([`crate::s1_operand_refs::OperandRefsPass`]), returning its output keyed by
+/// the pass id (`"operand_refs"`).
+///
+/// Like the Listing tier (PR6), this pass must run at the deferred commit point
+/// rather than at load: it linear-decodes the executable sections through the
+/// engine `Translate`, and the program loadimage is only attached to the engine's
+/// `Sleigh` *after* the load-time pass list runs (`set_loader` in
+/// `bootstrap_from_object`). A load-time decode would find no bytes (every decode
+/// fails). The console calls this from `commit_pending_analysis` (reached at `read
+/// symbols`, after `set_loader`), gated on `arch.analysis_operand_refs`
+/// (`--option operand_refs on`). `ctx.listing` is `None` — the pass does its own
+/// linear decode, independent of the Listing tier (which never populates the data
+/// references this pass needs; see `docs/listing-tier-design.md` §2.2).
+///
+/// A parse failure yields an empty output (additive, never fails). Bound to the
+/// real-ELF path: the XML datatest path never calls this, so the parity oracles
+/// are structurally untouched.
+pub fn run_operand_refs(
+    bytes: &[u8],
+    image: &ObjectLoadImage,
+    arch: &Architecture,
+) -> AnalysisOutput {
+    let Ok(file) = object::File::parse(bytes) else {
+        return AnalysisOutput::default();
+    };
+    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: None };
+    crate::s1_operand_refs::OperandRefsPass.run(&ctx)
 }
 
 /// Extract `(addr, name)` for every text/function symbol in the object — the name

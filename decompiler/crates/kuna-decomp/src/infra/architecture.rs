@@ -420,6 +420,18 @@ pub struct Architecture {
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
     /// Ghidra `AddressTableAnalyzer.setDefaultEnablement(false)`).
     pub analysis_addrtable: bool,
+    /// (kuna) Gate the scalar/operand reference-markup pass (`operand_refs`); the
+    /// kuna analog of Ghidra's `ScalarOperandAnalyzer`/`ElfScalarOperandAnalyzer`.
+    /// Default **off**: `ScalarOperandAnalyzer.getDefaultEnablement` is `!isElf`
+    /// (Ghidra ships the producing analyzer DISABLED for every ELF), the ELF
+    /// subclass only *removes* bad `.got`/`.plt` refs kuna never creates, and the
+    /// one useful product (a `.rodata` string typed `char*`) is already delivered
+    /// by the always-on `s1_strings` + libproto/S5 typing — so a per-instruction
+    /// immediate scan is net-negative (over-accepts). When on, it linear-decodes the
+    /// executable sections and plants a typed `char[N]`+readonly fact for each
+    /// scalar immediate that points into allocated read-only data. Real-ELF path
+    /// only ⇒ the XML datatest oracle is structurally untouched.
+    pub analysis_operand_refs: bool,
     /// (kuna) Gate the format-string varargs-typing behavior (`formatstring`,
     /// `FormatStringAnalyzer` half B); default **off** (matches Ghidra
     /// `FormatStringAnalyzer.setDefaultEnablement(false)`).  Unlike the other
@@ -681,6 +693,7 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
+            analysis_operand_refs: false,
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_noreturn_disc: false,
@@ -791,6 +804,7 @@ impl Architecture {
         self.analysis_dwarf = true;
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
+        self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
@@ -944,6 +958,7 @@ impl Architecture {
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
+            "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
             "formatstring" => {
                 on_off!(analysis_formatstring, "Format-string varargs-typing pass")
             }
