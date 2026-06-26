@@ -2,7 +2,7 @@
 
 **Option**: `noreturn_externmatch` (default-OFF during dev; ablation decides ship).
 **Module**: `decompiler/crates/kuna-decomp/src/s2_lift/kuna_noreturn_externmatch.rs`.
-**ElementId**: `4103` (max in use is 4102).
+**ElementId**: `4104` (renumbered from 4103 on merge; PR #90's `noreturn_extern` took 4103).
 **Stage**: S2 (lift / flow follow) — `FlowEnvironment::query_call_no_return` seam.
 
 ## Mechanism
@@ -23,7 +23,7 @@ address-keyed scan missed — exactly the chcon.o `__stack_chk_fail` case.
 
 ## Anchors (minimal, each marked `// (kuna)`)
 
-1. `s2_lift/kuna_noreturn_externmatch.rs` (NEW): `ELEM_NORETURN_EXTERNMATCH = 4103`;
+1. `s2_lift/kuna_noreturn_externmatch.rs` (NEW): `ELEM_NORETURN_EXTERNMATCH = 4104`;
    `is_known_noreturn_name(name) -> bool` (strip leading `_`, upstream namespace
    guard global/`std`, match the vendored list pulled via
    `include_str!("../../../kuna-analysis/data/ElfFunctionsThatDoNotReturn")`).

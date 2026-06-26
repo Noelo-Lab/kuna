@@ -7,14 +7,14 @@
   "angr_version": "9.2.213",
   "option": "noreturn_externmatch",
   "flag": "noreturn_extern_match",
-  "element_id": 4103,
+  "element_id": 4104,
   "module": "decompiler/crates/kuna-decomp/src/s2_lift/kuna_noreturn_externmatch.rs",
   "change_kind": "correctness-fix",
   "source_decompiler": "angr",
   "inspiration": "test_decompiling_incorrect_duplication_chcon_main; angr CLE/CFGFast extern no-return tagging; main",
   "scope": "small",
   "default_on": true,
-  "div": "DIV-12",
+  "div": "DIV-13",
   "ablation_changed": 0,
   "parity": "OK",
   "speed_off_ms": 449.82,
@@ -44,7 +44,7 @@
     {
       "question": "default-ON vs opt-in after the ablation",
       "by": "worker",
-      "decision": "Ship default-ON (DIV-12). The ablation is clean (0/675 upstream + 193/193 stage assertions unchanged at the default), the feature is 23% faster on the target, it is a correctness fix, and it adds no risk class beyond the already-default-on noreturn_known (same vendored list, same namespace guard). Recorded interaction: `option noreturn_known off` alone no longer restores the post-`exit` dead code; the PE multiformat test now disables both name-based gates."
+      "decision": "Ship default-ON (DIV-13; renumbered from DIV-12 on merge after PR #90 took DIV-12 for the region structurer). The ablation is clean (0/675 upstream + stage assertions unchanged at the default), the feature is 23% faster on the target, it is a correctness fix, and it adds no risk class beyond the already-default-on noreturn_known (same vendored list, same namespace guard). Recorded interaction: `option noreturn_known off` alone no longer restores the post-`exit` dead code; the PE multiformat test now disables both name-based gates."
     }
   ]
 }

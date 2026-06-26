@@ -149,7 +149,7 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
     let on = decompile_func(prog, &["load function __tmainCRTStartup", "decompile", "print C"]);
 
     let Some(prog_off) = boot("pe_imports.exe") else { return };
-    // OFF: the dead code after `exit(…)` reappears. (kuna DIV-12) BOTH name-based
+    // OFF: the dead code after `exit(…)` reappears. (kuna DIV-13) BOTH name-based
     // no-return gates must be disabled: `noreturn_known` (the address-keyed scan)
     // AND `noreturn_externmatch` (the flow-seam name match, default-on), since the
     // latter independently marks `exit` no-return from the same vendored list.

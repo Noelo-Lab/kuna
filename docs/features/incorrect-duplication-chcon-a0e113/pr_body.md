@@ -20,7 +20,7 @@ set — so flow runs off the end into the padding.
 
 ### Mechanism
 
-New `option noreturn_externmatch` (S2 flow-follow, ElementId 4103). When set, the
+New `option noreturn_externmatch` (S2 flow-follow, ElementId 4104). When set, the
 `FlowEnvironment::query_call_no_return` seam (`infra/decompile_drive.rs`) **also** reports no-return
 for a callee whose *name* matches the same vendored ELF list — `flow.rs` ORs this with the proto
 flag at the artificial-halt site, so a name match plants the halt and the trailing padding is never
@@ -33,7 +33,7 @@ misses. A no-op on a normal ELF (the proto flag is already set).
 ### Option & default
 
 - `option noreturn_externmatch on|off` — flip via `kuna decompile … --option noreturn_externmatch off`.
-- **Default-ON (DIV-12).** The full ablation is clean: **0 / 675** upstream datatest assertions
+- **Default-ON (DIV-13).** The full ablation is clean: **0 / 675** upstream datatest assertions
   change with it default-ON, and it is **~23% faster** on the target (`chcon.o::main` median
   449.8 ms → 344.3 ms, n=5 — there is less dead padding to decompile). Set OFF to restore the prior
   byte-identical rendering.

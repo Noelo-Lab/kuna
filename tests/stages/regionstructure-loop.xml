@@ -1,0 +1,93 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Region-based (Phoenix/SAILR) structurer, Increment 3 - CYCLIC/LOOP recovery.
+    Option `regionstructure` (default OFF).  This proves the cyclic schemas end to
+    end: under `option regionstructure on`, `ActionBlockStructure` replaces Ghidra's
+    `CollapseStructure` with the region-driven structurer
+    (`s8_structure::region_structurer`), which now recovers the three loop classes
+    (`phoenix._analyze_cyclic` + `_match_cyclic_{while,dowhile,natural_loop}`):
+
+      * **do-while**  -> BlockDoWhile  (`new_block_do_while`)
+      * **while/for** -> BlockWhileDo  (`new_block_while_do`)
+      * **inf-loop**  -> BlockInfLoop  (`new_block_inf_loop`, break on a CBRANCH)
+
+    The loop schemas lean on the back-edges + dominators already marked on the
+    seeded `sblocks` `BlockCopy`s (`structure_loops`/`calc_forward_dominator` on
+    `bblocks`, copied verbatim by `build_copy_from`), and on the deferred
+    `negateCondition` pending-flip machinery (a loop-condition orientation flip is
+    recorded in the structurer and realized by `block_basic_negate_lastop` in
+    `ActionBlockStructure`, exactly as the `CollapseStructure` path does for
+    `take_pending_flips`).  Multi-latch / multi-exit loops are refined (the
+    secondary back-edges / exits virtualized to gotos) so the body collapses to the
+    clean while/do-while/inf-loop shape the fold rules accept; irreducible /
+    head-in-body / nested-interlock loops fall back to `CollapseStructure`
+    (honest-partial, never a panic).
+
+    `loopproof` exercises all three loop classes in one function (x86-64, GCC -O0,
+    the bytes of a `-c` object loaded at 0x401000).  Source:
+
+        int loopproof(int n, int *a) {
+            int i, s = 0;
+            i = 0;
+            do { s += a[i]; i++; } while (i < n);      // do-while
+            for (i = 0; i < n; i++) s += a[i] * 2;     // while / for
+            i = 0;
+            while (1) { s += a[i]; if (a[i]==0) break; i++; }  // inf-loop + break
+            return s;
+        }
+
+    The region structurer FOLDS each loop with its cyclic schema (verified to take
+    the structurer's success path - `folded loop head` x3 - not the
+    CollapseStructure fall-back).
+
+    Parity proof (the honest Inc 3 result on REDUCIBLE loops): Ghidra's
+    `CollapseStructure` already recovers do-while / for / while-true-with-break
+    cleanly (ZERO gotos), so the region-driven structuring is byte-identical to
+    Ghidra on these shapes - pass 1 (off) and pass 2 (on) emit the SAME C, both
+    ZERO gotos.  This mirrors the Inc 1 acyclic finding: Ghidra's loop structurer is
+    already complete on reducible loops, so the region structurer MATCHES it (active
+    + correct recovery) rather than beating it there.  The goto-reduction the
+    roadmap targets lives in the IRREDUCIBLE / head-in-body family (the PR #44
+    Windows-PE shape kuna cannot yet load, and the inlined-getc interlocks like
+    fmt's `get_space`), where BOTH Ghidra and the region structurer emit the minimal
+    goto and the structurer falls back parity-safely.  See
+    docs/region-structurer-roadmap.md (Inc 3 row + findings).
+
+    Stage model: S8 "structuring" / loop recovery.  `option regionstructure off`
+    (default) is byte-identical to the existing pipeline; `on` swaps in the region
+    structurer.  Asserted invariants below hold across BOTH passes (counts are 2x
+    the per-pass count): the do-while, the for-loop, the while-true body, and ZERO
+    gotos.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa554889e5897dec488975e0c7
+45f800000000c745fc000000008b45fc
+4898488d148500000000488b45e04801
+d08b000145f88345fc018b45fc3b45ec
+7cdbc745fc00000000eb1f8b45fc4898
+488d148500000000488b45e04801d08b
+0001c00145f88345fc018b45fc3b45ec
+7cd9c745fc000000008b45fc4898488d
+148500000000488b45e04801d08b0001
+45f88b45fc4898488d14850000000048
+8b45e04801d08b0085c074068345fc01
+ebc7908b45f85dc3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="loopproof"/>
+</binaryimage>
+<script>
+  <com>option regionstructure off</com>
+  <com>lo fu loopproof</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regionstructure on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="regionstructure-loop #1: do-while recovered (BlockDoWhile), both passes" min="2" max="2">  } while \(v2 &lt; a0\);</stringmatch>
+<stringmatch name="regionstructure-loop #2: for/while recovered (BlockWhileDo), both passes" min="2" max="2">for \(v2 = 0; v2 &lt; a0; v2 = v2 \+ 1\) \{</stringmatch>
+<stringmatch name="regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes" min="2" max="2">  while \(v1 = v1 \+ \*\(int4 \*\)\(a1 \+ \(int8\)v2 \* 4\), \*\(int4 \*\)\(a1 \+ \(int8\)v2 \* 4\) != 0\) \{</stringmatch>
+<stringmatch name="regionstructure-loop #4: ZERO gotos - region structurer matches Ghidra on reducible loops (parity)" min="0" max="0">goto </stringmatch>
+</decompilertest>

@@ -401,9 +401,48 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   rendered a bare `0`). `docs/baseline-stages.json` (+3 assertions, 176 → 179).
 - **Date**: 2026-06-25.
 
-## DIV-12: name-matched known-no-return externs are flagged in ET_REL `.o` files by default
+---
 
-- **Flip**: `option noreturn_externmatch` (S2 flow-follow, ElementId 4103) now ships **default-on**.
+## DIV-12: the region structurer becomes the default structuring path
+
+- **Flip**: `regionstructure` → **on** (a port of angr's Phoenix/SAILR structurer, built
+  increment by increment over Inc 0–6). kuna's S8 now structures the CFG by walking the
+  `KunaRegionIdentifier` region tree and matching the Phoenix/SAILR acyclic-sequence, ITE,
+  cyclic-loop (Inc 3), and acyclic switch-case (Inc 4) schemas — with Inc 5's short-circuit
+  condition folding (`&&`/`||`) — instead of running Ghidra's `CollapseStructure` unconditionally.
+  When a function cannot be collapsed to a single structured root (irreducible / multi-entry
+  loops) the region structurer falls back to `CollapseStructure`, so it is never *worse* than
+  upstream. `option regionstructure off` restores the unconditional Ghidra `CollapseStructure`
+  path. Like DIV-10, this is **not a correctness fix** — it is a deliberate
+  structure-recovery default (the region-driven structurer is the foundation for the
+  irreducible/SAILR goto-reduction work that later increments build on); it is recorded here
+  because it changes the default *engine* that produces S8 output.
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without regeneration).
+  The full 675-assertion datatest corpus is **byte-identical** with the region structurer on vs
+  off (verified during Inc 5: the last divergence, `elseif.xml` Else-if #14, was closed by Inc
+  5's `&&`/`||` condition folding, so on now reproduces Ghidra's `CollapseStructure` output
+  exactly across the whole corpus). `docs/baseline.json` untouched. `make rust-test` green.
+- **Mechanism**: the per-`Architecture` flag `region_structure` now defaults **on** (set `true`
+  in both the `Architecture` struct-literal ctor and `resetDefaults`, copied into the
+  per-function seam in `build_arch_handle`) and is read by `ActionBlockStructure`, which routes
+  S8 through the region structurer (`s8_structure::region_structurer`) when set, falling back to
+  `CollapseStructure` on an un-collapsible region. No CFG/SSA/type change — it swaps the S8
+  block-structuring engine and is byte-output-equivalent to Ghidra on the reducible corpus.
+- **Speed**: ON-vs-OFF decompile speed is unchanged on the datatest corpus (per Inc 5's
+  verification); the region walk is O(regions) and runs in place of `CollapseStructure`.
+- **Value beyond parity**: on the reducible corpus the output is identical to Ghidra, but the
+  region structurer adds value on irreducible / SAILR cases as the later goto-reduction and
+  region-refinement increments land — it is the primary structuring path those passes extend.
+- **Stage-testcase**: `tests/stages/regionstructure-shortcircuit.xml` (added with Inc 5) already
+  asserts the `&&`-folded form across both passes (off = `CollapseStructure`, on = region
+  structurer); the existing region-structurer stage tests now exercise the default-on path.
+- **Date**: 2026-06-26.
+
+---
+
+## DIV-13: name-matched known-no-return externs are flagged in ET_REL `.o` files by default
+
+- **Flip**: `option noreturn_externmatch` (S2 flow-follow, ElementId 4104) now ships **default-on**.
   When set, the `FlowEnvironment::query_call_no_return` seam (`infra/decompile_drive.rs`) also
   reports a direct call no-return if the callee **name** matches the vendored ELF known-no-return
   list (`exit`/`abort`/`__stack_chk_fail`/…), in addition to the proto flag set by the
@@ -425,7 +464,8 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   and applies the **same** leading-`_` strip + global/`std` namespace guard. So the feature adds no
   risk class beyond the already-default-on `noreturn_known`; it merely reaches the ET_REL extern the
   address scan structurally misses. On a normal dynamically-linked ELF the proto flag is already set,
-  so the OR is a no-op (byte-identical).
+  so the OR is a no-op (byte-identical). This is the always-on companion of `noreturn_extern`
+  (DIV-none, default-off opt-in; same seam, same vendored list) added in PR #90.
 - **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without regeneration): the
   XML datatest `<binaryimage>` bytechunks do not run the analysis tier nor target name-matched
   returning externs, and every real-ELF call to a listed name is already proto-marked by
@@ -437,5 +477,5 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   ET_REL relocation cannot be applied in the bytechunk model, so the chcon.o bytes are not usable
   verbatim). Pass 1 (`option noreturn_externmatch off`) asserts the dead `0xdeadbeef` after the call
   survives (the bug); pass 2 (`on`) asserts the call is flagged no-return (artificial halt) and the
-  dead code is gone. `docs/baseline-stages.json` (190 -> 193 assertions, +3).
+  dead code is gone. `docs/baseline-stages.json` (+3 assertions).
 - **Date**: 2026-06-26.

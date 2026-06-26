@@ -43,7 +43,7 @@
 //! build-time string include, *not* a crate dependency) so it can never drift from
 //! `noreturn_known`.
 //!
-//! Ships **default-ON** (DIV-12): a clean 0/675 datatest ablation (the corpus is
+//! Ships **default-ON** (DIV-13): a clean 0/675 datatest ablation (the corpus is
 //! either real ELFs, where `noreturn_known` already set the proto flag and this is
 //! a no-op, or bytechunks with no name-matched returning extern) and a ~23% speed
 //! *win* on the target (less dead padding to decompile). It carries no risk class
@@ -56,8 +56,8 @@
 use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<noreturn_externmatch>` (kuna). ElementIds live in the
-/// 4000+ range; 4102 is the previous max.
-pub const ELEM_NORETURN_EXTERNMATCH: ElementId = ElementId::new("noreturn_externmatch", 4103);
+/// 4000+ range; 4103 (`noreturn_extern`, PR #90) is the previous max.
+pub const ELEM_NORETURN_EXTERNMATCH: ElementId = ElementId::new("noreturn_externmatch", 4104);
 
 /// The known-no-return name list, `include_str!`'d from the canonical vendored
 /// file the `noreturn_known` analysis pass uses

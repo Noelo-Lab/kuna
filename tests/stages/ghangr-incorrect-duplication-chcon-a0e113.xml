@@ -17,7 +17,7 @@
     synthetic target (the call PRINTS the name) but no no-return flag is set, so
     flow runs off the end into the padding.
 
-    Option `noreturn_externmatch` (kuna, S2 flow-follow, ElementId 4103) closes
+    Option `noreturn_externmatch` (kuna, S2 flow-follow, ElementId 4104) closes
     the gap: when on, the `query_call_no_return` seam also reports no-return for a
     callee whose NAME matches the same vendored ELF known-no-return list, even
     when the address-keyed scan missed it.  A no-op on a normal ELF (the proto

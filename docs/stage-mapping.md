@@ -72,7 +72,8 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_memsetsequence` | S5 | const-sequence memset recovery (GH-9230/1537) |
 | `kuna_v850indbranch` | S2 | flow-classification reclassify (GH-8817) |
 | `kuna_tailcalljump` | S2 | flow-classification: recover an -O2 tail jump (direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call — BRANCH→CALL+RETURN (angr tee-O2 tail-jumps; `option tailcalljump`, default-off) |
-| `kuna_noreturn_externmatch` | S2 | flow-follow (`query_call_no_return` seam): name-match a known-no-return callee against the vendored ELF list when the address-keyed `noreturn_known` scan missed it (ET_REL `.o` undefined extern, e.g. `__stack_chk_fail`), so the dead post-call padding is dropped (angr incorrect-duplication-chcon; `option noreturn_externmatch`, DIV-12 default-on) |
+| `kuna_noreturnextern` | S2 | flow-classification: at the `query_call_no_return` seam, name-match an **undefined-extern** CALL (`__stack_chk_fail`/`abort`/… in an ET_REL `.o`) as no-return when the address-keyed flag is unset, so flow stops instead of running off the function end (angr `test_tail_tail_bytes_ret_dup`; `option noreturn_extern`, default-off opt-in) |
+| `kuna_noreturn_externmatch` | S2 | flow-follow (`query_call_no_return` seam): name-match a known-no-return callee against the vendored ELF list when the address-keyed `noreturn_known` scan missed it (ET_REL `.o` undefined extern, e.g. `__stack_chk_fail`), so the dead post-call padding is dropped (angr incorrect-duplication-chcon; `option noreturn_externmatch`, DIV-13 default-on) |
 | `kuna_flagcompare` | S3 | flag-modelled-compare folding — `(b<<k)s<0`, N==V SBORROW (GH-1276/8777) |
 | `kuna_switchmodbound` | S2 | modulo/and-mask LOAD-table jumptable index bound (GH-9191) |
 | `kuna_stackprobeloop` | S2/S6 | stack-pointer normalization across a stack-probe loop (GH-8017) |
