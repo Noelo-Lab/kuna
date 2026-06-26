@@ -13,6 +13,7 @@ pub mod inject_sleigh;
 pub mod kuna_v850indbranch;
 pub mod kuna_switchmodbound;
 pub mod kuna_switchguardbound;
+pub mod kuna_switchsharedcase;
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
 pub mod kuna_loweredswitch;

@@ -319,6 +319,14 @@ pub struct Architecture {
     /// jumptable index by an out-of-band CBRANCH range guard the basic model's
     /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
     pub switch_guard_bound: bool,
+    /// (kuna, angr `test_switch_case_shared_case_nodes_b2sum_digest`) Recover a
+    /// GCC PIC relative-offset jump table whose base register is a loop-carried
+    /// MULTIEQUAL (the `lea .rodata` table base is set before a getopt-style loop
+    /// while the `BRANCHIND` is inside it).  The path-meld collapses to the final
+    /// `base+offset` add, so the CBRANCH range guard on the load index never
+    /// bounds it; this rebuilds the meld as a clean single path down to the
+    /// guarded index so the table resolves (C++ `switch_shared_case`).
+    pub switch_shared_case: bool,
     /// (kuna GH-8500) Hold a store-through-a-stack-pointer-alias across the
     /// deadcode race (C++ `stack_alias_deadstore`).
     pub stack_alias_deadstore: bool,
@@ -648,6 +656,7 @@ impl Architecture {
             fold_flag_compare: false,
             switch_modulo_bound: false,
             switch_guard_bound: false,
+            switch_shared_case: false,
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
@@ -742,6 +751,7 @@ impl Architecture {
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.switch_shared_case = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
@@ -863,6 +873,7 @@ impl Architecture {
             }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
             "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
+            "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
@@ -1248,6 +1259,9 @@ impl Architecture {
         // (kuna, angr) carry the CBRANCH-guard jump-table index-bound gate
         // (`option switchguardbound`) so `JumpBasic::recoverModel` reaches it.
         seam.switch_guard_bound = self.switch_guard_bound;
+        // (kuna, angr) carry the loop-carried-base relative-offset jump-table gate
+        // (`option switchsharedcase`) so `JumpBasic::recoverModel` reaches it.
+        seam.switch_shared_case = self.switch_shared_case;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

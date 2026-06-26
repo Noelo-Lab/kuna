@@ -26,10 +26,11 @@ fn substage_count_is_40() {
 #[test]
 fn surface_count_is_94() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
+    // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps),
     // +1 for the `option branchflip` surface row (angr SAILR condition polarity).
-    assert_eq!(kuna_num_surfaces(), 94);
-    assert_eq!(SURFACE_TABLE.len(), 94);
+    assert_eq!(kuna_num_surfaces(), 95);
+    assert_eq!(SURFACE_TABLE.len(), 95);
 }
 
 #[test]
@@ -56,6 +57,8 @@ fn settable_count_is_49() {
     // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
     // gotoreduce with the angr SAILR return-tail goto-reduction pass;
     // switchguardbound with guard-bounded GCC PIC jump-table recovery;
+    // switchsharedcase with loop-carried-base PIC jump-table recovery
+    // (angr test_switch_case_shared_case_nodes_b2sum_digest);
     // regionstructure with the region-based Phoenix/SAILR structurer (Inc 1);
     // noreturn_propagate with angr-style structural no-return propagation.)
     // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
@@ -67,8 +70,8 @@ fn settable_count_is_49() {
     // knob, default-off opt-in; +1 for `branchflip`, the angr SAILR negated-guard
     // S8 branch-flip readability knob, default-off opt-in; +1 for `regionstructure`,
     // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 49);
-    assert_eq!(SETTABLE_TABLE.len(), 49);
+    assert_eq!(kuna_num_settables(), 50);
+    assert_eq!(SETTABLE_TABLE.len(), 50);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -247,10 +250,11 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_23_suppressed_for_25() {
+fn option_values_live_value_present_for_24_suppressed_for_26() {
     let ov = OptionValues::default();
-    // 23 options have a codegen live reader (realtypes + dedupvardecls join the
+    // 24 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
+    // switchsharedcase is field-backed via switch_shared_case;
     // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`); the
     // live_value returns the current value for them and None for
     // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
@@ -309,7 +313,7 @@ fn option_values_live_value_present_for_23_suppressed_for_25() {
             }
         }
     }
-    assert_eq!(with_live, 23);
+    assert_eq!(with_live, 24);
 }
 
 #[test]
@@ -374,10 +378,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 49 rows: 48 trailing commas (the last, macho-arm64e, has none;
-    // switchguardbound's and tailcalljump's S2 rows, branchflip's S8 row,
-    // and regionstructure's S8 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 48);
+    // 50 rows: 49 trailing commas (the last, macho-arm64e, has none;
+    // switchguardbound's, switchsharedcase's and tailcalljump's S2 rows,
+    // branchflip's S8 row, and regionstructure's S8 row sit mid-table, so they
+    // do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 49);
 }
 
 #[test]

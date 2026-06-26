@@ -621,6 +621,15 @@ pub struct Architecture {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kuna_try_guard_bound_table`.  `false` (default off / upstream byte-identical).
     pub switch_guard_bound: bool,
+    /// (kuna) Recover a GCC PIC relative-offset jump table whose base register is a
+    /// loop-carried MULTIEQUAL, so the path-meld collapses and the CBRANCH range
+    /// guard on the load index never bounds the table (C++
+    /// `Architecture::switch_shared_case`, flipped by `option switchsharedcase`,
+    /// angr `test_switch_case_shared_case_nodes_b2sum_digest`), shared from the
+    /// real architecture.  Read by `JumpBasic::recoverModel` before
+    /// `kuna_try_loop_carried_guard_table`.  `false` (default off / upstream
+    /// byte-identical).
+    pub switch_shared_case: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -769,6 +778,7 @@ impl Architecture {
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
