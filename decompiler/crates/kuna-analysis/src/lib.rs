@@ -61,4 +61,5 @@ pub mod s1_noreturn_disc;
 pub mod s1_noreturn_propagate;
 pub mod s1_aif;
 pub mod s1_pclntab;
+pub mod s1_fid;
 pub mod listing;

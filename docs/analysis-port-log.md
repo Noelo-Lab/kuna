@@ -4302,3 +4302,82 @@ cases) RAN (4 passed, 0 ignored).
   not an accessor limitation (the same harness would fail RIP-relative in
   `print_assembly`). PR2+ (the hasher / DB / pass) build on this accessor.
 
+### Increment 53 — FID PR2: FNV-1a64 FidHashQuad hasher (extent + skipper)
+
+The second PR of the FID port — the **pure hashing core**: the FNV-1a64 digest,
+the operand-masked `FidHasher`/`FidHashQuad`, the function-extent generator, and
+the x86 NOP skipper. A **byte-exact** port of Ghidra's `MessageDigestFidHasher` /
+`FNV1a64MessageDigest` (a one-bit divergence makes every hash miss *silently*, so
+the constants and the per-instruction loop order are reproduced verbatim).
+Mechanism only — **no pass/DB/option/engine wiring** (that is PR3/PR4). Because
+nothing here is reachable from a decompilation, PR2 structurally cannot perturb
+the parity oracles.
+
+**Three new pure modules** under `kuna-analysis/src/s1_fid/` (`mod.rs` +):
+1. **`hash.rs`** — `Fnv1a64` (the §4.1 FNV-1a64: offset basis
+   `0xcbf29ce484222325`, prime `0x100000001b3`; `update_byte`/`update_bytes`;
+   `update_i32` = 4 bytes **big-endian** via `AbstractMessageDigest.update(int)`;
+   `digest_long` resets to basis). `FidHasher::hash(extent, relocs)` ports
+   `MessageDigestFidHasher.hash` line-for-line: per instruction — read `len`
+   bytes; run skippers (→ `code_unit_index -= 1; continue`, BEFORE the call count
+   and operand hashing, matching the Java order); count calls via `is_call`; the
+   per-operand sub-hash seeds `full_u = spec_u = (ii+1)*7777` then applies the
+   **4-way scalar rule in order** (relocation / whole-operand-address /
+   large-non-whole / small-usable) — the **full hash NEVER sees a scalar value,
+   only the `0xfeeddead` placeholder**; registers mix `(off+7654321)*98777` into
+   **both**; address objects are value-suppressed placeholders into both; then
+   `full.update_i32(full_u); spec.update_i32(spec_u)`; then the **critical
+   interleave**: `buf[i] &= fixed_mask[i]` and feed the masked bytes to BOTH
+   digests AFTER that instruction's operand `update_i32` writes. Magic copied
+   verbatim (`0xfeeddead, 7777, 1234567, 67999, 7654321, 98777, 0xa5, 4, 127`);
+   `wrapping_*` everywhere (Java two's-complement overflow is observable, incl.
+   the `(int) val` truncation of the 64-bit scalar). Extents `< 4` code units →
+   `None`. The empty/absent mask → Ghidra's NPE arm (fill `0xa5`).
+   `FidHashQuad { code_unit_size:i16, full_hash:u64, specific_addl_size:u8,
+   specific_hash:u64 }`. The relocation check is consumed as a `RelocationQuery`
+   trait (pure-core testable; PR4 supplies the `elf_reloc.rs`-backed adapter).
+2. **`extent.rs`** — the `FunctionBodyFunctionExtentGenerator` analog: the
+   address-contiguous `[entry, next_function_after(entry))` clip over the flat,
+   address-ordered `instructions()` map (the `s1_noreturn_disc` idiom). The clip
+   rule is split into a pure `clip_extent` so it is unit-testable without a full
+   `Listing`. **LOSS** (documented, §1): address-contiguous, not flow-reachable —
+   interleaved/outlined bodies mis-clip (same approximation `s1_noreturn_disc`
+   accepts).
+3. **`skipper.rs`** — the `InstructionSkipper` trait + `X86InstructionSkipper`
+   (the 17 NOP/alignment `PATTERNS` copied byte-for-byte; carries the same
+   "bump the DB version if you change this" warning). `getApplicableProcessor` is
+   dropped from the trait — the skipper *set* is selected per-architecture at
+   hasher-build time (PR4); non-x86 = empty set → never skips.
+
+**Fidelity gate (honest accounting).** The **FNV-1a64 layer is validated against
+an external authority**: the unit gate asserts the *canonical published FNV-1a64
+test vectors* (`""→offset basis`, `a/b/c`, `foobar`, `hello`), independently
+cross-checked against the reference algorithm — not mere self-consistency. The
+full **`FidHashQuad` is gated by a hand-computed quad on a 5-instruction synthetic
+extent** (register / small-usable-scalar / large-suppressed / whole-operand-
+address / no-operand + a call), asserted against an *independent in-test reference
+reimplementation* of the loop, plus self-consistency (same extent hashes
+identically across two builds of the hasher) and targeted invariants
+(`code_unit_size = count − calls`; relocation suppression drops `specific_count`
+and changes only the specific hash, never the full hash). **The Ghidra-validated
+golden-vector gate (§7.1) is a documented follow-up:** the Ghidra checkout at
+`~/github/ghidra` has the FID sources (ported from here) but **no built
+distribution** (`build/dist` empty, no `.class` files), so dumping
+`(function → FidHashQuad)` vectors needs a multi-GB gradle build out of scope for
+PR2 — the design doc explicitly anticipates this fallback. PR3 (which builds a
+real `lib.o` fixture) is the natural place to add the Ghidra dump once a built
+Ghidra is available.
+
+**Gates:** `make test` **675/675 PARITY OK**, `make test-stages` **PARITY OK**
+(205/205, raised by the concurrent worker), `make rust-test` **green**. The new
+`s1_fid` unit gate RAN — **19 passed, 0 ignored** (10 `hash`, 5 `skipper`, 4
+`extent`).
+
+- **New:** `kuna-analysis/src/s1_fid/{mod,hash,extent,skipper}.rs`.
+- **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_fid;`),
+  `docs/analysis-port-log.md`.
+- **Next (PR3/PR4):** the `.fid` DB format + `kuna fid build` generator (PR3),
+  then the `FidPass` + `instruction_mask`→`InsnFingerprint` assembly +
+  rename/commit + `--option fid` surface + the stripped-binary re-identification
+  e2e test (PR4).
+
