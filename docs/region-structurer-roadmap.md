@@ -1,6 +1,10 @@
 # Region-based (Phoenix/SAILR) structurer for kuna — staged roadmap
 
-**Status:** PROPOSAL (draft PR) — awaiting go/no-go before implementation.
+**Status:** LANDED & DEFAULT-ON. Inc 0–5 are implemented; `regionstructure` is the primary
+S8 structuring path (DIV-12 default-on, falls back to `CollapseStructure` on irreducible code).
+Inc 5b (loop-successor refinement infrastructure, option `regionlooprefine`, default-OFF) is
+landed parity-safe. The remaining **goto-win** (complete acyclic schemas + continuation hoisting)
+is the deferred Inc 6 — see the *Inc 5b* section below for the precise remaining path.
 
 This is the foundation behind the "structuring / goto / switch / loops" gains. Multiple
 feature attempts (e.g. the head-in-body natural-loop PR #44) returned NEGATIVE with the same
@@ -35,7 +39,9 @@ Default-OFF ⇒ all 675 datatests render byte-identical. New module:
 | **3** | **Loop recovery (payoff):** cyclic **while/do-while/natural-loop** → While/DoWhile/InfLoop + break/continue as kuna goto-flags. The exact #44 shape. | `phoenix._analyze_cyclic` + 4 cyclic matchers, break/continue rewriters | high |
 | **4** | **Switch-case** recovery → BlockSwitch, fed by `switch_case_edges`/`find_jump_table_index` already in blockaction.rs. Independent of 2/3 after Inc 1. | `phoenix._match_acyclic_switch_cases*` | med-high |
 | **5** | **Short-circuit** folding (`if(a)if(b)`→`if(a&&b)`) + SAILR **H2** post-dom heuristic (with angr's size caps) + recursive re-structure. Closes the quality gap. | `phoenix._match_acyclic_short_circuit_conditions*`, `sailr` H2 | medium |
-| **6** | Flip default-ON where strictly better → **DIV-6**, re-pin datatests, regenerate baseline. The only intentional default change. | — | careful |
+| **5b** | **Loop-successor refinement infrastructure** (option `regionlooprefine`, default-OFF): RI cyclic-loop projection (`KunaRegionIdentifier::cyclic_loops`) + re-enabled `refine_loop_edges` (virtualize secondary exits/latches of a multi-exit / multi-latch / mid-entry loop). **Parity-safe convergence** — the refinement *fires* but still falls back to `CollapseStructure` for the final collapse, so output is byte-identical OFF and ON. The wiring the goto-win (Inc 6) needs. | `RegionIdentifier._refine_loop_successors_to_guarded_successors`, `_ensure_jump_at_loop_exit_ends` (`force_loop_single_exit`) | low |
+| **6** | **Goto-win (deep, follow-up):** complete the acyclic schemas (false-clause if-then, no-exit if-then, full ITE/switch convergence) + **continuation hoisting** so a refined multi-exit loop folds to a structured root (`ok=true`) instead of falling back. This is what turns "refinement fires" into a measurable goto reduction on `parse_str`-class functions. Genuinely multi-increment. | `phoenix` acyclic schema set + `sailr` continuation hoisting / `RegionIdentifier._make_*` | high |
+| **7** | Flip default-ON where strictly better → **DIV-6**, re-pin datatests, regenerate baseline. The only intentional default change. | — | careful |
 
 ## Parity & performance
 - **Parity:** default-OFF through Inc 0–5 ⇒ mechanically byte-identical (`make test` PARITY OK).
@@ -204,3 +210,78 @@ option, and the up-front fixpoint is bounded by the same `round_cap` as the main
 irreducible `get_space`-style interlocks Inc 3 leaves as gotos) is still future work — Inc 5 here
 delivers the **short-circuit `&&`/`||` folding** half of the roadmap's Inc 5, which is the piece
 that unblocks the clean default-on flip; the H2 post-dom refinement remains for a later pass.
+
+## Inc 5b — loop-successor refinement infrastructure (option `regionlooprefine`, default OFF)
+
+**Landed (parity-safe, 3 gates green).** This increment re-enables the multi-latch / multi-exit
+loop refinement that Inc 3 implemented-but-shelved (it was `#[allow(dead_code)]`, run nowhere),
+this time **grounded in the region identifier's own loop analysis** rather than the narrower
+structural natural-loop walk on the `sblocks` graph — and gates it behind a new default-OFF
+opt-in, `regionlooprefine` (settable #53). It is the read side of the angr
+`RegionIdentifier._refine_loop_successors_to_guarded_successors` / `_ensure_jump_at_loop_exit_ends`
+steps (the `force_loop_single_exit` path), which kuna's RI port had omitted.
+
+**What it adds:**
+1. **`KunaRegionIdentifier::cyclic_loops()`** (`s7_regions/kuna_regionid.rs`) projects every
+   identified *cyclic* region onto basic-block start addresses: `(head_addr, body, exits)` —
+   the loop head, every leaf-block address in the loop body (recursively resolved through nested
+   multi-nodes / sub-regions), and the loop-successor (exit) frontier (angr
+   `GraphRegion.successors`). This exposes the RI's **correct** loop body — it absorbs the
+   dominated switch-case successors a structural natural-loop walk misses — for the S8 structurer.
+2. **`region_structurer::refine_loop_edges`** (re-enabled, RI-grounded): for a multi-exit /
+   multi-latch / mid-entry loop the base cyclic schemas (`try_fold_loop`) declined, virtualize the
+   *secondary* exits and latches to gotos (keeping one normal exit + one primary latch), so the
+   body collapses toward the clean single-exit / single-latch shape `try_fold_loop` accepts. The
+   existing `scopeBreak` / loop-construction passes then lower the virtualized loop-exit/back-edge
+   gotos to `break;`/`continue;`. Only loops the base schemas already declined are touched, so
+   reducible code is byte-identical regardless of the flag.
+
+**Parity invariant (the honest infrastructure-increment result).** The refinement is wired in and
+**actively fires** on multi-exit loops — `KUNA_RS_DEBUG=1` shows `[rs] RI loop head=…` (projection
+consumed) and `[rs]   refined loop head#N` (refinement runs) on early-return-plus-break loops. But
+on every real and constructed shape tried, after the refinement fires the structurer **still
+reports `ok=false`** and the function **falls back to `CollapseStructure`** for the final collapse,
+because the *acyclic* convergence around the refined loop is incomplete (the limited sequence/ITE
+schemas + virtualize fallback fragment the freed body before the loop schemas can fold it to a
+root). The net effect on emitted C is therefore **zero**: `regionlooprefine off` and `on` produce
+byte-identical output (same `do { … } while (…)` body, same in-loop early returns, ZERO gotos).
+`make test` stays **PARITY OK 675/675** with `regionstructure` default-ON and the refinement
+default-OFF (and identical with it ON). The stage test
+`tests/stages/regionstructure-loop-refine.xml` pins this across both passes on a multi-exit
+`for`-loop (`mexit`: early `return -1` + `break`), x86-64 GCC -O1.
+
+This is the deliberate scope: **land the wiring, prove it is byte-safe and active, defer the win.**
+The RI loop projection and the `force_loop_single_exit` refinement are exactly the inputs the
+goto-reduction needs; turning the opt-in ON today exercises them at zero output risk.
+
+### Remaining path to the goto win (the deferred Inc 6)
+
+The refinement firing without a structuring win localizes the goto-reduction blocker precisely: it
+is **not** the loop schemas (they are complete — Inc 3) and **not** the refinement wiring (it fires
+— this increment). It is the **acyclic convergence around the refined loop**, which still
+fragments and falls back. Closing it is a genuinely deep, multi-increment effort:
+
+1. **Complete the acyclic schema set.** The current acyclic schemas are sequence + a structural
+   ITE + short-circuit (Inc 1/2/5). The convergence gaps that block the refined-loop fold are the
+   **false-clause if-then** (an if-then whose only structured arm is the *false* edge, needing a
+   `negateCondition` orientation flip *in the region structurer*, not just at fold time) and the
+   **no-exit if-then** (an if-then region with no fall-through successor — the tail is the loop
+   back-edge or a return, so the region has a "missing" successor the sequence schema cannot
+   thread). Both are present in angr's `phoenix._match_acyclic_ite` as the `else`-branch and
+   single-successor cases; kuna's structural ITE handles only the symmetric two-arm shape today.
+   Until these collapse, the body the refinement frees stays multi-component and `try_fold_loop`
+   never sees the single-block loop it needs.
+2. **Continuation hoisting** (`sailr`-style). Even with the acyclic schemas complete, a refined
+   multi-exit loop leaves a *continuation* — the code reached after the (now-virtualized) secondary
+   exit — stranded as a separate region the sequence schema cannot re-absorb (it is a join target
+   with multiple predecessors). SAILR's structurer hoists such a continuation into the dominating
+   region so the post-loop tail folds into the loop's successor sequence. kuna needs the analog:
+   after `refine_loop_edges` virtualizes an exit, hoist the exit's continuation region into the
+   loop's structured successor before re-running the acyclic cascade, so the freed graph actually
+   converges to a single root (`ok=true`) instead of fragmenting back to `CollapseStructure`.
+
+Only once both are in place does a refined loop fold to a structured root and the virtualized
+secondary-exit gotos become `break;`/`continue;` — i.e. a **measurable goto reduction** over
+Ghidra on the `parse_str`-class functions (multi-exit loops with switch-dominated successors)
+that motivated this work. That is the deferred **Inc 6**; this increment lands the parity-safe
+infrastructure (RI projection + `force_loop_single_exit` refinement) it stands on.

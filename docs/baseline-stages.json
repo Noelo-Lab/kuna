@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    203,
-    203
+    208,
+    208
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -197,6 +197,11 @@
     "data:regionstructure-loop #2: for/while recovered (BlockWhileDo), both passes",
     "data:regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes",
     "data:regionstructure-loop #4: ZERO gotos - region structurer matches Ghidra on reducible loops (parity)",
+    "data:regionstructure-loop-refine #1: multi-exit loop body is a do-while (BlockDoWhile), both passes",
+    "data:regionstructure-loop-refine #2: loop-exit condition recovered structurally, both passes",
+    "data:regionstructure-loop-refine #3: early-return secondary exit preserved, both passes",
+    "data:regionstructure-loop-refine #4: break secondary exit + post-loop return both recovered (2 sites x 2 passes), both passes",
+    "data:regionstructure-loop-refine #5: ZERO gotos - regionlooprefine on is byte-identical to off (parity invariant)",
     "data:regionstructure-switch #1: the switch head is recovered, both passes",
     "data:regionstructure-switch #2: case 0, both passes",
     "data:regionstructure-switch #3: case 3 (middle of the dense table), both passes",
