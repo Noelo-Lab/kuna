@@ -353,6 +353,7 @@ fn option_values_live_value_present_for_26_suppressed_for_34() {
                             | "gotoreduce"
                             | "ifelseflatten"
                             | "crossjumprevert"
+                            | "taildup"
                             | "loopbreak_recovery"
                             | "relocobjects"
                     ) || PASS_GATES.contains(&st.option),
@@ -427,14 +428,14 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 60 rows: 59 trailing commas (the last, macho-arm64e, has none;
+    // 61 rows: 60 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, tailcalljump's, noreturn_extern's,
     // and noreturn_externmatch's S2 rows, branchflip's, regionstructure's,
-    // regionlooprefine's, ifelseflatten's, and crossjumprevert's S8 rows,
+    // regionlooprefine's, ifelseflatten's, crossjumprevert's, and taildup's S8 rows,
     // eh_frame_full's S1 row, operand_refs's S1 row, funcstart_patterns's S1 row,
     // aif's S1 row, and dwarf_lines' S1 row sit mid-table, so they
     // do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 59);
+    assert_eq!(json.matches("},\n").count(), 60);
 }
 
 #[test]
