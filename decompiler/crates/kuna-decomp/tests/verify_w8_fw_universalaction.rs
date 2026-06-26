@@ -182,17 +182,18 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     let nonblank = lines.iter().filter(|l| !l.is_empty()).count();
 
     // All universalAction passes are ported: the allowlist is empty, so every
-    // one of the 252 C++ leaves renders.  (+2 kuna-only leaves: `branchflip`,
+    // one of the 252 C++ leaves renders.  (+3 kuna-only leaves: `branchflip`,
     // option-gated default-off, registered after the second `prefercomplement`;
-    // and `gotoreduce`, option-gated default-off, after `finalstructure`.)
+    // `gotoreduce`, option-gated default-off, after `finalstructure`; and
+    // `ifelseflatten`, option-gated default-off, after `gotoreduce`.)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 261,
-        "full universal tree must render 252 C++ leaves + 2 kuna leaves (branchflip + gotoreduce) + 7 container headers"
+        nonblank, 262,
+        "full universal tree must render 252 C++ leaves + 3 kuna leaves (branchflip + gotoreduce + ifelseflatten) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
@@ -211,9 +212,10 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // Tail: the S9 fixation/naming/cast suffix, ending at `stop`.
     let tail: Vec<&str> =
         lines.iter().rev().take(4).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
-    // (kuna) ActionGotoReduce is registered after ActionFinalStructure, so the
-    // gotoreduce leaf sits between finalstructure and prototypewarnings.
-    assert_eq!(tail, vec!["finalstructure", "gotoreduce", "prototypewarnings", "stop"]);
+    // (kuna) ActionGotoReduce then ActionIfElseFlatten are registered after
+    // ActionFinalStructure, so they sit between finalstructure and
+    // prototypewarnings (finalstructure -> gotoreduce -> ifelseflatten).
+    assert_eq!(tail, vec!["gotoreduce", "ifelseflatten", "prototypewarnings", "stop"]);
 
     // `directwrite` (protorecovery_b) appears 3x total (protorecovery_a twice +
     // protorecovery_b once is 4x by class, but protorecovery_b instances are the

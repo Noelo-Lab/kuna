@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr IfElseFlattener (region_simplifiers/ifelse.py), S8 "goto-quality" sub-stage.
+
+    The option-gated ActionIfElseFlatten (option `ifelseflatten`, default-OFF; ELEM
+    4103) ports angr's IfElseFlattener: for a 3-component BlockIf whose true-clause
+    is statement-terminating (every endpoint returns / aborts, matching angr's
+    is_statement_terminating) and whose else-clause is not, it drops the `else` and
+    re-parents the former else-body as the if's immediate follower in the parent
+    list. A pure print-tree splice (kuna_flatten_ifelse), no p-code cloned.
+
+    Witness (self-contained, no relocations): a function that, after structuring,
+    keeps an explicit `else { a0 = 99; }` arm, i.e. a real 3-component BlockIf,
+    exactly the shape the pass inspects:
+
+        if (a0 le 0) { if (1 le a1) { do {...} while (...); return a0; } }
+        else { a0 = 99; }
+        return a0;
+
+    This is the conservative-no-op (honest-partial) invariant the test pins: the
+    pass examines this else-bearing BlockIf but correctly declines to flatten it,
+    because its true-clause is NOT statement-terminating (it falls through when the
+    inner `if (1 le a1)` is false). angr's exact firing predicate (true-terminates
+    AND else-does-not) is unmet, so enabling the option is a structural no-op here
+    and the output is byte-identical OFF vs ON. Splicing the else away would be
+    unsound for a non-terminating true-clause, so refusing it is correct, and that
+    safety is what these asserts lock.
+
+    Stage-pipeline note: kuna's region structurer (default-on, DIV-12) and the
+    CollapseStructure fallback both already perform terminating-if guard-clause
+    flattening natively, so a 3-component BlockIf with a terminating true-clause
+    does not arise for ordinary compiler output. The residual the pass targets only
+    appears on the ET_REL / undefined-extern witnesses (angr
+    test_ifelseflatten_iprule / _clientloop), each gated behind a separate
+    loader/function-boundary prerequisite tracked in the sibling [PROPOSAL]
+    branches. This test therefore validates the full control surface end-to-end
+    (option recognized + registered + catalog) and the no-corruption invariant on a
+    real else-bearing function; the splice mechanics proper are covered by the
+    BlockGraph unit tests in substrate/block/tests.rs (flatten_ifelse_*).
+
+    Pass 1 (option ifelseflatten off) and Pass 2 (option ifelseflatten on) render
+    identically: the explicit `else { a0 = 99; }` survives in both, so each token
+    that names the else-bearing form appears exactly twice (once per pass).
+-->
+<bytechunk space="ram" offset="0x100000">
+f30f1efa89f885ff7f0c85f67e0d01f083ee0175f9c3b863000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="el"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 el(int4 a, int4 b);</com>
+  <com>option ifelseflatten off</com>
+  <com>lo fu el</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ifelseflatten on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)" min="2" max="2">else \{</stringmatch>
+<stringmatch name="ifelseflatten #2: the else-arm constant body survives identically (no-op, not corrupted; off plus on = 2)" min="2" max="2">= 99;</stringmatch>
+<stringmatch name="ifelseflatten #3: enabling the option is byte-identical, the loop tail is unchanged (off plus on = 2)" min="2" max="2">do \{</stringmatch>
+</decompilertest>
