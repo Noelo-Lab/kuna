@@ -299,6 +299,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "i386_pie_plt",
     "mips_isa",
     "dwarf",
+    // (kuna) DWARF `.debug_line` source-line comments; default-off (output-changing).
+    "dwarf_lines",
     "callfixup",
     "addrtable",
     "operand_refs",

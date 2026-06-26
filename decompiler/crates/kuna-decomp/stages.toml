@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=94, settable=53
-# (31 stage-model knobs + 19 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=94, settable=54
+# (31 stage-model knobs + 20 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -2003,6 +2003,22 @@ use_when = "On (default) applies DWARF names/types; off ignores debug info (name
 example = "option dwarf off"
 source_decompiler = "kuna"
 inspiration = "Ghidra DWARFAnalyzer"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "dwarf_lines"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-dwarf-lines"
+summary = "Run the DWARF .debug_line source-line comment pass: parse the .debug_line program, map each instruction PC to its source file:line, and attach it as an instruction comment so the decompiled output carries the source location (the kuna analog of Ghidra's DWARFLineInfoCommentScript). DISABLED by default (it changes the output by adding /* file:line */ comment lines). Skips cleanly on a binary without .debug_line."
+use_when = "Off (default; byte-identical output). Flip on to annotate each decompiled instruction with its DWARF source file:line."
+example = "option dwarf_lines on"
+source_decompiler = "kuna"
+inspiration = "Ghidra DWARFLineInfoCommentScript (.debug_line)"
 change_kind = "analysis-enablement"
 [[settable]]
 option = "callfixup"

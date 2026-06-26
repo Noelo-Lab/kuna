@@ -147,6 +147,13 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // Skips cleanly on a non-DWARF binary. Subtask-3 (DW_OP_fbreg stack-local
         // ScopeLocal map) is a deferred engine change — see s1_dwarf docs.
         Box::new(crate::s1_dwarf::DwarfPass),
+        // S1 DWARF source lines: parse `.debug_line` and surface each
+        // instruction's `file:line` as a `Comment::user2` on the decompiled
+        // output (the kuna analog of Ghidra's `DWARFLineInfoCommentScript`).
+        // Default-OFF (`--option dwarf_lines on`): it CHANGES the output (adds
+        // comment lines), so unlike the names/types `dwarf` pass it is opt-in.
+        // Registered after `DwarfPass` (it reuses the same `.debug_*` sections).
+        Box::new(crate::s1_dwarf::DwarfLinesPass),
         // S1 call-fixups: tag each function whose name matches a cspec call-fixup
         // `<target>` (e.g. the `-pg` `mcount`/`__fentry__` profiling stubs) so the
         // engine replaces the CALL with the fixup body. The kuna analog of Ghidra's
