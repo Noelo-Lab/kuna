@@ -76,14 +76,16 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_57_settables() {
-    // One `"option":` per settable row: 34 stage-model knobs (incl. the `foldcallret`
+fn fixture_has_all_58_settables() {
+    // One `"option":` per settable row: 35 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
     // break recovery gate, DIV-10, the `gotoreduce` angr SAILR return-tail
     // goto-reduction gate, the `crossjumprevert` angr SAILR CrossJumpReverter
     // cross-jump-tail duplication gate, the `switchguardbound` guard-bounded GCC PIC
     // jump-table recovery gate, angr test_decompiling_missing_function_call,
+    // the `switchsharedcase` loop-carried-base PIC jump-table recovery gate,
+    // angr test_switch_case_shared_case_nodes_b2sum_digest,
     // the `tailcalljump` angr -O2 tail-jump S2 flow-classification gate,
     // the `branchflip` angr SAILR negated-guard S8 branch-flip gate,
     // the `regionstructure` region-based Phoenix/SAILR structurer, Inc 1,
@@ -107,7 +109,7 @@ fn fixture_has_all_57_settables() {
     // + 3 loader-tier capabilities (the `relocobjects` ET_REL relocatable-object
     // loader, DIV-8; the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9; and
     // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate, PR-8).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 57);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 58);
 }
 
 #[test]

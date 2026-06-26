@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr test_switch_case_shared_case_nodes_b2sum_digest: kuna fails to recover the
+    getopt_long option-dispatch switch in coreutils b2sum's main and renders the
+    BRANCHIND as an indirect *call* (goto spaghetti), where angr recovers a real
+    11-case switch (incl. the 132->98 "shared case node" fallthrough).
+    Opportunity: docs/features/switch-case-shared-case-node-0e34ba/.
+
+    The bytes below are the real GCC-compiled `main` of
+    b2sum-digest_shared_switch_nodes.o, linked to a fixed base (main @ 0x401000,
+    the relative-offset jump table @ 0x403d60) so the testcase is self-contained
+    (the external getopt_long/dcgettext/... calls remain unresolved calls, which is
+    irrelevant to jump-table recovery; only `main` + the .rodata table are needed,
+    and all 35 table targets land inside `main`).
+
+    The construct is a textbook GCC PIC relative-offset jump table whose base
+    register (`lea .rodata, %rbp` @ 0x401071) is established ONCE before the getopt
+    `while` loop while the BRANCHIND (`movslq (%rbp,%rax,4); add %rbp; notrack jmp`
+    @ 0x4010fd..0x401105) is INSIDE it:
+
+        sub  $0x62,%eax            ; normalize index (idx = getopt result - 98)
+        cmp  $0x22,%eax ; ja       ; the bound: idx <=u 0x22  (35 entries)
+        movslq 0x0(%rbp,%rax,4),%rax  ; load signed int32 table offset
+        add  %rbp,%rax             ; target = base + offset
+        notrack jmp *%rax          ; BRANCHIND
+
+    Root cause (S2 "switch-model"): the table base reaches the jump through a
+    loop-header MULTIEQUAL and feeds BOTH the load address (base + idx*4) and the
+    final add (base + offset), so JumpBasic::findDeterminingVarnodes melds the two
+    paths down to the single final INT_ADD.  The normalized index (the value the
+    out-of-band `cmp $0x22; ja` guard bounds) never enters the path-meld, so
+    findSmallestNormal leaves it unbounded, recover_model builds no model, and
+    truncateIndirectJump downgrades the BRANCHIND to a CALLIND ("Treating indirect
+    jump as call").
+
+    Fix surface = a default-off ArchOption (switchsharedcase): when the normal
+    model and the modulo/CBRANCH-guard extensions all fail, walk the index path
+    from the BRANCHIND down through the realigning ops and the one table LOAD to
+    the guarded load index, collect the loop-invariant `lea .rodata` base and seed
+    it into the emulation, rebuild the meld as a clean single path to that index,
+    and re-run findNormalized so the table sizes at 35 and the switch structures.
+
+    Pass 1 (default, option off): assertion #1 proves the bug reproduces; the
+    dispatch downgrades to an indirect call ("Treating indirect jump as call").
+    Assertion #2 (switch count == 1) proves NO switch is recovered on the off pass
+    (the single match comes from the option-on pass only).
+    Pass 2 (option switchsharedcase on): assertion #2 proves the table is bounded
+    and the dispatch is recovered as a single `switch(idx - 0x62){...}` (no more
+    "Too many branches" / computed call).
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa415741bf0100000041564c8d350b4e000041554c8d2ddb2c000041544189fc55488d2db22b0000534889f34881ec88000000488b3e64488b042528000000488944247831c0e8b2efbfff488d35832b0000bf06000000e8a1efbfff488d35202c00004889efe892efbfff4889ef488d2de82c0000e883efbfff488b3d5c4f0000e877efbfff488b3d70efbfff31c931f6ba01000000e862efbfff488d05332b0000c6442414004889442418c744240cffffffffc6442413000f1f40004531c04c89f14c89ea4889de4489e7e82cefbfff83f8ff0f84f70100003d840000000f8f3003000083f8610f8e7f01000083e86283f8220f871b03000048634485004801e83effe00f1f840000000000c644241401c744240c01000000eba19044883d014f0000eb970f1f8000000000c605f54e000000c605ed4e00000044883de44e0000e976ffffff660f1f44000044883dd54e0000c605cd4e000000c605c44e000000e956ffffff660f1f44000044883db34e0000e944ffffff0f1f4000c605914e000000e934ffffff0f1f4000c605954e00000044883d8d4e0000c605844e000000e916ffffff660f1f440000ba05000000488d35e22a000031ffe83deebfff488b3d36eebfff4531c931f6488d0d022a00004989c048c7c2ffffffffe81beebfff488b0d14eebfff4889052d4e000048894c2418a8070f84c0feffff4889cfe8f8edbfffba05000000488d35992a000031ff4989c4e8e2edbfff4c89e131f631ff4889c231c0e8d1edbfffba05000000488d35852a000031ffe8beedbfff31f64889c231ff31c0e8b0edbfffbf07000000e8a6edbfff660f1f440000c644241301e956feffff660f1f4400003d7dffffff753e4883ec08488b3d7eedbfff31c0488b0d75edbfff6a004c8d0d4a2a00004c8d05502a0000488d1537290000488d35b4280000e852edbfff31ffe84bedbfff3d7effffff0f855801000031ffe819180000c744240c00000000e9ecfdffff488b05454d000048c705524d000003000000483d000200000f87a90200004885c0751048c7051e4d000000020000b80002000048c1e802837c240c00488905194d0000750b807c2414000f8538020000803ded4c00000a745c807c241300ba05000000488d35e22500000f85bf000000803ddf4c0000000f85be020000803dd44c0000000f852c020000803dc64c0000000f85b7000000803db74c0000017573807c241300ba05000000488d35332700007560eb7a807c2413007413807c241400ba05000000488d35bf2500007560837c240c007813807c241300ba05000000488d35e52500007546803d664c0000000f84a8010000807c2413000f843a020000803d504c0000007457803d464c000000754e803d3a4c0000007445807c241300ba05000000488d35f7260000753231ffe8f6ebbfff31f631ff4889c231c0e8e8ebbfffbf01000000e8be160000807c241300ba05000000488d354526000074ce8b44240c4531ed486315bdebbfff85c0440f49e84963c4488d2cc34439e27510e8060c0000488d4d08488945004889cd4c8d3cd34c39fd0f867e000000488d7c2430bb01000000e86f0e0000440fb67424134989c40fb644241444896c24148944240ceb19660f1f4400004c89efe8580e000021c34983c7084c39fd76424d8b2f4584f675e5488d54242f4c89e64c89efe8e509000084c0750431dbebd78b4c240c8b7424144c89e24c89ef440fb6052f4b0000e8d2070000ebbabb01000000803d444b000000752883f3010fb6c3488b54247864482b14252800000075594881c4880000005b5d415c415d415e415fc3488b3dd3eabfffe8ceeabfff83c00175c7ba05000000488d35c326000031ffe8b6eabfff4989c4e8aeeabfff4c89e28b30e9ebfcffffba05000000488d3590230000e996feffffe88eeabfff803db34a0000000f84dffdffff807c2413000f8554feffffba05000000488d35a2240000e968feffff488b7c2418e85beabfffba05000000488d35fc26000031ff4989c4e845eabfff4c89e131f631ff4889c231c0e834eabfff488d3d65250000e828eabfffba05000000488d35ec22000031ff4989c4e812eabfff31ff41b8000200004c89e14889c231f631c0e8fbe9bfffbf07000000e8f1e9bfffba05000000488d35d5230000e9e3fdffff
+</bytechunk>
+<bytechunk space="ram" offset="0x403d60">
+b5d3ffff00d5ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffff50d4ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffff67d5ffffb8d6ffffb8d6ffff30d4ffffb8d6ffffb8d6ffff20d4ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffff10d4fffff0d3ffffd0d3ffffc0d3ffffb0d3ffff
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="main"/>
+</binaryimage>
+<script>
+  <com>lo fu main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchsharedcase on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="switchsharedcase #1: option off downgrades the dispatch to an indirect call (bug reproduced)" min="1" max="2">Treating indirect jump as call</stringmatch>
+<stringmatch name="switchsharedcase #2: option on bounds the table and recovers the switch (recovered exactly once, on-pass only)" min="1" max="1">switch\(</stringmatch>
+</decompilertest>

@@ -263,6 +263,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "memsetrecover",
     "switchmodbound",
     "switchguardbound",
+    "switchsharedcase",
     "noreturn_externmatch",
     "loweredswitch",
     "regionstructure",

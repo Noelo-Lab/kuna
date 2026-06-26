@@ -1186,6 +1186,12 @@ substage = "switch-model"
 note = "(kuna, angr) bound a LOAD-table jumptable by an out-of-band CBRANCH range guard the guard analysis missed"
 
 [[surface]]
+surface = "option switchsharedcase"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna, angr) recover a GCC PIC relative-offset jump table whose base register is loop-carried (getopt switch); rebuild the meld to the guarded load index"
+
+[[surface]]
 surface = "option noreturn_externmatch"
 stage = "S2"
 substage = "flow-follow"
@@ -1525,6 +1531,26 @@ source_decompiler = "angr"
 inspiration = "test_decompiling_missing_function_call; angr jump-table / VSA guard bounding; main"
 change_kind = "opt-in-tool"
 live_field = "switch_guard_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "switchsharedcase"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-switch-case-shared-case-node"
+summary = "Recover a GCC PIC relative-offset jump table (target = base + sext(load4(base + idx*4))) whose table-base register is a loop-carried MULTIEQUAL: the `lea .rodata` base is set before a getopt-style loop while the BRANCHIND is inside it, so the path-meld collapses to the final base+offset add and the CBRANCH range guard on the load index never bounds the table. Rebuilds the meld as a clean single path down to the guarded index so the table resolves and the switch structures."
+use_when = "Set on PER PROGRAM when a getopt/dispatch switch inside a loop reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call with goto spaghetti, and the table is a PIC relative-offset table (load + add base); DESTRUCTIVE as a global default (it reads a read-only table at a base it heuristically recovers across a loop phi, so it may mis-size or accept an unrelated indirect jump)."
+example = "option switchsharedcase on"
+source_decompiler = "angr"
+inspiration = "test_switch_case_shared_case_nodes_b2sum_digest; angr CFGFast indirect-jump resolution across the loop phi; main"
+change_kind = "opt-in-tool"
+live_field = "switch_shared_case"
 live_true = "on"
 live_false = "off"
 
