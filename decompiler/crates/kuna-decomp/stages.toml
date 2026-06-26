@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=94, settable=50
-# (31 stage-model knobs + 16 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=94, settable=53
+# (31 stage-model knobs + 19 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -2116,6 +2116,22 @@ example = "option listing on --option noreturn_propagate on"
 source_decompiler = "angr"
 inspiration = "test_decompiling_tee_O2_x2nrealloc; angr CFGFast no-return propagation (returning / _iteratively_analyze_function_features); x2nrealloc"
 change_kind = "structure-recovery"
+[[settable]]
+option = "aif"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-aif"
+summary = "Run the Aggressive Instruction Finder gap-walk (the third Listing/xref consumer): the kuna analog of Ghidra's AggressiveInstructionFinderAnalyzer, a speculative gap-filler. Over the undefined gaps between discovered functions, speculatively decode each gap start and accept it as a NEW function entry when it BOTH (a) disassembles into a valid subroutine (followSubFlows reaches a clean RET without hitting a bad/undecodable byte or an out-of-range flow, > 2 instructions) AND (b) matches a function-start byte fingerprint (mask-histogram) shared by >= 4 already-discovered functions. Finds functions reachable ONLY through an indirect/data path (a .rodata function-pointer table) that entry discovery + funcsyms + .eh_frame miss. Emits the discovered starts as the existing entries fact -> the existing name_function/add_function commit seam (no new commit arm). Requires the Listing (option listing on) — a no-op when the Listing is absent. DISABLED by default (Ghidra ships setDefaultEnablement(false) with the warning 'IT MAY CREATE A LOT OF BAD CODE!'; a speculative gap-filler can create false-positive functions; real-ELF path only, so every parity gate is byte-identical)."
+use_when = "Off (default; no Listing consumer runs and there is zero behavior change, and a speculative gap-filler can create false-positive functions). Flip on (with option listing on) when a function is reachable ONLY through an indirect/data path (its address taken into a .rodata function-pointer table and called via call *reg with an opaque index) — so it is in no symbol table, has no .eh_frame FDE, and no static CALL edge points at it, leaving it an undefined gap that entry discovery cannot reach. AIF's fingerprint+validity gap-walk recovers it as a named sub_<addr>."
+example = "option listing on --option aif on"
+source_decompiler = "kuna"
+inspiration = "Ghidra AggressiveInstructionFinderAnalyzer (speculative gap-fill, fingerprint histogram, checkValidSubroutine, default-off); PseudoDisassembler.followSubFlows"
+change_kind = "analysis-enablement"
 [[settable]]
 option = "gopclntab"
 values = "on|off"

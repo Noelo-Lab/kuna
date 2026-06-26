@@ -190,15 +190,15 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // `s1_strings` + libproto/S5 typing for the common case; (c) a per-instruction
         // immediate scan over-accepts. See docs/analysis-port-buildplan.md §1.2.
 
-        // DELIBERATELY ABSENT — `AggressiveInstructionFinderAnalyzer` (AIF, + the ARM
-        // variant). Not ported: it is a *post-disassembly* speculative gap-filler that
-        // requires a fully-populated Listing/FunctionManager (≥20 found functions) +
-        // a PseudoDisassembler — none of which exist at the kuna-analysis tier (which
-        // runs *before* decompilation). It is off-by-default upstream
-        // (`setDefaultEnablement(false)`) and its sound output (new entries) is
-        // subsumed by `s1-entry-disc` + `s1-eh-frame`. Documented ⛔ infeasible-at-tier,
-        // same as `FindNoReturnFunctionsAnalyzer` (see s1_loader/noreturn.rs and
-        // docs/analysis-port-log.md). No `AnalysisPass` impl exists for it.
+        // `AggressiveInstructionFinderAnalyzer` (AIF) is NOT a pure-`ctx` pass here:
+        // it is the third *Listing/xref consumer* (`s1_aif`, the sound substitute the
+        // buildplan §1.3 prescribed, gated off-by-default like upstream's
+        // `setDefaultEnablement(false)`). It speculatively decodes the undefined gaps
+        // the Listing left, which needs the live SLEIGH decoder, so it is driven by
+        // `s1_aif::run_aif` inside `run_listing_consumers` (below), not from this
+        // load-time pure-ctx list. The `AggressiveInstructionFinderPass` `AnalysisPass`
+        // impl exists only for the `aif` gate identity (its `run` is a no-op). See
+        // `s1_aif/mod.rs` + docs/analysis-port-log.md.
     ];
 
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
@@ -313,10 +313,29 @@ pub fn run_listing_consumers(
     // treats a Known-no-return callee as terminal.
     let listing = listing.with_noreturn_seeds(noreturn_seeds, callfixup_seeds);
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: Some(&listing) };
-    listing_consumer_passes()
+    let mut out: Vec<(&'static str, AnalysisOutput)> = listing_consumer_passes()
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
-        .collect()
+        .collect();
+
+    // The Aggressive Instruction Finder gap-walk (`s1_aif`, the third Listing
+    // consumer) is NOT a pure-`ctx` pass: it speculatively decodes undecoded gap
+    // bytes, so it needs the live SLEIGH decoder (the upstream builds its own
+    // `PseudoDisassembler`). Drive it here with the same `translate`/code-space the
+    // Listing build held, keyed by its `aif` id so the deferred commit gates it via
+    // `analysis_pass_enabled` exactly like the pure consumers. A no-op (empty
+    // `entries`) when there is no code space.
+    if let Some(code_space) = arch.manage().get_default_code_space() {
+        let mut aif_out = AnalysisOutput::default();
+        aif_out.entries = crate::s1_aif::run_aif(
+            &listing,
+            translate,
+            std::rc::Rc::clone(code_space),
+            listing.exec_ranges(),
+        );
+        out.push(("aif", aif_out));
+    }
+    out
 }
 
 /// Build an [`AnalysisCtx`] and run the **deferred** scalar/operand reference-markup

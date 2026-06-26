@@ -388,6 +388,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "listing" => arch.analysis_listing,
         "noreturn_disc" => arch.analysis_noreturn_disc,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
+        "aif" => arch.analysis_aif,
         "gopclntab" => arch.analysis_gopclntab,
         _ => true,
     }
