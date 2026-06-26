@@ -249,7 +249,12 @@ fn decode_extent(
 /// info into the hasher's [`InsnFingerprint`]. The field mapping is 1:1 (the
 /// hasher's `OpObject` mirrors the SLEIGH one); the only translation is the enum
 /// re-tag.
-fn fingerprint_from_mask(
+///
+/// `pub(crate)` so the FID matching pass ([`crate::s1_fid::FidPass`]) assembles a
+/// looked-up function's fingerprints with the **exact same** projection the
+/// generator uses — a function fingerprints identically whether it is built into a
+/// DB here or matched against one later (the load-bearing build/lookup symmetry).
+pub(crate) fn fingerprint_from_mask(
     addr: u64,
     len: u32,
     is_call: bool,

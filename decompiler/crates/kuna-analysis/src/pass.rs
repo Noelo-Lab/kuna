@@ -224,6 +224,27 @@ pub struct CallFixupFact {
     pub func_name: String,
 }
 
+/// A function the FID matcher re-identified by full-hash fingerprint: at `addr`,
+/// the function's instruction-stream fingerprint matched a known-library record
+/// whose name is `name` (e.g. `kuna_crc32`). Produced by [`crate::s1_fid::FidPass`]
+/// (the kuna analog of Ghidra's FID identification analyzer) — the capability that
+/// renames a `FUN_<addr>`/`sub_<addr>` in a **stripped** binary back to its library
+/// name purely by fingerprint.
+///
+/// Distinct from a [`SymFact`]: the commit SymFact path is an *idempotent add* and
+/// would no-op on the already-installed (placeholder-named) function. FID instead
+/// **renames** the existing function — resolved by ADDRESS — and only when it still
+/// carries an engine `FUN_*`/`sub_*` placeholder (the label gate); a real
+/// `.symtab`/DWARF name is never overwritten. See `engine.rs::commit_analysis_output`
+/// (the FID rename arm) and `docs/fid-design.md` §6.2.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FidMatch {
+    /// Virtual address of the re-identified function's entry (the rename target).
+    pub addr: u64,
+    /// The library name the full-hash fingerprint matched (e.g. `kuna_crc32`).
+    pub name: String,
+}
+
 /// The facts one analysis contributes. Every field is additive and may be empty;
 /// merging two outputs is concatenation (the driver dedups by address).
 #[derive(Default, Debug)]
@@ -300,6 +321,14 @@ pub struct AnalysisOutput {
     /// architecture's `commentdb`. Produced only by the DWARF lines pass
     /// (`dwarf_lines`, default-off); empty otherwise. See [`CommentFact`].
     pub comments: Vec<CommentFact>,
+    /// Functions the FID matcher re-identified by full-hash fingerprint, by
+    /// `(addr, name)`. The commit seam **renames** each (resolved by ADDRESS) only
+    /// when it still carries an engine `FUN_*`/`sub_*` placeholder (the label gate)
+    /// — the stripped-binary re-identification the FID pass exists for. Produced
+    /// only by [`crate::s1_fid::FidPass`] (`--option fid on`, default-off, real-ELF
+    /// path only, and only when a `.fid` database is configured); empty otherwise.
+    /// See [`FidMatch`].
+    pub fid_names: Vec<FidMatch>,
 }
 
 impl AnalysisOutput {
@@ -317,6 +346,7 @@ impl AnalysisOutput {
         self.call_fixups.extend(other.call_fixups);
         self.locals.extend(other.locals);
         self.comments.extend(other.comments);
+        self.fid_names.extend(other.fid_names);
     }
 }
 

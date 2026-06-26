@@ -392,10 +392,27 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "listing" => arch.analysis_listing,
         "noreturn_disc" => arch.analysis_noreturn_disc,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
+        "fid" => arch.analysis_fid,
         "aif" => arch.analysis_aif,
         "gopclntab" => arch.analysis_gopclntab,
         _ => true,
     }
+}
+
+/// The FID label gate: is `name` an engine-generated placeholder a FID match may
+/// overwrite (never a real `.symtab`/DWARF/imported name)?
+///
+/// kuna names an un-symboled function `sub_<addr>` (`kuna_function_name`, the
+/// default angr-style) or `func_<addr>` (`Architecture::name_function`, the upstream
+/// style); a Ghidra-imported binary uses `FUN_<addr>`. Those are the only names FID
+/// renames. The kuna analog of Ghidra's `!alwaysApplyFidLabels &&
+/// hasUserOrImportedSymbols` gate — on a stripped binary every function is a
+/// placeholder ⇒ FID fires; a function with a real name is left alone.
+fn is_generic_placeholder_name(name: &str) -> bool {
+    name.starts_with("sub_")
+        || name.starts_with("func_")
+        || name.starts_with("FUN_")
+        || name.starts_with("LAB_")
 }
 
 /// Build the marshaling [`IdRegistry`] the console bootstrap needs (the same
@@ -955,6 +972,41 @@ fn commit_analysis_output(
         };
         if let Some(sid) = sid {
             prog.arch_mut().symboltab.set_function_no_return(sid, true);
+        }
+    }
+
+    // 3b. FID re-identification (the kuna analog of Ghidra's FID identification
+    //     analyzer): RENAME a function whose instruction-stream fingerprint matched
+    //     a known-library record. Unlike the SymFact arm (step 1) — an idempotent
+    //     *add* that no-ops on an already-installed function — FID overwrites the
+    //     engine placeholder name of a function that DOES exist. Resolution is by
+    //     ADDRESS (`find_function_across_scopes`, the no-return arm's resolver).
+    //
+    //     The LABEL GATE (`is_generic_placeholder_name`) is kuna's analog of
+    //     Ghidra's `!alwaysApplyFidLabels && hasUserOrImportedSymbols` gate: FID
+    //     only ever overwrites the engine's OWN `sub_<addr>`/`func_<addr>`/`FUN_*`
+    //     placeholder, NEVER a real `.symtab`/DWARF/imported name. On a stripped
+    //     binary every function is a placeholder ⇒ FID fires; on a named binary it
+    //     defers (the real name wins). A fact with no function at `addr`, or whose
+    //     function already carries a real name, is the faithful no-op.
+    let mut fids = out.fid_names.clone();
+    fids.sort_by(|a, b| (a.addr, &a.name).cmp(&(b.addr, &b.name)));
+    fids.dedup();
+    for m in &fids {
+        let addr = Address::new(Rc::clone(code_space), m.addr);
+        let sid = prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
+        if let Some(sid) = sid {
+            // The label gate: only rename an engine placeholder.
+            let is_placeholder = {
+                let cur = prog.arch().symboltab.symbol(sid).get_name();
+                is_generic_placeholder_name(cur)
+            };
+            if is_placeholder {
+                prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
+                // Make the new name resolvable by `load function <name>` (the same
+                // name->addr binding the entry/symbol arms register).
+                prog.register_symbol(&m.name, addr);
+            }
         }
     }
 

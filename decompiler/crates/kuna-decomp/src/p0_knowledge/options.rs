@@ -335,6 +335,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // Default-off (a heuristic that can be wrong; also requires `--option listing
     // on` to build the Listing it reads).
     "noreturn_propagate",
+    // (kuna) FID fingerprint matcher: the kuna analog of Ghidra's FID identification
+    // analyzer.  Over the built Listing it fingerprints each function with the
+    // byte-exact operand-masked FNV-1a64 hash and looks the full hash up in a kuna
+    // `.fid` database (named by the `kuna_fid_db` env var), renaming a matched
+    // `FUN_*`/`sub_*` placeholder back to its library name — re-identifying a
+    // function in a STRIPPED binary (e.g. `sub_4017c0` -> `kuna_crc32`).  Default-off
+    // (real-ELF path only; also requires `--option listing on` to build the Listing
+    // it reads and a configured `.fid` DB).
+    "fid",
     // (kuna) Aggressive Instruction Finder gap-walk: the kuna analog of Ghidra's
     // `AggressiveInstructionFinderAnalyzer` (which ships off-by-default with the
     // warning "IT MAY CREATE A LOT OF BAD CODE!").  Over the undefined gaps between
