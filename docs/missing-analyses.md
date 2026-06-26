@@ -126,8 +126,12 @@ object model (below) is deferred.
   the runtime `%ebx` GOT pointer — skipped.
 - The external/thunk **object model** (Ghidra's `ExternalLocation` + thunk
   functions) is not built; kuna registers a plain named function at the stub.
-  This is invisible for ordinary call naming but matters for thunk tail-call
-  inlining and external-reference rendering.
+  This is invisible for ordinary call naming but was thought to matter for thunk
+  tail-call inlining and external-reference rendering. The spike in
+  [`proposals/thunk-external-model.md`](proposals/thunk-external-model.md) found
+  both payoffs already covered (correct names via `elf_plt`; `-O2` tail-call
+  rendering via `option tailcalljump`; upstream Ghidra does **not** inline PLT
+  thunks by default), so the model is **deferred** as structural-fidelity-only.
 
 ## 2. Dynamic / defined symbol coverage — ✅ Improved
 
