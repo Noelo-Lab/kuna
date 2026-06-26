@@ -1,0 +1,27 @@
+{
+  "opportunity": "test_who_condensing_opt_reversion::scan_entries",
+  "test_name": "test_who_condensing_opt_reversion",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/who.o",
+  "selector": "scan_entries",
+  "func_addr": "0x401250",
+  "angr_version": "9.2.213",
+  "option": "crossjumpreverter",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_who_condensing_opt_reversion; CrossJumpReverter/ReturnDuplicatorLow; scan_entries",
+  "scope": "large",
+  "proposal": true,
+  "gap_summary": "kuna emits 1 goto; angr 'full' preset emits 0. The goto is a residual of compiler Irreducible Statement Condensing (ISC): two identical `v1 = *a1;` tails condensed into one shared block reached by `goto label_4012b5`. Reverting = duplicate the non-return, fall-through cross-jump tail back into the `need_deadprocs` goto source (SAILR CrossJumpReverter).",
+  "owning_stage": "S8 structuring / goto-reduction (SAILR de-optimization family), after ActionFinalStructure on the sblocks tree",
+  "existing_option_coverage": "none — gotoreduce/regionstructure/loopbreak_recovery/foldcallret (alone or combined) all leave 1 goto; gotoreduce only duplicates return-terminated tails, not this fall-through tail",
+  "decisions": [
+    {
+      "question": "Is a single-Action crossjumpreverter SMALL, or LARGE (proposal)?",
+      "verdict": "large",
+      "justification": "The existing `gotoreduce` works only because its tail ends in `return`: `kuna_inline_return_tail` appends duplicated `BlockCopy` leaves to the `if` true-clause and drops the goto, and the printer re-emits them ending in `return` — a *closed* path with no fall-through to reconcile. The cross-jump case is categorically different: the duplicated `v1=*a1` tail must *fall through into the shared `if(v1==2)` successor*, which only renders correctly if the goto-source if-block's own structured fall-through already converges on that exact block. Establishing that is a real convergence/post-dominance precondition over the structured tree (not the bounded single-successor *bblock* walk `return_tail_chain` does), and a correct surgery (`kuna_inline_crossjump_tail`) does not exist — `kuna_inline_return_tail` deliberately does *not* rewire edges or touch the if's existing successor, exactly the part a fall-through duplication must get right. Worse, the angr testcase itself states this function reaches zero gotos only via TWO passes (ReturnDuplicatorLow + CrossJumpReverter) *and* a specific edge-virtualization ordering; kuna's verbatim CollapseStructure/TraceDAG structurer does not virtualize edges the way angr's region structurer does, so the goto shape kuna hands a reverter is not the shape angr's reverter consumes — there is no guarantee one new bounded Action lands on this single goto. This trips at least three of Hard Rule 7's triggers: new structured-tree surgery infrastructure (new pass *type*, not modelable like `kuna_loweredswitch.rs`), a likely dependency on a second pass/edge-ordering, and the convergence-precondition machinery that gotoreduce intentionally lacks.",
+      "biggest_risk": "An incorrect convergence/post-dominance check would silently emit wrong C — duplicating `v1=*a1` into a branch whose actual structured fall-through is NOT `if(v1==2)` changes control flow, a correctness defect far worse than the one harmless goto it removes.",
+      "proposal_should_request": "A draft [PROPOSAL] PR for a SAILR CrossJumpReverter pass: a `kuna_inline_crossjump_tail` structured-tree surgery (non-return fall-through duplication with a tree-level convergence/post-dominator precondition) plus an investigation of whether the angr-stated edge-virtualization ordering / ReturnDuplicatorLow co-dependency means this needs more than one option-gated pass to actually reach zero gotos on scan_entries.",
+      "decider": "general-purpose subagent (opus)"
+    }
+  ]
+}

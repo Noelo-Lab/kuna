@@ -1,0 +1,209 @@
+==============================================================================
+test_who_condensing_opt_reversion :: scan_entries   (angr 9.2.213 @ 0x401250)
+==============================================================================
+
+--- angr ---
+typedef struct struct_0 {
+    unsigned short field_0;
+    char padding_2[338];
+    unsigned int field_154;
+} struct_0;
+
+extern char include_heading;
+extern char my_line_only;
+extern char need_boottime;
+extern char need_clockchange;
+extern char need_deadprocs;
+extern char need_initspawn;
+extern char need_login;
+extern char need_runlevel;
+extern char need_users;
+
+char * scan_entries(unsigned long long a0, struct_0 *cur)
+{
+    char *v1;  // rax
+    char v2;  // r12b
+    char *iter;  // r13
+    long long v4;  // r14
+    unsigned long long v5;  // rbp
+    unsigned long long v6;  // rbp
+    char *v7;  // rax
+    unsigned long long v8;  // rbp
+
+    if (include_heading)
+        v1 = print_heading();
+    v2 = my_line_only;
+    if (my_line_only)
+    {
+        iter = ttyname(0);
+        if (!iter)
+            return iter;
+        v1 = strncmp(iter, "/dev/", 5);
+        if (!(unsigned int)v1)
+            iter += 5;
+    }
+    v4 = -0x8000000000000000;
+    v5 = a0 - 1;
+    if (!a0)
+        return v1;
+    while (true)
+    {
+        v6 = v5;
+        if (v2 && strncmp(iter, &cur->padding_2[6], 32))
+        {
+LABEL_4012b5:
+            v7 = cur->field_0;
+        }
+        else
+        {
+            v7 = cur->field_0;
+            if (!(!need_users || !cur->padding_2[42] || *((unsigned short *)&v7) != 7))
+            {
+                print_user(cur, v4);
+                v7 = cur->field_0;
+            }
+            else if (!(!need_runlevel || *((unsigned short *)&v7) != 1))
+            {
+                print_runlevel(cur);
+                v7 = cur->field_0;
+            }
+            else if (!(!need_boottime || *((unsigned short *)&v7) != 2))
+            {
+                print_boottime.isra.0(cur->field_154);
+                v7 = cur->field_0;
+            }
+            else if (!(!need_clockchange || *((unsigned short *)&v7) != 3))
+            {
+                print_clockchange.isra.0(cur->field_154);
+                v7 = cur->field_0;
+            }
+            else if (!(!need_initspawn || *((unsigned short *)&v7) != 5))
+            {
+                print_initspawn(cur);
+                v7 = cur->field_0;
+            }
+            else if (!(!need_login || *((unsigned short *)&v7) != 6))
+            {
+                print_login(cur);
+                v7 = cur->field_0;
+            }
+            else if (need_deadprocs && *((unsigned short *)&v7) == 8)
+            {
+                print_deadprocs(cur);
+                goto LABEL_4012b5;
+            }
+        }
+        if (*((unsigned short *)&v7) == 2)
+            v4 = cur->field_154;
+        cur = &cur[1].padding_2[38];
+        v8 = v6 - 1;
+        if (v6 < 1)
+            break;
+        v2 = my_line_only;
+        v5 = v8;
+    }
+    return v7;
+}
+
+
+--- kuna (name mode) ---
+void scan_entries(int8 a0,int2 *a1)
+
+{
+  int2 v1;
+  int4 v2; // eax
+  char v3;
+  int8 v4; // rax
+  int8 v5; // r14
+  
+  if (dat_401732 != '\0') {
+    print_heading();
+  }
+  v3 = dat_401728;
+  if (dat_401728 != '\0') {
+    v4 = ttyname(0);
+    if (v4 == 0) {
+      return;
+    }
+    v2 = strncmp(v4,0x4018ef,5);
+    if (v2 == 0) {
+      v4 = v4 + 5;
+    }
+  }
+  v5 = -0x8000000000000000;
+  if (a0 == 0) {
+    return;
+  }
+  do {
+    a0 = a0 + -1;
+    if ((v3 == '\0') || (v2 = strncmp(v4,&a1[4],0x20), v2 == 0)) {
+      v1 = *a1;
+      if ((dat_401729 == '\0') || (((char)a1[0x16] == '\0' || (v1 != 7)))) {
+        if ((dat_40172a == '\0') || (v1 != 1)) {
+          if ((dat_40172f == '\0') || (v1 != 2)) {
+            if ((dat_40172b == '\0') || (v1 != 3)) {
+              if ((dat_40172c == '\0') || (v1 != 5)) {
+                if ((dat_40172d == '\0') || (v1 != 6)) {
+                  if ((dat_40172e != '\0') && (v1 == 8)) {
+                    print_deadprocs(a1);
+                    goto label_4012b5;
+                  }
+                }
+                else {
+                  print_login(a1);
+                  v1 = *a1;
+                }
+              }
+              else {
+                print_initspawn(a1);
+                v1 = *a1;
+              }
+            }
+            else {
+              print_clockchange.isra.0(*(void *)&a1[0xaa]);
+              v1 = *a1;
+            }
+          }
+          else {
+            print_boottime.isra.0(*(void *)&a1[0xaa]);
+            v1 = *a1;
+          }
+        }
+        else {
+          print_runlevel(a1);
+          v1 = *a1;
+        }
+      }
+      else {
+        print_user(a1,v5);
+        v1 = *a1;
+      }
+    }
+    else {
+label_4012b5:
+      v1 = *a1;
+    }
+    if (v1 == 2) {
+      v5 = (int8)*(int4 *)&a1[0xaa];
+    }
+    a1 = &a1[0xc0];
+    if (a0 == 0) {
+      return;
+    }
+    v3 = dat_401728;
+  } while( true );
+}
+
+--- metrics (reference | kuna) ---
+  loc            98 | 84  
+  gotos           1 | 1   
+  labels          1 | 1   
+  switches        0 | 0   
+  cases           0 | 0   
+  ifs            15 | 15  
+  loops           1 | 1   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  (none -- structurally comparable)
