@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    208,
-    208
+    212,
+    212
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -114,8 +114,8 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound, tailcalljump, regionstructure, noreturn_extern, noreturn_externmatch)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, tailcalljump, regionstructure)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, switchguardbound, tailcalljump, regionstructure, noreturn_extern, noreturn_externmatch)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, tailcalljump, regionstructure)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
@@ -140,6 +140,10 @@
     "data:KUNA-REGIONS #7: the loop's enclosing acyclic region pairs the cyclic self-loop with its 0x40a exit block",
     "data:KUNA-REGIONS #8: the cyclic self-loop region wraps exactly the single 0x3e0 block",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none",
+    "data:P1: default (crossjumprevert off) emits the condensed cross-jump goto",
+    "data:P1b: default labels the shared condensed tail",
+    "data:P2: on duplicates the cross-jump tail and logs the reversion",
+    "data:P3: TOTAL goto-label count across both passes is 1 (off: 1, on: 0)",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
     "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",

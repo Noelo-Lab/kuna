@@ -725,6 +725,11 @@ pub fn universal_sched(
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
             // default-OFF).  Runs after the tree is final + goto targets labelled.
             act!(crate::s8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
+            // (kuna) angr SAILR cross-jump reversion (option `crossjumprevert`,
+            // default-OFF).  Runs *after* gotoreduce — per the CrossJumpReverter
+            // docstring it is the last deoptimization, so return tails are already
+            // structured early returns and only true cross-jump tails remain.
+            act!(crate::s8_structure::kuna_crossjumpreverter::ActionCrossJumpReverter::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

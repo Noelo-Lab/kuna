@@ -352,6 +352,10 @@ pub struct Architecture {
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
     pub reduce_return_gotos: bool,
+    /// (kuna) angr SAILR `CrossJumpReverter`: revert compiler cross-jumping by
+    /// duplicating a small *non-return* cross-jump tail into the `goto` source so
+    /// both paths fall straight through (`revert_cross_jumps`, opt-in default-off).
+    pub revert_cross_jumps: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -718,6 +722,7 @@ impl Architecture {
             recover_lowered_switch: false,
             region_structure: true,
             reduce_return_gotos: false,
+            revert_cross_jumps: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -819,6 +824,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
+        self.revert_cross_jumps = false; // (kuna) default-off opt-in (angr SAILR CrossJumpReverter)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
@@ -959,6 +965,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
                 self.reduce_return_gotos = val;
+                Ok(msg)
+            }
+            "crossjumprevert" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_crossjumpreverter::OptionCrossJumpReverter.apply(p1)?;
+                self.revert_cross_jumps = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -1306,6 +1318,7 @@ impl Architecture {
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         seam.region_structure = self.region_structure; // regionstructure
         seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
