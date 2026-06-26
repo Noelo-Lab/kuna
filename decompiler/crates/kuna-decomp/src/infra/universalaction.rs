@@ -730,6 +730,11 @@ pub fn universal_sched(
             // 3-component `if` whose true-clause terminates, re-parenting the
             // else body as a follower (option `ifelseflatten`, default-OFF).
             act!(crate::s8_structure::kuna_ifelseflatten::ActionIfElseFlatten::boxed("blockrecovery")),
+            // (kuna) angr SAILR cross-jump reversion (option `crossjumprevert`,
+            // default-OFF).  Runs *after* gotoreduce — per the CrossJumpReverter
+            // docstring it is the last deoptimization, so return tails are already
+            // structured early returns and only true cross-jump tails remain.
+            act!(crate::s8_structure::kuna_crossjumpreverter::ActionCrossJumpReverter::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

@@ -66,7 +66,11 @@ use crate::seams::BlockId;
 use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<ifelseflatten>` (kuna).  ElementIds live in the 4000+ range.
-pub const ELEM_IFELSEFLATTEN: ElementId = ElementId::new("ifelseflatten", 4103);
+/// Renumbered from 4103 at the merge into main: main now uses 4100 gotoreduce,
+/// 4101 tailcalljump, 4102 regionstructure, 4103 noreturn_extern,
+/// 4104 noreturn_externmatch, 4105 crossjumprevert, 4106 switchsharedcase, so the
+/// next free id is 4107.
+pub const ELEM_IFELSEFLATTEN: ElementId = ElementId::new("ifelseflatten", 4107);
 
 /// \brief Flatten `if (c) { ...return } else { body }` to `if (c) { ...return } body`
 /// (angr `IfElseFlattener`).  Option-gated (`flatten_ifelse`).

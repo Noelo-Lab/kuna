@@ -2240,6 +2240,42 @@ impl BlockGraph {
         true
     }
 
+    /// (kuna) Inline a duplicated **cross-jump tail** into a `BlockGoto` that
+    /// currently renders as `<body>; goto T`, turning it into a plain `BlockList`
+    /// `<body>; <chain>` (the goto vanishes — angr `CrossJumpReverter`).
+    ///
+    /// Unlike [`kuna_inline_return_tail`](Self::kuna_inline_return_tail) (which
+    /// duplicates a *return* tail into a `BlockIf`'s true clause — a closed path),
+    /// this duplicates a *non-return, fall-through* tail into a `BlockGoto`.  The
+    /// goto node already holds the source body in `list[0]` (e.g. the
+    /// `print_deadprocs(a1)` block); a fresh `BlockCopy` leaf is minted for each
+    /// bblock in `bbchain` (so the printer re-emits its ops on this path), the leaves
+    /// are appended after the body, and the node's kind is switched from `Goto` to
+    /// `Ls` so it prints as a braced/flat list with **no** trailing `goto`.  The
+    /// caller ([`crate::s8_structure::kuna_crossjumpreverter`], option-gated) has
+    /// verified the chain is bounded, side-effect-safe, and *convergent* (the goto's
+    /// own structured fall-through already reaches the tail's successor), so dropping
+    /// the goto and falling through is semantics-preserving.  Edges are intentionally
+    /// not rewired — this runs after `ActionFinalStructure`, and the C printer walks
+    /// only components / copy pointers (never edges) below the list.
+    pub fn kuna_inline_crossjump_tail(&mut self, goto_id: BlockId, bbchain: &[BlockId]) {
+        // Mint a BlockCopy leaf per bblock in the duplicated tail (flags cleared so
+        // no spurious label/goto annotation rides along on the copy).
+        let mut leaves: Vec<BlockId> = Vec::with_capacity(bbchain.len());
+        for &bb in bbchain {
+            let leaf = FlowBlock::new_kind(BlockKind::Copy { copy: Some(bb) });
+            leaves.push(self.arena.insert(leaf));
+        }
+        // Append the duplicated tail after the goto's existing body component(s).
+        for &lf in &leaves {
+            self.arena[lf].parent = Some(goto_id);
+            self.arena[goto_id].list.push(lf);
+        }
+        // Drop the goto: switch the node kind to a plain BlockList so the printer
+        // emits the body + duplicated tail and no trailing `goto`/label.
+        self.arena[goto_id].kind = BlockKind::Ls;
+    }
+
     /// Build a new BlockGoto incorporating the given FlowBlock
     /// (C++ `BlockGraph::newBlockGoto`, `block.cc:1705`).
     pub fn new_block_goto(&mut self, graph_id: BlockId, bl: BlockId) -> BlockId {

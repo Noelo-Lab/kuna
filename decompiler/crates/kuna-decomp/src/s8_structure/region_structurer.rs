@@ -162,12 +162,51 @@ pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<Block
     // `sblocks` `BlockCopy`'s `copy` references.
     let complex_blocks = compute_complex_blocks(data);
 
+    // ---- 1d. Read the cyclic loop-successor refinement gate (regionlooprefine) -
+    // Opt-in (default-OFF).  When ON, a multi-exit / multi-latch / mid-entry loop
+    // that the base cyclic schemas cannot fold is refined (its secondary exits and
+    // latches virtualized to gotos) so it folds into a structured loop instead of
+    // falling back to `CollapseStructure`.  OFF ⇒ byte-identical to the base
+    // region structurer (the refinement is dead).  Read before the `sblocks_mut`
+    // borrow so we still hold `&Funcdata`.
+    let loop_refine = data.get_arch().region_loop_refine;
+
+    // When refinement is ON, project the region identifier's cyclic (loop) regions
+    // onto basic-block start addresses: for each loop the head address, the body
+    // block addresses, and the loop-successor (exit) block addresses (the angr
+    // `GraphRegion.successors` frontier).  This is the read side of the omitted
+    // `_refine_loop_successors_to_guarded_successors` — it gives the structurer the
+    // region identifier's *correct* loop body (which absorbs the dominated
+    // switch-case successors a structural natural-loop walk on the sblocks graph
+    // misses) and exit frontier, so the refinement virtualizes exactly the
+    // secondary exits.  Empty (and skipped) when refinement is off.
+    let cyclic_loops = if loop_refine { ri.cyclic_loops() } else { Vec::new() };
+
+    // The `cyclic_loops` are keyed by basic-block start ADDRESS, but the structuring
+    // graph's `BlockCopy` leaves carry only the bblocks `BlockId` they copy (their
+    // own `sblocks` cover is empty — `block_get_start` returns invalid through a
+    // cross-arena copy).  Precompute the bblocks `BlockId → start offset` map here
+    // (while we hold `&Funcdata`) so the structurer can resolve a live component's
+    // front-leaf back to its address.  Skipped (empty) when refinement is off.
+    let bb_addr: std::collections::BTreeMap<BlockId, uintb> = if loop_refine {
+        let nbb = data.bblocks_get_size();
+        let mut m = std::collections::BTreeMap::new();
+        for i in 0..nbb {
+            let bb = data.bblocks_get_block(i);
+            m.insert(bb, data.bblocks_block_start(bb).get_offset());
+        }
+        m
+    } else {
+        std::collections::BTreeMap::new()
+    };
+
     // ---- 2. Structure the seeded sblocks graph -------------------------------
     let sroot = data.sblocks_root();
     let graph = data.sblocks_mut();
     let mut st = RegionStructurer::new(graph, sroot)
         .with_switch_maps(switch_blocks, switch_case_edges)
-        .with_complex_blocks(complex_blocks);
+        .with_complex_blocks(complex_blocks)
+        .with_loop_refine(loop_refine, cyclic_loops, bb_addr);
     let ok = st.structure()?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
@@ -271,6 +310,25 @@ struct RegionStructurer<'a> {
     /// `boolean_flip`/`fallthru_true` toggled (the deferred data-flow half of
     /// `BlockBasic::negateCondition`) — mirrors `CollapseStructure::pending_flips`.
     pending_flips: Vec<BlockId>,
+    /// Cyclic loop-successor refinement gate (`Architecture::region_loop_refine`,
+    /// option `regionlooprefine`, default-OFF).  When set, `match_cyclic_schemas`
+    /// refines a multi-exit / multi-latch / mid-entry loop that `try_fold_loop`
+    /// rejected — virtualizing its secondary exits and latches to gotos so it
+    /// folds into a structured loop.  OFF ⇒ the refinement is never attempted, so
+    /// output is byte-identical to the base region structurer.
+    loop_refine: bool,
+    /// The region identifier's cyclic (loop) regions, keyed by loop-head **block
+    /// start address** (the angr refined loop body + successor frontier projected
+    /// onto basic-block addresses).  Populated only when `loop_refine` is on; used
+    /// by `refine_loop_edges` to pick the loop body / single normal exit grounded
+    /// in the region identifier's analysis rather than the narrower structural
+    /// natural-loop walk.
+    cyclic_loops: std::collections::BTreeMap<uintb, crate::s7_regions::kuna_regionid::KunaCyclicLoop>,
+    /// bblocks `BlockBasic` id → start offset, so a live `sblocks` component's
+    /// front-leaf `BlockCopy` (whose `copy` is a bblocks id) resolves to its
+    /// address — the key the `cyclic_loops` body/exit sets use.  Populated only
+    /// when `loop_refine` is on.
+    bb_addr: std::collections::BTreeMap<BlockId, uintb>,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -282,7 +340,36 @@ impl<'a> RegionStructurer<'a> {
             switch_case_edges: std::collections::BTreeMap::new(),
             complex_blocks: std::collections::BTreeSet::new(),
             pending_flips: Vec::new(),
+            loop_refine: false,
+            cyclic_loops: std::collections::BTreeMap::new(),
+            bb_addr: std::collections::BTreeMap::new(),
         }
+    }
+
+    /// Attach the cyclic loop-successor refinement gate (`regionlooprefine`) plus
+    /// the region identifier's cyclic loop projection (keyed by head address) and
+    /// the bblocks-id → address map used to resolve live components to addresses.
+    fn with_loop_refine(
+        mut self,
+        loop_refine: bool,
+        cyclic_loops: Vec<crate::s7_regions::kuna_regionid::KunaCyclicLoop>,
+        bb_addr: std::collections::BTreeMap<BlockId, uintb>,
+    ) -> Self {
+        self.loop_refine = loop_refine;
+        self.cyclic_loops =
+            cyclic_loops.into_iter().map(|l| (l.head_addr, l)).collect();
+        self.bb_addr = bb_addr;
+        self
+    }
+
+    /// Resolve a live structuring component to its front-leaf basic-block start
+    /// address (the key the `cyclic_loops` body/exit sets use).  A merged component
+    /// (e.g. a `BlockList`) resolves through its front leaf; a leaf with no
+    /// resolvable `copy` (or an unmapped id) yields `None`.
+    fn component_addr(&self, bl: BlockId) -> Option<uintb> {
+        let leaf = self.graph.get_front_leaf(bl)?;
+        let bb = self.graph.block(leaf).get_copy()?;
+        self.bb_addr.get(&bb).copied()
     }
 
     /// Attach the precomputed switch/jump-table maps (Inc 4 switch schema).
@@ -452,6 +539,22 @@ impl<'a> RegionStructurer<'a> {
             }
             // Nothing matched and >1 node remains and no edge to virtualize:
             // an un-virtualizable knot.  Report failure (caller falls back).
+            if std::env::var_os("KUNA_RS_DEBUG").is_some() {
+                let n = self.size();
+                eprintln!("[rs] STUCK: {n} components remain (round {rounds})");
+                for i in 0..n.min(12) {
+                    let c = self.component(i);
+                    let b = self.graph.block(c);
+                    eprintln!(
+                        "[rs]   comp#{} type={:?} sizeout={} sizein={} addr=0x{:x}",
+                        b.get_index(),
+                        b.get_type(),
+                        b.size_out(),
+                        b.size_in(),
+                        self.component_addr(c).unwrap_or(0),
+                    );
+                }
+            }
             return Ok(false);
         }
         Ok(self.size() == 1)
@@ -1052,6 +1155,21 @@ impl<'a> RegionStructurer<'a> {
         // (so we structure inside-out, matching CollapseStructure's depth order).
         let heads = self.collect_loop_heads();
         let dbg = std::env::var_os("KUNA_RS_DEBUG").is_some();
+        if dbg && self.loop_refine {
+            // One-shot dump of the region identifier's cyclic loop projection.
+            static DUMPED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !DUMPED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                for (head, l) in self.cyclic_loops.iter() {
+                    eprintln!(
+                        "[rs] RI loop head=0x{:x} body={} exits=[{}]",
+                        head,
+                        l.body.len(),
+                        l.exits.iter().map(|a| format!("0x{a:x}")).collect::<Vec<_>>().join(",")
+                    );
+                }
+            }
+        }
         if heads.is_empty() {
             return Ok(false);
         }
@@ -1087,19 +1205,68 @@ impl<'a> RegionStructurer<'a> {
                 return Ok(true);
             }
         }
-        // No directly-foldable loop.  A speculative `refine_loop_edges` (virtualizing
-        // secondary latches / exits to gotos so a not-yet-clean loop collapses) is
-        // intentionally NOT run: empirically it yields no goto reduction Ghidra's
-        // `select_goto`/`TraceDAG` doesn't already achieve, and on multi-exit /
-        // multi-latch loops its edge choice can render a *worse* (extra-goto) or
-        // — for a continue-goto into the head condition — malformed loop.  Leaving
-        // the loop unfolded lets the structurer fall through to the virtualize
-        // fallback and ultimately back to `CollapseStructure` (proven optimal on
-        // reducible loops), guaranteeing ON-output is never worse than OFF.  The
-        // refinement machinery (`refine_loop_edges` & friends) is retained for a
-        // future increment that pairs it with a proper exit-block / post-dominator
-        // analysis (roadmap Inc 5).
+
+        // No directly-foldable loop.  WITHOUT the `regionlooprefine` opt-in
+        // (default), we stop here: leaving a multi-exit / multi-latch / irreducible
+        // loop unfolded lets the structurer fall through to the virtualize fallback
+        // and ultimately back to `CollapseStructure` (proven optimal on reducible
+        // loops), guaranteeing the region structurer is never worse than the
+        // upstream Ghidra path (the DIV-12 default-on parity invariant).
+        //
+        // WITH `regionlooprefine` ON, refine the loops the base schemas could not
+        // fold: virtualize their SECONDARY exits and latches to gotos so the body
+        // collapses to the clean single-exit / single-latch shape `try_fold_loop`
+        // accepts — the kuna analog of angr's
+        // `RegionIdentifier._refine_loop_successors_to_guarded_successors`
+        // (`force_loop_single_exit`).  The virtualized loop-exit gotos are then
+        // lowered to `break;` by the existing `scopeBreak` pass and the back-edge
+        // gotos to `continue;` by loop construction.  Only loops that would
+        // otherwise fall back are touched (`try_fold_loop` already had its turn
+        // above), so reducible code is byte-identical regardless of the flag.
+        if self.loop_refine {
+            // Innermost-first: refine the deepest loop head (largest `index`) whose
+            // body contains no other live loop head, so the inside-out fold order
+            // matches CollapseStructure.  Refining one head per round (returning
+            // true) lets the acyclic schemas re-collapse the freed body before the
+            // next loop is considered.
+            let ordered = self.order_loop_heads_innermost_first(&heads);
+            for &head in ordered.iter() {
+                match self.refine_loop_edges(head)? {
+                    LoopRefineOutcome::Progressed => {
+                        if dbg {
+                            eprintln!("[rs]   refined loop head#{}", self.graph.block(head).get_index());
+                        }
+                        return Ok(true);
+                    }
+                    LoopRefineOutcome::Irreducible | LoopRefineOutcome::NoChange => {}
+                }
+            }
+        }
         Ok(false)
+    }
+
+    /// Order loop heads innermost-first: a head whose natural-loop body contains
+    /// *no other* live loop head sorts before an outer head, so refinement (like
+    /// `CollapseStructure`'s depth-ordered `loopbody`) reduces the deepest loop
+    /// first and its now-collapsed body becomes a single node inside the outer
+    /// loop.  Stable within a depth class by `index`.
+    fn order_loop_heads_innermost_first(&self, heads: &[BlockId]) -> Vec<BlockId> {
+        // For each head, count how many OTHER heads sit inside its body (its
+        // "outerness").  Innermost = 0 inner heads; sort ascending by that count,
+        // then by descending index (deeper RPO first) as a stable tiebreak.
+        let head_set: std::collections::BTreeSet<BlockId> = heads.iter().copied().collect();
+        let mut keyed: Vec<(int4, int4, BlockId)> = Vec::with_capacity(heads.len());
+        for &head in heads.iter() {
+            let body = self.natural_loop_body(head);
+            let inner = body
+                .iter()
+                .filter(|&&b| b != head && head_set.contains(&b))
+                .count() as int4;
+            // Negated index so a higher index (deeper) sorts earlier within a class.
+            keyed.push((inner, -self.graph.block(head).get_index(), head));
+        }
+        keyed.sort();
+        keyed.into_iter().map(|(_, _, h)| h).collect()
     }
 
     /// Collect every live component that is a natural-loop head: it has at least
@@ -1303,39 +1470,65 @@ impl<'a> RegionStructurer<'a> {
     ///     the loop to a body node other than `head` — the head-in-body /
     ///     irreducible case) into a `goto` so the body becomes single-entry.
     ///
-    /// Returns `true` if it marked at least one edge (made progress).  Per angr
-    /// *without* `force_loop_single_exit`, one secondary exit may legitimately
-    /// remain a single goto — that's acceptable and still strictly fewer gotos
-    /// than Ghidra's per-latch virtualization.
+    /// Returns [`LoopRefineOutcome::Progressed`] if it marked at least one edge,
+    /// [`LoopRefineOutcome::Irreducible`] if the loop is multi-entry at the head
+    /// (cannot be refined — caller falls back), or [`LoopRefineOutcome::NoChange`]
+    /// if nothing needed refining (already single-exit / single-latch; the base
+    /// `try_fold_loop` will fold it, or it is a not-yet-collapsed body that a later
+    /// round handles).  Per angr *without* `force_loop_single_exit`, one secondary
+    /// exit may legitimately remain a single goto — that's acceptable and still
+    /// strictly fewer gotos than Ghidra's per-latch virtualization.
     ///
-    /// NOTE: NOT invoked in Inc 3 (see `match_cyclic_schemas`) — empirically its
-    /// edge choice yields no goto reduction over Ghidra's `select_goto` and can
-    /// render a worse-or-malformed loop on multi-exit/multi-latch shapes.  Retained
-    /// for a future increment that pairs it with a post-dominator exit analysis.
-    #[allow(dead_code)]
-    fn refine_loop_edges(&mut self, head: BlockId) -> KunaResult<bool> {
-        let body = self.natural_loop_body(head);
-        let in_body: std::collections::BTreeSet<BlockId> = body.iter().copied().collect();
+    /// Gated by `regionlooprefine` (the `self.loop_refine` flag), and only invoked
+    /// on a loop the base cyclic schemas already declined to fold, so a reducible
+    /// loop never reaches here and output is byte-identical with the flag off.
+    fn refine_loop_edges(&mut self, head: BlockId) -> KunaResult<LoopRefineOutcome> {
+        // Resolve the loop using the region identifier's projection if we have it
+        // (the angr refined loop body + successor frontier, which absorbs the
+        // dominated switch-case successors a structural natural-loop walk misses).
+        // The loop is keyed by its head's basic-block start address.
+        let head_addr = self.component_addr(head);
+        let ri_loop = head_addr.and_then(|a| self.cyclic_loops.get(&a).cloned());
 
-        // (1) Choose the single primary latch: the back-edge source with the
-        //     LATEST node (highest index = deepest in RPO), so the others become
-        //     continues.  Collect all back-edge (latch) edges into head.
+        // Build the live loop-body component set + exit-address set, either from the
+        // RI projection (preferred) or the structural natural-loop walk (fallback,
+        // when the head has no RI loop — e.g. a loop only the structural marker
+        // sees).  A live component is "in the body" when its front-leaf address is
+        // in the RI body set.
+        let dbg = std::env::var_os("KUNA_RS_DEBUG").is_some();
+        let (in_body, exit_addrs): (std::collections::BTreeSet<BlockId>, Option<std::collections::BTreeSet<uintb>>) =
+            match &ri_loop {
+                Some(l) => {
+                    let mut s = std::collections::BTreeSet::new();
+                    let n = self.size();
+                    for i in 0..n {
+                        let comp = self.component(i);
+                        if let Some(a) = self.component_addr(comp) {
+                            if l.body.contains(&a) {
+                                s.insert(comp);
+                            }
+                        }
+                    }
+                    // `head` must be in the body set (it carries the head address).
+                    s.insert(head);
+                    (s, Some(l.exits.clone()))
+                }
+                None => {
+                    let body = self.natural_loop_body(head);
+                    (body.into_iter().collect(), None)
+                }
+            };
+
+        // (1) Latch edges: back-edges into `head` from a body component.
         let mut latch_edges: Vec<(BlockId, int4)> = Vec::new();
         {
             let hb = self.graph.block(head);
             for j in 0..hb.size_in() {
                 if hb.is_back_edge_in(j) {
                     let latch = hb.get_in(j);
-                    // Resolve the latch's out-edge index that targets head.  Skip
-                    // edges already virtualized to a goto (an earlier round turned
-                    // a secondary latch into a continue) — otherwise we would
-                    // re-process it forever.
                     let lb = self.graph.block(latch);
                     for e in 0..lb.size_out() {
-                        if lb.get_out(e) == head
-                            && lb.is_back_edge_out(e)
-                            && !lb.is_goto_out(e)
-                        {
+                        if lb.get_out(e) == head && lb.is_back_edge_out(e) && !lb.is_goto_out(e) {
                             latch_edges.push((latch, e));
                         }
                     }
@@ -1343,14 +1536,15 @@ impl<'a> RegionStructurer<'a> {
             }
         }
 
-        // (2) Collect exit edges (body → non-body) and mid-body entry edges
-        //     (non-body → body node ≠ head).
+        // (2) Exit edges (body → non-body) and mid-body entry edges
+        //     (non-body → body node ≠ head).  A target is "non-body" when it is not
+        //     a body component; with the RI exit set, a body→exit edge is an exit.
         let mut exit_edges: Vec<(BlockId, int4, BlockId)> = Vec::new();
         let mut mid_entry_edges: Vec<(BlockId, int4)> = Vec::new();
-        for &bl in body.iter() {
+        let body_vec: Vec<BlockId> = in_body.iter().copied().collect();
+        for &bl in body_vec.iter() {
             let b = self.graph.block(bl);
-            let sout = b.size_out();
-            for e in 0..sout {
+            for e in 0..b.size_out() {
                 let dst = b.get_out(e);
                 if dst == bl {
                     continue;
@@ -1359,19 +1553,14 @@ impl<'a> RegionStructurer<'a> {
                     exit_edges.push((bl, e, dst));
                 }
             }
-            // mid-body entries: in-edges to bl (≠ head) from outside the body.
             if bl != head {
                 let sin = b.size_in();
                 for j in 0..sin {
                     let p = b.get_in(j);
                     if !in_body.contains(&p) {
-                        // find p's out-edge index into bl
                         let pb = self.graph.block(p);
                         for e in 0..pb.size_out() {
-                            if pb.get_out(e) == bl
-                                && !pb.is_goto_out(e)
-                                && !pb.is_back_edge_out(e)
-                            {
+                            if pb.get_out(e) == bl && !pb.is_goto_out(e) && !pb.is_back_edge_out(e) {
                                 mid_entry_edges.push((p, e));
                             }
                         }
@@ -1380,14 +1569,19 @@ impl<'a> RegionStructurer<'a> {
             }
         }
 
-        // (3) Choose the normal exit: the exit target with the most exit edges to
-        //     it, breaking ties by lowest address (matching angr's
-        //     successor-and-edgecounts pick).
-        let normal_exit = self.choose_normal_exit(&exit_edges);
+        // (3) Normal exit: prefer the RI successor frontier ordering — the exit
+        //     target whose ADDRESS appears earliest in the RI exit set (the angr
+        //     normal-exit is the post-order-earliest successor; lowest address is a
+        //     deterministic, region-grounded surrogate).  Without RI data, fall
+        //     back to the most-targeted exit (ties by index).
+        let normal_exit = self.choose_normal_exit_grounded(&exit_edges, &exit_addrs);
 
-        if std::env::var_os("KUNA_RS_DEBUG").is_some() {
+        if dbg {
             eprintln!(
-                "[rs]     refine: latches={} exits={} mid_entries={} head_extra_in={}",
+                "[rs]     refine head=0x{:x} ri={} body={} latches={} exits={} mid={} head_xin={}",
+                head_addr.unwrap_or(0),
+                ri_loop.is_some(),
+                in_body.len(),
                 latch_edges.len(),
                 exit_edges.len(),
                 mid_entry_edges.len(),
@@ -1395,39 +1589,46 @@ impl<'a> RegionStructurer<'a> {
             );
         }
 
-        // If the loop *head itself* is multi-entry (an in-edge from outside the body
-        // that is not a back-edge), the loop is irreducible at the head and these
-        // schemas cannot reduce it.  Bail so the caller falls back to
-        // `CollapseStructure` rather than spinning the round budget.
+        // Irreducible at the head (multi-entry that is not a back-edge): when the
+        // head is a real RI loop head, virtualize the *extra* head entries (the
+        // abnormal-entry edges that make it multi-entry) to gotos so the loop
+        // becomes single-entry — the kuna analog of angr's abnormal-entries
+        // handling.  When it is NOT a real RI loop head (a structural false
+        // positive, e.g. a high-in-degree continuation merge the natural-loop walk
+        // mistakes for a loop), refinement must not touch it — bail so the merge is
+        // handled by the acyclic schemas / virtualize fallback instead.
         if self.head_extra_entries(head, &in_body) > 0 {
-            return Ok(false);
+            if ri_loop.is_none() {
+                return Ok(LoopRefineOutcome::Irreducible);
+            }
+            let extra = self.head_extra_entry_edges(head, &in_body);
+            let mut any = false;
+            for (src, e) in extra {
+                self.graph.set_goto_branch(src, e)?;
+                any = true;
+            }
+            return Ok(if any {
+                LoopRefineOutcome::Progressed
+            } else {
+                LoopRefineOutcome::Irreducible
+            });
         }
 
         let mut progressed = false;
 
-        // (3a) Mid-body entry edges first: an entry into the body other than at
-        //      head makes the loop multi-entry (irreducible / head-in-body).
-        //      Virtualizing them to gotos makes the loop single-entry at head.
+        // (3a) Mid-body entries → goto (make the loop single-entry at head).
         for (src, e) in mid_entry_edges.iter() {
             self.graph.set_goto_branch(*src, *e)?;
             progressed = true;
         }
         if progressed {
-            return Ok(true);
+            return Ok(LoopRefineOutcome::Progressed);
         }
 
         // (3b) Secondary latches → goto (continue).  Keep ONE primary latch
-        //      structural (the single back-edge the fold rules need) and
-        //      virtualize the rest.  These goto-marked latches are exactly the
-        //      edges a later (opt-in) `scope_break`/loop-break pass renders as
-        //      `continue;`; left as gotos they render `goto <head-label>`.  We do
-        //      NOT set the `f_continue_goto` flag here — the renderer's break/
-        //      continue determination is a separate (gated) pass; setting it
-        //      prematurely produces a mis-rendered loop.
+        //      structural (the deepest, highest-index source) so the fold rules
+        //      have the single back-edge they need; virtualize the rest.
         if latch_edges.len() > 1 {
-            // Primary = the latch whose source has the highest index (deepest),
-            // so the remaining (earlier) ones become gotos — these are the edges
-            // Ghidra's TraceDAG would also have to virtualize.
             let primary = latch_edges
                 .iter()
                 .copied()
@@ -1441,24 +1642,16 @@ impl<'a> RegionStructurer<'a> {
                 progressed = true;
             }
             if progressed {
-                return Ok(true);
+                return Ok(LoopRefineOutcome::Progressed);
             }
         }
 
-        // (3c) Secondary exits → goto.  Keep ONE structural exit (to the chosen
-        //      normal-exit target) and virtualize every OTHER exit edge as a goto.
-        //      This is the heart of the win: the loop now has a single structural
-        //      exit + a single structural back-edge, so the body collapses to the
-        //      clean while-do/do-while/inf-loop shape the fold rules accept — with
-        //      strictly fewer virtualized edges than Ghidra's per-edge TraceDAG.
-        //      We only ever keep one exit STRUCTURAL when its source can also reach
-        //      the loop back-edge (so the loop still has a structural body path);
-        //      if every exit shares its source with the head condition, keep none
-        //      structural here and let the fold's own 2-out handle the exit.
+        // (3c) Secondary exits → goto (break).  Keep ONE structural exit (to the
+        //      chosen normal-exit target) and virtualize every other exit edge.
+        //      The kept exit lets the loop fold (single structural exit + single
+        //      back-edge → while/do-while/inf-loop); `scopeBreak` then lowers the
+        //      virtualized loop-exit gotos to `break;`.
         if exit_edges.len() > 1 {
-            // The single structural exit: prefer one whose source is NOT the head
-            // (so the head's own 2-out condition stays the loop test), else the
-            // first exit edge in (src-index, dst-index) order.
             let keep = self.choose_structural_exit(head, &exit_edges, normal_exit);
             for &(src, e, _dst) in exit_edges.iter() {
                 if Some((src, e)) == keep {
@@ -1469,14 +1662,52 @@ impl<'a> RegionStructurer<'a> {
             }
         }
 
-        Ok(progressed)
+        Ok(if progressed {
+            LoopRefineOutcome::Progressed
+        } else {
+            LoopRefineOutcome::NoChange
+        })
+    }
+
+    /// Choose the loop's normal exit target.  With the region identifier's exit
+    /// frontier (`exit_addrs`), prefer the live exit edge whose destination address
+    /// is the LOWEST in that frontier (a deterministic, region-grounded surrogate
+    /// for the angr post-order-earliest normal exit).  Otherwise fall back to
+    /// [`Self::choose_normal_exit`] (most-targeted, ties by index).
+    fn choose_normal_exit_grounded(
+        &self,
+        exit_edges: &[(BlockId, int4, BlockId)],
+        exit_addrs: &Option<std::collections::BTreeSet<uintb>>,
+    ) -> Option<BlockId> {
+        if let Some(addrs) = exit_addrs {
+            if !addrs.is_empty() {
+                // Among the live exit-edge destinations, pick the one whose address
+                // is smallest (BTreeSet iterates ascending, so the first matching
+                // frontier address that has a live edge wins).
+                let mut best: Option<(uintb, BlockId)> = None;
+                for &(_, _, dst) in exit_edges.iter() {
+                    if let Some(a) = self.component_addr(dst) {
+                        if addrs.contains(&a) {
+                            match best {
+                                None => best = Some((a, dst)),
+                                Some((ba, _)) if a < ba => best = Some((a, dst)),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                if let Some((_, dst)) = best {
+                    return Some(dst);
+                }
+            }
+        }
+        self.choose_normal_exit(exit_edges)
     }
 
     /// Pick the single exit edge to keep structural when refining a multi-exit
     /// loop: prefer an exit whose source is the loop head (so the head's natural
     /// 2-out condition remains the loop test → a clean while/do-while), else the
     /// earliest exit edge by `(src index, dst index)`.  Returns `(src, edge)`.
-    #[allow(dead_code)] // Inc 5 refinement helper (see `refine_loop_edges`).
     fn choose_structural_exit(
         &self,
         head: BlockId,
@@ -1522,7 +1753,6 @@ impl<'a> RegionStructurer<'a> {
     /// `bblocks` — `block_get_start` does not resolve through a cross-arena
     /// `BlockCopy`, so `index` is the reliable deterministic key here).  Mirrors
     /// angr `_refine_cyclic_core`'s successor pick.
-    #[allow(dead_code)] // Inc 5 refinement helper (see `refine_loop_edges`).
     fn choose_normal_exit(&self, exit_edges: &[(BlockId, int4, BlockId)]) -> Option<BlockId> {
         if exit_edges.is_empty() {
             return None;
@@ -1552,7 +1782,6 @@ impl<'a> RegionStructurer<'a> {
     /// means the loop is multi-entry at the head (irreducible) — these schemas
     /// cannot reduce it and the caller must fall back.  (A normal single-entry
     /// loop has exactly one such edge: the loop preheader; we tolerate up to one.)
-    #[allow(dead_code)] // Inc 5 refinement helper (see `refine_loop_edges`).
     fn head_extra_entries(
         &self,
         head: BlockId,
@@ -1575,6 +1804,54 @@ impl<'a> RegionStructurer<'a> {
         } else {
             0
         }
+    }
+
+    /// The loop head's *extra* (abnormal) entry edges to virtualize, KEEPING the
+    /// single lowest-index (earliest) non-back-edge predecessor as the structural
+    /// preheader and returning every other non-back-edge, non-goto in-edge as a
+    /// `(src, out-edge-index)` pair.  Used when an RI loop head is multi-entry: the
+    /// kuna analog of angr's abnormal-entries → goto handling, making the loop
+    /// single-entry so it can fold.
+    fn head_extra_entry_edges(
+        &self,
+        head: BlockId,
+        in_body: &std::collections::BTreeSet<BlockId>,
+    ) -> Vec<(BlockId, int4)> {
+        // Collect every non-back-edge, non-goto predecessor from outside the body.
+        let mut preds: Vec<BlockId> = Vec::new();
+        {
+            let hb = self.graph.block(head);
+            for j in 0..hb.size_in() {
+                if hb.is_back_edge_in(j) || hb.is_goto_in(j) {
+                    continue;
+                }
+                let p = hb.get_in(j);
+                if !in_body.contains(&p) {
+                    preds.push(p);
+                }
+            }
+        }
+        if preds.len() <= 1 {
+            return Vec::new();
+        }
+        // Keep the lowest-index predecessor as the structural preheader.
+        let keep = preds
+            .iter()
+            .copied()
+            .min_by_key(|&p| self.graph.block(p).get_index());
+        let mut res: Vec<(BlockId, int4)> = Vec::new();
+        for &p in preds.iter() {
+            if Some(p) == keep {
+                continue;
+            }
+            let pb = self.graph.block(p);
+            for e in 0..pb.size_out() {
+                if pb.get_out(e) == head && !pb.is_goto_out(e) && !pb.is_back_edge_out(e) {
+                    res.push((p, e));
+                }
+            }
+        }
+        res
     }
 
     // Note on break/continue: angr's structurer emits `BreakNode`/`ContinueNode`
@@ -1752,4 +2029,20 @@ struct Edge {
     src: BlockId,
     edge: int4,
     dst: BlockId,
+}
+
+/// Outcome of [`RegionStructurer::refine_loop_edges`] on one loop head.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopRefineOutcome {
+    /// At least one secondary exit / latch / mid-entry edge was virtualized to a
+    /// goto — the structurer made progress and should re-run its schema cascade.
+    Progressed,
+    /// The loop is multi-entry at the head (irreducible); refinement cannot make
+    /// it foldable, so the caller leaves it for the virtualize fallback /
+    /// `CollapseStructure`.
+    Irreducible,
+    /// Nothing needed refining for this head (already single-exit/single-latch, or
+    /// its body has not yet collapsed enough to expose the secondary edges) — the
+    /// caller tries the next head.
+    NoChange,
 }

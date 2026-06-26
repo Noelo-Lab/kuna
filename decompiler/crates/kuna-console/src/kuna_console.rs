@@ -187,6 +187,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
+        "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         // (kuna) Analysis-pass gates: the live `current` field reflects each pass's
         // per-run enable flag (set by `--option <id> on|off`). Real-ELF path only;
@@ -196,6 +197,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "libproto" => on_off(conf.analysis_libproto),
         "strings" => on_off(conf.analysis_strings),
         "entry_disc" => on_off(conf.analysis_entry_disc),
+        "eh_frame_full" => on_off(conf.analysis_eh_frame_full),
         "arm_markers" => on_off(conf.analysis_arm_markers),
         "mips_gp" => on_off(conf.analysis_mips_gp),
         "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),

@@ -259,5 +259,6 @@
 0252                  finalstructure
 0253                  gotoreduce
 0254                  ifelseflatten
-0255        !         prototypewarnings
-0256                  stop
+0255                  crossjumprevert
+0256        !         prototypewarnings
+0257                  stop

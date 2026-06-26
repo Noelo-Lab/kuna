@@ -288,6 +288,12 @@ pub struct Architecture {
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump`, default off).
     pub tail_call_jumps: bool,
+    /// (kuna) Treat a direct CALL whose resolved callee display name matches a
+    /// known ELF no-return name (`__stack_chk_fail`, `abort`, `exit`, …) as
+    /// no-return at flow time, even when the address-keyed no-return flag is unset
+    /// — the undefined-extern (`ET_REL .o`) case the analysis-tier `noreturn_known`
+    /// pass cannot reach (`option noreturn_extern`, default off).
+    pub noreturn_extern_calls: bool,
     /// (kuna GH-6882) Let a SPARC struct-return post-call `unimp` fall through
     /// (C++ `sparc_struct_return`).
     pub sparc_struct_return: bool,
@@ -319,6 +325,22 @@ pub struct Architecture {
     /// jumptable index by an out-of-band CBRANCH range guard the basic model's
     /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
     pub switch_guard_bound: bool,
+    /// (kuna, angr `test_switch_case_shared_case_nodes_b2sum_digest`) Recover a
+    /// GCC PIC relative-offset jump table whose base register is a loop-carried
+    /// MULTIEQUAL (the `lea .rodata` table base is set before a getopt-style loop
+    /// while the `BRANCHIND` is inside it).  The path-meld collapses to the final
+    /// `base+offset` add, so the CBRANCH range guard on the load index never
+    /// bounds it; this rebuilds the meld as a clean single path down to the
+    /// guarded index so the table resolves (C++ `switch_shared_case`).
+    pub switch_shared_case: bool,
+    /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
+    /// direct CALL to a function whose *name* matches the vendored ELF
+    /// known-no-return list as no-return at the `query_call_no_return` flow seam,
+    /// even when the address-keyed `noreturn_known` scan emitted no fact (an
+    /// ET_REL `.o` undefined extern such as `__stack_chk_fail`). DIV-13 default-on
+    /// (clean 0/675 ablation; a no-op on a normal ELF since the proto flag is
+    /// already set). See `kuna_noreturn_externmatch`.
+    pub noreturn_extern_match: bool,
     /// (kuna GH-8500) Hold a store-through-a-stack-pointer-alias across the
     /// deadcode race (C++ `stack_alias_deadstore`).
     pub stack_alias_deadstore: bool,
@@ -334,6 +356,19 @@ pub struct Architecture {
     /// Ghidra's `CollapseStructure` (option `regionstructure`, DIV-12 default-on:
     /// the primary structuring path; falls back to `CollapseStructure` on irreducible code).
     pub region_structure: bool,
+    /// (kuna) Region structurer cyclic loop-successor refinement: when
+    /// `region_structure` is on, refine a multi-exit / multi-latch (or
+    /// irreducible mid-entry) loop by virtualizing its *secondary* exits and
+    /// latches to gotos (lowered to `break;`/`continue;` by the existing
+    /// `scopeBreak`/loop-construction passes) so the loop folds into a structured
+    /// `while`/`do-while`/`for`/inf-loop instead of falling back to
+    /// `CollapseStructure` (option `regionlooprefine`, default-OFF opt-in).  A
+    /// strict superset of the cyclic schemas: a loop the base schemas already fold
+    /// is untouched (so reducible code stays byte-identical); only loops that
+    /// would otherwise fall back are refined.  Port of angr `RegionIdentifier`'s
+    /// `_refine_loop_successors_to_guarded_successors` /
+    /// `_ensure_jump_at_loop_exit_ends` (the `force_loop_single_exit` path).
+    pub region_loop_refine: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
@@ -342,6 +377,10 @@ pub struct Architecture {
     /// whose true-clause is statement-terminating, re-parenting the else body as
     /// the `if`'s follower (`flatten_ifelse`).
     pub flatten_ifelse: bool,
+    /// (kuna) angr SAILR `CrossJumpReverter`: revert compiler cross-jumping by
+    /// duplicating a small *non-return* cross-jump tail into the `goto` source so
+    /// both paths fall straight through (`revert_cross_jumps`, opt-in default-off).
+    pub revert_cross_jumps: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -396,6 +435,25 @@ pub struct Architecture {
     pub analysis_strings: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
     pub analysis_entry_disc: bool,
+    /// (kuna) Gate the `.eh_frame` LSDA landing-pad discovery sub-feature of the
+    /// always-on entry-discovery pass (`eh_frame_full`, the GccExceptionAnalyzer
+    /// `.gcc_except_table` markup); default **off** (output-changing: adds the
+    /// discovered exception-handler landing pads as function entries).
+    pub analysis_eh_frame_full: bool,
+    /// (kuna) Gate the **full byte-pattern function-start** pass
+    /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
+    /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
+    /// entire vendored pattern corpus (`s1_entry/patterns/*.xml`, the
+    /// `<patternpairs>` pre/post sequences + bare `<funcstart/>` patterns), as a
+    /// SEPARATE pass from `entry_disc` (whose always-on oracle 5 ports only a
+    /// minimal three-prologue subset). When on, a stripped binary recovers many
+    /// more function starts (e.g. `push rbx; mov rbx,rdi` after NOP padding); the
+    /// commit seam adds each as `sub_<addr>`, idempotent against the funcsym stream
+    /// + the `entry_disc` entries. Default-off ⇒ the pass's facts are dropped at
+    /// commit (`engine.rs::analysis_pass_enabled`) and every parity gate is
+    /// byte-identical. Real-ELF/PE/Mach-O path only ⇒ the XML datatest oracle is
+    /// structurally untouched.
+    pub analysis_funcstart_patterns: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
@@ -414,11 +472,27 @@ pub struct Architecture {
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
     pub analysis_dwarf: bool,
+    /// (kuna) Gate the DWARF `.debug_line` source-line comment pass (`dwarf_lines`);
+    /// default **off** — it changes the decompiled output (adds `/* file:line */`
+    /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
+    pub analysis_dwarf_lines: bool,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
     pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
     /// Ghidra `AddressTableAnalyzer.setDefaultEnablement(false)`).
     pub analysis_addrtable: bool,
+    /// (kuna) Gate the scalar/operand reference-markup pass (`operand_refs`); the
+    /// kuna analog of Ghidra's `ScalarOperandAnalyzer`/`ElfScalarOperandAnalyzer`.
+    /// Default **off**: `ScalarOperandAnalyzer.getDefaultEnablement` is `!isElf`
+    /// (Ghidra ships the producing analyzer DISABLED for every ELF), the ELF
+    /// subclass only *removes* bad `.got`/`.plt` refs kuna never creates, and the
+    /// one useful product (a `.rodata` string typed `char*`) is already delivered
+    /// by the always-on `s1_strings` + libproto/S5 typing — so a per-instruction
+    /// immediate scan is net-negative (over-accepts). When on, it linear-decodes the
+    /// executable sections and plants a typed `char[N]`+readonly fact for each
+    /// scalar immediate that points into allocated read-only data. Real-ELF path
+    /// only ⇒ the XML datatest oracle is structurally untouched.
+    pub analysis_operand_refs: bool,
     /// (kuna) Gate the format-string varargs-typing behavior (`formatstring`,
     /// `FormatStringAnalyzer` half B); default **off** (matches Ghidra
     /// `FormatStringAnalyzer.setDefaultEnablement(false)`).  Unlike the other
@@ -455,6 +529,20 @@ pub struct Architecture {
     /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
     /// gate is byte-identical.
     pub analysis_noreturn_propagate: bool,
+    /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
+    /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
+    /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
+    /// with the warning *"IT MAY CREATE A LOT OF BAD CODE!"*): a speculative
+    /// gap-filler that, over the undefined gaps between discovered functions,
+    /// speculatively decodes each gap start and accepts it as a NEW function entry
+    /// when it (a) disassembles into a valid subroutine (a clean RET, > 2
+    /// instructions) AND (b) matches a function-start byte fingerprint shared by ≥ 4
+    /// of the already-discovered functions. Finds functions reachable ONLY through
+    /// an indirect/data path (a `.rodata` function-pointer table) that entry
+    /// discovery + funcsyms miss. Reads the Listing (`--option listing on` builds
+    /// it); a no-op when the Listing is absent. Default-off ⇒ every parity gate is
+    /// byte-identical.
+    pub analysis_aif: bool,
     /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
     /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
     /// **on**, but the pass is registered ONLY for a Go binary
@@ -642,6 +730,7 @@ impl Architecture {
             add_carry_chain: false,
             v850_indirect_branch: false,
             tail_call_jumps: false,
+            noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
@@ -652,12 +741,16 @@ impl Architecture {
             fold_flag_compare: false,
             switch_modulo_bound: false,
             switch_guard_bound: false,
+            switch_shared_case: false,
+            noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
             region_structure: true,
+            region_loop_refine: false,
             reduce_return_gotos: false,
             flatten_ifelse: false,
+            revert_cross_jumps: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -673,17 +766,22 @@ impl Architecture {
             analysis_libproto: false,
             analysis_strings: false,
             analysis_entry_disc: false,
+            analysis_eh_frame_full: false,
+            analysis_funcstart_patterns: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
+            analysis_dwarf_lines: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
+            analysis_operand_refs: false,
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
+            analysis_aif: false,
             analysis_gopclntab: false,
             macho_arm64e: false,
 
@@ -739,6 +837,7 @@ impl Architecture {
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.tail_call_jumps = false; // (kuna) default-OFF opt-in: default-on regresses 2 datatests (Long double #1/#2); tee-O2 tail-jumps
+        self.noreturn_extern_calls = false; // (kuna) default-OFF opt-in: name-based extern no-return overlaps `noreturn_known`'s name match for defined/imported symbols (default-on would change PE/ELF `exit`-family handling under `noreturn_known off`); kept opt-in for the ET_REL `.o` undefined-extern case
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
@@ -747,12 +846,16 @@ impl Architecture {
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.switch_shared_case = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
+        self.region_loop_refine = false; // (kuna) default-off opt-in (region structurer multi-exit/irreducible loop-successor refinement)
         self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
         self.flatten_ifelse = false; // (kuna) default-off opt-in (angr IfElseFlattener)
+        self.revert_cross_jumps = false; // (kuna) default-off opt-in (angr SAILR CrossJumpReverter)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
@@ -781,17 +884,24 @@ impl Architecture {
         self.analysis_libproto = true;
         self.analysis_strings = true;
         self.analysis_entry_disc = true;
+        // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
+        // output-changing: adds the discovered exception landing pads as entries).
+        self.analysis_eh_frame_full = false;
+        self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
+        self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
+        self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
+        self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
@@ -851,6 +961,7 @@ impl Architecture {
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
+            "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
             "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
@@ -869,6 +980,8 @@ impl Architecture {
             }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
             "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
+            "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
+            "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
@@ -880,6 +993,10 @@ impl Architecture {
                 self.region_structure = val;
                 Ok(msg)
             }
+            "regionlooprefine" => on_off!(
+                region_loop_refine,
+                "Region structurer multi-exit/irreducible loop-successor refinement"
+            ),
             "gotoreduce" => {
                 let (val, msg) =
                     crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
@@ -890,6 +1007,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::s8_structure::kuna_ifelseflatten::OptionIfElseFlatten.apply(p1)?;
                 self.flatten_ifelse = val;
+                Ok(msg)
+            }
+            "crossjumprevert" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_crossjumpreverter::OptionCrossJumpReverter.apply(p1)?;
+                self.revert_cross_jumps = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -925,6 +1048,12 @@ impl Architecture {
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
+            "eh_frame_full" => {
+                on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
+            }
+            "funcstart_patterns" => {
+                on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
+            }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
             // (kuna) Loader-tier gate: also bridge to the env var the loader reads
@@ -942,8 +1071,12 @@ impl Architecture {
             }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
+            "dwarf_lines" => {
+                on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
+            }
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
+            "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
             "formatstring" => {
                 on_off!(analysis_formatstring, "Format-string varargs-typing pass")
             }
@@ -953,6 +1086,9 @@ impl Architecture {
             }
             "noreturn_propagate" => {
                 on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
+            }
+            "aif" => {
+                on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
             }
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
@@ -1223,8 +1359,10 @@ impl Architecture {
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         seam.region_structure = self.region_structure; // regionstructure
+        seam.region_loop_refine = self.region_loop_refine; // regionlooprefine
         seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         seam.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
+        seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
@@ -1261,6 +1399,9 @@ impl Architecture {
         // (kuna, angr) carry the CBRANCH-guard jump-table index-bound gate
         // (`option switchguardbound`) so `JumpBasic::recoverModel` reaches it.
         seam.switch_guard_bound = self.switch_guard_bound;
+        // (kuna, angr) carry the loop-carried-base relative-offset jump-table gate
+        // (`option switchsharedcase`) so `JumpBasic::recoverModel` reaches it.
+        seam.switch_shared_case = self.switch_shared_case;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
