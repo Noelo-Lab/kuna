@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr SAILR / Phoenix goto-reduction via return-tail duplication WITH a call
+    (Basque et al., USENIX Security 2024 "SAILR"; ReturnDuplicatorLow /
+    ReturnDuplicatorBase, max_calls_in_regions).
+
+    morton 'my_message_callback' (x86-64, GCC) @ 0x403de7 (file vaddr 0x3de7,
+    relocated to image base 0x400000).  An if/else-if cascade over the parsed
+    command token has a shared epilogue 'free(v6); return;'.  The "Invalid Command"
+    arm must skip the rest of the body and jump straight to that epilogue, so
+    Ghidra's CollapseStructure must express that in-edge as an unstructured
+    'goto label_4041d6;' with the epilogue 'label_4041d6: free(v6); return;'
+    (CollapseStructure has no schema that duplicates a tail to avoid a goto).  angr
+    emits zero gotos by duplicating the 'free(ptr); return;' epilogue into the arm,
+    turning the cross-edge into a structured early return.
+
+    This is the THIRD SAILR goto-reduction pass and is distinct from the two merged
+    siblings, both of which decline this exact shape:
+      * gotoreduce (return tail) REJECTS any call in the tail, so it cannot handle
+        'free(v6); return;' (a return tail WITH a call);
+      * crossjumprevert (non-return fall-through tail) explicitly declines a tail
+        that ends in 'return'.
+    With BOTH gotoreduce AND crossjumprevert on, the morton goto+label remain.
+    Only 'taildup' removes them (matching angr's max_calls_in_regions=2 budget).
+
+    Stage model: S8 "goto-quality" sub-stage.  The option-gated 'ActionTailDup'
+    (option 'taildup', default-OFF) runs after ActionFinalStructure (and after the
+    two sibling passes): it finds an unstructured 'goto T' (here a BlockGoto arm
+    '{ stmts; goto label }') where T is a small single-successor basic-block chain
+    ending in 'return' that may contain up to 2 calls (no STORE), and inlines that
+    return tail in place of the goto (a print-tree copy of the same ops, no p-code
+    cloned and def/use untouched), then clears T's now-unused label.  Each
+    duplication is logged ('taildup: duplicated return-call tail ...').
+
+    The PLT call targets (strtok/strlen/malloc/mosquitto_publish/strcmp/etc.) are
+    outside this single-function chunk, so they render as unnamed 'sub_<addr>'
+    calls; only 'free' (0x403890) is named, since it is the call inside the
+    duplicated tail.  That is irrelevant to the goto metric.
+
+    Pass 1 (option taildup off): the bug is present; one 'goto label_4041d6' and
+    the 'label_4041d6:' definition (so 'goto label_' = 1, 'label_4041d6' = 2).
+    Pass 2 (option taildup on): the goto and label are gone and the
+    'free(v6); return;' tail is duplicated into the arm, so the combined 'free(v6)'
+    count rises from one (pass 1) to three (one in pass 1 plus two in pass 2: the
+    inlined early-return plus the shared fall-through epilogue).
+-->
+<bytechunk space="ram" offset="0x403de7">
+f30f1efa554889e5534883ec6848897da8488975a04889559848894d90488b4598488b4010488d35f59100004889c7e8e5fcffff488945c8488d35e4910000bf00000000e8d0fcffff488945d0488d05d0910000488945d8488d05d3910000488945e0488b05eff100004889c7e847faffff4883c02c4889c7e82bf9ffff488945e8c745b800000000c745bc00000000c745c000000000c745c4000000000fb60584f1000083f00184c00f85380300000fb605d1f2000084c07442488b45980fb6402084c07436488b4598488b5008488b45a84883ec086a0141b90100000041b800000000b900000000488d3560f300004889c7e820fbffff4883c41048837dd0007410488b45d04889c7e809f8ffff85c07465488b45d84889c7e899f9ffff89c1488b55d8488b45a84883ec086a0041b9010000004989d0488d1502910000be000000004889c7e8ccfaffff4883c4108945c4837dc4000f848d0200008b45c489c6488d3de2900000b800000000e805f7ffffe97202000048837dc8007545488b45e04889c7e82df9ffff89c1488b55e0488b45a84883ec086a0041b9010000004989d0488d1596900000be000000004889c7e860faffff4883c4108945c4e92a020000488b45c8488d35969000004889c7e801fbffff85c07552be52000000bf44000000e8c1fdffff8945b8488b1d64f00000488b055df000004889c7e8b5f8ffff488d702b8b55b8488b45e84189d04889d9488d155d9000004889c7b800000000e890f6ffffe914010000488b45c8488d35689000004889c7e898faffff85c07552be64000000bf32000000e858fdffff8945bc488b1dfbef0000488b05f4ef00004889c7e84cf8ffff488d70228b55bc488b45e84189d04889d9488d152c9000004889c7b800000000e827f6ffffe9ab000000488b45c8488d352e9000004889c7e82ffaffff85c0754fbe0b000000bf00000000e8effcffff8945c0488b1d92ef0000488b058bef00004889c7e8e3f7ffff488d70208b55c0488b45e84189d04889d9488d15e58f00004889c7b800000000e8bef5ffffeb45488b45e04889c7e8b0f7ffff89c1488b55e0488b45a84883ec086a0041b9010000004989d0488d15198f0000be000000004889c7e8e3f8ffff4883c4108945c4e9ad000000488b45e84889c7e8dbf5ffff488b45e84889c7e85ff7ffff89c6488b4de8488b55d0488b45a84883ec086a0041b9010000004989c889f1be000000004889c7e893f8ffff4883c4108945c4837dc400745b8b45c489c6488d3d518f0000b800000000e8d0f4ffff488b45d84889c7e804f7ffff89c1488b55d8488b45a84883ec086a0041b9010000004989d0488d156d8e0000be000000004889c7e837f8ffff4883c410eb0790eb0490eb0190488b45e84889c7e8aef6ffff48c745e80000000090488b5df8c9c3
+</bytechunk>
+<symbol space="ram" offset="0x403de7" name="my_message_callback"/>
+<symbol space="ram" offset="0x403890" name="free"/>
+</binaryimage>
+<script>
+  <com>option taildup off</com>
+  <com>lo fu my_message_callback</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option taildup on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="angr-taildup #1 (bug, off): one residual goto to the shared free();return; tail" min="1" max="1">goto label_</stringmatch>
+<stringmatch name="angr-taildup #2 (bug, off): goto label reference + label definition present, none on" min="2" max="2">label_4041d6</stringmatch>
+<stringmatch name="angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)" min="3" max="3">free\(v6\)</stringmatch>
+</decompilertest>

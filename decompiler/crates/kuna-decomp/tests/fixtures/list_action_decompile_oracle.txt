@@ -258,7 +258,8 @@
 0251        !         setcasts
 0252                  finalstructure
 0253                  gotoreduce
-0254                  ifelseflatten
-0255                  crossjumprevert
-0256        !         prototypewarnings
-0257                  stop
+0254                  taildup
+0255                  ifelseflatten
+0256                  crossjumprevert
+0257        !         prototypewarnings
+0258                  stop

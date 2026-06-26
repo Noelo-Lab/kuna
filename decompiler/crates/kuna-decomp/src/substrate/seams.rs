@@ -559,6 +559,11 @@ pub struct Architecture {
     /// default-off).  Read by
     /// [`crate::s8_structure::kuna_crossjumpreverter`]'s `ActionCrossJumpReverter`.
     pub revert_cross_jumps: bool,
+    /// (kuna) angr SAILR `ReturnDuplicatorLow`: duplicate a small **return tail that
+    /// contains a call** (e.g. `free(p); return;`) into the `goto` source
+    /// (`dup_return_call_tails`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_taildup`]'s `ActionTailDup`.
+    pub dup_return_call_tails: bool,
     /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-10 default-on).  Read by
     /// [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure) to gate
@@ -784,6 +789,7 @@ impl Architecture {
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
+            dup_return_call_tails: false, // taildup (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)

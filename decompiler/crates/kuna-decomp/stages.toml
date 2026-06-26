@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=96, settable=60
-# (37 stage-model knobs + 20 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=97, settable=63
+# (39 stage-model knobs + 21 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1840,6 +1840,23 @@ use_when = "Set on when kuna emits 1+ gotos to a shared, condensed *non-return* 
 example = "option crossjumprevert on"
 source_decompiler = "angr"
 inspiration = "test_who_condensing_opt_reversion; SAILR CrossJumpReverter/ReturnDuplicatorLow (angr/analyses/decompiler/optimization_passes/cross_jump_reverter.py); who.o scan_entries"
+change_kind = "structure-recovery"
+
+[[settable]]
+option = "taildup"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-ReturnDuplicatorLow-call-tail"
+summary = "After structuring, rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor basic-block chain ending in `return` that *contains a call* (e.g. a `free(p); return;` epilogue), by duplicating that return tail inline (a print-tree copy of the same ops — no p-code cloned). The third SAILR goto-reduction pass: it fills the gap between gotoreduce (return tail, rejects ALL calls) and crossjumprevert (non-return fall-through tail) — neither handles a return tail with a call. Mirrors angr ReturnDuplicatorBase whose budget is calls (max_calls_in_regions=2), not call-rejection."
+use_when = "Set on when kuna emits 1+ gotos to a shared `... free(p); return;` style epilogue (a return tail WITH a call) that angr renders goto-free by duplicating it into each arm (e.g. morton my_message_callback: 1 goto -> 0). Off (default) is byte-identical to upstream; on, the bounded (<=3 blocks / <=12 printed ops / <=2 calls, no STORE) return-call tail is duplicated so the cross-edge becomes a structured early return. Safe because the tail ends in `return`: the duplicated call is reached on exactly one structured path (the early-return arm), never both. Each duplication is logged (`taildup:`). Runs right after gotoreduce."
+example = "option taildup on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_morton_my_message_callback; SAILR ReturnDuplicatorLow / ReturnDuplicatorBase max_calls_in_regions (angr/analyses/decompiler/optimization_passes/return_duplicator_{base,low}.py); my_message_callback free();return; epilogue"
 change_kind = "structure-recovery"
 
 [[settable]]
