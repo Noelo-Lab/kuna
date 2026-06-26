@@ -35,7 +35,7 @@ fn surface_count_is_96() {
 }
 
 #[test]
-fn settable_count_is_60() {
+fn settable_count_is_61() {
     // 32 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -99,9 +99,12 @@ fn settable_count_is_60() {
     // +1 for `regionlooprefine`, the region structurer multi-exit/irreducible
     // loop-successor refinement knob, default-off opt-in;
     // +1 for `ifelseflatten`, the angr IfElseFlattener S8 terminating-if else-drop
-    // knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 60);
-    assert_eq!(SETTABLE_TABLE.len(), 60);
+    // knob, default-off opt-in;
+    // +1 for `taildup`, the angr SAILR ReturnDuplicatorLow return-tail-WITH-call
+    // duplication knob (the gap between gotoreduce and crossjumprevert), default-off
+    // opt-in.)
+    assert_eq!(kuna_num_settables(), 61);
+    assert_eq!(SETTABLE_TABLE.len(), 61);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------

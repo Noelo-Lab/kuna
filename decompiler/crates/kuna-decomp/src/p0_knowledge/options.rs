@@ -271,6 +271,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "gotoreduce",
     "ifelseflatten",
     "crossjumprevert",
+    "taildup",
     "foldcallret",
     "stackguard",
     "branchflip",
