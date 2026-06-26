@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    190,
-    190
+    192,
+    192
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -114,7 +114,7 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound, tailcalljump, regionstructure)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound, tailcalljump, regionstructure, noreturn_extern)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, tailcalljump, regionstructure)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
@@ -186,6 +186,8 @@
     "data:namestyle #5 ghidra restores: argument renders as param_N",
     "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
     "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
+    "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
+    "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",

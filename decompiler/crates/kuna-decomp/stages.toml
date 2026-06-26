@@ -1216,7 +1216,7 @@ substage = "naming-policy"
 note = "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming"
 
 # ---------------------------------------------------------------------------
-# settableTable: one row per kuna ArchOption -- the LLM control surface (24).
+# settableTable: one row per kuna ArchOption -- the LLM control surface (25).
 # live_field/live_true/live_false give build.rs the typed OptionValues field +
 # the live-value reader mapping (the literal `flag ? live_true : live_false`
 # ternary of kuna_console.cc kunaLiveValue); the three options with no live
@@ -1439,6 +1439,26 @@ source_decompiler = "angr"
 inspiration = "test_decompiling_tee_O2_tail_jumps; angr tail-call handling (direct jmp to a function/PLT thunk); setlocale_null_androidfix"
 change_kind = "structure-recovery"
 live_field = "tail_call_jumps"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "noreturn_extern"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S2"
+substage = "flow-classification"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-tail-tail-bytes-ret-dup"
+summary = "Treat a direct CALL whose resolved callee display name matches a known ELF no-return name (`__stack_chk_fail`, `abort`, `exit`, `__assert_fail`, `pthread_exit`, `longjmp`, `_Unwind_Resume`, the C++ terminate/throw family, ...) as no-return at decompile flow time - planting the artificial halt so flow stops at the call - even when the address-keyed no-return flag is unset. This is the undefined-extern case the analysis-tier `noreturn_known` pass cannot reach: in an ELF relocatable object (ET_REL `.o`) a libc no-return is an `UND` symbol with no definition/address, so the address-keyed pass never marks it, and flow runs off the function's end into the next function."
+use_when = "Flip on when decompiling a `.o` (ET_REL relocatable object) and a function balloons far past its real end - kuna swallows neighbour functions after an undefined-extern no-return call (e.g. tail.o::tail_bytes renders 326 lines / 9 gotos, pulling in adjacent `tail_lines`/`die_pipe` code after `__stack_chk_fail()`, vs angr's 96 lines / 1 goto). On = the call is no-return, the function is bounded at it (tail_bytes -> 87 lines). Kept opt-in (default off): the name match overlaps `noreturn_known`'s for defined/imported symbols, so default-on would change PE/ELF `exit`-family handling under `noreturn_known off`. Default-off is byte-identical over the 675 datatests."
+example = "option noreturn_extern on"
+source_decompiler = "angr"
+inspiration = "test_tail_tail_bytes_ret_dup; angr CFG call-graph no-return analysis (undefined-extern `__stack_chk_fail`); tail_bytes"
+change_kind = "correctness-fix"
+live_field = "noreturn_extern_calls"
 live_true = "on"
 live_false = "off"
 

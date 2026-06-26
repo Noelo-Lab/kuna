@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr test_tail_tail_bytes_ret_dup :: tail_bytes
+    (binaries/tests/x86_64/decompiler/tail.o, x86-64, ELF relocatable object).
+
+    In an ET_REL `.o` a libc no-return like `__stack_chk_fail` is an UNDEFINED
+    EXTERNAL symbol (UND, NOTYPE, size 0, no address of its own).  kuna's
+    analysis-tier known-no-return pass (`noreturn_known`, default on) keys its
+    facts on the ADDRESS of a *defined* FUNC symbol, so it never marks the UND
+    extern.  At decompile flow time the call to `__stack_chk_fail` resolves to a
+    display NAME (the relocation supplies it) but the symbol's no-return flag is
+    false, so `FlowEnvironment::query_call_no_return` returns false, no
+    artificialHalt(noreturn) is planted, and flow runs straight off the end of the
+    function into the NEXT function.  tail.o::tail_bytes (615 bytes,
+    0x401e80..0x4020e7) renders as 326 lines / 9 gotos, swallowing several
+    neighbour functions, vs angr's 96 lines / 1 goto.
+
+    Stage model: S2 "flow-classification" sub-stage.  The P0 assertion `option
+    noreturn_extern on|off` toggles a name-based no-return fallback at the flow
+    seam: when the address-keyed flag is unset, a CALL whose resolved callee name
+    matches the known ELF no-return list (`__stack_chk_fail`, `abort`, `exit`, ...,
+    leading `_` stripped, `std`-only namespace guard) is treated as no-return.
+    Default OFF (only undefined-extern no-returns are affected, i.e. `.o` targets).
+
+    Minimal reconstruction of the construct: `victim` at 0x1000 has a normal `ret`
+    on the non-fail path and, on the fail path, a `call __stack_chk_fail` (the
+    UND extern at 0x1040) as its LAST act with NO `ret` after it.  The bytes after
+    that call are the NEXT function `next_func` at 0x100a, whose body is a
+    `call neighbor_marker` (0x1050).  With the gate OFF the fall-through past the
+    no-return call decodes `next_func`'s body INTO `victim`, so `neighbor_marker(`
+    leaks into victim's decompilation; with the gate ON flow stops at the
+    `__stack_chk_fail()` call and `victim` is bounded correctly.
+
+    Pass 1 (option noreturn_extern off): assertion #1 proves the bug - the
+    neighbour function's `neighbor_marker(...)` call leaks into victim.
+    Pass 2 (option noreturn_extern on): assertion #2 proves the fix - the
+    neighbour call is gone (`neighbor_marker` count drops to 0 across both passes,
+    so min=1/max=1 holds only because of pass 1).  Assertion #3 proves
+    `__stack_chk_fail()` is still emitted as the bounding call in BOTH passes.
+-->
+<bytechunk space="ram" offset="0x1000">
+85ff7501c3e836000000e841000000c3909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090c3909090909090909090909090909090c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="victim"/>
+<symbol space="ram" offset="0x100a" name="next_func"/>
+<symbol space="ram" offset="0x1040" name="__stack_chk_fail"/>
+<symbol space="ram" offset="0x1050" name="neighbor_marker"/>
+</binaryimage>
+<script>
+  <com>option noreturn_extern off</com>
+  <com>lo fu victim</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_extern on</com>
+  <com>lo fu victim</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+  <!-- pass 1 = default (option off) reproduces the bug; pass 2 (option on) is the fix -->
+  <!-- (kuna) option noreturn_extern is default-OFF opt-in: its name match overlaps
+       noreturn_known's for defined/imported symbols, so default-on would change PE/ELF
+       exit-family handling under `noreturn_known off` (verify_multiformat_passes). -->
+
+</script>
+<stringmatch name="noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)" min="1" max="1">neighbor_marker\(</stringmatch>
+<stringmatch name="noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)" min="2" max="2">__stack_chk_fail\(</stringmatch>
+</decompilertest>
