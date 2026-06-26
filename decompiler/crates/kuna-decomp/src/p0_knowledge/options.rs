@@ -283,6 +283,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "libproto",
     "strings",
     "entry_disc",
+    // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
+    // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
+    // (output-changing: adds the discovered exception landing pads as entries).
+    "eh_frame_full",
+    // (kuna) The full byte-pattern function-start pass (Ghidra FunctionStartAnalyzer
+    // over the entire vendored pattern corpus), default-OFF (output-changing:
+    // discovers more functions). A separate gate from `entry_disc` (whose always-on
+    // oracle 5 ports only a minimal subset).
+    "funcstart_patterns",
     "arm_markers",
     "mips_gp",
     // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A
@@ -293,6 +302,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "dwarf",
     "callfixup",
     "addrtable",
+    "operand_refs",
     // (kuna) `FormatStringAnalyzer` half B (`DecompilerDependent`): the console
     // `IfcDecompile` reads this flag after the first decompile to type
     // printf/scanf varargs per call site, then re-decompiles.  Default-off

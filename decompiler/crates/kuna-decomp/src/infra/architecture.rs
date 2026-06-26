@@ -405,6 +405,25 @@ pub struct Architecture {
     pub analysis_strings: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
     pub analysis_entry_disc: bool,
+    /// (kuna) Gate the `.eh_frame` LSDA landing-pad discovery sub-feature of the
+    /// always-on entry-discovery pass (`eh_frame_full`, the GccExceptionAnalyzer
+    /// `.gcc_except_table` markup); default **off** (output-changing: adds the
+    /// discovered exception-handler landing pads as function entries).
+    pub analysis_eh_frame_full: bool,
+    /// (kuna) Gate the **full byte-pattern function-start** pass
+    /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
+    /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
+    /// entire vendored pattern corpus (`s1_entry/patterns/*.xml`, the
+    /// `<patternpairs>` pre/post sequences + bare `<funcstart/>` patterns), as a
+    /// SEPARATE pass from `entry_disc` (whose always-on oracle 5 ports only a
+    /// minimal three-prologue subset). When on, a stripped binary recovers many
+    /// more function starts (e.g. `push rbx; mov rbx,rdi` after NOP padding); the
+    /// commit seam adds each as `sub_<addr>`, idempotent against the funcsym stream
+    /// + the `entry_disc` entries. Default-off ⇒ the pass's facts are dropped at
+    /// commit (`engine.rs::analysis_pass_enabled`) and every parity gate is
+    /// byte-identical. Real-ELF/PE/Mach-O path only ⇒ the XML datatest oracle is
+    /// structurally untouched.
+    pub analysis_funcstart_patterns: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
@@ -428,6 +447,18 @@ pub struct Architecture {
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
     /// Ghidra `AddressTableAnalyzer.setDefaultEnablement(false)`).
     pub analysis_addrtable: bool,
+    /// (kuna) Gate the scalar/operand reference-markup pass (`operand_refs`); the
+    /// kuna analog of Ghidra's `ScalarOperandAnalyzer`/`ElfScalarOperandAnalyzer`.
+    /// Default **off**: `ScalarOperandAnalyzer.getDefaultEnablement` is `!isElf`
+    /// (Ghidra ships the producing analyzer DISABLED for every ELF), the ELF
+    /// subclass only *removes* bad `.got`/`.plt` refs kuna never creates, and the
+    /// one useful product (a `.rodata` string typed `char*`) is already delivered
+    /// by the always-on `s1_strings` + libproto/S5 typing — so a per-instruction
+    /// immediate scan is net-negative (over-accepts). When on, it linear-decodes the
+    /// executable sections and plants a typed `char[N]`+readonly fact for each
+    /// scalar immediate that points into allocated read-only data. Real-ELF path
+    /// only ⇒ the XML datatest oracle is structurally untouched.
+    pub analysis_operand_refs: bool,
     /// (kuna) Gate the format-string varargs-typing behavior (`formatstring`,
     /// `FormatStringAnalyzer` half B); default **off** (matches Ghidra
     /// `FormatStringAnalyzer.setDefaultEnablement(false)`).  Unlike the other
@@ -682,6 +713,8 @@ impl Architecture {
             analysis_libproto: false,
             analysis_strings: false,
             analysis_entry_disc: false,
+            analysis_eh_frame_full: false,
+            analysis_funcstart_patterns: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -689,6 +722,7 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
+            analysis_operand_refs: false,
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_noreturn_disc: false,
@@ -790,6 +824,10 @@ impl Architecture {
         self.analysis_libproto = true;
         self.analysis_strings = true;
         self.analysis_entry_disc = true;
+        // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
+        // output-changing: adds the discovered exception landing pads as entries).
+        self.analysis_eh_frame_full = false;
+        self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -797,6 +835,7 @@ impl Architecture {
         self.analysis_dwarf = true;
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
+        self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
@@ -932,6 +971,12 @@ impl Architecture {
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
+            "eh_frame_full" => {
+                on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
+            }
+            "funcstart_patterns" => {
+                on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
+            }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
             // (kuna) Loader-tier gate: also bridge to the env var the loader reads
@@ -951,6 +996,7 @@ impl Architecture {
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
+            "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
             "formatstring" => {
                 on_off!(analysis_formatstring, "Format-string varargs-typing pass")
             }

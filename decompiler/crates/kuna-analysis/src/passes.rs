@@ -71,6 +71,37 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // idempotent against the funcsym stream). After LibProtoPass so prototypes
         // are seeded first. Always-on, like noreturn/libproto.
         Box::new(crate::s1_entry::EntryDiscoveryPass),
+        // S1 `.eh_frame` LSDA landing-pad discovery (`eh_frame_full`): the
+        // GccExceptionAnalyzer full `.gcc_except_table` markup. For each FDE, follow
+        // the CIE `L` augmentation to its LSDA pointer in `.gcc_except_table`,
+        // decode the call-site table, and emit each exception-handler landing pad
+        // (catch/cleanup block, reached only by the unwinder) as a discovered
+        // function entry — net-new code targets `EntryDiscoveryPass`'s FDE-pcBegin /
+        // prologue / libc-start oracles never see (a landing pad sits mid-function).
+        // Registered always (the facts are computed + stashed at load), but the
+        // commit is GATED by `--option eh_frame_full on` (default-OFF,
+        // output-changing: it ADDS entries) via `engine.rs::analysis_pass_enabled`.
+        // A default run therefore commits nothing here and the discovery set is
+        // byte-identical to the FDE-pcBegin-only behavior. After EntryDiscoveryPass
+        // (this is the deeper `.eh_frame` markup). The DW_CFA_* call-frame
+        // instructions are NOT recovered — kuna's S5/S7 frame analysis already
+        // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
+        Box::new(crate::s1_entry::EhFrameLsdaPass),
+        // S1 full byte-pattern function starts (FuncStartPatternPass): the faithful
+        // port of Ghidra's `FunctionStartAnalyzer` over the ENTIRE vendored pattern
+        // corpus (`s1_entry/patterns/*.xml`: the `<patternpairs>` pre/post sequences
+        // + bare `<funcstart/>` patterns, x86/x86-64 headline + AArch64/ARM/RISC-V/
+        // MIPS/PPC). Unlike `EntryDiscoveryPass`'s always-on minimal oracle 5 (three
+        // bare x86-64 prologues), this applies the full set with the upstream
+        // pre/post matching: a candidate is a start iff a postpattern matches at it
+        // AND a prepattern matches the bytes immediately before it. Default-**OFF**
+        // (output-changing: discovers more functions): registered always, but its
+        // facts are dropped at commit unless `--option funcstart_patterns on`
+        // (`engine.rs::analysis_pass_enabled` reads `arch.analysis_funcstart_patterns`,
+        // default false), so a default run is byte-identical. After EntryDiscoveryPass
+        // (its discoveries are a superset; the commit seam dedups against the entries
+        // EntryDiscoveryPass already emits). See `s1_entry::FuncStartPatternPass`.
+        Box::new(crate::s1_entry::FuncStartPatternPass),
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna
@@ -140,6 +171,24 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // change behind the Override::queryMultistageJumptable seam) — it is only the
         // application-layer absolute-pointer-table discovery. See docs/analysis-port-log.md.
         // Box::new(crate::s1_addrtable::AddrTablePass { min_run: 2 }),
+
+        // S1 scalar/operand reference markup (OperandRefsPass) is implemented +
+        // tested but **gated off by default** AND runs DEFERRED (not in this
+        // load-time list) — the kuna analog of Ghidra's `ScalarOperandAnalyzer` /
+        // `ElfScalarOperandAnalyzer`. Like the Listing/xref tier (PR6), it must run
+        // at the deferred commit point (`read symbols`) rather than at load: it
+        // linear-decodes the executable sections via the engine `Translate`, and the
+        // program loadimage is only attached to the engine's `Sleigh` AFTER this
+        // load-time pass list runs (`set_loader` in `bootstrap_from_object`), so a
+        // load-time decode finds no bytes. It is therefore driven from
+        // [`run_operand_refs`] in `commit_pending_analysis`, gated on
+        // `analysis_operand_refs` (`--option operand_refs on`). OFF by default
+        // because (a) Ghidra ships the producing analyzer `setDefaultEnablement` =
+        // `!isElf` (disabled for every ELF) and the ELF subclass only *removes* bad
+        // `.got`/`.plt` refs kuna never creates; (b) its one useful product (a
+        // `.rodata` string typed as `char*`) is already delivered by the always-on
+        // `s1_strings` + libproto/S5 typing for the common case; (c) a per-instruction
+        // immediate scan over-accepts. See docs/analysis-port-buildplan.md §1.2.
 
         // DELIBERATELY ABSENT — `AggressiveInstructionFinderAnalyzer` (AIF, + the ARM
         // variant). Not ported: it is a *post-disassembly* speculative gap-filler that
@@ -268,6 +317,36 @@ pub fn run_listing_consumers(
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
         .collect()
+}
+
+/// Build an [`AnalysisCtx`] and run the **deferred** scalar/operand reference-markup
+/// pass ([`crate::s1_operand_refs::OperandRefsPass`]), returning its output keyed by
+/// the pass id (`"operand_refs"`).
+///
+/// Like the Listing tier (PR6), this pass must run at the deferred commit point
+/// rather than at load: it linear-decodes the executable sections through the
+/// engine `Translate`, and the program loadimage is only attached to the engine's
+/// `Sleigh` *after* the load-time pass list runs (`set_loader` in
+/// `bootstrap_from_object`). A load-time decode would find no bytes (every decode
+/// fails). The console calls this from `commit_pending_analysis` (reached at `read
+/// symbols`, after `set_loader`), gated on `arch.analysis_operand_refs`
+/// (`--option operand_refs on`). `ctx.listing` is `None` — the pass does its own
+/// linear decode, independent of the Listing tier (which never populates the data
+/// references this pass needs; see `docs/listing-tier-design.md` §2.2).
+///
+/// A parse failure yields an empty output (additive, never fails). Bound to the
+/// real-ELF path: the XML datatest path never calls this, so the parity oracles
+/// are structurally untouched.
+pub fn run_operand_refs(
+    bytes: &[u8],
+    image: &ObjectLoadImage,
+    arch: &Architecture,
+) -> AnalysisOutput {
+    let Ok(file) = object::File::parse(bytes) else {
+        return AnalysisOutput::default();
+    };
+    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: None };
+    crate::s1_operand_refs::OperandRefsPass.run(&ctx)
 }
 
 /// Extract `(addr, name)` for every text/function symbol in the object — the name

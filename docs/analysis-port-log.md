@@ -3730,3 +3730,307 @@ exercises the now-default path. `kuna catalog --check` is unchanged
   + `docs/assertions.md` (the `macho-arm64e` `use_when`/`example` drop the flag
   mention), `kuna-console/tests/verify_{pe_imports,macho_imports,coff_object,object_formats,multiformat_entry,multiformat_passes,multiformat_dwarf,macho_fat,msvc_demangle}.rs`
   (de-flagged), `docs/multiformat-loader-design.md`, `docs/analysis-port-log.md`.
+
+### Increment 47 — `.eh_frame` LSDA landing-pad discovery + CFI assessment (GccExceptionAnalyzer) ✅
+
+Increment 5 mined the `.eh_frame` FDE `pcBegin` addresses (function STARTS) as an
+entry oracle. This increment ports the **rest** of Ghidra's `GccExceptionAnalyzer`:
+the **`.gcc_except_table` LSDA call-site table** → exception-handler **landing
+pads**. A landing pad (a `catch`/cleanup block) is a real code target reached
+*only* by the unwinder — it sits mid-function, so the FDE-pcBegin / prologue /
+libc-start oracles never see it, and a stripped C++ binary's entry-disc misses it.
+Output-changing (it ADDS entries), so it is **gated behind `--option eh_frame_full
+on`, default-OFF** — a default run is byte-identical to FDE-pcBegin-only.
+
+**Product 1 — LSDA landing pads → entries (the decompiler-relevant arm).** A new
+`EhFrameLsdaPass` (id `eh_frame_full`, `s1_entry/mod.rs`) walks `.eh_frame`: for
+each CIE it decodes the `zPLR` augmentation (the `L` char's LSDA pointer encoding
+alongside the `R` FDE encoding and `P` personality — `Cie.processAugmentationInfo`);
+for each FDE whose CIE has an `L`, it reads the FDE augmentation-data LSDA pointer
+(after `pcBegin`/`pcRange`/`augLen` — `FrameDescriptionEntry.createLsda`), follows
+it into `.gcc_except_table`, and decodes the LSDA header
+(`[lpStartEnc][lpStart?][ttypeEnc][ttypeOff?][callSiteEnc][callSiteLen]` —
+`LSDAHeader.create`) and the call-site table
+(`[cs_start][cs_len][cs_lp][cs_action]*` — `LSDACallSiteRecord.create`). Each
+non-zero landing pad is `lpStart + cs_lp` (with `lpStart` defaulting to the FDE's
+`pcBegin` when `lpStartEnc == omit`; `cs_lp == 0` ⇒ no landing pad). Faithful to
+`GccExceptionAnalyzer.processCallSiteRecord`, which disassembles each non-zero
+landing pad — our `AnalysisOutput.entries` fact, put through the same exec-section
++ funcsym-skip + dedup filter every oracle uses. The pass runs at load (the facts
+are stashed per-pass) but **commits** only when the gate is on
+(`engine.rs::analysis_pass_enabled` → `arch.analysis_eh_frame_full`), so a default
+run computes nothing visible.
+
+**Product 2 — CFI assessment (built vs inherited).** The CIE/FDE `DW_CFA_*`
+call-frame instructions give the CFA + saved-register rules. kuna's engine recovers
+the stack frame *from the code itself* — S5 type inference + S7 frame analysis
+(`coreaction_infertypes` / the stack-frame restructuring) reconstruct locals, the
+saved-register set, and the frame layout from the lifted p-code, exactly as Ghidra's
+decompiler does. The CFA/register-save rules therefore add **nothing** at the
+decompiler tier (they are an unwinder runtime concern, not a source-recovery one).
+**CFI is INHERITED, not rebuilt** — no DW_CFA decoder is ported (a no-op pass would
+be the wrong thing to add). The one cheap confirmation CFI *could* offer — the frame
+register (`DW_CFA_def_cfa: r7`) — is already recovered identically by the engine's
+frame analysis, so there is no win to bank. This is documented here per the brief.
+
+**Fixture + e2e.** `eh_lsda_x86_64` (vendored, `g++ -O1 -no-pie -fexceptions` +
+`strip`): a `guarded()` with two `catch` arms over an out-of-line throwing
+`may_throw()`. Landing pads (pinned, hand-decoded + `objdump`/`readelf`
+cross-checked, all `endbr64`, all mid-function): `may_throw` → `0x4012bf`;
+`guarded` → `0x4012e2` (catch dispatch), `0x401352`, `0x401366` (cleanup). The
+LSDA pointers (`0x40218c`/`0x402198`) come from the FDE augmentation data
+`8c 21 40 00`/`98 21 40 00` (`udata4`). Unit tests
+(`s1_entry::tests`): the call-site-table parse over both the real fixture and
+synthetic bytes, plus a proof that the landing pads are NOT FDE starts and that a
+no-`.gcc_except_table` binary (`fauxware`) yields none. e2e
+(`verify_eh_frame_full`): `--option eh_frame_full on` discovers `sub_4012e2`
+(decompilable by name, no `--addr`); default-off it is absent.
+
+**Speed.** The LSDA scan is one linear walk of two tiny sections, run once at load
+— sub-millisecond, below measurement resolution. End-to-end decompile (interleaved
+OFF/ON, 8 runs each on `eh_lsda_x86_64`): OFF mean 0.493 s, ON mean 0.526 s —
+within subprocess-spawn noise (the LSDA work itself is negligible; the small delta
+is the extra discovered functions the engine sees, not the scan).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**194/194 PARITY OK**, `make rust-test` **green**, `kuna catalog --check` **OK**
+(byte-identical default-off; the new settable raised the count 49 → 50). The
+`kuna-catalog.xml` stage test's `use_when`/`change_kind` count bounds were bumped
+`max 50 → 60` (the catalog now emits 50 settables + 1 from the single-`returnpair`
+catalog probe = 51 > the old 50 bound).
+
+- **Divergence/LOSS:** none to the parity oracles (the option is default-off, so
+  the discovery set is byte-identical to before). LOSS, inherited from the Increment-5
+  FDE scan: a forward-referencing CIE (CIE after its FDE) is missed (gcc never emits
+  this); the `indirect` DW_EH_PE bit (`0x80`) is unresolvable without a runtime
+  relocation; 64-bit `0xffffffff`-extended `.eh_frame` records are skipped. CFI is
+  inherited (see Product 2). SJLJ (setjmp/longjmp) exception tables are not handled
+  (the standard DWARF call-site table is the GNU C++ default and the only form in
+  the fixtures).
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (the `EhFrameLsdaPass` +
+  `scan_eh_frame_landing_pads` / `decode_lsda_landing_pads` / `parse_cie_aug` /
+  `collect_landing_pad_entries` + unit tests), `kuna-analysis/src/passes.rs`
+  (register the pass), `kuna-console/src/engine.rs` + `kuna_console.rs` (the commit
+  gate + live-value arm), `kuna-decomp/{stages.toml, src/p0_knowledge/options.rs,
+  src/infra/architecture.rs}` (the settable + the `analysis_eh_frame_full` flag),
+  the settable-count tests (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`,
+  `stage_catalog.json`, `docs/assertions.md`), `tests/stages/kuna-catalog.xml`
+  (count bounds), `kuna-console/tests/verify_eh_frame_full.rs` (e2e), the vendored
+  fixture `eh_lsda_x86_64` (+ source + README), `docs/analysis-port-log.md`.
+
+### Increment 48 — scalar/operand reference markup (`ScalarOperandAnalyzer` family, gated off) ✅
+
+Ports the salvageable subset of Ghidra's operand/reference markup family
+(`ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`, `OperandReferenceAnalyzer`,
+`DataOperandReferenceAnalyzer`) as ONE pass, **gated off by default** — clearing
+the buildplan §1.2 item (the "never-for-an-ELF-decompiler as producing passes"
+verdict) by building it so it *exists + is flippable*, rather than leaving it a doc
+note. New module `kuna-analysis/src/s1_operand_refs/` (`OperandRefsPass`, id
+`operand_refs`).
+
+**What it builds (the faithful, salvageable subset).** The one product of the
+family with decompiler relevance: a scalar immediate operand that points into
+allocated **read-only** data is an address, so type the target so it renders. The
+pass linear-decodes the executable sections through the engine `Translate`
+(`one_instruction` + a capturing `PcodeEmit` that keeps every constant-space input —
+the kuna projection of `Instruction.getOpObjects(i)` `Scalar`s), applies
+`ScalarOperandAnalyzer.checkOperands`'s value filter (reject `< 4096` and the
+byte-mask values `0xffff`/`0xff00`/…), accepts the scalar only when it lands in an
+allocated, non-writable, non-exec section (the `.rodata` partition; mirrors
+`program.getMemory().contains` + the readonly check), applies the
+`ElfScalarOperandAnalyzer` `.got`/`.plt` exclusion (those are `elf_plt`-named, never
+data refs), and for a target that begins a NUL-terminated printable run emits a
+`StringFact` (`char[N]`) + `readonly` range through the **existing** strings/readonly
+commit arms — so the printer's pointer-to-readonly-char-array literal route
+(Increment 12) renders the reference as the literal.
+
+**The empirical render result (the headline).** The scalar→string-literal render
+**works** — the printer-shadowing wall the buildplan §1.2 flagged is **gone** since
+Increment 12. On the `operand_refs_x86_64` fixture (`main` materializes the `.rodata`
+string `"hi"`@`0x402004` with `movabs $0x402004,%rax` and passes it to the
+**no-prototype** `mystery`):
+- **default-off:** `mystery(0x402004)` (the bare absolute scalar);
+- **`--option operand_refs on`:** `mystery("hi")` (the literal) — proving the pass's
+  planted `char[3]` promotes the constant into a global SPACEBASE reference that the
+  Increment-12 printer route renders as the literal, NOT the `s_<addr>` name.
+
+`"hi"` is **2 chars** (< 5, so the always-on `StringLiteralPass` skips it) and
+`mystery` has no prototype (no libproto/S5 typing), so the literal renders *only*
+because `operand_refs` typed the operand — isolating this pass's contribution. The
+pass fires only when the address **appears directly in code** as a bare immediate
+(the `movabs` / `-mcmodel=large` case); a RIP-relative `lea 0xNNN(%rip)` surfaces a
+`pc + displacement` computation, not a bare scalar, so no operand is captured —
+faithful to Ghidra's `ADDRESSES_DO_NOT_APPEAR_DIRECTLY_IN_CODE`
+(`getDefaultEnablement2`) gate. So the value-add is the narrow residual the verdict
+predicted: a short / `s1_strings`-missed read-only string operand of a no-prototype
+call where the address is materialized as a direct immediate.
+
+**Documented-as-covered-elsewhere (not built as a no-op).** The listing-cosmetic
+`OperandReferenceAnalyzer`/`DataOperandReferenceAnalyzer` halves (subroutine refs,
+address-table refs, generic xrefs) have no decompiler-relevant commit arm and are
+delivered by other passes — module docs carry the map: subroutine refs → `s1_entry`;
+jump/address tables → the engine `JumpTable::recoverAddresses` (S2) + `s1_addrtable`;
+strings → `s1_strings` + the printer route; `.plt`/`.got` → `elf_plt`.
+
+**Why default-off (the net-negative rationale, unchanged from §1.2).** (a) Ghidra
+ships the producing analyzer `getDefaultEnablement` = `!isElf` — **disabled for every
+ELF**; (b) `ElfScalarOperandAnalyzer` only *removes* bad `.got`/`.plt` refs kuna
+never creates; (c) the one useful product is already covered for the common (≥5-char,
+prototyped-call) case by `s1_strings` + libproto/S5 typing; (d) a per-instruction
+immediate scan over-accepts (the `s1_addrtable` false-positive shape). So it ships
+**ported + flippable** but off.
+
+**Deferred-run requirement (the build-timing finding).** Like the Listing tier
+(PR6), the pass runs **deferred** at the commit point (`read symbols`), NOT in the
+load-time pass list: it decodes through the engine `Translate` whose program
+loadimage is only attached (`set_loader`) *after* the load-time passes run — a
+load-time decode finds no bytes (empirically `decoded_ok=0, decoded_err=357` over the
+fixture). It is driven from `passes::run_operand_refs`, called from
+`engine.rs::commit_pending_analysis` gated on `arch.analysis_operand_refs`, sharing
+the deferred-Listing image stash.
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**194/194 PARITY OK** (the two `kuna-catalog.xml` `use_when`/`change_kind` range
+assertions had their `max` bumped `50`→`60` to admit the +1 settable; the new option
+itself adds no datatest), `make rust-test` **green** (5 `s1_operand_refs` unit tests
++ the new `verify_operand_refs` e2e gate's 2 tests), `kuna catalog --check` **OK**
+(50 settables; `stage_catalog.json` + `docs/assertions.md` regenerated). Decompile
+speed: default-off byte-identical and zero-cost (the deferred decode is skipped); on,
+adds a one-time whole-`.text` linear sweep (~0.3 s on fauxware, within noise).
+
+- **Divergence/LOSS:** none to the parity oracles (all default-off ⇒ byte-identical).
+  The pass is the residual-only producer the buildplan predicted; the listing-cosmetic
+  halves are documented as covered-elsewhere, not built. **`make test-stages`
+  delta:** the `kuna-catalog.xml` `max` bump (range loosening, intent unchanged).
+- **Changed:** new `kuna-analysis/src/s1_operand_refs/mod.rs` + `lib.rs` mod;
+  `kuna-analysis/src/passes.rs` (`run_operand_refs` deferred runner + the load-time
+  registration note); `kuna-console/src/engine.rs` (`analysis_pass_enabled` arm +
+  the deferred run in `commit_pending_analysis`); `kuna-decomp/src/infra/architecture.rs`
+  (`analysis_operand_refs` field + default + `set_kuna_option` arm);
+  `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`);
+  `kuna-decomp/stages.toml` (`[[settable]]` row); the `49`→`50` count tests
+  (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`); `tests/stages/kuna-catalog.xml`
+  (max bump); goldens `stage_catalog.json` + `docs/assertions.md`; new fixture
+  `tests/fixtures/operand_refs_x86_64`(`.c`) + README; new e2e gate
+  `kuna-console/tests/verify_operand_refs.rs`.
+
+### Increment 49 — The FULL byte-pattern function-start set (FunctionStartAnalyzer)
+
+`s1_entry` already ports Ghidra's `DittedBitSequence` matcher and a *minimal*,
+hand-written set of three bare x86-64 prologues (oracle 5,
+`prologue_pattern_starts`, always-on inside `EntryDiscoveryPass`). This increment
+vendors and parses the **entire upstream pattern corpus** and applies it with the
+upstream pre/post matching semantics, as a **separate, default-OFF** analysis pass
+(`funcstart_patterns`), so a stripped binary recovers many more function starts.
+
+**What was vendored.** The complete
+`Ghidra/Processors/{x86,AARCH64,ARM,RISCV,MIPS,PowerPC}/data/patterns/*.xml`
+(28 files) into `kuna-analysis/src/s1_entry/patterns/` — verbatim from upstream
+(`GHIDRA_REV=cef869af04c4740a71ad31a55704045b1b0d1644`, `docs/UPSTREAM.md`),
+embedded via `include_str!` (the analyzer tier has no spec-root handle). The new
+`s1_entry/patterns/mod.rs` is the faithful port of two upstream classes:
+`DittedBitSequence.initFromDittedStringData` (the full hex+binary ditted parser,
+incl. the `*` mark-offset) and `PatternPairSet.createFinalPatterns`/`restoreXml`
+(the pre/post pairing).
+
+**The matcher (the high-value half).** Faithful to `PatternPairSet`: a candidate
+is a function start iff a **postpattern** (the prologue shape) matches **at** it
+AND a **prepattern** (the preceding context — a RET/JMP/NOP/…) matches the bytes
+**immediately before** it (the concat's mark is `prepattern.getSize()`), at the
+instruction alignment (`FunctionStartAnalyzer.applyActionToSet`'s
+`addr % getInstructionAlignment() != 0` reject). Bare `<pattern>` blocks with an
+unconditional `<funcstart/>` (incl. the `*`-marked x86-64win MSVC shapes, where the
+bytes before the `*` are context) are also matched. This is pure byte matching —
+no disassembler — so it ports cleanly at the analyzer tier. Arches with an
+unconditional-`<funcstart/>` patternpair yield a set: **x86-64 / x86-32 / ARM /
+RISC-V / MIPS**. AArch64 and PPC carry only `<possiblefuncstart/>` patternpairs
+(`PossibleFunctionStartAction` writes a *separate* `potentialFuncResult` set that
+Ghidra confirms later via the Listing), so they yield **no** set — a documented
+LOSS at this disassembler-free tier, not a bug.
+
+**LOSS (unchanged wall).** The `after="defined"` / `validcode="N"` /
+`<possiblefuncstart/>` / `thunk` / `label` / `section` post-rules all need a
+`PseudoDisassembler`/`Listing` (is there defined code/data right before? do N valid
+instructions disassemble here?) the analyzer tier does not have — dropped, the same
+wall `s1_entry`'s oracle-5 docs and `noreturn.rs` record. Only the
+byte-decidable `<patternpairs>` `<funcstart/>` + bare unconditional `<funcstart/>`
+are ported.
+
+**The gate (default-OFF, output-changing).** Because the pass discovers MORE
+functions, it ships as a *separate* `AnalysisPass` (`FuncStartPatternPass`,
+`id() == "funcstart_patterns"`) gated default-off — NOT folded into the always-on
+`entry_disc`. The mechanism mirrors every other analysis-pass gate exactly: the
+pass `run`s unconditionally at bootstrap (it reads only `ctx.file`), is keyed by
+`id()`, and the console's deferred commit (`engine.rs::analysis_pass_enabled`,
+reached at `read symbols` after the `--option` lines are applied) keeps its facts
+only when `arch.analysis_funcstart_patterns` is true. The `_ => true` fail-open in
+`analysis_pass_enabled` made an explicit `"funcstart_patterns" =>` arm load-bearing
+for the default-off contract. End-to-end wiring: `stages.toml` (the
+`funcstart_patterns` settable, `default = "off"`) + `KUNA_OPTION_NAMES`
+(`options.rs`) + `architecture.rs` (the `analysis_funcstart_patterns` bool +
+`reset_defaults_internal` false + `set_kuna_option` arm) +
+`engine.rs::analysis_pass_enabled` (explicit id) + the settable-count tests
+(`kuna_stages/tests.rs` 49→50, `catalog_bytecompat.rs` 49→50) + the goldens
+(`stage_catalog.json` regenerated, `docs/assertions.md` via `kuna catalog
+--markdown` — a single additive row).
+
+**The headline (the extra-function proof).** The fixture
+`funcstart_patterns_x86_64` (stripped x86-64 ELF) has a `static` helper `widget`
+@`0x401130` whose `-O2` prologue is `push rbx; mov rbx,rdi` (`53 48 89 fb`),
+preceded by gcc's 8-byte NOP pad — the FULL `<patternpairs>` postpattern
+`0x534889fb` gated by the prepattern `0x0f1f840000000000`, a shape the minimal
+oracle misses. `widget` has no symbol (stripped, `static`), no `.eh_frame` FDE
+(`-fno-asynchronous-unwind-tables`), and is not `e_entry`/INIT/FINI/`main`, so it
+is discoverable ONLY via the full set:
+
+```text
+$ kuna decompile funcstart_patterns_x86_64 sub_401130 --option funcstart_patterns on
+int8 sub_401130(int8 a0)
+{
+  return a0 * 7 + 9;
+}
+
+$ kuna decompile funcstart_patterns_x86_64 sub_401130     # default off
+error: no function "sub_401130" in …; for a stripped binary pass an address with --addr
+```
+
+`kuna-console/tests/verify_funcstart_patterns.rs` asserts both halves
+(`lookup_symbol("sub_401130")` is `Some` only with the option on) plus the pure-core
+seam (`full_pattern_starts` includes `widget`, default `collect_entries` does not);
+the `patterns` module unit-tests the ditted parser (hex/binary/`*`-mark), the
+pre/post matching (a `push rbx` hit needs the NOP prepattern; no prepattern ⇒ no
+hit), and the per-arch set selection.
+
+**Speed.** The full-pattern sweep runs once at load (O(exec-section-bytes ×
+patterns), not per-function); end-to-end `kuna decompile … --option
+funcstart_patterns on` is ~0.31 s on the fixture vs ~0.2–0.6 s default-off — no
+measurable slowdown (the pattern set is parsed once, cached per arch via
+`OnceLock`).
+
+**Gating / parity.** Default-off ⇒ the pass's facts are dropped at commit and every
+decompilation is byte-identical to the `entry_disc`-only baseline; the XML datatest
+path never reaches the object analysis tier, so the parity oracles are structurally
+untouched. Gates: `make test` **675/675 PARITY OK**, `make test-stages` **PARITY
+OK**, `make rust-test` **green**; `kuna catalog --check` **OK** (the catalog adds
+the single `funcstart_patterns` row; the byte-for-byte fixture was regenerated, no
+`current` field).
+
+- **Divergence/LOSS:** the `after`/`validcode`/`<possiblefuncstart/>`/thunk/label
+  pattern rules are dropped (disassembler-gated), so AArch64/PPC (whose patternpairs
+  are all `<possiblefuncstart/>`) and the conditioned x86 bare patterns contribute
+  nothing — the same `s1_entry` analyzer-tier wall. No parity-oracle divergence
+  (default-off).
+- **New:** `kuna-analysis/src/s1_entry/patterns/` (the 28 vendored XMLs +
+  `mod.rs`), `kuna-console/tests/verify_funcstart_patterns.rs`,
+  `kuna-analysis/tests/fixtures/funcstart_patterns_x86_64{,.c}`.
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (`FuncStartPatternPass` +
+  `full_pattern_starts` + the `mod patterns`), `kuna-analysis/src/passes.rs`
+  (register the pass), `kuna-decomp/src/infra/architecture.rs`
+  (`analysis_funcstart_patterns` field + default + `set_kuna_option`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`),
+  `kuna-decomp/stages.toml` (the settable), `kuna-console/src/engine.rs`
+  (`analysis_pass_enabled` arm), `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`
+  + `kuna-decomp/tests/catalog_bytecompat.rs` (count 49→50),
+  `kuna-decomp/tests/fixtures/stage_catalog.json`,
+  `kuna-analysis/tests/fixtures/README.md`, `docs/assertions.md`,
+  `docs/analysis-port-log.md`.
