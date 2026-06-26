@@ -1860,6 +1860,23 @@ inspiration = "test_decompiling_morton_my_message_callback; SAILR ReturnDuplicat
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "dedupitetail"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-ITE-region-dedup"
+summary = "After structuring, deduplicate a cloned `if/else` tail: when both arms of a 3-component `if` begin (prefix) or end (suffix) with one or more *leaf* blocks that emit identical C — same printed-op sequence, matching constants by value, named storage by location, and call targets by resolved callee — hoist that shared run out of the `if` (prefix before it, suffix after) so it is emitted ONCE instead of twice (a print-tree edit — no p-code cloned). The inverse of the SAILR duplication passes (gotoreduce/crossjumprevert/taildup, which DUPLICATE a shared tail to drop a goto); here kuna's collapse-based structurer over-duplicated a shared continuation and the readability win is to merge the copies. Mirrors angr's structurer ITE region deduplication (converging two predecessors onto one copy instead of cloning). Bounded (<=8 leaves, <=64 ops/leaf), exact-or-decline, and suffix-sound only when each arm's divergent middle falls through to the suffix."
+use_when = "Set on when kuna emits the SAME leaf statement(s) at the head or tail of BOTH arms of an if/else (a compiler-duplicated shared prefix/suffix the structurer cloned into each arm), e.g. a shared cleanup epilogue or a `--help`-style shared call repeated in both branches. Off (default) is byte-identical to upstream; on, the shared leaf run is hoisted out of the `if` (one copy), each merge logged (`dedupitetail:`). Conservative: only flat C-equivalent leaf blocks are merged (never a nested if/loop or a labelled/goto block), and a suffix is hoisted only when both arms provably reach it. Deeply entangled duplication where the shared code shares a basic block with divergent code (e.g. true_1804 usage's online-help printf folded into the setlocale condition block) is out of scope — that needs the full label-convergence transform."
+example = "option dedupitetail on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_true_1804_x86_64::usage; angr structurer condition-processing / ITE region deduplication (RegionSimplifier; structuring/structurer_base.py _merge_nodes); inverse of SAILR ReturnDuplicator/CrossJumpReverter"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "foldcallret"
 values = "on|off"
 default = "off"

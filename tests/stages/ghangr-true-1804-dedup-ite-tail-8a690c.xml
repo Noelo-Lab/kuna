@@ -1,0 +1,86 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr "true_1804 usage if/else tail deduplication"
+    (test_decompiling_true_1804_x86_64::usage) then the angr structurer ITE
+    region-deduplication (the INVERSE of the SAILR duplication passes).
+
+    kuna inherits Ghidra's collapse-based structurer, which, when a basic block is
+    reachable from BOTH arms of an if/else, CLONES it into each arm instead of
+    converging the two predecessors onto one copy.  On true_ubuntu1804::usage the
+    trailing `if (v4 == 0) { A } else { B }` emits a shared online-help printf /
+    setlocale / Full-documentation tail TWICE (loc 121 / 9 ifs vs angr's 112 / 6).
+    angr emits each shared continuation once.  This is the exact inverse of
+    gotoreduce/crossjumprevert/taildup (which DUPLICATE a shared tail to remove a
+    goto): here kuna over-duplicated, and the readability win is to MERGE the copies.
+
+    The `dedupitetail` pass (option-gated, default-off) does the sound, bounded
+    subset of that convergence: when both arms of a 3-component if/else share a
+    maximal common PREFIX or SUFFIX of *leaf* blocks that emit identical C (same
+    printed-op sequence, constants matched by value, named storage by location, call
+    targets by resolved callee), it hoists that shared run out of the if (prefix
+    before it, suffix after) so it is emitted ONCE.  A prefix hoist is unconditionally
+    sound (both arms run it first); a suffix hoist is sound when both arms' divergent
+    middles fall through to it.
+
+    usage's own duplication is sub-block-entangled (the online-help printf shares a
+    basic block with the setlocale condition test), so it needs the FULL
+    label-convergence transform and is out of scope for the bounded leaf hoist.  This
+    testcase therefore uses a minimised x86-64 reproducer (gcc-faithful, exactly as
+    the sibling who.o/morton SAILR tests do) that exhibits the same shared-tail shape
+    at block granularity: an outer `if (x)` whose two arms each run a divergent guard
+    (`if (cond_K()) body_K();`) and then call the SAME shared epilogue `shared(y)` in
+    its own basic block, converging to `post(y)`.  That shared `shared(y)` block is
+    reached from both arms - exactly the ISC-condensed shared continuation Ghidra's
+    CollapseStructure (and kuna's region structurer) clones into each arm:
+
+      g:    if (!x) goto else_arm;
+            true_arm:  if (cond_a()) body_a();
+            true_shared: shared(y); goto conv;       // shared SUFFIX block
+            else_arm:  if (cond_b()) body_b();
+            else_shared: shared(y); goto conv;        // DUP shared SUFFIX block
+            conv:      post(y);
+      cond_a/cond_b/body_a/body_b/shared/post: ret stubs.
+
+    Pass 1 (option dedupitetail off, the DEFAULT): kuna clones the shared epilogue
+    into each arm, so `shared(...)` appears in BOTH the `if` and `else` bodies (two
+    clones).
+    Pass 2 (option dedupitetail on): the shared suffix is hoisted out of the if (one
+    copy after it), so `shared(...)` appears ONCE and a `dedupitetail:` warning is
+    logged then assertion P2 (the merge log).
+
+    The harness counts pattern occurrences across the WHOLE two-pass output, so the
+    discriminating assertion is the TOTAL:
+      * P1 pins the total `shared(` count at exactly THREE = two in pass 1 (the
+        cloned epilogue, default-off) + one in pass 2 (the deduplicated copy).  With
+        the merge log P2 proving the on-pass collapsed the duplication to a single
+        copy, the only split consistent with a total of 3 is 2 (off) + 1 (on) -
+        exactly the gap and its fix.
+      * P3 pins the `post(` call (the convergence sink, NOT deduplicated by the pass)
+        at exactly TWO = one per pass - a control that the pass touched only the
+        shared suffix, not the rest of the function.
+-->
+<bytechunk space="ram" offset="0x100000">
+5389f385ff7417e83200000085c07405e82f00000089dfe82a000000eb17e81e00000085c07405e81900000089dfe813000000eb0089dfe80b0000005bc331c0c331c0c3c3c3c3c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="g"/>
+<symbol space="ram" offset="0x10003e" name="cond_a"/>
+<symbol space="ram" offset="0x100041" name="cond_b"/>
+<symbol space="ram" offset="0x100044" name="body_a"/>
+<symbol space="ram" offset="0x100045" name="body_b"/>
+<symbol space="ram" offset="0x100046" name="shared"/>
+<symbol space="ram" offset="0x100047" name="post"/>
+</binaryimage>
+<script>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupitetail on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="P1: TOTAL shared() epilogue count across both passes is 3 (off clones to 2, on dedups to 1)" min="3" max="3">shared\(</stringmatch>
+<stringmatch name="P2: on merges the duplicated if/else tail and logs the dedup" min="1" max="1">dedupitetail: merged</stringmatch>
+<stringmatch name="P3: the convergence sink post() is untouched (one per pass = 2 total)" min="2" max="2">post\(</stringmatch>
+</decompilertest>

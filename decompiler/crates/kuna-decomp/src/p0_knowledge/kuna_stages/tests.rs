@@ -36,7 +36,7 @@ fn surface_count_is_97() {
 }
 
 #[test]
-fn settable_count_is_63() {
+fn settable_count_is_64() {
     // 32 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -110,9 +110,12 @@ fn settable_count_is_63() {
     // default-off opt-in, real-ELF path only;
     // +1 for `taildup`, the angr SAILR ReturnDuplicatorLow return-tail-WITH-call
     // duplication knob (the gap between gotoreduce and crossjumprevert), default-off
-    // opt-in.)
-    assert_eq!(kuna_num_settables(), 63);
-    assert_eq!(SETTABLE_TABLE.len(), 63);
+    // opt-in;
+    // +1 for `dedupitetail`, the angr structurer ITE region-dedup knob — the INVERSE
+    // of the duplication passes: it merges a duplicated if/else leaf prefix/suffix
+    // (one copy instead of two), default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 64);
+    assert_eq!(SETTABLE_TABLE.len(), 64);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -368,6 +371,7 @@ fn option_values_live_value_present_for_27_suppressed_for_34() {
                             | "ifelseflatten"
                             | "crossjumprevert"
                             | "taildup"
+                            | "dedupitetail"
                             | "loopbreak_recovery"
                             | "relocobjects"
                     ) || PASS_GATES.contains(&st.option),
@@ -442,14 +446,14 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 63 rows: 62 trailing commas (the last, macho-arm64e, has none;
+    // 64 rows: 63 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, switchmultipred's, tailcalljump's,
     // noreturn_extern's, and noreturn_externmatch's S2 rows, branchflip's,
-    // regionstructure's, regionlooprefine's, ifelseflatten's, crossjumprevert's, and
-    // taildup's S8 rows, eh_frame_full's S1 row, operand_refs's S1 row,
-    // funcstart_patterns's S1 row, aif's S1 row, fid's S1 row, and dwarf_lines' S1
+    // regionstructure's, regionlooprefine's, ifelseflatten's, crossjumprevert's,
+    // taildup's, and dedupitetail's S8 rows, eh_frame_full's S1 row, operand_refs's S1
+    // row, funcstart_patterns's S1 row, aif's S1 row, fid's S1 row, and dwarf_lines' S1
     // row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 62);
+    assert_eq!(json.matches("},\n").count(), 63);
 }
 
 #[test]

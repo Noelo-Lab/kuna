@@ -273,6 +273,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ifelseflatten",
     "crossjumprevert",
     "taildup",
+    "dedupitetail",
     "foldcallret",
     "stackguard",
     "branchflip",
