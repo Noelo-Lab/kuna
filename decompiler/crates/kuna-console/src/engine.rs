@@ -292,41 +292,65 @@ impl ConsoleProgram {
                 merged.merge(out);
             }
         }
-        // (kuna, PR6) Deferred Listing build + consumer run, gated on the listing
-        // flag (now in effect). Default-off ⇒ skipped ⇒ zero cost. Real-ELF path
-        // only (the XML path stashes no image). The call-fixup seed list is the
-        // names the load-time pass flagged resolved to addresses via the (already
-        // installed) symbol table.
-        if self.arch().analysis_listing {
+        // (kuna, PR6 + operand_refs) Deferred decode-driven passes, run at the
+        // commit point because they decode through the engine `Translate` whose
+        // program loadimage is only attached AFTER the load-time pass list
+        // (`set_loader` in `bootstrap_from_object`). Each is gated on its own
+        // `--option` flag (now in effect). Default-off (both) ⇒ skipped ⇒ zero cost.
+        // Real-ELF path only (the XML path stashes no image). The stash is consumed
+        // once and shared by both deferred passes.
+        let want_listing = self.arch().analysis_listing;
+        let want_operand_refs = self.arch().analysis_operand_refs;
+        if (want_listing || want_operand_refs) && self.analysis_image.is_some() {
             if let Some((path, bytes)) = self.analysis_image.take() {
-                // A throwaway loadimage just to satisfy `Listing::build`'s contract
-                // (its `image` arg is unused — the decode reads through `translate`);
-                // a parse failure makes the Listing step a graceful no-op.
+                // A throwaway loadimage just to satisfy the pass contracts (their
+                // `image` arg is unused — the decode reads through `translate`); a
+                // parse failure makes the deferred step a graceful no-op.
                 if let Ok(image) = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(
                     &path, &bytes,
                 ) {
-                    let arch = self.arch();
-                    // The call-fixup seed list is empty: a fixup'd callee is also
-                    // skipped via the consumer's no-return-disc `function_at(..)`
-                    // checks, and there is no fixup-address index here. The
-                    // no-return seeds (above) are the load-bearing skip set.
-                    let consumer_out = kuna_analysis::passes::run_listing_consumers(
-                        &bytes,
-                        &image,
-                        arch,
-                        arch.translate(),
-                        &noreturn_seed_addrs,
-                        &[],
-                    );
-                    for (id, out) in consumer_out {
-                        if analysis_pass_enabled(self.arch(), id) {
-                            merged.merge(out);
+                    // Deferred Listing build + consumer run, gated on the listing
+                    // flag. The call-fixup seed list is the names the load-time pass
+                    // flagged resolved to addresses via the (already installed)
+                    // symbol table.
+                    if want_listing {
+                        let arch = self.arch();
+                        // The call-fixup seed list is empty: a fixup'd callee is also
+                        // skipped via the consumer's no-return-disc `function_at(..)`
+                        // checks, and there is no fixup-address index here. The
+                        // no-return seeds (above) are the load-bearing skip set.
+                        let consumer_out = kuna_analysis::passes::run_listing_consumers(
+                            &bytes,
+                            &image,
+                            arch,
+                            arch.translate(),
+                            &noreturn_seed_addrs,
+                            &[],
+                        );
+                        for (id, out) in consumer_out {
+                            if analysis_pass_enabled(self.arch(), id) {
+                                merged.merge(out);
+                            }
                         }
+                    }
+                    // Deferred scalar/operand reference-markup pass, gated on the
+                    // operand_refs flag (the kuna analog of Ghidra's
+                    // ScalarOperandAnalyzer). Independent of the Listing tier — it
+                    // does its own linear decode (the Listing never populates the
+                    // data references it needs). Its facts go through the existing
+                    // string/readonly commit arms.
+                    if want_operand_refs {
+                        let out = kuna_analysis::passes::run_operand_refs(
+                            &bytes,
+                            &image,
+                            self.arch(),
+                        );
+                        merged.merge(out);
                     }
                 }
             }
         } else {
-            // Listing off: drop the stash (no deferred build).
+            // Both deferred passes off: drop the stash (no deferred build).
             self.analysis_image = None;
         }
         commit_analysis_output(self, &code_space, merged)
@@ -342,15 +366,33 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "libproto" => arch.analysis_libproto,
         "strings" => arch.analysis_strings,
         "entry_disc" => arch.analysis_entry_disc,
+        // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a
+        // standalone stashed pass whose facts (the exception landing pads) are
+        // computed at LOAD but COMMITTED only when this gate is on. Default-off
+        // (output-changing: adds entries), so a default run never commits them and
+        // the discovery set is byte-identical to FDE-pcBegin-only.
+        "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) The full byte-pattern function-start pass — default-OFF
+        // (output-changing). The `_ => true` fail-open below would otherwise run it
+        // by default, so this explicit arm reading the (default-false)
+        // `analysis_funcstart_patterns` flag is load-bearing for the default-off
+        // contract.
+        "funcstart_patterns" => arch.analysis_funcstart_patterns,
         "arm_markers" => arch.analysis_arm_markers,
         "mips_gp" => arch.analysis_mips_gp,
         "mips_isa" => arch.analysis_mips_isa,
         "dwarf" => arch.analysis_dwarf,
+        // Explicit (NOT the fail-open `_ => true` default): the source-line pass is
+        // default-OFF (it changes the output), so it must be registered here to be
+        // gated by the `analysis_dwarf_lines` flag rather than running by default.
+        "dwarf_lines" => arch.analysis_dwarf_lines,
         "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,
+        "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
         "noreturn_disc" => arch.analysis_noreturn_disc,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
+        "aif" => arch.analysis_aif,
         "gopclntab" => arch.analysis_gopclntab,
         _ => true,
     }
@@ -1095,6 +1137,28 @@ fn commit_analysis_output(
     for fact in out.locals {
         prog.dwarf_locals
             .push((fact.func_addr, fact.name, fact.type_, fact.stack_offset));
+    }
+
+    // 9. DWARF SOURCE-LINE comments (the kuna analog of Ghidra's
+    //    `DWARFLineInfoCommentScript`, `.debug_line` → instruction comments).
+    //    Each `.debug_line` row's `file:line` is installed into the architecture's
+    //    `commentdb` as a `Comment::user2` (the instruction-comment type the C
+    //    printer emits as a `/* … */` line at the op's address). The printer reads
+    //    `arch.commentdb` at `print C` time and `CommentSorter` places each comment
+    //    in the basic block holding its instruction. `func_addr`/`addr` build their
+    //    Address in the code space; a duplicate (same fad,ad,text) is dropped by
+    //    `add_comment_no_duplicate` (the script also de-dups via `appendComment`).
+    //    Produced only by the `dwarf_lines` pass (default-off); empty otherwise, so
+    //    the default output is byte-identical to before this arm.
+    for fact in out.comments {
+        let fad = Address::new(Rc::clone(code_space), fact.func_addr);
+        let ad = Address::new(Rc::clone(code_space), fact.addr);
+        prog.arch_mut().commentdb.add_comment_no_duplicate(
+            kuna_decomp::comment::comment_type::USER2,
+            &fad,
+            &ad,
+            &fact.text,
+        );
     }
 
     Ok(())

@@ -437,3 +437,45 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   asserts the `&&`-folded form across both passes (off = `CollapseStructure`, on = region
   structurer); the existing region-structurer stage tests now exercise the default-on path.
 - **Date**: 2026-06-26.
+
+---
+
+## DIV-13: name-matched known-no-return externs are flagged in ET_REL `.o` files by default
+
+- **Flip**: `option noreturn_externmatch` (S2 flow-follow, ElementId 4104) now ships **default-on**.
+  When set, the `FlowEnvironment::query_call_no_return` seam (`infra/decompile_drive.rs`) also
+  reports a direct call no-return if the callee **name** matches the vendored ELF known-no-return
+  list (`exit`/`abort`/`__stack_chk_fail`/…), in addition to the proto flag set by the
+  address-keyed `noreturn_known` scan. `flow.rs` ORs this query at the artificial-halt site, so a
+  name match plants the halt and flow stops at the call.
+- **Problem**: in an **ET_REL `.o`**, a known-no-return libc function like `__stack_chk_fail` is an
+  *undefined extern* — its `.symtab` entry has `address()==0` and there is no PLT stub — so the
+  address-keyed `noreturn_known` pass (DIV-on by default) emits no `NoReturnFact` for it. The
+  `relocobjects` loader (DIV-8) installs a `FunctionSymbol` named `__stack_chk_fail` at a synthetic
+  target (the call **prints** the name) but no no-return flag is ever set, so flow runs off the end
+  of the function into the inter-function alignment padding (`00 00 …` decoded as
+  `add byte ptr [rax], al`) and the decompiler emits dozens of garbage `*v = *v + c;` lines. Surfaced
+  on angr `test_decompiling_incorrect_duplication_chcon_main` (coreutils `chcon.o`, `main`): kuna
+  emitted ~90 such lines after `__stack_chk_fail()`; angr emits none.
+- **Mechanism**: a single gated check at the flow seam. The new module
+  `kuna-decomp/src/s2_lift/kuna_noreturn_externmatch.rs` carries the name matcher; it
+  `include_str!`s the **same** vendored list `noreturn_known` uses
+  (`kuna-analysis/data/ElfFunctionsThatDoNotReturn`, a build-time include, not a crate dependency)
+  and applies the **same** leading-`_` strip + global/`std` namespace guard. So the feature adds no
+  risk class beyond the already-default-on `noreturn_known`; it merely reaches the ET_REL extern the
+  address scan structurally misses. On a normal dynamically-linked ELF the proto flag is already set,
+  so the OR is a no-op (byte-identical). This is the always-on companion of `noreturn_extern`
+  (DIV-none, default-off opt-in; same seam, same vendored list) added in PR #90.
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without regeneration): the
+  XML datatest `<binaryimage>` bytechunks do not run the analysis tier nor target name-matched
+  returning externs, and every real-ELF call to a listed name is already proto-marked by
+  `noreturn_known`. **Speed**: a ~23% *win* on the target (`chcon.o::main` median 449.8 ms off ->
+  344.3 ms on, n=5) — there is less dead padding to decompile. `make rust-test` green (3 new unit
+  tests in the module pin the matcher + namespace guard).
+- **Testcase**: `tests/stages/ghangr-incorrect-duplication-chcon-a0e113.xml` — a self-contained
+  bytechunk (`call __stack_chk_fail; mov eax, 0xdeadbeef; ret`, with a `__stack_chk_fail` symbol; the
+  ET_REL relocation cannot be applied in the bytechunk model, so the chcon.o bytes are not usable
+  verbatim). Pass 1 (`option noreturn_externmatch off`) asserts the dead `0xdeadbeef` after the call
+  survives (the bug); pass 2 (`on`) asserts the call is flagged no-return (artificial halt) and the
+  dead code is gone. `docs/baseline-stages.json` (+3 assertions).
+- **Date**: 2026-06-26.

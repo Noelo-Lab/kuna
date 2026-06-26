@@ -1021,6 +1021,21 @@ impl SubtableSymbol {
             .ok_or_else(|| KunaError::sleigh("subtable has no decision tree (not decoded)"))?;
         tree.resolve(walker)
     }
+
+    /// Like [`SubtableSymbol::resolve`], but returns the matched
+    /// `(DisjointPattern, ct)` leaf via [`DecisionNode::resolve_matched`].
+    /// Used by `Sleigh::instruction_mask` to recover the constructor's
+    /// fixed-bit mask.
+    pub fn resolve_matched(
+        &self,
+        walker: &dyn SymbolWalker,
+    ) -> KunaResult<&(DisjointPattern, u32)> {
+        let tree = self
+            .decisiontree
+            .as_ref()
+            .ok_or_else(|| KunaError::sleigh("subtable has no decision tree (not decoded)"))?;
+        tree.resolve_matched(walker)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1881,6 +1896,47 @@ impl DecisionNode {
         // construction; an undersized children vector (corrupt .sla) is UB
         // in C++ and an indexing panic here (ADR 0004).
         self.children[val as usize].resolve(walker)
+    }
+
+    /// Like [`DecisionNode::resolve`], but returns the matched
+    /// `(DisjointPattern, ct)` *pair* (the specific terminal leaf) rather
+    /// than just the constructor id.  This walks the decision tree byte-for-byte
+    /// identically to `resolve` — same context/instruction-bit dispatch, same
+    /// `BadDataError` on no match — but at the terminal node it hands back the
+    /// concrete `DisjointPattern` whose `is_match` succeeded.  No kuna-sleigh
+    /// decode path calls this; it exists only so the FID instruction-mask
+    /// accessor (`Sleigh::instruction_mask`) can recover the fixed-bit mask of
+    /// the constructor that actually matched at a node.
+    ///
+    /// **Why a pair, not a ct lookup:** one constructor can sit under several
+    /// `(DisjointPattern, ct)` leaves (different context/operand
+    /// specializations); the specific leaf must be captured by re-running
+    /// `pat.is_match`, there is no canonical "pattern for this ct".
+    pub fn resolve_matched(
+        &self,
+        walker: &dyn SymbolWalker,
+    ) -> KunaResult<&(DisjointPattern, u32)> {
+        if self.bitsize == 0 {
+            // The node is terminal
+            let pw: &dyn PatternExpressionContext = walker;
+            for pair in &self.list {
+                if pair.0.is_match(pw)? {
+                    return Ok(pair);
+                }
+            }
+            let mut s = String::new();
+            s.push(walker.get_addr().get_shortcut());
+            walker.get_addr().print_raw(&mut s)?;
+            s.push_str(": Unable to resolve constructor");
+            return Err(KunaError::bad_data(s));
+        }
+        let val = if self.contextdecision {
+            walker.get_context_bits(self.startbit, self.bitsize)?
+        } else {
+            walker.get_instruction_bits(self.startbit, self.bitsize)?
+        };
+        // Mirror of `resolve`: val < 2^bitsize by construction.
+        self.children[val as usize].resolve_matched(walker)
     }
 
     /// The terminal pattern list (test/inspection surface).

@@ -252,6 +252,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "flagcompare",
     "v850indirectbranch",
     "tailcalljump",
+    "noreturn_extern",
     "inputvarnodeadjust",
     "condexeplace",
     "sparcstructret",
@@ -263,9 +264,11 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchmodbound",
     "switchguardbound",
     "switchsharedcase",
+    "noreturn_externmatch",
     "loweredswitch",
     "regionstructure",
     "gotoreduce",
+    "crossjumprevert",
     "foldcallret",
     "stackguard",
     "branchflip",
@@ -283,6 +286,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "libproto",
     "strings",
     "entry_disc",
+    // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
+    // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
+    // (output-changing: adds the discovered exception landing pads as entries).
+    "eh_frame_full",
+    // (kuna) The full byte-pattern function-start pass (Ghidra FunctionStartAnalyzer
+    // over the entire vendored pattern corpus), default-OFF (output-changing:
+    // discovers more functions). A separate gate from `entry_disc` (whose always-on
+    // oracle 5 ports only a minimal subset).
+    "funcstart_patterns",
     "arm_markers",
     "mips_gp",
     // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A
@@ -291,8 +303,11 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "i386_pie_plt",
     "mips_isa",
     "dwarf",
+    // (kuna) DWARF `.debug_line` source-line comments; default-off (output-changing).
+    "dwarf_lines",
     "callfixup",
     "addrtable",
+    "operand_refs",
     // (kuna) `FormatStringAnalyzer` half B (`DecompilerDependent`): the console
     // `IfcDecompile` reads this flag after the first decompile to type
     // printf/scanf varargs per call site, then re-decompiles.  Default-off
@@ -318,6 +333,16 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // Default-off (a heuristic that can be wrong; also requires `--option listing
     // on` to build the Listing it reads).
     "noreturn_propagate",
+    // (kuna) Aggressive Instruction Finder gap-walk: the kuna analog of Ghidra's
+    // `AggressiveInstructionFinderAnalyzer` (which ships off-by-default with the
+    // warning "IT MAY CREATE A LOT OF BAD CODE!").  Over the undefined gaps between
+    // discovered functions, speculatively decode each gap start and accept it as a
+    // NEW function entry when it (a) disassembles into a valid subroutine and (b)
+    // matches a function-start fingerprint shared by >= 4 already-discovered
+    // functions.  Finds functions reachable ONLY through an indirect/data path that
+    // entry discovery + funcsyms miss.  Default-off (a speculative gap-filler that
+    // can create false positives; also requires `--option listing on`).
+    "aif",
     // (kuna) Go pclntab function-name recovery: parse the embedded pclntab of a Go
     // binary and name each Go function (`main.main`/`runtime.*` instead of
     // `sub_<addr>`).  The kuna analog of Ghidra's `GolangSymbolAnalyzer`

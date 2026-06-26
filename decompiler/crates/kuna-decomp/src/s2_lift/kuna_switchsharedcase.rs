@@ -55,9 +55,11 @@
 use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<switchsharedcase>` (kuna). ElementIds live in the 4000+
-/// range (C++ `ELEM_SWITCHSHAREDCASE = ElementId("switchsharedcase",4103)`;
-/// 4102 is `regionstructure`, 4101 is `tailcalljump`).
-pub const ELEM_SWITCHSHAREDCASE: ElementId = ElementId::new("switchsharedcase", 4103);
+/// range (C++ `ELEM_SWITCHSHAREDCASE = ElementId("switchsharedcase",4106)`;
+/// renumbered from 4103 at the merge into main — main now uses 4103
+/// `noreturn_extern`, 4104 `noreturn_externmatch`, 4105 `crossjumprevert`, so the
+/// next free id above `regionstructure`'s 4102 is 4106).
+pub const ELEM_SWITCHSHAREDCASE: ElementId = ElementId::new("switchsharedcase", 4106);
 
 /// (kuna, angr `test_switch_case_shared_case_nodes_b2sum_digest`) Toggle
 /// recovery of a GCC PIC relative-offset jump table whose base register is a

@@ -1630,14 +1630,17 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 63 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
+        // 83 datatests + 66 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
         // ghangr-missing-function-call-1101b1, ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump,
         // branchflip-negated-guard / branchflip,
         // regionstructure-seq + regionstructure-loop + regionstructure-switch +
         // regionstructure-shortcircuit / regionstructure,
         // switchsharedcase-b2sum / switchsharedcase,
-        // and ghangr-setlocale-rettype / DIV-11)
-        assert_eq!(count, 146, "corpus file count drifted");
+        // ghangr-who-condensing-opt-reversion-72e518 / crossjumprevert,
+        // ghangr-setlocale-rettype / DIV-11,
+        // ghangr-noreturn_extern / noreturn_extern, angr test_tail_tail_bytes_ret_dup,
+        // and ghangr-incorrect-duplication-chcon-a0e113 / noreturn_externmatch, DIV-13)
+        assert_eq!(count, 149, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
