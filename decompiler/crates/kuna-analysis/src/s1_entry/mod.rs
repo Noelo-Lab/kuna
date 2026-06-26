@@ -140,6 +140,52 @@ impl AnalysisPass for EntryDiscoveryPass {
     }
 }
 
+/// (kuna) `.eh_frame` LSDA landing-pad discovery — the GccExceptionAnalyzer full
+/// `.gcc_except_table` markup, factored out of the always-on entry-discovery pass
+/// as its OWN gated pass (id `eh_frame_full`, default-OFF). It emits each
+/// exception-handler landing pad (catch/cleanup block, reached only by the
+/// unwinder) as a discovered function entry — net-new code targets the FDE-pcBegin
+/// / prologue / libc-start oracles never see (a landing pad sits mid-function).
+///
+/// Like every other analysis pass it RUNS at load (the facts are cheap to compute
+/// and are stashed per-pass); the **commit** is gated by `--option eh_frame_full
+/// on` (`engine.rs::analysis_pass_enabled` → `arch.analysis_eh_frame_full`). So a
+/// default run computes but never COMMITS the landing pads, and the discovery set
+/// is byte-identical to the FDE-pcBegin-only behavior — every parity gate is
+/// structurally untouched. Output-changing (adds entries) ⇒ default-off.
+///
+/// CFI (the `DW_CFA_*` call-frame instructions) is INHERITED, not rebuilt: kuna's
+/// engine recovers the stack frame from the code (S5 type inference + S7 frame
+/// analysis), so the CFA/saved-register rules add nothing at the decompiler tier.
+pub struct EhFrameLsdaPass;
+
+impl AnalysisPass for EhFrameLsdaPass {
+    fn stage(&self) -> Stage {
+        Stage::S1
+    }
+
+    fn id(&self) -> &'static str {
+        "eh_frame_full"
+    }
+
+    fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let mut out = AnalysisOutput::default();
+        // ELF-only (the `.eh_frame`/`.gcc_except_table` exception model). Additive
+        // contract: an empty output on any anomaly, never a failure.
+        if !matches!(
+            crate::s1_loader::format::detect(ctx.file).map(|f| f.kind()),
+            Ok(FormatKind::Elf)
+        ) {
+            return out;
+        }
+        // The filtered landing-pad entries (exec-section + funcsym-skip + dedup,
+        // the SAME gates every other oracle applies). Empty on a non-exception
+        // binary (no `.gcc_except_table`), so the pass is a strict no-op there.
+        out.entries = collect_landing_pad_entries(ctx.file, ctx.bytes);
+        out
+    }
+}
+
 // ===========================================================================
 // The pure core
 // ===========================================================================
@@ -1047,6 +1093,418 @@ fn scan_eh_frame_starts_sized(file: &object::File, ptr_size: usize) -> Vec<u64> 
     out
 }
 
+// ===========================================================================
+// `.eh_frame` LSDA landing pads (GccExceptionAnalyzer, full markup) — GATED
+// ===========================================================================
+//
+// The `--option eh_frame_full on` product: for each FDE whose CIE augmentation
+// carries an `L` char, follow the FDE's augmentation-data LSDA pointer into
+// `.gcc_except_table`, decode the call-site table, and emit each non-zero
+// landing pad (`lpStart + cs_landing_pad`) as a discovered code entry. A landing
+// pad is the catch/cleanup block the unwinder jumps to — a real code target that
+// the FDE-pcBegin / prologue / call-idiom oracles never see (it sits mid-function).
+//
+// Faithful to Ghidra's `ghidra.app.plugin.exceptionhandlers.gcc.*`:
+//   - `Cie.processAugmentationInfo` records the `L` char's LSDA-encoding byte
+//     (and the `P` personality, `R` FDE-encoding) — `getLSDAEncoding()`.
+//   - `FrameDescriptionEntry.createAugmentationInfo`/`createLsda` decodes the FDE's
+//     own augmentation-data LSDA pointer with that CIE encoding.
+//   - `LSDAHeader.create` reads `[lpStartEnc][lpStart?][ttypeEnc][ttypeOff?]
+//     [callSiteEnc][callSiteTableLen]`; when `lpStartEnc == omit`, `lpStart`
+//     defaults to the FDE's pcBegin (the region/function start).
+//   - `LSDACallSiteRecord.create` reads `[cs_start][cs_len][cs_lp][cs_action]`;
+//     `getLandingPad()` is `lpStart + cs_lp`, and `cs_lp == 0` ⇒ NO landing pad
+//     (cleanup-less call site). `GccExceptionAnalyzer.processCallSiteRecord`
+//     disassembles each non-zero landing pad (marks it code) — our entry fact.
+//
+// CFI (the `DW_CFA_*` call-frame instructions giving CFA/register-save rules) is
+// deliberately NOT recovered here: kuna's own engine recovers the stack frame from
+// the code (S5 type inference + S7 frame analysis), so the CFA/saved-register
+// rules add nothing at the decompiler tier — CFI is INHERITED, not rebuilt. See
+// `docs/analysis-port-log.md`.
+
+/// Decoded CIE augmentation fields relevant to the LSDA walk: the FDE pointer
+/// encoding (`R`), and — when the augmentation carries an `L` — the LSDA pointer
+/// encoding (`L`). `has_lsda == false` ⇒ this CIE's FDEs carry no LSDA pointer.
+#[derive(Clone, Copy)]
+struct CieAug {
+    /// The FDE `pcBegin`/`pcRange` pointer encoding (the `R` char payload).
+    fde_enc: u8,
+    /// True iff the augmentation string contains an `L` char (FDEs carry an LSDA
+    /// pointer in their augmentation data).
+    has_lsda: bool,
+    /// The LSDA pointer encoding (the `L` char payload), valid iff `has_lsda`.
+    lsda_enc: u8,
+    /// The byte offset, within the FDE augmentation-data block, at which the LSDA
+    /// pointer sits. It is the FIRST aug-data field for a `zL`/`zPL`/`zPLR` CIE
+    /// (the `L` data is the LSDA pointer; `P`/`R` consume CIE aug-data, not FDE
+    /// aug-data) — so always 0 in practice; kept explicit for faithfulness.
+    fde_lsda_off: usize,
+}
+
+/// As [`scan_eh_frame_starts`] but, for `--option eh_frame_full on`, return the
+/// exception-handler **landing-pad** PCs decoded from each FDE's
+/// `.gcc_except_table` LSDA (the GccExceptionAnalyzer full-markup product). The
+/// raw decode (NOT exec-section/funcsym filtered — see
+/// [`collect_landing_pad_entries`] for the filtered entry set).
+pub fn scan_eh_frame_landing_pads(file: &object::File) -> Vec<u64> {
+    scan_eh_frame_landing_pads_sized(file, 8)
+}
+
+fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec<u64> {
+    let mut out: Vec<u64> = Vec::new();
+    if !matches!(file.format(), object::BinaryFormat::Elf) {
+        return out;
+    }
+    let Some(sec) = file.section_by_name(".eh_frame") else {
+        return out;
+    };
+    let sec_vma = sec.address();
+    let Ok(data) = sec.data() else {
+        return out;
+    };
+    if data.is_empty() {
+        return out;
+    }
+    // The `.gcc_except_table` bytes, read by VMA (the LSDA + call-site table live
+    // here, not in `.eh_frame`). Absent ⇒ no landing pads.
+    let Some(gcc) = file.section_by_name(".gcc_except_table") else {
+        return out;
+    };
+    let gcc_vma = gcc.address();
+    let Ok(gcc_data) = gcc.data() else {
+        return out;
+    };
+    let le = file.is_little_endian();
+
+    // CIE-offset -> decoded augmentation (FDE encoding + LSDA encoding). A flat Vec
+    // lookup (no HashMap), resolved by the FDE's `(o+4) - cieId` back-pointer —
+    // faithful given CIEs precede their FDEs in gcc output. A forward-referencing
+    // CIE is missed (documented LOSS, same as the FDE-start scan).
+    let mut cie_aug: Vec<(usize, CieAug)> = Vec::new();
+
+    let mut o = 0usize;
+    while o + 4 <= data.len() {
+        let length = read_u32(&data[o..], le) as usize;
+        if length == 0 {
+            break; // zero-length record = end-of-frame
+        }
+        if length == 0xffff_ffff {
+            // 64-bit extended length: read + skip (same scope as the FDE-start scan).
+            if o + 12 > data.len() {
+                break;
+            }
+            let ext = read_u64(&data[o + 4..], le) as usize;
+            o = match o.checked_add(12).and_then(|v| v.checked_add(ext)) {
+                Some(v) => v,
+                None => break,
+            };
+            continue;
+        }
+        let next = o + 4 + length;
+        if next > data.len() || o + 8 > data.len() {
+            break;
+        }
+        let cie_id = read_u32(&data[o + 4..], le);
+
+        if cie_id == 0 {
+            // CIE: decode the FDE + LSDA encodings from its augmentation.
+            if let Some(aug) = parse_cie_aug(&data[o..next], ptr_size) {
+                cie_aug.push((o, aug));
+            }
+        } else {
+            // FDE: locate its CIE by the relative back-pointer.
+            let cie_ptr_field = o + 4;
+            if (cie_id as usize) > cie_ptr_field {
+                o = next;
+                continue;
+            }
+            let cie_off = cie_ptr_field - cie_id as usize;
+            let Some(&(_, aug)) = cie_aug.iter().find(|&&(co, _)| co == cie_off) else {
+                o = next;
+                continue;
+            };
+            // This FDE carries an LSDA only if its CIE augmentation had an `L`.
+            if !aug.has_lsda {
+                o = next;
+                continue;
+            }
+            // FDE layout: [length:u32][ciePtr:u32][pcBegin][pcRange][augLen(uleb)]
+            //             [augData: lsdaPtr ...][cfi...]. pcBegin starts at o+8.
+            let pc_begin_off = o + 8;
+            let pc_begin_vma = sec_vma + pc_begin_off as u64;
+            let Some(pc_begin) =
+                decode_eh_pointer(aug.fde_enc, pc_begin_vma, sec_vma, data, pc_begin_off, ptr_size)
+            else {
+                o = next;
+                continue;
+            };
+            // Skip pcBegin + pcRange (both the FDE `R` encoding's size), then the
+            // augmentation-data length (uleb), to reach the FDE aug-data block.
+            let enc_sz = encoded_size(aug.fde_enc, ptr_size, data.get(pc_begin_off..).unwrap_or(&[]));
+            let pc_range_off = pc_begin_off + enc_sz;
+            let aug_len_off = pc_range_off + enc_sz;
+            let Some((_aug_len, aug_data_off)) = read_uleb128(data, aug_len_off) else {
+                o = next;
+                continue;
+            };
+            // The LSDA pointer field within the FDE aug-data, decoded with the
+            // CIE's `L` encoding. Its VMA is needed for a pcrel `L` encoding.
+            let lsda_field_off = aug_data_off + aug.fde_lsda_off;
+            let lsda_field_vma = sec_vma + lsda_field_off as u64;
+            let Some(lsda_ptr) = decode_eh_pointer(
+                aug.lsda_enc,
+                lsda_field_vma,
+                sec_vma,
+                data,
+                lsda_field_off,
+                ptr_size,
+            ) else {
+                o = next;
+                continue;
+            };
+            if lsda_ptr == 0 {
+                o = next; // no LSDA for this FDE.
+                continue;
+            }
+            // Decode the `.gcc_except_table` LSDA at `lsda_ptr`. lpStart defaults to
+            // the FDE's pcBegin when the LSDA omits its own lpStart.
+            decode_lsda_landing_pads(
+                gcc_data, gcc_vma, lsda_ptr, pc_begin, ptr_size, &mut out,
+            );
+        }
+        o = next;
+    }
+
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Decode the `.gcc_except_table` LSDA at VMA `lsda_vma` and push each non-zero
+/// landing pad (`lpStart + cs_landing_pad`) into `out`. `func_pc_begin` is the
+/// FDE's pcBegin — the default `lpStart` when the LSDA's `lpStartEncoding` is
+/// `omit`. Faithful to `LSDAHeader.create` + `LSDACallSiteRecord.create`.
+fn decode_lsda_landing_pads(
+    gcc_data: &[u8],
+    gcc_vma: u64,
+    lsda_vma: u64,
+    func_pc_begin: u64,
+    ptr_size: usize,
+    out: &mut Vec<u64>,
+) {
+    // Section-relative offset of the LSDA header.
+    let Some(base) = lsda_vma.checked_sub(gcc_vma) else {
+        return;
+    };
+    let base = base as usize;
+    if base >= gcc_data.len() {
+        return;
+    }
+    let mut p = base;
+
+    // lpStartEncoding (1 byte). When omit, lpStart = func_pc_begin; else decode a
+    // pointer of that encoding (the rebased landing-pad base).
+    let Some(&lp_enc) = gcc_data.get(p) else {
+        return;
+    };
+    p += 1;
+    let lp_start: u64 = if lp_enc == DW_EH_PE_OMIT {
+        func_pc_begin
+    } else {
+        let field_vma = gcc_vma + p as u64;
+        let Some(v) = decode_eh_pointer(lp_enc, field_vma, gcc_vma, gcc_data, p, ptr_size) else {
+            return;
+        };
+        p += encoded_size(lp_enc, ptr_size, gcc_data.get(p..).unwrap_or(&[]));
+        v
+    };
+
+    // ttypeEncoding (1 byte) + ttypeOffset (uleb) iff not omit. We do not consume
+    // the types table (only the call-site landing pads matter for code discovery),
+    // but we must SKIP the ttypeOffset uleb to reach the call-site header.
+    let Some(&tt_enc) = gcc_data.get(p) else {
+        return;
+    };
+    p += 1;
+    if tt_enc != DW_EH_PE_OMIT {
+        let Some((_tt_off, np)) = read_uleb128(gcc_data, p) else {
+            return;
+        };
+        p = np;
+    }
+
+    // callSiteEncoding (1 byte) + callSiteTableLength (uleb).
+    let Some(&cs_enc) = gcc_data.get(p) else {
+        return;
+    };
+    p += 1;
+    let Some((cs_table_len, np)) = read_uleb128(gcc_data, p) else {
+        return;
+    };
+    p = np;
+    let table_end = match p.checked_add(cs_table_len as usize) {
+        Some(e) if e <= gcc_data.len() => e,
+        _ => return,
+    };
+
+    // Call-site records: [cs_start][cs_len][cs_landing_pad] (all `cs_enc`-encoded),
+    // then [cs_action] (uleb). cs_landing_pad == 0 ⇒ no landing pad.
+    let mut guard = 0usize;
+    while p < table_end {
+        // Bound the loop: each record consumes ≥4 bytes; cap iterations defensively.
+        guard += 1;
+        if guard > 1 << 20 {
+            break;
+        }
+        // cs_start (skipped — the try-block start, not a code entry we emit).
+        let Some(np) = skip_eh_pointer(cs_enc, gcc_data, p, ptr_size) else {
+            break;
+        };
+        p = np;
+        // cs_len (skipped — try-block length).
+        let Some(np) = skip_eh_pointer(cs_enc, gcc_data, p, ptr_size) else {
+            break;
+        };
+        p = np;
+        // cs_landing_pad (the offset from lpStart). Decoded as a DW_EH_PE value —
+        // in practice `udata4`/`uleb128` with `appl == absptr`, so this is a plain
+        // offset; `decode_eh_pointer` applies any `appl` exactly as for a pointer.
+        let lp_field_vma = gcc_vma + p as u64;
+        let Some(cs_lp) = decode_eh_pointer(cs_enc, lp_field_vma, gcc_vma, gcc_data, p, ptr_size)
+        else {
+            break;
+        };
+        let Some(np) = skip_eh_pointer(cs_enc, gcc_data, p, ptr_size) else {
+            break;
+        };
+        p = np;
+        // cs_action (uleb, skipped — index into the action table).
+        let Some((_action, np)) = read_uleb128(gcc_data, p) else {
+            break;
+        };
+        p = np;
+
+        if cs_lp != 0 {
+            out.push(lp_start.wrapping_add(cs_lp));
+        }
+    }
+}
+
+/// Parse a CIE record's augmentation and return its decoded [`CieAug`] (the FDE
+/// `R` encoding plus the LSDA `L` encoding / presence), or `None` on a malformed
+/// record. The walk mirrors [`parse_cie_fde_encoding`] but tracks the `L` char's
+/// 1-byte LSDA encoding payload (`Cie.processLsdaEncoding`) alongside the `R`
+/// char's FDE encoding (`Cie.processFdeEncoding`).
+fn parse_cie_aug(rec: &[u8], ptr_size: usize) -> Option<CieAug> {
+    let mut p = 8usize; // skip length + cieId
+    let version = *rec.get(p)?;
+    p += 1;
+
+    let aug_start = p;
+    while p < rec.len() && rec[p] != 0 {
+        p += 1;
+    }
+    if p >= rec.len() {
+        return None;
+    }
+    let aug = &rec[aug_start..p];
+    p += 1; // skip NUL
+
+    if version >= 4 {
+        p += 2; // address_size, segment_selector_size
+    }
+    let (_, np) = read_uleb128(rec, p)?; // code_alignment_factor
+    p = np;
+    let (_, np) = read_sleb128(rec, p)?; // data_alignment_factor
+    p = np;
+    if version == 1 {
+        p += 1; // return_address_register (u8)
+    } else {
+        let (_, np) = read_uleb128(rec, p)?; // return_address_register (uleb)
+        p = np;
+    }
+
+    // Defaults: no `L`, FDE encoding absptr. Only a `z`-augmentation carries the
+    // aug-data block where the `R`/`L`/`P` payloads live.
+    let mut fde_enc = DW_EH_PE_ABSPTR;
+    let mut has_lsda = false;
+    let mut lsda_enc = DW_EH_PE_ABSPTR;
+    if aug.first() != Some(&b'z') {
+        return Some(CieAug { fde_enc, has_lsda, lsda_enc, fde_lsda_off: 0 });
+    }
+    let (aug_len, np) = read_uleb128(rec, p)?;
+    p = np;
+    let aug_data_start = p;
+    let aug_data_end = (aug_data_start + aug_len as usize).min(rec.len());
+
+    let mut dp = aug_data_start;
+    for &c in &aug[1..] {
+        match c {
+            b'R' => {
+                fde_enc = *rec.get(dp)?;
+                dp += 1;
+            }
+            b'L' => {
+                has_lsda = true;
+                lsda_enc = *rec.get(dp)?;
+                dp += 1;
+            }
+            b'P' => {
+                let enc = *rec.get(dp)?;
+                dp += 1;
+                dp += encoded_size(enc, ptr_size, rec.get(dp..).unwrap_or(&[]));
+            }
+            b'S' => {}
+            _ => {}
+        }
+        if dp > aug_data_end {
+            break;
+        }
+    }
+    // The FDE aug-data LSDA pointer is the FIRST FDE aug-data field for the
+    // `zL`/`zPL`/`zPLR` augmentations gcc emits (the `R` char only sizes the FDE
+    // pcBegin/pcRange; `P`'s personality is CIE aug-data). Offset 0.
+    Some(CieAug { fde_enc, has_lsda, lsda_enc, fde_lsda_off: 0 })
+}
+
+/// Advance past a DW_EH_PE-encoded value at `bytes[off..]`, returning the next
+/// offset (or `None` past end-of-buffer).
+fn skip_eh_pointer(enc: u8, bytes: &[u8], off: usize, ptr_size: usize) -> Option<usize> {
+    let sz = encoded_size(enc, ptr_size, bytes.get(off..)?);
+    let next = off.checked_add(sz)?;
+    if next > bytes.len() {
+        return None;
+    }
+    Some(next)
+}
+
+/// The filtered landing-pad entry set: [`scan_eh_frame_landing_pads`] put through
+/// the SAME exec-section + funcsym-skip + dedup filter every entry oracle uses, so
+/// a landing pad that coincides with a real funcsym (or falls outside an
+/// executable section) is dropped. Purely additive — only ever ADDS entries.
+pub fn collect_landing_pad_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+    let pads = scan_eh_frame_landing_pads(file);
+    if pads.is_empty() {
+        return Vec::new();
+    }
+    let execs = executable_sections(file);
+    let funcsyms = existing_function_addrs(file, bytes);
+    let mut out: Vec<u64> = Vec::new();
+    for vma in pads {
+        if vma == 0 || !in_executable_section(&execs, vma) {
+            continue;
+        }
+        if funcsyms.binary_search(&vma).is_ok() {
+            continue;
+        }
+        out.push(vma);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Parse a CIE record's augmentation and return its FDE pointer-encoding byte
 /// (the `R` char's payload), or `None` if the augmentation does not specify one.
 /// Faithful to `Cie.processAugmentationString`/`processAugmentationInfo`
@@ -1319,6 +1777,109 @@ mod tests {
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
         let starts = scan_eh_frame_starts(&file);
         assert!(starts.contains(&0x400500), "first FDE pcBegin should be 0x400500");
+    }
+
+    // -- `.eh_frame` LSDA landing pads (eh_lsda_x86_64, the gated headline) ----
+
+    // The C++ try/catch fixture (stripped of `.symtab`): each FDE's `zPLR` CIE
+    // carries an `L` LSDA encoding, so `scan_eh_frame_landing_pads` follows the
+    // FDE aug-data LSDA pointer into `.gcc_except_table`, decodes the call-site
+    // table, and yields the exception-handler landing pads. Ground truth (decoded
+    // by hand + cross-checked against `objdump -d`, see fixture README):
+    //   may_throw LSDA @0x40218c → landing 0x4012bf
+    //   guarded   LSDA @0x402198 → landings 0x4012e2, 0x401352, 0x401366
+    // Every landing pad lands on an `endbr64` (a real unwinder-only code target).
+    #[test]
+    fn eh_frame_landing_pads_eh_lsda() {
+        let bytes = fixture("eh_lsda_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse eh_lsda_x86_64");
+        let pads = scan_eh_frame_landing_pads(&file);
+        for want in [0x4012bfu64, 0x4012e2, 0x401352, 0x401366] {
+            assert!(pads.contains(&want), "landing pad {want:#x} missing from {pads:#x?}");
+        }
+        assert!(!pads.contains(&0), "no spurious 0 landing pad");
+    }
+
+    // The landing pads are NOT FDE pcBegins (function starts) — they sit
+    // mid-function inside `may_throw`/`guarded` and are reached only by the
+    // unwinder, so the FDE-start oracle never finds them. This is the property
+    // that makes the LSDA oracle net-new (it adds entries no other oracle has).
+    #[test]
+    fn landing_pads_are_not_fde_starts() {
+        let bytes = fixture("eh_lsda_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse eh_lsda_x86_64");
+        let starts = scan_eh_frame_starts(&file);
+        let pads = scan_eh_frame_landing_pads(&file);
+        for p in &pads {
+            assert!(
+                !starts.contains(p),
+                "landing pad {p:#x} must NOT be an FDE start (it is mid-function)"
+            );
+        }
+        // And the filtered entry set keeps them (none coincide with a funcsym in
+        // this stripped binary) — the additive product the gated option commits.
+        let entries = collect_landing_pad_entries(&file, &bytes);
+        for want in [0x4012bfu64, 0x4012e2, 0x401352, 0x401366] {
+            assert!(entries.contains(&want), "filtered entry {want:#x} missing from {entries:#x?}");
+        }
+    }
+
+    // A binary with no `.gcc_except_table` (fauxware: C, no exceptions) yields no
+    // landing pads — the oracle is inert there, so the gated option is a strict
+    // no-op on a non-exception binary.
+    #[test]
+    fn landing_pads_empty_without_except_table() {
+        let bytes = fixture("fauxware");
+        let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
+        assert!(file.section_by_name(".gcc_except_table").is_none(), "fauxware has no LSDA");
+        assert!(scan_eh_frame_landing_pads(&file).is_empty(), "no landing pads without LSDA");
+    }
+
+    // Unit-test the LSDA call-site-table parse over SYNTHETIC bytes (no fixture):
+    // exactly the `guarded` LSDA layout (lpStart=omit → func pcBegin, callSiteEnc=
+    // uleb128) decoded in isolation. Proves the header walk (lpStartEnc/ttypeEnc/
+    // ttypeOff/callSiteEnc/callSiteLen) + the record walk (cs_start/cs_len/cs_lp/
+    // cs_action) + the `lpStart + cs_lp` math + the `cs_lp == 0 ⇒ none` rule.
+    #[test]
+    fn lsda_call_site_table_parse_synthetic() {
+        // `.gcc_except_table` content (just the one LSDA at section offset 0):
+        //   lpStartEnc = 0xff (omit)              → lpStart = func_pc_begin
+        //   ttypeEnc   = 0x03 (udata4, present)
+        //   ttypeOff   = 0x25 (uleb)
+        //   callSiteEnc= 0x01 (uleb128)
+        //   csTableLen = 0x16 (22 bytes)
+        //   records (uleb cs_start, cs_len, cs_lp, action):
+        //     05 05 0c 03  → cs_lp=0x0c → landing pc_begin+0x0c
+        //     1f 05 00 00  → cs_lp=0    → NONE
+        //     44 05 7c 00  → cs_lp=0x7c → landing pc_begin+0x7c
+        //     6b 05 90 01 00 → cs_lp uleb(90 01)=0x90 → +0x90
+        //     8b 01 19 00 00 → cs_start uleb(8b 01)=0x8b, cs_lp=0 → NONE
+        // csTableLen = 0x16 (22) = 4+4+4+5+5. (mirrors the real fixture bytes,
+        // README-pinned; the action/types tables AFTER the call-site table are
+        // unread, so they are omitted here.)
+        let gcc: &[u8] = &[
+            0xff, 0x03, 0x25, 0x01, 0x16, // header: lpEnc, ttEnc, ttOff, csEnc, csLen=22
+            0x05, 0x05, 0x0c, 0x03, // record 1 (4) → +0x0c
+            0x1f, 0x05, 0x00, 0x00, // record 2 (4) → none
+            0x44, 0x05, 0x7c, 0x00, // record 3 (4) → +0x7c
+            0x6b, 0x05, 0x90, 0x01, 0x00, // record 4 (5) → +0x90 (cs_lp uleb 0x90,0x01)
+            0x8b, 0x01, 0x19, 0x00, 0x00, // record 5 (5) → none (cs_start uleb 0x8b,0x01)
+        ];
+        let func_pc_begin = 0x4012d6u64;
+        let mut out: Vec<u64> = Vec::new();
+        // gcc_vma=0, lsda_vma=0 (section offset 0), ptr_size 8.
+        decode_lsda_landing_pads(gcc, 0, 0, func_pc_begin, 8, &mut out);
+        out.sort_unstable();
+        out.dedup();
+        assert_eq!(
+            out,
+            vec![
+                func_pc_begin + 0x0c, // 0x4012e2
+                func_pc_begin + 0x7c, // 0x401352
+                func_pc_begin + 0x90, // 0x401366
+            ],
+            "call-site table landing pads (zero cs_lp records dropped)"
+        );
     }
 
     // -- Oracle 1+2: entry / init / fini (stripped_dynamic) -------------------

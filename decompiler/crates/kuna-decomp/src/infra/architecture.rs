@@ -392,6 +392,11 @@ pub struct Architecture {
     pub analysis_strings: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
     pub analysis_entry_disc: bool,
+    /// (kuna) Gate the `.eh_frame` LSDA landing-pad discovery sub-feature of the
+    /// always-on entry-discovery pass (`eh_frame_full`, the GccExceptionAnalyzer
+    /// `.gcc_except_table` markup); default **off** (output-changing: adds the
+    /// discovered exception-handler landing pads as function entries).
+    pub analysis_eh_frame_full: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
@@ -668,6 +673,7 @@ impl Architecture {
             analysis_libproto: false,
             analysis_strings: false,
             analysis_entry_disc: false,
+            analysis_eh_frame_full: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -775,6 +781,9 @@ impl Architecture {
         self.analysis_libproto = true;
         self.analysis_strings = true;
         self.analysis_entry_disc = true;
+        // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
+        // output-changing: adds the discovered exception landing pads as entries).
+        self.analysis_eh_frame_full = false;
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -913,6 +922,9 @@ impl Architecture {
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
+            "eh_frame_full" => {
+                on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
+            }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
             // (kuna) Loader-tier gate: also bridge to the env var the loader reads

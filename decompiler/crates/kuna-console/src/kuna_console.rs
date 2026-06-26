@@ -196,6 +196,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "libproto" => on_off(conf.analysis_libproto),
         "strings" => on_off(conf.analysis_strings),
         "entry_disc" => on_off(conf.analysis_entry_disc),
+        "eh_frame_full" => on_off(conf.analysis_eh_frame_full),
         "arm_markers" => on_off(conf.analysis_arm_markers),
         "mips_gp" => on_off(conf.analysis_mips_gp),
         "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),

@@ -282,6 +282,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "libproto",
     "strings",
     "entry_disc",
+    // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
+    // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
+    // (output-changing: adds the discovered exception landing pads as entries).
+    "eh_frame_full",
     "arm_markers",
     "mips_gp",
     // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A

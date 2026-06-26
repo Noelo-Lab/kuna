@@ -342,6 +342,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "libproto" => arch.analysis_libproto,
         "strings" => arch.analysis_strings,
         "entry_disc" => arch.analysis_entry_disc,
+        // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a
+        // standalone stashed pass whose facts (the exception landing pads) are
+        // computed at LOAD but COMMITTED only when this gate is on. Default-off
+        // (output-changing: adds entries), so a default run never commits them and
+        // the discovery set is byte-identical to FDE-pcBegin-only.
+        "eh_frame_full" => arch.analysis_eh_frame_full,
         "arm_markers" => arch.analysis_arm_markers,
         "mips_gp" => arch.analysis_mips_gp,
         "mips_isa" => arch.analysis_mips_isa,
