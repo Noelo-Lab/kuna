@@ -4381,3 +4381,102 @@ Ghidra is available.
   rename/commit + `--option fid` surface + the stripped-binary re-identification
   e2e test (PR4).
 
+### Increment 54 — FID PR3: .fid database format + `kuna fid build` generator
+
+The third PR of the FID port — the **kuna-native `.fid` fingerprint database** and
+the **`kuna fid build` generator** (the §5.2 `FidServiceLibraryIngest` analog).
+Builds on PR2's byte-exact hasher: parse a `.a`/`.o`, disassemble each named
+function through the live SLEIGH decoder, run the PR2 `FidHasher` over its extent,
+and write the deduplicated records to a `.fid`. Still **no pass/option/engine
+wiring** (that is PR4) — the generator is a build-time tool, never reached from a
+decompilation, so the parity oracles are structurally untouched.
+
+**New code:**
+1. **`kuna-analysis/src/s1_fid/db.rs`** — the `.fid` format + `FidDb` (§5.1).
+   On-disk: magic `"KFID"`, `version:u32(=1)`, len-prefixed `lang_id`/`cspec_id`,
+   `n_records:u32`, then per-record `full_hash:u64 | specific_hash:u64 |
+   code_unit_size:i16 | specific_addl:u8 | flags:u8 | name_off:u32`, then an
+   **interned** NUL-separated `string_blob` (LE throughout). In-memory:
+   `FidDb { lang_id, cspec_id, by_full_hash: HashMap<u64, Vec<FidRecord>>, ... }`
+   behind a small `FidDatabase` trait (`lang_id`/`cspec_id`/`find_by_full_hash`/
+   `record_count`) — the seam a future `.fidbf` reader (deferred PR6) swaps in.
+   `find_by_full_hash(h) -> &[FidRecord]` is the only hot-path query (Ghidra's
+   `FULL_HASH_COL` index). `serialize`/`load` are a fixed flat layout; **`load`
+   never panics** on a malformed/truncated file (every read bounds-checked → `Err`,
+   never an OOB index). Modeled field-for-field on Ghidra's FID
+   `FunctionsTable`+`StringsTable`.
+2. **`kuna-analysis/src/s1_fid/build.rs`** — `build_records(bytes, image, arch,
+   translate) -> Vec<FidRecord>`. The body source is the loader's **rebased**
+   funcsyms (`ObjectLoadImage::func_symbols`, a new accessor — for an `ET_REL`
+   `.o` the raw `object::File` symbol address is section-relative; the loader laid
+   each `SHF_ALLOC` section out above `RELOC_BASE`). Per function: the
+   address-contiguous `[entry, next_entry)` extent reconstructed by a **linear
+   decode** through `listing::decode::decode_one` + `listing::classify::classify`
+   (independent of the Listing/xref exec-range universe, which is computed from the
+   *unrebased* section addresses and so is wrong for a `.o`); each instruction
+   fingerprinted via `Sleigh::instruction_mask` → `InsnFingerprint`; the x86 skipper
+   set selected on `archid.starts_with("x86:")`; the 4-way scalar rule fed a real
+   `RelocationQuery` (`ObjectRelocations`, rebasing reloc offsets the same way
+   `elf_reloc` does — correct for a `.o` with `.rela.text`). Only functions with a
+   **real** symbol name + ≥ 4 code units are kept; identical `(full, specific,
+   name)` rows are deduped — faithful to `hashAllTheFunctions`.
+3. **`kuna-cli` `fid` subcommand** — `kuna fid build <lib.a|*.o ...> -o <out.fid>
+   --lang <id> --cspec <id>`. Bootstraps the architecture in-process via
+   `kuna_console::bootstrap_from_object` (the live `Sleigh` the generator's
+   `instruction_mask` needs), then calls `build_records`. A `.a` archive is
+   unpacked member-by-member (the `object` `archive` feature, enabled only on
+   `kuna-cli`'s `object` dep); `--lang`/`--cspec` are authoritative (written into
+   the header). New `kuna-cli` deps: `kuna-console`, `kuna-analysis`, `object`.
+
+**Fixture** (`tests/fixtures/fid/`, mirrored to
+`kuna-analysis/tests/fixtures/fid_lib_x86_32.*`): `lib.c` — `kuna_crc32` (the star,
+`0xEDB88320` immediate), `kuna_strlen`, `kuna_memset` (each ≥ 4 code units, no libc
+call) + `main.c` (PR4 retention). Built `gcc -m32 -O2 -ffreestanding
+-fno-stack-protector -c lib.c -o lib.o` then `kuna fid build lib.o -o lib.fid
+--lang x86:LE:32:default --cspec gcc`; **`lib.o` + `lib.fid` vendored** (both tiny,
+regenerable via the committed `Makefile`/`README.md`). The records:
+`kuna_crc32 → full 0x0c802846cd3b75ef / spec 0x270017388f7ad28e / cus 33 / addl 24`,
+`kuna_strlen → full 0x6457464202e9c843 / spec 0x0dc29556fc68a8f2 / cus 15 / addl 13`,
+`kuna_memset → full 0x1461d890c55eb740 / spec 0x8706041ac5102d0b / cus 18 / addl 19`.
+
+**HONEST fidelity note — the fixture is 32-bit x86, not the x86-64 the design doc
+(§7.2) targets.** The byte-exact hasher, the `.fid` format, the generator, and the
+rebasing are all architecture-agnostic, but the FID **PR1** `Sleigh::instruction_mask`
+accessor does **not yet decode REX-prefixed (x86-64) instructions**: its post-decode
+decision-tree re-walk (`DecisionNode::resolve_matched`) reads the *final* multi-phase
+decode context (`instrPhase` advanced past the REX-prefix phase) and fails to
+re-resolve the constructor ("Unable to resolve constructor" for e.g. `48 01 fe`,
+`add rsi,rdi`). Diagnosis: the engine's `Sleigh::resolve` applies each node's context
+commits *after* matching (`apply_context` post-`resolve`), so a fresh end-of-decode
+re-walk sees post-commit context; the fix (retain the matched pattern on
+`ConstructState` during decode, or look the pattern up by the known `ct`) is a **PR1
+change to the proven `kuna-sleigh`**, out of PR3's scope. 32-bit x86 has no REX and
+masks cleanly, so it exercises the **entire PR3 mechanism** end-to-end with verifiable
+hashes; the x86-64 fixture is a tracked PR1 follow-up (the README records the x86-64
+recipe for when `instruction_mask` handles multi-phase decode). The Ghidra-validated
+golden gate (§7.1) remains the deferred cross-validation target (no built Ghidra
+in-env, as PR2 noted); here the hashes are validated by self-consistency (a fresh
+in-process generate reproduces the vendored `.fid`) + the PR2 FNV gate.
+
+**Tests** (all RAN, not skipped — `x86.sla` built): `s1_fid::db` — **9** new unit
+tests (round-trip preserves records + `find_by_full_hash`; interning; collisions;
+empty DB; and 5 malformed-input → `Err`-not-panic cases). `verify_fid_build.rs`
+(`kuna-console`) — **3** integration tests over the vendored `.o`: the generator
+recovers `kuna_crc32`/`kuna_strlen`/`kuna_memset` by name with distinct hashes; the
+records round-trip through the DB; and a fresh in-process generate **matches the
+vendored `.fid`** record-for-record (ties the engine to the artifact).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. the 9 `db` + 3 `verify_fid_build` new tests.
+
+- **New:** `kuna-analysis/src/s1_fid/{db,build}.rs`,
+  `kuna-cli/src/fid.rs`, `kuna-console/tests/verify_fid_build.rs`,
+  `tests/fixtures/fid/{lib.c,main.c,lib.o,lib.fid,README.md,Makefile}`,
+  `kuna-analysis/tests/fixtures/fid_lib_x86_32.{o,c,fid}`.
+- **Changed:** `kuna-analysis/src/s1_fid/mod.rs` (+`build`/`db`),
+  `kuna-analysis/src/loadimage_object.rs` (+`func_symbols` accessor),
+  `kuna-cli/src/main.rs` (+`fid` arm), `kuna-cli/Cargo.toml` (+deps),
+  `docs/analysis-port-log.md`.
+- **Next (PR4):** the `FidPass` + commit/rename + `--option fid` surface + the
+  stripped-binary re-identification e2e test (and, prerequisite for an x86-64
+  fixture, the PR1 `instruction_mask` multi-phase fix).

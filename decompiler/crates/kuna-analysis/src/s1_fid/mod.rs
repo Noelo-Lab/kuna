@@ -19,12 +19,27 @@
 //! - [`skipper`] — the [`skipper::InstructionSkipper`] trait and
 //!   [`skipper::X86InstructionSkipper`] (the x86 NOP/alignment skipper).
 //!
-//! These are pure, independently unit-testable, and **not yet wired** into any
-//! pass / DB / option / engine path — that is PR3 (the `.fid` DB format +
-//! generator) and PR4 (the `FidPass` + commit/rename + `--option fid` surface).
-//! Because nothing here is reachable from a decompilation, PR2 structurally
-//! cannot perturb the parity oracles.
+//! # PR3 scope (added) — the `.fid` database + generator
+//!
+//! - [`db`] — the kuna-native `.fid` format ([`db::FidDb`] / [`db::FidRecord`]):
+//!   a flat, full-hash-indexed, version-stamped file modeled field-for-field on
+//!   Ghidra's FID `FunctionsTable`+`StringsTable`, behind the [`db::FidDatabase`]
+//!   trait so a future `.fidbf` reader (deferred PR6) is a serialization swap.
+//!   `load`/`serialize` are robust (never panic on a malformed file).
+//! - [`build`] — the `FidServiceLibraryIngest` analog ([`build::build_records`]):
+//!   disassembles every named function in a parsed object through the Listing
+//!   path, runs the PR2 [`hash::FidHasher`] over its extent (assembling each
+//!   instruction's fingerprint from [`Sleigh::instruction_mask`](kuna_sleigh::sleigh::Sleigh::instruction_mask)),
+//!   and emits the deduplicated records. Drives the `kuna fid build` CLI
+//!   subcommand.
+//!
+//! Still **not wired** into any pass / option / engine path — that is PR4 (the
+//! `FidPass` + commit/rename + `--option fid` surface). The generator is a
+//! build-time tool (it produces the fixture `.fid`), never reached from a
+//! decompilation, so PR3 structurally cannot perturb the parity oracles.
 
+pub mod build;
+pub mod db;
 pub mod extent;
 pub mod hash;
 pub mod skipper;
