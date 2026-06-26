@@ -741,6 +741,12 @@ pub fn universal_sched(
             // docstring it is the last deoptimization, so return tails are already
             // structured early returns and only true cross-jump tails remain.
             act!(crate::s8_structure::kuna_crossjumpreverter::ActionCrossJumpReverter::boxed("blockrecovery")),
+            // (kuna) angr structurer ITE region-dedup (option `dedupitetail`,
+            // default-OFF).  The inverse of the duplication passes above: after the
+            // tree is final + goto targets labelled, merge a duplicated `if/else`
+            // tail (shared prefix/suffix of statement-equivalent leaves across both
+            // arms) by hoisting the shared blocks out of the `if`, emitting one copy.
+            act!(crate::s8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],
