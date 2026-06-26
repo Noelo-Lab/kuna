@@ -37,10 +37,28 @@
 //!    ([`s9_emit::printc`](crate::printc)) and `ActionFinalStructure`'s
 //!    `mark_unstructured` are happy.
 //!
-//! Loops, if/else (ITE), switches and short-circuit folding are **later
-//! increments**; in Inc 1 they fall back to virtualized gotos (honest-partial,
-//! never a panic).  Because the virtualize fallback always removes one edge, the
-//! loop always converges to a single structured root — there is no "stuck" state.
+//! # Increment 4 scope (switch-case recovery)
+//!
+//! [`match_acyclic_switch_cases`](RegionStructurer::match_acyclic_switch_cases)
+//! recovers resolved jump-table switches natively: it matches the `f_switch_out`
+//! head (the kuna analog of angr
+//! `phoenix._match_acyclic_switch_cases_address_computed` →
+//! `_switch_build_cases` → `_make_switch_cases_core`), resolves the recovered
+//! [`JumpTable`](crate::jumptable::JumpTable) via the precomputed
+//! `switch_blocks`/`switch_case_edges` maps (the same data Ghidra's
+//! `CollapseStructure::ruleBlockSwitch` consumes), and folds it into a
+//! [`BlockSwitch`](crate::block::BlockKind::Switch) carrying the
+//! [`CaseOrder`](crate::block::CaseOrder) descriptors
+//! `ActionFinalStructure::finalize_switch_printing` expects.  This is what lets a
+//! switch region structure natively instead of forcing the whole function back to
+//! `CollapseStructure` — the prerequisite for loop+switch (getopt-style) functions
+//! getting the loop win once the cyclic schemas land.
+//!
+//! Loops (the cyclic schemas) and short-circuit folding are **later increments**;
+//! a region the matched schemas cannot fold falls back to virtualized gotos
+//! (honest-partial, never a panic).  Because the virtualize fallback always removes
+//! one edge, the loop always converges to a single structured root — there is no
+//! "stuck" state.
 //!
 //! # Honest-partial safety
 //!
@@ -124,16 +142,71 @@ pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<Block
     let mut ri = crate::s7_regions::kuna_regionid::KunaRegionIdentifier::new();
     let _ = ri.build_from_block_graph(data).and_then(|()| ri.compute().map(|_| ()));
 
+    // ---- 1b. Precompute the switch/jump-table maps over bblocks (Inc 4) -------
+    // The switch-case schema (`match_acyclic_switch_cases`) needs the same two maps
+    // `ActionBlockStructure::apply` builds for `CollapseStructure`: `switch_blocks`
+    // (the bblocks switch BlockBasic → `Funcdata::jumpvec` slot, C++ `BlockSwitch(ind)`'s
+    // `ind->getJumptable()`) and `switch_case_edges` (the per-switch case-edge topology
+    // `(switch_bb, target_bb) → (outindex, isdefault)`, C++ `BlockSwitch::addCase`'s
+    // `getInIndex`/`isDefaultBranch`).  Built here against `data` (whose switch
+    // in/out edges structuring never severs) before the `sblocks_mut` borrow.
+    let (switch_blocks, switch_case_edges) = compute_switch_maps(data);
+
     // ---- 2. Structure the seeded sblocks graph -------------------------------
     let sroot = data.sblocks_root();
     let graph = data.sblocks_mut();
-    let mut st = RegionStructurer::new(graph, sroot);
+    let mut st = RegionStructurer::new(graph, sroot)
+        .with_switch_maps(switch_blocks, switch_case_edges);
     let ok = st.structure()?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
         eprintln!("[rs] structure -> ok={ok} flips={}", flips.len());
     }
     Ok((ok, flips))
+}
+
+/// Precompute the bblocks switch-block → jumpvec-slot map and the per-switch
+/// case-edge topology map over `data` (Inc 4).
+///
+/// A mirror of the precomputation in
+/// [`ActionBlockStructure::apply`](crate::blockaction::ActionBlockStructure) so the
+/// region structurer's switch schema feeds [`BlockGraph::new_block_switch`] exactly
+/// the maps Ghidra's `CollapseStructure::ruleBlockSwitch` does.  A bblocks
+/// `BlockBasic` is a switch block when it `is_switch_out` and its tail BRANCHIND
+/// has a recovered `JumpTable` (`find_jump_table_index`); the case-edge map records
+/// each switch's first out-edge to every target as `(outindex, isdefault)` (C++
+/// `getInIndex` returns the first matching in-edge).
+#[allow(clippy::type_complexity)]
+fn compute_switch_maps(
+    data: &Funcdata,
+) -> (
+    std::collections::BTreeMap<BlockId, usize>,
+    std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+) {
+    let mut switch_blocks: std::collections::BTreeMap<BlockId, usize> =
+        std::collections::BTreeMap::new();
+    let nbb = data.bblocks_get_size();
+    for i in 0..nbb {
+        let bb = data.bblocks_get_block(i);
+        if data.bblocks_ref().block(bb).is_switch_out() {
+            if let Some(indop) = data.bb_op_tail(bb) {
+                if let Some(jt_idx) = data.find_jump_table_index(indop) {
+                    switch_blocks.insert(bb, jt_idx);
+                }
+            }
+        }
+    }
+    let mut switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)> =
+        std::collections::BTreeMap::new();
+    for &sbb in switch_blocks.keys() {
+        let nout = data.bblocks_ref().block(sbb).size_out();
+        for j in 0..nout {
+            let target = data.bblocks_ref().block(sbb).get_out(j);
+            let isdef = data.bblocks_ref().block(sbb).is_default_branch(j);
+            switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
+        }
+    }
+    (switch_blocks, switch_case_edges)
 }
 
 /// The acyclic sequence + virtualize structuring engine, operating on the
@@ -144,6 +217,14 @@ struct RegionStructurer<'a> {
     graph: &'a mut BlockGraph,
     /// The root BlockGraph node id (its `list` holds the live components).
     graph_id: BlockId,
+    /// The bblocks switch BlockBasic → `Funcdata::jumpvec` slot map (Inc 4), keyed
+    /// by the bblocks id each `sblocks` `BlockCopy` exit-leaf's `copy` references
+    /// (C++ `BlockSwitch(ind)`'s `ind->getJumptable()`).  Empty ⇒ no switch schema.
+    switch_blocks: std::collections::BTreeMap<BlockId, usize>,
+    /// The per-switch case-edge topology `(switch_bb, target_bb) → (outindex,
+    /// isdefault)` over bblocks (Inc 4), fed to [`BlockGraph::new_block_switch`]
+    /// (C++ `BlockSwitch::addCase`).
+    switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
     /// `bblocks` `BlockBasic` ids whose CBRANCH op must have its
     /// `boolean_flip`/`fallthru_true` toggled (the deferred data-flow half of
     /// `BlockBasic::negateCondition`) — mirrors `CollapseStructure::pending_flips`.
@@ -152,7 +233,24 @@ struct RegionStructurer<'a> {
 
 impl<'a> RegionStructurer<'a> {
     fn new(graph: &'a mut BlockGraph, graph_id: BlockId) -> RegionStructurer<'a> {
-        RegionStructurer { graph, graph_id, pending_flips: Vec::new() }
+        RegionStructurer {
+            graph,
+            graph_id,
+            switch_blocks: std::collections::BTreeMap::new(),
+            switch_case_edges: std::collections::BTreeMap::new(),
+            pending_flips: Vec::new(),
+        }
+    }
+
+    /// Attach the precomputed switch/jump-table maps (Inc 4 switch schema).
+    fn with_switch_maps(
+        mut self,
+        switch_blocks: std::collections::BTreeMap<BlockId, usize>,
+        switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+    ) -> Self {
+        self.switch_blocks = switch_blocks;
+        self.switch_case_edges = switch_case_edges;
+        self
     }
 
     /// The XOR-reduced set of `bblocks` `BlockBasic` ids whose CBRANCH op flags
@@ -233,6 +331,16 @@ impl<'a> RegionStructurer<'a> {
                 return Ok(false);
             }
 
+            // (a0) acyclic switch-case schema (phoenix._match_acyclic_switch_cases*,
+            //      Inc 4).  Must run before the sequence/ITE schemas (which already
+            //      refuse `is_switch_out` nodes), mirroring Ghidra's pass order where
+            //      a nested switch resolves before its surrounding structure.  Emits
+            //      a `BlockSwitch` carrying the `CaseOrder` descriptors
+            //      `ActionFinalStructure::finalize_switch_printing` expects, so the
+            //      switch-finalization/rendering path is unchanged.
+            if self.match_acyclic_switch_cases()? {
+                continue;
+            }
             // (a) acyclic sequence schema (phoenix._match_acyclic_sequence).
             if self.match_acyclic_sequence()? {
                 continue;
@@ -458,6 +566,246 @@ impl<'a> RegionStructurer<'a> {
         let graph_id = self.graph_id;
         self.graph.new_block_if(graph_id, bl, clause);
         Ok(true)
+    }
+
+    // -----------------------------------------------------------------------
+    // (a0) acyclic switch-case schema — phoenix._match_acyclic_switch_cases*
+    //      (Inc 4).  kuna structural form: the switch is a node flagged
+    //      `f_switch_out` whose out-edges (case + default + exit) carry the jump
+    //      table's edge labels (built by `seed_sblocks_copy`); the recovered
+    //      `JumpTable` lives in `Funcdata::jumpvec`, resolved via the precomputed
+    //      `switch_blocks`/`switch_case_edges` maps.  No claripy / AIL
+    //      condition-processor is needed — the case topology *is* the edge set.
+    //      This is the kuna analog of angr
+    //      `phoenix._match_acyclic_switch_cases_address_computed` →
+    //      `_switch_build_cases` → `_make_switch_cases_core`, realized over kuna's
+    //      `BlockSwitch` builder (the same path Ghidra's `ruleBlockSwitch` drives).
+    // -----------------------------------------------------------------------
+
+    /// Find a structured switch region and fold it into a
+    /// [`BlockSwitch`](crate::block::BlockKind::Switch).
+    ///
+    /// Port of angr `phoenix._match_acyclic_switch_cases` (the
+    /// `*_address_computed` resolved-jump-table arm kuna already has the data for).
+    /// The topological match mirrors Ghidra `CollapseStructure::ruleBlockSwitch`:
+    /// a `f_switch_out` head whose cases each have a single in-edge from the head
+    /// and at most one out-edge to a common exit block.  Returns `Ok(true)` once a
+    /// switch is folded (or a skip-edge is virtualized to a goto, which makes
+    /// progress); honest-partial: a switch we cannot match falls through to the
+    /// virtualize fallback (never a panic, never a whole-function abort).
+    fn match_acyclic_switch_cases(&mut self) -> KunaResult<bool> {
+        if self.switch_blocks.is_empty() {
+            return Ok(false); // no recovered jump table ⇒ no switch schema
+        }
+        let n = self.size();
+        for i in 0..n {
+            let bl = self.component(i);
+            if self.try_switch_cases(bl)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Attempt to fold the switch rooted at `bl` (port of Ghidra
+    /// `CollapseStructure::ruleBlockSwitch`, `blockaction.cc:1649`, realized in the
+    /// region structurer).  Mirrors the exact case/exit/skip topology checks; on a
+    /// clean match emits `BlockSwitch` via [`BlockGraph::new_block_switch`].
+    fn try_switch_cases(&mut self, bl: BlockId) -> KunaResult<bool> {
+        if !self.graph.block(bl).is_switch_out() {
+            return Ok(false);
+        }
+        // Only proceed if this switch has a recovered jump table (`getJumptable()`
+        // ≠ 0); else there is no case-label source and `new_block_switch` would be
+        // meaningless — leave it to virtualize (honest partial).
+        let jt_index = match self.switch_jt_index(bl) {
+            Some(j) => j,
+            None => return Ok(false),
+        };
+
+        let sizeout = self.graph.block(bl).size_out();
+        let mut exitblock: Option<BlockId> = None;
+
+        // --- Find the "obvious" exit block (ruleBlockSwitch first loop) ---------
+        for i in 0..sizeout {
+            let curbl = self.graph.block(bl).get_out(i);
+            if curbl == bl {
+                exitblock = Some(curbl); // exit back to top of switch (loop)
+                break;
+            }
+            if self.graph.block(curbl).size_out() > 1 {
+                exitblock = Some(curbl);
+                break;
+            }
+            if self.graph.block(curbl).size_in() > 1 {
+                exitblock = Some(curbl);
+                break;
+            }
+        }
+
+        if exitblock.is_none() {
+            // Every immediate block has sizeIn==1 and sizeOut<=1.
+            for i in 0..sizeout {
+                let curbl = self.graph.block(bl).get_out(i);
+                if self.graph.block(curbl).is_goto_in(0) {
+                    return Ok(false); // in cannot be a goto
+                }
+                if self.graph.block(curbl).is_switch_out() {
+                    return Ok(false); // resolve nested switch first
+                }
+                if self.graph.block(curbl).size_out() == 1 {
+                    if self.graph.block(curbl).is_goto_out(0) {
+                        return Ok(false); // out cannot be goto
+                    }
+                    let curout = self.graph.block(curbl).get_out(0);
+                    if let Some(e) = exitblock {
+                        if e != curout {
+                            return Ok(false);
+                        }
+                    } else {
+                        exitblock = Some(curout);
+                    }
+                }
+            }
+        } else if let Some(e) = exitblock {
+            // A determined exit block: no in/out gotos on it, and every case must
+            // fall through only to it.
+            for i in 0..self.graph.block(e).size_in() {
+                if self.graph.block(e).is_goto_in(i) {
+                    return Ok(false);
+                }
+            }
+            for i in 0..self.graph.block(e).size_out() {
+                if self.graph.block(e).is_goto_out(i) {
+                    return Ok(false);
+                }
+            }
+            for i in 0..sizeout {
+                let curbl = self.graph.block(bl).get_out(i);
+                if curbl == e {
+                    continue; // switch can go straight to the exit
+                }
+                if self.graph.block(curbl).size_in() > 1 {
+                    return Ok(false); // only the switch may fall into a case
+                }
+                if self.graph.block(curbl).is_goto_in(0) {
+                    return Ok(false);
+                }
+                if self.graph.block(curbl).size_out() > 1 {
+                    return Ok(false); // at most one exit from a case
+                }
+                if self.graph.block(curbl).size_out() == 1 {
+                    if self.graph.block(curbl).is_goto_out(0) {
+                        return Ok(false);
+                    }
+                    if self.graph.block(curbl).get_out(0) != e {
+                        return Ok(false); // which must be the exit block
+                    }
+                }
+                if self.graph.block(curbl).is_switch_out() {
+                    return Ok(false); // nested switch first
+                }
+            }
+        }
+
+        // --- Skip-to-exit handling (checkSwitchSkips) ---------------------------
+        // If a non-default case edge goes straight to the exit while the default
+        // does not, virtualize those skip edges to gotos (progress) and bail this
+        // round; the next round re-matches.  Returns Ok(true) (progress made).
+        if !self.check_switch_skips(bl, exitblock)? {
+            return Ok(true);
+        }
+
+        // --- Collect the case components (ruleBlockSwitch tail) ----------------
+        let mut cases: Vec<BlockId> = vec![bl];
+        for i in 0..sizeout {
+            let curbl = self.graph.block(bl).get_out(i);
+            if Some(curbl) == exitblock {
+                continue; // the exit is not a case
+            }
+            cases.push(curbl);
+        }
+
+        let graph_id = self.graph_id;
+        let switch_case_edges = std::mem::take(&mut self.switch_case_edges);
+        let res = self.graph.new_block_switch(
+            graph_id,
+            &cases,
+            exitblock.is_some(),
+            jt_index,
+            &switch_case_edges,
+        );
+        self.switch_case_edges = switch_case_edges;
+        // new_block_switch can fail if the exit-leaf is not a BlockCopy (should not
+        // happen for a real switch head, but keep it honest-partial: report no
+        // match so the fallback virtualizes rather than aborting the run).
+        match res {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// Resolve this switch head's `Funcdata::jumpvec` slot via its exit-leaf
+    /// `BlockCopy`'s `copy` (the bblocks BlockBasic carrying the BRANCHIND) against
+    /// the precomputed `switch_blocks` map (C++ `BlockSwitch(ind)`'s
+    /// `ind->getJumptable()`).  `None` ⇒ no recovered table for this head.
+    fn switch_jt_index(&self, bl: BlockId) -> Option<usize> {
+        let leaf = self.graph.get_exit_leaf(bl)?;
+        let bb = self.graph.block(leaf).get_copy()?;
+        self.switch_blocks.get(&bb).copied()
+    }
+
+    /// Convert any non-default switch edge that skips straight to the exit into a
+    /// goto (port of Ghidra `CollapseStructure::checkSwitchSkips`,
+    /// `blockaction.cc:1607`).  Returns `Ok(false)` (and marks the gotos) when such
+    /// skip edges exist alongside a default that does not go to the exit — the
+    /// switch then re-matches next round; otherwise `Ok(true)` (clean to fold).
+    fn check_switch_skips(
+        &mut self,
+        switchbl: BlockId,
+        exitblock: Option<BlockId>,
+    ) -> KunaResult<bool> {
+        let exitblock = match exitblock {
+            Some(e) => e,
+            None => return Ok(true),
+        };
+        let sizeout = self.graph.block(switchbl).size_out();
+        let mut defaultnottoexit = false;
+        let mut anyskiptoexit = false;
+        for edgenum in 0..sizeout {
+            if self.graph.block(switchbl).get_out(edgenum) == exitblock {
+                if !self.graph.block(switchbl).is_default_branch(edgenum) {
+                    anyskiptoexit = true;
+                }
+            } else if self.graph.block(switchbl).is_default_branch(edgenum) {
+                defaultnottoexit = true;
+            }
+        }
+        if !anyskiptoexit {
+            return Ok(true);
+        }
+        if !defaultnottoexit
+            && self.graph.block(switchbl).get_type() == crate::block::BlockType::MultiGoto
+        {
+            if let crate::block::BlockKind::MultiGoto { defaultswitch, .. } =
+                self.graph.block(switchbl).kind()
+            {
+                if *defaultswitch {
+                    defaultnottoexit = true;
+                }
+            }
+        }
+        if !defaultnottoexit {
+            return Ok(true);
+        }
+        for edgenum in 0..sizeout {
+            if self.graph.block(switchbl).get_out(edgenum) == exitblock
+                && !self.graph.block(switchbl).is_default_branch(edgenum)
+            {
+                self.graph.set_goto_branch(switchbl, edgenum)?;
+            }
+        }
+        Ok(false)
     }
 
     // -----------------------------------------------------------------------

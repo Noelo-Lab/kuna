@@ -1,0 +1,90 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Region-based (Phoenix/SAILR) structurer, Increment 4  -  acyclic switch-case
+    recovery.  Option `regionstructure` (default OFF).  This proves the region
+    structurer recovers a resolved jump-table switch NATIVELY (emits a
+    `BlockSwitch` from its own `match_acyclic_switch_cases` schema) instead of
+    whole-function-falling-back to Ghidra's `CollapseStructure` on switch code  -
+    the prerequisite for loop+switch functions (getopt-style) getting the loop
+    win once Inc 3's cyclic schemas land.
+
+    `dispatch` is a dense 7-way jump-table switch (x86-64, GCC -O1, no-PIE; the
+    bytes [0x401106, 0x401149) of a linked executable, the jump table at
+    0x402008, the one global `g` at 0x40402c).  Source:
+
+        volatile int g;
+        int dispatch(int sel, int x) {
+            int r;
+            switch (sel) {                       // dense table, sel = 0..6
+                case 0: r = x + 10; break;
+                case 1: r = x - 7;  break;
+                case 2: r = x * 3;  break;
+                case 3: r = x ^ 5;  break;
+                case 4: r = x | 8;  break;
+                case 5: r = x & 12; break;
+                case 6: r = x << 1; break;
+                default: r = 0;     break;
+            }
+            g = r;
+            return r;
+        }
+
+    Under `option regionstructure on`, `ActionBlockStructure` swaps Ghidra's
+    `CollapseStructure` for the region structurer
+    (`s8_structure::region_structurer`).  Its Inc 4 switch schema
+    (`match_acyclic_switch_cases`, the kuna analog of angr
+    `phoenix._match_acyclic_switch_cases_address_computed` ->
+    `_switch_build_cases` -> `_make_switch_cases_core`) matches the `f_switch_out`
+    head, resolves the recovered `JumpTable` via the precomputed
+    `switch_blocks`/`switch_case_edges` maps (the same data
+    `CollapseStructure::ruleBlockSwitch` consumes), and folds it into a
+    `BlockSwitch` carrying the `CaseOrder` descriptors
+    `ActionFinalStructure::finalize_switch_printing` expects  -  so the existing
+    switch finalization/rendering path runs unchanged.
+
+    Parity proof: the region-driven switch recovery is byte-identical to Ghidra's
+    `CollapseStructure` on this switch  -  pass 1 (off) and pass 2 (on) emit the
+    SAME C, both ZERO gotos.  Per the Inc 1 finding, Ghidra's switch recovery is
+    already good, so the OUTPUT MATCHES Ghidra rather than beating it; the POINT
+    of Inc 4 is the region structurer handling switches NATIVELY (so it no longer
+    whole-function-falls-back on switch+loop code).  See
+    docs/region-structurer-roadmap.md (Inc 4 row).
+
+    Stage model: S8 "structuring".  `option regionstructure off` (default) is
+    byte-identical to the existing pipeline; `on` swaps in the region structurer.
+    The asserted invariants hold across BOTH passes, so the counts are 2x the
+    per-pass count.
+-->
+<bytechunk space="ram" offset="0x401106" readonly="true">
+f30f1efa89f083ff06773189ff3eff24
+fd0820400083c00a8905082f0000c383
+e807ebf48d0476ebef83f005ebea83c8
+08ebe583e00cebe001c0ebdcb8000000
+00ebd5
+</bytechunk>
+<bytechunk space="ram" offset="0x402008" readonly="true">
+1b114000000000002511400000000000
+2a114000000000002f11400000000000
+341140000000000039114000000000
+003e11400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401106" name="dispatch"/>
+</binaryimage>
+<script>
+  <com>option regionstructure off</com>
+  <com>lo fu dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regionstructure on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="regionstructure-switch #1: the switch head is recovered, both passes" min="2" max="2">switch\(a0\) \{</stringmatch>
+<stringmatch name="regionstructure-switch #2: case 0, both passes" min="2" max="2">    case 0:</stringmatch>
+<stringmatch name="regionstructure-switch #3: case 3 (middle of the dense table), both passes" min="2" max="2">    case 3:</stringmatch>
+<stringmatch name="regionstructure-switch #4: case 6 (last case), both passes" min="2" max="2">    case 6:</stringmatch>
+<stringmatch name="regionstructure-switch #5: the default case is recovered, both passes" min="2" max="2">    default:</stringmatch>
+<stringmatch name="regionstructure-switch #6: ZERO gotos  -  region structurer recovers the switch natively (parity with Ghidra)" min="0" max="0">goto </stringmatch>
+</decompilertest>
