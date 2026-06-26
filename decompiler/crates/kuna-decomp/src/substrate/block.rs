@@ -2197,6 +2197,49 @@ impl BlockGraph {
         }
     }
 
+    /// (kuna) If-else flattening (angr `IfElseFlattener`): drop the `else` arm of
+    /// the 3-component [`BlockIf`](BlockKind::If) `if_id` whose true-clause is
+    /// statement-terminating, re-parenting the former else-clause as the `if`'s
+    /// immediate successor in its parent's component list.  Turns
+    /// `if (c) { ...return } else { body }` into `if (c) { ...return } body`.
+    ///
+    /// This is a pure print-tree edit (component `list`/`parent` only) — the CFG
+    /// edges and p-code are untouched.  The caller has already verified (via the
+    /// `ActionIfElseFlatten` predicate) that `if_id` is a 3-component `BlockIf`
+    /// with a terminating true-clause and a non-terminating else-clause, and that
+    /// its parent is a [`Ls`](BlockKind::Ls)/[`Graph`](BlockKind::Graph) able to
+    /// host the moved sibling.  Returns `true` on success, `false` if the shape no
+    /// longer matches (defensive — the tree may have shifted under a prior splice).
+    pub fn kuna_flatten_ifelse(&mut self, if_id: BlockId) -> bool {
+        // Must still be a 3-component BlockIf.
+        if self.arena[if_id].get_type() != BlockType::If || self.arena[if_id].get_size() != 3 {
+            return false;
+        }
+        let parent = match self.arena[if_id].get_parent() {
+            Some(p) => p,
+            None => return false,
+        };
+        match self.arena[parent].get_type() {
+            BlockType::Ls | BlockType::Graph => {}
+            _ => return false,
+        }
+        // Locate the `if` within the parent's component list.
+        let pos = match self.arena[parent].list.iter().position(|&b| b == if_id) {
+            Some(i) => i,
+            None => return false,
+        };
+        // Pop the else-clause (list[2]) off the `if`, demoting it to an if/then.
+        let else_clause = match self.arena[if_id].list.get(2).copied() {
+            Some(c) => c,
+            None => return false,
+        };
+        self.arena[if_id].list.truncate(2);
+        // Splice the else-clause into the parent as the `if`'s successor.
+        self.arena[else_clause].parent = Some(parent);
+        self.arena[parent].list.insert(pos + 1, else_clause);
+        true
+    }
+
     /// Build a new BlockGoto incorporating the given FlowBlock
     /// (C++ `BlockGraph::newBlockGoto`, `block.cc:1705`).
     pub fn new_block_goto(&mut self, graph_id: BlockId, bl: BlockId) -> BlockId {

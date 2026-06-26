@@ -5,7 +5,7 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=94, settable=49
+# Counts (asserted in tests): group=39, substage=40, surface=94, settable=50
 # (31 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
@@ -1691,6 +1691,23 @@ use_when = "Set on when kuna emits 1+ gotos to a shared `... return v;` tail tha
 example = "option gotoreduce on"
 source_decompiler = "angr"
 inspiration = "test_decompiling_dd_argmatch_to_argument_noeagerreturns; SAILR/Phoenix goto-reduction (ReturnDuplicator); argmatch_to_argument"
+change_kind = "structure-recovery"
+
+[[settable]]
+option = "ifelseflatten"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-IfElseFlattener"
+summary = "After structuring, flatten a 3-component `if/else` whose true-clause is statement-terminating (every endpoint returns / aborts / gotos away) by dropping the `else` and re-parenting the former else body as the `if`'s immediate follower (a print-tree edit of the structured `list`/`parent` — no p-code cloned). Mirrors angr's `IfElseFlattener`: `if (c) { ...return } else { body }` becomes `if (c) { ...return } body`, removing the syntactic `else` (and any residual goto/label it carried)."
+use_when = "Set on when kuna keeps an `else { ... }` whose matching `if`-branch always returns/aborts (or ends in a goto), so the `else` is redundant guard-clause noise — the early-return form angr emits. Off (default) is byte-identical to upstream; the region structurer already flattens most clean diamonds, so this catches the residual terminating-if/non-terminating-else shapes the structurer (or the CollapseStructure fallback) left with an explicit `else`."
+example = "option ifelseflatten on"
+source_decompiler = "angr"
+inspiration = "test_ifelseflatten_iprule / test_ifelseflatten_clientloop; angr IfElseFlattener (region_simplifiers/ifelse.py); SAILR guard-clause flattening"
 change_kind = "structure-recovery"
 
 [[settable]]

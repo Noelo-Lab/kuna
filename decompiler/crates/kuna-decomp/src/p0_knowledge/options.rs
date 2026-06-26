@@ -265,6 +265,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "loweredswitch",
     "regionstructure",
     "gotoreduce",
+    "ifelseflatten",
     "foldcallret",
     "stackguard",
     "branchflip",

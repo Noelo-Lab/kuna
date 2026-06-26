@@ -725,6 +725,11 @@ pub fn universal_sched(
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
             // default-OFF).  Runs after the tree is final + goto targets labelled.
             act!(crate::s8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
+            // (kuna) angr `IfElseFlattener`: after the tree is final + goto
+            // targets labelled (and after gotoreduce), drop the `else` arm of a
+            // 3-component `if` whose true-clause terminates, re-parenting the
+            // else body as a follower (option `ifelseflatten`, default-OFF).
+            act!(crate::s8_structure::kuna_ifelseflatten::ActionIfElseFlatten::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],
