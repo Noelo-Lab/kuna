@@ -267,6 +267,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "noreturn_externmatch",
     "loweredswitch",
     "regionstructure",
+    "regionlooprefine",
     "gotoreduce",
     "crossjumprevert",
     "foldcallret",

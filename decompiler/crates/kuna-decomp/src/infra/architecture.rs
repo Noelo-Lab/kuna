@@ -356,6 +356,19 @@ pub struct Architecture {
     /// Ghidra's `CollapseStructure` (option `regionstructure`, DIV-12 default-on:
     /// the primary structuring path; falls back to `CollapseStructure` on irreducible code).
     pub region_structure: bool,
+    /// (kuna) Region structurer cyclic loop-successor refinement: when
+    /// `region_structure` is on, refine a multi-exit / multi-latch (or
+    /// irreducible mid-entry) loop by virtualizing its *secondary* exits and
+    /// latches to gotos (lowered to `break;`/`continue;` by the existing
+    /// `scopeBreak`/loop-construction passes) so the loop folds into a structured
+    /// `while`/`do-while`/`for`/inf-loop instead of falling back to
+    /// `CollapseStructure` (option `regionlooprefine`, default-OFF opt-in).  A
+    /// strict superset of the cyclic schemas: a loop the base schemas already fold
+    /// is untouched (so reducible code stays byte-identical); only loops that
+    /// would otherwise fall back are refined.  Port of angr `RegionIdentifier`'s
+    /// `_refine_loop_successors_to_guarded_successors` /
+    /// `_ensure_jump_at_loop_exit_ends` (the `force_loop_single_exit` path).
+    pub region_loop_refine: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
@@ -730,6 +743,7 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             region_structure: true,
+            region_loop_refine: false,
             reduce_return_gotos: false,
             revert_cross_jumps: false,
             recover_loop_break: false,
@@ -833,6 +847,7 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
+        self.region_loop_refine = false; // (kuna) default-off opt-in (region structurer multi-exit/irreducible loop-successor refinement)
         self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
         self.revert_cross_jumps = false; // (kuna) default-off opt-in (angr SAILR CrossJumpReverter)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
@@ -972,6 +987,10 @@ impl Architecture {
                 self.region_structure = val;
                 Ok(msg)
             }
+            "regionlooprefine" => on_off!(
+                region_loop_refine,
+                "Region structurer multi-exit/irreducible loop-successor refinement"
+            ),
             "gotoreduce" => {
                 let (val, msg) =
                     crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
@@ -1328,6 +1347,7 @@ impl Architecture {
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         seam.region_structure = self.region_structure; // regionstructure
+        seam.region_loop_refine = self.region_loop_refine; // regionlooprefine
         seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    214,
-    214
+    219,
+    219
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -114,8 +114,8 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, switchguardbound, switchsharedcase, tailcalljump, regionstructure, noreturn_extern, noreturn_externmatch)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, tailcalljump, regionstructure)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, switchguardbound, switchsharedcase, tailcalljump, regionstructure, regionlooprefine, noreturn_extern, noreturn_externmatch)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, tailcalljump, regionstructure, regionlooprefine)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
@@ -206,6 +206,11 @@
     "data:regionstructure-loop #2: for/while recovered (BlockWhileDo), both passes",
     "data:regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes",
     "data:regionstructure-loop #4: ZERO gotos - region structurer matches Ghidra on reducible loops (parity)",
+    "data:regionstructure-loop-refine #1: multi-exit loop body is a do-while (BlockDoWhile), both passes",
+    "data:regionstructure-loop-refine #2: loop-exit condition recovered structurally, both passes",
+    "data:regionstructure-loop-refine #3: early-return secondary exit preserved, both passes",
+    "data:regionstructure-loop-refine #4: break secondary exit + post-loop return both recovered (2 sites x 2 passes), both passes",
+    "data:regionstructure-loop-refine #5: ZERO gotos - regionlooprefine on is byte-identical to off (parity invariant)",
     "data:regionstructure-switch #1: the switch head is recovered, both passes",
     "data:regionstructure-switch #2: case 0, both passes",
     "data:regionstructure-switch #3: case 3 (middle of the dense table), both passes",

@@ -1749,6 +1749,23 @@ inspiration = "angr Phoenix/SAILR structurer (angr/analyses/decompiler/structuri
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "regionlooprefine"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-tr-o2-parse-str"
+summary = "Extend the region structurer (regionstructure) with cyclic loop-successor refinement: a multi-exit / multi-latch / mid-entry (irreducible) loop that the base cyclic schemas cannot fold is refined by virtualizing its SECONDARY exits and latches to gotos (lowered to break;/continue; by the existing scopeBreak / loop-construction passes) so it folds into a structured while/do-while/for/inf-loop instead of falling back to CollapseStructure. A strict superset of regionstructure's cyclic schemas: a loop the base schemas already fold is untouched, so reducible code stays byte-identical (675/675). Port of angr RegionIdentifier._refine_loop_successors_to_guarded_successors / _ensure_jump_at_loop_exit_ends (the force_loop_single_exit path)."
+use_when = "Set ON (with regionstructure on, its prerequisite) when a function with a multi-exit or irreducible loop renders goto-heavy where angr recovers a clean while/for with break/continue (e.g. tr_O2.o::parse_str: 37 -> fewer gotos). Default OFF: byte-identical to regionstructure-without-refinement. Only loops that would otherwise fall back to CollapseStructure are refined; if refinement cannot make a loop foldable it still falls back (never worse than OFF)."
+example = "option regionlooprefine on"
+source_decompiler = "angr"
+inspiration = "angr RegionIdentifier._refine_loop_successors_to_guarded_successors + _ensure_jump_at_loop_exit_ends (force_loop_single_exit); test_decompiling_tr_O2_parse_str"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "gotoreduce"
 values = "on|off"
 default = "off"

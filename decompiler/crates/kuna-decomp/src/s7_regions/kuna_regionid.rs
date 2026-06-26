@@ -138,6 +138,26 @@ impl KunaGraphRegion {
     }
 }
 
+/// (kuna) One identified cyclic (loop) region, projected onto basic-block start
+/// addresses for the S8 region structurer.  Produced by
+/// [`KunaRegionIdentifier::cyclic_loops`].
+///
+/// `head_addr` is the loop head's start address; `body` is every basic-block
+/// start address inside the loop (recursively resolved through nested
+/// regions/multi-nodes); `exits` is every loop-successor block start address (the
+/// angr `GraphRegion.successors` frontier — the blocks control reaches on leaving
+/// the loop).  The structurer maps these addresses back to its `sblocks`
+/// `BlockCopy` components to drive loop-successor refinement.
+#[derive(Debug, Clone)]
+pub struct KunaCyclicLoop {
+    /// The loop head's basic-block start address.
+    pub head_addr: uintb,
+    /// Every basic-block start address in the loop body.
+    pub body: BTreeSet<uintb>,
+    /// Every loop-successor (exit) basic-block start address.
+    pub exits: BTreeSet<uintb>,
+}
+
 /// (kuna) Callback interface for walking the blocks of a region tree
 /// (C++ `KunaRegionVisitor`).
 ///
@@ -2093,6 +2113,89 @@ impl KunaRegionIdentifier {
     /// private, so this exposes a single node's address for console rendering.
     pub fn node_addr(&self, id: KunaNodeId) -> uintb {
         self.pool.get(id).get_addr()
+    }
+
+    /// Collect every *leaf-block* start address reachable under `node`, recursing
+    /// through `k_multi` chains and `k_region` wrappers (the latter expand to their
+    /// own loop body via the region pool).  Used by [`Self::cyclic_loops`] to
+    /// resolve a cyclic region's body/exit nodes back to the basic-block addresses
+    /// the S8 structurer keys on.  `k_dummy` nodes contribute nothing.
+    fn collect_leaf_addrs(&self, node: KunaNodeId, out: &mut BTreeSet<uintb>) {
+        let n = self.pool.get(node);
+        match n.get_kind() {
+            NodeKind::Block => {
+                out.insert(n.get_addr());
+            }
+            NodeKind::Multi => {
+                for &m in n.get_chain() {
+                    out.insert(self.pool.get(m).get_addr());
+                }
+            }
+            NodeKind::Region => {
+                if let Some(sub) = n.get_region() {
+                    let member_ids: Vec<KunaNodeId> = {
+                        let mut v = Vec::new();
+                        self.region_pool[sub.0 as usize].graph.get_nodes(&mut v);
+                        v
+                    };
+                    for m in member_ids {
+                        self.collect_leaf_addrs(m, out);
+                    }
+                }
+            }
+            NodeKind::Dummy => {}
+        }
+    }
+
+    /// Expose the identified **cyclic** (loop) regions for the S8 region structurer
+    /// (`region_structurer`).  For each cyclic region in the pool, returns a
+    /// [`KunaCyclicLoop`] carrying the loop head's start address, the set of every
+    /// basic-block start address in its loop body (recursively resolved through
+    /// nested multi-nodes / sub-regions), and the set of its *exit* (successor)
+    /// block start addresses — the angr `RegionIdentifier` refined loop body +
+    /// successor frontier (`GraphRegion.successors`).
+    ///
+    /// This is the read side of the omitted
+    /// `_refine_loop_successors_to_guarded_successors` /
+    /// `_ensure_jump_at_loop_exit_ends` steps: it hands the structurer the
+    /// region identifier's *correct* loop-body / exit identification (which absorbs
+    /// the dominated switch-case successors the structural natural-loop walk on the
+    /// sblocks graph misses), so the structurer can virtualize the secondary exits
+    /// to break-gotos and fold the loop.  Only available after [`compute`] has run;
+    /// returns an empty vec otherwise.
+    ///
+    /// [`compute`]: Self::compute
+    pub fn cyclic_loops(&self) -> Vec<KunaCyclicLoop> {
+        let mut res = Vec::new();
+        for region in self.region_pool.iter() {
+            if !region.cyclic {
+                continue;
+            }
+            let head_addr = match region.head {
+                Some(h) => self.pool.get(h).get_addr(),
+                None => continue,
+            };
+            // Body: every leaf-block address inside the region's own loop graph.
+            let mut body: BTreeSet<uintb> = BTreeSet::new();
+            let body_members: Vec<KunaNodeId> = {
+                let mut v = Vec::new();
+                region.graph.get_nodes(&mut v);
+                v
+            };
+            for m in body_members {
+                self.collect_leaf_addrs(m, &mut body);
+            }
+            // Exits: the head address of each successor node (the block control
+            // reaches when it leaves the loop).  A successor may itself be a
+            // wrapped region — use its head, since that is the block the loop-exit
+            // edge actually targets.
+            let mut exits: BTreeSet<uintb> = BTreeSet::new();
+            for sk in region.successors.iter() {
+                exits.insert(self.pool.get(sk.id).get_addr());
+            }
+            res.push(KunaCyclicLoop { head_addr, body, exits });
+        }
+        res
     }
 
     /// Render the nested region tree (C++ `IfcKunaRegionTree::printRegion`

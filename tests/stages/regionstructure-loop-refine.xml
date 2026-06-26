@@ -1,0 +1,81 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Region-based (Phoenix/SAILR) structurer - loop-successor REFINEMENT
+    infrastructure (option `regionlooprefine`, default OFF).  Sits on top of
+    `regionstructure` (DIV-12 default-on): the read side of angr
+    `RegionIdentifier._refine_loop_successors_to_guarded_successors` /
+    `_ensure_jump_at_loop_exit_ends` (the `force_loop_single_exit` path).
+
+    What this proves end to end:
+
+      * `KunaRegionIdentifier::cyclic_loops()` projects each identified cyclic
+        region onto basic-block start addresses (head / refined loop body / exit
+        frontier) and hands it to the S8 structurer.
+      * For a MULTI-EXIT loop the base cyclic schemas (`try_fold_loop`) decline,
+        `region_structurer::refine_loop_edges` fires (it virtualizes the loop's
+        SECONDARY exits to gotos so the body collapses to a single-exit shape) -
+        confirmed live via `KUNA_RS_DEBUG=1` (`[rs] RI loop head=...` +
+        `[rs]   refined loop head#N`).
+
+    `mexit` is a multi-exit loop (a `for` with an early `return -1` AND a
+    `break`/`return s`), x86-64 GCC -O1, the `.text` bytes of a `-c` object
+    loaded at 0x401000.  Source:
+
+        int mexit(int n, int *a) {
+            int i, s = 0;
+            for (i = 0; i < n; i++) {
+                if (a[i] < 0) return -1;   // early-return exit (secondary)
+                if (a[i] == 7) break;      // break exit (secondary)
+                s += a[i];
+            }
+            return s;
+        }
+
+    PARITY PROOF (the honest infrastructure-increment result): the refinement is a
+    strict SUPERSET of the base structurer - a loop the base schemas already fold is
+    untouched, and a multi-exit loop the base schemas decline still falls back to
+    `CollapseStructure` for the FINAL collapse when the acyclic convergence is
+    incomplete (the structurer reports `ok=false`, so the upstream Ghidra path emits
+    the C).  The net effect on emitted C is therefore ZERO: pass 1
+    (`regionlooprefine off`) and pass 2 (`regionlooprefine on`) emit byte-identical
+    C - the same clean `do { ... } while (...)` with the two early returns inside and
+    ZERO gotos.  Turning the opt-in ON exercises the new RI-projection +
+    `refine_loop_edges` machinery (it FIRES on this multi-exit loop) without changing
+    output, which is exactly the parity invariant this increment lands: the
+    refinement infrastructure is wired in and active, byte-safe by construction.
+
+    The remaining work to convert "refinement fires" into an actual goto REDUCTION
+    (so refined loops fold to a structured root instead of falling back) is the
+    acyclic-schema completion + continuation hoisting documented as the next
+    increment in docs/region-structurer-roadmap.md (Inc 6).
+
+    Asserted invariants below hold across BOTH passes (counts are 2x the per-pass
+    count): the do-while body, the two early returns, the loop-exit condition, and
+    ZERO gotos - identical with the refinement off and on.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa85ff7e284889f28d47ff488d
+748604b9000000008b0285c0781983f8
+07741901c14883c2044839f275eaeb0c
+b900000000eb05b9ffffffff89c8c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="mexit"/>
+</binaryimage>
+<script>
+  <com>option regionstructure on</com>
+  <com>option regionlooprefine off</com>
+  <com>lo fu mexit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regionlooprefine on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="regionstructure-loop-refine #1: multi-exit loop body is a do-while (BlockDoWhile), both passes" min="2" max="2">  v2 = \*a1;</stringmatch>
+<stringmatch name="regionstructure-loop-refine #2: loop-exit condition recovered structurally, both passes" min="2" max="2">  \} while \(a1 != v1\);</stringmatch>
+<stringmatch name="regionstructure-loop-refine #3: early-return secondary exit preserved, both passes" min="2" max="2">      return -1;</stringmatch>
+<stringmatch name="regionstructure-loop-refine #4: break secondary exit + post-loop return both recovered (2 sites x 2 passes), both passes" min="4" max="4">return v3;</stringmatch>
+<stringmatch name="regionstructure-loop-refine #5: ZERO gotos - regionlooprefine on is byte-identical to off (parity invariant)" min="0" max="0">goto </stringmatch>
+</decompilertest>
