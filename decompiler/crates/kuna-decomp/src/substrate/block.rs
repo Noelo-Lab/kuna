@@ -2240,6 +2240,187 @@ impl BlockGraph {
         true
     }
 
+    /// (kuna) Deduplicate a cloned `if/else` head (angr structurer ITE region-dedup):
+    /// hoist a shared leaf **prefix** out of both arms of the 3-component
+    /// [`BlockIf`](BlockKind::If) `if_id`, emitting one copy before the `if` instead
+    /// of two inside it.  `retained` are the prefix leaf nodes kept (the true-arm
+    /// copies, in order); `duplicate` are the matching else-arm copies that are
+    /// removed.  Returns `true` on success.
+    ///
+    /// This is the *inverse* of the SAILR duplication helpers
+    /// ([`kuna_inline_return_tail`](Self::kuna_inline_return_tail) /
+    /// [`kuna_inline_crossjump_tail`](Self::kuna_inline_crossjump_tail)) and a pure
+    /// print-tree edit (component `list`/`parent` only) — CFG edges and p-code are
+    /// untouched.  Sound because a shared prefix executes unconditionally first in
+    /// **both** arms: moving the single retained copy ahead of the `if` and dropping
+    /// the duplicate changes neither which code runs nor its order.  The caller
+    /// ([`crate::s8_structure::kuna_dedupitetail`], option-gated) has verified each
+    /// `(retained, duplicate)` pair are C-equivalent clean leaves and that both arms
+    /// keep at least one component after the prefix.
+    pub fn kuna_hoist_ite_prefix(
+        &mut self,
+        if_id: BlockId,
+        retained: &[BlockId],
+        duplicate: &[BlockId],
+    ) -> bool {
+        // Must still be a 3-component BlockIf whose parent can host the hoisted leaves.
+        if self.arena[if_id].get_type() != BlockType::If || self.arena[if_id].get_size() != 3 {
+            return false;
+        }
+        if retained.is_empty() || retained.len() != duplicate.len() {
+            return false;
+        }
+        let parent = match self.arena[if_id].get_parent() {
+            Some(p) => p,
+            None => return false,
+        };
+        match self.arena[parent].get_type() {
+            BlockType::Ls | BlockType::Graph => {}
+            _ => return false,
+        }
+        let true_clause = self.arena[if_id].list[1];
+        let else_clause = self.arena[if_id].list[2];
+        // The retained nodes must be the leading components of the true clause and the
+        // duplicate nodes the leading components of the else clause, in order (defensive
+        // re-verification: a prior splice may have shifted the tree).
+        for (i, (&r, &d)) in retained.iter().zip(duplicate.iter()).enumerate() {
+            if self.arena[true_clause].list.get(i).copied() != Some(r) {
+                return false;
+            }
+            if self.arena[else_clause].list.get(i).copied() != Some(d) {
+                return false;
+            }
+        }
+        let k = retained.len();
+        // Both arms must retain at least one component after the prefix.
+        if self.arena[true_clause].list.len() <= k || self.arena[else_clause].list.len() <= k {
+            return false;
+        }
+        // Locate the `if` within the parent's component list.
+        let pos = match self.arena[parent].list.iter().position(|&b| b == if_id) {
+            Some(i) => i,
+            None => return false,
+        };
+        // Drop the leading `k` components from both clauses.
+        self.arena[true_clause].list.drain(0..k);
+        self.arena[else_clause].list.drain(0..k);
+        // Free the now-orphaned duplicate (else-arm) leaf nodes.
+        for &d in duplicate {
+            self.arena.remove(d);
+        }
+        // Splice the retained leaves into the parent immediately before the `if`,
+        // preserving their order.
+        for (off, &r) in retained.iter().enumerate() {
+            self.arena[r].parent = Some(parent);
+            self.arena[parent].list.insert(pos + off, r);
+        }
+        // Unwrap any clause that shrank to a single component (avoid the degenerate
+        // 1-element BlockList the printer double-emits).
+        self.unwrap_singleton_clause(if_id, 1);
+        self.unwrap_singleton_clause(if_id, 2);
+        true
+    }
+
+    /// (kuna) Deduplicate a cloned `if/else` tail (angr structurer ITE region-dedup):
+    /// hoist a shared leaf **suffix** out of both arms of the 3-component
+    /// [`BlockIf`](BlockKind::If) `if_id`, emitting one copy *after* the `if` instead
+    /// of two inside it.  `retained` are the suffix leaf nodes kept (the true-arm
+    /// copies, in source order); `duplicate` are the matching else-arm copies removed.
+    /// Returns `true` on success.
+    ///
+    /// The dual of [`kuna_hoist_ite_prefix`](Self::kuna_hoist_ite_prefix), and likewise
+    /// a pure print-tree edit (component `list`/`parent` only).  Sound only because the
+    /// caller ([`crate::s8_structure::kuna_dedupitetail`], option-gated) has verified
+    /// each arm's divergent middle *falls through* to the suffix (so both arms always
+    /// reach it) and that each `(retained, duplicate)` pair are C-equivalent clean
+    /// leaves with at least one component left before the suffix in each arm.
+    pub fn kuna_hoist_ite_suffix(
+        &mut self,
+        if_id: BlockId,
+        retained: &[BlockId],
+        duplicate: &[BlockId],
+    ) -> bool {
+        if self.arena[if_id].get_type() != BlockType::If || self.arena[if_id].get_size() != 3 {
+            return false;
+        }
+        if retained.is_empty() || retained.len() != duplicate.len() {
+            return false;
+        }
+        let parent = match self.arena[if_id].get_parent() {
+            Some(p) => p,
+            None => return false,
+        };
+        match self.arena[parent].get_type() {
+            BlockType::Ls | BlockType::Graph => {}
+            _ => return false,
+        }
+        let true_clause = self.arena[if_id].list[1];
+        let else_clause = self.arena[if_id].list[2];
+        let tn = self.arena[true_clause].list.len();
+        let en = self.arena[else_clause].list.len();
+        let k = retained.len();
+        if tn <= k || en <= k {
+            return false; // must leave a divergent component before the suffix
+        }
+        // The retained/duplicate runs must be the *trailing* `k` components of the
+        // respective clauses, in source order (defensive re-verification).
+        for (i, (&r, &d)) in retained.iter().zip(duplicate.iter()).enumerate() {
+            if self.arena[true_clause].list.get(tn - k + i).copied() != Some(r) {
+                return false;
+            }
+            if self.arena[else_clause].list.get(en - k + i).copied() != Some(d) {
+                return false;
+            }
+        }
+        // Drop the trailing `k` components from both clauses.
+        self.arena[true_clause].list.truncate(tn - k);
+        self.arena[else_clause].list.truncate(en - k);
+        // Free the now-orphaned duplicate (else-arm) leaf nodes.
+        for &d in duplicate {
+            self.arena.remove(d);
+        }
+        // Splice the retained leaves into the parent immediately *after* the `if`,
+        // preserving their order.
+        let pos = match self.arena[parent].list.iter().position(|&b| b == if_id) {
+            Some(i) => i,
+            None => return false,
+        };
+        for (off, &r) in retained.iter().enumerate() {
+            self.arena[r].parent = Some(parent);
+            self.arena[parent].list.insert(pos + 1 + off, r);
+        }
+        // Unwrap any clause that shrank to a single component (the `PrintC::emitBlockLs`
+        // path double-emits a 1-element list — replace such a clause with its sole
+        // component directly).
+        self.unwrap_singleton_clause(if_id, 1);
+        self.unwrap_singleton_clause(if_id, 2);
+        true
+    }
+
+    /// (kuna) If the `i`-th clause of the `BlockIf` `if_id` is an `Ls`/`Graph` list
+    /// holding exactly **one** component, replace the clause with that component
+    /// directly (re-parenting it to the `if`) and free the now-empty list.  This
+    /// avoids the degenerate single-element [`BlockList`](BlockKind::Ls), which the
+    /// `PrintC::emitBlockLs` path emits twice.  No-op if the clause is not a
+    /// single-component list.
+    fn unwrap_singleton_clause(&mut self, if_id: BlockId, i: usize) {
+        let clause = match self.arena[if_id].list.get(i).copied() {
+            Some(c) => c,
+            None => return,
+        };
+        match self.arena[clause].get_type() {
+            BlockType::Ls | BlockType::Graph => {}
+            _ => return,
+        }
+        if self.arena[clause].list.len() != 1 {
+            return;
+        }
+        let sole = self.arena[clause].list[0];
+        self.arena[sole].parent = Some(if_id);
+        self.arena[if_id].list[i] = sole;
+        self.arena.remove(clause);
+    }
+
     /// (kuna) Inline a duplicated **cross-jump tail** into a `BlockGoto` that
     /// currently renders as `<body>; goto T`, turning it into a plain `BlockList`
     /// `<body>; <chain>` (the goto vanishes — angr `CrossJumpReverter`).

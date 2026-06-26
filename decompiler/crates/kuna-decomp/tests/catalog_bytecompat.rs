@@ -76,7 +76,7 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_63_settables() {
+fn fixture_has_all_64_settables() {
     // One `"option":` per settable row: 37 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
@@ -118,8 +118,11 @@ fn fixture_has_all_63_settables() {
     // loader, DIV-8; the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9; and
     // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate, PR-8).
     // (+1 for the `taildup` angr SAILR ReturnDuplicatorLow return-tail-WITH-call
-    // duplication gate — the gap between gotoreduce and crossjumprevert.)
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 63);
+    // duplication gate — the gap between gotoreduce and crossjumprevert;
+    // +1 for the `dedupitetail` angr structurer ITE region-dedup gate — the INVERSE
+    // of the duplication passes, merging a duplicated if/else leaf prefix/suffix into
+    // one copy.)
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 64);
 }
 
 #[test]

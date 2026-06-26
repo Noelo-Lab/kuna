@@ -261,5 +261,6 @@
 0254                  taildup
 0255                  ifelseflatten
 0256                  crossjumprevert
-0257        !         prototypewarnings
-0258                  stop
+0257                  dedupitetail
+0258        !         prototypewarnings
+0259                  stop

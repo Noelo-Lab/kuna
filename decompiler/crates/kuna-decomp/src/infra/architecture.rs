@@ -399,6 +399,13 @@ pub struct Architecture {
     /// calls allowed) — angr's `max_calls_in_regions` budget (`dup_return_call_tails`,
     /// opt-in default-off).
     pub dup_return_call_tails: bool,
+    /// (kuna) angr structurer ITE region-dedup: merge a duplicated `if/else` tail
+    /// (a maximal common prefix/suffix of statement-equivalent leaves shared by both
+    /// arms) by hoisting the shared blocks out of the `if` — emitting one copy
+    /// instead of two.  The inverse of the SAILR duplication passes
+    /// (`gotoreduce`/`crossjumprevert`/`taildup`) (`dedup_ite_tail`, opt-in
+    /// default-off).
+    pub dedup_ite_tail: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -782,6 +789,7 @@ impl Architecture {
             flatten_ifelse: false,
             revert_cross_jumps: false,
             dup_return_call_tails: false,
+            dedup_ite_tail: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -890,6 +898,7 @@ impl Architecture {
         self.flatten_ifelse = false; // (kuna) default-off opt-in (angr IfElseFlattener)
         self.revert_cross_jumps = false; // (kuna) default-off opt-in (angr SAILR CrossJumpReverter)
         self.dup_return_call_tails = false; // (kuna) default-off opt-in (angr SAILR ReturnDuplicatorLow return-call-tail dup)
+        self.dedup_ite_tail = false; // (kuna) default-off opt-in (angr structurer ITE region-dedup — merge duplicated if/else tails)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
@@ -1054,6 +1063,12 @@ impl Architecture {
             "taildup" => {
                 let (val, msg) = crate::s8_structure::kuna_taildup::OptionTailDup.apply(p1)?;
                 self.dup_return_call_tails = val;
+                Ok(msg)
+            }
+            "dedupitetail" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
+                self.dedup_ite_tail = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -1406,6 +1421,7 @@ impl Architecture {
         seam.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         seam.dup_return_call_tails = self.dup_return_call_tails; // taildup
+        seam.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
