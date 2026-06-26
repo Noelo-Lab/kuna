@@ -48,6 +48,7 @@
 <symbol space="ram" offset="0x1050" name="neighbor_marker"/>
 </binaryimage>
 <script>
+  <com>option noreturn_externmatch off</com>
   <com>option noreturn_extern off</com>
   <com>lo fu victim</com>
   <com>decompile</com>
@@ -61,6 +62,11 @@
   <!-- (kuna) option noreturn_extern is default-OFF opt-in: its name match overlaps
        noreturn_known's for defined/imported symbols, so default-on would change PE/ELF
        exit-family handling under `noreturn_known off` (verify_multiformat_passes). -->
+  <!-- noreturn_externmatch (DIV-13, default-ON) is the always-on companion that
+       name-matches the SAME __stack_chk_fail at the SAME flow seam; it is disabled
+       up-front (sticks across both passes) to isolate the noreturn_extern toggle this
+       test exercises, otherwise pass 1 would already be bounded and `neighbor_marker(`
+       would not leak. -->
 
 </script>
 <stringmatch name="noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)" min="1" max="1">neighbor_marker\(</stringmatch>

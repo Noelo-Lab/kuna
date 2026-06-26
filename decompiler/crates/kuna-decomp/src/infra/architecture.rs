@@ -325,6 +325,14 @@ pub struct Architecture {
     /// jumptable index by an out-of-band CBRANCH range guard the basic model's
     /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
     pub switch_guard_bound: bool,
+    /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
+    /// direct CALL to a function whose *name* matches the vendored ELF
+    /// known-no-return list as no-return at the `query_call_no_return` flow seam,
+    /// even when the address-keyed `noreturn_known` scan emitted no fact (an
+    /// ET_REL `.o` undefined extern such as `__stack_chk_fail`). DIV-13 default-on
+    /// (clean 0/675 ablation; a no-op on a normal ELF since the proto flag is
+    /// already set). See `kuna_noreturn_externmatch`.
+    pub noreturn_extern_match: bool,
     /// (kuna GH-8500) Hold a store-through-a-stack-pointer-alias across the
     /// deadcode race (C++ `stack_alias_deadstore`).
     pub stack_alias_deadstore: bool,
@@ -704,6 +712,7 @@ impl Architecture {
             fold_flag_compare: false,
             switch_modulo_bound: false,
             switch_guard_bound: false,
+            noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
@@ -804,6 +813,7 @@ impl Architecture {
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
@@ -933,6 +943,7 @@ impl Architecture {
             }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
             "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
+            "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
