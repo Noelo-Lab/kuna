@@ -152,7 +152,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `callfixup` | Auto-apply cspec call-fixups (`CallFixupAnalyzer`, install half) | med | `mcount_x86_64`: `main`'s `-pg` `call mcount` is **dissolved** — body becomes `return 0;` + `Function: mcount replaced with injection: mcount`. Pass matches FUNC names to cspec `<callfixup><target>`; commit tags inject id (the inherited inject/weave path applies it). Flow-repair half infeasible-at-tier (LOSS). See Increment 8 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
 | 🟡 | `const-prop` | `ConstantPropagationAnalyzer` | — | engine does its own SSA const-prop (S3) |
-| ⛔ | `s1-aif` | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer` + ARM) | xhard | needs post-disassembly Listing/FunctionManager/PseudoDisassembler + ≥20 found functions — not at this tier; off-by-default upstream; folds into `s1-entry-disc` + `s1-eh-frame`. Increment 4 |
+| ✅ | `s1-aif` | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer`) | xhard | **done** (Increment 47, the sound substitute the buildplan §1.3 prescribed) — `s1_aif` gap-walk, the third Listing consumer: over the undefined gaps between discovered functions, speculatively decode each gap start and accept it as a new entry when it (a) disassembles into a valid subroutine (`check_valid_subroutine` ~ `PseudoDisassembler.checkValidSubroutine`/`followSubFlows`) AND (b) matches a function-start fingerprint shared by ≥4 of the ≥20 discovered functions. Finds functions reachable ONLY through an indirect/data path that entry-disc + `.eh_frame` miss (`aif_gap_x86_64` → `sub_13ae`). **Gated OFF** (`--option listing on --option aif on`, Ghidra `setDefaultEnablement(false)`). LOSS: fingerprint is the decoded mnemonic sequence (operand-insensitive), not Ghidra's masked `getInstructionMask` bytes; ARM variant out of scope. `verify_aif.rs` |
 | ⛔ | `operand-refs` | Operand/scalar reference markup (`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`, `ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`) | easy | no Listing/ReferenceManager at this tier; products subsumed by `s1-strings`/`s2`-jumptables/`s1-entry-disc`; the one relevant idea (scalar→`char*`) is blocked by the same printer/MapGlobals shadowing as `s1-strings`. Increment 4 |
 | ⛔ | `s1-noreturn-discovered` | `FindNoReturnFunctionsAnalyzer` (flow heuristic) | hard | needs pre-decompile listing/flow — not at this tier |
 | ⛔ | `thunk-model` | thunk/external object model | hard | needs `ExternalLocation`/S2-S4 internals |
@@ -4033,4 +4033,103 @@ the single `funcstart_patterns` row; the byte-for-byte fixture was regenerated, 
   + `kuna-decomp/tests/catalog_bytecompat.rs` (count 49→50),
   `kuna-decomp/tests/fixtures/stage_catalog.json`,
   `kuna-analysis/tests/fixtures/README.md`, `docs/assertions.md`,
+  `docs/analysis-port-log.md`.
+
+### Increment 50 — Aggressive Instruction Finder gap-walk (the third Listing/xref consumer, gated off)
+
+**Premise.** The Listing/xref tier (Increments 28–33: the recursive-descent
+disassembly + instruction/xref/function model) and its first two consumers
+(`noreturn_disc`, `noreturn_propagate`) recover functions reachable by a static CALL
+or named in a symbol table. But a function reachable ONLY through an **indirect /
+data path** — its address taken into a `.rodata` function-pointer table and called
+via `call *reg` with an opaque index — is invisible: it is in no symbol table, has
+no `.eh_frame` FDE, and no static CALL edge points at it. It sits in the executable
+image as an **undefined gap** between two discovered functions. This increment ports
+the **sound substitute for `AggressiveInstructionFinderAnalyzer`** the buildplan
+prescribed (`docs/analysis-port-buildplan.md` §1.3 verdict: *"build the sound
+substitute, not AIF"* — and the §1.0 keystone made it a small consumer), as the
+third Listing consumer `s1_aif`, **gated off by default** (faithful to Ghidra's
+`setDefaultEnablement(false)` + the warning *"IT MAY CREATE A LOT OF BAD CODE!"*).
+
+**The gap-walk (`s1_aif/mod.rs`, the kuna analog of `AggressiveInstructionFinderAnalyzer.added`).**
+Over the `CodeUnit` partition the Listing walk left behind, AIF finds each UNDEFINED
+gap (`Listing::first_undefined_after`), speculatively decodes the gap start (the
+Listing decoded only *reachable* code; AIF probes the gaps with the same SLEIGH
+decoder via a `GapDecoder` wrapping `decode_one` — the kuna analog of the upstream's
+own `PseudoDisassembler`), and accepts a gap start as a NEW function entry when it
+BOTH (a) **disassembles into a valid subroutine** (`check_valid_subroutine` — the
+analog of `PseudoDisassembler.checkValidSubroutine` / `followSubFlows`: follow
+fall-through + intra-gap branches to a clean RET without a bad byte / out-of-range
+flow, > 2 instructions) AND (b) **matches a function-start fingerprint** shared by
+≥ 4 discovered functions (Ghidra's `funcStartMap` mask-histogram). It bails unless
+there are ≥ 20 discovered functions (Ghidra's `MINIMUM_FUNCTION_COUNT`). Accepted
+starts are emitted as the existing `entries` fact → the existing
+`name_function`/`add_function` commit arm (no new commit arm); the flow-repair half
+is **inherited** (the engine decompiles any registered entry on demand).
+
+**Why AIF is not a pure `AnalysisPass` over `ctx.listing`** (unlike the two no-return
+consumers). AIF must speculatively decode *undecoded* gap bytes, which needs the live
+SLEIGH decoder, not just the built Listing. So it is driven by `s1_aif::run_aif`,
+invoked from `passes::run_listing_consumers` with the same `translate`/code-space the
+Listing build held, keyed `"aif"` so the deferred commit gates it via
+`engine.rs::analysis_pass_enabled` exactly like the pure consumers. The
+`AggressiveInstructionFinderPass` `AnalysisPass` impl exists only for the gate
+identity (its `run` is an inert no-op).
+
+**Option wiring (full end-to-end, the `noreturn_propagate` template).** `aif`
+registered default-off: `stages.toml` `[[settable]]` row (count 49→50), `architecture.rs`
+(`analysis_aif` field + ctor default + `reset_defaults_internal` + `set_kuna_option`
+arm), `options.rs` `KUNA_OPTION_NAMES`, `engine.rs::analysis_pass_enabled` (explicit
+`"aif" => arch.analysis_aif`; the default arm is fail-OPEN so a new gate MUST be
+listed), the settable-count tests (`kuna_stages/tests.rs` 49→50 + the `},\n` framing
+48→49 + `aif` in `PASS_GATES`, `catalog_bytecompat.rs` 49→50), and the regenerated
+goldens (`tests/fixtures/stage_catalog.json` recaptured, `docs/assertions.md` via
+`kuna catalog --markdown`). `kuna catalog --check` **OK**.
+
+**Fixture + e2e.** `tests/fixtures/aif_gap_x86_64` (vendored + `.c` + README
+provenance, VMAs pinned): a STRIPPED PIE x86-64 ELF where `hidden_handler`@`0x13ae`
+is referenced ONLY from a const `.rodata` function-pointer table (an
+`R_X86_64_RELATIVE` reloc) and called indirectly, so entry-disc + funcsyms + the
+static walk all miss it; 24 sibling handlers `h0..h23` (called directly from `main`,
+recovered via the PIE `_start`→`main` idiom) clear the ≥-20-function gate and stock
+the fingerprint histogram. `kuna-console/tests/verify_aif.rs`: with
+`--option listing on --option aif on` the gap-walk discovers `sub_13ae`
+(decompilable by name); default (off) leaves it undiscovered (byte-identical parity).
+Unit tests in `s1_aif` pin the thresholds + the operand-insensitive fingerprint.
+
+**Decompile-speed impact.** Default-off ⇒ **nil** (the gap-walk never runs unless
+both `--option listing on` and `--option aif on` are set; the structural guard is
+that `run_listing_consumers` is reached only on the real-ELF deferred-commit path,
+never the XML datatest path). On-path cost: bounded by the undefined-gap byte count
+× the speculative decode (each gap VMA probed at most once via the `GapDecoder`
+cache; the validity walk is capped at 4000 instructions per gap). It builds no
+decompilation IR — far cheaper than a real decompile, and it runs once, post-load.
+
+**LOSS / faithful scope.** (1) The fingerprint is the decoded **mnemonic** sequence
+of the first 2 instructions, not Ghidra's masked instruction *bytes*
+(`getInstructionMask` is a SLEIGH capability kuna's decoder does not surface —
+`docs/listing-tier-design.md` §8). The mnemonic sequence is the operand-insensitive
+opcode projection the decoder *does* expose (`print_assembly` splits mnemonic from
+operand body), forming the same masked-bytes equivalence class — a faithful
+*substitute*, not a bit-exact reproduction. (2) The ARM variant
+(`ArmAggressiveInstructionFinderAnalyzer`, per-gap `TMode` flip) is out of scope
+(x86-64 is the gated target; the gap walk probes in the Listing's resolved decode
+context). (3) Ghidra's analysis-bookmark side effect is not emitted (kuna has no
+bookmark surface).
+
+**Gates.** `make test` **675/675 PARITY OK**, `make test-stages` **PARITY OK**,
+`make rust-test` **green**, `kuna catalog --check` **OK**. Default-off ⇒ all
+byte-identical to main.
+
+- **Changed:** `kuna-analysis/src/s1_aif/mod.rs` (new), `kuna-analysis/src/lib.rs`
+  (`pub mod s1_aif`), `kuna-analysis/src/passes.rs` (`run_aif` wired into
+  `run_listing_consumers`), `kuna-analysis/src/listing/mod.rs`
+  (`next_instruction_start_after` + `exec_ranges` accessors),
+  `kuna-decomp/src/infra/architecture.rs`, `kuna-decomp/src/p0_knowledge/options.rs`,
+  `kuna-console/src/engine.rs`, `kuna-decomp/stages.toml`,
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
+  `kuna-decomp/tests/catalog_bytecompat.rs`,
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen), `docs/assertions.md`
+  (regen), `kuna-console/tests/verify_aif.rs` (new),
+  `kuna-analysis/tests/fixtures/aif_gap_x86_64{,.c}` (new) + `fixtures/README.md`,
   `docs/analysis-port-log.md`.

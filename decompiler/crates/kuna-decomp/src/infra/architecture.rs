@@ -482,6 +482,20 @@ pub struct Architecture {
     /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
     /// gate is byte-identical.
     pub analysis_noreturn_propagate: bool,
+    /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
+    /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
+    /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
+    /// with the warning *"IT MAY CREATE A LOT OF BAD CODE!"*): a speculative
+    /// gap-filler that, over the undefined gaps between discovered functions,
+    /// speculatively decodes each gap start and accepts it as a NEW function entry
+    /// when it (a) disassembles into a valid subroutine (a clean RET, > 2
+    /// instructions) AND (b) matches a function-start byte fingerprint shared by ≥ 4
+    /// of the already-discovered functions. Finds functions reachable ONLY through
+    /// an indirect/data path (a `.rodata` function-pointer table) that entry
+    /// discovery + funcsyms miss. Reads the Listing (`--option listing on` builds
+    /// it); a no-op when the Listing is absent. Default-off ⇒ every parity gate is
+    /// byte-identical.
+    pub analysis_aif: bool,
     /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
     /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
     /// **on**, but the pass is registered ONLY for a Go binary
@@ -713,6 +727,7 @@ impl Architecture {
             analysis_listing: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
+            analysis_aif: false,
             analysis_gopclntab: false,
             macho_arm64e: false,
 
@@ -825,6 +840,7 @@ impl Architecture {
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
+        self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
@@ -987,6 +1003,9 @@ impl Architecture {
             }
             "noreturn_propagate" => {
                 on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
+            }
+            "aif" => {
+                on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
             }
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
