@@ -97,8 +97,9 @@ use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<taildup>` (kuna).  ElementIds live in the 4000+ range
 /// (4100 gotoreduce, 4101 tailcalljump, 4102 regionstructure, 4103 noreturn_extern,
-/// 4104 noreturn_externmatch, 4105 crossjumprevert are taken; this is 4106).
-pub const ELEM_TAILDUP: ElementId = ElementId::new("taildup", 4106);
+/// 4104 noreturn_externmatch, 4105 crossjumprevert, 4106 switchsharedcase,
+/// 4107 ifelseflatten are taken; this is 4108).
+pub const ELEM_TAILDUP: ElementId = ElementId::new("taildup", 4108);
 
 /// Maximum number of basic blocks in a duplicated return tail.
 pub const MAX_TAIL_BLOCKS: usize = 3;

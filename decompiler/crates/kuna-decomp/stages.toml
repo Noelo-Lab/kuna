@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=96, settable=60
-# (37 stage-model knobs + 20 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=97, settable=63
+# (39 stage-model knobs + 21 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1192,6 +1192,12 @@ substage = "switch-model"
 note = "(kuna, angr) recover a GCC PIC relative-offset jump table whose base register is loop-carried (getopt switch); rebuild the meld to the guarded load index"
 
 [[surface]]
+surface = "option switchmultipred"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna, angr) recover an image-base-relative jump table whose bound guard is unrolled across MULTIPLE dispatch predecessors (abnormal switch case); union the per-path guard prefixes across the dispatch MULTIEQUAL"
+
+[[surface]]
 surface = "option noreturn_externmatch"
 stage = "S2"
 substage = "flow-follow"
@@ -1551,6 +1557,26 @@ source_decompiler = "angr"
 inspiration = "test_switch_case_shared_case_nodes_b2sum_digest; angr CFGFast indirect-jump resolution across the loop phi; main"
 change_kind = "opt-in-tool"
 live_field = "switch_shared_case"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "switchmultipred"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-abnormal-switch-case-case3"
+summary = "Recover an image-base-relative jump table (target = imagebase + load4(table + idx*4)) whose bound guard is 'unrolled' / duplicated across MULTIPLE predecessors of the dispatch block: the BRANCHIND's parent has sizeIn() > 1, each incoming path ending in its OWN (often semantically different) bound CBRANCH, the per-path switch indices meeting in a MULTIEQUAL. The single-predecessor guard walk short-circuits to checkUnrolledGuard, so no dominating guard bounds the table and the dispatch is truncated to a computed (code *)() call. When on, finds the dispatch MULTIEQUAL, evaluates each predecessor guard as a function of its MULTIEQUAL input, and re-bounds the table to [0, max-over-paths) so the readonly-LOAD table model recovers the switch (angr's 'abnormal switch case')."
+use_when = "Set on PER PROGRAM when an image-base-relative switch (e.g. an MSVC memmove/memcpy small-count tail dispatch) reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch block has multiple predecessors each with its own bound guard (vs the single-guard form switchguardbound handles); DESTRUCTIVE as a global default (it unions per-path guard prefixes across a MULTIEQUAL and re-binds the table from a heuristic max bound, so it may over-bind an unrelated multi-entry indirect jump)."
+example = "option switchmultipred on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_abnormal_switch_case_case3; JumpTableResolver / abnormal switch case; 0x18003c330"
+change_kind = "opt-in-tool"
+live_field = "switch_multi_pred"
 live_true = "on"
 live_false = "off"
 
@@ -2255,6 +2281,22 @@ use_when = "Off (default; no Listing consumer runs and there is zero behavior ch
 example = "option listing on --option noreturn_disc on"
 source_decompiler = "kuna"
 inspiration = "Ghidra FindNoReturnFunctionsAnalyzer (discovered no-return, evidence threshold)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "fid"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-fid"
+summary = "Run the FID fingerprint matcher (a Listing/xref consumer): the kuna analog of Ghidra's FID (Function-ID) identification analyzer. Over the built Listing, fingerprint each function with the byte-exact operand-masked FNV-1a64 hash (the MessageDigestFidHasher port, driving Sleigh::instruction_mask) and look the full hash up in a kuna `.fid` fingerprint database (named by the `kuna_fid_db` environment variable). When the full-hash bucket collapses to exactly one name (conservative — never guess on a tie), RENAME the matched function — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate; a real .symtab/DWARF name is never overwritten). This re-identifies a function in a STRIPPED binary purely by its instruction-stream fingerprint (e.g. sub_4017c0 -> kuna_crc32). Requires the Listing (option listing on) and a configured `.fid` DB — a no-op when either is absent. DISABLED by default (real-ELF path only, so every parity gate is byte-identical)."
+use_when = "Off (default; no Listing consumer runs and there is zero behavior change). Flip on (with option listing on, and `kuna_fid_db` pointing at a `.fid` database built by `kuna fid build`) to re-identify library functions in a STRIPPED real-ELF target by full-hash fingerprint — renaming a FUN_*/sub_* placeholder back to its known library name."
+example = "option listing on --option fid on"
+source_decompiler = "kuna"
+inspiration = "Ghidra FID (Function-ID) identification analyzer (FidServiceImpl full-hash re-identification)"
 change_kind = "analysis-enablement"
 [[settable]]
 option = "noreturn_propagate"

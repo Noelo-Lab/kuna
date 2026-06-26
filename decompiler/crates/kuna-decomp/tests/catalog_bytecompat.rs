@@ -76,7 +76,7 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_61_settables() {
+fn fixture_has_all_63_settables() {
     // One `"option":` per settable row: 37 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
@@ -86,6 +86,8 @@ fn fixture_has_all_61_settables() {
     // jump-table recovery gate, angr test_decompiling_missing_function_call,
     // the `switchsharedcase` loop-carried-base PIC jump-table recovery gate,
     // angr test_switch_case_shared_case_nodes_b2sum_digest,
+    // the `switchmultipred` multi-predecessor unrolled-guard jump-table recovery
+    // gate, angr test_decompiling_abnormal_switch_case_case3,
     // the `tailcalljump` angr -O2 tail-jump S2 flow-classification gate,
     // the `branchflip` angr SAILR negated-guard S8 branch-flip gate,
     // the `regionstructure` region-based Phoenix/SAILR structurer, Inc 1,
@@ -108,14 +110,16 @@ fn fixture_has_all_61_settables() {
     // DecompilerDependent varargs-typing gate, the `listing` Listing/xref
     // disassembly tier gate, the `noreturn_disc` discovered-no-return Listing
     // consumer gate, the `noreturn_propagate` no-return propagation Listing consumer
-    // gate, the `aif` Aggressive Instruction Finder gap-walk Listing consumer gate,
-    // and the `gopclntab` Go pclntab function-name recovery gate)
+    // gate, the `fid` FID fingerprint-matcher Listing consumer gate (re-identify a
+    // stripped function by full-hash fingerprint, FUN_*/sub_* -> kuna_crc32,
+    // default-off), the `aif` Aggressive Instruction Finder gap-walk Listing consumer
+    // gate, and the `gopclntab` Go pclntab function-name recovery gate)
     // + 3 loader-tier capabilities (the `relocobjects` ET_REL relocatable-object
     // loader, DIV-8; the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9; and
     // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate, PR-8).
     // (+1 for the `taildup` angr SAILR ReturnDuplicatorLow return-tail-WITH-call
     // duplication gate — the gap between gotoreduce and crossjumprevert.)
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 61);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 63);
 }
 
 #[test]

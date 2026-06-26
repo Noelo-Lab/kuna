@@ -258,15 +258,18 @@ pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
 /// (`read symbols`), not at load — see [`run_listing_consumers`].
 ///
 /// The consumers are the discovered-no-return analyzer (`noreturn_disc`, the kuna
-/// analog of Ghidra's `FindNoReturnFunctionsAnalyzer`) and the structural
-/// no-return propagation analyzer (`noreturn_propagate`, the kuna analog of angr's
-/// CFGFast call-graph no-return propagation). Each is still gated by its own
+/// analog of Ghidra's `FindNoReturnFunctionsAnalyzer`), the structural no-return
+/// propagation analyzer (`noreturn_propagate`, the kuna analog of angr's CFGFast
+/// call-graph no-return propagation), and the FID fingerprint matcher (`fid`, the
+/// kuna analog of Ghidra's FID identification analyzer — re-identify a stripped
+/// function by full-hash fingerprint). Each is still gated by its own
 /// `--option <id> on|off` flag at commit time
 /// (`engine.rs::analysis_pass_enabled`), so a default run skips it.
 fn listing_consumer_passes() -> Vec<Box<dyn AnalysisPass>> {
     vec![
         Box::new(crate::s1_noreturn_disc::NoReturnDiscoveredPass),
         Box::new(crate::s1_noreturn_propagate::NoReturnPropagatePass),
+        Box::new(crate::s1_fid::FidPass),
     ]
 }
 

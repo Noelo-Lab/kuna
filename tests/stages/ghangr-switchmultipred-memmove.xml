@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    angr test_decompiling_abnormal_switch_case_case3 (memmove @ 0x18003c330,
+    msvcr120.dll): an image-base-relative jump table whose bound guard is
+    "unrolled" / duplicated across MULTIPLE dispatch predecessors.
+
+    memmove dispatches the small-count (count <= 16) tail copy through an
+    image-base-relative jump table:
+        r9  = 0x180000000                     (image base, a computed lea)
+        eax = *(uint32*)(0x18003c410 + r8*4)  (17-entry RVA table)
+        rax = r9 + rax
+        jmp  *rax                              (BRANCHIND -> the switch)
+    The index r8 (count) is bounded by `cmp $0x10,%r8 ; jbe` at the function
+    ENTRY, far from the jmp.  But the dispatch block at 0x18003c3fc is ALSO
+    re-entered from the backward-copy path (`jmp 0x18003c3fc`), where r8 is
+    bounded by a DIFFERENT guard (`and $0x7 ; test ; jne`).  So the BRANCHIND's
+    parent block has TWO predecessors, each ending in its own bound CBRANCH and
+    its own copy of the switch index; the two indices meet in a MULTIEQUAL.
+
+    Stage model: S2 switch-model.  The basic guard walk
+    (JumpBasic::analyzeGuards) bounds a table by backing up through
+    SINGLE-predecessor blocks to the dominating guard.  With size_in() > 1 it
+    short-circuits to checkUnrolledGuard, which kuna left as an empty SEAM stub;
+    no bound was found, the normalized range stayed > maxtablesize, the basic
+    model declined, and flow.rs truncated the indirect jump to a call
+    (rendered as a computed (code *)() call).
+
+    Fix surface = a default-off ArchOption (switchmultipred) that ports the
+    upstream multi-predecessor unrolled-guard machinery
+    (checkCommonCbranch + BlockBasic::findMultiequal + liftVerifyUnroll) into
+    the checkUnrolledGuard SEAM, so the common guard is lifted onto the
+    MULTIEQUAL output (the switch index), the table bounds to [0, 17), and the
+    existing image-base-relative readonly-LOAD table model recovers the switch.
+
+    Pass 1 (default, option off): assertion #1 proves the bug reproduces:
+    the dispatch renders as a computed call through a function pointer.
+    Pass 2 (option switchmultipred on): assertion #2 proves the multi-predecessor
+    guard is lifted, the table is bounded, and the dispatch is recovered as a
+    switch.
+-->
+<bytechunk space="ram" offset="0x18003c330">
+4c8bd94c8bd24983f8100f86b9000000482bd1730f498bc24903c0483bc80f8c960300000fba25fc530a000173135756488bf9498bf2498bc8f3a45e5f498bc3c30fba25df530a00020f8256020000f6c1077436f6c101740b8a040a49ffc8880148ffc1f6c102740f668b040a4983e8026689014883c102f6c104740d8b040a4983e80489014883c1044d8bc849c1e9050f85d90100004d8bc849c1e9037414488b040a4889014883c10849ffc975f04983e0074d85c07507498bc3c30f1f00488d140a4c8bd1eb034d8bd34c8d0dfd3bfcff438b848110c403004903c1ffe054c4030058c4030063c403006fc4030084c403008dc403009fc40300b2c40300cec40300d8c40300ebc40300ffc403001cc503002dc5030047c5030062c5030086c50300498bc3c3480fb602418802498bc3c3480fb70266418902498bc3c3480fb602480fb74a014188026641894a01498bc3c38b02418902498bc3c3480fb6028b4a0141880241894a01498bc3c3480fb7028b4a026641890241894a02498bc3c3480fb602480fb74a018b52034188026641894a0141895203498bc3c3488b02498902498bc3c3480fb602488b4a0141880249894a01498bc3c3480fb702488b4a026641890249894a02498bc3c3480fb602480fb74a01488b52034188026641894a0149895203498bc3c38b02488b4a0441890249894a04498bc3c3480fb6028b4a01488b520541880241894a0149895205498bc3c3480fb7028b4a02488b52066641890241894a0249895206498bc3c34c0fb602480fb742018b4a03488b5207458802664189420141894a0349895207498bc3c3f30f6f02f3410f7f02498bc3c366666666660f1f840000000000488b040a4c8b540a084883c120488941e04c8951e8488b440af04c8b540af849ffc9488941f04c8951f875d44983e01fe9f2fdffff4983f8200f86e1000000f6c10f750e0f10040a4883c1104983e810eb1d0f100c0a4883c12080e1f00f10440af0410f110b488bc1492bc34c2bc04d8bc849c1e90774660f2941f0eb0a66900f2941e00f2949f00f10040a0f104c0a104881c1800000000f2941800f2949900f10440aa00f104c0ab049ffc90f2941a00f2949b00f10440ac00f104c0ad00f2941c00f2949d00f10440ae00f104c0af075ad0f2941e04983e07f0f28c14d8bc849c1e904741a660f1f8400000000000f2941f00f10040a4883c11049ffc975ef4983e00f740d498d04080f104c02f00f1148f00f2941f0498bc3c30f1f4000410f1002498d4c08f00f100c0a410f11030f1109498bc3c30f1f840000000000666666906666669066900fba2566500a00020f82b90000004903c8f6c1077436f6c101740b48ffc98a040a49ffc88801f6c102740f4883e902668b040a4983e802668901f6c104740d4883e9048b040a4983e80489014d8bc849c1e90575414d8bc849c1e90374144883e908488b040a49ffc948890175f04983e0074d85c0750f498bc3c36666660f1f840000000000492bc84c8bd1488d140ae97dfcffff90488b440af84c8b540af04883e920488941184c895110488b440a084c8b140a49ffc9488941084c891175d54983e01feb8e4983f8200f8605ffffff4903c8f6c10f750e4883e9100f10040a4983e810eb1b4883e9100f100c0a488bc180e1f00f10040a0f11084c8bc14d2bc34d8bc849c1e90774680f2901eb0d660f1f4400000f2941100f29090f10440af00f104c0ae04881e9800000000f2941700f2949600f10440a500f104c0a4049ffc90f2941500f2949400f10440a300f104c0a200f2941300f2949200f10440a100f100c0a75ae0f2941104983e07f0f28c14d8bc849c1e904741a66660f1f8400000000000f29014883e9100f10040a49ffc975f04983e00f7408410f100a410f110b0f2901498bc3c3cc
+</bytechunk>
+<symbol space="ram" offset="0x18003c330" name="memmove"/>
+</binaryimage>
+<script>
+  <com>lo fu memmove</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchmultipred on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="switchmultipred #1: multi-predecessor switch renders as a computed call (bug reproduced)" min="1" max="1">\(\*\(code \*\)</stringmatch>
+<stringmatch name="switchmultipred #2: switchmultipred on bounds the table and recovers the switch" min="1" max="1">switch\(</stringmatch>
+<stringmatch name="switchmultipred #3: switchmultipred on recovers the first table case (index 0)" min="1" max="1">case 0:</stringmatch>
+<stringmatch name="switchmultipred #4: switchmultipred on recovers the last table case (index 16)" min="1" max="1">case 0x10:</stringmatch>
+<stringmatch name="switchmultipred #5: the recovered switch has no default case (matches angr's 17-case-no-default)" min="0" max="0">default:</stringmatch>
+</decompilertest>

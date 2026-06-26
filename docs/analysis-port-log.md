@@ -4480,3 +4480,184 @@ vendored `.fid`** record-for-record (ties the engine to the artifact).
 - **Next (PR4):** the `FidPass` + commit/rename + `--option fid` surface + the
   stripped-binary re-identification e2e test (and, prerequisite for an x86-64
   fixture, the PR1 `instruction_mask` multi-phase fix).
+
+### Increment 55 — FID PR1-fix: x86-64 REX instruction_mask (+ re-home the FID fixture to x86-64)
+
+The PR1 follow-up flagged by PR2/PR3: `Sleigh::instruction_mask` could not
+fingerprint REX-prefixed x86-64 instructions, which forced the FID fixture to
+32-bit x86. This increment fixes the accessor and re-homes the fixture to
+x86-64 (the architecture `docs/fid-design.md` §7.2 targets).
+
+**The bug.** PR1's `instruction_mask` computed each constructor node's fixed-bit
+mask by RE-WALKING the SLEIGH decision tree *post-decode* via
+`DecisionNode::resolve_matched`. But that re-walk reads the **final** multi-phase
+parser context — for an x86-64 instruction the `instrPhase` context register has
+already advanced PAST the REX-prefix phase that selected the constructor. So for
+e.g. `48 01 fe` (`add rsi,rdi`) the re-resolve picked the wrong leaf / failed
+outright with "Unable to resolve constructor". 32-bit x86 has no REX prefix and
+single-phase decode, so it always re-resolved cleanly — hence the 32-bit
+workaround. The bug is precisely "decode used multi-phase context."
+
+**The fix — capture the matched pattern DURING decode (correct per-phase
+context), don't re-walk.** The matched `DisjointPattern` for each node was already
+found inside `Sleigh::resolve`'s constructor resolution, *when that node's context
+was correct*. The fix retains it:
+1. `ConstructState` gains a kuna-only `matched_pattern: Option<DisjointPattern>`
+   field (`sleigh.rs`).
+2. `Symbol::resolve_matched` (`slghsymbol.rs`) mirrors `Symbol::resolve` but, for a
+   subtable triple, also returns the matched pattern leaf (cloned) — `(Some(ct),
+   Some(pattern))`; for non-subtable triples it runs the same validating `resolve`
+   and returns `(None, None)`. Same `is_match` walk, same `BadDataError`.
+3. `Sleigh::resolve`'s two resolution points — the root (`subtable.resolve_matched`)
+   and each subtable operand (`resolve_triple_matched`) — now capture the matched
+   pattern and stash it on the node via a new `ParserWalkerChange::set_matched_pattern`
+   right where the constructor is set. **Same constructor chosen, same length, same
+   handles, same p-code** — only an extra clone of a pattern decode already matched.
+4. `Sleigh::instruction_mask` now READS each node's stashed `matched_pattern`
+   (correct per-phase context baked in) and ORs its fixed bits, instead of the
+   post-decode re-walk. The dead re-walk path (`subtable.resolve_matched` inside the
+   accessor, `ParserWalker::set_point`, the standalone `resolve_triple`) is dropped.
+
+**Byte-identical decode — additive only.** The capture runs at the existing
+resolution sites under the existing context; it never changes which constructor is
+selected. Proof: `make test` **675/675 PARITY OK** and `make rust-test`'s `.sla`
+content-parity + datatest parity are **unchanged**.
+
+**The x86-64 mask proof (the regression gate).** Three REX cases added to
+`kuna-sleigh/tests/instruction_mask.rs`, each of which **fails on `main`/pre-fix**
+("Unable to resolve constructor") and passes with the fix:
+- `48 01 fe` (`add rsi,rdi`) → `fixed_mask=[f8,ff,c0]`: REX prefix marker +
+  **REX.W (0x08) pinned**, REX.R/X/B register-extension bits free; opcode `01`
+  fully pinned; modrm mod bits pinned, reg/rm selectors operand. Both operands
+  classify `Register`.
+- `48 b8 …` (`mov rax,imm64`) → the **imm64 (bytes 2..10) fully zeroed**, a
+  `Scalar{0x8877665544332211}`.
+- `48 89 fe` (`mov rsi,rdi`) → register-to-register, both operands `Register`,
+  opcode `89` pinned.
+The four pre-existing non-REX cases still pass. Unit gate RAN: 7 passed, 0 ignored.
+
+**Fixture re-homed to x86-64.** Rebuilt `tests/fixtures/fid/lib.o` as x86-64
+(`gcc -O2 -ffreestanding -fno-stack-protector -c lib.c -o lib.o`) and regenerated
+`lib.fid` via `kuna fid build lib.o -o lib.fid --lang x86:LE:64:default --cspec
+gcc`. The generator now recovers all three functions on x86-64:
+
+| function | full_hash | specific_hash | code_unit_size | specific_addl |
+|---|---|---|---|---|
+| `kuna_crc32`  | `0x2603a009d9e0776f` | `0xc05eead857c9304a` | 25 | 30 |
+| `kuna_strlen` | `0x03a308fb37c24cf0` | `0xea7136fa1ab9ce93` | 12 | 22 |
+| `kuna_memset` | `0x67c5bd4207a978b3` | `0xe74cd6a00ca603e6` | 11 | 31 |
+
+The cargo-test mirror `fid_lib_x86_32.{o,c,fid}` is renamed to `fid_lib_x86_64.*`;
+`verify_fid_build.rs` now bootstraps `x86:LE:64:default` and still passes its 3
+integration tests (the fresh in-process generate matches the re-homed vendored
+`.fid` record-for-record). The fixture README + Makefile drop the 32-bit workaround
+note.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. `.sla` content-parity + the re-homed
+`verify_fid_build` (3) and `instruction_mask` (7 — 3 new REX) tests.
+
+- **New:** (none — all changes are edits/regenerations).
+- **Changed:** `kuna-sleigh/src/sleigh.rs` (`ConstructState.matched_pattern`,
+  `set_matched_pattern`, capture in `resolve`, `resolve_triple_matched`,
+  `instruction_mask` reads the stash, dropped the re-walk + `set_point`),
+  `kuna-sleigh/src/slghsymbol.rs` (`Symbol::resolve_matched`),
+  `kuna-sleigh/tests/instruction_mask.rs` (+3 REX cases),
+  `kuna-console/tests/verify_fid_build.rs` (x86-64 fixture/lang),
+  `tests/fixtures/fid/{lib.o,lib.fid,README.md,Makefile}` (x86-64),
+  `kuna-analysis/tests/fixtures/fid_lib_x86_64.{o,c,fid}` (re-homed from
+  `fid_lib_x86_32.*`), `docs/analysis-port-log.md`.
+
+### Increment 56 — FID PR4: the gated `--option fid` matching pass + stripped-binary re-identification
+
+**THE PAYOFF.** PR1-PR3 built the FID *mechanism* (the `Sleigh::instruction_mask`
+accessor, the byte-exact FNV-1a64 `FidHasher`/`FidHashQuad`, the kuna-native `.fid`
+database + `kuna fid build` generator). PR4 wires it into a default-off Listing/xref
+**consumer pass** that re-identifies a function in a STRIPPED binary purely by its
+instruction-stream fingerprint — the one capability unique to FID.
+
+**The before/after (the only thing FID does), on a stripped, static, `-no-pie`
+x86-64 ELF (`tests/fixtures/fid/prog`):**
+
+```
+                                     symbol @ 0x4017c0   rendered body
+--option fid off (default)        →  sub_4017c0          uint4 sub_4017c0(uint1 *a0,uint4 a1) { ... 0xedb88320 ... }
+--option listing on --option fid on  →  kuna_crc32       uint4 kuna_crc32(uint1 *a0,uint4 a1) { ... 0xedb88320 ... }
+  (+ kuna_fid_db=tests/fixtures/fid/lib.fid)
+```
+
+The stripped binary has NO symbol table (`strip --strip-all`), so the function at
+`0x4017c0` is the engine placeholder `sub_4017c0` by default — proving the name is
+not a leftover symbol. With FID on it is renamed to `kuna_crc32`, recovered by a
+full-hash match against the vendored `lib.fid` (built by `kuna fid build` over the
+un-stripped `lib.o`). Same function, same body (the CRC-32 loop with the magic
+`0xedb88320`), only the NAME changes — `FUN_*`/`sub_*` → `kuna_crc32`, only FID
+could do this.
+
+**Wiring (every piece a verified clone of the `noreturn_disc` consumer):**
+
+- `s1_fid/mod.rs` — `FidPass impl AnalysisPass { stage→S1; id→"fid"; run }`: inert
+  without the Listing (`ctx.listing` `None`) AND without a configured DB
+  (`kuna_fid_db` env var, mirroring the loader's `kuna_i386_pie_plt`). Over each
+  `listing.functions()` entry it builds the `[entry,next)` extent (PR2's
+  `extent::calculate_extent`), fingerprints each instruction via the SAME
+  `build::fingerprint_from_mask` projection the generator uses (driving
+  `Sleigh::instruction_mask`), hashes with `FidHasher`, queries
+  `db.find_by_full_hash`, and `pick_unique_name` (emit a name ONLY when the bucket
+  collapses to one name — never guess on a tie). Registered in
+  `listing_consumer_passes()`.
+- `pass.rs` — `FidMatch { addr, name }` + `AnalysisOutput.fid_names` + the `merge`
+  line.
+- `engine.rs` — the new FID **rename** commit arm (after the no-return arm): resolve
+  the function by ADDRESS (`find_function_across_scopes`), then — ONLY behind the
+  label gate `is_generic_placeholder_name` (`sub_`/`func_`/`FUN_`/`LAB_`, never a
+  real `.symtab`/DWARF name) — `Database::rename_symbol` + `register_symbol`. The
+  SymFact arm is an idempotent-add and would no-op on an existing function, so the
+  rename is the one net-new piece of plumbing. + `"fid" => arch.analysis_fid` gate.
+- Option surface (cloned from `noreturn_disc`): `architecture.rs`
+  field/default/reset/`set_kuna_option` arm, `options.rs` `KUNA_OPTION_NAMES`,
+  `stages.toml` `[[settable]] fid` block (`default="off"`,
+  `change_kind="analysis-enablement"`), settable count `60 → 61` (`stages.toml`,
+  `kuna_stages/tests.rs` count + comma + `PASS_GATES` suppressed set,
+  `catalog_bytecompat.rs` `fixture_has_all_61` + count), regenerated
+  `tests/fixtures/stage_catalog.json` + `docs/assertions.md`. `kuna catalog --check`
+  → catalog OK.
+
+**DB path:** read from the `kuna_fid_db` env var (a real `--fidb <path>` flag is
+deferred). **The fixture:** the stripped `tests/fixtures/fid/prog` is vendored
+(recipe + the pinned `kuna_crc32` VMA `0x4017c0` recorded in the fixture README);
+`lib.o`/`lib.fid` were already vendored by PR3.
+
+**Speed:** the FID-on decompile of `kuna_crc32` (load function + decompile + print C)
+is ~6.5 ms wall; the default (FID-off) path builds no Listing and runs no consumer
+(~9 ms here is the first cold load + the un-renamed `load addr` flow). The FID hash
+is a single per-function decode-pass + FNV stream, on an opt-in, real-ELF-only path —
+no impact on the default pipeline (FID never runs by default).
+
+**Parity:** real-ELF-path-only + default-off ⇒ the XML datatest path never builds a
+Listing and never runs the FID consumer, so the 675/158 oracles are structurally
+untouched.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **222/222 PARITY OK**
+(the KUNA-CATALOG #5/#9 `use_when`/`change_kind` `max` bound bumped 61 → 62 — the
+catalog `<script>` emits the full catalog + one `returnpair` single-row, so the count
+is settables+1); `make rust-test` **green** incl. the new `verify_fid` e2e (2 tests,
+ran — not skipped) and the regenerated catalog tests; `kuna catalog --check`
+**catalog OK**.
+
+- **New:** `kuna-console/tests/verify_fid.rs` (the §7.2 two-state e2e),
+  `tests/fixtures/fid/prog` (vendored stripped x86-64 ELF).
+- **Changed:** `kuna-analysis/src/s1_fid/mod.rs` (`FidPass`),
+  `kuna-analysis/src/s1_fid/build.rs` (`fingerprint_from_mask` → `pub(crate)`),
+  `kuna-analysis/src/pass.rs` (`FidMatch` + `fid_names` + merge),
+  `kuna-analysis/src/passes.rs` (register the pass),
+  `kuna-console/src/engine.rs` (rename arm + gate + `is_generic_placeholder_name`),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_fid`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`"fid"`),
+  `kuna-decomp/stages.toml` (`[[settable]] fid`),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comma/PASS_GATES),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 61 → 62),
+  `docs/assertions.md` (regen), `docs/rust-port/losses.md`,
+  `tests/fixtures/fid/README.md`, `docs/analysis-port-log.md`.
