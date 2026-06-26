@@ -1,0 +1,63 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr test_decompiling_tee_O2_tail_jumps :: setlocale_null_androidfix
+    (binaries/tests/x86_64/decompiler/tee_O2, x86-64).  The *type* half of that
+    case (the wrapper around `char *setlocale(int, const char *)`).
+
+    On the real binary kuna had no prototype for `setlocale`, so the call's
+    result was an untyped `undefined8`: the `setlocale(...)` call carried no
+    `char *`, its NULL second argument rendered as a bare `0`, and (where the
+    type DID flow, e.g. a caller that stores the result) the wrapper was typed
+    against an undefined.  Root cause: a missing libc prototype.
+
+    The fix curates `char *setlocale(int, const char *)` into the built-in libc
+    prototype table (kuna-analysis `s1_protos`, the `ApplyDataArchiveAnalyzer`
+    analog).  A binary that imports `setlocale` then gets the call typed: its
+    NULL `locale` argument renders as a typed `(char *)0x0` and the result is a
+    `char *`.  See docs/features/setlocale-rettype/analysis.md.
+
+    Stage model: S5 type inference (the call's recovered return/parameter types).
+    Pure correctness fix: the curated prototype only ever ADDS a `char *` typing,
+    so the datatest corpus (which imports no `setlocale`) is byte-identical.
+    DIV-12, default-on (no option flag).
+
+    The stage harness does not run the analysis tier, so this case declares the
+    SAME prototype the libproto table now seeds, inline via `parse line`, then
+    decompiles a normal `call setlocale; ret` wrapper:
+
+        0x100000 setlocale_null:  xor esi,esi ; call setlocale ; ret
+        0x100040 setlocale:       ret          (prototype set by parse line)
+
+    Assertions prove the type fix: the call resolves to the NAMED `setlocale`
+    (not a `dat_`/`undefined` indirect) and its NULL second argument is typed as
+    a `char *` constant `(char *)0x0` rather than a bare `0` (the pre-fix shape).
+
+    NOTE: the separate "the wrapper itself returns the char* result" line is a
+    GENERAL return-value-recovery limitation (it affects ANY `return libcfn(...)`
+    compiled to a tail-position `call F; ret` with no intervening use of the
+    return register, e.g. `return strchr(s,c);` too), not the missing prototype,
+    and is documented as a follow-up in analysis.md.  This test pins only what
+    the prototype fix delivers.
+-->
+<bytechunk space="ram" offset="0x100000">
+31f6e839000000c30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="setlocale_null"/>
+<symbol space="ram" offset="0x100040" name="setlocale"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *setlocale(int4 category,char *locale);</com>
+  <com>lo fu setlocale_null</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<!-- The fix: the call resolves to the named `setlocale` (its prototype is
+     applied), with the NULL `locale` argument typed as a `char *` constant. -->
+<stringmatch name="SETLOCALE RETTYPE #1: NULL locale arg is typed char *" min="1" max="1">setlocale\([^)]*\(char \*\)0x0\)</stringmatch>
+<!-- The pre-fix shapes must be gone: no untyped indirect call through a data
+     pointer, and the call is the named setlocale. -->
+<stringmatch name="SETLOCALE RETTYPE #2: no untyped indirect call" min="0" max="0">\(\*(code|dat_)</stringmatch>
+<stringmatch name="SETLOCALE RETTYPE #3: call is the named setlocale" min="1" max="999">setlocale\(</stringmatch>
+</decompilertest>

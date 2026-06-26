@@ -62,8 +62,8 @@ use crate::seams::BlockId;
 use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<regionstructure>` (kuna).  ElementIds live in the 4000+
-/// range (the next free id after `gotoreduce` = 4100).
-pub const ELEM_REGIONSTRUCTURE: ElementId = ElementId::new("regionstructure", 4101);
+/// range (the next free id after `tailcalljump` = 4101).
+pub const ELEM_REGIONSTRUCTURE: ElementId = ElementId::new("regionstructure", 4102);
 
 /// Guard cap on structuring rounds: `2*n^2 + 64`, computed in 64-bit (mirrors the
 /// [`kuna_guard_cap`](crate::s7_regions::kuna_regionid) caps).  The virtualize

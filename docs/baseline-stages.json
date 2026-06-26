@@ -1,9 +1,12 @@
 {
   "data_footer": [
-    179,
-    179
+    194,
+    194
   ],
   "passing": [
+    "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
+    "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
+    "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
@@ -111,9 +114,9 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, regionstructure)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, regionstructure)",
-    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound, tailcalljump, regionstructure)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, tailcalljump, regionstructure)",
+    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
     "data:KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage",
@@ -142,6 +145,9 @@
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
     "data:REALTYPES #4: no xunknown placeholder remains",
     "data:REALTYPES #5: no undefined placeholder remains",
+    "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
+    "data:SETLOCALE RETTYPE #2: no untyped indirect call",
+    "data:SETLOCALE RETTYPE #3: call is the named setlocale",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",
@@ -160,6 +166,11 @@
     "data:angr-gotoreduce #3 (fix, on): return tail duplicated (1 return off + 2 returns on)",
     "data:angr-loopbreak #1: nine loop-exit gotos (pass1 off only; pass2 on recovers all)",
     "data:angr-loopbreak #2: synthesized cleanup label present in pass1, suppressed in pass2",
+    "data:angr-missing-function-call #1: fix recovers a switch (none in pass 1 off, one in pass 2 on)",
+    "data:angr-missing-function-call #2: bug renders the unrecovered jump as a computed call (pass 1 off only)",
+    "data:angr-missing-function-call #3: boundary case 0x36 (u/userlist) recovered, proving bound N==0x37 not 0x36",
+    "data:angr-missing-function-call #4: case 0x26 (e/emaillist) recovered",
+    "data:angr-missing-function-call #5: case 0x2e (m/maillist) recovered",
     "data:angr-mv #1: one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-mv #2: default present",
     "data:angr-mv #3: case 0x66 (102 f) recovered",
@@ -182,7 +193,11 @@
     "data:regionstructure-loop #1: do-while recovered (BlockDoWhile), both passes",
     "data:regionstructure-loop #2: for/while recovered (BlockWhileDo), both passes",
     "data:regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes",
-    "data:regionstructure-loop #4: ZERO gotos - region structurer matches Ghidra on reducible loops (parity)"
+    "data:regionstructure-loop #4: ZERO gotos - region structurer matches Ghidra on reducible loops (parity)",
+    "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
+    "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
+    "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
+    "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)"
   ],
   "returncode": 0,
   "unit_footer": null

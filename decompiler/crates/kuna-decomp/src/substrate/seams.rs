@@ -554,6 +554,10 @@ pub struct Architecture {
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
     pub strip_stack_guard: bool,
+    /// (kuna) flip negated-guard if/else branches for linearity (option
+    /// `branchflip`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_branchflip`]'s `ActionBranchFlip`.
+    pub branch_flip: bool,
     /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
     /// to materialize a propagated constant as a COPY inside a loop predecessor
     /// block (which would render as a spurious `= 0` in the do/while body).  C++
@@ -609,6 +613,13 @@ pub struct Architecture {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
+    /// (kuna) Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard
+    /// when the basic model's guard analysis could not (C++
+    /// `Architecture::switch_guard_bound`, flipped by `option switchguardbound`,
+    /// angr `test_decompiling_missing_function_call`), shared from the real
+    /// architecture.  Read by `JumpBasic::recoverModel` before
+    /// `kuna_try_guard_bound_table`.  `false` (default off / upstream byte-identical).
+    pub switch_guard_bound: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -737,6 +748,7 @@ impl Architecture {
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
+            branch_flip: false,          // branchflip (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
@@ -755,6 +767,7 @@ impl Architecture {
             // the thumb guard never fires regardless of this flag.
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
+            switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

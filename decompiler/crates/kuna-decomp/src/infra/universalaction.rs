@@ -355,8 +355,8 @@ pub fn universal_sched(
     extra_pool_rules: Vec<RuleRow>,
 ) -> SchedNode {
     use crate::blockaction::{
-        ActionBlockStructure, ActionFinalStructure, ActionNodeJoin, ActionNormalizeBranches,
-        ActionPreferComplement, ActionReturnSplit, ActionStructureTransform,
+        ActionBlockStructure, ActionBranchFlip, ActionFinalStructure, ActionNodeJoin,
+        ActionNormalizeBranches, ActionPreferComplement, ActionReturnSplit, ActionStructureTransform,
     };
     use crate::coreaction_cleanup::{
         ActionAssignHigh, ActionCopyMarker, ActionDominantCopy, ActionHideShadow, ActionMarkExplicit,
@@ -709,6 +709,11 @@ pub fn universal_sched(
             act!(ActionBlockStructure::boxed("blockrecovery")),
             act!(ActionPreferComplement::boxed("blockrecovery", false)),
             act!(ActionStructureTransform::boxed("blockrecovery", false)),
+            // (kuna, option `branchflip`, default-off) angr-SAILR-style negated-
+            // guard branch flip on the FINAL structured tree, after the second
+            // `preferComplement` has normalized the positive-flip cases — so we
+            // only catch the residual `if (x == 0)` / equality guards.
+            act!(ActionBranchFlip::boxed("blockrecovery", false)),
             act!(Box::new(crate::kuna_compareform::ActionPresentCompareForm::new(false, "presentcompare"))),
             act!(ActionOutputPrototype::boxed("localrecovery")),
             act!(ActionInputPrototype::boxed("fixateproto")),

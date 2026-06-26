@@ -22,11 +22,12 @@
 //! `KUNA_MACHO_SLICE`) picks the **arm64** slice instead. Both slices are the
 //! same `_main` calling `printf`, so each decompiles with a named `printf(`.
 //!
-//! ## Flag gating (default-off ⇒ byte-identical)
+//! ## Default-on multi-format dispatch
 //!
-//! Like the thin-Mach-O gate, the fat binary only loads under
-//! `KUNA_EXPERIMENTAL_FORMATS` (the `--experimental-formats` CLI flag); with it
-//! unset the same fixture routes to the XML branch and is rejected.
+//! Like the thin-Mach-O gate, the fat binary loads through the default `load file`
+//! dispatch with no flag — multi-format support is unconditional. The fat magic
+//! routes straight to the object loader (no XML rejection); the `--slice`/arm64e
+//! overrides remain separate, opt-in selectors layered on top.
 //!
 //! ## `.sla` precondition
 //!
@@ -43,8 +44,8 @@ use kuna_console::ifacedecomp::{
 };
 use kuna_console::ifaceterm::ConsoleCommands;
 
-/// `KUNA_EXPERIMENTAL_FORMATS` / `KUNA_MACHO_SLICE` are process-global env vars
-/// these tests toggle; serialize their bodies so a slice-override in one never
+/// `KUNA_MACHO_SLICE` / `KUNA_MACHO_ARM64E` are process-global env vars these
+/// tests toggle; serialize their bodies so a slice/arm64e override in one never
 /// races the default-slice bootstrap in another (cargo runs tests in parallel
 /// within one process).
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -79,15 +80,14 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap `macho_fat` under `--experimental-formats` (and the given slice
-/// override env), returning `None` (a visible skip) when the `.sla` is absent.
+/// Bootstrap `macho_fat` (multi-format loading is unconditional) with the given
+/// slice override env, returning `None` (a visible skip) when the `.sla` is absent.
 fn boot_fat(slice: Option<&str>) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("macho_fat");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     match slice {
         Some(s) => std::env::set_var("KUNA_MACHO_SLICE", s),
         None => std::env::remove_var("KUNA_MACHO_SLICE"),
@@ -103,25 +103,29 @@ fn boot_fat(slice: Option<&str>) -> Option<ConsoleProgram> {
             None
         }
     };
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
     std::env::remove_var("KUNA_MACHO_SLICE");
     r
 }
 
-/// (default-off proof) Without the flag a fat Mach-O must NOT load — it routes to
-/// the XML branch, which cannot parse it.
+/// (default-on proof) A fat Mach-O loads through the *default* `load file`
+/// dispatch with no flag — multi-format support is unconditional. A `.sla`-absent
+/// environment surfaces as a load error; here we only assert the dispatch ROUTES
+/// to the object loader (no XML "not recognized" rejection). The default slice
+/// selection still applies (the `KUNA_MACHO_SLICE` override stays a separate
+/// feature).
 #[test]
-fn fat_default_off_is_rejected() {
+fn fat_default_on_routes_to_object_loader() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("macho_fat");
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
-    let off = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    assert!(
-        off.is_err(),
-        "default-off: a fat Mach-O must NOT load without --experimental-formats"
-    );
+    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
+        let msg = e.explain();
+        assert!(
+            !msg.contains("Unable to recognize") && !msg.contains("XML"),
+            "default-on: the binary must route to the object loader (got: {msg})"
+        );
+    }
 }
 
 /// The headline: the fat binary loads with the **default** slice (x86-64),
@@ -192,7 +196,7 @@ fn fat_slice_override_selects_arm64() {
 // is real* (the engine reads the header, the gate fires, the AppleSilicon `.sla`
 // drives the decode). A genuine Apple-toolchain arm64e fixture is a follow-up.
 
-/// Bootstrap `macho_arm64e` under `--experimental-formats`, with the
+/// Bootstrap `macho_arm64e` (multi-format loading is unconditional) with the
 /// `macho-arm64e` gate set per `gate`, returning `None` (a visible skip) when the
 /// `.sla` is absent.
 fn boot_arm64e(gate: bool) -> Option<ConsoleProgram> {
@@ -201,7 +205,6 @@ fn boot_arm64e(gate: bool) -> Option<ConsoleProgram> {
     let path = fixtures().join("macho_arm64e");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     if gate {
         std::env::set_var("KUNA_MACHO_ARM64E", "1");
     } else {
@@ -218,7 +221,6 @@ fn boot_arm64e(gate: bool) -> Option<ConsoleProgram> {
             None
         }
     };
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
     std::env::remove_var("KUNA_MACHO_ARM64E");
     r
 }
