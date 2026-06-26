@@ -333,6 +333,17 @@ pub struct Architecture {
     /// bounds it; this rebuilds the meld as a clean single path down to the
     /// guarded index so the table resolves (C++ `switch_shared_case`).
     pub switch_shared_case: bool,
+    /// (kuna, angr `test_decompiling_abnormal_switch_case_case3`) Recover an
+    /// image-base-relative jump table whose bound guard is "unrolled" /
+    /// duplicated across MULTIPLE predecessors of the dispatch block (the
+    /// `BRANCHIND` parent has `sizeIn() > 1`, each incoming block ending in its
+    /// own copy of the bound CBRANCH, the per-path switch indices meeting in a
+    /// MULTIEQUAL).  Ports the upstream multi-predecessor unrolled-guard
+    /// machinery (`JumpBasic::checkCommonCbranch` + `BlockBasic::findMultiequal`
+    /// + `BlockBasic::liftVerifyUnroll`) into `JumpBasic::checkUnrolledGuard`,
+    /// lifting the common guard onto the MULTIEQUAL output so the table bounds
+    /// (C++ `switch_multi_pred`).
+    pub switch_multi_pred: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow seam,
@@ -753,6 +764,7 @@ impl Architecture {
             switch_modulo_bound: false,
             switch_guard_bound: false,
             switch_shared_case: false,
+            switch_multi_pred: false,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             recover_array_stride: false,
@@ -859,6 +871,7 @@ impl Architecture {
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.switch_multi_pred = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
@@ -994,6 +1007,7 @@ impl Architecture {
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
             "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
             "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
+            "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
             "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
@@ -1416,6 +1430,9 @@ impl Architecture {
         // (kuna, angr) carry the loop-carried-base relative-offset jump-table gate
         // (`option switchsharedcase`) so `JumpBasic::recoverModel` reaches it.
         seam.switch_shared_case = self.switch_shared_case;
+        // (kuna, angr) carry the multi-predecessor unrolled-guard jump-table gate
+        // (`option switchmultipred`) so `JumpBasic::checkUnrolledGuard` reaches it.
+        seam.switch_multi_pred = self.switch_multi_pred;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

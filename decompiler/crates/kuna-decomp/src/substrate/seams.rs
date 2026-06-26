@@ -647,6 +647,15 @@ pub struct Architecture {
     /// `kuna_try_loop_carried_guard_table`.  `false` (default off / upstream
     /// byte-identical).
     pub switch_shared_case: bool,
+    /// (kuna) Recover an image-base-relative jump table whose bound guard is
+    /// "unrolled" / duplicated across multiple predecessors of the dispatch
+    /// block (the `BRANCHIND` parent has `sizeIn() > 1`) (C++
+    /// `Architecture::switch_multi_pred`, flipped by `option switchmultipred`,
+    /// angr `test_decompiling_abnormal_switch_case_case3`), shared from the real
+    /// architecture.  Read by `JumpBasic::checkUnrolledGuard` to gate the
+    /// multi-predecessor unrolled-guard walk.  `false` (default off / upstream
+    /// byte-identical).
+    pub switch_multi_pred: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -799,6 +808,7 @@ impl Architecture {
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

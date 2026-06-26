@@ -1192,6 +1192,12 @@ substage = "switch-model"
 note = "(kuna, angr) recover a GCC PIC relative-offset jump table whose base register is loop-carried (getopt switch); rebuild the meld to the guarded load index"
 
 [[surface]]
+surface = "option switchmultipred"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna, angr) recover an image-base-relative jump table whose bound guard is unrolled across MULTIPLE dispatch predecessors (abnormal switch case); union the per-path guard prefixes across the dispatch MULTIEQUAL"
+
+[[surface]]
 surface = "option noreturn_externmatch"
 stage = "S2"
 substage = "flow-follow"
@@ -1551,6 +1557,26 @@ source_decompiler = "angr"
 inspiration = "test_switch_case_shared_case_nodes_b2sum_digest; angr CFGFast indirect-jump resolution across the loop phi; main"
 change_kind = "opt-in-tool"
 live_field = "switch_shared_case"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "switchmultipred"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-abnormal-switch-case-case3"
+summary = "Recover an image-base-relative jump table (target = imagebase + load4(table + idx*4)) whose bound guard is 'unrolled' / duplicated across MULTIPLE predecessors of the dispatch block: the BRANCHIND's parent has sizeIn() > 1, each incoming path ending in its OWN (often semantically different) bound CBRANCH, the per-path switch indices meeting in a MULTIEQUAL. The single-predecessor guard walk short-circuits to checkUnrolledGuard, so no dominating guard bounds the table and the dispatch is truncated to a computed (code *)() call. When on, finds the dispatch MULTIEQUAL, evaluates each predecessor guard as a function of its MULTIEQUAL input, and re-bounds the table to [0, max-over-paths) so the readonly-LOAD table model recovers the switch (angr's 'abnormal switch case')."
+use_when = "Set on PER PROGRAM when an image-base-relative switch (e.g. an MSVC memmove/memcpy small-count tail dispatch) reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch block has multiple predecessors each with its own bound guard (vs the single-guard form switchguardbound handles); DESTRUCTIVE as a global default (it unions per-path guard prefixes across a MULTIEQUAL and re-binds the table from a heuristic max bound, so it may over-bind an unrelated multi-entry indirect jump)."
+example = "option switchmultipred on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_abnormal_switch_case_case3; JumpTableResolver / abnormal switch case; 0x18003c330"
+change_kind = "opt-in-tool"
+live_field = "switch_multi_pred"
 live_true = "on"
 live_false = "off"
 
