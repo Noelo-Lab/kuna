@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=94, settable=55
-# (32 stage-model knobs + 20 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=95, settable=57
+# (34 stage-model knobs + 20 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1186,6 +1186,12 @@ substage = "switch-model"
 note = "(kuna, angr) bound a LOAD-table jumptable by an out-of-band CBRANCH range guard the guard analysis missed"
 
 [[surface]]
+surface = "option noreturn_externmatch"
+stage = "S2"
+substage = "flow-follow"
+note = "(kuna, angr) treat a name-matched known-no-return extern as no-return at the flow query seam (closes the ET_REL `.o` __stack_chk_fail dead-padding gap)"
+
+[[surface]]
 surface = "option dynamichashmax"
 stage = "S6"
 substage = "alias-facets"
@@ -1216,7 +1222,7 @@ substage = "naming-policy"
 note = "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming"
 
 # ---------------------------------------------------------------------------
-# settableTable: one row per kuna ArchOption -- the LLM control surface (25).
+# settableTable: one row per kuna ArchOption -- the LLM control surface (26).
 # live_field/live_true/live_false give build.rs the typed OptionValues field +
 # the live-value reader mapping (the literal `flag ? live_true : live_false`
 # ternary of kuna_console.cc kunaLiveValue); the three options with no live
@@ -1523,6 +1529,26 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "noreturn_externmatch"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S2"
+substage = "flow-follow"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-incorrect-duplication-chcon"
+summary = "Treat a direct CALL whose callee NAME matches the vendored ELF known-no-return list (exit/abort/__stack_chk_fail/...) as no-return at the flow `query_call_no_return` seam, even when the address-keyed noreturn_known scan emitted no fact. Closes the ET_REL `.o` gap: an undefined extern has symtab address()==0 and no PLT, so noreturn_known never marks it, and flow runs past a `__stack_chk_fail()` call into the inter-function alignment padding (00 00 -> `add [rax],al`), emitting dozens of garbage `*v = *v + c;` lines."
+use_when = "On by default (DIV-13): applies the SAME vendored name list and global/std namespace guard as the already-default-on noreturn_known, just at the flow query seam to reach the ET_REL `.o` undefined extern the address-keyed scan structurally misses; a no-op on a normal dynamically-linked ELF (the proto flag is already set). Set OFF to restore the prior byte-identical rendering (dead `add`-padding after a `__stack_chk_fail`/`abort`/`exit` call reappears)."
+example = "option noreturn_externmatch off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_incorrect_duplication_chcon_main; angr CLE/CFGFast extern no-return tagging; main"
+change_kind = "correctness-fix"
+live_field = "noreturn_extern_match"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "stackprobeloop"
 values = "on|off"
 default = "on"
@@ -1711,6 +1737,23 @@ use_when = "Set on when kuna emits 1+ gotos to a shared `... return v;` tail tha
 example = "option gotoreduce on"
 source_decompiler = "angr"
 inspiration = "test_decompiling_dd_argmatch_to_argument_noeagerreturns; SAILR/Phoenix goto-reduction (ReturnDuplicator); argmatch_to_argument"
+change_kind = "structure-recovery"
+
+[[settable]]
+option = "crossjumprevert"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-CrossJumpReverter"
+summary = "After structuring, revert compiler cross-jumping (Irreducible Statement Condensing): rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor *non-return* basic block that falls through to a successor S, by duplicating that cross-jump tail inline (a print-tree copy of the same ops — no p-code cloned). Only fires when the if's own structured fall-through also converges on S (a next_flow_after convergence precondition), so duplication is semantics-preserving. Sibling of gotoreduce (return tails) for the non-return fall-through case."
+use_when = "Set on when kuna emits 1+ gotos to a shared, condensed *non-return* tail that angr's CrossJumpReverter renders goto-free (e.g. `else if (c) { f(); goto label; } ... else { label: v = *p; } if (v == 2) ...`). Off (default) is byte-identical to upstream; on, the bounded (one tail block, <=8 printed ops, no STORE, <=1 call) cross-jump tail is duplicated back into the goto source so both paths fall straight through and the goto/label vanish. Each duplication is logged (`crossjumprevert:`). Runs after gotoreduce (last deoptimization)."
+example = "option crossjumprevert on"
+source_decompiler = "angr"
+inspiration = "test_who_condensing_opt_reversion; SAILR CrossJumpReverter/ReturnDuplicatorLow (angr/analyses/decompiler/optimization_passes/cross_jump_reverter.py); who.o scan_entries"
 change_kind = "structure-recovery"
 
 [[settable]]

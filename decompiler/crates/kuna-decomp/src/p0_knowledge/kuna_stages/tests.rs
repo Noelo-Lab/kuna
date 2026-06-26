@@ -24,16 +24,17 @@ fn substage_count_is_40() {
 }
 
 #[test]
-fn surface_count_is_94() {
+fn surface_count_is_95() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps),
-    // +1 for the `option branchflip` surface row (angr SAILR condition polarity).
-    assert_eq!(kuna_num_surfaces(), 94);
-    assert_eq!(SURFACE_TABLE.len(), 94);
+    // +1 for the `option branchflip` surface row (angr SAILR condition polarity),
+    // +1 for the `option noreturn_externmatch` surface row (angr incorrect-duplication-chcon, DIV-13).
+    assert_eq!(kuna_num_surfaces(), 95);
+    assert_eq!(SURFACE_TABLE.len(), 95);
 }
 
 #[test]
-fn settable_count_is_55() {
+fn settable_count_is_57() {
     // 31 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -83,9 +84,13 @@ fn settable_count_is_55() {
     // Listing consumer, default-off opt-in; +1 for `dwarf_lines`, the DWARF
     // .debug_line source-line mapping, default-off opt-in;
     // +1 for `noreturn_extern`, the undefined-extern name-based no-return S2
-    // flow-classification knob, angr test_tail_tail_bytes_ret_dup, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 55);
-    assert_eq!(SETTABLE_TABLE.len(), 55);
+    // flow-classification knob, angr test_tail_tail_bytes_ret_dup, default-off opt-in;
+    // +1 for `noreturn_externmatch`, the angr incorrect-duplication-chcon S2
+    // name-matched-extern no-return knob, DIV-13 default-on;
+    // +1 for `crossjumprevert`, the angr SAILR CrossJumpReverter cross-jump-tail
+    // duplication knob, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 57);
+    assert_eq!(SETTABLE_TABLE.len(), 57);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -264,12 +269,13 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_24_suppressed_for_31() {
+fn option_values_live_value_present_for_25_suppressed_for_32() {
     let ov = OptionValues::default();
-    // 24 options have a codegen live reader (realtypes + dedupvardecls join the
+    // 25 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
     // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`; +1 for
-    // `noreturn_extern`, whose `live_field` is `noreturn_extern_calls`, opt-in); the
+    // `noreturn_extern`, whose `live_field` is `noreturn_extern_calls`, opt-in;
+    // +1 for `noreturn_externmatch`, field-backed via `noreturn_extern_match`, DIV-13); the
     // live_value returns the current value for them and None for
     // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
     // 18 analysis/loader-tier gates (which have no `live_field` — their live state
@@ -329,6 +335,7 @@ fn option_values_live_value_present_for_24_suppressed_for_31() {
                             | "namestyle"
                             | "foldcallret"
                             | "gotoreduce"
+                            | "crossjumprevert"
                             | "loopbreak_recovery"
                             | "relocobjects"
                     ) || PASS_GATES.contains(&st.option),
@@ -338,7 +345,7 @@ fn option_values_live_value_present_for_24_suppressed_for_31() {
             }
         }
     }
-    assert_eq!(with_live, 24);
+    assert_eq!(with_live, 25);
 }
 
 #[test]
@@ -403,13 +410,14 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 55 rows: 54 trailing commas (the last, macho-arm64e, has none;
-    // switchguardbound's, tailcalljump's, and noreturn_extern's S2 rows,
-    // branchflip's S8 row, regionstructure's S8 row, eh_frame_full's S1 row,
-    // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, and
-    // dwarf_lines' S1 row sit mid-table, so they
+    // 57 rows: 56 trailing commas (the last, macho-arm64e, has none;
+    // switchguardbound's, tailcalljump's, noreturn_extern's, and
+    // noreturn_externmatch's S2 rows, branchflip's, regionstructure's, and
+    // crossjumprevert's S8 rows, eh_frame_full's S1 row, operand_refs's S1 row,
+    // funcstart_patterns's S1 row, aif's S1 row, and dwarf_lines' S1 row sit
+    // mid-table, so they
     // do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 54);
+    assert_eq!(json.matches("},\n").count(), 56);
 }
 
 #[test]

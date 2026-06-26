@@ -1,5 +1,43 @@
 # kuna Progress Log
 
+## Session (2026-06-26) — name-matched extern no-return in ET_REL `.o` (option `noreturn_externmatch`, DIV-13)
+
+**angr testcase**: `test_decompiling_incorrect_duplication_chcon_main` (coreutils `chcon.o`, an
+ET_REL `.o`, function `main`).
+
+**Why angr was better**: kuna emitted ~90 lines of garbage after the no-return
+`__stack_chk_fail()` call — the inter-function alignment padding (`00 00 …` decoded as
+`add byte ptr [rax], al`) decompiled as live code. angr emits none (313 loc / 33 gotos kuna vs
+223 / 7 angr).
+
+**Root cause**: `stack_chk_fail` is in kuna's vendored ELF known-no-return list
+(`option noreturn_known`, default-on), but in an ET_REL `.o` `__stack_chk_fail` is an *undefined
+extern* — `.symtab` `address()==0`, no PLT — so the address-keyed scan
+(`s1_loader/noreturn.rs::scan_noreturn`) emits no `NoReturnFact`. The `relocobjects` loader
+installs a `FunctionSymbol` named `__stack_chk_fail` at a synthetic target (the call *prints* the
+name) but no no-return flag is set, so flow runs off the end into the padding.
+
+**Mechanism**: new `option noreturn_externmatch` (S2 flow-follow, ElementId 4104). The
+`FlowEnvironment::query_call_no_return` seam (`infra/decompile_drive.rs`) also reports no-return
+when the callee *name* matches the vendored list — `flow.rs` ORs it at the artificial-halt site, so
+the halt is planted and the padding never decoded. The matcher
+(`s2_lift/kuna_noreturn_externmatch.rs`) `include_str!`s the *same* list `noreturn_known` uses and
+applies the *same* leading-`_` strip + global/`std` namespace guard, so it adds no risk class beyond
+the already-default-on `noreturn_known`. A no-op on a normal ELF (proto flag already set).
+
+**Ablation**: clean — 0/675 upstream datatest assertions change with the feature default-ON, and
+it is **23% faster** on the target (`chcon.o::main` 449.8 ms → 344.3 ms, n=5; less dead padding to
+decompile). **Decision**: ship **default-ON** (DIV-13). One interaction noted: `option
+noreturn_known off` no longer alone restores the post-`exit` dead code (the PE multiformat test now
+disables both name-based gates).
+
+**Testcase**: `tests/stages/ghangr-incorrect-duplication-chcon-a0e113.xml` (self-contained
+bytechunk; the ET_REL relocation cannot be applied in the bytechunk model). Pass 1 (off) asserts the
+dead `0xdeadbeef` after the call survives; pass 2 (on) asserts the call is flagged no-return and the
+dead code is gone. `docs/baseline-stages.json` +3. All gates green (catalog OK, datatest
+PARITY OK, test-stages PARITY OK, rust-test green). (Merged after PR #90's `noreturn_extern`,
+so ElementId 4104 and DIV-13 — both renumbered up one from the value in the original PR.)
+
 ## Session (2026-06-26) — undefined-extern no-return (option `noreturn_extern`, default-off opt-in)
 
 **angr testcase**: `test_tail_tail_bytes_ret_dup` :: `tail_bytes`
