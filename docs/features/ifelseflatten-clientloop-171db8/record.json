@@ -1,0 +1,26 @@
+{
+  "opportunity": "test_ifelseflatten_clientloop::client_request_tun_fwd",
+  "test_name": "test_ifelseflatten_clientloop",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o",
+  "selector": "client_request_tun_fwd",
+  "func_addr": "0x405170",
+  "arch_override": "x86_64",
+  "angr_version": "9.2.213",
+  "scope": "large",
+  "proposal": true,
+  "option": "externdatazerofill",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_ifelseflatten_clientloop; CLE extern object zero-fill; client_request_tun_fwd",
+  "mislabeled": "Opportunity is not an if-else flattening gap; kuna emits zero output (loader hard-fail 'Unable to load 512 bytes at r0x0040cb60') on an undefined-extern data read 'cmpl $0x1, options+0x1373'. Root cause: ET_REL synthetic extern area (elf_reloc.rs:282) is a 16-byte slot with no readable backing segment. Fix is loader/analysis-tier, not a kuna_<slug>.rs decompiler Action/Rule.",
+  "decisions": [
+    {
+      "question": "Worker can only ship one decompiler Action/Rule for 'ifelseflatten', but the gap is a loader-tier hard-fail in kuna-analysis. small/large? implement/proposal/negative?",
+      "decider": "general-purpose (opus)",
+      "scope": "large",
+      "outcome": "proposal",
+      "option_name_suggestion": "externdatazerofill",
+      "justification": "The worker's only sanctioned deliverable is a single option-gated decompiler Action/Rule in a new kuna_<slug>.rs module (stages S2-S9), but the gap is a hard-fail in the LOADER (kuna-analysis crate, s1_loader/elf_reloc.rs) where undefined-extern DATA reads land in unbacked synthetic memory and abort decompilation before any structuring runs -- so there is literally no output to flatten. Per Hard rule 7 this is explicitly out of scope: it touches a different tier (loader/analysis) and requires new memory-backing infrastructure (a zero-filled readable segment over the synthetic extern area), not something modelable as one Action/Rule. It is not a negative result either, because the fix is plausible, well-localized, and analogous to the existing env-var-bridged relocobjects loader option, so the loop should not abandon the lead -- it should escalate for human go/no-go. A PROPOSAL draft PR is the correct outcome: document the loader root cause, propose the option-gated zero-fill backing, and note that whether a genuine ifelseflatten structural gap remains is unknown and would be a separate, later feature once the loader unblocks output. Shipping a kuna_ifelseflatten.rs Action now would be wrong because it could never execute on this input and would not address the actual fault."
+    }
+  ]
+}

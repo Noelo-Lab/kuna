@@ -1,0 +1,126 @@
+==============================================================================
+test_ifelseflatten_clientloop :: client_request_tun_fwd   (angr 9.2.213 @ 0x405170)
+==============================================================================
+
+--- angr ---
+extern char g_501380;
+extern unsigned long got.sys_tun_infilter;
+extern unsigned long got.sys_tun_outfilter;
+
+long long client_request_tun_fwd(long long a0, unsigned int a1, unsigned long long a2, unsigned int a3, long long a4, long long a5)
+{
+    unsigned int ptr[73];  // rax
+    unsigned int v7[73];  // rbx
+    unsigned int v8;  // eax
+    unsigned long long v0;  // [bp-0x78]
+    unsigned long long v1;  // [bp-0x70]
+    unsigned long long v2;  // [bp-0x60]
+    unsigned long v3;  // [bp-0x50]
+    unsigned long flag;  // [bp-0x48]
+
+    flag = 0;
+    if (!a1)
+        return 0;
+    v2 = a2;
+    sshlog("clientloop.c", "client_request_tun_fwd", 1627, 0, 5, 0, "Requesting tun unit %d in mode %d");
+    if ((int)tun_open(a2 & 4294967295, a1, &flag) == 4294967295)
+    {
+        sshlog("clientloop.c", "client_request_tun_fwd", 1631, 0, 2, 0, "Tunnel device open failed.");
+        return 0;
+    }
+    v3 = flag;
+    sshlog("clientloop.c", "client_request_tun_fwd", 1634, 0, 5, 0, "Tunnel forwarding using interface %s");
+    v2 = "tun";
+    v1 = 0x8000;
+    v0 = 0x200000;
+    ptr = channel_new(a0, "tun", 3);
+    ptr[72] = 1;
+    v7 = ptr;
+    if (*((int *)&g_501380) == 1)
+        channel_register_filter(a0, v7[1], got.sys_tun_infilter, got.sys_tun_outfilter, 0, 0);
+    if (a4)
+        channel_register_open_confirm(a0, v7[1], a4, a5);
+    v8 = sshpkt_start(a0, 90);
+    if (!v8)
+    {
+        v8 = sshpkt_put_cstring(a0, "tun@openssh.com");
+        if (!v8)
+        {
+            v8 = sshpkt_put_u32(a0, v7[1]);
+            if (!v8)
+            {
+                v8 = sshpkt_put_u32(a0, v7[45]);
+                if (!v8)
+                {
+                    v8 = sshpkt_put_u32(a0, v7[47]);
+                    if (!v8)
+                    {
+                        v8 = sshpkt_put_u32(a0, a1);
+                        if (!v8)
+                        {
+                            v8 = sshpkt_put_u32(a0, a3);
+                            if (!v8)
+                            {
+                                v8 = sshpkt_send(a0);
+                                if (!v8)
+                                    return flag;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    sshpkt_fatal(a0, v8, "%s: send reply", "client_request_tun_fwd");
+    __stack_chk_fail(); /* do not return */
+}
+
+
+--- kuna (addr mode) ---
+  (no output: addr-mode: no C output for '0x405170' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load addr 0x405170
+Execution error: Unable to load 512 bytes at r0x0040cb60
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_m222ctq1.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit
+
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0x785: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0x7cc: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0x9fd: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa09: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa1d: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa31: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa45: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa6d: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa81: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/git (name-mode: no C output for 'client_request_tun_fwd' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load function client_request_tun_fwd
+Execution error: Unable to load 512 bytes at r0x0040cb60
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_qdxb6ntv.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit
+
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0x785: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0x7cc: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0x9fd: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa09: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa1d: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa31: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa45: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa6d: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/clientloop.o: reloc at 0x400000+0xa81: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader]))
