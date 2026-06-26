@@ -1186,6 +1186,12 @@ substage = "switch-model"
 note = "(kuna, angr) bound a LOAD-table jumptable by an out-of-band CBRANCH range guard the guard analysis missed"
 
 [[surface]]
+surface = "option noreturn_externmatch"
+stage = "S2"
+substage = "flow-follow"
+note = "(kuna, angr) treat a name-matched known-no-return extern as no-return at the flow query seam (closes the ET_REL `.o` __stack_chk_fail dead-padding gap)"
+
+[[surface]]
 surface = "option dynamichashmax"
 stage = "S6"
 substage = "alias-facets"
@@ -1499,6 +1505,26 @@ source_decompiler = "angr"
 inspiration = "test_decompiling_missing_function_call; angr jump-table / VSA guard bounding; main"
 change_kind = "opt-in-tool"
 live_field = "switch_guard_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "noreturn_externmatch"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S2"
+substage = "flow-follow"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-incorrect-duplication-chcon"
+summary = "Treat a direct CALL whose callee NAME matches the vendored ELF known-no-return list (exit/abort/__stack_chk_fail/...) as no-return at the flow `query_call_no_return` seam, even when the address-keyed noreturn_known scan emitted no fact. Closes the ET_REL `.o` gap: an undefined extern has symtab address()==0 and no PLT, so noreturn_known never marks it, and flow runs past a `__stack_chk_fail()` call into the inter-function alignment padding (00 00 -> `add [rax],al`), emitting dozens of garbage `*v = *v + c;` lines."
+use_when = "On by default (DIV-12): applies the SAME vendored name list and global/std namespace guard as the already-default-on noreturn_known, just at the flow query seam to reach the ET_REL `.o` undefined extern the address-keyed scan structurally misses; a no-op on a normal dynamically-linked ELF (the proto flag is already set). Set OFF to restore the prior byte-identical rendering (dead `add`-padding after a `__stack_chk_fail`/`abort`/`exit` call reappears)."
+example = "option noreturn_externmatch off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_incorrect_duplication_chcon_main; angr CLE/CFGFast extern no-return tagging; main"
+change_kind = "correctness-fix"
+live_field = "noreturn_extern_match"
 live_true = "on"
 live_false = "off"
 

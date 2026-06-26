@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr test_decompiling_incorrect_duplication_chcon_main (coreutils chcon.o,
+    an ET_REL `.o`, function main).  kuna emitted ~90 lines of garbage after the
+    no-return `__stack_chk_fail()` call: the inter-function alignment padding
+    (`00 00 ...` decoded as `add byte ptr [rax], al`) was decompiled as live code
+    because flow never stopped at the call.  angr emits none of it.
+
+    Root cause: `stack_chk_fail` is in kuna's vendored ELF known-no-return list
+    (option noreturn_known, default-on), so on a normal dynamically-linked ELF the
+    proto is marked no-return and `FlowInfo::queryCall` plants an
+    artificialHalt(noreturn).  But in an ET_REL `.o`, `__stack_chk_fail` is an
+    UNDEFINED extern: its `.symtab` entry has address()==0 and there is no PLT
+    stub, so the address-keyed `noreturn_known` scan emits no fact for it.  The
+    relocobjects loader installs a FunctionSymbol named `__stack_chk_fail` at a
+    synthetic target (the call PRINTS the name) but no no-return flag is set, so
+    flow runs off the end into the padding.
+
+    Option `noreturn_externmatch` (kuna, S2 flow-follow, ElementId 4103) closes
+    the gap: when on, the `query_call_no_return` seam also reports no-return for a
+    callee whose NAME matches the same vendored ELF known-no-return list, even
+    when the address-keyed scan missed it.  A no-op on a normal ELF (the proto
+    flag is already set); the only change is on the name-resolved-but-unmarked
+    extern of an ET_REL `.o`.
+
+    SELF-CONTAINED REPRO (the ET_REL relocation is not applied in the bytechunk
+    model, so the chcon.o bytes cannot be used verbatim - the CALL displacement
+    would not target the extern).  Instead `main` at 0x1000 is:
+        e8 fb 0f 00 00   call __stack_chk_fail   ; rel32 = 0x2000-0x1005 = 0xFFB
+        b8 ef be ad de   mov  eax, 0xdeadbeef     ; the "dead code after the call"
+        c3               ret
+    with a `__stack_chk_fail` symbol at 0x2000 (body `c3`).  The datatest path
+    does NOT run the analysis tier, so `__stack_chk_fail` is name-resolved but NOT
+    auto-marked no-return - exactly the chcon.o situation.
+
+    Pass 1 (option noreturn_externmatch off): the bug - the dead `0xdeadbeef`
+    after the call is emitted (`return 0xdeadbeef;`).
+    Pass 2 (option noreturn_externmatch on): the fix - flow halts at the call
+    (`/* WARNING: Subroutine does not return */`), so `0xdeadbeef` is gone.
+-->
+<bytechunk space="ram" offset="0x1000">
+e8fb0f0000b8efbeaddec3
+</bytechunk>
+<bytechunk space="ram" offset="0x2000">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="main"/>
+<symbol space="ram" offset="0x2000" name="__stack_chk_fail"/>
+</binaryimage>
+<script>
+  <com>option noreturn_externmatch off</com>
+  <com>lo fu main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_externmatch on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="angr-incorrect-duplication-chcon #1: the no-return call is present in both passes" min="2" max="2">__stack_chk_fail\(</stringmatch>
+<stringmatch name="angr-incorrect-duplication-chcon #2: dead code after the call survives only with the option OFF (bug); dropped with ON (fix)" min="1" max="1">0xdeadbeef</stringmatch>
+<stringmatch name="angr-incorrect-duplication-chcon #3: with the option ON the call is recognized no-return (artificial halt planted)" min="1" max="1">Subroutine does not return</stringmatch>
+</decompilertest>

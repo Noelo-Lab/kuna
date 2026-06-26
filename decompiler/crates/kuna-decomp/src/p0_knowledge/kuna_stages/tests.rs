@@ -24,16 +24,17 @@ fn substage_count_is_40() {
 }
 
 #[test]
-fn surface_count_is_94() {
+fn surface_count_is_95() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps),
-    // +1 for the `option branchflip` surface row (angr SAILR condition polarity).
-    assert_eq!(kuna_num_surfaces(), 94);
-    assert_eq!(SURFACE_TABLE.len(), 94);
+    // +1 for the `option branchflip` surface row (angr SAILR condition polarity),
+    // +1 for the `option noreturn_externmatch` surface row (angr incorrect-duplication-chcon, DIV-12).
+    assert_eq!(kuna_num_surfaces(), 95);
+    assert_eq!(SURFACE_TABLE.len(), 95);
 }
 
 #[test]
-fn settable_count_is_49() {
+fn settable_count_is_50() {
     // 31 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -66,9 +67,11 @@ fn settable_count_is_49() {
     // (+1 for `tailcalljump`, the angr tee-O2 tail-jump S2 flow-classification
     // knob, default-off opt-in; +1 for `branchflip`, the angr SAILR negated-guard
     // S8 branch-flip readability knob, default-off opt-in; +1 for `regionstructure`,
-    // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 49);
-    assert_eq!(SETTABLE_TABLE.len(), 49);
+    // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in;
+    // +1 for `noreturn_externmatch`, the angr incorrect-duplication-chcon S2
+    // name-matched-extern no-return knob, DIV-12 default-on.)
+    assert_eq!(kuna_num_settables(), 50);
+    assert_eq!(SETTABLE_TABLE.len(), 50);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -247,11 +250,12 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_23_suppressed_for_25() {
+fn option_values_live_value_present_for_24_suppressed_for_26() {
     let ov = OptionValues::default();
-    // 23 options have a codegen live reader (realtypes + dedupvardecls join the
+    // 24 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
-    // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`); the
+    // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`;
+    // +1 for `noreturn_externmatch`, field-backed via `noreturn_extern_match`, DIV-12); the
     // live_value returns the current value for them and None for
     // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
     // 17 analysis/loader-tier gates (which have no `live_field` — their live state
@@ -309,7 +313,7 @@ fn option_values_live_value_present_for_23_suppressed_for_25() {
             }
         }
     }
-    assert_eq!(with_live, 23);
+    assert_eq!(with_live, 24);
 }
 
 #[test]
@@ -374,10 +378,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 49 rows: 48 trailing commas (the last, macho-arm64e, has none;
+    // 50 rows: 49 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's and tailcalljump's S2 rows, branchflip's S8 row,
-    // and regionstructure's S8 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 48);
+    // regionstructure's S8 row, and noreturn_externmatch's S2 row sit mid-table,
+    // so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 49);
 }
 
 #[test]
