@@ -331,7 +331,8 @@ pub struct Architecture {
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::s7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
-    /// Ghidra's `CollapseStructure` (option `regionstructure`, opt-in default-off).
+    /// Ghidra's `CollapseStructure` (option `regionstructure`, DIV-12 default-on:
+    /// the primary structuring path; falls back to `CollapseStructure` on irreducible code).
     pub region_structure: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
@@ -650,7 +651,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
-            region_structure: false,
+            region_structure: true,
             reduce_return_gotos: false,
             recover_loop_break: false,
             fold_call_returns: false,
@@ -744,7 +745,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
-        self.region_structure = false; // (kuna) default-off opt-in (region-based Phoenix/SAILR structurer)
+        self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
