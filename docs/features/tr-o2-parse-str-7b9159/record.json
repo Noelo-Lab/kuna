@@ -1,0 +1,36 @@
+{
+  "opportunity": "test_decompiling_tr_O2_parse_str::parse_str",
+  "test_name": "test_decompiling_tr_O2_parse_str",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr_O2.o",
+  "selector": "parse_str",
+  "func_addr": "0x400a20",
+  "angr_version": "9.2.213",
+  "scope": "large",
+  "proposal": true,
+  "option": "loop_refine_structure",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_tr_O2_parse_str; angr SAILR/Phoenix LoopRefinement + RegionIdentifier cyclic structuring (DreamStructurer-style condition regions over loops); parse_str",
+  "gap_metrics": {
+    "ref_gotos": 11,
+    "kuna_gotos": 37,
+    "ref_labels": 8,
+    "kuna_labels": 21,
+    "ref_loc": 417,
+    "kuna_loc": 354,
+    "dominant_goto": "label_400af2 x12 (loop continuation/back-edge merge)"
+  },
+  "existing_options_tried": ["gotoreduce", "loopbreak_recovery", "regionstructure"],
+  "existing_options_effect": "none change the target; goto count stays 37 with each or all enabled",
+  "decisions": [
+    {
+      "question": "Is closing the parse_str goto/label gap (37->11) a single option-gated Action (small) or new structuring infrastructure (large)?",
+      "decider_model": "opus",
+      "scope": "large",
+      "rationale": "The dominant excess (goto label_400af2 x12) is a loop-continuation/back-edge merge - a CYCLIC structuring problem - and angr's clean while(true){...} comes from its cyclic loop-refinement + condition-region structuring, not a single rule. kuna's existing acyclic schemas (region_structurer is explicitly 'no loops': acyclic sequence/ITE + edge-virtualization) and the two tail-duplication passes (gotoreduce, loopbreak_recovery) already model the SAILR/Phoenix acyclic family and provably don't fire here, so closing the gap needs new cyclic-structuring infrastructure in S7/S8 - not expressible as one Action/Rule like kuna_loweredswitch.rs. Even eliminating all 12 back-edge gotos leaves ~25 vs angr's 11, so no single narrow Action meaningfully approaches angr's output.",
+      "which_gate_triggered": "needs a new pass type / must touch S7-S8 structuring beyond a single gated early-return (cyclic loop-refinement is not modelable as one Action/Rule)",
+      "angr_reference_pass": "angr SAILR/Phoenix LoopRefinement + RegionIdentifier cyclic structuring (DreamStructurer-style condition regions over loops)",
+      "recommended_next": "STOP at design; file a [PROPOSAL] draft PR for a cyclic loop-refinement structuring pass building on KunaRegionIdentifier/region_structurer, scoped as a multi-increment S7/S8 effort."
+    }
+  ]
+}

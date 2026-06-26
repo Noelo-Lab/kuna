@@ -1,0 +1,420 @@
+typedef struct struct_0 {
+    char padding_0[8];
+    void* field_8;
+} struct_0;
+
+extern unsigned long long char_class_name[4];
+
+long long parse_str(char *ptr6, struct_0 *ptr)
+{
+    unsigned long len;  // rax
+    unsigned long v21;  // rbp
+    unsigned int v30;  // r15d
+    char *ptr4;  // rbx
+    unsigned long long ptr5;  // r13
+    unsigned int v33;  // edx
+    unsigned long long v34;  // r13
+    unsigned int v35;  // eax
+    unsigned long v36;  // rsi
+    unsigned int v37;  // r8d
+    unsigned int v38;  // esi
+    unsigned int v39;  // eax
+    void* v22;  // r12
+    unsigned long v40;  // rdx
+    unsigned long v42;  // rax
+    unsigned long long i;  // r13
+    unsigned long long v44;  // r14
+    char v45;  // bl
+    unsigned long long v46;  // rdx
+    unsigned long long v47;  // rax
+    unsigned long long v48;  // r15
+    unsigned long long v49;  // rax
+    char v23;  // al
+    unsigned long v50;  // rax
+    void* ptr;  // rax
+    char v52;  // dl
+    void* ptr8;  // rdx
+    unsigned long long v54;  // r15
+    unsigned long long v55;  // rax
+    unsigned long long v56;  // r15
+    unsigned long long v57;  // r15
+    unsigned int v24;  // ecx
+    char v59;  // bl
+    void* ptr;  // rax
+    void* ptr9;  // rdx
+    long long v62;  // r13
+    long long v63;  // r13
+    char *v64;  // r14
+    unsigned long long v65;  // rdx
+    void* ptr;  // rax
+    void* ptr10;  // rdx
+    unsigned long long v68;  // r15
+    unsigned int v25;  // r14d
+    unsigned long v69;  // r13
+    char *v70;  // rdx
+    void* v71;  // rax
+    void* v72;  // rax
+    char *v74;  // rsi
+    char *v75;  // rsi
+    char *j;  // r13
+    char *v26;  // r10
+    unsigned long long v27;  // rdx
+    unsigned long v28;  // rsi
+    unsigned int v29;  // r9d
+    unsigned long v0;  // [bp-0xd8]
+    unsigned long v1;  // [bp-0xd0]
+    unsigned long v2;  // [bp-0xc8]
+    char *v3;  // [bp-0xc0]
+    unsigned int v4;  // [bp-0xb0], Other Possible Types: unsigned long long
+    char *v5;  // [bp-0xa8], Other Possible Types: unsigned int, unsigned long long
+    char *v6;  // [bp-0xa0]
+    unsigned long v7;  // [bp-0x98]
+    char *ptr7;  // [bp-0x90]
+    unsigned long long v9;  // [bp-0x88]
+    unsigned long long v10;  // [bp-0x80]
+    char v11;  // [bp-0x72]
+    char v12;  // [bp-0x71]
+    unsigned long long v13;  // [bp-0x70]
+    unsigned long long v14;  // [bp-0x68]
+    char v15;  // [bp-0x60]
+    unsigned long ptr;  // [bp-0x58]
+    void* ptr;  // [bp-0x50]
+    unsigned long long v18;  // [bp-0x48]
+
+    len = strlen(ptr6);
+    ptr = xmalloc(len);
+    v21 = ptr;
+    ptr = xcalloc(len, 1);
+    v22 = ptr;
+    v23 = *(ptr6);
+    if (v23)
+    {
+        v24 = 0;
+        v25 = 0;
+        v26 = ptr6;
+        while (true)
+        {
+            v27 = v25;
+            v28 = v24 + 1;
+            v25 += 1;
+            v29 = v26[v28];
+            v30 = v28;
+            ptr4 = v21 + v27;
+            if (v23 != 92)
+            {
+                *(ptr4) = v23;
+                v23 = v29;
+                v24 = v28;
+                if (!v23)
+                    break;
+            }
+            else
+            {
+                ptr5 = v22 + v27;
+                *((char *)ptr5) = 1;
+                if ((char)v29)
+                {
+                    v33 = v29 - 48;
+                    v34 = v29 & 255;
+                    switch ((char)v33)
+                    {
+                    case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+                        v36 = v24 + 2;
+                        v34 = v33;
+                        v37 = v26[v36];
+                        v35 = v36;
+                        v38 = v37 - 48;
+                        if (v38 <= 7)
+                        {
+                            v34 = v38 + (unsigned int)v34 * 8;
+                            v39 = v26[3 + v24];
+                            v40 = v39 - 48;
+                            v4 = v39;
+                            v35 = v30 + 2;
+                            if ((unsigned int)v40 <= 7)
+                            {
+                                if ((unsigned int)v40 + (char)v34 * 8 <= 255)
+                                {
+                                    v34 = v40 + v34 * 8;
+                                    v35 = v24 + 4;
+                                    break;
+                                }
+                                else
+                                {
+                                    v6 = v26;
+                                    v11 = v29;
+                                    v5 = v37;
+                                    v3 = dcgettext(NULL, "warning: the ambiguous octal escape \\%c%c%c is being\n\tinterpreted as the 2-byte sequence \\0%c%c, %c", 5);
+                                    v2 = v4;
+                                    v1 = v5;
+                                    v0 = v11;
+                                    error(0, 0, v3);
+                                    v35 = v30 + 2;
+                                    v26 = v6;
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    case 44:
+                        v34 = 92;
+                        v35 = v24 + 2;
+                        break;
+                    case 49:
+                        v34 = 7;
+                        goto LABEL_400aef;
+                    case 50:
+                        v34 = 8;
+                        v35 = v24 + 2;
+                        break;
+                    case 54:
+                        v34 = 12;
+                        v35 = v24 + 2;
+                        break;
+                    case 62:
+                        v34 = 10;
+                        v35 = v24 + 2;
+                        break;
+                    case 66:
+                        v34 = 13;
+                        v35 = v24 + 2;
+                        break;
+                    case 68:
+                        v34 = 9;
+                        v35 = v24 + 2;
+                        break;
+                    case 70:
+                        v34 = 11;
+                        v35 = v24 + 2;
+                        break;
+                    default:
+LABEL_400aef:
+                        v35 = v24 + 2;
+                        break;
+                    }
+                }
+                else
+                {
+                    v5 = v26;
+                    v4 = v24;
+                    error(0, 0, dcgettext(NULL, "warning: an unescaped backslash at end of string is not portable", 5));
+                    *((char *)ptr5) = 0;
+                    v26 = v5;
+                    v34 = 92;
+                    v35 = v4 + 1;
+                }
+                v42 = v35;
+                *(ptr4) = v34;
+                v24 = v42;
+                v23 = v26[v42];
+                if (!v23)
+                    break;
+            }
+        }
+        v5 = v25;
+        v18 = v5;
+        if (v25 > 2)
+        {
+            i = 2;
+            v44 = 0;
+            do
+            {
+                v45 = *((char *)(v21 + v44 + 1));
+                v4 = v44 + 1;
+                v11 = *((char *)(v21 + v44));
+                if (*((char *)(v21 + v44)) != 91 || (*((char *)&v6) = *((char *)((char *)v22 + v44)), *((char *)((char *)v22 + v44))))
+                {
+LABEL_400b30:
+                    if (v45 != 45 || (*((char *)&v6) = *((char *)((char *)v22 + v4)), *((char *)((char *)v22 + v4))))
+                    {
+                        append_normal_char(ptr);
+                        v44 = v4;
+                        goto LABEL_400b4c;
+                    }
+                    else
+                    {
+                        v59 = *((char *)(v21 + i));
+                        if (v59 < v11)
+                        {
+                            v71 = make_printable_char(v11);
+                            v72 = make_printable_char(v59);
+                            error(0, 0, dcgettext(NULL, "range-endpoints of '%s-%s' are in reverse collating sequence order", 5));
+                            free(v71);
+                            free(v72);
+                            free(v21);
+                            free(v22);
+                            return *((char *)&v6);
+                        }
+                        ptr = xmalloc(32);
+                        *((void* *)&ptr[8]) = NULL;
+                        ptr9 = ptr->field_8;
+                        *((unsigned int *)ptr) = 1;
+                        *((char *)&ptr[16]) = v11;
+                        *((char *)&ptr[17]) = v59;
+                        if (!ptr9)
+                            __assert_fail(); /* do not return */
+                        *((void* *)&ptr9[8]) = ptr;
+                        v44 += 3;
+                        ptr->field_8 = ptr;
+                        goto LABEL_400b4c;
+                    }
+                }
+                else
+                {
+                    if ((v45 == 58 || v45 == 61) && !*((char *)v22 + v4) && (v46 = v5 - 1, v46 > i))
+                    {
+                        v47 = i;
+                        while (true)
+                        {
+                            v48 = v47;
+                            v49 = v47 + 1;
+                            if (*((char *)(v21 + v47)) == v45 && *((char *)(v21 + v48 + 1)) == 93 && !*(-1 + (char *)v22 + v49) && !*(1 + (char *)v22 + v48))
+                                break;
+                            v47 = v49;
+                            if (v46 <= v47)
+                                goto LABEL_400ba0;
+                        }
+                        v50 = v48 - v44;
+                        ptr7 = v21 + i;
+                        v7 = v50 - 2;
+                        if (v50 == 2)
+                        {
+                            v75 = "missing character class name '[::]'";
+                            if (v45 != 58)
+                                v75 = "missing equivalence class character '[==]'";
+                            error(0, 0, dcgettext(NULL, v75, 5));
+                            free(v21);
+                            free(v22);
+                            return *((char *)&v6);
+                        }
+                        if (v45 != 58)
+                        {
+                            if (v7 != 1)
+                            {
+                                if ((char)star_digits_closebracket(&ptr, i))
+                                    goto LABEL_400ba0;
+                                v69 = make_printable_str(ptr7, v7);
+                                v70 = dcgettext(NULL, "%s: equivalence class operand must be a single character", 5);
+                                goto LABEL_400dc5;
+                            }
+                            else
+                            {
+                                ptr = xmalloc(32);
+                                *((void* *)&ptr[8]) = NULL;
+                                v52 = *(ptr7);
+                                *((unsigned int *)ptr) = 3;
+                                *((char *)&ptr[16]) = v52;
+                                ptr8 = ptr->field_8;
+                                if (!ptr8)
+                                    __assert_fail(); /* do not return */
+LABEL_401087:
+                                *((void* *)&ptr8[8]) = ptr;
+                                v44 = v48 + 2;
+                                ptr->field_8 = ptr;
+                            }
+LABEL_400b4c:
+                            i = v44 + 2;
+                            if (i < v5)
+                                continue;
+                        }
+                        else
+                        {
+                            v10 = v44;
+                            v9 = i;
+                            v12 = v45;
+                            v13 = v48;
+                            v54 = 0;
+                            do
+                            {
+                                if (!strncmp(ptr7, char_class_name[v54], v7) && v7 == strlen(char_class_name[v54]))
+                                {
+                                    v48 = v13;
+                                    ptr = xmalloc(32);
+                                    *((void* *)&ptr[8]) = NULL;
+                                    ptr8 = ptr->field_8;
+                                    *((unsigned int *)ptr) = 2;
+                                    *((unsigned int *)&ptr[16]) = v54;
+                                    if (!ptr8)
+                                        __assert_fail(); /* do not return */
+                                    goto LABEL_401087;
+                                }
+                            } while ((v54 += 1, v54 != 12));
+                            i = v9;
+                            v44 = v10;
+                            v45 = v12;
+                            if (!(char)star_digits_closebracket(&ptr, i))
+                            {
+                                v69 = make_printable_str(ptr7, v7);
+                                quote(v69);
+                                v74 = "invalid character class %s";
+LABEL_401031:
+                                v70 = dcgettext(NULL, v74, 5);
+LABEL_400dc5:
+                                error(0, 0, v70);
+                                free(v69);
+                                free(v21);
+                                free(v22);
+                                return *((char *)&v6);
+                            }
+                        }
+                    }
+LABEL_400ba0:
+                    if (*((char *)(v21 + i)) != 42 || *((char *)v22 + i) || (v55 = v44 + 3, v56 = v55, v5 <= v55) || !((v57 = v56, !*((char *)((char *)v22 + v57)))))
+                        goto LABEL_400b30;
+                    if (*((char *)(v21 + v57)) != 93)
+                    {
+                        if (v5 <= v57 + 1)
+                            goto LABEL_400b30;
+                        continue;
+                    }
+                }
+                v62 = v57 - v4;
+                v63 = v62 - 2;
+                if (v62 != 2)
+                {
+                    v64 = v21 + v55;
+                    if (!(int)xstrtoumax(v64, &v15, (*(v64) != 48) * 2 + 8, &v14, 0) && !((v65 = v14, v65 == 18446744073709551615 || v15 != v64 + v63)))
+                        goto LABEL_400c49;
+                    v69 = make_printable_str(v64, v63);
+                    quote(v69);
+                    v74 = "invalid repeat count %s in [c*n] construct";
+                    goto LABEL_401031;
+                }
+                v14 = 0;
+                v65 = 0;
+LABEL_400c49:
+                v4 = v65;
+                ptr = xmalloc(32);
+                *((void* *)&ptr[8]) = NULL;
+                *((unsigned long long *)&ptr[24]) = v4;
+                ptr10 = ptr->field_8;
+                *((unsigned int *)ptr) = 4;
+                *((char *)&ptr[16]) = v45;
+                if (!ptr10)
+                    append_repeated_char.part.0(); /* do not return */
+                v44 = v57 + 1;
+                *((void* *)&ptr10[8]) = ptr;
+                i = v44 + 2;
+                ptr->field_8 = ptr;
+            } while (i < v5);
+            v68 = v44;
+        }
+        else
+        {
+            v68 = 0;
+        }
+        j = v21 + v68;
+        if (v5 > v68)
+        {
+            do
+            {
+                append_normal_char(ptr, *(j));
+                j += 1;
+            } while (v21 + v5 != j);
+        }
+    }
+    *((char *)&v6) = 1;
+    free(v21);
+    free(v22);
+    return *((char *)&v6);
+}

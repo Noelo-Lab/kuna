@@ -1,0 +1,357 @@
+uint1 parse_str(uint1 *a0,int8 a1)
+
+{
+  uint1 *v1;
+  uint4 v10; // eax
+  int4 v12;
+  uint4 v14;
+  uint8 v15; // rdx
+  int8 v16;
+  uint1 *v17;
+  int8 v18; // stack - 0x68
+  char *v19; // stack - 0x60
+  char *v2;
+  int8 v20; // stack - 0x58
+  uint1 v23;
+  uint4 v24; // r13d
+  void *v25;
+  void *v26;
+  unsigned long v27;
+  void *v28;
+  void *v29;
+  uint1 v3;
+  int8 v30;
+  int8 v31;
+  void *v32; // stack - 0xa8
+  int8 v33; // stack - 0x50
+  void *v34; // stack - 0x48
+  int8 v35; // stack - 0x40
+  char v4;
+  int8 v5;
+  int8 v6;
+  void *v7;
+  void *v8;
+  uint1 v9; // al
+  
+label_400f2b:
+  v11 = (uint8)(uint8)(v12 + 2);
+  v1 = &a0[(int8)v11];
+  if (8 <= (uint4)((int4)(char)*v1 - 0x30U)) goto label_400af2;
+  v10 = v12 + 3;
+  v11 = (uint8)(uint8)v10;
+  v24 = ((int4)(char)*v1 - 0x30U) + v14 * 8;
+  v23 = (uint1)v24;
+  v10 = (int4)(char)a0[(int8)v11];
+  v14 = v10 - 0x30;
+  v10 = v12 + 3;
+  v11 = (uint8)(uint8)v10;
+  if (8 <= v14) goto label_400af2;
+  v10 = v24 & 0xff;
+  v10 = v14 + v10 * 8;
+  if ((int4)v10 > 0xff) {
+    v11 = (unsigned long)dcgettext(0,0x404090,5);
+    error(0,0,v11);
+    v10 = v12 + 3;
+    v11 = (uint8)(uint8)v10;
+    goto label_400af2;
+  }
+  v23 = (char)v14 + v23 * '\b';
+  v10 = v12 + 4;
+  v11 = (uint8)(uint8)v10;
+  goto label_400af2;
+label_400fb0:
+  v22 = *(void *)(v30 * 8 + 0x405f00);
+  v10 = strncmp(v29,v22,v8);
+  if ((v10 != 0) || (v11 = (void *)strlen(v22), (void *)v8 != v11)) goto label_400fda;
+  v11 = (void *)xmalloc(0x20);
+  *(void *)&v11[2] = 0;
+  v16 = *(int8 *)(a1 + 8);
+  *v11 = 2;
+  v11[4] = (int4)v30;
+  if (v16 == 0) goto label_40121b;
+label_401087:
+  *(void **)(v16 + 8) = v11;
+  v28 = &v7[2];
+  *(void **)(a1 + 8) = v11;
+  goto label_400b4c;
+label_400fda:
+  v30 = v30 + 1;
+  if (v30 == 0xc) goto label_400fe4;
+  goto label_400fb0;
+label_400fe4:
+  v9 = star_digits_closebracket(&v20,v25);
+  if (v9 == '\0') {
+    v11 = (unsigned long)make_printable_str(v29,v8);
+    v27 = v11;
+    v11 = (unsigned long)quote(v11);
+    v21 = 0x403ba8;
+    v22 = v11;
+label_401031:
+    v11 = (unsigned long)dcgettext(0,v21,5);
+label_400dc5:
+    error(0,0,v11,v22);
+    free(v27);
+    goto label_400e9c;
+  }
+label_400ba0:
+  if ((v25[v5] == '*') && (v25[v6] == '\0')) {
+    for (v29 = &v26[3]; (v29 < v32 && (v29[v6] == '\0')); v29 = &v29[1]) {
+      if (v29[v5] == ']') {
+        v26 = &v29[0xfffffffffffffffe - (int8)v28];
+        if (v26 == (void *)0x0) {
+          v18 = 0;
+          v30 = 0;
+        }
+        else {
+          v2 = &(&v26[3])[v5];
+          v10 = xstrtoumax(v2,&v19,(*v2 != '0') * '\x02' + '\b',&v18,0);
+          if (((v10 != 0) || (v18 == -1)) || (v30 = v18, v19 != &v2[(int8)v26])) {
+            v11 = (unsigned long)make_printable_str(v2,v26);
+            v27 = v11;
+            v11 = (unsigned long)quote(v11);
+            v21 = 0x4041d8;
+            v22 = v11;
+            goto label_401031;
+          }
+        }
+        v11 = (void *)xmalloc(0x20);
+        *(void *)&v11[2] = 0;
+        *(int8 *)&v11[6] = v30;
+        v30 = *(int8 *)(a1 + 8);
+        *v11 = 4;
+        *(uint1 *)&v11[4] = v23;
+        if (v30 == 0) goto label_401216;
+        *(void **)(v30 + 8) = v11;
+        v25 = &v29[3];
+        *(void **)(a1 + 8) = v11;
+        v26 = &v29[1];
+        goto label_400c9c;
+      }
+    }
+  }
+label_400b30:
+  if ((v23 == 0x2d) && (v28[v6] == '\0')) {
+    v23 = v25[v5];
+    if (v23 < v3) {
+      v11 = (unsigned long)make_printable_char(v3);
+      v22 = v11;
+      v11 = (unsigned long)make_printable_char(v23);
+      v27 = v11;
+      v11 = (unsigned long)dcgettext(0,0x404208,5);
+      error(0,0,v11,v22,v27);
+      free(v22);
+      free(v27);
+      v4 = 0;
+      goto label_400e9c;
+    }
+    v11 = (void *)xmalloc(0x20);
+    *(void *)&v11[2] = 0;
+    v30 = *(int8 *)(a1 + 8);
+    *v11 = 1;
+    *(uint1 *)&v11[4] = v3;
+    *(uint1 *)((int8)v11 + 0x11) = v23;
+    if (v30 == 0) {
+      __assert_fail(0x403b9d,0x403b62,0x2a7,0x403fb8);
+      goto label_401211;
+    }
+    *(void **)(v30 + 8) = v11;
+    v28 = &v26[3];
+    *(void **)(a1 + 8) = v11;
+  }
+  else {
+    append_normal_char(a1);
+  }
+label_400b4c:
+  v25 = &v28[2];
+  v26 = v28;
+label_400c9c:
+  if (v32 <= v25) {
+    while( true ) {
+      v25 = &v26[v5];
+      if (v26 < v32) {
+        do {
+          v4 = *v25;
+          v25 = &v25[1];
+          append_normal_char(a1,v4);
+        } while (&v32[v5] != v25);
+      }
+label_400cd6:
+      v4 = 1;
+label_400e9c:
+      free(v5);
+      free(v6);
+      if (v35 == *(int8 *)(v31 + 0x28)) break;
+label_401211:
+      __stack_chk_fail();
+label_401216:
+      append_repeated_char.part.0();
+label_40121b:
+      __assert_fail(0x403b9d,0x403b62,0x2bd,0x404010);
+label_40123a:
+      v26 = (void *)0x0;
+    }
+    v9 = v4;
+    return v9;
+  }
+  goto label_400b5b;
+  v35 = *(int8 *)(v31 + 0x28);
+  v11 = (unsigned long)strlen();
+  v22 = v11;
+  v11 = (int8)xmalloc(v11);
+  v5 = (int8)v11;
+  v20 = (int8)v11;
+  v11 = (int8)xcalloc(v22,1);
+  v6 = (int8)v11;
+  v33 = (int8)v11;
+  if (*a0 == 0) goto label_400cd6;
+  v26 = (void *)0x0;
+  v13 = 0;
+  v3 = *a0;
+  do {
+    do {
+      v9 = v3;
+      v15 = (uint8)v26 & 0xffffffff;
+      v12 = (int4)v13;
+      v13 = (uint8)(v12 + 1);
+      v26 = (void *)(uint8)((int4)v26 + 1);
+      v3 = a0[v13];
+      v17 = (uint1 *)(v5 + v15);
+      if (v9 == 0x5c) {
+        v25 = (void *)(v6 + v15);
+        *v25 = 1;
+        if (v3 == 0) goto label_4010eb;
+        v14 = (uint4)v3 - 0x30;
+        v23 = (uint1)v14;
+        v10 = v14 & 0xff;
+        switch(v10) {
+          case 0:
+          case 1:
+          case 2:
+          case 3:
+          case 4:
+          case 5:
+          case 6:
+          case 7:
+            goto label_400f2b;
+          default:
+label_400aef:
+            v23 = v3;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          case 0x2c:
+            v23 = 0x5c;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          case 0x31:
+            v3 = 7;
+            goto label_400aef;
+          case 0x32:
+            v23 = 8;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          case 0x36:
+            v23 = 0xc;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          case 0x3e:
+            v23 = 10;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          case 0x42:
+            v23 = 0xd;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          case 0x44:
+            v23 = 9;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          case 0x46:
+            v23 = 0xb;
+            v10 = v12 + 2;
+            v11 = (uint8)(uint8)v10;
+            goto label_400af2;
+          
+        }
+      }
+      *v17 = v9;
+    } while (v3 != 0);
+    do {
+      v11 = (void *)((uint8)v26 & 0xffffffff);
+      v32 = (void *)v11;
+      v34 = (void *)v11;
+      if ((uint4)v26 <= 2) goto label_40123a;
+      v26 = (void *)0x0;
+      v25 = (void *)0x2;
+label_400b5b:
+      v3 = v26[v5];
+      v28 = &v26[1];
+      v23 = v26[v5 + 1];
+      v17 = (uint1 *)(uint8)v23;
+      if ((v3 != 0x5b) || (v26[v6] != '\0')) goto label_400b30;
+      v4 = 0;
+      if (((v23 != 0x3a) && (v23 != 0x3d)) || ((v28[v6] != '\0' || (&v32[-1] <= v25)))) goto label_400ba0;
+      v11 = (void *)v25;
+      while( true ) {
+        v7 = (void *)v11;
+        v29 = (void *)((int8)v11 + 1);
+        if ((((*(uint1 *)((int8)v11 + v5) == v23) && (*(char *)((int8)v11 + v5 + 1) == ']')) && (v29[v6 + -1] == '\0')) && (*(char *)((int8)v11 + v6 + 1) == '\0')) break;
+        v11 = (void *)v29;
+        if (&v32[-1] <= v29) goto label_400ba0;
+      }
+      v29 = &v25[v5];
+      v11 = (void *)((int8)v11 + (0xfffffffffffffffe - (int8)v26));
+      v8 = (void *)v11;
+      if (v11 == (void *)0x0) {
+        v22 = 0x404140;
+        if (v23 != 0x3a) {
+          v22 = 0x404168;
+        }
+        v11 = (unsigned long)dcgettext(0,v22,5);
+        error(0,0,v11);
+        goto label_400e9c;
+      }
+      if (v23 == 0x3a) {
+        v11 = (void *)0x0;
+        v30 = (int8)v11;
+        goto label_400fb0;
+      }
+      if (v11 != (void *)0x1) {
+        v9 = star_digits_closebracket(&v20,v25);
+        if (v9 == '\0') {
+          v11 = (unsigned long)make_printable_str(v29,v8);
+          v22 = v11;
+          v11 = (unsigned long)dcgettext(0,0x404198,5);
+          v27 = v22;
+          goto label_400dc5;
+        }
+        goto label_400ba0;
+      }
+      v11 = (void *)xmalloc(0x20);
+      *(void *)&v11[2] = 0;
+      v4 = *v29;
+      *v11 = 3;
+      *(void *)&v11[4] = v4;
+      v16 = *(int8 *)(a1 + 8);
+      if (v16 != 0) goto label_401087;
+      v12 = 0x403ff0;
+      __assert_fail(0x403b9d,0x403b62,0x2e7);
+label_4010eb:
+      v11 = (unsigned long)dcgettext(0,0x4040f8,5);
+      error(0,0,v11);
+      *v25 = 0;
+      v23 = 0x5c;
+      v11 = (uint8)(uint8)(v12 + 1);
+label_400af2:
+      *v17 = v23;
+      v13 = (uint8)v11;
+      v3 = a0[(int8)v11];
+    } while (a0[(int8)v11] == 0);
+  } while( true );
+}
