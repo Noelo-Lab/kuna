@@ -16,6 +16,17 @@ publish.workspace = true
 # table against the registered kuna-option set via `kuna-decomp`).
 [dependencies]
 kuna-decomp.workspace = true
+# `kuna fid build` runs in-process (it needs the live `Sleigh::instruction_mask`
+# the FID generator consumes): `kuna-console` bootstraps the architecture from
+# the object (`bootstrap_from_object`), `kuna-analysis` hosts the generator + the
+# `.fid` writer, and `object` re-opens the parsed image / `ObjectLoadImage`.
+kuna-console.workspace = true
+kuna-analysis.workspace = true
+# The workspace `object` is read_core+formats; `kuna fid build` additionally needs
+# the `ar` archive reader to unpack `.a` static libraries member-by-member, so the
+# `archive` feature is enabled here (additive — features unify, the rest of the
+# workspace is unaffected).
+object = { workspace = true, features = ["archive"] }
 
 [lints]
 workspace = true

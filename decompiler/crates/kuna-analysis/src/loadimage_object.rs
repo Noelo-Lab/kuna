@@ -467,6 +467,23 @@ impl ObjectLoadImage {
         self.sections.iter().map(|s| (s.vma, s.size, s.flags)).collect()
     }
 
+    /// The loader's function symbols as `(load_vma, name)` pairs — the SAME list
+    /// `getNextSymbol` yields, but already **rebased** to the load VMA (for an
+    /// `ET_REL` `.o` the raw `object` symbol address is section-relative; the
+    /// loader's layout pass rebases each `SHF_ALLOC` section above
+    /// [`RELOC_BASE`](crate::s1_loader::elf_reloc::RELOC_BASE) and rebases the
+    /// symbols with it). Exposed for the FID generator
+    /// ([`crate::s1_fid::build`]), which needs the rebased `(addr, name)` to seed
+    /// the Listing and label the hashed functions — the raw `object::File`
+    /// addresses would point into the unrebased `.o` and miss every instruction.
+    /// Names are lossy-UTF-8 decoded (the marshal convention stores them as bytes).
+    pub fn func_symbols(&self) -> Vec<(u64, String)> {
+        self.funcsyms
+            .iter()
+            .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned()))
+            .collect()
+    }
+
     /// Find the segment containing `offset`, or the closest segment above it
     /// (C++ `LoadImageBfd::findSection`, `loadimage_bfd.cc:99`).  Returns the
     /// index into [`Self::segments`] and the segment size, or `None` for "no
