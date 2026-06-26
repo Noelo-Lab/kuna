@@ -1,0 +1,35 @@
+{
+  "opportunity": "test_ifelseflatten_iprule::flush_rule",
+  "test_name": "test_ifelseflatten_iprule",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/iprule.o",
+  "selector": "flush_rule",
+  "func_addr": "0x1310",
+  "arch": "x86_64",
+  "angr_version": "9.2.213",
+  "option": "ifelseflatten",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_ifelseflatten_iprule; angr IfElseFlattener (region_simplifiers/ifelse.py); flush_rule",
+  "scope": "large",
+  "proposal": true,
+  "decisions": [
+    {
+      "question": "Is closing test_ifelseflatten_iprule::flush_rule a small single option-gated Action/Rule, or large (proposal/negative)?",
+      "decider_verdict": "scope: large; verdict: PROPOSAL",
+      "decider_reasoning": "The target flush_rule is blocked by TWO genuinely independent gaps, and neither alone yields a firing stage test. The if-else-flatten capability (porting angr's IfElseFlattener) is by definition 'large' under the worker's rules - it touches S7/S8 region/structuring code beyond a single gated early-return, which is exactly the STOP-and-PROPOSAL trigger. Critically, even a perfect if-else-flatten Rule could not produce a firing test on flush_rule, because the orthogonal ET_REL no-return-propagation merge bug means kuna never renders flush_rule as a discrete function in the first place (15 neighbour-only call sites leak in from the merged iprule_list_flush_or_save). That merge fix is an analysis/loader-tier change, not an S2 Action/Rule, so it cannot be folded into the one-option-gated-Action contract either. This is the classic 'needs deeper restructuring than one option-gated pass' situation that the rules flag - but the work is large-but-coherent rather than impossible: the if-else-flatten capability is real, recurring, and human-approvable (other witnesses: clientloop, certtool-common), and the boundary-merge prerequisite is a well-characterized root cause an implementation worker could later land. A NEGATIVE result would correctly capture that THIS target can't get a firing test today, but it would discard a coherent, recurring capability plus a precisely-diagnosed prerequisite that a human is well-positioned to scope and greenlight. Therefore the right move is a draft [PROPOSAL] PR that surfaces both the if-else-flatten capability and its boundary-merge blocker for human go/no-go, explicitly noting that a different (already-renderable) target should be chosen for the firing test rather than flush_rule."
+    }
+  ],
+  "gaps": [
+    {
+      "id": "boundary-merge",
+      "tier": "analysis/loader",
+      "summary": "kuna merges neighbouring iprule_list_flush_or_save into flush_rule because the no-return fact for `call __stack_chk_fail` (R_X86_64_PLT32, rel32=0) is not propagated to the relocation-resolved call site in this ET_REL .o; flow falls through nopl padding into 0x1410.",
+      "evidence": "15 neighbour-only call sites leak into flush_rule's body even with relocobjects+noreturn_known+noreturn_disc+noreturn_propagate all on; full scripts.pipeline.compare reproduces."
+    },
+    {
+      "id": "ifelseflatten",
+      "tier": "S7/S8 structuring",
+      "summary": "kuna lacks angr's IfElseFlattener: it emits `if(cond){body} ... return -1` instead of the single-scope early-return `if(!cond) return -1; body`."
+    }
+  ]
+}
