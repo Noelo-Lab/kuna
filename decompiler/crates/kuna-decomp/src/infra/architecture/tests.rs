@@ -103,6 +103,7 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(!arch.sparc_struct_return);
     assert!(!arch.switch_modulo_bound);
     assert!(!arch.switch_multi_pred);
+    assert!(!arch.unrolled_guard);
     assert!(!arch.stack_alias_deadstore);
     assert!(!arch.strip_stack_guard);
 }

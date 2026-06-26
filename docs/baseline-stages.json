@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    233,
-    233
+    235,
+    235
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -114,9 +114,9 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, switchguardbound, switchsharedcase, switchmultipred, tailcalljump, regionstructure, regionlooprefine, ifelseflatten, noreturn_extern, noreturn_externmatch)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, ifelseflatten, noreturn_extern, noreturn_externmatch)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, tailcalljump, regionstructure, regionlooprefine, ifelseflatten)",
-    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +branchflip)",
+    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
     "data:KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage",
@@ -236,7 +236,9 @@
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
-    "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)"
+    "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)",
+    "data:unrolledguard #1: option off, the interleaved dispatches degrade to computed calls (bug reproduced); option on adds ZERO new ones (7 pass1 + 0 pass2)",
+    "data:unrolledguard #2: option on recovers every interleaved table as a switch (1 off + 16 on = 17)"
   ],
   "returncode": 0,
   "unit_footer": null

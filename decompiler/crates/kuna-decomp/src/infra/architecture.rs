@@ -344,6 +344,23 @@ pub struct Architecture {
     /// lifting the common guard onto the MULTIEQUAL output so the table bounds
     /// (C++ `switch_multi_pred`).
     pub switch_multi_pred: bool,
+    /// (kuna, angr `test_decompiling_optimized_memcpy`) Recover the interleaved
+    /// jump tables of an MSVC optimized memcpy/memmove (Duff's device).  When a
+    /// function holds several jump tables whose case bodies are reachable only as
+    /// one another's case targets, kuna recovers them one at a time, each in its
+    /// own fresh partial-flow clone; a later table's clone re-clones an
+    /// already-recovered sibling table into its jumpvec, and that partial's
+    /// `collect_edges` then calls `target()` on a sibling case body that was
+    /// never decoded into this partial's `visited` (it is only decoded into the
+    /// PARENT flow after the recovery pass returns), throwing
+    /// "Could not find op at target address" and degrading the dispatch to a
+    /// computed call.  Upstream avoids this by building one shared partial and
+    /// running `collectEdges` once while the sibling tables are still empty; this
+    /// gate makes the partial-clone `collect_edges` SKIP an unresolvable
+    /// recovered-table case-target edge (the same "assume no branches out" shape
+    /// the `findJumpTable==0` partial path already uses) instead of throwing
+    /// (C++ `unrolled_guard`).
+    pub unrolled_guard: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow seam,
@@ -779,6 +796,7 @@ impl Architecture {
             switch_guard_bound: false,
             switch_shared_case: false,
             switch_multi_pred: false,
+            unrolled_guard: false,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             recover_array_stride: false,
@@ -888,6 +906,7 @@ impl Architecture {
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_multi_pred = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
@@ -1026,6 +1045,7 @@ impl Architecture {
             "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
             "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
             "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
+            "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
             "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
@@ -1464,6 +1484,9 @@ impl Architecture {
         // (kuna, angr) carry the multi-predecessor unrolled-guard jump-table gate
         // (`option switchmultipred`) so `JumpBasic::checkUnrolledGuard` reaches it.
         seam.switch_multi_pred = self.switch_multi_pred;
+        // (kuna, angr) carry the interleaved unrolled-guard partial-flow gate
+        // (`option unrolledguard`) so `FlowInfo::collectEdges` reaches it.
+        seam.unrolled_guard = self.unrolled_guard;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

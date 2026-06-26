@@ -119,10 +119,12 @@ fn fixture_has_all_64_settables() {
     // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate, PR-8).
     // (+1 for the `taildup` angr SAILR ReturnDuplicatorLow return-tail-WITH-call
     // duplication gate — the gap between gotoreduce and crossjumprevert;
+    // +1 for the `unrolledguard` angr optimized-memcpy interleaved unrolled-guard
+    // jump-table partial-flow recovery gate;
     // +1 for the `dedupitetail` angr structurer ITE region-dedup gate — the INVERSE
     // of the duplication passes, merging a duplicated if/else leaf prefix/suffix into
     // one copy.)
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 64);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 65);
 }
 
 #[test]

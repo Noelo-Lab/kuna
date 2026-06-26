@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=97, settable=64
-# (40 stage-model knobs + 21 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=98, settable=65
+# (41 stage-model knobs + 21 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1198,6 +1198,12 @@ substage = "switch-model"
 note = "(kuna, angr) recover an image-base-relative jump table whose bound guard is unrolled across MULTIPLE dispatch predecessors (abnormal switch case); union the per-path guard prefixes across the dispatch MULTIEQUAL"
 
 [[surface]]
+surface = "option unrolledguard"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna, angr) recover the interleaved jump tables of an MSVC optimized memcpy/memmove (Duff's device): skip a recovered sibling table's undecoded case-target edge in the partial-flow collect_edges instead of throwing"
+
+[[surface]]
 surface = "option noreturn_externmatch"
 stage = "S2"
 substage = "flow-follow"
@@ -1577,6 +1583,26 @@ source_decompiler = "angr"
 inspiration = "test_decompiling_abnormal_switch_case_case3; JumpTableResolver / abnormal switch case; 0x18003c330"
 change_kind = "opt-in-tool"
 live_field = "switch_multi_pred"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "unrolledguard"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-optimized-memcpy-6301a9"
+summary = "Recover the interleaved jump tables of an MSVC optimized memcpy/memmove (Duff's device) at the partial-flow stage. The function holds several image-base-relative jump tables whose case bodies are reachable only as one another's case targets; kuna recovers them one at a time, each in its OWN fresh partial-flow clone. A later table's clone re-clones an already-recovered sibling table into its jumpvec, and that partial's collectEdges then calls target() on a sibling case body that was never decoded into THIS partial's visited snapshot (it is only decoded into the parent flow after the recovery pass returns), throwing 'Could not find op at target address' so the dispatch is truncated to a computed (code *)() call. Upstream avoids this by building one shared partial and running collectEdges once while the sibling tables are still empty. When on, the partial-clone collectEdges SKIPS an unresolvable recovered-table case-target edge (the same 'assume no branches out' shape the findJumpTable==0 partial path already uses) instead of throwing, so the interleaved tables all recover and the dispatches render as switches (angr's optimized memcpy)."
+use_when = "Set on PER PROGRAM when a function holding several interleaved jump tables (e.g. an MSVC optimized memcpy/memmove Duff's-device tail dispatch) recovers ONE switch but degrades the OTHERS to 'Treating indirect jump as call' computed (code *)() calls, and the failures are flow-stage 'Could not find op at target address' on a sibling table's case body (NOT a guard-bound failure switchguardbound/switchmultipred would handle); DESTRUCTIVE as a global default (it suppresses an unresolved-case-target edge during partial-flow recovery, so on an unrelated truly-malformed table it could mask a real missing target instead of declining the table)."
+example = "option unrolledguard on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_optimized_memcpy; JumpBasic::checkUnrolledGuard / angr JumpTableResolver; 0x42cca0"
+change_kind = "opt-in-tool"
+live_field = "unrolled_guard"
 live_true = "on"
 live_false = "off"
 
