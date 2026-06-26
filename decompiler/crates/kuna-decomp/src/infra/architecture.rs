@@ -429,6 +429,10 @@ pub struct Architecture {
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
     pub analysis_dwarf: bool,
+    /// (kuna) Gate the DWARF `.debug_line` source-line comment pass (`dwarf_lines`);
+    /// default **off** — it changes the decompiled output (adds `/* file:line */`
+    /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
+    pub analysis_dwarf_lines: bool,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
     pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
@@ -720,6 +724,7 @@ impl Architecture {
             analysis_i386_pie_plt: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
+            analysis_dwarf_lines: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
@@ -833,6 +838,7 @@ impl Architecture {
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
+        self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
@@ -991,6 +997,9 @@ impl Architecture {
             }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
+            "dwarf_lines" => {
+                on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
+            }
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
             "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),

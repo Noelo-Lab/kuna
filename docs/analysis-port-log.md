@@ -4133,3 +4133,100 @@ byte-identical to main.
   (regen), `kuna-console/tests/verify_aif.rs` (new),
   `kuna-analysis/tests/fixtures/aif_gap_x86_64{,.c}` (new) + `fixtures/README.md`,
   `docs/analysis-port-log.md`.
+
+### Increment 51 — DWARF `.debug_line` source-line mapping (`dwarf_lines`, default-off)
+
+The `s1_dwarf` pass recovers names/types/stack-locals from `.debug_info`
+(Increments 6/14/43) but never read the **`.debug_line`** side — the PC→source
+`file:line` mapping the compiler emits under `-g`. This increment ports it as a
+sibling pass `DwarfLinesPass` (`kuna-analysis/src/s1_dwarf/lines.rs`), the kuna
+analog of Ghidra's `DWARFLineInfoCommentScript` (`addSourceLineInfo` walks each
+CU's line-table rows via `DWARFLine.getAllSourceFileAddrInfo` and
+`appendComment(addr, EOL, "%s:%d".formatted(fileName, lineNum))`).
+
+**The spike — there IS a source-line comment seam.** The engine already carries
+the full upstream comment subsystem: `Architecture::commentdb`
+(`CommentDatabase`, `comment.{cc,hh}` port) is read at `print C` time by
+`PrintC::setup_comments` → `CommentSorter` (block placement by instruction
+address) → `emit_comment_group` → `emit_line_comment`, which renders each
+`Comment::user2` as a `/* … */` line at the op's address (exactly what the
+`Funcdata::warning` path already uses for `Comment::warning`). So no printer
+change is needed — the analysis tier only has to deposit comments into
+`commentdb`. The print drive reads the **console** `Architecture`
+(`print_c(prog.arch_mut(), fd)`), which is where the analysis commit writes, so
+the seam is wired end-to-end with no `ArchSeam` plumbing.
+
+**The pass.** `DwarfLinesPass` parses `.debug_line` with gimli
+(`Unit::line_program` → `OneShotLineRows::next_row()`, the standard DWARF
+state machine: address advance / `is_stmt` / `end_sequence`). For each
+non-`end_sequence` row it emits a `CommentFact { func_addr, addr, "file:line" }`,
+bucketing the row onto the subprogram `[low_pc, high_pc)` range that contains its
+PC (the comment DB keys by `(funcaddr, addr)` and the printer only retrieves a
+function's comments via `comments_for(funcaddr)`, so each row must carry its
+owning function's entry VMA). A new `AnalysisOutput::comments` channel +
+`CommentFact` type carry the facts; the console commit
+(`commit_analysis_output`, step 9) installs each into `arch.commentdb` via
+`add_comment_no_duplicate(USER2, …)`.
+
+**The headline (the whole point).** `cet_pie_x86_64`'s `elaborate_debug_symbol`
+(`.debug_line` for `debug_symbol.c`, lines ~122-146) with the gate ON:
+
+```text
+$ kuna decompile cet_pie_x86_64 elaborate_debug_symbol --option dwarf_lines on
+…
+                    /* debug_symbol.c:124 */
+  iVar1 = open(binary,0);
+                    /* debug_symbol.c:125 */
+  …
+                    /* debug_symbol.c:146 */
+  return v1;
+```
+
+Default-OFF the same decompile carries no `debug_symbol.c:` comment — the output
+is byte-identical to pre-feature.
+
+**Gating — default-OFF (output-changing).** Unlike the names/types `dwarf`
+pass (default-on, additive), `dwarf_lines` ADDS comment lines, so it is a new
+default-off `--option dwarf_lines on|off`, registered end-to-end like the other
+analysis gates: `stages.toml` (settable, `default = "off"`), `KUNA_OPTION_NAMES`,
+`Architecture::{analysis_dwarf_lines field, ctor, reset_defaults=false,
+set_kuna_option arm}`, and `engine.rs::analysis_pass_enabled` (explicit arm — NOT
+the fail-open default, so it gates off by default). The settable count goes
+49→50; goldens regenerated (`stage_catalog.json` via the in-process emitter,
+`docs/assertions.md` via `kuna catalog --markdown`).
+
+**Speed.** The pass only runs at `--option dwarf_lines on`, so default decompile
+speed is unchanged (the pass is not in the default-enabled set's commit). When on,
+it is a single linear walk of `.debug_line` per CU at load time (no per-decompile
+cost); the e2e fixture decompile is unmeasurably different from the gate-off run.
+
+**Faithful divergence (DOC).** `end_sequence` rows are **skipped** (a
+past-the-end marker, line `-` in objdump; the Ghidra script keeps them). And a
+row's PC is bucketed to its owning subprogram range; a row outside every known
+function range is dropped (the kuna comment DB is per-function, vs Ghidra's flat
+program-wide CommentDB). The entry-line comment (line 122 @ 0x1357) does not
+render because the prologue op at the entry is eliminated, so `CommentSorter`
+excises the comment with no surviving op to hang on (same reason cet_pie's
+write-once locals never render) — a presentation gap, not a parse loss; the parse
+itself recovers 0x1357→`debug_symbol.c:122` (unit-tested).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**PARITY OK**, `make rust-test` **green** (new unit tests in
+`s1_dwarf/lines/tests.rs` + e2e `dwarf_lines_annotate_source_locations` in
+`verify_s1_dwarf.rs`), `kuna catalog --check` **OK** (byte-identical default-off).
+
+- **Divergence/LOSS:** the parity oracles are byte-identical (the pass is
+  default-off and the XML datatest path produces no analysis facts). `end_sequence`
+  rows skipped + per-function bucketing (above) are the only differences from the
+  Ghidra script's row set.
+- **Changed:** `kuna-analysis/src/s1_dwarf/lines.rs` (+`lines/tests.rs`, NEW),
+  `kuna-analysis/src/s1_dwarf/mod.rs` (`mod lines` + re-export),
+  `kuna-analysis/src/pass.rs` (`CommentFact` + `AnalysisOutput::comments` + merge),
+  `kuna-analysis/src/passes.rs` (register `DwarfLinesPass`),
+  `kuna-console/src/engine.rs` (commit step 9 + `analysis_pass_enabled` arm),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_dwarf_lines` field/ctor/reset/
+  set_kuna_option), `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`),
+  `kuna-decomp/stages.toml` (settable), the settable-count tests
+  (`kuna_stages/tests.rs` 49→50, `catalog_bytecompat.rs` 49→50),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` + `docs/assertions.md` (goldens),
+  `kuna-console/tests/verify_s1_dwarf.rs` (e2e), `docs/analysis-port-log.md`.
