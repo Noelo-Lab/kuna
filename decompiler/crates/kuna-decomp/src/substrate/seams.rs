@@ -550,6 +550,11 @@ pub struct Architecture {
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
     pub reduce_return_gotos: bool,
+    /// (kuna) angr SAILR `CrossJumpReverter`: duplicate a small *non-return*
+    /// cross-jump tail into the `goto` source (`revert_cross_jumps`, opt-in
+    /// default-off).  Read by
+    /// [`crate::s8_structure::kuna_crossjumpreverter`]'s `ActionCrossJumpReverter`.
+    pub revert_cross_jumps: bool,
     /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-10 default-on).  Read by
     /// [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure) to gate
@@ -629,6 +634,15 @@ pub struct Architecture {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kuna_try_guard_bound_table`.  `false` (default off / upstream byte-identical).
     pub switch_guard_bound: bool,
+    /// (kuna) Recover a GCC PIC relative-offset jump table whose base register is a
+    /// loop-carried MULTIEQUAL, so the path-meld collapses and the CBRANCH range
+    /// guard on the load index never bounds the table (C++
+    /// `Architecture::switch_shared_case`, flipped by `option switchsharedcase`,
+    /// angr `test_switch_case_shared_case_nodes_b2sum_digest`), shared from the
+    /// real architecture.  Read by `JumpBasic::recoverModel` before
+    /// `kuna_try_loop_carried_guard_table`.  `false` (default off / upstream
+    /// byte-identical).
+    pub switch_shared_case: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -755,6 +769,7 @@ impl Architecture {
             region_structure: false,     // regionstructure (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
+            revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
@@ -778,6 +793,7 @@ impl Architecture {
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

@@ -382,12 +382,17 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "mips_gp" => arch.analysis_mips_gp,
         "mips_isa" => arch.analysis_mips_isa,
         "dwarf" => arch.analysis_dwarf,
+        // Explicit (NOT the fail-open `_ => true` default): the source-line pass is
+        // default-OFF (it changes the output), so it must be registered here to be
+        // gated by the `analysis_dwarf_lines` flag rather than running by default.
+        "dwarf_lines" => arch.analysis_dwarf_lines,
         "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
         "noreturn_disc" => arch.analysis_noreturn_disc,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
+        "aif" => arch.analysis_aif,
         "gopclntab" => arch.analysis_gopclntab,
         _ => true,
     }
@@ -1132,6 +1137,28 @@ fn commit_analysis_output(
     for fact in out.locals {
         prog.dwarf_locals
             .push((fact.func_addr, fact.name, fact.type_, fact.stack_offset));
+    }
+
+    // 9. DWARF SOURCE-LINE comments (the kuna analog of Ghidra's
+    //    `DWARFLineInfoCommentScript`, `.debug_line` → instruction comments).
+    //    Each `.debug_line` row's `file:line` is installed into the architecture's
+    //    `commentdb` as a `Comment::user2` (the instruction-comment type the C
+    //    printer emits as a `/* … */` line at the op's address). The printer reads
+    //    `arch.commentdb` at `print C` time and `CommentSorter` places each comment
+    //    in the basic block holding its instruction. `func_addr`/`addr` build their
+    //    Address in the code space; a duplicate (same fad,ad,text) is dropped by
+    //    `add_comment_no_duplicate` (the script also de-dups via `appendComment`).
+    //    Produced only by the `dwarf_lines` pass (default-off); empty otherwise, so
+    //    the default output is byte-identical to before this arm.
+    for fact in out.comments {
+        let fad = Address::new(Rc::clone(code_space), fact.func_addr);
+        let ad = Address::new(Rc::clone(code_space), fact.addr);
+        prog.arch_mut().commentdb.add_comment_no_duplicate(
+            kuna_decomp::comment::comment_type::USER2,
+            &fad,
+            &ad,
+            &fact.text,
+        );
     }
 
     Ok(())

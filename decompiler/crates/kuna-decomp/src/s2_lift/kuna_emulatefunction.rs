@@ -80,6 +80,18 @@ impl<'a> EmulateFunction<'a> {
         self.loadpoints = if collect { Some(Vec::new()) } else { None };
     }
 
+    /// (kuna) Pre-seed a Varnode's value in the emulation memory state, exactly
+    /// as if it had already been computed.  Used by the loop-carried-base
+    /// jump-table recovery (`option switchsharedcase`) to inject the table base —
+    /// a loop-invariant `lea .rodata` value that reaches the rebuilt meld path
+    /// through a loop-header `MULTIEQUAL` and so cannot be read from the load
+    /// image (it lives in a register space).  Without this seed,
+    /// `get_varnode_value` would consult the load image at a register offset and
+    /// fail.  Has no effect on any path that does not read `vn`.
+    pub fn seed_varnode_value(&mut self, vn: VarnodeId, val: uintb) {
+        self.set_varnode_value(vn, val);
+    }
+
     /// Take the collected LOAD records (C++ writes them through the
     /// `loadpoints` pointer the caller owns).
     pub fn take_loadpoints(&mut self) -> Option<Vec<LoadTable>> {

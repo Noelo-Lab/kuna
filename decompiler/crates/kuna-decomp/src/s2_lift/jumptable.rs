@@ -678,6 +678,11 @@ impl GuardRecord {
         &self.range
     }
 
+    /// (kuna) Get the Varnode this guard restricts (C++ `GuardRecord::vn`).
+    pub fn get_vn(&self) -> VarnodeId {
+        self.vn
+    }
+
     /// Mark \b this guard as unused (C++ `GuardRecord::clear`).
     pub fn clear(&mut self) {
         self.cbranch = None;
@@ -1847,6 +1852,17 @@ impl JumpBasic {
     }
 }
 
+/// (kuna, `option switchsharedcase`) The result of walking the index path of a
+/// loop-carried-base GCC PIC relative-offset jump table from the BRANCHIND to the
+/// guarded load index: the rebuilt single-path meld nodes and the loop-invariant
+/// base seeds to inject into emulation.
+struct LoopCarriedWalk {
+    /// The melded path (BRANCHIND-first), descending into each op's index input.
+    path: Vec<PcodeOpNode>,
+    /// Loop-invariant base varnodes and their resolved `.rodata` constant values.
+    seeds: Vec<(VarnodeId, uintb)>,
+}
+
 // ---------------------------------------------------------------------------
 // JumpBasicModel (the instance JumpBasic, jumptable.cc:1062-1786)
 // ---------------------------------------------------------------------------
@@ -1886,6 +1902,12 @@ pub struct JumpBasicModel {
     orig_path_meld: PathMeld,
     /// `true` if the owning JumpTable is marked partial (drives `usenzmask`).
     is_partial: bool,
+    /// (kuna, `option switchsharedcase`) Loop-invariant Varnodes (the
+    /// `lea .rodata` table base reaching the rebuilt meld through a loop-header
+    /// `MULTIEQUAL`) and their resolved constant values, pre-seeded into the
+    /// emulation before each `build_addresses` path walk.  Empty for every model
+    /// the basic recovery handles directly.
+    loop_carried_seeds: Vec<(VarnodeId, uintb)>,
 }
 
 impl JumpBasicModel {
@@ -1902,6 +1924,7 @@ impl JumpBasicModel {
             extravn: None,
             orig_path_meld: PathMeld::new(),
             is_partial: false,
+            loop_carried_seeds: Vec::new(),
         }
     }
 
@@ -2238,6 +2261,18 @@ impl JumpBasicModel {
             // and re-bound the table to [0, N).
             if fd.get_arch().switch_guard_bound
                 && self.kuna_try_guard_bound_table(fd, maxtablesize)
+            {
+                self.mark_foldable_guards(fd);
+                return Ok(true);
+            }
+            // (kuna, angr `test_switch_case_shared_case_nodes_b2sum_digest`) When
+            // `option switchsharedcase on`, handle the loop-carried-base GCC PIC
+            // relative-offset table: the base register is a loop phi, so the meld
+            // collapsed to the final `base + offset` add and the index guard never
+            // bounded the table.  Rebuild the meld as a clean single path down to
+            // the guarded load index and re-run findNormalized.
+            if fd.get_arch().switch_shared_case
+                && self.kuna_try_loop_carried_guard_table(fd, indop, matchsize, maxtablesize)?
             {
                 self.mark_foldable_guards(fd);
                 return Ok(true);
@@ -2739,6 +2774,371 @@ impl JumpBasicModel {
         None
     }
 
+    /// (kuna, angr `test_switch_case_shared_case_nodes_b2sum_digest`) Recover a
+    /// GCC PIC relative-offset jump table whose table-base register is a
+    /// loop-carried MULTIEQUAL.  Gated by `option switchsharedcase`.
+    ///
+    /// Third sibling of
+    /// [`kuna_try_modulo_bound_table`](Self::kuna_try_modulo_bound_table) and
+    /// [`kuna_try_guard_bound_table`](Self::kuna_try_guard_bound_table); invoked
+    /// from [`recover_model_basic`](Self::recover_model_basic) only after the
+    /// normal model — and the modulo and CBRANCH-guard extensions — fail to bound
+    /// the table.
+    ///
+    /// The construct is `target = base + sext32(load4(base + idx*4))` where the
+    /// `lea .rodata, base` is set **before** an enclosing (getopt) loop while the
+    /// `BRANCHIND` is **inside** it.  The base reaches the jump through a
+    /// loop-header phi and feeds *both* the load address and the final add, so
+    /// `findDeterminingVarnodes` melds the two paths down to the single final
+    /// `INT_ADD` and the normalized index — the value the out-of-band
+    /// `cmp K; ja DEFAULT` guard bounds — never enters the meld.
+    ///
+    /// Strategy: walk the index path from the BRANCHIND input down through the
+    /// realigning ops and the one table LOAD to the **index varnode** a guard
+    /// bounds to `[0, N)`; collect the loop-invariant base operand(s) on the way
+    /// and resolve each to its `lea .rodata` constant; rebuild the path-meld as a
+    /// clean single path down to the index; pre-seed the base constants into the
+    /// emulation; and re-run `findNormalized` so `findSmallestNormal` sizes the
+    /// table at `N` (the guard now `value_match`es the meld index directly).  The
+    /// normal `buildAddresses` emulation then reads the read-only table and
+    /// enumerates the case targets.  `JumpBasic::sanityCheck` truncates/rejects if
+    /// a mis-resolved base yields wild addresses, so a bad guess is self-limiting.
+    ///
+    /// Returns `Ok(true)` iff a bounded model was installed; on any mismatch the
+    /// model state is restored and the caller declines exactly as before (the
+    /// gate-off path is therefore byte-identical to upstream).
+    fn kuna_try_loop_carried_guard_table(
+        &mut self,
+        fd: &mut Funcdata,
+        indop: OpId,
+        matchsize: uint4,
+        maxtablesize: uint4,
+    ) -> KunaResult<bool> {
+        // Phase 1 (read-only): walk the index path, building a fresh single-path
+        // meld and collecting the loop-invariant base seeds.
+        let walk = match self.scan_loop_carried_index(fd, indop, maxtablesize) {
+            Some(w) => w,
+            None => return Ok(false),
+        };
+
+        // Save the model state so a failed re-bound restores cleanly.
+        let saved_meld = self.path_meld.clone();
+        let saved_index = self.varnode_index;
+        let saved_seeds = std::mem::take(&mut self.loop_carried_seeds);
+
+        // Phase 2 (mutate): install the rebuilt meld + base seeds, re-run the
+        // normalization, and verify the table is now bounded.
+        let mut new_meld = PathMeld::new();
+        new_meld.set_path(fd, &walk.path);
+        self.path_meld = new_meld;
+        self.loop_carried_seeds = walk.seeds;
+
+        let parent = fd.obank().get(indop).unwrap().get_parent().unwrap();
+        // analyze_guards was already run in the original find_normalized; re-run it
+        // against the rebuilt path so the guards are re-evaluated, then size.
+        if let Err(e) = self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop) {
+            self.path_meld = saved_meld;
+            self.varnode_index = saved_index;
+            self.loop_carried_seeds = saved_seeds;
+            return Err(e);
+        }
+        if self.jrange().get_size() <= maxtablesize as uintb && self.jrange().get_size() >= 2 {
+            // (kuna) Log the recovery (standing requirement: "Log when it recovers
+            // the table").  Only ever printed with `option switchsharedcase on`, so
+            // it never reaches the default datatest run.
+            let addr = fd
+                .obank()
+                .get(indop)
+                .map(|o| o.get_addr().clone())
+                .unwrap_or_default();
+            let base = self.loop_carried_seeds.first().map(|s| s.1).unwrap_or(0);
+            eprintln!(
+                "[kuna switchsharedcase] recovered loop-carried-base PIC jump table \
+                 at 0x{:x}: base=0x{:x} entries={}",
+                addr.get_offset(),
+                base,
+                self.jrange().get_size(),
+            );
+            return Ok(true);
+        }
+
+        // Re-bound did not size the table: restore and decline.
+        self.path_meld = saved_meld;
+        self.varnode_index = saved_index;
+        self.loop_carried_seeds = saved_seeds;
+        Ok(false)
+    }
+
+    /// (kuna) Walk the index path of a GCC PIC relative-offset table from the
+    /// BRANCHIND input down to the guarded load index, building the single-path
+    /// meld and collecting the loop-invariant base seeds (helper for
+    /// [`kuna_try_loop_carried_guard_table`]).
+    ///
+    /// [`kuna_try_loop_carried_guard_table`]: Self::kuna_try_loop_carried_guard_table
+    fn scan_loop_carried_index(
+        &self,
+        fd: &Funcdata,
+        indop: OpId,
+        maxtablesize: uint4,
+    ) -> Option<LoopCarriedWalk> {
+        let mut path: Vec<PcodeOpNode> = Vec::new();
+        let mut seeds: Vec<(VarnodeId, uintb)> = Vec::new();
+        let mut load_seen = 0;
+        // The path starts at the BRANCHIND, descending into its input.
+        let mut cur_op = indop;
+        let mut cur_slot = 0;
+        let mut budget = 32;
+        loop {
+            if budget == 0 {
+                return None;
+            }
+            budget -= 1;
+            path.push(PcodeOpNode::new(cur_op, cur_slot));
+            let curvn = fd.obank().get(cur_op)?.get_in(cur_slot)?;
+
+            // Is curvn an index a selectguard bounds to a clean [0, N) prefix?
+            if let Some(n) = self.guard_bound_of(fd, curvn, maxtablesize) {
+                // The walk ends at this index (it is the new meld tail).  Require
+                // at least one LOAD on the path (a genuine table lookup) and a real
+                // base seed (a relative-offset table, not a bare guarded index).
+                if load_seen == 0 || n < 2 || seeds.is_empty() {
+                    return None;
+                }
+                return Some(LoopCarriedWalk { path, seeds });
+            }
+
+            let v = fd.vbank().get(curvn)?;
+            if v.is_constant() {
+                return None;
+            }
+            let def = v.get_def()?;
+            let dop = fd.obank().get(def)?;
+            match dop.code() {
+                // Unary value-/index-preserving ops: descend into in(0).
+                OpCode::CPUI_INT_SEXT
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_COPY
+                | OpCode::CPUI_CAST => {
+                    cur_op = def;
+                    cur_slot = 0;
+                }
+                OpCode::CPUI_SUBPIECE => {
+                    // Only a zero-offset truncation preserves the index value.
+                    let off =
+                        dop.get_in(1).and_then(|c| fd.vbank().get(c)).map(|c| c.get_offset());
+                    if off != Some(0) {
+                        return None;
+                    }
+                    cur_op = def;
+                    cur_slot = 0;
+                }
+                // idx * stride: descend into the non-constant operand.
+                OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_LEFT => {
+                    let slot = self.nonconst_slot(fd, def)?;
+                    cur_op = def;
+                    cur_slot = slot;
+                }
+                // The table LOAD: descend into the address operand (in(1)).
+                OpCode::CPUI_LOAD => {
+                    load_seen += 1;
+                    if load_seen > 1 {
+                        return None; // a single table lookup only
+                    }
+                    cur_op = def;
+                    cur_slot = 1;
+                }
+                // base + (idx-derived): one operand is the loop-invariant table
+                // base (seed it), the other carries the index (descend).
+                OpCode::CPUI_INT_ADD => {
+                    let a = dop.get_in(0)?;
+                    let b = dop.get_in(1)?;
+                    let a_base = self.resolve_loop_invariant_base(fd, a, curvn);
+                    let b_base = self.resolve_loop_invariant_base(fd, b, curvn);
+                    let (idx_slot, base_vn, base_val) = match (a_base, b_base) {
+                        // Exactly one operand is a loop-invariant base address.
+                        (Some(bv), None) => (1, a, bv),
+                        (None, Some(bv)) => (0, b, bv),
+                        // Constant offset (the SLEIGH `lea base+disp` residue):
+                        // descend into the non-constant operand, no seed.
+                        _ => {
+                            let aconst = fd.vbank().get(a).map(|x| x.is_constant()).unwrap_or(false);
+                            let bconst = fd.vbank().get(b).map(|x| x.is_constant()).unwrap_or(false);
+                            if aconst && !bconst {
+                                cur_op = def;
+                                cur_slot = 1;
+                                continue;
+                            } else if bconst && !aconst {
+                                cur_op = def;
+                                cur_slot = 0;
+                                continue;
+                            }
+                            return None;
+                        }
+                    };
+                    seeds.push((base_vn, base_val));
+                    cur_op = def;
+                    cur_slot = idx_slot;
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    /// (kuna) The clean exclusive bound `N ∈ [2, maxtablesize]` a selectguard
+    /// imposes on `vn` (`vn <=u K` with `vn == K` a switch-path value ⇒ `N = K+1`;
+    /// `vn <u K` ⇒ `N = K`), or `None` if no guard bounds `vn` to a contiguous
+    /// `[0, N)` prefix (helper for [`scan_loop_carried_index`]).
+    ///
+    /// A guard whose restricted Varnode `value_match`es `vn` and whose range is
+    /// `[0, N)` (low bound 0, contiguous) sizes the table at `N`.
+    ///
+    /// [`scan_loop_carried_index`]: Self::scan_loop_carried_index
+    fn guard_bound_of(&self, fd: &Funcdata, vn: VarnodeId, maxtablesize: uint4) -> Option<uintb> {
+        let mut bits_preserved = 0;
+        let base_vn = GuardRecord::quasi_copy(fd, vn, &mut bits_preserved);
+        for guard in self.selectguards.iter() {
+            if guard.get_branch().is_none() {
+                continue;
+            }
+            if guard.value_match(fd, vn, base_vn, bits_preserved) == 0 {
+                continue;
+            }
+            let rng = guard.get_range();
+            // A contiguous prefix [0, N): the range minimum is 0 and the size is N.
+            if rng.get_min() != 0 {
+                continue;
+            }
+            let n = rng.get_size();
+            if n >= 2 && n <= maxtablesize as uintb {
+                return Some(n);
+            }
+        }
+        None
+    }
+
+    /// (kuna) The single non-constant input slot of a binary op (helper for
+    /// [`scan_loop_carried_index`]).
+    ///
+    /// [`scan_loop_carried_index`]: Self::scan_loop_carried_index
+    fn nonconst_slot(&self, fd: &Funcdata, op: OpId) -> Option<int4> {
+        let o = fd.obank().get(op)?;
+        let a = o.get_in(0)?;
+        let b = o.get_in(1)?;
+        let aconst = fd.vbank().get(a).map(|x| x.is_constant()).unwrap_or(true);
+        let bconst = fd.vbank().get(b).map(|x| x.is_constant()).unwrap_or(true);
+        if aconst && !bconst {
+            Some(1)
+        } else if bconst && !aconst {
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    /// (kuna) If `vn` is the loop-carried table-base operand of the relative-offset
+    /// jump table — a `lea .rodata` COPY-of-constant reaching the `INT_ADD` through
+    /// COPY/CAST and one or more loop-header `MULTIEQUAL`s — return that constant;
+    /// else `None` (helper for [`scan_loop_carried_index`]).
+    ///
+    /// The base register (`%rbp`) is established once before the enclosing loop but
+    /// is reused for other values inside it, so the phi feeding the indirect jump
+    /// merges the base with loop-variant values.  We therefore BFS the COPY/phi
+    /// tree and collect every **read-only / load-image** constant reachable — these
+    /// are the candidate `.rodata` table bases — descending through `INT_ADD`-by-
+    /// constant residue along the way but **ignoring** branches that lead to
+    /// non-invariant arithmetic (the alternate loop values).  The base is accepted
+    /// only when exactly **one distinct** read-only constant is found and at least
+    /// one branch was non-constant arithmetic we skipped is NOT required; the
+    /// single-constant + read-only gate plus `JumpBasic::sanityCheck` (which
+    /// rejects wild recovered targets) keeps a mis-identified operand from being
+    /// seeded as a base.  The index operand's tree yields no read-only constant
+    /// (it leads through a LOAD), so it never satisfies this.
+    ///
+    /// [`scan_loop_carried_index`]: Self::scan_loop_carried_index
+    fn resolve_loop_invariant_base(
+        &self,
+        fd: &Funcdata,
+        vn: VarnodeId,
+        _avoid: VarnodeId,
+    ) -> Option<uintb> {
+        let spc = Rc::clone(fd.get_arch().manage().get_default_data_space()?);
+        let is_rodata = |c: uintb| -> bool {
+            let addr = Address::new(Rc::clone(&spc), c);
+            fd.get_arch().get_load_image_value(&addr, 4).is_ok()
+        };
+        // BFS the COPY/CAST/MULTIEQUAL/ADD-const tree, collecting read-only
+        // constant candidates; a non-invariant branch is simply not explored
+        // further (it is an alternate loop value, not the base).
+        let mut stack: Vec<VarnodeId> = vec![vn];
+        let mut visited: BTreeSet<VarnodeId> = BTreeSet::new();
+        let mut candidates: BTreeSet<uintb> = BTreeSet::new();
+        let mut budget = 256;
+        while let Some(cur) = stack.pop() {
+            if budget == 0 {
+                break;
+            }
+            budget -= 1;
+            if !visited.insert(cur) {
+                continue;
+            }
+            let v = match fd.vbank().get(cur) {
+                Some(v) => v,
+                None => continue,
+            };
+            if v.is_constant() {
+                let c = v.get_offset();
+                if is_rodata(c) {
+                    candidates.insert(c);
+                }
+                continue;
+            }
+            let def = match v.get_def() {
+                Some(d) => d,
+                None => continue,
+            };
+            let dop = fd.obank().get(def)?;
+            match dop.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+                    if let Some(iv) = dop.get_in(0) {
+                        stack.push(iv);
+                    }
+                }
+                OpCode::CPUI_MULTIEQUAL => {
+                    for s in 0..dop.num_input() {
+                        if let Some(inv) = dop.get_in(s) {
+                            if inv != cur {
+                                stack.push(inv);
+                            }
+                        }
+                    }
+                }
+                // `lea base+disp` SLEIGH residue: base reached through ADD-by-const.
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+                    if let Some(slot) = self.nonconst_slot(fd, def) {
+                        if let Some(iv) = dop.get_in(slot) {
+                            stack.push(iv);
+                        }
+                    }
+                    // (a non-constant + non-constant add is a real address calc,
+                    //  not the base — do not explore it.)
+                }
+                _ => {} // a non-invariant op: not part of the base chain
+            }
+        }
+        // Exactly one distinct read-only base constant identifies the table base.
+        if candidates.len() != 1 {
+            return None;
+        }
+        let c = *candidates.iter().next().unwrap();
+        // Re-confirm (cheap; the candidate already passed is_rodata).
+        let addr = Address::new(spc, c);
+        if fd.get_arch().get_load_image_value(&addr, 4).is_ok() {
+            Some(c)
+        } else {
+            None
+        }
+    }
+
     /// Build the explicit address table by emulating the switch calculation for
     /// each value in `jrange` (C++ `JumpBasic::buildAddresses`,
     /// `jumptable.cc:1588`).
@@ -2753,6 +3153,12 @@ impl JumpBasicModel {
         addresstable.clear();
         let mut emul = EmulateFunction::new(fd);
         emul.set_load_collect(loadpoints.is_some());
+        // (kuna, `option switchsharedcase`) Pre-seed any loop-invariant base
+        // varnode the rebuilt meld reads through a loop-header MULTIEQUAL; it
+        // cannot be read from the load image (it lives in a register space).
+        for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+            emul.seed_varnode_value(seed_vn, seed_val);
+        }
 
         let mut mask: uintb = !0u64;
         let bit = fd.get_arch().funcptr_align;
@@ -3182,6 +3588,7 @@ impl JumpModel for JumpBasicModel {
         self.switchvn = None;
         self.extravn = None;
         self.orig_path_meld.clear();
+        self.loop_carried_seeds.clear();
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

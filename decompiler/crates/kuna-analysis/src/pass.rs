@@ -152,6 +152,31 @@ pub struct LocalFact {
     pub stack_offset: i64,
 }
 
+/// A source-line annotation to attach to a decompiled instruction: at `addr`,
+/// the instruction came from source location `text` (e.g. `debug_symbol.c:122`).
+/// The commit seam (`engine.rs::commit_analysis_output`) installs each into the
+/// architecture's `commentdb` as a `Comment::user2` (the instruction-comment
+/// type the C printer emits as a `/* ... */` line at the op's address).
+///
+/// The kuna analog of Ghidra's `DWARFLineInfoCommentScript.addSourceLineInfo`,
+/// which walks each compilation unit's `.debug_line` rows
+/// (`DWARFLine.getAllSourceFileAddrInfo`) and `appendComment(addr, EOL,
+/// "%s:%d".formatted(fileName, lineNum))`. Produced only by
+/// [`crate::s1_dwarf::DwarfLinesPass`] (the `.debug_line` parse, gated on the
+/// `dwarf_lines` flag, default-off); empty otherwise.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommentFact {
+    /// Virtual address of the OWNING function's entry; the C printer keys comments
+    /// by `(funcaddr, addr)`, so a comment is placed in the right function.
+    pub func_addr: u64,
+    /// The instruction virtual address the comment is attached to (a `.debug_line`
+    /// row's `address`).
+    pub addr: u64,
+    /// The comment body — the source location, `file:line` (no `/* */`; the printer
+    /// adds the C delimiters).
+    pub text: String,
+}
+
 /// A tracked register **value** to seed at a function entry: at `func_addr`, the
 /// register named `reg` holds the constant `value`. Distinct from
 /// [`ContextPaint`] (which steers SLEIGH instruction *decode* via a context BIT):
@@ -269,6 +294,12 @@ pub struct AnalysisOutput {
     /// Produced only by the DWARF pass (subtask 3); empty otherwise. See
     /// [`LocalFact`].
     pub locals: Vec<LocalFact>,
+    /// Source-line annotations recovered from DWARF `.debug_line`, each to be
+    /// installed as a `Comment::user2` so the decompiled output carries the
+    /// `file:line` of the instruction. The commit seam writes each into the
+    /// architecture's `commentdb`. Produced only by the DWARF lines pass
+    /// (`dwarf_lines`, default-off); empty otherwise. See [`CommentFact`].
+    pub comments: Vec<CommentFact>,
 }
 
 impl AnalysisOutput {
@@ -285,6 +316,7 @@ impl AnalysisOutput {
         self.tracked_regs.extend(other.tracked_regs);
         self.call_fixups.extend(other.call_fixups);
         self.locals.extend(other.locals);
+        self.comments.extend(other.comments);
     }
 }
 
