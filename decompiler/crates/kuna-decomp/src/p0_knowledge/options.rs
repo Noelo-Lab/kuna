@@ -296,6 +296,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "dwarf",
     "callfixup",
     "addrtable",
+    "operand_refs",
     // (kuna) `FormatStringAnalyzer` half B (`DecompilerDependent`): the console
     // `IfcDecompile` reads this flag after the first decompile to type
     // printf/scanf varargs per call site, then re-decompiles.  Default-off
