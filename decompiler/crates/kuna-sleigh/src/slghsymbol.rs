@@ -3106,6 +3106,42 @@ impl SleighSymbol {
         }
     }
 
+    /// Like [`Symbol::resolve`], but for a subtable triple also returns the
+    /// matched `DisjointPattern` leaf (cloned) alongside the constructor id —
+    /// i.e. `(ct_id, Some(pattern))`.  Dispatches identically to `resolve`
+    /// (same `is_match` walk, same `BadDataError` on no match): for non-subtable
+    /// triples it runs the same validating `resolve` and returns
+    /// `(None, None)` — they have no instruction-stream pattern.  kuna-only:
+    /// used by `Sleigh::resolve` to capture, during decode (under the correct
+    /// per-node multi-phase context), the same pattern that
+    /// `Sleigh::instruction_mask` would otherwise re-derive by a post-decode
+    /// re-walk.  No decode behavior changes — the constructor chosen is the one
+    /// `resolve` picks; the pattern is the leaf its `is_match` already matched.
+    pub fn resolve_matched(
+        &self,
+        walker: &dyn SymbolWalker,
+    ) -> KunaResult<(Option<u32>, Option<DisjointPattern>)> {
+        match &self.kind {
+            SymbolKind::ValueMap(v) => {
+                v.resolve(walker)?;
+                Ok((None, None))
+            }
+            SymbolKind::Name(v) => {
+                v.resolve(walker)?;
+                Ok((None, None))
+            }
+            SymbolKind::VarnodeList(v) => {
+                v.resolve(walker)?;
+                Ok((None, None))
+            }
+            SymbolKind::Subtable(v) => {
+                let (pat, ct) = v.resolve_matched(walker)?;
+                Ok((Some(*ct), Some(pat.clone())))
+            }
+            _ => Ok((None, None)), // TripleSymbol::resolve base: null
+        }
+    }
+
     /// C++ virtual `TripleSymbol::getSize` (size out of context).
     pub fn get_size(&self, table: &SymbolTable) -> KunaResult<i32> {
         match &self.kind {

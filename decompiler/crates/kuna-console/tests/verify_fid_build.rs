@@ -1,7 +1,7 @@
 //! FID PR3 — the `.fid` generator consistency + DB round-trip gate.
 //!
 //! Two things this proves end-to-end over the vendored fixture
-//! (`kuna-analysis/tests/fixtures/fid_lib_x86_32.o`, a 32-bit x86 `.o` with three
+//! (`kuna-analysis/tests/fixtures/fid_lib_x86_64.o`, an x86-64 `.o` with three
 //! distinctive self-contained functions — `kuna_crc32`, `kuna_strlen`,
 //! `kuna_memset`):
 //!
@@ -11,24 +11,23 @@
 //!
 //! 2. **DB serialization consistency:** the records, written to a `.fid` and
 //!    reloaded, are byte-for-byte the same (`find_by_full_hash` recovers each),
-//!    and they match the **vendored** `fid_lib_x86_32.fid` (the committed output
+//!    and they match the **vendored** `fid_lib_x86_64.fid` (the committed output
 //!    of `kuna fid build` over the same `.o`) record-for-record. This ties the
 //!    in-process generator to the vendored artifact: if the hash drifts, the
 //!    vendored `.fid` and a fresh generate diverge and the test fails.
 //!
-//! # Architecture note (honest fidelity accounting)
+//! # Architecture note
 //!
-//! The fixture is **32-bit x86** (`x86:LE:32:default`), not the x86-64 the FID
-//! design doc (`docs/fid-design.md` §7.2) targets. The byte-exact PR2 hasher, the
-//! `.fid` format, the generator, and the rebasing are all architecture-agnostic
-//! and work on either — but the FID PR1 `Sleigh::instruction_mask` accessor does
-//! **not yet decode REX-prefixed (x86-64) instructions**: its post-decode
-//! decision-tree re-walk (`DecisionNode::resolve_matched`) reads the *final*
-//! multi-phase context (`instrPhase` advanced past the REX prefix phase) and so
-//! fails to re-resolve the constructor ("Unable to resolve constructor"). 32-bit
-//! x86 has no REX prefixes and decodes cleanly. The x86-64 fixture is a tracked
-//! PR1 follow-up (see the increment log); the mechanism this PR ships is proven
-//! here on the architecture where the prerequisite accessor works.
+//! The fixture is **x86-64** (`x86:LE:64:default`), the architecture the FID
+//! design doc (`docs/fid-design.md` §7.2) targets. Earlier this fixture was a
+//! 32-bit x86 workaround because the FID PR1 `Sleigh::instruction_mask` accessor
+//! could not decode REX-prefixed (x86-64) instructions — its post-decode
+//! decision-tree re-walk read the *final* multi-phase context (`instrPhase`
+//! advanced past the REX prefix phase) and failed to re-resolve the constructor.
+//! The PR1-fix captures each node's matched pattern DURING decode (correct
+//! per-phase context), so REX-prefixed instructions now mask correctly and the
+//! fixture is re-homed to x86-64. The byte-exact PR2 hasher, the `.fid` format,
+//! the generator, and the rebasing are all architecture-agnostic.
 //!
 //! # `.sla` precondition
 //!
@@ -48,14 +47,14 @@ fn repo_root() -> PathBuf {
 }
 
 fn fixture_o() -> PathBuf {
-    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fid_lib_x86_32.o")
+    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fid_lib_x86_64.o")
 }
 
 fn fixture_fid() -> PathBuf {
-    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fid_lib_x86_32.fid")
+    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fid_lib_x86_64.fid")
 }
 
-const LANG: &str = "x86:LE:32:default";
+const LANG: &str = "x86:LE:64:default";
 const CSPEC: &str = "gcc";
 
 /// Build the FID records for the fixture `.o` in-process, or `None` on a
@@ -66,9 +65,9 @@ fn records_for_fixture() -> Option<Vec<kuna_analysis::s1_fid::db::FidRecord>> {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = fixture_o().to_str()?.to_string();
-    // The fixture is 32-bit x86; pass the language explicitly so the bootstrap
-    // resolves `x86:LE:32:default` (the `.o`'s machine is EM_386, which derives
-    // to the same id — the explicit target just pins it).
+    // The fixture is x86-64; pass the language explicitly so the bootstrap
+    // resolves `x86:LE:64:default` (the `.o`'s machine is EM_X86_64, which
+    // derives to the same id — the explicit target just pins it).
     let prog = match bootstrap_from_object(&bin, LANG, &spec_roots) {
         Ok(p) => p,
         Err(e) => {
