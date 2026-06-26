@@ -1644,8 +1644,10 @@ mod tests {
         // ghangr-noreturn_extern / noreturn_extern, angr test_tail_tail_bytes_ret_dup,
         // ghangr-incorrect-duplication-chcon-a0e113 / noreturn_externmatch, DIV-13,
         // and ghangr-switchmultipred-memmove / switchmultipred, angr
-        // test_decompiling_abnormal_switch_case_case3)
-        assert_eq!(count, 153, "corpus file count drifted");
+        // test_decompiling_abnormal_switch_case_case3,
+        // and ghangr-optimized-memcpy-6301a9 / unrolledguard, angr
+        // test_decompiling_optimized_memcpy)
+        assert_eq!(count, 154, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

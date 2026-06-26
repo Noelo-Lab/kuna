@@ -265,6 +265,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchguardbound",
     "switchsharedcase",
     "switchmultipred",
+    "unrolledguard",
     "noreturn_externmatch",
     "loweredswitch",
     "regionstructure",

@@ -1,0 +1,45 @@
+{
+  "opportunity": "test_decompiling_optimized_memcpy::0x42cca0",
+  "test_name": "test_decompiling_optimized_memcpy",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/i386/windows/736cb27201273f6c4f83da362c9595b50d12333362e02bc7a77dd327cc6b045a",
+  "selector": "0x42cca0",
+  "func_addr": "0x42cca0",
+  "angr_version": "9.2.213",
+  "option": "unrolledguard",
+  "flag": "unrolled_guard",
+  "element_id": null,
+  "change_kind": "opt-in-tool",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_optimized_memcpy; JumpBasic::checkUnrolledGuard / angr JumpTableResolver; 0x42cca0",
+  "default_on": false,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "kuna_baseline_switch_count": 1,
+  "kuna_baseline_warning_count": 7,
+  "kuna_fixed_switch_count": 16,
+  "kuna_fixed_warning_count": 0,
+  "angr_switch_count": 7,
+  "speed_off_ms": 148.0,
+  "speed_on_ms": 579.0,
+  "speed_delta_pct": 291.0,
+  "speed_samples": 10,
+  "speed_note": "ON recovers 16 jump tables vs 1 OFF (each full table-emulated, function decompiles much larger); slowdown is proportional to recovered content, justifying default-off opt-in. No effect on the default path.",
+  "scope": "large",
+  "module": "decompiler/crates/kuna-decomp/src/s2_lift/flow.rs (FlowInfo::collect_edges, no new module/ElementId)",
+  "stage_test": "tests/stages/ghangr-optimized-memcpy-6301a9.xml",
+  "root_cause": "REVISED from the proposal. The six failing tables do NOT fail in JumpBasic guard analysis (checkUnrolledGuard / switchmultipred is fully ported and irrelevant here). They fail in the per-table partial-flow rebuild: kuna recovers the interleaved tables one at a time, each in its own fresh partial clone; a later table's clone re-clones an already-recovered SIBLING table into its jumpvec, and that partial's collect_edges then calls target() on a sibling case body (e.g. 0x42ce24, the case-0 body of the 0x42ce14 table) that was never decoded into THIS partial's visited snapshot. target() throws 'Could not find op at target address', the partial pipeline errors -> FailNormal -> truncate_indirect_jump -> CALLIND. Upstream avoids this by building ONE shared partial and running collectEdges once while sibling tables are still empty (addresstable filled later, in recoverAddresses), so it iterates 0 case targets and never calls target() on an undecoded body.",
+  "fix": "Gate (option unrolledguard, default-off): inside a jump-table-recovery partial clone (funcdata flag jumptablerecovery_on) with the gate on, FlowInfo::collect_edges skips a recovered sibling table's case-target edge whose op was not decoded into this partial (instead of propagating the target() error), reproducing upstream's partial CFG (the 'assume no branches out' shape the findJumpTable==0 partial path already uses). All interleaved tables then recover and the dispatches render as switches.",
+  "decisions": [
+    {
+      "question": "Is the #50 gap a JumpBasic guard-bound port gap (checkUnrolledGuard) or something else?",
+      "decider": "two instrumentation traces (fork + general-purpose subagent, opus)",
+      "decision": "NEITHER guard-bound nor table-sizing. It is a partial-flow lifecycle gap (kuna rebuilds a fresh partial per table and re-runs collectEdges over already-recovered siblings; upstream reuses one shared partial built before any table recovers).",
+      "reasoning": "switchmultipred on (the multi-pred checkUnrolledGuard port) does not change the output. The 7 failing BRANCHINDs never reach recover_model_basic/analyze_guards/check_unrolled_guard. They fail in the partial-flow rebuild with 'Could not find op at target address: 0x42ce24'. 0x42ce24 is a legitimate CODE case body of the 0x42ce14 table (verified by disassembly), not table data or an over-read. The recovered 4-entry table is correctly sized. Upstream's collectEdges is byte-identical in shape and also throws on a missing target; it avoids the throw purely via block-build-once / shared-partial / empty-table timing."
+    },
+    {
+      "question": "Default on or off?",
+      "decision": "off",
+      "reasoning": "Recovering all interleaved tables makes the function decompile much larger (16 switches vs 1), ~3.9x slower for this function. The fix is upstream-faithful (produces upstream's partial CFG) and 0/675 datatest ablation, but the speed cost and the narrow MSVC-memcpy shape make it a conservative opt-in. make test stays PARITY OK (byte-identical) with the gate off."
+    }
+  ]
+}

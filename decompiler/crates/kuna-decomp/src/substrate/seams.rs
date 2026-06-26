@@ -661,6 +661,15 @@ pub struct Architecture {
     /// multi-predecessor unrolled-guard walk.  `false` (default off / upstream
     /// byte-identical).
     pub switch_multi_pred: bool,
+    /// (kuna) Recover the interleaved jump tables of an MSVC optimized
+    /// memcpy/memmove by making the jump-table-recovery partial clone's
+    /// `collect_edges` SKIP a recovered sibling table's case-target edge whose
+    /// op was not decoded into this partial's `visited` (C++
+    /// `Architecture::unrolled_guard`, flipped by `option unrolledguard`, angr
+    /// `test_decompiling_optimized_memcpy`), shared from the real architecture.
+    /// Read by `FlowInfo::collectEdges`.  `false` (default off / upstream
+    /// byte-identical).
+    pub unrolled_guard: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -815,6 +824,7 @@ impl Architecture {
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
+            unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

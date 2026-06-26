@@ -1594,13 +1594,43 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     //   no JumpTable -> assume no out-branches (partial flow).
                     if let Some(jt_idx) = self.data.find_jump_table_index(op) {
                         let num = self.data.get_jump_table(jt_idx as int4).num_entries();
+                        // (kuna, angr `test_decompiling_optimized_memcpy`,
+                        // `option unrolledguard`) Inside a jump-table-recovery
+                        // partial clone, a case target may belong to an
+                        // already-recovered SIBLING table whose case body was
+                        // never decoded into this partial's `visited` (it is
+                        // decoded into the parent flow only after the recovery
+                        // pass returns).  Upstream never reaches this because it
+                        // builds one shared partial and runs collectEdges once
+                        // while sibling tables are still empty; kuna rebuilds a
+                        // fresh partial per table, re-cloning recovered siblings.
+                        // When the gate is on, skip an unresolvable case-target
+                        // edge instead of throwing -- the same "assume no branches
+                        // out" shape the `findJumpTable==0` partial path uses.
+                        let tolerate_missing = self.data.get_arch().unrolled_guard
+                            && (self.data.flags()
+                                & crate::funcdata::funcdata_flags::jumptablerecovery_on)
+                                != 0;
                         // Edge per recovered case target, deduped by the C++
                         // `setMark`/`clearMark` discipline over the target ops.
                         let edge_start = self.block_edge1.len();
+                        let mut skipped = 0u32;
                         for i in 0..num {
                             let addr =
                                 self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
-                            let targ = self.target(&addr)?;
+                            let targ = if tolerate_missing {
+                                match self.target(&addr) {
+                                    Ok(t) => t,
+                                    Err(_) => {
+                                        // (kuna) Sibling table body not decoded in
+                                        // this partial -- skip the edge.
+                                        skipped += 1;
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                self.target(&addr)?
+                            };
                             if self.data.obank().get(targ).expect("collect_edges: targ").is_mark() {
                                 continue; // Already a link between these blocks
                             }
@@ -1613,6 +1643,25 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         for k in edge_start..self.block_edge2.len() {
                             let targ = self.block_edge2[k];
                             self.data.obank_mut().get_mut(targ).unwrap().clear_mark();
+                        }
+                        if skipped != 0 {
+                            // (kuna, `option unrolledguard`) Log the recovery
+                            // (standing requirement: "log when it recovers the
+                            // table").  Only reached with the gate on, so it never
+                            // pollutes the default datatest run.
+                            let oaddr = self
+                                .data
+                                .obank()
+                                .get(op)
+                                .map(|o| o.get_addr().get_offset())
+                                .unwrap_or(0);
+                            eprintln!(
+                                "[kuna unrolledguard] interleaved jump table at 0x{:x}: \
+                                 skipped {} undecoded sibling-table case-target edge(s) in \
+                                 the partial-flow rebuild (table recovers instead of \
+                                 truncating to a computed call)",
+                                oaddr, skipped,
+                            );
                         }
                     }
                 }
