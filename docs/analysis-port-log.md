@@ -4567,3 +4567,97 @@ note.
   `tests/fixtures/fid/{lib.o,lib.fid,README.md,Makefile}` (x86-64),
   `kuna-analysis/tests/fixtures/fid_lib_x86_64.{o,c,fid}` (re-homed from
   `fid_lib_x86_32.*`), `docs/analysis-port-log.md`.
+
+### Increment 56 — FID PR4: the gated `--option fid` matching pass + stripped-binary re-identification
+
+**THE PAYOFF.** PR1-PR3 built the FID *mechanism* (the `Sleigh::instruction_mask`
+accessor, the byte-exact FNV-1a64 `FidHasher`/`FidHashQuad`, the kuna-native `.fid`
+database + `kuna fid build` generator). PR4 wires it into a default-off Listing/xref
+**consumer pass** that re-identifies a function in a STRIPPED binary purely by its
+instruction-stream fingerprint — the one capability unique to FID.
+
+**The before/after (the only thing FID does), on a stripped, static, `-no-pie`
+x86-64 ELF (`tests/fixtures/fid/prog`):**
+
+```
+                                     symbol @ 0x4017c0   rendered body
+--option fid off (default)        →  sub_4017c0          uint4 sub_4017c0(uint1 *a0,uint4 a1) { ... 0xedb88320 ... }
+--option listing on --option fid on  →  kuna_crc32       uint4 kuna_crc32(uint1 *a0,uint4 a1) { ... 0xedb88320 ... }
+  (+ kuna_fid_db=tests/fixtures/fid/lib.fid)
+```
+
+The stripped binary has NO symbol table (`strip --strip-all`), so the function at
+`0x4017c0` is the engine placeholder `sub_4017c0` by default — proving the name is
+not a leftover symbol. With FID on it is renamed to `kuna_crc32`, recovered by a
+full-hash match against the vendored `lib.fid` (built by `kuna fid build` over the
+un-stripped `lib.o`). Same function, same body (the CRC-32 loop with the magic
+`0xedb88320`), only the NAME changes — `FUN_*`/`sub_*` → `kuna_crc32`, only FID
+could do this.
+
+**Wiring (every piece a verified clone of the `noreturn_disc` consumer):**
+
+- `s1_fid/mod.rs` — `FidPass impl AnalysisPass { stage→S1; id→"fid"; run }`: inert
+  without the Listing (`ctx.listing` `None`) AND without a configured DB
+  (`kuna_fid_db` env var, mirroring the loader's `kuna_i386_pie_plt`). Over each
+  `listing.functions()` entry it builds the `[entry,next)` extent (PR2's
+  `extent::calculate_extent`), fingerprints each instruction via the SAME
+  `build::fingerprint_from_mask` projection the generator uses (driving
+  `Sleigh::instruction_mask`), hashes with `FidHasher`, queries
+  `db.find_by_full_hash`, and `pick_unique_name` (emit a name ONLY when the bucket
+  collapses to one name — never guess on a tie). Registered in
+  `listing_consumer_passes()`.
+- `pass.rs` — `FidMatch { addr, name }` + `AnalysisOutput.fid_names` + the `merge`
+  line.
+- `engine.rs` — the new FID **rename** commit arm (after the no-return arm): resolve
+  the function by ADDRESS (`find_function_across_scopes`), then — ONLY behind the
+  label gate `is_generic_placeholder_name` (`sub_`/`func_`/`FUN_`/`LAB_`, never a
+  real `.symtab`/DWARF name) — `Database::rename_symbol` + `register_symbol`. The
+  SymFact arm is an idempotent-add and would no-op on an existing function, so the
+  rename is the one net-new piece of plumbing. + `"fid" => arch.analysis_fid` gate.
+- Option surface (cloned from `noreturn_disc`): `architecture.rs`
+  field/default/reset/`set_kuna_option` arm, `options.rs` `KUNA_OPTION_NAMES`,
+  `stages.toml` `[[settable]] fid` block (`default="off"`,
+  `change_kind="analysis-enablement"`), settable count `60 → 61` (`stages.toml`,
+  `kuna_stages/tests.rs` count + comma + `PASS_GATES` suppressed set,
+  `catalog_bytecompat.rs` `fixture_has_all_61` + count), regenerated
+  `tests/fixtures/stage_catalog.json` + `docs/assertions.md`. `kuna catalog --check`
+  → catalog OK.
+
+**DB path:** read from the `kuna_fid_db` env var (a real `--fidb <path>` flag is
+deferred). **The fixture:** the stripped `tests/fixtures/fid/prog` is vendored
+(recipe + the pinned `kuna_crc32` VMA `0x4017c0` recorded in the fixture README);
+`lib.o`/`lib.fid` were already vendored by PR3.
+
+**Speed:** the FID-on decompile of `kuna_crc32` (load function + decompile + print C)
+is ~6.5 ms wall; the default (FID-off) path builds no Listing and runs no consumer
+(~9 ms here is the first cold load + the un-renamed `load addr` flow). The FID hash
+is a single per-function decode-pass + FNV stream, on an opt-in, real-ELF-only path —
+no impact on the default pipeline (FID never runs by default).
+
+**Parity:** real-ELF-path-only + default-off ⇒ the XML datatest path never builds a
+Listing and never runs the FID consumer, so the 675/158 oracles are structurally
+untouched.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **222/222 PARITY OK**
+(the KUNA-CATALOG #5/#9 `use_when`/`change_kind` `max` bound bumped 61 → 62 — the
+catalog `<script>` emits the full catalog + one `returnpair` single-row, so the count
+is settables+1); `make rust-test` **green** incl. the new `verify_fid` e2e (2 tests,
+ran — not skipped) and the regenerated catalog tests; `kuna catalog --check`
+**catalog OK**.
+
+- **New:** `kuna-console/tests/verify_fid.rs` (the §7.2 two-state e2e),
+  `tests/fixtures/fid/prog` (vendored stripped x86-64 ELF).
+- **Changed:** `kuna-analysis/src/s1_fid/mod.rs` (`FidPass`),
+  `kuna-analysis/src/s1_fid/build.rs` (`fingerprint_from_mask` → `pub(crate)`),
+  `kuna-analysis/src/pass.rs` (`FidMatch` + `fid_names` + merge),
+  `kuna-analysis/src/passes.rs` (register the pass),
+  `kuna-console/src/engine.rs` (rename arm + gate + `is_generic_placeholder_name`),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_fid`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`"fid"`),
+  `kuna-decomp/stages.toml` (`[[settable]] fid`),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comma/PASS_GATES),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 61 → 62),
+  `docs/assertions.md` (regen), `docs/rust-port/losses.md`,
+  `tests/fixtures/fid/README.md`, `docs/analysis-port-log.md`.

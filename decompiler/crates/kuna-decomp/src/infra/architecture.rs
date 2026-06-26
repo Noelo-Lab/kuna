@@ -529,6 +529,17 @@ pub struct Architecture {
     /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
     /// gate is byte-identical.
     pub analysis_noreturn_propagate: bool,
+    /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
+    /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
+    /// over the built Listing it fingerprints each function with the byte-exact
+    /// operand-masked FNV-1a64 hash and looks the full hash up in a kuna `.fid`
+    /// database (named by the `kuna_fid_db` env var), renaming a matched
+    /// `FUN_*`/`sub_*` placeholder back to its library name — the capability that
+    /// re-identifies a function in a STRIPPED binary (e.g. `sub_4017c0` →
+    /// `kuna_crc32`). Reads the Listing (`--option listing on` builds it) and is a
+    /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
+    /// path only ⇒ every parity gate is byte-identical.
+    pub analysis_fid: bool,
     /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
@@ -781,6 +792,7 @@ impl Architecture {
             analysis_listing: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
+            analysis_fid: false,
             analysis_aif: false,
             analysis_gopclntab: false,
             macho_arm64e: false,
@@ -901,6 +913,7 @@ impl Architecture {
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
+        self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
@@ -1087,6 +1100,7 @@ impl Architecture {
             "noreturn_propagate" => {
                 on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
             }
+            "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
             "aif" => {
                 on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
             }
