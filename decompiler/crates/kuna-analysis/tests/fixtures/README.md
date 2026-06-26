@@ -19,6 +19,7 @@ real ELF parser.
 | `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only); entry discovery (`s1_entry`): `e_entry`=0x1160, `DT_INIT`=0x1000, `DT_FINI`=0x1464, INIT/FINI_ARRAY ptrs, `_start`→`main` idiom → 0x1405, `.eh_frame` FDE starts — `sub_1405` (main) decompiles without `--addr` |
 | `cpp_mangled_x86_64` | non-PIE x86-64 C++, not stripped | symbol demangling (`s1_demangle`): a defined `.symtab` C++ method `_ZN3foo3Bar3bazEi` must surface name-only as `foo::Bar::baz` |
 | `cpp_noreturn_x86_64` | non-PIE x86-64 C++, not stripped (source `cpp_noreturn_x86_64.cpp`) | the **no-return × demangle cross-pass seam** (`s1_loader::noreturn` + `s1_demangle`): `.dynsym` carries the mangled no-return imports `_ZSt9terminatev` (demangled `std::terminate`) and `__cxa_throw`, both UND (`.dynsym` address 0) — their real FunctionSymbols are installed at the PLT stubs `_ZSt9terminatev@plt`=`0x401070`, `__cxa_throw@plt`=`0x4010a0`. The no-return scan emits those **stub addresses** under the raw names, so the commit resolves the *demangled* funcsym **by address** (`find_function_across_scopes`); a name lookup of the mangled string would miss. e2e: `fail()` (`_Z4failv`=`0x401196`, demangled `fail`) tail-calls `std::terminate()` → `void fail(void)` with the `Subroutine does not return` warning and no dead fall-through; `main`=`0x4011a3` |
+| `eh_lsda_x86_64` | non-PIE x86-64 C++ try/catch, **`.symtab` stripped** (source `eh_lsda_x86_64.cpp`) | `.eh_frame` LSDA landing-pad discovery (`s1_entry::EhFrameLsdaPass`, gated `--option eh_frame_full on`, the GccExceptionAnalyzer full `.gcc_except_table` markup): the `zPLR` CIE's `L` augmentation points each FDE at its LSDA in `.gcc_except_table` (`may_throw`@`0x40218c`, `guarded`@`0x402198`); the call-site tables decode to landing pads `0x4012bf` (may_throw cleanup), `0x4012e2` (guarded catch dispatch), `0x401352`/`0x401366` (guarded cleanup) — all `endbr64`, all **mid-function** (reached only by the unwinder, so NOT FDE pcBegins; the FDE-start oracle misses them). e2e (`verify_eh_frame_full`): with `--option eh_frame_full on`, `0x4012e2` registers as `sub_4012e2` and decompiles by name; default-off it is absent (discovery byte-identical to FDE-pcBegin only). FDE pcBegins (function starts): `may_throw`=`0x401256`, `guarded`=`0x4012d6`, `main`=`0x40137a` |
 | `dwarf_stripped_x86_64` | non-PIE x86-64, **`.symtab`/`.dynsym` FUNC names removed but `.debug_*` kept** | DWARF recovery (`s1_dwarf`): names + typed signatures of `add_values`/`compute`/`main` come **only** from `.debug_info` (the funcsym stream has none) |
 | `switchtab_x86_64` | non-PIE x86-64, dense `switch(x){0..7}` | address/jump tables (`addrtable`): an absolute 8-byte jump table in `.rodata` at vma `0x402008` (`jmp *0x402008(,%rdi,8)`) |
 | `rust_hello_x86_64` | tiny `#![no_std]` rustc PIE (x86-64), **not stripped** | source-language detection (`s1_sourcelang`): `.comment` carries `rustc version 1.90.0 …` (the faithful `ElfRustSourceLanguage` comment path) AND `.symtab` carries a Rust-mangled symbol `_ZN5nostd1m12rusty_helper17h…E` (the legacy `_ZN…17h<hex>E` heuristic) — both detection paths fire |
@@ -26,6 +27,7 @@ real ELF parser.
 | `arm_thumb_linked_le32` | **LINKED** ARM Thumb ET_EXEC (LE, `-static -nostdlib`) — one PT_LOAD R E at `0x10000` (so `ObjectLoadImage` loads it, unlike the bare `.o`) | ARM/Thumb decode **e2e** (`s1_loader::arm_markers` + the commit seam, `kuna-console/tests/verify_arm_thumb_decode.rs`): the `$t`@`0x100b8` mapping symbol + the LSB-set FUNCs `compute`@`0x100b9` (→ even `0x100b8`) / `_start`@`0x100d7` (→ even `0x100d6`) drive a `TMode=1` paint, so `load function compute` Thumb-decodes `compute(x)` to `return a0 * 3 + 7;` (an ARM-mode misdecode of the same bytes is garbage), and the Thumb-FUNC re-home makes `_start`'s `bl` to compute's even entry render `compute(5)`. **The deferred Increment-8/17 decode e2e, now built in-container** |
 | `mcount_x86_64` | static, non-PIE x86-64, `gcc -pg` (`-O0`), `.debug_*` stripped | call-fixup auto-apply (`s1_callfixup`): the `-pg` prologue emits a direct `call mcount` to the weak `mcount` FUNC symbol (0x44a710); `main` is at 0x401795. The cspec (`x86-64-gcc.cspec`) registers `<callfixup name="mcount"><target name="mcount"/>` (body `temp:1 = 0;`), so tagging `main`'s `mcount` callee with that fixup's inject id dissolves the profiling call — `kuna decompile … main` then shows no `mcount();` line. Also carries `__fentry__` (0x44a770, the `fentry`-fixup target) |
 | `fmt_x86_64` | non-PIE x86-64, `gcc -O0`, not stripped (source `fmt_x86_64.c`) | format-string varargs typing (`s1_formatstring` half B, `FormatStringAnalyzer`, **gated off** by default): `main`=0x401136 calls `printf("%d %s\n", argc, argv[0])` (`printf@plt`=0x401040; the `"%d %s\n"` format constant is at `.rodata` vma 0x402004). With `--option formatstring on`, the console reads the format constant at the `printf` call's format slot, parses `%d`→int / `%s`→char\*, installs a per-call-site prototype override, and re-decompiles so the call renders `printf("%d %s\n",a0,(char *)*a1)` (the `%d` arg as a plain `int`, the `%s` arg cast to `char *`) instead of the default untyped `printf("%d %s\n",(uint8)a0,*a1)` |
+| `operand_refs_x86_64` | non-PIE x86-64, `gcc -no-pie -fno-pic -mcmodel=large -O0`, not stripped (source `operand_refs_x86_64.c`) | scalar/operand reference markup (`s1_operand_refs`, `ScalarOperandAnalyzer` family, **gated off** by default): `main`=0x40112e materializes the address of the short `.rodata` string `"hi"`@`0x402004` with `movabs $0x402004,%rax` (the large code model puts the absolute address DIRECTLY in code as a bare immediate — the `ScalarOperandAnalyzer` case; a RIP-relative `lea` would not surface a bare scalar) and passes it to the **no-prototype** `mystery`=0x401106. `"hi"` is 2 chars (< 5) so the always-on `StringLiteralPass` skips it, and `mystery` has no libproto/S5 typing, so the literal renders ONLY via `operand_refs`. With `--option operand_refs on` the call renders `mystery("hi")`; default-off `mystery(0x402004)`. Drives `kuna-console/tests/verify_operand_refs.rs` |
 | `fmt_aarch64` | PIE AArch64, `gcc -O0 -fno-stack-protector`, not stripped (source `fmt_aarch64.c`, same C as `fmt_x86_64`) | format-string varargs typing **cross-arch** (`s1_formatstring` half B, **gated off**): `main`=0x754 calls `printf("%d %s\n", argc, argv[0])` (`printf@plt`=0x630); the format address is materialized by `adrp x0,0; add x0,x0,#0x7a8` so the format constant is at `.rodata` vma 0x7a8. With `--option formatstring on` the call renders `printf("%d %s\n",a0,(char *)*a1)` (default-off leaves the `%s` arg untyped). Drives `kuna-console/tests/verify_formatstring_crossarch.rs` |
 | `fmt_arm` | PIE ARM (32-bit, Thumb), `gcc -O0 -fno-stack-protector`, not stripped (source `fmt_arm.c`, same C as `fmt_x86_64`) | format-string varargs typing **cross-arch — the read-only literal-pool case** (`s1_formatstring` half B, **gated off**): `main`=0x504 (Thumb, `main`=0x505 in `.symtab`) calls `printf("%d %s\n", argc, argv[0])` (`printf@plt`=0x3e4). The format address is loaded **PC-relatively from the read-only literal pool** (`ldr r3,[pc,#20]` reads the `.word 0xb0` at 0x52c; `add r3,pc` → pc(0x51c)+0xb0 = format constant at `.rodata` vma 0x5cc), so the format-arg varnode is a memory LOAD that constant-folds only under `readonlypropagate`. With `--option formatstring on` the loop enables read-only propagation for the decompile so the call renders `printf("%d %s\n",a0,(char *)*a1)` (default-off leaves the format pointer the unresolved `(char *)(dat_52c + 0x51c)`). Drives `kuna-console/tests/verify_formatstring_crossarch.rs` |
 | `fmt_riscv64` | PIE RISC-V64 (RVC, lp64d), `gcc -O0 -fno-stack-protector`, not stripped (source `fmt_riscv64.c`, same C as `fmt_x86_64`) | format-string varargs typing **cross-arch** (`s1_formatstring` half B, **gated off**): `main`=0x668 calls `printf("%d %s\n", argc, argv[0])` (`printf@plt`=0x5a0); the format address is materialized by `auipc a0,0x0; addi a0,a0,32` (pc 0x688 + 32) so the format constant is at `.rodata` vma 0x6a8. With `--option formatstring on` the call renders `printf("%d %s\n",a0,(char *)*a1)` (default-off leaves the `%s` arg untyped; the default `%d` cast is `(int8)`). Drives `kuna-console/tests/verify_formatstring_crossarch.rs` |
@@ -38,6 +40,8 @@ real ELF parser.
 | `plt_aarch64` | linked, dynamic AArch64 ET_EXEC (`-no-pie`), not stripped (source `plt_aarch64.c`) | AArch64 PLT/import-name resolution end-to-end (`s1_loader::elf_plt::decode_aarch64`): the standard GNU `ld` 16-byte veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12]; add x16,x16,#lo12; br x17`). `main`@`0x400604` calls `puts("hello")` (`puts@plt`@`0x4004d0`, GOT slot `0x411018`) and `printf("%d\n", argc)` (`printf@plt`@`0x4004e0`, GOT slot `0x411020`); both `R_AARCH64_JUMP_SLOT` in `.rela.plt`. The console e2e (`kuna-console/tests/verify_aarch64_plt.rs`) asserts the call sites render `puts(`/`printf(` not `sub_4004d0`/`sub_4004e0` — the first **linked** AArch64 PLT proof (the decoder was previously synthetic-byte-unit-only). **Linked ET_EXEC with PT_LOAD** (unlike the ARM `.o`): the decode e2e works in-env (this container has the AArch64 toolchain + linker) |
 | `plt_sparc64` | linked, dynamic SPARC v9 / ELF64 **big-endian** ET_EXEC, not stripped (source `plt_sparc64.c`) | SPARC PLT/import-name resolution end-to-end (`s1_loader::elf_plt::decode_sparc`): the standard 32-byte SPARC veneer (`sethi %hi(...),%g1; b,a %xcc,<resolver>; nop*6`), preceded by a 4-slot (`0x80`-byte) reserved PLT0 header. SPARC's `R_SPARC_JMP_SLOT` `r_offset` **is** the PLT entry address (the linker rewrites the in-place stub at resolution time), so the decoder strides the `.plt` in 32-byte steps and records any `sethi %g1`-headed entry whose address is a known relocation — stub == name-map key. `main`@`0x100750` calls `puts("hello")` (`puts@plt`@`0x2021c0`) and `printf("%d\n", argc)` (`printf@plt`@`0x2021a0`); both `R_SPARC_JMP_SLOT` in `.rela.plt` naming `puts`/`printf`. The console e2e (`kuna-console/tests/verify_sparc_plt.rs`) asserts the call sites render `puts(`/`printf(` not `sub_2021c0`/`sub_2021a0` — the first **linked** SPARC PLT proof. **Linked ET_EXEC with PT_LOAD**: the decode e2e works in-env (this container has the SPARC toolchain + linker) |
 | `plt_mips32` | linked, dynamic MIPS32 **big-endian** ET_EXEC (`-O0`), not stripped (source `plt_mips32.c`) | MIPS o32 import-name resolution end-to-end (`s1_loader::elf_plt::resolve_mips_imports`, Increment 27): **no `.plt` / no `R_MIPS_JUMP_SLOT`** — the o32 ABI calls libc imports indirectly through a `$gp`-relative GOT slot (`lw $t9, off($gp); jalr $t9`). The stub→name correspondence is the dynamic-symbol GOT layout (`DT_MIPS_LOCAL_GOTNO`=6, `DT_MIPS_GOTSYM`=5, `DT_PLTGOT`=`0x411020`): `got_index(i)=6+(i-5)`. `main`@`0x400700` calls `puts` (dynidx 7 → GOT slot `0x411040` → stub `0x400800`) and `printf` (dynidx 8 → GOT slot `0x411044` → stub `0x4007f0`). `resolve_mips_imports` names each `.MIPS.stubs` stub (= the GOT slot's static contents = the dynsym `st_value`) and marks the GOT external slots constant; `bootstrap_from_object` turns on `readonlypropagate` for MIPS so the GOT load folds and the call resolves. The console e2e (`kuna-console/tests/verify_mips_plt.rs`) asserts the call sites render `puts(`/`printf(` not `(*(code *)(dat_411040 & ...))(...)`. **Linked ET_EXEC with PT_LOAD**: the decode e2e works in-env (the container has the MIPS toolchain) |
+| `funcstart_patterns_x86_64` | **stripped**, statically-linked **x86-64** ELF, `gcc -O2 -fno-asynchronous-unwind-tables -fcf-protection=none -no-pie -fno-pic -fno-stack-protector` (source `funcstart_patterns_x86_64.c`) | the **full byte-pattern function-start** pass (`s1_entry::FuncStartPatternPass`, `--option funcstart_patterns on`, default-off): a `static` helper `widget`@**`0x401130`** has the prologue `push rbx; mov rbx,rdi` (`53 48 89 fb`) preceded by an 8-byte NOP pad (`0f 1f 84 00 00 00 00 00`). That is the FULL upstream `<patternpairs>` postpattern `0x534889fb` (PUSH RBX; MOV RBX,RDI) gated by the NOP prepattern `0x0f1f840000000000` — but it is **not** one of the three bare x86-64 prologues the always-on minimal oracle (`entry_disc` oracle 5) ports, and `widget` carries **no symbol** (stripped, `static`), **no `.eh_frame` FDE** (`-fno-asynchronous-unwind-tables`), and is not `e_entry`/INIT/FINI/`main`. So `widget` is discoverable **only** via the full pattern set: `kuna-console/tests/verify_funcstart_patterns.rs` asserts `sub_401130` is found + decompilable with `--option funcstart_patterns on` and **NOT** registered by default. The other helper `ext`@`0x401170` is `T`/global (stripped). Pinned VMAs read from the un-stripped build's `nm` (`widget`=`0x401130`, `ext`=`0x401170`, `main`=`0x401020`). |
+| `aif_gap_x86_64` | **STRIPPED** dynamic PIE x86-64 (`-O0`), no unwind tables (source `aif_gap_x86_64.c`) | Aggressive Instruction Finder gap-walk (`s1_aif`, the third Listing/xref consumer; the kuna analog of Ghidra's `AggressiveInstructionFinderAnalyzer`, **gated off** by default). 24 handlers `h0..h23` are called DIRECTLY from `main` (`sub_13c9`, recovered via the PIE `_start`→`main` `lea rdi,[rip+main]` idiom), so the recursive-descent Listing walk reaches them — clearing Ghidra's `MINIMUM_FUNCTION_COUNT` (20, here `function_count`=33) — and their identical `push rbp; mov rsp,rbp; mov edi,-0x14(rbp); …` prologue stocks the function-start fingerprint histogram (one bucket shared by 25 functions, ≥ the acceptance threshold 4). `hidden_handler`@`0x13ae` is the gap target: it is in **no** symbol table (stripped), has **no** `.eh_frame` FDE (built `-fno-asynchronous-unwind-tables`), and is **never** the target of a static CALL — its address lives ONLY in the const `.rodata` function-pointer `table`@`0x3df0` (slot 1=`0x3df8`, an `R_X86_64_RELATIVE` reloc → `0x13ae`), which `main` indexes with a `volatile` (unfoldable) value and calls via `call *reg`. So entry-disc + funcsyms + the static walk all miss it (`main` renders the call as `(**(code **)(…0x3df0))(…)`, unresolved). With `--option listing on --option aif on`, AIF's gap-walk fingerprint-matches `hidden_handler`'s prologue + valid-subroutine-checks it (a clean `ret`, 11 instructions) and emits it as a discovered entry → `sub_13ae`, decompilable by name. Default (off) leaves it undiscovered (byte-identical parity). Drives `kuna-console/tests/verify_aif.rs` |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -48,7 +52,21 @@ baz(int); }; } void foo::Bar::baz(int){...} int main(){...}` source.
 cpp_noreturn_x86_64.cpp` (source vendored alongside) — a `fail()` that tail-calls
 `std::terminate()` plus a `throw` (→ `__cxa_throw`); both are mangled no-return
 `.dynsym` imports the demangle pass renames, so they verify the address-resolved
-no-return commit. `dwarf_stripped_x86_64`: `cc -g -O0 -no-pie -fno-pic t.c -o x` then
+no-return commit. `eh_lsda_x86_64` (14744 bytes, source vendored alongside as
+`eh_lsda_x86_64.cpp`): `g++ -O1 -no-pie -fno-pic -fexceptions -o eh_lsda_x86_64
+eh_lsda_x86_64.cpp` then `strip eh_lsda_x86_64` (drops `.symtab`; keeps
+`.eh_frame` + `.gcc_except_table`). The source is a `guarded()` with a
+`try { may_throw(x); } catch (const std::runtime_error&) {...} catch (int) {...}`
+over an out-of-line throwing helper — `-fexceptions` (default for C++) emits the
+`zPLR`-augmented FDEs whose `L` char points each FDE at an LSDA in
+`.gcc_except_table`, and the `catch` blocks become the landing pads. `-no-pie`
+keeps the landing-pad VMAs fixed/deterministic for the pinned test consts; `-O1`
+keeps it small (14 KB) while still emitting all four landing pads. The landing
+pads (`0x4012bf`/`0x4012e2`/`0x401352`/`0x401366`) were decoded by hand from the
+`.gcc_except_table` call-site tables and cross-checked against `objdump -d`
+(every one is an `endbr64`) and `readelf --debug-dump=frames` (the FDE LSDA
+augmentation-data pointers `8c 21 40 00`=`0x40218c`, `98 21 40 00`=`0x402198`).
+**Pin the landing-pad VMAs as test consts.** `dwarf_stripped_x86_64`: `cc -g -O0 -no-pie -fno-pic t.c -o x` then
 `objcopy --wildcard --strip-symbol='*' x dwarf_stripped_x86_64` (empties the symbol
 table, keeps `.debug_*` — so DWARF is the sole name source; `t.c` = three funcs
 `add_values`/`compute`/`main`). `switchtab_x86_64`: `gcc -O1 -no-pie -fno-pic s.c`
@@ -95,6 +113,23 @@ direct `call mcount` to a real `mcount` FUNC symbol. Static glibc makes this
 fixture larger (~896 KB) than the others; that size is the unavoidable cost of a
 self-contained direct-`call mcount` target.
 
+`aif_gap_x86_64` (source vendored alongside as `aif_gap_x86_64.c`): built locally
+with
+`gcc -O0 -fpie -pie -fcf-protection=none -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -o aif_gap_x86_64 aif_gap_x86_64.c`
+then `strip aif_gap_x86_64`. The 24 `h0..h23` handlers share an identical prologue
+(they differ only by an operand immediate, the operand-insensitive fingerprint
+equivalence class) and are all called directly from `main` so the Listing walk
+reaches them (≥ 20 functions); `hidden_handler` is referenced ONLY from the const
+`.rodata` function-pointer `table` (an `R_X86_64_RELATIVE` reloc) and called
+indirectly, so no oracle / static CALL reaches it — it is the AIF gap target. The
+`-fno-asynchronous-unwind-tables -fno-unwind-tables` flags strip the `.eh_frame`
+FDEs from the program functions (so the `.eh_frame` FDE entry oracle cannot find
+`hidden_handler`); `-fcf-protection=none` keeps the prologues `endbr64`-free so the
+fingerprint is the plain frame setup. The VMAs (`hidden_handler`=`0x13ae`,
+`main`=`0x13c9`, `h0`=`0x1129`, `table`=`0x3df0`) are pinned by
+`kuna-console/tests/verify_aif.rs`. **PIE** so the `_start`→`main`
+`lea rdi,[rip+main]` idiom (`s1_entry` oracle 4) recovers `main` and seeds the walk.
+
 **No Go fixture is vendored** (the Golang no-return list, Increment 15). Go ELF
 binaries are unavoidably large — `go build` emits **~1.1 MB** un-stripped (the
 whole runtime is statically embedded) and **~750 KB** stripped — and the
@@ -120,6 +155,26 @@ The `-no-pie` keeps the format-string constant a fixed absolute address
 (`.rodata` vma 0x402004) so the per-call-site format-constant read is
 deterministic. Drives the `FormatStringAnalyzer` half-B console gate
 (`kuna-console/tests/verify_s1_formatstring.rs`).
+
+`operand_refs_x86_64` (~15 KB, source vendored alongside as
+`operand_refs_x86_64.c`): built with
+`gcc -no-pie -fno-pic -mcmodel=large -fno-stack-protector -O0 -o operand_refs_x86_64 operand_refs_x86_64.c`,
+kept **un**stripped so `main`/`mystery` resolve by name. The
+**`-mcmodel=large`** is load-bearing: it forces gcc to materialize the `"hi"`
+string address with a `movabs $0x402004,%rax` (a bare 64-bit immediate — the
+address appears DIRECTLY in code), the exact case `ScalarOperandAnalyzer` reads as
+a `Scalar` operand. Under the default small/medium model gcc `-O0` emits a
+RIP-relative `lea 0xNNN(%rip)` instead, which computes the address as `pc +
+displacement` (no bare scalar surfaces), so the pass would correctly find nothing —
+faithful to Ghidra's `ADDRESSES_DO_NOT_APPEAR_DIRECTLY_IN_CODE` gate. `mystery` is
+`__attribute__((noinline))` so it survives as a real `.text` function with **no
+known prototype** (absent from the libproto table), and `"hi"` is 2 chars (< the
+`StringLiteralPass` `min_len` 5) — so the `mystery("hi")` literal renders ONLY when
+`operand_refs` types the operand, isolating this pass's contribution from
+`s1_strings` + libproto. `main`@`0x40112e`, `mystery`@`0x401106`, the `"hi"` string
+@`0x402004` (4-byte data prefix at `0x402000`). **Pin the VMAs as test consts**
+(`nm`/`objdump -d`/`objdump -s -j .rodata`). Drives
+`kuna-console/tests/verify_operand_refs.rs`.
 
 `fmt_aarch64` (8880 bytes), `fmt_arm` (7816 bytes), `fmt_riscv64` (8472 bytes) —
 the **cross-arch** counterparts of `fmt_x86_64`, each built in the `kuna-dev`
@@ -497,6 +552,28 @@ the identical bodies + their build recipes):
 
   Pinned VMAs (section-relative in the object): `first_byte`@`0x0`, `add`@`0x20`.
   Same DWARF recovery + `char *` type; `load addr 0x0` is the `sub_0` baseline.
+
+`funcstart_patterns_x86_64` (source vendored alongside as
+`funcstart_patterns_x86_64.c`): built + stripped with
+
+  ```
+  gcc -O2 -fno-asynchronous-unwind-tables -fcf-protection=none \
+      -no-pie -fno-pic -fno-stack-protector \
+      funcstart_patterns_x86_64.c -o funcstart_patterns_x86_64
+  strip funcstart_patterns_x86_64
+  ```
+
+  The `-fno-asynchronous-unwind-tables` drops the helpers' `.eh_frame` FDEs (so the
+  entry-discovery FDE oracle does not find them), `-fcf-protection=none` drops the
+  ENDBR64 prefix (so the prologue is the bare `push rbx; mov rbx,rdi` shape), and
+  `static` + `strip` removes every symbol for `widget`/`ext`. The `widget` helper's
+  `-O2` prologue is exactly `push rbx; mov rbx,rdi` (`53 48 89 fb`) at the
+  16-aligned `0x401130`, immediately preceded by gcc's 8-byte inter-function NOP
+  pad `0f 1f 84 00 00 00 00 00`. That pair is the FULL upstream x86-64gcc
+  `<patternpairs>` (postpattern `0x534889fb`, prepattern `0x0f1f840000000000`) but
+  not a minimal-oracle shape, so `widget` is recovered ONLY by
+  `--option funcstart_patterns on`. Pinned VMAs (read from the un-stripped build's
+  `nm`): `widget`=`0x401130`, `ext`=`0x401170`, `main`=`0x401020`.
 
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via

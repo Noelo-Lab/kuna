@@ -46,6 +46,14 @@ fn fixture(name: &str) -> PathBuf {
 /// Bootstrap a fixture and drive `load function <fn>` -> `decompile` -> `print C`,
 /// returning the captured C output (or `None` if the `.sla` is absent — a skip).
 fn decompile_c(fixture_name: &str, func: &str) -> Option<String> {
+    decompile_c_with(fixture_name, func, &[])
+}
+
+/// Like [`decompile_c`] but runs the given `option <name> <value>` lines BEFORE
+/// `load function` (the analysis commit is deferred to `load function`/`read
+/// symbols`, so a gate must be flipped before then). Each `pre_options` entry is
+/// a full console command, e.g. `"option dwarf_lines on"`.
+fn decompile_c_with(fixture_name: &str, func: &str, pre_options: &[&str]) -> Option<String> {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -65,9 +73,8 @@ fn decompile_c(fixture_name: &str, func: &str) -> Option<String> {
         }
     };
 
-    let cmds: Vec<String> = [format!("load function {func}"), "decompile".into(), "print C".into()]
-        .into_iter()
-        .collect();
+    let mut cmds: Vec<String> = pre_options.iter().map(|s| s.to_string()).collect();
+    cmds.extend([format!("load function {func}"), "decompile".into(), "print C".into()]);
     let count = cmds.len();
     let mut status = ConsoleCommands::into_status(cmds);
     register_decomp_commands(&mut status);
@@ -149,5 +156,49 @@ fn stacklocal_renders_dwarf_named_typed_locals() {
     assert!(
         !out.contains("local_10") && !out.contains("local_c"),
         "the DWARF-named slots should not render as `local_*`, got:\n{out}"
+    );
+}
+
+#[test]
+fn dwarf_lines_annotate_source_locations() {
+    // The `.debug_line` source-line pass (`dwarf_lines`, the kuna analog of Ghidra's
+    // DWARFLineInfoCommentScript). cet_pie's `elaborate_debug_symbol` body
+    // (debug_symbol.c lines ~122-146) decompiles to statements that each carry their
+    // DWARF `file:line` as a `/* … */` comment. With the gate ON, the output must
+    // carry the source-file annotations; DEFAULT-OFF leaves the output unchanged.
+    //
+    // NOTE: the entry-line comment (line 122 @ 0x1357) does not render — the prologue
+    // instruction at the entry is eliminated, so the comment at that PC has no
+    // surviving op to hang on and `CommentSorter` excises it (the same reason
+    // cet_pie's write-once locals never render, see the typed-signature test). We
+    // assert a body line (124) that maps to a surviving statement instead.
+    let Some(on) =
+        decompile_c_with("cet_pie_x86_64", "elaborate_debug_symbol", &["option dwarf_lines on"])
+    else {
+        return;
+    };
+    assert!(
+        on.contains("elaborate_debug_symbol"),
+        "expected the function name in the output, got:\n{on}"
+    );
+    // The headline: a body statement's source line lands as a C `/* … */` comment.
+    assert!(
+        on.contains("/* debug_symbol.c:124 */"),
+        "expected the DWARF source-line annotation `/* debug_symbol.c:124 */`, got:\n{on}"
+    );
+    // Several distinct lines are annotated (the pass walks the whole line program).
+    assert!(
+        on.contains("/* debug_symbol.c:125 */") && on.contains("/* debug_symbol.c:146 */"),
+        "expected multiple distinct DWARF source-line comments, got:\n{on}"
+    );
+
+    // Default-OFF parity: the same function with the gate OFF (the default) carries
+    // NO source-line comment — the output is byte-identical to pre-feature.
+    let Some(off) = decompile_c("cet_pie_x86_64", "elaborate_debug_symbol") else {
+        return;
+    };
+    assert!(
+        !off.contains("debug_symbol.c:"),
+        "default (gate off) must NOT add source-line comments, got:\n{off}"
     );
 }

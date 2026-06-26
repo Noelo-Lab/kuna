@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    192,
-    192
+    205,
+    205
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -192,6 +192,19 @@
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
     "data:regionstructure #4: ZERO gotos  -  region structurer matches Ghidra's acyclic structuring (parity)",
+    "data:regionstructure shortcircuit #1: the cascading b==0xc9 / a<=299 conditions fold to one compound and (both passes)",
+    "data:regionstructure shortcircuit #2: the inner a<=299 condition is NOT left as a separate nested if (both passes)",
+    "data:regionstructure shortcircuit #3: an unrelated single-condition else-if is unchanged (both passes)",
+    "data:regionstructure-loop #1: do-while recovered (BlockDoWhile), both passes",
+    "data:regionstructure-loop #2: for/while recovered (BlockWhileDo), both passes",
+    "data:regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes",
+    "data:regionstructure-loop #4: ZERO gotos - region structurer matches Ghidra on reducible loops (parity)",
+    "data:regionstructure-switch #1: the switch head is recovered, both passes",
+    "data:regionstructure-switch #2: case 0, both passes",
+    "data:regionstructure-switch #3: case 3 (middle of the dense table), both passes",
+    "data:regionstructure-switch #4: case 6 (last case), both passes",
+    "data:regionstructure-switch #5: the default case is recovered, both passes",
+    "data:regionstructure-switch #6: ZERO gotos  -  region structurer recovers the switch natively (parity with Ghidra)",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",

@@ -208,6 +208,22 @@ impl Listing {
         self.insns.iter()
     }
 
+    /// The VMA of the first decoded instruction that starts strictly after `vma`
+    /// (the upper bound of an undefined gap that begins at `vma`). `None` if no
+    /// decoded instruction starts after `vma` (the gap runs to the end of the
+    /// executable image). Used by the AIF gap-walk to scope the "must-decode-here"
+    /// interior of a gap (`s1_aif`).
+    pub fn next_instruction_start_after(&self, vma: u64) -> Option<u64> {
+        self.insns.range(vma.checked_add(1)?..).next().map(|(&a, _)| a)
+    }
+
+    /// The executable-range universe `[lo, hi)` the Listing covers (sorted,
+    /// disjoint). The AIF gap-walk (`s1_aif`) needs it to bound its speculative
+    /// gap decode (`memory.contains` / executable-block guard).
+    pub fn exec_ranges(&self) -> &[(u64, u64)] {
+        &self.exec_ranges
+    }
+
     /// The decoded instruction whose `[addr, addr+len)` byte span contains `vma`
     /// (its start *or* interior), if any (ordered interior lookup).
     fn instruction_covering(&self, vma: u64) -> Option<&Insn> {

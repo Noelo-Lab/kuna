@@ -98,3 +98,109 @@ shape (the success path, not the fall-back) and is **byte-identical to Ghidra** 
 parity result), rather than a goto delta. The "one fewer goto" verifiable delta should be the
 success metric for **Inc 3** (loops), not Inc 1 — Inc 1 delivers the live, parity-safe
 sequence/ITE/virtualize foundation the cyclic schemas build on.
+
+## Inc 3 — implementation status & findings (cyclic/loop recovery, option `regionstructure`)
+
+**Landed (parity-safe, 3 gates green):** the region structurer now recovers the three loop
+classes — **do-while** (`BlockDoWhile`), **while/for** (`BlockWhileDo`), and **infinite-loop +
+CBRANCH break** (`BlockInfLoop`) — porting angr `phoenix._analyze_cyclic` +
+`_match_cyclic_{while,dowhile,natural_loop}` structurally over kuna's loop builders
+(`new_block_{do_while,while_do,inf_loop}`). The schemas lean on the **back-edges + dominators
+already marked on the seeded `sblocks` `BlockCopy`s** (`structure_loops`/`calc_forward_dominator`
+run on `bblocks` in `structure_reset`, copied verbatim by `build_copy_from` — so the structurer
+gets loop-edge marks and `immed_dom`/`index` for free), plus a port of
+`CollapseStructure::negate_condition_rec` so a loop-condition orientation flip (the `i==0`
+do-while/while-do arm) records a deferred **pending-flip** that `run_region_structurer` returns
+and `ActionBlockStructure` realizes via `block_basic_negate_lastop` — identical to the
+`CollapseStructure` `take_pending_flips` path. The `BlockWhileDo` fold carries Ghidra's
+`ruleBlockWhileDo` **interior-goto-target guard**: a loop whose head is the target of a
+virtualized continue/goto is NOT foldable as a top-tested `while` (that would render a `label:`
+*inside* the `while (...)` condition — malformed C); such a loop folds as `BlockInfLoop` or falls
+back. Honest-partial-safe throughout: a loop class that doesn't match falls back to
+`CollapseStructure` (never a panic, never malformed). Default-OFF ⇒ 675/675 datatests
+byte-identical; ON-vs-OFF decompile speed is within noise on loop-heavy functions.
+
+A **multi-latch / multi-exit refinement** (`refine_loop_edges`, the kuna analog of
+`_refine_cyclic_core` — virtualize the secondary back-edges/exits/mid-body entries so a
+not-yet-clean loop collapses) is implemented but **deliberately NOT run in Inc 3**: a 262-binary
+corpus sweep showed it produces **no goto reduction** over Ghidra's `select_goto`/`TraceDAG` *and*
+its edge choice can render a worse (extra-goto) or — for a continue-goto into the head condition —
+malformed loop. Inc 3 therefore folds only the **directly-foldable** loops (the clean reducible
+shapes, which need no edge virtualization at all — verified: do-while/while/for/inf-loop and
+nested loops fold with zero refinement rounds) and leaves everything else to the
+virtualize-fallback → `CollapseStructure`, which **guarantees ON-output is never worse than OFF**.
+The refinement machinery is retained (behind `#[allow(dead_code)]`) for an increment that pairs it
+with a post-dominator exit analysis (Inc 5).
+
+**break/continue:** angr emits `BreakNode`/`ContinueNode` directly in the structurer. kuna instead
+determines break/continue in a **separate, opt-in** pass (`kuna_loopbreak_recovery::kuna_scope_break`,
+gated by `option loopbreak_recovery`, default-OFF) that runs in `ActionFinalStructure` *after*
+structuring and lowers loop-exit `goto <successor>` edges to `break;` once the loop scope is
+finalized. The region structurer therefore marks every virtualized loop edge as a **plain goto**
+(`set_goto_branch`) — setting `f_break_goto`/`f_continue_goto` before that pass mis-renders the
+loop — and the gated scope-break pass converts them, exactly as it does for the CollapseStructure
+path. This keeps the loop recovery parity-safe and renderer-correct.
+
+**Empirical finding (the goto-reduction is IRREDUCIBLE-only, as Inc 1 predicted):** across 40+
+hand-crafted loop shapes (gcc/clang -O0/-O1/-O2: clean do-while/while/for/inf-loop, multi-continue,
+multi-break, two-latch with side effects, nested loops, head-in-body two-entry, and goto-spaghetti
+loops) **Ghidra's `CollapseStructure` already emits the minimal goto count** — ZERO for every
+*reducible* loop (it has comma-folding into the condition, a complete while/do-while/inf-loop rule
+set, and a good `select_goto`), and exactly ONE for a genuinely *irreducible* loop (a 2-entry
+natural loop *needs* a goto to enter, and Ghidra's single goto is already minimal). The region
+structurer **matches** this: it folds the reducible loops byte-identically (`tests/stages/`
+`regionstructure-loop.xml` asserts the three-class success path + ZERO gotos, the honest parity
+result, mirroring Inc 1's acyclic finding) and falls back on the irreducible / nested-interlock
+ones (e.g. fmt's `get_space`, where an inlined-`getc` interlock yields 2 gotos that both Ghidra and
+the region structurer leave). The roadmap's multi-goto target — the **PR #44 head-in-body**
+function — lives in a **Windows PE** binary the kuna loader does not yet accept (`kuna decompile`
+rejects PE32+; that loader is a separate in-flight effort), so that specific over-virtualization
+could not be reproduced in-tree. No constructible-in-C or available-x86-64-ELF loop in the corpus
+exhibits a Ghidra over-virtualization the flat schemas can beat.
+
+**Consequence for the roadmap:** Inc 3 delivers **live, correct, parity-safe loop recovery**
+(all three classes folded via the cyclic schemas, proven on the success path) — the structural
+foundation the goto-reduction needs — but the **measurable goto delta** on a loop awaits either
+(a) the PE loader, to reach the PR #44 / `1after909`-family irreducible regions, or (b) Inc 5's
+post-dom (H2) refinement, which restructures the irreducible interlocks (`get_space`) Ghidra and
+the flat cyclic schemas both leave as gotos. The cyclic schemas + the break/continue plumbing are
+in place for both.
+
+## Inc 5 — implementation status & findings (short-circuit / condition folding, option `regionstructure`)
+
+**Landed (parity-safe, 3 gates green):** the region structurer now folds **cascading
+short-circuit conditions** into a single compound `&&`/`||` condition, matching Ghidra
+byte-for-byte. `region_structurer::match_acyclic_short_circuit_conditions` (→ `try_block_or`)
+is a faithful port of Ghidra `CollapseStructure::ruleBlockOr` (`blockaction.cc:1321`) — the
+kuna analog of angr `phoenix._match_acyclic_short_circuit_conditions` (types a–d). When a 2-out
+condition `bl` has a single-in, non-complex, 2-out successor `orblock` that reconverges through
+a shared clause, the pair folds into a [`BlockCondition`](../decompiler/crates/kuna-decomp/src/substrate/block.rs)
+via `new_block_condition`, which picks `CPUI_INT_AND`/`CPUI_INT_OR` from the edge orientation
+*exactly* as Ghidra does (so the rendered `&&`/`||` is byte-identical). The `isComplex` gate
+reuses `BlockBasic::isComplex` (precomputed `complex_blocks`, the same set `CollapseStructure`
+consumes), and the condition orientation uses the existing `negate_condition_rec` (recording the
+deferred data-flow flips into `pending_flips`). It runs as an **up-front fixpoint** before the
+sequence/ITE/loop cascade, mirroring Ghidra's `collapseAll` order (`collapseConditions` — which
+is *only* `ruleBlockOr` — runs before `collapseInternal`).
+
+**This closes the default-on blocker.** The single datatest where the region structurer (`on`)
+diverged from Ghidra was `elseif.xml` *Else-if #14*: the `if (b==0xc9) { if (a<=299) { … } }`
+cascade rendered as a nested `if` under `regionstructure on` instead of Ghidra's folded
+`else if ((b == 0xc9) && (a <= 299))`. Inc 5 makes the region structurer produce the **identical**
+folded `&&` form. With the option temporarily flipped default-ON, **the whole 675-assertion
+datatest suite is byte-identical to default-OFF (0/675 divergences, PARITY OK)** — so the future
+Inc 6 default-on flip is clean. `tests/stages/regionstructure-shortcircuit.xml` asserts the
+`&&`-folded form across BOTH passes (off=CollapseStructure, on=region structurer) on the upstream
+`testElseIf` binary; the full per-function C output is byte-identical between the two passes.
+
+**Honest-partial-safe:** a 2-out node whose successor is not a single-in, non-complex, 2-out
+condition reconverging through the shared clause is left untouched and flows to the
+sequence/ITE/virtualize schemas (never a panic, never a whole-function abort). Default-OFF ⇒
+675/675 byte-identical; ON-vs-OFF decompile speed is unchanged (the fold only runs under the
+option, and the up-front fixpoint is bounded by the same `round_cap` as the main loop).
+
+**Not in this increment:** the SAILR **H2** post-dominator virtualization heuristic (the
+`postdom_max_edges`/`postdom_max_graph_size`-capped refinement that would restructure the
+irreducible `get_space`-style interlocks Inc 3 leaves as gotos) is still future work — Inc 5 here
+delivers the **short-circuit `&&`/`||` folding** half of the roadmap's Inc 5, which is the piece
+that unblocks the clean default-on flip; the H2 post-dom refinement remains for a later pass.
