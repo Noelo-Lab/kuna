@@ -1,5 +1,52 @@
 # kuna Progress Log
 
+## Session (2026-06-26) — undefined-extern no-return (option `noreturn_extern`, default-off opt-in)
+
+**angr testcase**: `test_tail_tail_bytes_ret_dup` :: `tail_bytes`
+(`binaries/tests/x86_64/decompiler/tail.o`, x86-64, ELF **relocatable object**).
+
+**Why angr was better.** kuna decompiled `tail_bytes` (a 615-byte function,
+`0x401e80..0x4020e7`) as **326 lines / 9 gotos**, running far past the function end and
+swallowing several adjacent functions (`tail_lines` + its `pipe_lines`/`start_lines`/
+`file_lines`, a `fstatfs`/`is_local_fs_type`/`__assert_fail` function, an `lstat` loop, a
+`raise`/`exit`/`poll`/`die_pipe` function), even synthesizing a bogus
+`do { ... } while (dat_4045a1 == '\0')` outer loop. angr renders **96 lines / 1 goto**:
+it knows the canary epilogue's `__stack_chk_fail()` never returns and bounds the function
+there.
+
+**Root cause.** In a `.o`, `__stack_chk_fail` is an **undefined external** symbol (`UND`,
+`NOTYPE`, size 0). kuna's analysis-tier known-no-return pass (`noreturn_known`, default on)
+keys its facts on the **address** of a *defined* `FUNC` symbol, so it never marks the UND
+extern - even though its base name is on the shipped ELF no-return list. At flow time the
+call resolves to a display name but the symbol's no-return flag is false, so
+`FlowEnvironment::query_call_no_return` returns false, no `artificialHalt(noreturn)` is
+planted, and flow runs off the end into the next function. (Proof: the manual
+`option noreturn __stack_chk_fail` override chops it 328 -> 87 lines.)
+
+**Mechanism.** A name-based fallback in the flow seam `ArchFlowEnv::query_call_no_return`
+(`infra/decompile_drive.rs`): when the address-keyed check is false **and** the gate is on,
+resolve the callee display name and return true if `kuna_noreturnextern::
+matches_noreturn_extern_name` matches the known ELF no-return list (mirrors the
+analysis-tier `name_matches`: leading-`_` strip + `std`-only namespace guard, exact match
+against a closed set). Plants the existing artificial halt -> flow stops -> function bounded.
+New module `kuna_noreturnextern.rs` (ElementId 4103), Architecture flag
+`noreturn_extern_calls`, modelled on `tail_call_jumps`. No new pass type, no S7 change.
+
+**Ablation / default.** The 675-datatest ablation with the gate on is **byte-identical
+(0/675)**, and the target is **37% faster** with the gate (299 ms -> 188 ms median, less
+code decoded). I initially shipped default-ON, but `make rust-test` caught a real
+interaction: `verify_multiformat_passes::pe_exit_eliminates_dead_code_via_noreturn_list`
+asserts that `option noreturn_known off` restores the dead fall-through after a PE `exit`
+tail call — but the name-based fallback *independently* catches `exit`, so default-on would
+make `noreturn_known off` no longer restore it (the bytechunk-only 675 corpus never
+exercises this). The name match overlaps `noreturn_known`'s for defined/imported symbols,
+so I shipped it **default-OFF opt-in** (like `tailcalljump`/`gotoreduce`/`stackguard`) — no
+DIV, default output byte-identical. `kuna decompile tail.o tail_bytes --option noreturn_extern on`
+-> **326 -> 87 lines**; default (off) keeps the old rendering. Test
+`tests/stages/ghangr-noreturn_extern.xml` (+2, baseline-stages 190 -> 192).
+All gates green: `make test` PARITY OK 675/675, `make test-stages` 192/192,
+`make rust-test` green, `catalog --check` OK.
+
 ## Session (2026-06-25) — `setlocale` `char *` prototype (DIV-11; follow-up on PR #59)
 
 Follow-up to the reviewer's note on PR #59 (`tee_O2` `setlocale_null_androidfix`):

@@ -33,7 +33,7 @@ fn surface_count_is_94() {
 }
 
 #[test]
-fn settable_count_is_54() {
+fn settable_count_is_55() {
     // 31 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -81,9 +81,11 @@ fn settable_count_is_54() {
     // +1 for `funcstart_patterns`, the full byte-pattern function-start set,
     // default-off opt-in; +1 for `aif`, the AggressiveInstructionFinder gap-walk
     // Listing consumer, default-off opt-in; +1 for `dwarf_lines`, the DWARF
-    // .debug_line source-line mapping, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 54);
-    assert_eq!(SETTABLE_TABLE.len(), 54);
+    // .debug_line source-line mapping, default-off opt-in;
+    // +1 for `noreturn_extern`, the undefined-extern name-based no-return S2
+    // flow-classification knob, angr test_tail_tail_bytes_ret_dup, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 55);
+    assert_eq!(SETTABLE_TABLE.len(), 55);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -262,11 +264,12 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_23_suppressed_for_26() {
+fn option_values_live_value_present_for_24_suppressed_for_31() {
     let ov = OptionValues::default();
-    // 23 options have a codegen live reader (realtypes + dedupvardecls join the
+    // 24 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
-    // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`); the
+    // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`; +1 for
+    // `noreturn_extern`, whose `live_field` is `noreturn_extern_calls`, opt-in); the
     // live_value returns the current value for them and None for
     // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
     // 18 analysis/loader-tier gates (which have no `live_field` — their live state
@@ -335,7 +338,7 @@ fn option_values_live_value_present_for_23_suppressed_for_26() {
             }
         }
     }
-    assert_eq!(with_live, 23);
+    assert_eq!(with_live, 24);
 }
 
 #[test]
@@ -400,13 +403,13 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 54 rows: 53 trailing commas (the last, macho-arm64e, has none;
-    // switchguardbound's and tailcalljump's S2 rows, branchflip's S8 row,
-    // regionstructure's S8 row, eh_frame_full's S1 row, operand_refs's S1 row,
-    // funcstart_patterns's S1 row, aif's S1 row, and dwarf_lines' S1 row sit
-    // mid-table, so they
+    // 55 rows: 54 trailing commas (the last, macho-arm64e, has none;
+    // switchguardbound's, tailcalljump's, and noreturn_extern's S2 rows,
+    // branchflip's S8 row, regionstructure's S8 row, eh_frame_full's S1 row,
+    // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, and
+    // dwarf_lines' S1 row sit mid-table, so they
     // do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 53);
+    assert_eq!(json.matches("},\n").count(), 54);
 }
 
 #[test]
