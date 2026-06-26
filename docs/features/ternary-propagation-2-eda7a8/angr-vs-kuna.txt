@@ -1,0 +1,54 @@
+==============================================================================
+test_ternary_propagation_2 :: print_only_size   (angr 9.2.213 @ 0x400280)
+==============================================================================
+
+--- angr ---
+typedef struct FILE {
+} FILE;
+
+extern unsigned long stdout;
+
+long long print_only_size(unsigned long long a0)
+{
+    char *v2;  // rax
+    unsigned long v3;  // fs
+    unsigned long v0;  // [bp-0x10]
+
+    v2 = (a0 == 18446744073709551615 ? dcgettext(NULL, "Infinity", 5) : human_readable());
+    fputs_unlocked(v2, stdout);
+    return v0 - *((long long *)(40 + v3));
+}
+
+
+--- kuna (addr mode) ---
+  (no output: addr-mode: no C output for '0x400280' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load addr 0x400280
+Execution error: Unable to load 512 bytes at r0x00405290
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_19l2hlgo.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit
+
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o: reloc at 0x4026c0+0x8d: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o: reloc at 0x4026c0+0x34c: unhandled kind GotRelative (skipped) (name-mode: no C output for 'print_only_size' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load function print_only_size
+Execution error: Unable to load 512 bytes at r0x00405290
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_jm5tb05l.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit
+
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o: reloc at 0x4026c0+0x8d: unhandled kind GotRelative (skipped)
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o: reloc at 0x4026c0+0x34c: unhandled kind GotRelative (skipped)))

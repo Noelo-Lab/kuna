@@ -1,0 +1,23 @@
+{
+  "opportunity": "test_ternary_propagation_2::print_only_size",
+  "test_name": "test_ternary_propagation_2",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/du.o",
+  "selector": "print_only_size",
+  "func_addr": "0x400280",
+  "angr_version": "9.2.213",
+  "option": "ternary_propagate",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_ternary_propagation_2; RegionSimplifier ternary propagation; print_only_size",
+  "scope": "large",
+  "proposal": true,
+  "decisions": [
+    {
+      "question": "Is reconstructing angr's ternary-propagation (collapsing a control-flow diamond whose two arms are side-effecting CALLs into a single `?:` assignment) on `du.o` a SMALL one-option pass or a LARGE proposal-gated feature?",
+      "scope": "large",
+      "decision": "This needs two independent pieces across two tiers: a loader fix (back the synthetic data-extern region with zero bytes plus handle GOTPCREL) so `du.o` can load at all, and a genuinely new S8 structuring behavior that rewrites two side-effecting CALL arms plus their merge into one ternary statement — likely requiring new side-effecting `?:` emit support that Ghidra/kuna deliberately omit (RuleConditionalMove only covers a single side-effect-free MULTIEQUAL). That exceeds a single gated early-return in S8 and is >1 new module, so it fails the SMALL rule on multiple axes. The loader prerequisite also means the named target can't be demoed before/after and a firing test would have to be a contrived externless bytechunk, removing the end-to-end witness a small one-session change relies on.",
+      "recommended_action": "proposal",
+      "proposed_option_name": "ternary_propagate"
+    }
+  ]
+}
