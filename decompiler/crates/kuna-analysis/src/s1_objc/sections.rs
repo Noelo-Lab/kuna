@@ -16,6 +16,8 @@
 use object::read::{Object, ObjectSection};
 use object::{Endianness, SectionKind};
 
+use crate::s1_loader::format::macho::ChainedFixups;
+
 /// The `__objc_classlist` section name (the array of `class_t*` the walk starts
 /// from). Lives in `__DATA_CONST,__objc_classlist` on a modern toolchain,
 /// `__DATA,__objc_classlist` historically — `object` exposes the bare section
@@ -34,6 +36,14 @@ pub struct MachoImage<'a> {
     /// Pointer size in bytes (8 for the 64-bit Mach-O this pass targets; 4 for a
     /// 32-bit image).
     ptr_size: u64,
+    /// The resolved `LC_DYLD_CHAINED_FIXUPS` overlay (PR-O0). On a chained-fixup
+    /// arm64(e) Mach-O the raw section word at a pointer slot is a packed fixup
+    /// entry, not the real address, so [`Self::read_ptr`] consults this overlay
+    /// **first** and only falls back to the raw section word when the slot was not
+    /// a rebase fixup. Empty (the no-op overlay) on a classic x86-64
+    /// `LC_DYLD_INFO` Mach-O — `read_ptr` then reads raw section bytes exactly as
+    /// before this resolver existed.
+    fixups: ChainedFixups,
 }
 
 impl<'a> MachoImage<'a> {
@@ -42,6 +52,17 @@ impl<'a> MachoImage<'a> {
     /// returned — an image with no usable sections yields an empty map (every read
     /// then misses, the inert path).
     pub fn new(file: &'a object::File<'a>) -> MachoImage<'a> {
+        Self::with_fixups(file, ChainedFixups::default())
+    }
+
+    /// Like [`Self::new`] but with a resolved [`ChainedFixups`] overlay (PR-O0):
+    /// [`Self::read_ptr`] consults the overlay first, so an arm64(e)
+    /// chained-fixup image's `__objc_*` pointer slots dereference to **real**
+    /// addresses instead of packed fixup entries. The live ObjC pass builds the
+    /// overlay from `ctx.bytes` and threads it here; passing
+    /// [`ChainedFixups::default`] (the no-op overlay) reproduces the classic
+    /// raw-section read path for a non-chained-fixup Mach-O.
+    pub fn with_fixups(file: &'a object::File<'a>, fixups: ChainedFixups) -> MachoImage<'a> {
         let mut spans: Vec<(u64, u64, &'a [u8])> = Vec::new();
         for sec in file.sections() {
             if matches!(sec.kind(), SectionKind::UninitializedData) {
@@ -58,7 +79,7 @@ impl<'a> MachoImage<'a> {
         }
         spans.sort_unstable_by_key(|&(lo, _, _)| lo);
         let ptr_size = if file.is_64() { 8 } else { 4 };
-        MachoImage { spans, endian: file.endianness(), ptr_size }
+        MachoImage { spans, endian: file.endianness(), ptr_size, fixups }
     }
 
     /// Pointer size in bytes for this image.
@@ -82,7 +103,17 @@ impl<'a> MachoImage<'a> {
     /// A pointer-sized word at `va` (the absolute `class_t*` / `class_ro_t*` /
     /// string-pointer form the large/64-bit ObjC layout uses), honoring endianness
     /// + pointer width.
+    ///
+    /// On a chained-fixup image the raw section word at a pointer slot is a packed
+    /// fixup entry, **not** the real address, so a resolved rebase from the
+    /// [`ChainedFixups`] overlay wins when one exists at `va`. A slot the overlay
+    /// does not cover (a non-fixup constant, a bind/import slot, or any non-chained
+    /// Mach-O — where the overlay is empty) falls through to the raw section read,
+    /// which is byte-identical to the pre-resolver behavior.
     pub fn read_ptr(&self, va: u64) -> Option<u64> {
+        if let Some(resolved) = self.fixups.resolved_ptr(va) {
+            return Some(resolved);
+        }
         let bytes = self.read(va, self.ptr_size as usize)?;
         Some(match (self.endian, self.ptr_size) {
             (Endianness::Little, 8) => u64::from_le_bytes(bytes.try_into().ok()?),

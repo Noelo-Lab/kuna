@@ -4987,3 +4987,96 @@ Default-off + real-binary-path-only ⇒ the parity oracles are structurally unto
   (`function_named_at` + the `out.readonly` commit arm), `kuna-console/tests/verify_rtti.rs`
   (the R3 vftable assertions), `tests/fixtures/README.md` (the pinned slot-0 VMAs + R3
   note), `docs/analysis-port-log.md`.
+
+### Increment 61 — Mach-O chained-fixup resolver + arm64 Objective-C (s1_objc O0+O2)
+
+**THE arm64 HEADLINE.** Extends the x86-64 ObjC pass (Increment 58) to arm64 by
+landing the **`LC_DYLD_CHAINED_FIXUPS` resolver** (design §5 PR-O0) it was waiting
+on, plus the ObjC **type-encoding decoder** + **ivar labels** (PR-O2). A modern
+arm64 Mach-O does not store real pointers in its `__DATA_CONST`/`__DATA` slots —
+each is a packed *chained-fixup entry* — so without the resolver `__objc_classlist`
+dereferences to garbage. With it, the SAME ObjC walk names the IMP `-[Greeter
+greet:]` on arm64. **No new `--option`** — this reuses `objc`; the resolver is
+additive loader infra (no option).
+
+**The before/after, on a (locally-)stripped arm64 Objective-C Mach-O with REAL
+chained fixups (`tests/fixtures/macho_objc_arm64`):**
+
+```
+                          symbol @ 0x1000005f0    rendered body
+--option objc off (default) →  sub_1000005f0      int4 sub_1000005f0(...) { return a2 * 3 + 7; }
+--option objc on            →  -[Greeter greet:]  int4 -[Greeter greet:](...) { return a2 * 3 + 7; }
+```
+
+Naming this IMP proves the whole chain: the resolver rebased the
+`__objc_classlist[0]` slot (raw word `0x0000000100008000` → `class_t`@`0x100008000`)
+and the `class_t.isa` slot (raw word `0x0020000100008028`, whose `next=4` field
+leaks into the high bits → **resolves to `0x100008028`**, garbage without the
+resolver), and the arm64 walk then reached `Greeter`/`greet:`/IMP@`0x1000005f0`.
+
+**The resolver (`s1_loader/format/macho/chained.rs`, PR-O0).** Parses
+`LC_DYLD_CHAINED_FIXUPS` (header → `starts_in_image` → `starts_in_segment` → per-page
+chains) and produces a flat **VMA → resolved-pointer** overlay that
+`MachoImage::read_ptr` consults first (`with_fixups`). Handles:
+- **Plain rebase** — `DYLD_CHAINED_PTR_64` (2, target = unslid vmaddr),
+  `DYLD_CHAINED_PTR_64_OFFSET` (6, target = imagebase + offset), and
+  `DYLD_CHAINED_PTR_ARM64E` (1) non-auth (43-bit vmaddr) +
+  `_USERLAND`/`_USERLAND24` (12/15, imagebase + offset). Strides: 4-byte for the
+  `_64` formats, 8-byte for the arm64e formats.
+- **arm64e auth-rebase** — the PAC/diversity/addrDiv/key bits are stripped and the
+  32-bit image-base-relative target rebased (`imagebase + target`).
+- **Bind / import-ordinal chains: OUT OF SCOPE** (design §3.2) — an external
+  symbol's runtime address is unknown statically, so a bind slot is left
+  unresolved (the consumer reads the raw word and falls back, never a wrong
+  address). The chain head VMA is computed from the **mach_header** (`imagebase +
+  segment_offset + page*page_size + page_start`), matching dyld's
+  `forEachFixupChainSegment` (segment_offset is image-base-relative, not
+  per-segment).
+
+**The type-encoding decoder (`s1_objc/encoding.rs`, PR-O2).** Maps an ObjC method
+type encoding to a `PrototypePieces`: `i20@0:8i16` → `int -[Greeter greet:](id
+self, SEL _cmd, int n)` — `@`→`id` (objc_object*), `:`→`SEL`, `#`→`Class`, the
+primitive codes (`c i s l q f d B v * ^T`), with `{...}`/`[...]` name-level-opaque
+(the `s1_dwarf` MVP posture) and protocol qualifiers + trailing frame-offsets
+skipped. Not a demangler (selectors are ASCII). Also emits `<Class>::ivar` Data
+labels from `class_ro_t.ivars` (`ivar_list_t` walk) — inert on the root-class
+fixture (no ivars), exercised by unit tests.
+
+**The fixture.** `macho_objc_arm64` is the **same `macho_objc.m` source** built
+`-arch arm64 ... -fixup_chains` (the one flag that makes the container's in-tree
+`ld64.lld` emit `LC_DYLD_CHAINED_FIXUPS` + `LC_DYLD_EXPORTS_TRIE` instead of the
+classic `LC_DYLD_INFO_ONLY` rebase opcodes — confirmed: `LC_DYLD_CHAINED_FIXUPS
+dataoff=0xc000 datasize=0x80`, `DYLD_CHAINED_PTR_64` format 2). So the resolver IS
+exercised by a real chained-fixup binary (no hand-assembly / vendored-slice
+fallback needed). The in-container linker does not emit an arm64e *auth*-fixup
+slice, so the auth-rebase path is covered by the resolver's synthetic-bit-pattern
+unit tests.
+
+**Parity / no-op safety (the CAUTION).** The resolver runs in the Mach-O LOAD path
+but is a **strict no-op on a non-chained-fixup Mach-O**: a classic
+`LC_DYLD_INFO`/`LC_DYLD_INFO_ONLY` image (every existing x86-64 `macho_objc` /
+`macho_imports` fixture) yields an EMPTY overlay, so `read_ptr` reads raw section
+words exactly as before — a dedicated unit test
+(`resolver_is_noop_on_non_chained_fixup_macho`) asserts the overlay is empty AND
+that `read_ptr` is byte-identical with/without the (empty) overlay on both
+fixtures. The ObjC pass stays default-off + real-binary-path only, so the XML
+oracles are structurally untouched.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK
+(235/235)**; `make rust-test` **green** incl. `verify_objc` (3 tests: x86-64 +
+the new arm64 chained-fixup e2e + the off-baseline, all ran), the resolver unit
+tests (8 in `macho::chained`), the arm64 walk + no-op tests (in `s1_objc`), and the
+type-encoding decoder tests. No `kuna catalog --check` needed (no settable added —
+reuses `objc`).
+
+- **New:** `kuna-analysis/src/s1_loader/format/macho/chained.rs` (the resolver +
+  tests), `kuna-analysis/src/s1_objc/encoding.rs` (the type-encoding decoder +
+  tests), `tests/fixtures/macho_objc_arm64` (the real chained-fixup arm64 fixture).
+- **Changed:** `kuna-analysis/src/s1_loader/format/macho.rs` (moved to a `macho/`
+  module dir; `pub mod chained` + re-export), `s1_objc/sections.rs`
+  (`with_fixups` + overlay-aware `read_ptr`), `s1_objc/mod.rs` (resolve fixups,
+  emit prototypes + ivar labels, arm64 e2e tests), `s1_objc/classt.rs` (the
+  `ivar_list_t` walk), `kuna-console/tests/verify_objc.rs` (parameterized over the
+  x86-64 + arm64 fixtures), `tests/fixtures/README.md` (the arm64 fixture recipe +
+  pinned VMAs), `docs/analysis-port-log.md`.
+
