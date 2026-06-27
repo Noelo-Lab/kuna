@@ -4914,3 +4914,76 @@ needed (no settable added — a clean, option-free merge).
 - **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_pdb`),
   `tests/fixtures/README.md` (the `pdb_min.exe` recipe + pinned record),
   `docs/analysis-port-log.md`.
+
+### Increment 60 — MSVC RTTI vftable discovery + virtual-method naming (s1_rtti R3)
+
+**The RTTI line's third increment (PR R3, per `docs/metadata-analyzers-design.md` §3.1
++ §5).** Increment 57 (R1+R2) recovered the C++ class names and labelled the metadata
+graph (`<Class>::RTTI_*`) + the vftable base (`<Class>::vftable`). R3 walks the vftable
+itself — the kuna analog of Ghidra's `VfTableModel.getVfTableCount` — so each virtual
+method is named and the virtual *dispatch* resolves to a named function. **NO new
+`--option`** (reuses the existing `rtti` flag): no catalog/count change.
+
+**The before/after, on the same polymorphic-C++ PEs (`tests/fixtures/msvc_rtti_x{64,86}.exe`,
+`Box : Shape` with a virtual `area()`):**
+
+```
+                                  the virtual dispatch / vtable slot
+--option rtti off (default)    →  the vtable is an unnamed DAT_<addr>; the virtual
+                                  call `(**(code **)*p)()` jumps to an unnamed slot.
+--option rtti on               →  Box::vftable labelled; its one slot named the
+                                  virtual-method function Box::vftable_0 (at the slot
+                                  target VA 0x140001040 x64 / 0x401030 x86 = Box::area),
+                                  the slot array marked read-only — so the virtual
+                                  dispatch now resolves to a NAMED method.
+```
+
+**The walk (port of `VfTableModel.getVfTableCount`, `s1_rtti/vftable.rs`):** from the
+`<Class>::vftable` base (already recovered in R1 from the COL's meta-pointer slot),
+read each pointer-width slot and bound the array at the first **NULL / non-`.text`**
+slot (a slot is a virtual-method entry only while it points into an executable
+section). For each surviving slot emit a `SymKind::Function` `SymFact` named
+`<Class>::vftable_<i>` (the MSVC metadata carries the class name but NOT per-method
+names — the slot index is the faithful disambiguator vs Ghidra's script-tier method
+demangling), and mark the slot array read-only (`out.readonly`).
+
+**The x64 vftable-slot subtlety (faithful to the design):** a vftable slot is an
+**absolute pointer-width VA on BOTH arches** — NOT the `IBO32` image-base displacement
+the COL/RTTI *inter-structure* refs use on x64. The walk reads each with
+`RefKind::read_ptr` (8 bytes x64 / 4 bytes x86), never `resolve_ref`. Verified against
+the real fixtures: the x64 cell at `0x140002010` holds the full 8-byte `0x140001040`,
+the x86 cell at `0x40200c` the 4-byte `0x401030` (`objdump -s -j .rdata -d -j .text`).
+
+**The `out.readonly` commit arm (newly load-bearing).** `out.readonly` was merged but
+never applied; `commit_analysis_output` grew a step-1b arm that ORs `Varnode::readonly`
+over each `[first, last_open)` range via `symboltab.set_property_range` (the same call
+the loader's section-derived ranges use). Belt-and-suspenders on PE `.rdata` (already
+read-only from its section flags), load-bearing for any pass that marks a range the
+loader did not. Empty on every default run (only the gated real-binary passes emit).
+
+**Module layout:** `kuna-analysis/src/s1_rtti/vftable.rs` (the `VfTableModel` port:
+`TextRanges` executable-section view + `walk_vftable` slot bounder + `VfTable`), wired
+into `s1_rtti/mod.rs` (`emit_vftable_methods` + the `TextRanges` build in `run`). A new
+`ConsoleProgram::function_named_at(vma)` accessor (resolves the FunctionSymbol at a code
+VA across scopes) is the verification seam for "the slot now points at a named method".
+
+**e2e (RAN, not skipped):** `kuna-console/tests/verify_rtti.rs` extended — with
+`--option rtti on` it asserts `Box::vftable_0` exists AND `function_named_at(slot-0
+target VA)` resolves to the named virtual method (the virtual dispatch is now named);
+with `rtti off` both are absent (default-off parity). The pinned slot-0 target VMAs
+(`0x140001040` x64 / `0x401030` x86 = `Box::area`) are read from
+`objdump -s -j .rdata -d -j .text` (`tests/fixtures/README.md`). Built the `.sla`
+(`make specs`) so the 4 tests run; all 4 pass. 3 new `vftable.rs` unit tests
+(null-boundary walk / reject-no-code-slot / one-slot table).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **235/235 PARITY OK**;
+`make rust-test` **green** incl. `verify_rtti` (4/4 ran) + the new vftable units.
+`kuna catalog --check` **OK** (no settable added — reuses the `rtti` flag).
+Default-off + real-binary-path-only ⇒ the parity oracles are structurally untouched.
+
+- **New:** `kuna-analysis/src/s1_rtti/vftable.rs` (the `VfTableModel` port + tests).
+- **Changed:** `kuna-analysis/src/s1_rtti/mod.rs` (`pub mod vftable`,
+  `emit_vftable_methods`, `TextRanges` in `run`), `kuna-console/src/engine.rs`
+  (`function_named_at` + the `out.readonly` commit arm), `kuna-console/tests/verify_rtti.rs`
+  (the R3 vftable assertions), `tests/fixtures/README.md` (the pinned slot-0 VMAs + R3
+  note), `docs/analysis-port-log.md`.

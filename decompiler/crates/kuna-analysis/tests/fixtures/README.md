@@ -449,12 +449,12 @@ docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc '
     $F/msvc_rtti.cpp -o $F/msvc_rtti_x86.exe'
 ```
 
-Pinned VMAs (from `x86_64-w64-mingw32-objdump -s -j .rdata/.data` + `-p` ImageBase):
+Pinned VMAs (from `x86_64-w64-mingw32-objdump -s -j .rdata/.data -d -j .text` + `-p` ImageBase):
 
-| | ImageBase | Box `TypeDescriptor` (RTTI0) | Shape `TypeDescriptor` | Box `CompleteObjectLocator` (RTTI4) | Box vftable |
-|---|---|---|---|---|---|
-| **x64** | `0x140000000` | `0x140003010` (`.?AUBox@@`) | `0x140003030` (`.?AVShape@@`/`.?AUShape@@`) | `0x140002020` | `0x140002010` |
-| **x86** | `0x400000` | `0x403010` (`.?AUBox@@`) | `0x403030` (`.?AUShape@@`) | `0x402010` | `0x40200c` |
+| | ImageBase | Box `TypeDescriptor` (RTTI0) | Shape `TypeDescriptor` | Box `CompleteObjectLocator` (RTTI4) | Box vftable | Box vftable slot 0 (`Box::area`) |
+|---|---|---|---|---|---|---|
+| **x64** | `0x140000000` | `0x140003010` (`.?AUBox@@`) | `0x140003030` (`.?AVShape@@`/`.?AUShape@@`) | `0x140002020` | `0x140002010` | `0x140001040` |
+| **x86** | `0x400000` | `0x403010` (`.?AUBox@@`) | `0x403030` (`.?AUShape@@`) | `0x402010` | `0x40200c` | `0x401030` |
 
 With `--option rtti on` the recovery labels the Box `TypeDescriptor`
 `Box::RTTI_Type_Descriptor`, the COL `Box::RTTI_Complete_Object_Locator`, the vftable
@@ -463,6 +463,18 @@ With `--option rtti on` the recovery labels the Box `TypeDescriptor`
 absent (the parity proof). The `.?A…@@` names demangle through the existing MSVC
 demangler via the Ghidra `RttiUtil` `??_R0…@8` wrap (clang renders `struct` classes
 as `.?AU…`; both `V`/`U` recover the bare name).
+
+**vftable discovery + virtual-method naming (R3).** Each recovered class's vftable is
+walked from its `Box::vftable` base (`VfTableModel.getVfTableCount`), bounding the slot
+array at the first NULL / non-`.text` slot. The Box vftable holds exactly one slot —
+`Box::area` (`return side*side;`, the pinned slot-0 target above: `0x140001040` x64 /
+`0x401030` x86) — which R3 names `Box::vftable_0` (a `SymKind::Function`) and marks the
+slot array read-only. The slots are **absolute VAs on both arches** (NOT the `IBO32`
+displacements the COL/RTTI inter-struct refs use): the x64 vftable cell at `0x140002010`
+holds the full 8-byte `0x140001040`, the x86 cell at `0x40200c` the 4-byte `0x401030`.
+`kuna-console/tests/verify_rtti.rs` asserts `Box::vftable_0` exists AND a function symbol
+resolves at the slot-0 target VA (the virtual dispatch now points at a named method),
+absent with `rtti off`.
 
 ## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
 
