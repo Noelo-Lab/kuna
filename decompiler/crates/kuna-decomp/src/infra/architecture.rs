@@ -630,6 +630,24 @@ pub struct Architecture {
     /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
     /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     pub analysis_objc: bool,
+    /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
+    /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
+    /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
+    /// name-recovery half. On a Windows PE, read the CodeView fingerprint
+    /// (`{guid, age, path}` from the debug directory), locate the external `.pdb`
+    /// (tier-1: the `kuna_pdb_path` env var, the s1_fid `kuna_fid_db` precedent),
+    /// **fingerprint-gate** it (the supplied `.pdb`'s `pdb_information().guid/age`
+    /// must match the PE's CodeView record — a MISMATCH/ABSENT `.pdb` emits nothing,
+    /// the FID full-hash-match discipline of never applying wrong external
+    /// knowledge), and on a match walk the global symbols (`S_PUB32`/`S_GPROC32`) to
+    /// RENAME each stripped `FUN_*`/`sub_*` function to its real name (the
+    /// FID-precedent label-gated rename of a placeholder; a real symbol is never
+    /// overwritten). The pass is registered ONLY for a PE binary, so on every non-PE
+    /// binary it is structurally absent regardless of this flag. Default-off,
+    /// output-changing (it renames + adds symbols), real-binary-path only (and inert
+    /// without a fingerprint-matching `.pdb`) ⇒ every parity gate is byte-identical.
+    /// Types/typed-locals/lines are the deferred PR-P2/P3 (this PR is name-level).
+    pub analysis_pdb: bool,
     /// (kuna) Gate the Mach-O arm64e Apple-Silicon SLEIGH-spec selection
     /// (`macho-arm64e`); default **off** (design §3.7, opt-in until proven). When
     /// on, an arm64e Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
@@ -868,6 +886,7 @@ impl Architecture {
             analysis_aif: false,
             analysis_gopclntab: false,
             analysis_objc: false,
+            analysis_pdb: false,
             macho_arm64e: false,
 
             symboltab,
@@ -995,6 +1014,7 @@ impl Architecture {
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
+        self.analysis_pdb = false; // PE PDB metadata recovery default-off (PE-only, external-.pdb-gated pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
 
@@ -1201,6 +1221,7 @@ impl Architecture {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
             }
             "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
+            "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
             // (kuna) ET_REL relocatable-object (`.o`) loader capability. Unlike
             // every other kuna option this gates the *loader* (run at `load
             // file`, before any `option` command is processed), so a flag on this

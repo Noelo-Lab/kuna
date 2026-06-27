@@ -68,6 +68,17 @@ msvc-demangler = "0.11"
 # keeps the surface to `read` + `std`.  Used by kuna-analysis only -- never the
 # engine.
 gimli = { version = "0.33", default-features = false, features = ["read", "std"] }
+# PDB (Program Database) parsing (kuna-analysis / `s1_pdb/`), the kuna analog of
+# Ghidra's `PdbUniversalAnalyzer`.  Ghidra hand-rolls a complete PDB reader in
+# `ghidra.app.util.bin.format.pdb2.pdbreader.*` (~196 type + ~280 symbol
+# classes — the TPI/IPI/DBI/symbol-stream parsers).  Per the same
+# dependency-substitution LOSS the BFD object model takes (BFD -> `object`) and
+# DWARF takes (Ghidra's hand-rolled DWARF -> `gimli`; see `loadimage_object.rs`
+# / docs/rust-port/losses.md), kuna substitutes `pdb` — the de-facto mature Rust
+# PDB reader (MIT/Apache, used by Firefox symbolication + `pdb-addr2line`) — for
+# Ghidra's hand-rolled `pdb2/pdbreader` wholesale.  Read-only over the PDB
+# streams.  Used by kuna-analysis only -- never the engine.
+pdb = "0.8"
 # Intra-workspace
 kuna-base = { path = "crates/kuna-base" }
 kuna-num = { path = "crates/kuna-num" }

@@ -2422,6 +2422,23 @@ source_decompiler = "kuna"
 inspiration = "Ghidra ObjcTypeMetadataAnalyzer (Objc2Class / Objc2ClassRW / Objc2Method / Objc2MethodList, ObjC 2.0 __objc_* metadata)"
 change_kind = "analysis-enablement"
 
+[[settable]]
+option = "pdb"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-pdb"
+summary = "Run the PE PDB (Program Database) metadata recovery pass: on a Windows PE, recover function names from the external .pdb debug file (the kuna analog of Ghidra's PdbUniversalAnalyzer, name-recovery half). PDB is Windows' DWARF, but the debug info lives in a SEPARATE .pdb file the PE only fingerprints. Read the PE CodeView debug record ({guid|sig, age, .pdb path}), locate the .pdb (tier-1: the kuna_pdb_path environment variable, the exact s1_fid kuna_fid_db external-artifact precedent), and apply the FINGERPRINT GATE: open the supplied .pdb via the `pdb` crate and verify its pdb_information().guid/age matches the PE's CodeView record. A MISMATCH or ABSENT/unreadable .pdb emits nothing — never apply a wrong/stale PDB (the FID full-hash-match discipline of never applying wrong external knowledge). On a match, walk the global symbol stream (S_PUB32 publics + S_GPROC32 procedures), resolve each to its VMA (segment:offset -> RVA + the PE ImageBase), and RENAME each stripped function to its real name — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate, the FID precedent; a real symbol is never overwritten). Registered ONLY for a PE binary, so it is a structural no-op on every non-PE target. This PR is NAME-level (stripped FUN_<addr> -> the real name); typed prototypes, typed stack locals, and source lines are the deferred PR-P2/P3. DISABLED by default (output-changing: renames stripped functions; real-binary-path only and inert without a fingerprint-matching .pdb, so every parity gate is byte-identical)."
+use_when = "Off (default; no function is renamed and there is zero behavior change). Flip on for a stripped Windows PE that has a matching .pdb supplied via the kuna_pdb_path env var — a stripped FUN_<addr> renders its real source name (e.g. WinMain) recovered from the PDB. A .pdb whose GUID/age does not match the PE is rejected (no rename)."
+example = "option pdb on"
+source_decompiler = "kuna"
+inspiration = "Ghidra PdbUniversalAnalyzer (PdbInfoCodeView/PdbInfoDotNet record + pdb2/pdbreader; kuna substitutes the `pdb` crate)"
+change_kind = "analysis-enablement"
+
 # ---------------------------------------------------------------------------
 # (kuna) Loader-tier capability (1 row): ET_REL relocatable-object support. Unlike
 # the analysis-pass gates above, this gates the LOADER (run at `load file`, before

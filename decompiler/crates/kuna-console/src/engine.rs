@@ -178,6 +178,22 @@ impl ConsoleProgram {
         }
     }
 
+    /// (kuna) The basename of the FunctionSymbol installed at code-space VMA `vma`, or
+    /// `None` if no function is mapped there. Resolves across scopes
+    /// (`find_function_across_scopes`, the no-return/FID arm's resolver), so it sees a
+    /// namespaced virtual-method function (e.g. `Box::vftable_0` in scope `Box`).
+    ///
+    /// The verification seam for the MSVC-RTTI **vftable** e2e (R3): a vtable slot's
+    /// target VA should now resolve to a named virtual method — the virtual dispatch
+    /// `(**(code **)*p)()` points at this function instead of a bare `DAT_*`.
+    pub fn function_named_at(&self, vma: u64) -> Option<String> {
+        let code_space = Rc::clone(self.arch().manage().get_default_code_space()?);
+        let addr = Address::new(code_space, vma);
+        let db = &self.arch().symboltab;
+        let (sid, _) = db.find_function_across_scopes(&addr)?;
+        Some(db.symbol(sid).get_name().to_string())
+    }
+
     /// Read the binaryimage's loader symbols into the symbol table as
     /// FunctionSymbols (C++ `Architecture::readLoaderSymbols`, `architecture.cc:347`,
     /// called by `testfunction.cc:160` / `consolemain.cc:104` after load).
@@ -424,6 +440,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
         "objc" => arch.analysis_objc,
+        // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
+        // stripped functions to their real PDB names). PE-only + externally gated on
+        // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
+        // here so it is gated by `analysis_pdb` rather than running by the fail-open
+        // default.
+        "pdb" => arch.analysis_pdb,
         _ => true,
     }
 }
@@ -932,6 +954,26 @@ fn commit_analysis_output(
                     .set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
             }
         }
+    }
+
+    // 1b. Extra read-only address ranges a pass discovered (`out.readonly`) — e.g.
+    //     the MSVC RTTI vftable slot arrays (`s1_rtti` R3). OR `Varnode::readonly`
+    //     over each `[first, last_open)` range in the symbol-table property map, the
+    //     same `symboltab->setPropertyRange(Varnode::readonly, *iter)` the loader's
+    //     section-derived read-only ranges use (bootstrap_program). With `option
+    //     readonly` on this lets a load of a vtable slot fold to its constant; the
+    //     ranges are additive and only ever WIDEN the read-only set. PE `.rdata` is
+    //     already read-only from its section flags, so this is belt-and-suspenders
+    //     there; it is load-bearing for any pass that marks a range the loader did
+    //     not. Empty on every default run (only the gated real-binary passes emit).
+    for &(first, last_open) in &out.readonly {
+        let begin = Address::new(Rc::clone(code_space), first);
+        let end = Address::new(Rc::clone(code_space), last_open);
+        prog.arch_mut().symboltab.set_property_range(
+            kuna_decomp::varnode::varnode_flags::readonly,
+            &begin,
+            &end,
+        );
     }
 
     // 2. Discovered entry points (stripped targets): name + add_function +

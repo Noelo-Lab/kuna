@@ -265,6 +265,26 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::s1_objc::ObjcMetadataPass));
     }
 
+    // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
+    // fingerprint (`{guid, age, path}`), locate the external `.pdb` (tier-1: the
+    // `kuna_pdb_path` env var, the s1_fid `kuna_fid_db` precedent), fingerprint-gate
+    // it (the supplied `.pdb`'s guid/age must match the PE's CodeView record — never
+    // apply a wrong/stale PDB, the FID full-hash-match discipline), and on a match
+    // walk the global symbols (S_PUB32/S_GPROC32) to RENAME each stripped FUN_*/sub_*
+    // function to its real name (`out.fid_names`, the label-gated rename) + emit the
+    // function symbol (`out.symbols`). The kuna analog of Ghidra's
+    // PdbUniversalAnalyzer (name-recovery half). PE-only: registered ONLY for
+    // `BinaryFormat::Pe`, so every non-PE binary's pass set is byte-identical to
+    // before (the gate is structural, and the pass ALSO self-gates on PE in `run`).
+    // DEFAULT-OFF: its facts are computed at load but committed only when `--option
+    // pdb on` (`engine.rs::analysis_pass_enabled` reads `arch.analysis_pdb`, default
+    // false) AND a fingerprint-matching `.pdb` is supplied via `kuna_pdb_path`, so a
+    // default run is byte-identical and bound to the real-PE path (the XML datatest
+    // oracle is untouched). Types/typed-locals/lines are the deferred PR-P2/P3.
+    if format == object::BinaryFormat::Pe {
+        passes.push(Box::new(crate::s1_pdb::PdbPass));
+    }
+
     passes
 }
 
@@ -578,16 +598,40 @@ mod tests {
     /// existed (the parity-safety contract).
     #[test]
     fn rtti_pass_is_pe_gated() {
-        // PE: the rtti pass is appended (last, after any compiler-specific extras).
+        // PE: the rtti pass is appended (after any compiler-specific extras; the
+        // `pdb` pass follows it, so rtti is no longer strictly last).
         let pe = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Pe));
         assert!(pe.contains(&"rtti"), "PE pass set must carry the rtti pass");
-        assert_eq!(pe.last(), Some(&"rtti"), "rtti is appended last");
         // Non-PE: never carried, for every format + compiler.
         for fmt in [object::BinaryFormat::Elf, object::BinaryFormat::MachO, object::BinaryFormat::Coff] {
             for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
                 assert!(
                     !ids(&passes_for(c, fmt)).contains(&"rtti"),
                     "{c:?}/{fmt:?} must not carry rtti"
+                );
+            }
+        }
+    }
+
+    /// The PE PDB pass (`pdb`) is registered ONLY on a PE image — never on a non-PE
+    /// one — so a non-PE pass set is byte-identical to before the pass existed (the
+    /// parity-safety contract). It is appended last (after the rtti pass).
+    #[test]
+    fn pdb_pass_is_pe_gated() {
+        // PE: the pdb pass is appended last (after the rtti pass).
+        let pe = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Pe));
+        assert!(pe.contains(&"pdb"), "PE pass set must carry the pdb pass");
+        assert_eq!(pe.last(), Some(&"pdb"), "pdb is appended last on a PE");
+        // A PE carries BOTH the rtti and pdb metadata passes (rtti then pdb).
+        let rtti_i = pe.iter().position(|&p| p == "rtti");
+        let pdb_i = pe.iter().position(|&p| p == "pdb");
+        assert!(rtti_i < pdb_i, "rtti precedes pdb on a PE");
+        // Non-PE: never carried, for every format + compiler.
+        for fmt in [object::BinaryFormat::Elf, object::BinaryFormat::MachO, object::BinaryFormat::Coff] {
+            for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
+                assert!(
+                    !ids(&passes_for(c, fmt)).contains(&"pdb"),
+                    "{c:?}/{fmt:?} must not carry pdb"
                 );
             }
         }

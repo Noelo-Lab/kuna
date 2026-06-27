@@ -19,6 +19,7 @@ real ELF parser.
 | `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only); entry discovery (`s1_entry`): `e_entry`=0x1160, `DT_INIT`=0x1000, `DT_FINI`=0x1464, INIT/FINI_ARRAY ptrs, `_start`→`main` idiom → 0x1405, `.eh_frame` FDE starts — `sub_1405` (main) decompiles without `--addr` |
 | `cpp_mangled_x86_64` | non-PIE x86-64 C++, not stripped | symbol demangling (`s1_demangle`): a defined `.symtab` C++ method `_ZN3foo3Bar3bazEi` must surface name-only as `foo::Bar::baz` |
 | `msvc_rtti_x64.exe` / `msvc_rtti_x86.exe` | linked Windows PE (PE32+/x86-64 and PE32/x86), polymorphic C++ (`Shape` base + `Box` derived, virtual method), source `msvc_rtti.cpp` | MSVC RTTI / vftable class-name recovery (`s1_rtti`, `--option rtti on`): the `CompleteObjectLocator` → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data` recovers `Box`/`Shape` + labels `Box::vftable` / `<Class>::RTTI_Type_Descriptor` / `Box::RTTI_Complete_Object_Locator`. Exercises BOTH the x64 IBO32 image-base-relative ref path (name offset 16) and the x86 raw-VA path (name offset 8). VMAs pinned below |
+| `pdb_prog.exe` + `pdb_prog.pdb` (+ `pdb_prog_mismatch.pdb`) | x86-64 Windows PE built `-g -gcodeview` with its matching `.pdb`, source `pdb_prog.c` | PE PDB metadata recovery (`s1_pdb`, `--option pdb on` + `kuna_pdb_path=<...>/pdb_prog.pdb`): a stripped `FUN_<addr>` → its real name `pdb_demo_compute` from the PDB `S_PUB32`/`S_GPROC32` stream, gated by the GUID/age fingerprint check. `pdb_prog_mismatch.pdb` (a different content-hash GUID) drives the negative gate (mismatch → no rename). VMA/GUID pinned below |
 | `cpp_noreturn_x86_64` | non-PIE x86-64 C++, not stripped (source `cpp_noreturn_x86_64.cpp`) | the **no-return × demangle cross-pass seam** (`s1_loader::noreturn` + `s1_demangle`): `.dynsym` carries the mangled no-return imports `_ZSt9terminatev` (demangled `std::terminate`) and `__cxa_throw`, both UND (`.dynsym` address 0) — their real FunctionSymbols are installed at the PLT stubs `_ZSt9terminatev@plt`=`0x401070`, `__cxa_throw@plt`=`0x4010a0`. The no-return scan emits those **stub addresses** under the raw names, so the commit resolves the *demangled* funcsym **by address** (`find_function_across_scopes`); a name lookup of the mangled string would miss. e2e: `fail()` (`_Z4failv`=`0x401196`, demangled `fail`) tail-calls `std::terminate()` → `void fail(void)` with the `Subroutine does not return` warning and no dead fall-through; `main`=`0x4011a3` |
 | `eh_lsda_x86_64` | non-PIE x86-64 C++ try/catch, **`.symtab` stripped** (source `eh_lsda_x86_64.cpp`) | `.eh_frame` LSDA landing-pad discovery (`s1_entry::EhFrameLsdaPass`, gated `--option eh_frame_full on`, the GccExceptionAnalyzer full `.gcc_except_table` markup): the `zPLR` CIE's `L` augmentation points each FDE at its LSDA in `.gcc_except_table` (`may_throw`@`0x40218c`, `guarded`@`0x402198`); the call-site tables decode to landing pads `0x4012bf` (may_throw cleanup), `0x4012e2` (guarded catch dispatch), `0x401352`/`0x401366` (guarded cleanup) — all `endbr64`, all **mid-function** (reached only by the unwinder, so NOT FDE pcBegins; the FDE-start oracle misses them). e2e (`verify_eh_frame_full`): with `--option eh_frame_full on`, `0x4012e2` registers as `sub_4012e2` and decompiles by name; default-off it is absent (discovery byte-identical to FDE-pcBegin only). FDE pcBegins (function starts): `may_throw`=`0x401256`, `guarded`=`0x4012d6`, `main`=`0x40137a` |
 | `dwarf_stripped_x86_64` | non-PIE x86-64, **`.symtab`/`.dynsym` FUNC names removed but `.debug_*` kept** | DWARF recovery (`s1_dwarf`): names + typed signatures of `add_values`/`compute`/`main` come **only** from `.debug_info` (the funcsym stream has none) |
@@ -449,12 +450,12 @@ docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc '
     $F/msvc_rtti.cpp -o $F/msvc_rtti_x86.exe'
 ```
 
-Pinned VMAs (from `x86_64-w64-mingw32-objdump -s -j .rdata/.data` + `-p` ImageBase):
+Pinned VMAs (from `x86_64-w64-mingw32-objdump -s -j .rdata/.data -d -j .text` + `-p` ImageBase):
 
-| | ImageBase | Box `TypeDescriptor` (RTTI0) | Shape `TypeDescriptor` | Box `CompleteObjectLocator` (RTTI4) | Box vftable |
-|---|---|---|---|---|---|
-| **x64** | `0x140000000` | `0x140003010` (`.?AUBox@@`) | `0x140003030` (`.?AVShape@@`/`.?AUShape@@`) | `0x140002020` | `0x140002010` |
-| **x86** | `0x400000` | `0x403010` (`.?AUBox@@`) | `0x403030` (`.?AUShape@@`) | `0x402010` | `0x40200c` |
+| | ImageBase | Box `TypeDescriptor` (RTTI0) | Shape `TypeDescriptor` | Box `CompleteObjectLocator` (RTTI4) | Box vftable | Box vftable slot 0 (`Box::area`) |
+|---|---|---|---|---|---|---|
+| **x64** | `0x140000000` | `0x140003010` (`.?AUBox@@`) | `0x140003030` (`.?AVShape@@`/`.?AUShape@@`) | `0x140002020` | `0x140002010` | `0x140001040` |
+| **x86** | `0x400000` | `0x403010` (`.?AUBox@@`) | `0x403030` (`.?AUShape@@`) | `0x402010` | `0x40200c` | `0x401030` |
 
 With `--option rtti on` the recovery labels the Box `TypeDescriptor`
 `Box::RTTI_Type_Descriptor`, the COL `Box::RTTI_Complete_Object_Locator`, the vftable
@@ -463,6 +464,18 @@ With `--option rtti on` the recovery labels the Box `TypeDescriptor`
 absent (the parity proof). The `.?A…@@` names demangle through the existing MSVC
 demangler via the Ghidra `RttiUtil` `??_R0…@8` wrap (clang renders `struct` classes
 as `.?AU…`; both `V`/`U` recover the bare name).
+
+**vftable discovery + virtual-method naming (R3).** Each recovered class's vftable is
+walked from its `Box::vftable` base (`VfTableModel.getVfTableCount`), bounding the slot
+array at the first NULL / non-`.text` slot. The Box vftable holds exactly one slot —
+`Box::area` (`return side*side;`, the pinned slot-0 target above: `0x140001040` x64 /
+`0x401030` x86) — which R3 names `Box::vftable_0` (a `SymKind::Function`) and marks the
+slot array read-only. The slots are **absolute VAs on both arches** (NOT the `IBO32`
+displacements the COL/RTTI inter-struct refs use): the x64 vftable cell at `0x140002010`
+holds the full 8-byte `0x140001040`, the x86 cell at `0x40200c` the 4-byte `0x401030`.
+`kuna-console/tests/verify_rtti.rs` asserts `Box::vftable_0` exists AND a function symbol
+resolves at the slot-0 target VA (the virtual dispatch now points at a named method),
+absent with `rtti off`.
 
 ## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
 
@@ -562,9 +575,52 @@ ImageBase `0x100000000` (PIE). The metadata chain the pass walks:
 `class_t Greeter`@`0x100003000`, `class_ro_t`@`0x100003098`,
 `method_list_t`@`0x10000066c`. With `--option objc on` the IMP renders
 `-[Greeter greet:]`; off, it is `sub_100000640`. x86-64, **no chained fixups**
-(the clang on this toolchain emits classic rebase pointers, like
-`macho_imports`) — the arm64 + `LC_DYLD_CHAINED_FIXUPS` slice is a deferred
-follow-on.
+(the clang on this toolchain emits classic `LC_DYLD_INFO_ONLY` rebase opcodes,
+like `macho_imports`) — so this slice is also the **no-op proof** for the
+chained-fixup resolver (the resolver yields an empty overlay here, and `read_ptr`
+reads raw section words exactly as before).
+
+### `macho_objc_arm64` — the chained-fixup + arm64 slice (PR-O0 + PR-O2)
+
+`macho_objc_arm64` (arm64, ~49 KB) is the **same `macho_objc.m` source** built for
+arm64 **with a real `LC_DYLD_CHAINED_FIXUPS`** — the prerequisite for arm64 ObjC.
+The only build-recipe change vs the x86-64 slice is the `-arch arm64` target and
+the **`-fixup_chains`** linker flag, which makes `ld64.lld` emit chained fixups
+(`LC_DYLD_CHAINED_FIXUPS` + `LC_DYLD_EXPORTS_TRIE`) instead of the classic
+`LC_DYLD_INFO_ONLY` rebase opcodes:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_objc.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_arm64 m.o
+```
+
+Confirm it carries the chained fixups: `llvm-otool -l macho_objc_arm64 | grep
+CHAINED` (or a load-command dump shows `LC_DYLD_CHAINED_FIXUPS dataoff=0xc000
+datasize=0x80`). ImageBase `0x100000000` (PIE), `DYLD_CHAINED_PTR_64` (format 2,
+4-byte stride). The metadata chain (read through the resolver): `__DATA_CONST,
+__objc_classlist[0]` (a chained-fixup slot resolving to) → `class_t`@`0x100008000`
+→ (`data & ~0x7`) `class_ro_t`@`0x100008098` → `.name`=`"Greeter"`, `.baseMethods`
+→ the small/relative `method_list_t`@`0x100000618` → selector `"greet:"`, types
+`"i20@0:8i16"`, **IMP**@`0x1000005f0`. **Pinned VMAs:** IMP@`0x1000005f0`,
+`class_t`@`0x100008000`, `class_ro_t`@`0x100008098`, classlist slot@`0x100004000`
+(raw word `0x0000000100008000`, resolves to `0x100008000`); `class_t.isa`
+slot@`0x100008000` (raw word `0x0020000100008028`, **resolves to `0x100008028`** —
+the raw word would be garbage without the resolver, since the `next=4` field leaks
+into the high bits). With `--option objc on` the IMP renders `-[Greeter greet:]`;
+off, it is `sub_1000005f0`.
+
+The resolver (PR-O0, `s1_loader/format/macho/chained.rs`) handles plain rebase
+(`DYLD_CHAINED_PTR_64`/`_64_OFFSET`) + arm64e auth-rebase
+(`DYLD_CHAINED_PTR_ARM64E`/`_USERLAND`, PAC bits stripped); **bind/import-ordinal
+chains are out of scope** (an external symbol's runtime address is unknown
+statically, so a bind slot is left unresolved — the consumer reads the raw word
+and falls back, never a wrong address). The container's in-tree `ld64.lld` emits a
+`DYLD_CHAINED_PTR_64` (format 2) arm64 fixture; the arm64e auth-rebase path is
+covered by the resolver's synthetic-bit-pattern unit tests
+(`decode_arm64e_auth_rebase_strips_pac` et al.) since the in-container linker does
+not emit an arm64e auth-fixup slice.
 
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
@@ -693,6 +749,50 @@ form), Age = `1`, PDBFileName = `pdb_min.pdb`. The GUID is content-hash-derived,
 **a rebuild produces a different GUID** — pin the checked-in binary's values as
 test consts (re-read with `llvm-readobj` if you ever rebuild it).
 
-All other fixtures are checked in well under 32 KB so the gates are hermetic and
-reproducible. **Pin load-bearing VMAs as test consts** (read via
-`objdump`/`readelf` at build time) — addresses shift across toolchains.
+## PE + matching PDB — the PDB-consuming pass (s1_pdb PR-P1)
+
+`pdb_prog.exe` (x86-64 PE, ~2.5 KB) **plus its matching `pdb_prog.pdb`** (~72 KB)
+is the end-to-end fixture for the PDB-consuming pass (`s1_pdb::PdbPass`, `--option
+pdb on`), the kuna analog of Ghidra's `PdbUniversalAnalyzer` — the **stripped
+`FUN_<addr>` → real name** recovery. When `clang -g -gcodeview` builds a PE,
+`lld-link` writes BOTH the RSDS CodeView record (into the PE) **and** the matching
+`.pdb` (the symbol+type streams). kuna's loader does not name functions from the
+COFF symbol table, so the uniquely-named `pdb_demo_compute` is a stripped
+`FUN_<addr>` *without* the `.pdb`; only the PDB `S_PUB32`/`S_GPROC32` stream
+recovers it. Built freestanding (own entry, no CRT) so it links on Linux without
+the MSVC CRT libs (`kuna-dev`):
+
+```bash
+# (run from a clean dir; /pdbaltpath keeps the recorded path a bare filename)
+F=decompiler/crates/kuna-analysis/tests/fixtures
+clang -target x86_64-pc-windows-msvc -g -gcodeview -fuse-ld=lld -nostdlib -O1 \
+      -Xlinker /entry:mainCRTStartup -Xlinker /subsystem:console \
+      -Xlinker /pdbaltpath:pdb_prog.pdb -Xlinker /debug \
+      $F/pdb_prog.c -o $F/pdb_prog.exe      # lld-link also emits pdb_prog.pdb
+```
+
+`pdb_prog.c` defines `pdb_demo_compute(int,int)` (the distinctively-named function
+the rename proves) + the freestanding entry `mainCRTStartup`. The fixture's pinned
+values (read with kuna's own `s1_pdb::codeview` extractor + the `pdb` crate — the
+`kuna-dev` image has no `llvm-readobj`):
+- **ImageBase** = `0x140000000`; **`pdb_demo_compute` VMA** = `0x140001000` (RVA
+  `0x1000`); `mainCRTStartup` VMA = `0x140001010`.
+- CodeView/PDB **GUID** = `A192EC48-382A-DFBA-4C4C-44205044422E`, **Age** = `1`,
+  PDBFileName = `pdb_prog.pdb` (the EXE record and the `.pdb`'s own
+  `pdb_information().guid/age` agree — the fingerprint gate passes).
+
+`pdb_prog_mismatch.pdb` (~72 KB, source `pdb_mismatch.c`, a *different* program so
+its content-hash GUID differs — `3395B1A2-F530-116C-4C4C-44205044422E`) is the
+**fingerprint-gate negative** fixture: supplied for `pdb_prog.exe`, its GUID does
+NOT match the EXE's CodeView record, so the pass rejects it (no rename). The
+matching `.exe` is not vendored (only the mismatched `.pdb` is needed). `verify_pdb.rs`
+proves both: matching `.pdb` → `pdb_demo_compute`; mismatch `.pdb` → still
+`FUN_*`. The GUID is content-hash-derived, so **a rebuild produces a different
+GUID** — re-read both with the `s1_pdb` extractor + `pdb` crate and re-pin if you
+rebuild.
+
+NB: a `.pdb` (MSF container) has a minimum multi-stream page-table overhead, so
+`pdb_prog.pdb` / `pdb_prog_mismatch.pdb` are ~72 KB each — the two PDBs are the only
+fixtures over 32 KB (a PDB cannot be made smaller). All other fixtures are under 32
+KB. **Pin load-bearing VMAs as test consts** (read via `objdump`/`readelf`/the
+`s1_pdb` extractor at build time) — addresses shift across toolchains.

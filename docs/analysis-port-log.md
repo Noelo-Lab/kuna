@@ -4914,3 +4914,254 @@ needed (no settable added — a clean, option-free merge).
 - **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_pdb`),
   `tests/fixtures/README.md` (the `pdb_min.exe` recipe + pinned record),
   `docs/analysis-port-log.md`.
+
+### Increment 60 — MSVC RTTI vftable discovery + virtual-method naming (s1_rtti R3)
+
+**The RTTI line's third increment (PR R3, per `docs/metadata-analyzers-design.md` §3.1
++ §5).** Increment 57 (R1+R2) recovered the C++ class names and labelled the metadata
+graph (`<Class>::RTTI_*`) + the vftable base (`<Class>::vftable`). R3 walks the vftable
+itself — the kuna analog of Ghidra's `VfTableModel.getVfTableCount` — so each virtual
+method is named and the virtual *dispatch* resolves to a named function. **NO new
+`--option`** (reuses the existing `rtti` flag): no catalog/count change.
+
+**The before/after, on the same polymorphic-C++ PEs (`tests/fixtures/msvc_rtti_x{64,86}.exe`,
+`Box : Shape` with a virtual `area()`):**
+
+```
+                                  the virtual dispatch / vtable slot
+--option rtti off (default)    →  the vtable is an unnamed DAT_<addr>; the virtual
+                                  call `(**(code **)*p)()` jumps to an unnamed slot.
+--option rtti on               →  Box::vftable labelled; its one slot named the
+                                  virtual-method function Box::vftable_0 (at the slot
+                                  target VA 0x140001040 x64 / 0x401030 x86 = Box::area),
+                                  the slot array marked read-only — so the virtual
+                                  dispatch now resolves to a NAMED method.
+```
+
+**The walk (port of `VfTableModel.getVfTableCount`, `s1_rtti/vftable.rs`):** from the
+`<Class>::vftable` base (already recovered in R1 from the COL's meta-pointer slot),
+read each pointer-width slot and bound the array at the first **NULL / non-`.text`**
+slot (a slot is a virtual-method entry only while it points into an executable
+section). For each surviving slot emit a `SymKind::Function` `SymFact` named
+`<Class>::vftable_<i>` (the MSVC metadata carries the class name but NOT per-method
+names — the slot index is the faithful disambiguator vs Ghidra's script-tier method
+demangling), and mark the slot array read-only (`out.readonly`).
+
+**The x64 vftable-slot subtlety (faithful to the design):** a vftable slot is an
+**absolute pointer-width VA on BOTH arches** — NOT the `IBO32` image-base displacement
+the COL/RTTI *inter-structure* refs use on x64. The walk reads each with
+`RefKind::read_ptr` (8 bytes x64 / 4 bytes x86), never `resolve_ref`. Verified against
+the real fixtures: the x64 cell at `0x140002010` holds the full 8-byte `0x140001040`,
+the x86 cell at `0x40200c` the 4-byte `0x401030` (`objdump -s -j .rdata -d -j .text`).
+
+**The `out.readonly` commit arm (newly load-bearing).** `out.readonly` was merged but
+never applied; `commit_analysis_output` grew a step-1b arm that ORs `Varnode::readonly`
+over each `[first, last_open)` range via `symboltab.set_property_range` (the same call
+the loader's section-derived ranges use). Belt-and-suspenders on PE `.rdata` (already
+read-only from its section flags), load-bearing for any pass that marks a range the
+loader did not. Empty on every default run (only the gated real-binary passes emit).
+
+**Module layout:** `kuna-analysis/src/s1_rtti/vftable.rs` (the `VfTableModel` port:
+`TextRanges` executable-section view + `walk_vftable` slot bounder + `VfTable`), wired
+into `s1_rtti/mod.rs` (`emit_vftable_methods` + the `TextRanges` build in `run`). A new
+`ConsoleProgram::function_named_at(vma)` accessor (resolves the FunctionSymbol at a code
+VA across scopes) is the verification seam for "the slot now points at a named method".
+
+**e2e (RAN, not skipped):** `kuna-console/tests/verify_rtti.rs` extended — with
+`--option rtti on` it asserts `Box::vftable_0` exists AND `function_named_at(slot-0
+target VA)` resolves to the named virtual method (the virtual dispatch is now named);
+with `rtti off` both are absent (default-off parity). The pinned slot-0 target VMAs
+(`0x140001040` x64 / `0x401030` x86 = `Box::area`) are read from
+`objdump -s -j .rdata -d -j .text` (`tests/fixtures/README.md`). Built the `.sla`
+(`make specs`) so the 4 tests run; all 4 pass. 3 new `vftable.rs` unit tests
+(null-boundary walk / reject-no-code-slot / one-slot table).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **235/235 PARITY OK**;
+`make rust-test` **green** incl. `verify_rtti` (4/4 ran) + the new vftable units.
+`kuna catalog --check` **OK** (no settable added — reuses the `rtti` flag).
+Default-off + real-binary-path-only ⇒ the parity oracles are structurally untouched.
+
+- **New:** `kuna-analysis/src/s1_rtti/vftable.rs` (the `VfTableModel` port + tests).
+- **Changed:** `kuna-analysis/src/s1_rtti/mod.rs` (`pub mod vftable`,
+  `emit_vftable_methods`, `TextRanges` in `run`), `kuna-console/src/engine.rs`
+  (`function_named_at` + the `out.readonly` commit arm), `kuna-console/tests/verify_rtti.rs`
+  (the R3 vftable assertions), `tests/fixtures/README.md` (the pinned slot-0 VMAs + R3
+  note), `docs/analysis-port-log.md`.
+
+### Increment 61 — Mach-O chained-fixup resolver + arm64 Objective-C (s1_objc O0+O2)
+
+**THE arm64 HEADLINE.** Extends the x86-64 ObjC pass (Increment 58) to arm64 by
+landing the **`LC_DYLD_CHAINED_FIXUPS` resolver** (design §5 PR-O0) it was waiting
+on, plus the ObjC **type-encoding decoder** + **ivar labels** (PR-O2). A modern
+arm64 Mach-O does not store real pointers in its `__DATA_CONST`/`__DATA` slots —
+each is a packed *chained-fixup entry* — so without the resolver `__objc_classlist`
+dereferences to garbage. With it, the SAME ObjC walk names the IMP `-[Greeter
+greet:]` on arm64. **No new `--option`** — this reuses `objc`; the resolver is
+additive loader infra (no option).
+
+**The before/after, on a (locally-)stripped arm64 Objective-C Mach-O with REAL
+chained fixups (`tests/fixtures/macho_objc_arm64`):**
+
+```
+                          symbol @ 0x1000005f0    rendered body
+--option objc off (default) →  sub_1000005f0      int4 sub_1000005f0(...) { return a2 * 3 + 7; }
+--option objc on            →  -[Greeter greet:]  int4 -[Greeter greet:](...) { return a2 * 3 + 7; }
+```
+
+Naming this IMP proves the whole chain: the resolver rebased the
+`__objc_classlist[0]` slot (raw word `0x0000000100008000` → `class_t`@`0x100008000`)
+and the `class_t.isa` slot (raw word `0x0020000100008028`, whose `next=4` field
+leaks into the high bits → **resolves to `0x100008028`**, garbage without the
+resolver), and the arm64 walk then reached `Greeter`/`greet:`/IMP@`0x1000005f0`.
+
+**The resolver (`s1_loader/format/macho/chained.rs`, PR-O0).** Parses
+`LC_DYLD_CHAINED_FIXUPS` (header → `starts_in_image` → `starts_in_segment` → per-page
+chains) and produces a flat **VMA → resolved-pointer** overlay that
+`MachoImage::read_ptr` consults first (`with_fixups`). Handles:
+- **Plain rebase** — `DYLD_CHAINED_PTR_64` (2, target = unslid vmaddr),
+  `DYLD_CHAINED_PTR_64_OFFSET` (6, target = imagebase + offset), and
+  `DYLD_CHAINED_PTR_ARM64E` (1) non-auth (43-bit vmaddr) +
+  `_USERLAND`/`_USERLAND24` (12/15, imagebase + offset). Strides: 4-byte for the
+  `_64` formats, 8-byte for the arm64e formats.
+- **arm64e auth-rebase** — the PAC/diversity/addrDiv/key bits are stripped and the
+  32-bit image-base-relative target rebased (`imagebase + target`).
+- **Bind / import-ordinal chains: OUT OF SCOPE** (design §3.2) — an external
+  symbol's runtime address is unknown statically, so a bind slot is left
+  unresolved (the consumer reads the raw word and falls back, never a wrong
+  address). The chain head VMA is computed from the **mach_header** (`imagebase +
+  segment_offset + page*page_size + page_start`), matching dyld's
+  `forEachFixupChainSegment` (segment_offset is image-base-relative, not
+  per-segment).
+
+**The type-encoding decoder (`s1_objc/encoding.rs`, PR-O2).** Maps an ObjC method
+type encoding to a `PrototypePieces`: `i20@0:8i16` → `int -[Greeter greet:](id
+self, SEL _cmd, int n)` — `@`→`id` (objc_object*), `:`→`SEL`, `#`→`Class`, the
+primitive codes (`c i s l q f d B v * ^T`), with `{...}`/`[...]` name-level-opaque
+(the `s1_dwarf` MVP posture) and protocol qualifiers + trailing frame-offsets
+skipped. Not a demangler (selectors are ASCII). Also emits `<Class>::ivar` Data
+labels from `class_ro_t.ivars` (`ivar_list_t` walk) — inert on the root-class
+fixture (no ivars), exercised by unit tests.
+
+**The fixture.** `macho_objc_arm64` is the **same `macho_objc.m` source** built
+`-arch arm64 ... -fixup_chains` (the one flag that makes the container's in-tree
+`ld64.lld` emit `LC_DYLD_CHAINED_FIXUPS` + `LC_DYLD_EXPORTS_TRIE` instead of the
+classic `LC_DYLD_INFO_ONLY` rebase opcodes — confirmed: `LC_DYLD_CHAINED_FIXUPS
+dataoff=0xc000 datasize=0x80`, `DYLD_CHAINED_PTR_64` format 2). So the resolver IS
+exercised by a real chained-fixup binary (no hand-assembly / vendored-slice
+fallback needed). The in-container linker does not emit an arm64e *auth*-fixup
+slice, so the auth-rebase path is covered by the resolver's synthetic-bit-pattern
+unit tests.
+
+**Parity / no-op safety (the CAUTION).** The resolver runs in the Mach-O LOAD path
+but is a **strict no-op on a non-chained-fixup Mach-O**: a classic
+`LC_DYLD_INFO`/`LC_DYLD_INFO_ONLY` image (every existing x86-64 `macho_objc` /
+`macho_imports` fixture) yields an EMPTY overlay, so `read_ptr` reads raw section
+words exactly as before — a dedicated unit test
+(`resolver_is_noop_on_non_chained_fixup_macho`) asserts the overlay is empty AND
+that `read_ptr` is byte-identical with/without the (empty) overlay on both
+fixtures. The ObjC pass stays default-off + real-binary-path only, so the XML
+oracles are structurally untouched.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK
+(235/235)**; `make rust-test` **green** incl. `verify_objc` (3 tests: x86-64 +
+the new arm64 chained-fixup e2e + the off-baseline, all ran), the resolver unit
+tests (8 in `macho::chained`), the arm64 walk + no-op tests (in `s1_objc`), and the
+type-encoding decoder tests. No `kuna catalog --check` needed (no settable added —
+reuses `objc`).
+
+- **New:** `kuna-analysis/src/s1_loader/format/macho/chained.rs` (the resolver +
+  tests), `kuna-analysis/src/s1_objc/encoding.rs` (the type-encoding decoder +
+  tests), `tests/fixtures/macho_objc_arm64` (the real chained-fixup arm64 fixture).
+- **Changed:** `kuna-analysis/src/s1_loader/format/macho.rs` (moved to a `macho/`
+  module dir; `pub mod chained` + re-export), `s1_objc/sections.rs`
+  (`with_fixups` + overlay-aware `read_ptr`), `s1_objc/mod.rs` (resolve fixups,
+  emit prototypes + ivar labels, arm64 e2e tests), `s1_objc/classt.rs` (the
+  `ivar_list_t` walk), `kuna-console/tests/verify_objc.rs` (parameterized over the
+  x86-64 + arm64 fixtures), `tests/fixtures/README.md` (the arm64 fixture recipe +
+  pinned VMAs), `docs/analysis-port-log.md`.
+
+### Increment 62 — PDB PR-P1: .pdb-consuming pass, stripped FUN_* -> real names (s1_pdb, gated --option pdb)
+
+**THE HEADLINE.** PR-P0 (Increment 59) extracted the PE's CodeView *fingerprint*;
+this PR consumes the external `.pdb` it points at and delivers the DWARF-for-Windows
+payoff at the **name level**: a stripped `FUN_<addr>` → its real source name
+(`pdb_demo_compute`, and on a real Windows EXE `WinMain`/`main`/…). The kuna analog
+of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer; the MS-DIA
+`PdbAnalyzer` is Windows-native FFI and is never ported). PDB is the lone
+**external-file** case in the metadata tier — the PE carries only the fingerprint —
+so it follows the **`s1_fid` external-artifact precedent** (default-off, externally
+gated, *rename*-emitting), not the in-image `s1_rtti`/`s1_objc` shape.
+
+**The `pdb` crate (the one new dep).** Ghidra hand-rolls `pdb2/pdbreader` (~196 type
++ ~280 symbol classes — the MSF/TPI/IPI/DBI parsers); kuna substitutes the mature
+`pdb` crate (MIT/Apache, Firefox symbolication / `pdb-addr2line`) **exactly as it
+substituted `gimli` for DWARF, `object` for BFD, `msvc-demangler` for the MSVC
+demangler** — `pdb = "0.8"` in the workspace `[workspace.dependencies]` (next to
+`object`/`gimli`), `pdb.workspace = true` in `kuna-analysis`. Documented as
+**LOSS-252** in `docs/rust-port/losses.md`.
+
+**The pass (`s1_pdb::PdbPass`, gate id `pdb`).** On a PE: (1) `extract_codeview` for
+the PE's `{guid, age, path}`; (2) **tier-1 locate** — the `.pdb` path from the
+`kuna_pdb_path` env var (the exact `s1_fid` `kuna_fid_db` precedent — keeps the
+catalog to ONE new on|off settable, the `.pdb` source off the `--option` surface);
+(3) open via the `pdb` crate + **the fingerprint gate** (`locate::fingerprint_ok`:
+the `.pdb`'s `pdb_information().guid/age` must match the CodeView record — a
+MISMATCH/ABSENT `.pdb` → empty output, the FID full-hash-match discipline of never
+applying wrong external knowledge); (4) on a match, walk the global symbol stream
+(`S_PUB32` publics + `S_GPROC32` procedures, `walk::walk_functions`), resolve each
+`segment:offset → RVA + ImageBase → VMA`, and emit a function **rename** via
+`out.fid_names` (the label-gated `FUN_*`/`sub_*` placeholder rename, the FID
+precedent) + `out.symbols` (so the function exists for the rename to bind even when
+reached only through the PDB). NAME-level only: types/typed-locals/lines are the
+deferred PR-P2/P3 (the same name-level-first posture `s1_dwarf` took).
+
+**Gating (the `fid`/`rtti`/`objc` clone, full wiring).** Default-OFF: `passes.rs`
+registers `PdbPass` behind a `BinaryFormat::Pe` gate (and the pass self-gates on PE
+in `run`); `engine.rs::analysis_pass_enabled` `"pdb" => arch.analysis_pdb`;
+`architecture.rs` `analysis_pdb` field/default-false/reset/`on_off!` arm;
+`options.rs` `KUNA_OPTION_NAMES += "pdb"`; a `[[settable]] pdb` row in `stages.toml`
+cloned from the fid/objc row (`values="on|off"`, `default="off"`, `stage="S1"`,
+`substage="external-refinement"`, `strength="HARD"`, `change_kind="analysis-enablement"`).
+
+**Settable count 67 → 68.** Updated everywhere: `kuna_stages` `settable_count_is_68`
++ `kuna_num_settables`/`SETTABLE_TABLE.len`, the comma-count (`},\n` × 67), the
+`fixture_has_all_68_settables` + `"option": ` × 68 in `catalog_bytecompat`, the
+`pdb → PASS_GATES` suppressed-set arm (no codegen `live_value`; `with_live` stays
+28), `kuna-catalog.xml` #5/#9 `max`=69, the regenerated `stage_catalog.json` fixture
++ `docs/assertions.md`. `kuna catalog --check` → **OK**.
+
+**The fixture + e2e (the headline, the two-state proof).** `tests/fixtures/pdb_prog.exe`
+(x86-64 PE, `-g -gcodeview`) **with its matching `pdb_prog.pdb`**, built in `kuna-dev`
+(lld-link emits both + the RSDS record). `pdb_demo_compute`@`0x140001000` carries no
+leftover symbol kuna names from, so without the `.pdb` it is a stripped `FUN_*`.
+`pdb_prog_mismatch.pdb` (a different program → a different content-hash GUID
+`3395B1A2-…`) drives the negative gate. `kuna-console/tests/verify_pdb.rs`:
+- `--option pdb off` → `0x140001000` is a `FUN_*`/`sub_*` placeholder (proves the
+  name is NOT a leftover symbol);
+- `--option pdb on` + `kuna_pdb_path=…/pdb_prog.pdb` → it is **`pdb_demo_compute`**
+  (the PDB rename, GUID/age `A192EC48-…`/1 matched);
+- `--option pdb on` + the guid-MISMATCH `.pdb` → **still `FUN_*`** (the fingerprint
+  gate rejected the stale PDB). The test runs on the real-PE path (not skipped when
+  `.sla` is built).
+
+**Parity:** default-off + PE-format-gated + inert without a fingerprint-matching
+`.pdb` ⇒ the XML datatest path never reaches it; the oracles are byte-identical by
+construction.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. `verify_pdb` + the new `s1_pdb::{locate,walk}` units;
+`kuna catalog --check` **OK**.
+
+- **New:** `kuna-analysis/src/s1_pdb/{locate,walk}.rs` (tier-1 locate + fingerprint
+  gate + the S_PUB32/S_GPROC32 walk), `tests/fixtures/pdb_prog.{c,exe,pdb}` +
+  `pdb_prog_mismatch.pdb` + `pdb_mismatch.c`, `kuna-console/tests/verify_pdb.rs`.
+- **Changed:** `decompiler/Cargo.toml` + `kuna-analysis/Cargo.toml` (the `pdb` dep),
+  `kuna-analysis/src/s1_pdb/mod.rs` (the `PdbPass`), `passes.rs` (the PE-gated
+  registration + the `pdb_pass_is_pe_gated` test), `architecture.rs` (`analysis_pdb`
+  field/reset/`on_off!`), `engine.rs` (`analysis_pass_enabled` arm), `options.rs`
+  (`KUNA_OPTION_NAMES`), `stages.toml` (the `[[settable]] pdb` row), the count tests
+  (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`), `kuna-catalog.xml`,
+  `tests/fixtures/stage_catalog.json`, `docs/assertions.md`,
+  `docs/rust-port/losses.md` (LOSS-252), `tests/fixtures/README.md`,
+  `docs/analysis-port-log.md`.
+

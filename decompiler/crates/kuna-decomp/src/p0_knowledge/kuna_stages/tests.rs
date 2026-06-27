@@ -37,7 +37,7 @@ fn surface_count_is_98() {
 }
 
 #[test]
-fn settable_count_is_67() {
+fn settable_count_is_68() {
     // 32 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -127,9 +127,15 @@ fn settable_count_is_67() {
     // output-changing, so every ELF/XML parity gate is byte-identical.
     // +1 for `objc`, the Mach-O Objective-C metadata recovery pass — renames an IMP
     // function `-[Class sel]`/`+[Class sel]` from the `__objc_*` metadata
-    // (ObjcTypeMetadataAnalyzer), Mach-O-only, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 67);
-    assert_eq!(SETTABLE_TABLE.len(), 67);
+    // (ObjcTypeMetadataAnalyzer), Mach-O-only, default-off opt-in.
+    // +1 for `pdb`, the PE PDB metadata recovery pass — renames a stripped FUN_*/sub_*
+    // function to its real name from the external `.pdb` (PdbUniversalAnalyzer): read
+    // the PE CodeView fingerprint, locate the `.pdb` (the `kuna_pdb_path` env var,
+    // the s1_fid `kuna_fid_db` precedent), fingerprint-gate it (guid/age must match —
+    // never apply a wrong/stale PDB), then walk S_PUB32/S_GPROC32. PE-only,
+    // default-off opt-in, inert without a fingerprint-matching `.pdb`.)
+    assert_eq!(kuna_num_settables(), 68);
+    assert_eq!(SETTABLE_TABLE.len(), 68);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -308,7 +314,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_36() {
+fn option_values_live_value_present_for_28_suppressed_for_37() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -364,6 +370,10 @@ fn option_values_live_value_present_for_28_suppressed_for_36() {
         // no codegen live reader (read console-side via kuna_live_value), like the
         // gates around it. Default-off, Mach-O-only.
         "objc",
+        // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
+        // live reader (read console-side via kuna_live_value), like the gates around
+        // it. Default-off, PE-only, externally `.pdb`-gated.
+        "pdb",
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
         "i386_pie_plt",
@@ -469,15 +479,15 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 67 rows: 66 trailing commas (the last, macho-arm64e, has none;
+    // 68 rows: 67 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, ifelseflatten's,
     // crossjumprevert's, taildup's, and dedupitetail's S8 rows, eh_frame_full's S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
-    // row, rtti's S1 row, dwarf_lines' S1 row, and the `objc` Mach-O Objective-C S1
-    // row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 66);
+    // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
+    // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 67);
 }
 
 #[test]
