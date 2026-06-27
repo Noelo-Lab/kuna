@@ -575,6 +575,35 @@ the identical bodies + their build recipes):
   `--option funcstart_patterns on`. Pinned VMAs (read from the un-stripped build's
   `nm`): `widget`=`0x401130`, `ext`=`0x401170`, `main`=`0x401020`.
 
+## PE CodeView / PDB debug record (s1_pdb PR-P0)
+
+`pdb_min.exe` (x86-64 PE, ~2.5 KB) is a **PE carrying a CodeView/RSDS debug
+record** for the PDB CodeView extractor gate
+(`kuna-analysis::s1_pdb::codeview::tests::extract_pdb_min_exe_rsds_record`). When
+`clang -gcodeview` builds a PE, `lld-link` writes an RSDS record (PDB GUID + age)
+plus the `.pdb` path into the PE's `IMAGE_DIRECTORY_ENTRY_DEBUG` directory — the
+fingerprint a later PDB-consuming pass uses to find + gate the external `.pdb`.
+This fixture carries only that *record*; the matching `.pdb` is **not** needed for
+PR-P0 (it lands with the PR-P1 pass). Built freestanding (own entry, no CRT) so it
+links with `clang`/`lld-link` on Linux without the MSVC CRT libs (`kuna-dev`):
+
+```bash
+# (run from a clean dir; /pdbaltpath keeps the recorded path a bare filename)
+clang -target x86_64-pc-windows-msvc -g -gcodeview -fuse-ld=lld -nostdlib \
+      -Xlinker /entry:mainCRTStartup -Xlinker /subsystem:console \
+      -Xlinker /pdbaltpath:pdb_min.pdb \
+      pdb_min.c -o pdb_min.exe   # then discard the emitted pdb_min.pdb
+```
+
+`pdb_min.c` = `int add(int a,int b){return a+b;} int mainCRTStartup(void){return add(2,3);}`
+(`mainCRTStartup` is the freestanding entry, so no CRT/`main` is needed). The RSDS
+record, confirmed via `llvm-readobj --coff-debug-directory pdb_min.exe`:
+GUID (raw 16 bytes) = `63 39 AC 61 48 FF 24 90 4C 4C 44 20 50 44 42 2E`
+(canonical text `61AC3963-FF48-9024-4C4C-44205044422E`, the Microsoft mixed-endian
+form), Age = `1`, PDBFileName = `pdb_min.pdb`. The GUID is content-hash-derived, so
+**a rebuild produces a different GUID** — pin the checked-in binary's values as
+test consts (re-read with `llvm-readobj` if you ever rebuild it).
+
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
 `objdump`/`readelf` at build time) — addresses shift across toolchains.
