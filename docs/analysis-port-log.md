@@ -4773,3 +4773,53 @@ regenerated catalog tests; `kuna catalog --check` **catalog OK**.
   `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 66 → 67),
   `tests/fixtures/README.md` (the `msvc_rtti` entry + VMAs),
   `docs/assertions.md` (regen), `docs/analysis-port-log.md`.
+
+### Increment 59 — PDB PR-P0: PE CodeView debug-record extractor (RSDS/NB10)
+
+**THE FOUNDATION.** This is the first PR of the PDB metadata tier (analyzer 3 of the
+PE/Mach-O deep-metadata frontier). PDB is **Windows' DWARF** — function names, full
+types, typed locals, source lines — but unlike DWARF the debug info lives in an
+*external* `.pdb` file; the PE itself carries only a tiny CodeView *fingerprint* (a
+GUID/signature + age + the `.pdb` path) in its `IMAGE_DIRECTORY_ENTRY_DEBUG`
+directory. PR-P0 ports the extraction of that fingerprint — Ghidra's
+`PdbInfoCodeView` (NB10) + `PdbInfoDotNet` (RSDS),
+`Ghidra/Features/Base/.../format/pdb/PdbInfo{CodeView,DotNet}.java`. The
+`.pdb`-consuming `AnalysisPass` + the `pdb` crate are the NEXT PR (PR-P1).
+
+**What it ships.** A pure extractor `kuna_analysis::s1_pdb::codeview::extract_codeview(bytes) -> Option<CodeViewInfo>`:
+
+- Branches on `FileKind` (PE32/PE32+), parses the typed `PeFile32`/`PeFile64` (the
+  same shape as `s1_loader::pe_iat`), walks the debug data directory, finds the
+  first `IMAGE_DEBUG_TYPE_CODEVIEW` entry, reads its payload at
+  `pointer_to_raw_data` (file offset), and decodes the record.
+- **RSDS** (`PdbInfoDotNet`): `RSDS` magic, `guid:[u8;16]`, `age:u32`, `pdb_path`.
+- **NB10** (`PdbInfoCodeView`): `NB10` magic, `offset:u32` (skipped), `signature:u32`,
+  `age:u32`, `pdb_path`. Field order matches Ghidra's `read()` byte-for-byte.
+- `CodeViewInfo::guid_string()` renders the canonical Microsoft mixed-endian text
+  GUID (`{u32 LE, u16 LE, u16 LE, [u8;8]}`) for the PR-P1 gate to log.
+- Totally infallible: a non-PE, no debug directory, no CodeView entry, an unknown
+  magic, or a truncated record all yield `None` — never a panic, never an error.
+
+**The fixture + the extracted record.** `tests/fixtures/pdb_min.exe` (~2.5 KB) is a
+freestanding x86-64 PE built `clang -target x86_64-pc-windows-msvc -g -gcodeview
+-fuse-ld=lld` so `lld-link` emits a real RSDS record. The in-source test
+`extract_pdb_min_exe_rsds_record` pulls the exact `{guid, age, pdb_path}` that
+`llvm-readobj --coff-debug-directory pdb_min.exe` reports:
+GUID (raw) = `63 39 AC 61 48 FF 24 90 4C 4C 44 20 50 44 42 2E`
+(text `61AC3963-FF48-9024-4C4C-44205044422E`), Age = `1`, PDB = `pdb_min.pdb`.
+
+**Parity:** a *pure extractor* — no analysis pass, no `--option`/settable, no `pdb`
+crate. It is never called on any pipeline path, so the 675/158 oracles are
+structurally untouched (the same posture as the rest of the metadata tier, here
+even stronger: there is not even a default-off pass to run).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. the new `s1_pdb::codeview` tests (5 tests — 4 unit
++ the `pdb_min.exe` fixture e2e, ran, not skipped). No `kuna catalog --check`
+needed (no settable added — a clean, option-free merge).
+
+- **New:** `kuna-analysis/src/s1_pdb/mod.rs` + `s1_pdb/codeview.rs` (the extractor +
+  tests), `tests/fixtures/pdb_min.exe` + `pdb_min.c` (the RSDS fixture).
+- **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_pdb`),
+  `tests/fixtures/README.md` (the `pdb_min.exe` recipe + pinned record),
+  `docs/analysis-port-log.md`.
