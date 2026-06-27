@@ -292,9 +292,71 @@ fn strip_legacy_rust_hash(name: &str) -> String {
     name.to_string()
 }
 
+/// Recover the **C++ class name** carried by an MSVC RTTI `TypeDescriptor` (RTTI0)
+/// mangled type-info string, or `None` if `typeinfo` is not a recognized `.?A…@@`
+/// type-info name.
+///
+/// MSVC's RTTI0 `TypeDescriptor` stores its class as a *type-info* mangled string,
+/// `.?A<kind><name>@@` (`kind` = `V` class / `U` struct / `T` union / `W` enum) —
+/// e.g. `.?AVShape@@`, `.?AUBox@@`, `.?AVInner@ns@@`, `.?AV?$Vec@H@@`. This is NOT
+/// a symbol name and the `?`-symbol arm of [`demangle_name`] does not handle it (it
+/// would yield the raw `AVShape`/`AUBox` with the type-code prefix attached). The
+/// faithful recovery — Ghidra's `RttiUtil`/`MicrosoftDemangler` recipe — is to wrap
+/// the type-info string in the RTTI0 descriptor symbol form `??_R0<name>@8` and
+/// demangle *that*, which the MSVC scheme renders as
+/// `<qualified-class>::`RTTI Type Descriptor'`; the class name is the prefix.
+///
+/// Reuses the **same** [`msvc_demangler`] crate the MSVC arm of [`demangle_name`]
+/// already drives (no new demangler dependency); `NO_MS_KEYWORDS | NO_CLASS_TYPE`
+/// drop the leading `class`/`struct` keyword so the result is the bare qualified
+/// name (`ns::Inner`, `Vec<int>`). The recovered name is reduced through
+/// [`strip_bracket_groups`] for the same name-only `::`-scope-splitter contract the
+/// rest of this module enforces (a templated class like `Vec<int>` → `Vec`).
+///
+/// Returns `None` for any string that does not demangle to the
+/// `…::`RTTI Type Descriptor'` shape — never panics.
+pub fn demangle_rtti_class_name(typeinfo: &str) -> Option<String> {
+    // RTTI0 type-info names carry a leading `.`; the wrapped symbol form does not.
+    let core = typeinfo.strip_prefix('.').unwrap_or(typeinfo);
+    if !core.starts_with("?A") {
+        return None;
+    }
+    let wrapped = format!("??_R0{core}@8");
+    let flags = msvc_demangler::DemangleFlags::NAME_ONLY
+        | msvc_demangler::DemangleFlags::NO_MS_KEYWORDS
+        | msvc_demangler::DemangleFlags::NO_CLASS_TYPE;
+    let d = msvc_demangler::demangle(&wrapped, flags).ok()?;
+    // `d` is `<qualified-class>::`RTTI Type Descriptor'`; take the class prefix.
+    let class = d.strip_suffix("::`RTTI Type Descriptor'")?;
+    let reduced = strip_bracket_groups(class);
+    if reduced.is_empty() {
+        None
+    } else {
+        Some(reduced)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rtti_class_name_msvc_typeinfo() {
+        // The RTTI0 `.?A<kind><name>@@` type-info forms recover their bare class
+        // name (the Ghidra RttiUtil recipe), kind-agnostic (V class / U struct).
+        assert_eq!(demangle_rtti_class_name(".?AVShape@@").as_deref(), Some("Shape"));
+        assert_eq!(demangle_rtti_class_name(".?AUBox@@").as_deref(), Some("Box"));
+        // A namespaced class keeps its `::` qualification (the scope splitter nests it).
+        assert_eq!(demangle_rtti_class_name(".?AVInner@ns@@").as_deref(), Some("ns::Inner"));
+        // A templated class is reduced to the bare name (the name-only contract).
+        assert_eq!(demangle_rtti_class_name(".?AV?$Vec@H@@").as_deref(), Some("Vec"));
+        // The leading `.` is optional (some readers strip it before calling).
+        assert_eq!(demangle_rtti_class_name("?AVShape@@").as_deref(), Some("Shape"));
+        // Non-type-info strings are rejected (no panic, no junk name).
+        assert_eq!(demangle_rtti_class_name("Shape"), None);
+        assert_eq!(demangle_rtti_class_name(".?AB"), None);
+        assert_eq!(demangle_rtti_class_name(""), None);
+    }
 
     #[test]
     fn name_only_nested_itanium() {

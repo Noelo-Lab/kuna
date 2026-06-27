@@ -61,7 +61,10 @@ fn read_fixture(name: &str) -> Vec<u8> {
 }
 
 fn pass_ids(compiler: Compiler) -> Vec<&'static str> {
-    passes_for(compiler).iter().map(|p| p.id()).collect()
+    // These assertions cover the *compiler*-gated pass set (gopclntab/noreturn_known),
+    // independent of the loader format; a non-PE format (`Elf`) keeps them unaffected
+    // by the PE-only `rtti` pass gate.
+    passes_for(compiler, object::BinaryFormat::Elf).iter().map(|p| p.id()).collect()
 }
 
 /// PE: a MinGW PE detects as `Gcc` via its `.rdata` `GCC:` records.

@@ -62,5 +62,6 @@ pub mod s1_noreturn_propagate;
 pub mod s1_aif;
 pub mod s1_pclntab;
 pub mod s1_fid;
+pub mod s1_rtti;
 pub mod s1_pdb;
 pub mod listing;
