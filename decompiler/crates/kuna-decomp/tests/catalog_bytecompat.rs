@@ -76,7 +76,7 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_66_settables() {
+fn fixture_has_all_67_settables() {
     // One `"option":` per settable row: 37 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
@@ -129,8 +129,11 @@ fn fixture_has_all_66_settables() {
     // RTTI3/2/1 -> RTTI0 graph in `.rdata`/`.data`, demangle each `.?A...@@` class
     // name, and emit `<Class>::vftable` / `<Class>::RTTI_*` labels (Box/Shape) —
     // PE-only, default-off, output-changing, so every ELF/XML parity gate is
-    // byte-identical.)
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 66);
+    // byte-identical.
+    // +1 for the `objc` Mach-O Objective-C metadata recovery gate (rename an IMP
+    // function `-[Class sel]`/`+[Class sel]` from the `__objc_*` metadata,
+    // ObjcTypeMetadataAnalyzer; Mach-O-only, default-off).)
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 67);
 }
 
 #[test]

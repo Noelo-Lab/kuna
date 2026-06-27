@@ -37,7 +37,7 @@ fn surface_count_is_98() {
 }
 
 #[test]
-fn settable_count_is_66() {
+fn settable_count_is_67() {
     // 32 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
@@ -124,9 +124,12 @@ fn settable_count_is_66() {
     // CompleteObjectLocator -> RTTI3/2/1 -> RTTI0 graph in `.rdata`/`.data`,
     // demangle each `.?A...@@` class name, and emit `<Class>::vftable` /
     // `<Class>::RTTI_*` labels (Box/Shape) — PE-only, default-off opt-in,
-    // output-changing, so every ELF/XML parity gate is byte-identical.)
-    assert_eq!(kuna_num_settables(), 66);
-    assert_eq!(SETTABLE_TABLE.len(), 66);
+    // output-changing, so every ELF/XML parity gate is byte-identical.
+    // +1 for `objc`, the Mach-O Objective-C metadata recovery pass — renames an IMP
+    // function `-[Class sel]`/`+[Class sel]` from the `__objc_*` metadata
+    // (ObjcTypeMetadataAnalyzer), Mach-O-only, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 67);
+    assert_eq!(SETTABLE_TABLE.len(), 67);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -357,6 +360,10 @@ fn option_values_live_value_present_for_28_suppressed_for_36() {
         "rtti",
         "aif",
         "gopclntab",
+        // (kuna) Mach-O Objective-C metadata recovery — an analysis-pass gate with
+        // no codegen live reader (read console-side via kuna_live_value), like the
+        // gates around it. Default-off, Mach-O-only.
+        "objc",
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
         "i386_pie_plt",
@@ -462,15 +469,15 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 66 rows: 65 trailing commas (the last, macho-arm64e, has none;
+    // 67 rows: 66 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, ifelseflatten's,
     // crossjumprevert's, taildup's, and dedupitetail's S8 rows, eh_frame_full's S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
-    // row, rtti's S1 row, and dwarf_lines' S1 row sit mid-table, so they do not move
-    // the tail).
-    assert_eq!(json.matches("},\n").count(), 65);
+    // row, rtti's S1 row, dwarf_lines' S1 row, and the `objc` Mach-O Objective-C S1
+    // row sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 66);
 }
 
 #[test]

@@ -617,6 +617,19 @@ pub struct Architecture {
     /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_gopclntab: bool,
+    /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
+    /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
+    /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
+    /// metadata (classlist → class_t → class_ro_t → method_list_t) and rename each
+    /// IMP function `-[Class sel]` / `+[Class sel]` (the FID-precedent label-gated
+    /// rename of a `sub_*`/`FUN_*` placeholder), plus emit `_OBJC_CLASS_$_<name>`
+    /// and selector symbols. Selectors are plain ASCII — no demangler needed. The
+    /// pass is registered ONLY for a Mach-O binary, so on every non-Mach-O binary it
+    /// is structurally absent regardless of this flag. Default-off, output-changing
+    /// (it renames + adds symbols), real-binary-path only ⇒ every parity gate is
+    /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
+    /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
+    pub analysis_objc: bool,
     /// (kuna) Gate the Mach-O arm64e Apple-Silicon SLEIGH-spec selection
     /// (`macho-arm64e`); default **off** (design §3.7, opt-in until proven). When
     /// on, an arm64e Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
@@ -854,6 +867,7 @@ impl Architecture {
             analysis_rtti: false,
             analysis_aif: false,
             analysis_gopclntab: false,
+            analysis_objc: false,
             macho_arm64e: false,
 
             symboltab,
@@ -980,6 +994,7 @@ impl Architecture {
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
+        self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
 
@@ -1185,6 +1200,7 @@ impl Architecture {
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
             }
+            "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
             // (kuna) ET_REL relocatable-object (`.o`) loader capability. Unlike
             // every other kuna option this gates the *loader* (run at `load
             // file`, before any `option` command is processed), so a flag on this

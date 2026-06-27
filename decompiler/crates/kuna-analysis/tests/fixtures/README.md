@@ -522,6 +522,50 @@ The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, desig
   is a follow-up). Rebuild: copy `macho_imports_arm64` and overwrite the 4-byte
   cpusubtype at offset 8 with little-endian `2`.
 
+## Mach-O Objective-C metadata (the `s1_objc` headline)
+
+`macho_objc` (x86-64, ~16 KB) is a self-contained Objective-C Mach-O for the
+ObjC metadata-recovery gate (`kuna-console/tests/verify_objc.rs`, the kuna
+analog of Ghidra's `ObjcTypeMetadataAnalyzer`). Source `macho_objc.m` uses a
+**root class** (`objc_root_class`) so it needs **no macOS SDK / Foundation** —
+bare `clang` synthesizes the `__objc_*` metadata from the `@interface`/
+`@implementation` alone:
+
+```objc
+__attribute__((objc_root_class)) @interface Greeter @end
+@implementation Greeter
+- (int)greet:(int)n { return n*3+7; }
+@end
+int main(){ return 0; }
+```
+
+Built in the `kuna-dev` container (or on a host with `clang` + the rustup
+`ld64.lld`) with the **exact `macho_imports` recipe**, plus `-x` (strip local
+symbols) so the IMP `-[Greeter greet:]` has NO leftover symbol — only the
+`__objc_*` metadata recovers the name:
+
+```bash
+clang -target x86_64-apple-macos11 -fobjc-arc -O1 -c macho_objc.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch x86_64 -platform_version macos 11.0 11.0 \
+       -undefined dynamic_lookup -x -e _main -o macho_objc m.o
+```
+
+ImageBase `0x100000000` (PIE). The metadata chain the pass walks:
+`__DATA_CONST,__objc_classlist[0]` → `class_t`@`0x100003000` →
+(`data & ~0x7`) `class_ro_t`@`0x100003098` → `.name`=`"Greeter"`,
+`.baseMethods` → the **small/relative** `method_list_t`@`0x10000066c`
+(`entsizeAndFlags=0x8000000c`, count 1) → `method_t` selector `"greet:"`
+(via a selref), types `"i20@0:8i16"`, **IMP**@`0x100000640`. The metaclass
+(`isa`@`0x100003028`) has no `+` methods. **Pinned VMAs** (`llvm-objdump
+--macho -d` / a manual Mach-O parse): IMP `-[Greeter greet:]`@`0x100000640`,
+`class_t Greeter`@`0x100003000`, `class_ro_t`@`0x100003098`,
+`method_list_t`@`0x10000066c`. With `--option objc on` the IMP renders
+`-[Greeter greet:]`; off, it is `sub_100000640`. x86-64, **no chained fixups**
+(the clang on this toolchain emits classic rebase pointers, like
+`macho_imports`) — the arm64 + `LC_DYLD_CHAINED_FIXUPS` slice is a deferred
+follow-on.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate

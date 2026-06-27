@@ -27,8 +27,9 @@ use crate::s1_sourcelang::Compiler;
 /// MSVC-RTTI pass). The real bootstrap path uses [`passes_for`] with the detected
 /// compiler + the parsed object's format.
 pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
-    // A neutral non-PE format (`Elf`): the back-compat entry never carries the
-    // PE-only `rtti` pass, so the default set is byte-identical to before that pass.
+    // A neutral non-PE/non-Mach-O format (`Elf`): the back-compat entry never
+    // carries the PE-only `rtti` pass nor the Mach-O-only `objc` pass, so the
+    // default set is byte-identical to before those passes.
     passes_for(Compiler::Unknown, object::BinaryFormat::Elf)
 }
 
@@ -36,13 +37,16 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
 /// the parsed object's `format`. This is the kuna analog of Ghidra's
 /// source-language-gated AND loader-format-gated analyzer selection
 /// (`SourceLanguageAnalyzer` records the IDs; `RttiAnalyzer.canAnalyze` gates on a
-/// PE/Microsoft program). The two gates here are:
+/// PE/Microsoft program). The gates here are:
 /// - the no-return list widening (`noReturnFunctionConstraints.xml`'s
 ///   per-`<compiler>` arms: the `rustc` arm adds the Rust list, the `golang` arm
-///   adds the Go list, plus the Go-only `gopclntab` pass), and
+///   adds the Go list, plus the Go-only `gopclntab` pass),
 /// - the MSVC RTTI / vftable pass (`rtti`), registered ONLY on a PE image (the
 ///   Microsoft C++ ABI is a PE concern — `BinaryFormat::Pe`), so a non-PE binary's
-///   pass set is byte-identical to before this pass existed.
+///   pass set is byte-identical to before this pass existed, and
+/// - the Objective-C method-name pass (`objc`), registered ONLY on a Mach-O image
+///   (the Objective-C runtime metadata is a Mach-O concern — `BinaryFormat::MachO`),
+///   so a non-Mach-O binary's pass set is byte-identical to before this pass existed.
 pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<dyn AnalysisPass>> {
     let mut passes: Vec<Box<dyn AnalysisPass>> = vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
@@ -243,6 +247,22 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // and bound to the real-PE path (the XML datatest oracle is untouched).
     if format == object::BinaryFormat::Pe {
         passes.push(Box::new(crate::s1_rtti::RttiPass));
+    }
+
+    // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
+    // is a Mach-O, walk the `__objc_*` metadata (classlist → class_t → class_ro_t
+    // → method_list_t) and rename each IMP function `-[Class sel]` / `+[Class sel]`
+    // (the FID-precedent label-gated rename) + emit `_OBJC_CLASS_$_<name>` /
+    // selector symbols. The kuna analog of Ghidra's ObjcTypeMetadataAnalyzer
+    // (name-recovery half). Registered ONLY for a Mach-O binary, so every non-Mach-O
+    // target's pass set is byte-identical to before (the gate is structural, like
+    // the Go pclntab pass). Default-OFF (`--option objc`, the fid precedent): its
+    // facts are computed at LOAD but COMMITTED only when the `objc` gate is on
+    // (`engine.rs::analysis_pass_enabled`), so a default run is byte-identical.
+    // Selectors are plain ASCII — no demangler needed. x86-64, no-chained-fixups
+    // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is the deferred PR-O0/O2).
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::s1_objc::ObjcMetadataPass));
     }
 
     passes
@@ -505,8 +525,9 @@ mod tests {
         passes.iter().map(|p| p.id()).collect()
     }
 
-    /// The non-PE format every existing pass-set test uses (the `rtti` pass is
-    /// PE-gated, so a non-PE format gives the byte-identical pre-rtti set).
+    /// The neutral format every existing pass-set test uses: the `rtti` pass is
+    /// PE-gated and the `objc` pass is Mach-O-gated, so an ELF (neither) format
+    /// gives the byte-identical pre-rtti/pre-objc set.
     const NON_PE: object::BinaryFormat = object::BinaryFormat::Elf;
 
     /// `passes_for(Unknown, non-PE)` MUST be exactly today's `default_passes()`
@@ -569,6 +590,25 @@ mod tests {
                     "{c:?}/{fmt:?} must not carry rtti"
                 );
             }
+        }
+    }
+
+    /// The `objc` pass is registered ONLY for a Mach-O binary (the Mach-O-format
+    /// gate, like `gopclntab`'s Go gate): a Mach-O target carries it, every other
+    /// format's pass set is byte-identical to before.
+    #[test]
+    fn objc_pass_registered_only_for_macho() {
+        let elf = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Elf));
+        let macho = ids(&passes_for(Compiler::Clang, object::BinaryFormat::MachO));
+        assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
+        assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
+        // Mach-O adds exactly the one objc pass over the ELF set (the rtti pass is
+        // PE-only, so a Mach-O target adds only objc over the ELF base).
+        assert_eq!(macho.len(), elf.len() + 1, "Mach-O adds exactly the objc pass");
+        assert_eq!(macho.last(), Some(&"objc"), "objc is appended last");
+        // No non-Mach-O format carries it.
+        for f in [object::BinaryFormat::Elf, object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
+            assert!(!ids(&passes_for(Compiler::Clang, f)).contains(&"objc"), "{f:?} must not carry objc");
         }
     }
 
