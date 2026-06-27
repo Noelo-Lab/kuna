@@ -17,6 +17,8 @@
 <symbol space="ram" offset="0x402d29e0" name="iblockadd"/>
 </binaryimage>
 <script>
+  <!-- kuna: branchflip default-on (DIV-13); this upstream test pins the pre-branchflip (Ghidra polarity) rendering -->
+  <com>option branchflip off</com>
   <com>option readonly on</com>
   <com>set context TMode 1 [ram,0x402d29e0] [ram,0x402d29ef]</com>
   <com>parse line struct foo { char buf[0x14]; char w; char x; char y; char z; };</com>

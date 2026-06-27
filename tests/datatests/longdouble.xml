@@ -52,6 +52,8 @@ f30f1efadb6c2408d9c0db3fdc059e01
 <symbol space="ram" offset="0x101108" name="printf_chk"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailcalljump default-on (DIV-13); this upstream test pins the pre-tailcalljump rendering -->
+  <com>option tailcalljump off</com>
   <com>option readonly on</com>
   <com>map addr r0x101000 float10 ldarr[16]</com>
   <com>map fun r0x10014b printldfirst</com>

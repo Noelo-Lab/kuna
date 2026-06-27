@@ -1449,7 +1449,7 @@ live_false = "off"
 [[settable]]
 option = "tailcalljump"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S2"
 substage = "flow-classification"
@@ -1569,7 +1569,7 @@ live_false = "off"
 [[settable]]
 option = "switchmultipred"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = true
 stage = "S2"
 substage = "switch-model"
@@ -1803,7 +1803,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "regionlooprefine"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "goto-quality"
@@ -1820,7 +1820,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "gotoreduce"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "goto-quality"
@@ -1837,7 +1837,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "ifelseflatten"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "goto-quality"
@@ -1854,7 +1854,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "crossjumprevert"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "goto-quality"
@@ -1871,7 +1871,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "taildup"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "goto-quality"
@@ -1888,7 +1888,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "dedupitetail"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "goto-quality"
@@ -1905,7 +1905,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "foldcallret"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S6"
 substage = "explicit-marking"
@@ -1939,7 +1939,7 @@ change_kind = "opt-in-tool"
 [[settable]]
 option = "branchflip"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "readability-rewrites"

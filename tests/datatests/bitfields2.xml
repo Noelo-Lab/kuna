@@ -78,6 +78,8 @@
 <symbol space="ram" offset="0x100700" name="increment"/>
 </binaryimage>
 <script>
+  <!-- kuna: branchflip default-on (DIV-13); this upstream test pins the pre-branchflip (Ghidra polarity) rendering -->
+  <com>option branchflip off</com>
   <com>map fun r0x400000 receive</com>
   <com>parse line struct myfoo { bool fieldb:1; uint4 field3:3; int4 sfield4:4; char a; char b; char c; int4 d; uint4 field7:7; uint4 field5:5; uint4 field2:2;  };</com>
   <com>parse line extern void receive(myfoo *ptr);</com>

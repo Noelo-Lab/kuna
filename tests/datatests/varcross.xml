@@ -30,6 +30,8 @@ ffffff891db70f00005bc3
 <symbol space="ram" offset="0x100000e50" name="retval"/>
 </binaryimage>
 <script>
+  <!-- kuna: foldcallret default-on (DIV-13); this upstream test pins the pre-foldcallret rendering -->
+  <com>option foldcallret off</com>
   <com>map addr r0x101a00 uint4 glob1</com>
   <com>lo fu store_cross</com>
   <com>map addr s0xffffffffffffff98 uint4 local_array[20]</com>
