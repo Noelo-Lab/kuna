@@ -1,13 +1,17 @@
 //! s1_objc end-to-end gate — THE HEADLINE: recover an Objective-C method name in
-//! a (locally-)stripped x86-64 Mach-O from the `__objc_*` metadata.
+//! a (locally-)stripped Mach-O from the `__objc_*` metadata, on **x86-64 and
+//! arm64**.
 //!
-//! Fixture: `tests/fixtures/macho_objc` — a self-contained x86-64 Mach-O built
-//! from `macho_objc.m` (a root class `Greeter` with `-(int)greet:(int)n` →
-//! `n*3+7`). A **root class** (`objc_root_class`) needs no macOS SDK / Foundation,
-//! so it builds with bare `clang` + the rustup `ld64.lld` (the exact `macho_imports`
-//! recipe). Linked with `-x` (strip local symbols), so the IMP `-[Greeter greet:]`
-//! has NO leftover symbol — only the `__objc_*` metadata can recover the name. The
-//! build recipe + the pinned VMAs are in `tests/fixtures/README.md`.
+//! Fixtures: `tests/fixtures/macho_objc` (x86-64) + `tests/fixtures/macho_objc_arm64`
+//! (arm64) — both self-contained Mach-Os built from `macho_objc.m` (a root class
+//! `Greeter` with `-(int)greet:(int)n` → `n*3+7`). A **root class**
+//! (`objc_root_class`) needs no macOS SDK / Foundation, so they build with bare
+//! `clang` + the rustup `ld64.lld` (the exact `macho_imports` recipe). Linked with
+//! `-x` (strip local symbols), so the IMP `-[Greeter greet:]` has NO leftover
+//! symbol — only the `__objc_*` metadata can recover the name. The arm64 slice is
+//! built with `-fixup_chains`, so it carries a real `LC_DYLD_CHAINED_FIXUPS` —
+//! naming its IMP exercises the PR-O0 chained-fixup resolver + the PR-O2 arm64
+//! walk together. The build recipe + the pinned VMAs are in `tests/fixtures/README.md`.
 //!
 //! ## The two-state proof (the `verify_fid` posture)
 //!
@@ -40,12 +44,26 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::decompile_drive::build_and_follow_flow;
 
-/// The pinned VMA of the IMP for `-[Greeter greet:]` in the stripped fixture
+/// The pinned VMA of the IMP for `-[Greeter greet:]` in the x86-64 fixture
 /// (`__text` base; PIE imagebase `0x100000000`). See `tests/fixtures/README.md`.
 const GREET_IMP_VMA: u64 = 0x100000640;
 
+/// The pinned VMA of the IMP in the **arm64** (chained-fixup) fixture. Differs
+/// from the x86-64 VMA because the arm64 slice's `__text` layout differs.
+const GREET_IMP_VMA_ARM64: u64 = 0x1000005f0;
+
 /// The recovered Objective-C method name the pass installs.
 const GREET_NAME: &str = "-[Greeter greet:]";
+
+/// One fixture under test: the binary name + the IMP VMA to resolve.
+#[derive(Clone, Copy)]
+struct Fixture {
+    bin: &'static str,
+    imp_vma: u64,
+}
+
+const X86_64: Fixture = Fixture { bin: "macho_objc", imp_vma: GREET_IMP_VMA };
+const ARM64: Fixture = Fixture { bin: "macho_objc_arm64", imp_vma: GREET_IMP_VMA_ARM64 };
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -70,12 +88,12 @@ struct Run {
     body: String,
 }
 
-/// Resolve the symbol-table name at `GREET_IMP_VMA` (the engine placeholder, or the
-/// ObjC-installed method name).
-fn name_at_imp(prog: &ConsoleProgram) -> String {
+/// Resolve the symbol-table name at the fixture's IMP VMA (the engine placeholder,
+/// or the ObjC-installed method name).
+fn name_at_imp(prog: &ConsoleProgram, imp_vma: u64) -> String {
     let code_space =
         prog.arch().manage().get_default_code_space().expect("a default code space").clone();
-    let addr = Address::new(Rc::clone(&code_space), GREET_IMP_VMA);
+    let addr = Address::new(Rc::clone(&code_space), imp_vma);
     match prog.arch().symboltab.find_function_across_scopes(&addr) {
         Some((sid, _)) => prog.arch().symboltab.symbol(sid).get_name().to_string(),
         None => prog.arch().name_function(&addr),
@@ -83,11 +101,11 @@ fn name_at_imp(prog: &ConsoleProgram) -> String {
 }
 
 /// Bootstrap the fixture, (optionally) enable the ObjC pass, then resolve +
-/// decompile the IMP at `GREET_IMP_VMA`. `None` ⇒ specs-less skip.
-fn run(mode: Mode) -> Option<Run> {
+/// decompile the IMP at the fixture's IMP VMA. `None` ⇒ specs-less skip.
+fn run(fx: Fixture, mode: Mode) -> Option<Run> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = fixtures().join("macho_objc");
+    let bin = fixtures().join(fx.bin);
     assert!(bin.exists(), "missing fixture {bin:?}");
 
     let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
@@ -109,7 +127,7 @@ fn run(mode: Mode) -> Option<Run> {
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     // The rename ground truth: the symbol-table name at the IMP after the commit.
-    let name = name_at_imp(&prog);
+    let name = name_at_imp(&prog, fx.imp_vma);
 
     // Decompile the IMP and render its body through the full console pipeline
     // (`decompile` → `print C`, the same path `verify_macho_imports` drives), naming
@@ -122,7 +140,7 @@ fn run(mode: Mode) -> Option<Run> {
     // name/entry, so the rendered header carries the recovered name.
     let code_space =
         prog.arch().manage().get_default_code_space().expect("a default code space").clone();
-    let addr = Address::new(Rc::clone(&code_space), GREET_IMP_VMA);
+    let addr = Address::new(Rc::clone(&code_space), fx.imp_vma);
     let fd = {
         let arch = prog.arch_mut();
         build_and_follow_flow(arch, &name, addr, kuna_console::engine::UNBOUNDED_SIZE)
@@ -145,19 +163,19 @@ fn run(mode: Mode) -> Option<Run> {
     Some(Run { name, body: status.optr.clone() })
 }
 
-/// THE HEADLINE: the IMP at `0x100000640` in the stripped Mach-O is a generic
-/// `sub_<addr>` placeholder by default, and becomes `-[Greeter greet:]` only when
-/// the ObjC pass is on — recovered purely by the `__objc_*` metadata walk.
-#[test]
-fn objc_recovers_stripped_imp_method_name() {
-    let Some(off) = run(Mode::Off) else {
-        return; // specs-less skip
+/// The shared two-state proof for one fixture: the IMP is a generic `sub_<addr>`
+/// placeholder by default, and becomes `-[Greeter greet:]` only when the ObjC pass
+/// is on — recovered purely by the `__objc_*` metadata walk. Returns `false` on a
+/// specs-less skip.
+fn assert_two_state_recovery(fx: Fixture) -> bool {
+    let Some(off) = run(fx, Mode::Off) else {
+        return false; // specs-less skip
     };
-    let on = run(Mode::On).expect("second bootstrap succeeds if the first did");
+    let on = run(fx, Mode::On).expect("second bootstrap succeeds if the first did");
 
     eprintln!(
-        "==== 0x{GREET_IMP_VMA:x} symbol  OFF: {:>20}   ON: {:>20} ====",
-        off.name, on.name
+        "==== {} 0x{:x} symbol  OFF: {:>20}   ON: {:>20} ====",
+        fx.bin, fx.imp_vma, off.name, on.name
     );
     eprintln!("---- objc OFF (default) ----\n{}", off.body);
     eprintln!("---- objc ON ----\n{}", on.body);
@@ -166,43 +184,66 @@ fn objc_recovers_stripped_imp_method_name() {
     //    (`sub_*`/`FUN_*`/`func_*`) — NOT the ObjC method name (it was stripped).
     assert!(
         is_placeholder(&off.name),
-        "default (objc off) must leave 0x{GREET_IMP_VMA:x} a generic placeholder, got `{}`",
-        off.name
+        "[{}] default (objc off) must leave 0x{:x} a generic placeholder, got `{}`",
+        fx.bin, fx.imp_vma, off.name
     );
     assert_ne!(
         off.name, GREET_NAME,
-        "default (objc off) must NOT name the stripped IMP {GREET_NAME} (proves it is not a leftover symbol)"
+        "[{}] default (objc off) must NOT name the stripped IMP {GREET_NAME} (proves it is not a leftover symbol)",
+        fx.bin
     );
     assert!(
         !off.body.contains(GREET_NAME),
-        "default (objc off) body must not render {GREET_NAME}:\n{}",
-        off.body
+        "[{}] default (objc off) body must not render {GREET_NAME}:\n{}",
+        fx.bin, off.body
     );
 
     // 2. objc ON: the SAME function is now `-[Greeter greet:]`, recovered from the
     //    metadata — in the symbol table AND in the rendered body.
     assert_eq!(
         on.name, GREET_NAME,
-        "objc on must rename 0x{GREET_IMP_VMA:x} to {GREET_NAME} from the __objc_* metadata (symbol table)"
+        "[{}] objc on must rename 0x{:x} to {GREET_NAME} from the __objc_* metadata (symbol table)",
+        fx.bin, fx.imp_vma
     );
     assert!(
         on.body.contains(GREET_NAME),
-        "objc on body must render the recovered method name {GREET_NAME}:\n{}",
-        on.body
+        "[{}] objc on body must render the recovered method name {GREET_NAME}:\n{}",
+        fx.bin, on.body
     );
 
     // 3. The symbol name changed — the ObjC pass performed the rename.
     assert_ne!(
         off.name, on.name,
-        "objc must change the IMP's name (the placeholder -> {GREET_NAME} rename)"
+        "[{}] objc must change the IMP's name (the placeholder -> {GREET_NAME} rename)",
+        fx.bin
     );
+    true
+}
+
+/// THE HEADLINE (x86-64): the IMP at `0x100000640` in the stripped Mach-O is a
+/// generic `sub_<addr>` placeholder by default, and becomes `-[Greeter greet:]`
+/// only when the ObjC pass is on — recovered purely by the `__objc_*` metadata.
+#[test]
+fn objc_recovers_stripped_imp_method_name() {
+    assert_two_state_recovery(X86_64);
+}
+
+/// THE arm64 HEADLINE (PR-O0 + PR-O2): the SAME recovery on a **real
+/// `LC_DYLD_CHAINED_FIXUPS`** arm64 Mach-O. Proving `-[Greeter greet:]` here proves
+/// the chained-fixup resolver rebased the `__objc_classlist`/`class_t` slots (whose
+/// raw words are packed fixup entries) AND that the arm64 ObjC walk then names the
+/// IMP. Without the resolver the classlist would dereference to garbage and the
+/// name would never recover.
+#[test]
+fn objc_recovers_arm64_chained_fixup_imp_method_name() {
+    assert_two_state_recovery(ARM64);
 }
 
 /// The default path is byte-identical regardless of how it is reached: with NO objc
 /// flag the IMP stays a `sub_<addr>` placeholder (the pass never fires by default).
 #[test]
 fn objc_off_is_the_today_baseline() {
-    let Some(off) = run(Mode::Off) else {
+    let Some(off) = run(X86_64, Mode::Off) else {
         return; // specs-less skip
     };
     assert!(

@@ -562,9 +562,52 @@ ImageBase `0x100000000` (PIE). The metadata chain the pass walks:
 `class_t Greeter`@`0x100003000`, `class_ro_t`@`0x100003098`,
 `method_list_t`@`0x10000066c`. With `--option objc on` the IMP renders
 `-[Greeter greet:]`; off, it is `sub_100000640`. x86-64, **no chained fixups**
-(the clang on this toolchain emits classic rebase pointers, like
-`macho_imports`) — the arm64 + `LC_DYLD_CHAINED_FIXUPS` slice is a deferred
-follow-on.
+(the clang on this toolchain emits classic `LC_DYLD_INFO_ONLY` rebase opcodes,
+like `macho_imports`) — so this slice is also the **no-op proof** for the
+chained-fixup resolver (the resolver yields an empty overlay here, and `read_ptr`
+reads raw section words exactly as before).
+
+### `macho_objc_arm64` — the chained-fixup + arm64 slice (PR-O0 + PR-O2)
+
+`macho_objc_arm64` (arm64, ~49 KB) is the **same `macho_objc.m` source** built for
+arm64 **with a real `LC_DYLD_CHAINED_FIXUPS`** — the prerequisite for arm64 ObjC.
+The only build-recipe change vs the x86-64 slice is the `-arch arm64` target and
+the **`-fixup_chains`** linker flag, which makes `ld64.lld` emit chained fixups
+(`LC_DYLD_CHAINED_FIXUPS` + `LC_DYLD_EXPORTS_TRIE`) instead of the classic
+`LC_DYLD_INFO_ONLY` rebase opcodes:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_objc.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_arm64 m.o
+```
+
+Confirm it carries the chained fixups: `llvm-otool -l macho_objc_arm64 | grep
+CHAINED` (or a load-command dump shows `LC_DYLD_CHAINED_FIXUPS dataoff=0xc000
+datasize=0x80`). ImageBase `0x100000000` (PIE), `DYLD_CHAINED_PTR_64` (format 2,
+4-byte stride). The metadata chain (read through the resolver): `__DATA_CONST,
+__objc_classlist[0]` (a chained-fixup slot resolving to) → `class_t`@`0x100008000`
+→ (`data & ~0x7`) `class_ro_t`@`0x100008098` → `.name`=`"Greeter"`, `.baseMethods`
+→ the small/relative `method_list_t`@`0x100000618` → selector `"greet:"`, types
+`"i20@0:8i16"`, **IMP**@`0x1000005f0`. **Pinned VMAs:** IMP@`0x1000005f0`,
+`class_t`@`0x100008000`, `class_ro_t`@`0x100008098`, classlist slot@`0x100004000`
+(raw word `0x0000000100008000`, resolves to `0x100008000`); `class_t.isa`
+slot@`0x100008000` (raw word `0x0020000100008028`, **resolves to `0x100008028`** —
+the raw word would be garbage without the resolver, since the `next=4` field leaks
+into the high bits). With `--option objc on` the IMP renders `-[Greeter greet:]`;
+off, it is `sub_1000005f0`.
+
+The resolver (PR-O0, `s1_loader/format/macho/chained.rs`) handles plain rebase
+(`DYLD_CHAINED_PTR_64`/`_64_OFFSET`) + arm64e auth-rebase
+(`DYLD_CHAINED_PTR_ARM64E`/`_USERLAND`, PAC bits stripped); **bind/import-ordinal
+chains are out of scope** (an external symbol's runtime address is unknown
+statically, so a bind slot is left unresolved — the consumer reads the raw word
+and falls back, never a wrong address). The container's in-tree `ld64.lld` emits a
+`DYLD_CHAINED_PTR_64` (format 2) arm64 fixture; the arm64e auth-rebase path is
+covered by the resolver's synthetic-bit-pattern unit tests
+(`decode_arm64e_auth_rebase_strips_pac` et al.) since the in-container linker does
+not emit an arm64e auth-fixup slice.
 
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 

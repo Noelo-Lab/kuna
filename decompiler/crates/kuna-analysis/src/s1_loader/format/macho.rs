@@ -32,6 +32,12 @@ use kuna_sleigh::loadimage::section_flags;
 
 use super::{FormatKind, ImportSym, ObjectFormat};
 
+/// The `LC_DYLD_CHAINED_FIXUPS` resolver (design §5 PR-O0). Lives beside the
+/// Mach-O format impl because it is loader infra shared by the ObjC walk (and any
+/// future chained-fixup consumer), keyed off the same typed Mach-O re-parse.
+pub mod chained;
+pub use chained::{resolve_chained_fixups, ChainedFixups};
+
 /// The environment-variable gate for arm64e Apple-Silicon spec selection
 /// (design §3.7). Off (unset/empty) by default — an arm64e Mach-O then loads
 /// with the generic `AARCH64:LE:64:v8A` spec exactly as any arm64. Turned on by
