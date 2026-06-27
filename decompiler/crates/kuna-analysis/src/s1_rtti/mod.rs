@@ -23,6 +23,19 @@
 //! so the decompiled output labels the metadata graph and the class names
 //! (`Box`, `Shape`) surface as recovered symbols.
 //!
+//! # vftable discovery + virtual-method naming (R3)
+//!
+//! On top of the class-name recovery, the pass walks each recovered class's vftable
+//! ([`vftable::walk_vftable`], the port of `VfTableModel.getVfTableCount`): from the
+//! `<Class>::vftable` base it reads each pointer-width slot (an **absolute VA on both
+//! arches** — vftable slots are NOT the `IBO32` displacements the COL/RTTI graph uses),
+//! bounding the array at the first NULL / non-`.text` slot. For each surviving slot it
+//! emits a virtual-method **function** [`SymFact`] named `<Class>::vftable_<i>` (the
+//! MSVC metadata carries the class name but not per-method names, so the slot index is
+//! the disambiguator), and marks the slot array read-only ([`AnalysisOutput::readonly`]).
+//! So the virtual dispatch — `(**(code **)*plVar1)()`, an unnamed `DAT_*` vtable slot
+//! before — now resolves to a named function (`Box::vftable_0` = `Box::area`).
+//!
 //! # x86 vs x64 — the one place a port goes wrong (§3.1f)
 //!
 //! The inter-structure references are **raw VAs on x86** but **32-bit image-base
@@ -42,6 +55,7 @@
 
 pub mod models;
 pub mod refkind;
+pub mod vftable;
 
 use object::read::pe::{ImageNtHeaders, PeFile32, PeFile64};
 use object::read::Object;
@@ -54,6 +68,7 @@ use models::{
     ImageBytes, TypeDescriptor,
 };
 use refkind::{End, RefKind};
+use vftable::{walk_vftable, TextRanges};
 
 /// The byte distance from a reference-to-a-`TypeDescriptor` back to the
 /// `CompleteObjectLocator` that names it: the COL's `pTypeDescriptor` field is at
@@ -97,6 +112,9 @@ impl AnalysisPass for RttiPass {
             return out;
         };
         let img = ImageBytes::new(ctx.file);
+        // The executable-section ranges that bound a vftable's slot walk (R3): a slot
+        // is a virtual-method entry only while it points into one of these.
+        let text = TextRanges::new(ctx.file);
 
         // 1. Find the common `type_info` vftable: the pointer every RTTI0
         //    TypeDescriptor's leading `pVFTable` field shares. We discover it by
@@ -139,7 +157,7 @@ impl AnalysisPass for RttiPass {
                 if col.p_type_descriptor != td.addr {
                     continue;
                 }
-                emit_for_col(&img, &rk, &col, type_info_vftable, &mut out);
+                emit_for_col(&img, &rk, &text, &col, type_info_vftable, &mut out);
             }
         }
 
@@ -232,6 +250,7 @@ fn pick_common_type_info_vftable(descriptors: &[TypeDescriptor]) -> Option<u64> 
 fn emit_for_col(
     img: &ImageBytes,
     rk: &RefKind,
+    text: &TextRanges,
     col: &CompleteObjectLocator,
     type_info_vftable: u64,
     out: &mut AnalysisOutput,
@@ -263,12 +282,18 @@ fn emit_for_col(
         name: format!("{self_class}::RTTI_Complete_Object_Locator"),
         kind: SymKind::Data,
     });
-    if let Some(vftable) = recover_vftable(img, rk, col, type_info_vftable) {
+    if let Some(vftable_base) = recover_vftable(img, rk, col, type_info_vftable) {
         out.symbols.push(SymFact {
-            addr: vftable,
+            addr: vftable_base,
             name: format!("{self_class}::vftable"),
             kind: SymKind::Data,
         });
+        // R3: walk the vftable's slots, naming each virtual-method function
+        // `<Class>::vftable_<i>` and marking the slot array read-only. The virtual
+        // dispatch (an unnamed `DAT_*` slot before) now resolves to a named function.
+        if let Some(vt) = walk_vftable(img, rk, text, vftable_base) {
+            emit_vftable_methods(&self_class, &vt, rk, out);
+        }
     }
 
     // Each base class reachable through the hierarchy: label its TypeDescriptor.
@@ -292,6 +317,31 @@ fn emit_type_descriptor_label(class: &str, td_addr: u64, out: &mut AnalysisOutpu
         name: format!("{class}::RTTI_Type_Descriptor"),
         kind: SymKind::Data,
     });
+}
+
+/// Emit the per-slot virtual-method facts for a recovered vftable (R3):
+///   - one `Function` [`SymFact`] per slot, named `<Class>::vftable_<i>` at the slot's
+///     target VA (the virtual method the dispatch jumps to);
+///   - the slot array's VMA range as read-only ([`AnalysisOutput::readonly`]).
+/// The `SymFact{Function}` commit is an idempotent ADD (`find_function`-gated), so a
+/// slot target that already carries a real `.symtab`/import name keeps it; only a
+/// never-symboled virtual method takes the `<Class>::vftable_<i>` name.
+fn emit_vftable_methods(
+    class: &str,
+    vt: &vftable::VfTable,
+    rk: &RefKind,
+    out: &mut AnalysisOutput,
+) {
+    for (i, &fn_addr) in vt.slots.iter().enumerate() {
+        out.symbols.push(SymFact {
+            addr: fn_addr,
+            name: format!("{class}::vftable_{i}"),
+            kind: SymKind::Function,
+        });
+    }
+    // The slot array itself is constant data — mark it read-only so a load of a vtable
+    // slot can fold (the `out.readonly` commit arm ORs `Varnode::readonly` over it).
+    out.readonly.push(vt.range(rk));
 }
 
 /// Recover the class's vftable VMA from a validated COL: a vftable's `meta` slot
