@@ -582,6 +582,18 @@ pub struct Architecture {
     /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
     /// path only ⇒ every parity gate is byte-identical.
     pub analysis_fid: bool,
+    /// (kuna) Gate the MSVC RTTI / vftable recovery pass (`rtti`); default **off**.
+    /// The kuna analog of Ghidra's `RttiAnalyzer` (a Microsoft-PE analyzer): on a
+    /// Windows PE it parses the `CompleteObjectLocator` → RTTI3/2/1 → RTTI0 graph in
+    /// `.rdata`/`.data`, demangles each `.?A…@@` class name, and emits
+    /// `<Class>::vftable` / `<Class>::RTTI_Complete_Object_Locator` /
+    /// `<Class>::RTTI_Type_Descriptor` labels so the C++ class names (`Box`/`Shape`)
+    /// surface as recovered symbols and the virtual-dispatch metadata graph is
+    /// named. PE-only (registered in `passes_for` only for `BinaryFormat::Pe`, and
+    /// the pass also self-gates on PE in `run`), real-PE path only ⇒ every ELF/XML
+    /// parity gate is byte-identical. Default-off (output-changing: it adds named
+    /// data symbols); `--option rtti on` enables it.
+    pub analysis_rtti: bool,
     /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
@@ -839,6 +851,7 @@ impl Architecture {
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
             analysis_fid: false,
+            analysis_rtti: false,
             analysis_aif: false,
             analysis_gopclntab: false,
             macho_arm64e: false,
@@ -964,6 +977,7 @@ impl Architecture {
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
+        self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
@@ -1164,6 +1178,7 @@ impl Architecture {
                 on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
             }
             "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
+            "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
             "aif" => {
                 on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
             }

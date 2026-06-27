@@ -159,6 +159,25 @@ impl ConsoleProgram {
         self.symbols.iter().find(|s| s.name == name).map(|s| s.addr.clone())
     }
 
+    /// (kuna) Is a (possibly `::`-scoped) symbol of full name `full_name` present in
+    /// the engine symbol table? Resolves the namespace path (`Box::vftable` → scope
+    /// `Box`, basename `vftable`) read-only, then queries that scope by basename.
+    ///
+    /// Unlike [`Self::lookup_symbol`] (which only sees the console `register_symbol`
+    /// name→addr map, populated by the Function-symbol commit arm), this reaches the
+    /// `Database` directly, so it sees the **Data** symbols the analysis commit
+    /// installs via `add_symbol_mapped` (the RTTI `<Class>::vftable` /
+    /// `<Class>::RTTI_*` labels the `s1_rtti` pass emits). The verification seam for
+    /// the gated MSVC-RTTI recovery e2e.
+    pub fn has_symbol_named(&self, full_name: &str) -> bool {
+        let db = &self.arch().symboltab;
+        let (scope, base) = db.resolve_scope_from_symbol_name(full_name, "::", None);
+        match scope {
+            Some(s) => !db.query_by_name(s, &base).is_empty(),
+            None => false,
+        }
+    }
+
     /// Read the binaryimage's loader symbols into the symbol table as
     /// FunctionSymbols (C++ `Architecture::readLoaderSymbols`, `architecture.cc:347`,
     /// called by `testfunction.cc:160` / `consolemain.cc:104` after load).
@@ -393,6 +412,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "noreturn_disc" => arch.analysis_noreturn_disc,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
         "fid" => arch.analysis_fid,
+        // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
+        // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
+        // this gate is on. Default-OFF (output-changing: adds named data symbols),
+        // PE-only (the pass + its passes_for registration both self-gate on PE), so
+        // a default run / every non-PE binary commits nothing here.
+        "rtti" => arch.analysis_rtti,
         "aif" => arch.analysis_aif,
         "gopclntab" => arch.analysis_gopclntab,
         _ => true,

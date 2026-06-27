@@ -23,20 +23,27 @@ use crate::s1_sourcelang::Compiler;
 /// is: implement [`AnalysisPass`] in an `s1_*` module, then add it here.
 ///
 /// This is the back-compat entry: it builds the pass list as if the source
-/// language were [`Compiler::Unknown`] (no Rust widening). The real bootstrap
-/// path uses [`passes_for`] with the detected compiler.
+/// language were [`Compiler::Unknown`] (no Rust widening) on a non-PE image (no
+/// MSVC-RTTI pass). The real bootstrap path uses [`passes_for`] with the detected
+/// compiler + the parsed object's format.
 pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
-    passes_for(Compiler::Unknown)
+    // A neutral non-PE format (`Elf`): the back-compat entry never carries the
+    // PE-only `rtti` pass, so the default set is byte-identical to before that pass.
+    passes_for(Compiler::Unknown, object::BinaryFormat::Elf)
 }
 
-/// Build the program-prep pass list for a detected source-language
-/// [`Compiler`]. This is the kuna analog of Ghidra's source-language-gated
-/// analyzer selection (`SourceLanguageAnalyzer` records the IDs;
-/// language-specific analyzers gate on them). Today the only gate is the
-/// no-return list widening (`noReturnFunctionConstraints.xml`'s per-`<compiler>`
-/// arms: the `rustc` arm adds the Rust list, the `golang` arm adds the Go list);
-/// future Rust/Go-specific passes plug in here with one line.
-pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
+/// Build the program-prep pass list for a detected source-language [`Compiler`] and
+/// the parsed object's `format`. This is the kuna analog of Ghidra's
+/// source-language-gated AND loader-format-gated analyzer selection
+/// (`SourceLanguageAnalyzer` records the IDs; `RttiAnalyzer.canAnalyze` gates on a
+/// PE/Microsoft program). The two gates here are:
+/// - the no-return list widening (`noReturnFunctionConstraints.xml`'s
+///   per-`<compiler>` arms: the `rustc` arm adds the Rust list, the `golang` arm
+///   adds the Go list, plus the Go-only `gopclntab` pass), and
+/// - the MSVC RTTI / vftable pass (`rtti`), registered ONLY on a PE image (the
+///   Microsoft C++ ABI is a PE concern — `BinaryFormat::Pe`), so a non-PE binary's
+///   pass set is byte-identical to before this pass existed.
+pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<dyn AnalysisPass>> {
     let mut passes: Vec<Box<dyn AnalysisPass>> = vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
         // default-on `NoReturnFunctionAnalyzer`. For a Rust binary, also match the
@@ -221,6 +228,21 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
     // Go binary's `sub_<addr>` functions take the recovered name).
     if compiler.is_golang() {
         passes.push(Box::new(crate::s1_pclntab::GoPclntabPass));
+    }
+
+    // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
+    // CompleteObjectLocator → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data`, demangle
+    // each `.?A…@@` class name, and emit `<Class>::vftable` / `<Class>::RTTI_*`
+    // labels + the recovered class names (`Box`/`Shape`). The kuna analog of
+    // Ghidra's `RttiAnalyzer` (a Microsoft-PE analyzer). PE-only: registered ONLY
+    // for `BinaryFormat::Pe`, so every non-PE binary's pass set is byte-identical to
+    // before (the no-op is structural, not a runtime check — and the pass ALSO
+    // self-gates on PE in `run`). DEFAULT-OFF: its facts are computed at load but
+    // committed only when `--option rtti on` (`engine.rs::analysis_pass_enabled`
+    // reads `arch.analysis_rtti`, default false), so a default run is byte-identical
+    // and bound to the real-PE path (the XML datatest oracle is untouched).
+    if format == object::BinaryFormat::Pe {
+        passes.push(Box::new(crate::s1_rtti::RttiPass));
     }
 
     passes
@@ -433,7 +455,8 @@ pub fn run_default_analyses(
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
-    run_analyses(&ctx, &passes_for(compiler))
+    let format = file.format();
+    run_analyses(&ctx, &passes_for(compiler, format))
 }
 
 /// Like [`run_default_analyses`], but keep each pass's output keyed by its
@@ -466,7 +489,8 @@ pub fn run_default_analyses_per_pass(
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
-    passes_for(compiler)
+    let format = file.format();
+    passes_for(compiler, format)
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
         .collect()
@@ -481,12 +505,16 @@ mod tests {
         passes.iter().map(|p| p.id()).collect()
     }
 
-    /// `passes_for(Unknown)` MUST be exactly today's `default_passes()` contents
-    /// — the no-Rust default must never silently drop a pass (the guard the
+    /// The non-PE format every existing pass-set test uses (the `rtti` pass is
+    /// PE-gated, so a non-PE format gives the byte-identical pre-rtti set).
+    const NON_PE: object::BinaryFormat = object::BinaryFormat::Elf;
+
+    /// `passes_for(Unknown, non-PE)` MUST be exactly today's `default_passes()`
+    /// contents — the no-Rust default must never silently drop a pass (the guard the
     /// sourcelang brief calls for).
     #[test]
     fn unknown_matches_default_passes() {
-        assert_eq!(ids(&passes_for(Compiler::Unknown)), ids(&default_passes()));
+        assert_eq!(ids(&passes_for(Compiler::Unknown, NON_PE)), ids(&default_passes()));
         // Both must still carry the always-on analysis passes.
         let want = ["noreturn_known", "libproto"];
         for id in want {
@@ -503,9 +531,9 @@ mod tests {
     /// is byte-identical to the Gcc base.
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
-        let base = ids(&passes_for(Compiler::Gcc));
+        let base = ids(&passes_for(Compiler::Gcc, NON_PE));
         for c in [Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
-            assert_eq!(ids(&passes_for(c)), base, "{c:?} pass ids must match the base set");
+            assert_eq!(ids(&passes_for(c, NON_PE)), base, "{c:?} pass ids must match the base set");
         }
     }
 
@@ -513,14 +541,34 @@ mod tests {
     /// (the Go-only function-name recovery); no other compiler carries it.
     #[test]
     fn go_adds_only_gopclntab_pass() {
-        let base = ids(&passes_for(Compiler::Gcc));
-        let go = ids(&passes_for(Compiler::Go));
+        let base = ids(&passes_for(Compiler::Gcc, NON_PE));
+        let go = ids(&passes_for(Compiler::Go, NON_PE));
         assert_eq!(&go[..base.len()], &base[..], "Go set is the base set + extras");
         assert_eq!(go.last(), Some(&"gopclntab"), "Go appends the gopclntab pass");
         assert_eq!(go.len(), base.len() + 1, "Go adds exactly one pass");
         // No non-Go compiler carries the gopclntab pass.
         for c in [Compiler::Gcc, Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
-            assert!(!ids(&passes_for(c)).contains(&"gopclntab"), "{c:?} must not carry gopclntab");
+            assert!(!ids(&passes_for(c, NON_PE)).contains(&"gopclntab"), "{c:?} must not carry gopclntab");
+        }
+    }
+
+    /// The MSVC RTTI pass (`rtti`) is registered ONLY on a PE image — never on a
+    /// non-PE one — so a non-PE pass set is byte-identical to before the pass
+    /// existed (the parity-safety contract).
+    #[test]
+    fn rtti_pass_is_pe_gated() {
+        // PE: the rtti pass is appended (last, after any compiler-specific extras).
+        let pe = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Pe));
+        assert!(pe.contains(&"rtti"), "PE pass set must carry the rtti pass");
+        assert_eq!(pe.last(), Some(&"rtti"), "rtti is appended last");
+        // Non-PE: never carried, for every format + compiler.
+        for fmt in [object::BinaryFormat::Elf, object::BinaryFormat::MachO, object::BinaryFormat::Coff] {
+            for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
+                assert!(
+                    !ids(&passes_for(c, fmt)).contains(&"rtti"),
+                    "{c:?}/{fmt:?} must not carry rtti"
+                );
+            }
         }
     }
 
