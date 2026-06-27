@@ -40,6 +40,8 @@ c4205bc3e8bf0e000000000000000000
 <symbol space="ram" offset="0x101008" name="__stack_chk_fail"/>
 </binaryimage>
 <script>
+  <!-- kuna: stackguard default-on (DIV-14); this upstream test pins the pre-stackguard rendering (keeps the canary epilogue) -->
+  <com>option stackguard off</com>
   <com>option noreturn __stack_chk_fail</com>
   <com>parse line struct myfoo { int4 a; int2 b; int2 c; int4 d; };</com>
   <com>parse line struct otherfoo { int2 A; int2 B; uint4 C; };</com>

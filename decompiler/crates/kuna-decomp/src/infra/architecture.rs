@@ -922,7 +922,7 @@ impl Architecture {
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
-        self.noreturn_extern_calls = false; // (kuna) default-OFF opt-in: name-based extern no-return overlaps `noreturn_known`'s name match for defined/imported symbols (default-on would change PE/ELF `exit`-family handling under `noreturn_known off`); kept opt-in for the ET_REL `.o` undefined-extern case
+        self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
@@ -931,7 +931,7 @@ impl Architecture {
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
-        self.switch_shared_case = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
@@ -947,7 +947,7 @@ impl Architecture {
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-13 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
-        self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
@@ -989,7 +989,7 @@ impl Architecture {
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
-        self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
+        self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off

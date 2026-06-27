@@ -58,6 +58,8 @@ b5d3ffff00d5ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffff
 <symbol space="ram" offset="0x401000" name="main"/>
 </binaryimage>
 <script>
+  <!-- kuna: switchsharedcase is now default-on (DIV-14); pass 1 asserts the OFF (bug-reproduced) baseline, so turn it off here. Pass 2 re-enables it. -->
+  <com>option switchsharedcase off</com>
   <com>lo fu main</com>
   <com>decompile</com>
   <com>print C</com>

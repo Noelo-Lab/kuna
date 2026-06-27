@@ -1,6 +1,6 @@
 # kuna Progress Log
 
-## Session (2026-06-27) — default-on sweep: ten angr structuring/switch flags (DIV-14)
+## Session (2026-06-27) — default-on sweep: fourteen angr flags (DIV-14; 4 added in revision, 3 REMOVE CODE)
 
 User-directed "enable good flags by default" sweep (`feat/default-on-sweep`). Flipped **ten**
 previously default-off, angr-derived settables to **default-on** in one group:
@@ -39,6 +39,44 @@ the ten new default-on fields). Regenerated the byte-exact catalog fixture
 `off`→`on`; settable count unchanged at 65). `kuna catalog --check` OK. Documented as **DIV-14** in
 `docs/divergences.md`. Every datatest failure was exactly the mapping — no flag misbehaved or changed
 more datatests than expected.
+
+### Revision (2026-06-27) — four more flags default-on (3 of them REMOVE CODE)
+
+Extended the same sweep with **four more** previously default-off settables, flipped to **default-on**
+via the same three-place flip (`stages.toml` `default="on"` + `reset_defaults_internal` + the seam copy
+where one exists): `stackguard`, `noreturn_extern`, `noreturn_propagate`, `switchsharedcase`. DIV-14
+now covers **fourteen** flags. Three of the four **REMOVE CODE** from the emitted decompilation — the
+user asked this be visible to a downstream LLM, so each one's catalog `summary` is now prefixed
+`REMOVES CODE:` (surfaced by `kuna catalog --json`):
+- `stackguard` — "REMOVES CODE: strips the -fstack-protector canary epilogue (the
+  `if(canary!=*fs:0x28) __stack_chk_fail()` check) from the output."
+- `noreturn_extern` — "REMOVES CODE: marks a matched extern call no-return, so code after the call
+  (the fall-through) is dropped as unreachable."
+- `noreturn_propagate` — "REMOVES CODE: propagates no-return through the call graph, dropping
+  unreachable code after no-return calls."
+The fourth, `switchsharedcase`, recovers a loop-carried-guard PIC switch; its summary notes it is
+**slower on the functions whose switch it recovers** (kept on for quality).
+
+**Datatest opt-outs.** Only `stackguard` changes the corpus → one per-test opt-out, a single
+`<com>option stackguard off</com>` (with an XML comment) at the top of `tests/datatests/partialsplit.xml`'s
+`<script>` (Partial splitting #1/#2). `noreturn_extern`, `noreturn_propagate`, and `switchsharedcase`
+change **0** datatests (no datatest call resolves to a known no-return name; `noreturn_propagate` is
+Listing-gated and the XML path builds no Listing; no datatest has a loop-carried PIC switch).
+`docs/baseline.json` **UNTOUCHED** → `make test` PARITY OK 675/675.
+
+**Stage opt-outs.** Three `tests/stages/` testcases needed a pass-1 opt-out (the new flag fired on
+their default decompile): `switchsharedcase-b2sum.xml` (`switchsharedcase off`),
+`ghangr-incorrect-duplication-chcon-a0e113.xml` (`noreturn_extern off`, alongside the existing
+`noreturn_externmatch off` — both match the same name list via the same seam), and
+`ghangr-x8664-cvs-863633.xml` (`stackguard off`: the default-on canary strip changed the `0x3c` decl
+count). `docs/baseline-stages.json` untouched → `make test-stages` PARITY OK 235/235.
+
+**Gates (all green, no baseline re-pin):** `make test` PARITY OK 675/675, `make test-stages` PARITY OK
+235/235, `make rust-test` green (extended the `kuna_anchor_flags` unit test to assert the four new
+default-on fields — `strip_stack_guard`/`noreturn_extern_calls`/`analysis_noreturn_propagate`/
+`switch_shared_case`). Regenerated `tests/fixtures/stage_catalog.json` + `docs/assertions.md` (only the
+four `default` fields flip + the three `REMOVES CODE:` summaries + the `switchsharedcase` slowness note;
+settable count unchanged). `kuna catalog --check` OK.
 
 ## Session (2026-06-26) — loop-carried-guard jump tables (`option switchsharedcase`)
 

@@ -109,6 +109,14 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.dedup_ite_tail);
     assert!(arch.fold_call_returns);
     assert!(arch.branch_flip);
+    // (kuna) DIV-14 default-on sweep: 4 more flags default-on (3 of them REMOVE
+    // CODE — stackguard/noreturn_extern/noreturn_propagate). Per-test opt-out
+    // (stackguard on the 2 Partial-splitting datatests) keeps the corpora at
+    // parity; noreturn_propagate is Listing-gated so it is inert on every gate.
+    assert!(arch.strip_stack_guard); // stackguard (REMOVES CODE)
+    assert!(arch.noreturn_extern_calls); // noreturn_extern (REMOVES CODE)
+    assert!(arch.analysis_noreturn_propagate); // noreturn_propagate (REMOVES CODE, Listing-gated)
+    assert!(arch.switch_shared_case); // switchsharedcase
     // default-off (upstream byte-identical).
     assert!(!arch.return_single);
     assert!(!arch.v850_indirect_branch);
@@ -116,7 +124,6 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(!arch.switch_modulo_bound);
     assert!(!arch.unrolled_guard);
     assert!(!arch.stack_alias_deadstore);
-    assert!(!arch.strip_stack_guard);
 }
 
 #[test]
