@@ -4662,7 +4662,119 @@ ran — not skipped) and the regenerated catalog tests; `kuna catalog --check`
   `docs/assertions.md` (regen), `docs/rust-port/losses.md`,
   `tests/fixtures/fid/README.md`, `docs/analysis-port-log.md`.
 
-### Increment 57 — Mach-O Objective-C method-name recovery (s1_objc, gated --option objc, x86-64)
+### Increment 57 — MSVC RTTI class-name recovery (s1_rtti, gated --option rtti, x86+x64)
+
+**The PE/Mach-O deep-metadata frontier opens.** This is PR 1 of 3 (per the canonical
+`docs/metadata-analyzers-design.md`, landed alongside): the kuna analog of Ghidra's
+`RttiAnalyzer` (a Microsoft-PE analyzer). On a Windows PE built by MSVC (or
+`clang -target …-windows-msvc`), it recovers the C++ class names from the run-time
+type information graph — the one self-contained, highest-ROI metadata analyzer
+(richest seam reuse: the MSVC demangler is already wired).
+
+**The before/after, on a polymorphic-C++ PE (`tests/fixtures/msvc_rtti_x{64,86}.exe`,
+one base `Shape` + one derived `Box` with a virtual method):**
+
+```
+                                  symbol table / .rdata
+--option rtti off (default)    →  .rdata is raw bytes; the vtable is an unnamed
+                                  DAT_<addr>; no `Box`/`Shape` class names exist.
+--option rtti on               →  Box::RTTI_Type_Descriptor, Shape::RTTI_Type_Descriptor,
+                                  Box::RTTI_Complete_Object_Locator, Box::vftable —
+                                  so `Box` and `Shape` surface as recovered C++ classes.
+```
+
+**The walk (port of `RttiAnalyzer.added()`, entirely in the loaded image):** find the
+common `type_info` vftable (the pointer every RTTI0 `TypeDescriptor`'s leading field
+shares; ≥2 agreeing) → locate the `TypeDescriptor`s by scanning for the `.?A…@@`
+type-info name strings → byte-search the image for a reference to each
+`TypeDescriptor`, `−12` = the `CompleteObjectLocator` (COL) base → validate the
+COL→RTTI3 `ClassHierarchyDescriptor`→RTTI2 `BaseClassArray`→RTTI1
+`BaseClassDescriptor`→RTTI0 reachability chain → demangle each `.?A…@@` class name →
+emit the `<Class>::RTTI_Type_Descriptor` / `<Class>::RTTI_Complete_Object_Locator` /
+`<Class>::vftable` Data labels (the vftable is recovered from the COL's meta-pointer
+slot: `vftable = (slot holding the COL VA) + ptr_size`).
+
+**x86 vs x64 — the one place a port goes wrong (design §3.1f), isolated in
+`refkind.rs`:** the inter-structure references are **raw VAs on x86** but **32-bit
+image-base-relative displacements (`IBO32` = `image_base + disp32`) on x64**; the
+RTTI0 class-name string sits at TypeDescriptor offset **8 on x86 / 16 on x64**; the
+RTTI2 entries are 4 bytes on both (same width, different meaning); the COL
+meta-pointer before a vftable is a full pointer-width VA on both. `RefKind::new(is64,
+image_base, end)` owns all of it; the walk never branches on `is64` directly. Both
+arches verified against the real fixtures (`objdump -s -j .rdata`).
+
+**Demangling — ZERO new demangler code:** RTTI0 names are *type-info* mangled strings
+(`.?AVShape@@` / `.?AUBox@@` — clang renders a `struct` class as `.?AU`), which the
+`?`-symbol arm of `demangle_name` does not handle. The new
+`s1_demangle::demangle_rtti_class_name` reuses the **same** `msvc_demangler` crate
+already driving the MSVC arm: it wraps the type-info name as the RTTI0 descriptor
+symbol form `??_R0<name>@8` (the Ghidra `RttiUtil` recipe) and demangles *that* with
+`NO_MS_KEYWORDS | NO_CLASS_TYPE` → `<qualified-class>::`RTTI Type Descriptor'`; the
+class prefix is the name. Recovers `Box`, `Shape`, namespaced `ns::Inner`, and even
+templated `Vec<int>` → `Vec` (reduced via the existing `strip_bracket_groups`).
+
+**Module layout (the `s1_fid`/`s1_dwarf` gated-default-off precedent):**
+`kuna-analysis/src/s1_rtti/{mod.rs (RttiPass + the added()-style walk), models.rs
+(the RTTI0..4 + ImageBytes readers — ports of Rtti{0..4}Model/TypeDescriptorModel),
+refkind.rs (the x86/x64 dispatch)}`.
+
+**Gating + the format gate:** `RttiPass impl AnalysisPass { stage→S1; id→"rtti" }`.
+Registered in `passes_for` ONLY for `BinaryFormat::Pe` (the Microsoft C++ ABI is a PE
+concern — `passes_for` grew a `format` parameter, the loader-format analog of the
+existing `Compiler` gate; the pass ALSO self-gates on PE in `run`). Default-**OFF**
+(`--option rtti on`): the facts are computed at load but committed only when the
+`"rtti" => arch.analysis_rtti` gate is on (`engine.rs::analysis_pass_enabled`),
+output-changing (it adds named Data symbols). Option surface cloned from `fid`:
+`architecture.rs` field/default/reset/`set_kuna_option` arm, `options.rs`
+`KUNA_OPTION_NAMES`, `stages.toml` `[[settable]] rtti` block
+(`change_kind="analysis-enablement"`), settable count `65 → 66` (`stages.toml`,
+`kuna_stages/tests.rs` count + comment + `PASS_GATES` suppressed set — `rtti` has no
+`live_field`, like the other analysis gates, so `with_live` stays 28 —
+`catalog_bytecompat.rs` `fixture_has_all_66` + count), regenerated
+`tests/fixtures/stage_catalog.json` + `docs/assertions.md`. `kuna catalog --check`
+→ catalog OK.
+
+**The fixtures (the new `.rdata`-carrying-PE need):** the `msvc_mangled.obj` recipe
+already proved `clang -target …-windows-msvc` emits the real MSVC C++ ABI; a *linked*
+PE with a populated `.rdata` is the new need — supplied by `-fuse-ld=lld` (`lld-link`)
++ `-nostdlib` + a one-cell inline-asm stub for the CRT `type_info` vftable
+(`??_7type_info@@6B@`, the only CRT symbol the RTTI Type Descriptors reference), so
+the image links freestanding while keeping the genuine RTTI bytes. Both arches built
+in `kuna-dev` (no new packages — `clang` + `lld-link` ship in the image), vendored
+with the `.cpp` source + a README entry pinning the COL/RTTI0/vftable VMAs (from
+`x86_64-w64-mingw32-objdump`).
+
+**Parity:** real-PE-path-only + default-off ⇒ the XML datatest path never loads a PE
+and never runs the pass, so the 675/235 oracles are structurally untouched by
+construction.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **235/235 PARITY OK**
+(the KUNA-CATALOG #5/#9 `use_when`/`change_kind` `max` bound bumped 66 → 67 — the
+catalog `<script>` emits the full catalog + one `returnpair` single-row, so the count
+is settables+1, exactly as Increment 56 noted); `make rust-test` **green** incl. the
+new `verify_rtti` e2e (4 tests — x64+x86 × on/off — **ran, not skipped**) and the
+regenerated catalog tests; `kuna catalog --check` **catalog OK**.
+
+- **New:** `kuna-analysis/src/s1_rtti/{mod,models,refkind}.rs` (the pass),
+  `kuna-console/tests/verify_rtti.rs` (the x64+x86 on/off e2e),
+  `tests/fixtures/msvc_rtti{.cpp,_x64.exe,_x86.exe}` (vendored source + two linked PEs),
+  `docs/metadata-analyzers-design.md` (the canonical 3-analyzer design).
+- **Changed:** `kuna-analysis/src/s1_demangle/mod.rs` (`demangle_rtti_class_name`),
+  `kuna-analysis/src/passes.rs` (`passes_for` gains a `format` arg; PE-gated `rtti`
+  registration), `kuna-analysis/src/lib.rs` (`pub mod s1_rtti`),
+  `kuna-console/src/engine.rs` (`"rtti"` gate + `has_symbol_named` verification seam),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_rtti`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`"rtti"`),
+  `kuna-decomp/stages.toml` (`[[settable]] rtti`),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comment/PASS_GATES),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
+  `kuna-console/tests/verify_multiformat_sourcelang.rs` (`pass_ids` format arg),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 66 → 67),
+  `tests/fixtures/README.md` (the `msvc_rtti` entry + VMAs),
+  `docs/assertions.md` (regen), `docs/analysis-port-log.md`.
+
+### Increment 58 — Mach-O Objective-C method-name recovery (s1_objc, gated --option objc, x86-64)
 
 **THE HEADLINE.** A new default-off, Mach-O-format-gated analysis pass that walks
 the `__objc_*` Objective-C 2.0 metadata web and recovers method names — so a
@@ -4719,9 +4831,10 @@ symbol per selector.
   `on_off!(analysis_objc, …)` arm).
 - `options.rs` — `KUNA_OPTION_NAMES += "objc"`.
 - `stages.toml` — `[[settable]] objc` (cloned from the `fid` row: `on|off`,
-  default `off`, `S1`/`external-refinement`/`HARD`). Settable count **65 → 66**;
-  bumped `kuna_num_settables`/`SETTABLE_TABLE.len` (66), the `},\n`-comma count
-  (64 → 65), the catalog `"option":` count (65 → 66), `objc → PASS_GATES`
+  default `off`, `S1`/`external-refinement`/`HARD`). Settable count **66 → 67**
+  (landed after Increment 57's `rtti` row took the count to 66); bumped
+  `kuna_num_settables`/`SETTABLE_TABLE.len` (67), the `},\n`-comma count
+  (65 → 66), the catalog `"option":` count (66 → 67), `objc → PASS_GATES`
   (suppressed-set; `with_live` stays 28); regenerated `stage_catalog.json` +
   `docs/assertions.md`; `kuna catalog --check` → OK.
 
@@ -4746,8 +4859,58 @@ relative-selector base); chained-fixup (arm64 `LC_DYLD_CHAINED_FIXUPS`) deferred
   `kuna-decomp/src/p0_knowledge/options.rs` (`"objc"`),
   `kuna-decomp/stages.toml` (`[[settable]] objc`),
   `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comma/PASS_GATES),
-  `kuna-decomp/tests/catalog_bytecompat.rs` (count 65 → 66),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count 66 → 67),
   `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
-  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 66 → 67),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 67 → 68),
   `docs/assertions.md` (regen),
   `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 59 — PDB PR-P0: PE CodeView debug-record extractor (RSDS/NB10)
+
+**THE FOUNDATION.** This is the first PR of the PDB metadata tier (analyzer 3 of the
+PE/Mach-O deep-metadata frontier). PDB is **Windows' DWARF** — function names, full
+types, typed locals, source lines — but unlike DWARF the debug info lives in an
+*external* `.pdb` file; the PE itself carries only a tiny CodeView *fingerprint* (a
+GUID/signature + age + the `.pdb` path) in its `IMAGE_DIRECTORY_ENTRY_DEBUG`
+directory. PR-P0 ports the extraction of that fingerprint — Ghidra's
+`PdbInfoCodeView` (NB10) + `PdbInfoDotNet` (RSDS),
+`Ghidra/Features/Base/.../format/pdb/PdbInfo{CodeView,DotNet}.java`. The
+`.pdb`-consuming `AnalysisPass` + the `pdb` crate are the NEXT PR (PR-P1).
+
+**What it ships.** A pure extractor `kuna_analysis::s1_pdb::codeview::extract_codeview(bytes) -> Option<CodeViewInfo>`:
+
+- Branches on `FileKind` (PE32/PE32+), parses the typed `PeFile32`/`PeFile64` (the
+  same shape as `s1_loader::pe_iat`), walks the debug data directory, finds the
+  first `IMAGE_DEBUG_TYPE_CODEVIEW` entry, reads its payload at
+  `pointer_to_raw_data` (file offset), and decodes the record.
+- **RSDS** (`PdbInfoDotNet`): `RSDS` magic, `guid:[u8;16]`, `age:u32`, `pdb_path`.
+- **NB10** (`PdbInfoCodeView`): `NB10` magic, `offset:u32` (skipped), `signature:u32`,
+  `age:u32`, `pdb_path`. Field order matches Ghidra's `read()` byte-for-byte.
+- `CodeViewInfo::guid_string()` renders the canonical Microsoft mixed-endian text
+  GUID (`{u32 LE, u16 LE, u16 LE, [u8;8]}`) for the PR-P1 gate to log.
+- Totally infallible: a non-PE, no debug directory, no CodeView entry, an unknown
+  magic, or a truncated record all yield `None` — never a panic, never an error.
+
+**The fixture + the extracted record.** `tests/fixtures/pdb_min.exe` (~2.5 KB) is a
+freestanding x86-64 PE built `clang -target x86_64-pc-windows-msvc -g -gcodeview
+-fuse-ld=lld` so `lld-link` emits a real RSDS record. The in-source test
+`extract_pdb_min_exe_rsds_record` pulls the exact `{guid, age, pdb_path}` that
+`llvm-readobj --coff-debug-directory pdb_min.exe` reports:
+GUID (raw) = `63 39 AC 61 48 FF 24 90 4C 4C 44 20 50 44 42 2E`
+(text `61AC3963-FF48-9024-4C4C-44205044422E`), Age = `1`, PDB = `pdb_min.pdb`.
+
+**Parity:** a *pure extractor* — no analysis pass, no `--option`/settable, no `pdb`
+crate. It is never called on any pipeline path, so the 675/158 oracles are
+structurally untouched (the same posture as the rest of the metadata tier, here
+even stronger: there is not even a default-off pass to run).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. the new `s1_pdb::codeview` tests (5 tests — 4 unit
++ the `pdb_min.exe` fixture e2e, ran, not skipped). No `kuna catalog --check`
+needed (no settable added — a clean, option-free merge).
+
+- **New:** `kuna-analysis/src/s1_pdb/mod.rs` + `s1_pdb/codeview.rs` (the extractor +
+  tests), `tests/fixtures/pdb_min.exe` + `pdb_min.c` (the RSDS fixture).
+- **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_pdb`),
+  `tests/fixtures/README.md` (the `pdb_min.exe` recipe + pinned record),
+  `docs/analysis-port-log.md`.

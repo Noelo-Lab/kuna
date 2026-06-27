@@ -61,9 +61,10 @@ fn read_fixture(name: &str) -> Vec<u8> {
 }
 
 fn pass_ids(compiler: Compiler) -> Vec<&'static str> {
-    // These assertions key off the COMPILER gate (gopclntab/noreturn-list widening),
-    // not the format gate, so the historical ELF format is the right fixed input —
-    // the Mach-O-only `objc` pass is exercised by `verify_objc.rs`.
+    // These assertions cover the *compiler*-gated pass set (gopclntab/noreturn_known),
+    // independent of the loader format; the ELF format keeps them unaffected by both
+    // the PE-only `rtti` pass gate and the Mach-O-only `objc` pass gate (`objc` is
+    // exercised by `verify_objc.rs`, `rtti` by `verify_rtti.rs`).
     passes_for(compiler, object::BinaryFormat::Elf).iter().map(|p| p.id()).collect()
 }
 

@@ -76,7 +76,7 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_65_settables() {
+fn fixture_has_all_67_settables() {
     // One `"option":` per settable row: 37 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
@@ -124,10 +124,16 @@ fn fixture_has_all_65_settables() {
     // +1 for the `dedupitetail` angr structurer ITE region-dedup gate — the INVERSE
     // of the duplication passes, merging a duplicated if/else leaf prefix/suffix into
     // one copy.
+    // +1 for the `rtti` MSVC RTTI / vftable class-name recovery gate (the kuna analog
+    // of Ghidra's RttiAnalyzer): on a Windows PE, parse the CompleteObjectLocator ->
+    // RTTI3/2/1 -> RTTI0 graph in `.rdata`/`.data`, demangle each `.?A...@@` class
+    // name, and emit `<Class>::vftable` / `<Class>::RTTI_*` labels (Box/Shape) —
+    // PE-only, default-off, output-changing, so every ELF/XML parity gate is
+    // byte-identical.
     // +1 for the `objc` Mach-O Objective-C metadata recovery gate (rename an IMP
     // function `-[Class sel]`/`+[Class sel]` from the `__objc_*` metadata,
     // ObjcTypeMetadataAnalyzer; Mach-O-only, default-off).)
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 66);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 67);
 }
 
 #[test]

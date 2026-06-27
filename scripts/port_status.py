@@ -56,6 +56,10 @@ OUTCOMES = {
     "regionstructure":      ("infra",  85,   "Phoenix/SAILR region structurer (Inc 0-6) — matches Ghidra"),
     "regionlooprefine":     ("infra",  95,   "loop-successor refinement infra (goto-win = Inc-6 follow-up)"),
     "ifelseflatten":        ("noop",   96,   "angr IfElseFlattener — Ghidra already flattens (faithful no-op)"),
+    "taildup":              ("win",    103,  "duplicate a return-tail WITH a call (gap gotoreduce/crossjumprevert reject)"),
+    "switchmultipred":      ("win",    102,  "multi-predecessor image-base-relative unrolled-guard jump tables"),
+    "dedupitetail":         ("win",    104,  "merge a duplicated if/else tail (inverse of the duplication passes)"),
+    "unrolledguard":        ("win",    105,  "recover MSVC interleaved Duff's-device jump tables"),
     # pre-this-effort ports (the original loweredswitch/namestyle/stackguard work)
     "loweredswitch":        ("win",    None, "angr LoweredSwitchSimplifier"),
     "namestyle":            ("polish", None, "angr default naming scheme (vN/aN/sub_/...)"),

@@ -348,6 +348,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (real-ELF path only; also requires `--option listing on` to build the Listing
     // it reads and a configured `.fid` DB).
     "fid",
+    // (kuna) MSVC RTTI / vftable class-name recovery: the kuna analog of Ghidra's
+    // `RttiAnalyzer` (a Microsoft-PE analyzer).  On a Windows PE, parse the
+    // CompleteObjectLocator -> RTTI3/2/1 -> RTTI0 graph in `.rdata`/`.data`, demangle
+    // each `.?A...@@` class name, and emit `<Class>::vftable` /
+    // `<Class>::RTTI_Complete_Object_Locator` / `<Class>::RTTI_Type_Descriptor`
+    // labels so the C++ class names (Box/Shape) surface as recovered symbols.
+    // PE-only, default-off (output-changing; real-PE path only, so every ELF/XML
+    // parity gate is byte-identical).
+    "rtti",
     // (kuna) Aggressive Instruction Finder gap-walk: the kuna analog of Ghidra's
     // `AggressiveInstructionFinderAnalyzer` (which ships off-by-default with the
     // warning "IT MAY CREATE A LOT OF BAD CODE!").  Over the undefined gaps between

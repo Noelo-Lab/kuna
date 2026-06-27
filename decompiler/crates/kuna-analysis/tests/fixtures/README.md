@@ -18,6 +18,7 @@ real ELF parser.
 | `cet_pie_x86_64` | PIE x86-64 with CET (`.plt.sec`) | `endbr64; FF 25` CET stubs, naming at the `.plt.sec` call target |
 | `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only); entry discovery (`s1_entry`): `e_entry`=0x1160, `DT_INIT`=0x1000, `DT_FINI`=0x1464, INIT/FINI_ARRAY ptrs, `_start`→`main` idiom → 0x1405, `.eh_frame` FDE starts — `sub_1405` (main) decompiles without `--addr` |
 | `cpp_mangled_x86_64` | non-PIE x86-64 C++, not stripped | symbol demangling (`s1_demangle`): a defined `.symtab` C++ method `_ZN3foo3Bar3bazEi` must surface name-only as `foo::Bar::baz` |
+| `msvc_rtti_x64.exe` / `msvc_rtti_x86.exe` | linked Windows PE (PE32+/x86-64 and PE32/x86), polymorphic C++ (`Shape` base + `Box` derived, virtual method), source `msvc_rtti.cpp` | MSVC RTTI / vftable class-name recovery (`s1_rtti`, `--option rtti on`): the `CompleteObjectLocator` → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data` recovers `Box`/`Shape` + labels `Box::vftable` / `<Class>::RTTI_Type_Descriptor` / `Box::RTTI_Complete_Object_Locator`. Exercises BOTH the x64 IBO32 image-base-relative ref path (name offset 16) and the x86 raw-VA path (name offset 8). VMAs pinned below |
 | `cpp_noreturn_x86_64` | non-PIE x86-64 C++, not stripped (source `cpp_noreturn_x86_64.cpp`) | the **no-return × demangle cross-pass seam** (`s1_loader::noreturn` + `s1_demangle`): `.dynsym` carries the mangled no-return imports `_ZSt9terminatev` (demangled `std::terminate`) and `__cxa_throw`, both UND (`.dynsym` address 0) — their real FunctionSymbols are installed at the PLT stubs `_ZSt9terminatev@plt`=`0x401070`, `__cxa_throw@plt`=`0x4010a0`. The no-return scan emits those **stub addresses** under the raw names, so the commit resolves the *demangled* funcsym **by address** (`find_function_across_scopes`); a name lookup of the mangled string would miss. e2e: `fail()` (`_Z4failv`=`0x401196`, demangled `fail`) tail-calls `std::terminate()` → `void fail(void)` with the `Subroutine does not return` warning and no dead fall-through; `main`=`0x4011a3` |
 | `eh_lsda_x86_64` | non-PIE x86-64 C++ try/catch, **`.symtab` stripped** (source `eh_lsda_x86_64.cpp`) | `.eh_frame` LSDA landing-pad discovery (`s1_entry::EhFrameLsdaPass`, gated `--option eh_frame_full on`, the GccExceptionAnalyzer full `.gcc_except_table` markup): the `zPLR` CIE's `L` augmentation points each FDE at its LSDA in `.gcc_except_table` (`may_throw`@`0x40218c`, `guarded`@`0x402198`); the call-site tables decode to landing pads `0x4012bf` (may_throw cleanup), `0x4012e2` (guarded catch dispatch), `0x401352`/`0x401366` (guarded cleanup) — all `endbr64`, all **mid-function** (reached only by the unwinder, so NOT FDE pcBegins; the FDE-start oracle misses them). e2e (`verify_eh_frame_full`): with `--option eh_frame_full on`, `0x4012e2` registers as `sub_4012e2` and decompiles by name; default-off it is absent (discovery byte-identical to FDE-pcBegin only). FDE pcBegins (function starts): `may_throw`=`0x401256`, `guarded`=`0x4012d6`, `main`=`0x40137a` |
 | `dwarf_stripped_x86_64` | non-PIE x86-64, **`.symtab`/`.dynsym` FUNC names removed but `.debug_*` kept** | DWARF recovery (`s1_dwarf`): names + typed signatures of `add_values`/`compute`/`main` come **only** from `.debug_info` (the funcsym stream has none) |
@@ -419,6 +420,50 @@ by that demangled name. Note `strip_version` (the glibc `@@VERSION` stripper) is
 guarded to NOT truncate a leading-`?` name (MSVC uses `@` structurally), or every
 MSVC symbol would arrive at the demangler cut to `?foo`.
 
+`msvc_rtti_x64.exe` (3584 B, PE32+/x86-64) and `msvc_rtti_x86.exe` (3072 B, PE32/x86)
+are **linked Windows PEs carrying the real MSVC C++ RTTI / vftable ABI** in
+`.rdata`/`.data`, for the MSVC RTTI class-name recovery gate
+(`kuna-console/tests/verify_rtti.rs`, the `s1_rtti` pass, `--option rtti on`). Both
+are the same source `msvc_rtti.cpp` (one polymorphic base class `Shape` + one
+derived class `Box` with a virtual method) linked for two arches — proving the
+recovery is arch-independent (x64 = image-base-relative `IBO32` refs + RTTI0 name at
+offset 16; x86 = raw-VA refs + name at offset 8). `cl.exe` is unavailable on Linux,
+but `clang -target {x86_64,i686}-pc-windows-msvc -fuse-ld=lld` emits the *same* MSVC
+C++ RTTI ABI (the real `CompleteObjectLocator` / RTTI{0..3} bytes in `.rdata`,
+verified by `objdump -s -j .rdata`), so these are **real** RTTI PEs, not hand-faked
+tables. The `msvc_mangled.obj` recipe already proved `clang` emits the MSVC C++ ABI;
+a *linked* PE with a populated `.rdata` is the new need — supplied by `-fuse-ld=lld`
+(`lld-link`) + a one-cell inline-asm stub for the CRT `type_info` vftable
+(`??_7type_info@@6B@`) the RTTI Type Descriptors reference, so the image links
+freestanding (`-nostdlib`) while keeping the genuine RTTI bytes. Built in `kuna-dev`
+(no new packages — `clang` + `lld-link` ship in the image):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc '
+  F=decompiler/crates/kuna-analysis/tests/fixtures
+  clang -target x86_64-pc-windows-msvc -fuse-ld=lld -O1 -nostdlib \
+    -Wl,-subsystem:console -Wl,-entry:mainCRTStartup \
+    $F/msvc_rtti.cpp -o $F/msvc_rtti_x64.exe
+  clang -target i686-pc-windows-msvc   -fuse-ld=lld -O1 -nostdlib \
+    -Wl,-subsystem:console -Wl,-entry:mainCRTStartup \
+    $F/msvc_rtti.cpp -o $F/msvc_rtti_x86.exe'
+```
+
+Pinned VMAs (from `x86_64-w64-mingw32-objdump -s -j .rdata/.data` + `-p` ImageBase):
+
+| | ImageBase | Box `TypeDescriptor` (RTTI0) | Shape `TypeDescriptor` | Box `CompleteObjectLocator` (RTTI4) | Box vftable |
+|---|---|---|---|---|---|
+| **x64** | `0x140000000` | `0x140003010` (`.?AUBox@@`) | `0x140003030` (`.?AVShape@@`/`.?AUShape@@`) | `0x140002020` | `0x140002010` |
+| **x86** | `0x400000` | `0x403010` (`.?AUBox@@`) | `0x403030` (`.?AUShape@@`) | `0x402010` | `0x40200c` |
+
+With `--option rtti on` the recovery labels the Box `TypeDescriptor`
+`Box::RTTI_Type_Descriptor`, the COL `Box::RTTI_Complete_Object_Locator`, the vftable
+`Box::vftable`, and the Shape `TypeDescriptor` `Shape::RTTI_Type_Descriptor` — so
+`Box`/`Shape` surface as recovered C++ class names; default-off (`rtti off`) they are
+absent (the parity proof). The `.?A…@@` names demangle through the existing MSVC
+demangler via the Ghidra `RttiUtil` `??_R0…@8` wrap (clang renders `struct` classes
+as `.?AU…`; both `V`/`U` recover the bare name).
+
 ## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
 
 `macho_imports` (x86-64, 16 KB) and `macho_imports_arm64` (arm64, 49 KB) are
@@ -618,6 +663,35 @@ the identical bodies + their build recipes):
   not a minimal-oracle shape, so `widget` is recovered ONLY by
   `--option funcstart_patterns on`. Pinned VMAs (read from the un-stripped build's
   `nm`): `widget`=`0x401130`, `ext`=`0x401170`, `main`=`0x401020`.
+
+## PE CodeView / PDB debug record (s1_pdb PR-P0)
+
+`pdb_min.exe` (x86-64 PE, ~2.5 KB) is a **PE carrying a CodeView/RSDS debug
+record** for the PDB CodeView extractor gate
+(`kuna-analysis::s1_pdb::codeview::tests::extract_pdb_min_exe_rsds_record`). When
+`clang -gcodeview` builds a PE, `lld-link` writes an RSDS record (PDB GUID + age)
+plus the `.pdb` path into the PE's `IMAGE_DIRECTORY_ENTRY_DEBUG` directory — the
+fingerprint a later PDB-consuming pass uses to find + gate the external `.pdb`.
+This fixture carries only that *record*; the matching `.pdb` is **not** needed for
+PR-P0 (it lands with the PR-P1 pass). Built freestanding (own entry, no CRT) so it
+links with `clang`/`lld-link` on Linux without the MSVC CRT libs (`kuna-dev`):
+
+```bash
+# (run from a clean dir; /pdbaltpath keeps the recorded path a bare filename)
+clang -target x86_64-pc-windows-msvc -g -gcodeview -fuse-ld=lld -nostdlib \
+      -Xlinker /entry:mainCRTStartup -Xlinker /subsystem:console \
+      -Xlinker /pdbaltpath:pdb_min.pdb \
+      pdb_min.c -o pdb_min.exe   # then discard the emitted pdb_min.pdb
+```
+
+`pdb_min.c` = `int add(int a,int b){return a+b;} int mainCRTStartup(void){return add(2,3);}`
+(`mainCRTStartup` is the freestanding entry, so no CRT/`main` is needed). The RSDS
+record, confirmed via `llvm-readobj --coff-debug-directory pdb_min.exe`:
+GUID (raw 16 bytes) = `63 39 AC 61 48 FF 24 90 4C 4C 44 20 50 44 42 2E`
+(canonical text `61AC3963-FF48-9024-4C4C-44205044422E`, the Microsoft mixed-endian
+form), Age = `1`, PDBFileName = `pdb_min.pdb`. The GUID is content-hash-derived, so
+**a rebuild produces a different GUID** — pin the checked-in binary's values as
+test consts (re-read with `llvm-readobj` if you ever rebuild it).
 
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
