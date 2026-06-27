@@ -61,7 +61,10 @@ fn read_fixture(name: &str) -> Vec<u8> {
 }
 
 fn pass_ids(compiler: Compiler) -> Vec<&'static str> {
-    passes_for(compiler).iter().map(|p| p.id()).collect()
+    // These assertions key off the COMPILER gate (gopclntab/noreturn-list widening),
+    // not the format gate, so the historical ELF format is the right fixed input —
+    // the Mach-O-only `objc` pass is exercised by `verify_objc.rs`.
+    passes_for(compiler, object::BinaryFormat::Elf).iter().map(|p| p.id()).collect()
 }
 
 /// PE: a MinGW PE detects as `Gcc` via its `.rdata` `GCC:` records.

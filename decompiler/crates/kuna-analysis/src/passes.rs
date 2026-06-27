@@ -26,7 +26,9 @@ use crate::s1_sourcelang::Compiler;
 /// language were [`Compiler::Unknown`] (no Rust widening). The real bootstrap
 /// path uses [`passes_for`] with the detected compiler.
 pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
-    passes_for(Compiler::Unknown)
+    // The no-format default (ELF): no format-gated pass (e.g. the Mach-O ObjC
+    // pass) is added — exactly the historical `default_passes()` set.
+    passes_for(Compiler::Unknown, object::BinaryFormat::Elf)
 }
 
 /// Build the program-prep pass list for a detected source-language
@@ -36,7 +38,10 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
 /// no-return list widening (`noReturnFunctionConstraints.xml`'s per-`<compiler>`
 /// arms: the `rustc` arm adds the Rust list, the `golang` arm adds the Go list);
 /// future Rust/Go-specific passes plug in here with one line.
-pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
+pub fn passes_for(
+    compiler: Compiler,
+    format: object::BinaryFormat,
+) -> Vec<Box<dyn AnalysisPass>> {
     let mut passes: Vec<Box<dyn AnalysisPass>> = vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
         // default-on `NoReturnFunctionAnalyzer`. For a Rust binary, also match the
@@ -221,6 +226,22 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
     // Go binary's `sub_<addr>` functions take the recovered name).
     if compiler.is_golang() {
         passes.push(Box::new(crate::s1_pclntab::GoPclntabPass));
+    }
+
+    // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
+    // is a Mach-O, walk the `__objc_*` metadata (classlist → class_t → class_ro_t
+    // → method_list_t) and rename each IMP function `-[Class sel]` / `+[Class sel]`
+    // (the FID-precedent label-gated rename) + emit `_OBJC_CLASS_$_<name>` /
+    // selector symbols. The kuna analog of Ghidra's ObjcTypeMetadataAnalyzer
+    // (name-recovery half). Registered ONLY for a Mach-O binary, so every non-Mach-O
+    // target's pass set is byte-identical to before (the gate is structural, like
+    // the Go pclntab pass). Default-OFF (`--option objc`, the fid precedent): its
+    // facts are computed at LOAD but COMMITTED only when the `objc` gate is on
+    // (`engine.rs::analysis_pass_enabled`), so a default run is byte-identical.
+    // Selectors are plain ASCII — no demangler needed. x86-64, no-chained-fixups
+    // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is the deferred PR-O0/O2).
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::s1_objc::ObjcMetadataPass));
     }
 
     passes
@@ -433,7 +454,7 @@ pub fn run_default_analyses(
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
-    run_analyses(&ctx, &passes_for(compiler))
+    run_analyses(&ctx, &passes_for(compiler, file.format()))
 }
 
 /// Like [`run_default_analyses`], but keep each pass's output keyed by its
@@ -466,7 +487,7 @@ pub fn run_default_analyses_per_pass(
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
-    passes_for(compiler)
+    passes_for(compiler, file.format())
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
         .collect()
@@ -481,12 +502,15 @@ mod tests {
         passes.iter().map(|p| p.id()).collect()
     }
 
-    /// `passes_for(Unknown)` MUST be exactly today's `default_passes()` contents
-    /// — the no-Rust default must never silently drop a pass (the guard the
-    /// sourcelang brief calls for).
+    /// The historical (non-Mach-O) format default for the pass-set tests.
+    const ELF: object::BinaryFormat = object::BinaryFormat::Elf;
+
+    /// `passes_for(Unknown, Elf)` MUST be exactly today's `default_passes()`
+    /// contents — the no-Rust default must never silently drop a pass (the guard
+    /// the sourcelang brief calls for).
     #[test]
     fn unknown_matches_default_passes() {
-        assert_eq!(ids(&passes_for(Compiler::Unknown)), ids(&default_passes()));
+        assert_eq!(ids(&passes_for(Compiler::Unknown, ELF)), ids(&default_passes()));
         // Both must still carry the always-on analysis passes.
         let want = ["noreturn_known", "libproto"];
         for id in want {
@@ -503,9 +527,9 @@ mod tests {
     /// is byte-identical to the Gcc base.
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
-        let base = ids(&passes_for(Compiler::Gcc));
+        let base = ids(&passes_for(Compiler::Gcc, ELF));
         for c in [Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
-            assert_eq!(ids(&passes_for(c)), base, "{c:?} pass ids must match the base set");
+            assert_eq!(ids(&passes_for(c, ELF)), base, "{c:?} pass ids must match the base set");
         }
     }
 
@@ -513,14 +537,35 @@ mod tests {
     /// (the Go-only function-name recovery); no other compiler carries it.
     #[test]
     fn go_adds_only_gopclntab_pass() {
-        let base = ids(&passes_for(Compiler::Gcc));
-        let go = ids(&passes_for(Compiler::Go));
+        let base = ids(&passes_for(Compiler::Gcc, ELF));
+        let go = ids(&passes_for(Compiler::Go, ELF));
         assert_eq!(&go[..base.len()], &base[..], "Go set is the base set + extras");
         assert_eq!(go.last(), Some(&"gopclntab"), "Go appends the gopclntab pass");
         assert_eq!(go.len(), base.len() + 1, "Go adds exactly one pass");
         // No non-Go compiler carries the gopclntab pass.
         for c in [Compiler::Gcc, Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
-            assert!(!ids(&passes_for(c)).contains(&"gopclntab"), "{c:?} must not carry gopclntab");
+            assert!(
+                !ids(&passes_for(c, ELF)).contains(&"gopclntab"),
+                "{c:?} must not carry gopclntab"
+            );
+        }
+    }
+
+    /// The `objc` pass is registered ONLY for a Mach-O binary (the Mach-O-format
+    /// gate, like `gopclntab`'s Go gate): a Mach-O target carries it, every other
+    /// format's pass set is byte-identical to before.
+    #[test]
+    fn objc_pass_registered_only_for_macho() {
+        let elf = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Elf));
+        let macho = ids(&passes_for(Compiler::Clang, object::BinaryFormat::MachO));
+        assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
+        assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
+        // Mach-O adds exactly the one objc pass over the ELF set.
+        assert_eq!(macho.len(), elf.len() + 1, "Mach-O adds exactly the objc pass");
+        assert_eq!(macho.last(), Some(&"objc"), "objc is appended last");
+        // No non-Mach-O format carries it.
+        for f in [object::BinaryFormat::Elf, object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
+            assert!(!ids(&passes_for(Compiler::Clang, f)).contains(&"objc"), "{f:?} must not carry objc");
         }
     }
 

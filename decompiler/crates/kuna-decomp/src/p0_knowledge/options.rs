@@ -364,6 +364,16 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (name-recovery half).  Default-on, but the pass is registered ONLY for a Go
     // binary, so it is a structural no-op on every non-Go target.
     "gopclntab",
+    // (kuna) Mach-O Objective-C metadata recovery: when the binary is a Mach-O,
+    // walk the `__objc_*` metadata (classlist -> class_t -> class_ro_t ->
+    // method_list_t) and rename each IMP function `-[Class sel]` / `+[Class sel]`
+    // (the FID-precedent label-gated rename of a `sub_*`/`FUN_*` placeholder), plus
+    // emit `_OBJC_CLASS_$_<name>` + selector symbols. Selectors are ASCII (no
+    // demangler). The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
+    // (name-recovery half). Default-OFF, registered ONLY for a Mach-O binary, so it
+    // is a structural no-op on every non-Mach-O target. x86-64, no-chained-fixups
+    // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
+    "objc",
     // (kuna) ET_REL relocatable-object (`.o`) loader capability: load a
     // relocatable object (no PT_LOAD segments) by synthesizing a section layout,
     // applying `.rela.*` relocations, and rebasing symbols. Default ON (it only

@@ -2389,6 +2389,22 @@ example = "option gopclntab off"
 source_decompiler = "kuna"
 inspiration = "Ghidra GolangSymbolAnalyzer (pclntab / GoPcHeader / GoModuledata / GoFuncData)"
 change_kind = "analysis-enablement"
+[[settable]]
+option = "objc"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-objc"
+summary = "Run the Mach-O Objective-C metadata recovery pass: when the binary is a Mach-O, walk the __objc_* ObjC 2.0 metadata web (the kuna analog of Ghidra's ObjcTypeMetadataAnalyzer, name-recovery half). From __objc_classlist (array of class_t*), per class follow data & FAST_DATA_MASK (~0x7) to the class_ro_t, read .name (class name) and .baseMethods (the - instance method_list_t), and follow class_t.isa to the metaclass baseMethods (the + class methods). Walk method_list_t handling BOTH the large absolute-pointer form and the small/relative form (entsizeAndFlags & 0x80000000), per method_t resolving the selector (ASCII), type encoding, and IMP (function VA). RENAME each IMP function -[Class sel] / +[Class sel] — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate, the FID precedent; a real symbol is never overwritten) — plus emit _OBJC_CLASS_$_<name> + selector symbols. Selectors are plain ASCII, so no demangler is needed. Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. x86-64, no-chained-fixups path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on). DISABLED by default (output-changing: renames IMP functions + adds symbols; real-binary-path only, so every parity gate is byte-identical)."
+use_when = "Off (default; no IMP is renamed and there is zero behavior change). Flip on for a Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, and the class/selector strings are named."
+example = "option objc on"
+source_decompiler = "kuna"
+inspiration = "Ghidra ObjcTypeMetadataAnalyzer (Objc2Class / Objc2ClassRW / Objc2Method / Objc2MethodList, ObjC 2.0 __objc_* metadata)"
+change_kind = "analysis-enablement"
 
 # ---------------------------------------------------------------------------
 # (kuna) Loader-tier capability (1 row): ET_REL relocatable-object support. Unlike

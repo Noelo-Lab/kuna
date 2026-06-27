@@ -395,6 +395,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "fid" => arch.analysis_fid,
         "aif" => arch.analysis_aif,
         "gopclntab" => arch.analysis_gopclntab,
+        // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
+        // renames IMP functions + adds class/selector symbols). Registered here so it
+        // is gated by `analysis_objc` rather than running by the fail-open default.
+        "objc" => arch.analysis_objc,
         _ => true,
     }
 }

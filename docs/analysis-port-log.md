@@ -4661,3 +4661,93 @@ ran — not skipped) and the regenerated catalog tests; `kuna catalog --check`
   `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 61 → 62),
   `docs/assertions.md` (regen), `docs/rust-port/losses.md`,
   `tests/fixtures/fid/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 57 — Mach-O Objective-C method-name recovery (s1_objc, gated --option objc, x86-64)
+
+**THE HEADLINE.** A new default-off, Mach-O-format-gated analysis pass that walks
+the `__objc_*` Objective-C 2.0 metadata web and recovers method names — so a
+stripped IMP renders `-[Greeter greet:]` instead of `sub_<addr>`. The kuna analog
+of Ghidra's `ObjcTypeMetadataAnalyzer` (name-recovery half). x86-64, no-chained-
+fixups path (the arm64 + `LC_DYLD_CHAINED_FIXUPS` resolver is a deferred follow-on).
+
+**The before/after, on a (locally-)stripped x86-64 Objective-C Mach-O
+(`tests/fixtures/macho_objc`):**
+
+```
+                          symbol @ 0x100000640    rendered body
+--option objc off (default) →  sub_100000640      int4 sub_100000640(...) { return a2 * 3 + 7; }
+--option objc on            →  -[Greeter greet:]   int4 -[Greeter greet:](...) { return a2 * 3 + 7; }
+```
+
+The fixture is built from a **root class** (`__attribute__((objc_root_class))`), so
+it needs no macOS SDK / Foundation — bare `clang` synthesizes the `__objc_*`
+metadata, and `ld64.lld -x` strips the local IMP symbol so the name has to come
+from the metadata (not a leftover symbol). The IMP body (the `n*3+7` math) is
+identical either way; only the NAME changes — `sub_*` → `-[Greeter greet:]`.
+
+**The walk (design §3.2):** `__objc_classlist` (array of `class_t*`, stride=ptr) →
+per class `data & FAST_DATA_MASK` (`~0x7`) → `class_ro_t` → `.name` (class name) +
+`.baseMethods` (the `-` instance `method_list_t`); follow `class_t.isa` to the
+metaclass `baseMethods` (the `+` class methods). The `method_list_t` walk handles
+BOTH forms — the **large absolute-pointer** form (the §3.2 MVP) AND the
+**small/relative** form (`entsizeAndFlags & 0x80000000`) a modern clang actually
+emits (`__TEXT,__objc_methlist`), whose `name` field points at a selref (deref to
+the selector string), `types`/`imp` are self-relative; the IMP gets the 32-bit ARM
+Thumb LSB stripped (a no-op on x86-64/arm64). Per `method_t` the pass resolves the
+selector (plain ASCII — **no demangler needed**), the type encoding, and the IMP
+function VA.
+
+**What it emits:** the IMP function **rename** `-[Class sel]` / `+[Class sel]` via
+`out.fid_names` (the label-gated placeholder rename — the commit seam only
+overwrites an engine `sub_*`/`FUN_*` placeholder, the FID precedent), plus a
+`_OBJC_CLASS_$_<name>` Data symbol per class, the IMP as a Function symbol (so it
+exists even when reachable only through the metadata), and a `sel_<selector>` Data
+symbol per selector.
+
+**Wiring (every piece a verified clone of the `gopclntab`/`fid` precedents):**
+
+- `s1_objc/{mod,sections,classt,methods}.rs` — `ObjcMetadataPass impl AnalysisPass
+  { stage→S1; id→"objc"; run }`: pure over `ctx.file` (a VMA→bytes section map +
+  little/big-endian scalar/cstr reads), additive, never failing; inert on every
+  non-Mach-O / no-`__objc_*` image.
+- `passes.rs` — registered ONLY for a Mach-O binary (the format gate, threaded into
+  `passes_for(compiler, format)` alongside the Go `gopclntab` compiler gate), so
+  every non-Mach-O target's pass set is byte-identical.
+- `engine.rs::analysis_pass_enabled` — `"objc" => arch.analysis_objc` (default-off,
+  output-changing, so the explicit arm — not the fail-open default — is load-bearing).
+- `architecture.rs` — `analysis_objc` field (default-false, reset-false,
+  `on_off!(analysis_objc, …)` arm).
+- `options.rs` — `KUNA_OPTION_NAMES += "objc"`.
+- `stages.toml` — `[[settable]] objc` (cloned from the `fid` row: `on|off`,
+  default `off`, `S1`/`external-refinement`/`HARD`). Settable count **65 → 66**;
+  bumped `kuna_num_settables`/`SETTABLE_TABLE.len` (66), the `},\n`-comma count
+  (64 → 65), the catalog `"option":` count (65 → 66), `objc → PASS_GATES`
+  (suppressed-set; `with_live` stays 28); regenerated `stage_catalog.json` +
+  `docs/assertions.md`; `kuna catalog --check` → OK.
+
+**Parity:** default-off + Mach-O-real-binary-path only ⇒ the XML datatest path never
+constructs an `ObjectLoadImage`, so `make test` (675/675), `make test-stages`, and
+`make rust-test` are byte-identical by construction. `verify_objc.rs` RUNS (not
+skipped) on a specs-built tree.
+
+**Documented LOSS/scope:** ObjC v2 only; standalone Mach-O only (no dyld-shared-cache
+relative-selector base); chained-fixup (arm64 `LC_DYLD_CHAINED_FIXUPS`) deferred; ivar
+/ method-type prototypes + the `objc_msgSend` selref→selector annotation deferred
+(design §3.2 LOSS).
+
+- **New:** `kuna-analysis/src/s1_objc/{mod,sections,classt,methods}.rs`,
+  `kuna-console/tests/verify_objc.rs`, `tests/fixtures/macho_objc` + `macho_objc.m`
+  (vendored, with README pinning the IMP/class/method-list VMAs).
+- **Changed:** `kuna-analysis/src/lib.rs` (module), `kuna-analysis/src/passes.rs`
+  (`passes_for(compiler, format)` + Mach-O gate + tests),
+  `kuna-console/tests/verify_multiformat_sourcelang.rs` (pass-ids helper),
+  `kuna-console/src/engine.rs` (`"objc"` gate arm),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_objc`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`"objc"`),
+  `kuna-decomp/stages.toml` (`[[settable]] objc`),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comma/PASS_GATES),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count 65 → 66),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 66 → 67),
+  `docs/assertions.md` (regen),
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
