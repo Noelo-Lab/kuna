@@ -450,12 +450,12 @@ docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc '
     $F/msvc_rtti.cpp -o $F/msvc_rtti_x86.exe'
 ```
 
-Pinned VMAs (from `x86_64-w64-mingw32-objdump -s -j .rdata/.data` + `-p` ImageBase):
+Pinned VMAs (from `x86_64-w64-mingw32-objdump -s -j .rdata/.data -d -j .text` + `-p` ImageBase):
 
-| | ImageBase | Box `TypeDescriptor` (RTTI0) | Shape `TypeDescriptor` | Box `CompleteObjectLocator` (RTTI4) | Box vftable |
-|---|---|---|---|---|---|
-| **x64** | `0x140000000` | `0x140003010` (`.?AUBox@@`) | `0x140003030` (`.?AVShape@@`/`.?AUShape@@`) | `0x140002020` | `0x140002010` |
-| **x86** | `0x400000` | `0x403010` (`.?AUBox@@`) | `0x403030` (`.?AUShape@@`) | `0x402010` | `0x40200c` |
+| | ImageBase | Box `TypeDescriptor` (RTTI0) | Shape `TypeDescriptor` | Box `CompleteObjectLocator` (RTTI4) | Box vftable | Box vftable slot 0 (`Box::area`) |
+|---|---|---|---|---|---|---|
+| **x64** | `0x140000000` | `0x140003010` (`.?AUBox@@`) | `0x140003030` (`.?AVShape@@`/`.?AUShape@@`) | `0x140002020` | `0x140002010` | `0x140001040` |
+| **x86** | `0x400000` | `0x403010` (`.?AUBox@@`) | `0x403030` (`.?AUShape@@`) | `0x402010` | `0x40200c` | `0x401030` |
 
 With `--option rtti on` the recovery labels the Box `TypeDescriptor`
 `Box::RTTI_Type_Descriptor`, the COL `Box::RTTI_Complete_Object_Locator`, the vftable
@@ -464,6 +464,18 @@ With `--option rtti on` the recovery labels the Box `TypeDescriptor`
 absent (the parity proof). The `.?A…@@` names demangle through the existing MSVC
 demangler via the Ghidra `RttiUtil` `??_R0…@8` wrap (clang renders `struct` classes
 as `.?AU…`; both `V`/`U` recover the bare name).
+
+**vftable discovery + virtual-method naming (R3).** Each recovered class's vftable is
+walked from its `Box::vftable` base (`VfTableModel.getVfTableCount`), bounding the slot
+array at the first NULL / non-`.text` slot. The Box vftable holds exactly one slot —
+`Box::area` (`return side*side;`, the pinned slot-0 target above: `0x140001040` x64 /
+`0x401030` x86) — which R3 names `Box::vftable_0` (a `SymKind::Function`) and marks the
+slot array read-only. The slots are **absolute VAs on both arches** (NOT the `IBO32`
+displacements the COL/RTTI inter-struct refs use): the x64 vftable cell at `0x140002010`
+holds the full 8-byte `0x140001040`, the x86 cell at `0x40200c` the 4-byte `0x401030`.
+`kuna-console/tests/verify_rtti.rs` asserts `Box::vftable_0` exists AND a function symbol
+resolves at the slot-0 target VA (the virtual dispatch now points at a named method),
+absent with `rtti off`.
 
 ## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
 
@@ -563,9 +575,52 @@ ImageBase `0x100000000` (PIE). The metadata chain the pass walks:
 `class_t Greeter`@`0x100003000`, `class_ro_t`@`0x100003098`,
 `method_list_t`@`0x10000066c`. With `--option objc on` the IMP renders
 `-[Greeter greet:]`; off, it is `sub_100000640`. x86-64, **no chained fixups**
-(the clang on this toolchain emits classic rebase pointers, like
-`macho_imports`) — the arm64 + `LC_DYLD_CHAINED_FIXUPS` slice is a deferred
-follow-on.
+(the clang on this toolchain emits classic `LC_DYLD_INFO_ONLY` rebase opcodes,
+like `macho_imports`) — so this slice is also the **no-op proof** for the
+chained-fixup resolver (the resolver yields an empty overlay here, and `read_ptr`
+reads raw section words exactly as before).
+
+### `macho_objc_arm64` — the chained-fixup + arm64 slice (PR-O0 + PR-O2)
+
+`macho_objc_arm64` (arm64, ~49 KB) is the **same `macho_objc.m` source** built for
+arm64 **with a real `LC_DYLD_CHAINED_FIXUPS`** — the prerequisite for arm64 ObjC.
+The only build-recipe change vs the x86-64 slice is the `-arch arm64` target and
+the **`-fixup_chains`** linker flag, which makes `ld64.lld` emit chained fixups
+(`LC_DYLD_CHAINED_FIXUPS` + `LC_DYLD_EXPORTS_TRIE`) instead of the classic
+`LC_DYLD_INFO_ONLY` rebase opcodes:
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_objc.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_objc_arm64 m.o
+```
+
+Confirm it carries the chained fixups: `llvm-otool -l macho_objc_arm64 | grep
+CHAINED` (or a load-command dump shows `LC_DYLD_CHAINED_FIXUPS dataoff=0xc000
+datasize=0x80`). ImageBase `0x100000000` (PIE), `DYLD_CHAINED_PTR_64` (format 2,
+4-byte stride). The metadata chain (read through the resolver): `__DATA_CONST,
+__objc_classlist[0]` (a chained-fixup slot resolving to) → `class_t`@`0x100008000`
+→ (`data & ~0x7`) `class_ro_t`@`0x100008098` → `.name`=`"Greeter"`, `.baseMethods`
+→ the small/relative `method_list_t`@`0x100000618` → selector `"greet:"`, types
+`"i20@0:8i16"`, **IMP**@`0x1000005f0`. **Pinned VMAs:** IMP@`0x1000005f0`,
+`class_t`@`0x100008000`, `class_ro_t`@`0x100008098`, classlist slot@`0x100004000`
+(raw word `0x0000000100008000`, resolves to `0x100008000`); `class_t.isa`
+slot@`0x100008000` (raw word `0x0020000100008028`, **resolves to `0x100008028`** —
+the raw word would be garbage without the resolver, since the `next=4` field leaks
+into the high bits). With `--option objc on` the IMP renders `-[Greeter greet:]`;
+off, it is `sub_1000005f0`.
+
+The resolver (PR-O0, `s1_loader/format/macho/chained.rs`) handles plain rebase
+(`DYLD_CHAINED_PTR_64`/`_64_OFFSET`) + arm64e auth-rebase
+(`DYLD_CHAINED_PTR_ARM64E`/`_USERLAND`, PAC bits stripped); **bind/import-ordinal
+chains are out of scope** (an external symbol's runtime address is unknown
+statically, so a bind slot is left unresolved — the consumer reads the raw word
+and falls back, never a wrong address). The container's in-tree `ld64.lld` emits a
+`DYLD_CHAINED_PTR_64` (format 2) arm64 fixture; the arm64e auth-rebase path is
+covered by the resolver's synthetic-bit-pattern unit tests
+(`decode_arm64e_auth_rebase_strips_pac` et al.) since the in-container linker does
+not emit an arm64e auth-fixup slice.
 
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
