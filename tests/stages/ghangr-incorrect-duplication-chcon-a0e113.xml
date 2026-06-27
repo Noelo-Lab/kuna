@@ -49,6 +49,8 @@ c3
 <symbol space="ram" offset="0x2000" name="__stack_chk_fail"/>
 </binaryimage>
 <script>
+  <!-- kuna: noreturn_extern is now default-on (DIV-14) and matches the same known-no-return name list via the same flow seam, so it would also drop the dead code in pass 1. Turn it off here too so pass 1 reproduces the bug (the externmatch-off baseline). -->
+  <com>option noreturn_extern off</com>
   <com>option noreturn_externmatch off</com>
   <com>lo fu main</com>
   <com>decompile</com>

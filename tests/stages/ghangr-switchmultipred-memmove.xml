@@ -45,6 +45,17 @@
 <symbol space="ram" offset="0x18003c330" name="memmove"/>
 </binaryimage>
 <script>
+  <!-- kuna: the 10 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
+  <com>option gotoreduce off</com>
+  <com>option crossjumprevert off</com>
+  <com>option taildup off</com>
+  <com>option dedupitetail off</com>
+  <com>option regionlooprefine off</com>
+  <com>option ifelseflatten off</com>
+  <com>option switchmultipred off</com>
+  <com>option tailcalljump off</com>
+  <com>option foldcallret off</com>
+  <com>option branchflip off</com>
   <com>lo fu memmove</com>
   <com>decompile</com>
   <com>print C</com>

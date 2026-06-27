@@ -54,6 +54,8 @@
 <script>
   <com>parse line extern int4 bf(int4 x, int4 *p);</com>
   <com>lo fu bf</com>
+  <!-- kuna: branchflip is now default-on (DIV-13); pass 1 explicitly turns it OFF to assert the pre-flip (Ghidra-polarity) rendering -->
+  <com>option branchflip off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option branchflip on</com>

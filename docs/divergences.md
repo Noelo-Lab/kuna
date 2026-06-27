@@ -479,3 +479,97 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   survives (the bug); pass 2 (`on`) asserts the call is flagged no-return (artificial halt) and the
   dead code is gone. `docs/baseline-stages.json` (+3 assertions).
 - **Date**: 2026-06-26.
+
+---
+
+## DIV-14: fourteen angr structuring / switch / readability / no-return flags become the default
+
+- **Flip**: a user-directed "enable good flags by default" sweep flips **fourteen** previously
+  default-off, angr-derived settables to **default-on**. The first ten (the structuring/switch/
+  readability group):
+  `gotoreduce`, `crossjumprevert`, `taildup`, `dedupitetail`, `regionlooprefine`,
+  `ifelseflatten`, `switchmultipred`, `tailcalljump`, `foldcallret`, `branchflip`.
+  Together they are the SAILR/Phoenix goto-reduction passes (return-tail / cross-jump /
+  return-call-tail duplication + ITE-tail dedup + irreducible-loop refinement +
+  guard-clause flattening), the multi-predecessor unrolled-guard jump-table recovery,
+  the -O2 tail-call-jump recovery, call-return expression folding, and negated-guard
+  branch flipping. The **four added in this revision**:
+  `stackguard`, `noreturn_extern`, `noreturn_propagate`, `switchsharedcase`.
+  **Three of these four REMOVE CODE from the emitted decompilation** (surfaced in the
+  catalog metadata an LLM reads, prefixed `REMOVES CODE:` in each `summary`):
+  - `stackguard` (S7) — strips the `-fstack-protector` canary epilogue (the
+    `if (canary != *fs:0x28) __stack_chk_fail()` check) from the output.
+  - `noreturn_extern` (S2) — marks a name-matched extern call no-return, so the post-call
+    fall-through is dropped as unreachable (the ET_REL `.o` undefined-extern case).
+  - `noreturn_propagate` (S1, Listing-gated) — propagates no-return through the call graph,
+    dropping unreachable code after no-return calls (a custom `die()`/`xalloc_die()` wrapper).
+  The fourth, `switchsharedcase` (S2), recovers a loop-carried-guard PIC jump table; it is
+  **slower on the functions whose switch it recovers** (the extra meld-rebuild + table-resolve
+  walk runs there) but is kept on for the recovery quality. Before this sweep each of the
+  fourteen shipped opt-in behind `option <flag> on`. Each individual `option <flag> off`
+  still restores the pre-flag (Ghidra/upstream) rendering per decompilation.
+- **Mechanism**: for each flag, `default = "on"` in `decompiler/crates/kuna-decomp/stages.toml`
+  AND the live `Architecture` field set on in `reset_defaults_internal`
+  (`infra/architecture.rs`: `reduce_return_gotos`, `revert_cross_jumps`,
+  `dup_return_call_tails`, `dedup_ite_tail`, `region_loop_refine`, `flatten_ifelse`,
+  `switch_multi_pred`, `tail_call_jumps`, `fold_call_returns`, `branch_flip`; plus the four
+  added here: `strip_stack_guard`, `noreturn_extern_calls`, `switch_shared_case`,
+  `analysis_noreturn_propagate`). The seam-carried flags (`build_arch_handle`) reach the
+  consuming Action/Rule via `glb` (this group adds `strip_stack_guard` and `switch_shared_case`,
+  both already wired to the seam); the rest are read directly off the `Architecture`:
+  `tail_call_jumps` and `noreturn_extern_calls` at the S2 flow seam (`decompile_drive.rs`), and
+  `analysis_noreturn_propagate` console-side at the Listing-consumer commit point
+  (`kuna-console/engine.rs`, `kuna-analysis` no-return-propagation pass). No CFG/SSA/type
+  change — these are S6/S8 print-tree / readability transforms plus the S1/S2 flow / switch-model
+  gates and the S7 canary-strip.
+- **Changed upstream assertions: 0 of 675 re-pinned** (`make test` stays PARITY OK,
+  `docs/baseline.json` **UNTOUCHED**). Of the fourteen, only four change any datatest, each
+  handled by a **per-test opt-out** (NOT a baseline re-pin): a single
+  `<com>option <flag> off</com>` line is added to the `<script>` of each affected datatest
+  file (before its decompile commands), so that file runs the flag off and keeps its upstream
+  rendering. Of the four added in this revision, only `stackguard` touches the corpus
+  (`tests/datatests/partialsplit.xml`, the Partial-splitting cases — the opt-out keeps the
+  canary epilogue in the rendered output); `noreturn_extern`, `noreturn_propagate`, and
+  `switchsharedcase` change **0** datatests (no datatest call resolves to a known no-return
+  name, `noreturn_propagate` is Listing-gated and the XML path builds no Listing, and no
+  datatest has a loop-carried PIC switch). The opt-outs are:
+  - `tailcalljump` → `tests/datatests/longdouble.xml` (Long double #1/#2): the -O2 tail-jump
+    recovery would re-render the `printldfirst`/`printstruct` tail jumps; the test pins the
+    pre-tailcalljump rendering.
+  - `foldcallret` → `tests/datatests/deindirect2.xml`, `inline.xml`, `varcross.xml`,
+    `condconstsub.xml` (Deindirect Output #1, Inlining #8, Local cross #2, Modified conditional
+    constant #2/#3): call-return folding would inline the `vN = call(); use(vN)` spill these
+    tests pin in the explicit-temporary form.
+  - `branchflip` → `tests/datatests/bitfields.xml`, `bitfields2.xml`, `condexesub.xml`,
+    `copytrim.xml`, `elseif.xml`, `forloop_varused.xml` (Bitfields #19, MIPS Bitfields #19,
+    Conditional Add #1/#3, Copy trim #6/#7, Else-if #1/#2/#3/#4/#5/#6/#11/#14, For-loop var
+    used #2): the negated-guard flip would invert the `if (x == 0)` polarity these tests pin.
+    One opt-out line covers all of a file's `#N` (e.g. `elseif.xml`'s eight Else-if cases).
+  - `stackguard` → `tests/datatests/partialsplit.xml` (Partial splitting #1/#2): stripping the
+    `-fstack-protector` canary epilogue (REMOVES CODE) would change the rendered body; the test
+    pins the pre-stackguard rendering (canary check kept). One opt-out line at the top of the
+    file's `<script>` covers it.
+- **Stage corpus (`make test-stages`)**: PARITY OK without re-pinning
+  `docs/baseline-stages.json`. Twelve stage testcases assert the pre-sweep (flags-off)
+  baseline in their pass-1 default decompile (`namestyle.xml`, `gh6882-sparcstructret.xml`,
+  `regionstructure-seq.xml`, `regionstructure-shortcircuit.xml`, the `ghangr-*` goto-quality /
+  switchmultipred / dedup / ifelseflatten / morton / who / true-1804 / dd-argmatch /
+  optimized-memcpy / switchmultipred-memmove files, and `branchflip-negated-guard.xml`); each
+  gets an explicit `option <flag> off` in its default pass so the off-baseline assertions hold,
+  while each pass-2 `option <flag> on` still re-enables only the flag under test. The four flags
+  added here extend three of those pass-1 opt-outs: `switchsharedcase-b2sum.xml` (pass 1 now
+  turns `switchsharedcase off` to reproduce the bug, pass 2 re-enables it),
+  `ghangr-incorrect-duplication-chcon-a0e113.xml` (pass 1 adds `noreturn_extern off` alongside
+  the existing `noreturn_externmatch off` — the now-default-on `noreturn_extern` matches the same
+  name list via the same flow seam, so it would otherwise also drop the dead code), and
+  `ghangr-x8664-cvs-863633.xml` (the dedupvardecls test adds `stackguard off`: default-on
+  `stackguard` strips the canary epilogue in this `cvs` main, changing the `0x3c` declaration
+  count the test pins).
+- **Catalog / docs**: the byte-exact catalog fixture
+  (`decompiler/crates/kuna-decomp/tests/fixtures/stage_catalog.json`) and `docs/assertions.md`
+  are regenerated — the fourteen `default` fields flip `off`→`on`, and the three code-removing
+  flags' `summary`/`use_when` gain the `REMOVES CODE:` prefix (so `kuna catalog --json`, which an
+  LLM reads, surfaces the warning) plus the `switchsharedcase` slowness note. The settable count
+  is unchanged (these are existing settables, only their `default`/`summary` change), so
+  `catalog_bytecompat` is unaffected. `kuna catalog --check` OK.
+- **Date**: 2026-06-27.

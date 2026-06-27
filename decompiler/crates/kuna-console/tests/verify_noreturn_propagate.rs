@@ -104,6 +104,13 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
             prog.arch_mut()
                 .set_kuna_option("noreturn_disc", "on")
                 .expect("noreturn_disc flips on");
+            // (kuna DIV-14) `noreturn_propagate` is now default-ON and is the *other*
+            // Listing consumer; with the Listing built (listing on) it would ALSO fix
+            // this fixture. Turn it off so this mode isolates the discovered-consumer
+            // (noreturn_disc) behaviour — the differential this test asserts.
+            prog.arch_mut()
+                .set_kuna_option("noreturn_propagate", "off")
+                .expect("noreturn_propagate flips off");
         }
     }
     // `read symbols`: build the Listing (deferred) and run the consumer, gated.

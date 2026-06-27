@@ -51,6 +51,8 @@ f30f1efa41564155415455534883ec30897c240c488d3dfc6709004889342464488b042528000000
 <symbol space="ram" offset="0x404df0" name="main"/>
 </binaryimage>
 <script>
+  <!-- kuna: stackguard is now default-on (DIV-14) and strips the -fstack-protector canary epilogue in this cvs main, changing the 0x3c decl count. It is not the flag under test here, so keep it off for both passes (the off-baseline these dedupvardecls assertions were pinned against). -->
+  <com>option stackguard off</com>
   <com>option dedupvardecls off</com>
   <com>lo fu main</com>
   <com>decompile</com>

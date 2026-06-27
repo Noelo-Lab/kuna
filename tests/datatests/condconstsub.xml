@@ -8,6 +8,8 @@
 </bytechunk>
 </binaryimage>
 <script>
+  <!-- kuna: foldcallret default-on (DIV-13); this upstream test pins the pre-foldcallret rendering -->
+  <com>option foldcallret off</com>
   <com>map fun r0x110320 foo</com>
   <com>override flow r0x110324 callreturn</com>
   <com>map fun r0x110350 otherfunc</com>
