@@ -479,3 +479,59 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   survives (the bug); pass 2 (`on`) asserts the call is flagged no-return (artificial halt) and the
   dead code is gone. `docs/baseline-stages.json` (+3 assertions).
 - **Date**: 2026-06-26.
+
+---
+
+## DIV-14: ten angr structuring / switch / readability flags become the default
+
+- **Flip**: a user-directed "enable good flags by default" sweep flips **ten** previously
+  default-off, angr-derived settables to **default-on** in one group:
+  `gotoreduce`, `crossjumprevert`, `taildup`, `dedupitetail`, `regionlooprefine`,
+  `ifelseflatten`, `switchmultipred`, `tailcalljump`, `foldcallret`, `branchflip`.
+  Together they are the SAILR/Phoenix goto-reduction passes (return-tail / cross-jump /
+  return-call-tail duplication + ITE-tail dedup + irreducible-loop refinement +
+  guard-clause flattening), the multi-predecessor unrolled-guard jump-table recovery,
+  the -O2 tail-call-jump recovery, call-return expression folding, and negated-guard
+  branch flipping — the angr-readability layer that, before this sweep, each shipped
+  opt-in behind `option <flag> on`. Each individual `option <flag> off` still restores
+  the pre-flag (Ghidra/upstream) rendering per decompilation.
+- **Mechanism**: for each flag, `default = "on"` in `decompiler/crates/kuna-decomp/stages.toml`
+  AND the live `Architecture` field set on in `reset_defaults_internal`
+  (`infra/architecture.rs`: `reduce_return_gotos`, `revert_cross_jumps`,
+  `dup_return_call_tails`, `dedup_ite_tail`, `region_loop_refine`, `flatten_ifelse`,
+  `switch_multi_pred`, `tail_call_jumps`, `fold_call_returns`, `branch_flip`). Nine of the
+  ten are carried into the per-function seam in `build_arch_handle` so the consuming
+  Action/Rule reads the live value via `glb`; `tail_call_jumps` is read directly off the
+  `Architecture` at the S2 flow seam (`decompile_drive.rs`). No CFG/SSA/type change — these
+  are S6/S8 print-tree / readability transforms plus the S2 tail-call and switch-model gates.
+- **Changed upstream assertions: 0 of 675 re-pinned** (`make test` stays PARITY OK,
+  `docs/baseline.json` **UNTOUCHED**). Seven of the ten change **no** datatest. The three
+  that do are handled by a **per-test opt-out** (NOT a baseline re-pin): a single
+  `<com>option <flag> off</com>` line is added to the `<script>` of each affected datatest
+  file (before its decompile commands), so that file runs the flag off and keeps its upstream
+  rendering. The opt-outs are:
+  - `tailcalljump` → `tests/datatests/longdouble.xml` (Long double #1/#2): the -O2 tail-jump
+    recovery would re-render the `printldfirst`/`printstruct` tail jumps; the test pins the
+    pre-tailcalljump rendering.
+  - `foldcallret` → `tests/datatests/deindirect2.xml`, `inline.xml`, `varcross.xml`,
+    `condconstsub.xml` (Deindirect Output #1, Inlining #8, Local cross #2, Modified conditional
+    constant #2/#3): call-return folding would inline the `vN = call(); use(vN)` spill these
+    tests pin in the explicit-temporary form.
+  - `branchflip` → `tests/datatests/bitfields.xml`, `bitfields2.xml`, `condexesub.xml`,
+    `copytrim.xml`, `elseif.xml`, `forloop_varused.xml` (Bitfields #19, MIPS Bitfields #19,
+    Conditional Add #1/#3, Copy trim #6/#7, Else-if #1/#2/#3/#4/#5/#6/#11/#14, For-loop var
+    used #2): the negated-guard flip would invert the `if (x == 0)` polarity these tests pin.
+    One opt-out line covers all of a file's `#N` (e.g. `elseif.xml`'s eight Else-if cases).
+- **Stage corpus (`make test-stages`)**: PARITY OK without re-pinning
+  `docs/baseline-stages.json`. Twelve stage testcases assert the pre-sweep (flags-off)
+  baseline in their pass-1 default decompile (`namestyle.xml`, `gh6882-sparcstructret.xml`,
+  `regionstructure-seq.xml`, `regionstructure-shortcircuit.xml`, the `ghangr-*` goto-quality /
+  switchmultipred / dedup / ifelseflatten / morton / who / true-1804 / dd-argmatch /
+  optimized-memcpy / switchmultipred-memmove files, and `branchflip-negated-guard.xml`); each
+  gets an explicit `option <flag> off` in its default pass so the off-baseline assertions hold,
+  while each pass-2 `option <flag> on` still re-enables only the flag under test.
+- **Catalog / docs**: the byte-exact catalog fixture
+  (`decompiler/crates/kuna-decomp/tests/fixtures/stage_catalog.json`) and `docs/assertions.md`
+  are regenerated — the ten `default` fields flip `off`→`on` (only those lines change; settable
+  count unchanged at 65, so `catalog_bytecompat` is unaffected). `kuna catalog --check` OK.
+- **Date**: 2026-06-27.

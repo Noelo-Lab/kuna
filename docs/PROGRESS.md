@@ -1,5 +1,45 @@
 # kuna Progress Log
 
+## Session (2026-06-27) — default-on sweep: ten angr structuring/switch flags (DIV-14)
+
+User-directed "enable good flags by default" sweep (`feat/default-on-sweep`). Flipped **ten**
+previously default-off, angr-derived settables to **default-on** in one group:
+`gotoreduce`, `crossjumprevert`, `taildup`, `dedupitetail`, `regionlooprefine`, `ifelseflatten`,
+`switchmultipred`, `tailcalljump`, `foldcallret`, `branchflip` — the SAILR/Phoenix goto-reduction
++ ITE-tail dedup + irreducible-loop refinement + guard-clause flattening passes, the
+multi-predecessor unrolled-guard jump-table recovery, -O2 tail-call-jump recovery, call-return
+expression folding, and negated-guard branch flipping. Each is the angr-readability layer that
+previously shipped opt-in behind `option <flag> on`; `option <flag> off` still restores the
+pre-flag rendering per decompilation.
+
+**Mechanism.** Per flag: `default = "on"` in `stages.toml` AND the live `Architecture` field set
+on in `reset_defaults_internal` (`infra/architecture.rs`). Nine are carried into the per-function
+seam in `build_arch_handle`; `tail_call_jumps` is read directly at the S2 flow seam. No CFG/SSA/type
+change — S6/S8 print-tree + S2 flow/switch-model gates.
+
+**The per-test opt-out mechanism (NOT a baseline re-pin).** Seven of the ten change **0** datatests.
+The three that do are kept at parity by adding a single `<com>option <flag> off</com>` line to each
+affected datatest's `<script>` (so it runs the flag off → keeps the upstream rendering), each with a
+one-line XML comment explaining why. `docs/baseline.json` **UNTOUCHED**:
+- `tailcalljump` → `longdouble.xml` (Long double #1/#2).
+- `foldcallret` → `deindirect2.xml`, `inline.xml`, `varcross.xml`, `condconstsub.xml`
+  (Deindirect Output #1, Inlining #8, Local cross #2, Modified conditional constant #2/#3).
+- `branchflip` → `bitfields.xml`, `bitfields2.xml`, `condexesub.xml`, `copytrim.xml`, `elseif.xml`,
+  `forloop_varused.xml` (Bitfields #19, MIPS Bitfields #19, Conditional Add #1/#3, Copy trim #6/#7,
+  Else-if #1/#2/#3/#4/#5/#6/#11/#14, For-loop var used #2). One opt-out line covers a whole file's `#N`.
+
+**Stage corpus.** Twelve `tests/stages/` testcases assert the pre-sweep (flags-off) baseline in their
+pass-1 default decompile; each gets an explicit `option <flag> off` in its default pass (each pass-2
+`option <flag> on` re-enables only the flag under test). `docs/baseline-stages.json` untouched.
+
+**Gates (all green, no baseline re-pin):** `make test` PARITY OK 675/675 (via opt-outs only),
+`make test-stages` PARITY OK, `make rust-test` green (updated the `kuna_anchor_flags` unit test for
+the ten new default-on fields). Regenerated the byte-exact catalog fixture
+`tests/fixtures/stage_catalog.json` and `docs/assertions.md` (only the ten `default` fields flip
+`off`→`on`; settable count unchanged at 65). `kuna catalog --check` OK. Documented as **DIV-14** in
+`docs/divergences.md`. Every datatest failure was exactly the mapping — no flag misbehaved or changed
+more datatests than expected.
+
 ## Session (2026-06-26) — loop-carried-guard jump tables (`option switchsharedcase`)
 
 Finished the WIP on `feat/switchguard-sharedcase`: recover the `b2sum::main`
