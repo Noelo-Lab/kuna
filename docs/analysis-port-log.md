@@ -4914,3 +4914,88 @@ needed (no settable added — a clean, option-free merge).
 - **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_pdb`),
   `tests/fixtures/README.md` (the `pdb_min.exe` recipe + pinned record),
   `docs/analysis-port-log.md`.
+
+### Increment 60 — PDB PR-P1: .pdb-consuming pass, stripped FUN_* -> real names (s1_pdb, gated --option pdb)
+
+**THE HEADLINE.** PR-P0 (Increment 59) extracted the PE's CodeView *fingerprint*;
+this PR consumes the external `.pdb` it points at and delivers the DWARF-for-Windows
+payoff at the **name level**: a stripped `FUN_<addr>` → its real source name
+(`pdb_demo_compute`, and on a real Windows EXE `WinMain`/`main`/…). The kuna analog
+of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer; the MS-DIA
+`PdbAnalyzer` is Windows-native FFI and is never ported). PDB is the lone
+**external-file** case in the metadata tier — the PE carries only the fingerprint —
+so it follows the **`s1_fid` external-artifact precedent** (default-off, externally
+gated, *rename*-emitting), not the in-image `s1_rtti`/`s1_objc` shape.
+
+**The `pdb` crate (the one new dep).** Ghidra hand-rolls `pdb2/pdbreader` (~196 type
++ ~280 symbol classes — the MSF/TPI/IPI/DBI parsers); kuna substitutes the mature
+`pdb` crate (MIT/Apache, Firefox symbolication / `pdb-addr2line`) **exactly as it
+substituted `gimli` for DWARF, `object` for BFD, `msvc-demangler` for the MSVC
+demangler** — `pdb = "0.8"` in the workspace `[workspace.dependencies]` (next to
+`object`/`gimli`), `pdb.workspace = true` in `kuna-analysis`. Documented as
+**LOSS-252** in `docs/rust-port/losses.md`.
+
+**The pass (`s1_pdb::PdbPass`, gate id `pdb`).** On a PE: (1) `extract_codeview` for
+the PE's `{guid, age, path}`; (2) **tier-1 locate** — the `.pdb` path from the
+`kuna_pdb_path` env var (the exact `s1_fid` `kuna_fid_db` precedent — keeps the
+catalog to ONE new on|off settable, the `.pdb` source off the `--option` surface);
+(3) open via the `pdb` crate + **the fingerprint gate** (`locate::fingerprint_ok`:
+the `.pdb`'s `pdb_information().guid/age` must match the CodeView record — a
+MISMATCH/ABSENT `.pdb` → empty output, the FID full-hash-match discipline of never
+applying wrong external knowledge); (4) on a match, walk the global symbol stream
+(`S_PUB32` publics + `S_GPROC32` procedures, `walk::walk_functions`), resolve each
+`segment:offset → RVA + ImageBase → VMA`, and emit a function **rename** via
+`out.fid_names` (the label-gated `FUN_*`/`sub_*` placeholder rename, the FID
+precedent) + `out.symbols` (so the function exists for the rename to bind even when
+reached only through the PDB). NAME-level only: types/typed-locals/lines are the
+deferred PR-P2/P3 (the same name-level-first posture `s1_dwarf` took).
+
+**Gating (the `fid`/`rtti`/`objc` clone, full wiring).** Default-OFF: `passes.rs`
+registers `PdbPass` behind a `BinaryFormat::Pe` gate (and the pass self-gates on PE
+in `run`); `engine.rs::analysis_pass_enabled` `"pdb" => arch.analysis_pdb`;
+`architecture.rs` `analysis_pdb` field/default-false/reset/`on_off!` arm;
+`options.rs` `KUNA_OPTION_NAMES += "pdb"`; a `[[settable]] pdb` row in `stages.toml`
+cloned from the fid/objc row (`values="on|off"`, `default="off"`, `stage="S1"`,
+`substage="external-refinement"`, `strength="HARD"`, `change_kind="analysis-enablement"`).
+
+**Settable count 67 → 68.** Updated everywhere: `kuna_stages` `settable_count_is_68`
++ `kuna_num_settables`/`SETTABLE_TABLE.len`, the comma-count (`},\n` × 67), the
+`fixture_has_all_68_settables` + `"option": ` × 68 in `catalog_bytecompat`, the
+`pdb → PASS_GATES` suppressed-set arm (no codegen `live_value`; `with_live` stays
+28), `kuna-catalog.xml` #5/#9 `max`=69, the regenerated `stage_catalog.json` fixture
++ `docs/assertions.md`. `kuna catalog --check` → **OK**.
+
+**The fixture + e2e (the headline, the two-state proof).** `tests/fixtures/pdb_prog.exe`
+(x86-64 PE, `-g -gcodeview`) **with its matching `pdb_prog.pdb`**, built in `kuna-dev`
+(lld-link emits both + the RSDS record). `pdb_demo_compute`@`0x140001000` carries no
+leftover symbol kuna names from, so without the `.pdb` it is a stripped `FUN_*`.
+`pdb_prog_mismatch.pdb` (a different program → a different content-hash GUID
+`3395B1A2-…`) drives the negative gate. `kuna-console/tests/verify_pdb.rs`:
+- `--option pdb off` → `0x140001000` is a `FUN_*`/`sub_*` placeholder (proves the
+  name is NOT a leftover symbol);
+- `--option pdb on` + `kuna_pdb_path=…/pdb_prog.pdb` → it is **`pdb_demo_compute`**
+  (the PDB rename, GUID/age `A192EC48-…`/1 matched);
+- `--option pdb on` + the guid-MISMATCH `.pdb` → **still `FUN_*`** (the fingerprint
+  gate rejected the stale PDB). The test runs on the real-PE path (not skipped when
+  `.sla` is built).
+
+**Parity:** default-off + PE-format-gated + inert without a fingerprint-matching
+`.pdb` ⇒ the XML datatest path never reaches it; the oracles are byte-identical by
+construction.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. `verify_pdb` + the new `s1_pdb::{locate,walk}` units;
+`kuna catalog --check` **OK**.
+
+- **New:** `kuna-analysis/src/s1_pdb/{locate,walk}.rs` (tier-1 locate + fingerprint
+  gate + the S_PUB32/S_GPROC32 walk), `tests/fixtures/pdb_prog.{c,exe,pdb}` +
+  `pdb_prog_mismatch.pdb` + `pdb_mismatch.c`, `kuna-console/tests/verify_pdb.rs`.
+- **Changed:** `decompiler/Cargo.toml` + `kuna-analysis/Cargo.toml` (the `pdb` dep),
+  `kuna-analysis/src/s1_pdb/mod.rs` (the `PdbPass`), `passes.rs` (the PE-gated
+  registration + the `pdb_pass_is_pe_gated` test), `architecture.rs` (`analysis_pdb`
+  field/reset/`on_off!`), `engine.rs` (`analysis_pass_enabled` arm), `options.rs`
+  (`KUNA_OPTION_NAMES`), `stages.toml` (the `[[settable]] pdb` row), the count tests
+  (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`), `kuna-catalog.xml`,
+  `tests/fixtures/stage_catalog.json`, `docs/assertions.md`,
+  `docs/rust-port/losses.md` (LOSS-252), `tests/fixtures/README.md`,
+  `docs/analysis-port-log.md`.

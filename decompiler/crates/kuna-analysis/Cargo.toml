@@ -17,6 +17,7 @@ cpp_demangle.workspace = true
 rustc-demangle.workspace = true
 msvc-demangler.workspace = true
 gimli.workspace = true
+pdb.workspace = true
 
 [lints]
 workspace = true

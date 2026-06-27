@@ -383,6 +383,18 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // is a structural no-op on every non-Mach-O target. x86-64, no-chained-fixups
     // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     "objc",
+    // (kuna) PE PDB metadata recovery: on a Windows PE, read the CodeView
+    // fingerprint (`{guid, age, path}`), locate the external `.pdb` (tier-1: the
+    // `kuna_pdb_path` env var, the s1_fid `kuna_fid_db` precedent), fingerprint-gate
+    // it (the supplied `.pdb`'s guid/age must match the PE's CodeView record — never
+    // apply a wrong/stale PDB, the FID full-hash-match discipline), and on a match
+    // walk the global symbols (`S_PUB32`/`S_GPROC32`) to rename each stripped
+    // `FUN_*`/`sub_*` function to its real name (the FID-precedent label-gated rename
+    // of a placeholder; a real symbol is never overwritten). The kuna analog of
+    // Ghidra's `PdbUniversalAnalyzer` (name-recovery half). Default-OFF, PE-only, and
+    // inert without a fingerprint-matching `.pdb`, so every parity gate is
+    // byte-identical. Types/typed-locals/lines are the deferred PR-P2/P3.
+    "pdb",
     // (kuna) ET_REL relocatable-object (`.o`) loader capability: load a
     // relocatable object (no PT_LOAD segments) by synthesizing a section layout,
     // applying `.rela.*` relocations, and rebasing symbols. Default ON (it only
