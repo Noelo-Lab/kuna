@@ -76,7 +76,7 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_67_settables() {
+fn fixture_has_all_68_settables() {
     // One `"option":` per settable row: 37 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
@@ -132,8 +132,12 @@ fn fixture_has_all_67_settables() {
     // byte-identical.
     // +1 for the `objc` Mach-O Objective-C metadata recovery gate (rename an IMP
     // function `-[Class sel]`/`+[Class sel]` from the `__objc_*` metadata,
-    // ObjcTypeMetadataAnalyzer; Mach-O-only, default-off).)
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 67);
+    // ObjcTypeMetadataAnalyzer; Mach-O-only, default-off).
+    // +1 for the `pdb` PE PDB metadata recovery gate (rename a stripped FUN_*/sub_*
+    // function to its real name from the external `.pdb`, PdbUniversalAnalyzer:
+    // CodeView fingerprint -> `kuna_pdb_path` locate -> guid/age fingerprint gate ->
+    // S_PUB32/S_GPROC32 walk; PE-only, default-off, inert without a matching `.pdb`).)
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 68);
 }
 
 #[test]

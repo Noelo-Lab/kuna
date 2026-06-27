@@ -440,6 +440,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
         "objc" => arch.analysis_objc,
+        // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
+        // stripped functions to their real PDB names). PE-only + externally gated on
+        // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
+        // here so it is gated by `analysis_pdb` rather than running by the fail-open
+        // default.
+        "pdb" => arch.analysis_pdb,
         _ => true,
     }
 }
