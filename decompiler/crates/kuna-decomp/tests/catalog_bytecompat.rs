@@ -137,7 +137,11 @@ fn fixture_has_all_68_settables() {
     // function to its real name from the external `.pdb`, PdbUniversalAnalyzer:
     // CodeView fingerprint -> `kuna_pdb_path` locate -> guid/age fingerprint gate ->
     // S_PUB32/S_GPROC32 walk; PE-only, default-off, inert without a matching `.pdb`).)
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 68);
+    // +1 for the `regionedgeorder` region structurer last-resort edge-virtualization
+    // ORDERING gate (SAILR P2: H2 post-dominator + dominance-tiered
+    // crossing/secondary/other bucketing), default-off opt-in — only reorders which
+    // goto is chosen when virtualizing, so OFF is byte-identical.
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 69);
 }
 
 #[test]

@@ -397,6 +397,20 @@ pub struct Architecture {
     /// `_refine_loop_successors_to_guarded_successors` /
     /// `_ensure_jump_at_loop_exit_ends` (the `force_loop_single_exit` path).
     pub region_loop_refine: bool,
+    /// (kuna) Region structurer last-resort edge-virtualization ORDERING (SAILR P2):
+    /// when the structurer must virtualize an edge to a `goto` (no schema applies),
+    /// pick the order that minimizes the resulting goto count.  Replaces the flat
+    /// H1/H3 + block-index tiebreak with angr's `_last_resort_refinement` dominance-
+    /// tiered bucketing (crossing / secondary / other via forward immediate-
+    /// dominators) and the SAILR `_order_virtualizable_edges` H2 post-dominator
+    /// heuristic (with the `postdom_max_edges` ≈ 10 / `postdom_max_graph_size` ≈ 50
+    /// caps so post-dom computation stays bounded).  Option `regionedgeorder`,
+    /// default-OFF opt-in: OFF ⇒ the existing H1/H3 + address ordering, so output is
+    /// byte-identical (on reducible code the structurer never virtualizes, so the
+    /// reordering is unobservable — this only changes WHICH goto is chosen when the
+    /// structurer is already forced to emit one).  Port of angr SAILR
+    /// `phoenix._last_resort_refinement` + `sailr._order_virtualizable_edges`.
+    pub region_edge_order: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
@@ -846,6 +860,7 @@ impl Architecture {
             recover_lowered_switch: false,
             region_structure: true,
             region_loop_refine: false,
+            region_edge_order: false,
             reduce_return_gotos: false,
             flatten_ifelse: false,
             revert_cross_jumps: false,
@@ -959,6 +974,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
+        self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
         self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
@@ -1110,6 +1126,10 @@ impl Architecture {
             "regionlooprefine" => on_off!(
                 region_loop_refine,
                 "Region structurer multi-exit/irreducible loop-successor refinement"
+            ),
+            "regionedgeorder" => on_off!(
+                region_edge_order,
+                "Region structurer H2 post-dominator + dominance-tiered edge-virtualization ordering"
             ),
             "gotoreduce" => {
                 let (val, msg) =
@@ -1489,6 +1509,7 @@ impl Architecture {
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         seam.region_structure = self.region_structure; // regionstructure
         seam.region_loop_refine = self.region_loop_refine; // regionlooprefine
+        seam.region_edge_order = self.region_edge_order; // regionedgeorder
         seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         seam.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert

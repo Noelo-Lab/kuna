@@ -546,6 +546,14 @@ pub struct Architecture {
     /// `CollapseStructure`.  Read by
     /// [`crate::s8_structure::region_structurer::run_region_structurer`].
     pub region_loop_refine: bool,
+    /// (kuna) region structurer last-resort edge-virtualization ORDERING (SAILR P2,
+    /// `region_edge_order`, opt-in default-off).  When set (and `region_structure`
+    /// is on), the structurer orders the edges it virtualizes to gotos via angr's
+    /// dominance-tiered bucketing (crossing / secondary / other) + the H2 post-
+    /// dominator heuristic (capped), instead of the flat H1/H3 + address ordering.
+    /// Only changes WHICH goto is chosen when virtualizing, so OFF is byte-identical.
+    /// Read by [`crate::s8_structure::region_structurer::run_region_structurer`].
+    pub region_edge_order: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -801,6 +809,7 @@ impl Architecture {
             recover_lowered_switch: false, // loweredswitch
             region_structure: false,     // regionstructure (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
+            region_edge_order: false,    // regionedgeorder (opt-in default-off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)

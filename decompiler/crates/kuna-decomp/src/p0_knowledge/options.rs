@@ -270,6 +270,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "loweredswitch",
     "regionstructure",
     "regionlooprefine",
+    "regionedgeorder",
     "gotoreduce",
     "ifelseflatten",
     "crossjumprevert",

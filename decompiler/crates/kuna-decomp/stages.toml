@@ -1818,6 +1818,23 @@ inspiration = "angr RegionIdentifier._refine_loop_successors_to_guarded_successo
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "regionedgeorder"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-sailr-edge-ordering"
+summary = "Improve the region structurer's (regionstructure) last-resort edge-virtualization ORDERING: when no schema applies and the structurer MUST virtualize an edge to a goto, pick the order that minimizes the resulting goto count. Replaces the flat H1 (sibling-count) / H3 (return-edge) + address tiebreak with angr's _last_resort_refinement dominance-tiered bucketing (classify candidate edges into crossing / secondary / other via forward immediate-dominators over the acyclic graph, and virtualize the highest-priority bucket first) and the SAILR _order_virtualizable_edges H2 post-dominator heuristic (prefer the edge whose removal yields the most post-dominators, i.e. the most-linear structure), with the postdom_max_edges (10) / postdom_max_graph_size (50) caps so post-dominator computation stays bounded. Only changes WHICH goto is chosen when the structurer is already forced to virtualize, so on reducible code (where the structurer never virtualizes) output is byte-identical (675/675). Port of angr SAILR phoenix._last_resort_refinement + sailr._order_virtualizable_edges."
+use_when = "Set ON (with regionstructure on, its prerequisite) when a goto-heavy function would render with fewer gotos under a smarter virtualization order — i.e. the structurer is forced to virtualize multiple edges and the bucketing/post-dominator order exposes more structure than the address tiebreak. Default OFF: byte-identical to regionstructure's existing H1/H3 + address ordering. The caps bound the post-dominator cost; above them only the H1/H3 + node-order tiebreak applies (no regression)."
+example = "option regionedgeorder on"
+source_decompiler = "angr"
+inspiration = "angr SAILR phoenix._last_resort_refinement (crossing/secondary/other bucketing via immediate_dominators + to_acyclic_graph + post-order node_seq) + sailr._order_virtualizable_edges (H1/H2/H3, postdom_max_edges/postdom_max_graph_size caps)"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "gotoreduce"
 values = "on|off"
 default = "on"
