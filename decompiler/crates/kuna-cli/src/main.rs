@@ -18,6 +18,7 @@
 
 mod catalog;
 mod decompile;
+mod decompile_all;
 mod fid;
 mod jsonfmt;
 mod paths;
@@ -39,10 +40,16 @@ fn main() -> ExitCode {
     let rest = &args[2..];
     let code = match sub {
         "decompile" => cmd_decompile(rest),
+        "decompile-all" => decompile_all::run(rest),
+        "functions" => decompile_all::run_functions(rest),
         "test" => cmd_test(rest),
         "catalog" => cmd_catalog(rest),
         "specs" => specs::run(rest),
         "fid" => fid::run(rest),
+        "-V" | "--version" | "version" => {
+            println!("kuna {}", env!("CARGO_PKG_VERSION"));
+            0
+        }
         "-h" | "--help" | "help" => {
             usage();
             0
@@ -58,13 +65,16 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|test|catalog|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|functions|test|catalog|specs|fid> ...\n\
          \n\
          kuna decompile <binary> <func> [--addr] [--slice ARCH] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--option N V]...\n\
+         kuna functions <binary> [--json]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
-         kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>"
+         kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
+         kuna --version"
     );
 }
 
