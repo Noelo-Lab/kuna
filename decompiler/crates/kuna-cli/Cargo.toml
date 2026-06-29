@@ -16,6 +16,9 @@ publish.workspace = true
 # table against the registered kuna-option set via `kuna-decomp`).
 [dependencies]
 kuna-decomp.workspace = true
+# `kuna decompile-all` names the engine's `Address` type for its in-process
+# decompile loop and builds `Address`es for the `--addr` entry-point path.
+kuna-base.workspace = true
 # `kuna fid build` runs in-process (it needs the live `Sleigh::instruction_mask`
 # the FID generator consumes): `kuna-console` bootstraps the architecture from
 # the object (`bootstrap_from_object`), `kuna-analysis` hosts the generator + the

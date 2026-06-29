@@ -148,6 +148,7 @@ name = "kuna-cli"
 version = "0.1.0"
 dependencies = [
  "kuna-analysis",
+ "kuna-base",
  "kuna-console",
  "kuna-decomp",
  "object",
