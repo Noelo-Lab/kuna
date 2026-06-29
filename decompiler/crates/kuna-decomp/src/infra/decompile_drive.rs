@@ -902,3 +902,116 @@ pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
     arch.put_print(printer);
     out
 }
+
+/// A recovered variable surfaced for the machine-readable batch output
+/// (`kuna decompile-all --json`) — the fields decbench's `type_match` metric
+/// consumes from a decompiler's per-function variable list.
+#[derive(Debug, Clone)]
+pub struct VarInfo {
+    /// Variable name as it appears in the decompiled C (`param_1`, `local_18`, a
+    /// DWARF name on a `-g` binary, …).
+    pub name: String,
+    /// The C type string, rendered exactly as `print_c` would spell it
+    /// (`int`, `char *`, `undefined8`, …) via [`crate::printc::type_to_c_string`].
+    pub type_name: String,
+    /// Signed frame-relative stack offset for a stack-resident variable; `None`
+    /// for a register-resident parameter (ghidra `getStorage().getStackOffset()`).
+    pub stack_offset: Option<i64>,
+    /// Size in bytes (the variable's type size).
+    pub size: i64,
+    /// `true` for a formal parameter (`kind="arg"`), `false` for a local
+    /// (`kind="stack"`).
+    pub is_param: bool,
+    /// ABI parameter index (dense, source order) for parameters; `None` for locals.
+    pub arg_index: Option<usize>,
+}
+
+/// Interpret a raw spacebase `off` as a signed frame offset for `space`
+/// (negative locals wrap to the high end of the unsigned range): sign-extend from
+/// the space's address bit-width via the codebase's canonical
+/// [`kuna_base::address::sign_extend`] (the same idiom `varmap` uses, which also
+/// masks off any bits above the sign bit).  Matches ghidra
+/// `getStorage().getStackOffset()`, which the decbench `type_match` metric
+/// calibrates per binary against DWARF.  Stack spaces are byte-addressed
+/// (`word_size == 1`), so no `byte_to_address` scaling is needed.
+fn signed_space_offset(space: &Rc<kuna_base::space::AddrSpace>, off: u64) -> i64 {
+    kuna_base::address::sign_extend(off as i64, space.get_addr_size() as i32 * 8 - 1)
+}
+
+/// (kuna) Extract the recovered parameters + stack locals of a decompiled
+/// [`Funcdata`] as a flat `Vec<VarInfo>` for the `kuna decompile-all --json`
+/// surface (→ decbench `type_match`).
+///
+/// Mirrors how the decbench Ghidra backend reads the `HighFunction` local symbol
+/// map: parameters come from the `FuncProto` in ABI order (`arg_index` = dense
+/// source position, a register-passed param has `stack_offset == None`); stack
+/// locals come from the function's `ScopeLocal` stack space, keeping only
+/// `NO_CATEGORY` symbols (a `FUNCTION_PARAMETER` symbol is already emitted as a
+/// parameter, the `emitScopeVarDecls(no_category)` split).  Reads the
+/// already-computed `Funcdata` — no decompile re-run.
+pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
+    let stack_index = arch.manage().get_stack_space().map(|s| s.get_index());
+    let mut out: Vec<VarInfo> = Vec::new();
+
+    // 1) Parameters, in ABI order, off the FuncProto.
+    let proto = fd.get_func_proto();
+    let nparams = proto.num_params();
+    let mut arg_pos = 0usize;
+    for i in 0..nparams {
+        let Some(p) = proto.get_param(i) else { continue };
+        // A hidden return-storage pointer is a synthetic ABI slot, not a
+        // source-level parameter (no DWARF formal-parameter to match), so skip it.
+        if p.is_hidden_return() {
+            continue;
+        }
+        let raw_name = p.get_name();
+        let name = if raw_name.is_empty() {
+            format!("param_{}", arg_pos + 1)
+        } else {
+            raw_name.to_string()
+        };
+        let type_name = p
+            .get_type()
+            .map(|t| crate::printc::type_to_c_string(arch, t))
+            .unwrap_or_default();
+        let size = p.get_size() as i64;
+        let addr = p.get_address();
+        let stack_offset = match (stack_index, addr.get_space()) {
+            (Some(si), Some(sp)) if sp.get_index() == si => {
+                Some(signed_space_offset(sp, addr.get_offset()))
+            }
+            _ => None,
+        };
+        out.push(VarInfo {
+            name,
+            type_name,
+            stack_offset,
+            size,
+            is_param: true,
+            arg_index: Some(arg_pos),
+        });
+        arg_pos += 1;
+    }
+
+    // 2) Stack locals, off the ScopeLocal (NO_CATEGORY symbols only).
+    if let Some(sl) = fd.get_scope_local() {
+        let space = sl.get_space_id();
+        let space_index = space.get_index() as usize;
+        let specs = sl.database().scope_space_local_var_specs(sl.scope_id(), space_index);
+        for (name, ct, addr, category) in specs {
+            if category != crate::database::symbol_category::NO_CATEGORY {
+                continue; // already emitted as a parameter above
+            }
+            let type_name = crate::printc::type_to_c_string(arch, &ct);
+            out.push(VarInfo {
+                name,
+                type_name,
+                stack_offset: Some(signed_space_offset(space, addr.get_offset())),
+                size: ct.get_size() as i64,
+                is_param: false,
+                arg_index: None,
+            });
+        }
+    }
+    out
+}
