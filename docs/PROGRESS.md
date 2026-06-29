@@ -1,5 +1,42 @@
 # kuna Progress Log
 
+## Session (2026-06-29) — whole-binary decompilation + machine-readable CLI (decbench-ready)
+
+User-directed "get kuna ready for public use + run on decbench + LLM-via-CLI" work
+(`feat/decompile-all-json`). Adds an **in-process, load-once whole-binary** path and a
+machine-readable JSON surface, plus a decbench backend (separate `decbench` repo branch
+`feat/kuna-backend`).
+
+**New CLI.** `kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]..
+[--no-vars] [--option N V].. [--slice ARCH] [--target T]`, `kuna functions <binary> [--json]`,
+and `kuna --version`. `decompile-all` runs entirely in-process — `bootstrap_from_object` →
+`commit_pending_analysis` → loop `decompile_func_full_with_override_dyn` (with `dwarf_locals_for`,
+the faithful `IfcDecompile` recipe) + `print_c` — loading + analyzing the binary **once** instead
+of `kuna decompile`'s subprocess-per-function. Measured **≈11×** on a 14-function ELF (0.167s vs
+1.88s); the gap grows with function count. Per-function `code` is **byte-identical** to
+`kuna decompile`; a per-function pipeline/printer abort is recorded as that function's `error`
+(the drive's `catch_unwind` + a CLI-level `catch_unwind` around print/extract) instead of aborting
+the binary.
+
+**Variable extraction (`kuna_decomp::decompile_drive::extract_variables`).** Off the post-decompile
+`Funcdata`: `FuncProto` params in ABI order (`arg_index`, register-vs-stack via the stack-space
+index) + `ScopeLocal` `NO_CATEGORY` stack locals (signed offset via the canonical
+`kuna_base::address::sign_extend`), with a public `printc::type_to_c_string` for the C type string
+and a new `Database::scope_space_local_var_specs` accessor (name/type/addr/category). Feeds
+decbench's `type_match`.
+
+**Surface.** New `ConsoleProgram::function_entries()` enumerator; new `kuna-cli/src/decompile_all.rs`;
+`kuna-base` added as a `kuna-cli` dep. **Purely additive** — no change to any existing emitted C, no
+new settable option, no `docs/baseline.json` re-pin; all three gates green (`make test` 675/675,
+`make test-stages` 235/235, `make rust-test`). E2e tests: `kuna-console/tests/verify_decompile_all.rs`
+(engine path) + `kuna-cli/tests/decompile_all_cli.rs` (CLI/JSON).
+
+**decbench integration (separate repo).** `decbench/decompilers/raw/kuna_raw.py` (registered `kuna`)
+shells out to `kuna decompile-all --json`, reusing the shared `common` helpers; `type_match`'s
+`TYPE_MAP` gains kuna's SLEIGH core-type aliases (`int4`/`int8`/…). Validated via
+`decbench evaluate <bin> -d kuna`: **GED 0.00 (perfect structure), type_match 0.85, byte_match 0.19**
+on a `-g` sample.
+
 ## Session (2026-06-27) — default-on sweep: fourteen angr flags (DIV-14; 4 added in revision, 3 REMOVE CODE)
 
 User-directed "enable good flags by default" sweep (`feat/default-on-sweep`). Flipped **ten**

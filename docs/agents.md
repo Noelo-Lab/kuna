@@ -68,6 +68,11 @@ kuna test --datatests --json                                   # machine-readabl
 kuna decompile ./a.out main
 kuna decompile ./stripped.bin 0x401040 --addr
 
+# Decompile a WHOLE binary in one in-process load (load-once, decompile-many)
+kuna decompile-all ./a.out --json                              # machine-readable: every function
+kuna decompile-all ./a.out --functions main,parse --json       # a subset
+kuna functions ./a.out --json                                  # just enumerate (name + address)
+
 # Flip a stage-model assertion per decompilation (the LLM control surface)
 kuna catalog --json                                            # discover settable assertions
 kuna decompile ./a.out main --option compareform canonical
@@ -79,6 +84,15 @@ datatest results on **stdout**) and exits nonzero on any failure or baseline reg
 `kuna decompile` drives `decomp_dbg` as a subprocess and captures `print C` via
 `openfile write` so interactive prompts never pollute the output; `--option NAME VALUE`
 (repeatable) and `--kassert "<args>"` flip stage-model sub-stage assertions per run.
+`kuna decompile-all` / `kuna functions` are the **whole-binary, machine-readable** surface
+(the benchmark + LLM path): they run *in-process* (`kuna_console::engine::bootstrap_from_object`
+→ `commit_pending_analysis` → loop `decompile_func` + `print_c`), loading + analyzing the
+binary **once** instead of `kuna decompile`'s subprocess-per-function (≈10×+ faster on a
+many-function binary). `--json` emits `{binary,count,functions:[{name,address,size,code,error,
+variables:[{name,type,kind,arg_index,stack_offset,size}]}]}` — per-function `code` is
+byte-identical to `kuna decompile`, `error` isolates a single failed function, and `variables`
+(params in ABI order + DWARF/stack locals) feed type-recovery scoring. The decbench backend
+(`decbench/decompilers/raw/kuna_raw.py`) shells out to `kuna decompile-all --json`.
 `kuna catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
 `stage catalog` JSON (single source of truth: `settableTable`, generated from
 `decompiler/crates/kuna-decomp/stages.toml`) into the documented, flippable assertion list —

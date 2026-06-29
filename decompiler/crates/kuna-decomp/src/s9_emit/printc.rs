@@ -6531,6 +6531,22 @@ pub(crate) fn declarator_parts(
     (front_full, back)
 }
 
+/// (kuna) The full C type string for `ct` with no identifier, rendered exactly as
+/// the decompiler would print it — e.g. `int`, `char *`, `undefined8`, `int [16]`.
+///
+/// A public wrapper over [`declarator_parts`] for out-of-crate consumers (the
+/// `kuna decompile-all --json` variable extractor → decbench's `type_match`
+/// metric).  It resolves the live `realtypes` context off the architecture so the
+/// spelling matches `print_c`'s body, and concatenates the declarator
+/// `front`/`back` around an empty identifier (`<front><back>`).
+pub fn type_to_c_string(
+    arch: &Architecture,
+    ct: &std::rc::Rc<crate::dtype::Datatype>,
+) -> String {
+    let (front, back) = declarator_parts(ct, RealTypeCtx::from_arch(arch));
+    format!("{front}{back}")
+}
+
 /// The type-token text for a local declaration.  Mirrors C++ `pushTypeStart`
 /// (printc.cc:265): a named/base type prints its name; an *anonymous pointer*
 /// (e.g. `char *`) prints the full declarator front via `declarator_parts` so a

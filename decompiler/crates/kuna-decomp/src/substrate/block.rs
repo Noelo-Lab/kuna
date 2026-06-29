@@ -2653,6 +2653,36 @@ impl BlockGraph {
         ret
     }
 
+    /// SAILR P1 (kuna) — build a `BlockInfLoop` over a *set* of body components.
+    ///
+    /// Unlike [`new_block_inf_loop`](Self::new_block_inf_loop) (one pre-collapsed
+    /// body block), this absorbs the whole natural-loop body `body` (in the given
+    /// order, `body[0]` the head) into one inner `BlockGraph`, then wraps that as the
+    /// `BlockInfLoop` body — the kuna analog of angr
+    /// `phoenix._match_cyclic_natural_loop` collecting the cycle into one
+    /// `SequenceNode` wrapped as `LoopNode("while", true, seq)`.  Edges *between*
+    /// members (including the back-edges to the head) become internal to the inner
+    /// graph (the loop's implicit continues); the single retained exit edge (if any)
+    /// becomes the `BlockInfLoop`'s out-edge (the `break` target).  The inner graph
+    /// renders via `emit_block_graph` (each member emitted in list order), so the
+    /// already-folded members (`BlockSwitch`, `BlockIf`, …) print structurally.
+    ///
+    /// Requires every member to already be structured (each member's *internal*
+    /// branching folded); a member that is still a bare multi-out decision will
+    /// render its non-fallthrough edges as gotos.  Returns the new `BlockInfLoop`.
+    pub fn new_block_inf_loop_region(&mut self, graph_id: BlockId, body: &[BlockId]) -> BlockId {
+        debug_assert!(!body.is_empty());
+        // 1. Absorb the body set into one inner BlockGraph (Graph type).
+        let inner = self.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+        self.identify_internal(graph_id, inner, body);
+        self.add_block(graph_id, inner);
+        // 2. Wrap the inner graph as the infinite loop body.
+        let ret = self.arena.insert(FlowBlock::new_kind(BlockKind::InfLoop));
+        self.identify_internal(graph_id, ret, &[inner]);
+        self.add_block(graph_id, ret);
+        ret
+    }
+
     /// Build a new BlockSwitch collapsing the switch root + its case components
     /// (C++ `BlockGraph::newBlockSwitch`, `block.cc:1907`).
     ///

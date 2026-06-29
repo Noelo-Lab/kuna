@@ -354,6 +354,20 @@ struct RegionStructurer<'a> {
     /// changes WHICH goto is chosen when the structurer is already forced to emit one,
     /// which on reducible code never happens).
     edge_order: bool,
+    /// SAILR P1: front-leaf start addresses of switch-bodied natural loops whose
+    /// boundary edges `try_fold_switch_loop` has virtualized to gotos (so the body
+    /// is no longer detected as cyclic).  Once such a body collapses to a single
+    /// goto-only/sizeout-0 component covering the head address,
+    /// `match_pending_inf_loop` wraps it as a `BlockInfLoop` — the kuna analog of
+    /// angr's `LoopNode("while", true, seq)` from
+    /// `phoenix._match_cyclic_natural_loop`.
+    pending_inf_loops: std::collections::BTreeSet<uintb>,
+    /// SAILR P1: per pending switch-loop head address, the set of front-leaf
+    /// addresses of the loop body members (captured when `try_fold_switch_loop`
+    /// virtualizes the break edges).  `match_pending_inf_loop` re-resolves the live
+    /// body components through this set and absorbs them into a `BlockInfLoop` once
+    /// the switch + conditionals have folded.
+    pending_body_addrs: std::collections::BTreeMap<uintb, std::collections::BTreeSet<uintb>>,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -369,6 +383,8 @@ impl<'a> RegionStructurer<'a> {
             cyclic_loops: std::collections::BTreeMap::new(),
             bb_addr: std::collections::BTreeMap::new(),
             edge_order: false,
+            pending_inf_loops: std::collections::BTreeSet::new(),
+            pending_body_addrs: std::collections::BTreeMap::new(),
         }
     }
 
@@ -546,6 +562,14 @@ impl<'a> RegionStructurer<'a> {
             //      so the false-clause-only if-then case is left to virtualize
             //      (honest-partial; the full negate path is a later increment).
             if self.match_acyclic_ite()? {
+                continue;
+            }
+            // (a2b) SAILR P1: fold a collapsed switch-bodied loop body back into a
+            //      BlockInfLoop (the deferred half of `try_fold_switch_loop`).  Runs
+            //      before the cyclic schemas so a body that has finished collapsing
+            //      becomes a loop promptly.  No-op unless `try_fold_switch_loop` has
+            //      queued a pending head.
+            if self.match_pending_inf_loop()? {
                 continue;
             }
             // (a3) cyclic loop schemas (Inc 3; phoenix._analyze_cyclic +
@@ -979,9 +1003,28 @@ impl<'a> RegionStructurer<'a> {
         let sizeout = self.graph.block(bl).size_out();
         let mut exitblock: Option<BlockId> = None;
 
+        // SAILR P1: a switch nested in a loop has **continue cases** — a case whose
+        // single out-edge is a `f_back_edge` to the loop head (the `continue`).
+        // `ruleBlockSwitch` demands a single common fall-through exit, but a continue
+        // case has no fall-through: it leaves the switch by looping back, like
+        // `case X: …; continue;`.  We treat such a case as TERMINAL — it neither
+        // becomes nor constrains the exit — the kuna analog of angr hiding the
+        // `cyclic_refinement_outgoing`-marked case→head edge from the switch schema
+        // (`_f()`).  The resulting `BlockSwitch` keeps the back-edge (self_identify
+        // externalizes it to the loop head), so the enclosing loop still folds.
+        // Parity-safe: an acyclic datatest switch has no back-edge case, so this
+        // branch is dead off-loop and the 675-assertion corpus is byte-identical.
+        let is_continue_case = |s: &Self, c: BlockId| -> bool {
+            let cb = s.graph.block(c);
+            cb.size_out() == 1 && cb.is_back_edge_out(0)
+        };
+
         // --- Find the "obvious" exit block (ruleBlockSwitch first loop) ---------
         for i in 0..sizeout {
             let curbl = self.graph.block(bl).get_out(i);
+            if is_continue_case(self, curbl) {
+                continue; // terminal continue case — never the exit
+            }
             if curbl == bl {
                 exitblock = Some(curbl); // exit back to top of switch (loop)
                 break;
@@ -1000,6 +1043,9 @@ impl<'a> RegionStructurer<'a> {
             // Every immediate block has sizeIn==1 and sizeOut<=1.
             for i in 0..sizeout {
                 let curbl = self.graph.block(bl).get_out(i);
+                if is_continue_case(self, curbl) {
+                    continue; // terminal continue case
+                }
                 if self.graph.block(curbl).is_goto_in(0) {
                     return Ok(false); // in cannot be a goto
                 }
@@ -1037,6 +1083,9 @@ impl<'a> RegionStructurer<'a> {
                 let curbl = self.graph.block(bl).get_out(i);
                 if curbl == e {
                     continue; // switch can go straight to the exit
+                }
+                if is_continue_case(self, curbl) {
+                    continue; // terminal continue case (SAILR P1) — not a fallthrough
                 }
                 if self.graph.block(curbl).size_in() > 1 {
                     return Ok(false); // only the switch may fall into a case
@@ -1089,6 +1138,9 @@ impl<'a> RegionStructurer<'a> {
             &switch_case_edges,
         );
         self.switch_case_edges = switch_case_edges;
+        if std::env::var_os("KUNA_RS_DEBUG").is_some() {
+            eprintln!("[rs]   SWITCH FOLDED #{} ({} cases, exit={})", self.graph.block(bl).get_index(), cases.len()-1, exitblock.is_some());
+        }
         // new_block_switch can fail if the exit-leaf is not a BlockCopy (should not
         // happen for a real switch head, but keep it honest-partial: report no
         // match so the fallback virtualizes rather than aborting the run).
@@ -1238,6 +1290,31 @@ impl<'a> RegionStructurer<'a> {
             }
         }
 
+        // SAILR P1: cyclic *natural* loop over a STRUCTURED switch body (the
+        // `while ((c = getopt_long(...)) != -1) switch (c) { … }` pattern in every
+        // coreutils `main`).  Gated by `regionlooprefine` (the `loop_refine`
+        // flag) — only attempted on a loop the base schemas above already
+        // declined, so reducible code is byte-identical regardless of the flag.
+        //
+        // The angr analog is `phoenix._match_cyclic_natural_loop` + the
+        // switch-in-loop handling of `_refine_cyclic_core` (case→head edges marked
+        // `cyclic_refinement_outgoing` rather than virtualized): mark the loop's
+        // EXIT edge (the head's `c != -1` decision out) so the head collapses INTO
+        // the switch body, fold the switch with its case→head back-edges as the
+        // single (continue) exit, then the body self-loops and `try_fold_loop`'s
+        // inf-loop rule folds it.  See `try_fold_switch_loop`.
+        if self.loop_refine {
+            let ordered = self.order_loop_heads_innermost_first(&heads);
+            for &head in ordered.iter() {
+                if self.try_fold_switch_loop(head)? {
+                    if dbg {
+                        eprintln!("[rs]   switch-loop refined head#{}", self.graph.block(head).get_index());
+                    }
+                    return Ok(true);
+                }
+            }
+        }
+
         // No directly-foldable loop.  WITHOUT the `regionlooprefine` opt-in
         // (default), we stop here: leaving a multi-exit / multi-latch / irreducible
         // loop unfolded lets the structurer fall through to the virtualize fallback
@@ -1263,6 +1340,15 @@ impl<'a> RegionStructurer<'a> {
             // next loop is considered.
             let ordered = self.order_loop_heads_innermost_first(&heads);
             for &head in ordered.iter() {
+                // A switch-bodied loop is owned by `try_fold_switch_loop` (above):
+                // its case→head **continue** back-edges must stay structural so the
+                // switch folds with `exitblock == head`.  The generic refinement
+                // would virtualize all-but-one of those latches to gotos, destroying
+                // the `is_continue_case` shape and shattering the switch — so we skip
+                // such heads here and let the switch-loop path drive them.
+                if self.is_switch_bodied_loop_head(head) {
+                    continue;
+                }
                 match self.refine_loop_edges(head)? {
                     LoopRefineOutcome::Progressed => {
                         if dbg {
@@ -1275,6 +1361,28 @@ impl<'a> RegionStructurer<'a> {
             }
         }
         Ok(false)
+    }
+
+    /// Is `head` the head of a *switch-bodied* natural loop — its structural body
+    /// contains a `BlockSwitch`/switch-out component whose case edges loop back to
+    /// `head`?  Such loops are driven by [`Self::try_fold_switch_loop`] (which keeps
+    /// the case→head continues structural so `ruleBlockSwitch` folds with
+    /// `exitblock == head`); the generic [`Self::refine_loop_edges`] must not touch
+    /// their latches.
+    fn is_switch_bodied_loop_head(&self, head: BlockId) -> bool {
+        let body = self.natural_loop_body(head);
+        for &bl in body.iter() {
+            let b = self.graph.block(bl);
+            if !b.is_switch_out() {
+                continue;
+            }
+            for e in 0..b.size_out() {
+                if b.get_out(e) == head {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Order loop heads innermost-first: a head whose natural-loop body contains
@@ -1483,6 +1591,446 @@ impl<'a> RegionStructurer<'a> {
         }
 
         Ok(false)
+    }
+
+    /// SAILR P1 — the cyclic *natural loop over a structured switch body*
+    /// (`while ((c = getopt_long(...)) != -1) switch (c) { … }`, the coreutils
+    /// `main` pattern).  This is the kuna analog of angr
+    /// `phoenix._match_cyclic_natural_loop` + the switch-in-loop edge marking of
+    /// `_refine_cyclic_core` (lines ~911-915: a case→head edge is marked
+    /// `cyclic_refinement_outgoing` — foldable as `continue` — instead of being
+    /// virtualized away).
+    ///
+    /// # The gap this closes
+    ///
+    /// `try_fold_loop` rejects a loop whose body is a *switch* (its
+    /// `is_switch_out()` guards) and the generic `refine_loop_edges` virtualizes
+    /// the case→head latches to gotos one at a time, which **shatters** the switch
+    /// (its cases become disconnected `BlockGoto` islands so the acyclic switch
+    /// schema can never fold them) — the structurer then STUCKs and the whole
+    /// function reverts to `CollapseStructure`.
+    ///
+    /// # The fold (two halves)
+    ///
+    /// 1. **Mark + collapse** (this method).  Virtualize every edge that crosses the
+    ///    loop boundary to a `goto`: the head's loop-exit (`c != -1`) edge, the
+    ///    switch's case→head **continue** back-edges, and any case→outside **break**
+    ///    edges.  Each virtualized case becomes a *terminal* `BlockGoto` the
+    ///    unmodified `ruleBlockSwitch` (`match_acyclic_switch_cases`) accepts, so the
+    ///    switch collapses to a `BlockSwitch` and the body sequence
+    ///    `head; …; BlockSwitch` reduces to ONE goto-only component.  The head's
+    ///    address is recorded in `pending_inf_loops`.
+    /// 2. **Re-wrap** ([`Self::match_pending_inf_loop`]).  Once that component has
+    ///    fully collapsed, wrap it into a `BlockInfLoop` (the kuna analog of angr's
+    ///    `LoopNode("while", true, seq)`).  The `scopeBreak` pass lowers the
+    ///    goto-to-head edges to `continue;` and the goto-to-outside edges to
+    ///    `break;`, exactly as for the `CollapseStructure` path.
+    ///
+    /// This mirrors angr's filtered-view trick (`_f()` hides the
+    /// `cyclic_refinement_outgoing`-marked edges so the acyclic schemas collapse the
+    /// switch, then `_match_cyclic_natural_loop` folds the body) using kuna's
+    /// structural `set_goto_branch` marks instead.
+    ///
+    /// Returns `true` (made progress) iff it virtualized the boundary edges of a
+    /// genuine switch-bodied natural loop.  Honest-partial: a loop that is not this
+    /// shape is left untouched for `refine_loop_edges` / the virtualize fallback.
+    fn try_fold_switch_loop(&mut self, head: BlockId) -> KunaResult<bool> {
+        // The head must be a 2-out decision (the loop test), not already a goto/
+        // switch, and not an interior-goto target (a continue-goto already aimed at
+        // it would make a head-tested loop malformed; an inf-loop is fine, but we
+        // only fold the exit edge here and let the inf-loop rule run later).
+        let dbg = std::env::var_os("KUNA_RS_DEBUG").is_some();
+        let hb = self.graph.block(head);
+        if hb.size_out() != 2 || hb.is_switch_out() {
+            if dbg { eprintln!("[rs]   sw-loop head#{} bail: sizeout={} switchout={}", self.graph.block(head).get_index(), hb.size_out(), hb.is_switch_out()); }
+            return Ok(false);
+        }
+        if hb.is_goto_out(0) || hb.is_goto_out(1) {
+            if dbg { eprintln!("[rs]   sw-loop head#{} bail: goto out", self.graph.block(head).get_index()); }
+            return Ok(false);
+        }
+
+        // Resolve the loop body STRUCTURALLY (the natural-loop walk: nodes dominated
+        // by `head` that reach a latch of `head`).  We deliberately do NOT use the
+        // region identifier's projection here: RI absorbs the whole dominated
+        // continuation after the loop (for the getopt loop it projects the entire
+        // `main`), so its body is far too broad to tell the head's loop-exit edge
+        // from the body.  The structural body is exactly `{head} ∪ {switch + cases
+        // that loop back}` — the tight getopt loop.
+        let head_addr = self.component_addr(head);
+        let body_vec = self.natural_loop_body(head);
+        let in_body: std::collections::BTreeSet<BlockId> = body_vec.iter().copied().collect();
+
+        // Single-entry only: an irreducible (multi-entry) head can't fold this way.
+        if self.head_extra_entries(head, &in_body) > 0 {
+            if dbg { eprintln!("[rs]   sw-loop head#{} bail: multi-entry", self.graph.block(head).get_index()); }
+            return Ok(false);
+        }
+
+        // Find a switch component in the body whose case edges loop back to `head`
+        // (the `continue`s).  Without such a switch this is not the getopt pattern;
+        // leave it to `refine_loop_edges`.
+        let mut switch_bl: Option<BlockId> = None;
+        for &bl in in_body.iter() {
+            let b = self.graph.block(bl);
+            if !b.is_switch_out() {
+                continue;
+            }
+            for e in 0..b.size_out() {
+                if b.get_out(e) == head {
+                    switch_bl = Some(bl);
+                    break;
+                }
+            }
+            if switch_bl.is_some() {
+                break;
+            }
+        }
+        let switch_bl = match switch_bl {
+            Some(s) => s,
+            None => {
+                if dbg { eprintln!("[rs]   sw-loop head#{} bail: no switch->head in body (bodylen={})", self.graph.block(head).get_index(), in_body.len()); }
+                return Ok(false);
+            }
+        };
+        if dbg { eprintln!("[rs]   sw-loop head#{} HAS switch->head, bodylen={}", self.graph.block(head).get_index(), in_body.len()); }
+
+        // Identify the head's loop-EXIT out-edge: the decision out whose target is
+        // NOT in the structural body (it leaves the loop) and is not a back-edge.
+        // The other out-edge flows into the switch body.  If both outs stay in the
+        // body (no head exit) or both leave, this isn't the shape we fold.
+        let mut exit_edge: Option<int4> = None;
+        for e in 0..2 {
+            let dst = self.graph.block(head).get_out(e);
+            if dst == head {
+                continue;
+            }
+            let in_body_dst = in_body.contains(&dst);
+            let is_back = self.graph.block(head).is_back_edge_out(e);
+            if !in_body_dst && !is_back {
+                if exit_edge.is_some() {
+                    if dbg { eprintln!("[rs]   sw-loop head#{} bail: two head exits", self.graph.block(head).get_index()); }
+                    return Ok(false); // two exits off the head — not this shape
+                }
+                exit_edge = Some(e);
+            }
+        }
+        let exit_edge = match exit_edge {
+            Some(e) => e,
+            None => {
+                if dbg { eprintln!("[rs]   sw-loop head#{} bail: no clean head exit edge", self.graph.block(head).get_index()); }
+                return Ok(false);
+            }
+        };
+
+        // Collect EVERY boundary edge of the structural loop body that is not yet a
+        // goto: the head's loop-exit edge, the switch's case→head **continue**
+        // back-edges, and any case→outside **break** edges.  Virtualizing all of
+        // them turns each switch case into a *terminal* `BlockGoto` (sizeout 0) the
+        // unmodified `ruleBlockSwitch` accepts, so the switch collapses cleanly; the
+        // body sequence `head; …; BlockSwitch` then reduces to ONE goto-only
+        // component which `match_pending_inf_loop` wraps as a `BlockInfLoop`.
+        //
+        // This mirrors angr's filtered-view trick (`_f()` hides the marked
+        // `cyclic_refinement_outgoing` edges so the acyclic schemas collapse the
+        // switch, then `_match_cyclic_natural_loop` folds the body) using kuna's
+        // structural `set_goto_branch` marks.  `scopeBreak` lowers a goto-to-head to
+        // `continue;` (set explicitly at the inf-loop wrap) and a goto-to-outside to
+        // `break;`.
+        // We DELIBERATELY KEEP the head's own loop-exit edge structural (it stays a
+        // 2-out decision): that prevents the sequence schema from merging the loop
+        // *preheader* into the body (which would move the head off the front leaf and
+        // hide it from `match_pending_inf_loop`).  After the switch folds, the head
+        // becomes a `BlockIf` whose then-clause is the switch and whose single
+        // out-edge is the loop exit — exactly the body `match_pending_inf_loop` wraps
+        // as a `BlockInfLoop` with that exit as the loop successor (the break target).
+        let _ = exit_edge; // confirmed the single clean head exit above; kept structural
+        // Virtualize ONLY the **break** edges: a body out-edge whose target is
+        // OUTSIDE the loop body and is NOT the head (e.g. the switch's `default:
+        // usage();` case).  We KEEP the case→head **continue** back-edges structural:
+        // the extended `try_switch_cases` (`is_continue_case`) treats a switch case
+        // whose only out is a back-edge to the loop head as a TERMINAL continue case,
+        // so the switch folds with `exitblock == head`; the resulting `BlockSwitch`
+        // keeps a single consolidated back-edge to `head`, and `try_fold_loop`'s
+        // while-do rule folds `head{BlockSwitch→head}` into a `BlockWhileDo`.  Keeping
+        // the head's exit edge structural keeps it a 2-out decision (the loop test).
+        let mut boundary_edges: Vec<(BlockId, int4)> = Vec::new();
+        for &bl in in_body.iter() {
+            if bl == head {
+                continue; // keep BOTH head out-edges structural (exit + into-switch)
+            }
+            let b = self.graph.block(bl);
+            for e in 0..b.size_out() {
+                let dst = b.get_out(e);
+                if dst == head || in_body.contains(&dst) {
+                    continue; // continue back-edge or internal edge — KEEP
+                }
+                if b.is_goto_out(e) || b.is_back_edge_out(e) {
+                    continue; // already virtualized / a back-edge
+                }
+                boundary_edges.push((bl, e));
+            }
+        }
+
+        if boundary_edges.is_empty() {
+            // No break edges to virtualize — the switch's only non-continue exit is
+            // already the head.  Leave it to `try_switch_cases` + `try_fold_loop`;
+            // making no change here avoids spinning.
+            if dbg { eprintln!("[rs]   sw-loop head#{} no break edges (switch already single-exit=head)", self.graph.block(head).get_index()); }
+            return Ok(false);
+        }
+
+        if dbg {
+            eprintln!(
+                "[rs]   sw-loop head#{} VIRTUALIZING {} break edges (switch#{}) @0x{:x}",
+                self.graph.block(head).get_index(), boundary_edges.len(),
+                self.graph.block(switch_bl).get_index(),
+                head_addr.unwrap_or(0),
+            );
+        }
+
+        // Virtualize the break edges to gotos.  The head's exit edge and the
+        // case→head continue back-edges stay structural so the switch folds with
+        // `exitblock == head` and the loop folds as a `BlockWhileDo`.
+        for (src, e) in boundary_edges {
+            self.graph.set_goto_branch(src, e)?;
+        }
+
+        // The break virtualizations are progress; the surrounding cascade re-runs and
+        // (with the loop body protected from `virtualize_one_edge`) folds the switch
+        // with `exitblock == head`/`exit=false`.  Once the body has collapsed,
+        // `match_pending_inf_loop`/`try_fold_loop` fold the loop.  Recording the body
+        // address set lets `match_pending_inf_loop` re-resolve and absorb the body.
+        if let Some(a) = head_addr {
+            self.pending_inf_loops.insert(a);
+            self.pending_body_addrs.insert(a, self.body_addr_set(&in_body));
+        }
+        Ok(true)
+    }
+
+    /// The set of front-leaf start addresses of the live components currently in the
+    /// loop body `in_body` — a stable key set the body components can be re-resolved
+    /// through after they merge/fold during the atomic drive.
+    fn body_addr_set(
+        &self,
+        in_body: &std::collections::BTreeSet<BlockId>,
+    ) -> std::collections::BTreeSet<uintb> {
+        let mut s = std::collections::BTreeSet::new();
+        for &bl in in_body.iter() {
+            if let Some(a) = self.component_addr(bl) {
+                s.insert(a);
+            }
+        }
+        s
+    }
+
+    /// SAILR P1 — absorb the live loop body (the components whose front-leaf address
+    /// is in `body_addrs`, rooted at `head_addr`) into one `BlockInfLoop` via
+    /// [`BlockGraph::new_block_inf_loop_region`].  The kuna analog of angr
+    /// `phoenix._match_cyclic_natural_loop`: collect the whole cycle into one loop
+    /// node rather than requiring it to pre-collapse to a single block.
+    ///
+    /// Preconditions for a clean, valid-C fold (else returns `false`, honest-partial):
+    ///   * the head component is live and is the only body member with an external
+    ///     (non-body) in-edge — i.e. the region is single-entry (the preheader);
+    ///   * every body member's structural out-edges stay inside the body EXCEPT at
+    ///     most one retained exit edge (the loop successor / `break` target); other
+    ///     boundary edges are already gotos (continues/breaks).
+    fn try_absorb_body_region(
+        &mut self,
+        head_addr: Option<uintb>,
+        body_addrs: &std::collections::BTreeSet<uintb>,
+    ) -> KunaResult<bool> {
+        let head = match self.resolve_head(head_addr) {
+            Some(h) => h,
+            None => return Ok(false),
+        };
+        // Collect the live body members (in component order, head first).
+        let mut members: Vec<BlockId> = vec![head];
+        let mut member_set: std::collections::BTreeSet<BlockId> =
+            std::collections::BTreeSet::new();
+        member_set.insert(head);
+        let n = self.size();
+        for i in 0..n {
+            let bl = self.component(i);
+            if bl == head {
+                continue;
+            }
+            if let Some(a) = self.component_addr(bl) {
+                if body_addrs.contains(&a) {
+                    members.push(bl);
+                    member_set.insert(bl);
+                }
+            }
+        }
+        let dbg = std::env::var_os("KUNA_RS_DEBUG").is_some();
+        if members.len() < 2 {
+            return Ok(false); // body did not stay multi-membered — not this path
+        }
+
+        // Single-entry check: only the head may have an external structural in-edge
+        // (the preheader).  Any other body member reached from outside the body by a
+        // structural edge means the region is not single-entry → bail.
+        for &m in members.iter() {
+            if m == head {
+                continue;
+            }
+            let mb = self.graph.block(m);
+            for j in 0..mb.size_in() {
+                let p = mb.get_in(j);
+                if !member_set.contains(&p) && !mb.is_goto_in(j) {
+                    if dbg { eprintln!("[rs]   absorb bail: member#{} has external in from #{} (multi-entry)", self.graph.block(m).get_index(), self.graph.block(p).get_index()); }
+                    return Ok(false);
+                }
+            }
+        }
+
+        // Exit check: count the retained structural (non-goto) out-edges that leave
+        // the body.  At most one (the loop successor) is allowed; more means the body
+        // has multiple live exits and is not yet ready to wrap.
+        let mut exits = 0;
+        for &m in members.iter() {
+            let mb = self.graph.block(m);
+            for e in 0..mb.size_out() {
+                let dst = mb.get_out(e);
+                if member_set.contains(&dst) || dst == m {
+                    continue; // internal / self
+                }
+                if mb.is_goto_out(e) {
+                    continue; // already a break/continue goto
+                }
+                exits += 1;
+            }
+        }
+        if exits > 1 {
+            if dbg { eprintln!("[rs]   absorb bail: {} live exits (members={})", exits, members.len()); }
+            return Ok(false);
+        }
+
+        // Every member must already be structured enough to render (no live bare
+        // switch head — its cases must have folded).
+        for &m in members.iter() {
+            if self.graph.block(m).is_switch_out() {
+                if dbg { eprintln!("[rs]   absorb bail: member#{} still a live switch", self.graph.block(m).get_index()); }
+                return Ok(false);
+            }
+        }
+        if dbg { eprintln!("[rs]   absorb OK: wrapping {} members as inf-loop", members.len()); }
+
+        // Mark the interior continue gotos (goto→head) as `continue;` before wrapping.
+        if let Some(a) = head_addr {
+            for &m in members.iter() {
+                self.mark_continue_gotos(m, a);
+            }
+        }
+
+        let graph_id = self.graph_id;
+        self.graph.new_block_inf_loop_region(graph_id, &members);
+        Ok(true)
+    }
+
+    /// Re-resolve a loop head component by its recorded front-leaf address (used by
+    /// the `try_fold_switch_loop` atomic drive, since the head's `BlockId` changes
+    /// as it merges).  Returns the live component whose front leaf is `addr`.
+    fn resolve_head(&self, addr: Option<uintb>) -> Option<BlockId> {
+        let addr = addr?;
+        let n = self.size();
+        for i in 0..n {
+            let bl = self.component(i);
+            if self.component_addr(bl) == Some(addr) {
+                return Some(bl);
+            }
+        }
+        None
+    }
+
+    /// SAILR P1 — wrap a collapsed switch-bodied loop body (whose boundary edges
+    /// `try_fold_switch_loop` virtualized to gotos) back into a `BlockInfLoop`.
+    ///
+    /// After `try_fold_switch_loop` virtualizes a loop's exit + every boundary edge
+    /// (continues and breaks) to gotos, the acyclic schemas collapse the body
+    /// `head; …; BlockSwitch` into a SINGLE component whose only out-edges (if any)
+    /// are gotos — it is no longer cyclic, so `collect_loop_heads` cannot see it.
+    /// This schema finds that component by its recorded front-leaf head address and
+    /// folds it into a `BlockInfLoop` (the kuna analog of angr's
+    /// `LoopNode("while", true, seq)`).  A goto inside the body whose target is the
+    /// loop head is marked `f_continue_goto` here so `scopeBreak`/the printer render
+    /// it as `continue;`; a goto whose target leaves the loop is lowered to `break;`
+    /// by `scopeBreak`.
+    ///
+    /// Conservative match (honest-partial): the component must (a) cover a pending
+    /// head address as its front leaf, (b) not still be a bare switch mid-collapse,
+    /// and (c) have AT MOST ONE structural (non-goto, non-self) out-edge — the loop
+    /// successor (the `break` target).  The switch's continue/break cases inside the
+    /// body must already be virtualized to gotos.  Anything else is left for a later
+    /// round; if the body never converges the pending entry never fires and the loop
+    /// falls back cleanly.
+    fn match_pending_inf_loop(&mut self) -> KunaResult<bool> {
+        if self.pending_inf_loops.is_empty() {
+            return Ok(false);
+        }
+        // Try to absorb each pending switch-loop body whose members have finished
+        // folding (the switch → `BlockSwitch`, the pre-switch conditionals →
+        // `BlockIf`).  Iterate over a snapshot since a successful absorb mutates the
+        // pending set.
+        let pending: Vec<uintb> = self.pending_inf_loops.iter().copied().collect();
+        for addr in pending {
+            let body_addrs = match self.pending_body_addrs.get(&addr).cloned() {
+                Some(s) => s,
+                None => continue,
+            };
+            if self.try_absorb_body_region(Some(addr), &body_addrs)? {
+                self.pending_inf_loops.remove(&addr);
+                self.pending_body_addrs.remove(&addr);
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Mark every `BlockGoto`/`BlockIf`-goto inside the just-collapsed loop body
+    /// `bl` whose goto target is the loop head (front-leaf address `head_addr`) as a
+    /// `continue;` (`f_continue_goto`).  kuna's `scopeBreak` only establishes
+    /// `break;`; the `continue;` flag must be set at loop construction (per the note
+    /// in `kuna_loopbreak_recovery`), which is what this does — turning the getopt
+    /// switch's `goto loop-head` cases into `continue;`.
+    fn mark_continue_gotos(&mut self, bl: BlockId, head_addr: uintb) {
+        use crate::block::{block_flags, BlockKind, BlockType};
+        // Walk the component subtree; a Goto/If/MultiGoto whose target's front-leaf
+        // address is the loop head becomes a continue.
+        let mut stack = vec![bl];
+        while let Some(cur) = stack.pop() {
+            match self.graph.block(cur).get_type() {
+                BlockType::Goto => {
+                    if let Some(tgt) = self.graph.block(cur).get_goto_target() {
+                        if self.component_addr(tgt) == Some(head_addr) {
+                            if let BlockKind::Goto { gototype, .. } =
+                                self.graph.block_mut(cur).kind_mut()
+                            {
+                                *gototype = block_flags::f_continue_goto;
+                            }
+                        }
+                    }
+                }
+                BlockType::If => {
+                    if let Some(tgt) = self.graph.block(cur).get_if_goto_target() {
+                        if self.component_addr(tgt) == Some(head_addr) {
+                            if let BlockKind::If { gototype, .. } =
+                                self.graph.block_mut(cur).kind_mut()
+                            {
+                                *gototype = block_flags::f_continue_goto;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+            // Recurse into sub-components (BlockList/If/Switch/etc.).
+            let sz = self.graph.block(cur).get_size();
+            for k in 0..sz {
+                stack.push(self.graph.block(cur).get_block(k));
+            }
+        }
     }
 
     /// Refine a not-yet-foldable loop by marking its *secondary* control edges as
@@ -1959,10 +2507,30 @@ impl<'a> RegionStructurer<'a> {
     /// the base `_chick_order_edges` tie-break.  Returns `false` only if no
     /// structured (non-goto, non-self) out-edge exists at all.
     fn virtualize_one_edge(&mut self) -> KunaResult<bool> {
+        // SAILR P1: when a switch-bodied loop is mid-fold (its head still live and
+        // `try_fold_switch_loop` owns it), protect every edge inside that loop body
+        // from last-resort virtualization — otherwise the case/continue edges get
+        // shattered before the switch and loop can fold, defeating the schema.  The
+        // protected set is the union of the structural natural-loop bodies of all
+        // live switch-bodied loop heads.  Off-loop and acyclic code is unaffected,
+        // so this is parity-safe (the protected set is empty without such a loop).
+        let mut protected: std::collections::BTreeSet<BlockId> =
+            std::collections::BTreeSet::new();
+        if self.loop_refine {
+            for &h in self.collect_loop_heads().iter() {
+                if self.is_switch_bodied_loop_head(h) {
+                    for bl in self.natural_loop_body(h) {
+                        protected.insert(bl);
+                    }
+                }
+            }
+        }
+
         // Collect candidate edges: structured (non-goto) out-edges of components,
         // excluding self-loops and edges to a single-out chain that the sequence
         // schema would otherwise fold (so we never goto a foldable sequence).
         let mut candidates: Vec<Edge> = Vec::new();
+        let mut protected_candidates: Vec<Edge> = Vec::new();
         let n = self.size();
         for i in 0..n {
             let src = self.component(i);
@@ -1976,8 +2544,20 @@ impl<'a> RegionStructurer<'a> {
                 if dst == src {
                     continue; // self-loop (back edge handled elsewhere)
                 }
-                candidates.push(Edge { src, edge: e, dst });
+                let edge = Edge { src, edge: e, dst };
+                // An edge wholly inside a protected switch-loop body is deferred.
+                if protected.contains(&src) && protected.contains(&dst) {
+                    protected_candidates.push(edge);
+                } else {
+                    candidates.push(edge);
+                }
             }
+        }
+        // Only virtualize a protected (in-loop) edge as the very last resort, when
+        // there is no other structured edge to break — so the switch-loop fold gets
+        // every chance to complete first.
+        if candidates.is_empty() {
+            candidates = protected_candidates;
         }
         if candidates.is_empty() {
             return Ok(false);

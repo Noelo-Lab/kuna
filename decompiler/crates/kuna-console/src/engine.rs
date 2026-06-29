@@ -159,6 +159,22 @@ impl ConsoleProgram {
         self.symbols.iter().find(|s| s.name == name).map(|s| s.addr.clone())
     }
 
+    /// (kuna) Iterate every function symbol kuna knows for the loaded program as
+    /// `(name, entry Address)` — the enumeration a whole-binary driver
+    /// (`kuna decompile-all`) loops over.
+    ///
+    /// After [`Self::commit_pending_analysis`] (`read symbols`) this covers both
+    /// the loader's function symbols (`.symtab`/`.dynsym`/PLT stubs, read at load
+    /// into `self.symbols`) and the analysis-tier discovered/renamed functions
+    /// (committed via [`Self::register_symbol`]).  The addresses are engine
+    /// code-space VMAs, which equal the ELF file virtual addresses for
+    /// `ET_EXEC`/`ET_DYN`.  CRT/thunk/PLT filtering is intentionally left to the
+    /// caller (the decbench backend's `should_skip_function`), matching the
+    /// raw-backend convention — the engine reports every function it found.
+    pub fn function_entries(&self) -> impl Iterator<Item = (&str, &Address)> {
+        self.symbols.iter().map(|s| (s.name.as_str(), &s.addr))
+    }
+
     /// (kuna) Is a (possibly `::`-scoped) symbol of full name `full_name` present in
     /// the engine symbol table? Resolves the namespace path (`Box::vftable` → scope
     /// `Box`, basename `vftable`) read-only, then queries that scope by basename.

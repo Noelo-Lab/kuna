@@ -2286,6 +2286,41 @@ impl Database {
         out
     }
 
+    /// (kuna) The `(name, type, addr, category)` specs for every whole-symbol entry
+    /// mapped into a scope's space, for an out-of-pipeline JSON/benchmark consumer
+    /// (the `kuna decompile-all --json` variable extractor).  Like
+    /// [`Self::scope_space_symbol_specs`] but surfaces the symbol *category* (see
+    /// [`symbol_category`]) so the caller can keep recovered locals
+    /// (`NO_CATEGORY`) and drop formal parameters (`FUNCTION_PARAMETER`, already
+    /// emitted from the `FuncProto`) — the split `printc`'s
+    /// `emitScopeVarDecls(no_category)` makes.  Whole-symbol entries only
+    /// (`offset == 0`); symbols with no data-type are skipped.
+    pub fn scope_space_local_var_specs(
+        &self,
+        scope: ScopeId,
+        space_index: usize,
+    ) -> Vec<(String, Rc<Datatype>, Address, int4)> {
+        let mut out = Vec::new();
+        let rangemap = match self.scopes[scope].maptable.get(space_index).and_then(|m| m.as_ref()) {
+            Some(rm) => rm,
+            None => return out,
+        };
+        for (_, rec) in rangemap.records() {
+            let entry = &rec.entry;
+            if entry.get_offset() != 0 {
+                continue;
+            }
+            let sym = entry.symbol;
+            let symbol = &self.symbols[sym];
+            let ct = match &symbol.dtype {
+                Some(c) => Rc::clone(c),
+                None => continue,
+            };
+            out.push((symbol.name.clone(), ct, entry.get_addr().clone(), symbol.get_category()));
+        }
+        out
+    }
+
     /// The `(name, type, addr, all_flags)` specs for every **addr-tied** (empty-
     /// `uselimit`) Symbol mapped into this scope in a space OTHER than
     /// `skip_space_index`.  The console `map addr <ramaddr> <type> <name>` form
