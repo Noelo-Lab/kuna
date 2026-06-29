@@ -1,10 +1,14 @@
 # Region-based (Phoenix/SAILR) structurer for kuna — staged roadmap
 
 **Status:** LANDED & DEFAULT-ON. Inc 0–5 are implemented; `regionstructure` is the primary
-S8 structuring path (DIV-12 default-on, falls back to `CollapseStructure` on irreducible code).
-Inc 5b (loop-successor refinement infrastructure, option `regionlooprefine`, default-OFF) is
-landed parity-safe. The remaining **goto-win** (complete acyclic schemas + continuation hoisting)
-is the deferred Inc 6 — see the *Inc 5b* section below for the precise remaining path.
+S8 structuring path (**DIV-12 default-on**, falls back to `CollapseStructure` on irreducible
+code). Inc 5b (loop-successor refinement, option `regionlooprefine`) is also **DIV-14
+default-on** and parity-safe. **SAILR P1** (this branch — the cyclic *natural-loop over a
+structured switch body*, the `while ((c = getopt_long(...)) != -1) switch (c) { … }` pattern)
+extends `regionlooprefine` with a switch-bodied-loop fold; see the **SAILR P1** section at the
+bottom for the mechanism, the convergence status, and the goto-swing finding. The remaining
+**goto-win** (complete acyclic schemas + continuation hoisting) is the deferred Inc 6 — see the
+*Inc 5b* section below for the precise remaining path.
 
 This is the foundation behind the "structuring / goto / switch / loops" gains. Multiple
 feature attempts (e.g. the head-in-body natural-loop PR #44) returned NEGATIVE with the same
@@ -285,3 +289,47 @@ secondary-exit gotos become `break;`/`continue;` — i.e. a **measurable goto re
 Ghidra on the `parse_str`-class functions (multi-exit loops with switch-dominated successors)
 that motivated this work. That is the deferred **Inc 6**; this increment lands the parity-safe
 infrastructure (RI projection + `force_loop_single_exit` refinement) it stands on.
+
+## SAILR P1 — cyclic natural-loop over a structured switch body (`while…switch` / getopt)
+
+**Scope:** the linchpin schema for the `while ((c = getopt_long(...)) != -1) switch (c) { … }`
+pattern in every coreutils `main` — a loop whose body is a *switch* whose cases `continue` (loop
+back to the head) or `break` (leave the loop). This is the kuna analog of angr
+`phoenix._match_cyclic_natural_loop` + the switch-in-loop edge marking of `_refine_cyclic_core`
+(a case→head edge marked `cyclic_refinement_outgoing`, foldable as `continue`, instead of
+virtualized). Gated by **`regionlooprefine`** (it only fires on a loop the base cyclic schemas
+already declined), so it is parity-safe by construction.
+
+**Mechanism (`region_structurer.rs`):**
+1. **Continue-aware switch fold** — `try_switch_cases` now treats a switch case whose single
+   out-edge is a `f_back_edge` to the loop head as a **terminal `continue` case** (it neither
+   becomes nor constrains the switch's fall-through exit), the kuna analog of angr's filtered
+   view (`_f()`) hiding the marked case→head edge from the acyclic switch schema. The resulting
+   `BlockSwitch` keeps the back-edge (so the enclosing loop is still detected). Parity-safe: an
+   acyclic datatest switch has **no** back-edge case, so this branch is dead off-loop and the
+   675-assertion corpus is byte-identical.
+2. **Switch-bodied-loop detection + boundary virtualization** — `try_fold_switch_loop` detects a
+   single-entry natural loop whose body contains a switch that loops back to the head, virtualizes
+   the loop's **break** edges (case→outside-the-loop) to gotos so the switch's only non-continue
+   successor is the head, and lets the continue-aware switch fold collapse it.
+3. **Region-absorbing inf-loop wrap** — once the body folds, the natural-loop body set is absorbed
+   into a `BlockInfLoop` (angr's `LoopNode("while", true, seq)`), with the case→head gotos lowered
+   to `continue;` and the break gotos to `break;` by the existing `scopeBreak` pass.
+
+**Convergence + goto-swing finding (the honest result):** the schema **does fold** the getopt
+switch loop — on `cat.o`/`chcon.o`/`mv_0`/`cvs` `main` the switch collapses (continue-aware) and
+the loop-body region absorbs into an inf-loop. But the **whole-function** structuring still does
+*not* converge to a single root (`ok=true`) on those real binaries — the surrounding `main`
+(the file-processing loop, the nested pre-switch conditionals branching to `usage()`/`version()`
+no-return tails, shared case tails) fragments and the structurer falls back to `CollapseStructure`
+(the all-or-nothing seam in `ActionBlockStructure::apply` — a non-converged region structurer
+re-seeds `sblocks` and runs Ghidra's path). And on a *clean* synthetic getopt loop where the
+region structurer **does** converge, `CollapseStructure` **already emits zero gotos** (it has a
+complete while/switch rule set + a good `select_goto`). So there is **no demonstrable goto swing**
+on this pattern: the clean cases are already optimal via the fallback, and the complex real mains
+do not fully converge. This is the same "acyclic convergence around the refined region" blocker
+the deferred **Inc 6** describes — SAILR P1 closes the *switch-in-loop* half (continue-aware
+switch fold + region absorption) but the **continuation hoisting + complete acyclic schemas**
+needed to converge the surrounding `main` remain the large Inc 6 follow-up. SAILR P1 lands the
+switch-bodied-loop foundation, parity-safe (`make test` 675/675), honest-partial (never invalid
+C — a non-converging function falls back exactly as before).
