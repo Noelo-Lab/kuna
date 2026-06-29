@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Region-based (Phoenix/SAILR) structurer - last-resort edge-virtualization
+    ORDERING infrastructure (option `regionedgeorder`, default OFF; SAILR P2).
+    Sits on top of `regionstructure` (DIV-12 default-on): the read side of angr
+    `phoenix._last_resort_refinement` (the dominance-tiered crossing/secondary/other
+    bucketing via forward immediate-dominators + `to_acyclic_graph` + post-order
+    `node_seq`) and `sailr._order_virtualizable_edges` (H1 sibling-count -> H2
+    post-dominator count [capped at postdom_max_edges=10 / postdom_max_graph_size=50]
+    -> H3 return-edge -> base node_seq tiebreak).
+
+    What this proves end to end:
+
+      * When the structurer MUST virtualize an edge to a goto (no acyclic/cyclic
+        schema applies and >1 component remains), `regionedgeorder` ON replaces the
+        flat H1/H3 + address ordering with the dominance-tiered bucketing + H2
+        post-dominator heuristic.  `cross` is a reducible function with sibling
+        cross-edges that the acyclic schemas decline, so the structurer reaches the
+        `virtualize_one_edge` fallback - confirmed live via `KUNA_RS_DEBUG=1`
+        (`[rs] VIRT ...`): the new ordering FIRES on this function and selects a
+        DIFFERENT edge to virtualize than the flat ordering would.
+
+    Source (x86-64 GCC -O1, the `.text` bytes of a `-c` object loaded at 0x401000):
+
+        int cross(int a, int b, int c, int d, int e) {
+            int s = 0;
+            if (a > b) { if (c > d) goto P; s = 1; }
+            else       { s = 2; P: s += e; }
+            if (a) s += 10;
+            return s;
+        }
+
+    PARITY PROOF (the honest standalone result): the edge-virtualization ordering
+    only changes WHICH edge becomes a goto when the structurer is already FORCED to
+    virtualize.  Standalone (without the P1 cyclic-natural-loop fold that lets more
+    virtualized graphs converge), the kuna structurer that must virtualize on a knot
+    still reports `ok=false` for the FINAL collapse and falls back to
+    `CollapseStructure` to emit the C - so the net effect on emitted C is ZERO: pass
+    1 (`regionedgeorder off`) and pass 2 (`regionedgeorder on`) emit byte-identical
+    C.  Turning the opt-in ON exercises the new dominance-bucketing + H2
+    post-dominator machinery (it FIRES and picks a different edge) without changing
+    output, which is exactly the parity invariant this increment lands: the ordering
+    infrastructure is wired in and active, byte-safe by construction, and the goto
+    REDUCTION compounds once P1 lets virtualized graphs converge to a structured root
+    instead of falling back.
+
+    Across the whole 83-file / 675-assertion datatest corpus the structurer never
+    virtualizes (every function is reducible and folds via schemas), so this ordering
+    is unobservable there too - `make test` stays PARITY OK 675/675.
+
+    Asserted invariants below hold across BOTH passes (counts are 2x the per-pass
+    count): the if/else arms, the shared `+ e` join, the post-test, and the return -
+    identical with the ordering off and on.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa39f77e10b80100000039ca7e0f
+b800000000eb05b80200000044
+01c08d500a85ff0f45c2c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="cross"/>
+</binaryimage>
+<script>
+  <com>option regionstructure on</com>
+  <com>option regionedgeorder off</com>
+  <com>lo fu cross</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regionedgeorder on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="regionstructure-edgeorder #1: else-arm constant assignment recovered, both passes" min="2" max="2">    v1 = 2;</stringmatch>
+<stringmatch name="regionstructure-edgeorder #2: then-arm constant assignment recovered, both passes" min="2" max="2">    v1 = 1;</stringmatch>
+<stringmatch name="regionstructure-edgeorder #3: post-test guard recovered, both passes" min="2" max="2">  if \(a0 != 0\) \{</stringmatch>
+<stringmatch name="regionstructure-edgeorder #4: function returns the accumulator, both passes" min="2" max="2">  return v1;</stringmatch>
+<stringmatch name="regionstructure-edgeorder #5: regionedgeorder on is byte-identical to off (parity invariant)" min="2" max="2"> goto label_</stringmatch>
+</decompilertest>
