@@ -68,7 +68,7 @@ fn usage() {
         "usage: kuna <decompile|decompile-all|functions|test|catalog|specs|fid> ...\n\
          \n\
          kuna decompile <binary> <func> [--addr] [--slice ARCH] [--option NAME VALUE]... [--kassert ARGS]...\n\
-         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--option N V]...\n\
+         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--option N V]...\n\
          kuna functions <binary> [--json]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME]\n\

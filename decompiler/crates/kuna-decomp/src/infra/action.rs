@@ -526,6 +526,12 @@ pub trait Action {
             {
                 break;
             }
+            // (kuna decompile-all watchdog) Cooperative deadline: a repeatapply
+            // action that keeps finding changes must still yield once the
+            // per-function budget expires (a no-op compare when no budget).
+            if ctx.deadline_expired() {
+                break;
+            }
         }
 
         if (self.base().flags & (ruleflags::rule_onceperfunc | ruleflags::rule_oneactperfunc)) != 0 {
@@ -571,12 +577,39 @@ pub struct ActionContext {
     /// `restart_pending` flag on the Funcdata is left SET in this case (the outer
     /// loop consumes it after re-flow), unlike the in-loop restart which clears it.
     pub reflow_requested: bool,
+    /// (kuna decompile-all watchdog) Optional wall-clock deadline for the
+    /// per-function decompile drive (`kuna decompile-all --max-fn-seconds N`).
+    /// Consulted **cooperatively** at the action boundaries ([`ActionGroup::apply`],
+    /// [`ActionRestartGroup::apply`], [`Action::perform`]'s repeat gate) and every
+    /// [`POOL_DEADLINE_STRIDE`] ops in the [`ActionPool`] rule loop; on expiry the
+    /// containers stop scheduling further work and unwind with their current
+    /// counts, and the outer driver (`run_pipeline`) turns the expiry into a
+    /// per-function `Err`.  `None` (every path except `decompile-all` with a
+    /// budget) is a no-op compare — the console/`decomp_dbg` parity pipeline
+    /// never sets it.
+    pub deadline: Option<std::time::Instant>,
 }
+
+/// How many [`ActionPool`] op visits between deadline probes (the tight rule
+/// loop only pays an `Instant::now()` every this-many ops).
+const POOL_DEADLINE_STRIDE: u32 = 1024;
 
 impl ActionContext {
     /// A fresh context.
     pub fn new() -> ActionContext {
         ActionContext::default()
+    }
+
+    /// (kuna decompile-all watchdog) `true` once the cooperative per-function
+    /// [`deadline`](ActionContext::deadline) has passed.  A single
+    /// `Instant::now()` compare; `None` (no budget — every console/parity path)
+    /// short-circuits without touching the clock.
+    #[inline]
+    pub fn deadline_expired(&self) -> bool {
+        match self.deadline {
+            Some(d) => std::time::Instant::now() >= d,
+            None => false,
+        }
     }
 }
 
@@ -737,6 +770,14 @@ impl Action for ActionGroup {
             self.state = 0; // Initialize the derived action (list.begin())
         }
         while self.state < self.list.len() {
+            // (kuna decompile-all watchdog) Cooperative deadline at every action
+            // boundary: stop scheduling further sub-actions once the per-function
+            // budget expires and unwind with the current count (the outer driver
+            // `run_pipeline` turns the expiry into a per-function `Err`).  A
+            // no-op compare when no budget is set (every console/parity path).
+            if ctx.deadline_expired() {
+                return 0;
+            }
             let res = self.list[self.state].perform(data, ctx);
             if res > 0 {
                 // A change was made
@@ -833,6 +874,13 @@ impl Action for ActionRestartGroup {
             let res = self.group.apply(data, ctx);
             if res != 0 {
                 return res;
+            }
+            // (kuna decompile-all watchdog) Never begin another restart iteration
+            // past the per-function deadline — the observed non-convergence hang
+            // cycles heritage/deadcode restarts forever.  Return with the current
+            // state; `run_pipeline` converts the expiry into a per-function `Err`.
+            if ctx.deadline_expired() {
+                return 0;
             }
             if !data.has_restart_pending() {
                 self.curstart = -1;
@@ -1299,7 +1347,20 @@ impl Action for ActionPool {
             self.rule_index = 0;
         }
         // for(;op_state!=data.endOpAll();)
+        let mut ops_since_deadline_probe: u32 = 0;
         while let Some(op) = self.current_op(data) {
+            // (kuna decompile-all watchdog) Cooperative deadline in the tight
+            // rule loop, probed only every POOL_DEADLINE_STRIDE ops so the hot
+            // path stays cheap.  On expiry, stop visiting ops and report
+            // completion with the current count; the outer driver errors out.
+            ops_since_deadline_probe += 1;
+            if ops_since_deadline_probe >= POOL_DEADLINE_STRIDE {
+                ops_since_deadline_probe = 0;
+                if ctx.deadline_expired() {
+                    self.drain_into(ctx);
+                    return 0;
+                }
+            }
             let r = self.process_op(op, data);
             if r != 0 {
                 self.drain_into(ctx);
