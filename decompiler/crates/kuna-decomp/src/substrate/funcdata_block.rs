@@ -2188,11 +2188,21 @@ impl Funcdata {
             if self.obank().get(indop).map(|o| o.code()) != Some(OpCode::CPUI_BRANCHIND) {
                 continue;
             }
-            // If input 0 already names a live, non-free Varnode, leave it.
+            // If input 0 already names a live, non-free Varnode, leave it.  A
+            // constant is "heritage known" (C++ `Varnode::isHeritageKnown()` =
+            // insert|constant|annotation) and must count as healthy: on the
+            // hang-repro stripped-ELF corpus `ActionConditionalConst` legitimately
+            // proves the switch variable constant down the guarding edge and
+            // replaces this very input with the constant.  Classifying that
+            // constant as broken re-pointed the BRANCHIND back at the register
+            // SSA def on every heritage pass, and condconst re-replaced it on
+            // every mainloop iteration — the two actions toggled the same input
+            // forever and the repeatapply mainloop never converged (the
+            // `decompile-all` infinite hang on stripped openssh/bash binaries).
             let in0 = self.obank().get(indop).and_then(|o| o.get_in(0));
             let healthy = in0
                 .and_then(|v| self.vbank().get(v))
-                .map(|v| v.is_written() || v.is_input())
+                .map(|v| v.is_written() || v.is_input() || v.is_heritage_known())
                 .unwrap_or(false);
             if healthy {
                 continue;

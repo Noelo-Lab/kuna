@@ -615,3 +615,35 @@ fn dummy_rule_registers_and_dispatches_only_on_its_opcode() {
     assert!(pool.clone_filtered(&ActionGroupList::from_names(["analysis"])).is_some());
     assert!(pool.clone_filtered(&ActionGroupList::from_names(["other"])).is_none());
 }
+
+#[test]
+fn repeatapply_deadline_bounds_nonconverging_action() {
+    // (kuna decompile-all watchdog) The cooperative per-function deadline must
+    // bound a repeatapply loop whose child NEVER stops reporting changes — the
+    // exact shape of the stripped-ELF `decompile-all` hang (a `mainloop` child
+    // reported one change per iteration forever).  With an already-expired
+    // deadline the `Action::perform` repeat gate and the `ActionGroup::apply`
+    // scheduling boundary must both bail out after at most one body pass
+    // instead of looping on the huge budget.
+    let mut fd = build_fd();
+    let log: Log = Rc::new(RefCell::new(Vec::new()));
+    // A budget so large that, without the deadline, the loop would effectively
+    // run forever (1<<30 change-reporting passes).
+    let budget = Rc::new(RefCell::new(1 << 30));
+    let mut group = ActionGroup::new(ruleflags::rule_repeatapply, "grp");
+    group.add_action(CountdownAction::boxed("g", "act", budget.clone(), log.clone()));
+
+    let mut ctx = ActionContext::new();
+    ctx.deadline = Some(std::time::Instant::now()); // already expired
+    let total = group.perform(&mut fd, &mut ctx);
+    // The child applied at most twice (the group body may schedule the first
+    // pass before probing, and the repeat gate stops the loop), not 2^30 times.
+    assert!(
+        log.borrow().len() <= 2,
+        "expired deadline must stop the repeatapply loop, got {} applies",
+        log.borrow().len()
+    );
+    // Whatever ran is reported as the change count (the drive then turns the
+    // expiry into a per-function error).
+    assert!(total <= 2);
+}

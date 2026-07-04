@@ -133,35 +133,36 @@ fn decompile_all_emits_json_for_main() {
     );
 }
 
-/// The per-function watchdog (`--max-fn-seconds`) bounds the known
-/// non-converging function of the stripped-ELF hang repro: the invocation that
-/// used to spin FOREVER (100% CPU, no output) must now terminate, exit 0, and
-/// record the function as a per-function `error` in otherwise-valid JSON.
+/// The past-pathological function of the stripped-ELF hang repro now
+/// CONVERGES: `sub_1bd04` @ 0x1bd04 used to spin forever (100% CPU, no output)
+/// in a condconst↔lowered-switch-repair fixpoint tug-of-war
+/// (`kuna_repair_lowered_switch_inputs` mis-classified the constant that
+/// `ActionConditionalConst` legitimately installed on the synthetic BRANCHIND
+/// as a broken input, re-pointing it at the register def every heritage pass).
+/// With the repair's healthy-input test accepting heritage-known Varnodes the
+/// pipeline converges, so the DEFAULT watchdog budget must never fire here:
+/// the function decompiles with non-null `code` and null `error`.
 ///
-/// The 300s outer cap is deliberately generous (slow debug builds / shared-
-/// machine load); the watchdog itself is asked for 10s.
+/// This is the convergence-regression gate: if the fixpoint bug returns, the
+/// default 120s budget turns it into a per-function error (failing the
+/// `"error": null` assertion) inside the generous 300s outer cap — visible,
+/// never a hung CI.  The watchdog *mechanism* stays covered deterministically
+/// by `kuna-decomp`'s `repeatapply_deadline_bounds_nonconverging_action` unit
+/// test (an already-expired deadline bounding a never-converging repeatapply
+/// loop).
 #[test]
-fn decompile_all_watchdog_bounds_pathological_function() {
+fn decompile_all_converges_on_past_pathological_function() {
     let bin = hang_repro();
     let res = run_kuna_with_timeout(
-        &[
-            "decompile-all",
-            &bin,
-            "--addr",
-            "0x1bd04",
-            "--json",
-            "--max-fn-seconds",
-            "10",
-            "--sleighpath",
-            &specs(),
-        ],
+        &["decompile-all", &bin, "--addr", "0x1bd04", "--json", "--sleighpath", &specs()],
         Duration::from_secs(300),
     );
     let (stdout, stderr, ok) = match res {
         Some(t) => t,
         None => panic!(
             "kuna decompile-all did not terminate within the 300s outer bound — \
-             the --max-fn-seconds watchdog is not firing on the hang repro"
+             the 0x1bd04 convergence fix has regressed AND the default \
+             --max-fn-seconds watchdog is not firing"
         ),
     };
     if !ok {
@@ -172,16 +173,23 @@ fn decompile_all_watchdog_bounds_pathological_function() {
         panic!("kuna decompile-all failed: {stderr}");
     }
     // Shape assertions (no JSON dep): a well-formed single-function document
-    // whose one record errored out on the budget, with no code emitted.
+    // whose one record decompiled cleanly (non-null code, null error).
     let trimmed = stdout.trim();
     assert!(trimmed.starts_with('{') && trimmed.ends_with('}'), "output is not a JSON object:\n{stdout}");
     assert!(stdout.contains("\"count\": 1"), "expected count 1:\n{stdout}");
     assert!(stdout.contains("\"address_hex\": \"0x1bd04\""), "missing the 0x1bd04 record:\n{stdout}");
     assert!(
-        stdout.contains("\"error\": \"per-function decompile budget exceeded (10 s)\""),
-        "expected the watchdog budget error:\n{stdout}"
+        stdout.contains("\"error\": null"),
+        "sub_1bd04 must decompile cleanly now (the convergence fix regressed?):\n{stdout}"
     );
-    assert!(stdout.contains("\"code\": null"), "a budget-exceeded function must have null code:\n{stdout}");
+    assert!(
+        stdout.contains("\"code\": \""),
+        "sub_1bd04 must emit code (the convergence fix regressed?):\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("budget exceeded"),
+        "the watchdog must not fire on the fixed function:\n{stdout}"
+    );
 }
 
 /// Watchdog control: a healthy function in the SAME hang-repro binary
