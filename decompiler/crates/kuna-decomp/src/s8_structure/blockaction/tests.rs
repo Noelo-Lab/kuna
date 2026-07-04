@@ -768,14 +768,16 @@ fn cj_cutdown_keeps_multiequal_when_extra_pred_remains() {
 }
 
 // ---------------------------------------------------------------------------
-// is_complex resolution (BlockBasic::isComplex via the BlockCopy `copy` pointer)
+// is_complex resolution (the FlowBlock::isComplex virtual dispatch: only
+// BlockBasic/BlockCopy/BlockCondition override; base block.hh:254 is `true`)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn is_complex_resolves_through_block_copy() {
     // Build a structuring graph holding a single BlockCopy leaf whose `copy`
-    // points at a (synthetic) bblocks BlockBasic id.  is_complex must descend the
-    // front leaf, read the copy pointer, and consult the precomputed set.
+    // points at a (synthetic) bblocks BlockBasic id.  is_complex must read the
+    // copy pointer (BlockCopy::isComplex, block.hh:549) and consult the
+    // precomputed set (BlockBasic::isComplex, block.cc:2403).
     let mut g = BlockGraph::new();
     let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
     g.root = Some(root);
@@ -798,9 +800,88 @@ fn is_complex_resolves_through_block_copy() {
 
 #[test]
 fn is_complex_falls_back_to_true_for_non_copy_leaf() {
-    // A plain graph node (no BlockCopy descendant) cannot resolve to a basic
-    // block, so the C++ base FlowBlock::isComplex default (`true`) applies.
+    // A plain graph node has no isComplex override, so the C++ base
+    // FlowBlock::isComplex default (`true`, block.hh:254) applies.
     let (mut g, root, b) = build_graph(1);
     let cs = CollapseStructure::new(&mut g, root);
     assert!(cs.is_complex(b[0]), "non-copy leaf -> conservative true");
+}
+
+#[test]
+fn is_complex_blocklist_is_unconditionally_complex() {
+    // A BlockList has NO isComplex override upstream -> base `true`
+    // (block.hh:254) even when its front leaf is a trivial (non-complex)
+    // BlockBasic.  The buggy front-leaf descent scored such a list non-complex,
+    // which skipped the whileDo overflow syntax and inlined the list's
+    // statements (including embedded returns) into the `while(...)` parens —
+    // invalid C (decbench O0-iproute2-ip-lookup_flag_data_by_name).
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    let basic = g.new_block_basic(root);
+    let copyleaf = g.new_block_copy(root, basic); // trivial front leaf
+    let tail = g.new_block(root);
+    g.add_edge(copyleaf, tail);
+    let list = g.new_block_list(root, &[copyleaf, tail]).expect("new_block_list");
+
+    // `basic` is NOT in complex_blocks -> the front leaf alone would say false.
+    let cs = CollapseStructure::new(&mut g, root);
+    assert!(!cs.is_complex(copyleaf), "the front leaf itself is not complex");
+    assert!(cs.is_complex(list), "a BlockList is unconditionally complex (base isComplex)");
+}
+
+#[test]
+fn is_complex_blockif_is_unconditionally_complex() {
+    // A BlockIf has no isComplex override either -> base `true` (block.hh:254).
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    let basic = g.new_block_basic(root);
+    let cond = g.new_block_copy(root, basic); // trivial condition leaf
+    let clause = g.new_block(root);
+    let exit = g.new_block(root);
+    g.add_edge(cond, clause);
+    g.add_edge(cond, exit);
+    g.add_edge(clause, exit);
+    let ifblk = g.new_block_if(root, cond, clause);
+
+    let cs = CollapseStructure::new(&mut g, root);
+    assert!(cs.is_complex(ifblk), "a BlockIf is unconditionally complex (base isComplex)");
+}
+
+#[test]
+fn is_complex_condition_delegates_to_component_zero() {
+    // BlockCondition::isComplex -> getBlock(0)->isComplex() (block.hh:649):
+    // only the FIRST component's verdict matters.
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    let basic1 = g.new_block_basic(root);
+    let basic2 = g.new_block_basic(root);
+    let b1 = g.new_block_copy(root, basic1);
+    let b2 = g.new_block_copy(root, basic2);
+    let clause = g.new_block(root);
+    let exit = g.new_block(root);
+    g.add_edge(b1, b2);
+    g.add_edge(b1, clause);
+    g.add_edge(b2, clause);
+    g.add_edge(b2, exit);
+    let cond = g.new_block_condition(root, b1, b2).expect("new_block_condition");
+
+    // Mark only the SECOND component's basic complex: the condition still
+    // delegates to component 0 -> not complex.
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(basic2);
+    let cs = CollapseStructure::new(&mut g, root).with_complex_blocks(complex);
+    assert!(
+        !cs.is_complex(cond),
+        "BlockCondition delegates to getBlock(0), ignoring the second component"
+    );
+    drop(cs);
+
+    // Marking the FIRST component's basic complex flips the answer.
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(basic1);
+    let cs = CollapseStructure::new(&mut g, root).with_complex_blocks(complex);
+    assert!(cs.is_complex(cond), "complex getBlock(0) -> the condition is complex");
 }

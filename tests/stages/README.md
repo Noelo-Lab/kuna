@@ -96,6 +96,7 @@ writeup, not here.
 
 | `gh9218-inputvarnodeadjust.xml` | [GH-9218](https://github.com/NationalSecurityAgency/ghidra/issues/9218) | S6 storage reconciliation (`stack-frame-layout`, overlapping input varnodes) | `option inputvarnodeadjust on\|off` |
 | `ghangr-ite-region-converter-missing-5db28e.xml` | angr `test_ite_region_converter_missing_break_statement` (StackCanarySimplifier) | S7 region recovery (`edge-virtualization`, strip the -fstack-protector canary epilogue so the shared-return goto is eliminated) | `option stackguard on\|off` |
+| `ghdec-whiledo-complex.xml` | decbench `O0-iproute2-ip-lookup_flag_data_by_name` (invalid C: statement inside `while(...)` parens) | S8 structure recovery (whileDo overflow-syntax decision; `FlowBlock::isComplex` virtual-dispatch parity, porting-divergence correctness fix, no option) | default (upstream `isComplex`: BlockList/BlockIf unconditionally complex) |
 
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`

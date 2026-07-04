@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    235,
-    235
+    245,
+    245
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -211,6 +211,11 @@
     "data:regionstructure shortcircuit #1: the cascading b==0xc9 / a<=299 conditions fold to one compound and (both passes)",
     "data:regionstructure shortcircuit #2: the inner a<=299 condition is NOT left as a separate nested if (both passes)",
     "data:regionstructure shortcircuit #3: an unrelated single-condition else-if is unchanged (both passes)",
+    "data:regionstructure-edgeorder #1: else-arm constant assignment recovered, both passes",
+    "data:regionstructure-edgeorder #2: then-arm constant assignment recovered, both passes",
+    "data:regionstructure-edgeorder #3: post-test guard recovered, both passes",
+    "data:regionstructure-edgeorder #4: function returns the accumulator, both passes",
+    "data:regionstructure-edgeorder #5: regionedgeorder on is byte-identical to off (parity invariant)",
     "data:regionstructure-loop #1: do-while recovered (BlockDoWhile), both passes",
     "data:regionstructure-loop #2: for/while recovered (BlockWhileDo), both passes",
     "data:regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes",
@@ -220,11 +225,6 @@
     "data:regionstructure-loop-refine #3: early-return secondary exit preserved, both passes",
     "data:regionstructure-loop-refine #4: break secondary exit + post-loop return both recovered (2 sites x 2 passes), both passes",
     "data:regionstructure-loop-refine #5: ZERO gotos - regionlooprefine on is byte-identical to off (parity invariant)",
-    "data:regionstructure-edgeorder #1: else-arm constant assignment recovered, both passes",
-    "data:regionstructure-edgeorder #2: then-arm constant assignment recovered, both passes",
-    "data:regionstructure-edgeorder #3: post-test guard recovered, both passes",
-    "data:regionstructure-edgeorder #4: function returns the accumulator, both passes",
-    "data:regionstructure-edgeorder #5: regionedgeorder on is byte-identical to off (parity invariant)",
     "data:regionstructure-switch #1: the switch head is recovered, both passes",
     "data:regionstructure-switch #2: case 0, both passes",
     "data:regionstructure-switch #3: case 3 (middle of the dense table), both passes",
@@ -243,7 +243,12 @@
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
     "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)",
     "data:unrolledguard #1: option off, the interleaved dispatches degrade to computed calls (bug reproduced); option on adds ZERO new ones (7 pass1 + 0 pass2)",
-    "data:unrolledguard #2: option on recovers every interleaved table as a switch (1 off + 16 on = 17)"
+    "data:unrolledguard #2: option on recovers every interleaved table as a switch (1 off + 16 on = 17)",
+    "data:whiledo-complex #1: compound while condition forces overflow syntax (valid C)",
+    "data:whiledo-complex #2: no statement is inlined inside a while-parens condition (plain form absent)",
+    "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",
+    "data:whiledo-complex #4: the loop exit is a proper break statement",
+    "data:whiledo-complex #5: the bound-check return is a statement, not condition text"
   ],
   "returncode": 0,
   "unit_footer": null

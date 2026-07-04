@@ -811,21 +811,33 @@ impl<'a> RegionStructurer<'a> {
     /// Is `bl` too complex to be folded as a *cascading* condition clause (C++
     /// `FlowBlock::isComplex` virtual dispatch)?
     ///
-    /// The base returns `true`; `BlockList`/`BlockCopy` delegate down to the front
-    /// `BlockBasic`, whose statement count is the real test.  Resolves `bl` to its
-    /// front-leaf `BlockCopy` and reads the precomputed per-BlockBasic complexity
-    /// (`complex_blocks`, keyed by the `copy` pointer).  A block that does not
-    /// resolve to a `BlockCopy`/`BlockBasic` falls back to the conservative `true`
-    /// (so it never participates in a fold — honest-partial).  Identical to
+    /// Faithful to the upstream override set (`decompiler/cpp/block.hh`): the
+    /// base `FlowBlock::isComplex` (block.hh:254) returns `true` — every graph
+    /// subtype without an override (BlockList, BlockIf, ...) is unconditionally
+    /// complex; only `BlockCopy` (block.hh:549, delegates to the copied
+    /// `BlockBasic`, whose statement-count verdict `BlockBasic::isComplex`
+    /// block.cc:2403 is precomputed in `complex_blocks`) and `BlockCondition`
+    /// (block.hh:649, delegates to `getBlock(0)`) resolve further.  Identical to
     /// [`CollapseStructure::is_complex`](crate::blockaction::CollapseStructure).
     fn is_complex(&self, bl: BlockId) -> bool {
-        let leaf = match self.graph.get_front_leaf(bl) {
-            Some(l) => l,
-            None => return true, // base FlowBlock::isComplex
-        };
-        match self.graph.block(leaf).get_copy() {
-            Some(basic) => self.complex_blocks.contains(&basic),
-            None => true,
+        use crate::block::BlockType;
+        let mut bl = bl;
+        loop {
+            match self.graph.block(bl).get_type() {
+                // BlockCopy::isComplex -> copy->isComplex() (block.hh:549).
+                BlockType::Copy => {
+                    return match self.graph.block(bl).get_copy() {
+                        Some(basic) => self.complex_blocks.contains(&basic),
+                        None => true,
+                    };
+                }
+                // BlockCondition::isComplex -> getBlock(0)->isComplex()
+                // (block.hh:649).
+                BlockType::Condition => bl = self.graph.block(bl).get_block(0),
+                // Everything else inherits the base FlowBlock::isComplex
+                // default `true` (block.hh:254).
+                _ => return true,
+            }
         }
     }
 

@@ -45,9 +45,12 @@
 //!     `dataflow_changecount` driver, transcribed exactly.
 //!   - **`FlowBlock::isComplex`** ([`is_complex`]): the C++ base default returns
 //!     `true`; `BlockBasic::isComplex` counts statements against
-//!     `max_implied_ref` (data-flow).  The port returns the base default (`true`)
-//!     and seam-notes the statement count.  This only affects whether a whileDo
-//!     uses *overflow syntax* and whether `ruleBlockOr` fires — recorded as a loss.
+//!     `max_implied_ref` (data-flow).  The statement count is precomputed by
+//!     [`ActionBlockStructure`] over the live op lists (`Funcdata::bb_is_complex`
+//!     → `complex_blocks`) and [`is_complex`] reproduces the upstream virtual
+//!     dispatch exactly (only BlockCopy/BlockCondition resolve further; every
+//!     other subtype is unconditionally complex).  This decides whether a
+//!     whileDo uses *overflow syntax* and whether `ruleBlockOr` fires.
 //!
 //! The structuring [`Action`]s whose body is a single call into a `BlockGraph`
 //! method that `block.cc` defers to W7/W8 ([`ActionFinalStructure`] →
@@ -1990,23 +1993,45 @@ impl<'a> CollapseStructure<'a> {
     }
 
     /// Is structuring block `bl` too complex to be a condition clause (C++
-    /// `FlowBlock::isComplex` virtual dispatch: `BlockList`/`BlockCopy` delegate
-    /// down to the front `BlockBasic`, whose statement count is the real test;
-    /// the base returns `true`).
+    /// `FlowBlock::isComplex` virtual dispatch)?
     ///
-    /// Resolves `bl` to its front-leaf BlockCopy and reads the precomputed
-    /// per-BlockBasic complexity (`complex_blocks`, keyed by the `copy` pointer).
-    /// A block that does not resolve to a BlockCopy/BlockBasic (e.g. an empty
-    /// graph node) falls back to the conservative `true`.
+    /// Faithful to the upstream override set (`decompiler/cpp/block.hh`):
+    ///   * base `FlowBlock::isComplex` (block.hh:254) returns `true` — every
+    ///     graph subtype without an override (**BlockList, BlockIf, ...**) is
+    ///     unconditionally complex;
+    ///   * `BlockBasic::isComplex` (block.cc:2403) is the statement-count test,
+    ///     precomputed over the live op lists into `complex_blocks` (keyed by
+    ///     the bblocks id);
+    ///   * `BlockCopy::isComplex` (block.hh:549) delegates to the copied block
+    ///     — the `complex_blocks` lookup through the `copy` pointer;
+    ///   * `BlockCondition::isComplex` (block.hh:649) delegates to
+    ///     `getBlock(0)`.
+    ///
+    /// Note this is *not* a front-leaf descent: a compound condition block
+    /// (e.g. the BlockList a `ruleBlockWhileDo` condition can collapse to) is
+    /// complex regardless of how trivial its front `BlockBasic` is — that is
+    /// what forces the valid `while(true){...; if (cond) break;}` overflow
+    /// syntax instead of inlining statements into the `while(...)` parens.
     pub(crate) fn is_complex(&self, bl: BlockId) -> bool {
-        // C++ virtual chain: getFrontLeaf descends getBlock(0) to the t_copy leaf.
-        let leaf = match self.graph.get_front_leaf(bl) {
-            Some(l) => l,
-            None => return true, // base FlowBlock::isComplex
-        };
-        match self.graph.block(leaf).get_copy() {
-            Some(basic) => self.complex_blocks.contains(&basic),
-            None => true,
+        let mut bl = bl;
+        loop {
+            match self.graph.block(bl).get_type() {
+                // BlockCopy::isComplex -> copy->isComplex() (block.hh:549): the
+                // copied BlockBasic's statement-count verdict (block.cc:2403),
+                // precomputed in `complex_blocks`.
+                BlockType::Copy => {
+                    return match self.graph.block(bl).get_copy() {
+                        Some(basic) => self.complex_blocks.contains(&basic),
+                        None => true,
+                    };
+                }
+                // BlockCondition::isComplex -> getBlock(0)->isComplex()
+                // (block.hh:649).
+                BlockType::Condition => bl = self.graph.block(bl).get_block(0),
+                // Everything else inherits the base FlowBlock::isComplex
+                // default `true` (block.hh:254).
+                _ => return true,
+            }
         }
     }
 
