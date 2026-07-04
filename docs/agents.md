@@ -119,14 +119,18 @@ large/multi-part features go through a `[PROPOSAL]` draft PR for human go/no-go)
 ## Known issues
 
 - **Fixpoint non-convergence on certain fully-stripped x86-64 ELF binaries**
-  (underlying bug OPEN). On some stripped binaries (openssh/bash) ONE pathological
-  function's decompile pipeline never converges (heritage/dead-code restart cycling —
-  99 instructions, infinite loop, 100% CPU). The `decompile-all` **watchdog is shipped**
-  (`--max-fn-seconds`, default 120 s), so `kuna decompile-all` now isolates the
-  pathological function as a per-function `error` record and finishes the batch instead
-  of hanging forever. Single-function repro:
-  `kuna decompile-all tests/hang-repro/ssh-sk-helper --addr 0x1bd04`; offending binaries
-  + full writeup: **`tests/hang-repro/README.md`**.
+  (FIXED). The `loweredswitch` repair hook (`kuna_repair_lowered_switch_inputs`)
+  mis-classified the constant `ActionConditionalConst` legitimately installed on a
+  synthetic BRANCHIND as a broken input and re-pointed it at the register def on
+  every heritage pass — a condconst↔repair tug-of-war that kept the repeatapply
+  `mainloop` reporting one change forever (infinite loop, 100% CPU). Fixed by
+  accepting heritage-known Varnodes (C++ `Varnode::isHeritageKnown()`:
+  insert|constant|annotation) as healthy. The full known-hang set (9 stripped
+  openssh binaries + bash `-O2`) now completes under the default `decompile-all`
+  watchdog (`--max-fn-seconds`, default 120 s), which remains as a defensive
+  bound. Past repro: `kuna decompile-all tests/hang-repro/ssh-sk-helper --addr
+  0x1bd04` (now converges in well under a second); binaries + original writeup:
+  **`tests/hang-repro/README.md`**.
 
 ## Tests
 
