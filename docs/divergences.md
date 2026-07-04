@@ -573,3 +573,48 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   is unchanged (these are existing settables, only their `default`/`summary` change), so
   `catalog_bytecompat` is unaffected. `kuna catalog --check` OK.
 - **Date**: 2026-06-27.
+
+---
+
+## DIV-15: `kuna decompile-all` builds the Listing by default (decbench F1: `benchlisting`)
+
+- **Flip**: the **`decompile-all` driver** (`kuna-cli/src/decompile_all.rs::load_program`) now
+  injects `option listing on` before the analysis commit, unless the caller names `listing`
+  explicitly (`--option listing off` is the per-run opt-out; an explicit `on` is byte-identical
+  to the default). This is a **driver default**, not an engine default: `analysis_listing`
+  still resets to `false` in `reset_defaults_internal`, and `kuna functions`, `kuna decompile`
+  (subprocess `decomp_dbg`), the console, and the datatest harness all keep listing off.
+- **Problem**: the default-on `noreturn_propagate` pass (DIV-14) — the angr-CFGFast-style
+  call-graph no-return fixpoint — is a structural **no-op without the Listing**, and the
+  whole-binary benchmark/LLM surface (`decompile-all`, what decbench drives) never built one.
+  On a stripped binary a call to an unnamed internal exit/fatal wrapper (e.g. coreutils
+  `xalloc_die`'s `call sub_3100`, a two-instruction `exit` wrapper) is treated as returning,
+  so flow runs past the call into the alignment padding and **swallows every following
+  function** into the caller: `xalloc_die` rendered as 118 LOC / 2 gotos / 7 loops (GED 183)
+  instead of its true 4-instruction body. Seven triaged decbench cases
+  (`noreturn-propagation-stripped`, `status: covered-by-option` with `option_closing: listing`)
+  all collapse with the Listing on; angr/ghidra/ida/binja score GED 0 on them.
+- **Mechanism**: one gated injection in `load_program` (decompile-all arm only,
+  `default_listing = true`): if no `--option` names `listing`, `set_kuna_option("listing", "on")`
+  before `apply_runtime_options` + `commit_pending_analysis`, so the deferred Listing build and
+  its consumer passes (`noreturn_propagate` default-on; `noreturn_disc`/`fid`/`aif` still
+  default-off) run exactly as they do under an explicit `--option listing on`. `kuna functions`
+  keeps `default_listing = false`: no-return facts never add/remove entries, and the Listing
+  build would turn the cheap enumeration into a whole-program decode (measured 0.21 s → 5.7 s
+  on a stripped tar).
+- **Changed upstream assertions: 0 of 675** (`make test` PARITY OK, `docs/baseline.json`
+  untouched) and **0 stage-test changes** (`make test-stages` PARITY OK): both corpora run
+  through `decomp_test_dbg`/`decomp_dbg`, which this driver default cannot reach. **Speed**
+  (whole-binary `decompile-all`, the changed surface): stripped csplit (244 fns) median
+  2.30 s → 2.39 s (+3.8%, n=7 interleaved) — the once-per-binary Listing decode, amortized
+  over the batch; on stripped tar (1585 fns) the default is a net **win**, median 52.5 s →
+  47.0 s (-10%, n=3): the collapsed no-return callers no longer drag every swallowed
+  neighbor's body through the pipeline.
+- **Testcase**: `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs::`
+  `decompile_all_listing_default_collapses_noreturn_wrapper` — the two-pass gate at the exact
+  changed surface (an XML stage test structurally cannot exercise it: the datatest path never
+  stashes an analysis image, so no Listing can be built there). Default = the `my_die` wrapper
+  call is concluded no-return and the dead fall-through collapses; `--option listing off` = the
+  pre-F1 inflated form; explicit `on` = byte-identical to the default. The engine-level
+  mechanism keeps its own gate (`kuna-console/tests/verify_noreturn_propagate.rs`).
+- **Date**: 2026-07-04.

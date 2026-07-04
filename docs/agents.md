@@ -90,8 +90,13 @@ datatest results on **stdout**) and exits nonzero on any failure or baseline reg
 binary **once** instead of `kuna decompile`'s subprocess-per-function (≈10×+ faster on a
 many-function binary). `--json` emits `{binary,count,functions:[{name,address,size,code,error,
 variables:[{name,type,kind,arg_index,stack_offset,size}]}]}` — per-function `code` is
-byte-identical to `kuna decompile`, `error` isolates a single failed function, and `variables`
-(params in ABI order + DWARF/stack locals) feed type-recovery scoring. `decompile-all` also
+byte-identical to `kuna decompile ... --option listing on`, `error` isolates a single failed
+function, and `variables` (params in ABI order + DWARF/stack locals) feed type-recovery
+scoring. **`decompile-all` builds the Listing analysis tier by default** (DIV-15, decbench F1):
+it injects `option listing on` unless the caller names `listing`, so the default-on
+`noreturn_propagate` call-graph fixpoint fires and a stripped binary's unnamed exit/fatal
+wrappers no longer swallow the functions after them (`--option listing off` opts out;
+`kuna functions` and the `kuna decompile`/console path keep listing off). `decompile-all` also
 carries a **per-function watchdog**, `--max-fn-seconds N` (default 120, `0` disables): a
 function whose decompile drive exceeds the budget is cut off cooperatively (deadline probes
 at the action/rule-pool/heritage loop boundaries) and recorded as that function's `error`

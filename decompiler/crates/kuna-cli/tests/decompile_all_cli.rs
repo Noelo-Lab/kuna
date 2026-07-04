@@ -216,6 +216,106 @@ fn decompile_all_watchdog_quiet_on_healthy_function() {
     );
 }
 
+/// The `noreturn_propagate` fixture (`kuna-analysis/tests/fixtures/`): a
+/// non-PIE x86-64 ELF whose custom no-return wrapper `my_die` (ending in
+/// `call abort` + NOP padding, called from a SINGLE site) is only concluded
+/// no-return by the call-graph propagation fixpoint — the mechanism the
+/// decompile-all Listing default (decbench F1, DIV-15) exists to activate.
+fn noreturn_fixture() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/noreturn_propagate_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// Extract the JSON-escaped `code` string of the first function record (shape
+/// assertion helper — no JSON dep, mirrors the other raw-substring checks).
+fn code_field(stdout: &str) -> &str {
+    let start = stdout.find("\"code\": \"").expect("record has a code field") + 9;
+    let rest = &stdout[start..];
+    // The code string ends at the first unescaped quote.
+    let mut end = 0;
+    let bytes = rest.as_bytes();
+    while end < bytes.len() {
+        match bytes[end] {
+            b'\\' => end += 2,
+            b'"' => break,
+            _ => end += 1,
+        }
+    }
+    &rest[..end]
+}
+
+/// decbench F1 (DIV-15), the two-pass gate at the exact benchmark surface:
+///
+/// - **default** (`listing` injected on ⇒ the default-on `noreturn_propagate`
+///   fixpoint fires): `compute`'s single `call my_die` is concluded no-return —
+///   the no-return terminator appears and the post-call dead fall-through is
+///   gone (the "collapsed" form);
+/// - **`--option listing off`** (the explicit opt-out = the pre-F1 behavior):
+///   `my_die` is treated as returning, the dead fall-through survives, and the
+///   output is the inflated form (on real stripped binaries this is the
+///   swallow-the-next-function shape, e.g. coreutils `xalloc_die`,
+///   118 LOC / 2 gotos for a 4-instruction body).
+#[test]
+fn decompile_all_listing_default_collapses_noreturn_wrapper() {
+    let bin = noreturn_fixture();
+    let sleigh = specs();
+    let base = ["decompile-all", bin.as_str(), "--functions", "compute", "--json", "--sleighpath", sleigh.as_str()];
+
+    // Pass 1: the default — Listing injected on, noreturn_propagate fires.
+    let (on_out, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all (default) failed: {stderr}");
+    }
+    let on_code = code_field(&on_out).to_string();
+    assert!(
+        on_code.contains("Subroutine does not return"),
+        "default decompile-all must mark the my_die() wrapper call no-return \
+         (the Listing default is not reaching noreturn_propagate):\n{on_code}"
+    );
+
+    // Pass 2: the opt-out — `--option listing off` restores the old behavior.
+    let mut off_args = base.to_vec();
+    off_args.extend_from_slice(&["--option", "listing", "off"]);
+    let (off_out, stderr, ok) = run_kuna(&off_args);
+    assert!(ok, "kuna decompile-all --option listing off failed: {stderr}");
+    let off_code = code_field(&off_out).to_string();
+    assert!(
+        !off_code.contains("Subroutine does not return"),
+        "listing-off output must NOT mark my_die() no-return (the opt-out must \
+         restore the pre-F1 rendering):\n{off_code}"
+    );
+    assert_ne!(
+        on_code, off_code,
+        "the Listing default must change compute's decompilation"
+    );
+    assert!(
+        on_code.len() < off_code.len(),
+        "the no-return collapse must SHRINK the function (dead fall-through \
+         eliminated):\n--- default ({} bytes) ---\n{on_code}\n--- listing off ({} bytes) ---\n{off_code}",
+        on_code.len(),
+        off_code.len()
+    );
+
+    // An EXPLICIT `--option listing on` must be byte-identical to the default
+    // (the injection only fills the unset case; it never double-applies).
+    let mut expl_args = base.to_vec();
+    expl_args.extend_from_slice(&["--option", "listing", "on"]);
+    let (expl_out, stderr, ok) = run_kuna(&expl_args);
+    assert!(ok, "kuna decompile-all --option listing on failed: {stderr}");
+    assert_eq!(
+        code_field(&expl_out),
+        on_code,
+        "explicit `--option listing on` must match the injected default"
+    );
+}
+
 #[test]
 fn functions_lists_main() {
     let bin = fauxware();
