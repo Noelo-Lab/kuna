@@ -1,0 +1,1019 @@
+{
+ "schema": 1,
+ "snapshot_date": "2026-07-04",
+ "queue": [
+  {
+   "tier": "L",
+   "group_id": "libedit::ce_inc_search",
+   "group_margin": 294.0,
+   "case_id": "O2-noinline-libedit-libedit.so.0.0-ce_inc_search",
+   "project": "libedit",
+   "opt_level": "O2-noinline",
+   "binary": "libedit.so.0.0",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libedit/compiled/libedit.so.0.0.70",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libedit/stripped/libedit.so.0.0.70",
+   "function": "ce_inc_search",
+   "address": 83840,
+   "address_hex": "0x14780",
+   "margin": 294.0,
+   "base_value": 0.0,
+   "target_value": 294.0,
+   "others_ged": {
+    "ghidra": 288.0,
+    "ida": 293.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "library",
+    "terminal",
+    "large"
+   ],
+   "siblings": [
+    "O2-libedit-libedit.so.0.0-ce_inc_search"
+   ]
+  },
+  {
+   "tier": "L",
+   "group_id": "tar::xheader_set_option",
+   "group_margin": 241.0,
+   "case_id": "O2-noinline-tar-tar-xheader_set_option",
+   "project": "tar",
+   "opt_level": "O2-noinline",
+   "binary": "tar",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/tar/compiled/tar",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/tar/stripped/tar",
+   "function": "xheader_set_option",
+   "address": 114704,
+   "address_hex": "0x1c010",
+   "margin": 241.0,
+   "base_value": 0.0,
+   "target_value": 241.0,
+   "others_ged": {
+    "ghidra": 161.0,
+    "ida": 23.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "cli-tool",
+    "archiving"
+   ],
+   "siblings": [
+    "O2-tar-tar-xheader_set_option"
+   ]
+  },
+  {
+   "tier": "L",
+   "group_id": "coreutils::beyond",
+   "group_margin": 221.0,
+   "case_id": "O0-coreutils-test-beyond",
+   "project": "coreutils",
+   "opt_level": "O0",
+   "binary": "test",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/coreutils/compiled/test",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/coreutils/stripped/test",
+   "function": "beyond",
+   "address": 11091,
+   "address_hex": "0x2b53",
+   "margin": 58.0,
+   "base_value": 0.0,
+   "target_value": 58.0,
+   "others_ged": {
+    "ghidra": 0.0,
+    "ida": 0.0,
+    "binja": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "system"
+   ],
+   "siblings": [
+    "O2-coreutils-_-beyond",
+    "O2-coreutils-test-beyond",
+    "O0-coreutils-_-beyond",
+    "O2-noinline-coreutils-_-beyond",
+    "O2-noinline-coreutils-test-beyond"
+   ]
+  },
+  {
+   "tier": "L",
+   "group_id": "gzip::abort_gzip",
+   "group_margin": 207.0,
+   "case_id": "O0-gzip-gzip-abort_gzip",
+   "project": "gzip",
+   "opt_level": "O0",
+   "binary": "gzip",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/gzip/compiled/gzip",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/gzip/stripped/gzip",
+   "function": "abort_gzip",
+   "address": 36767,
+   "address_hex": "0x8f9f",
+   "margin": 10.0,
+   "base_value": 0.0,
+   "target_value": 10.0,
+   "others_ged": {
+    "ghidra": 0.0,
+    "ida": 0.0,
+    "binja": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "compression"
+   ],
+   "siblings": [
+    "O2-gzip-gzip-abort_gzip",
+    "O2-noinline-gzip-gzip-abort_gzip"
+   ]
+  },
+  {
+   "tier": "L",
+   "group_id": "openssh-portable::ssh_tun_confirm",
+   "group_margin": 190.0,
+   "case_id": "O2-openssh-portable-ssh-ssh_tun_confirm",
+   "project": "openssh-portable",
+   "opt_level": "O2",
+   "binary": "ssh",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2/openssh-portable/compiled/ssh",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2/openssh-portable/stripped/ssh",
+   "function": "ssh_tun_confirm",
+   "address": 79360,
+   "address_hex": "0x13600",
+   "margin": 190.0,
+   "base_value": 0.0,
+   "target_value": 190.0,
+   "others_ged": {
+    "ghidra": 0.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2",
+    "optimized",
+    "sailr",
+    "daemon",
+    "server",
+    "networking",
+    "crypto"
+   ],
+   "siblings": [
+    "O2-noinline-openssh-portable-ssh-ssh_tun_confirm"
+   ]
+  },
+  {
+   "tier": "L",
+   "group_id": "dpkg::spawn_shell",
+   "group_margin": 186.0,
+   "case_id": "O2-noinline-dpkg-dpkg-spawn_shell",
+   "project": "dpkg",
+   "opt_level": "O2-noinline",
+   "binary": "dpkg",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/dpkg/compiled/dpkg",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/dpkg/stripped/dpkg",
+   "function": "spawn_shell",
+   "address": 52016,
+   "address_hex": "0xcb30",
+   "margin": 186.0,
+   "base_value": 0.0,
+   "target_value": 186.0,
+   "others_ged": {
+    "ghidra": 6.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "cli-tool",
+    "package-management"
+   ],
+   "siblings": []
+  },
+  {
+   "tier": "L",
+   "group_id": "openssh-portable::cleanup_exit",
+   "group_margin": 186.0,
+   "case_id": "O0-openssh-portable-sftp-server-cleanup_exit",
+   "project": "openssh-portable",
+   "opt_level": "O0",
+   "binary": "sftp-server",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/openssh-portable/compiled/sftp-server",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/openssh-portable/stripped/sftp-server",
+   "function": "cleanup_exit",
+   "address": 66242,
+   "address_hex": "0x102c2",
+   "margin": 13.0,
+   "base_value": 0.0,
+   "target_value": 13.0,
+   "others_ged": {
+    "ghidra": 0.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "daemon",
+    "server",
+    "networking",
+    "crypto"
+   ],
+   "siblings": [
+    "O2-openssh-portable-sftp-server-cleanup_exit",
+    "O2-noinline-openssh-portable-sftp-server-cleanup_exit"
+   ]
+  },
+  {
+   "tier": "L",
+   "group_id": "coreutils::xalloc_die",
+   "group_margin": 183.0,
+   "case_id": "O2-noinline-coreutils-csplit-xalloc_die",
+   "project": "coreutils",
+   "opt_level": "O2-noinline",
+   "binary": "csplit",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/coreutils/compiled/csplit",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/coreutils/stripped/csplit",
+   "function": "xalloc_die",
+   "address": 16992,
+   "address_hex": "0x4260",
+   "margin": 183.0,
+   "base_value": 0.0,
+   "target_value": 183.0,
+   "others_ged": {
+    "ghidra": 0.0,
+    "ida": 0.0,
+    "binja": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "cli-tool",
+    "system"
+   ],
+   "siblings": [
+    "O2-coreutils-csplit-xalloc_die"
+   ]
+  },
+  {
+   "tier": "M",
+   "group_id": "dpkg::filesavespackage",
+   "group_margin": 99.0,
+   "case_id": "O2-noinline-dpkg-dpkg-filesavespackage",
+   "project": "dpkg",
+   "opt_level": "O2-noinline",
+   "binary": "dpkg",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/dpkg/compiled/dpkg",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/dpkg/stripped/dpkg",
+   "function": "filesavespackage",
+   "address": 39216,
+   "address_hex": "0x9930",
+   "margin": 99.0,
+   "base_value": 0.0,
+   "target_value": 99.0,
+   "others_ged": {
+    "ghidra": 99.0,
+    "ida": 97.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "cli-tool",
+    "package-management"
+   ],
+   "siblings": [
+    "O2-dpkg-dpkg-filesavespackage"
+   ]
+  },
+  {
+   "tier": "M",
+   "group_id": "coreutils::output_one_dumb_line",
+   "group_margin": 98.0,
+   "case_id": "O0-coreutils-ptx-output_one_dumb_line",
+   "project": "coreutils",
+   "opt_level": "O0",
+   "binary": "ptx",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/coreutils/compiled/ptx",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/coreutils/stripped/ptx",
+   "function": "output_one_dumb_line",
+   "address": 22351,
+   "address_hex": "0x574f",
+   "margin": 98.0,
+   "base_value": 0.0,
+   "target_value": 98.0,
+   "others_ged": {
+    "ghidra": 80.0,
+    "ida": 65.0,
+    "binja": 114.0,
+    "phoenix": 26.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "system"
+   ],
+   "siblings": []
+  },
+  {
+   "tier": "M",
+   "group_id": "zlib::deflateSetDictionary",
+   "group_margin": 90.0,
+   "case_id": "O2-zlib-minigzip64-deflateSetDictionary",
+   "project": "zlib",
+   "opt_level": "O2",
+   "binary": "minigzip64",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2/zlib/compiled/minigzip64",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2/zlib/stripped/minigzip64",
+   "function": "deflateSetDictionary",
+   "address": 27040,
+   "address_hex": "0x69a0",
+   "margin": 90.0,
+   "base_value": 0.0,
+   "target_value": 90.0,
+   "others_ged": {
+    "ghidra": 90.0,
+    "ida": 90.0,
+    "binja": 91.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": true,
+   "labels": [
+    "O2",
+    "optimized",
+    "sailr",
+    "library",
+    "compression",
+    "large"
+   ],
+   "siblings": [
+    "O2-zlib-minigzip-deflateSetDictionary",
+    "O2-noinline-zlib-minigzip-deflateSetDictionary",
+    "O2-noinline-zlib-minigzip64-deflateSetDictionary"
+   ]
+  },
+  {
+   "tier": "M",
+   "group_id": "dpkg::pkg_infodb_remove_file",
+   "group_margin": 88.0,
+   "case_id": "O2-noinline-dpkg-dpkg-pkg_infodb_remove_file",
+   "project": "dpkg",
+   "opt_level": "O2-noinline",
+   "binary": "dpkg",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/dpkg/compiled/dpkg",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/dpkg/stripped/dpkg",
+   "function": "pkg_infodb_remove_file",
+   "address": 102416,
+   "address_hex": "0x19010",
+   "margin": 88.0,
+   "base_value": 0.0,
+   "target_value": 88.0,
+   "others_ged": {
+    "ghidra": 6.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "cli-tool",
+    "package-management"
+   ],
+   "siblings": []
+  },
+  {
+   "tier": "M",
+   "group_id": "diffutils::ck_fopen",
+   "group_margin": 82.0,
+   "case_id": "O2-noinline-diffutils-sdiff-ck_fopen",
+   "project": "diffutils",
+   "opt_level": "O2-noinline",
+   "binary": "sdiff",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/diffutils/compiled/sdiff",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/diffutils/stripped/sdiff",
+   "function": "ck_fopen",
+   "address": 19040,
+   "address_hex": "0x4a60",
+   "margin": 82.0,
+   "base_value": 0.0,
+   "target_value": 82.0,
+   "others_ged": {
+    "ghidra": 6.0,
+    "ida": 0.0,
+    "binja": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "cli-tool",
+    "text-processing"
+   ],
+   "siblings": []
+  },
+  {
+   "tier": "M",
+   "group_id": "openssh-portable::mktemp_proto",
+   "group_margin": 81.0,
+   "case_id": "O2-openssh-portable-ssh-sk-helper-mktemp_proto",
+   "project": "openssh-portable",
+   "opt_level": "O2",
+   "binary": "ssh-sk-helper",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2/openssh-portable/compiled/ssh-sk-helper",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2/openssh-portable/stripped/ssh-sk-helper",
+   "function": "mktemp_proto",
+   "address": 162976,
+   "address_hex": "0x27ca0",
+   "margin": 81.0,
+   "base_value": 0.0,
+   "target_value": 81.0,
+   "others_ged": {
+    "ghidra": 38.0,
+    "ida": 39.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2",
+    "optimized",
+    "sailr",
+    "daemon",
+    "server",
+    "networking",
+    "crypto"
+   ],
+   "siblings": [
+    "O2-openssh-portable-scp-mktemp_proto",
+    "O2-openssh-portable-sftp-mktemp_proto",
+    "O2-openssh-portable-sftp-server-mktemp_proto",
+    "O2-openssh-portable-ssh-add-mktemp_proto",
+    "O2-openssh-portable-ssh-keyscan-mktemp_proto",
+    "O2-openssh-portable-ssh-pkcs11-helper-mktemp_proto",
+    "O2-noinline-openssh-portable-scp-mktemp_proto",
+    "O2-noinline-openssh-portable-sftp-mktemp_proto",
+    "O2-noinline-openssh-portable-sftp-server-mktemp_proto",
+    "O2-noinline-openssh-portable-ssh-add-mktemp_proto",
+    "O2-noinline-openssh-portable-ssh-keyscan-mktemp_proto",
+    "O2-noinline-openssh-portable-ssh-pkcs11-helper-mktemp_proto",
+    "O2-noinline-openssh-portable-ssh-sk-helper-mktemp_proto"
+   ]
+  },
+  {
+   "tier": "M",
+   "group_id": "openssh-portable::sshbuf_set_max_size",
+   "group_margin": 79.0,
+   "case_id": "O2-noinline-openssh-portable-ssh-sk-helper-sshbuf_set_max_size",
+   "project": "openssh-portable",
+   "opt_level": "O2-noinline",
+   "binary": "ssh-sk-helper",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/openssh-portable/compiled/ssh-sk-helper",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/openssh-portable/stripped/ssh-sk-helper",
+   "function": "sshbuf_set_max_size",
+   "address": 49600,
+   "address_hex": "0xc1c0",
+   "margin": 79.0,
+   "base_value": 0.0,
+   "target_value": 79.0,
+   "others_ged": {
+    "ghidra": 79.0,
+    "ida": 75.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "daemon",
+    "server",
+    "networking",
+    "crypto"
+   ],
+   "siblings": [
+    "O2-noinline-openssh-portable-scp-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-sftp-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-sftp-server-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-ssh-add-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-ssh-agent-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-ssh-keygen-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-ssh-keyscan-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-ssh-keysign-sshbuf_set_max_size",
+    "O2-noinline-openssh-portable-ssh-pkcs11-helper-sshbuf_set_max_size"
+   ]
+  },
+  {
+   "tier": "M",
+   "group_id": "bash::shell_initialize",
+   "group_margin": 72.0,
+   "case_id": "O2-noinline-bash-bash-shell_initialize",
+   "project": "bash",
+   "opt_level": "O2-noinline",
+   "binary": "bash",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/bash/compiled/bash",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/bash/stripped/bash",
+   "function": "shell_initialize",
+   "address": 214112,
+   "address_hex": "0x34460",
+   "margin": 72.0,
+   "base_value": 0.0,
+   "target_value": 72.0,
+   "others_ged": {
+    "ghidra": 84.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "ahead",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "shell",
+    "interpreter"
+   ],
+   "siblings": []
+  },
+  {
+   "tier": "M",
+   "group_id": "gnutls::figure_key_type",
+   "group_margin": 70.0,
+   "case_id": "O2-noinline-gnutls-systemkey-figure_key_type",
+   "project": "gnutls",
+   "opt_level": "O2-noinline",
+   "binary": "systemkey",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/gnutls/compiled/systemkey",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/gnutls/stripped/systemkey",
+   "function": "figure_key_type",
+   "address": 56896,
+   "address_hex": "0xde40",
+   "margin": 70.0,
+   "base_value": 0.0,
+   "target_value": 70.0,
+   "others_ged": {
+    "ghidra": 70.0,
+    "ida": 70.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": true,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "library",
+    "crypto",
+    "networking"
+   ],
+   "siblings": [
+    "O2-gnutls-ocsptool-figure_key_type",
+    "O2-gnutls-systemkey-figure_key_type",
+    "O2-noinline-gnutls-ocsptool-figure_key_type"
+   ]
+  },
+  {
+   "tier": "M",
+   "group_id": "gnutls::pubkey_info",
+   "group_margin": 69.0,
+   "case_id": "O2-noinline-gnutls-certtool-pubkey_info",
+   "project": "gnutls",
+   "opt_level": "O2-noinline",
+   "binary": "certtool",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/gnutls/compiled/certtool",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/gnutls/stripped/certtool",
+   "function": "pubkey_info",
+   "address": 81664,
+   "address_hex": "0x13f00",
+   "margin": 69.0,
+   "base_value": 0.0,
+   "target_value": 69.0,
+   "others_ged": {
+    "ghidra": 6.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "library",
+    "crypto",
+    "networking"
+   ],
+   "siblings": []
+  },
+  {
+   "tier": "S",
+   "group_id": "coreutils::factor",
+   "group_margin": 12.0,
+   "case_id": "O0-coreutils-factor-factor",
+   "project": "coreutils",
+   "opt_level": "O0",
+   "binary": "factor",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/coreutils/compiled/factor",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/coreutils/stripped/factor",
+   "function": "factor",
+   "address": 29068,
+   "address_hex": "0x718c",
+   "margin": 12.0,
+   "base_value": 0.0,
+   "target_value": 12.0,
+   "others_ged": {
+    "ghidra": 12.0,
+    "ida": 17.0,
+    "binja": 21.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": true,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "system"
+   ],
+   "siblings": [
+    "O2-noinline-coreutils-factor-factor"
+   ]
+  },
+  {
+   "tier": "S",
+   "group_id": "gnutls::getpass_copy",
+   "group_margin": 16.0,
+   "case_id": "O2-noinline-gnutls-systemkey-getpass_copy",
+   "project": "gnutls",
+   "opt_level": "O2-noinline",
+   "binary": "systemkey",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/gnutls/compiled/systemkey",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/gnutls/stripped/systemkey",
+   "function": "getpass_copy",
+   "address": 59312,
+   "address_hex": "0xe7b0",
+   "margin": 16.0,
+   "base_value": 0.0,
+   "target_value": 16.0,
+   "others_ged": {
+    "ghidra": 16.0,
+    "ida": 16.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": true,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "library",
+    "crypto",
+    "networking"
+   ],
+   "siblings": [
+    "O2-gnutls-certtool-getpass_copy",
+    "O2-gnutls-gnutls-cli-getpass_copy",
+    "O2-gnutls-gnutls-cli-debug-getpass_copy",
+    "O2-gnutls-gnutls-serv-getpass_copy",
+    "O2-gnutls-ocsptool-getpass_copy",
+    "O2-gnutls-systemkey-getpass_copy",
+    "O2-noinline-gnutls-certtool-getpass_copy",
+    "O2-noinline-gnutls-gnutls-cli-getpass_copy",
+    "O2-noinline-gnutls-gnutls-cli-debug-getpass_copy",
+    "O2-noinline-gnutls-gnutls-serv-getpass_copy",
+    "O2-noinline-gnutls-ocsptool-getpass_copy"
+   ]
+  },
+  {
+   "tier": "S",
+   "group_id": "libedit::hist_convert",
+   "group_margin": 13.0,
+   "case_id": "O0-libedit-libedit.so.0.0-hist_convert",
+   "project": "libedit",
+   "opt_level": "O0",
+   "binary": "libedit.so.0.0",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/libedit/compiled/libedit.so.0.0.70",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/libedit/stripped/libedit.so.0.0.70",
+   "function": "hist_convert",
+   "address": 73354,
+   "address_hex": "0x11e8a",
+   "margin": 13.0,
+   "base_value": 0.0,
+   "target_value": 13.0,
+   "others_ged": {
+    "ghidra": 21.0,
+    "ida": 8.0,
+    "phoenix": 0.0
+   },
+   "bucket": "ahead",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "library",
+    "terminal"
+   ],
+   "siblings": [
+    "O2-noinline-libedit-libedit.so.0.0-hist_convert"
+   ]
+  },
+  {
+   "tier": "S",
+   "group_id": "iproute2::lookup_flag_data_by_name",
+   "group_margin": 19.0,
+   "case_id": "O0-iproute2-ip-lookup_flag_data_by_name",
+   "project": "iproute2",
+   "opt_level": "O0",
+   "binary": "ip",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/iproute2/compiled/ip",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/iproute2/stripped/ip",
+   "function": "lookup_flag_data_by_name",
+   "address": 85111,
+   "address_hex": "0x14c77",
+   "margin": 19.0,
+   "base_value": 0.0,
+   "target_value": 19.0,
+   "others_ged": {
+    "ghidra": 5.0,
+    "ida": 0.0,
+    "phoenix": 5.0
+   },
+   "bucket": "kuna-specific",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "networking"
+   ],
+   "siblings": [
+    "O2-noinline-iproute2-ip-lookup_flag_data_by_name"
+   ]
+  },
+  {
+   "tier": "S",
+   "group_id": "findutils::parse_ilname",
+   "group_margin": 16.0,
+   "case_id": "O0-findutils-find-parse_ilname",
+   "project": "findutils",
+   "opt_level": "O0",
+   "binary": "find",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/findutils/compiled/find",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/findutils/stripped/find",
+   "function": "parse_ilname",
+   "address": 87513,
+   "address_hex": "0x155d9",
+   "margin": 6.0,
+   "base_value": 0.0,
+   "target_value": 6.0,
+   "others_ged": {
+    "ghidra": 8.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "search"
+   ],
+   "siblings": [
+    "O2-findutils-find-parse_ilname",
+    "O2-noinline-findutils-find-parse_ilname"
+   ]
+  },
+  {
+   "tier": "S",
+   "group_id": "tar::write_fatal_details",
+   "group_margin": 14.0,
+   "case_id": "O2-tar-tar-write_fatal_details",
+   "project": "tar",
+   "opt_level": "O2",
+   "binary": "tar",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2/tar/compiled/tar",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2/tar/stripped/tar",
+   "function": "write_fatal_details",
+   "address": 55824,
+   "address_hex": "0xda10",
+   "margin": 14.0,
+   "base_value": 0.0,
+   "target_value": 14.0,
+   "others_ged": {
+    "ghidra": 21.0,
+    "ida": 20.0,
+    "phoenix": 0.0
+   },
+   "bucket": "ahead",
+   "artifact_suspect": true,
+   "labels": [
+    "O2",
+    "optimized",
+    "sailr",
+    "cli-tool",
+    "archiving"
+   ],
+   "siblings": [
+    "O2-noinline-tar-tar-write_fatal_details"
+   ]
+  },
+  {
+   "tier": "S",
+   "group_id": "e2fsprogs::ext4_fc_handle_add_extent",
+   "group_margin": 9.0,
+   "case_id": "O0-e2fsprogs-e2fsck-ext4_fc_handle_add_extent",
+   "project": "e2fsprogs",
+   "opt_level": "O0",
+   "binary": "e2fsck",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/e2fsprogs/compiled/e2fsck",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/e2fsprogs/stripped/e2fsck",
+   "function": "ext4_fc_handle_add_extent",
+   "address": 256942,
+   "address_hex": "0x3ebae",
+   "margin": 7.0,
+   "base_value": 0.0,
+   "target_value": 7.0,
+   "others_ged": {
+    "ghidra": 15.0,
+    "ida": 0.0,
+    "phoenix": 0.0
+   },
+   "bucket": "ahead",
+   "artifact_suspect": false,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "filesystem"
+   ],
+   "siblings": [
+    "O2-noinline-e2fsprogs-e2fsck-ext4_fc_handle_add_extent"
+   ]
+  },
+  {
+   "tier": "A",
+   "group_id": "libedit::tok_wline",
+   "group_margin": 164.0,
+   "case_id": "O2-noinline-libedit-libedit.so.0.0-tok_wline",
+   "project": "libedit",
+   "opt_level": "O2-noinline",
+   "binary": "libedit.so.0.0",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libedit/compiled/libedit.so.0.0.70",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libedit/stripped/libedit.so.0.0.70",
+   "function": "tok_wline",
+   "address": 109616,
+   "address_hex": "0x1ac30",
+   "margin": 164.0,
+   "base_value": 0.0,
+   "target_value": 164.0,
+   "others_ged": {
+    "ghidra": 182.0,
+    "ida": 183.0,
+    "phoenix": 0.0
+   },
+   "bucket": "ahead",
+   "artifact_suspect": true,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "sailr",
+    "library",
+    "terminal",
+    "large"
+   ],
+   "siblings": [
+    "O2-libedit-libedit.so.0.0-tok_wline"
+   ]
+  },
+  {
+   "tier": "A",
+   "group_id": "dpkg::packages",
+   "group_margin": 161.0,
+   "case_id": "O2-dpkg-dpkg-packages",
+   "project": "dpkg",
+   "opt_level": "O2",
+   "binary": "dpkg",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2/dpkg/compiled/dpkg",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2/dpkg/stripped/dpkg",
+   "function": "packages",
+   "address": 83168,
+   "address_hex": "0x144e0",
+   "margin": 161.0,
+   "base_value": 0.0,
+   "target_value": 161.0,
+   "others_ged": {
+    "ghidra": 161.0,
+    "ida": 164.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": true,
+   "labels": [
+    "O2",
+    "optimized",
+    "sailr",
+    "cli-tool",
+    "package-management",
+    "large"
+   ],
+   "siblings": []
+  },
+  {
+   "tier": "A",
+   "group_id": "iproute2::print_link_flags",
+   "group_margin": 140.0,
+   "case_id": "O0-iproute2-ip-print_link_flags",
+   "project": "iproute2",
+   "opt_level": "O0",
+   "binary": "ip",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/iproute2/compiled/ip",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/iproute2/stripped/ip",
+   "function": "print_link_flags",
+   "address": 66028,
+   "address_hex": "0x101ec",
+   "margin": 140.0,
+   "base_value": 0.0,
+   "target_value": 140.0,
+   "others_ged": {
+    "ghidra": 140.0,
+    "ida": 140.0,
+    "phoenix": 0.0
+   },
+   "bucket": "inherited",
+   "artifact_suspect": true,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "cli-tool",
+    "networking",
+    "large"
+   ],
+   "siblings": []
+  }
+ ]
+}
