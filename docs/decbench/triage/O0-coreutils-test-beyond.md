@@ -13,6 +13,8 @@ feature_slug: listing-default-on
 scope: small
 angr_ref: angr.analyses.cfg.cfg_fast.CFGFast._iteratively_analyze_function_features (call-graph no-return propagation)
 kuna_stage: S1/external-refinement (kuna-analysis s1_noreturn_propagate, gated on the Listing)
+closed_by: PR #121 (benchlisting, DIV-15)
+ged_after_fix: 0
 ---
 ## Side-by-side
 

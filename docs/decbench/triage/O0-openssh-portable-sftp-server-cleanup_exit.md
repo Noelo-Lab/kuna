@@ -13,6 +13,8 @@ feature_slug: listing-default-on
 scope: small
 angr_ref: angr.analyses.cfg.cfg_fast.CFGFast (nonreturning fixpoint in _analyze_all_function_features + mark_nonreturning_calls_endpoints, cfg_fast.py:2302-2351)
 kuna_stage: S1/external-refinement (kuna-analysis s1_noreturn_propagate, Listing-gated)
+closed_by: PR #121 (benchlisting, DIV-15)
+ged_after_fix: 0
 ---
 ## Side-by-side
 

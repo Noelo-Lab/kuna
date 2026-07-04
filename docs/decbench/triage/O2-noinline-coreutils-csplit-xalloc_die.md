@@ -13,6 +13,8 @@ feature_slug: noreturn-propagate-without-listing
 scope: small
 angr_ref: angr.analyses.cfg.cfg_fast.CFGFast (Function.returning no-return fixpoint, add_nonreturning_function / _iteratively_analyze_function_features)
 kuna_stage: kuna-analysis S1 (s1_noreturn_propagate, gated on option listing)
+closed_by: PR #121 (benchlisting, DIV-15)
+ged_after_fix: 0
 ---
 
 ## Side-by-side
