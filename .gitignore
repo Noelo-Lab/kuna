@@ -29,3 +29,6 @@ TAGS
 *~
 .claude/
 out.txt
+
+# pyjoern scratch (created when scripts/decbench rescore/triage run from repo root)
+workspace/
