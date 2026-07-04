@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench campaign case O0-iproute2-ip-lookup_flag_data_by_name (F3):
+    kuna emitted syntactically INVALID C for a while loop whose condition
+    block is a compound graph.
+
+    The function is a linear-search loop (iproute2 ip, x86-64 gcc -O0):
+
+        for (i = 0; i <= 12; i++)
+            if (!strcmp(name, table[i*3])) return &table[i*3];
+        return 0;
+
+    During S8 structuring the loop header (the bound check "if (0xd <= i)
+    return 0;") collapses with the strcmp block into a BlockList that becomes
+    the WhileDo CONDITION block.  Upstream Ghidra guards exactly this with
+    FlowBlock::isComplex (decompiler/cpp/block.hh:254 base returns true; only
+    BlockBasic block.cc:2403, BlockCopy block.hh:549 and BlockCondition
+    block.hh:649 override), so a BlockList/BlockIf condition is unconditionally
+    complex, which sets the whiledo OVERFLOW syntax and prints the valid form
+
+        while( true ) { <cond stmts>; if (<branch>) break; <body> }
+
+    kuna's ported is_complex instead resolved EVERY block type down to its
+    front BlockBasic leaf (get_front_leaf), so a compound condition whose
+    front leaf is trivial scored non-complex, overflow syntax was skipped, and
+    the whole BlockList - including the embedded return - was inlined into the
+    while(...) parentheses as a comma expression:
+
+        while (
+        if 0xd <= v2 {return 0
+        }v1 = ..., strcmp(a0,v1) != 0) { ... }
+
+    which no C parser accepts (decbench GED 19 vs ghidra 5 on this function).
+
+    Stage model: S8 structure recovery, loop-shape sub-stage
+    (CollapseStructure::rule_block_while_do overflow decision in
+    s8_structure/blockaction.rs; duplicated helper in region_structurer.rs;
+    rendering consequence in s9_emit/printc.rs emit_block_while_do).
+
+    No option: this is a porting-divergence CORRECTNESS fix (invalid C is
+    never desired) restoring the upstream virtual dispatch, on by default.
+    Single pass asserts the correct output: the loop uses the overflow
+    syntax "while( true )", the bound check is a proper statement in the
+    loop body, and NO statement text appears inside a "while (" condition
+    (the plain-form spelling never occurs in this function).
+-->
+<bytechunk space="ram" offset="0x14c77">
+f30f1efa554889e54883ec2048897de8c745fc00000000eb518b55fc4889d04801c04801d048
+c1e0034889c2488d0576060c00488b1402488b45e84889d64889c7e803a2ffff85c0751c8b55
+fc4889d04801c04801d048c1e003488d1548060c004801d0eb0f8345fc01837dfc0c76a9b800
+000000c9c3
+</bytechunk>
+<symbol space="ram" offset="0x14c77" name="lookup_flag_data_by_name"/>
+</binaryimage>
+<script>
+  <com>lo fu lookup_flag_data_by_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="whiledo-complex #1: compound while condition forces overflow syntax (valid C)" min="1" max="1">while\( true \)</stringmatch>
+<stringmatch name="whiledo-complex #2: no statement is inlined inside a while-parens condition (plain form absent)" min="0" max="0">while \(</stringmatch>
+<stringmatch name="whiledo-complex #3: the bound check is a proper if statement in the loop body" min="1" max="1">if \(0xd &lt;= </stringmatch>
+<stringmatch name="whiledo-complex #4: the loop exit is a proper break statement" min="1" max="1">break;</stringmatch>
+<stringmatch name="whiledo-complex #5: the bound-check return is a statement, not condition text" min="1" max="1">return 0;</stringmatch>
+</decompilertest>
