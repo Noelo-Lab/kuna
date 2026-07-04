@@ -439,3 +439,85 @@ fn option_command_mutates_the_real_architecture() {
     set(arch, "setaction", "decompile").expect("option setaction decompile");
     assert_eq!(arch.current_action_name(), "decompile");
 }
+
+/// The `maxinstruction` option is LIVE: flow-following honors
+/// `glb->max_instructions` / `glb->flowoptions` exactly as C++
+/// `Funcdata::followFlow` wires them into the `FlowInfo`
+/// (`decompiler/cpp/funcdata_op.cc:765`: `flow.setFlags(glb->flowoptions);
+/// flow.setMaximumInstructions(glb->max_instructions);`).
+///
+/// Drives the bound end-to-end through `OptionDatabase::set` +
+/// `decompile_func` (the same path the console `option maxinstruction N`
+/// takes), exercising both halves of the `FlowInfo::processInstruction`
+/// too-many-instructions policy (`flow.cc:409`):
+///
+///   * with the default `error_toomanyinstructions` flow option, exceeding the
+///     bound is the faithful fatal error `"Flow exceeded maximum allowable
+///     instructions"`;
+///   * with `option errortoomanyinstructions off`, the same bound TRUNCATES
+///     flow (artificial halt) and the function still decompiles.
+#[test]
+fn maxinstruction_option_bounds_flow_following() {
+    use kuna_decomp::flow::flow_flags;
+
+    // gp is a MIPS datatest whose function body is far more than 2 instructions.
+    let dt = parse_datatest("gp").expect("parse gp");
+    let registry = build_registry();
+    let mut xarch = bootstrap(&dt).expect("bootstrap gp");
+    let arch = xarch.sleigh_mut().base_mut().expect("Architecture base");
+
+    // The constructor defaults (C++ `resetDefaultsInternal`, architecture.cc:1420).
+    assert_eq!(arch.flowoptions, flow_flags::error_toomanyinstructions);
+    assert_eq!(arch.max_instructions, 100000);
+
+    // test_gp is the datatest's real (byte-backed) function; the other symbols
+    // (printf/populate) are call targets without loaded bytes.
+    let sym = dt
+        .symbols
+        .iter()
+        .find(|s| s.name == "test_gp")
+        .expect("gp has the test_gp <symbol>");
+    let space =
+        Rc::clone(arch.manage().get_space_by_name(&sym.space).expect("symbol space exists"));
+    let entry = Address::new(space, sym.offset);
+
+    let options = OptionDatabase::new();
+    let set = |arch: &mut Architecture, name: &str, p1: &str| -> KunaResult<String> {
+        let id = registry.find_element(name, 0);
+        assert!(id != 0, "option element `{name}` is not registered");
+        options.set(arch, id, p1, "", "")
+    };
+
+    // (1) `option maxinstruction 2` + the default error_toomanyinstructions
+    //     flow option: following flow past the bound must abort with the
+    //     faithful C++ error (flow.cc:411).
+    set(arch, "maxinstruction", "2").expect("option maxinstruction 2");
+    let err = match decompile_func(arch, &sym.name, entry.clone(), 0) {
+        Ok(_) => panic!("decompile under `option maxinstruction 2` must fail"),
+        Err(e) => e,
+    };
+    assert!(
+        format!("{err}").contains("Flow exceeded maximum allowable instructions"),
+        "wrong error under the instruction bound: {err}"
+    );
+
+    // (2) `option errortoomanyinstructions off`: the same tiny bound now
+    //     truncates flow with an artificial halt (flow.cc:414) instead of
+    //     erroring, and the truncated function still prints sane C.
+    set(arch, "errortoomanyinstructions", "off")
+        .expect("option errortoomanyinstructions off");
+    let fd = decompile_func(arch, &sym.name, entry.clone(), 0)
+        .expect("truncated flow should still decompile");
+    let c = print_c(arch, &fd);
+    assert!(is_structurally_sane(&c, &sym.name), "truncated-flow C is not sane:\n{c}");
+
+    // (3) Restore the error flag and the default bound: the full function
+    //     decompiles again, proving the failure in (1) was the bound itself.
+    set(arch, "errortoomanyinstructions", "on")
+        .expect("option errortoomanyinstructions on");
+    set(arch, "maxinstruction", "100000").expect("option maxinstruction 100000");
+    let fd = decompile_func(arch, &sym.name, entry, 0)
+        .expect("decompile under the default bound");
+    let c = print_c(arch, &fd);
+    assert!(is_structurally_sane(&c, &sym.name), "default-bound C is not sane:\n{c}");
+}
