@@ -13,6 +13,8 @@ feature_slug: null
 scope: small
 angr_ref: angr.analyses.cfg.cfg_fast (function-returning call-graph fixpoint; NOTE angr's stored output here is a truncated stub, not a real win)
 kuna_stage: S1/external-refinement (kuna-analysis Listing consumer noreturn_propagate, gated on option listing)
+closed_by: PR #121 (benchlisting, DIV-15)
+ged_after_fix: 20
 ---
 
 ## Side-by-side

@@ -27,6 +27,16 @@
 //! `--json` emits a machine-readable object (the decbench / LLM surface); without
 //! it the command prints concatenated C with `// Function: <name> @ <addr>`
 //! headers (the human surface).
+//!
+//! **The Listing is on by default for `decompile-all`** (decbench F1, DIV-15):
+//! the decompile surface injects `--option listing on` unless the caller names
+//! `listing` explicitly, so the default-on `noreturn_propagate` consumer (the
+//! angr-style call-graph no-return fixpoint) actually fires and a call to an
+//! unnamed internal exit/fatal wrapper in a stripped binary terminates the
+//! caller instead of swallowing the following functions.  Opt out with
+//! `--option listing off`.  `kuna functions` and the subprocess
+//! `kuna decompile` / `decomp_dbg` surfaces keep the engine default
+//! (listing off).
 
 use std::rc::Rc;
 
@@ -150,7 +160,7 @@ struct FuncResult {
 
 /// Load + analyze the binary once, then decompile every selected function.
 fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
-    let mut prog = load_program(args)?;
+    let mut prog = load_program(args, /* default_listing= */ true)?;
     let targets = resolve_targets(&prog, args)?;
 
     // Per-function watchdog (`--max-fn-seconds`, default 120, 0 disables):
@@ -237,7 +247,7 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
 /// Enumerate the program's functions as `(name, address)` (the `functions`
 /// command + the default `decompile-all` target set).
 fn list_functions(args: &Args) -> Result<Vec<(String, u64)>, String> {
-    let prog = load_program(args)?;
+    let prog = load_program(args, /* default_listing= */ false)?;
     let mut entries: Vec<(String, u64)> = prog
         .function_entries()
         .map(|(n, a)| (n.to_string(), a.get_offset()))
@@ -251,8 +261,10 @@ fn list_functions(args: &Args) -> Result<Vec<(String, u64)>, String> {
 
 /// Bootstrap the architecture from the binary and run the analysis commit (the
 /// in-process `load file` + `read symbols`), applying load-time env gates and
-/// `--option`s in the correct order.
-fn load_program(args: &Args) -> Result<ConsoleProgram, String> {
+/// `--option`s in the correct order.  `default_listing` injects the Listing
+/// default of the `decompile-all` surface (decbench F1, DIV-15) — `true` from
+/// [`decompile_all`], `false` from [`list_functions`] (enumeration stays cheap).
+fn load_program(args: &Args, default_listing: bool) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
         .to_string_lossy()
@@ -266,6 +278,30 @@ fn load_program(args: &Args) -> Result<ConsoleProgram, String> {
     let target = args.target.as_deref().unwrap_or("");
     let mut prog = bootstrap_from_object(&binary, target, &spec_roots)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
+
+    // (kuna, decbench F1) Default the program-wide Listing ON for the
+    // `decompile-all` surface, unless the caller set it explicitly
+    // (`--option listing on|off` still wins — the injection is skipped whenever
+    // the caller names `listing` at all).  The Listing feeds the default-on
+    // `noreturn_propagate` consumer (the angr-style call-graph no-return
+    // fixpoint, DIV-14): without it the pass is a structural no-op, so a call
+    // to an unnamed internal exit/fatal wrapper in a STRIPPED binary is treated
+    // as returning and the decompiler runs past it, swallowing every following
+    // function into the caller (the decbench `noreturn-propagation-stripped`
+    // family, e.g. coreutils `xalloc_die`: 118 LOC / 2 gotos swallowed vs the
+    // true 4-instruction body).  Only this driver changes: the engine default
+    // (`analysis_listing = false`) and the subprocess surfaces (`kuna
+    // decompile` → `decomp_dbg`, the datatest harness) are untouched.  `kuna
+    // functions` also keeps the engine default: its default output cannot
+    // change (no-return facts never add or remove entries — only the
+    // default-OFF `aif`/`fid` consumers do that) and the Listing build would
+    // turn the cheap enumeration into a whole-program decode (measured 0.21 s →
+    // 5.7 s on a stripped tar).  See DIV-15 (`docs/divergences.md`).
+    if default_listing && !args.options.iter().any(|(name, _)| name == "listing") {
+        prog.arch_mut()
+            .set_kuna_option("listing", "on")
+            .map_err(|e| format!("option listing: {}", e.explain()))?;
+    }
 
     // Analysis-/printer-tier `--option`s must be applied to the architecture
     // BEFORE the gated analysis commit (the `option` < `read symbols` ordering
@@ -595,7 +631,10 @@ fn usage_decompile_all() {
          without it, concatenated C with `// Function:` headers.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 120,\n\
          0 disables); a function over budget becomes its own `error` record and the\n\
-         batch continues (the stripped-ELF hang watchdog, see tests/hang-repro/)."
+         batch continues (the stripped-ELF hang watchdog, see tests/hang-repro/).\n\
+         The Listing analysis tier is ON by default on this surface (so the\n\
+         no-return call-graph fixpoint `noreturn_propagate` fires on stripped\n\
+         binaries); opt out with `--option listing off`."
     );
 }
 

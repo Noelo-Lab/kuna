@@ -13,6 +13,8 @@ feature_slug: null
 scope: small
 angr_ref: angr.analyses.cfg.cfg_base.CFGBase._determine_function_returning (via CFGFast._iteratively_analyze_function_features)
 kuna_stage: S1/external-refinement (noreturn_propagate, gated on S1 listing)
+closed_by: PR #121 (benchlisting, DIV-15)
+ged_after_fix: 6
 ---
 
 ## Side-by-side

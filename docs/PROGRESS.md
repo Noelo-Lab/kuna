@@ -1,5 +1,36 @@
 # kuna Progress Log
 
+## Session (2026-07-04) — decbench F1 `benchlisting`: decompile-all builds the Listing by default (DIV-15)
+
+The first decbench campaign feature (`docs/decbench-loop.md`; cluster F1 in
+`docs/decbench/features.md`). The default-on `noreturn_propagate` fixpoint (DIV-14) was a
+structural **no-op on the benchmark surface**: it requires the Listing, and `kuna decompile-all`
+never built one — so on stripped binaries a call to an unnamed internal exit/fatal wrapper was
+treated as returning and the decompiler **swallowed every following function** into the caller
+(coreutils `xalloc_die`: 118 LOC / 2 gotos / 7 loops for a 4-instruction body, GED 183).
+
+**Mechanism (driver default, not engine default).** `kuna-cli/src/decompile_all.rs::load_program`
+injects `option listing on` before the analysis commit unless the caller names `listing`
+(`--option listing off` opts out; explicit `on` is byte-identical to the default). The engine
+default (`analysis_listing=false`), `kuna functions` (0.21 s → 5.7 s if it built the Listing on
+tar — kept off), `kuna decompile`/`decomp_dbg`, and both datatest corpora are untouched.
+
+**Benchmark delta (rescore, `--siblings`; 18 case instances, 17 improved, 13 now PERFECT).**
+`xalloc_die` GED 183→**0** (sibling 181→0), `beyond` 58/221/16→**0** (all six instances),
+`abort_gzip` 10/207/98→**0**, `cleanup_exit` 13/186/186→**0**, `ck_fopen` 82→6,
+`pubkey_info` 69→6, `xheader_set_option` 241→20. The one unchanged instance
+(`O2-tar-tar-xheader_set_option`, 216→216) is not an F1 miss: the wrapper IS concluded
+no-return there too (149→142 LOC, 4→2 gotos with the Listing on) — the residual score is a
+different, larger structural gap that dominates the GED. Spliced into
+`docs/features/benchlisting/record.json`.
+
+**Speed** (whole-binary `decompile-all`, the changed surface): stripped csplit (244 fns) median
+2.30 s → 2.39 s (+3.8%, n=7 interleaved) — the once-per-binary Listing decode, amortized over
+the batch. Gates: `make test` 675/675 PARITY OK, `make test-stages` PARITY OK, `make rust-test`
+green. Two-pass e2e at the changed surface:
+`kuna-cli/tests/decompile_all_cli.rs::decompile_all_listing_default_collapses_noreturn_wrapper`
+(an XML stage test cannot reach this — the datatest path never builds a Listing).
+
 ## Session (2026-06-29) — whole-binary decompilation + machine-readable CLI (decbench-ready)
 
 User-directed "get kuna ready for public use + run on decbench + LLM-via-CLI" work
