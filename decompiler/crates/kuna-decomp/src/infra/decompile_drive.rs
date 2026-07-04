@@ -459,6 +459,18 @@ pub fn build_and_follow_flow_with_override_and_protos(
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let env = ArchFlowEnv { arch: arch as *const Architecture };
     let mut flow = FlowInfo::new(fd, &env);
+    // C++ Funcdata::followFlow (decompiler/cpp/funcdata_op.cc:765): after the
+    // FlowInfo is constructed (and its range set), followFlow applies the global
+    // flow options and the instruction bound:
+    //   uint4 fl = 0; fl |= glb->flowoptions;   // Global flow options
+    //   flow.setFlags(fl);
+    //   flow.setMaximumInstructions(glb->max_instructions);
+    // `flowoptions` defaults to `error_toomanyinstructions` and
+    // `max_instructions` to 100000 (`resetDefaultsInternal`); the console
+    // options `maxinstruction` / `errortoomanyinstructions` / `unimplemented` /
+    // `jumpload` mutate them (options.cc ports in `p0_knowledge/options.rs`).
+    flow.set_flags(arch.flowoptions);
+    flow.set_maximum_instructions(arch.max_instructions);
     // C++ followFlow: generateOps() then generateBlocks().  The jump-table
     // recovery loop runs inside generateOps (via the action sub-pipeline).
     {
