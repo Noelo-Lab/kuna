@@ -3866,8 +3866,18 @@ impl Heritage {
     /// `handleNewLoadCopies`/`reprocessFreeStores`) sub-systems are SEAM-marked;
     /// they are inert for a function with no split records and no indexed-stack
     /// LOAD/STOREs (the realized critical path).
+    ///
+    /// `deadline` is the (kuna) `decompile-all` per-function watchdog: the
+    /// per-address-space loop probes it and returns early once it passes (the
+    /// half-finished pass is discarded — the action layer then unwinds and the
+    /// drive errors the function out).  `None` (the console/parity paths) is a
+    /// no-op compare.
     #[allow(clippy::mutable_key_type)]
-    pub fn heritage(&mut self, fd: &mut crate::funcdata::Funcdata) {
+    pub fn heritage(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        deadline: Option<std::time::Instant>,
+    ) {
         // A function with no basic blocks has no data-flow to heritage.  The C++
         // never reaches `heritage()` in that state (it runs after `followFlow`/
         // `structureReset` built the CFG), and `buildADT` indexes the block list
@@ -3896,6 +3906,17 @@ impl Heritage {
 
         let nspaces = fd.get_arch().manage().num_spaces() as usize;
         for i in 0..nspaces {
+            // (kuna decompile-all watchdog) Cooperative per-function deadline at
+            // the per-address-space boundary: the observed non-convergence hang
+            // spends its time inside heritage passes (`LocationMap::add` growth),
+            // so bail out of the pass here rather than only at the next action
+            // boundary.  The abandoned pass's partial state is never printed —
+            // the drive turns the expiry into a per-function `Err`.
+            if let Some(d) = deadline {
+                if std::time::Instant::now() >= d {
+                    return;
+                }
+            }
             // info = &infolist[i];
             if !self.infolist[i].is_heritaged() {
                 continue;
@@ -4637,7 +4658,7 @@ mod tests {
         assert_eq!(h.get_pass(), 0, "fresh heritage starts at pass 0");
         // Empty function: the driver walks the spaces (no free Varnodes),
         // places no phis, renames nothing, and bumps the pass counter.
-        h.heritage(&mut fd);
+        h.heritage(&mut fd, None);
         assert_eq!(h.get_pass(), 1, "one heritage pass advances `pass` to 1");
         assert_eq!(fd.vbank().num_varnodes(), 0, "empty function: no Varnodes created");
     }
@@ -4721,7 +4742,7 @@ mod tests {
         // Run the full driver.
         let mut h = Heritage::new();
         h.build_info_list(&fd);
-        h.heritage(&mut fd);
+        h.heritage(&mut fd, None);
 
         // Exactly one MULTIEQUAL, at block 3 (the join).
         let phis: Vec<crate::seams::OpId> = fd

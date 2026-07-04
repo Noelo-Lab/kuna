@@ -3,7 +3,8 @@
 //!
 //! ```text
 //!   kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \
-//!                       [--no-vars] [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]
+//!                       [--no-vars] [--max-fn-seconds N] [--option N V].. \
+//!                       [--slice ARCH] [--target T] [--sleighpath D]
 //!   kuna functions <binary> [--json] [--slice ARCH] [--target T] [--sleighpath D]
 //! ```
 //!
@@ -51,6 +52,12 @@ struct Args {
     /// `--no-vars`: skip the per-function variable extraction (faster; drops the
     /// `variables` array used by decbench's `type_match`).
     no_vars: bool,
+    /// `--max-fn-seconds N` (decompile-all only): per-function decompile
+    /// watchdog budget in seconds; `0` disables.  A function that exceeds it is
+    /// recorded as that function's `error` (the batch continues) instead of
+    /// hanging the whole run — the defensive cap for the known stripped-ELF
+    /// non-convergence hang (`tests/hang-repro/`).  Default 120.
+    max_fn_seconds: u64,
     options: Vec<(String, String)>,
     slice: Option<String>,
     target: Option<String>,
@@ -145,6 +152,16 @@ struct FuncResult {
 fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
     let mut prog = load_program(args)?;
     let targets = resolve_targets(&prog, args)?;
+
+    // Per-function watchdog (`--max-fn-seconds`, default 120, 0 disables):
+    // driver policy, not a stage-model option — the decompile drive arms a
+    // cooperative deadline from this budget for EACH function, so one
+    // pathological non-converging function becomes a per-function `error`
+    // record instead of hanging the whole batch (see `tests/hang-repro/`).
+    if args.max_fn_seconds > 0 {
+        prog.arch_mut().kuna_fn_budget =
+            Some(std::time::Duration::from_secs(args.max_fn_seconds));
+    }
 
     let mut out = Vec::with_capacity(targets.len());
     for (name, entry) in targets {
@@ -491,6 +508,7 @@ fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let mut names: Option<Vec<String>> = None;
     let mut addrs: Vec<u64> = Vec::new();
     let mut no_vars = false;
+    let mut max_fn_seconds: u64 = 120;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -509,6 +527,13 @@ fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
             "--addr" => {
                 let v = take(argv, &mut i, "--addr")?;
                 addrs.push(parse_hex(&v)?);
+            }
+            "--max-fn-seconds" if cmd == "decompile-all" => {
+                let v = take(argv, &mut i, "--max-fn-seconds")?;
+                max_fn_seconds = v
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|_| format!("invalid --max-fn-seconds value {v:?}"))?;
             }
             "--option" => {
                 if i + 2 >= argv.len() {
@@ -541,7 +566,7 @@ fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
-    Ok(Args { binary, json, names, addrs, no_vars, options, slice, target, sleighpath })
+    Ok(Args { binary, json, names, addrs, no_vars, max_fn_seconds, options, slice, target, sleighpath })
 }
 
 fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
@@ -562,11 +587,15 @@ fn parse_hex(s: &str) -> Result<u64, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                   [--no-vars] [--max-fn-seconds N] [--option N V].. \\\n\
+         \x20                   [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile every function of a binary in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
-         without it, concatenated C with `// Function:` headers."
+         without it, concatenated C with `// Function:` headers.\n\
+         --max-fn-seconds N caps ONE function's decompile at N seconds (default 120,\n\
+         0 disables); a function over budget becomes its own `error` record and the\n\
+         batch continues (the stripped-ELF hang watchdog, see tests/hang-repro/)."
     );
 }
 

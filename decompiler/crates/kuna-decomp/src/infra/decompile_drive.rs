@@ -537,6 +537,10 @@ fn run_jumptable_pipeline(
     let saved = arch.allacts.get_current_name().to_string();
     arch.allacts.set_current("jumptable")?;
     let mut ctx = ActionContext::new();
+    // (kuna decompile-all watchdog) The jumptable sub-pipeline runs inside the
+    // budgeted per-function drive (flow-follow), so it shares the same deadline;
+    // `None` on every unbudgeted path (console/parity — structurally unchanged).
+    ctx.deadline = arch.kuna_fn_deadline;
     let result = {
         let root = arch
             .allacts
@@ -590,16 +594,32 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     let mut total: int4 = 0;
     for _ in 0..=MAX_REFLOW {
         let res = {
+            let deadline = arch.kuna_fn_deadline;
             let root = arch
                 .allacts
                 .get_current_mut()
                 .ok_or_else(|| kuna_base::error::KunaError::lowlevel("no current action"))?;
             root.reset(fd);
             let mut ctx = ActionContext::new();
+            // (kuna decompile-all watchdog) thread the per-function deadline
+            // into the action loop (`None` = no budget, the parity default).
+            ctx.deadline = deadline;
             let r = root.perform(fd, &mut ctx);
             (r, ctx.reflow_requested)
         };
         let (r, reflow_requested) = res;
+        // (kuna decompile-all watchdog) A budgeted drive that ran past its
+        // deadline unwound cooperatively (the action/heritage loops stop
+        // scheduling work); surface it as the per-function error the batch
+        // driver records, instead of printing a half-analyzed function.
+        if let Some(deadline) = arch.kuna_fn_deadline {
+            if std::time::Instant::now() >= deadline {
+                let secs = arch.kuna_fn_budget.map(|b| b.as_secs()).unwrap_or(0);
+                return Err(kuna_base::error::KunaError::lowlevel(format!(
+                    "per-function decompile budget exceeded ({secs} s)"
+                )));
+            }
+        }
         if r < 0 {
             return Ok(r); // breakpoint — propagate verbatim (no re-flow)
         }
@@ -750,53 +770,74 @@ pub fn decompile_func_full_with_override_dyn(
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
 ) -> KunaResult<Funcdata> {
-    let mut fd =
-        build_and_follow_flow_with_override_and_protos(arch, name, funcaddr, size, flow_overrides, proto_overrides)?;
-    // Apply any parsed-and-locked prototype to the fresh funcp (the input-param
-    // recovery SEED): after this the inputs/output are type-locked, so
-    // ActionPrototypeTypes forces the typed Varnodes.
-    if let Some(pieces) = pending_proto {
-        fd.apply_locked_prototype(pieces)?;
-    }
-    // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
-    // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
-    // the rebuilt proto input-locked so `ActionPrototypeTypes` forces the typed
-    // input Varnode (C++ `IfcMapParam` writes straight onto the live FuncProto).
-    fd.apply_mapped_params(mapped_params);
-    // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
-    fd.seed_mapped_symbols(mapped_symbols);
-    // Re-seed the usepoint-scoped console symbols (the register-storage
-    // `type varnode %REG(pc)` symbols, e.g. retstruct's `tmp`) WITH their use
-    // address so `linkSymbol`'s usepoint query binds them at the scoped read.
-    fd.seed_usepoint_symbols(usepoint_symbols);
-    // Re-seed the console-added dynamic (`map hash`) symbols (likewise lost).
-    fd.seed_dynamic_symbols(dynamic_symbols);
-    // With the single-manager unification (LOSS-132) the universalAction passes
-    // now reach the *real* lifted varnodes, so the pipeline genuinely executes
-    // heritage / simplification / merge / … on live IR.  Some pass BODIES are
-    // still un-ported seams (LOSS-131, the M3 grind): a hand-built fixture never
-    // reached them, but a real corpus function can hit, e.g.,
-    // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those seams abort via
-    // `unimplemented_seam` (a deliberate `#[cold] panic!`).  Convert such a
-    // seam-abort into a recoverable `Err` at this orchestration boundary so the
-    // end-to-end harnesses degrade to the documented "honest partial parity"
-    // (the pipeline ran; a body declined at a seam) instead of taking down the
-    // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
-    // assumes.  `fd`/`arch` are discarded on the unwind, so no half-mutated
-    // state escapes (`AssertUnwindSafe` is sound here for that reason).
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
-    match res {
-        Ok(r) => {
-            r?;
-            Ok(fd)
+    // (kuna decompile-all watchdog) Arm the per-function deadline from the
+    // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
+    // `kuna_fn_budget`; every other path leaves it `None`, so this is a `None`
+    // assignment and the pipeline below is structurally unchanged).  The budget
+    // covers the whole drive — flow-follow (incl. the jumptable sub-pipeline)
+    // and the action pipeline — and is consulted cooperatively at the action /
+    // rule-pool / heritage loop boundaries.
+    arch.kuna_fn_deadline = arch.kuna_fn_budget.map(|b| std::time::Instant::now() + b);
+    let result = (|| {
+        let mut fd = build_and_follow_flow_with_override_and_protos(
+            arch,
+            name,
+            funcaddr,
+            size,
+            flow_overrides,
+            proto_overrides,
+        )?;
+        // Apply any parsed-and-locked prototype to the fresh funcp (the input-param
+        // recovery SEED): after this the inputs/output are type-locked, so
+        // ActionPrototypeTypes forces the typed Varnodes.
+        if let Some(pieces) = pending_proto {
+            fd.apply_locked_prototype(pieces)?;
         }
-        Err(payload) => {
-            let msg = panic_message(&payload);
-            Err(kuna_base::error::KunaError::lowlevel(format!(
-                "decompile pipeline reached an un-ported seam (LOSS-131): {msg}"
-            )))
+        // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
+        // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
+        // the rebuilt proto input-locked so `ActionPrototypeTypes` forces the typed
+        // input Varnode (C++ `IfcMapParam` writes straight onto the live FuncProto).
+        fd.apply_mapped_params(mapped_params);
+        // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
+        fd.seed_mapped_symbols(mapped_symbols);
+        // Re-seed the usepoint-scoped console symbols (the register-storage
+        // `type varnode %REG(pc)` symbols, e.g. retstruct's `tmp`) WITH their use
+        // address so `linkSymbol`'s usepoint query binds them at the scoped read.
+        fd.seed_usepoint_symbols(usepoint_symbols);
+        // Re-seed the console-added dynamic (`map hash`) symbols (likewise lost).
+        fd.seed_dynamic_symbols(dynamic_symbols);
+        // With the single-manager unification (LOSS-132) the universalAction passes
+        // now reach the *real* lifted varnodes, so the pipeline genuinely executes
+        // heritage / simplification / merge / … on live IR.  Some pass BODIES are
+        // still un-ported seams (LOSS-131, the M3 grind): a hand-built fixture never
+        // reached them, but a real corpus function can hit, e.g.,
+        // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those seams abort via
+        // `unimplemented_seam` (a deliberate `#[cold] panic!`).  Convert such a
+        // seam-abort into a recoverable `Err` at this orchestration boundary so the
+        // end-to-end harnesses degrade to the documented "honest partial parity"
+        // (the pipeline ran; a body declined at a seam) instead of taking down the
+        // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
+        // assumes.  `fd`/`arch` are discarded on the unwind, so no half-mutated
+        // state escapes (`AssertUnwindSafe` is sound here for that reason).
+        let res =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
+        match res {
+            Ok(r) => {
+                r?;
+                Ok(fd)
+            }
+            Err(payload) => {
+                let msg = panic_message(&payload);
+                Err(kuna_base::error::KunaError::lowlevel(format!(
+                    "decompile pipeline reached an un-ported seam (LOSS-131): {msg}"
+                )))
+            }
         }
-    }
+    })();
+    // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
+    // no later, non-drive pipeline run (console sub-queries) consults a stale one.
+    arch.kuna_fn_deadline = None;
+    result
 }
 
 /// (kuna) Build the IR for `name` and run a **named reduced pipeline** variant

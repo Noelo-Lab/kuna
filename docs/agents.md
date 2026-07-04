@@ -91,7 +91,13 @@ binary **once** instead of `kuna decompile`'s subprocess-per-function (≈10×+ 
 many-function binary). `--json` emits `{binary,count,functions:[{name,address,size,code,error,
 variables:[{name,type,kind,arg_index,stack_offset,size}]}]}` — per-function `code` is
 byte-identical to `kuna decompile`, `error` isolates a single failed function, and `variables`
-(params in ABI order + DWARF/stack locals) feed type-recovery scoring. The decbench backend
+(params in ABI order + DWARF/stack locals) feed type-recovery scoring. `decompile-all` also
+carries a **per-function watchdog**, `--max-fn-seconds N` (default 120, `0` disables): a
+function whose decompile drive exceeds the budget is cut off cooperatively (deadline probes
+at the action/rule-pool/heritage loop boundaries) and recorded as that function's `error`
+("per-function decompile budget exceeded"), the batch continuing — driver policy, not a
+stage-model settable (zero output change for any function that converges; the console /
+`decomp_dbg` parity path never arms it). The decbench backend
 (`decbench/decompilers/raw/kuna_raw.py`) shells out to `kuna decompile-all --json`.
 `kuna catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
 `stage catalog` JSON (single source of truth: `settableTable`, generated from
@@ -109,6 +115,18 @@ obeys five **standing requirements** (one PR/feature; end-to-end binary→addr/f
 output-changing ⇒ logged + `--option`-flaggable; always measure+record decompile speed;
 large/multi-part features go through a `[PROPOSAL]` draft PR for human go/no-go) — see
 `docs/pipeline.md` → *Standing requirements*.
+
+## Known issues
+
+- **Fixpoint non-convergence on certain fully-stripped x86-64 ELF binaries**
+  (underlying bug OPEN). On some stripped binaries (openssh/bash) ONE pathological
+  function's decompile pipeline never converges (heritage/dead-code restart cycling —
+  99 instructions, infinite loop, 100% CPU). The `decompile-all` **watchdog is shipped**
+  (`--max-fn-seconds`, default 120 s), so `kuna decompile-all` now isolates the
+  pathological function as a per-function `error` record and finishes the batch instead
+  of hanging forever. Single-function repro:
+  `kuna decompile-all tests/hang-repro/ssh-sk-helper --addr 0x1bd04`; offending binaries
+  + full writeup: **`tests/hang-repro/README.md`**.
 
 ## Tests
 

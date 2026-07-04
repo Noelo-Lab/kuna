@@ -834,6 +834,16 @@ impl Funcdata {
     /// info list exists — the merged-tree substitute for the
     /// `startProcessing` → `heritage.buildInfoList()` call (a W4 seam there).
     pub fn op_heritage(&mut self) {
+        self.op_heritage_with_deadline(None)
+    }
+
+    /// [`op_heritage`](Self::op_heritage) with the (kuna) `decompile-all`
+    /// per-function watchdog deadline threaded through to
+    /// [`Heritage::heritage`](crate::heritage::Heritage::heritage)'s
+    /// per-address-space loop (`ActionHeritage` passes its
+    /// [`ActionContext::deadline`](crate::action::ActionContext); every other
+    /// caller passes `None` and is byte-identical to before).
+    pub fn op_heritage_with_deadline(&mut self, deadline: Option<std::time::Instant>) {
         let mut heritage = std::mem::take(&mut self.heritage);
         heritage.build_info_list(self);
         // C++ `Funcdata::startProcessing` runs `localoverride.applyDeadCodeDelay`
@@ -856,7 +866,7 @@ impl Funcdata {
                 let _ = heritage.set_dead_code_delay(&spc, delay);
             }
         }
-        heritage.heritage(self);
+        heritage.heritage(self, deadline);
         self.heritage = heritage;
     }
 

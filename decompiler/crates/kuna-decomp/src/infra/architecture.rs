@@ -473,6 +473,20 @@ pub struct Architecture {
     /// (kuna GH-8471) Keep mode-bit-encoded (Thumb) function pointers symbolic
     /// (C++ `preserve_thumb_funcptr`).
     pub preserve_thumb_funcptr: bool,
+    /// (kuna decompile-all watchdog) Optional wall-clock budget for ONE
+    /// function's decompile drive (`kuna decompile-all --max-fn-seconds N`).
+    /// `None` (the default) means no budget: the console/`decomp_dbg` parity
+    /// path never sets it, so the datatest pipeline is structurally unaffected.
+    /// Driver policy, NOT a stage-model settable: it changes zero output for a
+    /// function that converges — it only bounds a non-converging one.
+    pub kuna_fn_budget: Option<std::time::Duration>,
+    /// (kuna decompile-all watchdog) The live deadline for the CURRENT
+    /// function's drive, computed from [`kuna_fn_budget`](Self::kuna_fn_budget)
+    /// at the top of `decompile_func_full_with_override_dyn` and consulted
+    /// cooperatively at the action/rule-pool/heritage loop boundaries
+    /// ([`ActionContext::deadline`](crate::action::ActionContext)).  Always
+    /// `None` when no budget is set.
+    pub kuna_fn_deadline: Option<std::time::Instant>,
 
     // --- kuna analysis-pass gates (per-run `--option <id> on|off`) ----------
     // One boolean per `kuna_analysis::passes` pass id; the console's
@@ -875,6 +889,8 @@ impl Architecture {
             realtypes: false,
             present_lessequal: false,
             preserve_thumb_funcptr: false,
+            kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
+            kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
 
             // Analysis-pass gates: real defaults set by reset_defaults_internal.
             analysis_noreturn_known: false,

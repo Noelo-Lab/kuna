@@ -401,14 +401,16 @@ impl Action for ActionHeritage {
         }
         Some(Box::new(ActionHeritage { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:289 — ActionHeritage::apply: data.opHeritage(); return 0;
         // `opHeritage` drives the owned Heritage engine (heritage.rs), mutating
         // the live Funcdata into SSA form (reads linked to writes, MULTIEQUAL
         // phi-nodes placed at dominance frontiers).  The action always reports 0
         // changes (the C++ does too — heritage registers no change count, which
         // is why `break action heritage` never fires; see kuna/goldens.py B3).
-        data.op_heritage();
+        // (kuna decompile-all watchdog) thread the per-function deadline into
+        // the heritage per-space loop; `None` everywhere but a budgeted drive.
+        data.op_heritage_with_deadline(ctx.deadline);
         // (kuna) Repair any synthetic lowered-switch BRANCHIND whose input
         // heritage normalized away (see `kuna_repair_lowered_switch_inputs`).
         // A no-op unless a lowered-switch was installed this function, so it
