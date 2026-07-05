@@ -79,17 +79,46 @@ time the copy is trimmed (post-merge), the do-nothing sweeps have already passed
 
 Deferred after landing the 44-case `noreturn_reach` win; option 2 is the scoped follow-up.
 
-### 3. Merge / copy-propagation quality — **~6 genuine-gaps** → port after (2)
+### 3. Merge / copy-propagation quality — **~6 genuine-gaps** → ROOT-CAUSED (deferred)
 
 The `merge.cc` phase Ghidra runs that kuna under-applies:
 `Merge::mergeAddrTied` / `ActionMergeAdjacent` / `ActionHideShadow` (coreaction.cc:4976 →
-`Merge::hideShadows`). Ghidra coalesces a return-value MULTIEQUAL with its address-tied
-stack-var / parameter input, eliding the unchanged branch's **self-copy** into a
-single-armed in-place `if`, and consolidates copy-shadow varnodes of a common ancestor
-into one HighVariable. kuna emits the residual `v = v;` self-copy / a two-armed `if`.
+`Merge::hideShadows`). Ghidra coalesces a return-value / size MULTIEQUAL with its
+address-tied stack-var / parameter / pass-through input into one HighVariable, so the
+unchanged branch's copy becomes an identity `v = v` that is elided → a single-armed in-place
+`if`. kuna keeps them distinct, emitting the residual `v = v;` self-copy / a two-armed `if`.
 Families: `phi-copy-merge` (×2), `merge-copy-residue`, `highvar-merge`, `copy-shadow-merge`,
 `global-store-heritage`. A couple also touch `RuleStoreVarnode` (STORE-through-const-pointer
 → COPY to the mapped global, ruleaction.cc:4340) and `SubvariableFlow` return narrowing.
+
+**Root cause (traced, tar `make_directory` @0x1e190).** Same shape as cluster (2): the
+merge passes ARE ported and registered (`s6_variables/merge.rs`:
+`merge_multi_entry`/`merge_adjacent`/`mark_internal_copies`/`merge_test_speculative`,
+`merge_opcode(MULTIEQUAL)`; `universalaction.rs` wires `ActionMergeMultiEntry`/`MergeCopy`/
+`MergeAdjacent`) — but **`merge_test_speculative` (the cover/interference test) declines the
+coalesce Ghidra accepts** (coalescing a MULTIEQUAL output with a compatible input whose cover
+reaches the phi on both in-edges). So a phi-output register var stays a distinct
+`v5 = phi(v1, v1+1)` where Ghidra reuses `sVar1`.
+
+**Secondary defect = a real correctness bug (invalid C).** The un-merged phi output `v5` is
+**emitted but never declared** (used 3× in `make_directory`, no declaration → won't compile).
+Traced: `v5`'s high *is* reached by `emit_local_var_decls` (`printc.rs`) and *is* named, but
+is skipped by the **`is_param` filter** — because the failed merge left `v5` with an instance
+overlapping a parameter register, so the containment query mis-classifies it as a signature
+parameter (declared in the signature, not the body). So invalid C is stacked on top of the
+cosmetic diff, both rooted in the same declined coalesce.
+
+**Fix options (deferred — deep/risky for the margins; the invalid-C sub-bug is the valuable
+part):**
+1. *Core-merge*: align `merge_test_speculative`'s cover/interference + candidate ordering with
+   Ghidra's `Merge::mergeAdjacent` for the MULTIEQUAL-output ↔ input case. Correct root fix but
+   **high-risk** (merge phase is pipeline-wide; 675-datatest revalidation).
+2. *Emission backstop for the invalid-C bug* (targeted, byte-identical on the 675 datatests
+   since none has an undeclared var): make `emit_local_var_decls` never skip a body-referenced
+   high whose storage is not *actually* the signature parameter (tighten `is_param` to "is the
+   declared parameter", or add a post-emit declaration backstop for any referenced-but-undeclared
+   high). Fixes the invalid C without touching the merge phase. Recommended as the scoped
+   follow-up — it removes a genuine invalid-C output regardless of the cosmetic coalesce.
 
 ### 4. Runtime choices — **already flippable, no fix needed** (20 covered-by-option)
 
