@@ -42,6 +42,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+use object::Object; // `File::architecture()` (ARM-discovery default, decbench)
 use kuna_decomp::decompile_drive::{
     decompile_func_full_with_override_dyn, extract_variables, print_c, VarInfo,
 };
@@ -301,6 +302,32 @@ fn load_program(args: &Args, default_listing: bool) -> Result<ConsoleProgram, St
         prog.arch_mut()
             .set_kuna_option("listing", "on")
             .map_err(|e| format!("option listing: {}", e.explain()))?;
+    }
+
+    // (kuna, decbench ARM) Oracle 5 — the always-on prologue-pattern scan folded into
+    // function discovery — is x86-64-only, so on a STRIPPED **non-x86-64** binary the ELF
+    // entry point is the ONLY discovered function (ARM Cortex-M `betaflight`: 1 of ~469;
+    // it has no recursive-descent Listing sweep at the analyzer tier).  The
+    // `funcstart_patterns` pass IS the primary discovery source there — it applies the
+    // full ARM/AArch64/MIPS/PPC/RISC-V `<patternpairs>` (pre/post) prologue matcher over
+    // the code — so default it ON for non-x86-64 on the `decompile-all` surface (the
+    // benchmark/LLM path), unless the caller named it explicitly.  x86-64 keeps it OFF
+    // (oracle 5 + the entry oracles suffice, and the aggressive scan can over-produce
+    // there); only this driver changes, the engine default
+    // (`analysis_funcstart_patterns = false`) and the console/datatest surfaces are
+    // untouched.  See DIV-20 (`docs/divergences.md`).
+    if default_listing && !args.options.iter().any(|(name, _)| name == "funcstart_patterns") {
+        let non_x86_64 = std::fs::read(&binary)
+            .ok()
+            .and_then(|b| {
+                object::File::parse(&*b).ok().map(|f| f.architecture() != object::Architecture::X86_64)
+            })
+            .unwrap_or(false);
+        if non_x86_64 {
+            prog.arch_mut()
+                .set_kuna_option("funcstart_patterns", "on")
+                .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
+        }
     }
 
     // Analysis-/printer-tier `--option`s must be applied to the architecture
