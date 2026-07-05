@@ -410,14 +410,19 @@ What breaks when a partial core omits pieces — all failure modes are clean:
       exepath swap, binary shipped as `os/<platform>/kuna_ghidra`.
 - [x] These two documents.
 
-**Phase 2 — engine bridge (first real C in the GUI).**
-- [ ] `ArchitectureGhidra`-equivalent construction path: Architecture from the four
+**Phase 2 — engine bridge (first real C in the GUI).** Full plan + risk
+assessment + sequencing: **`docs/rust-port/ghidra-phase2-plan.md`** (a [PROPOSAL]
+awaiting go/no-go, since this is the first phase that touches kuna-decomp's core).
+- [x] `SharedClient` design (the re-entrant provider→query pattern) +
+      `GhidraLoadImage` (`load_fill` = `getBytes`) — `kuna-ghidra/src/provider.rs`,
+      implemented and tested as the phase's demonstrator.
+- [ ] `Architecture`-equivalent construction path: Architecture from the four
       wire spec documents (wire the Phase-1 tspec space manager into the engine;
       cspec/pspec via the existing `set_cspec_xml`/`set_pspec_xml` + `init_post_engine`).
 - [ ] `Translate` enum seam on `Architecture` (`{Sleigh, GhidraTranslate}`);
       `GhidraTranslate` port (getPcode per instruction, register caches, user-op probe
-      loop).
-- [ ] `GhidraLoadImage` (`load_fill` = `getBytes`); `ContextGhidra::getTrackedSet`.
+      loop). *The go/no-go linchpin — must land as a behavior-preserving refactor.*
+- [ ] `ContextGhidra::getTrackedSet` (the trait-borrow friction is resolved in the plan).
 - [ ] `Funcdata::encode` — minimal `<function>` (name/addr + `<ast>` + prototype).
 - [ ] PrintC → `EmitMarkup` wiring; `doc_function` markup path; dual-`<function>`
       `decompileAt` response.
