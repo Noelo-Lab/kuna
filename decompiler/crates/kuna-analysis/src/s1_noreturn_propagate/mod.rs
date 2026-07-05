@@ -114,11 +114,169 @@ impl AnalysisPass for NoReturnPropagatePass {
         let Some(listing) = ctx.listing else {
             return out;
         };
-        for fact in propagate_noreturn(listing) {
+        // (kuna, decbench F2) The `error(status,…)`-conditional recognizer:
+        // glibc `error`/`error_at_line` never return WHEN the `status` argument is
+        // a nonzero constant (they call `exit(status)`), so a wrapper whose tail is
+        // `call error(2,…)` is itself no-return — but `error` is NOT on the Known
+        // no-return list (it *returns* for `error(0,…)`). The recognizer is a
+        // per-call-site value check (arg0 is a nonzero literal), gated by its own
+        // `--option noreturn_error` flag (default-on, DIV-16). When on, compute the
+        // `error`/`error_at_line` entry addresses (PLT stubs + any defined funcsym)
+        // so the propagation rule can treat a `call error(nonzero)` tail as terminal.
+        let error_recog = if ctx.arch.analysis_noreturn_error {
+            ErrorRecognizer::from_object(ctx.file, ctx.bytes, listing)
+        } else {
+            ErrorRecognizer::disabled()
+        };
+        for fact in propagate_noreturn(listing, &error_recog) {
             out.noreturn.push(fact);
         }
         out
     }
+}
+
+/// The `error(status,…)`-conditional no-return recognizer (decbench F2).
+///
+/// glibc `error(int status, int errnum, const char *fmt, …)` and
+/// `error_at_line(int status, …)` call `exit(status)` and **never return** when
+/// `status != 0` — but *do* return for `status == 0`. So `error` cannot be a plain
+/// Known no-return, yet a wrapper whose tail is `call error(2,…)` (e.g. GNU
+/// `pfatal_with_name`) is unconditionally no-return. This recognizer holds the
+/// `error`/`error_at_line` entry addresses and answers, per call site, whether the
+/// `status` argument (x86-64 SysV first int arg = `EDI`/`RDI`) is a nonzero
+/// constant, so [`function_is_no_return`] can treat that tail call as terminal.
+///
+/// This is exactly the value-conditional slice of Ghidra's discovered-no-return
+/// analyzer (which flags a `call error` with a nonzero status "Subroutine does not
+/// return"); it reuses the *same* propagation fixpoint and the same `NoReturnFact`
+/// commit seam — no parallel machinery.
+struct ErrorRecognizer {
+    /// Entry addresses (PLT stub + any defined funcsym) of `error`/`error_at_line`.
+    /// Empty ⇒ the recognizer is inert (disabled, or no `error` import present).
+    error_addrs: BTreeSet<u64>,
+}
+
+impl ErrorRecognizer {
+    /// A disabled recognizer (no addresses ⇒ never matches).
+    fn disabled() -> Self {
+        ErrorRecognizer { error_addrs: BTreeSet::new() }
+    }
+
+    /// Collect the `error`/`error_at_line` entry addresses from the object: the
+    /// dynamic-import PLT stubs (`resolve_imports`, the same stream the Known
+    /// no-return pass scans) plus any defined/named funcsym the Listing carries
+    /// (the unstripped-static case). Version-suffix stripped like the Known pass.
+    fn from_object(file: &object::File, bytes: &[u8], listing: &Listing) -> Self {
+        let mut error_addrs = BTreeSet::new();
+        let is_error_name = |n: &str| n == "error" || n == "error_at_line";
+        // Dynamic imports (PLT stubs): the common dynamically-linked case.
+        for p in crate::s1_loader::format::resolve_imports(file, bytes) {
+            if let Ok(n) =
+                String::from_utf8(crate::s1_loader::elf_plt::strip_version(&p.name))
+            {
+                if is_error_name(n.trim_start_matches('_')) {
+                    error_addrs.insert(p.addr);
+                }
+            }
+        }
+        // Named functions in the Listing (a defined/statically-linked `error`).
+        for (&entry, f) in listing.functions() {
+            if let Some(n) = f.name.as_deref() {
+                if is_error_name(n.trim_start_matches('_')) {
+                    error_addrs.insert(entry);
+                }
+            }
+        }
+        ErrorRecognizer { error_addrs }
+    }
+
+    /// Is `entry` the `error`/`error_at_line` function?
+    fn is_error(&self, entry: u64) -> bool {
+        self.error_addrs.contains(&entry)
+    }
+
+    /// Is the last (tail) instruction of a body a `call error`/`call error_at_line`
+    /// whose `status` argument is a **nonzero constant** — i.e. the call (and so the
+    /// whole no-returning-path body) never returns?
+    ///
+    /// `call_idx` indexes the tail CALL in `body`. Returns true only when (a) the
+    /// call target is an `error` address and (b) the last write to the first int-arg
+    /// register (x86-64 SysV `EDI`/`RDI`, the `int status`) before the call is a
+    /// `MOV reg, imm` with a nonzero literal. A zero status (`XOR EDI,EDI` /
+    /// `MOV EDI,0x0` — `error` *returns*) or any non-constant / unprovable definition
+    /// is rejected (conservative: a false positive would drop live caller code).
+    fn call_is_terminal_error(&self, body: &[(u64, &Insn)], call_idx: usize) -> bool {
+        let (_, call) = body[call_idx];
+        if !call.flow.is_call {
+            return false;
+        }
+        if !call.flows.iter().any(|t| self.is_error(*t)) {
+            return false;
+        }
+        arg0_is_nonzero_const(body, call_idx)
+    }
+}
+
+/// Uppercase register token of the first integer argument on x86-64 SysV — the
+/// `int status` slot of `error()`/`error_at_line()`. The 64-/32-/16-/8-bit views
+/// of `rdi`; on any non-x86 target none of these appear as a destination operand,
+/// so the whole recognizer degrades to a clean no-op (no false positives).
+fn is_arg0_reg(reg: &str) -> bool {
+    matches!(reg.to_ascii_uppercase().as_str(), "RDI" | "EDI" | "DI" | "DIL")
+}
+
+/// Parse an operand token as an integer literal (SLEIGH x86 emits hex `0x2` /
+/// `-0x1`; decimal is accepted defensively). `None` ⇒ not a literal.
+fn parse_imm(tok: &str) -> Option<i64> {
+    let t = tok.trim();
+    let (neg, t) = t.strip_prefix('-').map_or((false, t), |r| (true, r));
+    let v = if let Some(h) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        i64::from_str_radix(h, 16).ok()?
+    } else {
+        t.parse::<i64>().ok()?
+    };
+    Some(if neg { -v } else { v })
+}
+
+/// Backward-scan the straight-line predecessors of the tail `call` (`call_idx`)
+/// for the defining write of the first int-arg register, returning true iff that
+/// write is a nonzero **constant** load.
+///
+/// Conservative by construction: it stops (and returns false) at the first
+/// control-flow instruction or intervening `call` (beyond which the straight-line
+/// definition we depend on no longer dominates the call and `edi`/`rdi` may be
+/// clobbered), and returns false for a zero literal (`error(0,…)` *returns*) or any
+/// non-literal / unrecognised definition. A false positive would mark a returning
+/// function no-return and drop live caller code, so every uncertain case is a no.
+fn arg0_is_nonzero_const(body: &[(u64, &Insn)], call_idx: usize) -> bool {
+    let mut i = call_idx;
+    while i > 0 {
+        i -= 1;
+        let insn = body[i].1;
+        // A branch/return between here and the call breaks straight-line dominance.
+        if insn.flow.is_jump || insn.flow.is_terminal {
+            return false;
+        }
+        let ops = insn.operands.trim();
+        let mut parts = ops.splitn(2, ',');
+        let dest = parts.next().unwrap_or("").trim();
+        let src = parts.next().unwrap_or("").trim();
+        let mnem = insn.mnemonic.trim().to_ascii_uppercase();
+        if is_arg0_reg(dest) {
+            // The nearest definition of the status register: decide here.
+            return match mnem.as_str() {
+                // `MOV EDI, <imm>`: nonzero literal ⇒ error() never returns.
+                "MOV" => parse_imm(src).is_some_and(|v| v != 0),
+                // `XOR EDI,EDI` / `SUB EDI,EDI`: sets zero ⇒ error() *returns*.
+                _ => false,
+            };
+        }
+        // A call before the definition clobbers the caller-saved arg register.
+        if insn.flow.is_call {
+            return false;
+        }
+    }
+    false
 }
 
 /// Is `insn` an alignment NOP — the trailing padding a compiler emits after a
@@ -153,7 +311,12 @@ fn skip_candidate(listing: &Listing, entry: u64, terminal: &BTreeSet<u64>) -> bo
 /// no computed jump; no escaping/tail-skipping branch). Conservative: any
 /// uncertainty (a return path, an indirect jump, a branch out of the reachable
 /// body) leaves `entry` untouched.
-fn function_is_no_return(listing: &Listing, entry: u64, terminal: &BTreeSet<u64>) -> bool {
+fn function_is_no_return(
+    listing: &Listing,
+    entry: u64,
+    terminal: &BTreeSet<u64>,
+    error_recog: &ErrorRecognizer,
+) -> bool {
     let next = listing.next_function_after(entry).map(|f| f.entry);
     // The function body in address order (the Listing's `instructions()` is a
     // BTreeMap iterator, already sorted).
@@ -169,13 +332,19 @@ fn function_is_no_return(listing: &Listing, entry: u64, terminal: &BTreeSet<u64>
     // Rule 1: the last *real* (non-padding) instruction must be a CALL — or a tail
     // JMP — to a callee already in the terminal set. Trailing alignment NOPs after
     // a no-return call are unreachable and skipped.
-    let Some(&(last_vma, last)) = body.iter().rev().find(|(_, insn)| !is_padding_nop(insn))
-    else {
+    let Some(last_idx) = body.iter().rposition(|(_, insn)| !is_padding_nop(insn)) else {
         return false;
     };
+    let (last_vma, last) = body[last_idx];
     let last_is_terminal_transfer = (last.flow.is_call || last.flow.is_jump)
         && last.flows.iter().any(|t| terminal.contains(t));
-    if !last_is_terminal_transfer {
+    // (kuna, decbench F2) …or a tail `call error(nonzero,…)`: glibc error()/
+    // error_at_line() with a nonzero constant status calls exit() and never
+    // returns, so the wrapper is no-return even though `error` itself is NOT on the
+    // Known no-return list (it returns for error(0,…)). Value-conditional, checked
+    // per call site by the recognizer (arg0 is a nonzero literal).
+    let last_is_terminal_error = error_recog.call_is_terminal_error(&body, last_idx);
+    if !last_is_terminal_transfer && !last_is_terminal_error {
         return false;
     }
 
@@ -219,7 +388,7 @@ fn function_is_no_return(listing: &Listing, entry: u64, terminal: &BTreeSet<u64>
 /// newly-concluded function joins the terminal set so a caller whose last act is a
 /// call to *it* is re-evaluated next sweep (a wrapper-of-a-wrapper converges).
 /// Keyed by entry VMA (a `BTreeMap` ⇒ address-ordered, deduped).
-fn propagate_noreturn(listing: &Listing) -> Vec<NoReturnFact> {
+fn propagate_noreturn(listing: &Listing, error_recog: &ErrorRecognizer) -> Vec<NoReturnFact> {
     let mut discovered: BTreeMap<u64, NoReturnFact> = BTreeMap::new();
     // The "already no-return" anchor set: the Known-seeded functions plus
     // everything propagated so far. A call to one of these is a terminal transfer
@@ -244,7 +413,7 @@ fn propagate_noreturn(listing: &Listing) -> Vec<NoReturnFact> {
             if skip_candidate(listing, entry, &terminal) {
                 continue;
             }
-            if function_is_no_return(listing, entry, &terminal) {
+            if function_is_no_return(listing, entry, &terminal, error_recog) {
                 let name = listing
                     .function_at(entry)
                     .and_then(|f| f.name.clone())
@@ -276,6 +445,81 @@ mod tests {
         let p = NoReturnPropagatePass;
         assert_eq!(p.id(), "noreturn_propagate");
         assert_eq!(p.stage(), Stage::S1);
+    }
+
+    // --- error(nonzero,…) recognizer predicates (decbench F2) ------------------
+
+    #[test]
+    fn arg0_reg_is_the_x86_64_first_int_arg() {
+        for r in ["EDI", "RDI", "edi", "rdi", "DI", "DIL"] {
+            assert!(is_arg0_reg(r), "{r} is the x86-64 SysV first int arg");
+        }
+        // Other regs / a target with no `EDI` are a clean no-op.
+        for r in ["EAX", "ESI", "RSI", "R0", "W0", ""] {
+            assert!(!is_arg0_reg(r), "{r} is not the first int arg");
+        }
+    }
+
+    #[test]
+    fn parse_imm_reads_hex_and_decimal() {
+        assert_eq!(parse_imm("0x2"), Some(2));
+        assert_eq!(parse_imm("0x0"), Some(0));
+        assert_eq!(parse_imm(" 0xff "), Some(255));
+        assert_eq!(parse_imm("-0x1"), Some(-1));
+        assert_eq!(parse_imm("7"), Some(7));
+        // Not a literal (a register / memory operand).
+        assert_eq!(parse_imm("EAX"), None);
+        assert_eq!(parse_imm("[rax]"), None);
+    }
+
+    /// Build a minimal straight-line `Insn` (fields the recognizer reads).
+    fn insn(mnemonic: &str, operands: &str, is_call: bool, is_jump: bool) -> Insn {
+        let mut flow = crate::listing::model::FlowType::default();
+        flow.is_call = is_call;
+        flow.is_jump = is_jump;
+        Insn {
+            addr: 0,
+            len: 1,
+            fall_through: Some(1),
+            flow,
+            flows: vec![],
+            mnemonic: mnemonic.into(),
+            operands: operands.into(),
+            pcode: None,
+        }
+    }
+
+    #[test]
+    fn arg0_nonzero_const_recognizes_mov_edi_imm() {
+        // …; MOV EDI,0x2 ; XOR EAX,EAX ; CALL error  → status 2 (nonzero).
+        let a = insn("MOV", "EDI,0x2", false, false);
+        let b = insn("XOR", "EAX,EAX", false, false);
+        let c = insn("CALL", "0x4de0", true, false);
+        let body: Vec<(u64, &Insn)> = vec![(0, &a), (1, &b), (2, &c)];
+        assert!(arg0_is_nonzero_const(&body, 2), "MOV EDI,0x2 is a nonzero status");
+    }
+
+    #[test]
+    fn arg0_nonzero_const_rejects_zero_and_nonconst_and_intervening_call() {
+        let call = insn("CALL", "0x4de0", true, false);
+        // XOR EDI,EDI → 0 (error() returns).
+        let z = insn("XOR", "EDI,EDI", false, false);
+        assert!(!arg0_is_nonzero_const(&vec![(0, &z), (1, &call)], 1));
+        // MOV EDI,0x0 → 0.
+        let m0 = insn("MOV", "EDI,0x0", false, false);
+        assert!(!arg0_is_nonzero_const(&vec![(0, &m0), (1, &call)], 1));
+        // MOV EDI,EAX → not a literal (unprovable) → conservative reject.
+        let mr = insn("MOV", "EDI,EAX", false, false);
+        assert!(!arg0_is_nonzero_const(&vec![(0, &mr), (1, &call)], 1));
+        // MOV EDI,0x2 then an intervening CALL clobbers edi → reject.
+        let m2 = insn("MOV", "EDI,0x2", false, false);
+        let clobber = insn("CALL", "0x1234", true, false);
+        assert!(!arg0_is_nonzero_const(&vec![(0, &m2), (1, &clobber), (2, &call)], 2));
+        // A branch between the def and the call breaks dominance → reject.
+        let br = insn("JMP", "0x9", false, true);
+        assert!(!arg0_is_nonzero_const(&vec![(0, &m2), (1, &br), (2, &call)], 2));
+        // No writer at all → reject.
+        assert!(!arg0_is_nonzero_const(&vec![(0, &call)], 0));
     }
 
     #[test]

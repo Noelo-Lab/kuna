@@ -145,6 +145,7 @@ pub(super) fn walk(
                     flow: c.flow,
                     flows: c.flows.clone(),
                     mnemonic: decoded.mnemonic,
+                    operands: decoded.operands,
                     pcode: None,
                 },
             );

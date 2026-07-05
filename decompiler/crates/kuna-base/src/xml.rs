@@ -1653,8 +1653,9 @@ mod tests {
         // and ghdec-whiledo-complex / decbench F3 whiledo isComplex parity,
         // and ghangr-returndup / returndup (angr SAILR gotoless ReturnDuplicatorHigh:
         // duplicate a shared bare-epilogue return into each predecessor so the classic
-        // guard shape structures as early returns; decbench F4))
-        assert_eq!(count, 158, "corpus file count drifted");
+        // guard shape structures as early returns; decbench F4),
+        // and ghangr-noreturn-error / noreturn_error, decbench F2 error(nonzero,...) wrappers)
+        assert_eq!(count, 159, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -42,15 +42,18 @@ impl PcodeEmit for OpCapture {
     }
 }
 
-/// A capturing [`AssemblyEmit`] that records the mnemonic for one instruction.
+/// A capturing [`AssemblyEmit`] that records the mnemonic + operand body for one
+/// instruction.
 #[derive(Default)]
 struct AsmCapture {
     mnemonic: String,
+    operands: String,
 }
 
 impl AssemblyEmit for AsmCapture {
-    fn dump(&mut self, _addr: &Address, mnem: &str, _body: &str) {
+    fn dump(&mut self, _addr: &Address, mnem: &str, body: &str) {
         self.mnemonic = mnem.to_string();
+        self.operands = body.to_string();
     }
 }
 
@@ -63,6 +66,8 @@ pub struct Decoded {
     pub ops: Vec<RawOp>,
     /// The decoded mnemonic.
     pub mnemonic: String,
+    /// The decoded operand body (the `body` half of `AssemblyEmit::dump`).
+    pub operands: String,
 }
 
 /// Decode the instruction at `vma` (in `code_space`) by driving `translate`.
@@ -88,5 +93,5 @@ pub fn decode_one(
     // keep the (possibly empty) captured string rather than failing the decode.
     let _ = translate.print_assembly(&mut asm, &addr);
 
-    Ok(Decoded { len: len.max(0) as u32, ops: cap.ops, mnemonic: asm.mnemonic })
+    Ok(Decoded { len: len.max(0) as u32, ops: cap.ops, mnemonic: asm.mnemonic, operands: asm.operands })
 }
