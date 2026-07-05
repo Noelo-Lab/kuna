@@ -1,0 +1,59 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench F2: the error(nonzero,...)-conditional no-return recognizer
+    (`option noreturn_error on|off`, default-ON, DIV-16).
+
+    kuna analog of the value-conditional slice of Ghidra's discovered-no-return
+    analyzer (and angr's CFGBase._determine_function_returning callgraph
+    returning-fixpoint). glibc error(int status, int errnum, const char *fmt, ...)
+    and error_at_line() call exit(status) and NEVER return WHEN status != 0 - but
+    DO return for status == 0 - so `error` cannot be a Known no-return. An internal
+    wrapper whose tail is `call error(2,...)` (GNU diffutils pfatal_with_name, and
+    every die()-via-error helper) is nonetheless no-return; `noreturn_error` folds
+    this recognition into the `noreturn_propagate` consumer (arg0 = the x86-64
+    SysV `int status` register EDI = a nonzero literal), concludes the wrapper
+    no-return, and its callers drop the dead fall-through.
+
+    Like the whole no-return propagation family (`noreturn_propagate` /
+    `noreturn_disc` / the Listing/xref tier, docs/listing-tier-design.md), the
+    recognizer runs ONLY on the real-ELF bootstrap path - it reads the program-wide
+    Listing, which is built in the console bootstrap, never on this XML
+    `<binaryimage>` datatest path. So on the XML path the flag is INERT (there is
+    no Listing to consume). The end-to-end behavior - an error(2,...) wrapper
+    concluded no-return, its caller truncated, and an error(0,...) wrapper left
+    returning - is proven by the cross-crate gate
+    `decompiler/crates/kuna-console/tests/verify_noreturn_error.rs` against a real
+    x86-64 fixture (`noreturn_error_x86_64`), the same way `noreturn_propagate` is
+    proven by `verify_noreturn_propagate.rs`.
+
+    This datatest proves the P0 assertion is WIRED:
+      * `option noreturn_error on` / `off` PARSE and round-trip (an unknown option
+        would make the console error and the second decompile would differ / not
+        run), and
+      * flipping it changes NOTHING about the rendered C on the XML path
+        (default-inert parity): the same output appears under the default pipeline
+        AND with `noreturn_error off`.
+
+    Reuses the GH-558 bytes as a small, deterministic loadable function.
+
+    Source:           int gh558(int x) { if (x LE 8) return 1; return 0; }
+    Compiled (as):    cmp $8,%edi ; jg +6 ; mov $1,%eax ; ret ; xor %eax,%eax ; ret
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="gh558"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 gh558(int4 x);</com>
+  <com>lo fu gh558</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_error off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GHANGR-NORETURN-ERROR #1: option noreturn_error off parses and round-trips, and is inert on the XML path (no Listing built): the source form x &lt;= 8 renders identically in both passes (default-on + flag-off parity)" min="2" max="2">if \(x &lt;= 8\)</stringmatch>
+</decompilertest>

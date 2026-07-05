@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    245,
-    245
+    246,
+    246
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -106,6 +106,7 @@
     "data:GH9218 #3: the low-level abort no longer fires under the fix",
     "data:GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)",
+    "data:GHANGR-NORETURN-ERROR #1: option noreturn_error off parses and round-trips, and is inert on the XML path (no Listing built): the source form x <= 8 renders identically in both passes (default-on + flag-off parity)",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism",

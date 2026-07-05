@@ -94,6 +94,7 @@ mod tests {
             flow: Default::default(),
             flows: vec![],
             mnemonic: String::new(),
+            operands: String::new(),
             pcode: None,
         }
     }

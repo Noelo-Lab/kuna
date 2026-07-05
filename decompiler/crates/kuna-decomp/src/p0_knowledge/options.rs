@@ -340,6 +340,13 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // Default-off (a heuristic that can be wrong; also requires `--option listing
     // on` to build the Listing it reads).
     "noreturn_propagate",
+    // (kuna, decbench F2) The `error(status,…)`-conditional no-return recognizer, a
+    // sub-rule of `noreturn_propagate`: glibc `error`/`error_at_line` never return
+    // when their `status` argument is a nonzero constant (they `exit(status)`), so a
+    // wrapper whose tail is `call error(2,…)` is concluded no-return and its callers
+    // drop the dead fall-through. REMOVES CODE. Default-ON (DIV-16); requires the
+    // Listing + `noreturn_propagate`, so every parity gate is byte-identical.
+    "noreturn_error",
     // (kuna) FID fingerprint matcher: the kuna analog of Ghidra's FID identification
     // analyzer.  Over the built Listing it fingerprints each function with the
     // byte-exact operand-masked FNV-1a64 hash and looks the full hash up in a kuna

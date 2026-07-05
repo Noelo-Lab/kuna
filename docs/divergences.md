@@ -618,3 +618,31 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   pre-F1 inflated form; explicit `on` = byte-identical to the default. The engine-level
   mechanism keeps its own gate (`kuna-console/tests/verify_noreturn_propagate.rs`).
 - **Date**: 2026-07-04.
+
+## DIV-16: `error(nonzero,...)` wrappers concluded no-return (decbench F2: `noreturn_error`)
+
+- **Flip**: option **`noreturn_error`** (default **on**, `change_kind = correctness-fix`,
+  **REMOVES CODE**). The value-conditional slice of Ghidra's discovered-no-return analyzer,
+  folded into the `noreturn_propagate` consumer (`kuna-analysis` `s1_noreturn_propagate`).
+- **Problem**: glibc `error(int status, ...)` / `error_at_line(...)` call `exit(status)` and
+  never return **when `status != 0`** — but DO return for `status == 0` — so `error` cannot be a
+  *Known* no-return. Yet an internal wrapper whose tail is `call error(2,...)` (GNU
+  `pfatal_with_name`, and every `die()`-via-`error` helper) is unconditionally no-return. kuna
+  treated such wrappers as returning, so at every caller it decoded the cold fall-through /
+  next-function bytes as live code (diffutils `diff::sip` inflated 43→99 LOC, GED 347).
+- **Fix**: when concluding a wrapper, treat a tail `call error`/`error_at_line` as terminal iff
+  the call site's first int-arg register (x86-64 SysV `EDI`/`RDI` = the `int status`) is a
+  **nonzero literal** (`MOV EDI,0x2`). A zero status (`XOR EDI,EDI`) or any non-constant /
+  unprovable status is rejected (conservative — a false positive would drop live caller code).
+  Emits the existing `NoReturnFact` → the existing `set_function_no_return` commit seam; the
+  existing fixpoint propagates to every caller, which then truncates at the wrapper call.
+- **Effect**: `diff::sip` 99→~43 LOC (ghidra's shape), GED **347 → 0**; also closes the ghidra
+  cases `sshd_hostkey_sign` / `simple_flush_write` family. Gated on the **Listing** (default-off)
+  AND `noreturn_propagate` — a no-op otherwise — so **every parity gate is byte-identical**
+  (the real-ELF Listing path only; the console/datatest harness never builds a Listing).
+- **Scope note**: this is the `error()` slice only. Other internal-wrapper-no-return shapes
+  (transitive custom fatal wrappers like `sshfatal`, infinite-loop wrappers like
+  `archive_write_error`) are a follow-up — see `docs/decbench/triage-ghidra/`.
+- **Testcase**: `tests/stages/ghangr-noreturn-error.xml` + the real-ELF fixture
+  `kuna-analysis/tests/fixtures/noreturn_error_x86_64` (+ `kuna-console/tests/verify_noreturn_error.rs`).
+- **Date**: 2026-07-05.

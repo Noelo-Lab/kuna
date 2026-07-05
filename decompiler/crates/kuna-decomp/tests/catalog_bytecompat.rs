@@ -141,7 +141,7 @@ fn fixture_has_all_68_settables() {
     // ORDERING gate (SAILR P2: H2 post-dominator + dominance-tiered
     // crossing/secondary/other bucketing), default-off opt-in — only reorders which
     // goto is chosen when virtualizing, so OFF is byte-identical.
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 69);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 70);
 }
 
 #[test]

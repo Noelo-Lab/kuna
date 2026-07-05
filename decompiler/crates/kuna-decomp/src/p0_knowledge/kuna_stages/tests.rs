@@ -138,8 +138,8 @@ fn settable_count_is_68() {
     // edge-virtualization ORDERING knob (SAILR P2: H2 post-dominator +
     // dominance-tiered crossing/secondary/other bucketing), default-off opt-in:
     // only reorders which goto is chosen when virtualizing, so OFF is byte-identical.
-    assert_eq!(kuna_num_settables(), 69);
-    assert_eq!(SETTABLE_TABLE.len(), 69);
+    assert_eq!(kuna_num_settables(), 70);
+    assert_eq!(SETTABLE_TABLE.len(), 70);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -359,6 +359,11 @@ fn option_values_live_value_present_for_28_suppressed_for_37() {
         "listing",
         "noreturn_disc",
         "noreturn_propagate",
+        // (kuna, decbench F2) The error(nonzero,…)-conditional recognizer — a
+        // sub-rule gate of noreturn_propagate with no codegen live reader (read
+        // console-side via kuna_live_value), like the analysis gates around it.
+        // Default-on (DIV-16).
+        "noreturn_error",
         // (kuna) FID fingerprint-matcher Listing consumer — an analysis-pass gate
         // whose DB source is a load-time env var (`kuna_fid_db`); no codegen
         // live_value reader (read console-side via kuna_live_value), like the gates
@@ -493,7 +498,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 68);
+    assert_eq!(json.matches("},\n").count(), 69);
 }
 
 #[test]
