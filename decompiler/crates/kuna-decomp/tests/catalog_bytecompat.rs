@@ -77,7 +77,9 @@ fn fixture_has_no_current_field() {
 
 #[test]
 fn fixture_has_all_68_settables() {
-    // One `"option":` per settable row: 37 stage-model knobs (incl. the `foldcallret`
+    // One `"option":` per settable row: 38 stage-model knobs (incl. the `iteregion`
+    // angr ITERegionConverter S8 assignment-diamond -> `?:` ternary gate, default-off,
+    // a RUNTIME CHOICE, and the `foldcallret`
     // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
     // break recovery gate, DIV-10, the `gotoreduce` angr SAILR return-tail
@@ -141,7 +143,7 @@ fn fixture_has_all_68_settables() {
     // ORDERING gate (SAILR P2: H2 post-dominator + dominance-tiered
     // crossing/secondary/other bucketing), default-off opt-in — only reorders which
     // goto is chosen when virtualizing, so OFF is byte-identical.
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 69);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 70);
 }
 
 #[test]

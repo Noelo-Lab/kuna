@@ -1920,6 +1920,23 @@ inspiration = "test_decompiling_true_1804_x86_64::usage; angr structurer conditi
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "iteregion"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-ITE-region-converter"
+summary = "After structuring, rewrite a narrow two-arm assignment *diamond* — a 3-component `if` whose condition block is a single `CBRANCH`, whose true- and else-clauses are each a single `COPY` to the SAME variable (`if (c) v = A; else v = B;`), converging on one tail — into a single `?:` ternary statement `v = ( c ) ? A : B;`. A **print-only** mark on the condition `CBRANCH` (no p-code cloned/mutated); the two arm COPYs and the condition stay live so the merged variable's later uses render unchanged, only the `if`'s layout differs. The S9 emit hook is the one genuinely new piece (Ghidra's printc has no ternary operator). Mirrors angr's `ITERegionConverter` / `_find_ite_assignment_regions` (a conditional-jump region with two single-assignment children on one tail). Halves the branch count of format/print/flag code full of `flags ? \"%s,\" : \"%s\"` diamonds (iproute2 print_link_flags: 41 ifs/0 ternaries -> 21 ifs/20 ternaries, GED 140 -> small)."
+use_when = "RUNTIME CHOICE — an agent flips this PER FUNCTION. The diamond->ternary rewrite matches the source ONLY when the source used a `?:` ternary; the SAME object code is emitted for an explicit `if/else`, which the binary cannot distinguish. Set ON for format/print/flag-heavy code where the ternary form dominates (compilers turn `cond ? \"%s,\" : \"%s\"` into exactly this diamond; iproute2 print_link_flags, coreutils output helpers), so kuna emits `v = c ? A : B;` matching source/angr. Leave OFF (the default, byte-identical to upstream) where explicit `if/else` is the likely source, to avoid inventing a ternary the author never wrote. Off is byte-identical; on, each rewrite is logged (`iteregion:`)."
+example = "option iteregion on"
+source_decompiler = "angr"
+inspiration = "decbench:O0-iproute2-ip-print_link_flags; angr ITERegionConverter (angr/analyses/decompiler/optimization_passes/ite_region_converter.py); _find_ite_assignment_regions"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "foldcallret"
 values = "on|off"
 default = "on"

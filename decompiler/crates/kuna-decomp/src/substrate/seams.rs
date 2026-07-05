@@ -578,6 +578,12 @@ pub struct Architecture {
     /// opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_dedupitetail`]'s `ActionDedupIteTail`.
     pub dedup_ite_tail: bool,
+    /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
+    /// (`if (c) v = A; else v = B;`) to a `?:` ternary (`v = c ? A : B;`)
+    /// (`iteregion`, opt-in default-off — a **runtime choice**: matches source only
+    /// when the source used a ternary).  Read by
+    /// [`crate::s8_structure::kuna_iteregion`]'s `ActionIteRegion`.
+    pub iteregion: bool,
     /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-10 default-on).  Read by
     /// [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure) to gate
@@ -815,6 +821,7 @@ impl Architecture {
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             dup_return_call_tails: false, // taildup (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
+            iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)

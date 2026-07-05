@@ -437,6 +437,14 @@ pub struct Architecture {
     /// (`gotoreduce`/`crossjumprevert`/`taildup`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
+    /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
+    /// (`if (c) v = A; else v = B;`, both arms a single COPY to the same
+    /// variable, converging on one tail) to a `?:` ternary (`v = c ? A : B;`).
+    /// A deliberate **runtime choice** (`iteregion`, opt-in default-off): the
+    /// rewrite matches the source only when the source used a ternary — common in
+    /// format/print/flag code (`flags ? "%s," : "%s"`) — and diverges when the
+    /// source used explicit if/else, so an agent flips it per function.
+    pub iteregion: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -880,6 +888,7 @@ impl Architecture {
             revert_cross_jumps: false,
             dup_return_call_tails: false,
             dedup_ite_tail: false,
+            iteregion: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -1174,6 +1183,11 @@ impl Architecture {
                 let (val, msg) =
                     crate::s8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
                 self.dedup_ite_tail = val;
+                Ok(msg)
+            }
+            "iteregion" => {
+                let (val, msg) = crate::s8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
+                self.iteregion = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -1531,6 +1545,7 @@ impl Architecture {
         seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         seam.dup_return_call_tails = self.dup_return_call_tails; // taildup
         seam.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
+        seam.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard

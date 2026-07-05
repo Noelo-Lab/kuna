@@ -747,6 +747,13 @@ pub fn universal_sched(
             // tail (shared prefix/suffix of statement-equivalent leaves across both
             // arms) by hoisting the shared blocks out of the `if`, emitting one copy.
             act!(crate::s8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
+            // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
+            // runtime choice).  After the tree is final + goto targets labelled,
+            // mark a narrow two-arm assignment diamond (`if (c) v=A; else v=B;`,
+            // both arms a single COPY to the same variable) so the S9 printer emits
+            // it as a `?:` ternary (`v = c ? A : B;`).  Print-only mark; no p-code
+            // is touched, so OFF is byte-identical.
+            act!(crate::s8_structure::kuna_iteregion::ActionIteRegion::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

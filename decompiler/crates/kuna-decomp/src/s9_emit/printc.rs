@@ -2528,6 +2528,15 @@ impl PrintC {
     /// block 2 (optional) the else body.
     fn emit_block_if(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::prettyprint::Emit;
+        // (kuna) iteregion: a two-arm assignment diamond the S8 `iteregion` pass
+        // marked (its condition `CBRANCH` carries the `kuna_iteregion` addl-flag)
+        // renders as a single `dest = ( cond ) ? A : B;` ternary instead of the
+        // if/else.  The mark is set only with `option iteregion on`, so when off
+        // this is never taken and the if/else render is byte-identical.
+        if let Some(m) = self.ite_ternary_match(fd, blk) {
+            self.emit_block_if_ite(fd, arch, m);
+            return;
+        }
         let size = fd.sblocks_ref().block(blk).get_size();
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
 
@@ -2631,6 +2640,112 @@ impl PrintC {
         if my_pending_indent >= 0 {
             self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
         }
+    }
+
+    /// (kuna) Is `blk` a two-arm assignment diamond that the S8 `iteregion` pass
+    /// selected for `?:` rendering?  Returns the [`IteAssignMatch`] iff both (a) the
+    /// structure still matches the narrow diamond schema and (b) its condition
+    /// `CBRANCH` carries the [`kuna_iteregion`](crate::op::pcodeop_addlflags::kuna_iteregion)
+    /// mark (set only under `option iteregion on`).  The flag is the gate, so with
+    /// the option off this is always `None` and the if/else render is byte-identical.
+    fn ite_ternary_match(
+        &self,
+        fd: &Funcdata,
+        blk: BlockId,
+    ) -> Option<crate::s8_structure::kuna_iteregion::IteAssignMatch> {
+        let m = crate::s8_structure::kuna_iteregion::match_ite_assignment(fd, blk)?;
+        let marked = fd
+            .obank()
+            .get(m.cbranch)
+            .map(|o| (o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_iteregion) != 0)
+            .unwrap_or(false);
+        if marked {
+            Some(m)
+        } else {
+            None
+        }
+    }
+
+    /// (kuna) Emit an `iteregion`-selected assignment diamond as a single ternary
+    /// statement `dest = ( cond ) ? A : B;` (angr `ITERegionConverter`).  Reuses the
+    /// existing renderers: the LHS via `push_vn_explicit_ir`, the condition via the
+    /// normal `ONLY_BRANCH` `CBRANCH` render (`( cond )`, honouring boolean-flip),
+    /// and each arm's RHS via `op_push_ir` on the arm's `COPY` — every sub-expression
+    /// drains on an empty RPN stack (the direct-resolution engine, as in
+    /// `opCbranch`), interleaved with the raw `=`/`?`/`:` tokens (the same
+    /// block-then-token pattern as `emit_block_condition`).  Honours the parent's
+    /// pending brace so a diamond that is itself an `else` clause renders
+    /// `else { dest = ...; }`.
+    fn emit_block_if_ite(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        m: crate::s8_structure::kuna_iteregion::IteAssignMatch,
+    ) {
+        use crate::prettyprint::Emit;
+
+        // Mirror emit_block_if's pending-brace handling: if this diamond is a
+        // parent if's else-clause, register the lazy brace so the ternary statement
+        // renders `else { ... }` (a statement can never be `else if`).
+        let mut registered_pending = false;
+        if self.context.is_set(modifiers::PENDING_BRACE) {
+            self.emit.set_pending_brace(to_emit_brace(self.options.brace_ifelse));
+            registered_pending = true;
+        }
+        self.context.push_mod();
+        self.context.unset_mod(
+            modifiers::NO_BRANCH | modifiers::ONLY_BRANCH | modifiers::PENDING_BRACE,
+        );
+
+        // Emit the condition block's leading statements (everything before the
+        // CBRANCH — e.g. the `flags &= ~IFF_x` in front of each `_PF` diamond)
+        // exactly as emit_block_if does (NO_BRANCH), so nothing is lost.  For a
+        // clean condition (only the CBRANCH) this emits nothing.
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        self.emit_block(fd, arch, m.cond_block);
+        self.context.pop_mod();
+        self.emit_comment_block_tree(fd, m.cond_block);
+
+        // Start the ternary statement on a fresh line; the tag_line fires any
+        // pending brace (so an else-clause diamond renders `else { v = ...; }`).
+        let mut my_pending_indent = -1;
+        if registered_pending {
+            my_pending_indent = self.emit.pending_brace_indent_id();
+        }
+        self.emit.tag_line();
+
+        // dest = ( cond ) ? A : B ;
+        let sid = self.emit.begin_statement(&MarkupRef::none());
+        // LHS assignment target (drains as a leaf on the empty stack).
+        self.push_vn_explicit_ir(fd, arch, m.dest, m.true_op);
+        // ` = `
+        self.emit.spaces(1, 0);
+        self.emit.tag_op(tokens::ASSIGNMENT.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        // ` ( cond ) ` — the normal ONLY_BRANCH CBRANCH render (boolean-flip aware).
+        self.context.push_mod();
+        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.emit_block(fd, arch, m.cond_block);
+        self.context.pop_mod();
+        // ` ? A `
+        self.emit.spaces(1, 0);
+        self.emit.tag_op("?", SyntaxHighlight::NoColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        self.op_push_ir(fd, arch, m.true_op, None);
+        // ` : B `
+        self.emit.spaces(1, 0);
+        self.emit.tag_op(":", SyntaxHighlight::NoColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        self.op_push_ir(fd, arch, m.else_op, None);
+        self.emit.end_statement(sid);
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+
+        // Close the pending brace if it fired (the else-clause `{ ... }`).
+        if my_pending_indent >= 0 {
+            self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
+        }
+        self.context.pop_mod();
     }
 
     /// C++ `PrintC::emitBlockSwitch` (printc.cc:3470): emit a `BlockSwitch` — the

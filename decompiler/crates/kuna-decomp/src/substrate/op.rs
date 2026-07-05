@@ -178,6 +178,14 @@ pub mod pcodeop_addlflags {
     /// (kuna) INT_LESS/INT_SLESS produced by canonicalizing a LESSEQUAL
     /// (RuleIntLessEqual)
     pub const canonical_lessequal: uint4 = 0x1000;
+    /// (kuna) This `CBRANCH` heads an if/else assignment *diamond* that the
+    /// `iteregion` S8 pass selected for `?:` ternary rendering (angr
+    /// `ITERegionConverter`).  Set by
+    /// [`crate::s8_structure::kuna_iteregion`]'s `ActionIteRegion`; read by
+    /// `PrintC::emit_block_if`, which emits `dest = cond ? A : B;` for the marked
+    /// `if`.  Print-only: never affects the p-code, so with the option off (the
+    /// pass never runs) the bit is never set and output is byte-identical.
+    pub const kuna_iteregion: uint4 = 0x2000;
 }
 
 // ---------------------------------------------------------------------------

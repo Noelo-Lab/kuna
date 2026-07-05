@@ -138,8 +138,11 @@ fn settable_count_is_68() {
     // edge-virtualization ORDERING knob (SAILR P2: H2 post-dominator +
     // dominance-tiered crossing/secondary/other bucketing), default-off opt-in:
     // only reorders which goto is chosen when virtualizing, so OFF is byte-identical.
-    assert_eq!(kuna_num_settables(), 69);
-    assert_eq!(SETTABLE_TABLE.len(), 69);
+    // +1 for `iteregion`, the angr ITERegionConverter S8 assignment-diamond -> `?:`
+    // ternary knob, default-off — a RUNTIME CHOICE (matches source only when the
+    // source used a ternary), agent-flippable per function.
+    assert_eq!(kuna_num_settables(), 70);
+    assert_eq!(SETTABLE_TABLE.len(), 70);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -410,6 +413,7 @@ fn option_values_live_value_present_for_28_suppressed_for_37() {
                             | "crossjumprevert"
                             | "taildup"
                             | "dedupitetail"
+                            | "iteregion"
                             | "loopbreak_recovery"
                             | "relocobjects"
                     ) || PASS_GATES.contains(&st.option),
@@ -484,16 +488,17 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 69 rows: 68 trailing commas (the last, macho-arm64e, has none;
+    // 70 rows: 69 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
     // ifelseflatten's,
-    // crossjumprevert's, taildup's, and dedupitetail's S8 rows, eh_frame_full's S1 row,
+    // crossjumprevert's, taildup's, dedupitetail's, and iteregion's S8 rows,
+    // eh_frame_full's S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 68);
+    assert_eq!(json.matches("},\n").count(), 69);
 }
 
 #[test]
