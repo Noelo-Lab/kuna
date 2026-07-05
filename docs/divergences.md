@@ -755,9 +755,16 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   discovery source for these arches — it applies the full ARM/AArch64/MIPS/PPC/RISC-V
   `<patternpairs>` (pre/post) prologue matcher over the code (Thumb `push {…}` etc.). Enabling
   it by default on `decompile-all` for non-x86-64 lifts ARM Cortex-M discovery from **1** to
-  **hundreds** of functions (betaflight `STM32F405` 1 → 469, chibios 1 → 47), each decompiled
-  in Thumb mode. Still short of Ghidra (recursive descent finds more — betaflight 1822), but
-  the binaries go from unusable to usable.
+  **hundreds** of functions, each decompiled in Thumb mode.
+- **Recursive descent** (the same flag): kuna's Listing already runs a two-level
+  recursive-descent walk (`listing/walk.rs`: CALL targets become new function entries), but
+  (a) it was seeded only with the entry oracles — 1 root on a stripped ARM binary — and
+  (b) its discoveries were never committed as functions. When `funcstart_patterns` is on we now
+  (a) seed the walk with the prologue starts too, so it explores the CALL graph out of every
+  discovered function, and (b) commit its discoveries (`funcdisc_recursive`, gated by the same
+  flag → the Ghidra disassembler-driven `CreateFunctionCmd` analog). This finds the call-only
+  targets that have no recognizable prologue: **betaflight `STM32F405` 469 → 1470** (Ghidra 1822
+  — 81%, up from 26%), chibios/cleanflight/crazyflie similarly. Analysis stays ~4 s.
 - **x86-64 untouched**: the injection fires only when `File::architecture() != X86_64`, so
   every x86-64 result is byte-identical (oracle 5 + the entry oracles already discover them,
   and the aggressive pattern scan is kept off there where it can over-produce). `docs/baseline.json`
