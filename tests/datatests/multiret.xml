@@ -17,6 +17,7 @@ ebce000000000000488d7c2404c64424
 </bytechunk>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>map fun r0x100000 getval</com>
   <com>override flow r0x10007d callreturn</com>
   <com>lo fu getval</com>

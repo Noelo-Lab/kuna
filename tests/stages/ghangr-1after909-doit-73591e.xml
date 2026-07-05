@@ -37,6 +37,7 @@
 <symbol space="ram" offset="0x2467" name="main"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>option loopbreak_recovery off</com>
   <com>lo fu doit</com>
   <com>decompile</com>

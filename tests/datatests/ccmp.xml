@@ -13,6 +13,7 @@ f30300aa600640391ff00071800a497a
 <symbol space="ram" offset="0x4f9588" name="otherfunc"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>parse line extern void ccmp(uint1 *ptr,int4 val);</com>
   <com>lo fu ccmp</com>
   <com>decompile</com>

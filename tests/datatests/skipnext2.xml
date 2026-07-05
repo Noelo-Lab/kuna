@@ -9,6 +9,7 @@
 <symbol name="skipinst" space="ram" offset="0x10"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>lo fu skipinst</com>
   <com>decompile</com>
   <com>print C</com>

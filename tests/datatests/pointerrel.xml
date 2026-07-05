@@ -25,6 +25,7 @@ f30f104df0f30f58c1f30f1145f04883
 <symbol name="process_array" space="ram" offset="0x1006fa"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
 <com>option readonly on</com>
 <com>parse line struct mystruct { int4 a; float4 b; int4 c; int4 d; int4 arr[16]; };</com>
 <com>pointer setting myptroff mystruct offset 8</com>

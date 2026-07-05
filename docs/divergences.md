@@ -674,3 +674,30 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
 - **Testcase**: `tests/stages/ghangr-iteregion.xml` (two-pass; pass 1 explicitly `option
   iteregion off` pins the upstream if/else baseline, pass 2 the default-on ternary).
 - **Date**: 2026-07-05.
+
+## DIV-18: return duplication (early-return recovery) on by default (decbench F4: `returndup`)
+
+- **Flip**: option **`returndup`** (default **on**, `change_kind = structure-recovery`,
+  `source_decompiler = angr`). The gotoless complement of the ported `ActionReturnSplit`
+  (`s8_structure/kuna_returndup.rs`): before final structuring, a SHARED bare-epilogue RETURN
+  block (side-effect-free — only MULTIEQUAL/COPY/RETURN over constant/annotation/non-free
+  inputs, ≤16 predecessors, ≤64 splits/function) is duplicated into each predecessor but one,
+  reusing the same `return_split_is_splittable` filter and `node_split` machinery. Mirrors angr
+  SAILR `ReturnDuplicatorHigh`.
+- **Problem**: `if (cond) { body; return X; } return Y;` compiles at -O0 to a single
+  multi-predecessor RETURN block; kuna (like upstream Ghidra) keeps the merged form —
+  `rule_block_or` fuses the guards into ONE short-circuit `if` with comma side effects and a
+  single trailing return — where the source (and angr/ida) show separate `if (c) return X;`
+  early-return clauses (coreutils `factor`: 3 ifs / 0 early returns → 4 ifs / early returns,
+  GED 12 → 0; also closes the ghidra-beats-kuna bash `compspec_dispose` shape).
+- **Corpus impact**: unlike the 0/675 flags, returndup changes **16 datatest files** (any O0
+  function with a shared bare epilogue gains early returns — broad but correct rendering churn),
+  so each carries a per-test `<com>option returndup off</com>` opt-out that keeps
+  `docs/baseline.json` **byte-identical** to upstream (bitfields, bitfields2, boolless, ccmp,
+  condconst, condconst2, condexesub, condmulti, copytrim, multiret, orcompare, partialunion,
+  pointerrel, skipnext2, statuscmp, union_datatype). No baseline re-pin.
+- **Runtime**: bounded + side-effect-safe (only a return-only block is ever cloned).
+  `--option returndup off` reverts to the upstream merged short-circuit form per function.
+- **Testcase**: `tests/stages/ghangr-returndup.xml` (two-pass; pass 1 explicit `option returndup
+  off` = merged form, pass 2 the default-on per-predecessor early returns).
+- **Date**: 2026-07-05.
