@@ -14,12 +14,12 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::error::KunaError;
 use kuna_base::marshal::{
-    ElementId, Encoder, PackedDecode, PackedEncode, ATTRIB_CONTENT, ATTRIB_NAME,
+    ElementId, Encoder, PackedDecode, PackedEncode, ATTRIB_CONTENT, ATTRIB_INDEX, ATTRIB_NAME,
 };
 use kuna_base::space::VarnodeStorage;
 
 use kuna_ghidra::client::GhidraClient;
-use kuna_ghidra::ids::ELEM_COMMAND_GETREGISTER;
+use kuna_ghidra::ids::{ELEM_COMMAND_GETREGISTER, ELEM_COMMAND_GETUSEROPNAME};
 use kuna_ghidra::process::GhidraProcess;
 use kuna_ghidra::protocol::{nibble_expand, string_data_size_header, WireError};
 use kuna_ghidra::translate::{build_registry, TspecModel};
@@ -117,6 +117,22 @@ fn packed_optionslist() -> Vec<u8> {
     packed
 }
 
+/// The packed `<command_getuseropname index=N>` document the client emits for
+/// the init-time user-op probe (client.rs `get_user_op_name`).  Phase-2
+/// registerProgram issues exactly one of these (index 0) during
+/// `init_post_engine` → `userops.initialize`, and terminates the probe on the
+/// host's empty answer.
+fn get_user_op_name_doc(index: i32) -> Vec<u8> {
+    let mut doc = Vec::new();
+    {
+        let mut e = PackedEncode::new(&mut doc);
+        e.open_element(&ELEM_COMMAND_GETUSEROPNAME);
+        e.write_signed_integer(&ATTRIB_INDEX, index as i64);
+        e.close_element(&ELEM_COMMAND_GETUSEROPNAME);
+    }
+    doc
+}
+
 // ---------------------------------------------------------------------------
 // (a) full session over the command loop
 // ---------------------------------------------------------------------------
@@ -135,6 +151,12 @@ fn test_full_session_byte_exact() {
         .string(TSPEC)
         .string(CORETYPES)
         .end_command()
+        // ...then the getUserOpName probe answer the engine's init reads back:
+        // an empty name terminates the probe (client.rs `get_user_op_name`).
+        // This query is nested inside the still-open registerProgram response.
+        .burst(8)
+        .string(b"")
+        .burst(9)
         // setOptions: archid + packed <optionslist>
         .command("setOptions")
         .string(b"0")
@@ -183,8 +205,14 @@ fn test_full_session_byte_exact() {
         .unwrap();
 
     let expected = Wire::new()
-        // registerProgram: {6}{14}"0"{15}{16}{17}{7}
+        // registerProgram: {6} then the nested getUserOpName probe query
+        // {4}{14}<doc>{15}{5}, then the archid {14}"0"{15}, then the (empty)
+        // warnings frame {16}{17}, then {7}.  The empty warnings prove the
+        // live Architecture was built with no construction error.
         .burst(6)
+        .burst(4)
+        .string(&get_user_op_name_doc(0))
+        .burst(5)
         .string(b"0")
         .burst(16)
         .burst(17)
@@ -281,9 +309,12 @@ fn test_unregistered_archid_passes_java_exception() {
     assert_eq!(out, expected.0);
 }
 
-/// registerProgram with an unparseable tspec still succeeds (lenient phase-1
-/// parse), records a warning, and decompileAt then reports the undecoded
-/// address.
+/// registerProgram with an unparseable tspec still succeeds at the protocol
+/// level (returns an archid, does not JavaError), but engine construction fails
+/// (the tspec drives `GhidraTranslate::new` / the `<sleigh>` decode, C++
+/// `buildTranslator`).  The failure is recorded as a warning on the 16/17
+/// frame — Java treats the non-empty nativeMessage as a registration failure —
+/// and decompileAt then reports the undecoded address (no engine manager).
 #[test]
 fn test_bad_tspec_is_lenient() {
     let input = Wire::new()
@@ -303,12 +334,85 @@ fn test_bad_tspec_is_lenient() {
     let (_, out) = process.into_inner();
     let text = String::from_utf8_lossy(&out);
     assert!(
-        text.contains("could not parse tspec <sleigh> element"),
-        "missing tspec warning in: {text}"
+        text.contains("could not build the decompiler engine from the registerProgram specs"),
+        "missing engine-construction-failure warning in: {text}"
     );
     assert!(
         text.contains("function at (address not decoded) not decompiled"),
         "missing decompileAt warning in: {text}"
+    );
+}
+
+/// Phase-2 step 3: registerProgram over four tiny valid specs (plus the
+/// init-time query answers) builds a live [`Architecture`], and a follow-up
+/// command drives that live engine's space manager.
+///
+/// Proof the engine was built: registerProgram issues exactly one nested query
+/// (the getUserOpName probe, from `init_post_engine` → `userops.initialize`),
+/// its warnings frame is empty (no construction error), and the follow-up
+/// decompileAt decodes its wire `<addr>` through the live manager (the warning
+/// names the actual address, not "(address not decoded)").
+#[test]
+fn test_register_program_builds_live_architecture() {
+    let tr = test_translate();
+    let addr_packed = packed_ram_addr(&tr, 0x401000);
+
+    let input = Wire::new()
+        .command("registerProgram")
+        .string(PSPEC)
+        .string(CSPEC)
+        .string(TSPEC)
+        .string(CORETYPES)
+        .end_command()
+        // getUserOpName probe answer: empty name terminates the probe.
+        .burst(8)
+        .string(b"")
+        .burst(9)
+        // decompileAt: archid + packed <addr> — exercises the LIVE engine's
+        // space manager (the whole point: the addr decodes only because
+        // registerProgram built a real Architecture whose manager the tspec
+        // spaces populated).
+        .command("decompileAt")
+        .string(b"0")
+        .string(&addr_packed)
+        .end_command();
+
+    let mut process = GhidraProcess::new(Cursor::new(input.0), Vec::new());
+    assert_eq!(process.read_command().expect("registerProgram completes"), 0);
+    assert_eq!(process.read_command().expect("decompileAt completes"), 0);
+    let (_, out) = process.into_inner();
+
+    // registerProgram issued exactly one init query (the getUserOpName probe) —
+    // it ran `init_post_engine`, so the Architecture is present.
+    let mut query_opens = 0usize;
+    let mut i = 0usize;
+    while i + 4 <= out.len() {
+        if out[i..i + 4] == [0, 0, 1, 4] {
+            query_opens += 1;
+        }
+        i += 1;
+    }
+    assert_eq!(
+        query_opens, 1,
+        "registerProgram should issue exactly one init query (getUserOpName probe)"
+    );
+
+    let text = String::from_utf8_lossy(&out);
+    assert!(
+        !text.contains("could not build the decompiler engine"),
+        "engine construction unexpectedly failed: {text}"
+    );
+
+    // The follow-up decompileAt decoded ram:0x401000 through the live manager.
+    let ram = tr.manager.get_space_by_name("ram").unwrap();
+    let mut addr_text = String::new();
+    addr_text.push(ram.get_shortcut());
+    Address::new(Rc::clone(ram), 0x401000)
+        .print_raw(&mut addr_text)
+        .unwrap();
+    assert!(
+        text.contains(&format!("function at {addr_text} not decompiled")),
+        "decompileAt did not decode the wire <addr> through the live engine manager: {text}"
     );
 }
 

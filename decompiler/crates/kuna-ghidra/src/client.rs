@@ -105,6 +105,28 @@ impl<R: Read, W: Write> GhidraClient<R, W> {
         (self.sin, self.sout)
     }
 
+    /// Mutably borrow the input stream (C++ `sin`) for the command loop's own
+    /// framing reads.
+    ///
+    /// The loop and the engine's providers share one `GhidraClient` (a
+    /// [`SharedClient`](crate::provider::SharedClient)): the loop frames command
+    /// responses through these accessors, and mid-decompile the engine's
+    /// providers issue callback queries through the typed query methods — on the
+    /// *same* streams.  The borrow handed out here must be short-lived (framing
+    /// one read/write, then dropped) so it never overlaps a provider's query
+    /// borrow; the protocol is synchronous, so those borrows never actually
+    /// overlap.  See [`crate::process`] for the no-borrow-across-`raw_action`
+    /// invariant that makes this sound.
+    pub fn sin_mut(&mut self) -> &mut R {
+        &mut self.sin
+    }
+
+    /// Mutably borrow the output stream (C++ `sout`) for the command loop's own
+    /// framing writes.  See [`sin_mut`](GhidraClient::sin_mut).
+    pub fn sout_mut(&mut self) -> &mut W {
+        &mut self.sout
+    }
+
     /// The shared request framing: query open, string stream holding the
     /// packed command document, string close, query close, flush.
     fn send_query_document(&mut self, packed: &[u8]) -> WireResult<()> {

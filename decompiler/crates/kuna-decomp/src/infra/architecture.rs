@@ -51,7 +51,7 @@ use kuna_base::space::{AddrSpace, AddrSpaceManager};
 use kuna_base::types::{int4, uint4, uintb};
 
 use kuna_sleigh::sleigh::Sleigh;
-use kuna_sleigh::translate::{Translate, UniqueLayout};
+use kuna_sleigh::translate::UniqueLayout;
 
 use crate::action::ActionDatabase;
 use crate::engine_translate::EngineTranslate;
@@ -851,6 +851,33 @@ impl Architecture {
     /// `.sla`); the architecture borrows its `AddrSpaceManager` and the
     /// `getUniqueStart(INJECT)` tempbase for the injection library.
     pub fn new(archid: &str, translate: Sleigh) -> Architecture {
+        // The standalone (SLEIGH) engine: box the concrete `Sleigh` into the
+        // `EngineTranslate` seam and share the construction with the ghidra-mode
+        // path.  `EngineTranslate::manager()` / the provided
+        // `Translate::get_unique_start` on the boxed `Sleigh` are the very calls
+        // the former direct-`Sleigh` body made (`base().manager()` /
+        // `get_unique_start`), so this delegation is behavior-identical for the
+        // 675-datatest path.
+        Architecture::from_engine_translate(archid, Box::new(translate))
+    }
+
+    /// Construct an `Architecture` over an already-initialized disassembly
+    /// engine behind the [`EngineTranslate`] seam — the shared body of
+    /// [`Architecture::new`] (the standalone `Sleigh`) and the ghidra-mode
+    /// bridge (`kuna-ghidra`'s query-backed `GhidraTranslate`, which
+    /// `kuna-decomp` cannot name as a concrete type here — the whole reason the
+    /// field is a trait object, see `crate::engine_translate`).
+    ///
+    /// The `translate` must already be initialized (spaces decoded,
+    /// endianness/unique-base set); the architecture reads its space manager and
+    /// `getUniqueStart(INJECT)` tempbase for the injection library, then builds
+    /// the subsystems whose dependencies exist (the tail of C++
+    /// `Architecture::init`/`restoreFromSpec` runs later, in
+    /// [`init_post_engine`](Architecture::init_post_engine)).
+    pub fn from_engine_translate(
+        archid: &str,
+        translate: Box<dyn EngineTranslate>,
+    ) -> Architecture {
         // C++ PcodeInjectLibrarySleigh(g): tempbase = g->translate->getUniqueStart(INJECT).
         let inject_tempbase = translate.get_unique_start(UniqueLayout::INJECT);
 
@@ -858,8 +885,8 @@ impl Architecture {
         //   Scope *globscope = new ScopeInternal(0,"",this);
         //   symboltab->attachScope(globscope,(Scope*)0);
         // ScopeInternal sizes its per-space maps to numSpaces(); count before the
-        // translate is moved into the struct (manage() borrows it).
-        let space_count = translate.base().manager().num_spaces();
+        // translate is moved into the struct (the manager accessor borrows it).
+        let space_count = translate.manager().num_spaces();
         let mut symboltab = Database::new(true);
         symboltab
             .find_create_scope(0, "", None, space_count)
@@ -987,10 +1014,10 @@ impl Architecture {
             lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
-            // Box the concrete engine into the `EngineTranslate` seam (only
-            // `Sleigh` implements it today; the field type keeps the ghidra
-            // translator installable later).
-            translate: Box::new(translate),
+            // The engine behind the `EngineTranslate` seam: a boxed `Sleigh` on
+            // the standalone path, a query-backed `GhidraTranslate` on the
+            // ghidra-mode path (already boxed by the caller).
+            translate,
         };
         // C++ ctor calls resetDefaultsInternal(); then sets min_funcsymbol_size=1
         // etc. (those one-offs are folded into resetDefaultsInternal's siblings
@@ -2228,9 +2255,19 @@ impl Architecture {
         // it (the &SleighBase read does not alias the &mut library).  Injection
         // compilation is a Sleigh-engine concern, so reach the concrete engine's
         // `SleighBase` through the downcast (only `Sleigh` implements the seam).
-        let parse_res = lib.parse_inject_all(
-            self.translate.as_sleigh().expect("parse_inject_all: standalone Sleigh engine").base(),
-        );
+        //
+        // In ghidra mode there is no local `.sla` to compile snippets against —
+        // the host supplies inject p-code on demand via a `getPcodeInject` query
+        // (C++ `PcodeInjectLibraryGhidra`).  That query-backed library is Phase 3
+        // (`docs/rust-port/ghidra-phase2-plan.md` §6); for now the non-Sleigh
+        // engine skips local compilation, leaving each registered payload's `tpl`
+        // null (exactly the state a not-yet-fetched ghidra inject is in).  The
+        // guard is a no-op on the standalone path, where `as_sleigh()` is always
+        // `Some` (the 675-datatest behavior is unchanged).
+        let parse_res = match self.translate.as_sleigh() {
+            Some(sleigh) => lib.parse_inject_all(sleigh.base()),
+            None => Ok(()),
+        };
         self.pcodeinjectlib = lib;
         parse_res
     }
