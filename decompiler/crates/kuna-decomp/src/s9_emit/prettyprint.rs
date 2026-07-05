@@ -119,8 +119,9 @@ pub mod ids {
     // cross-file: defined in funcdata.cc / type.cc / variable.cc (not yet
     // ported).  Mirrored with the *exact* upstream numeric id so the markup
     // encoding is byte-identical; collapses to a re-export once those land.
-    /// Marshaling element `<function>` (funcdata.cc:23, id 116, cross-file).
-    pub const ELEM_FUNCTION: ElementId = ElementId::new("function", 116);
+    /// Marshaling element `<function>` (funcdata.cc:23, id 116), re-exported
+    /// from the `Funcdata::encode` port (same numeric id).
+    pub use crate::funcdata_encode::ELEM_FUNCTION;
     /// Marshaling element `<type>` (type.cc:67, id 60, cross-file).
     pub const ELEM_TYPE: ElementId = ElementId::new("type", 60);
     /// Marshaling element `<field>` (type.cc:56, id 49, cross-file).
