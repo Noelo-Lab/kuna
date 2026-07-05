@@ -182,13 +182,15 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     let nonblank = lines.iter().filter(|l| !l.is_empty()).count();
 
     // All universalAction passes are ported: the allowlist is empty, so every
-    // one of the 252 C++ leaves renders.  (+6 kuna-only leaves: `branchflip`,
+    // one of the 252 C++ leaves renders.  (+7 kuna-only leaves: `branchflip`,
     // option-gated default-off, registered after the second `prefercomplement`;
     // `gotoreduce`, option-gated default-off, after `finalstructure`; `taildup`,
     // option-gated default-off, right after `gotoreduce`;
     // `ifelseflatten`, option-gated default-off, after `taildup`;
-    // `crossjumprevert`, option-gated default-off, right after `ifelseflatten`; and
-    // `dedupitetail`, option-gated default-off, right after `crossjumprevert`.)
+    // `crossjumprevert`, option-gated default-off, right after `ifelseflatten`;
+    // `dedupitetail`, option-gated default-off, right after `crossjumprevert`; and
+    // `returndup`, option-gated default-off, in the `returnsplit` group right after
+    // `returnsplit` (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
@@ -196,7 +198,7 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     );
     assert_eq!(
         nonblank, 266,
-        "full universal tree must render 252 C++ leaves + 7 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + iteregion) + 7 container headers"
+        "full universal tree must render 252 C++ leaves + 7 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
@@ -215,14 +217,14 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // Tail: the S9 fixation/naming/cast suffix, ending at `stop`.
     // (kuna) ActionGotoReduce is registered after ActionFinalStructure, then
     // ActionTailDup, then ActionIfElseFlatten, then ActionCrossJumpReverter, then
-    // ActionDedupIteTail, then ActionIteRegion, so all six kuna leaves sit between
-    // finalstructure and prototypewarnings (finalstructure -> gotoreduce -> taildup ->
-    // ifelseflatten -> crossjumprevert -> dedupitetail -> iteregion).
+    // ActionDedupIteTail, so all five kuna leaves sit between finalstructure and
+    // prototypewarnings (finalstructure -> gotoreduce -> taildup -> ifelseflatten ->
+    // crossjumprevert -> dedupitetail).
     let tail: Vec<&str> =
         lines.iter().rev().take(8).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
     assert_eq!(
         tail,
-        vec!["gotoreduce", "taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "iteregion", "prototypewarnings", "stop"]
+        vec!["finalstructure", "gotoreduce", "taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "prototypewarnings", "stop"]
     );
 
     // `directwrite` (protorecovery_b) appears 3x total (protorecovery_a twice +

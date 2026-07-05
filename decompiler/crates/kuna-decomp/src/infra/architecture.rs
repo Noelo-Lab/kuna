@@ -445,6 +445,14 @@ pub struct Architecture {
     /// format/print/flag code (`flags ? "%s," : "%s"`) — and diverges when the
     /// source used explicit if/else, so an agent flips it per function.
     pub iteregion: bool,
+    /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
+    /// **bare-epilogue** RETURN block (only MULTIEQUAL/COPY/RETURN, no side effects)
+    /// into each predecessor but one, so the classic
+    /// `if (c) { body; return X; } return Y;` guard shape structures as
+    /// per-predecessor early returns instead of one comma-folded exit — the gotoless
+    /// complement to `ActionReturnSplit` (the goto-driven `ReturnDuplicatorLow`)
+    /// (`duplicate_shared_returns`, opt-in default-off).
+    pub duplicate_shared_returns: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -607,6 +615,18 @@ pub struct Architecture {
     /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
     /// gate is byte-identical.
     pub analysis_noreturn_propagate: bool,
+    /// (kuna, decbench F2) Gate the `error(status,…)`-conditional recognizer inside
+    /// the `noreturn_propagate` consumer (`noreturn_error`); default **on**
+    /// (DIV-16). glibc `error`/`error_at_line` never return WHEN their first
+    /// argument (`int status`) is a nonzero constant — they call `exit(status)` —
+    /// but *do* return for `status == 0`, so `error` cannot be a Known no-return.
+    /// A wrapper whose tail is `call error(2,…)` (GNU `pfatal_with_name`, …) is
+    /// nonetheless no-return; when on, the propagation treats such a tail call as
+    /// terminal (arg0 = a nonzero literal, x86-64 SysV `EDI`/`RDI`), concludes the
+    /// wrapper no-return, and its callers drop the dead fall-through. REMOVES CODE.
+    /// Requires the Listing (`--option listing on`) AND `noreturn_propagate` on;
+    /// a no-op otherwise, so every parity gate is byte-identical (real-ELF path).
+    pub analysis_noreturn_error: bool,
     /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
     /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
     /// over the built Listing it fingerprints each function with the byte-exact
@@ -889,6 +909,7 @@ impl Architecture {
             dup_return_call_tails: false,
             dedup_ite_tail: false,
             iteregion: false,
+            duplicate_shared_returns: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -921,6 +942,7 @@ impl Architecture {
             analysis_listing: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
+            analysis_noreturn_error: false,
             analysis_fid: false,
             analysis_rtti: false,
             analysis_aif: false,
@@ -1005,6 +1027,8 @@ impl Architecture {
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dup_return_call_tails = true; // (kuna) DIV-13 default-on (angr SAILR ReturnDuplicatorLow return-call-tail dup; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
+        self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
+        self.duplicate_shared_returns = false; // (kuna) default: upstream byte-identical (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4 returndup — opt-in; broad O0 early-return churn, a later default-on sweep can flip it with per-test opt-outs)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-13 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
@@ -1050,6 +1074,7 @@ impl Architecture {
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
+        self.analysis_noreturn_error = true; // (kuna) DIV-16 default-on: REMOVES CODE (conclude error(nonzero,...) wrappers no-return, dropping the dead fall-through at every caller). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_error off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
@@ -1188,6 +1213,10 @@ impl Architecture {
             "iteregion" => {
                 let (val, msg) = crate::s8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
                 self.iteregion = val;
+            "returndup" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
+                self.duplicate_shared_returns = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -1261,6 +1290,9 @@ impl Architecture {
             }
             "noreturn_propagate" => {
                 on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
+            }
+            "noreturn_error" => {
+                on_off!(analysis_noreturn_error, "error(nonzero,...) conditional no-return recognizer")
             }
             "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
             "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
@@ -1546,6 +1578,7 @@ impl Architecture {
         seam.dup_return_call_tails = self.dup_return_call_tails; // taildup
         seam.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         seam.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
+        seam.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard

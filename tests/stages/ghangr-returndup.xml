@@ -1,0 +1,78 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr "shared bare-epilogue return duplication" (SAILR gotoless
+    ReturnDuplicatorHigh; decbench F4, O0-coreutils-factor-factor /
+    O0-e2fsprogs-e2fsck-ext4_fc_handle_add_extent).
+
+    The classic guard shape
+
+        if (cond) { body; return X; }
+        return Y;
+
+    is compiled by gcc -O0 into a single SHARED epilogue/RETURN block reached from
+    several predecessors (each `return K` becomes `mov eax, K; jmp .Lepilogue`).
+    kuna, like upstream Ghidra, keeps the merged form: CollapseStructure fuses the
+    guards into one nested if/else with a single trailing `return v;` whose value is a
+    MULTIEQUAL merge of the per-path constants, and the existing ActionReturnSplit (the
+    goto-driven ReturnDuplicatorLow analog) never fires because clean structuring left
+    no goto into the return.  angr's SAILR ReturnDuplicatorHigh duplicates the shared
+    bare-epilogue return into each predecessor even with no goto, so the source's early
+    returns emerge.
+
+    Stage / sub-stage: S8 structure / goto-quality (return duplication), owned by the
+    P0 assertion `option returndup on|off` (default OFF).  The `returndup` pass
+    (s8_structure/kuna_returndup.rs) reuses the EXISTING `return_split_is_splittable`
+    bare-epilogue filter (only MULTIEQUAL/COPY/RETURN over constant/annotation/non-free
+    inputs) and the EXISTING `node_split` machinery ActionReturnSplit already drives:
+    for every shared bare-epilogue RETURN block it splits every in-edge but one, giving
+    each predecessor its own return.
+
+    Minimised gcc-faithful x86-64 reproducer (exactly as the sibling
+    who.o/morton/true_1804 SAILR stage tests use a block-granularity reproducer): an
+    if-else-if guard chain over `a0` whose three paths each `mov eax, K; jmp .Lend`
+    into a single shared `ret` epilogue (3 in-edges), the return value a MULTIEQUAL of
+    {1,2,3}:
+
+        f:  test edi,edi ; jne .L1 ; mov eax,1 ; jmp .Lend
+            .L1: cmp edi,1 ; jne .L2 ; mov eax,2 ; jmp .Lend
+            .L2: mov eax,3
+            .Lend: ret                          ; SHARED bare epilogue, 3 in-edges
+
+    Pass 1 (option returndup off, the DEFAULT): kuna keeps the merged form - one
+    `return v1;` (the MULTIEQUAL of 1/2/3) reached through the nested if/else; NO
+    constant early returns.
+    Pass 2 (option returndup on): the shared epilogue is duplicated into 2 of its 3
+    predecessors (leaving 1), so the structurer recovers three constant early returns
+    (`return 1;` / `return 2;` / `return 3;`) and logs a `returndup:` warning.
+
+    The harness counts pattern occurrences across the WHOLE two-pass output:
+      * P1 pins `return <digit>;` (a constant early return) at exactly THREE = zero in
+        the off pass (merged) + three in the on pass - the recovered guard clauses.
+      * P2 pins the `returndup: duplicated 2` merge log at exactly ONE (3 in-edges ->
+        split 2, leave 1), proving the pass fired only on the on pass.
+      * P3 pins `return v` (the single merged variable return) at exactly ONE = one in
+        the off pass + zero in the on pass - a control that OFF is byte-for-byte the
+        merged upstream shape and the split is entirely option-gated.
+-->
+<bytechunk space="ram" offset="0x100000">
+85ff7507b801000000eb1183ff017507b802000000eb05b803000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+</binaryimage>
+<script>
+  <!-- returndup is default-OFF; set it explicitly in pass 1 to guard against a future
+       default-on sweep, then flip it on for pass 2 (the only change between passes). -->
+  <com>option returndup off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option returndup on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="P1: on recovers three constant early returns from the shared epilogue (off merges to none)" min="3" max="3">return [0-9];</stringmatch>
+<stringmatch name="P2: on duplicates the shared bare-epilogue return (3 in-edges -&gt; split 2, leave 1) and logs it" min="1" max="1">returndup: duplicated 2</stringmatch>
+<stringmatch name="P3: off keeps ONE merged variable return (the transform is fully option-gated)" min="1" max="1">return v</stringmatch>
+</decompilertest>

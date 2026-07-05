@@ -10,5 +10,6 @@ pub mod kuna_gotoreduce;
 pub mod kuna_ifelseflatten;
 pub mod kuna_iteregion;
 pub mod kuna_loopbreak_recovery;
+pub mod kuna_returndup;
 pub mod kuna_taildup;
 pub mod region_structurer;

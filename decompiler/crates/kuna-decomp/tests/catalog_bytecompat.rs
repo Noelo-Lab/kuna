@@ -143,7 +143,12 @@ fn fixture_has_all_68_settables() {
     // ORDERING gate (SAILR P2: H2 post-dominator + dominance-tiered
     // crossing/secondary/other bucketing), default-off opt-in — only reorders which
     // goto is chosen when virtualizing, so OFF is byte-identical.
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 70);
+    // +1 for the `returndup` angr SAILR gotoless `ReturnDuplicatorHigh` gate (decbench F4).
+    // +1 for the `noreturn_error` gate — conclude error(nonzero,...) wrappers no-return
+    // (decbench F2, default-on but Listing-gated so byte-identical in the datatest path).
+    // +1 for the `iteregion` angr ITERegionConverter assignment-diamond -> `?:` ternary
+    // knob (decbench F5, default-off opt-in runtime choice).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 72);
 }
 
 #[test]

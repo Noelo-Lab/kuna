@@ -2901,6 +2901,85 @@ impl Funcdata {
         count
     }
 
+    /// (kuna) Duplicate a shared **bare-epilogue** RETURN block into each of its
+    /// predecessors but one — kuna's analog of angr's SAILR gotoless
+    /// `ReturnDuplicatorHigh` (driver for
+    /// [`ActionReturnDup`](crate::s8_structure::kuna_returndup::ActionReturnDup),
+    /// option `returndup`).  Returns the number of edges split.
+    ///
+    /// Unlike [`Self::return_split_apply`] (the goto-driven `ReturnDuplicatorLow`
+    /// analog, which needs the structured `sblocks` tree to find goto-in edges via
+    /// [`Self::gather_return_gotos`]), this runs **pre-structuring on the raw bblocks
+    /// CFG**: for every RETURN block with `size_in > 1` that passes the *existing*
+    /// [`Self::return_split_is_splittable`] filter (only MULTIEQUAL/COPY/RETURN over
+    /// constant/annotation/non-free inputs — a bare epilogue, exactly angr's "simple
+    /// return graph"), it splits every in-edge but the first via the *existing*
+    /// [`Self::node_split`] (the exact p-code-clone + control-flow-duplication
+    /// machinery `ActionReturnSplit` drives).  Each predecessor then owns its own
+    /// return, so the guards no longer share an out-target and
+    /// [`rule_block_or`](crate::blockaction) cannot comma-merge them — the structurer
+    /// yields the source's early-return `if`s.
+    ///
+    /// Bounded by construction (the splittable filter admits only a side-effect-free
+    /// return-only block, so `node_split` never clones a call/store) and by an explicit
+    /// per-function cap (`max_splits`) plus a per-block in-degree cap (`max_inedges`):
+    /// a block with more predecessors than `max_inedges` is left merged.  A
+    /// `node_split` that errors (e.g. redundant in edges) stops splitting that block.
+    pub(crate) fn returndup_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
+        let mut count = 0;
+
+        // Collect the candidate RETURN blocks up front — `node_split` mutates the CFG
+        // (adds duplicate blocks, calls `structure_reset`), so we must not iterate the
+        // op bank while splitting.
+        let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        let mut parents: Vec<BlockId> = Vec::new();
+        for op in return_ops {
+            let o = match self.obank().get(op) {
+                Some(o) => o,
+                None => continue,
+            };
+            if o.is_dead() {
+                continue;
+            }
+            let parent = match o.get_parent() {
+                Some(p) => p,
+                None => continue,
+            };
+            let size_in = self.bblocks_ref().block(parent).size_in();
+            if size_in <= 1 || size_in > max_inedges {
+                continue;
+            }
+            if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            if !parents.contains(&parent) {
+                parents.push(parent);
+            }
+        }
+
+        // For each candidate, split every in-edge but the first (leave edge 0 on the
+        // original block — never split ALL edges).  Split the highest index each pass
+        // so removing an edge does not shift the lower indices.
+        for parent in parents {
+            loop {
+                if count >= max_splits {
+                    return count;
+                }
+                let size_in = self.bblocks_ref().block(parent).size_in();
+                if size_in <= 1 {
+                    break; // one predecessor left on the original — done with this block
+                }
+                match self.node_split(parent, size_in - 1) {
+                    Ok(()) => count += 1,
+                    // Redundant in edges (or any other split rejection) — stop this
+                    // block; leave it merged rather than risk a partial/incorrect split.
+                    Err(_) => break,
+                }
+            }
+        }
+        count
+    }
+
     // --- Block-cover helpers (BlockBasic::setInitialRange/copyRange/mergeRange)
 
     /// First address covered by basic block `bb` (C++ `BlockBasic::getStart`,

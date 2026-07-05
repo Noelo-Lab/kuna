@@ -663,6 +663,17 @@ pub fn universal_sched(
             })),
             act!(Box::new(crate::kuna_stackguard::ActionStripStackGuard::new(false, "returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
+            // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
+            // default-OFF).  Runs right after ActionReturnSplit (the goto-driven
+            // ReturnDuplicatorLow analog): for every shared *bare-epilogue* RETURN
+            // block that ActionReturnSplit leaves merged (no goto-in edge), duplicate
+            // it into each predecessor via the same `node_split` machinery, so the
+            // classic `if (c) { body; return X; } return Y;` guard shape structures as
+            // per-predecessor early returns instead of one comma-folded exit.  Placed
+            // in the `returnsplit` group so its duplicated returns flow through the
+            // same merge/naming passes and are re-structured by the next fullloop
+            // iteration (and the final ActionBlockStructure).
+            act!(crate::s8_structure::kuna_returndup::ActionReturnDup::boxed("returnsplit")),
             act!(ActionUnjustifiedParams::boxed("protorecovery")),
             act!(ActionStartTypes::boxed("typerecovery")),
             act!(ActionActiveReturn::boxed("protorecovery")),

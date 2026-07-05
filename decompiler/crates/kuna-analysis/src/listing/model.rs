@@ -33,6 +33,13 @@ pub struct Insn {
     pub flows: Vec<u64>,
     /// The decoded mnemonic (from a capturing `AssemblyEmit`).
     pub mnemonic: String,
+    /// The decoded operand body — the `body` half of `AssemblyEmit::dump`
+    /// (`MOV EDI,0x2` ⇒ mnemonic `MOV`, operands `EDI,0x2`). Populated on the
+    /// real-ELF Listing path alongside `mnemonic`; the `noreturn_error` consumer
+    /// reads it to recognise a `call error(status,…)` argument as a constant
+    /// (edi/rdi = a nonzero literal ⇒ `error` never returns). Empty when the
+    /// disassembly emit produced no operands.
+    pub operands: String,
     /// Lazy: only `skipNOPS` / `isUsedForCalculation` need the raw ops, so the
     /// common case keeps this `None` (design §2.1 / §8).
     pub pcode: Option<Vec<RawOp>>,
