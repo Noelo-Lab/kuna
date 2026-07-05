@@ -83,18 +83,6 @@ fn test_translate() -> TspecModel {
     TspecModel::decode(TSPEC, &registry).expect("test tspec parses")
 }
 
-/// Encode an `<addr>` for ram:offset the way Java's AddressXML.encode does
-/// (space + offset attributes in a packed document).
-fn packed_ram_addr(tr: &TspecModel, offset: u64) -> Vec<u8> {
-    let ram = Rc::clone(tr.manager.get_space_by_name("ram").expect("ram"));
-    let mut packed = Vec::new();
-    {
-        let mut enc = PackedEncode::new(&mut packed);
-        Address::new(ram, offset).encode(&mut enc).unwrap();
-    }
-    packed
-}
-
 /// A packed `<optionslist>` with two single-param option children
 /// (DecompileOptions.encode / appendOption shape; the ids only need to be
 /// self-consistent for the count).
@@ -137,10 +125,15 @@ fn get_user_op_name_doc(index: i32) -> Vec<u8> {
 // (a) full session over the command loop
 // ---------------------------------------------------------------------------
 
+// NOTE: decompileAt is deliberately absent from this byte-exact test.  Since
+// phase-2 step 6 wired `decompileAt` to the live engine, its response bytes are
+// a real `<doc>` whose contents (the `Funcdata::encode` `<ast>` + the Clang
+// markup) depend on the whole decompile pipeline's internal Varnode/op
+// numbering — not hand-assertable byte-exact.  `decompileAt` is proven
+// end-to-end in `test_decompile_at_emits_c` (the interactive MockJava e2e);
+// this test keeps the byte-exact framing coverage of every OTHER command.
 #[test]
 fn test_full_session_byte_exact() {
-    let tr = test_translate();
-    let addr_packed = packed_ram_addr(&tr, 0x401000);
     let options_packed = packed_optionslist();
 
     let input = Wire::new()
@@ -168,11 +161,6 @@ fn test_full_session_byte_exact() {
         .string(b"decompile")
         .string(b"c")
         .end_command()
-        // decompileAt: archid + packed <addr>
-        .command("decompileAt")
-        .string(b"0")
-        .string(&addr_packed)
-        .end_command()
         // flushNative: archid only
         .command("flushNative")
         .string(b"0")
@@ -190,19 +178,11 @@ fn test_full_session_byte_exact() {
 
     let mut process = GhidraProcess::new(Cursor::new(input.0), Vec::new());
     let mut statuses = Vec::new();
-    for _ in 0..7 {
+    for _ in 0..6 {
         statuses.push(process.read_command().expect("command completes"));
     }
-    assert_eq!(statuses, vec![0, 0, 0, 0, 0, 0, 1]);
+    assert_eq!(statuses, vec![0, 0, 0, 0, 0, 1]);
     let (_, out) = process.into_inner();
-
-    // The rendered form of ram:0x401000 in the decompileAt warning
-    let ram = tr.manager.get_space_by_name("ram").unwrap();
-    let mut addr_text = String::new();
-    addr_text.push(ram.get_shortcut());
-    Address::new(Rc::clone(ram), 0x401000)
-        .print_raw(&mut addr_text)
-        .unwrap();
 
     let expected = Wire::new()
         // registerProgram: {6} then the nested getUserOpName probe query
@@ -232,20 +212,6 @@ fn test_full_session_byte_exact() {
         .burst(6)
         .string(b"t")
         .burst(16)
-        .burst(17)
-        .burst(7)
-        // decompileAt: EMPTY payload (incomplete-function shape) + warning
-        .burst(6)
-        .burst(14)
-        .burst(15)
-        .burst(16)
-        .raw(
-            format!(
-                "\nkuna ghidra-mode: engine bridge not yet implemented (phase 1); \
-                 function at {addr_text} not decompiled"
-            )
-            .as_bytes(),
-        )
         .burst(17)
         .burst(7)
         // flushNative: "0"
@@ -343,20 +309,16 @@ fn test_bad_tspec_is_lenient() {
     );
 }
 
-/// Phase-2 step 3: registerProgram over four tiny valid specs (plus the
-/// init-time query answers) builds a live [`Architecture`], and a follow-up
-/// command drives that live engine's space manager.
+/// Phase-2: registerProgram over four tiny valid specs (plus the init-time
+/// query answer) builds a live [`Architecture`].
 ///
 /// Proof the engine was built: registerProgram issues exactly one nested query
 /// (the getUserOpName probe, from `init_post_engine` → `userops.initialize`),
-/// its warnings frame is empty (no construction error), and the follow-up
-/// decompileAt decodes its wire `<addr>` through the live manager (the warning
-/// names the actual address, not "(address not decoded)").
+/// its warnings frame is empty (no construction error), and it returns archid
+/// "0".  (The live manager's `<addr>` decode + the whole decompile drive are
+/// proven end-to-end in `test_decompile_at_emits_c`.)
 #[test]
 fn test_register_program_builds_live_architecture() {
-    let tr = test_translate();
-    let addr_packed = packed_ram_addr(&tr, 0x401000);
-
     let input = Wire::new()
         .command("registerProgram")
         .string(PSPEC)
@@ -367,19 +329,10 @@ fn test_register_program_builds_live_architecture() {
         // getUserOpName probe answer: empty name terminates the probe.
         .burst(8)
         .string(b"")
-        .burst(9)
-        // decompileAt: archid + packed <addr> — exercises the LIVE engine's
-        // space manager (the whole point: the addr decodes only because
-        // registerProgram built a real Architecture whose manager the tspec
-        // spaces populated).
-        .command("decompileAt")
-        .string(b"0")
-        .string(&addr_packed)
-        .end_command();
+        .burst(9);
 
     let mut process = GhidraProcess::new(Cursor::new(input.0), Vec::new());
     assert_eq!(process.read_command().expect("registerProgram completes"), 0);
-    assert_eq!(process.read_command().expect("decompileAt completes"), 0);
     let (_, out) = process.into_inner();
 
     // registerProgram issued exactly one init query (the getUserOpName probe) —
@@ -403,16 +356,12 @@ fn test_register_program_builds_live_architecture() {
         "engine construction unexpectedly failed: {text}"
     );
 
-    // The follow-up decompileAt decoded ram:0x401000 through the live manager.
-    let ram = tr.manager.get_space_by_name("ram").unwrap();
-    let mut addr_text = String::new();
-    addr_text.push(ram.get_shortcut());
-    Address::new(Rc::clone(ram), 0x401000)
-        .print_raw(&mut addr_text)
-        .unwrap();
+    // The response is archid "0" with an EMPTY 16/17 warnings frame (no
+    // construction error): {6} {4}<query>{5} {14}"0"{15} {16}{17} {7}.
+    let expected_tail = Wire::new().string(b"0").burst(16).burst(17).burst(7);
     assert!(
-        text.contains(&format!("function at {addr_text} not decompiled")),
-        "decompileAt did not decode the wire <addr> through the live engine manager: {text}"
+        out.ends_with(&expected_tail.0),
+        "registerProgram must end with archid \"0\" + empty warnings frame; got {out:02x?}"
     );
 }
 

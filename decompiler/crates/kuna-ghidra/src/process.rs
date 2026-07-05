@@ -28,13 +28,17 @@
 //! issues are nested inside the open command response (the phase-2 engine
 //! bridge relies on this).
 //!
-//! Phase-2 step 3 (see `docs/rust-port/ghidra-phase2-plan.md`): registerProgram
-//! now builds a *live* [`Architecture`] over the query-backed
-//! [`GhidraTranslate`] — its `init_post_engine` issues the getUserOpName probe
-//! loop as a real query nested in the registerProgram response.  `decompileAt`
-//! still answers the incomplete-function shape (an EMPTY 14/15 payload,
-//! ghidra_process.cc:313-334) plus a not-implemented warning — driving the
-//! engine from `decompileAt` is the next step.  `flushNative` has no engine
+//! Phase-2 step 6 (see `docs/rust-port/ghidra-phase2-plan.md`): registerProgram
+//! builds a *live* [`Architecture`] over the query-backed [`GhidraTranslate`] —
+//! its `init_post_engine` issues the getUserOpName probe loop as a real query
+//! nested in the registerProgram response — and `decompileAt` now DRIVES that
+//! engine: it names the function (getCodeLabel), runs [`decompile_func`] (whose
+//! providers issue the getPcode/getBytes/… queries nested in the still-open
+//! decompileAt response), and emits the `<doc>` response — `Funcdata::encode`'s
+//! `<function>`/`<ast>` plus the Clang-markup `<function>` — the first real C
+//! from kuna in ghidra mode.  A decompile failure degrades to the C++
+//! `!fd->isProcComplete()` incomplete-function shape (empty 14/15 payload +
+//! warning) so it never desyncs the GUI.  `flushNative` has no engine
 //! caches to clear yet.  `structureGraph` and the four signature commands are
 //! deliberately NOT registered: the unknown-command response
 //! `{6}{16}"Bad command: <name>"{17}{7}` (ghidra_process.cc:476-484) is the
@@ -47,12 +51,15 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::marshal::{Decoder, PackedDecode};
+use kuna_base::marshal::{Decoder, Encoder, PackedDecode, PackedEncode};
 use kuna_base::space::AddrSpaceManager;
 
 use kuna_decomp::architecture::Architecture;
+use kuna_decomp::decompile_drive::decompile_func;
+use kuna_decomp::funcdata::Funcdata;
 
 use crate::client::GhidraClient;
+use crate::ids::ELEM_DOC;
 use crate::protocol::{
     pass_java_exception, read_string_stream, read_string_stream_optional, read_to_any_burst,
     write_burst, write_string_stream, WireError, WireResult, BURST_COMMAND_CLOSE,
@@ -156,8 +163,10 @@ struct CommandState {
     /// setAction params.
     actionstring: Vec<u8>,
     printstring: Vec<u8>,
-    /// decompileAt param: the decoded address (None if the engine is
-    /// unavailable) plus its rendered form for messages.
+    /// decompileAt param: the decoded entry address (None if the engine is
+    /// unavailable), driving the [`decompile_func`] build.
+    addr: Option<Address>,
+    /// decompileAt param: the rendered form of `addr` for warning messages.
     addr_text: Option<String>,
     /// setOptions param: the raw packed \<optionslist> bytes.
     options_raw: Option<Vec<u8>>,
@@ -175,6 +184,7 @@ impl CommandState {
             specs: None,
             actionstring: Vec::new(),
             printstring: Vec::new(),
+            addr: None,
             addr_text: None,
             options_raw: None,
         }
@@ -427,11 +437,13 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         decoder.ingest_stream(&bytes).map_err(WireError::Kuna)?;
                         let addr = Address::decode(&mut decoder).map_err(WireError::Kuna)?;
                         cmd.addr_text = Some(render_address(&addr));
+                        cmd.addr = Some(addr);
                     }
                     (None, Some(_bytes)) => {
                         // Engine construction failed: the <addr> was consumed
                         // but cannot be decoded (the session already carries the
                         // construction-failure warning on its 16/17 frame).
+                        cmd.addr = None;
                         cmd.addr_text = None;
                     }
                     (_, None) => {
@@ -543,26 +555,119 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                 cmd.res = 0;
                 Ok(())
             }
-            // DecompileAt::rawAction (ghidra_process.cc:293-335): step 3 still
-            // emits the incomplete-function shape — an EMPTY 14/15 payload
-            // (exactly what upstream sends when !fd->isProcComplete()) — plus a
-            // warning on the 16/17 channel, which renders as a clean error in
-            // the Ghidra GUI instead of a hang/desync.  Driving the (now-built)
-            // engine from decompileAt is the next step.
+            // DecompileAt::rawAction (ghidra_process.cc:293-335): the live
+            // engine bridge.  Establish the function name (getCodeLabel), drive
+            // `decompile_func` to a ready-to-print `Funcdata` (its providers
+            // issue the getPcode/getBytes/… queries nested inside this still-open
+            // command response), then emit the `<doc>` between the 14/15 burst —
+            // `fd.encode` (the `<function>`/`<ast>` syntax tree) plus, when C is
+            // requested for the `decompile` action, the Clang-markup `<function>`
+            // spliced into the SAME `<doc>` stream.  Any decompile failure
+            // degrades to the C++ `!fd->isProcComplete()` incomplete-function
+            // shape (empty 14/15 payload + a 16/17 warning) so a failure never
+            // desyncs the GUI.
             CommandKind::DecompileAt => {
-                write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_OPEN)?;
-                write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
-                let at = match &cmd.addr_text {
-                    Some(t) => t.clone(),
-                    None => "(address not decoded)".to_string(),
+                let slot = cmd.slot.expect("bound session");
+                // The entry address decoded in loadParameters.  `None` ⇒ engine
+                // construction failed (no manager) — degrade to the
+                // incomplete-function shape (the construction-failure warning is
+                // already on the session's 16/17 frame).
+                let addr = match cmd.addr.clone() {
+                    Some(a) => a,
+                    None => {
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_OPEN)?;
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
+                        self.print_message(
+                            cmd.slot,
+                            "kuna ghidra-mode: engine unavailable; \
+                             function at (address not decoded) not decompiled",
+                        );
+                        return Ok(());
+                    }
                 };
-                self.print_message(
-                    cmd.slot,
-                    &format!(
-                        "kuna ghidra-mode: engine bridge not yet implemented (phase 1); \
-                         function at {at} not decompiled"
-                    ),
-                );
+
+                // (2) Establish the display name.  C++ `queryFunction` resolves
+                // it from the mapped symbol; the v1 milestone (no `<mapsym>`
+                // decoder yet — Phase 3) uses the plain-string `getCodeLabel`,
+                // falling back to a synthesized `FUN_<addr>` on an empty label or
+                // a query failure.  Short-lived client borrow, dropped before the
+                // decompile re-borrows the client through the engine providers
+                // (the no-borrow-across-decompile invariant).
+                let name = match self.client.borrow_mut().get_code_label(&addr) {
+                    Ok(label) if !label.is_empty() => {
+                        String::from_utf8_lossy(&label).into_owned()
+                    }
+                    _ => format!("FUN_{:08x}", addr.get_offset()),
+                };
+
+                // Snapshot the render flags before taking `&mut Architecture`.
+                let (send_syntax_tree, send_c_code, current_action) = {
+                    let session = self.archlist[slot].as_ref().expect("bound session");
+                    (
+                        session.send_syntax_tree,
+                        session.send_c_code,
+                        session.current_action.clone(),
+                    )
+                };
+
+                // (3) Drive the decompile FULLY — releasing every provider query
+                // borrow — BEFORE re-borrowing the client to write the `<doc>`.
+                // `size = 0` = the flow-discovered natural extent (the console
+                // decompile-all path's shape: build a `Funcdata` for the raw
+                // entry, let flow-following via the getPcode/getBytes providers
+                // discover the body).  Assemble the response document while the
+                // `&mut Architecture` is in hand (the markup needs `&Architecture`).
+                let doc: KunaResult<Vec<u8>> = {
+                    let session = self.archlist[slot].as_mut().expect("bound session");
+                    let arch = session
+                        .architecture
+                        .as_mut()
+                        .expect("addr decoded ⇒ engine present");
+                    match decompile_func(arch, &name, addr.clone(), 0) {
+                        Ok(fd) => build_decompile_at_doc(
+                            arch,
+                            &fd,
+                            send_syntax_tree,
+                            send_c_code,
+                            &current_action,
+                        ),
+                        Err(e) => Err(e),
+                    }
+                };
+
+                match doc {
+                    // C++ `isProcComplete` branch: the `<doc>` inside the 14/15
+                    // burst.
+                    Ok(bytes) => {
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_OPEN)?;
+                        self.client
+                            .borrow_mut()
+                            .sout_mut()
+                            .write_all(&bytes)
+                            .map_err(WireError::Io)?;
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
+                    }
+                    // A decompile failure (a decode error, an un-ported seam that
+                    // `decompile_func` caught, or a Java exception a provider
+                    // surfaced) degrades to the SAME clean incomplete-function
+                    // shape — empty 14/15 payload + a 16/17 warning naming the
+                    // address.  DELIBERATE DIVERGENCE from the C++
+                    // passJavaException abort: a failure never desyncs the GUI
+                    // (the phase-1 stub's clean-error contract).
+                    Err(e) => {
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_OPEN)?;
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
+                        let at = cmd.addr_text.clone().unwrap_or_else(|| "?".to_string());
+                        self.print_message(
+                            cmd.slot,
+                            &format!(
+                                "kuna ghidra-mode: could not decompile the function at {at} \
+                                 ({}); returning an incomplete function",
+                                e.explain()
+                            ),
+                        );
+                    }
+                }
                 Ok(())
             }
             // SetAction::rawAction (ghidra_process.cc:378-406)
@@ -779,6 +884,57 @@ fn parse_arch_id(payload: &[u8]) -> i32 {
         val = -val;
     }
     val.clamp(i32::MIN as i64, i32::MAX as i64) as i32
+}
+
+/// Assemble the decompileAt response document (C++ `DecompileAt::rawAction`
+/// isProcComplete branch, `decompiler/cpp/ghidra_process.cc:317-333`):
+///
+/// ```text
+///   XmlEncode encoder(sout);        // kuna: PackedEncode over a buffer
+///   encoder.openElement(ELEM_DOC);
+///   fd->encode(encoder,0,ghidra->getSendSyntaxTree());   // <function>/<ast>
+///   if (ghidra->getSendCCode() && (actionname == "decompile")) {
+///     ghidra->print->setOutputStream(&sout);
+///     ghidra->print->docFunction(fd);   // the Clang-markup <function>
+///   }
+///   encoder.closeElement(ELEM_DOC);
+/// ```
+///
+/// The dual `<function>` (the markup) is spliced AFTER the syntax tree and
+/// BEFORE `</doc>`.  Its `opref`/`varref` tokens resolve to the SAME
+/// `get_time()`/`get_create_index()` the `<ast>` emitted, so the
+/// click-to-address contract holds by construction.  [`PackedEncode`] writes
+/// its 0x00-free bytes straight to the buffer with no open-element stack, so
+/// appending the markup bytes then writing `</doc>` from a fresh encoder is
+/// byte-identical to C++ writing both to one `sout` — exactly the same splice.
+fn build_decompile_at_doc(
+    arch: &mut Architecture,
+    fd: &Funcdata,
+    send_syntax_tree: bool,
+    send_c_code: bool,
+    current_action: &str,
+) -> KunaResult<Vec<u8>> {
+    let mut buf: Vec<u8> = Vec::new();
+    // <doc> open + fd.encode (the <function>/<ast> syntax tree).
+    {
+        let mut enc = PackedEncode::new(&mut buf);
+        enc.open_element(&ELEM_DOC);
+        fd.encode(&mut enc, 0, send_syntax_tree)?;
+    }
+    // The dual <function>: the Clang token-markup document.  `doc_function_markup`
+    // needs `&mut PrintC` + `&Architecture`; move the printer out (the
+    // `print_c` split-borrow precedent), render, put it back, splice the bytes.
+    if send_c_code && current_action == "decompile" {
+        let mut printer = arch.take_print();
+        let markup = printer.doc_function_markup(fd, arch);
+        arch.put_print(printer);
+        buf.extend_from_slice(&markup);
+    }
+    {
+        let mut enc = PackedEncode::new(&mut buf);
+        enc.close_element(&ELEM_DOC);
+    }
+    Ok(buf)
 }
 
 /// Render an address for warning messages: the space shortcut plus the C++
