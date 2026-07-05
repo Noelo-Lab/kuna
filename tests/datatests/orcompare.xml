@@ -14,7 +14,6 @@ c1e20409d07510833d920f000007ba02
 <symbol space="ram" offset="0x100036" name="comp3"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <com>parse line extern int4 comp2(int4 a,int4 b);</com>
   <com>parse line extern int4 comp3(int4 x,int4 y,int4 z);</com>
   <com>lo fu comp2</com>

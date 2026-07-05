@@ -63,7 +63,6 @@ b900000000eb05b9ffffffff89c8c3
 <symbol space="ram" offset="0x401000" name="mexit"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <com>option regionstructure on</com>
   <com>option regionlooprefine off</com>
   <com>lo fu mexit</com>

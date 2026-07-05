@@ -23,7 +23,6 @@
 <symbol space="ram" offset="0x1006a8" name="partial1"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <com>option readonly on</com>
   <com>parse line struct astruct { int4 aval1; int4 aval2; int4 aval3; };</com>
   <com>parse line struct bstruct { float4 bval1; int4 bval2; float4 bval3; };</com>

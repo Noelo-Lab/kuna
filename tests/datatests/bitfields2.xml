@@ -78,7 +78,6 @@
 <symbol space="ram" offset="0x100700" name="increment"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <!-- kuna: branchflip default-on (DIV-13); this upstream test pins the pre-branchflip (Ghidra polarity) rendering -->
   <com>option branchflip off</com>
   <com>map fun r0x400000 receive</com>

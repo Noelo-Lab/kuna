@@ -222,9 +222,6 @@ fn render_one(stem: &str, which: usize) -> Result<String, String> {
         .ok_or(format!("no space {space_name}"))?
         .clone();
     let entry = Address::new(space, off);
-    // (kuna) DIV-18: returndup is default-on; this adversarial fence pins the condconst
-    // implied-var rendering, orthogonal to return duplication — keep returndup off here.
-    arch.duplicate_shared_returns = false;
     let fd = decompile_func(arch, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
     Ok(print_c(arch, &fd))
 }
