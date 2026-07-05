@@ -496,17 +496,17 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 70 rows: 69 trailing commas (the last, macho-arm64e, has none;
+    // 71 rows: 70 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
     // ifelseflatten's,
     // crossjumprevert's, taildup's, dedupitetail's, and returndup's S8 rows,
-    // eh_frame_full's S1 row,
+    // noreturn_error's S1 analysis row, eh_frame_full's S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 69);
+    assert_eq!(json.matches("},\n").count(), 70);
 }
 
 #[test]
