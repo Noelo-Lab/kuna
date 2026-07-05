@@ -2672,3 +2672,41 @@ Four PRs merged on top of session 1's nine (all three gates verified before each
 Option count 69→72 (returndup, noreturn_error, iteregion). Follow-ups left in
 `docs/decbench/features.md`: F6 `cstyle-null-cmp`, P1 full ITE/expr-folding, P2 ARM Cortex-M,
 and the broader `noreturn_propagate` robustness relaxations (transitive/looping wrappers).
+
+## 2026-07-05 — Ghidra integration Phase 1: the decompiler-process protocol (branch feat/ghidra-mode)
+
+Phase 1 of "kuna as Ghidra's decompiler core": make the **stock, untouched Ghidra GUI**
+spawn kuna instead of the C++ `decompile` binary. Upstream's "ghidra mode" glue
+(`ghidra_process.cc`/`ghidra_arch.cc`/… — the LOSS-002 exclusion) is being reintroduced
+as a new **`kuna-ghidra`** crate speaking Ghidra's burst-framed stdin/stdout protocol,
+plus a Ghidra extension (`integrations/`) that swaps `DecompileProcessFactory.exepath`
+by reflection pre-spawn (the binary ships in the extension's own `os/<platform>/` as
+`kuna_ghidra`). Phase 1 ships the **wire-protocol-complete, engine-stubbed** native side
+(burst framer, command dispatch + `doit()` lifecycle, archid session model, the 19 typed
+callback-query clients, both exception channels, the upstream-numbered protocol element
+ids 229/239–257/261/262/264/268), the extension, and the two permanent design docs:
+
+- **`docs/ghidra-integration.md`** — the kuna plan: architecture + session lifecycle,
+  condensed protocol tables, what kuna already has (bit-exact `marshal.rs`, `EmitMarkup`,
+  the signature engine, the sparse `insert_space` no-`.sla` precedent, `KunaError::Java`)
+  vs the seam inventory with honest difficulty, the GUI response contracts (dual
+  `<function>`, ast↔markup refids, DB symbol-id echo, jumptablelist, parammeasures),
+  the graceful-degradation matrix, testing strategy, and the Phase 1–4 checklists.
+- **`docs/decompiler-core-interface.md`** — the core-agnostic spec of what Ghidra
+  requires from ANY replacement decompiler core (substitution seams ranked, process
+  contract, full wire grammar + choreography, packed-encoding invariants, the 19-query
+  data API, response document contracts, consumer matrix, versioning reality, minimum
+  viable core). Citations verified against Ghidra 12.2-DEV @ f9e13846.
+
+Decisions recorded (with rationale, in the docs): reimplement the native side, never
+fork the Java; **p-code comes from Java per instruction** (no wire query exists for
+disassembly context; listing parity; the contract assumes it) via a faithful
+`GhidraTranslate` port behind a `{Sleigh, GhidraTranslate}` enum seam; symbols/types/
+comments/strings/injects are **pull-only** → lazy `ScopeGhidra`-style query-through
+caches (eager pre-population is impossible — no enumerate query), forcing the Phase-3
+Scope/ArchSeam rework; pin the target Ghidra release but **tolerate unknown `setOptions`
+elements** (upstream bricks the program-open on one stale option — divergence to be
+DIV-logged when the behavior ships in Phase 2). Phases: 2 = engine bridge (Architecture
+from wire specs, GhidraLoadImage/ContextGhidra, minimal `Funcdata::encode`,
+PrintC→EmitMarkup — first real C in the GUI); 3 = lazy providers; 4 = parity
+(rename/retype id echo, structureGraph, parammeasures, BSim signatures, overlays).

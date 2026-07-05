@@ -1,0 +1,49 @@
+// Builds the KunaDecompiler Ghidra extension for a given Ghidra installation.
+// (Modeled on GhidraBuild/Skeleton/buildTemplate.gradle from the Ghidra tree.)
+//
+// An absolute path to the Ghidra installation directory must be supplied either by setting the
+// GHIDRA_INSTALL_DIR environment variable or the Gradle project property:
+//
+//     > export GHIDRA_INSTALL_DIR=<Absolute path to Ghidra>
+//     > gradle
+//
+//         or
+//
+//     > gradle -PGHIDRA_INSTALL_DIR=<Absolute path to Ghidra>
+//
+// Gradle should be invoked from the directory of the project to build.  Please see the
+// application.gradle.min property in <GHIDRA_INSTALL_DIR>/Ghidra/application.properties
+// for the correct version of Gradle to use for the Ghidra installation you specify.
+// The built extension zip lands in dist/.
+
+//----------------------START "DO NOT MODIFY" SECTION------------------------------
+def ghidraInstallDir
+
+if (System.env.GHIDRA_INSTALL_DIR) {
+	ghidraInstallDir = System.env.GHIDRA_INSTALL_DIR
+}
+else if (project.hasProperty("GHIDRA_INSTALL_DIR")) {
+	ghidraInstallDir = project.getProperty("GHIDRA_INSTALL_DIR")
+}
+else {
+	throw new GradleException("GHIDRA_INSTALL_DIR is not defined: " +
+		"export GHIDRA_INSTALL_DIR=<Absolute path to Ghidra> or pass " +
+		"-PGHIDRA_INSTALL_DIR=<Absolute path to Ghidra>")
+}
+
+task distributeExtension {
+	group = "Ghidra"
+
+	apply from: new File(ghidraInstallDir).getCanonicalPath() + "/support/buildExtension.gradle"
+	dependsOn ':buildExtension'
+}
+//----------------------END "DO NOT MODIFY" SECTION-------------------------------
+
+repositories {
+	// No external dependency repositories are needed: buildExtension.gradle puts the
+	// Ghidra installation's jars on the compile classpath.
+}
+
+dependencies {
+	// No external dependencies.
+}
