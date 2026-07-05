@@ -1213,6 +1213,8 @@ impl Architecture {
             "iteregion" => {
                 let (val, msg) = crate::s8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
                 self.iteregion = val;
+                Ok(msg)
+            }
             "returndup" => {
                 let (val, msg) =
                     crate::s8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;

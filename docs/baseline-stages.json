@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    249,
-    249
+    254,
+    254
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -115,8 +115,8 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
@@ -199,6 +199,11 @@
     "data:ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)",
     "data:ifelseflatten #2: the else-arm constant body survives identically (no-op, not corrupted; off plus on = 2)",
     "data:ifelseflatten #3: enabling the option is byte-identical, the loop tail is unchanged (off plus on = 2)",
+    "data:iteregion #1: bug (off) -- the assignment diamond renders as a literal if/else (else-arm only, off pass)",
+    "data:iteregion #2: bug (off) -- the else-arm constant assignment is a separate statement (off pass only)",
+    "data:iteregion #3: fix (on) -- the diamond collapses to a single ?: ternary (on pass only)",
+    "data:iteregion #4: fix (on) -- the rewrite is logged",
+    "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
     "data:namestyle #3 default: unnamed call target renders as sub_<addr>",

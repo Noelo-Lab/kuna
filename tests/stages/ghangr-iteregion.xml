@@ -71,6 +71,9 @@ f30f1efa554889e54883ec08897dfc837dfc007407b810000000eb05b82000000089c7e8c5ffffff
   <com>option tailcalljump off</com>
   <com>option foldcallret off</com>
   <com>option branchflip off</com>
+  <!-- kuna: iteregion is default-ON (DIV-17); pass 1 explicitly flips it OFF to pin
+       the upstream if/else baseline the pass converts, pass 2 turns it back on. -->
+  <com>option iteregion off</com>
   <com>parse line extern void pick(int4 x);</com>
   <com>lo fu pick</com>
   <com>decompile</com>

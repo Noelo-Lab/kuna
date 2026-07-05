@@ -263,5 +263,6 @@
 0256                  ifelseflatten
 0257                  crossjumprevert
 0258                  dedupitetail
-0259        !         prototypewarnings
-0260                  stop
+0259                  iteregion
+0260        !         prototypewarnings
+0261                  stop
