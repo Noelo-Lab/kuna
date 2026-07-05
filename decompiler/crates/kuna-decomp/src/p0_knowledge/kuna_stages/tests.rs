@@ -321,7 +321,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_37() {
+fn option_values_live_value_present_for_28_suppressed_for_38() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -367,6 +367,9 @@ fn option_values_live_value_present_for_28_suppressed_for_37() {
         // console-side via kuna_live_value), like the analysis gates around it.
         // Default-on (DIV-16).
         "noreturn_error",
+        // (kuna) CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn), a
+        // sub-rule gate of noreturn_propagate with no codegen live reader. Default-on (DIV-19).
+        "noreturn_reach",
         // (kuna) FID fingerprint-matcher Listing consumer — an analysis-pass gate
         // whose DB source is a load-time env var (`kuna_fid_db`); no codegen
         // live_value reader (read console-side via kuna_live_value), like the gates
