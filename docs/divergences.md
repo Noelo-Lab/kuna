@@ -737,3 +737,31 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   e2e gates (which stay green with the rule on). Real-binary behavior verified on the decbench
   openssh corpus (ssh_tun_confirm, sshd_hostkey_sign).
 - **Date**: 2026-07-05.
+
+## DIV-20: `decompile-all` defaults `funcstart_patterns` ON for non-x86-64 (ARM discovery)
+
+- **Flip**: the **`decompile-all` driver** (`kuna-cli/src/decompile_all.rs::load_program`)
+  now injects `option funcstart_patterns on` when the binary's architecture is **not**
+  x86-64, unless the caller names `funcstart_patterns` explicitly. A driver default, not an
+  engine default: `analysis_funcstart_patterns` still resets to `false`, and `kuna functions`,
+  `kuna decompile` (subprocess), the console, and the datatest harness are unchanged.
+- **Problem**: kuna's analyzer tier has **no disassembled Listing / recursive-descent sweep**,
+  so function discovery relies on the entry oracles + arch idioms + the always-on prologue
+  scan (**oracle 5**). Oracle 5 is **x86-64-only**. On a STRIPPED **non-x86-64** binary
+  (ARM Cortex-M firmware — the decbench `cps` project: betaflight, chibios, nuttx, u-boot, …)
+  the ELF entry point is therefore the ONLY discovered function, so the whole binary
+  decompiles to 1 function and scores as a total decompiler-failure.
+- **Fix**: the `funcstart_patterns` pass (`s1_entry::full_pattern_starts`) IS the primary
+  discovery source for these arches — it applies the full ARM/AArch64/MIPS/PPC/RISC-V
+  `<patternpairs>` (pre/post) prologue matcher over the code (Thumb `push {…}` etc.). Enabling
+  it by default on `decompile-all` for non-x86-64 lifts ARM Cortex-M discovery from **1** to
+  **hundreds** of functions (betaflight `STM32F405` 1 → 469, chibios 1 → 47), each decompiled
+  in Thumb mode. Still short of Ghidra (recursive descent finds more — betaflight 1822), but
+  the binaries go from unusable to usable.
+- **x86-64 untouched**: the injection fires only when `File::architecture() != X86_64`, so
+  every x86-64 result is byte-identical (oracle 5 + the entry oracles already discover them,
+  and the aggressive pattern scan is kept off there where it can over-produce). `docs/baseline.json`
+  and the datatest/console paths are unaffected (they never build this surface).
+- **Testcase**: `kuna-cli/tests/decompile_all_cli.rs` (the non-x86-64 default-on injection) +
+  the real ARM Cortex-M behavior on the decbench `cps` corpus.
+- **Date**: 2026-07-05.

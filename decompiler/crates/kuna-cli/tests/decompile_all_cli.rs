@@ -37,6 +37,22 @@ fn specs() -> String {
     repo_root().join("specs").to_str().unwrap().to_string()
 }
 
+/// A small **ARM 32-bit** (Thumb) ELF fixture — the non-x86-64 discovery surface
+/// where `decompile-all` defaults `funcstart_patterns` ON (DIV-20).
+fn arm_thumb() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_linked_le32")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// Parse the `"count": N` field out of the decompile-all `--json` header.
+fn json_count(stdout: &str) -> Option<usize> {
+    let i = stdout.find("\"count\":")? + "\"count\":".len();
+    stdout[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+}
+
 /// Run the built `kuna` binary, returning `(stdout, stderr, success)`.
 fn run_kuna(args: &[&str]) -> (String, String, bool) {
     let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
@@ -130,6 +146,47 @@ fn decompile_all_emits_json_for_main() {
     assert!(
         stdout.contains("\"kind\": \"arg\"") && stdout.contains("\"arg_index\": 0"),
         "expected a parameter with arg_index 0:\n{stdout}"
+    );
+}
+
+/// DIV-20: on a **non-x86-64** binary, `decompile-all` defaults
+/// `funcstart_patterns` ON — the primary function-discovery source when oracle 5
+/// (the x86-64-only prologue scan) does not apply. Without it a stripped ARM binary
+/// discovers only the ELF entry; with it the prologue `<patternpairs>` matcher finds
+/// more. The default must match an explicit `--option funcstart_patterns on` and beat
+/// `off`.
+#[test]
+fn arm_decompile_all_defaults_funcstart_patterns_on() {
+    let bin = arm_thumb();
+    let sp = specs();
+    let run = |extra: &[&str]| -> Option<usize> {
+        let mut args = vec!["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()];
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                return None;
+            }
+            panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
+        }
+        Some(json_count(&stdout).expect("count in json"))
+    };
+    let Some(default_cnt) = run(&[]) else {
+        eprintln!("arm funcstart default: skipping (no `.sla`; run `make specs`)");
+        return;
+    };
+    let off_cnt = run(&["--option", "funcstart_patterns", "off"]).expect("second run");
+    let on_cnt = run(&["--option", "funcstart_patterns", "on"]).expect("third run");
+    // The non-x86-64 default injects the pass: it discovers strictly more than `off`,
+    // and matches the explicit `on`.
+    assert!(
+        default_cnt > off_cnt,
+        "ARM decompile-all default should discover MORE than funcstart_patterns off \
+         (default={default_cnt}, off={off_cnt}) — the DIV-20 injection did not fire"
+    );
+    assert_eq!(
+        default_cnt, on_cnt,
+        "ARM default must equal explicit `funcstart_patterns on` (default={default_cnt}, on={on_cnt})"
     );
 }
 
