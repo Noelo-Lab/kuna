@@ -627,6 +627,14 @@ pub struct Architecture {
     /// Requires the Listing (`--option listing on`) AND `noreturn_propagate` on;
     /// a no-op otherwise, so every parity gate is byte-identical (real-ELF path).
     pub analysis_noreturn_error: bool,
+    /// (kuna) Gate the CFG-reachability no-return rule (`noreturn_reach`), the port of
+    /// Ghidra's `FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn`: a function is
+    /// no-return iff no `RETURN` is reachable from entry once calls to already-no-return
+    /// callees are treated as terminal. Generalizes `noreturn_propagate`'s tail-call rule
+    /// to mid-body no-return calls, dead returns, and switch-of-no-return. Requires the
+    /// Listing AND `noreturn_propagate` on; a no-op otherwise, so every parity gate is
+    /// byte-identical (real-ELF path only). Default **on** (DIV-19).
+    pub analysis_noreturn_reach: bool,
     /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
     /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
     /// over the built Listing it fingerprints each function with the byte-exact
@@ -943,6 +951,7 @@ impl Architecture {
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
             analysis_noreturn_error: false,
+            analysis_noreturn_reach: false,
             analysis_fid: false,
             analysis_rtti: false,
             analysis_aif: false,
@@ -1075,6 +1084,7 @@ impl Architecture {
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_error = true; // (kuna) DIV-16 default-on: REMOVES CODE (conclude error(nonzero,...) wrappers no-return, dropping the dead fall-through at every caller). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_error off`
+        self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
@@ -1295,6 +1305,9 @@ impl Architecture {
             }
             "noreturn_error" => {
                 on_off!(analysis_noreturn_error, "error(nonzero,...) conditional no-return recognizer")
+            }
+            "noreturn_reach" => {
+                on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")
             }
             "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
             "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),

@@ -349,6 +349,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // drop the dead fall-through. REMOVES CODE. Default-ON (DIV-16); requires the
     // Listing + `noreturn_propagate`, so every parity gate is byte-identical.
     "noreturn_error",
+    "noreturn_reach",
     // (kuna) FID fingerprint matcher: the kuna analog of Ghidra's FID identification
     // analyzer.  Over the built Listing it fingerprints each function with the
     // byte-exact operand-masked FNV-1a64 hash and looks the full hash up in a kuna

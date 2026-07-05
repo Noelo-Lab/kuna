@@ -128,7 +128,13 @@ impl AnalysisPass for NoReturnPropagatePass {
         } else {
             ErrorRecognizer::disabled()
         };
-        for fact in propagate_noreturn(listing, &error_recog) {
+        // (kuna, ghidra port) The CFG-reachability rule (Ghidra's
+        // `targetOnlyCallsNoReturn`) generalizes the tail-call rule to mid-body
+        // no-return calls, dead returns, and switch-of-no-return. Its own flag
+        // (`--option noreturn_reach`, default-on, DIV-19); Listing-gated like the rest,
+        // so every parity gate stays byte-identical.
+        let reach = ctx.arch.analysis_noreturn_reach;
+        for fact in propagate_noreturn(listing, &error_recog, reach) {
             out.noreturn.push(fact);
         }
         out
@@ -380,6 +386,223 @@ fn function_is_no_return(
     true
 }
 
+/// **CFG-reachability no-return** — the port of Ghidra's
+/// `FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn` (the "Non-Returning
+/// Functions - Discovered" analyzer's reachability rule), the generalization the
+/// strict tail-call rule ([`function_is_no_return`], rules 1–4) misses.
+///
+/// The strict rule requires the **last real instruction** to be a terminal
+/// call/jump, no `RETURN` anywhere, and no computed jump. That is a subset: it
+/// cannot conclude a wrapper whose no-return call is **mid-body** (with a dead
+/// tail after it), whose `RETURN` is present-but-**unreachable**, or that routes
+/// through a **switch** (indirect jump) whose every arm is no-return. Ghidra
+/// concludes all three by walking the CFG: a call to an already-no-return callee
+/// ends that path (its fall-through is dead), and the function is no-return iff
+/// **no `RETURN` is reachable from entry** and at least one reachable path ends at
+/// a no-return transfer. Iterated to a call-graph fixpoint by
+/// [`propagate_noreturn`], this converts e.g. openssh `sshpkt_vfatal` (a switch
+/// whose arms all `call` the log-die) → then `sshpkt_fatal` (whose *first* stmt is
+/// `call sshpkt_vfatal`, the write/return tail dead).
+///
+/// Instruction-level reachability over the Listing body (kuna has no separate
+/// block CFG in this tier, but `Insn` carries `fall_through` + resolved `flows` +
+/// the flow flags — enough). **Conservative by construction:** every uncertainty
+/// (a reachable `RETURN`/terminal, an unresolved indirect jump, a branch escaping
+/// the body to a possibly-returning neighbour, a call with no modelled
+/// fall-through that is not itself terminal) returns `false` — a false positive
+/// would drop live caller code, so every doubt is a "returns".
+fn function_reaches_only_noreturn(
+    listing: &Listing,
+    entry: u64,
+    terminal: &BTreeSet<u64>,
+    error_recog: &ErrorRecognizer,
+) -> bool {
+    let next = listing.next_function_after(entry).map(|f| f.entry);
+    // Address-indexed body for O(log n) successor lookup.
+    let body: BTreeMap<u64, &Insn> = listing
+        .instructions()
+        .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+        .map(|(&vma, insn)| (vma, insn))
+        .collect();
+    reaches_only_noreturn_walk(&body, entry, next, terminal, error_recog)
+}
+
+/// The reachability walk core (extracted for unit testing): from `entry`, walk the
+/// instruction-level reachable graph of `body` (bounded `[entry, next)`), treating
+/// a call/jump to a callee in `terminal` (or a value-conditional `error(nonzero,…)`
+/// tail) as a dead transfer, and return true iff **no `RETURN` is reachable** and at
+/// least one reachable path ends at such a transfer. Conservative: every uncertainty
+/// returns false. See [`function_reaches_only_noreturn`].
+fn reaches_only_noreturn_walk(
+    body: &BTreeMap<u64, &Insn>,
+    entry: u64,
+    next: Option<u64>,
+    terminal: &BTreeSet<u64>,
+    error_recog: &ErrorRecognizer,
+) -> bool {
+    let in_body = |vma: u64| vma >= entry && next.map_or(true, |n| vma < n);
+    if !body.contains_key(&entry) {
+        return false;
+    }
+
+    let mut visited: BTreeSet<u64> = BTreeSet::new();
+    let mut todo: Vec<u64> = vec![entry];
+    let mut hit_noreturn = false;
+
+    // Push a control successor, resolving whether it stays in the body, lands on an
+    // already-no-return callee (a dead transfer), or escapes to a neighbour.
+    // Returns false iff the successor escapes to a possibly-returning neighbour
+    // (which disqualifies the whole function).
+    enum Succ {
+        Follow(u64),
+        NoReturn,
+        Escape,
+    }
+    let classify = |vma: u64| -> Succ {
+        if in_body(vma) {
+            Succ::Follow(vma)
+        } else if terminal.contains(&vma) {
+            Succ::NoReturn
+        } else {
+            Succ::Escape
+        }
+    };
+
+    while let Some(vma) = todo.pop() {
+        if !visited.insert(vma) {
+            continue;
+        }
+        let Some(&insn) = body.get(&vma) else {
+            // Fell out of the body without a modelled transfer (should be caught by
+            // the successor classifier, but stay safe).
+            return false;
+        };
+
+        // A reachable RETURN (terminal that is not a call) ⇒ the function returns.
+        if insn.flow.is_terminal && !insn.flow.is_call {
+            return false;
+        }
+
+        // A call/jump whose static target is already no-return (or a value-conditional
+        // `error(nonzero,…)` tail) ends this path: its fall-through is dead code.
+        let transfers_to_noreturn = (insn.flow.is_call || insn.flow.is_jump)
+            && insn.flows.iter().any(|t| terminal.contains(t));
+        // error(nonzero,…): the recognizer needs a `&[(u64,&Insn)]` window ending at
+        // the call; a one-element window is enough for its arg back-scan to look at the
+        // straight-line predecessors it re-reads from the Listing is not available here,
+        // so only match when this very instruction is the terminal error call by target.
+        let transfers_to_error = insn.flow.is_call
+            && insn.flows.iter().any(|t| error_recog.is_error(*t))
+            && {
+                // Reconstruct the straight-line window [block start .. this call] so the
+                // arg back-scan can prove `status != 0`. Walk back over fall-through
+                // predecessors within the body until a control instruction.
+                let win = straightline_window(body, entry, vma);
+                let call_idx = win.len() - 1;
+                error_recog.call_is_terminal_error(&win, call_idx)
+            };
+        if transfers_to_noreturn || transfers_to_error {
+            hit_noreturn = true;
+            continue;
+        }
+
+        if insn.flow.is_call {
+            // A returning call: control continues at the fall-through.
+            match insn.fall_through {
+                Some(ft) => match classify(ft) {
+                    Succ::Follow(v) => todo.push(v),
+                    Succ::NoReturn => hit_noreturn = true,
+                    Succ::Escape => return false,
+                },
+                // A call with no modelled fall-through that is not to a terminal
+                // callee: we cannot reason about where control goes → returns.
+                None => return false,
+            }
+            continue;
+        }
+
+        if insn.flow.is_jump {
+            if insn.flow.is_computed || insn.flow.is_indirect {
+                // Resolved switch: follow every case target. Unresolved ⇒ cannot prove.
+                if insn.flows.is_empty() {
+                    return false;
+                }
+                for &t in &insn.flows {
+                    match classify(t) {
+                        Succ::Follow(v) => todo.push(v),
+                        Succ::NoReturn => hit_noreturn = true,
+                        Succ::Escape => return false,
+                    }
+                }
+            } else {
+                for &t in &insn.flows {
+                    match classify(t) {
+                        Succ::Follow(v) => todo.push(v),
+                        Succ::NoReturn => hit_noreturn = true,
+                        Succ::Escape => return false,
+                    }
+                }
+                // A conditional jump also falls through.
+                if insn.flow.has_fallthrough {
+                    if let Some(ft) = insn.fall_through {
+                        match classify(ft) {
+                            Succ::Follow(v) => todo.push(v),
+                            Succ::NoReturn => hit_noreturn = true,
+                            Succ::Escape => return false,
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        // A straight-line instruction: follow its fall-through.
+        match insn.fall_through {
+            Some(ft) => match classify(ft) {
+                Succ::Follow(v) => todo.push(v),
+                Succ::NoReturn => hit_noreturn = true,
+                Succ::Escape => return false,
+            },
+            // No fall-through and not terminal: end of the reachable stream with no
+            // return and no transfer — cannot conclude.
+            None => return false,
+        }
+    }
+
+    hit_noreturn
+}
+
+/// Reconstruct the straight-line instruction window ending at the call `call_vma`
+/// (inclusive), walking back over contiguous fall-through predecessors within the
+/// body until a control-flow instruction or a gap. Used to give
+/// [`ErrorRecognizer::call_is_terminal_error`] the `[(vma, insn)]` slice its
+/// nonzero-`status` back-scan needs at a mid-body call site.
+fn straightline_window<'a>(
+    body: &BTreeMap<u64, &'a Insn>,
+    entry: u64,
+    call_vma: u64,
+) -> Vec<(u64, &'a Insn)> {
+    let mut win: Vec<(u64, &Insn)> = Vec::new();
+    // Collect contiguous predecessors whose fall-through chains into the call.
+    let mut cur = call_vma;
+    loop {
+        let Some(&insn) = body.get(&cur) else { break };
+        win.push((cur, insn));
+        if cur == entry {
+            break;
+        }
+        // Previous instruction in address order.
+        let Some((&pv, &pi)) = body.range(..cur).next_back() else { break };
+        // Only chain if the predecessor falls straight through to `cur`.
+        if pi.fall_through != Some(cur) || pi.flow.is_jump || pi.flow.is_terminal {
+            break;
+        }
+        cur = pv;
+    }
+    win.reverse();
+    win
+}
+
 /// Run the call-graph no-return propagation over the Listing and return the
 /// concluded functions as [`NoReturnFact`]s.
 ///
@@ -388,7 +611,11 @@ fn function_is_no_return(
 /// newly-concluded function joins the terminal set so a caller whose last act is a
 /// call to *it* is re-evaluated next sweep (a wrapper-of-a-wrapper converges).
 /// Keyed by entry VMA (a `BTreeMap` ⇒ address-ordered, deduped).
-fn propagate_noreturn(listing: &Listing, error_recog: &ErrorRecognizer) -> Vec<NoReturnFact> {
+fn propagate_noreturn(
+    listing: &Listing,
+    error_recog: &ErrorRecognizer,
+    reach: bool,
+) -> Vec<NoReturnFact> {
     let mut discovered: BTreeMap<u64, NoReturnFact> = BTreeMap::new();
     // The "already no-return" anchor set: the Known-seeded functions plus
     // everything propagated so far. A call to one of these is a terminal transfer
@@ -413,7 +640,11 @@ fn propagate_noreturn(listing: &Listing, error_recog: &ErrorRecognizer) -> Vec<N
             if skip_candidate(listing, entry, &terminal) {
                 continue;
             }
-            if function_is_no_return(listing, entry, &terminal, error_recog) {
+            // The strict tail-call rule first (cheap, proven); then, if enabled, the
+            // CFG-reachability generalization (Ghidra's `targetOnlyCallsNoReturn`).
+            let concluded = function_is_no_return(listing, entry, &terminal, error_recog)
+                || (reach && function_reaches_only_noreturn(listing, entry, &terminal, error_recog));
+            if concluded {
                 let name = listing
                     .function_at(entry)
                     .and_then(|f| f.name.clone())
@@ -520,6 +751,128 @@ mod tests {
         assert!(!arg0_is_nonzero_const(&vec![(0, &m2), (1, &br), (2, &call)], 2));
         // No writer at all → reject.
         assert!(!arg0_is_nonzero_const(&vec![(0, &call)], 0));
+    }
+
+    // --- CFG-reachability rule (Ghidra targetOnlyCallsNoReturn port, DIV-19) --------
+
+    /// Build an `Insn` with explicit flow shape for the reachability walk tests.
+    #[allow(clippy::too_many_arguments)]
+    fn rinsn(
+        addr: u64,
+        fall_through: Option<u64>,
+        flows: Vec<u64>,
+        is_call: bool,
+        is_jump: bool,
+        is_terminal: bool,
+        is_computed: bool,
+        is_indirect: bool,
+        has_fallthrough: bool,
+    ) -> Insn {
+        let mut flow = crate::listing::model::FlowType::default();
+        flow.is_call = is_call;
+        flow.is_jump = is_jump;
+        flow.is_terminal = is_terminal;
+        flow.is_computed = is_computed;
+        flow.is_indirect = is_indirect;
+        flow.has_fallthrough = has_fallthrough;
+        Insn {
+            addr,
+            len: 1,
+            fall_through,
+            flow,
+            flows,
+            mnemonic: String::new(),
+            operands: String::new(),
+            pcode: None,
+        }
+    }
+
+    /// Run [`reaches_only_noreturn_walk`] over a hand-built body. `entry`=0x100,
+    /// `next`=0x200; `ABORT`=0x50 is the seeded terminal (no-return) callee.
+    fn walk(insns: &[Insn]) -> bool {
+        const NEXT: u64 = 0x200;
+        let body: BTreeMap<u64, &Insn> = insns.iter().map(|i| (i.addr, i)).collect();
+        let terminal: BTreeSet<u64> = [0x50u64].into_iter().collect();
+        reaches_only_noreturn_walk(&body, 0x100, Some(NEXT), &terminal, &ErrorRecognizer::disabled())
+    }
+    const ABORT: u64 = 0x50;
+
+    #[test]
+    fn reach_tail_noreturn_call_is_noreturn() {
+        // 0x100: call ABORT  (terminal callee, no return anywhere)
+        let b = [rinsn(0x100, Some(0x105), vec![ABORT], true, false, false, false, false, true)];
+        assert!(walk(&b), "a body whose only path ends in call abort is no-return");
+    }
+
+    #[test]
+    fn reach_midbody_noreturn_with_dead_tail_is_noreturn() {
+        // The reachability-ONLY case the strict rule misses: the no-return call is NOT
+        // the last instruction; a `ret` sits after it but is unreachable (the call's
+        // fall-through is never followed).
+        // 0x100: call ABORT (ft->0x105)   0x105: ret
+        let b = [
+            rinsn(0x100, Some(0x105), vec![ABORT], true, false, false, false, false, true),
+            rinsn(0x105, None, vec![], false, false, true, false, false, false),
+        ];
+        assert!(walk(&b), "mid-body call abort with an unreachable ret tail is no-return");
+    }
+
+    #[test]
+    fn reach_switch_of_noreturn_is_noreturn() {
+        // A switch (computed jump) whose every arm calls a no-return function.
+        // 0x100: jmp [table]  (computed, flows=[0x110,0x120])
+        // 0x110: call ABORT   0x120: call ABORT
+        let b = [
+            rinsn(0x100, None, vec![0x110, 0x120], false, true, false, true, true, false),
+            rinsn(0x110, Some(0x115), vec![ABORT], true, false, false, false, false, true),
+            rinsn(0x120, Some(0x125), vec![ABORT], true, false, false, false, false, true),
+        ];
+        assert!(walk(&b), "a switch whose every arm ends in call abort is no-return");
+    }
+
+    #[test]
+    fn reach_returning_function_is_not_noreturn() {
+        // 0x100: call FOO (returning, ft->0x105)  0x105: ret  → a RETURN is reachable.
+        let foo = 0x60; // NOT in the terminal set
+        let b = [
+            rinsn(0x100, Some(0x105), vec![foo], true, false, false, false, false, true),
+            rinsn(0x105, None, vec![], false, false, true, false, false, false),
+        ];
+        assert!(!walk(&b), "a reachable ret after a returning call ⇒ returns");
+    }
+
+    #[test]
+    fn reach_live_return_on_one_branch_is_not_noreturn() {
+        // 0x100: jz 0x120 (cond, flows=[0x120], ft->0x110)
+        // 0x110: call ABORT (dies)   0x120: ret (REACHABLE via the branch)
+        let b = [
+            rinsn(0x100, Some(0x110), vec![0x120], false, true, false, false, false, true),
+            rinsn(0x110, Some(0x115), vec![ABORT], true, false, false, false, false, true),
+            rinsn(0x120, None, vec![], false, false, true, false, false, false),
+        ];
+        assert!(!walk(&b), "a reachable ret on the taken branch ⇒ returns (conservative)");
+    }
+
+    #[test]
+    fn reach_unresolved_indirect_jump_is_rejected() {
+        // 0x100: jmp rax (indirect, NO resolved flows) → cannot prove.
+        let b = [rinsn(0x100, None, vec![], false, true, false, true, true, false)];
+        assert!(!walk(&b), "an unresolved indirect jump ⇒ cannot conclude no-return");
+    }
+
+    #[test]
+    fn reach_escape_to_returning_neighbour_is_rejected() {
+        // 0x100: jmp 0x9999 (direct, target OUTSIDE body, not terminal) → escape.
+        let b = [rinsn(0x100, None, vec![0x9999], false, true, false, false, false, false)];
+        assert!(!walk(&b), "a tail jump escaping the body to a neighbour ⇒ cannot conclude");
+    }
+
+    #[test]
+    fn reach_call_with_no_fallthrough_to_returning_callee_is_rejected() {
+        // 0x100: call FOO with no modelled fall-through, FOO not terminal → uncertain.
+        let foo = 0x60;
+        let b = [rinsn(0x100, None, vec![foo], true, false, false, false, false, false)];
+        assert!(!walk(&b), "a call with no fall-through to a non-terminal callee ⇒ reject");
     }
 
     #[test]
