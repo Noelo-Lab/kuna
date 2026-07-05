@@ -1,0 +1,30 @@
+# kuna-ghidra: the ghidra-mode process front-end (the native side of the
+# Ghidra GUI <-> decompiler stdin/stdout protocol; upstream's `decompile`
+# binary, built from ghidra_process.cc / ghidra_arch.cc).
+#
+# Phase 1 (see docs/ghidra-integration.md): wire-protocol complete, engine
+# stubbed.  Deliberately does NOT depend on kuna-decomp — the engine bridge
+# (Funcdata encode, ScopeGhidra, TypeFactoryGhidra, ...) is phase 2.
+
+[package]
+name = "kuna-ghidra"
+description = "kuna Rust port: ghidra-mode process front-end (Ghidra's `decompile` binary)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kuna-base.workspace = true
+# The tspec <sleigh> element decode (ELEM_SLEIGH / ATTRIB_UNIQBASE /
+# TruncationTag / register_translate_ids) — the GhidraTranslate::initialize
+# subset of translate.cc lives in kuna-sleigh.
+kuna-sleigh.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "kuna_ghidra"
+path = "src/bin/kuna_ghidra.rs"

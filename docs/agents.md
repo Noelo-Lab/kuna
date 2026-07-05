@@ -21,7 +21,7 @@ full what/why/how/validation. The SLEIGH `specs/` and the XML regression corpus
 
 | Path | What |
 |---|---|
-| `decompiler/` | **The engine.** Cargo workspace: `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (the decompiler), `kuna-analysis` (the program-prep loader/analyzer tier — ELF markup, strings, DWARF, …; the Ghidra "Run Analysis" layer), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (the SLEIGH compiler, binary `slacomp`), `kuna-cli` (the user-facing `kuna` binary), `kuna-harness`/`kuna-lift-diff` (dev test harness). `kuna-decomp/src/` is organized into stage-named folders (`s1_partition/`…`s9_emit/`, `substrate/`, `p0_knowledge/`, `infra/`) per `docs/stages.md`. See `docs/RUST_PORT.md`. |
+| `decompiler/` | **The engine.** Cargo workspace: `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (the decompiler), `kuna-analysis` (the program-prep loader/analyzer tier — ELF markup, strings, DWARF, …; the Ghidra "Run Analysis" layer), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (the SLEIGH compiler, binary `slacomp`), `kuna-cli` (the user-facing `kuna` binary), `kuna-ghidra` (the ghidra-mode process front-end — the `kuna_ghidra` binary that speaks Ghidra's decompiler-process protocol; see `docs/ghidra-integration.md` and `integrations/`), `kuna-harness`/`kuna-lift-diff` (dev test harness). `kuna-decomp/src/` is organized into stage-named folders (`s1_partition/`…`s9_emit/`, `substrate/`, `p0_knowledge/`, `infra/`) per `docs/stages.md`. See `docs/RUST_PORT.md`. |
 | `tests/datatests/` | Upstream XML regression tests (83 files → 675 assertions). The corpus `make test` runs. Vendored. |
 | `tests/stages/` | kuna-owned stage-model issue testcases (`make test-stages`, baseline `docs/baseline-stages.json`). |
 | `tests/golden/` | Differential golden vectors for the workspace test suite (`make rust-test`). |
@@ -30,7 +30,9 @@ full what/why/how/validation. The SLEIGH `specs/` and the XML regression corpus
 | `scripts/` | Python helpers backing the feature `pipeline/` (out of scope for the engine): `decompile.py` (thin library shim) and `paths.py`. The user-facing CLI is the Rust `kuna` binary, not these. |
 | `tools/pipeline/` | Driver + worker for the continuous feature pipeline (`run.sh`, `worker.sh`, `open_pr.sh`, `worker_prompt.md`, `install_gh.sh`). See `docs/pipeline.md`. |
 | `tools/sync_upstream.py` | Port upstream Ghidra changes into kuna (specs + datatests only — the C++ source is gone). |
+| `integrations/` | The Ghidra extension: a plugin that makes the **stock Ghidra GUI** spawn kuna's `kuna_ghidra` binary as its decompiler core (reflection exepath swap; binary ships in the module's `os/<platform>/`). See `docs/ghidra-integration.md`. |
 | `docs/RUST_PORT.md` | **The port summary**: what was ported (decompiler + SLEIGH compiler), why, how, and the validation gates. Detailed port history lives under `docs/rust-port/` (ADRs, `losses.md`, `verification.md`, `plan.md`). |
+| `docs/ghidra-integration.md` | Using kuna as Ghidra's decompiler core (Phases 1–4, seams, wire protocol); the core-agnostic interface spec is `docs/decompiler-core-interface.md`. |
 | `docs/stages.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
 | `docs/stage-mapping.md` | Maps every upstream source module to a stage (P0/S1–S9). The live registry is queryable at the console (`stage list/map/catalog`); the Rust implementation is under `decompiler/crates/kuna-decomp/`. |
 | `docs/baseline.json` | Recorded test-pass oracle (parity check) — the **kuna** oracle since DIV-2 (`docs/divergences.md`), no longer pristine-upstream. |

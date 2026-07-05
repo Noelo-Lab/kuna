@@ -1,0 +1,20 @@
+# Gradle build state
+.gradle/
+build/
+dist/
+bin/
+
+# IDE metadata (Eclipse GhidraDev / VSCode)
+.classpath
+.project
+.pydevproject
+.settings/
+.vscode/
+
+# Jars dropped into lib/ by buildExtension.gradle's copyDependencies task
+lib/*.jar
+
+# The kuna native binary is a build artifact: it is copied into os/<platform>/
+# from decompiler/target/release/ before packaging (see os/linux_x86_64/README.md)
+os/*/kuna_ghidra
+os/*/kuna_ghidra.exe

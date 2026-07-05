@@ -180,6 +180,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-ghidra"
+version = "0.1.0"
+dependencies = [
+ "kuna-base",
+ "kuna-sleigh",
+]
+
+[[package]]
 name = "kuna-harness"
 version = "0.1.0"
 dependencies = [
