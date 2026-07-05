@@ -36,16 +36,48 @@ a call-graph fixpoint. Result: `ssh_tun_confirm` 222 LOC → 18 (Ghidra 24),
 subsumes the 8 "covered-by-option: noreturn_disc" cases (the agents' proposed knob is
 exactly this rule).
 
-### 2. Loop structuring — **~7 genuine-gaps** → next port
+### 2. Loop structuring — **~7 genuine-gaps** → ROOT-CAUSED (deferred, see below)
 
-`CollapseStructure::ruleBlockWhileDo` (blockaction.cc) fed by
-`ActionNodeJoin`/`ConditionalJoin`: Ghidra de-rotates a `-O2` guarded tail-tested loop
-(the compiler-peeled guard/latch pair) into a single **top-tested `while`** by joining the
-duplicated condition (`functionalEqualityLevel` + `nodeJoinCreateBlock`), then
-`BlockWhileDo::finalTransform` / `analyze_for_loops` recovers the `for` init/increment.
-kuna leaves the rotated do-while + a residual guard goto. Families: `loop-while-recovery`,
+Symptom: on a `-O2` guarded tail-tested loop kuna emits `if (c) { do { body } while (c); }`
+(peeled guard + do-while) where Ghidra emits a single top-tested `while (c) { body }`. Both
+are correct; the margins are small (2–13). Families: `loop-while-recovery`,
 `loop-while-reconstruction`, `loop-derotation`, `for-loop-recovery`, `while-guard-folding`,
-`goto-structuring` (×2). Cases: e.g. iproute2 / bzip2 `-O2` loops.
+`goto-structuring`. Representative: bash `dequote_list` (0x6f410).
+
+**Root cause (traced to the bottom, dequote_list).** Ghidra un-rotates the loop with
+`ActionNodeJoin`/`ConditionalJoin`: it joins the guard block and the latch block (both
+2-out, both branching to {exit, loop-top}) once `findDups` proves their `!= 0` tests
+functionally equal, then `ruleBlockWhileDo` forms the `while`. **kuna ports all of this
+line-for-line** (`s8_structure/blockaction.rs`: `ConditionalJoin::{match_blocks,find_dups}`,
+the `ActionNodeJoin` driver, `functional_equality_level`; and `isDoNothing`/`hasOnlyMarkers`/
+`hasNoImmediateCopy`/`unblockedMulti` in `funcdata_block.rs`) — verified by tracing: the
+driver never even *tries* `match(guard, latch)`.
+
+The reason is one block upstream. GCC's rotated loop has the guard `jmp` into the loop top as
+its **own empty forwarding block** (a lone `CPUI_BRANCH`, @0x6f430) sitting between the guard
+and the loop top. So the guard branches to `{exit, jmpblock}` and the latch to `{exit,
+loop-top}` — different targets, no join. Ghidra removes that empty block (`ActionDoNothing` /
+`ActionLateDoNothing` → `isDoNothing`), after which the guard branches directly to the loop
+top and the join fires. **kuna keeps the block**: tracing `ActionDoNothing` shows it is
+correctly *delayed* (`unblockedMulti=true`, `hasNoImmediateCopy=false` — there is an immediate
+copy), but by `ActionLateDoNothing` time it is **no longer `isDoNothing`** (`hasOnlyMarkers`
+is false). The difference: **kuna materializes the loop's phi-init (`v = a0`) as a real
+`CPUI_COPY` op *inside* the pre-header block** — and a `COPY` is not a marker — so the block
+never becomes empty-enough to remove before late-do-nothing runs, whereas Ghidra keeps the
+phi-init as a `MULTIEQUAL` edge input (the block stays a lone branch and is removed). By the
+time the copy is trimmed (post-merge), the do-nothing sweeps have already passed.
+
+**Fix options (deferred — high effort/risk for a cosmetic, both-correct gain):**
+1. *Core-heritage*: don't materialize the loop pre-header phi-init as a `COPY` op (keep it a
+   `MULTIEQUAL` edge input like Ghidra). Correct but **high-risk** — phi/COPY materialization
+   is pipeline-wide and would need full 675-datatest re-validation.
+2. *Post-structuring guard-fold pass* (recommended, ~iteregion-sized, default-off/gated):
+   after structuring, rewrite a `BlockCondition{ true: BlockDoWhile }` whose guard test and
+   loop-continuation test are the same predicate on the loop-head `MULTIEQUAL` into a single
+   `BlockWhileDo`, dropping the guard. Operates on the structured tree, so it sidesteps the
+   do-nothing/copy-trim timing entirely.
+
+Deferred after landing the 44-case `noreturn_reach` win; option 2 is the scoped follow-up.
 
 ### 3. Merge / copy-propagation quality — **~6 genuine-gaps** → port after (2)
 
