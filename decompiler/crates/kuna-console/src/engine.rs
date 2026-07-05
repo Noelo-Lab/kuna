@@ -603,6 +603,8 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
         .base_mut()
         .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
         .translate_mut()
+        .as_sleigh_mut()
+        .expect("install_register_lookup: standalone Sleigh engine")
         .install_register_lookup()?;
 
     // The tail of Architecture::init (buildTypegrp/buildCoreTypes/buildAction/…).

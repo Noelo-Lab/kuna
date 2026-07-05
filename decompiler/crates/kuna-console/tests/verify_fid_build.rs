@@ -83,7 +83,12 @@ fn records_for_fixture() -> Option<Vec<kuna_analysis::s1_fid::db::FidRecord>> {
 
     let bytes = std::fs::read(&bin).expect("read fixture .o");
     let image = ObjectLoadImage::from_bytes(&bin, &bytes).expect("open loadimage");
-    Some(build_records(&bytes, &image, arch, arch.translate()))
+    Some(build_records(
+        &bytes,
+        &image,
+        arch,
+        arch.translate().as_sleigh().expect("standalone Sleigh engine"),
+    ))
 }
 
 #[test]

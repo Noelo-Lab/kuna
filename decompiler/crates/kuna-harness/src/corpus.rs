@@ -547,7 +547,9 @@ pub fn extract_rust_model(bs: &Bootstrap, c: &Case) -> Result<StructModel, Strin
     let fd = Funcdata::new(c.stem, c.stem, ir_arch, entry, uniq_start, 0x40)
         .map_err(|e| format!("Funcdata::new: {e}"))?;
 
-    let env = DiffEnv { sleigh: base.translate() };
+    let env = DiffEnv {
+        sleigh: base.translate().as_sleigh().expect("diff harness: standalone Sleigh engine"),
+    };
     let mut flow = FlowInfo::new(fd, &env);
     flow.generate_ops().map_err(|e| format!("EXCLUDED: generate_ops {}", seam_reason(&e)))?;
     flow.generate_blocks()

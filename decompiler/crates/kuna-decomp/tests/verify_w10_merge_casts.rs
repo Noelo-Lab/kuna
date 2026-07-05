@@ -344,7 +344,7 @@ mod harness {
             .base_mut()
             .ok_or("no Architecture base after build_translator")?
             .translate_mut()
-            .install_register_lookup()
+            .as_sleigh_mut().expect("standalone Sleigh engine").install_register_lookup()
             .map_err(|e| format!("install_register_lookup: {e}"))?;
         if !specs.compilerfile.is_empty() {
             if let Ok(cspec) = std::fs::read(&specs.compilerfile) {

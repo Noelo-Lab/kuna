@@ -1565,7 +1565,6 @@ use crate::cast::{CastContext, CastStrategy, CastStrategyC, OpRef, VnRef};
 use crate::funcdata::Funcdata;
 use crate::seams::{BlockId, OpId, VarnodeId};
 use kuna_num::opcodes::OpCode;
-use kuna_base::space::RegisterLookup;
 
 /// One resolved member token of a partial-symbol access walk (C++
 /// `PartialSymbolEntry`, printc.cc:1985-1994).  A struct/union field becomes a
@@ -6372,7 +6371,6 @@ impl PrintC {
     /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.
     fn push_float_ir(&mut self, arch: &Architecture, val: uintb, sz: int4, op: OpId) {
         use kuna_num::float::floatclass;
-        use kuna_sleigh::translate::Translate;
         let force_scinote = self.context.is_set(modifiers::FORCE_SCINOTE);
         let tok = match arch.translate().get_float_format(sz) {
             None => format_float_token(FloatClass::Unknown, false, "", force_scinote),
@@ -6475,7 +6473,6 @@ impl PrintC {
         char_type: &std::rc::Rc<crate::dtype::Datatype>,
     ) -> bool {
         use crate::stringmanage::StringManager;
-        use kuna_sleigh::translate::Translate;
         // Pull UTF-8 string data through the architecture's persistent
         // `stringManager` (C++ `glb->stringManager`).  Using the shared instance
         // (not a transient one) is what lets `getInternalString`-registered

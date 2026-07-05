@@ -531,7 +531,9 @@ fn ir_boundary_manager(src: &AddrSpaceManager) -> AddrSpaceManager {
 /// "reached the documented seam" check.  Proves the bootstrapped engine is wired
 /// into the flow engine end-to-end.
 fn real_flow_links_ops(bs: &Bootstrap, fd: Funcdata) -> bool {
-    let env = BootstrapEnv { sleigh: bs.arch.sleigh().base().unwrap().translate() };
+    let env = BootstrapEnv {
+        sleigh: bs.arch.sleigh().base().unwrap().translate().as_sleigh().expect("standalone Sleigh"),
+    };
     let mut flow = FlowInfo::new(fd, &env);
     let entry = flow.data.get_address().clone();
     let before = flow.data.obank().iter_dead().count();

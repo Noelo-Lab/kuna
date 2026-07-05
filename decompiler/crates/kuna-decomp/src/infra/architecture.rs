@@ -54,6 +54,7 @@ use kuna_sleigh::sleigh::Sleigh;
 use kuna_sleigh::translate::{Translate, UniqueLayout};
 
 use crate::action::ActionDatabase;
+use crate::engine_translate::EngineTranslate;
 use crate::database::Database;
 use crate::dtype::{type_metatype, TypeFactory, TypeFactoryImpl};
 use crate::flow::flow_flags;
@@ -828,12 +829,15 @@ pub struct Architecture {
 
     /// The disassembly engine for this binary (C++ `translate`, a `Translate*`).
     ///
-    /// Owned here as a concrete [`Sleigh`] (the C++ `Architecture` is-a
-    /// `AddrSpaceManager` and owns its `Translate`; in the Rust port the
-    /// `AddrSpaceManager` lives inside `Sleigh`'s `SleighBase`, reachable via
-    /// `base().manager()`).  The non-SLEIGH `Translate` backends (`raw_arch`) are
-    /// their own item; until then the engine is concrete so `manage()` works.
-    translate: Sleigh,
+    /// Owned behind the [`EngineTranslate`] trait object (the
+    /// `Architecture`↔translator seam) rather than a concrete [`Sleigh`], so a
+    /// ghidra-mode translator can replace `Sleigh` without `kuna-decomp` naming
+    /// a ghidra-specific type (see `crate::engine_translate` /
+    /// `docs/rust-port/ghidra-phase2-plan.md` §2.2).  The C++ `Architecture`
+    /// is-a `AddrSpaceManager` and owns its `Translate`; here the manager lives
+    /// inside the engine, reached through the trait's `manager*` accessors.
+    /// Only `Sleigh` implements the trait today.
+    translate: Box<dyn EngineTranslate>,
 }
 
 impl Architecture {
@@ -983,7 +987,10 @@ impl Architecture {
             lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
-            translate,
+            // Box the concrete engine into the `EngineTranslate` seam (only
+            // `Sleigh` implements it today; the field type keeps the ghidra
+            // translator installable later).
+            translate: Box::new(translate),
         };
         // C++ ctor calls resetDefaultsInternal(); then sets min_funcsymbol_size=1
         // etc. (those one-offs are folded into resetDefaultsInternal's siblings
@@ -1370,17 +1377,20 @@ impl Architecture {
     /// `AddrSpaceManager`); forwarded to the owned `Sleigh` engine's
     /// `SleighBase`.
     pub fn manage(&self) -> &AddrSpaceManager {
-        self.translate.base().manager()
+        self.translate.manager()
     }
 
-    /// Borrow the disassembly engine (C++ `translate`).
-    pub fn translate(&self) -> &Sleigh {
-        &self.translate
+    /// Borrow the disassembly engine (C++ `translate`) through the
+    /// [`EngineTranslate`] seam.  External callers reach the `Translate` /
+    /// `RegisterLookup` surface directly; those needing the concrete standalone
+    /// engine downcast via [`EngineTranslate::as_sleigh`].
+    pub fn translate(&self) -> &dyn EngineTranslate {
+        &*self.translate
     }
 
     /// Mutably borrow the disassembly engine.
-    pub fn translate_mut(&mut self) -> &mut Sleigh {
-        &mut self.translate
+    pub fn translate_mut(&mut self) -> &mut dyn EngineTranslate {
+        &mut *self.translate
     }
 
     /// Get the minimum size of a laned register in bytes, or -1 if there are no
@@ -1690,7 +1700,7 @@ impl Architecture {
         if self.manage().get_fspec_space().is_some() {
             return Ok(());
         }
-        let manager = self.translate.base_mut().manager_mut();
+        let manager = self.translate.manager_mut();
         let next = manager.num_spaces();
         manager.insert_space(Rc::new(FspecSpace::new(next)))?;
         let next = manager.num_spaces();
@@ -1740,7 +1750,7 @@ impl Architecture {
             .expect("addSpacebase: base register has a null space (C++ UB)")
             .get_delay()
             + 1;
-        let manager = self.translate.base_mut().manager_mut();
+        let manager = self.translate.manager_mut();
         let ind = manager.num_spaces();
         let spc = Rc::new(SpacebaseSpace::new(
             nm,
@@ -2038,7 +2048,7 @@ impl Architecture {
         // is a `Decoder` consumer, identical to C++).  Each `<range>`/`<register>`
         // becomes a `RangeProperties`, then `addToGlobalScope`'s `Range(props,this)`
         // + `symboltab->addRange`.
-        let manager = self.translate.base().manager_rc();
+        let manager = self.translate.manager_rc();
         let registry = IdRegistry::with_base_ids();
         let scope = match self.symboltab.get_global_scope() {
             Some(s) => s,
@@ -2131,7 +2141,7 @@ impl Architecture {
         }
         // The injection element/attribute ids the payload decode reads
         // (callfixup/pcode/body/target/name/...).
-        let manager = self.translate.base().manager_rc();
+        let manager = self.translate.manager_rc();
         let mut registry = IdRegistry::with_base_ids();
         crate::pcodeinject::register_ids(&mut registry);
         for fixup in fixups.iter() {
@@ -2196,7 +2206,7 @@ impl Architecture {
             if fixups.is_empty() {
                 return Ok(());
             }
-            let manager = self.translate.base().manager_rc();
+            let manager = self.translate.manager_rc();
             let mut registry = IdRegistry::with_base_ids();
             crate::pcodeinject::register_ids(&mut registry);
             crate::userop::register_ids(&mut registry);
@@ -2215,8 +2225,12 @@ impl Architecture {
         //    borrow of self.translate does not alias the &mut library.
         let mut lib = std::mem::take(&mut self.pcodeinjectlib);
         // The SnippetLanguage is the loaded `SleighBase`; drive parse_inject over
-        // it (the &SleighBase read does not alias the &mut library).
-        let parse_res = lib.parse_inject_all(self.translate.base());
+        // it (the &SleighBase read does not alias the &mut library).  Injection
+        // compilation is a Sleigh-engine concern, so reach the concrete engine's
+        // `SleighBase` through the downcast (only `Sleigh` implements the seam).
+        let parse_res = lib.parse_inject_all(
+            self.translate.as_sleigh().expect("parse_inject_all: standalone Sleigh engine").base(),
+        );
         self.pcodeinjectlib = lib;
         parse_res
     }
@@ -2361,7 +2375,17 @@ impl Architecture {
         &self,
         f: impl FnOnce(&mut dyn kuna_sleigh::globalcontext::ContextDatabase) -> R,
     ) -> R {
-        self.translate.with_context_db_mut(f)
+        // The engine seam exposes the object-safe `with_context_db_dyn` (a
+        // `&mut dyn FnMut`, so it survives the `Box<dyn EngineTranslate>` trait
+        // object); adapt the generic, value-returning closure over it.  The
+        // protocol is synchronous — the closure runs exactly once — so `f` and
+        // the result move through `Option` slots cleanly.
+        let mut f = Some(f);
+        let mut result: Option<R> = None;
+        self.translate.with_context_db_dyn(&mut |db| {
+            result = Some((f.take().expect("with_context_db_mut: closure runs once"))(db));
+        });
+        result.expect("with_context_db_mut: closure ran")
     }
 
     /// Resolve a register by name to its storage (C++
@@ -2752,12 +2776,11 @@ impl Architecture {
         // manager (so `space="ram"` resolves to the real ram space).  The Rc
         // keeps the manager alive for the decoder while the context database
         // (a sibling RefCell on the engine) is borrowed mutably — no aliasing.
-        let manager = self.translate.base().manager_rc();
+        let manager = self.translate.manager_rc();
         let mut registry = IdRegistry::with_base_ids();
         register_globalcontext_ids(&mut registry);
         let mut decoder = XmlDecode::new_with_root(&manager, &registry, &context_data, 0);
-        self.translate
-            .with_context_db_mut(|db| db.decode_from_spec(&mut decoder))?;
+        self.with_context_db_mut(|db| db.decode_from_spec(&mut decoder))?;
         Ok(())
     }
 
@@ -2782,7 +2805,7 @@ impl Architecture {
         use kuna_base::address::{Range, RangeProperties};
         use kuna_base::marshal::{IdRegistry, XmlDecode};
 
-        let manager = self.translate.base().manager_rc();
+        let manager = self.translate.manager_rc();
         let registry = IdRegistry::with_base_ids();
         // C++ `decodeVolatile`: while peekElement() != 0 { Range r; r.decode(decoder);
         // symboltab->setPropertyRange(Varnode::volatil, r); }.  Each child is a
@@ -3529,7 +3552,7 @@ impl Architecture {
         // the engine's float formats so the table is self-contained (the C++
         // passes the long-lived `Translate *`).
         let provider: Rc<dyn kuna_num::opbehavior::FloatFormatProvider> =
-            Rc::new(OwnedFloatFormats::from_translate(&self.translate));
+            Rc::new(OwnedFloatFormats::from_translate(self.translate.as_ref()));
         let mut behaviors: Vec<Option<Rc<dyn kuna_num::opbehavior::OpBehavior>>> = Vec::new();
         kuna_num::opbehavior::register_instructions(&mut behaviors, &provider);
         self.opbehaviors = behaviors;
@@ -3962,7 +3985,7 @@ impl crate::userop::UseropArchitecture for Architecture {
         // C++ `glb->translate->getUserOpNames(res)`.  The Sleigh translate hands
         // back display strings; convert to the byte-string form the manager keys.
         let mut res: Vec<String> = Vec::new();
-        kuna_sleigh::translate::Translate::get_user_op_names(&self.translate, &mut res);
+        self.translate.get_user_op_names(&mut res);
         res.into_iter().map(String::into_bytes).collect()
     }
 
@@ -4012,8 +4035,7 @@ impl OwnedFloatFormats {
     /// Clone the engine's float formats for the standard p-code encoding sizes
     /// (the C++ candidates: 2/4/8/10/16-byte IEEE formats; the engine returns
     /// only those it actually defines).
-    fn from_translate(translate: &Sleigh) -> Self {
-        use kuna_sleigh::translate::Translate;
+    fn from_translate(translate: &dyn EngineTranslate) -> Self {
         let mut formats = Vec::new();
         for size in [2, 4, 8, 10, 16] {
             if let Some(fmt) = translate.get_float_format(size) {

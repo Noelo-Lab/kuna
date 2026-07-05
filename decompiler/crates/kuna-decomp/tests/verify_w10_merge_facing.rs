@@ -183,7 +183,7 @@ fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
         .base_mut()
         .unwrap()
         .translate_mut()
-        .install_register_lookup()
+        .as_sleigh_mut().expect("standalone Sleigh engine").install_register_lookup()
         .map_err(|e| format!("install_register_lookup: {e}"))?;
 
     arch.sleigh_mut()
