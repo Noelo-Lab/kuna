@@ -184,7 +184,6 @@ fn rust_render(stem: &str) -> Result<String, String> {
             None => continue,
         };
         let entry = Address::new(space, sym.offset);
-        base.duplicate_shared_returns = false; // (kuna) DIV-18: upstream-parity form for the dump
         if let Ok(fd) = decompile_func(base, &sym.name, entry, 0) {
             out.push_str(&print_c(base, &fd));
             out.push('\n');
@@ -209,8 +208,6 @@ fn rust_decompile_first(stem: &str) -> Result<(XmlArchitecture, Funcdata), Strin
         .ok_or(format!("no space {space_name}"))?
         .clone();
     let entry = Address::new(space, off);
-    // (kuna) DIV-18: pin returndup off — this fence asserts the upstream-parity condexe structure.
-    base.duplicate_shared_returns = false;
     let fd = decompile_func(base, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
     Ok((xarch, fd))
 }
@@ -501,7 +498,6 @@ fn probe_scan_corpus_for_any_condition_node() {
             let base = match xarch.sleigh_mut().base_mut() { Some(b)=>b, None=>continue };
             let space = match base.manage().get_space_by_name(&sym.space) { Some(s)=>Rc::clone(s), None=>continue };
             let entry_addr = Address::new(space, sym.offset);
-            base.duplicate_shared_returns = false; // (kuna) DIV-18: upstream-parity form for the structure scan
             if let Ok(fd) = decompile_func(base, &sym.name, entry_addr, 0) {
                 total_funcs += 1;
                 let opcs = condition_opcodes(&fd);

@@ -49,7 +49,6 @@ f30f1efa89f885ff7f0c85f67e0d01f083ee0175f9c3b863000000c3
 <symbol space="ram" offset="0x100000" name="el"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <!-- kuna: the 10 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
   <com>option gotoreduce off</com>
   <com>option crossjumprevert off</com>

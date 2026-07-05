@@ -46,7 +46,6 @@
 <symbol space="ram" offset="0x700" name="get_funcptr"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <com>map fun r0x5fc some_funcptr_func</com>
   <com>map fun r0x700 get_funcptr</com>
   <com>parse line extern void * get_funcptr(void *p);</com>

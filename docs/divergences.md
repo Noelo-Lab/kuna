@@ -675,7 +675,16 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   iteregion off` pins the upstream if/else baseline, pass 2 the default-on ternary).
 - **Date**: 2026-07-05.
 
-## DIV-18: return duplication (early-return recovery) on by default (decbench F4: `returndup`)
+## DIV-18: return duplication (early-return recovery) on by default (decbench F4: `returndup`) — **REVERTED**
+
+> **REVERTED (2026-07-05).** `returndup` is back to **default-OFF** (a per-function runtime
+> choice, `--option returndup on`). The decbench re-run on the newest kuna measured
+> returndup default-on **regressing the aggregate GED perfect-structure count by ~976**
+> (it fired 21,768× across 550 binaries; early-return recovery diverges from the source's
+> merged short-circuit form on the majority, where the source did not use early returns). It
+> remains a documented runtime choice (`docs/decbench/runtime-choices.md`) — the merged form
+> is the byte-identical upstream default; flip it on only where the early-return form matches
+> the source. The original default-on rationale is kept below for the record.
 
 - **Flip**: option **`returndup`** (default **on**, `change_kind = structure-recovery`,
   `source_decompiler = angr`). The gotoless complement of the ported `ActionReturnSplit`

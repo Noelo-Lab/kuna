@@ -13,7 +13,6 @@ fc8905d9072000837dfc0a75188b45fc
 <symbol space="ram" offset="0x100825" name="condconst_multi"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <com>parse line extern int4 condconst_multi(int4 a,int4 b);</com>
   <com>map addr r0x301014 int4 glob1</com>
   <com>map addr r0x301020 int4 glob2</com>

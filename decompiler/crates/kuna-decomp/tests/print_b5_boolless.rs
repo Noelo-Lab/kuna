@@ -259,8 +259,6 @@ fn run_full(stem: &str, which: usize) -> Result<(XmlArchitecture, Funcdata), Str
         .ok_or(format!("no space {space_name}"))?
         .clone();
     let entry = Address::new(space, off);
-    // (kuna) DIV-18: pin returndup off — this B5 oracle is the upstream-parity merged form.
-    arch.duplicate_shared_returns = false;
     let fd = decompile_func(arch, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
     Ok((xarch, fd))
 }

@@ -98,7 +98,6 @@ ff90c9c3554889e548897df88975f489
 <symbol space="ram" offset="0x100b62" name="getvalue6"/>
 </binaryimage>
 <script>
-  <com>option returndup off</com>
   <com>option readonly on</com>
   <com>parse line union afunion { int4 a; int4 arr[10]; };</com>
   <com>parse line union baseunion { int4 intfield; float4 floatfield; uint4 uintfield; };</com>
