@@ -141,7 +141,13 @@ fn fixture_has_all_68_settables() {
     // ORDERING gate (SAILR P2: H2 post-dominator + dominance-tiered
     // crossing/secondary/other bucketing), default-off opt-in — only reorders which
     // goto is chosen when virtualizing, so OFF is byte-identical.
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 70);
+    // +1 for the `returndup` angr SAILR gotoless `ReturnDuplicatorHigh` gate —
+    // duplicate a shared bare-epilogue RETURN block into each predecessor so a
+    // `if (c) { body; return X; } return Y;` guard shape structures as early returns
+    // instead of one comma-folded exit (decbench F4, default-off opt-in).
+    // +1 for the `noreturn_error` gate — conclude error(nonzero,...) wrappers no-return
+    // (decbench F2, default-on but Listing-gated so byte-identical in the datatest path).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 71);
 }
 
 #[test]

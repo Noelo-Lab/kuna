@@ -182,21 +182,23 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     let nonblank = lines.iter().filter(|l| !l.is_empty()).count();
 
     // All universalAction passes are ported: the allowlist is empty, so every
-    // one of the 252 C++ leaves renders.  (+6 kuna-only leaves: `branchflip`,
+    // one of the 252 C++ leaves renders.  (+7 kuna-only leaves: `branchflip`,
     // option-gated default-off, registered after the second `prefercomplement`;
     // `gotoreduce`, option-gated default-off, after `finalstructure`; `taildup`,
     // option-gated default-off, right after `gotoreduce`;
     // `ifelseflatten`, option-gated default-off, after `taildup`;
-    // `crossjumprevert`, option-gated default-off, right after `ifelseflatten`; and
-    // `dedupitetail`, option-gated default-off, right after `crossjumprevert`.)
+    // `crossjumprevert`, option-gated default-off, right after `ifelseflatten`;
+    // `dedupitetail`, option-gated default-off, right after `crossjumprevert`; and
+    // `returndup`, option-gated default-off, in the `returnsplit` group right after
+    // `returnsplit` (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 265,
-        "full universal tree must render 252 C++ leaves + 6 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail) + 7 container headers"
+        nonblank, 266,
+        "full universal tree must render 252 C++ leaves + 7 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note

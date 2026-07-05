@@ -1650,9 +1650,12 @@ mod tests {
         // test_decompiling_abnormal_switch_case_case3,
         // and ghangr-optimized-memcpy-6301a9 / unrolledguard, angr
         // test_decompiling_optimized_memcpy,
-        // and ghdec-whiledo-complex / decbench F3 whiledo isComplex parity
+        // and ghdec-whiledo-complex / decbench F3 whiledo isComplex parity,
+        // and ghangr-returndup / returndup (angr SAILR gotoless ReturnDuplicatorHigh:
+        // duplicate a shared bare-epilogue return into each predecessor so the classic
+        // guard shape structures as early returns; decbench F4),
         // and ghangr-noreturn-error / noreturn_error, decbench F2 error(nonzero,...) wrappers)
-        assert_eq!(count, 158, "corpus file count drifted");
+        assert_eq!(count, 159, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
