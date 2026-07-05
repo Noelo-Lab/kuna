@@ -43,6 +43,7 @@
 <symbol space="ram" offset="0x0" name="FUN_0"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>option condexeplace off</com>
   <com>lo fu FUN_0</com>
   <com>decompile</com>

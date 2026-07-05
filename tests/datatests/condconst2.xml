@@ -20,6 +20,7 @@
 <symbol space="ram" offset="0x40228758" name="myfunc"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>set context TMode 1 [ram,0x4022871a] [ram,0x40228800]</com>
   <com>parse line extern char zeroprop(int4 *ptrint,int4 val);</com>
   <com>parse line extern void throughadd(int4 *tadd,int4 tval);</com>

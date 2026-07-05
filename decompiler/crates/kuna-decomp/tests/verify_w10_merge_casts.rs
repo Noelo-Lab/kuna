@@ -385,6 +385,9 @@ mod harness {
             .ok_or(format!("no space {space_name}"))?
             .clone();
         let entry = Address::new(space, off);
+        // (kuna) DIV-18: returndup is default-on, but this fence tests ActionSetCasts on the
+        // stable merged `boolless` form (the B5 oracle); pin returndup off so the two are orthogonal.
+        arch.duplicate_shared_returns = false;
         let fd = decompile_func(arch, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
         Ok(print_c(arch, &fd))
     }

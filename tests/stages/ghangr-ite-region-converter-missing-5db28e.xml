@@ -49,6 +49,7 @@ f30f1efa554889e54883ec4048897dc8488975c064488b042528000000488945f831c0488b45c8ba
 <symbol space="ram" offset="0x22e5" name="authenticate"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>option stackguard off</com>
   <com>lo fu authenticate</com>
   <com>decompile</com>

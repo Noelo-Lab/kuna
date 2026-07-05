@@ -61,6 +61,7 @@ b800000000eb05b80200000044
 <symbol space="ram" offset="0x401000" name="cross"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>option regionstructure on</com>
   <com>option regionedgeorder off</com>
   <com>lo fu cross</com>

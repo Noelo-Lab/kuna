@@ -27,6 +27,7 @@ eb068b45ec8945fc8b45fc5dc3
 <symbol space="ram" offset="0x1007a4" name="condconst_conn"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <com>parse line extern void condconst1(int4 *ptr,int4 a,int4 b,int4 c);</com>
   <com>parse line extern void condconst_copy(int4 d);</com>
   <com>parse line extern int4 condconst_conn(int4 x,int4 y);</com>

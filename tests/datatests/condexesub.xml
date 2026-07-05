@@ -17,6 +17,7 @@
 <symbol space="ram" offset="0x402d29e0" name="iblockadd"/>
 </binaryimage>
 <script>
+  <com>option returndup off</com>
   <!-- kuna: branchflip default-on (DIV-13); this upstream test pins the pre-branchflip (Ghidra polarity) rendering -->
   <com>option branchflip off</com>
   <com>option readonly on</com>
