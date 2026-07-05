@@ -1812,6 +1812,39 @@ impl PrintC {
         let mut decls: Vec<(crate::seams::HighVariableId, String)> = Vec::new();
         let mut seen: std::collections::BTreeSet<crate::seams::HighVariableId> =
             std::collections::BTreeSet::new();
+        // (kuna) The authoritative signature-parameter name set. The `is_param`
+        // storage-containment test below false-positives on a LOCAL high that merely
+        // has an instance overlapping a parameter register (a merge artifact: an
+        // un-coalesced phi output that picked up a param-register varnode). Such a
+        // local was then SKIPPED from body declarations yet still emitted in the
+        // statements -> an **undeclared variable / invalid C** (e.g. tar
+        // make_directory's `v5`). Ghidra keys declarations on the Symbol category, so a
+        // no_category local is always declared even when it overlaps a parameter; gate
+        // the skip on the high's name actually being one of the prototype's parameters.
+        // This only makes the skip STRICTER (never removes a declaration) — byte-identical
+        // on any function that was already valid C.
+        let param_names: std::collections::BTreeSet<String> = {
+            let proto = fd.get_func_proto();
+            let mut s = std::collections::BTreeSet::new();
+            if proto.has_store() {
+                for i in 0..proto.num_params() {
+                    if let Some(p) = proto.get_param(i) {
+                        let n = p.get_name();
+                        let nm = if n.is_empty() {
+                            if arch.name_style_angr {
+                                crate::database::kuna_arg_name(i)
+                            } else {
+                                format!("param_{}", i + 1)
+                            }
+                        } else {
+                            n.to_string()
+                        };
+                        s.insert(nm);
+                    }
+                }
+            }
+            s
+        };
         let vlist: Vec<crate::seams::VarnodeId> = fd.vbank().iter_loc().collect();
         for vn in vlist {
             let high = match fd.vbank().get(vn).and_then(|v| v.get_high()) {
@@ -1996,7 +2029,11 @@ impl PrintC {
                     })
                 })
                 .unwrap_or(false);
-            if is_param {
+            // Only skip as a signature parameter when the high is ALSO named as one of
+            // the prototype's parameters (see `param_names` above): the storage test
+            // alone false-positives on a local overlapping a param register, which would
+            // then be emitted UNDECLARED (invalid C).
+            if is_param && param_names.contains(name.as_str()) {
                 continue;
             }
             decls.push((high, name));

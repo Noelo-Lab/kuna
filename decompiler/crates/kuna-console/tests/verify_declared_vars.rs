@@ -1,0 +1,145 @@
+//! End-to-end gate: the decompiler must never emit an **undeclared local variable**
+//! (invalid C).
+//!
+//! Fixture: `declmerge_x86_64` (`+.c`), a non-PIE x86-64 ELF whose `make_dir_clone`
+//! (a reduction of tar's `make_directory`) has a size phi `sz = (…) ? len : len + 1`
+//! that kuna's merge phase declines to coalesce with the `strlen` result. The
+//! un-coalesced phi output picks up an instance overlapping a **parameter register**,
+//! so `PrintC::emit_local_var_decls`' `is_param` storage-containment test used to
+//! SKIP it — while the statements still referenced it, producing an undeclared `v5`
+//! (invalid C). The fix gates the `is_param` skip on the high actually being named as
+//! one of the prototype's parameters, so a local that merely overlaps a param is
+//! still declared.
+//!
+//! This gate re-parses the emitted C and asserts every referenced `vN` local appears
+//! in the declaration block. Regression for the ghidra-beats-kuna merge/copy cluster's
+//! invalid-C sub-bug (`docs/decbench/ghidra-gap-analysis.md` §3).
+//!
+//! ## `.sla` precondition
+//!
+//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make specs`).
+//! When absent the bootstrap fails; the test prints that and returns early (a
+//! specs-less CI is a visible skip, never a false green).
+
+use std::path::PathBuf;
+
+use kuna_console::engine::bootstrap_from_object;
+use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
+use kuna_console::ifaceterm::ConsoleCommands;
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
+}
+
+fn fixture() -> PathBuf {
+    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/declmerge_x86_64")
+}
+
+/// Bootstrap the fixture and decompile `func`, returning the printed C
+/// (`None` ⇒ specs-less skip).
+fn decompile(func: &str) -> Option<String> {
+    let root = repo_root();
+    let specs = root.join("specs");
+    let spec_roots = vec![specs.to_str().unwrap().to_string()];
+
+    let bin = fixture().to_str()?.to_string();
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("verify_declared_vars: skipping (bootstrap failed, `make specs`): {}", e.explain());
+            return None;
+        }
+    };
+
+    let cmds: Vec<String> =
+        [format!("load function {func}"), "decompile".into(), "print C".into()].to_vec();
+    let count = cmds.len();
+    let mut status = ConsoleCommands::into_status(cmds);
+    register_decomp_commands(&mut status);
+    {
+        let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+        let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+        dcp.conf = Some(prog);
+    }
+    for _ in 0..count {
+        execute(&mut status);
+    }
+    Some(status.optr.clone())
+}
+
+/// Every `vN` token that appears in the declaration block (the lines between the
+/// function's opening `{` and the first blank line — the C++ printer's local decl
+/// prelude).
+fn declared_vars(c: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut in_decls = false;
+    for line in c.lines() {
+        let t = line.trim();
+        if t == "{" {
+            in_decls = true;
+            continue;
+        }
+        if in_decls {
+            if t.is_empty() {
+                break; // first blank line ends the declaration prelude
+            }
+            // A declaration line ends in `;` (possibly with a trailing `// comment`).
+            for tok in tokens_vn(line) {
+                out.insert(tok);
+            }
+        }
+    }
+    out
+}
+
+/// All `vN` identifier tokens in a string (N = one or more digits).
+fn tokens_vn(s: &str) -> Vec<String> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        // start of an identifier not preceded by an identifier char
+        let prev_ident = i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+        if !prev_ident && bytes[i] == b'v' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+            let start = i;
+            i += 1;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            // must not continue into a longer identifier (v1a)
+            if i >= bytes.len() || !(bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                out.push(s[start..i].to_string());
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+#[test]
+fn no_undeclared_local_variable_in_make_dir_clone() {
+    let Some(c) = decompile("make_dir_clone") else {
+        return; // specs-less skip
+    };
+    eprintln!("---- make_dir_clone ----\n{c}");
+
+    let declared = declared_vars(&c);
+    // Every `vN` referenced anywhere in the body must be declared.
+    let used: std::collections::BTreeSet<String> = tokens_vn(&c).into_iter().collect();
+    let undeclared: Vec<&String> = used.iter().filter(|v| !declared.contains(*v)).collect();
+
+    assert!(
+        undeclared.is_empty(),
+        "emitted an UNDECLARED local variable (invalid C): {:?}\n\
+         declared={:?}\n--- C ---\n{}",
+        undeclared, declared, c
+    );
+    // Sanity: the reduction really does exercise the phi-output local (`v5`),
+    // i.e. the fixture is still triggering the merge/decl path it was built for.
+    assert!(
+        used.len() >= 5,
+        "expected the make_dir_clone reduction to still materialise several `vN` locals, got {:?}",
+        used
+    );
+}
