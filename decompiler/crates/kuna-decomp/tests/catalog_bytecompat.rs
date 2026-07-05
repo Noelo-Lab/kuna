@@ -148,7 +148,7 @@ fn fixture_has_all_68_settables() {
     // (decbench F2, default-on but Listing-gated so byte-identical in the datatest path).
     // +1 for the `iteregion` angr ITERegionConverter assignment-diamond -> `?:` ternary
     // knob (decbench F5, default-off opt-in runtime choice).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 72);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 73);
 }
 
 #[test]

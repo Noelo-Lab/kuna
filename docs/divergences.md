@@ -701,3 +701,39 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
 - **Testcase**: `tests/stages/ghangr-returndup.xml` (two-pass; pass 1 explicit `option returndup
   off` = merged form, pass 2 the default-on per-predecessor early returns).
 - **Date**: 2026-07-05.
+
+## DIV-19: CFG-reachability no-return discovery on by default (`noreturn_reach`)
+
+- **Flip**: option **`noreturn_reach`** (default **on**, `change_kind = correctness-fix`,
+  `source_decompiler = ghidra`). The port of Ghidra's **"Non-Returning Functions -
+  Discovered"** analyzer's `FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn` rule,
+  added to the `noreturn_propagate` consumer (`kuna-analysis`
+  `s1_noreturn_propagate::function_reaches_only_noreturn`).
+- **Problem**: kuna's `noreturn_propagate` concludes a wrapper no-return only when its
+  **last real instruction** is a terminal call to an already-no-return callee — a tail-call
+  subset. Ghidra concludes three more shapes by walking the CFG, which kuna missed:
+  (1) a no-return call **mid-body** with a dead tail after it (openssh `cleanup_exit`,
+  whose `_exit` sits before a compiler-hoisted conditional block, so its last instruction
+  is a back-jump); (2) a **dead `RETURN`** (present but unreachable — the path to it dies at
+  a no-return call, openssh `sshpkt_fatal`); (3) a **switch** whose every arm is no-return
+  (`sshpkt_vfatal`). A caller of such a wrapper decoded the cold path / next-function bytes as
+  live code, ballooning the function (openssh `ssh_tun_confirm`: **222 LOC → 18**, Ghidra 24;
+  `sshd_hostkey_sign`: **153 → 37**, Ghidra 50 — kuna now *tighter* than Ghidra).
+- **Rule**: for each candidate, walk the instruction-level reachable CFG from entry; a
+  call/jump to an already-no-return callee is terminal (its fall-through is dead); conclude
+  no-return iff **no `RETURN` is reachable** and ≥1 path ends at such a transfer — iterated
+  to a call-graph fixpoint by the existing propagate loop, emitting the existing
+  `NoReturnFact` → `set_function_no_return` seam. **Conservative**: a reachable `RETURN`,
+  an unresolved indirect jump, a branch escaping the body to a possibly-returning neighbour,
+  or a call with no modelled fall-through that is not itself terminal all reject (a false
+  positive would drop live caller code).
+- **Gating**: requires the Listing (default-off) AND `noreturn_propagate` on — a no-op
+  otherwise — so **every parity gate is byte-identical** (real-ELF Listing path only;
+  `docs/baseline.json` untouched). Closes the largest ghidra-beats-kuna cluster (44/77 of the
+  triaged cases are noreturn-overrun on this mechanism).
+- **Testcase**: unit tests `s1_noreturn_propagate::tests::reach_*` (the walk's true cases —
+  tail / mid-body-with-dead-tail / switch-of-no-return — and every conservative reject);
+  the pass wiring is covered by the existing `verify_noreturn_propagate` / `verify_noreturn_error`
+  e2e gates (which stay green with the rule on). Real-binary behavior verified on the decbench
+  openssh corpus (ssh_tun_confirm, sshd_hostkey_sign).
+- **Date**: 2026-07-05.

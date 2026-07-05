@@ -141,8 +141,8 @@ fn settable_count_is_68() {
     // +1 for `returndup` (decbench F4), +1 for `noreturn_error` (decbench F2),
     // +1 for `iteregion`, the angr ITERegionConverter S8 assignment-diamond -> `?:`
     // ternary knob (decbench F5).
-    assert_eq!(kuna_num_settables(), 72);
-    assert_eq!(SETTABLE_TABLE.len(), 72);
+    assert_eq!(kuna_num_settables(), 73);
+    assert_eq!(SETTABLE_TABLE.len(), 73);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -321,7 +321,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_37() {
+fn option_values_live_value_present_for_28_suppressed_for_38() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -367,6 +367,9 @@ fn option_values_live_value_present_for_28_suppressed_for_37() {
         // console-side via kuna_live_value), like the analysis gates around it.
         // Default-on (DIV-16).
         "noreturn_error",
+        // (kuna) CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn), a
+        // sub-rule gate of noreturn_propagate with no codegen live reader. Default-on (DIV-19).
+        "noreturn_reach",
         // (kuna) FID fingerprint-matcher Listing consumer — an analysis-pass gate
         // whose DB source is a load-time env var (`kuna_fid_db`); no codegen
         // live_value reader (read console-side via kuna_live_value), like the gates
@@ -504,7 +507,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 71);
+    assert_eq!(json.matches("},\n").count(), 72);
 }
 
 #[test]
