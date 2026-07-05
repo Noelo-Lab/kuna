@@ -51,7 +51,7 @@ use crate::protocol::{
     BURST_COMMAND_OPEN, BURST_MESSAGE_CLOSE, BURST_MESSAGE_OPEN, BURST_RESPONSE_CLOSE,
     BURST_RESPONSE_OPEN, BURST_STRING_CLOSE, BURST_STRING_OPEN,
 };
-use crate::translate::{build_registry, GhidraTranslate};
+use crate::translate::{build_registry, TspecModel};
 
 /// One registered program: the kuna analog of an `ArchitectureGhidra` slot
 /// in the global `archlist` (ghidra_process.cc:76,176-201).
@@ -78,7 +78,11 @@ struct Session {
     /// tspec failed to parse (recorded as a warning; \<addr> params are
     /// then consumed without decoding — TODO(phase-2): a parse failure
     /// should fail registerProgram once the engine init is real).
-    translate: Option<GhidraTranslate>,
+    ///
+    /// The command loop needs only the client-free tspec model
+    /// ([`TspecModel`]); the live query-backed `GhidraTranslate<R,W>` is
+    /// built later (phase 3, when the engine bridge shares the streams).
+    translate: Option<TspecModel>,
     /// Accumulated warnings, shipped on the 16/17 channel by sendResult
     /// (C++ `ArchitectureGhidra::warnings`; `printMessage` appends
     /// `'\n' + message`, ghidra_arch.cc:898-902).
@@ -103,7 +107,7 @@ impl Session {
     fn new(pspec: Vec<u8>, cspec: Vec<u8>, tspec: Vec<u8>, corespec: Vec<u8>) -> Session {
         let registry = build_registry();
         let mut warnings = String::new();
-        let translate = match GhidraTranslate::decode(&tspec, &registry) {
+        let translate = match TspecModel::decode(&tspec, &registry) {
             Ok(t) => Some(t),
             Err(e) => {
                 // printMessage semantics: '\n' + message

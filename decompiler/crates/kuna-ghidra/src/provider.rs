@@ -104,7 +104,7 @@ impl<R: Read, W: Write> LoadImage for GhidraLoadImage<R, W> {
 /// "host pipe dead → terminate" so a mid-decompile pipe death still exits
 /// the process with status 1 (the `SharedClient` should carry a fatal flag
 /// the loop checks after each command).
-fn wire_to_kuna(err: WireError) -> KunaError {
+pub(crate) fn wire_to_kuna(err: WireError) -> KunaError {
     match err {
         WireError::Kuna(e) => e,
         WireError::PipeClosed => KunaError::lowlevel("ghidra host pipe closed during query"),
@@ -119,7 +119,7 @@ mod tests {
 
     use kuna_base::marshal::{Encoder, PackedEncode};
 
-    use crate::translate::{build_registry, GhidraTranslate};
+    use crate::translate::{build_registry, TspecModel};
 
     const TSPEC: &[u8] = b"<sleigh bigendian=\"false\" uniqbase=\"0x10000000\">\
 <spaces defaultspace=\"ram\">\
@@ -128,8 +128,8 @@ mod tests {
 <space name=\"ram\" index=\"3\" size=\"8\" bigendian=\"false\" delay=\"1\" physical=\"true\"/>\
 </spaces></sleigh>";
 
-    fn test_translate() -> GhidraTranslate {
-        GhidraTranslate::decode(TSPEC, &build_registry()).expect("test tspec parses")
+    fn test_translate() -> TspecModel {
+        TspecModel::decode(TSPEC, &build_registry()).expect("test tspec parses")
     }
 
     fn burst(v: &mut Vec<u8>, code: u8) {

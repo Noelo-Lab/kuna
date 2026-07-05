@@ -17,10 +17,18 @@ publish.workspace = true
 
 [dependencies]
 kuna-base.workspace = true
+# VarnodeData / opcodes (the packed <op> decode + the register-storage triple
+# GhidraTranslate hands back through EngineTranslate::get_register_varnode).
+kuna-num.workspace = true
 # The tspec <sleigh> element decode (ELEM_SLEIGH / ATTRIB_UNIQBASE /
-# TruncationTag / register_translate_ids) — the GhidraTranslate::initialize
-# subset of translate.cc lives in kuna-sleigh.
+# TruncationTag / register_translate_ids), the Translate / RegisterLookup /
+# PcodeEmit traits and TranslateBase, the ContextDatabase, and LoadImage — the
+# GhidraTranslate live-translator surface lives in kuna-sleigh.
 kuna-sleigh.workspace = true
+# The Architecture<->translator seam (the EngineTranslate trait GhidraTranslate
+# implements).  kuna-decomp does NOT depend on kuna-ghidra, so this is not a
+# cycle: the ghidra translator is the downstream implementor of the trait.
+kuna-decomp.workspace = true
 
 [lints]
 workspace = true

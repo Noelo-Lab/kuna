@@ -22,7 +22,7 @@ use kuna_ghidra::client::GhidraClient;
 use kuna_ghidra::ids::ELEM_COMMAND_GETREGISTER;
 use kuna_ghidra::process::GhidraProcess;
 use kuna_ghidra::protocol::{nibble_expand, string_data_size_header, WireError};
-use kuna_ghidra::translate::{build_registry, GhidraTranslate};
+use kuna_ghidra::translate::{build_registry, TspecModel};
 
 // ---------------------------------------------------------------------------
 // MockJava wire builder
@@ -78,14 +78,14 @@ const CORETYPES: &[u8] = b"<coretypes><type name=\"int\" size=\"4\" metatype=\"i
 </coretypes>";
 
 /// The tspec-derived translate the mock shares with the process under test.
-fn test_translate() -> GhidraTranslate {
+fn test_translate() -> TspecModel {
     let registry = build_registry();
-    GhidraTranslate::decode(TSPEC, &registry).expect("test tspec parses")
+    TspecModel::decode(TSPEC, &registry).expect("test tspec parses")
 }
 
 /// Encode an `<addr>` for ram:offset the way Java's AddressXML.encode does
 /// (space + offset attributes in a packed document).
-fn packed_ram_addr(tr: &GhidraTranslate, offset: u64) -> Vec<u8> {
+fn packed_ram_addr(tr: &TspecModel, offset: u64) -> Vec<u8> {
     let ram = Rc::clone(tr.manager.get_space_by_name("ram").expect("ram"));
     let mut packed = Vec::new();
     {
