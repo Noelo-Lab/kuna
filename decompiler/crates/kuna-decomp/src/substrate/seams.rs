@@ -578,6 +578,12 @@ pub struct Architecture {
     /// opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_dedupitetail`]'s `ActionDedupIteTail`.
     pub dedup_ite_tail: bool,
+    /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
+    /// **bare-epilogue** RETURN block into each predecessor but one so a
+    /// `if (c) { body; return X; } return Y;` guard shape structures as per-predecessor
+    /// early returns (`duplicate_shared_returns`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_returndup`]'s `ActionReturnDup`.
+    pub duplicate_shared_returns: bool,
     /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-10 default-on).  Read by
     /// [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure) to gate
@@ -815,6 +821,7 @@ impl Architecture {
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             dup_return_call_tails: false, // taildup (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
+            duplicate_shared_returns: false, // returndup (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
