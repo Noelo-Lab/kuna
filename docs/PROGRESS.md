@@ -2651,3 +2651,24 @@ upstream files). `sleigh_opt` and all 148 `.sla` build without libbfd.
   `tools/sync_upstream.py`, STAGE_MAPPING.md. Upstream rev: cef869af04c474...1644.
 - Scaffolding written (.gitignore, README.md, UPSTREAM.md, this file).
 - Baseline build of the pristine tree started in /tmp/kuna-baseline (parity oracle).
+
+## 2026-07-05 — decbench campaign, session 2 (angr fixes + runtime choices)
+
+Four PRs merged on top of session 1's nine (all three gates verified before each merge):
+- **#123** — ghidra-beats-kuna triage (`docs/decbench/triage-ghidra/`) + the runtime-choice
+  registry `docs/decbench/runtime-choices.md` (divergences where both renderings are valid,
+  flipped per source-shape).
+- **#124 F4 `returndup`** — angr `ReturnDuplicatorHigh` (gotoless shared-return duplication),
+  new S8 `kuna_returndup.rs`, default-off opt-in.
+- **#126 F2 `noreturn_error`** (DIV-16) — conclude `error(nonzero,…)` wrappers no-return via
+  the x86-64 EDI status-arg check; default-on but Listing-gated so 0/675 byte-identical;
+  diffutils `sip` GED 347→0.
+- **#125 F5 `iteregion`** (DIV-17, **default-ON** per user directive) — angr `ITERegionConverter`:
+  assignment-diamond → `?:` ternary, print-only S8 mark + S9 emit hook; iproute2
+  `print_link_flags` GED 140→11; 0/675 corpus byte-identical even default-on, −2.6% speed;
+  still `--option iteregion off` per-function (the object code is identical for an explicit
+  `if/else`, so it stays a runtime choice).
+
+Option count 69→72 (returndup, noreturn_error, iteregion). Follow-ups left in
+`docs/decbench/features.md`: F6 `cstyle-null-cmp`, P1 full ITE/expr-folding, P2 ARM Cortex-M,
+and the broader `noreturn_propagate` robustness relaxations (transitive/looping wrappers).
