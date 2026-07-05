@@ -39,6 +39,7 @@ use kuna_decomp::decompile_drive::decompile_func;
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::funcdata_encode::{ELEM_AST, ELEM_FUNCTION, ELEM_IOP, ELEM_VARNODES};
 use kuna_decomp::options::{register_option_elements, OptionDatabase};
+use kuna_decomp::prettyprint::ids::{ATTRIB_OPREF, ATTRIB_VARREF};
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase};
 use kuna_decomp::xml_arch::{XmlArchitecture, XmlArchitectureCapability};
 
@@ -473,4 +474,228 @@ fn corpus_functions_encode_and_roundtrip() {
     );
     assert!(agg.saw_bare_ref, "no bare <addr ref> observed across real functions");
     assert!(agg.saw_void, "no <void> slot observed across real functions");
+}
+
+// ===========================================================================
+// Step 5 GATE: the click-to-address contract — the clang `<function>` markup's
+// token refs resolve against the `<ast>`.
+//
+// This ties the step-4 encoder (`Funcdata::encode` -> `<ast>`) and the step-5
+// markup emitter (`PrintC::doc_function_markup` -> clang `<function>`) together
+// over the SAME decompiled `Funcdata`: every `opref`/`varref` a marked-up token
+// carries MUST appear as an `<op>`'s `<seqnum uniq>` / a `<varnodes>` `<addr ref>`
+// in the `<ast>` — because both sides read the exact same `get_time()` /
+// `get_create_index()` accessors, the tie holds by construction.
+// ===========================================================================
+
+/// Recursively walk a packed clang `<function>` document, collecting every
+/// `ATTRIB_OPREF` / `ATTRIB_VARREF` value (regardless of the element it hangs
+/// on).  Unmatched attributes are auto-skipped by `get_next_attribute_id`.
+fn walk_markup(
+    dec: &mut PackedDecode,
+    oprefs: &mut BTreeSet<u64>,
+    varrefs: &mut BTreeSet<u64>,
+) -> KunaResult<()> {
+    let id = dec.open_element()?;
+    loop {
+        let a = dec.get_next_attribute_id()?;
+        if a == 0 {
+            break;
+        }
+        if a == ATTRIB_OPREF.get_id() {
+            oprefs.insert(dec.read_unsigned_integer()?);
+        } else if a == ATTRIB_VARREF.get_id() {
+            varrefs.insert(dec.read_unsigned_integer()?);
+        }
+    }
+    loop {
+        let c = dec.peek_element()?;
+        if c == 0 {
+            break;
+        }
+        walk_markup(dec, oprefs, varrefs)?;
+    }
+    dec.close_element(id)?;
+    Ok(())
+}
+
+/// Structurally decode the clang `<function>` markup document and return its
+/// `(oprefs, varrefs)` sets.
+fn decode_markup_refs(
+    manage: &AddrSpaceManager,
+    bytes: &[u8],
+) -> KunaResult<(BTreeSet<u64>, BTreeSet<u64>)> {
+    let mut dec = PackedDecode::new(manage);
+    dec.ingest_stream(bytes)?;
+    // The markup root is the clang <function> (EmitMarkup::begin_function opens
+    // ELEM_FUNCTION, the same numeric id as the encoder's <function>).
+    let root = dec.peek_element()?;
+    assert_eq!(root, ELEM_FUNCTION.get_id(), "markup root is not <function>");
+    let mut oprefs = BTreeSet::new();
+    let mut varrefs = BTreeSet::new();
+    walk_markup(&mut dec, &mut oprefs, &mut varrefs)?;
+    Ok((oprefs, varrefs))
+}
+
+/// Drive `PrintC::doc_function_markup` over `fd` (moving the printer out of the
+/// architecture exactly as `decompile_drive::print_c` does) and decode the
+/// resulting clang `<function>` into its `(oprefs, varrefs)` sets.
+fn markup_refs_for(base: &mut Architecture, fd: &Funcdata) -> (BTreeSet<u64>, BTreeSet<u64>) {
+    let mut printer = base.take_print();
+    let bytes = printer.doc_function_markup(fd, base);
+    base.put_print(printer);
+    assert!(!bytes.is_empty(), "doc_function_markup produced no bytes");
+    decode_markup_refs(fd.get_arch().manage(), &bytes).expect("decode markup <function>")
+}
+
+#[test]
+fn corpus_functions_markup_refs_resolve_against_ast() {
+    let mut verified = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+    let mut total_oprefs = 0usize;
+    let mut total_varrefs = 0usize;
+
+    for stem in FIXTURES {
+        let dt = match parse_datatest(stem) {
+            Ok(dt) => dt,
+            Err(e) => {
+                errors.push(format!("{stem} (parse): {e}"));
+                continue;
+            }
+        };
+        let registry = build_registry();
+        let mut xarch = match bootstrap(&dt) {
+            Ok(x) => x,
+            Err(e) => {
+                errors.push(format!("{stem} (bootstrap): {e}"));
+                continue;
+            }
+        };
+        if let Some(base) = xarch.sleigh_mut().base_mut() {
+            apply_options(base, &dt, &registry);
+        }
+
+        for sym in &dt.symbols {
+            let base = match xarch.sleigh_mut().base_mut() {
+                Some(b) => b,
+                None => continue,
+            };
+            let space = match base.manage().get_space_by_name(&sym.space) {
+                Some(s) => Rc::clone(s),
+                None => continue,
+            };
+            let entry = Address::new(space, sym.offset);
+            let fd = match decompile_func(base, &sym.name, entry, 0) {
+                Ok(fd) => fd,
+                Err(e) => {
+                    errors.push(format!("{stem}:{} decompile: {e}", sym.name));
+                    continue;
+                }
+            };
+
+            // (1)+(2) the <ast> ids (step 4) and the clang markup refs (step 5).
+            let ast_refs = expected_refs(&fd);
+            let ast_uniqs = expected_uniqs(&fd);
+            let (oprefs, varrefs) = markup_refs_for(base, &fd);
+
+            // (3)+(4) the click-to-address contract: every markup opref/varref
+            // resolves to an <ast> op time / varnode create index.  Because the
+            // markup and the <ast> read the SAME get_time()/get_create_index(),
+            // this is a subset relation that must hold exactly.
+            for o in &oprefs {
+                assert!(
+                    ast_uniqs.contains(o),
+                    "{stem}:{} markup opref {o} has no matching <ast> <op> <seqnum uniq>",
+                    sym.name
+                );
+            }
+            for v in &varrefs {
+                assert!(
+                    ast_refs.contains(v),
+                    "{stem}:{} markup varref {v} has no matching <ast> <varnodes> <addr ref>",
+                    sym.name
+                );
+            }
+            total_oprefs += oprefs.len();
+            total_varrefs += varrefs.len();
+            verified += 1;
+        }
+    }
+
+    eprintln!("=== markup-refs-resolve-against-ast report ===");
+    eprintln!(
+        "verified functions: {verified}, distinct oprefs {total_oprefs}, distinct varrefs {total_varrefs}"
+    );
+    for e in &errors {
+        eprintln!("  note: {e}");
+    }
+
+    // The gate's teeth: several real functions verify, and — crucially — the
+    // markup actually CARRIES refs (guards against a MarkupRef-still-none
+    // regression) that ALL resolve against the <ast> (asserted per function above).
+    assert!(
+        verified >= 3,
+        "expected >= 3 corpus functions to markup + resolve, got {verified} (notes: {errors:?})"
+    );
+    assert!(
+        total_oprefs > 0,
+        "no <opref> emitted across the corpus markup — MarkupRef still none()?"
+    );
+    assert!(
+        total_varrefs > 0,
+        "no <varref> emitted across the corpus markup — MarkupRef still none()?"
+    );
+}
+
+#[test]
+fn markup_emits_nonempty_refs() {
+    // A focused tripwire for the MarkupRef-still-none() regression: SOME real
+    // decompiled function's clang markup must carry BOTH a resolvable opref AND a
+    // varref.  (Not every function has named variable leaves — a purely boolean
+    // body may emit only oprefs — so scan the corpus for one fully-marked
+    // function rather than pinning a single fixture.)
+    let mut saw_op = false;
+    let mut saw_var = false;
+    let mut found_both = false;
+
+    'outer: for stem in FIXTURES {
+        let dt = match parse_datatest(stem) {
+            Ok(dt) => dt,
+            Err(_) => continue,
+        };
+        let registry = build_registry();
+        let mut xarch = match bootstrap(&dt) {
+            Ok(x) => x,
+            Err(_) => continue,
+        };
+        if let Some(base) = xarch.sleigh_mut().base_mut() {
+            apply_options(base, &dt, &registry);
+        }
+        for sym in &dt.symbols {
+            let base = match xarch.sleigh_mut().base_mut() {
+                Some(b) => b,
+                None => continue,
+            };
+            let space = match base.manage().get_space_by_name(&sym.space) {
+                Some(s) => Rc::clone(s),
+                None => continue,
+            };
+            let entry = Address::new(space, sym.offset);
+            let fd = match decompile_func(base, &sym.name, entry, 0) {
+                Ok(fd) => fd,
+                Err(_) => continue,
+            };
+            let (oprefs, varrefs) = markup_refs_for(base, &fd);
+            saw_op |= !oprefs.is_empty();
+            saw_var |= !varrefs.is_empty();
+            if !oprefs.is_empty() && !varrefs.is_empty() {
+                found_both = true;
+                break 'outer;
+            }
+        }
+    }
+
+    assert!(saw_op, "doc_function_markup emitted no <opref> — MarkupRef never populated");
+    assert!(saw_var, "doc_function_markup emitted no <varref> — MarkupRef never populated");
+    assert!(found_both, "no single function's markup carried both an opref and a varref");
 }

@@ -78,7 +78,8 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 use crate::dtype::type_metatype;
 use crate::options::{BraceStyle, NamespaceStrategy};
 use crate::prettyprint::{
-    BraceStyle as EmitBraceStyle, Emit, EmitNoMarkup, MarkupRef, SyntaxHighlight,
+    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, MarkupRef,
+    SyntaxHighlight,
 };
 use crate::printlanguage::{
     format_binary, modifiers, most_natural_base, parentheses, unicode_needs_escape, Atom, OpToken,
@@ -954,6 +955,147 @@ pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
 //   - the option toggles (`PrintCOptions`) gate the seam branches.
 
 // ===========================================================================
+// PrintEmit — the emit back-end selector (static, no-vtable delegation)
+// ===========================================================================
+
+/// The low-level [`Emit`] back-end `PrintC` drives, selected between the
+/// byte-exact plain-text sink ([`EmitNoMarkup`], the `print C` datatest path)
+/// and the packed clang token-markup sink ([`EmitMarkup`], the ghidra-mode
+/// `decompileAt` `<function>` document).
+///
+/// C++ swaps a heap `Emit *lowlevel` in `EmitPrettyPrint::setMarkup`
+/// (prettyprint.cc:2531); this port holds the two back-ends in a concrete enum
+/// so every one of the ~260 `self.emit.<method>()` call sites in `PrintC` stays
+/// a **static** call that matches on the active variant — no `Box<dyn Emit>`,
+/// no vtable on the hot path (the standalone datatest path is always
+/// `NoMarkup`).  Mirrors the [`crate::prettyprint::LowLevel`] precedent
+/// (prettyprint.rs:1740) but delegates the FULL `Emit` surface by static match
+/// rather than through a `&mut dyn Emit` re-dispatch.
+///
+/// The delegation MUST cover every `Emit` method — required AND
+/// default-provided — because [`EmitNoMarkup`] overrides `tag_line`
+/// (pending-brace absorption, prettyprint.rs:603) and `clear`: a method left to
+/// fall through to a `PrintEmit` trait default would silently diverge the
+/// byte-exact `print C` output the 675 datatests pin.
+#[derive(Debug)]
+pub enum PrintEmit {
+    /// The plain-text back-end (`print C`, the byte-exact datatest path).
+    NoMarkup(EmitNoMarkup),
+    /// The packed clang token-markup back-end (ghidra-mode `decompileAt`).
+    Markup(EmitMarkup),
+}
+
+/// Forward one [`Emit`] call to whichever [`PrintEmit`] variant is active — the
+/// static match that stands in for C++'s `Emit *` vtable dispatch.
+macro_rules! pe_forward {
+    ($self:ident . $method:ident ( $($arg:expr),* )) => {
+        match $self {
+            PrintEmit::NoMarkup(e) => e.$method($($arg),*),
+            PrintEmit::Markup(e) => e.$method($($arg),*),
+        }
+    };
+}
+
+impl PrintEmit {
+    /// Reset the active back-end's output buffer (C++ `Emit::setOutputStream`),
+    /// dispatched to the concrete leaf (both leaves clear their owned sink).
+    /// Type-divergent (not on the [`Emit`] trait): the leaves' sinks differ.
+    pub fn set_output_stream(&mut self) {
+        match self {
+            PrintEmit::NoMarkup(e) => e.set_output_stream(),
+            PrintEmit::Markup(e) => e.set_output_stream(),
+        }
+    }
+    /// Borrow the accumulated plain text (the `EmitNoMarkup` standalone
+    /// `doc_function_full` return).  The markup leaf holds packed bytes, not
+    /// text, so it yields `""` (mirrors [`crate::prettyprint::LowLevel::output`]).
+    pub fn output_str(&self) -> &str {
+        match self {
+            PrintEmit::NoMarkup(e) => e.output(),
+            PrintEmit::Markup(_) => "",
+        }
+    }
+    /// Take ownership of the accumulated packed markup bytes (the `EmitMarkup`
+    /// `doc_function_markup` return); empty on the plain-text leaf.
+    pub fn take_markup_bytes(&mut self) -> Vec<u8> {
+        match self {
+            PrintEmit::NoMarkup(_) => Vec::new(),
+            PrintEmit::Markup(e) => e.take_output(),
+        }
+    }
+}
+
+// The FULL `Emit` surface (prettyprint.rs:235-492), each method static-delegated
+// to the active leaf.  Required AND default-provided methods are ALL forwarded
+// so no call can fall through to a `PrintEmit` default that would diverge from
+// the leaf (`EmitNoMarkup` overrides `tag_line`/`clear`; see the type doc).
+impl Emit for PrintEmit {
+    fn state(&self) -> &EmitBase { pe_forward!(self.state()) }
+    fn state_mut(&mut self) -> &mut EmitBase { pe_forward!(self.state_mut()) }
+
+    fn begin_document(&mut self) -> int4 { pe_forward!(self.begin_document()) }
+    fn end_document(&mut self, id: int4) { pe_forward!(self.end_document(id)) }
+    fn begin_function(&mut self) -> int4 { pe_forward!(self.begin_function()) }
+    fn end_function(&mut self, id: int4) { pe_forward!(self.end_function(id)) }
+    fn begin_block(&mut self, blockref: int4) -> int4 { pe_forward!(self.begin_block(blockref)) }
+    fn end_block(&mut self, id: int4) { pe_forward!(self.end_block(id)) }
+
+    fn tag_line(&mut self) { pe_forward!(self.tag_line()) }
+    fn tag_line_indent(&mut self, indent: int4) { pe_forward!(self.tag_line_indent(indent)) }
+
+    fn begin_return_type(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_return_type(markup)) }
+    fn end_return_type(&mut self, id: int4) { pe_forward!(self.end_return_type(id)) }
+    fn begin_var_decl(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_var_decl(markup)) }
+    fn end_var_decl(&mut self, id: int4) { pe_forward!(self.end_var_decl(id)) }
+    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_statement(markup)) }
+    fn end_statement(&mut self, id: int4) { pe_forward!(self.end_statement(id)) }
+    fn begin_func_proto(&mut self) -> int4 { pe_forward!(self.begin_func_proto()) }
+    fn end_func_proto(&mut self, id: int4) { pe_forward!(self.end_func_proto(id)) }
+
+    fn tag_variable(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) { pe_forward!(self.tag_variable(name, hl, markup)) }
+    fn tag_op(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) { pe_forward!(self.tag_op(name, hl, markup)) }
+    fn tag_func_name(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) { pe_forward!(self.tag_func_name(name, hl, markup)) }
+    fn tag_type(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) { pe_forward!(self.tag_type(name, hl, markup)) }
+    fn tag_field(&mut self, name: &str, hl: SyntaxHighlight, off: int4, markup: &MarkupRef) { pe_forward!(self.tag_field(name, hl, off, markup)) }
+    fn tag_bit_field(&mut self, name: &str, hl: SyntaxHighlight, id: int4, markup: &MarkupRef) { pe_forward!(self.tag_bit_field(name, hl, id, markup)) }
+    fn tag_comment(&mut self, name: &str, hl: SyntaxHighlight, spc: &std::rc::Rc<AddrSpace>, off: uintb) { pe_forward!(self.tag_comment(name, hl, spc, off)) }
+    fn tag_label(&mut self, name: &str, hl: SyntaxHighlight, spc: &std::rc::Rc<AddrSpace>, off: uintb) { pe_forward!(self.tag_label(name, hl, spc, off)) }
+    fn tag_case_label(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef, value: uintb) { pe_forward!(self.tag_case_label(name, hl, markup, value)) }
+    fn print(&mut self, data: &str, hl: SyntaxHighlight) { pe_forward!(self.print(data, hl)) }
+
+    fn open_paren(&mut self, paren: &str, id: int4) -> int4 { pe_forward!(self.open_paren(paren, id)) }
+    fn close_paren(&mut self, paren: &str, id: int4) { pe_forward!(self.close_paren(paren, id)) }
+    fn open_group(&mut self) -> int4 { pe_forward!(self.open_group()) }
+    fn close_group(&mut self, id: int4) { pe_forward!(self.close_group(id)) }
+    fn clear(&mut self) { pe_forward!(self.clear()) }
+    fn set_markup(&mut self, val: bool) { pe_forward!(self.set_markup(val)) }
+    fn set_packed_output(&mut self, val: bool) { pe_forward!(self.set_packed_output(val)) }
+    fn start_indent(&mut self) -> int4 { pe_forward!(self.start_indent()) }
+    fn stop_indent(&mut self, id: int4) { pe_forward!(self.stop_indent(id)) }
+    fn start_comment(&mut self) -> int4 { pe_forward!(self.start_comment()) }
+    fn stop_comment(&mut self, id: int4) { pe_forward!(self.stop_comment(id)) }
+    fn flush(&mut self) -> KunaResult<()> { pe_forward!(self.flush()) }
+    fn set_max_line_size(&mut self, mls: int4) -> KunaResult<()> { pe_forward!(self.set_max_line_size(mls)) }
+    fn get_max_line_size(&self) -> int4 { pe_forward!(self.get_max_line_size()) }
+    fn set_comment_fill(&mut self, fill: &str) { pe_forward!(self.set_comment_fill(fill)) }
+    fn emits_markup(&self) -> bool { pe_forward!(self.emits_markup()) }
+    fn reset_defaults(&mut self) { pe_forward!(self.reset_defaults()) }
+
+    fn get_paren_level(&self) -> int4 { pe_forward!(self.get_paren_level()) }
+    fn get_indent_increment(&self) -> int4 { pe_forward!(self.get_indent_increment()) }
+    fn set_indent_increment(&mut self, val: int4) { pe_forward!(self.set_indent_increment(val)) }
+    fn spaces(&mut self, num: int4, bump: int4) { pe_forward!(self.spaces(num, bump)) }
+    fn open_brace_indent(&mut self, brace: &str, style: EmitBraceStyle) -> int4 { pe_forward!(self.open_brace_indent(brace, style)) }
+    fn open_brace(&mut self, brace: &str, style: EmitBraceStyle) { pe_forward!(self.open_brace(brace, style)) }
+    fn close_brace_indent(&mut self, brace: &str, id: int4) { pe_forward!(self.close_brace_indent(brace, id)) }
+    fn set_pending_brace(&mut self, style: EmitBraceStyle) { pe_forward!(self.set_pending_brace(style)) }
+    fn has_pending_brace(&self) -> bool { pe_forward!(self.has_pending_brace()) }
+    fn cancel_pending_brace(&mut self) { pe_forward!(self.cancel_pending_brace()) }
+    fn pending_brace_indent_id(&self) -> int4 { pe_forward!(self.pending_brace_indent_id()) }
+    fn emit_pending(&mut self) { pe_forward!(self.emit_pending()) }
+}
+
+// ===========================================================================
 // PrintC — the stateful c-language printer object (the `glb->print` the
 // `Architecture` owns).  (w9x-arch-engine-glue)
 // ===========================================================================
@@ -1010,9 +1152,23 @@ pub struct PrintC {
     name: String,
     /// Whether `print C flat` is active (C++ the `flat` mod bit).
     flat: bool,
-    /// The plain-text emit back-end (C++ the bound `Emit *`, an `EmitNoMarkup`
-    /// for the non-pretty `print C` path).
-    emit: EmitNoMarkup,
+    /// The emit back-end (C++ the bound `Emit *`).  Defaults to the plain-text
+    /// [`EmitNoMarkup`] for the byte-exact `print C` path; [`set_markup`](PrintC::set_markup)
+    /// swaps in the packed clang [`EmitMarkup`] for the ghidra-mode `decompileAt`
+    /// `<function>` document.  A concrete enum (not `Box<dyn Emit>`), so the
+    /// ~260 `self.emit.<method>()` sites stay static (see [`PrintEmit`]).
+    emit: PrintEmit,
+    /// (kuna) Scoped raw pointer to the [`Funcdata`] currently being emitted,
+    /// live ONLY for the duration of [`emit_function_document`](PrintC::emit_function_document).
+    /// Lets the fd-free RPN leaf emitters ([`emit_atom`](PrintC::emit_atom) /
+    /// [`emit_op`](PrintC::emit_op)) resolve an [`Atom`]'s carried op/varnode
+    /// arena key back to the `get_time()` / `get_create_index()` the `<ast>`
+    /// stamps — WITHOUT threading `fd` through the pure RPN engine (which the
+    /// synthetic `rpn_*` unit tests drive fd-free).  Dereferenced only when the
+    /// markup back-end is active (`emits_markup()`); the plain-text datatest path
+    /// never touches it, so its byte output is unaffected.  `None` outside body
+    /// emission.
+    emit_fd: Option<*const Funcdata>,
     /// The reverse-polish-notation operator stack (C++ `PrintLanguage::revpol`).
     /// Owned here because `printlanguage.rs` deferred its RPN driver to this
     /// closure (the driver and the `PrintC` op-emitters are one unit).
@@ -1048,7 +1204,8 @@ impl PrintC {
             context: PrintContext::new(),
             name: CAPABILITY_NAME.to_string(),
             flat: false,
-            emit: EmitNoMarkup::new(),
+            emit: PrintEmit::NoMarkup(EmitNoMarkup::new()),
+            emit_fd: None,
             revpol: Vec::new(),
             nodepend: Vec::new(),
             pending: 0,
@@ -1180,7 +1337,7 @@ impl PrintC {
         self.emit.end_function(id1);
 
         // C++ emit->flush() then the bound ostream holds the text.
-        self.emit.output().to_string()
+        self.emit.output_str().to_string()
     }
 
     // --- the options.cc `// SEAM(W8)` print setters (now wired) -----------
@@ -1291,8 +1448,9 @@ impl PrintC {
     // =====================================================================
 
     /// Borrow the emit back-end (so a body driver can interleave `tag_line`
-    /// etc. between RPN expressions).
-    pub fn emit_mut(&mut self) -> &mut EmitNoMarkup {
+    /// etc. between RPN expressions).  A [`PrintEmit`]; use
+    /// [`output_str`](PrintEmit::output_str) for the plain-text buffer.
+    pub fn emit_mut(&mut self) -> &mut PrintEmit {
         &mut self.emit
     }
 
@@ -1431,25 +1589,89 @@ impl PrintC {
         self.push_atom(operand);
     }
 
+    /// (kuna) The [`Funcdata`] published for the duration of
+    /// [`emit_function_document`](PrintC::emit_function_document), else `None`.
+    ///
+    /// SAFETY: see the `emit_fd` field doc — the pointer is live only within that
+    /// call, `fd` outlives it and is never mutated through the pointer, and it
+    /// aliases `fd` (a distinct object from `self`).
+    fn markup_fd(&self) -> Option<&Funcdata> {
+        self.emit_fd.map(|p| unsafe { &*p })
+    }
+
+    /// (kuna) The `MarkupRef` for an RPN operator token from its arena key (C++
+    /// `EmitMarkup::tagOp` derefs the entry's `PcodeOp *` for `opref =
+    /// getTime()`).  The op's `get_time()` is exactly the `<seqnum uniq>`
+    /// `PcodeOp::encode` writes into the `<ast>`, so the token resolves by
+    /// construction.  Returns `none()` (no deref) unless the markup back-end is
+    /// active and `fd` is in scope — a no-op on the byte-exact plain-text path.
+    fn markup_for_op_key(&self, op_key: Option<usize>) -> MarkupRef {
+        if !self.emit.emits_markup() {
+            return MarkupRef::none();
+        }
+        match self.markup_fd() {
+            Some(fd) => MarkupRef::op(resolve_op_ref(fd, op_key)),
+            None => MarkupRef::none(),
+        }
+    }
+
+    /// (kuna) The `MarkupRef` for a leaf [`Atom`] from its carried op/varnode
+    /// arena keys (C++ `EmitMarkup::tagVariable`/`tagOp`/`tagField`/`tagCaseLabel`
+    /// deref the `Varnode *`/`PcodeOp *`).  `varref = vn->getCreateIndex()` and
+    /// `opref = op->getTime()` are the SAME ids `Funcdata::encode` writes into the
+    /// `<ast>` (`<addr ref>` / `<seqnum uniq>`), so a clang token resolves against
+    /// the AST by construction.  `none()` (no deref) on the plain-text path.
+    fn markup_for_atom(&self, atom: &Atom) -> MarkupRef {
+        if !self.emit.emits_markup() {
+            return MarkupRef::none();
+        }
+        let fd = match self.markup_fd() {
+            Some(fd) => fd,
+            None => return MarkupRef::none(),
+        };
+        let mut m = MarkupRef::none();
+        m.opref = resolve_op_ref(fd, atom.op);
+        if let crate::printlanguage::AtomData::Vn(vn_key) = atom.data {
+            m.varref = resolve_var_ref(fd, vn_key);
+        }
+        m
+    }
+
+    /// (kuna) The `MarkupRef` for a DIRECT tag site that already holds an `OpId`
+    /// (C++ passes the `PcodeOp *`): `opref = op->getTime()`, the `<ast>`
+    /// `<seqnum uniq>`.  Gated on the active back-end so the plain-text datatest
+    /// path does no lookup and stays byte-identical.
+    fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
+        if !self.emit.emits_markup() {
+            return MarkupRef::none();
+        }
+        MarkupRef::op(fd.obank().get(op).map(|o| o.get_time() as uintb))
+    }
+
     /// C++ `PrintLanguage::emitOp` (printlanguage.cc:332) — resolve final
     /// spacing / parens for one RPN entry at its current stage.  Mutates the
     /// entry's `id2` for surround tokens (mirrored back by the callers).
     fn emit_op(&mut self, entry_in: &ReversePolish) {
         let mut entry = entry_in.clone();
+        // (kuna) The operator's markup (C++ `EmitMarkup::tagOp` derefs the entry's
+        // `PcodeOp *` for `opref = getTime()`).  Resolved from the entry's arena
+        // key; `none()` (no lookup) on the plain-text path so the datatest bytes
+        // are unchanged.
+        let op_markup = self.markup_for_op_key(entry.op);
         match entry.tok.token_type {
             TokenType::Binary => {
                 if entry.visited != 1 {
                     return;
                 }
                 self.emit.spaces(entry.tok.spacing, entry.tok.bump);
-                self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+                self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &op_markup);
                 self.emit.spaces(entry.tok.spacing, entry.tok.bump);
             }
             TokenType::UnaryPrefix => {
                 if entry.visited != 0 {
                     return;
                 }
-                self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+                self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &op_markup);
                 self.emit.spaces(entry.tok.spacing, entry.tok.bump);
             }
             TokenType::Postsurround => {
@@ -1498,7 +1720,10 @@ impl PrintC {
     /// C++ `PrintLanguage::emitAtom` (printlanguage.cc:379) — send a leaf token
     /// to the low-level emitter according to its tag type.
     fn emit_atom(&mut self, atom: &Atom) {
-        let markup = MarkupRef::none();
+        // (kuna) Resolve the leaf's markup (C++ `EmitMarkup::tag*` derefs the
+        // atom's `Varnode *`/`PcodeOp *` for `varref`/`opref`).  `none()` (no
+        // lookup) on the plain-text path, so the datatest bytes are unchanged.
+        let markup = self.markup_for_atom(atom);
         match atom.tag {
             TagType::Syntax => self.emit.print(&atom.name, to_emit_hl(atom.highlight)),
             TagType::VarToken => {
@@ -1585,12 +1810,69 @@ impl PrintC {
     /// Faithful transcription of C++ `PrintC::docFunction` (printc.cc:2790)
     /// driven over a real [`Funcdata`] + [`Architecture`]: emit the signature
     /// shell (real return type from the recovered proto), then the **structured
-    /// body** (`emitBlockGraph(&fd->getStructure())`) when `sblocks` is present.
+    /// body** (`emitBlockGraph(&fd->getStructure())`) when `sblocks` is present,
+    /// and return the plain-text C.
     ///
-    /// When `sblocks` is empty (structuring declined at a seam) this falls back
-    /// to the brace-matched shell so the output is still a complete function.
+    /// The emission itself is [`emit_function_document`](PrintC::emit_function_document),
+    /// shared verbatim with [`doc_function_markup`](PrintC::doc_function_markup)
+    /// so the plain-text and markup entries can never drift; this entry keeps the
+    /// active back-end (`EmitNoMarkup`, byte-exact) and returns its text.
     pub fn doc_function_full(&mut self, fd: &Funcdata, arch: &Architecture) -> String {
+        self.emit_function_document(fd, arch);
+        self.emit.output_str().to_string()
+    }
+
+    /// Select whether `PrintC` emits token-markup (C++
+    /// `EmitPrettyPrint::setMarkup`, prettyprint.cc:2531, driven from
+    /// `ArchitectureGhidra`'s ctor `print->setMarkup(true)`, ghidra_arch.cc:917).
+    /// Swaps the concrete [`PrintEmit`] variant; a fresh buffer either way (each
+    /// leaf owns its own sink).  The standalone datatest path NEVER calls this, so
+    /// `emit` stays `NoMarkup` and the 675-assertion byte output is untouched.
+    pub fn set_markup(&mut self, val: bool) {
+        self.emit = if val {
+            PrintEmit::Markup(EmitMarkup::new())
+        } else {
+            PrintEmit::NoMarkup(EmitNoMarkup::new())
+        };
+    }
+
+    /// Emit the ghidra-mode `decompileAt` clang token-markup `<function>` document
+    /// (C++ `ArchitectureGhidra::print->docFunction(fd)`, ghidra_process.cc:329):
+    /// run the IDENTICAL [`emit_function_document`](PrintC::emit_function_document)
+    /// sequence that drives `doc_function_full`, but over an [`EmitMarkup`]
+    /// back-end so each token carries its `opref`/`varref` (resolved to the SAME
+    /// `get_time()` / `get_create_index()` that `Funcdata::encode`'s `<ast>` uses,
+    /// so a token resolves against the AST by construction).  Returns the packed
+    /// bytes; the back-end is restored to plain text so the printer stays reusable.
+    pub fn doc_function_markup(&mut self, fd: &Funcdata, arch: &Architecture) -> Vec<u8> {
+        self.set_markup(true);
+        self.emit_function_document(fd, arch);
+        // C++ docFunction ends in emit->flush(); EmitMarkup's flush is a no-op
+        // (packed elements are self-delimiting), so the byte stream is complete.
+        let _ = self.emit.flush();
+        let bytes = self.emit.take_markup_bytes();
+        self.set_markup(false);
+        bytes
+    }
+
+    /// The shared body-emission sequence of C++ `PrintC::docFunction`
+    /// (printc.cc:2790), back-end-agnostic: `beginFunction` → header comment →
+    /// prototype declaration → `openBraceIndent` → local var decls → block graph →
+    /// `closeBraceIndent` → `endFunction`.  Driven by whichever [`PrintEmit`]
+    /// variant is active, so [`doc_function_full`](PrintC::doc_function_full)
+    /// (plain text) and [`doc_function_markup`](PrintC::doc_function_markup)
+    /// (packed markup) share ONE emission path — the token stream (and every
+    /// `MarkupRef` populated below) is identical; only the leaf that serializes it
+    /// differs.
+    fn emit_function_document(&mut self, fd: &Funcdata, arch: &Architecture) {
         self.emit.set_output_stream();
+        // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
+        // emit_op) to resolve op/varnode arena keys to the <ast> ids while markup
+        // is active.  SAFETY: `fd` outlives this call; it is only ever read
+        // (get_time/get_create_index), never mutated through the pointer, and
+        // aliases `fd` (a distinct object from `self`), so no `&mut self` here
+        // conflicts.  Cleared before return so the pointer never escapes the call.
+        self.emit_fd = Some(fd as *const Funcdata);
         // (kuna) Resolve the `realtypes` rendering context once per function from
         // the live architecture (the gate + the `long`-is-8 data-model fact); every
         // type-name chokepoint below reads `self.rt_ctx`.
@@ -1667,7 +1949,9 @@ impl PrintC {
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
-        self.emit.output().to_string()
+        // (kuna) Retire the scoped fd pointer (see the field doc): it is valid
+        // only for this call's dynamic extent.
+        self.emit_fd = None;
     }
 
     /// Emit the function's header warning comments (C++
@@ -2751,8 +3035,9 @@ impl PrintC {
         }
         self.emit.tag_line();
 
-        // dest = ( cond ) ? A : B ;
-        let sid = self.emit.begin_statement(&MarkupRef::none());
+        // dest = ( cond ) ? A : B ;  (opref = the ternary's true-branch assign op)
+        let stmt_markup = self.op_markup(fd, m.true_op);
+        let sid = self.emit.begin_statement(&stmt_markup);
         // LHS assignment target (drains as a leaf on the empty stack).
         self.push_vn_explicit_ir(fd, arch, m.dest, m.true_op);
         // ` = `
@@ -2845,11 +3130,17 @@ impl PrintC {
 
         if case.isdefault {
             // default: (the label value is informational; default emits no value).
+            // C++ `emit->tagCaseLabel(..., op, ...)` with op = the case's first op —
+            // `opref = firstop->getTime()`, the `<ast>` `<seqnum uniq>`.
+            let case_markup = match firstop {
+                Some(o) => self.op_markup(fd, o),
+                None => MarkupRef::none(),
+            };
             self.emit.tag_line();
             self.emit.tag_case_label(
                 keywords::KEYWORD_DEFAULT,
                 SyntaxHighlight::KeywordColor,
-                &MarkupRef::none(),
+                &case_markup,
                 case.label,
             );
             self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
@@ -3216,7 +3507,10 @@ impl PrintC {
 
     /// C++ `PrintC::emitStatement` (printc.cc:2361).
     fn emit_statement(&mut self, fd: &Funcdata, arch: &Architecture, inst: OpId) {
-        let id = self.emit.begin_statement(&MarkupRef::none());
+        // C++ `emit->beginStatement(inst)`: the statement's root op — `opref =
+        // inst->getTime()`, the `<ast>` `<seqnum uniq>` a client clicks to.
+        let stmt_markup = self.op_markup(fd, inst);
+        let id = self.emit.begin_statement(&stmt_markup);
         self.emit_expression_ir(fd, arch, inst);
         self.emit.end_statement(id);
         if !self.context.is_set(modifiers::COMMA_SEPARATE) {
@@ -3322,7 +3616,8 @@ impl PrintC {
             // The structured switch body (`{ case N: ... }`) is emitted by
             // `emit_block_switch`; here only the `switch(in0)` expression prints.
             OpCode::CPUI_BRANCHIND => {
-                self.emit.tag_op(keywords::KEYWORD_SWITCH, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+                let kw_markup = self.op_markup(fd, op);
+                self.emit.tag_op(keywords::KEYWORD_SWITCH, SyntaxHighlight::KeywordColor, &kw_markup);
                 let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                     self.push_vn_ir(fd, arch, vn, op);
@@ -3331,7 +3626,8 @@ impl PrintC {
             }
             // RETURN (printc.cc:774 opReturn, the plain-return case).
             OpCode::CPUI_RETURN => {
-                self.emit.tag_op(keywords::KEYWORD_RETURN, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+                let kw_markup = self.op_markup(fd, op);
+                self.emit.tag_op(keywords::KEYWORD_RETURN, SyntaxHighlight::KeywordColor, &kw_markup);
                 let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
                 if nin > 1 {
                     self.emit.spaces(1, 0);
@@ -6862,6 +7158,35 @@ fn op_key(op: OpId) -> usize {
 fn vn_key(vn: VarnodeId) -> usize {
     use slotmap::Key;
     vn.data().as_ffi() as usize
+}
+
+/// (kuna) Invert [`op_key`]: reconstruct the `OpId` from the arena key an
+/// [`Atom`]/[`ReversePolish`] carries and return the op's `get_time()` — the
+/// markup `opref` (C++ `EmitMarkup` derefs the `PcodeOp *` for `getTime()`),
+/// identical to the `<seqnum uniq>` `PcodeOp::encode` writes into the `<ast>`
+/// (op.rs:589; `funcdata_encode.rs`).  `None` when the key is null or the op is
+/// no longer live (defensive — the emitted `opref` set stays a subset of the
+/// AST's op times).
+fn resolve_op_ref(fd: &Funcdata, op_key: Option<usize>) -> Option<uintb> {
+    let key = op_key?;
+    let op = OpId::from(slotmap::KeyData::from_ffi(key as u64));
+    Some(fd.obank().get(op)?.get_time() as uintb)
+}
+
+/// (kuna) Invert [`vn_key`]: reconstruct the `VarnodeId` and return its
+/// `get_create_index()` — the markup `varref` (C++ `EmitMarkup` derefs the
+/// `Varnode *` for `getCreateIndex()`), identical to the `<addr ref>`
+/// `Varnode::encode` writes into the `<ast>` `<varnodes>` (varnode.rs:629;
+/// `funcdata_encode.rs`).  `IPTR_IOP` annotation Varnodes are excluded exactly as
+/// `encode_tree` filters them out of `<varnodes>` — a `varref` to one would
+/// dangle.  `None` when null / not live / iop-space.
+fn resolve_var_ref(fd: &Funcdata, vn_key: usize) -> Option<uintb> {
+    let vn = VarnodeId::from(slotmap::KeyData::from_ffi(vn_key as u64));
+    let v = fd.vbank().get(vn)?;
+    if v.get_space().get_type() == kuna_base::space::spacetype::IPTR_IOP {
+        return None;
+    }
+    Some(v.get_create_index() as uintb)
 }
 
 /// C++ `TypeOpFloatInt2Float::absorbZext` (typeop.cc:1874): if the

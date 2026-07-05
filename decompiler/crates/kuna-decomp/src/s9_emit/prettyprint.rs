@@ -747,6 +747,13 @@ impl EmitMarkup {
     pub fn take_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.out)
     }
+    /// Reset the output buffer (C++ `EmitMarkup::setOutputStream`, prettyprint.cc:
+    /// which rebinds the encoder to a fresh stream).  Mirrors
+    /// [`EmitNoMarkup::set_output_stream`]; used by `PrintC::set_output_stream`
+    /// through the [`crate::printc::PrintEmit`] delegator.
+    pub fn set_output_stream(&mut self) {
+        self.out.clear();
+    }
 
     /// Run `f` with a fresh [`PackedEncode`] over the output buffer.
     ///

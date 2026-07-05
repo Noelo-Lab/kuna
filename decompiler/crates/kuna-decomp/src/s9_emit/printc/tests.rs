@@ -747,7 +747,7 @@ fn emit_expr<F: FnOnce(&mut PrintC)>(f: F) -> String {
     let mut p = PrintC::new();
     p.set_output_stream();
     f(&mut p);
-    p.emit_mut().output().to_string()
+    p.emit_mut().output_str().to_string()
 }
 
 #[test]
@@ -1390,7 +1390,7 @@ mod w10_printc_cast_render {
         p.set_no_cast_printing(nocasts);
         p.set_output_stream();
         p.op_type_cast_ir(fd, &arch, op);
-        p.emit_mut().output().to_string()
+        p.emit_mut().output_str().to_string()
     }
 
     /// FAITHFULNESS (1a): a `CPUI_CAST` whose output is `int8` renders
