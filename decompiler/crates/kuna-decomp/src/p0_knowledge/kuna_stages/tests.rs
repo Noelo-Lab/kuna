@@ -138,14 +138,11 @@ fn settable_count_is_68() {
     // edge-virtualization ORDERING knob (SAILR P2: H2 post-dominator +
     // dominance-tiered crossing/secondary/other bucketing), default-off opt-in:
     // only reorders which goto is chosen when virtualizing, so OFF is byte-identical.
-    // +1 for `returndup`, the angr SAILR gotoless `ReturnDuplicatorHigh` knob
-    // (decbench F4): duplicate a shared bare-epilogue RETURN block into each
-    // predecessor so the classic `if (c) { body; return X; } return Y;` guard shape
-    // structures as early returns instead of one comma-folded exit, default-off opt-in.
-    // +1 for `noreturn_error` (decbench F2): conclude error(nonzero,...) wrappers
-    // no-return (default-on, but Listing-gated so byte-identical in the datatest path).
-    assert_eq!(kuna_num_settables(), 71);
-    assert_eq!(SETTABLE_TABLE.len(), 71);
+    // +1 for `returndup` (decbench F4), +1 for `noreturn_error` (decbench F2),
+    // +1 for `iteregion`, the angr ITERegionConverter S8 assignment-diamond -> `?:`
+    // ternary knob (decbench F5).
+    assert_eq!(kuna_num_settables(), 72);
+    assert_eq!(SETTABLE_TABLE.len(), 72);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -421,6 +418,7 @@ fn option_values_live_value_present_for_28_suppressed_for_37() {
                             | "crossjumprevert"
                             | "taildup"
                             | "dedupitetail"
+                            | "iteregion"
                             | "returndup"
                             | "loopbreak_recovery"
                             | "relocobjects"
@@ -496,17 +494,17 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 71 rows: 70 trailing commas (the last, macho-arm64e, has none;
+    // 72 rows: 71 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
     // ifelseflatten's,
-    // crossjumprevert's, taildup's, dedupitetail's, and returndup's S8 rows,
+    // crossjumprevert's, taildup's, dedupitetail's, returndup's, and iteregion's S8 rows,
     // noreturn_error's S1 analysis row, eh_frame_full's S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 70);
+    assert_eq!(json.matches("},\n").count(), 71);
 }
 
 #[test]

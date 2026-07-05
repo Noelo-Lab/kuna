@@ -646,3 +646,31 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
 - **Testcase**: `tests/stages/ghangr-noreturn-error.xml` + the real-ELF fixture
   `kuna-analysis/tests/fixtures/noreturn_error_x86_64` (+ `kuna-console/tests/verify_noreturn_error.rs`).
 - **Date**: 2026-07-05.
+
+## DIV-17: assignment-diamond `?:` ternary recovery on by default (decbench F5: `iteregion`)
+
+- **Flip**: option **`iteregion`** (default **on**, `change_kind = structure-recovery`,
+  `source_decompiler = angr`). A **print-only** S8 pass (`s8_structure/kuna_iteregion.rs`,
+  `ActionIteRegion`): after structuring, a narrow two-arm assignment diamond — a 3-component
+  `if` whose condition is a single `CBRANCH` and whose true/else clauses are each a single
+  `COPY` to the SAME variable (`if (c) v = A; else v = B;`, converging on one tail) — is
+  marked so the S9 printer renders `v = c ? A : B`. No p-code is cloned or mutated (the arm
+  COPYs and condition stay live), so later uses render unchanged; the S9 emit hook is the one
+  new piece (Ghidra's printc has no ternary). Mirrors angr's `ITERegionConverter` /
+  `_find_ite_assignment_regions`.
+- **Problem**: a source `?:` ternary compiles at -O0 to exactly this diamond, which Ghidra/kuna's
+  collapse-based structurer renders as a literal `if (c) { v = A } else { v = B }` — doubling
+  the branch count of format/print/flag code (iproute2 `print_link_flags`: 41 ifs / 0 ternaries
+  → 21 ifs / 20 ternaries; GED 140 → 11).
+- **Effect / default-on rationale**: the ternary form matches the common format/print/flag source
+  where compilers turn `cond ? "%s," : "%s"` into exactly this diamond. **0/675** datatests
+  change (byte-identical corpus even default-on — the datatest functions carry no such diamond),
+  so no per-test opt-outs were needed. Speed −2.6% (a single linear post-structuring walk).
+- **Runtime choice (still flippable OFF)**: an explicit source `if/else` compiles to the SAME
+  object code as a `?:`, so the rewrite matches the source only when the source used a ternary.
+  The binary cannot tell them apart, so an agent may flip `--option iteregion off` (byte-identical
+  to upstream) per function where explicit `if/else` is the likely source. Documented in
+  `docs/decbench/runtime-choices.md`.
+- **Testcase**: `tests/stages/ghangr-iteregion.xml` (two-pass; pass 1 explicitly `option
+  iteregion off` pins the upstream if/else baseline, pass 2 the default-on ternary).
+- **Date**: 2026-07-05.

@@ -33,19 +33,21 @@ those are listed at the bottom as "not runtime choices" so they don't get mis-fi
 - Related: the `returndup` angr feature (below) auto-detects this shape from the other
   direction (splitting a merged return); here the existing `taildup` lever already closes it.
 
-### `iteregion` — recover `?:` ternaries from assignment diamonds (default: OFF)
+### `iteregion` — recover `?:` ternaries from assignment diamonds (default: ON, DIV-17)
 
 - **What ON does:** rewrites an `if/else { x = a } { x = b }` two-arm assignment diamond into
   `x = cond ? a : b`. Ghidra's printer has no ternary, so this is a kuna-added S9 form.
-- **When to flip ON:** the source **likely used a ternary** — format/print/flag code full of
-  `cond ? "%s," : "%s"` style expressions (each compiles to a register-assignment diamond).
-  On such code the source CFG is flat (no branch), so the ternary matches and the if/else
-  diamond does not.
-- **When to leave OFF (the default):** the source likely used an explicit `if/else` — then the
-  diamond is *correct* and a ternary would diverge. Default-off because the wrong guess hurts.
+- **Default ON (DIV-17):** the ternary form matches the common format/print/flag source where
+  compilers turn `cond ? "%s," : "%s"` into exactly this diamond (`print_link_flags`, coreutils
+  output helpers). 0/675 datatests change (byte-identical corpus even default-on), so the flip is
+  clean. Still a runtime choice — the object code is identical for an explicit `if/else`.
+- **When to flip OFF (`--option iteregion off`, per function):** the source **likely used an
+  explicit `if/else`** — then the diamond is what the author wrote and a ternary would invent a
+  form they never used. Off is byte-identical to upstream.
 - **Source-shape signal:** many two-arm same-destination assignment diamonds converging on a
-  call argument (print/format/flag builders). Evidence: `print_link_flags` (iproute2 ip).
-- Shipped by decbench feature F5 (PR TBD). `--option iteregion on`.
+  call argument (print/format/flag builders) ⇒ leave ON. A lone diamond guarding distinct
+  branch bodies ⇒ consider OFF. Evidence: `print_link_flags` (iproute2 ip), GED 140 → 11.
+- Shipped by decbench feature F5 (PR #125), default-on per user directive. `--option iteregion off` to revert.
 
 ### `cstyle-null-cmp` — terse null/bool comparisons (default: OFF)
 

@@ -437,6 +437,14 @@ pub struct Architecture {
     /// (`gotoreduce`/`crossjumprevert`/`taildup`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
+    /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
+    /// (`if (c) v = A; else v = B;`, both arms a single COPY to the same
+    /// variable, converging on one tail) to a `?:` ternary (`v = c ? A : B;`).
+    /// A deliberate **runtime choice** (`iteregion`, opt-in default-off): the
+    /// rewrite matches the source only when the source used a ternary — common in
+    /// format/print/flag code (`flags ? "%s," : "%s"`) — and diverges when the
+    /// source used explicit if/else, so an agent flips it per function.
+    pub iteregion: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block (only MULTIEQUAL/COPY/RETURN, no side effects)
     /// into each predecessor but one, so the classic
@@ -900,6 +908,7 @@ impl Architecture {
             revert_cross_jumps: false,
             dup_return_call_tails: false,
             dedup_ite_tail: false,
+            iteregion: false,
             duplicate_shared_returns: false,
             recover_loop_break: false,
             fold_call_returns: false,
@@ -1018,6 +1027,7 @@ impl Architecture {
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dup_return_call_tails = true; // (kuna) DIV-13 default-on (angr SAILR ReturnDuplicatorLow return-call-tail dup; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
+        self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_shared_returns = false; // (kuna) default: upstream byte-identical (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4 returndup — opt-in; broad O0 early-return churn, a later default-on sweep can flip it with per-test opt-outs)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-13 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
@@ -1198,6 +1208,11 @@ impl Architecture {
                 let (val, msg) =
                     crate::s8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
                 self.dedup_ite_tail = val;
+                Ok(msg)
+            }
+            "iteregion" => {
+                let (val, msg) = crate::s8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
+                self.iteregion = val;
                 Ok(msg)
             }
             "returndup" => {
@@ -1564,6 +1579,7 @@ impl Architecture {
         seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         seam.dup_return_call_tails = self.dup_return_call_tails; // taildup
         seam.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
+        seam.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         seam.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret

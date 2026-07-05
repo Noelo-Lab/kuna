@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr ITERegionConverter (angr/analyses/decompiler/optimization_passes/
+    ite_region_converter.py, _find_ite_assignment_regions), S8 "goto-quality"
+    sub-stage. decbench campaign feature F5, mined case
+    O0-iproute2-ip-print_link_flags (GED 140 -> 11 with the option on).
+
+    The option-gated ActionIteRegion (option `iteregion`, default-OFF; ELEM 4110)
+    ports angr's ITERegionConverter: a source `?:` ternary compiles at -O0 to a
+    two-arm register-assignment DIAMOND - one arm `mov eax, A`, the other
+    `mov eax, B`, both converging on the use of the merged value. Ghidra/kuna's
+    collapse-based structurer renders each diamond as a literal
+    `if (c) { v = A } else { v = B }` statement pair, doubling the branch count of
+    format/print/flag code (iproute2 print_link_flags: 41 ifs / 0 ternaries ->
+    21 ifs / 20 ternaries when the diamonds collapse). The pass matches the narrow
+    diamond (3-component BlockIf, single-CBRANCH condition, both clauses a single
+    COPY to the SAME variable) and marks its CBRANCH; the S9 printer then emits
+    `v = ( c ) ? A : B;` - Ghidra's printc has no ternary operator, so that emit
+    hook is the one genuinely new piece. It is a PURELY print-time mark (no p-code
+    cloned), so with the option off the pass never runs and output is
+    byte-identical to upstream.
+
+    *** RUNTIME CHOICE (why default-OFF and agent-flippable) ***
+    An explicit source `if/else` compiles to the SAME object code as a `?:`
+    ternary, so the diamond -> ternary rewrite matches the source ONLY when the
+    source used a ternary. The binary cannot tell them apart, so this ships
+    default-OFF and is flipped PER FUNCTION by an agent (`kuna catalog` ->
+    `-option iteregion on`): ON for format/print/flag-heavy code where the ternary
+    form dominates, OFF where explicit if/else is the likely source.
+
+    Witness (self-contained, no relocations): a `-O0` function whose only body is a
+    two-arm assignment diamond feeding a call -
+
+        int pick(int x) { return use(x ? 0x10 : 0x20); }
+
+    which compiles to `cmp x,0; je .else; mov eax,0x10; jmp .end;
+    .else: mov eax,0x20; .end: mov edi,eax; call use`. The merged eax is used by
+    the call, so the structurer keeps a real 3-component if/else BlockIf (not an
+    early return), exactly the shape the pass inspects. The `use` callee resolves
+    to an unnamed sub_401106 (outside the chunk), as in a stripped image.
+
+    P0 assertion: `option iteregion on|off` (default off = upstream byte-identical).
+    Pass 1 (option iteregion off): the diamond renders as a literal `if/else`
+    (`else {`, the else-arm `= 0x10;`). Pass 2 (option iteregion on): the same
+    diamond renders as the single ternary `v = (x == 0) ? 0x20 : 0x10;` and the
+    rewrite is logged (`iteregion: rewrote 1`). In both passes the merged variable
+    still feeds the `sub_401106` call, proving the p-code is untouched.
+
+    The `option ... off` preamble pins the pre-sweep (DIV-13 flags-off) structuring
+    baseline (the same convention as ghangr-ifelseflatten.xml), so the canonical
+    negated-guard `if (x == 0)` if/else diamond is what pass 1 sees and pass 2
+    converts regardless of future default flips.
+-->
+<bytechunk space="ram" offset="0x401119">
+f30f1efa554889e54883ec08897dfc837dfc007407b810000000eb05b82000000089c7e8c5ffffffc9c3
+</bytechunk>
+<symbol space="ram" offset="0x401119" name="pick"/>
+</binaryimage>
+<script>
+  <!-- kuna: pin the pre-sweep (DIV-13 flags-off) structuring baseline so pass 1
+       sees the canonical negated-guard if/else diamond; pass 2 enables only the
+       iteregion knob under test. -->
+  <com>option gotoreduce off</com>
+  <com>option crossjumprevert off</com>
+  <com>option taildup off</com>
+  <com>option dedupitetail off</com>
+  <com>option regionlooprefine off</com>
+  <com>option ifelseflatten off</com>
+  <com>option switchmultipred off</com>
+  <com>option tailcalljump off</com>
+  <com>option foldcallret off</com>
+  <com>option branchflip off</com>
+  <!-- kuna: iteregion is default-ON (DIV-17); pass 1 explicitly flips it OFF to pin
+       the upstream if/else baseline the pass converts, pass 2 turns it back on. -->
+  <com>option iteregion off</com>
+  <com>parse line extern void pick(int4 x);</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option iteregion on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="iteregion #1: bug (off) -- the assignment diamond renders as a literal if/else (else-arm only, off pass)" min="1" max="1">else \{</stringmatch>
+<stringmatch name="iteregion #2: bug (off) -- the else-arm constant assignment is a separate statement (off pass only)" min="1" max="1">= 0x10;</stringmatch>
+<stringmatch name="iteregion #3: fix (on) -- the diamond collapses to a single ?: ternary (on pass only)" min="1" max="1">\? 0x20 : 0x10</stringmatch>
+<stringmatch name="iteregion #4: fix (on) -- the rewrite is logged" min="1" max="1">iteregion: rewrote 1</stringmatch>
+<stringmatch name="iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes" min="2" max="2">sub_401106\(</stringmatch>
+</decompilertest>

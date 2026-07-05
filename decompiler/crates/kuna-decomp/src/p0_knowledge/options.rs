@@ -276,6 +276,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "crossjumprevert",
     "taildup",
     "dedupitetail",
+    "iteregion",
     "returndup",
     "foldcallret",
     "stackguard",
