@@ -429,6 +429,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `analysis_funcstart_patterns` flag is load-bearing for the default-off
         // contract.
         "funcstart_patterns" => arch.analysis_funcstart_patterns,
+        // (kuna) The recursive-descent discovery commit — promotes the Listing walk's
+        // followed CALL targets to functions. Coupled to the same flag as the prologue
+        // seeds that feed it (default-OFF; DIV-20 turns it on for non-x86-64 on the
+        // decompile-all surface). x86-64 keeps it off ⇒ byte-identical there.
+        "funcdisc_recursive" => arch.analysis_funcstart_patterns,
         "arm_markers" => arch.analysis_arm_markers,
         "mips_gp" => arch.analysis_mips_gp,
         "mips_isa" => arch.analysis_mips_isa,

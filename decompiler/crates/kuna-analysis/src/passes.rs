@@ -368,7 +368,26 @@ pub fn run_listing_consumers(
     let Ok(file) = object::File::parse(bytes) else {
         return Vec::new();
     };
-    let seeds = listing_seeds(&file, bytes);
+    let mut seeds = listing_seeds(&file, bytes);
+    // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
+    // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),
+    // seed the recursive-descent walk with its `<patternpairs>` function starts too — not
+    // just the entry oracles. On a STRIPPED ARM binary the entry oracles seed only the ELF
+    // entry, so the walk discovers ~nothing; seeded with the prologue starts it explores
+    // the CALL graph out of every discovered function and finds call-only targets that
+    // have no recognizable prologue (Ghidra's disassembler-driven recursive descent).
+    // betaflight STM32F405: the walk grows 1 -> 1470 discovered functions (Ghidra 1822).
+    // Gated by the same flag, so x86-64 (funcstart_patterns off) is unchanged.
+    if arch.analysis_funcstart_patterns {
+        let execs = crate::s1_entry::executable_sections(&file);
+        seeds.extend(
+            crate::s1_entry::full_pattern_starts(&file)
+                .into_iter()
+                .filter(|&vma| crate::s1_entry::in_executable_section(&execs, vma)),
+        );
+        seeds.sort_unstable();
+        seeds.dedup();
+    }
     let seed_names = funcsym_names(&file);
     let funcsym_seeds = crate::s1_entry::existing_function_addrs(&file, bytes);
     let listing = crate::listing::Listing::build_with_meta(
@@ -406,6 +425,19 @@ pub fn run_listing_consumers(
             listing.exec_ranges(),
         );
         out.push(("aif", aif_out));
+    }
+
+    // (kuna, recursive-descent discovery) Promote the walk's discovered functions — the
+    // CALL targets it followed from the (prologue-seeded) roots — to committed function
+    // entries. This is the commit step that turns the `walk.rs` two-level worklist
+    // recursive descent into actual functions (Ghidra's disassembler-driven
+    // CreateFunctionCmd analog); the commit arm names them `sub_<addr>` and dedups against
+    // the already-committed set. Gated by `funcdisc_recursive` → the same
+    // `analysis_funcstart_patterns` flag, so x86-64 (funcstart_patterns off) is byte-identical.
+    if arch.analysis_funcstart_patterns {
+        let mut rd_out = AnalysisOutput::default();
+        rd_out.entries = listing.functions().map(|(&vma, _)| vma).collect();
+        out.push(("funcdisc_recursive", rd_out));
     }
     out
 }
