@@ -195,8 +195,8 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 265,
-        "full universal tree must render 252 C++ leaves + 6 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail) + 7 container headers"
+        nonblank, 266,
+        "full universal tree must render 252 C++ leaves + 7 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + iteregion) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
@@ -215,14 +215,14 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // Tail: the S9 fixation/naming/cast suffix, ending at `stop`.
     // (kuna) ActionGotoReduce is registered after ActionFinalStructure, then
     // ActionTailDup, then ActionIfElseFlatten, then ActionCrossJumpReverter, then
-    // ActionDedupIteTail, so all five kuna leaves sit between finalstructure and
-    // prototypewarnings (finalstructure -> gotoreduce -> taildup -> ifelseflatten ->
-    // crossjumprevert -> dedupitetail).
+    // ActionDedupIteTail, then ActionIteRegion, so all six kuna leaves sit between
+    // finalstructure and prototypewarnings (finalstructure -> gotoreduce -> taildup ->
+    // ifelseflatten -> crossjumprevert -> dedupitetail -> iteregion).
     let tail: Vec<&str> =
         lines.iter().rev().take(8).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
     assert_eq!(
         tail,
-        vec!["finalstructure", "gotoreduce", "taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "prototypewarnings", "stop"]
+        vec!["gotoreduce", "taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "iteregion", "prototypewarnings", "stop"]
     );
 
     // `directwrite` (protorecovery_b) appears 3x total (protorecovery_a twice +
