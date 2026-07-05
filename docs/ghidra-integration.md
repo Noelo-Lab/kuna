@@ -410,22 +410,38 @@ What breaks when a partial core omits pieces — all failure modes are clean:
       exepath swap, binary shipped as `os/<platform>/kuna_ghidra`.
 - [x] These two documents.
 
-**Phase 2 — engine bridge (first real C in the GUI).** Full plan + risk
-assessment + sequencing: **`docs/rust-port/ghidra-phase2-plan.md`** (a [PROPOSAL]
-awaiting go/no-go, since this is the first phase that touches kuna-decomp's core).
+**Phase 2 — engine bridge (first real C in the GUI). DONE** (PR #135, branch
+`feat/ghidra-mode-phase2`). Full plan + risk assessment + sequencing:
+**`docs/rust-port/ghidra-phase2-plan.md`**. Each step landed as its own commit
+keeping `make test` at 675/675 PARITY OK. One design refinement vs the plan: the
+translator seam is a `Box<dyn EngineTranslate>` **trait**, not an enum — an enum
+variant naming `kuna-ghidra`'s `GhidraTranslate` would be a `kuna-decomp`↔`kuna-ghidra`
+dependency cycle; a trait object owned in `kuna-decomp` is not.
 - [x] `SharedClient` design (the re-entrant provider→query pattern) +
-      `GhidraLoadImage` (`load_fill` = `getBytes`) — `kuna-ghidra/src/provider.rs`,
-      implemented and tested as the phase's demonstrator.
-- [ ] `Architecture`-equivalent construction path: Architecture from the four
-      wire spec documents (wire the Phase-1 tspec space manager into the engine;
-      cspec/pspec via the existing `set_cspec_xml`/`set_pspec_xml` + `init_post_engine`).
-- [ ] `Translate` enum seam on `Architecture` (`{Sleigh, GhidraTranslate}`);
-      `GhidraTranslate` port (getPcode per instruction, register caches, user-op probe
-      loop). *The go/no-go linchpin — must land as a behavior-preserving refactor.*
-- [ ] `ContextGhidra::getTrackedSet` (the trait-borrow friction is resolved in the plan).
-- [ ] `Funcdata::encode` — minimal `<function>` (name/addr + `<ast>` + prototype).
-- [ ] PrintC → `EmitMarkup` wiring; `doc_function` markup path; dual-`<function>`
-      `decompileAt` response.
+      `GhidraLoadImage` (`load_fill` = `getBytes`) — `kuna-ghidra/src/provider.rs`.
+- [x] `EngineTranslate` trait seam on `Architecture` (`translate: Box<dyn EngineTranslate>`,
+      `infra/engine_translate.rs`) — behavior-preserving; only `Sleigh` implements it today.
+- [x] `GhidraTranslate` port (getPcode per instruction, register caches, user-op probe
+      loop) — `kuna-ghidra/src/translate.rs`. `ContextGhidra` is a `ContextInternal`
+      stub (empty tracked sets; the query-backed `getTrackedRegisters` is Phase 3).
+- [x] `Architecture::from_engine_translate` construction path: `registerProgram` builds
+      a live engine from the wire specs (tspec→manager, cspec/pspec via
+      `set_cspec_xml`/`set_pspec_xml`, `init_post_engine`; wire `<coretypes>` decode
+      deferred — uses the default `build_core_types`, Phase 3).
+- [x] `Funcdata::encode` — minimal `<function>`/`<ast>` (name/addr + ast;
+      `<prototype>`/`<localdb>`/`<highlist>`/`<jumptablelist>` deferred).
+- [x] PrintC → `EmitMarkup` wiring (`PrintEmit` enum, `doc_function_markup`, `MarkupRef`
+      population); the dual-`<function>` `decompileAt` response, driven by `decompile_func`
+      (name from `getCodeLabel`, flow-discovered extent). Proven end to end
+      (`kuna-ghidra/tests/decompile_at_e2e.rs`: the response decodes to a `<function>`
+      + a markup `<function>` whose refs resolve against the `<ast>`).
+
+**Phase-2 scope boundary (important):** `decompileAt` runs against an *empty*
+`ScopeInternal` global scope, so unresolved symbol/type references degrade to
+placeholders (`sub_ADDR`/`DAT_ADDR`/default types) and no `getMappedSymbols` query
+fires. Simple, self-contained functions decompile cleanly; correct names/types on
+global-heavy functions is exactly what Phase 3 (the lazy `ScopeGhidra`/
+`TypeFactoryGhidra`) adds. This is the intended Phase-2/Phase-3 line.
 
 **Phase 3 — lazy providers (correct symbols/types at scale).**
 - [ ] `ScopeGhidra`-equivalent lazy symbol cache: query-through + `<hole>` negatives +
