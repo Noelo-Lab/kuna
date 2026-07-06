@@ -781,3 +781,25 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
 - **Testcase**: `kuna-cli/tests/decompile_all_cli.rs` (the non-x86-64 default-on injection) +
   the real ARM Cortex-M behavior on the decbench `cps` corpus.
 - **Date**: 2026-07-05.
+
+## DIV-21: extra genuinely-unconditional no-return libc/BSD names (`err`/`errx` family, …)
+
+- **Flip**: kuna's `decompiler/crates/kuna-analysis/data/ElfFunctionsThatDoNotReturn` (the
+  data behind the default-on `noreturn_known` pass) adds names beyond the verbatim upstream
+  Ghidra list: the BSD `err`/`errx`/`verr`/`verrx`/`errc`/`verrc` family plus `quick_exit`,
+  `__assert_perror_fail`, `__chk_fail`, `__libc_fatal`.
+- **Why**: each of these ALWAYS `exit()`s/aborts (genuinely unconditional no-return), yet
+  upstream Ghidra's *ELF* list omits them — Ghidra catches them only via its default-on
+  discovered ≥3-evidence analyzer (`FindNoReturnFunctionsAnalyzer`), which kuna keeps
+  default-off. Without a no-return mark, kuna's flow-follower walks past a tail
+  `call errx(1,…)` (in an internal `die()`/`fatal()` wrapper) into the following function and
+  **absorbs** it — the exact function-boundary overrun class fixed for glibc `error()` in the
+  per-call-site prune (#138). Unlike `error()`/`error_at_line()` (which RETURN for status 0 and
+  are handled per-call-site by `noreturn_error`), the `err` family is unconditional, so a
+  whole-function mark is sound. `warn`/`warnx`/`vwarn`/`vwarnx` RETURN and are deliberately
+  excluded (a false positive would drop live caller code).
+- **Parity**: byte-identical on the datatest corpus (no datatest names any of these) and the
+  stage corpus — `make test` 675/675 PARITY OK. It only changes output on a real binary that
+  actually calls one of these as a no-returning tail.
+- **Testcase**: `s1_loader/noreturn.rs::div21_unconditional_noreturn_family_present_warn_absent`.
+- **Date**: 2026-07-06.
