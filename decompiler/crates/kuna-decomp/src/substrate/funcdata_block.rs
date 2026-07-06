@@ -2925,6 +2925,83 @@ impl Funcdata {
     /// per-function cap (`max_splits`) plus a per-block in-degree cap (`max_inedges`):
     /// a block with more predecessors than `max_inedges` is left merged.  A
     /// `node_split` that errors (e.g. redundant in edges) stops splitting that block.
+    /// True if the shared RETURN block `b` returns a CONSTANT value (or a phi/COPY
+    /// resolving to constants) — angr `ReturnDuplicatorHigh._should_duplicate_dst =
+    /// dst_is_const_ret` (it only duplicates *simple const-return* regions). A
+    /// `return <variable>` block is NOT const-ret. kuna's unfiltered duplication of
+    /// variable-return shares diverges from the source's merged short-circuit form on
+    /// the aggregate (decbench measured a ~976 GED-perfect regression); gating on this
+    /// makes returndup selective like angr's.
+    fn returndup_is_const_ret(&self, b: BlockId) -> bool {
+        let mut cur = self.bb_op_head(b);
+        let mut ret_op = None;
+        while let Some(op) = cur {
+            let o = self.obank().get(op).expect("rdup: stale op");
+            if o.code() == OpCode::CPUI_RETURN {
+                ret_op = Some(op);
+            }
+            cur = o.basic_neighbours().1;
+        }
+        let ret_op = match ret_op {
+            Some(o) => o,
+            None => return false,
+        };
+        let o = self.obank().get(ret_op).expect("rdup ret");
+        // CPUI_RETURN input 0 = return-address offset; input 1 = the returned value.
+        if o.num_input() < 2 {
+            return true; // void return — trivially a simple const-return region
+        }
+        match o.get_in(1) {
+            Some(valv) => self.returndup_value_is_const(valv),
+            None => false,
+        }
+    }
+
+    /// Constant-resolution helper for [`returndup_is_const_ret`]: a varnode resolves to
+    /// a constant if it is a literal/annotation, a COPY chain to one, or a MULTIEQUAL all
+    /// of whose inputs recursively resolve to constants (a phi-of-constants: `return 0`
+    /// merged from several predecessors, each a `mov eax,K; jmp` = COPY of a literal).
+    /// Recursion is depth-bounded (phis can cycle in loops) and never admits a `free`
+    /// varnode — a `return <variable>` (a load/call result) is NOT a const return.
+    fn returndup_value_is_const(&self, vn: VarnodeId) -> bool {
+        self.returndup_value_is_const_rec(vn, 8)
+    }
+
+    fn returndup_value_is_const_rec(&self, vn: VarnodeId, depth: u32) -> bool {
+        if depth == 0 {
+            return false;
+        }
+        let v = self.vbank().get(vn).expect("rdup vn");
+        if v.is_constant() || v.is_annotation() {
+            return true;
+        }
+        if v.is_free() {
+            return false;
+        }
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return false,
+        };
+        let d = self.obank().get(def).expect("rdup def");
+        match d.code() {
+            OpCode::CPUI_MULTIEQUAL => {
+                let n = d.num_input();
+                for i in 0..n {
+                    match d.get_in(i) {
+                        Some(iv) if self.returndup_value_is_const_rec(iv, depth - 1) => {}
+                        _ => return false,
+                    }
+                }
+                true
+            }
+            OpCode::CPUI_COPY => match d.get_in(0) {
+                Some(iv) => self.returndup_value_is_const_rec(iv, depth - 1),
+                None => false,
+            },
+            _ => false,
+        }
+    }
+
     pub(crate) fn returndup_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
         let mut count = 0;
 
@@ -2950,6 +3027,17 @@ impl Funcdata {
                 continue;
             }
             if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            // (kuna, angr-selective) Only duplicate a SIMPLE CONST-RETURN region — angr
+            // `ReturnDuplicatorHigh._should_duplicate_dst = dst_is_const_ret`. kuna used to
+            // duplicate every splittable shared return, INCLUDING `return <variable>`, which
+            // diverges from the source's merged short-circuit form on the aggregate (decbench:
+            // ~976 GED-perfect regression across 21768 firings). Const-return guard clauses
+            // (`if (c) return 0;`) are the early-return shape the source actually wrote, so
+            // restricting to them keeps the wins (factor, compspec_dispose) and drops the
+            // over-eager variable-return splits (~57% of candidates on coreutils b2sum).
+            if !self.returndup_is_const_ret(parent) {
                 continue;
             }
             if !parents.contains(&parent) {
