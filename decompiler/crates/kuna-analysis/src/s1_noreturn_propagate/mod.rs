@@ -137,8 +137,50 @@ impl AnalysisPass for NoReturnPropagatePass {
         for fact in propagate_noreturn(listing, &error_recog, reach) {
             out.noreturn.push(fact);
         }
+        // (kuna, Ghidra-gap) Emit every `call error(nonzero,…)` site so the decompile
+        // seam prunes its fall-through (CALL_RETURN override). Gated by the same
+        // `noreturn_error` flag as the recognizer; the recognizer is `disabled()` (no
+        // addresses) when the flag is off, so this yields an empty set then.
+        out.no_fallthru_calls = collect_error_noreturn_callsites(listing, &error_recog);
         out
     }
+}
+
+/// (kuna, Ghidra-gap) Every `call error(nonzero,…)` / `error_at_line(nonzero,…)`
+/// call-site address in the program. glibc `error()` with a nonzero constant status
+/// calls `exit(status)` and never returns, so the CALL's fall-through must be pruned
+/// exactly as Ghidra does ("Subroutine does not return"). Unlike [`function_is_no_return`]
+/// (which only inspects a *tail* call to conclude a wrapper no-return, entry-keyed),
+/// this collects EVERY such call site — the fall-through prune is what stops the
+/// flow-follower from walking past the call into the next function (the docolon→eval6
+/// boundary-overrun class). Reuses the recognizer's per-call-site value check.
+fn collect_error_noreturn_callsites(
+    listing: &Listing,
+    error_recog: &ErrorRecognizer,
+) -> Vec<u64> {
+    let mut sites = Vec::new();
+    if error_recog.error_addrs.is_empty() {
+        return sites;
+    }
+    for (&entry, _) in listing.functions() {
+        let next = listing.next_function_after(entry).map(|f| f.entry);
+        let body: Vec<(u64, &Insn)> = listing
+            .instructions()
+            .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+            .map(|(&vma, insn)| (vma, insn))
+            .collect();
+        for i in 0..body.len() {
+            // `call_is_terminal_error` = is_call && target is error && arg0 nonzero const
+            // (its name is "terminal" because such a call never returns; it is valid at
+            // any body position, not only the last).
+            if error_recog.call_is_terminal_error(&body, i) {
+                sites.push(body[i].0);
+            }
+        }
+    }
+    sites.sort_unstable();
+    sites.dedup();
+    sites
 }
 
 /// The `error(status,…)`-conditional no-return recognizer (decbench F2).

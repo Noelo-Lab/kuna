@@ -182,6 +182,28 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
         // catches un-ported-seam panics and returns Err, so a single bad function
         // degrades to an `error` record instead of aborting the binary.
         let mapped = prog.dwarf_locals_for(address);
+        // (kuna, Ghidra-gap) `CALL_RETURN` flow overrides for the binary's
+        // `call error(nonzero,…)` sites — prune the fall-through so the flow-follower
+        // stops at the no-return call (Ghidra "Subroutine does not return") instead of
+        // walking into the next function and absorbing it. The whole binary's list is
+        // passed; only sites this function's flow actually visits are applied. Empty
+        // unless the Listing + `noreturn_error` are on (so `kuna functions`/console are
+        // unaffected).
+        let flow_ovr: Vec<(kuna_base::address::Address, kuna_base::types::uint4)> =
+            match entry.get_space() {
+                Some(space) if !prog.arch().error_noreturn_callsites.is_empty() => prog
+                    .arch()
+                    .error_noreturn_callsites
+                    .iter()
+                    .map(|&off| {
+                        (
+                            kuna_base::address::Address::new(std::rc::Rc::clone(space), off),
+                            kuna_decomp::overrides::flow_type::CALL_RETURN,
+                        )
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
         match decompile_func_full_with_override_dyn(
             prog.arch_mut(),
             &name,
@@ -191,7 +213,7 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
             &[],
             &[],
             None,
-            &[],
+            &flow_ovr,
             &[],
             &[],
         ) {

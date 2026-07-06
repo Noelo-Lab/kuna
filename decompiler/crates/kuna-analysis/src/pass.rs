@@ -276,6 +276,14 @@ pub struct AnalysisOutput {
     /// The commit resolves each by ADDRESS (stable across demangling), falling
     /// back to the name path. See [`NoReturnFact`].
     pub noreturn: Vec<NoReturnFact>,
+    /// (kuna, Ghidra-gap) Addresses of `call error(nonzero,…)` / `error_at_line`
+    /// sites whose fall-through must be PRUNED — glibc `error()` with a nonzero
+    /// constant status calls `exit()` and never returns, so the CALL must not fall
+    /// through (Ghidra flags it "Subroutine does not return"). Committed as
+    /// `CALL_RETURN` flow overrides at the decompile seam; without this the
+    /// flow-follower walks past the call into the NEXT function and absorbs it
+    /// (the boundary-overrun class, ~50% of kuna's Ghidra GED gap).
+    pub no_fallthru_calls: Vec<u64>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
@@ -338,6 +346,7 @@ impl AnalysisOutput {
         self.entries.extend(other.entries);
         self.entry_names.extend(other.entry_names);
         self.noreturn.extend(other.noreturn);
+        self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.readonly.extend(other.readonly);
         self.strings.extend(other.strings);
         self.prototypes.extend(other.prototypes);

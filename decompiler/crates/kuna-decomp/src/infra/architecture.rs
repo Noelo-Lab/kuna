@@ -635,6 +635,13 @@ pub struct Architecture {
     /// Listing AND `noreturn_propagate` on; a no-op otherwise, so every parity gate is
     /// byte-identical (real-ELF path only). Default **on** (DIV-19).
     pub analysis_noreturn_reach: bool,
+    /// (kuna, Ghidra-gap) `call error(nonzero,…)` call-site addresses whose fall-through
+    /// the decompile seam must prune (as `CALL_RETURN` flow overrides). Populated at the
+    /// analysis commit from `AnalysisOutput::no_fallthru_calls` (empty unless `listing` +
+    /// `noreturn_error` are on); read by `decompile-all` per function. glibc `error()`
+    /// with a nonzero status never returns, so without the prune the flow-follower walks
+    /// past the call into the next function and absorbs it. Sorted/deduped.
+    pub error_noreturn_callsites: Vec<u64>,
     /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
     /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
     /// over the built Listing it fingerprints each function with the byte-exact
@@ -952,6 +959,7 @@ impl Architecture {
             analysis_noreturn_propagate: false,
             analysis_noreturn_error: false,
             analysis_noreturn_reach: false,
+            error_noreturn_callsites: Vec::new(),
             analysis_fid: false,
             analysis_rtti: false,
             analysis_aif: false,
