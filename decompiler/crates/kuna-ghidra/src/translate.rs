@@ -351,6 +351,7 @@ impl<R: Read, W: Write> RegisterLookup for GhidraTranslate<R, W> {
     /// C++ `GhidraTranslate::getExactRegisterName`
     /// (ghidra_translate.cc:89-106): the register name only if it matches the
     /// location AND size exactly, else "".
+    #[allow(clippy::mutable_key_type)] // see cache_register
     fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
         if base.get_type() != spacetype::IPTR_PROCESSOR {
             return String::new();
@@ -360,6 +361,17 @@ impl<R: Read, W: Write> RegisterLookup for GhidraTranslate<R, W> {
             offset: off,
             size: size as u32,
         };
+        // C++ getExactRegisterName opens with `addr2nm.find(vndata)` and returns
+        // the cached name before any query (ghidra_translate.cc:96-98).  A hit is
+        // keyed by a cached FULL register's exact vndata, so it already satisfies
+        // the exact-size requirement — no size re-check needed.  Mirrors the same
+        // short-circuit in `get_register_name`.
+        {
+            let cache = self.addr2nm.borrow();
+            if let Some(nm) = cache.get(&vndata) {
+                return nm.clone();
+            }
+        }
         let bytes = match self.client.borrow_mut().get_register_name(&vndata) {
             Ok(b) => b,
             Err(_) => return String::new(),
