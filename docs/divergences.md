@@ -803,3 +803,27 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   actually calls one of these as a no-returning tail.
 - **Testcase**: `s1_loader/noreturn.rs::div21_unconditional_noreturn_family_present_warn_absent`.
 - **Date**: 2026-07-06.
+
+## DIV-22: Ghidra's discovered ≥3-evidence no-return analyzer (`noreturn_disc`) on by default
+
+- **Flip**: option **`noreturn_disc`** default **off → on** (`architecture.rs`, `stages.toml`).
+  The kuna port of Ghidra's `FindNoReturnFunctionsAnalyzer.checkNonReturningIndicators` — a
+  callee is concluded no-return when **≥3 call sites** show no valid fall-through. This is
+  **default-ON in Ghidra**; kuna had it off. It complements `noreturn_reach` (the body-walk
+  `targetOnlyCallsNoReturn` rule) by catching heavily-called custom `die()`/`fatal()` wrappers
+  kuna cannot prove structurally (stripped `sub_*`, indirect-tail, partial decode).
+- **Why**: closes the residual function-boundary-overrun cases Ghidra catches by default —
+  the same class as the `error()` (#138) and `err`/`errx` (DIV-21) fixes, generalized to any
+  no-returning callee with enough call-site evidence. REMOVES CODE (drops the post-call dead
+  fall-through at each caller).
+- **Listing-gated**: like `noreturn_propagate`/`reach`/`error`, it only runs when the Listing
+  is built (`decompile-all` and the now-listing-defaulted `kuna decompile`; the datatest/stage
+  path never builds the Listing), so **`make test` 675/675 + `make test-stages` 254/254 are
+  byte-identical**. Restore the pre-DIV-22 behaviour with `option noreturn_disc off`.
+- **Companion (single-function correctness)**: `kuna decompile` now builds the Listing by
+  default (like `decompile-all`, DIV-15) and the console `decompile`/`load` commands apply the
+  `error(nonzero)` CALL_RETURN prune (`error_noreturn_callsites`), so a single-function
+  decompile no longer overruns past a no-returning call into the next function. Opt out with
+  `--option listing off`.
+- **Testcase**: `decompile_all_cli.rs::kuna_decompile_single_error_nonzero_does_not_absorb_next_function`.
+- **Date**: 2026-07-06.
