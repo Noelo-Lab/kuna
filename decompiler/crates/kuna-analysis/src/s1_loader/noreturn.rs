@@ -284,6 +284,27 @@ mod tests {
         assert!(!exact.iter().any(|e| e.starts_with('_')));
     }
 
+    /// (kuna DIV-21) The genuinely-unconditional no-return libc/BSD names added beyond
+    /// upstream's ELF list — the `err`/`errx` family + `quick_exit`/`__assert_perror_fail`/
+    /// `__chk_fail`/`__libc_fatal`. Each ALWAYS exits, so a `die()`/`fatal()` wrapper ending
+    /// in one is no-return; without them its callers overrun into the next function (the
+    /// same class as the `error()` boundary overrun). `warn`/`warnx` RETURN and must stay OUT.
+    #[test]
+    fn div21_unconditional_noreturn_family_present_warn_absent() {
+        let (exact, wildcard) = sets();
+        for want in ["err", "errx", "verr", "verrx", "errc", "verrc", "quick_exit"] {
+            assert!(name_matches(want, &exact, &wildcard), "DIV-21: {want} must be no-return");
+        }
+        // underscore-stripped glibc internals
+        assert!(name_matches("__assert_perror_fail", &exact, &wildcard));
+        assert!(name_matches("__chk_fail", &exact, &wildcard));
+        assert!(name_matches("__libc_fatal", &exact, &wildcard));
+        // the warn family RETURNS — a false positive here would drop live caller code.
+        for nope in ["warn", "warnx", "vwarn", "vwarnx"] {
+            assert!(!name_matches(nope, &exact, &wildcard), "{nope} RETURNS; must NOT be no-return");
+        }
+    }
+
     #[test]
     fn strips_all_leading_underscores() {
         let (exact, wildcard) = sets();

@@ -25,3 +25,21 @@ fortify_fail
 ZSt9terminatev
 ZN10__cxxabiv111__terminateEPFvvE
 pthread_exit
+#
+# (kuna divergence, DIV-21) Genuinely-UNCONDITIONAL no-return libc/BSD functions that
+# upstream Ghidra's ELF list omits (it catches them only via its default-on discovered
+# >=3-evidence analyzer). Each ALWAYS exits/aborts — safe to mark unconditionally
+# (unlike error()/error_at_line(), which RETURN for status 0 and are handled per-call-
+# site by noreturn_error). Adding them stops the function-boundary overrun where an
+# internal die()/fatal() wrapper ends in one of these (the same class as the error()
+# overrun fixed in #138). NB: warn/warnx/vwarn/vwarnx RETURN and are deliberately absent.
+err
+errx
+verr
+verrx
+errc
+verrc
+quick_exit
+assert_perror_fail
+chk_fail
+libc_fatal
