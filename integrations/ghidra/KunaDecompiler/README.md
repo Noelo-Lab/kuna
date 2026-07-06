@@ -1,14 +1,17 @@
 # KunaDecompiler — the kuna core inside the stock Ghidra GUI
 
-A standard Ghidra extension that makes Ghidra spawn **kuna** (the Rust port of the
-Ghidra decompiler, this repository) as its native decompiler process, in place of the
-stock C++ `decompile` binary — the full Ghidra GUI (Decompiler window, analyzers,
-scripts) on top of the kuna engine.
+A standard Ghidra extension that makes the **stock Ghidra GUI** spawn **kuna** (the Rust
+port of the Ghidra decompiler, this repository) as its native decompiler backend, in
+place of the stock C++ `decompile` binary — the *unchanged* Ghidra GUI (Decompiler
+window, analyzers, scripts) running on the kuna engine. It is a drop-in, backwards-
+compatible backend: Ghidra's Java side is untouched; only the spawned process changes.
 
-**Status: Phase 1 — protocol skeleton.** The `kuna_ghidra` binary speaks the complete
-Ghidra⇄decompiler wire protocol (burst framing, packed documents, query upcalls), but
-the engine bridge is not yet connected: Ghidra will show a clean per-function error
-message in the Decompiler window instead of decompiled C until Phase 2 lands. See
+**Status: Phase 2 — kuna decompiles.** The `kuna_ghidra` binary speaks the complete
+Ghidra⇄decompiler wire protocol *and* drives kuna's engine, so the Decompiler window
+shows **real C produced by kuna**, with working click-to-address. Current scope: simple,
+self-contained functions decompile cleanly; a function that references globals/types the
+engine can't yet resolve shows placeholder names (`sub_…`/`DAT_…`) and default types —
+correct names/types at scale is Phase 3 (the lazy symbol scope). See
 [`docs/ghidra-integration.md`](../../../docs/ghidra-integration.md) for the design and
 phase plan. Target Ghidra version: **12.2** (the swap relies on the exact shape of
 `DecompileProcessFactory`; see *How it works* below).
@@ -24,9 +27,37 @@ env var, or ExtensionPoint to substitute it — so at plugin load,
 field by reflection, before the lazily-spawned first decompiler process exists. A
 Tools-menu checkbox toggles between the kuna core and the stock one at runtime.
 
-## Build the kuna binary
+## Run the kuna backend in a real Ghidra instance
 
-From the kuna repo root:
+The whole flow, against a **Ghidra release install** — build the backend, package the
+extension, install it, enable the plugin, decompile:
+
+```bash
+# 1. Build the kuna_ghidra backend and package the extension in one step.
+#    build.sh compiles the release binary, stages it into os/<platform>/, and
+#    (because GHIDRA_INSTALL_DIR is set) builds the installable zip.
+cd integrations/ghidra/KunaDecompiler
+GHIDRA_INSTALL_DIR=/abs/path/to/ghidra_12.2 ./build.sh
+#    -> dist/ghidra_12.2_..._KunaDecompiler.zip
+```
+
+2. **Install the extension:** in Ghidra's project window, **File → Install Extensions… →
+   `+` → select `dist/…_KunaDecompiler.zip`**, then restart Ghidra when prompted.
+3. **Enable the plugin:** open a program in the CodeBrowser, then **File → Configure →
+   Miscellaneous** and check **KunaDecompilerPlugin**. On load it swaps the decompiler
+   core and logs `Decompiler core is now KUNA: <path>`.
+4. **Decompile:** open any function — the Decompiler window now shows kuna's C. (Try a
+   small, self-contained function first; see the status note above for what Phase 2 does
+   and doesn't yet resolve.)
+5. **Toggle / revert** at runtime with **Tools → Kuna Decompiler → Use Kuna Core** (see
+   *Revert* below).
+
+Manual equivalents and the dev-checkout path are in the sections below.
+
+### Just the binary (manual)
+
+`build.sh` with no `GHIDRA_INSTALL_DIR` builds + stages the binary only; the equivalent
+by hand, from the repo root:
 
 ```bash
 cd decompiler
@@ -35,8 +66,9 @@ cp target/release/kuna_ghidra ../integrations/ghidra/KunaDecompiler/os/linux_x86
 ```
 
 The binary is a gitignored build artifact; it must be present under
-`os/linux_x86_64/` **before** building the extension zip so it gets packaged (other
-platforms: see `os/linux_x86_64/README.md`).
+`os/<platform>/` **before** building the extension zip so it gets packaged (`build.sh`
+picks the right `os/<platform>/` dir for your host; for other platforms see
+`os/linux_x86_64/README.md`).
 
 ## Build & install the extension
 
@@ -82,9 +114,12 @@ leaves the stock core active.
 - Run the bundled script `KunaCoreStatus.java` (Script Manager, category *Kuna*): it
   prints the executable path currently installed in `DecompileProcessFactory` and
   whether the next decompiler process is the kuna or stock core.
-- Decompile any function: in Phase 1 the Decompiler window shows the kuna phase-1
-  per-function message instead of C — that message coming from the Decompiler window
-  *is* the proof that Ghidra spawned kuna.
+- Decompile a small, self-contained function: the Decompiler window shows kuna's C, and
+  clicking a token navigates to its address — proof that the stock GUI is running on the
+  kuna engine. If a function can't be decompiled yet (an un-supported engine path), the
+  window shows a clean per-function message instead of hanging.
+- Sanity check that it's really kuna and not the stock core: the two decompilers produce
+  cosmetically different C, and `KunaCoreStatus.java` reports the `kuna_ghidra` path.
 
 ## Revert
 
