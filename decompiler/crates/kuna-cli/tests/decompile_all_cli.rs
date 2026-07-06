@@ -455,3 +455,38 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
          NOT absorb `compute`/`compute_warn`:\n{on}"
     );
 }
+
+/// (kuna, Ghidra-gap) The SINGLE-function `kuna decompile` path must also prune the
+/// `error(nonzero)` fall-through — not just `decompile-all`. It now builds the Listing by
+/// default (like decompile-all) and `IfcDecompile` applies the CALL_RETURN overrides, so
+/// `err_fatal` @ 0x4011c0 does not overrun into the following `compute`/`compute_warn`.
+/// `--option noreturn_error off` disables the recognizer ⇒ the overrun returns (control).
+#[test]
+fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
+    let bin = noreturn_error_fixture();
+    let sp = specs();
+    let code = |extra: &[&str]| -> Option<String> {
+        let mut a: Vec<&str> = vec!["decompile", &bin, "0x4011c0", "--addr", "--sleighpath", &sp];
+        a.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&a);
+        if !ok {
+            eprintln!("kuna decompile failed (likely a specs-less environment): {stderr}");
+            return None;
+        }
+        Some(stdout)
+    };
+    // `err_warn` belongs to `compute_warn`, a DIFFERENT function — it appears in err_fatal's
+    // output ONLY if the flow overran past `call error(2)`.
+    let Some(off) = code(&["--option", "noreturn_error", "off"]) else {
+        return; // specs-less skip
+    };
+    let on = code(&[]).expect("second run succeeds if the first did");
+    assert!(
+        off.contains("err_warn"),
+        "noreturn_error off: single-function err_fatal should overrun (pre-fix):\n{off}"
+    );
+    assert!(
+        !on.contains("err_warn"),
+        "the single-function `kuna decompile` path must prune the error(2) fall-through:\n{on}"
+    );
+}

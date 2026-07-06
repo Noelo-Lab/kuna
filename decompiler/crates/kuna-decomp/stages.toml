@@ -2363,7 +2363,7 @@ change_kind = "analysis-enablement"
 [[settable]]
 option = "noreturn_disc"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S1"
 substage = "external-refinement"

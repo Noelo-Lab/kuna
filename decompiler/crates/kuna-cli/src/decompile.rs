@@ -67,6 +67,17 @@ fn build_script(
     // options first lets a per-run pass gate take effect; an option after the
     // commit would be a no-op (the analysis-port conflict #4 ordering fix). The
     // upstream/printer options here are order-independent w.r.t. `read symbols`.
+    //
+    // (kuna, Ghidra-gap / DIV-15) Build the Listing by default (unless the caller names
+    // `listing`), matching `decompile-all`: the Listing drives the no-return analysis
+    // (noreturn_propagate/reach/error/disc) that marks called functions no-return, so the
+    // flow-follower does NOT overrun past a `call error(nonzero)`/`abort`/… into the
+    // following function. Without it the single-function decompile inflates a function
+    // that ends in a no-returning call by absorbing its neighbour. Opt out with
+    // `--option listing off`.
+    if !options.iter().any(|(name, _)| name == "listing") {
+        lines.push("option listing on".into());
+    }
     for (name, value) in options {
         lines.push(format!("option {name} {value}"));
     }
