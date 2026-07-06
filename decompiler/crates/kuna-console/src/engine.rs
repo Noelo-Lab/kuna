@@ -1067,6 +1067,17 @@ fn commit_analysis_output(
         }
     }
 
+    // 3a'. (kuna, Ghidra-gap) Stash the `call error(nonzero,…)` prune list on the arch
+    //      so `decompile-all` applies CALL_RETURN flow overrides per function (prunes the
+    //      fall-through Ghidra also prunes). Empty unless the Listing + `noreturn_error`
+    //      are on, so the datatest/console parity paths (no Listing) are unaffected.
+    if !out.no_fallthru_calls.is_empty() {
+        let mut sites = out.no_fallthru_calls.clone();
+        sites.sort_unstable();
+        sites.dedup();
+        prog.arch_mut().error_noreturn_callsites = sites;
+    }
+
     // 3b. FID re-identification (the kuna analog of Ghidra's FID identification
     //     analyzer): RENAME a function whose instruction-stream fingerprint matched
     //     a known-library record. Unlike the SymFact arm (step 1) — an idempotent

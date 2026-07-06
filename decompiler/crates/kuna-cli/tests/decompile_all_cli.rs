@@ -53,6 +53,17 @@ fn json_count(stdout: &str) -> Option<usize> {
     stdout[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
 }
 
+/// The `error(nonzero,…)` boundary-overrun fixture (`noreturn_error_x86_64`):
+/// `err_fatal.constprop.0` @ 0x4011c0 ends in `call error(2,…)` and is immediately
+/// followed by `compute` @ 0x4011f0.
+fn noreturn_error_fixture() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/noreturn_error_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// Run the built `kuna` binary, returning `(stdout, stderr, success)`.
 fn run_kuna(args: &[&str]) -> (String, String, bool) {
     let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
@@ -394,4 +405,53 @@ fn functions_lists_main() {
     }
     assert!(stdout.contains("\"name\": \"main\""), "enumeration missing `main`:\n{stdout}");
     assert!(stdout.contains("\"address\""), "enumeration missing addresses:\n{stdout}");
+}
+
+/// (kuna, Ghidra-gap) The `error(nonzero,…)` boundary-overrun fix. `err_fatal`
+/// (0x4011c0) ends in `call error(2,…)` — glibc `error()` with a nonzero status
+/// never returns — so the decompile-all seam must prune its fall-through (a
+/// `CALL_RETURN` flow override) exactly as Ghidra does ("Subroutine does not
+/// return"). Without the prune the flow-follower walks past the call into the
+/// following function `compute` (0x4011f0) and absorbs it, inflating the CFG —
+/// the single biggest cause of kuna losing to Ghidra proper on the benchmark
+/// (~50% of the ghidra-beats-kuna GED cases were this boundary overrun).
+///
+/// The test isolates exactly the fix: `--option noreturn_error off` (no error
+/// recognizer ⇒ no prune ⇒ err_fatal absorbs `compute`) must yield a LARGER
+/// function byte-extent than the default (`noreturn_error on`, the prune fires).
+#[test]
+fn decompile_all_error_nonzero_does_not_absorb_next_function() {
+    let bin = noreturn_error_fixture();
+    let sp = specs();
+    let code = |extra: &[&str]| -> Option<String> {
+        let mut a: Vec<&str> =
+            vec!["decompile-all", &bin, "--addr", "0x4011c0", "--json", "--sleighpath", &sp];
+        a.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&a);
+        if !ok {
+            eprintln!("decompile-all failed (likely a specs-less environment): {stderr}");
+            return None;
+        }
+        Some(stdout)
+    };
+    // OFF: err_fatal's flow walks past `call error(2)` into the following functions.
+    let Some(off) = code(&["--option", "noreturn_error", "off"]) else {
+        return; // specs-less skip
+    };
+    // ON (default): the CALL_RETURN prune stops err_fatal at the no-return call.
+    let on = code(&[]).expect("second run succeeds if the first did");
+    // `err_warn` belongs to `compute_warn` — a DIFFERENT function two hops after
+    // err_fatal. It can only appear in err_fatal's decompilation if the flow-follower
+    // overran `call error(2)` and absorbed the following functions. OFF must show the
+    // overrun; ON (the prune) must not.
+    assert!(
+        off.contains("err_warn"),
+        "with noreturn_error off, err_fatal should overrun and absorb the following \
+         functions (the pre-fix behaviour):\n{off}"
+    );
+    assert!(
+        !on.contains("err_warn"),
+        "noreturn_error must prune the `call error(2)` fall-through so err_fatal does \
+         NOT absorb `compute`/`compute_warn`:\n{on}"
+    );
 }
