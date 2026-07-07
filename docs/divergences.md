@@ -827,3 +827,29 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   `--option listing off`.
 - **Testcase**: `decompile_all_cli.rs::kuna_decompile_single_error_nonzero_does_not_absorb_next_function`.
 - **Date**: 2026-07-06.
+
+## DIV-23: angr per-edge const-guard early-return hoisting (`earlyreturn`) on by default
+
+- **Flip**: option **`earlyreturn`** default **off → on** (`architecture.rs`, `stages.toml`).
+  The kuna port of angr SAILR `ReturnDuplicatorHigh`, narrowed to the **per-edge const case**:
+  for a leading argument-validity guard whose false arm returns a constant, merged with the
+  body's variable return (`v = MULTIEQUAL(#K, <var>); return v`), peel **only** the constant
+  edge into its own `return K` so `branchflip` + `ifelseflatten` hoist it to the source's
+  `if (!guard) return K; <body>; return <var>;` — instead of kuna's inverted diamond.
+- **Why**: closes the *plurality* cluster of the angr-beats-kuna gap (early-return / else-
+  simplification). It is the const-only narrowing of `returndup`, whose whole-block const gate
+  (`returndup_is_const_ret`) cannot reach the mixed const/variable diamond. Crucially, unlike
+  broad `returndup` (DIV-18, reverted for a **−976** aggregate GED-perfect regression from
+  peeling *variable* returns), the decbench ablation measured `earlyreturn` **NET-POSITIVE**:
+  **+47 perfect matches, −576 summed GED, 158:54 improved:regressed** across 508 sailr binaries
+  — because it only ever recovers genuine source early-return guards.
+- **Byte-identical on the corpus**: `earlyreturn` changes exactly **one** datatest (`boolless`,
+  which opts out via `option earlyreturn off`), so **`make test` 675/675 + `make test-stages`
+  256/256 hold**. The C++-parity unit tests (`print_b5_boolless`, the `verify_w10_*` boolless
+  witnesses) and the `returndup` stage test opt out the same way. Restore the pre-DIV-23
+  behaviour with `option earlyreturn off`.
+- **Mechanism (Stage 1 scope)**: register-MULTIEQUAL const-guard diamonds; fires on ~8–18% of
+  functions (valid C, 0 corruption). Stack-slot returns + nested multi-guard are a future
+  generalization. Bounded (≤16 predecessors, ≤32 splits/function); each hoist logged.
+- **Testcase**: `tests/stages/ghangr-earlyreturn.xml` (two-pass off/on flip on factor `sub_eb2e`).
+- **Date**: 2026-07-07.

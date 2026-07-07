@@ -259,6 +259,10 @@ fn run_full(stem: &str, which: usize) -> Result<(XmlArchitecture, Funcdata), Str
         .ok_or(format!("no space {space_name}"))?
         .clone();
     let entry = Address::new(space, off);
+    // (kuna) These tests pin boolless's upstream-parity shape; earlyreturn is default-on
+    // (DIV-23) and fires on boolless, so disable it here to match the datatest opt-out
+    // (`option earlyreturn off` in tests/datatests/boolless.xml).
+    arch.early_return = false;
     let fd = decompile_func(arch, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
     Ok((xarch, fd))
 }
