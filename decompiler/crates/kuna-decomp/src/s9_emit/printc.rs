@@ -2253,6 +2253,11 @@ impl PrintC {
             Some(r) => r,
             None => return,
         };
+        // Drop any pending-brace fire log from a previous function so the
+        // per-registration `pend_fired` record cannot accumulate across a
+        // load-once/decompile-many run (generations are globally unique, so this
+        // is purely to bound memory, not for correctness).
+        self.emit.reset_pending_fired();
         self.emit_block_graph(fd, arch, sroot);
     }
 
@@ -2582,8 +2587,13 @@ impl PrintC {
         //   else-clause of a parent if, the parent set the pending_brace mod; we
         //   register a brace that opens lazily so a real `else if` collapses.
         let mut registered_pending = false;
+        let mut my_pending_gen = 0u64;
         if self.context.is_set(modifiers::PENDING_BRACE) {
             self.emit.set_pending_brace(to_emit_brace(self.options.brace_ifelse));
+            // Remember *our* registration's generation so the close decision below
+            // asks whether OUR brace fired, not whether the shared slot holds any
+            // fired id (which could be a nested/sibling BlockIf's brace).
+            my_pending_gen = self.emit.pending_reg_gen();
             registered_pending = true;
         }
 
@@ -2614,7 +2624,12 @@ impl PrintC {
             self.emit.spaces(1, 0);
         } else {
             if registered_pending {
-                my_pending_indent = self.emit.pending_brace_indent_id();
+                // C++ `pendingBrace.getIndentId()`: close a lazy `else { … }`
+                // brace only if OUR OWN registration fired.  Reading the shared
+                // `pending_brace_indent_id()` here would pick up a stale id left by
+                // a nested BlockIf's fire and emit an unmatched `}` (dumping code to
+                // file scope) whenever our brace was shadowed but never opened.
+                my_pending_indent = self.emit.pending_fired_indent(my_pending_gen);
             }
             self.emit.tag_line();
         }
@@ -2725,8 +2740,10 @@ impl PrintC {
         // parent if's else-clause, register the lazy brace so the ternary statement
         // renders `else { ... }` (a statement can never be `else if`).
         let mut registered_pending = false;
+        let mut my_pending_gen = 0u64;
         if self.context.is_set(modifiers::PENDING_BRACE) {
             self.emit.set_pending_brace(to_emit_brace(self.options.brace_ifelse));
+            my_pending_gen = self.emit.pending_reg_gen();
             registered_pending = true;
         }
         self.context.push_mod();
@@ -2746,11 +2763,14 @@ impl PrintC {
 
         // Start the ternary statement on a fresh line; the tag_line fires any
         // pending brace (so an else-clause diamond renders `else { v = ...; }`).
+        // Read whether OUR registration fired only *after* the tag_line that fires
+        // it, and key it to our own generation (per-frame, like emit_block_if) so a
+        // nested/sibling fire can never leave us closing a brace we never opened.
+        self.emit.tag_line();
         let mut my_pending_indent = -1;
         if registered_pending {
-            my_pending_indent = self.emit.pending_brace_indent_id();
+            my_pending_indent = self.emit.pending_fired_indent(my_pending_gen);
         }
-        self.emit.tag_line();
 
         // dest = ( cond ) ? A : B ;
         let sid = self.emit.begin_statement(&MarkupRef::none());
