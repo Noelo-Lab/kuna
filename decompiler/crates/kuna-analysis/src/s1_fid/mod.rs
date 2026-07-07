@@ -116,7 +116,14 @@ impl AnalysisPass for FidPass {
             return out;
         };
         let code_space = Rc::clone(code_space);
-        let translate = ctx.arch.translate();
+        // FID hashing decodes through the concrete SLEIGH engine
+        // (`Sleigh::instruction_mask`); this re-identification path only ever
+        // runs on the standalone engine, so downcast through the seam.
+        let translate = ctx
+            .arch
+            .translate()
+            .as_sleigh()
+            .expect("FID build: standalone Sleigh engine");
 
         // The relocation oracle: a fully-linked image (the stripped `-static
         // -no-pie` re-identification target) carries no dynamic relocations over its

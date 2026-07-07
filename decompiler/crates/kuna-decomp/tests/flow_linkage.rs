@@ -401,7 +401,9 @@ fn drive_real_flow_and_render(
     start_off: u64,
     max_insn: usize,
 ) -> Vec<String> {
-    let env = BootstrapEnv { sleigh: bs.arch.sleigh().base().unwrap().translate() };
+    let env = BootstrapEnv {
+        sleigh: bs.arch.sleigh().base().unwrap().translate().as_sleigh().expect("standalone Sleigh"),
+    };
     let engine_manager: *const AddrSpaceManager = bs.arch.sleigh().base().unwrap().manage();
     let fd = build_funcdata(bs, "entry", space_name, start_off);
     let mut flow = FlowInfo::new(fd, &env);

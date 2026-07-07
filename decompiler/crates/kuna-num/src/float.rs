@@ -11,9 +11,16 @@
 //!
 //! - Exactly where the C++ computes on host `double`, this port computes on
 //!   host `f64` (same IEEE 754 binary64 arithmetic, same hardware ops on the
-//!   oracle's x86 host).  The sign of a NaN *result* therefore follows host
-//!   semantics (x86 NaN-producing arithmetic yields the negative default
-//!   QNaN; the payload is canonicalized by `get_nan_encoding`).
+//!   oracle's x86 host).  IEEE-754 leaves the *sign* of a NaN produced by an
+//!   invalid operation (`sqrt(-1)`, `0/0`, `inf-inf`, `0*inf`, …) host-defined:
+//!   the x86 FPU yields the negative "real indefinite" QNaN (`0xffc00000`),
+//!   Apple-Silicon/ARM the positive default NaN (`0x7fc00000`); Ghidra's C++
+//!   inherits whichever the build host produces (float.cc `signbit(host)`).
+//!   To stay deterministic across build hosts *and* byte-identical to the
+//!   Linux/x86 golden oracle everywhere, the arithmetic ops pin the x86 sign
+//!   for a *generated* NaN (see [`FloatFormat::encode_generated`]); a
+//!   *propagated* NaN (an input was already NaN) keeps its host-deterministic
+//!   sign.  The payload is canonicalized by `get_nan_encoding`.
 //! - `opTrunc`'s `(intb)double` cast is the host x86 `cvttsd2si` cast, NOT
 //!   Rust's saturating `as`; see [`host_double_to_int64`].
 //! - C++ `ldexp`/`frexp` have no Rust std equivalent; [`ldexp`] / [`frexp`]
@@ -713,32 +720,50 @@ impl FloatFormat {
         u64::from(tp == floatclass::nan)
     }
 
+    /// Encode a host FP result, pinning the sign of an *invalid-operation-
+    /// generated* NaN to the x86 "real indefinite" (`0xffc00000` / sign set),
+    /// so the engine is deterministic across build hosts and byte-identical to
+    /// the Linux/x86 golden oracle everywhere (see the module header).
+    ///
+    /// `input_was_nan` is true when any operand already decoded to a NaN — then
+    /// the result is a *propagated* NaN whose sign is host-deterministic (it
+    /// follows the operand: the `0x7fc00000` propagation rows of the golden
+    /// vectors), so it is left untouched.  On the x86 oracle host the fixup is a
+    /// no-op (the host already yields `0xffc00000`), so x86 output is unchanged.
+    fn encode_generated(&self, host: f64, input_was_nan: bool) -> u64 {
+        let enc = self.get_encoding(host);
+        if !input_was_nan && self.get_class(enc) == floatclass::nan {
+            return self.get_nan_encoding(true);
+        }
+        enc
+    }
+
     /// Addition (+).
     pub fn op_add(&self, a: u64, b: u64) -> u64 {
-        let (val1, _type) = self.get_host_float(a);
-        let (val2, _type) = self.get_host_float(b);
-        self.get_encoding(val1 + val2)
+        let (val1, t1) = self.get_host_float(a);
+        let (val2, t2) = self.get_host_float(b);
+        self.encode_generated(val1 + val2, t1 == floatclass::nan || t2 == floatclass::nan)
     }
 
     /// Division (/).
     pub fn op_div(&self, a: u64, b: u64) -> u64 {
-        let (val1, _type) = self.get_host_float(a);
-        let (val2, _type) = self.get_host_float(b);
-        self.get_encoding(val1 / val2)
+        let (val1, t1) = self.get_host_float(a);
+        let (val2, t2) = self.get_host_float(b);
+        self.encode_generated(val1 / val2, t1 == floatclass::nan || t2 == floatclass::nan)
     }
 
     /// Multiplication (*).
     pub fn op_mult(&self, a: u64, b: u64) -> u64 {
-        let (val1, _type) = self.get_host_float(a);
-        let (val2, _type) = self.get_host_float(b);
-        self.get_encoding(val1 * val2)
+        let (val1, t1) = self.get_host_float(a);
+        let (val2, t2) = self.get_host_float(b);
+        self.encode_generated(val1 * val2, t1 == floatclass::nan || t2 == floatclass::nan)
     }
 
     /// Subtraction (-).
     pub fn op_sub(&self, a: u64, b: u64) -> u64 {
-        let (val1, _type) = self.get_host_float(a);
-        let (val2, _type) = self.get_host_float(b);
-        self.get_encoding(val1 - val2)
+        let (val1, t1) = self.get_host_float(a);
+        let (val2, t2) = self.get_host_float(b);
+        self.encode_generated(val1 - val2, t1 == floatclass::nan || t2 == floatclass::nan)
     }
 
     /// Unary negate.
@@ -755,8 +780,8 @@ impl FloatFormat {
 
     /// Square root (sqrt).
     pub fn op_sqrt(&self, a: u64) -> u64 {
-        let (val, _type) = self.get_host_float(a);
-        self.get_encoding(val.sqrt())
+        let (val, tp) = self.get_host_float(a);
+        self.encode_generated(val.sqrt(), tp == floatclass::nan)
     }
 
     /// Convert integer to floating-point: `a` is a signed integer value,

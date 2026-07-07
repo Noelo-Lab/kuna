@@ -184,6 +184,8 @@ name = "kuna-ghidra"
 version = "0.1.0"
 dependencies = [
  "kuna-base",
+ "kuna-decomp",
+ "kuna-num",
  "kuna-sleigh",
 ]
 

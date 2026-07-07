@@ -109,7 +109,7 @@ fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
     arch.sleigh_mut().build_translator(Box::new(DummyImg), &sla).map_err(|e| format!("build_translator: {e}"))?;
     if !specs.compilerfile.is_empty() { if let Ok(cspec) = std::fs::read(&specs.compilerfile) { arch.sleigh_mut().base_mut().unwrap().set_cspec_xml(cspec); } }
     if !specs.processorfile.is_empty() { if let Ok(pspec) = std::fs::read(&specs.processorfile) { arch.sleigh_mut().base_mut().unwrap().set_pspec_xml(pspec); } }
-    arch.sleigh_mut().base_mut().unwrap().translate_mut().install_register_lookup().map_err(|e| format!("install_register_lookup: {e}"))?;
+    arch.sleigh_mut().base_mut().unwrap().translate_mut().as_sleigh_mut().expect("standalone Sleigh engine").install_register_lookup().map_err(|e| format!("install_register_lookup: {e}"))?;
     arch.sleigh_mut().base_mut().ok_or("no Architecture base after build_translator")?.init_post_engine().map_err(|e| format!("init_post_engine: {e}"))?;
     let manager_ptr: *const AddrSpaceManager = arch.sleigh().base().unwrap().manage();
     // SAFETY: the manager outlives the open() call; borrow released before &mut use.

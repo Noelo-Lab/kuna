@@ -29,6 +29,20 @@ use kuna_base::marshal::{AttributeId, ElementId, IdRegistry};
 pub const ELEM_DOC: ElementId = ElementId::new("doc", 229);
 
 // ---------------------------------------------------------------------------
+// op.cc — the p-code emit vocabulary GhidraTranslate::oneInstruction needs
+// ---------------------------------------------------------------------------
+
+/// Marshaling element \<unimpl> — the getPcode response for an instruction
+/// the host cannot translate (C++ `ELEM_UNIMPL`, `decompiler/cpp/op.cc:22`).
+///
+/// kuna's `ELEM_INST` (id 98) / `ELEM_OP` (id 27) live in kuna-decomp /
+/// kuna-sleigh; only `ELEM_UNIMPL` is missing, and `GhidraTranslate` compares
+/// it by numeric id alone (the packed decoder returns raw ids from
+/// `open_element`), so it is defined here rather than pulled from another
+/// crate.  Numeric id must match upstream for wire compatibility.
+pub const ELEM_UNIMPL: ElementId = ElementId::new("unimpl", 114);
+
+// ---------------------------------------------------------------------------
 // ghidra_arch.cc:30-48 — the query command elements (239-257)
 // ---------------------------------------------------------------------------
 
@@ -157,6 +171,7 @@ mod tests {
     #[test]
     fn test_protocol_id_numbers_match_upstream() {
         assert_eq!(ELEM_DOC.get_id(), 229);
+        assert_eq!(ELEM_UNIMPL.get_id(), 114);
         assert_eq!(ELEM_COMMAND_ISNAMEUSED.get_id(), 239);
         assert_eq!(ELEM_COMMAND_GETBYTES.get_id(), 240);
         assert_eq!(ELEM_COMMAND_GETCALLFIXUP.get_id(), 241);

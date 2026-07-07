@@ -163,7 +163,12 @@ fn records_for_object_path(path: &str, spec_roots: &[String]) -> Result<Vec<FidR
     let image = ObjectLoadImage::from_bytes(path, &bytes)
         .map_err(|e| format!("loadimage failed: {e}"))?;
 
-    Ok(build_records(&bytes, &image, arch, arch.translate()))
+    Ok(build_records(
+        &bytes,
+        &image,
+        arch,
+        arch.translate().as_sleigh().expect("fid build: standalone Sleigh engine"),
+    ))
 }
 
 /// Unpack a `.a` archive and build records from every object member. Each member

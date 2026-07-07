@@ -276,11 +276,15 @@ fn render_varnode_no_markup(
         }
     };
     let off = addr.get_offset();
-    let name = arch.translate().base().get_register_name(space, off, size);
+    // Register-name/storage resolution is a Sleigh-engine concern (the C++
+    // `getTrans()` back-pointer); reach the concrete engine's `SleighBase`
+    // through the seam downcast (only `Sleigh` implements it; this print-raw
+    // path only ever runs on the standalone engine).
+    let sleigh = arch.translate().as_sleigh().expect("print_raw: standalone Sleigh engine");
+    let name = sleigh.base().get_register_name(space, off, size);
     if !name.is_empty() {
         // C++ reads the canonical register storage to know the base offset/size.
-        let point = arch
-            .translate()
+        let point = sleigh
             .base()
             .get_register(&name)
             .map_err(|e| e.explain().to_string())?;

@@ -28,57 +28,62 @@
 //! issues are nested inside the open command response (the phase-2 engine
 //! bridge relies on this).
 //!
-//! Phase-1 scope (see `docs/ghidra-integration.md`): the protocol side of
-//! all seven decomp commands is complete; `decompileAt` answers with the
-//! incomplete-function shape (an EMPTY 14/15 payload,
-//! ghidra_process.cc:313-334) plus a not-implemented warning, and
-//! `flushNative` has no engine caches to clear yet.  `structureGraph` and
-//! the four signature commands are deliberately NOT registered: the
-//! unknown-command response `{6}{16}"Bad command: <name>"{17}{7}`
-//! (ghidra_process.cc:476-484) is the exact graceful-degradation shape the
-//! Java side expects (DecompInterface.java:341-347).
+//! Phase-2 step 6 (see `docs/rust-port/ghidra-phase2-plan.md`): registerProgram
+//! builds a *live* [`Architecture`] over the query-backed [`GhidraTranslate`] —
+//! its `init_post_engine` issues the getUserOpName probe loop as a real query
+//! nested in the registerProgram response — and `decompileAt` now DRIVES that
+//! engine: it names the function (getCodeLabel), runs [`decompile_func`] (whose
+//! providers issue the getPcode/getBytes/… queries nested in the still-open
+//! decompileAt response), and emits the `<doc>` response — `Funcdata::encode`'s
+//! `<function>`/`<ast>` plus the Clang-markup `<function>` — the first real C
+//! from kuna in ghidra mode.  A decompile failure degrades to the C++
+//! `!fd->isProcComplete()` incomplete-function shape (empty 14/15 payload +
+//! warning) so it never desyncs the GUI.  `flushNative` has no engine
+//! caches to clear yet.  `structureGraph` and the four signature commands are
+//! deliberately NOT registered: the unknown-command response
+//! `{6}{16}"Bad command: <name>"{17}{7}` (ghidra_process.cc:476-484) is the
+//! exact graceful-degradation shape the Java side expects
+//! (DecompInterface.java:341-347).
 
+use std::cell::RefCell;
 use std::io::{Read, Write};
+use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaError;
-use kuna_base::marshal::{Decoder, IdRegistry, PackedDecode};
+use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::marshal::{Decoder, Encoder, PackedDecode, PackedEncode};
 use kuna_base::space::AddrSpaceManager;
 
+use kuna_decomp::architecture::Architecture;
+use kuna_decomp::decompile_drive::decompile_func;
+use kuna_decomp::funcdata::Funcdata;
+
+use crate::client::GhidraClient;
+use crate::ids::ELEM_DOC;
 use crate::protocol::{
     pass_java_exception, read_string_stream, read_string_stream_optional, read_to_any_burst,
     write_burst, write_string_stream, WireError, WireResult, BURST_COMMAND_CLOSE,
     BURST_COMMAND_OPEN, BURST_MESSAGE_CLOSE, BURST_MESSAGE_OPEN, BURST_RESPONSE_CLOSE,
     BURST_RESPONSE_OPEN, BURST_STRING_CLOSE, BURST_STRING_OPEN,
 };
+use crate::provider::SharedClient;
 use crate::translate::{build_registry, GhidraTranslate};
 
 /// One registered program: the kuna analog of an `ArchitectureGhidra` slot
 /// in the global `archlist` (ghidra_process.cc:76,176-201).
 ///
-/// Phase 1 holds the wire-session state only; the engine (`Architecture`
-/// init over the four specs, the query-backed providers) is phase 2.
+/// Phase-2 step 3 makes this a *live engine*: registerProgram builds a real
+/// [`Architecture`] over the query-backed [`GhidraTranslate`] (the four wire
+/// specs → `from_engine_translate` + the console frontend's cspec/pspec →
+/// `init_post_engine` tail).  Its space manager decodes wire \<addr> elements
+/// and its subsystems are exercised by `decompileAt` (the next step).
 struct Session {
-    /// The four registerProgram XML documents, held verbatim for the
-    /// phase-2 engine bridge (C++ parses them in buildSpecFile and clears
-    /// them; kuna keeps them so phase 2 can replay them into the engine).
-    #[allow(dead_code)]
-    pspec: Vec<u8>,
-    #[allow(dead_code)]
-    cspec: Vec<u8>,
-    #[allow(dead_code)]
-    tspec: Vec<u8>,
-    #[allow(dead_code)]
-    corespec: Vec<u8>,
-    /// The session's marshaling id tables (the C++ static registration).
-    #[allow(dead_code)]
-    registry: IdRegistry,
-    /// The parsed tspec — endianness, unique base, and the address-space
-    /// manager whose indices decode wire \<addr> elements.  `None` when the
-    /// tspec failed to parse (recorded as a warning; \<addr> params are
-    /// then consumed without decoding — TODO(phase-2): a parse failure
-    /// should fail registerProgram once the engine init is real).
-    translate: Option<GhidraTranslate>,
+    /// The live decompiler engine built from the four registerProgram specs
+    /// (C++ `ArchitectureGhidra`, the `archlist` slot's `Architecture`).
+    /// `None` when engine construction failed — the failure is recorded on
+    /// `warnings` (shipped on the 16/17 frame) so Java detects the
+    /// registration failure (DecompInterface.java:291-294).
+    architecture: Option<Architecture>,
     /// Accumulated warnings, shipped on the 16/17 channel by sendResult
     /// (C++ `ArchitectureGhidra::warnings`; `printMessage` appends
     /// `'\n' + message`, ghidra_arch.cc:898-902).
@@ -98,32 +103,12 @@ struct Session {
 }
 
 impl Session {
-    /// Build a session from the four registerProgram documents, parsing the
-    /// tspec leniently (a failure becomes a warning, not a command error).
-    fn new(pspec: Vec<u8>, cspec: Vec<u8>, tspec: Vec<u8>, corespec: Vec<u8>) -> Session {
-        let registry = build_registry();
-        let mut warnings = String::new();
-        let translate = match GhidraTranslate::decode(&tspec, &registry) {
-            Ok(t) => Some(t),
-            Err(e) => {
-                // printMessage semantics: '\n' + message
-                warnings.push('\n');
-                warnings.push_str(&format!(
-                    "kuna ghidra-mode: could not parse tspec <sleigh> element ({}); \
-                     <addr> parameters will not be decoded",
-                    e.explain()
-                ));
-                None
-            }
-        };
+    /// A fresh session shell (defaults only); the live [`Architecture`] is
+    /// installed after construction by [`GhidraProcess::build_architecture`].
+    fn new() -> Session {
         Session {
-            pspec,
-            cspec,
-            tspec,
-            corespec,
-            registry,
-            translate,
-            warnings,
+            architecture: None,
+            warnings: String::new(),
             // ArchitectureGhidra constructor defaults (ghidra_arch.cc:912-926)
             send_syntax_tree: true,
             send_c_code: true,
@@ -131,6 +116,12 @@ impl Session {
             record_jumploads: false,
             current_action: "decompile".to_string(),
         }
+    }
+
+    /// The engine's space manager (for decoding wire \<addr> elements), or
+    /// `None` when construction failed.
+    fn manager(&self) -> Option<&AddrSpaceManager> {
+        self.architecture.as_ref().map(|a| a.manage())
     }
 
     /// C++ `ArchitectureGhidra::printMessage` (ghidra_arch.cc:898-902).
@@ -172,11 +163,11 @@ struct CommandState {
     /// setAction params.
     actionstring: Vec<u8>,
     printstring: Vec<u8>,
-    /// decompileAt param: the decoded address (None if the tspec is
-    /// unavailable) plus its rendered form for messages.
+    /// decompileAt param: the decoded entry address (None if the engine is
+    /// unavailable), driving the [`decompile_func`] build.
+    addr: Option<Address>,
+    /// decompileAt param: the rendered form of `addr` for warning messages.
     addr_text: Option<String>,
-    /// setOptions param: the raw packed \<optionslist> bytes.
-    options_raw: Option<Vec<u8>>,
 }
 
 impl CommandState {
@@ -191,8 +182,8 @@ impl CommandState {
             specs: None,
             actionstring: Vec::new(),
             printstring: Vec::new(),
+            addr: None,
             addr_text: None,
-            options_raw: None,
         }
     }
 }
@@ -200,27 +191,56 @@ impl CommandState {
 /// The ghidra-mode process: the command loop over the two protocol streams
 /// plus the architecture list (C++ `archlist` + `GhidraCapability::
 /// readCommand`, ghidra_process.cc:76,464-486).
-pub struct GhidraProcess<R: Read, W: Write> {
-    sin: R,
-    sout: W,
+///
+/// The process no longer owns `sin`/`sout` directly: it owns the
+/// [`SharedClient`] (`Rc<RefCell<GhidraClient>>`) that every session's engine
+/// providers (`GhidraTranslate`/`GhidraLoadImage`) hold `Rc::clone`s of.  The
+/// command loop frames each response through a *short-lived*
+/// `self.client.borrow_mut()` (via [`GhidraClient::sin_mut`]/
+/// [`GhidraClient::sout_mut`]); mid-decompile the engine re-entrantly issues
+/// callback queries through the same client on the same streams.
+///
+/// **The soundness invariant** (matching the C++ single-owner `glb` model): the
+/// loop must NEVER hold a `client` borrow across [`raw_action`](GhidraProcess::raw_action),
+/// where the engine re-entrantly calls providers that `borrow_mut()` the same
+/// client.  Each framing read/write here borrows, acts, and drops before the
+/// next statement, and the protocol is strictly synchronous (exactly one query
+/// is ever in flight, completing before the engine regains control), so no two
+/// borrows ever overlap.
+pub struct GhidraProcess<R: Read + 'static, W: Write + 'static> {
+    client: SharedClient<R, W>,
     archlist: Vec<Option<Session>>,
 }
 
-impl<R: Read, W: Write> GhidraProcess<R, W> {
+impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
     /// Construct over the two protocol streams (stdin/stdout in the real
-    /// binary; in-memory buffers in tests).
+    /// binary; in-memory buffers in tests), wrapping them in the
+    /// [`SharedClient`] the loop and the engine providers share.
     pub fn new(sin: R, sout: W) -> Self {
         GhidraProcess {
-            sin,
-            sout,
+            client: Rc::new(RefCell::new(GhidraClient::new(sin, sout))),
             archlist: Vec::new(),
         }
     }
 
     /// Tear down into the underlying streams (test access to the written
     /// response bytes).
+    ///
+    /// Drops every session first: each holds an [`Architecture`] whose ghidra
+    /// translator carries an `Rc::clone` of the shared client, so the client is
+    /// uniquely owned (and unwrappable) only once the archlist is gone.  In the
+    /// real binary this is never called (the process runs to a terminating
+    /// status); tests call it after deregistering / dropping all sessions.
     pub fn into_inner(self) -> (R, W) {
-        (self.sin, self.sout)
+        let GhidraProcess { client, archlist } = self;
+        drop(archlist);
+        match Rc::try_unwrap(client) {
+            Ok(cell) => cell.into_inner().into_inner(),
+            Err(_) => panic!(
+                "GhidraProcess::into_inner: the shared client is still referenced by a \
+                 live session engine (deregister or drop all sessions first)"
+            ),
+        }
     }
 
     /// Run the process loop until a command terminates it (C++ `main`'s
@@ -243,11 +263,11 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
         // anything else (including the dangling params + close burst of a
         // rejected command).
         loop {
-            if read_to_any_burst(&mut self.sin)? == BURST_COMMAND_OPEN {
+            if read_to_any_burst(self.client.borrow_mut().sin_mut())? == BURST_COMMAND_OPEN {
                 break;
             }
         }
-        let name_bytes = read_string_stream(&mut self.sin)?;
+        let name_bytes = read_string_stream(self.client.borrow_mut().sin_mut())?;
         let name = String::from_utf8_lossy(&name_bytes).into_owned();
         let kind = match name.as_str() {
             "registerProgram" => CommandKind::RegisterProgram,
@@ -263,14 +283,20 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             // graceful-degradation contract the Java side expects
             // (ghidra_process.cc:476-484; DecompInterface.java:341-347).
             _ => {
-                write_burst(&mut self.sout, BURST_RESPONSE_OPEN)?;
-                write_burst(&mut self.sout, BURST_MESSAGE_OPEN)?;
-                self.sout
+                write_burst(self.client.borrow_mut().sout_mut(), BURST_RESPONSE_OPEN)?;
+                write_burst(self.client.borrow_mut().sout_mut(), BURST_MESSAGE_OPEN)?;
+                self.client
+                    .borrow_mut()
+                    .sout_mut()
                     .write_all(format!("Bad command: {name}").as_bytes())
                     .map_err(WireError::Io)?;
-                write_burst(&mut self.sout, BURST_MESSAGE_CLOSE)?;
-                write_burst(&mut self.sout, BURST_RESPONSE_CLOSE)?;
-                self.sout.flush().map_err(WireError::Io)?;
+                write_burst(self.client.borrow_mut().sout_mut(), BURST_MESSAGE_CLOSE)?;
+                write_burst(self.client.borrow_mut().sout_mut(), BURST_RESPONSE_CLOSE)?;
+                self.client
+                    .borrow_mut()
+                    .sout_mut()
+                    .flush()
+                    .map_err(WireError::Io)?;
                 return Ok(0);
             }
         };
@@ -281,8 +307,11 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
     /// ghidra_process.cc:125-160).
     fn doit(&mut self, kind: CommandKind) -> WireResult<i32> {
         let mut cmd = CommandState::new(kind);
-        // Command response header — BEFORE any work, so queries nest inside
-        write_burst(&mut self.sout, BURST_RESPONSE_OPEN)?;
+        // Command response header — BEFORE any work, so queries nest inside.
+        // Borrow the client only for this framing write, then drop it: the
+        // rawAction inside run_command re-borrows it per callback query, and the
+        // loop must never hold a borrow across that re-entry (see the struct doc).
+        write_burst(self.client.borrow_mut().sout_mut(), BURST_RESPONSE_OPEN)?;
         let result = self.run_command(&mut cmd);
         match result {
             Ok(()) => {}
@@ -290,10 +319,14 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             Err(e @ (WireError::PipeClosed | WireError::Io(_))) => return Err(e),
             // catch(JavaError): pass the exception, abort sending results
             Err(WireError::Kuna(KunaError::Java { type_name, explain })) => {
-                pass_java_exception(&mut self.sout, &type_name, &explain)?;
+                pass_java_exception(self.client.borrow_mut().sout_mut(), &type_name, &explain)?;
                 // C++ relies on cin.tie(&cout) flushing before the next
                 // blocking read; Rust must flush explicitly.
-                self.sout.flush().map_err(WireError::Io)?;
+                self.client
+                    .borrow_mut()
+                    .sout_mut()
+                    .flush()
+                    .map_err(WireError::Io)?;
                 return Ok(cmd.status);
             }
             // catch(DecoderError) / catch(RecovError) / catch(LowlevelError):
@@ -310,8 +343,12 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             }
         }
         self.send_result(&cmd)?;
-        write_burst(&mut self.sout, BURST_RESPONSE_CLOSE)?;
-        self.sout.flush().map_err(WireError::Io)?;
+        write_burst(self.client.borrow_mut().sout_mut(), BURST_RESPONSE_CLOSE)?;
+        self.client
+            .borrow_mut()
+            .sout_mut()
+            .flush()
+            .map_err(WireError::Io)?;
         Ok(cmd.status)
     }
 
@@ -319,7 +356,7 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
     /// body of doit).
     fn run_command(&mut self, cmd: &mut CommandState) -> WireResult<()> {
         self.load_parameters(cmd)?;
-        let t = read_to_any_burst(&mut self.sin)?;
+        let t = read_to_any_burst(self.client.borrow_mut().sin_mut())?;
         if t != BURST_COMMAND_CLOSE {
             return Err(WireError::Kuna(KunaError::java(
                 "alignment",
@@ -335,11 +372,11 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
     /// the architecture id as ASCII decimal in a string stream, validated
     /// against the archlist, then `clearWarnings`.
     fn bind_session(&mut self, start_msg: &str, end_msg: &str) -> WireResult<usize> {
-        let t = read_to_any_burst(&mut self.sin)?;
+        let t = read_to_any_burst(self.client.borrow_mut().sin_mut())?;
         if t != BURST_STRING_OPEN {
             return Err(WireError::Kuna(KunaError::java("alignment", start_msg)));
         }
-        let (payload, code) = crate::protocol::read_id_payload(&mut self.sin)?;
+        let (payload, code) = crate::protocol::read_id_payload(self.client.borrow_mut().sin_mut())?;
         if code != BURST_STRING_CLOSE {
             return Err(WireError::Kuna(KunaError::java("alignment", end_msg)));
         }
@@ -363,10 +400,10 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             // RegisterProgram::loadParameters (ghidra_process.cc:162-173):
             // four consecutive string streams, no arch id
             CommandKind::RegisterProgram => {
-                let pspec = read_string_stream(&mut self.sin)?;
-                let cspec = read_string_stream(&mut self.sin)?;
-                let tspec = read_string_stream(&mut self.sin)?;
-                let corespec = read_string_stream(&mut self.sin)?;
+                let pspec = read_string_stream(self.client.borrow_mut().sin_mut())?;
+                let cspec = read_string_stream(self.client.borrow_mut().sin_mut())?;
+                let tspec = read_string_stream(self.client.borrow_mut().sin_mut())?;
+                let corespec = read_string_stream(self.client.borrow_mut().sin_mut())?;
                 cmd.specs = Some([pspec, cspec, tspec, corespec]);
                 Ok(())
             }
@@ -389,20 +426,21 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             CommandKind::DecompileAt => {
                 let slot = self.bind_session("Expecting arch id start", "Expecting arch id end")?;
                 cmd.slot = Some(slot);
-                let raw = read_string_stream_optional(&mut self.sin)?;
+                let raw = read_string_stream_optional(self.client.borrow_mut().sin_mut())?;
                 let session = self.archlist[slot].as_ref().expect("bound session");
-                match (&session.translate, raw) {
-                    (Some(tr), Some(bytes)) => {
-                        let mut decoder = PackedDecode::new(&tr.manager);
+                match (session.manager(), raw) {
+                    (Some(manager), Some(bytes)) => {
+                        let mut decoder = PackedDecode::new(manager);
                         decoder.ingest_stream(&bytes).map_err(WireError::Kuna)?;
                         let addr = Address::decode(&mut decoder).map_err(WireError::Kuna)?;
                         cmd.addr_text = Some(render_address(&addr));
+                        cmd.addr = Some(addr);
                     }
                     (None, Some(_bytes)) => {
-                        // tspec unavailable: the <addr> was consumed but
-                        // cannot be decoded (lenient skip; the session
-                        // already carries the tspec warning).
-                        // TODO(phase-2): hard-fail once engine init is real.
+                        // Engine construction failed: the <addr> was consumed
+                        // but cannot be decoded (the session already carries the
+                        // construction-failure warning on its 16/17 frame).
+                        cmd.addr = None;
                         cmd.addr_text = None;
                     }
                     (_, None) => {
@@ -419,8 +457,8 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             CommandKind::SetAction => {
                 let slot = self.bind_session("Expecting arch id start", "Expecting arch id end")?;
                 cmd.slot = Some(slot);
-                cmd.actionstring = read_string_stream(&mut self.sin)?;
-                cmd.printstring = read_string_stream(&mut self.sin)?;
+                cmd.actionstring = read_string_stream(self.client.borrow_mut().sin_mut())?;
+                cmd.printstring = read_string_stream(self.client.borrow_mut().sin_mut())?;
                 Ok(())
             }
             // SetOptions::loadParameters (ghidra_process.cc:418-426): base,
@@ -428,7 +466,10 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             CommandKind::SetOptions => {
                 let slot = self.bind_session("Expecting arch id start", "Expecting arch id end")?;
                 cmd.slot = Some(slot);
-                cmd.options_raw = read_string_stream_optional(&mut self.sin)?;
+                // Consume the packed <optionslist> for protocol alignment; the
+                // engine has no option database yet, so the list is accepted but
+                // not applied (see SetOptions::rawAction).
+                let _ = read_string_stream_optional(self.client.borrow_mut().sin_mut())?;
                 Ok(())
             }
         }
@@ -439,12 +480,11 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
     fn raw_action(&mut self, cmd: &mut CommandState) -> WireResult<()> {
         match cmd.kind {
             // RegisterProgram::rawAction (ghidra_process.cc:176-201): find a
-            // free slot (the C++ loop keeps the LAST open slot), build the
-            // session, archid = slot index
+            // free slot (the C++ loop keeps the LAST open slot), install a
+            // session shell, build the live engine, archid = slot index.
             CommandKind::RegisterProgram => {
                 let [pspec, cspec, tspec, corespec] =
                     cmd.specs.take().expect("registerProgram params");
-                let session = Session::new(pspec, cspec, tspec, corespec);
                 let mut open: Option<usize> = None;
                 for (i, s) in self.archlist.iter().enumerate() {
                     if s.is_none() {
@@ -453,16 +493,44 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
                 }
                 let slot = match open {
                     Some(i) => {
-                        self.archlist[i] = Some(session);
+                        self.archlist[i] = Some(Session::new());
                         i
                     }
                     None => {
-                        self.archlist.push(Some(session));
+                        self.archlist.push(Some(Session::new()));
                         self.archlist.len() - 1
                     }
                 };
                 cmd.slot = Some(slot);
                 cmd.archid = slot as i32;
+                // Build the live engine over the four wire specs.  This issues
+                // the init-time queries (the getUserOpName probe loop, C++
+                // `userops.initialize`) on the shared client — nested inside the
+                // still-open registerProgram command response.  The slot (and so
+                // the warning sink) is bound BEFORE this fallible build, so a
+                // construction failure ships its error on the 16/17 warnings
+                // frame and Java treats the non-empty nativeMessage as a
+                // registration failure (DecompInterface.java:291-294; the C++
+                // `RegisterProgram::rawAction` assigns `ghidra` before `init` for
+                // exactly this reason, ghidra_process.cc:176-201).
+                match self.build_architecture(cmd.archid, &pspec, &cspec, &tspec, &corespec) {
+                    Ok(arch) => {
+                        self.archlist[slot]
+                            .as_mut()
+                            .expect("bound session")
+                            .architecture = Some(arch);
+                    }
+                    Err(e) => {
+                        self.print_message(
+                            cmd.slot,
+                            &format!(
+                                "kuna ghidra-mode: could not build the decompiler engine from \
+                                 the registerProgram specs ({}); this program will not decompile",
+                                e.explain()
+                            ),
+                        );
+                    }
+                }
                 Ok(())
             }
             // DeregisterProgram::rawAction (ghidra_process.cc:231-251):
@@ -479,33 +547,127 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
                 }
                 Ok(())
             }
-            // FlushNative::rawAction (ghidra_process.cc:262-273): phase 1
-            // has no engine caches (global scope / non-core types /
-            // comments / strings / cpool are all phase 2) — nothing to
-            // flush.  TODO(phase-2): clear the provider caches here.
+            // FlushNative::rawAction (ghidra_process.cc:262-273): phase 2
+            // step 3 has no per-function engine caches to clear yet (the
+            // ScopeGhidra lazy symbol cache is phase 3).
+            // TODO(phase-3): clear the provider caches here.
             CommandKind::FlushNative => {
                 cmd.res = 0;
                 Ok(())
             }
-            // DecompileAt::rawAction (ghidra_process.cc:293-335): phase 1
-            // emits the incomplete-function shape — an EMPTY 14/15 payload
-            // (exactly what upstream sends when !fd->isProcComplete()) —
-            // plus a warning on the 16/17 channel, which renders as a clean
-            // error in the Ghidra GUI instead of a hang/desync.
+            // DecompileAt::rawAction (ghidra_process.cc:293-335): the live
+            // engine bridge.  Establish the function name (getCodeLabel), drive
+            // `decompile_func` to a ready-to-print `Funcdata` (its providers
+            // issue the getPcode/getBytes/… queries nested inside this still-open
+            // command response), then emit the `<doc>` between the 14/15 burst —
+            // `fd.encode` (the `<function>`/`<ast>` syntax tree) plus, when C is
+            // requested for the `decompile` action, the Clang-markup `<function>`
+            // spliced into the SAME `<doc>` stream.  Any decompile failure
+            // degrades to the C++ `!fd->isProcComplete()` incomplete-function
+            // shape (empty 14/15 payload + a 16/17 warning) so a failure never
+            // desyncs the GUI.
             CommandKind::DecompileAt => {
-                write_burst(&mut self.sout, BURST_STRING_OPEN)?;
-                write_burst(&mut self.sout, BURST_STRING_CLOSE)?;
-                let at = match &cmd.addr_text {
-                    Some(t) => t.clone(),
-                    None => "(address not decoded)".to_string(),
+                let slot = cmd.slot.expect("bound session");
+                // The entry address decoded in loadParameters.  `None` ⇒ engine
+                // construction failed (no manager) — degrade to the
+                // incomplete-function shape (the construction-failure warning is
+                // already on the session's 16/17 frame).
+                let addr = match cmd.addr.clone() {
+                    Some(a) => a,
+                    None => {
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_OPEN)?;
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
+                        self.print_message(
+                            cmd.slot,
+                            "kuna ghidra-mode: engine unavailable; \
+                             function at (address not decoded) not decompiled",
+                        );
+                        return Ok(());
+                    }
                 };
-                self.print_message(
-                    cmd.slot,
-                    &format!(
-                        "kuna ghidra-mode: engine bridge not yet implemented (phase 1); \
-                         function at {at} not decompiled"
-                    ),
-                );
+
+                // (2) Establish the display name.  C++ `queryFunction` resolves
+                // it from the mapped symbol; the v1 milestone (no `<mapsym>`
+                // decoder yet — Phase 3) uses the plain-string `getCodeLabel`,
+                // falling back to a synthesized `FUN_<addr>` on an empty label or
+                // a query failure.  Short-lived client borrow, dropped before the
+                // decompile re-borrows the client through the engine providers
+                // (the no-borrow-across-decompile invariant).
+                let name = match self.client.borrow_mut().get_code_label(&addr) {
+                    Ok(label) if !label.is_empty() => {
+                        String::from_utf8_lossy(&label).into_owned()
+                    }
+                    _ => format!("FUN_{:08x}", addr.get_offset()),
+                };
+
+                // Snapshot the render flags before taking `&mut Architecture`.
+                let (send_syntax_tree, send_c_code, current_action) = {
+                    let session = self.archlist[slot].as_ref().expect("bound session");
+                    (
+                        session.send_syntax_tree,
+                        session.send_c_code,
+                        session.current_action.clone(),
+                    )
+                };
+
+                // (3) Drive the decompile FULLY — releasing every provider query
+                // borrow — BEFORE re-borrowing the client to write the `<doc>`.
+                // `size = 0` = the flow-discovered natural extent (the console
+                // decompile-all path's shape: build a `Funcdata` for the raw
+                // entry, let flow-following via the getPcode/getBytes providers
+                // discover the body).  Assemble the response document while the
+                // `&mut Architecture` is in hand (the markup needs `&Architecture`).
+                let doc: KunaResult<Vec<u8>> = {
+                    let session = self.archlist[slot].as_mut().expect("bound session");
+                    let arch = session
+                        .architecture
+                        .as_mut()
+                        .expect("addr decoded ⇒ engine present");
+                    match decompile_func(arch, &name, addr.clone(), 0) {
+                        Ok(fd) => build_decompile_at_doc(
+                            arch,
+                            &fd,
+                            send_syntax_tree,
+                            send_c_code,
+                            &current_action,
+                        ),
+                        Err(e) => Err(e),
+                    }
+                };
+
+                match doc {
+                    // C++ `isProcComplete` branch: the `<doc>` inside the 14/15
+                    // burst.
+                    Ok(bytes) => {
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_OPEN)?;
+                        self.client
+                            .borrow_mut()
+                            .sout_mut()
+                            .write_all(&bytes)
+                            .map_err(WireError::Io)?;
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
+                    }
+                    // A decompile failure (a decode error, an un-ported seam that
+                    // `decompile_func` caught, or a Java exception a provider
+                    // surfaced) degrades to the SAME clean incomplete-function
+                    // shape — empty 14/15 payload + a 16/17 warning naming the
+                    // address.  DELIBERATE DIVERGENCE from the C++
+                    // passJavaException abort: a failure never desyncs the GUI
+                    // (the phase-1 stub's clean-error contract).
+                    Err(e) => {
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_OPEN)?;
+                        write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
+                        let at = cmd.addr_text.clone().unwrap_or_else(|| "?".to_string());
+                        self.print_message(
+                            cmd.slot,
+                            &format!(
+                                "kuna ghidra-mode: could not decompile the function at {at} \
+                                 ({}); returning an incomplete function",
+                                e.explain()
+                            ),
+                        );
+                    }
+                }
                 Ok(())
             }
             // SetAction::rawAction (ghidra_process.cc:378-406)
@@ -559,29 +721,62 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
             // decodes the <optionslist> and throws on any unknown option
             // (OptionDatabase::set -> ParseError -> response 'f' -> Java
             // IOException "Did not accept decompiler options", killing the
-            // program open).  Phase-1 kuna has no option database yet, and
-            // for drop-in robustness across Ghidra versions it TOLERATES
-            // the whole list: the packed stream is consumed (and counted
-            // when decodable) and the answer is always 't'.
+            // program open).  kuna's phase-2 engine has no option database wired
+            // yet, so for drop-in robustness it TOLERATES the whole list (the
+            // packed stream is consumed in loadParameters) and answers 't' —
+            // SILENTLY, with an empty 16/17 frame, exactly as upstream does on
+            // success.  It must emit NO message here: DecompInterface init stores
+            // the native message returned by setOptions, and
+            // openProgram/isErrorMessage (DecompInterface.java) flags any
+            // non-empty text lacking the word "warning" as a FATAL error — so a
+            // stray "recorded but not applied" note made the GUI report
+            // "Unable to initialize the DecompilerInterface" even though the
+            // options were accepted and the function would decompile.
             CommandKind::SetOptions => {
-                let slot = cmd.slot.expect("bound session");
-                let counted = cmd.options_raw.as_ref().and_then(|raw| {
-                    let session = self.archlist[slot].as_ref().expect("bound session");
-                    count_option_elements(raw, session.translate.as_ref().map(|t| &t.manager))
-                });
-                let msg = match counted {
-                    Some(n) => format!(
-                        "kuna ghidra-mode: setOptions: {n} option element(s) recorded \
-                         but not applied (phase 1)"
-                    ),
-                    None => "kuna ghidra-mode: setOptions accepted but not applied (phase 1)"
-                        .to_string(),
-                };
-                self.print_message(cmd.slot, &msg);
+                let _ = cmd.slot.expect("bound session");
                 cmd.ok = true;
                 Ok(())
             }
         }
+    }
+
+    /// Build the live ghidra-mode [`Architecture`] from the four registerProgram
+    /// wire documents (C++ `ArchitectureGhidra::buildSpecFile` +
+    /// `Architecture::init`/`restoreFromSpec`).
+    ///
+    /// - `buildTranslator` → a [`GhidraTranslate`] over a *clone* of the shared
+    ///   client (the kuna analog of the C++ `glb` back-pointer every ghidra-mode
+    ///   component holds).  The engine, mid-init and mid-decompile, issues
+    ///   queries through this clone on the same streams the command loop frames.
+    /// - `Architecture::from_engine_translate` builds the subsystems over the
+    ///   query-backed engine, and the wire cspec/pspec feed the same setters the
+    ///   console frontend uses (`build_engine_and_init`).
+    /// - `init_post_engine` runs the shared restoreFromSpec tail
+    ///   (typegrp / core types / default proto / actions / …) and — via
+    ///   `userops.initialize` — issues the getUserOpName probe loop, a real
+    ///   query nested inside the open registerProgram response.
+    ///
+    /// The wire corespec is the `<coretypes>` document; decoding it needs the
+    /// (unported) TypeFactory type decoder, which arrives with TypeFactoryGhidra
+    /// in Phase 3 (`docs/rust-port/ghidra-phase2-plan.md` §6).  For now
+    /// `init_post_engine` builds the default core types — the same set the
+    /// standalone engine uses, which the 675-datatest parity proves sufficient.
+    fn build_architecture(
+        &self,
+        archid: i32,
+        pspec: &[u8],
+        cspec: &[u8],
+        tspec: &[u8],
+        _corespec: &[u8],
+    ) -> KunaResult<Architecture> {
+        let registry = build_registry();
+        let translate = GhidraTranslate::new(tspec, &registry, Rc::clone(&self.client))?;
+        let mut arch =
+            Architecture::from_engine_translate(&archid.to_string(), Box::new(translate));
+        arch.set_cspec_xml(cspec.to_vec());
+        arch.set_pspec_xml(pspec.to_vec());
+        arch.init_post_engine()?;
+        Ok(arch)
     }
 
     // -- sendResult -----------------------------------------------------------
@@ -593,13 +788,22 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
     fn send_result(&mut self, cmd: &CommandState) -> WireResult<()> {
         match cmd.kind {
             CommandKind::RegisterProgram => {
-                write_string_stream(&mut self.sout, cmd.archid.to_string().as_bytes())?;
+                write_string_stream(
+                    self.client.borrow_mut().sout_mut(),
+                    cmd.archid.to_string().as_bytes(),
+                )?;
             }
             CommandKind::DeregisterProgram | CommandKind::FlushNative => {
-                write_string_stream(&mut self.sout, cmd.res.to_string().as_bytes())?;
+                write_string_stream(
+                    self.client.borrow_mut().sout_mut(),
+                    cmd.res.to_string().as_bytes(),
+                )?;
             }
             CommandKind::SetAction | CommandKind::SetOptions => {
-                write_string_stream(&mut self.sout, if cmd.ok { b"t" } else { b"f" })?;
+                write_string_stream(
+                    self.client.borrow_mut().sout_mut(),
+                    if cmd.ok { b"t" } else { b"f" },
+                )?;
             }
             // DecompileAt writes its payload inside rawAction (or none at
             // all when rawAction was aborted) — nothing here
@@ -607,11 +811,13 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
         }
         if let Some(slot) = cmd.slot {
             if let Some(session) = self.archlist[slot].as_ref() {
-                write_burst(&mut self.sout, BURST_MESSAGE_OPEN)?;
-                self.sout
+                write_burst(self.client.borrow_mut().sout_mut(), BURST_MESSAGE_OPEN)?;
+                self.client
+                    .borrow_mut()
+                    .sout_mut()
                     .write_all(session.warnings.as_bytes())
                     .map_err(WireError::Io)?;
-                write_burst(&mut self.sout, BURST_MESSAGE_CLOSE)?;
+                write_burst(self.client.borrow_mut().sout_mut(), BURST_MESSAGE_CLOSE)?;
             }
         }
         Ok(())
@@ -621,17 +827,13 @@ impl<R: Read, W: Write> GhidraProcess<R, W> {
     /// a bound session the message is dropped (the C++ base sendResult
     /// skips the 16/17 frame entirely when `ghidra` is null).
     ///
-    /// TODO(phase-2): C++ `RegisterProgram::rawAction` assigns `ghidra` to
-    /// the freshly-`new`'d `ArchitectureGhidra` *before* `init`, so an
-    /// `init` that throws on bad specs still ships its error on the 16/17
-    /// channel — and Java's registerProgram treats a non-empty
-    /// nativeMessage as registration failure (`DecompInterface.java:291-294`).
-    /// Phase 1 never hits this (`Session::new` is infallible; every pre-bind
-    /// error is a `JavaError`), but once phase 2 makes registerProgram's
-    /// engine init fallible, the in-flight session needs a warning sink here
-    /// (bind the slot first, or buffer warnings on `CommandState`) or a
-    /// failed registration would answer with a bare archid and no warning,
-    /// and Java would think it succeeded.
+    /// C++ `RegisterProgram::rawAction` assigns `ghidra` to the freshly-`new`'d
+    /// `ArchitectureGhidra` *before* `init`, so an `init` that throws on bad
+    /// specs still ships its error on the 16/17 channel — and Java's
+    /// registerProgram treats a non-empty nativeMessage as registration failure
+    /// (`DecompInterface.java:291-294`).  kuna mirrors this: the slot is bound
+    /// before the fallible `build_architecture`, so a construction failure
+    /// routes here and ships on the 16/17 frame.
     fn print_message(&mut self, slot: Option<usize>, message: &str) {
         if let Some(slot) = slot {
             if let Some(session) = self.archlist[slot].as_mut() {
@@ -678,6 +880,57 @@ fn parse_arch_id(payload: &[u8]) -> i32 {
     val.clamp(i32::MIN as i64, i32::MAX as i64) as i32
 }
 
+/// Assemble the decompileAt response document (C++ `DecompileAt::rawAction`
+/// isProcComplete branch, `decompiler/cpp/ghidra_process.cc:317-333`):
+///
+/// ```text
+///   XmlEncode encoder(sout);        // kuna: PackedEncode over a buffer
+///   encoder.openElement(ELEM_DOC);
+///   fd->encode(encoder,0,ghidra->getSendSyntaxTree());   // <function>/<ast>
+///   if (ghidra->getSendCCode() && (actionname == "decompile")) {
+///     ghidra->print->setOutputStream(&sout);
+///     ghidra->print->docFunction(fd);   // the Clang-markup <function>
+///   }
+///   encoder.closeElement(ELEM_DOC);
+/// ```
+///
+/// The dual `<function>` (the markup) is spliced AFTER the syntax tree and
+/// BEFORE `</doc>`.  Its `opref`/`varref` tokens resolve to the SAME
+/// `get_time()`/`get_create_index()` the `<ast>` emitted, so the
+/// click-to-address contract holds by construction.  [`PackedEncode`] writes
+/// its 0x00-free bytes straight to the buffer with no open-element stack, so
+/// appending the markup bytes then writing `</doc>` from a fresh encoder is
+/// byte-identical to C++ writing both to one `sout` — exactly the same splice.
+fn build_decompile_at_doc(
+    arch: &mut Architecture,
+    fd: &Funcdata,
+    send_syntax_tree: bool,
+    send_c_code: bool,
+    current_action: &str,
+) -> KunaResult<Vec<u8>> {
+    let mut buf: Vec<u8> = Vec::new();
+    // <doc> open + fd.encode (the <function>/<ast> syntax tree).
+    {
+        let mut enc = PackedEncode::new(&mut buf);
+        enc.open_element(&ELEM_DOC);
+        fd.encode(&mut enc, 0, send_syntax_tree)?;
+    }
+    // The dual <function>: the Clang token-markup document.  `doc_function_markup`
+    // needs `&mut PrintC` + `&Architecture`; move the printer out (the
+    // `print_c` split-borrow precedent), render, put it back, splice the bytes.
+    if send_c_code && current_action == "decompile" {
+        let mut printer = arch.take_print();
+        let markup = printer.doc_function_markup(fd, arch);
+        arch.put_print(printer);
+        buf.extend_from_slice(&markup);
+    }
+    {
+        let mut enc = PackedEncode::new(&mut buf);
+        enc.close_element(&ELEM_DOC);
+    }
+    Ok(buf)
+}
+
 /// Render an address for warning messages: the space shortcut plus the C++
 /// `printRaw` form (the shape of upstream's decompileAt/getBytes messages).
 fn render_address(addr: &Address) -> String {
@@ -689,33 +942,6 @@ fn render_address(addr: &Address) -> String {
         s.push_str("invalid_addr");
     }
     s
-}
-
-/// Best-effort count of the child elements of the packed \<optionslist>
-/// (option elements hold only strings/ints, so an empty manager decodes
-/// them fine).  `None` when the stream doesn't decode.
-fn count_option_elements(raw: &[u8], manager: Option<&AddrSpaceManager>) -> Option<usize> {
-    let empty;
-    let mgr = match manager {
-        Some(m) => m,
-        None => {
-            empty = AddrSpaceManager::new();
-            &empty
-        }
-    };
-    let mut decoder = PackedDecode::new(mgr);
-    decoder.ingest_stream(raw).ok()?;
-    let root = decoder.open_element().ok()?;
-    if root == 0 {
-        return None;
-    }
-    let mut n = 0usize;
-    while decoder.peek_element().ok()? != 0 {
-        decoder.skip_element().ok()?;
-        n += 1;
-    }
-    decoder.close_element(root).ok()?;
-    Some(n)
 }
 
 #[cfg(test)]

@@ -49,4 +49,5 @@ pub mod client;
 pub mod ids;
 pub mod process;
 pub mod protocol;
+pub mod provider;
 pub mod translate;
