@@ -1956,7 +1956,7 @@ change_kind = "structure-recovery"
 [[settable]]
 option = "earlyreturn"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 stage = "S8"
 substage = "goto-quality"

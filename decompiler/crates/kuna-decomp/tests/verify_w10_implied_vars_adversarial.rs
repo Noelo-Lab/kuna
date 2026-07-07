@@ -222,6 +222,7 @@ fn render_one(stem: &str, which: usize) -> Result<String, String> {
         .ok_or(format!("no space {space_name}"))?
         .clone();
     let entry = Address::new(space, off);
+    arch.early_return = false; // (kuna) C++-parity test: opt out of earlyreturn (DIV-23 default-on)
     let fd = decompile_func(arch, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
     Ok(print_c(arch, &fd))
 }
