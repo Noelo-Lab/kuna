@@ -2809,6 +2809,23 @@ impl Architecture {
             return Ok(());
         };
 
+        // Ghidra-mode: skip the <context_data> paints (C++
+        // `ContextGhidra::decode`/`decodeFromSpec`, ghidra_context.cc, are both a
+        // bare `decoder.skipElement()` — "Ignore details handled by ghidra").  In
+        // ghidra mode the Java host owns disassembly context and returns
+        // already-context-resolved p-code via `getPcode`, so the query-backed
+        // engine's own context database is never consulted for disassembly — and
+        // it has no variables registered (there is no `.sla` parse to
+        // `registerContext` them), so applying `<set name="addrsize" .../>` would
+        // raise "Non-existent context variable: addrsize".  `as_sleigh()` is
+        // `None` iff this is the query-backed `GhidraTranslate`; the standalone
+        // `Sleigh` path returns `Some` and still applies the paints, exactly as
+        // the 675 x86 datatests (which need `addrsize`/`opsize` for 64-bit
+        // disassembly) require.
+        if self.translate.as_sleigh().is_none() {
+            return Ok(());
+        }
+
         // Decode <context_data> against the engine's single address-space
         // manager (so `space="ram"` resolves to the real ram space).  The Rc
         // keeps the manager alive for the decoder while the context database
