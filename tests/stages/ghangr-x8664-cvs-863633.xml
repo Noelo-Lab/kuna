@@ -31,11 +31,14 @@
 
     Assertions are on the name-independent storage comment '; // stack - 0xNN'
     (one per declaration of that slot), summed over both passes:
-      Pass 1 (option dedupvardecls off): slot 0x58 declared 4x, slot 0x3c 2x
-        - the bug (duplicate scalar declarations).
+      Pass 1 (option dedupvardecls off): slot 0x58 declared 4x, slot 0x3c 1x
+        - the bug (duplicate scalar declarations); 0x58 still shows it.
       Pass 2 (option dedupvardecls on): each slot declared exactly 1x - the fix.
-    So slot 0x58 totals 4 + 1 = 5 and slot 0x3c totals 2 + 1 = 3.  A broken fix
-    (no collapse: 8 / 4) or an over-eager collapse (under 5 / under 3) fails.
+    So slot 0x58 totals 4 + 1 = 5 and slot 0x3c totals 1 + 1 = 2.  A broken fix
+    (no collapse: 8 / >=3) or an over-eager collapse (under 5 / under 2) fails.
+    (kuna: since the addr-tied merge coalescing fix (VariablePiece grouping no longer
+    aborts on a reused stack slot), the OFF pass already coalesces 0x3c to 1x, so its
+    total dropped from 3 to 2; dedupvardecls is still exercised by the 0x58 case.)
 
     Chunks: cvs main's .text bytes from 0x404df0 (plus slack so the jump-table
     over-read decodes), and the getopt-dispatch table in .rodata at 0x49b8f0.
@@ -63,5 +66,5 @@ f30f1efa41564155415455534883ec30897c240c488d3dfc6709004889342464488b042528000000
   <com>quit</com>
 </script>
 <stringmatch name="angr-dedupvardecls #1: slot 0x58 declared 4x (off, the bug) + 1x (on, the fix) = 5 total" min="5" max="5">; // stack - 0x58</stringmatch>
-<stringmatch name="angr-dedupvardecls #2: slot 0x3c declared 2x (off) + 1x (on) = 3 total" min="3" max="3">; // stack - 0x3c</stringmatch>
+<stringmatch name="angr-dedupvardecls #2: slot 0x3c declared 1x (off, now merge-coalesced) + 1x (on) = 2 total" min="2" max="2">; // stack - 0x3c</stringmatch>
 </decompilertest>
