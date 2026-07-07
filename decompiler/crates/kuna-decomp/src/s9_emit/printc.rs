@@ -2365,8 +2365,23 @@ impl PrintC {
         } else {
             None
         };
-        let markup = MarkupRef::none();
         for (high, name) in &decls {
+            // C++ `emitVarDecl(sym)` always writes the declared symbol's id
+            // (prettyprint.cc:154 `writeUnsignedInteger(ATTRIB_SYMREF, sym->getId())`),
+            // and Ghidra's `ClangVariableDecl.decode` does a REQUIRED read of `symref`:
+            // an ABSENT attribute aborts the whole markup decode with "Attribute symref
+            // is not present", so the Decompiler window shows nothing for any function
+            // that declares a local.  Phase 2 does not yet encode `<localdb>`
+            // (funcdata_encode.rs), so no HighSymbol reaches Java to resolve against —
+            // but the attribute must still be PRESENT (Java only *logs* an unresolvable
+            // ref, non-fatally, and still renders the declaration tokens).  Use the
+            // declaration representative Varnode's create index — the same id the
+            // `<ast>` and the token `varref` already carry — as the placeholder symref
+            // until the lazy scope encoding (Phase 3/4) supplies real symbol ids.
+            let mut markup = MarkupRef::none();
+            markup.symref = decl_rep_varnode(fd, *high)
+                .and_then(|vn| fd.vbank().get(vn))
+                .map(|v| v.get_create_index() as uintb);
             // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
             let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, *high);
             let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
