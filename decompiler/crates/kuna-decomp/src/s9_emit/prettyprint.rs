@@ -456,6 +456,41 @@ pub trait Emit {
         let st = self.state_mut();
         st.pend_print = Some(style);
         st.pend_brace_indent = -1;
+        // Stamp this registration with a fresh generation (its C++ pointer
+        // identity).  A later registration shadows this one; the shadowed brace
+        // then never fires and its owning frame must not close a brace it never
+        // opened.
+        st.pend_gen_ctr += 1;
+        st.pend_reg_gen = st.pend_gen_ctr;
+    }
+
+    /// The generation stamp of the pending-brace registration this call just
+    /// made — the caller keeps it and later asks [`Emit::pending_fired_indent`]
+    /// whether *its own* brace fired.  Read immediately after
+    /// [`Emit::set_pending_brace`].
+    fn pending_reg_gen(&self) -> u64 {
+        self.state().pend_reg_gen
+    }
+
+    /// The indent id the pending brace registered under `gen` opened when it
+    /// fired, or `-1` if that generation never fired (it was shadowed by a later
+    /// registration, or canceled).  This is C++'s frame-local
+    /// `PendingBrace::getIndentId()`: it answers "did *my* brace fire", immune to
+    /// sibling/descendant fires that share the emitter's pending slot.
+    fn pending_fired_indent(&self, gen: u64) -> int4 {
+        self.state()
+            .pend_fired
+            .iter()
+            .rev()
+            .find(|(g, _)| *g == gen)
+            .map(|(_, id)| *id)
+            .unwrap_or(-1)
+    }
+
+    /// Drop recorded pending-brace fire results (call at the start of a fresh
+    /// function body so the `pend_fired` log cannot accumulate across functions).
+    fn reset_pending_fired(&mut self) {
+        self.state_mut().pend_fired.clear();
     }
 
     /// Is a brace still pending (C++ `Emit::hasPendingPrint`)?  True only while
@@ -484,9 +519,14 @@ pub trait Emit {
         if let Some(style) = self.state().pend_print {
             // Clear pending before the callback (C++ emitPending order).
             self.state_mut().pend_print = None;
+            // The brace being fired is the *currently active* registration; stamp
+            // its generation so its owning frame (and only that frame) can later
+            // recognise its own fire.
+            let gen = self.state().pend_reg_gen;
             let id = self.open_brace_indent(OPEN_CURLY_FOR_PENDING, style);
             // Record the fired brace's indent id (C++ PendingBrace::indentId).
             self.state_mut().pend_brace_indent = id;
+            self.state_mut().pend_fired.push((gen, id));
         }
     }
 }
@@ -514,6 +554,20 @@ pub struct EmitBase {
     /// `PendingBrace::indentId`, which lives on the caller's stack frame).  Read
     /// by `emit_block_if` to decide whether a brace needs closing.
     pub pend_brace_indent: int4,
+    /// Monotonic id source for pending-brace registrations.  Each
+    /// [`Emit::set_pending_brace`] bumps this and stamps the new registration.
+    pub pend_gen_ctr: u64,
+    /// Generation stamp of the *currently active* pending-brace registration
+    /// (the C++ `pendPrint` pointer identity).  A later `set_pending_brace`
+    /// shadows an earlier one; the earlier registration then never fires.
+    pub pend_reg_gen: u64,
+    /// `(generation, fired indent id)` for every pending brace that actually
+    /// *fired*.  This is the per-frame `PendingBrace::indentId` of C++: an
+    /// `emit_block_if` frame stamps its own generation at registration and later
+    /// asks [`Emit::pending_fired_indent`] whether *that* generation fired — so a
+    /// frame closes its `else { … }` brace only when its own brace opened, never
+    /// on a stale sibling/descendant fire (the shared-slot bug).
+    pub pend_fired: Vec<(u64, int4)>,
 }
 
 impl Default for EmitBase {
@@ -531,6 +585,9 @@ impl EmitBase {
             indentincrement: 2,
             pend_print: None,
             pend_brace_indent: -1,
+            pend_gen_ctr: 0,
+            pend_reg_gen: 0,
+            pend_fired: Vec::new(),
         }
     }
     /// C++ `Emit::resetDefaultsInternal()`.
