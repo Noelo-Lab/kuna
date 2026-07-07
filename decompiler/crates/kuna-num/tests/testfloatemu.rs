@@ -55,6 +55,25 @@ fn double_to_raw_bits(f: f64) -> u64 {
     f.to_bits()
 }
 
+/// Pin a NaN *generated* from non-NaN inputs to the x86 "real indefinite"
+/// (`0xffc00000`), mirroring [`FloatFormat::encode_generated`] (see the float.rs
+/// module header).  These are host-parity tests: they compare `FloatFormat`
+/// against the build host's native FP, which agree everywhere EXCEPT the sign of
+/// an invalid-operation-generated NaN — the x86 FPU sets it, Apple-Silicon/ARM
+/// clears it.  The engine canonicalizes generated NaNs to the x86 sign for
+/// cross-host determinism, so the host reference is canonicalized the same way
+/// to keep the test meaningful off-x86.  On the x86 oracle host this is a no-op
+/// (the host already yields `0xffc00000`).  `inputs_nan` marks a *propagated*
+/// NaN (host-deterministic sign), which is left untouched.
+fn canon_generated_nan4(raw: u64, inputs_nan: bool) -> u64 {
+    let is_nan = (raw & 0x7f80_0000) == 0x7f80_0000 && (raw & 0x007f_ffff) != 0;
+    if !inputs_nan && is_nan {
+        0xffc0_0000
+    } else {
+        raw
+    }
+}
+
 // macros to preserve call site (testfloatemu.cc:64-82); Rust panics carry the
 // fixture-fn location, but the assert message still shows both values.
 
@@ -331,7 +350,7 @@ fn float_opSqrt() {
     let format = FloatFormat::new(4);
 
     for f in float_test_values() {
-        let true_result = float_to_raw_bits(f.sqrt());
+        let true_result = canon_generated_nan4(float_to_raw_bits(f.sqrt()), f.is_nan());
         let encoding = format.get_encoding(f64::from(f));
         let result = format.op_sqrt(encoding);
 
@@ -528,7 +547,8 @@ fn float_opAdd() {
     for f1 in float_test_values() {
         let encoding1 = format.get_encoding(f64::from(f1));
         for f2 in float_test_values() {
-            let true_result = float_to_raw_bits(f1 + f2);
+            let true_result =
+                canon_generated_nan4(float_to_raw_bits(f1 + f2), f1.is_nan() || f2.is_nan());
             let encoding2 = format.get_encoding(f64::from(f2));
             let result = format.op_add(encoding1, encoding2);
 
@@ -544,7 +564,8 @@ fn float_opDiv() {
     for f1 in float_test_values() {
         let encoding1 = format.get_encoding(f64::from(f1));
         for f2 in float_test_values() {
-            let true_result = float_to_raw_bits(f1 / f2);
+            let true_result =
+                canon_generated_nan4(float_to_raw_bits(f1 / f2), f1.is_nan() || f2.is_nan());
             let encoding2 = format.get_encoding(f64::from(f2));
             let result = format.op_div(encoding1, encoding2);
 
@@ -560,7 +581,8 @@ fn float_opMult() {
     for f1 in float_test_values() {
         let encoding1 = format.get_encoding(f64::from(f1));
         for f2 in float_test_values() {
-            let true_result = float_to_raw_bits(f1 * f2);
+            let true_result =
+                canon_generated_nan4(float_to_raw_bits(f1 * f2), f1.is_nan() || f2.is_nan());
             let encoding2 = format.get_encoding(f64::from(f2));
             let result = format.op_mult(encoding1, encoding2);
 
@@ -576,7 +598,8 @@ fn float_opSub() {
     for f1 in float_test_values() {
         let encoding1 = format.get_encoding(f64::from(f1));
         for f2 in float_test_values() {
-            let true_result = float_to_raw_bits(f1 - f2);
+            let true_result =
+                canon_generated_nan4(float_to_raw_bits(f1 - f2), f1.is_nan() || f2.is_nan());
             let encoding2 = format.get_encoding(f64::from(f2));
             let result = format.op_sub(encoding1, encoding2);
 
