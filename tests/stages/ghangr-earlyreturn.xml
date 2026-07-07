@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr ReturnDuplicatorHigh, per-edge const narrowing (option earlyreturn,
+    default-OFF; ELEM 4111), S8 goto-quality sub-stage.
+
+    ActionEarlyReturn peels ONLY the constant arm of a MIXED return phi
+    (v = MULTIEQUAL(#K, var); return v) into its own per-predecessor return K,
+    leaving the variable body return merged. The whole-block returndup gate
+    (returndup_is_const_ret) requires the ENTIRE return value const, so it rejects
+    this mixed diamond outright; earlyreturn reaches it via a per-edge const check
+    and reuses the same node_split machinery. branchflip + ifelseflatten (both
+    default-on) then orient the peeled guard as the if-true and de-indent the body.
+
+    Witness (self-contained, no relocations): coreutils factor sub_eb2e @ 0xeb2e, a
+    real isdigit-style character-class check compiled at -O0, whose two arms assign
+    constants merged at a single return of the register phi (rax = MULTIEQUAL of the
+    two arm values). 72 bytes verbatim from the O0/coreutils/factor corpus binary.
+
+    Pass 1 (option earlyreturn off): kuna keeps the merged diamond - a single
+    trailing return reached from both arms (if (guard) { v = 0 } else { v = 1 }
+    return v;), so the token return appears exactly ONCE.
+    Pass 2 (option earlyreturn on): the constant guard arm is peeled to its own
+    early return, so there are TWO returns (if (!guard) { return 1; } return 0;) and
+    the earlyreturn: hoisted line is logged. return appears TWICE. Total 3.
+-->
+<bytechunk space="ram" offset="0x100000">
+f30f1efa554889e5897dfc8b45fc83e83083f8360f97c284d2752648baff037e0000007e0089c148d3ea4889d083e0014885c00f95c084c07407b801000000eb05b8000000005dc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+</binaryimage>
+<script>
+  <com>option earlyreturn off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option earlyreturn on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)" min="1" max="1">else</stringmatch>
+<stringmatch name="earlyreturn #2: ON logs the const-guard hoist exactly once" min="1" max="1">earlyreturn: hoisted</stringmatch>
+</decompilertest>
