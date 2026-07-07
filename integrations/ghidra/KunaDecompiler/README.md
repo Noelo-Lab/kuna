@@ -156,38 +156,56 @@ a release install.
 
 ## Use with PyGhidra (headless / scripting)
 
-The GUI plugin can't load in a headless PyGhidra session, so preload the kuna core with
-the **file-drop seam** above — then the *unchanged* Ghidra (GUI, `analyzeHeadless`, or
-PyGhidra) runs on kuna with no code changes:
+Build the backend once (`cd decompiler && cargo build --release -p kuna-ghidra`), install
+pyghidra (`pip install "$GHIDRA_INSTALL_DIR"/Ghidra/Features/PyGhidra/pypkg/dist/pyghidra-*.whl`,
+or `pip install pyghidra`), and set `GHIDRA_INSTALL_DIR`. Then pick one of two ways to make
+Ghidra use kuna.
 
-```bash
-# 1. Build the backend and shadow the stock `decompile` (non-destructive: delete the
-#    copy to revert). Pick your host's os dir — see build.sh's platform map.
-cd decompiler && cargo build --release -p kuna-ghidra && cd ..
-PLAT=mac_arm_64   # or linux_x86_64 | mac_x86_64 | linux_arm_64
-DROP="$GHIDRA_INSTALL_DIR/Ghidra/Features/Decompiler/build/os/$PLAT"
-mkdir -p "$DROP" && cp decompiler/target/release/kuna_ghidra "$DROP/decompile"
+### In-script toggle — recommended (no file changes)
 
-# 2. Install pyghidra (bundled with Ghidra) and point it at your install.
-export GHIDRA_INSTALL_DIR=/abs/path/to/ghidra
-pip install "$GHIDRA_INSTALL_DIR"/Ghidra/Features/PyGhidra/pypkg/dist/pyghidra-*.whl  # or: pip install pyghidra
-```
+The GUI plugin can't load headless, but you can do exactly what it does — set
+`DecompileProcessFactory`'s cached `exepath` by reflection — straight from Python. This
+flips the core on and off at runtime with **no file surgery**; it takes effect on the next
+decompiler-process spawn (a freshly constructed `DecompInterface`):
 
 ```python
-import pyghidra
+import os, pyghidra
 pyghidra.start()
-from ghidra.app.decompiler import DecompInterface
+from ghidra.app.decompiler import DecompileProcessFactory, DecompInterface
 from ghidra.util.task import ConsoleTaskMonitor
 
-with pyghidra.open_program("a.out") as flat:      # analyze=True by default
+def _exepath():
+    f = DecompileProcessFactory.class_.getDeclaredField("exepath")
+    f.setAccessible(True)
+    return f
+def enable_kuna(exe):  _exepath().set(None, exe)    # kuna ON  (abs path to kuna_ghidra)
+def disable_kuna():    _exepath().set(None, None)   # back to the stock decompiler
+def active_core():     return _exepath().get(None)  # what Ghidra will spawn next
+
+with pyghidra.open_program("a.out") as flat:        # analyze=True by default
     program = flat.getCurrentProgram()
+    enable_kuna(os.environ["KUNA_GHIDRA_EXE"])       # target/release/kuna_ghidra
     ifc = DecompInterface(); ifc.openProgram(program)
     for func in program.getFunctionManager().getFunctions(True):
-        res = ifc.decompileFunction(func, 60, ConsoleTaskMonitor())
-        print(res.getDecompiledFunction().getC())   # kuna's C
+        print(ifc.decompileFunction(func, 60, ConsoleTaskMonitor()).getDecompiledFunction().getC())
+    ifc.dispose()
+    disable_kuna()                                   # later DecompInterfaces use stock again
 ```
 
-Confirm kuna is the active core: `ghidra.framework.Application.getOSFile("Decompiler",
-"decompile")` resolves to the `build/os/<platform>/decompile` you dropped. Remove that
-file to restore the stock decompiler. (Ghidra searches `build/os/<platform>/` before
-`os/<platform>/`, so the drop shadows the stock binary without overwriting it.)
+`enable_kuna`/`disable_kuna` are the headless equivalent of the extension's
+**Tools → Kuna Decompiler → Use Kuna Core** checkbox (which already toggles the GUI at
+runtime). An already-open `DecompInterface` keeps its current core until it respawns, so
+toggle *before* constructing the one you want to run.
+
+### Persistent swap — the file-drop seam
+
+When you can't inject Python (e.g. `analyzeHeadless`) or want *every* Ghidra invocation to
+use kuna, drop the binary named `decompile` into the module's `build/os/<platform>/` (Ghidra
+searches it before `os/<platform>/`, so it shadows the stock binary without overwriting it —
+delete the copy to revert):
+
+```bash
+PLAT=mac_arm_64   # or linux_x86_64 | mac_x86_64 | linux_arm_64 (see build.sh)
+DROP="$GHIDRA_INSTALL_DIR/Ghidra/Features/Decompiler/build/os/$PLAT"
+mkdir -p "$DROP" && cp decompiler/target/release/kuna_ghidra "$DROP/decompile"
+```
