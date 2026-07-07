@@ -1592,13 +1592,28 @@ impl<'a> RegionStructurer<'a> {
             if cb.get_out(0) != head {
                 continue; // clause must loop back to head
             }
-            if i == 0 {
+            // Overflow syntax (`CollapseStructure::ruleBlockWhileDo`,
+            // `blockaction.cc:1518`): a top-tested while-do whose condition block
+            // (`head`) is *complex* (a BlockList/BlockIf sequence — anything but a
+            // single BlockCopy/BlockCondition, per `FlowBlock::isComplex`) cannot be
+            // rendered inline as a comma-separated `while (<expr>)` — the emitter
+            // would print the region's nested `if`/statements *inside* the loop's
+            // condition parentheses (malformed C).  Ghidra flags such a loop with
+            // overflow syntax so it renders as `while (true) { <cond-body>;
+            // if (<cond>) break; <clause-body> }`, and flips the loop-continue edge
+            // accordingly: the clause must be the FALSE out under overflow syntax
+            // (the break fires on the TRUE cond), the TRUE out without it.  Mirrors
+            // `ruleBlockWhileDo` exactly, so a non-complex head (`overflow == false`)
+            // keeps the existing `negate-when-i==0` behavior byte-for-byte.
+            let overflow = self.is_complex(head);
+            if (i == 0) != overflow {
                 self.negate_condition_rec(head, true);
             }
             let graph_id = self.graph_id;
-            // After a possible flip the clause is now the TRUE out; re-read it.
-            let clause_now = self.graph.block(head).get_true_out();
-            self.graph.new_block_while_do(graph_id, head, clause_now);
+            let newbl = self.graph.new_block_while_do(graph_id, head, clause);
+            if overflow {
+                self.graph.block_mut(newbl).set_overflow_syntax();
+            }
             return Ok(true);
         }
 
