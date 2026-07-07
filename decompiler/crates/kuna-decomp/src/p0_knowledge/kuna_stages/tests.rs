@@ -141,8 +141,8 @@ fn settable_count_is_68() {
     // +1 for `returndup` (decbench F4), +1 for `noreturn_error` (decbench F2),
     // +1 for `iteregion`, the angr ITERegionConverter S8 assignment-diamond -> `?:`
     // ternary knob (decbench F5).
-    assert_eq!(kuna_num_settables(), 73);
-    assert_eq!(SETTABLE_TABLE.len(), 73);
+    assert_eq!(kuna_num_settables(), 74);
+    assert_eq!(SETTABLE_TABLE.len(), 74);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -423,6 +423,7 @@ fn option_values_live_value_present_for_28_suppressed_for_38() {
                             | "dedupitetail"
                             | "iteregion"
                             | "returndup"
+                            | "earlyreturn"
                             | "loopbreak_recovery"
                             | "relocobjects"
                     ) || PASS_GATES.contains(&st.option),
@@ -507,7 +508,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 72);
+    assert_eq!(json.matches("},\n").count(), 73);
 }
 
 #[test]

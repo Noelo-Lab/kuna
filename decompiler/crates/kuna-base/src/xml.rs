@@ -1657,7 +1657,7 @@ mod tests {
         // and ghangr-noreturn-error / noreturn_error, decbench F2 error(nonzero,...) wrappers,
         // and ghangr-iteregion / iteregion, angr ITERegionConverter assignment-diamond
         // -> `?:` ternary, decbench F5 O0-iproute2-ip-print_link_flags)
-        assert_eq!(count, 160, "corpus file count drifted");
+        assert_eq!(count, 161, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

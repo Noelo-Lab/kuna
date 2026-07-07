@@ -3068,6 +3068,122 @@ impl Funcdata {
         count
     }
 
+    /// (kuna, angr `earlyreturn`) The in-edge indices of shared RETURN block `b` whose
+    /// contribution to the return-value phi is a **constant** — the early-return guard
+    /// arms (`if (c) return 0;`).  This is the PER-EDGE analog of
+    /// [`Self::returndup_is_const_ret`] (which requires the *whole* return value const and
+    /// so rejects the common mixed diamond `MULTIEQUAL(#0, <var>)` = a const guard arm + a
+    /// variable-return body).  angr's `ReturnDuplicatorHigh` peels per-predecessor via
+    /// `_is_simple_return_graph`, which admits a variable body return; mirroring that,
+    /// return just the input slots that resolve to constants.  Empty unless the returned
+    /// value is a `CPUI_MULTIEQUAL` defined in `b` (phi input slot `i` aligns with in-edge
+    /// `i`, so a slot index is directly a [`Self::node_split`] edge index).
+    fn earlyreturn_const_edges(&self, b: BlockId) -> Vec<int4> {
+        // Find the RETURN op in b and its returned value (input 1).
+        let mut cur = self.bb_op_head(b);
+        let mut ret_val: Option<VarnodeId> = None;
+        while let Some(op) = cur {
+            let o = self.obank().get(op).expect("earlyret: stale op");
+            if o.code() == OpCode::CPUI_RETURN && o.num_input() >= 2 {
+                ret_val = o.get_in(1);
+            }
+            cur = o.basic_neighbours().1;
+        }
+        let ret_val = match ret_val {
+            Some(v) => v,
+            None => return Vec::new(), // void return — nothing to peel per-edge
+        };
+        // The returned value must be defined by a MULTIEQUAL *in this block* (the phi that
+        // merges the arm values); its input slots align 1:1 with b's in-edges.
+        let v = self.vbank().get(ret_val).expect("earlyret vn");
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+        let d = self.obank().get(def).expect("earlyret def");
+        if d.code() != OpCode::CPUI_MULTIEQUAL || d.get_parent() != Some(b) {
+            return Vec::new();
+        }
+        let n = d.num_input();
+        let mut edges = Vec::new();
+        for i in 0..n {
+            if let Some(iv) = d.get_in(i) {
+                if self.returndup_value_is_const(iv) {
+                    edges.push(i);
+                }
+            }
+        }
+        edges
+    }
+
+    /// (kuna) Peel the **constant guard arms** out of a shared RETURN block into their own
+    /// per-predecessor `return K`, so `if (c) { return K; } body; return <var>;` recovers as
+    /// an early-return guard — angr SAILR `ReturnDuplicatorHigh`, but PER-EDGE (see
+    /// [`Self::earlyreturn_const_edges`]).  Distinct from [`Self::returndup_apply`], which
+    /// requires the *whole* return const and so cannot reach the mixed const/variable
+    /// diamond; this only ever splits a **constant** arm, so it cannot re-introduce the
+    /// variable-return over-firing that made broad `returndup` regress the aggregate.
+    /// Same reuse of [`Self::return_split_is_splittable`] + [`Self::node_split`], same
+    /// caps, and it never splits the last remaining edge (leaves the variable body merged).
+    pub(crate) fn earlyreturn_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
+        let mut count = 0;
+        // Collect candidates up front — node_split mutates the CFG.
+        let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        let mut work: Vec<(BlockId, Vec<int4>)> = Vec::new();
+        for op in return_ops {
+            let o = match self.obank().get(op) {
+                Some(o) => o,
+                None => continue,
+            };
+            if o.is_dead() {
+                continue;
+            }
+            let parent = match o.get_parent() {
+                Some(p) => p,
+                None => continue,
+            };
+            let size_in = self.bblocks_ref().block(parent).size_in();
+            if size_in <= 1 || size_in > max_inedges {
+                continue;
+            }
+            if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            let mut edges = self.earlyreturn_const_edges(parent);
+            if edges.is_empty() {
+                continue;
+            }
+            edges.sort_unstable(); // ascending; slots align with in-edge indices
+            // Never split ALL in-edges — if every arm is const (the whole-block returndup
+            // shape), leave the lowest merged so a predecessor remains on the original.
+            if edges.len() as int4 >= size_in {
+                edges.remove(0);
+            }
+            if edges.is_empty() {
+                continue;
+            }
+            if !work.iter().any(|(b, _)| *b == parent) {
+                work.push((parent, edges));
+            }
+        }
+        // Split highest edge index first, so removing an edge does not shift lower indices.
+        for (parent, edges) in work {
+            for &i in edges.iter().rev() {
+                if count >= max_splits {
+                    return count;
+                }
+                if self.bblocks_ref().block(parent).size_in() <= 1 {
+                    break; // one predecessor left — leave it merged
+                }
+                match self.node_split(parent, i) {
+                    Ok(()) => count += 1,
+                    Err(_) => break,
+                }
+            }
+        }
+        count
+    }
+
     // --- Block-cover helpers (BlockBasic::setInitialRange/copyRange/mergeRange)
 
     /// First address covered by basic block `bb` (C++ `BlockBasic::getStart`,

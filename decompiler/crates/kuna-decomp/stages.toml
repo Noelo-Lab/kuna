@@ -1954,6 +1954,23 @@ inspiration = "decbench:O0-coreutils-factor-factor; O0-e2fsprogs-e2fsck-ext4_fc_
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "earlyreturn"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-ReturnDuplicatorHigh-peredge"
+summary = "Hoist a leading const-guard into an early return (`if (c) return K;`) by peeling only the CONSTANT arm of a MIXED return phi, so a function that opens with an argument-validity check recovers the source's early-return + de-indented body instead of kuna's inverted diamond (`if (guard) { entire body } else { v = default; } return v;`). This is the PER-EDGE narrowing of angr SAILR `ReturnDuplicatorHigh` that the whole-block `returndup` gate structurally cannot reach: the shared RETURN block is `v = MULTIEQUAL(#K /*guard-false arm, constant*/, <var> /*body arm, variable*/); return v`, and `returndup`'s `returndup_is_const_ret` requires the WHOLE return value const, so it rejects this mixed diamond outright. earlyreturn instead computes the per-in-edge const set (the phi input slots that resolve to constants) and splits ONLY those edges via the SAME `node_split` machinery, leaving the variable body return merged. Each peeled const arm becomes its own `return K` predecessor; `branchflip` then orients it as the `if`-true and `ifelseflatten` drops the else and de-indents the body -- yielding angr's exact `if (c) return K; ...body...; return <var>;` (coreutils realpath::relpath: kuna 73 loc diamond -> angr's 52 loc early-return). Because it only ever peels a CONSTANT arm (never a `return <variable>` share), it CANNOT re-introduce the variable-return over-firing that made broad returndup regress the aggregate GED-perfect count ~976; it targets the mixed const/variable diamond that whole-block returndup skips. Bounded: return-only epilogue (the splittable filter rejects calls/stores), never splits the last edge (body keeps its return), <= 16 predecessors, <= 32 splits/function; each hoist logged (`earlyreturn:`)."
+use_when = "Set ON per function/binary to recover the idiomatic early-return-guard shape where kuna emits the inverted diamond -- a function whose first action is an argument-validity check (`if (!p) return 0;`) that kuna renders as `if (p != 0) { whole body } else { v = 0 } return v;`. DEFAULT OFF (byte-identical to upstream when off). It is MORE permissive than the shipped whole-block `returndup` gate (it fires on mixed const/variable diamonds returndup skips), so the aggregate effect must be measured before any default-on flip -- but by construction it cannot cause the variable-return over-firing that reverted returndup (it splits only constant arms)."
+example = "option earlyreturn on"
+source_decompiler = "angr"
+inspiration = "decbench:O0-coreutils-realpath-relpath; O0-tar-tar-from_header; ReturnDuplicatorHigh._is_simple_return_graph (angr/analyses/decompiler/optimization_passes/return_duplicator_{high,base}.py)"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "foldcallret"
 values = "on|off"
 default = "on"

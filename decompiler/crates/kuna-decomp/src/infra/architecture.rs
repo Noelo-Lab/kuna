@@ -453,6 +453,11 @@ pub struct Architecture {
     /// complement to `ActionReturnSplit` (the goto-driven `ReturnDuplicatorLow`)
     /// (`duplicate_shared_returns`, opt-in default-off).
     pub duplicate_shared_returns: bool,
+    /// (kuna) Hoist a leading const-guard into an early return (`if (c) return K;`) by
+    /// peeling only the CONSTANT arm of a mixed return phi — the per-edge narrowing of
+    /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
+    /// const gate cannot reach (`early_return`, opt-in default-off).
+    pub early_return: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -925,6 +930,7 @@ impl Architecture {
             dedup_ite_tail: false,
             iteregion: false,
             duplicate_shared_returns: false,
+            early_return: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -1237,6 +1243,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::s8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
                 self.duplicate_shared_returns = val;
+                Ok(msg)
+            }
+            "earlyreturn" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
+                self.early_return = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -1602,6 +1614,7 @@ impl Architecture {
         seam.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         seam.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         seam.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
+        seam.early_return = self.early_return; // earlyreturn
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
