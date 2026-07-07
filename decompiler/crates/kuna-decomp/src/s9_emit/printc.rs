@@ -2544,8 +2544,21 @@ impl PrintC {
             return;
         }
         let n = list.len();
-        // First block: no_branch (unless flat).
         let id1 = self.emit.begin_block(0);
+        // C++ `PrintC::emitBlockLs` (printc.cc:2929-2933): a single-element list
+        // emits its one block **once**, in the caller's branch state (before the
+        // `no_branch` push), and returns.  Without this early-return the block is
+        // emitted a second time below as the "Final block" (`list[0] == list[n-1]`),
+        // duplicating it — e.g. the single-block `abort(); return;` tail that
+        // `taildup`/`gotoreduce` wrap in a 1-element `BlockList`, which otherwise
+        // renders `abort(); abort();`.  The datatest corpus never produces a
+        // size-1 `Ls`, so this only surfaced under the kuna structuring passes.
+        if n == 1 {
+            self.emit_block(fd, arch, list[0]);
+            self.emit.end_block(id1);
+            return;
+        }
+        // First block: no_branch (unless flat).
         self.context.push_mod();
         if !self.is_flat() {
             self.context.set_mod(modifiers::NO_BRANCH);
