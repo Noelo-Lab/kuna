@@ -6033,8 +6033,50 @@ impl PrintC {
         }
         // No bound name: fall to the register / unnamed-location naming, which is
         // the faithful `pushUnnamedLocation` tail (printc.cc:1957-1974).
-        let loc = v.get_addr().clone();
-        let size = v.get_size();
+        //
+        // (kuna) C++ `PrintC::pushSymbolDetail` renders EVERY member of a
+        // HighVariable through `high->getSymbol()` — one shared name for the whole
+        // variable.  A HighVariable that copy-shadow-merges a register/`unique`
+        // scratch value with an addr-tied persistent GLOBAL — the `global =
+        // COPY(reg)` store folded into the global's high, exactly as upstream's
+        // variable-merge does (Ghidra's `goal_width` phi has all-register-EAX inputs
+        // that every carry `hv=goal_width`) — therefore renders as the GLOBAL at
+        // every member, never as the raw register.  kuna instead renders an unnamed
+        // location from the *member's own* address, so a register/`unique` member of
+        // such a mixed high would leak a stray `EAX` / `Unique<hex>`.  Mirror the C++
+        // `getSymbol()` behavior: resolve the member to its high's canonical global
+        // storage first — if any instance of this high lives at a real memory global
+        // (a non-register `IPTR_PROCESSOR` address that renders `dat_<addr>`), render
+        // THIS member from that global's (address,size) so the whole variable reads
+        // one `dat_<addr>`.  A leaf that is itself a global, or whose high owns no
+        // global member (an ordinary register/`unique` temp), is unaffected.
+        let renders_as_global = |a: &kuna_base::address::Address, sz: int4| -> bool {
+            match a.get_space() {
+                Some(s) => {
+                    arch.translate().get_register_name(s, a.get_offset(), sz).is_empty()
+                        && kuna_global_naming(s)
+                }
+                None => false,
+            }
+        };
+        let mut loc = v.get_addr().clone();
+        let mut size = v.get_size();
+        if !renders_as_global(&loc, size) {
+            if let Some(h) = v.get_high() {
+                if let Some(hv) = fd.high_bank().get(h) {
+                    for i in 0..hv.num_instances() {
+                        let ivn = hv.get_instance(i);
+                        if let Some(iv) = fd.vbank().get(ivn) {
+                            if iv.is_addr_tied() && renders_as_global(iv.get_addr(), iv.get_size()) {
+                                loc = iv.get_addr().clone();
+                                size = iv.get_size();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let spc = match loc.get_space() {
             Some(s) => s,
             None => return,
