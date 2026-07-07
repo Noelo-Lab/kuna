@@ -153,3 +153,41 @@ You can run kuna under Ghidra without this extension at all: copy the kuna binar
 
 The extension is the recommended path; the file drop is handy for quick experiments on
 a release install.
+
+## Use with PyGhidra (headless / scripting)
+
+The GUI plugin can't load in a headless PyGhidra session, so preload the kuna core with
+the **file-drop seam** above — then the *unchanged* Ghidra (GUI, `analyzeHeadless`, or
+PyGhidra) runs on kuna with no code changes:
+
+```bash
+# 1. Build the backend and shadow the stock `decompile` (non-destructive: delete the
+#    copy to revert). Pick your host's os dir — see build.sh's platform map.
+cd decompiler && cargo build --release -p kuna-ghidra && cd ..
+PLAT=mac_arm_64   # or linux_x86_64 | mac_x86_64 | linux_arm_64
+DROP="$GHIDRA_INSTALL_DIR/Ghidra/Features/Decompiler/build/os/$PLAT"
+mkdir -p "$DROP" && cp decompiler/target/release/kuna_ghidra "$DROP/decompile"
+
+# 2. Install pyghidra (bundled with Ghidra) and point it at your install.
+export GHIDRA_INSTALL_DIR=/abs/path/to/ghidra
+pip install "$GHIDRA_INSTALL_DIR"/Ghidra/Features/PyGhidra/pypkg/dist/pyghidra-*.whl  # or: pip install pyghidra
+```
+
+```python
+import pyghidra
+pyghidra.start()
+from ghidra.app.decompiler import DecompInterface
+from ghidra.util.task import ConsoleTaskMonitor
+
+with pyghidra.open_program("a.out") as flat:      # analyze=True by default
+    program = flat.getCurrentProgram()
+    ifc = DecompInterface(); ifc.openProgram(program)
+    for func in program.getFunctionManager().getFunctions(True):
+        res = ifc.decompileFunction(func, 60, ConsoleTaskMonitor())
+        print(res.getDecompiledFunction().getC())   # kuna's C
+```
+
+Confirm kuna is the active core: `ghidra.framework.Application.getOSFile("Decompiler",
+"decompile")` resolves to the `build/os/<platform>/decompile` you dropped. Remove that
+file to restore the stock decompiler. (Ghidra searches `build/os/<platform>/` before
+`os/<platform>/`, so the drop shadows the stock binary without overwriting it.)
