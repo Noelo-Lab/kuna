@@ -1577,6 +1577,29 @@ impl<'a> RegionStructurer<'a> {
         if self.graph.block(head).is_interior_goto_target() {
             return Ok(false);
         }
+        // (kuna) Companion malformed-while-head guard for the `regionlooprefine`
+        // path.  A refined multi-latch loop can present a head that has absorbed an
+        // inner loop / if / switch — i.e. the head is a `BlockList` (or another
+        // non-condition graph subtype) rather than a bare condition block.  Folding
+        // such a head as a *top-tested* while-do would render those control-flow
+        // statements INSIDE the `while (...)` controlling expression — malformed C
+        // (a full `while (...) {...}` loop nested in another loop's condition, as
+        // seen on libedit `vi_history_word`).  A valid while-do head is always a
+        // single condition block: a `BlockCopy` (comma-expression basic block, e.g.
+        // `while (v = *p, iswspace(v) != 0)`) or a folded `BlockCondition` (`&&`/`||`
+        // of such).  Reject anything else so the loop falls through to the
+        // `BlockInfLoop` form (`while(true){ …; if(!cond) break; … }`) — the OFF /
+        // Ghidra rendering.  Gated on `loop_refine`: the base structurer (which
+        // produces the 675 byte-identical datatests, and to which `regionlooprefine`
+        // ON is byte-identical on reducible code) is left completely untouched.
+        if self.loop_refine
+            && !matches!(
+                self.graph.block(head).get_type(),
+                crate::block::BlockType::Copy | crate::block::BlockType::Condition
+            )
+        {
+            return Ok(false);
+        }
         for i in 0..2 {
             let clause = self.graph.block(head).get_out(i);
             if clause == head {
