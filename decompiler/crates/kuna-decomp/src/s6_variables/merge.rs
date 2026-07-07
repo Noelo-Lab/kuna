@@ -1640,7 +1640,22 @@ impl Merge {
             }
             self.unify_address(ctx, &range.all_varnodes)?;
             for sub in &range.must_merge_ranges {
-                self.merge_range_must(ctx, sub)?;
+                // (kuna divergence) A forced merge that intersects — a heavily-reused
+                // stack slot (compiler stack-coloring, hundreds of SSA versions) the
+                // port's `eliminate_intersect` cannot fully snip — is SKIPPED, not fatal.
+                // Upstream Ghidra's `mergeAddrTied` is INFALLIBLE (its `eliminateIntersect`
+                // always resolves, `merge.cc:489`), so `mergeRangeMust` never throws there.
+                // When kuna's does, `?`-propagating it aborts the WHOLE loop, which skips
+                // the `bank_group_with` VariablePiece grouping below for every OTHER slot
+                // too — so `mark_internal_copies` can hide no partial-preserve SUBPIECE and
+                // the function renders `SUB84(x,4)`/`CONCAT44(…)` reconstruction soup
+                // instead of Ghidra's inline `x._4_4_` member access. Swallowing just the
+                // conflicting sub-range (leaving it exactly as un-unified as the total
+                // abort did — strictly no worse there) and STILL forming the groups below
+                // lets every other slot's pieces coalesce and print correctly. The residual
+                // conflicting slot is the follow-up (match Ghidra's `eliminateIntersect`
+                // on the INPUT-vs-INDIRECT reused-slot intersection).
+                let _ = self.merge_range_must(ctx, sub);
             }
             for &(vn2_high, off, vn1_high) in &range.group_with {
                 ctx.bank_group_with(vn2_high, off, vn1_high)?;

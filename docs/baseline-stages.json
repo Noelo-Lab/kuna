@@ -171,7 +171,7 @@
     "data:angr-StackGuard #3: bug -- label (goto target + definition) emitted only with option off",
     "data:angr-StackGuard #4: fix -- only the option-on pass inlines the deep match path as a direct return 1",
     "data:angr-dedupvardecls #1: slot 0x58 declared 4x (off, the bug) + 1x (on, the fix) = 5 total",
-    "data:angr-dedupvardecls #2: slot 0x3c declared 2x (off) + 1x (on) = 3 total",
+    "data:angr-dedupvardecls #2: slot 0x3c declared 1x (off, now merge-coalesced) + 1x (on) = 2 total",
     "data:angr-gotoreduce #1 (bug, off): one residual goto to the shared return tail",
     "data:angr-gotoreduce #2 (bug, off): goto label reference + label definition present, none on",
     "data:angr-gotoreduce #3 (fix, on): return tail duplicated (1 return off + 2 returns on)",
