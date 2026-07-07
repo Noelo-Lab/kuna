@@ -197,15 +197,13 @@ fn test_full_session_byte_exact() {
         .burst(16)
         .burst(17)
         .burst(7)
-        // setOptions: "t" + phase-1 warning
+        // setOptions: "t", empty warnings — accepted SILENTLY.  A non-empty
+        // 16/17 message here fails DecompInterface init (openProgram stores it
+        // and isErrorMessage flags any non-"warning" text as fatal), so the GUI
+        // reports "Unable to initialize the DecompilerInterface" (see process.rs).
         .burst(6)
         .string(b"t")
         .burst(16)
-        .raw(
-            b"\nkuna ghidra-mode: setOptions: 2 option element(s) recorded \
-              but not applied (phase 1)"
-                .as_slice(),
-        )
         .burst(17)
         .burst(7)
         // setAction: "t", empty warnings
@@ -235,22 +233,6 @@ fn test_full_session_byte_exact() {
         out, expected.0,
         "response stream mismatch\n got: {:02x?}\nwant: {:02x?}",
         out, expected.0
-    );
-}
-
-/// The warning-string literals above must not drift: `\` line continuations
-/// inside the source would silently change the bytes.  (This guards the
-/// test itself, comparing against the same strings built without
-/// continuation.)
-#[test]
-fn test_expected_warning_literals() {
-    assert_eq!(
-        b"\nkuna ghidra-mode: setOptions: 2 option element(s) recorded \
-          but not applied (phase 1)"
-            .as_slice()
-            .len(),
-        "\nkuna ghidra-mode: setOptions: 2 option element(s) recorded but not applied (phase 1)"
-            .len()
     );
 }
 

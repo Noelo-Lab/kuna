@@ -168,8 +168,6 @@ struct CommandState {
     addr: Option<Address>,
     /// decompileAt param: the rendered form of `addr` for warning messages.
     addr_text: Option<String>,
-    /// setOptions param: the raw packed \<optionslist> bytes.
-    options_raw: Option<Vec<u8>>,
 }
 
 impl CommandState {
@@ -186,7 +184,6 @@ impl CommandState {
             printstring: Vec::new(),
             addr: None,
             addr_text: None,
-            options_raw: None,
         }
     }
 }
@@ -469,7 +466,10 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
             CommandKind::SetOptions => {
                 let slot = self.bind_session("Expecting arch id start", "Expecting arch id end")?;
                 cmd.slot = Some(slot);
-                cmd.options_raw = read_string_stream_optional(self.client.borrow_mut().sin_mut())?;
+                // Consume the packed <optionslist> for protocol alignment; the
+                // engine has no option database yet, so the list is accepted but
+                // not applied (see SetOptions::rawAction).
+                let _ = read_string_stream_optional(self.client.borrow_mut().sin_mut())?;
                 Ok(())
             }
         }
@@ -721,25 +721,19 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
             // decodes the <optionslist> and throws on any unknown option
             // (OptionDatabase::set -> ParseError -> response 'f' -> Java
             // IOException "Did not accept decompiler options", killing the
-            // program open).  kuna step-3 has no option database wired to the
-            // engine yet, and for drop-in robustness across Ghidra versions it
-            // TOLERATES the whole list: the packed stream is consumed (and
-            // counted when decodable) and the answer is always 't'.
+            // program open).  kuna's phase-2 engine has no option database wired
+            // yet, so for drop-in robustness it TOLERATES the whole list (the
+            // packed stream is consumed in loadParameters) and answers 't' —
+            // SILENTLY, with an empty 16/17 frame, exactly as upstream does on
+            // success.  It must emit NO message here: DecompInterface init stores
+            // the native message returned by setOptions, and
+            // openProgram/isErrorMessage (DecompInterface.java) flags any
+            // non-empty text lacking the word "warning" as a FATAL error — so a
+            // stray "recorded but not applied" note made the GUI report
+            // "Unable to initialize the DecompilerInterface" even though the
+            // options were accepted and the function would decompile.
             CommandKind::SetOptions => {
-                let slot = cmd.slot.expect("bound session");
-                let counted = cmd.options_raw.as_ref().and_then(|raw| {
-                    let session = self.archlist[slot].as_ref().expect("bound session");
-                    count_option_elements(raw, session.manager())
-                });
-                let msg = match counted {
-                    Some(n) => format!(
-                        "kuna ghidra-mode: setOptions: {n} option element(s) recorded \
-                         but not applied (phase 1)"
-                    ),
-                    None => "kuna ghidra-mode: setOptions accepted but not applied (phase 1)"
-                        .to_string(),
-                };
-                self.print_message(cmd.slot, &msg);
+                let _ = cmd.slot.expect("bound session");
                 cmd.ok = true;
                 Ok(())
             }
@@ -948,33 +942,6 @@ fn render_address(addr: &Address) -> String {
         s.push_str("invalid_addr");
     }
     s
-}
-
-/// Best-effort count of the child elements of the packed \<optionslist>
-/// (option elements hold only strings/ints, so an empty manager decodes
-/// them fine).  `None` when the stream doesn't decode.
-fn count_option_elements(raw: &[u8], manager: Option<&AddrSpaceManager>) -> Option<usize> {
-    let empty;
-    let mgr = match manager {
-        Some(m) => m,
-        None => {
-            empty = AddrSpaceManager::new();
-            &empty
-        }
-    };
-    let mut decoder = PackedDecode::new(mgr);
-    decoder.ingest_stream(raw).ok()?;
-    let root = decoder.open_element().ok()?;
-    if root == 0 {
-        return None;
-    }
-    let mut n = 0usize;
-    while decoder.peek_element().ok()? != 0 {
-        decoder.skip_element().ok()?;
-        n += 1;
-    }
-    decoder.close_element(root).ok()?;
-    Some(n)
 }
 
 #[cfg(test)]
