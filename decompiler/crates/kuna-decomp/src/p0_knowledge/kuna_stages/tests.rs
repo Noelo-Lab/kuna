@@ -140,9 +140,10 @@ fn settable_count_is_68() {
     // only reorders which goto is chosen when virtualizing, so OFF is byte-identical.
     // +1 for `returndup` (decbench F4), +1 for `noreturn_error` (decbench F2),
     // +1 for `iteregion`, the angr ITERegionConverter S8 assignment-diamond -> `?:`
-    // ternary knob (decbench F5).
-    assert_eq!(kuna_num_settables(), 74);
-    assert_eq!(SETTABLE_TABLE.len(), 74);
+    // ternary knob (decbench F5).  +1 for `switchreturn`, the continuation of
+    // `earlyreturn` to the WIDE multi-way switch-phi return.
+    assert_eq!(kuna_num_settables(), 75);
+    assert_eq!(SETTABLE_TABLE.len(), 75);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -424,6 +425,7 @@ fn option_values_live_value_present_for_28_suppressed_for_38() {
                             | "iteregion"
                             | "returndup"
                             | "earlyreturn"
+                            | "switchreturn"
                             | "loopbreak_recovery"
                             | "relocobjects"
                     ) || PASS_GATES.contains(&st.option),
@@ -507,8 +509,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // noreturn_error's S1 analysis row, eh_frame_full's S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
-    // and the `pdb` PE PDB S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 73);
+    // the `pdb` PE PDB S1 row, and switchreturn's S8 row sit mid-table, so they do
+    // not move the tail).
+    assert_eq!(json.matches("},\n").count(), 74);
 }
 
 #[test]

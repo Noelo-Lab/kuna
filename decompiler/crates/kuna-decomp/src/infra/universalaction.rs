@@ -681,6 +681,13 @@ pub fn universal_sched(
             // returndup gate structurally cannot reach.  branchflip + ifelseflatten do the
             // hoist downstream.
             act!(crate::s8_structure::kuna_earlyreturn::ActionEarlyReturn::boxed("returnsplit")),
+            // (kuna) The direct continuation of ActionEarlyReturn: the SAME per-edge const
+            // peel (option `switchreturn`, default-OFF), but with the in-edge cap lifted so
+            // the WIDE multi-way switch-phi that overflows earlyreturn's 16-edge limit
+            // (`switch (x) { case A: v = K0; break; … } return v;` with > 16 cases) is
+            // reached too, hoisting each case to its own `return K`.  Registered right after
+            // earlyreturn so the narrower pass consumes the ≤16-edge diamonds first.
+            act!(crate::s8_structure::kuna_switchreturn::ActionSwitchReturn::boxed("returnsplit")),
             act!(ActionUnjustifiedParams::boxed("protorecovery")),
             act!(ActionStartTypes::boxed("typerecovery")),
             act!(ActionActiveReturn::boxed("protorecovery")),
