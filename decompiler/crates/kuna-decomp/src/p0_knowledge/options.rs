@@ -279,6 +279,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "iteregion",
     "returndup",
     "earlyreturn",
+    "switchreturn",
     "foldcallret",
     "stackguard",
     "branchflip",

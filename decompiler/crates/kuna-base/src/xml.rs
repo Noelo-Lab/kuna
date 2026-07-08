@@ -1656,8 +1656,10 @@ mod tests {
         // guard shape structures as early returns; decbench F4),
         // and ghangr-noreturn-error / noreturn_error, decbench F2 error(nonzero,...) wrappers,
         // and ghangr-iteregion / iteregion, angr ITERegionConverter assignment-diamond
-        // -> `?:` ternary, decbench F5 O0-iproute2-ip-print_link_flags)
-        assert_eq!(count, 161, "corpus file count drifted");
+        // -> `?:` ternary, decbench F5 O0-iproute2-ip-print_link_flags,
+        // and ghangr-switchreturn / switchreturn, the continuation of earlyreturn to the
+        // WIDE multi-way switch-phi return, O0-libedit-tty__getcharindex)
+        assert_eq!(count, 162, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
