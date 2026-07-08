@@ -896,3 +896,31 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   `crates/kuna-analysis/tests/fixtures/dwarf_globals_x86_64` (gcc `-O2 -g`; `int`/`long`/`char*`
   globals).
 - **Date**: 2026-07-08.
+
+## DIV-25: angr per-case const returns for wide switches (`switchreturn`) on by default
+
+- **Flip**: option **`switchreturn`** default **off → on** (`architecture.rs`, `stages.toml`).
+  The continuation of `earlyreturn` (DIV-23) from if/else-if diamonds to the **multi-way
+  switch const-phi return**: `switch (x) { case A: v = K0; break; … } return v;` (a shared
+  single-exit return whose value is a `MULTIEQUAL` of per-case constants) → per-case
+  `case A: return K0;`.
+- **Why**: the switch/enum-dispatch merged-return idiom was the single most-recurring shape in
+  the fresh angr-beats-kuna triage. `earlyreturn` already recovers it for switches ≤16 cases
+  (its `MAX_EARLYRETURN_INEDGES` cap); `switchreturn` shares the same `const_return_peel` core
+  (`Funcdata::node_split`) with the cap lifted to 256, so it also handles WIDE switches
+  (libedit `tty__getcharindex` 17 cases, coreutils `stat::fmt_to_mask`, iproute2 `ip::accept_msg`).
+  Because it only ever peels **constant** case arms, it inherits earlyreturn's safety and
+  **cannot** cause returndup's variable-return regression (DIV-18).
+- **Ablation**: on top of default `earlyreturn`-on, the incremental wide-switch delta measured
+  **NET-POSITIVE** — **+2 perfect matches, −107 summed GED, 3:0 improved:regressed across 17
+  sailr binaries, zero regressions**.
+- **Byte-identical on the corpus**: `switchreturn` changes exactly the **one** datatest
+  `earlyreturn` already opts out (`boolless`, which now carries both `option earlyreturn off`
+  and `option switchreturn off`), so **`make test` 675/675 + `make test-stages` 259/259 hold**.
+  The C++-parity boolless unit tests and the `earlyreturn`/`returndup` stage tests opt out the
+  same way (they share the const-peel core, so `switchreturn` must be off wherever `earlyreturn`
+  is, to isolate the transform under test). Restore the pre-DIV-25 behaviour with
+  `option switchreturn off`.
+- **Testcase**: `tests/stages/ghangr-switchreturn.xml` (two-pass off/on flip on a 17-case
+  const jump-table switch).
+- **Date**: 2026-07-08.

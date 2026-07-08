@@ -30,6 +30,7 @@ f30f1efa554889e5897dfc8b45fc83e83083f8360f97c284d2752648baff037e0000007e0089c148
 <symbol space="ram" offset="0x100000" name="f"/>
 </binaryimage>
 <script>
+  <com>option switchreturn off</com>
   <com>option earlyreturn off</com>
   <com>lo fu f</com>
   <com>decompile</com>
