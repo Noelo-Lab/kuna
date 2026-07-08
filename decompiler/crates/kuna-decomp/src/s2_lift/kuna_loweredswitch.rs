@@ -302,6 +302,14 @@ struct CmpNode {
     cont_a: Option<BlockId>,
     /// Continuation successor B (range only).
     cont_b: Option<BlockId>,
+    /// (range only) Successor taken when `V > range_value` — angr's `gt_node`
+    /// (`lowered_switch_simplifier.py:_find_switch_variable_comparison_type_c`).
+    gt_out: Option<BlockId>,
+    /// (range only) Successor taken when `V <= range_value` — angr's `le_node`.
+    le_out: Option<BlockId>,
+    /// (range only) The normalized "gt-form" threshold: gt_out ⟺ `V > range_value`,
+    /// le_out ⟺ `V <= range_value` (angr's post-adjustment `value` in type-c).
+    range_value: uintb,
 }
 
 impl CmpNode {
@@ -315,6 +323,9 @@ impl CmpNode {
             match_out: None,
             cont_a: None,
             cont_b: None,
+            gt_out: None,
+            le_out: None,
+            range_value: 0,
         }
     }
 }
@@ -403,13 +414,16 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
     // if (v1->isConstant() && !v0->isConstant()) { var = v0; cval = v1->getOffset(); }
     // else if (v0->isConstant() && !v1->isConstant()) { var = v1; cval = v0->getOffset(); }
     // else return res;
-    let (var, cval): (VarnodeId, uintb) = if vn_is_constant(data, v1) && !vn_is_constant(data, v0) {
-        (v0, vn_offset(data, v1))
-    } else if vn_is_constant(data, v0) && !vn_is_constant(data, v1) {
-        (v1, vn_offset(data, v0))
-    } else {
-        return res;
-    };
+    // `var_on_left` records the operand order (`var OP const` vs `const OP var`);
+    // needed to normalize a range comparison to angr's "gt-form" below.
+    let (var, cval, var_on_left): (VarnodeId, uintb, bool) =
+        if vn_is_constant(data, v1) && !vn_is_constant(data, v0) {
+            (v0, vn_offset(data, v1), true)
+        } else if vn_is_constant(data, v0) && !vn_is_constant(data, v1) {
+            (v1, vn_offset(data, v0), false)
+        } else {
+            return res;
+        };
 
     // bool flip = cb->isBooleanFlip();
     let flip = op_is_boolean_flip(data, cb);
@@ -445,6 +459,35 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         res.cval = cval;
         res.cont_a = Some(cond_true);
         res.cont_b = Some(cond_false);
+
+        // Normalize to angr's "gt-form" so recover_cascade can classify a range
+        // node's terminal edges as case-vs-default by the comparison VALUE — a
+        // faithful port of `_find_switch_variable_comparison_type_c`
+        // (`lowered_switch_simplifier.py:791-860`).  angr only sees `var OP const`
+        // (operands[0] is the VirtualVariable); in pcode a `var > c` / `var >= c`
+        // is emitted as `c < var` / `c <= var` (const on the left), so the
+        // var-on-right orders below are the CmpGT/CmpGE cases.  In every case
+        // gt_out ⟺ `V > range_value` and le_out ⟺ `V <= range_value`.
+        let is_le =
+            oc == OpCode::CPUI_INT_SLESSEQUAL || oc == OpCode::CPUI_INT_LESSEQUAL;
+        let (gt_out, le_out, tval): (BlockId, BlockId, uintb) = if var_on_left {
+            if is_le {
+                // `var <= cval` — angr CmpLE (le=true_target, gt=false_target, value unchanged)
+                (cond_false, cond_true, cval)
+            } else {
+                // `var < cval` — angr CmpLT (le=true_target, gt=false_target, value -= 1)
+                (cond_false, cond_true, cval.wrapping_sub(1))
+            }
+        } else if is_le {
+            // `cval <= var` (== `var >= cval`) — angr CmpGE (gt=true_target, le=false_target, value += 1)
+            (cond_true, cond_false, cval.wrapping_add(1))
+        } else {
+            // `cval < var` (== `var > cval`) — angr CmpGT (gt=true_target, le=false_target, value unchanged)
+            (cond_true, cond_false, cval)
+        };
+        res.gt_out = Some(gt_out);
+        res.le_out = Some(le_out);
+        res.range_value = tval;
     }
     res
 }
@@ -456,6 +499,61 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
 /// to its cover's first address.
 fn target_start(data: &Funcdata, bl: BlockId) -> Address {
     block_get_start(&data.bblocks_ref().arena, bl)
+}
+
+/// Count the INDEPENDENT default sinks among a set of default candidates
+/// (kuna adaptation of angr's single-shared-default guard for the pre-merge,
+/// variable-fragmented cascade — see the call site in [`recover_cascade`]).
+///
+/// A candidate is "absorbed" if a forward CFG walk from it reaches ANOTHER
+/// candidate without crossing the switch structure (`stop` = case targets +
+/// same-variable cascade nodes + the cascade head); such a candidate is only a
+/// path into the shared default.  The candidates that reach no other candidate
+/// are the sinks.  A genuine lowered switch funnels every default edge into one
+/// sink; independent bodies each stay a sink.
+#[allow(clippy::mutable_key_type)]
+fn count_default_sinks(
+    data: &Funcdata,
+    cand_block: &BTreeMap<Address, BlockId>,
+    stop: &BTreeSet<Address>,
+) -> int4 {
+    let cand_addrs: BTreeSet<Address> = cand_block.keys().cloned().collect();
+    let mut sinks: int4 = 0;
+    for (addr, &cb) in cand_block.iter() {
+        // Seed the walk with the successors of the candidate (not itself).
+        let mut queue: Vec<BlockId> = {
+            let bref = data.bblocks_ref();
+            let blk = bref.block(cb);
+            (0..blk.size_out()).map(|k| blk.get_out(k)).collect()
+        };
+        let mut visited: BTreeSet<BlockId> = BTreeSet::new();
+        let mut absorbed = false;
+        while let Some(v) = queue.pop() {
+            if !visited.insert(v) {
+                continue;
+            }
+            if block_type(data, v) != BlockType::Basic {
+                continue;
+            }
+            let va = target_start(data, v);
+            if va != *addr && cand_addrs.contains(&va) {
+                absorbed = true;
+                break;
+            }
+            if stop.contains(&va) {
+                continue; // bound the walk at the switch structure
+            }
+            let bref = data.bblocks_ref();
+            let blk = bref.block(v);
+            for k in 0..blk.size_out() {
+                queue.push(blk.get_out(k));
+            }
+        }
+        if !absorbed {
+            sinks += 1;
+        }
+    }
+    sinks
 }
 
 /// Try to recover one lowered switch with `startbb` as the cascade head (C++
@@ -479,9 +577,17 @@ fn recover_cascade(
     // std::map<uintb,Address> cases;  std::map<Address,int4> defaultVotes;
     let mut cases: BTreeMap<uintb, Address> = BTreeMap::new();
     let mut default_votes: BTreeMap<Address, int4> = BTreeMap::new();
+    // Parallel to `default_votes`: a representative block for each candidate
+    // address, so the convergence check below can walk the CFG from it.
+    let mut default_cand_block: BTreeMap<Address, BlockId> = BTreeMap::new();
     let mut visited: BTreeSet<BlockId> = BTreeSet::new();
-    let mut stack: Vec<BlockId> = Vec::new();
-    stack.push(startbb);
+    // Each stack entry carries angr's binary-search interval `(min_, max_)` for the
+    // switch variable at that node (`lowered_switch_simplifier.py:441`
+    // `stack = [(head, 0, 0xFFFF_FFFF_FFFF_FFFF)]`).  A range node narrows it as it
+    // descends, so a terminal (non-cascade) edge that pins the variable to a single
+    // value (`min_ + 1 == value` / `value == max_`) is a real CASE, not a default.
+    let mut stack: Vec<(BlockId, uintb, uintb)> = Vec::new();
+    stack.push((startbb, 0, 0xFFFF_FFFF_FFFF_FFFF));
     let mut saw_range = false; // true once a range (binary-search) node is seen
 
     // auto isCascade = [&](FlowBlock *fb)->BlockBasic * { ... };
@@ -497,8 +603,19 @@ fn recover_cascade(
         }
     };
 
+    // Only a true default candidate (a terminal edge NOT pinned to a single value)
+    // is voted into `default_votes`; this closure keeps that construction in one
+    // place (angr's `default_case_candidates[addr] = ...` dedup by address) and
+    // remembers a representative block per candidate for the convergence check.
+    let vote_default =
+        |dv: &mut BTreeMap<Address, int4>, cb: &mut BTreeMap<Address, BlockId>, bl: BlockId| {
+            let a = target_start(data, bl);
+            *dv.entry(a.clone()).or_insert(0) += 1;
+            cb.entry(a).or_insert(bl);
+        };
+
     // while(!stack.empty()) {
-    while let Some(bb) = stack.pop() {
+    while let Some((bb, min_, max_)) = stack.pop() {
         // if (visited.count(bb)) continue;  visited.insert(bb);
         if visited.contains(&bb) {
             continue;
@@ -508,10 +625,13 @@ fn recover_cascade(
         let cn = *cmpmap.get(&bb).expect("recoverCascade: stack block is in cmpmap");
 
         if cn.is_equality {
+            // eq node: match edge is a case; the no-match edge continues with the
+            // interval unchanged (angr keeps `(min_, max_)` across an eq node,
+            // `lowered_switch_simplifier.py:539`).
             // BlockBasic *matchb = isCascade(cn.matchOut);
             match is_cascade(cn.match_out) {
                 // match edge leads to another comparison: rare; treat as continuation
-                Some(matchb) => stack.push(matchb),
+                Some(matchb) => stack.push((matchb, min_, max_)),
                 None => {
                     // Address tgt = targetStart(cn.matchOut);
                     let tgt = target_start(data, cn.match_out.expect("equality node has matchOut"));
@@ -524,25 +644,56 @@ fn recover_cascade(
             }
             // BlockBasic *contb = isCascade(cn.contA);
             match is_cascade(cn.cont_a) {
-                Some(contb) => stack.push(contb),
+                Some(contb) => stack.push((contb, min_, max_)),
                 None => {
                     let a = cn.cont_a.expect("equality node has contA");
-                    *default_votes.entry(target_start(data, a)).or_insert(0) += 1;
+                    vote_default(&mut default_votes, &mut default_cand_block, a);
                 }
             }
         } else {
-            // range node: both edges continue or fall to default
+            // Range node — angr's `op == "gt"` handling
+            // (`lowered_switch_simplifier.py:548-597`).  Each edge either continues
+            // into another cascade node (pushed with a narrowed interval) or is a
+            // terminal edge.  A terminal edge that the binary-search interval pins
+            // to a SINGLE value is a case body (folds into the default region as
+            // before); only a terminal edge spanning a RANGE is a true default
+            // candidate — the distinction the convergence guard below relies on.
             saw_range = true;
-            // FlowBlock *outs[2] = { cn.contA, cn.contB };
-            let outs = [cn.cont_a, cn.cont_b];
-            for out in outs {
-                match is_cascade(out) {
-                    Some(cb) => stack.push(cb),
-                    None => {
-                        let o = out.expect("range node has both contA/contB");
-                        *default_votes.entry(target_start(data, o)).or_insert(0) += 1;
-                    }
-                }
+            let value = cn.range_value;
+            let gt = cn.gt_out.expect("range node has gt_out");
+            let le = cn.le_out.expect("range node has le_out");
+            let gt_cascade = is_cascade(Some(gt));
+            let le_cascade = is_cascade(Some(le));
+
+            // gt edge: V > value ⇒ interval becomes (value, max_)
+            //   `stack.append((gt_comp, value, max_))`
+            if let Some(g) = gt_cascade {
+                stack.push((g, value, max_));
+            }
+            // le edge: V <= value ⇒ interval becomes (min_, value - 1)
+            //   `stack.append((le_comp, min_, value - 1))`
+            if let Some(l) = le_cascade {
+                stack.push((l, min_, value.wrapping_sub(1)));
+            }
+
+            // Classify each terminal (non-cascade) edge by the interval bound.
+            // angr, at `:573-577`/`:585-589`, appends the single-value edge to
+            // `cases` and only routes the rest into `default_case_candidates`.
+            // kuna does the SAME split, but does NOT synthesize the single-value
+            // edge as a new case label: the point here is to keep it OUT of the
+            // default set so the convergence guard below counts only true default
+            // sinks.  Synthesizing it as a case would change the recovered
+            // JumpTable (extra case target) for switches that already recover
+            // today, exercising an un-ported install/re-flow seam (LOSS-131) with
+            // no output benefit — the value already folds into the default region
+            // exactly as before.  So a single-value edge is simply dropped here.
+            if le_cascade.is_none() && min_.wrapping_add(1) != value {
+                // le edge terminal, not a single value ⇒ default candidate (`:579-582`).
+                vote_default(&mut default_votes, &mut default_cand_block, le);
+            }
+            if gt_cascade.is_none() && value != max_ {
+                // gt edge terminal, not a single value ⇒ default candidate (`:590-593`).
+                vote_default(&mut default_votes, &mut default_cand_block, gt);
             }
         }
     }
@@ -559,6 +710,41 @@ fn recover_cascade(
     // if (defaultVotes.empty()) return false;
     if default_votes.is_empty() {
         return None;
+    }
+    // angr's guard `if cases and len(default_case_candidates) <= 1`
+    // (`lowered_switch_simplifier.py:602`): a genuine GCC-lowered switch has
+    // exactly ONE shared default.  angr keeps the whole comparison tree in one
+    // cascade (its walk pushes any comparison node, `:537`, and stops at the
+    // first different-variable node, `:487-491`), so the many CFG edges that fall
+    // through to the default collapse to a single `default_case_candidates` entry.
+    //
+    // kuna groups the cascade by switch VARIABLE (`canonSwitchVar`), so when GCC
+    // re-derives the dispatch value the single default REGION appears as several
+    // unmerged blocks — the secondary dispatch head plus the trampolines that jump
+    // into it.  Counting distinct addresses would therefore wrongly decline a
+    // genuine switch (e.g. mv -O2 main: three default blocks 0x2d41 -> 0x2d50 <-
+    // 0x2da0 that funnel into one region).  Instead count the INDEPENDENT default
+    // sinks: a candidate that reaches another candidate (without crossing the
+    // switch structure) is just a path into the shared default and does not count.
+    // A genuine switch funnels to one sink; a hand-written if/else-if cascade
+    // (stty `visible`: four range arms landing on four independent bodies) leaves
+    // every arm a sink, so >1 sink ⇒ decline and render the correct if/else chain.
+    if default_cand_block.len() > 1 {
+        // Bound the CFG walk at the switch structure so a loop around the dispatch
+        // (getopt-style) can't make the shared default reach back to a sibling arm.
+        let mut stop: BTreeSet<Address> = BTreeSet::new();
+        for t in cases.values() {
+            stop.insert(t.clone());
+        }
+        for (bl, cn) in cmpmap.iter() {
+            if cn.var == Some(swvar) {
+                stop.insert(target_start(data, *bl));
+            }
+        }
+        stop.insert(target_start(data, startbb));
+        if count_default_sinks(data, &default_cand_block, &stop) > 1 {
+            return None;
+        }
     }
     // Require the GCC binary-search structure (a range/jump-tree split).  A
     // purely linear equality chain is a hand-written if/else-if.

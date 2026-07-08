@@ -115,8 +115,12 @@ fn opflags_for(opc: OpCode) -> u32 {
         OpCode::CPUI_INT_LESS => binary | booloutput,
         // TypeOpEqual / TypeOpNotEqual: binary | booloutput | commutative
         // (typeop.cc:929/993).  Reachable since the `markLabelBumpUp` port (#150)
-        // hoists loop-head labels out of loop *conditions*, which drives a rule to
-        // re-set the opcode of an `==`/`!=` guard through this seam.
+        // hoists loop-head labels out of loop *conditions* (driving a rule to re-set an
+        // `==`/`!=` guard opcode through this seam), and likewise when `RuleMultiCollapse`
+        // rebuilds an equality guard re-flowing a recovered jump table
+        // (`generate_ops_with_jumptables` -> `stage_jump_table`) — without these the shim
+        // panicked (LOSS-131) on some fully-native switch functions (e.g. mv -O2 sub_12280,
+        // unmasked once the loweredswitch over-fire on that function is declined).
         OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => binary | booloutput | commutative,
         other => panic!(
             "ruleaction_3::opflags_for: no W6 opflags entry for {other:?} \
