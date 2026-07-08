@@ -116,14 +116,20 @@ fn fmt_main_has_no_register_or_unique_variable_leaks() {
         leaks.join("\n"),
     );
 
-    // Positive witness: the width globals resolve to `dat_<addr>` and carry the
-    // register-computed values that used to leak as `EAX` — i.e. the merged high
-    // renders as the global everywhere.  `(dat_2151?? * 0xbb) / 200` is fmt's
-    // `goal_width = (max_width * 187) / 200`; the LHS must be a `dat_` global.
-    let width_div = Regex::new(r"dat_[0-9a-fA-F]+ = \(dat_[0-9a-fA-F]+ \* 0xbb\) / 200").unwrap();
+    // Positive witness: the width globals carry the register-computed values that
+    // used to leak as `EAX` — i.e. the merged high renders as ONE consistent global
+    // on both sides, never a raw register.  fmt's `goal_width = (max_width * 187) /
+    // 200` renders as `dat_215110 = (dat_215120 * 0xbb) / 200` with the render fix
+    // alone, or `goal_width = (max_width * 0xbb) / 200` once data-global naming
+    // (DWARF symbol recovery) also applies — accept either a `dat_<addr>` or its
+    // recovered symbol name on each side.
+    let global = r"(?:dat_[0-9a-fA-F]+|[A-Za-z_]\w*)";
+    let width_div =
+        Regex::new(&format!(r"{global} = \({global} \* 0xbb\) / 200")).unwrap();
     assert!(
         width_div.is_match(&code),
         "expected fmt/main's `goal_width = (max_width * 0xbb) / 200` to render both \
-         sides as `dat_<addr>` globals; output:\n{code}",
+         sides as one consistent global (a `dat_<addr>` or its recovered name), \
+         never a raw register; output:\n{code}",
     );
 }
