@@ -411,7 +411,7 @@ pub struct AnalysisCtx<'a> {
 /// One program-prep analysis. Implementors mirror the `elf_plt` contract: pure
 /// over the context, additive, never failing.
 pub trait AnalysisPass {
-    /// The stage this pass feeds (for ordering + `stage map` registry parity).
+    /// The phase this pass feeds (for ordering + `phase map` registry parity).
     fn phase(&self) -> Phase;
     /// Stable id used to gate the pass on/off as a settable assertion
     /// (registered in `phases.toml`, flippable via `--option <id> on|off`).

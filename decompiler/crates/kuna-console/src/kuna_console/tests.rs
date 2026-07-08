@@ -60,28 +60,32 @@ fn run_one(line: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn registers_all_eleven_kuna_commands() {
+fn registers_all_fifteen_kuna_commands() {
     // register_decomp_commands registers 105 (see ifacedecomp/tests.rs); the
-    // kuna capability adds 11: stage list/map/status/catalog, kassert, restarts,
+    // kuna capability adds 15: phase list/map/status/catalog (plus the four
+    // deprecated `stage ...` alias registrations), kassert, restarts,
     // pipeline, quality, region tree/blocks/walk.
     let only_kuna = {
         let mut st = ConsoleCommands::into_status(vec![]);
         register_kuna_commands(&mut st);
         st.num_commands()
     };
-    assert_eq!(only_kuna, 11);
-    assert_eq!(console(&[]).num_commands(), 105 + 11);
+    assert_eq!(only_kuna, 15);
+    assert_eq!(console(&[]).num_commands(), 105 + 15);
 }
 
 #[test]
 fn kuna_command_prefixes_expand() {
     let mut status = console(&[]);
     // The abbreviations the kuna datatests / kuna.catalog drive.
+    assert_eq!(status.resolve("phase list").unwrap(), vec!["phase", "list"]);
+    assert_eq!(status.resolve("phase map").unwrap(), vec!["phase", "map"]);
+    assert_eq!(status.resolve("phase status").unwrap(), vec!["phase", "status"]);
+    assert_eq!(status.resolve("phase catalog").unwrap(), vec!["phase", "catalog"]);
+    assert_eq!(status.resolve("phase cat").unwrap(), vec!["phase", "catalog"]);
+    // Deprecated `stage ...` aliases keep resolving.
     assert_eq!(status.resolve("stage list").unwrap(), vec!["stage", "list"]);
-    assert_eq!(status.resolve("stage map").unwrap(), vec!["stage", "map"]);
-    assert_eq!(status.resolve("stage status").unwrap(), vec!["stage", "status"]);
     assert_eq!(status.resolve("stage catalog").unwrap(), vec!["stage", "catalog"]);
-    assert_eq!(status.resolve("stage cat").unwrap(), vec!["stage", "catalog"]);
     assert_eq!(status.resolve("kassert list").unwrap(), vec!["kassert"]);
     assert_eq!(status.resolve("pipeline list").unwrap(), vec!["pipeline"]);
     assert_eq!(status.resolve("quality").unwrap(), vec!["quality"]);
@@ -97,9 +101,9 @@ fn kuna_command_prefixes_expand() {
 
 #[test]
 fn stage_list_prints_the_stage_model_header_and_all_stages() {
-    let out = run_one("stage list");
+    let out = run_one("phase list");
     assert!(
-        out.starts_with("Stages (kuna stage model, docs/stages.md / docs/stage-model.md):\n"),
+        out.starts_with("Phases (kuna phase model, docs/stages.md):\n"),
         "out: {out:?}"
     );
     // P0 is the orthogonal plane; S3..S6 are Band B.
@@ -111,11 +115,11 @@ fn stage_list_prints_the_stage_model_header_and_all_stages() {
     assert!(out.contains("  S9  Surface Rendering & Refinement\n"));
     // The artifact line follows each stage.
     assert!(out.contains("        artifact: text + position maps\n"));
-    // The sub-stage section header.
+    // The sub-phase section header.
     assert!(out.contains(
-        "Sub-stages (named decision points; LATENT = no override surface today):\n"
+        "Sub-phases (named decision points; LATENT = no override surface today):\n"
     ));
-    // Sub-stage rows carry decision/assertion/rewind/exposure lines.
+    // Sub-phase rows carry decision/assertion/rewind/exposure lines.
     assert!(out.contains("        decision: "));
     assert!(out.contains("   rewind: "));
     assert!(out.contains("        exposure: "));
@@ -123,31 +127,31 @@ fn stage_list_prints_the_stage_model_header_and_all_stages() {
 
 #[test]
 fn stage_list_marks_strength_and_latent() {
-    let out = run_one("stage list");
+    let out = run_one("phase list");
     // At least one HARD assertion and the LATENT marker appear in the catalog.
     assert!(out.contains(" (HARD)"), "out: {out:?}");
     assert!(out.contains("  (LATENT)"), "out: {out:?}");
 }
 
 // ---------------------------------------------------------------------------
-// `stage map` — group/surface/sub-stage resolution.
+// `phase map` — group/surface/sub-phase resolution.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn stage_map_no_arg_dumps_both_tables() {
-    let out = run_one("stage map");
+    let out = run_one("phase map");
     assert!(out.contains(
-        "Action/rule groups -> stage (dominant artifact; see stage-model.md s15 for straddlers):\n"
+        "Action/rule groups -> phase (dominant artifact; see docs/history/stage-model.md s15 for straddlers):\n"
     ));
-    assert!(out.contains("Console surfaces -> stage:\n"));
+    assert!(out.contains("Console surfaces -> phase:\n"));
 }
 
 #[test]
 fn stage_map_resolves_a_known_substage() {
-    // compareform's sub-stage is comparison-canonicalization (S3) in the registry.
-    let out = run_one("stage map comparison-canonicalization");
+    // compareform's sub-phase is comparison-canonicalization (S3) in the registry.
+    let out = run_one("phase map comparison-canonicalization");
     assert!(
-        out.contains("sub-stage comparison-canonicalization -> S3 (Definition Web)"),
+        out.contains("sub-phase comparison-canonicalization -> S3 (Definition Web)"),
         "out: {out:?}"
     );
     assert!(out.contains("  decision: "), "out: {out:?}");
@@ -157,10 +161,10 @@ fn stage_map_resolves_a_known_substage() {
 
 #[test]
 fn stage_map_unknown_token_is_execution_error() {
-    let out = run_one("stage map definitely-not-a-real-thing");
+    let out = run_one("phase map definitely-not-a-real-thing");
     assert!(
         out.contains(
-            "Execution error: Unknown group/surface/sub-stage: definitely-not-a-real-thing"
+            "Execution error: Unknown group/surface/sub-phase: definitely-not-a-real-thing"
         ),
         "out: {out:?}"
     );
@@ -174,7 +178,7 @@ fn stage_map_unknown_token_is_execution_error() {
 fn stage_catalog_full_matches_w4_emitter_byte_for_byte() {
     // No program loaded -> the static, no-`current` form (kuna_live_value is
     // never called). The command must equal the W4 emitter exactly.
-    let out = run_one("stage catalog");
+    let out = run_one("phase catalog");
     let expected = emit_catalog_json(|_| None);
     assert_eq!(out, expected);
     // Spot-check the JSON framing the catalog parser depends on.
@@ -184,7 +188,7 @@ fn stage_catalog_full_matches_w4_emitter_byte_for_byte() {
 
 #[test]
 fn stage_catalog_single_option_matches_w4_emitter() {
-    let out = run_one("stage catalog returnpair");
+    let out = run_one("phase catalog returnpair");
     let expected = emit_catalog_json_one("returnpair", None).expect("returnpair is a settable");
     assert_eq!(out, expected);
     assert!(out.contains("\"option\": \"returnpair\""), "out: {out:?}");
@@ -193,9 +197,9 @@ fn stage_catalog_single_option_matches_w4_emitter() {
 
 #[test]
 fn stage_catalog_unknown_option_is_execution_error() {
-    let out = run_one("stage catalog nosuchoption");
+    let out = run_one("phase catalog nosuchoption");
     assert!(
-        out.contains("Execution error: Unknown settable option: nosuchoption (try `stage catalog`)"),
+        out.contains("Execution error: Unknown settable option: nosuchoption (try `phase catalog`)"),
         "out: {out:?}"
     );
 }
@@ -225,7 +229,7 @@ fn kassert_list_with_no_image_still_guards_on_image() {
 
 #[test]
 fn stage_status_without_image_is_no_load_image_present() {
-    let out = run_one("stage status");
+    let out = run_one("phase status");
     assert!(out.contains("Execution error: No load image present"), "out: {out:?}");
 }
 
@@ -246,7 +250,7 @@ fn pipeline_list_prints_the_variants_with_no_program() {
     // `pipeline list` is fully expressible with no program (no `(current)` mark).
     let out = run_one("pipeline list");
     assert!(out.contains(
-        "Named pipeline variants (group filters over the universal action; P0 pipeline-variant sub-stage):\n"
+        "Named pipeline variants (group filters over the universal action; P0 pipeline-variant sub-phase):\n"
     ), "out: {out:?}");
     for v in ["decompile", "jumptable", "normalize", "paramid", "register", "firstpass"] {
         assert!(out.contains(&format!("  {v}\n")), "missing variant {v}: {out:?}");
@@ -305,21 +309,21 @@ fn region_commands_without_function_are_no_function_selected() {
 /// (`while(!s.eof()){ s>>word>>ws; if(empty)break; if(!token.empty())token+=' ';
 /// token+=word; }`) must rebuild the SPACE-JOINED surface key "force goto", not
 /// resolve on the first token alone. This is the exact datatest KUNA-CONSOLE #5
-/// surface (`surface "force goto" -> S7 (Region Hierarchy) sub-stage
+/// surface (`surface "force goto" -> S7 (Region Hierarchy) sub-phase
 /// edge-virtualization`); a join bug would silently drop the second word and
-/// report "Unknown group/surface/sub-stage: force".
+/// report "Unknown group/surface/sub-phase: force".
 #[test]
 fn w9_con_kuna_console_stage_map_joins_multiword_surface_key() {
-    let out = run_one("stage map force goto");
+    let out = run_one("phase map force goto");
     assert!(
         out.contains(
-            "surface \"force goto\" -> S7 (Region Hierarchy) sub-stage edge-virtualization"
+            "surface \"force goto\" -> S7 (Region Hierarchy) sub-phase edge-virtualization"
         ),
         "multi-word surface key join lost: {out:?}"
     );
     // It must NOT have resolved on the first token alone and errored on "force".
     assert!(
-        !out.contains("Unknown group/surface/sub-stage: force"),
+        !out.contains("Unknown group/surface/sub-phase: force"),
         "join collapsed to first token only: {out:?}"
     );
 }
@@ -330,7 +334,7 @@ fn w9_con_kuna_console_stage_map_joins_multiword_surface_key() {
 /// must too (a stray double-space in the rebuilt token would miss the table).
 #[test]
 fn w9_con_kuna_console_stage_map_collapses_irregular_whitespace() {
-    let out = run_one("stage map   force   goto   ");
+    let out = run_one("phase map   force   goto   ");
     assert!(
         out.contains("surface \"force goto\" -> S7"),
         "irregular whitespace not collapsed to single-space key: {out:?}"
@@ -353,14 +357,14 @@ fn w9_con_kuna_console_kassert_image_guard_precedes_validation() {
         "image guard did not precede validation: {out:?}"
     );
     // And a *bogus* stage code likewise must hit the image guard first (not a
-    // "Bad stage code" parse error), proving the ordering.
+    // "Bad phase code" parse error), proving the ordering.
     let out2 = run_one("kassert ZZ nosuch arg");
     assert!(
         out2.contains("Execution error: No load image present"),
         "bogus-stage kassert bypassed the image guard: {out2:?}"
     );
     assert!(
-        !out2.contains("Bad stage code"),
+        !out2.contains("Bad phase code"),
         "validation ran before the image guard: {out2:?}"
     );
 }
@@ -372,7 +376,7 @@ fn w9_con_kuna_console_kassert_image_guard_precedes_validation() {
 /// (the `kuna.catalog --json` single-option probe would then break).
 #[test]
 fn w9_con_kuna_console_stage_catalog_single_option_skips_leading_ws() {
-    let out = run_one("stage catalog    returnpair");
+    let out = run_one("phase catalog    returnpair");
     let expected = emit_catalog_json_one("returnpair", None).expect("returnpair is a settable");
     assert_eq!(out, expected, "leading-ws single-option form drifted");
     // Single-row form: starts with the object brace, not the array bracket.
@@ -386,6 +390,7 @@ fn w9_con_kuna_console_stage_catalog_single_option_skips_leading_ws() {
 /// to guard the empty-option branch selection (option.is_empty() -> full form).
 #[test]
 fn w9_con_kuna_console_stage_catalog_bare_is_full_array() {
+    // Drives the deprecated `stage catalog` alias on purpose: alias smoke test.
     let out = run_one("stage catalog");
     assert_eq!(out, emit_catalog_json(|_| None));
     assert!(out.starts_with("[\n"), "full form must open with the JSON array: {out:?}");

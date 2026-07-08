@@ -123,7 +123,7 @@ impl Dispatch {
     }
 }
 
-/// The result of validating a `kassert <stage> <substage> [hard|hint]` request,
+/// The result of validating a `kassert <phase> <subphase> [hard|hint]` request,
 /// before any store mutation — the console-independent half of
 /// `IfcKunaAssert::execute`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,23 +168,23 @@ pub fn validate_assertion(
 ) -> KunaResult<ValidatedAssertion> {
     // C++: if (!kunaStageFromCode(stagecode,stage)) throw IfaceParseError(...)
     let phase = KunaPhase::from_code(stagecode).ok_or_else(|| KunaError::Parse {
-        explain: format!("Bad stage code (expecting P0 or S1..S9): {stagecode}"),
+        explain: format!("Bad phase code (expecting P0 or S1..S9): {stagecode}"),
     })?;
     // C++: if (subname.empty()) throw IfaceParseError("Missing sub-stage name ...")
     if subname.is_empty() {
         return Err(KunaError::Parse {
-            explain: "Missing sub-stage name (see `stage list`)".to_string(),
+            explain: "Missing sub-phase name (see `phase list`)".to_string(),
         });
     }
     // C++: sub = kunaLookupSubStage(subname); if (sub==0) throw ...
     let sub = lookup_subphase(subname).ok_or_else(|| KunaError::Parse {
-        explain: format!("Unknown sub-stage: {subname} (see `stage list`)"),
+        explain: format!("Unknown sub-phase: {subname} (see `phase list`)"),
     })?;
     // C++: if (sub->stage != stage) throw IfaceParseError(...)
     if sub.phase != phase {
         return Err(KunaError::Parse {
             explain: format!(
-                "Sub-stage {subname} belongs to stage {}, not {stagecode}",
+                "Sub-phase {subname} belongs to phase {}, not {stagecode}",
                 sub.phase.code()
             ),
         });

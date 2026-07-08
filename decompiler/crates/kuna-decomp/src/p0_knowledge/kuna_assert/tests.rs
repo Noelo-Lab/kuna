@@ -15,7 +15,7 @@ fn validate_bad_stage_code_first() {
     let err = validate_assertion("ZZ", "type-propagation", None).unwrap_err();
     match err {
         KunaError::Parse { explain } => {
-            assert_eq!(explain, "Bad stage code (expecting P0 or S1..S9): ZZ");
+            assert_eq!(explain, "Bad phase code (expecting P0 or S1..S9): ZZ");
         }
         other => panic!("expected Parse, got {other:?}"),
     }
@@ -26,7 +26,7 @@ fn validate_missing_substage() {
     let err = validate_assertion("S5", "", None).unwrap_err();
     match err {
         KunaError::Parse { explain } => {
-            assert_eq!(explain, "Missing sub-stage name (see `stage list`)");
+            assert_eq!(explain, "Missing sub-phase name (see `phase list`)");
         }
         other => panic!("expected Parse, got {other:?}"),
     }
@@ -37,7 +37,7 @@ fn validate_unknown_substage() {
     let err = validate_assertion("S5", "not-real", None).unwrap_err();
     match err {
         KunaError::Parse { explain } => {
-            assert_eq!(explain, "Unknown sub-stage: not-real (see `stage list`)");
+            assert_eq!(explain, "Unknown sub-phase: not-real (see `phase list`)");
         }
         other => panic!("expected Parse, got {other:?}"),
     }
@@ -51,7 +51,7 @@ fn validate_wrong_stage_for_substage() {
         KunaError::Parse { explain } => {
             assert_eq!(
                 explain,
-                "Sub-stage type-propagation belongs to stage S5, not S3"
+                "Sub-phase type-propagation belongs to phase S5, not S3"
             );
         }
         other => panic!("expected Parse, got {other:?}"),
