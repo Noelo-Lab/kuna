@@ -746,6 +746,22 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   e2e gates (which stay green with the rule on). Real-binary behavior verified on the decbench
   openssh corpus (ssh_tun_confirm, sshd_hostkey_sign).
 - **Date**: 2026-07-05.
+- **Fix (2026-07-08, conditional-jump fall-through)**: the reachability walk over-concluded on
+  the **GCC `-O2` hot/cold-split** shape — an assertion / stack-canary check
+  `jcc <.cold fragment>` where the outlined `.cold` fragment is `call abort`/`__stack_chk_fail`
+  (correctly no-return via the strict rule), while the function **returns** on the fall-through.
+  The `transfers_to_noreturn` fast-path treated the conditional jump like an *unconditional*
+  transfer and `continue`d past it, skipping the returning fall-through arm — so the whole
+  function was wrongly concluded no-return, then propagated up **every** caller. On coreutils
+  `fmt`/main this marked the entire `quotearg_*` family no-return and dropped the file-open
+  `error()` path (`quotearg_style(4,file)` rendered `/* Subroutine does not return */`).
+  **IDA Pro and Ghidra both treat such a function as returning.** Fix: only short-circuit an
+  *unconditional* transfer (a call whose no-return callee makes its fall-through dead, or a
+  jump with no fall-through); a conditional jump now falls into the `is_jump` handler, which
+  walks BOTH its taken (→ terminal) and fall-through arms. Regression test
+  `reach_walk_follows_conditional_jump_fallthrough_to_ret`; the `my_die`/mv/tee legit
+  no-return cases (`verify_noreturn_propagate`) stay green (`abort` remains no-return via the
+  strict rule). `source_decompiler = ida` (parity target for the returning-function shape).
 
 ## DIV-20: `decompile-all` defaults `funcstart_patterns` ON for non-x86-64 (ARM discovery)
 
