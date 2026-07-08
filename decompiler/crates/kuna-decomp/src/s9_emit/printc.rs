@@ -2652,11 +2652,13 @@ impl PrintC {
     /// C++ `PrintC::emitBlockCopy` (printc.cc:2908): emit the underlying basic
     /// block (the `BlockCopy.copy` points back into `bblocks`).
     fn emit_block_copy(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
-        // emitBlockBasic -> emitLabelStatement(bb) (printc.cc:2834): a label line
+        // emitBlockCopy -> emitAnyLabelStatement(bl) (printc.cc:2894): a label line
         // for an unstructured-goto target.  Its `tag_line(0)` fires any pending
         // `else if` brace, forcing `else { label: if ... }` (the `else if`
-        // collapse is suppressed when the clause carries a goto label).
-        self.emit_label_statement(fd, blk);
+        // collapse is suppressed when the clause carries a goto label).  Routing
+        // through `emit_any_label_statement` skips the label when it was hoisted up
+        // to an enclosing loop head (`isLabelBumpUp`).
+        self.emit_any_label_statement(fd, blk);
         if let Some(under) = fd.sblocks_ref().block(blk).get_copy() {
             // The copy's `copy` field is a *bblocks* BlockId.
             self.emit_basic_block_ops(fd, arch, under, true);
@@ -2701,6 +2703,24 @@ impl PrintC {
         self.emit.tag_line_indent(0);
         self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
         self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
+    }
+
+    /// C++ `PrintC::emitAnyLabelStatement` (printc.cc:3354): find the entry basic
+    /// block of `bl` and emit any required label statement for it — unless the
+    /// label was hoisted up the hierarchy (`isLabelBumpUp`), in which case the
+    /// enclosing loop emitter prints it above the loop head instead (so a
+    /// loop-head label never lands inside the loop condition).  The block does not
+    /// have to be a basic block; `get_front_leaf` finds the entry `t_copy` leaf.
+    fn emit_any_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
+        // if (bl->isLabelBumpUp()) return;  // Label printed by someone else
+        if fd.sblocks_ref().block(bl).is_label_bump_up() {
+            return;
+        }
+        // bl = bl->getFrontLeaf(); if (bl == 0) return;
+        let Some(front) = fd.sblocks_ref().get_front_leaf(bl) else {
+            return;
+        };
+        self.emit_label_statement(fd, front);
     }
 
     /// Seed [`commsorter`](PrintC::commsorter) with this function's comments (C++
@@ -3298,8 +3318,11 @@ impl PrintC {
     fn emit_for_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
-        // emitCommentBlockTree(condBlock) (printc.cc:3116).  (emitAnyLabelStatement
-        // is a no-op here unless the for-loop head is an unstructured-goto target.)
+        // emitAnyLabelStatement(bl) (printc.cc:3097): hoist the loop-head label to
+        // its own line above the `for` (it was marked f_label_bumpup, so the inline
+        // emit_block_copy suppresses it).
+        self.emit_any_label_statement(fd, blk);
+        // emitCommentBlockTree(condBlock) (printc.cc:3099).
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
         self.emit_comment_block_tree(fd, cond_block);
         self.emit.tag_line();
@@ -3350,6 +3373,9 @@ impl PrintC {
         // whiledo block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        // emitAnyLabelStatement(bl) (printc.cc:3146): hoist the loop-head label
+        // above the `while` (suppressed inline via f_label_bumpup).
+        self.emit_any_label_statement(fd, blk);
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
         let indent;
         if fd.sblocks_ref().block(blk).has_overflow_syntax() {
@@ -3404,6 +3430,9 @@ impl PrintC {
         // dowhile block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        // emitAnyLabelStatement(bl) (printc.cc:3208): hoist the loop-head label
+        // above the `do` (suppressed inline via f_label_bumpup).
+        self.emit_any_label_statement(fd, blk);
         self.emit.tag_line();
         self.emit.print(keywords::KEYWORD_DO, SyntaxHighlight::KeywordColor);
         let id = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
@@ -3429,6 +3458,9 @@ impl PrintC {
     fn emit_block_inf_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        // emitAnyLabelStatement(bl) (printc.cc:3236): hoist the loop-head label
+        // above the `do` (suppressed inline via f_label_bumpup).
+        self.emit_any_label_statement(fd, blk);
         self.emit.tag_line();
         self.emit.print(keywords::KEYWORD_DO, SyntaxHighlight::KeywordColor);
         let id = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));

@@ -3621,9 +3621,9 @@ impl Action for ActionFinalStructure {
         // and for the whiledo case: finalize the for-loop iterator/initializer
         // (BlockWhileDo::finalizePrinting) so the printer can emit
         // `for (init; cond; iter)`.
-        // SEAM(W7/W8): `orderBlocks`/`scopeBreak`/`markLabelBumpUp` (the rest of
-        // the goto/break/label-bump print-prep) remain unported in `block.rs`.
-        // Recorded as losses.
+        // SEAM(W7/W8): `orderBlocks`/`scopeBreak` (the rest of the goto/break
+        // print-prep) remain unported in `block.rs`.  Recorded as losses.
+        // (`markLabelBumpUp` is now ported — see the call below.)
         data.finalize_switch_printing();
         data.finalize_forloop_printing();
         // graph.scopeBreak(-1,-1): lower loop-exit `goto <successor>` edges to
@@ -3642,6 +3642,12 @@ impl Action for ActionFinalStructure {
         // it enables is the BlockCopy label statement.
         let sroot = data.sblocks_root();
         data.sblocks_mut().mark_unstructured(sroot);
+        // graph.markLabelBumpUp(false): let loop blocks steal the label of their
+        // (first) component so a loop-head label is hoisted to its own line above
+        // the loop rather than emitted inside the loop condition (invalid C).
+        // Must run AFTER markUnstructured (it reads the f_unstructured_targ marks
+        // via the printer's emitAnyLabelStatement).  (port of blockaction.cc:2196)
+        data.sblocks_mut().mark_label_bump_up(sroot, false);
         0
     }
 }

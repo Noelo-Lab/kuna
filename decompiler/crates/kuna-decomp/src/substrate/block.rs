@@ -1917,6 +1917,54 @@ impl BlockGraph {
         }
     }
 
+    /// Let hierarchical blocks steal the label of their (first) component so a
+    /// loop-head label is hoisted to its own line ABOVE the loop rather than
+    /// printed inside the loop condition (C++ `BlockGraph::markLabelBumpUp` and
+    /// the `BlockWhileDo`/`BlockDoWhile`/`BlockInfLoop` overrides, `block.cc:1259`/
+    /// `3364`/`3477`/`3505`; the base `FlowBlock::markLabelBumpUp`, `block.cc:259`).
+    ///
+    /// Virtual dispatch by block type (the C++ `virtual markLabelBumpUp`): the
+    /// three loop blocks steal the label of their front leaf (their `getBlock(0)`
+    /// front-leaf gets `f_label_bumpup`, so the printer's `emitAnyLabelStatement`
+    /// suppresses the inline label and the loop emitter prints it above); every
+    /// other block uses the plain `BlockGraph` recursion (mark self if `bump`,
+    /// pass `bump` only to the first component, `false` to the rest).
+    pub fn mark_label_bump_up(&mut self, this_id: BlockId, bump: bool) {
+        match self.arena[this_id].get_type() {
+            // Block{WhileDo,DoWhile,InfLoop}::markLabelBumpUp: loops steal the
+            // lower block's label.  Always recurse with bump=true, then clear our
+            // own flag back if we were not asked to bump up.
+            BlockType::WhileDo | BlockType::DoWhile | BlockType::InfLoop => {
+                self.block_graph_mark_label_bump_up(this_id, true);
+                if !bump {
+                    self.arena[this_id].clear_flag(block_flags::f_label_bumpup);
+                }
+            }
+            _ => self.block_graph_mark_label_bump_up(this_id, bump),
+        }
+    }
+
+    /// C++ `BlockGraph::markLabelBumpUp` (`block.cc:1259`): mark ourselves if
+    /// `bump`, then pass `bump` down to the first subblock only and `false` to the
+    /// rest.  For a leaf (empty list) this reduces to the base
+    /// `FlowBlock::markLabelBumpUp` (`block.cc:259`).
+    fn block_graph_mark_label_bump_up(&mut self, this_id: BlockId, bump: bool) {
+        // FlowBlock::markLabelBumpUp(bump): mark ourselves if true.
+        if bump {
+            self.arena[this_id].set_flag(block_flags::f_label_bumpup);
+        }
+        let n = self.arena[this_id].get_size();
+        if n == 0 {
+            return;
+        }
+        // Only pass `bump` down to the first subblock; the rest get false.
+        for i in 0..n {
+            if let Some(child) = self.arena[this_id].list.get(i as usize).copied() {
+                self.mark_label_bump_up(child, if i == 0 { bump } else { false });
+            }
+        }
+    }
+
     /// (kuna) Recursively tally the goto-count structure-quality metric over the
     /// structured tree from `this_id` (C++ `IfcKunaQuality kunaCountGotos`).
     ///
