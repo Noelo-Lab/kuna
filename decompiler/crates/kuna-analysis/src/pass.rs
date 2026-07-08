@@ -50,6 +50,30 @@ pub struct SymFact {
     pub kind: SymKind,
 }
 
+/// A named data global: a symbol-table / DWARF data object at `addr` whose
+/// storage spans `size` bytes.
+///
+/// Distinct from a plain [`SymFact`]`{Data}`: it carries the object's **byte
+/// size** so the commit can map a covering `SymbolEntry` of the right extent.
+/// A `SymFact{Data}` is installed with a size-1 code type, so a 4-/8-byte
+/// memory access (`mov [max_width], eax`) queries `queryContainer(addr, 4)` and
+/// finds nothing — the global renders `dat_<addr>` instead of `max_width`. This
+/// fact maps the symbol with an `undefined<size>` type so the container query
+/// matches at the real access width. Matches how **IDA Pro / Ghidra** name data
+/// globals from the symbol table (`ApplyDataArchiveAnalyzer` / the symtab import).
+///
+/// Produced by the DWARF pass (top-level `DW_TAG_variable` with `DW_OP_addr`),
+/// which resolves the variable's `DW_AT_type` to its byte size.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DataObjectFact {
+    /// Virtual address of the data object.
+    pub addr: u64,
+    /// The recovered symbol name.
+    pub name: String,
+    /// Byte size of the object's storage (from `DW_AT_type`), `>= 1`.
+    pub size: u32,
+}
+
 /// A detected NUL-terminated string literal: a `char[len]` data object at `addr`.
 ///
 /// `len` is the byte length **including** the terminating NUL (visible chars + 1),
@@ -251,6 +275,11 @@ pub struct FidMatch {
 pub struct AnalysisOutput {
     /// `(addr, name, kind)` -> seed `Database::add_function` / symbol map.
     pub symbols: Vec<SymFact>,
+    /// Named, sized data globals (the symbol-table / DWARF data objects). Mapped
+    /// into the global scope with an `undefined<size>` type so a memory access of
+    /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
+    /// [`DataObjectFact`]. Produced by the DWARF pass; empty otherwise.
+    pub data_objects: Vec<DataObjectFact>,
     /// Discovered function entry points (for stripped targets).
     pub entries: Vec<u64>,
     /// Optional Ghidra-faithful names for a *subset* of [`Self::entries`], keyed by
@@ -343,6 +372,7 @@ impl AnalysisOutput {
     /// Fold another output into this one (concatenation; dedup is the driver's job).
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
+        self.data_objects.extend(other.data_objects);
         self.entries.extend(other.entries);
         self.entry_names.extend(other.entry_names);
         self.noreturn.extend(other.noreturn);

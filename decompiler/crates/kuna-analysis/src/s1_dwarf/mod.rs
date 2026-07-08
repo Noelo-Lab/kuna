@@ -675,10 +675,20 @@ impl AnalysisPass for DwarfPass {
                             continue;
                         }
                         if let Some(addr) = snap.addr_location {
-                            out.symbols.push(SymFact {
+                            // Resolve the variable's DW_AT_type to its byte size so
+                            // the commit maps a covering SymbolEntry of the right
+                            // extent (a size-1 code type would miss a 4-/8-byte
+                            // memory access and leave the global `dat_<addr>`). A
+                            // type that cannot be sized falls back to 1 (the prior
+                            // behavior for the 1-byte globals).
+                            let size = build_datatype(snap.type_ref, &dies, types, word_size, 0)
+                                .map(|t| t.get_size())
+                                .filter(|&s| s >= 1)
+                                .unwrap_or(1) as u32;
+                            out.data_objects.push(crate::pass::DataObjectFact {
                                 addr,
                                 name: snap.name.clone(),
-                                kind: SymKind::Data,
+                                size,
                             });
                         }
                     }

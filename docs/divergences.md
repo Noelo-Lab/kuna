@@ -869,3 +869,30 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   generalization. Bounded (≤16 predecessors, ≤32 splits/function); each hoist logged.
 - **Testcase**: `tests/stages/ghangr-earlyreturn.xml` (two-pass off/on flip on factor `sub_eb2e`).
 - **Date**: 2026-07-07.
+
+## DIV-24: name data globals from DWARF (`dat_<addr>` → `max_width`), matching IDA Pro / Ghidra
+
+- **Change**: a bug fix, default-on, no flag. `ActionNameVars` already queries the global scope
+  for a memory-access global varnode (`name_for_global_varnode_scoped`, `coreaction.cc:3061`
+  `linkSymbol`) — but a DWARF data global was mapped into the global scope with a **size-1 code
+  type**, so a 4-/8-byte access (`mov [max_width], eax`) queried `queryContainer(addr, 4)` and
+  found no covering `SymbolEntry`. Only 1-byte globals (`uniform`/`crown`) coincidentally matched
+  the size-1 entry and rendered by name; every `int`/`long`/pointer global rendered `dat_<addr>`.
+- **Fix**: the DWARF pass (`s1_dwarf`) resolves each top-level `DW_TAG_variable`'s `DW_AT_type`
+  to its byte size and emits a `DataObjectFact{addr,name,size}`; the commit maps it with an
+  `undefined<size>` type (`get_base(size, TYPE_UNKNOWN)`, `namelock` only — the type is NOT
+  typelocked, so propagation still infers the real type). The container query then matches at the
+  access width and the name binds. `fmt/main` now renders `max_width`, `goal_width`, `prefix`,
+  `prefix_length`, `prefix_full_length`, `prefix_lead_space`, `Version` instead of `dat_<addr>`.
+- **Provenance**: matched from **IDA Pro** (`decompiler decompile main --backend ida` on `fmt`
+  renders `max_width`/`goal_width`/`optind`) and **Ghidra** — both name data globals from the
+  symbol table (`ApplyDataArchiveAnalyzer` / the `.symtab`/DWARF import).
+- **Byte-identical on the corpus**: `make test` 675/675 + `make test-stages` 256/256 hold (no
+  datatest binary carries a DWARF data global), `make rust-test` green (+2 new).
+- **Follow-up (not in this change)**: libc extern data symbols (`optind`/`stdin`/`stdout`/
+  `optarg`) are NOT in the program's DWARF (they are external declarations); naming them needs an
+  ELF `.symtab` `STT_OBJECT` reader — a separate change. They still render `dat_<addr>`.
+- **Testcase**: `crates/kuna-console/tests/verify_data_global_symbols.rs` +
+  `crates/kuna-analysis/tests/fixtures/dwarf_globals_x86_64` (gcc `-O2 -g`; `int`/`long`/`char*`
+  globals).
+- **Date**: 2026-07-08.
