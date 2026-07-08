@@ -47,12 +47,12 @@
 //! flags are the W6 table (filled by the architecture's `inst` lookup).  The
 //! opcode *value* is the load-bearing part for the rewrite and the action
 //! engine's dispatch (the `kuna_addcarrychain` / `kuna_arraystride` idiom).
-//! // SEAM(W6): `glb->inst[CPUI_INT_ADD]` property flags.
+//! // STUB(W6): `glb->inst[CPUI_INT_ADD]` property flags.
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! The C++ `applyOp` reads `data.getArch()->model_stack_probe_loop` live.  The
-//! seam [`Architecture`](crate::seams::Architecture) on `Funcdata` does **not**
+//! seam [`Architecture`](crate::context::ArchContext) on `Funcdata` does **not**
 //! carry the flag yet (it holds only the `AddrSpaceManager`), so — exactly as
 //! `kuna_memsetsequence`'s `RuleMemsetCopy` and `kuna_loweredswitch`'s Detect
 //! Action do — the resolved gate is carried in [`RuleStackProbeLoop::enabled`],
@@ -73,7 +73,7 @@ use kuna_base::marshal::ElementId;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 
 /// Marshaling element `<stackprobeloop>` (kuna).  ElementIds live in the 4000+
 /// range (C++ `ELEM_STACKPROBELOOP = ElementId("stackprobeloop",4012)`).
@@ -90,7 +90,7 @@ pub const ELEM_STACKPROBELOOP: ElementId = ElementId::new("stackprobeloop", 4012
 /// `option stackprobeloop on`; the apply body returns 0 immediately when the
 /// arch flag is off, preserving byte-identical upstream output by default.
 pub struct RuleStackProbeLoop {
-    /// Resolved `glb->model_stack_probe_loop` gate (SEAM(W4); see module docs).
+    /// Resolved `glb->model_stack_probe_loop` gate (STUB(W4); see module docs).
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -271,7 +271,7 @@ impl Rule for RuleStackProbeLoop {
         let cvn = data.new_constant(sz, finaloff);
         let inlist = [sp_in, cvn];
         // data.opSetOpcode(op,CPUI_INT_ADD);
-        // SEAM(W6): glb->inst[CPUI_INT_ADD] property flags; opcode value is exact.
+        // STUB(W6): glb->inst[CPUI_INT_ADD] property flags; opcode value is exact.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_ADD, 0, "INT_ADD"));
         // data.opSetAllInput(op,inlist);
         data.op_set_all_input(op, &inlist).expect("opSetAllInput on rewritten MULTIEQUAL");
@@ -325,7 +325,7 @@ pub fn parse_stack_probe_loop_form(p1: &str) -> KunaResult<(StackProbeLoopForm, 
 ///
 /// Shipped default: `option stackprobeloop on` (`model_stack_probe_loop = true`;
 /// kuna DIV-3 default-on, GH-8017).  The gate is resolved into the rule at
-/// construction (SEAM(W4); see module docs), so the [`RuleSpec`] ctor builds it
+/// construction (STUB(W4); see module docs), so the [`RuleSpec`] ctor builds it
 /// `enabled`; the group placeholder is the per-file `"analysis"` (the
 /// `universalAction` schedule re-registers it under its slot group).
 pub fn specs() -> Vec<RuleSpec> {

@@ -15,7 +15,7 @@ use kuna_base::space::{
 use kuna_base::types::int4;
 
 use crate::funcdata::Funcdata;
-use crate::seams::{Architecture, VarnodeId};
+use crate::context::{ArchContext, VarnodeId};
 
 const SP_OFF: u64 = 0x20;
 const SP_SIZE: int4 = 8;
@@ -47,7 +47,7 @@ fn build_fd() -> Funcdata {
     let stackspc = Rc::clone(manage.get_stack_space().unwrap());
     let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let code = Rc::clone(glb.manage().get_space_by_name("register").unwrap());
     let entry = Address::new(code, 0x1000);
     Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap()

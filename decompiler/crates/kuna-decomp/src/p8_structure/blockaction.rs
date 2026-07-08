@@ -25,15 +25,15 @@
 //! (`BadEdgeScore::operator<` / `compareFinal`) are tie-breakers that decide
 //! *which* edge becomes a goto — transcribed verbatim.
 //!
-//! # Faithfulness — fully ported vs. seam-deferred
+//! # Faithfulness — fully ported vs. stub-deferred
 //!
 //! Everything that is **CFG topology** — [`FloatingEdge`], [`LoopBody`],
 //! [`TraceDAG`], and the whole [`CollapseStructure`] collapse loop and its rule
 //! cascade — is fully ported and tested; it operates on the
 //! [`BlockGraph`](crate::block::BlockGraph) edge/label API that W3 supplies.
 //!
-//! Two data-flow surfaces that `block.cc` itself left as `// SEAM(W7)` in
-//! `block.rs` are threaded here as faithful-topology + seam-noted-dataflow:
+//! Two data-flow surfaces that `block.cc` itself left as `// STUB(W7)` in
+//! `block.rs` are threaded here as faithful-topology + stub-noted-dataflow:
 //!
 //!   - **`FlowBlock::negateCondition`** ([`negate_condition`]): the *edge swap*
 //!     (`swapEdges`) is fully ported (it is pure topology and is what determines
@@ -58,7 +58,7 @@
 //! `markLabelBumpUp`; [`ActionPreferComplement`] → `preferComplement`;
 //! [`ActionStructureTransform`] → `finalTransform`; [`ActionNormalizeBranches`]
 //! → `flipInPlace`) reproduce the C++ control structure and surface the unported
-//! `BlockGraph` method as a seam — recorded as losses.  [`ActionBlockStructure`]
+//! `BlockGraph` method as a stub — recorded as losses.  [`ActionBlockStructure`]
 //! (the collapse driver) and [`ActionNodeJoin`]/[`ConditionalJoin`] (split-
 //! condition rejoin) are fully ported against the available Funcdata API.
 
@@ -69,7 +69,7 @@ use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 
 use crate::block::{BlockGraph, BlockKind, BlockType};
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 // ===========================================================================
 // FloatingEdge (blockaction.hh:31-39, blockaction.cc:27-38)
@@ -1398,7 +1398,7 @@ impl<'a> TraceDAG<'a> {
 }
 
 // ===========================================================================
-// negateCondition / isComplex seams (block.cc virtuals; SEAM(W7) in block.rs)
+// negateCondition / isComplex stubs (block.cc virtuals; STUB(W7) in block.rs)
 // ===========================================================================
 
 // `FlowBlock::negateCondition` and its subtype overrides (C++
@@ -1412,16 +1412,16 @@ impl<'a> TraceDAG<'a> {
 
 /// Surface the unported `BlockGraph::newBlockSwitch` (C++ `block.cc:1907`).
 ///
-/// SEAM(W7/W4): the switch *factory* needs `FlowBlock::getExitLeaf` and
+/// STUB(W7/W4): the switch *factory* needs `FlowBlock::getExitLeaf` and
 /// `BlockSwitch::grabCaseBasic` (the latter reads `JumpTable` labels, W4) — both
 /// left unported in `block.rs`, and the `BlockGraph` switch factory is not yet
 /// public.  [`CollapseStructure::rule_block_switch`] performs the full match /
 /// exit-block / skip-edge decision (the structuring novelty) but cannot build
-/// the node here; this returns an `Err` so the seam is visible.  See losses.
-fn new_block_switch_seam(_has_exit: bool) -> KunaResult<()> {
+/// the node here; this returns an `Err` so the stub is visible.  See losses.
+fn new_block_switch_stub(_has_exit: bool) -> KunaResult<()> {
     Err(KunaError::lowlevel(
         "kuna rust port: BlockGraph::newBlockSwitch needs getExitLeaf + grabCaseBasic \
-         (JumpTable labels, W4) which block.rs leaves as SEAM(W7); not available at this \
+         (JumpTable labels, W4) which block.rs leaves as STUB(W7); not available at this \
          item's boundary",
     ))
 }
@@ -2586,7 +2586,7 @@ impl<'a> CollapseStructure<'a> {
                 // unrecovered BRANCHIND): leave it unstructured rather than
                 // fabricating a table.  Matches C++ when getJumptable()==0 would
                 // make BlockSwitch construction meaningless; honest partial.
-                new_block_switch_seam(exitblock.is_some())?;
+                new_block_switch_stub(exitblock.is_some())?;
                 return Ok(true);
             }
         };
@@ -2780,7 +2780,7 @@ impl<'a> CollapseStructure<'a> {
 
 /// Last op of a basic block (C++ `BlockBasic::lastOp` = `op.back()`).  Reads the
 /// [`BasicData::op_tail`](crate::block::BasicData) of the block in `bblocks`.
-fn last_op_of(data: &Funcdata, bl: BlockId) -> Option<crate::seams::OpId> {
+fn last_op_of(data: &Funcdata, bl: BlockId) -> Option<crate::context::OpId> {
     match data.bblocks_ref().block(bl).kind() {
         crate::block::BlockKind::Basic(bd) => bd.op_tail,
         _ => None,
@@ -2788,7 +2788,7 @@ fn last_op_of(data: &Funcdata, bl: BlockId) -> Option<crate::seams::OpId> {
 }
 
 /// First op of a basic block (C++ `BlockBasic::beginOp` = `op.front()`).
-fn first_op_of(data: &Funcdata, bl: BlockId) -> Option<crate::seams::OpId> {
+fn first_op_of(data: &Funcdata, bl: BlockId) -> Option<crate::context::OpId> {
     match data.bblocks_ref().block(bl).kind() {
         crate::block::BlockKind::Basic(bd) => bd.op_head,
         _ => None,
@@ -2796,7 +2796,7 @@ fn first_op_of(data: &Funcdata, bl: BlockId) -> Option<crate::seams::OpId> {
 }
 
 /// The next op in the same basic block (C++ `++iter` over `op` list).
-fn next_op_in_block(data: &Funcdata, op: crate::seams::OpId) -> Option<crate::seams::OpId> {
+fn next_op_in_block(data: &Funcdata, op: crate::context::OpId) -> Option<crate::context::OpId> {
     let (_prev, next) = data.obank().get(op).expect("next_op_in_block: stale op").basic_neighbours();
     next
 }
@@ -2840,8 +2840,8 @@ pub struct ConditionalJoin {
     a_in2: int4,
     b_in1: int4,
     b_in2: int4,
-    cbranch1: Option<crate::seams::OpId>,
-    cbranch2: Option<crate::seams::OpId>,
+    cbranch1: Option<crate::context::OpId>,
+    cbranch2: Option<crate::context::OpId>,
     /// The new joined condition block (C++ `BlockBasic *joinblock`).  Written by
     /// [`execute`](ConditionalJoin::execute) (`nodeJoinCreateBlock`) and read by
     /// [`setup_multiequals`](ConditionalJoin::setup_multiequals) /
@@ -3205,7 +3205,7 @@ impl ConditionalJoin {
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
-use crate::seams::VarnodeId;
+use crate::context::VarnodeId;
 
 /// \brief Give each control-flow structure an opportunity to make a final
 /// transform (C++ `ActionStructureTransform`).  Currently sets up \e for loops
@@ -3282,11 +3282,11 @@ impl Action for ActionNormalizeBranches {
         // CBRANCH it runs opFlipInPlaceTest and, on a clean (==0) test,
         // opFlipInPlaceExecute + bb->flipInPlaceExecute().
         //
-        // SEAM(W7): `Funcdata::opFlipInPlaceExecute` is itself seamed
+        // STUB(W7): `Funcdata::opFlipInPlaceExecute` is itself stubbed
         // (funcdata_op.rs) — it needs `replaceLessequal`/`newConstant`; and
         // `BlockBasic::flipInPlaceExecute` (the op-flag flip + swapEdges) is the
         // block-side half left as W7 in `block.rs`.  The control structure is
-        // transcribed; the mutation is the seam.  See losses.
+        // transcribed; the mutation is the stub.  See losses.
         let graph = data.bblocks_ref();
         let root = graph.root.expect("ActionNormalizeBranches: bblocks root");
         let n = graph.block(root).get_size();
@@ -3302,14 +3302,14 @@ impl Action for ActionNormalizeBranches {
             if data.obank().get(cbranch).unwrap().code() != OpCode::CPUI_CBRANCH {
                 continue;
             }
-            let mut fliplist: Vec<crate::seams::OpId> = Vec::new();
+            let mut fliplist: Vec<crate::context::OpId> = Vec::new();
             if data.op_flip_in_place_test(cbranch, &mut fliplist, true) != 0 {
                 continue;
             }
-            // opFlipInPlaceExecute + bb->flipInPlaceExecute -- SEAM(W7) (see above)
-            // (skipped: the executes are seamed; no change recorded)
+            // opFlipInPlaceExecute + bb->flipInPlaceExecute -- STUB(W7) (see above)
+            // (skipped: the executes are stubbed; no change recorded)
         }
-        // data.clearDeadOps();  -- SEAM(W7): clearDeadOps not in merged tree.
+        // data.clearDeadOps();  -- STUB(W7): clearDeadOps not in merged tree.
         0
     }
 }
@@ -3359,7 +3359,7 @@ impl Action for ActionPreferComplement {
                 self.base.count += count;
             }
             Err(_e) => {
-                // A residual flip seam (e.g. replace_lessequal on an unported
+                // A residual flip stub (e.g. replace_lessequal on an unported
                 // shape) degrades to "no change made" rather than aborting the
                 // bare-int4 apply — the honest-partial-parity stance.
             }
@@ -3376,7 +3376,7 @@ impl Action for ActionPreferComplement {
 /// the same dual-arena flip machinery; the only difference is the accepted flip
 /// class — it rewrites the *equality-to-zero / negated* guard
 /// (`split_flip_in_place_test == 1`) that `preferComplement` leaves alone.  Gated
-/// off the per-function `Architecture::branch_flip` seam flag (option
+/// off the per-function `ArchContext::branch_flip` flag (option
 /// `branchflip`, default-off); a no-op unless the flag is set.  Each flip is
 /// logged via [`Funcdata::warning`] at the guard's CBRANCH.
 pub struct ActionBranchFlip {
@@ -3413,7 +3413,7 @@ impl Action for ActionBranchFlip {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // Gate: per-function `branch_flip` flag (option `branchflip`, default-off).
-        // Carried into the `ArchSeam` by `build_arch_handle`; absent => no-op so
+        // Carried into the `ArchContext` by `build_arch_handle`; absent => no-op so
         // the 675-datatest parity and the default rendering are untouched.
         if !data.get_arch().branch_flip {
             return 0;
@@ -3423,7 +3423,7 @@ impl Action for ActionBranchFlip {
                 self.base.count += count;
             }
             Err(_e) => {
-                // A residual flip seam degrades to "no change made" rather than
+                // A residual flip stub degrades to "no change made" rather than
                 // aborting (the honest-partial-parity stance, matching
                 // `ActionPreferComplement`).
             }
@@ -3570,7 +3570,7 @@ impl Action for ActionBlockStructure {
             data.block_basic_negate_lastop(bb);
         }
         if let Err(e) = collapse_res {
-            // A still-un-ported collapse sub-seam (switch/node-creation) aborts;
+            // A still-un-ported collapse sub-stub (switch/node-creation) aborts;
             // surface it as "no change made" rather than taking down the run, the
             // documented honest-partial-parity degradation.  See losses.
             let _ = e;
@@ -3621,14 +3621,14 @@ impl Action for ActionFinalStructure {
         // and for the whiledo case: finalize the for-loop iterator/initializer
         // (BlockWhileDo::finalizePrinting) so the printer can emit
         // `for (init; cond; iter)`.
-        // SEAM(W7/W8): `orderBlocks`/`scopeBreak` (the rest of the goto/break
+        // STUB(W7/W8): `orderBlocks`/`scopeBreak` (the rest of the goto/break
         // print-prep) remain unported in `block.rs`.  Recorded as losses.
         // (`markLabelBumpUp` is now ported — see the call below.)
         data.finalize_switch_printing();
         data.finalize_forloop_printing();
         // graph.scopeBreak(-1,-1): lower loop-exit `goto <successor>` edges to
         // structured `break;` (a port of Ghidra `BlockGraph::scopeBreak`, the
-        // `scopeBreak` SEAM filled by `kuna_loopbreak_recovery`).  Gated by the
+        // `scopeBreak` STUB filled by `kuna_loopbreak_recovery`).  Gated by the
         // `loopbreak_recovery` P0 assertion (`recover_loop_break`, opt-in
         // default-off); must run BEFORE `markUnstructured` so a converted break's
         // target is no longer marked as an unstructured goto label.  (kuna)

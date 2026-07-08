@@ -19,13 +19,13 @@ use kuna_base::space::{
 use kuna_base::types::int4;
 
 use kuna_decomp::database::{
-    kuna_global_data_name, Database, DatabaseArch, ScopeId, TranslateSeam, TypeFactorySeam,
+    kuna_global_data_name, Database, DatabaseArch, ScopeId, TranslateAccess, TypeFactoryAccess,
 };
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::varnode::varnode_flags;
 use kuna_base::types::{uintb, uint4};
 
-/// Minimal angr-style architecture seam: no register names, angr naming on.
+/// Minimal angr-style architecture access impl: no register names, angr naming on.
 /// `buildVariableName` with the `persist` flag and an empty register name then
 /// renders `dat_<addr>` and feeds it through `makeNameUnique` — the path under
 /// test for the x-form boundary.
@@ -33,7 +33,7 @@ struct AngrArch {
     num_spaces: int4,
 }
 struct NoTypes;
-impl TypeFactorySeam for NoTypes {
+impl TypeFactoryAccess for NoTypes {
     fn get_base(&self, size: int4, meta: type_metatype) -> Rc<Datatype> {
         Rc::new(Datatype::new(size, meta))
     }
@@ -41,7 +41,7 @@ impl TypeFactorySeam for NoTypes {
         Rc::new(Datatype::new(1, type_metatype::TYPE_CODE))
     }
 }
-impl TranslateSeam for AngrArch {
+impl TranslateAccess for AngrArch {
     fn get_register_name(&self, _sp: &Rc<AddrSpace>, _off: uintb, _size: int4) -> String {
         String::new() // no register backs any storage in these tests
     }
@@ -50,10 +50,10 @@ impl DatabaseArch for AngrArch {
     fn num_spaces(&self) -> int4 {
         self.num_spaces
     }
-    fn types(&self) -> &dyn TypeFactorySeam {
+    fn types(&self) -> &dyn TypeFactoryAccess {
         &NoTypes
     }
-    fn translate(&self) -> &dyn TranslateSeam {
+    fn translate(&self) -> &dyn TranslateAccess {
         self
     }
     fn min_funcsymbol_size(&self) -> int4 {
@@ -255,7 +255,7 @@ fn w4_p0_database_make_name_unique_ignores_wrong_digit_count() {
     assert_eq!(nm, format!("{basebare}_00"));
 }
 
-// Suppress unused-import warning for uint4 (kept for symmetry with seam decls).
+// Suppress unused-import warning for uint4 (kept for symmetry with the access-trait decls).
 const _: uint4 = 0;
 
 // ---------------------------------------------------------------------------

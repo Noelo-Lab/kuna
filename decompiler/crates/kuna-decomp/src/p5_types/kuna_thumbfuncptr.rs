@@ -17,14 +17,14 @@
 //! (preserving the PTRSUB when this returns `true`) is W5 (`ruleaction`); this
 //! module owns only the *decision*.
 //!
-//! ## SEAM(W4)/SEAM(W6): Rule + ArchOption + type-system wrappers
+//! ## STUB(W4)/STUB(W6): Rule + ArchOption + type-system wrappers
 //!
 //! The C++ predicate threads through the W6 `Datatype`/`TypePointer` subsystem
 //! (`getTypeReadFacing`, `getPtrTo`, `getWordSize`, `getSubType`) and two W4
 //! `Architecture` fields (`preserve_thumb_funcptr`, `funcptr_align`).  The W3
 //! `Datatype` skeleton (`dtype.rs`) carries only `getMetatype`/`getSize`, so the
 //! type-system resolution is taken here as an already-resolved fact struct
-//! [`ThumbPtrTypeFacts`] (each field `// SEAM(W6)`), and the two arch fields are
+//! [`ThumbPtrTypeFacts`] (each field `// STUB(W6)`), and the two arch fields are
 //! taken as resolved inputs (the gate via [`ThumbFuncPtrOption`], `funcptr_align`
 //! as a parameter).  W6 fills the type walk; W4 wires the arch fields.
 
@@ -36,7 +36,7 @@ use crate::dtype::type_metatype;
 /// (kuna) Toggle preservation of mode-bit-encoded (Thumb) function pointers
 /// (C++ `OptionThumbFuncPtr`, GH-8471).
 ///
-/// SEAM(W4): the C++ `OptionThumbFuncPtr::apply` flips
+/// STUB(W4): the C++ `OptionThumbFuncPtr::apply` flips
 /// `glb->preserve_thumb_funcptr`; here the flag is carried as a plain `bool`
 /// whose [`Default`] is the *shipped* default (`option thumbfuncptr on`, i.e.
 /// \b true — DIV-2 default-on; `architecture.cc:1451`).
@@ -76,7 +76,7 @@ impl ThumbFuncPtrOption {
 /// Resolved W6 type-system facts about `basevn->getTypeReadFacing(op)` for
 /// [`kuna_preserve_thumb_funcptr`].
 ///
-/// SEAM(W6): the C++ predicate reaches the `Datatype`/`TypePointer` subsystem
+/// STUB(W6): the C++ predicate reaches the `Datatype`/`TypePointer` subsystem
 /// (`type.{hh,cc}`).  The W3 `Datatype` skeleton has no `TypePointer`,
 /// `getPtrTo`, `getWordSize`, or `getSubType`, so the four query results the C++
 /// extracts are carried here as resolved facts; W6 produces them from the real
@@ -84,30 +84,30 @@ impl ThumbFuncPtrOption {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThumbPtrTypeFacts {
     /// `bt->getMetatype()` where `bt = basevn->getTypeReadFacing(op)`.
-    /// // SEAM(W6)
+    /// // STUB(W6)
     pub base_metatype: type_metatype,
     /// `pt->getMetatype()` where `pt = ((TypePointer*)bt)->getPtrTo()` — valid
-    /// only when `base_metatype == TYPE_PTR`.  // SEAM(W6)
+    /// only when `base_metatype == TYPE_PTR`.  // STUB(W6)
     pub ptr_to_metatype: type_metatype,
     /// `((TypePointer*)bt)->getWordSize()` — the pointer's word size, fed to
-    /// `AddrSpace::addressToByteInt`.  // SEAM(W6)
+    /// `AddrSpace::addressToByteInt`.  // STUB(W6)
     pub word_size: u32,
     /// The result of `pt->getSubType(newoff, &newoff)` for the byte-offset
     /// `newoff = addressToByteInt(val, word_size)`: the looked-up sub-datatype's
     /// metatype and the residual `newoff`.  `None` transcribes a null `sub`
     /// (no sub-datatype at that offset).  Valid only when
-    /// `ptr_to_metatype == TYPE_SPACEBASE`.  // SEAM(W6)
+    /// `ptr_to_metatype == TYPE_SPACEBASE`.  // STUB(W6)
     pub sub: Option<ThumbSubTypeFact>,
 }
 
-/// The resolved `pt->getSubType(newoff, &newoff)` result (SEAM(W6)).
+/// The resolved `pt->getSubType(newoff, &newoff)` result (STUB(W6)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThumbSubTypeFact {
     /// `sub->getMetatype()` — the symbol's data-type class (the C++ requires
-    /// `TYPE_CODE`).  // SEAM(W6)
+    /// `TYPE_CODE`).  // STUB(W6)
     pub metatype: type_metatype,
     /// The residual offset `newoff` after the sub-type look-up (the C++ requires
-    /// it be exactly 0 — `val` lands precisely on the symbol).  // SEAM(W6)
+    /// it be exactly 0 — `val` lands precisely on the symbol).  // STUB(W6)
     pub residual_offset: int8,
 }
 

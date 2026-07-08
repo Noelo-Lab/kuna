@@ -20,7 +20,7 @@
 //!      data-flow patch-up (`pushMultiequals`, `opZeroMulti`,
 //!      `branchRemoveInternal`, `blockRemoveInternal`, `removeBranch`,
 //!      `removeDoNothingBlock`, `removeUnreachableBlocks`, `pushBranch`,
-//!      `nodeSplit`, `descend2Undef`) are seam-noted (`// SEAM(W3-op)`) with an
+//!      `nodeSplit`, `descend2Undef`) are seam-noted (`// STUB(W3-op)`) with an
 //!      explicit `Err` and a precise note of the missing API; the funcdata_op
 //!      wave fills the bodies once it owns `opDestroy` & friends.
 //!
@@ -28,12 +28,12 @@
 //!      `findJumpTable`, `installJumpTable`, `recoverJumpTable`,
 //!      `stageJumpTable`, `earlyJumpTableFail`, `switchOverJumpTables`,
 //!      `removeJumpTable`) need the W4 `JumpTable`/`FlowInfo`/`ActionDatabase`.
-//!      They are seam-noted (`// SEAM(W4)`); `clearJumpTables` and the dead-table
+//!      They are seam-noted (`// STUB(W4)`); `clearJumpTables` and the dead-table
 //!      sweep that `structureReset` performs operate on the opaque
 //!      [`JumpTableId`](crate::funcdata::JumpTableId) handles and are carried.
 //!
 //! `stageJumpTable`'s Action-machinery (running the "jumptable" action set on a
-//! truncated partial function) is explicitly `// SEAM(W4)`: it drives
+//! truncated partial function) is explicitly `// STUB(W4)`: it drives
 //! `glb->allacts` (the W4 `ActionDatabase`) and `truncatedFlow` (W4 flow), with
 //! no W3 surface.
 
@@ -45,7 +45,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::block::{block_flags, BlockKind};
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 /// The deepest component that performs a conditional split (C++
 /// `FlowBlock::getSplitPoint`), tagged by which arena it lives in.  A leaf
@@ -664,12 +664,12 @@ impl Funcdata {
     /// Clear any jump-table information, preserving overrides
     /// (C++ `Funcdata::clearJumpTables`, `funcdata_block.cc:42`).
     ///
-    /// SEAM(W4): the C++ keeps override tables (`jt->isOverride()`) and frees the
+    /// STUB(W4): the C++ keeps override tables (`jt->isOverride()`) and frees the
     /// rest.  At W3 the table contents are opaque ([`JumpTableId`]); we drop the
     /// whole vector (no W3 way to know which are overrides).  W4 reinstates the
     /// override-preserving filter.
     pub fn clear_jump_tables(&mut self) {
-        // for jt in jumpvec: if jt->isOverride() keep(clear) else delete  -- SEAM(W4)
+        // for jt in jumpvec: if jt->isOverride() keep(clear) else delete  -- STUB(W4)
         self.jumpvec_mut().clear();
     }
 
@@ -681,9 +681,9 @@ impl Funcdata {
     /// `blocks_unreachable` flag, `sblocks.clear()`) is faithful.  The dead
     /// jump-table sweep operates on opaque handles: the C++ drops tables whose
     /// indirect op `isDead()`.  Determining that needs the op the table points
-    /// at; at W3 the table contents are seamed out, so the sweep is `// SEAM(W4)`
+    /// at; at W3 the table contents are seamed out, so the sweep is `// STUB(W4)`
     /// and the vector is left intact (no table is dropped here).  `heritage.
-    /// forceRestructure()` is `// SEAM(W7)`.
+    /// forceRestructure()` is `// STUB(W7)`.
     pub fn structure_reset(&mut self) {
         // flags &= ~blocks_unreachable;
         self.clear_flag_raw(crate::funcdata::funcdata_flags::blocks_unreachable);
@@ -696,7 +696,7 @@ impl Funcdata {
             self.set_flag_raw(crate::funcdata::funcdata_flags::blocks_unreachable);
         }
 
-        // Check for dead jumptables.  -- SEAM(W4): indOp->isDead() unavailable.
+        // Check for dead jumptables.  -- STUB(W4): indOp->isDead() unavailable.
 
         // sblocks.clear() -> force structuring to start over.
         self.clear_sblocks();
@@ -704,7 +704,7 @@ impl Funcdata {
         // removed by ActionConditionalExe), invalidating the heritage engine's
         // cached augmented dominator tree.  Forcing a rebuild on the next
         // `heritage()` pass prevents `rename_recurse` from walking a stale
-        // (removed) block handle.  (Previously a `// SEAM(W7)`; reached now that
+        // (removed) block handle.  (Previously a `// STUB(W7)`; reached now that
         // ActionDeadCode + condexe actually mutate the CFG.)
         self.heritage_force_restructure();
     }
@@ -1158,7 +1158,7 @@ impl Funcdata {
         // vn->getSymbolEntry() is a W4 surface (no Varnode-Symbol link in the
         // merged tree), so the symbol-dirty trigger is conservatively false.
         let vn_has_symbol_entry = false;
-        let mut set_high_log: Vec<(VarnodeId, crate::seams::HighVariableId, kuna_base::types::int2)> =
+        let mut set_high_log: Vec<(VarnodeId, crate::context::HighVariableId, kuna_base::types::int2)> =
             Vec::new();
         self.with_high_split(|hb, ctx| {
             hb.replace_in_high(
@@ -1393,7 +1393,7 @@ impl Funcdata {
             if self.obank().get(op).expect("blockRemoveInternal: stale op").code()
                 == OpCode::CPUI_BRANCHIND
             {
-                // JumpTable *jt = findJumpTable(op); if (jt) removeJumpTable(jt); -- SEAM(W4)
+                // JumpTable *jt = findJumpTable(op); if (jt) removeJumpTable(jt); -- STUB(W4)
             }
         }
         if !unreachable {
@@ -1764,7 +1764,7 @@ impl Funcdata {
     /// by the recovery pipeline (which owns the [`crate::flow::FlowInfo`] +
     /// architecture env).
     ///
-    /// SEAM(W4): the FuncCallSpecs cloning (`oldspec->clone(newop)` + the fspec
+    /// STUB(W4): the FuncCallSpecs cloning (`oldspec->clone(newop)` + the fspec
     /// annotation swap) is the W4 call-spec surface; the op + jump-table clone is
     /// the load-bearing part for switch recovery and is ported.
     pub fn truncated_flow_clone(&mut self, src: &Funcdata) -> KunaResult<()> {
@@ -2507,7 +2507,7 @@ impl Funcdata {
     /// destination calculation (C++ `Funcdata::earlyJumpTableFail`,
     /// `funcdata_block.cc:568`).
     ///
-    /// SEAM(W4): the CALLOTHER user-op-type classification
+    /// STUB(W4): the CALLOTHER user-op-type classification
     /// (`glb->userops.getOp(id)->getType()`) is the W4 user-op table; without it
     /// a CALLOTHER that writes the address is conservatively treated as a genuine
     /// switch input (returns `Success`, so recovery proceeds), matching the C++
@@ -2546,7 +2546,7 @@ impl Funcdata {
             if eval & pf::special != 0 {
                 if self.obank().get(cur).unwrap().is_call() {
                     if opc == OpCode::CPUI_CALLOTHER {
-                        // SEAM(W4): userop-type classification (injected/jumpassist/
+                        // STUB(W4): userop-type classification (injected/jumpassist/
                         // segment short-circuit Success; an uninjected CALLOTHER
                         // writing the address would be fail_callother).  Without the
                         // W4 user-op table, assume it does not interfere; continue.
@@ -3285,7 +3285,7 @@ impl Funcdata {
     /// blocks) are faithful.  The two p-code edits — destroying a trailing branch
     /// op and rejecting a leading MULTIEQUAL — need `opDestroy` (funcdata_op) and
     /// op-list inspection; the MULTIEQUAL check and the branch-op removal are
-    /// `// SEAM(W3-op)`-noted below.  The MULTIEQUAL rejection is enforced (it is
+    /// `// STUB(W3-op)`-noted below.  The MULTIEQUAL rejection is enforced (it is
     /// a read-only `code()` check), but the branch-op destruction is deferred to
     /// the funcdata_op wave; until then a trailing branch is moved with the rest
     /// of the list (an over-approximation flagged here, not silently wrong: the
@@ -4149,7 +4149,7 @@ mod tests {
 
     use crate::funcdata::Funcdata;
     use crate::op::pcodeop_flags;
-    use crate::seams::{Architecture, BlockId, OpId, TypeOp};
+    use crate::context::{ArchContext, BlockId, OpId, TypeOp};
 
     fn build_manager() -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
@@ -4172,7 +4172,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

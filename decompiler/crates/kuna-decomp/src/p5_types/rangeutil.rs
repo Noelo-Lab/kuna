@@ -23,7 +23,7 @@
 //! the [`Wrap`] ops (`wadd`/`wsub`/`wmul`/`wshl`/`wshr`), and mixed-sign
 //! comparisons are replicated with comments.
 //!
-//! # The value-set solver layer (IR-coupled; SEAM)
+//! # The value-set solver layer (IR-coupled; STUB)
 //!
 //! `ValueSet` / `ValueSetRead` / `Widener` / `WidenerFull` / `WidenerNone` /
 //! `Partition` / `ValueSetSolver` are the lattice-iteration layer on top of
@@ -49,7 +49,7 @@
 //!     and partition structure are exact and self-tested, while the methods
 //!     that bind a `ValueSet` to a live `Varnode`/`PcodeOp` (`set_varnode`,
 //!     `iterate`'s push-forward, all constraint generation,
-//!     `establish_value_sets`) are `// SEAM(W5/W7-IR)` `Err` shells recorded as
+//!     `establish_value_sets`) are `// STUB(W5/W7-IR)` `Err` shells recorded as
 //!     losses.
 
 use kuna_base::address::{
@@ -1787,7 +1787,7 @@ impl Widener for WidenerNone {
 // and none of which lives in a file this item owns.  The structures below carry
 // the lattice state faithfully (so the Widener trait above operates on a real
 // ValueSet), and the methods that bind a ValueSet to a live Varnode/PcodeOp or
-// run constraint generation are SEAM(W5/W7-IR) shells (recorded as losses).
+// run constraint generation are STUB(W5/W7-IR) shells (recorded as losses).
 // ===========================================================================
 
 /// An equation attached to a [`ValueSet`] (C++ `ValueSet::Equation`,
@@ -1816,7 +1816,7 @@ impl Equation {
 /// pointers into the IR / partition list are not modeled here; this struct
 /// holds the lattice state (`type_code`, `count`, stability flags, `range`,
 /// `equations`) that the [`Widener`] strategy reads.  Binding to a live Varnode
-/// is a SEAM (see module docs).
+/// is a STUB (see module docs).
 // `op_code` is set faithfully by the seamed `set_varnode`/`iterate` (which read
 // it to dispatch the per-opcode push-forward); dead until that IR binding lands.
 #[allow(dead_code)]
@@ -1903,7 +1903,7 @@ impl ValueSet {
 
     /// Mark value set as possibly containing any value (C++ `setFull`).
     ///
-    /// SEAM(W5/W7-IR): upstream reads `vn->getSize()` for the range size; with
+    /// STUB(W5/W7-IR): upstream reads `vn->getSize()` for the range size; with
     /// no bound Varnode the caller must supply the size.
     pub fn set_full(&mut self, size: int4) {
         self.range.set_full(size);
@@ -1981,7 +1981,7 @@ impl Partition {
 /// `rangeutil.hh:178`).
 ///
 /// Holds the value set at a specific read (PcodeOp + slot).  The `op`/`slot`
-/// binding and `compute()` (which reads `vn->getValueSet()`) are SEAM; the
+/// binding and `compute()` (which reads `vn->getValueSet()`) are STUB; the
 /// `addEquation`/range storage is faithful.
 #[derive(Debug, Clone)]
 pub struct ValueSetRead {
@@ -2054,7 +2054,7 @@ impl ValueSetRead {
     /// Compute this value set from the bound Varnode's value set
     /// (C++ `compute`, `rangeutil.cc:1804`).
     ///
-    /// SEAM(W5/W7-IR): the upstream method reads `op->getIn(slot)->getValueSet()`
+    /// STUB(W5/W7-IR): the upstream method reads `op->getIn(slot)->getValueSet()`
     /// — the Varnode->ValueSet back-pointer that the IR surface does not expose.
     /// The constraint-application arithmetic is transcribed in
     /// [`ValueSetRead::compute_from`].
@@ -2083,7 +2083,7 @@ impl ValueSetRead {
 /// Edge abstraction for the value-set graph (the `ValueSetEdge` iterator over
 /// out-bound edges, C++ `ValueSetSolver::ValueSetEdge`).
 ///
-/// SEAM(W5/W7-IR): upstream walks the descendant PcodeOps of a node's Varnode
+/// STUB(W5/W7-IR): upstream walks the descendant PcodeOps of a node's Varnode
 /// and yields the ValueSet of each output that is `isMark()`ed, plus a simulated
 /// root that yields `rootNodes`.  Because that requires the Varnode->ValueSet
 /// back-pointer, the solver here consumes a precomputed adjacency list (node
@@ -2104,7 +2104,7 @@ pub trait ValueSetGraph {
 /// (`visit`/`component`/`establish_topological_order`) over an injected
 /// [`ValueSetGraph`], plus the partition-prepend/surround bookkeeping and the
 /// `solve` driving loop's *structure*.  `establish_value_sets`, constraint
-/// generation, and the push-forward `iterate` are SEAM shells (losses).
+/// generation, and the push-forward `iterate` are STUB shells (losses).
 // `root_nodes`/`max_iterations` are consumed by the seamed
 // `establish_value_sets`/`solve` (which need IR binding); dead until then.
 #[allow(dead_code)]
@@ -2329,12 +2329,12 @@ impl ValueSetSolver {
         self.part_head.pop();
     }
 
-    // --- IR-coupled pipeline (SEAM) --------------------------------------
+    // --- IR-coupled pipeline (STUB) --------------------------------------
 
     /// Build value sets for a data-flow system (C++ `establishValueSets`,
     /// `rangeutil.cc:2416`).
     ///
-    /// SEAM(W5/W7-IR): needs the Varnode->ValueSet back-pointer, descendant-op
+    /// STUB(W5/W7-IR): needs the Varnode->ValueSet back-pointer, descendant-op
     /// walking, `FlowBlock` dominance, and the constraint-generation pipeline.
     pub fn establish_value_sets(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
@@ -2345,7 +2345,7 @@ impl ValueSetSolver {
     /// Iterate the ValueSet system until it stabilizes (C++ `solve`,
     /// `rangeutil.cc:2524`).
     ///
-    /// SEAM(W5/W7-IR): the per-node `iterate()` push-forward reads input
+    /// STUB(W5/W7-IR): the per-node `iterate()` push-forward reads input
     /// Varnodes' value sets through the IR back-pointer.  The partition-walk
     /// ordering that `solve` drives is ported faithfully in
     /// [`ValueSetSolver::establish_topological_order`] (exercised by the

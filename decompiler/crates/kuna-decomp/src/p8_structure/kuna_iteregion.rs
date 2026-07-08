@@ -72,7 +72,7 @@ use crate::block::BlockType;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_addlflags;
 use crate::options::on_or_off;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 use kuna_base::marshal::ElementId;
 

@@ -23,7 +23,7 @@
 //! cap, the global (per-log) sequence counter, and the dump format are
 //! transcribed verbatim.
 //!
-//! SEAM(W5): the trigger sites (`Heritage::bumpDeadcodeDelay`,
+//! STUB(W5): the trigger sites (`Heritage::bumpDeadcodeDelay`,
 //! `JumpTable::recoverLabels`, `FuncCallSpecs::deindirect`/`forceSet`) gain
 //! their `record(...)` calls when those passes port; this module owns the log
 //! and its API, not the call sites.

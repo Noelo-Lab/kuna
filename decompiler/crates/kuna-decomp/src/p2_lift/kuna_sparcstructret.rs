@@ -19,7 +19,7 @@
 //! fall-through rewrite itself is driven by `flow.rs` at
 //! `FlowInfo::xrefControlFlow`; this module owns only the *decision*.
 //!
-//! ## SEAM(W4): Rule/Action + ArchOption + user-op wrappers
+//! ## STUB(W4): Rule/Action + ArchOption + user-op wrappers
 //!
 //! Two architecture-side pieces live on the W4 `Architecture`:
 //!
@@ -36,13 +36,13 @@
 //! `iter_dead()` ordering (ADR 0001's intrusive insert-list).
 
 use crate::funcdata::Funcdata;
-use crate::seams::OpId;
+use crate::context::OpId;
 use kuna_num::opcodes::OpCode;
 
 /// (kuna) Toggle SPARC struct-return `unimp` BRANCHIND -> fall-through
 /// (C++ `OptionSparcStructRet`, GH-6882).
 ///
-/// SEAM(W4): the C++ `OptionSparcStructRet::apply` flips
+/// STUB(W4): the C++ `OptionSparcStructRet::apply` flips
 /// `glb->sparc_struct_return`; here the flag is carried as a plain `bool` whose
 /// [`Default`] is the *shipped* default (`option sparcstructret off`, i.e.
 /// \b false — upstream byte-identical; `architecture.cc:1434`).
@@ -114,7 +114,7 @@ const ILLEGAL_INSTRUCTION_TRAP: &str = "IllegalInstructionTrap";
 /// `gate` is the resolved `glb->sparc_struct_return` (see
 /// [`SparcStructRetOption`]).  `userop_name` resolves a user-op id (the C++
 /// `(uint4)idvn->getOffset()`) to `glb->userops.getOp(id)->getName()`
-/// (`None` == a null `UserPcodeOp *`).  // SEAM(W4)
+/// (`None` == a null `UserPcodeOp *`).  // STUB(W4)
 ///
 /// The C++ backward dead-list iteration (`op->getInsertIter()` walked with
 /// `--iter` until `beginOpDead()`) is ported by locating `op` in the op bank's

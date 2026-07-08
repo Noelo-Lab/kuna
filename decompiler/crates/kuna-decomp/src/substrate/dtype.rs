@@ -18,7 +18,7 @@
 //!     (`isCoreType`, `isPointer`, `isEnumType`, …), implemented over the stored
 //!     fields; the `compare`/`compareDependency` *signatures*, with the base
 //!     bodies implemented (they only read `submeta`/`size`) and the structured
-//!     overrides routed to a `// SEAM(W6)` `Err`;
+//!     overrides routed to a `// STUB(W6)` `Err`;
 //!   * the subclass *kinds* (TypeBase/Char/Unicode/Pointer/Array/Struct/Union/
 //!     Enum/Code/Spacebase/Unknown/Void/PartialStruct/PartialUnion/PartialEnum/
 //!     PointerRel) as the [`DatatypeKind`] enum, whose per-variant payload mirrors
@@ -27,7 +27,7 @@
 //!     call (`getBase`/`getTypeVoid`/`getTypePointer*`/`getTypeArray`/
 //!     `getTypeCode`/`getExactPiece`/`concretize`/…).
 //!
-//! # What is real vs. seam (`// SEAM(W6)`)
+//! # What is real vs. stub (`// STUB(W6)`)
 //!
 //! Everything implementable from `type.hh` **alone** — simple queries over stored
 //! fields, the size/metatype/submeta accessors, the base `compare`/
@@ -48,8 +48,8 @@
 //! `Funcdata`-backed union resolution (the union/pointer-to-union/array
 //! `resolveInFlow`/`findResolve` paths), the `TypeFactory` construction caches and
 //! decode, and `printRaw`/`hashSize`.  Those surfaces exist here (so callers link)
-//! but return `Err(KunaError::lowlevel("SEAM(W6) …"))`; each is tagged
-//! `// SEAM(W6)` and listed in the relevant item's `losses` output.  W6 fills the
+//! but return `Err(KunaError::lowlevel("STUB(W6) …"))`; each is tagged
+//! `// STUB(W6)` and listed in the relevant item's `losses` output.  W6 fills the
 //! bodies in place — the *signatures* are frozen by this file.
 //!
 //! The `Datatype::new(size, metatype)` 2-arg convenience constructor is preserved
@@ -762,7 +762,7 @@ pub enum DatatypeKind {
         ptrto: Rc<Datatype>,
         /// Address space this is intended to point into (C++ `spaceid`)
         spaceid: Option<Rc<AddrSpace>>,
-        /// Truncated form of the pointer, if any (C++ `truncate`)  // SEAM(W6)
+        /// Truncated form of the pointer, if any (C++ `truncate`)  // STUB(W6)
         truncate: Option<Rc<Datatype>>,
         /// What size unit does the pointer address (C++ `wordsize`)
         wordsize: uint4,
@@ -871,7 +871,7 @@ type PlainPointerView<'a> = (&'a Rc<Datatype>, Option<&'a Rc<AddrSpace>>, uint4)
 /// the full member layout from `type.hh` plus a [`DatatypeKind`] for the
 /// subclass payload, and exposes the complete query/property interface.  Heavy
 /// behavior (decode, per-kind compare/resolution, encode) is **W6** and tagged
-/// `// SEAM(W6)`.
+/// `// STUB(W6)`.
 #[derive(Debug, Clone)]
 pub struct Datatype {
     /// A unique id for the type (or 0 if an id is not assigned)
@@ -1133,14 +1133,14 @@ impl Datatype {
     /// Get the type id, without variable length size adjustment (C++
     /// `getUnsizedId`, the inline at type.hh:968).
     ///
-    /// SEAM(W6): the variable-length branch needs `Datatype::hashSize`
+    /// STUB(W6): the variable-length branch needs `Datatype::hashSize`
     /// (reversible size hashing in type.cc); the non-variable-length case is
     /// implemented (returns the plain id).
     pub fn get_unsized_id(&self) -> KunaResult<uint8> {
         if (self.flags & flags::variable_length) != 0 {
-            // C++: return hashSize(id, size);  // SEAM(W6)
+            // C++: return hashSize(id, size);  // STUB(W6)
             Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::getUnsizedId hashSize not yet ported",
+                "STUB(W6): Datatype::getUnsizedId hashSize not yet ported",
             ))
         } else {
             Ok(self.id)
@@ -1191,7 +1191,7 @@ impl Datatype {
 
     /// Are these the same variable length data-type (C++ `hasSameVariableBase`).
     ///
-    /// SEAM(W6): the non-trivial path needs `Datatype::hashSize`; the
+    /// STUB(W6): the non-trivial path needs `Datatype::hashSize`; the
     /// short-circuits (`!isVariableLength()`) are implemented and cover the
     /// common case (returns `false`).
     pub fn has_same_variable_base(&self, ct: &Datatype) -> KunaResult<bool> {
@@ -1203,7 +1203,7 @@ impl Datatype {
         }
         // C++: uint8 thisId = hashSize(id, size); ... return thisId == themId;
         Err(KunaError::lowlevel(
-            "SEAM(W6): Datatype::hasSameVariableBase hashSize not yet ported",
+            "STUB(W6): Datatype::hasSameVariableBase hashSize not yet ported",
         ))
     }
 
@@ -1221,7 +1221,7 @@ impl Datatype {
             DatatypeKind::Struct { field, .. } => field.len() as int4,
             DatatypeKind::Union { field } => field.len() as int4,
             // TypePartialUnion::numDepend is computed from the resolved field
-            // structure — W6.  // SEAM(W6)
+            // structure — W6.  // STUB(W6)
             DatatypeKind::PartialUnion { .. } => 0,
             _ => 0,
         }
@@ -1495,7 +1495,7 @@ impl Datatype {
     /// (type.cc:1363-1375) overrides are implemented for real (W6, this item).
     /// The remaining structured overrides (`TypeStruct`/`TypeUnion`/`TypeEnum`/
     /// `TypeCode`/`TypePartial*`/`TypePointerRel`/`TypeSpacebase::compare`) are
-    /// type-2/type-3 and route to a `// SEAM(W6)` `Err`.  `level` is the
+    /// type-2/type-3 and route to a `// STUB(W6)` `Err`.  `level` is the
     /// recursion budget the overrides decrement.
     pub fn compare(&self, op: &Datatype, level: int4) -> KunaResult<int4> {
         match &self.kind {
@@ -2768,12 +2768,12 @@ impl Datatype {
             // return `getBase(1, TYPE_CODE)` with newoff=0; else null.  The
             // factory is part of the W6 TypeFactory construction.
             DatatypeKind::Code { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypeCode::getSubType needs the bound TypeFactory (getBase)",
+                "STUB(W6): TypeCode::getSubType needs the bound TypeFactory (getBase)",
             )),
             // TypeSpacebase::getSubType (type.cc:3411-3433): resolves through the
             // symbol-table Scope — needs the W6 Architecture/Scope wiring.
             DatatypeKind::Spacebase { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypeSpacebase::getSubType needs symbol-table Scope resolution",
+                "STUB(W6): TypeSpacebase::getSubType needs symbol-table Scope resolution",
             )),
             // TypePointerRel does not override getSubType — it inherits
             // TypePointer::getSubType, but a relative pointer never carries a
@@ -2889,7 +2889,7 @@ impl Datatype {
             // TypeSpacebase::nearestArrayedComponentForward (type.cc:3435-3480):
             // walks the symbol-table Scope — needs the W6 Architecture wiring.
             DatatypeKind::Spacebase { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypeSpacebase::nearestArrayedComponentForward needs Scope resolution",
+                "STUB(W6): TypeSpacebase::nearestArrayedComponentForward needs Scope resolution",
             )),
             // Base default: return -1.
             _ => Ok((-1, off, 0)),
@@ -2955,7 +2955,7 @@ impl Datatype {
             // TypeSpacebase::nearestArrayedComponentBackward (type.cc:3482-3496):
             // resolves through getSubType (Scope) — needs the W6 Scope wiring.
             DatatypeKind::Spacebase { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypeSpacebase::nearestArrayedComponentBackward needs Scope resolution",
+                "STUB(W6): TypeSpacebase::nearestArrayedComponentBackward needs Scope resolution",
             )),
             // Base default: return -1.
             _ => Ok((-1, off, 0)),
@@ -3126,18 +3126,18 @@ impl Datatype {
     ///
     ///   * `TypePointer::resolveInFlow` (type.cc:1314-1333): if the pointed-to
     ///     type is a `TYPE_UNION`, score/resolve the union field against the
-    ///     `PcodeOp`/slot (needs `Funcdata` wiring — `// SEAM(W6)`); otherwise it
+    ///     `PcodeOp`/slot (needs `Funcdata` wiring — `// STUB(W6)`); otherwise it
     ///     returns `this`, which we honor here.
     ///   * `TypeArray::resolveInFlow` (type.cc:1455-1468): always does `Funcdata`
-    ///     union-field scoring — `// SEAM(W6)`.
+    ///     union-field scoring — `// STUB(W6)`.
     ///   * `TypeStruct`/`TypeUnion`/`TypePartialUnion::resolveInFlow`: type-2
-    ///     overrides — `// SEAM(W6)`.
+    ///     overrides — `// STUB(W6)`.
     ///
-    /// `op`/`slot` are opaque (`OpId`/`int4`); only the seamed union paths read
+    /// `op`/`slot` are opaque (`OpId`/`int4`); only the stubbed union paths read
     /// them, and those still need the `Funcdata` registry that W6+ provides.
     pub fn resolve_in_flow(
         self: &Rc<Datatype>,
-        _op: crate::seams::OpId,
+        _op: crate::context::OpId,
         _slot: int4,
     ) -> KunaResult<Rc<Datatype>> {
         match &self.kind {
@@ -3145,7 +3145,7 @@ impl Datatype {
             DatatypeKind::Pointer { ptrto, .. } => {
                 if ptrto.get_metatype() == type_metatype::TYPE_UNION {
                     Err(KunaError::lowlevel(
-                        "SEAM(W6): TypePointer::resolveInFlow (pointer-to-union) needs \
+                        "STUB(W6): TypePointer::resolveInFlow (pointer-to-union) needs \
                          Funcdata union-field resolution",
                     ))
                 } else {
@@ -3155,13 +3155,13 @@ impl Datatype {
             }
             // TypeArray::resolveInFlow always scores via Funcdata.
             DatatypeKind::Array { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypeArray::resolveInFlow needs Funcdata union-field scoring",
+                "STUB(W6): TypeArray::resolveInFlow needs Funcdata union-field scoring",
             )),
             // type-2 structured overrides.
             DatatypeKind::Struct { .. }
             | DatatypeKind::Union { .. }
             | DatatypeKind::PartialUnion { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::resolveInFlow structured override not yet ported",
+                "STUB(W6): Datatype::resolveInFlow structured override not yet ported",
             )),
             // Base "return this": every type without an override.
             _ => Ok(Rc::clone(self)),
@@ -3174,19 +3174,19 @@ impl Datatype {
     /// [`resolve_in_flow`](Datatype::resolve_in_flow); the base body
     /// (type.cc:590-593) returns `this`.  The `TypePointer::findResolve`
     /// (type.cc:1335-1345) override only consults the `Funcdata` cache when the
-    /// pointed-to type is a union (`// SEAM(W6)`), otherwise it returns `this`;
+    /// pointed-to type is a union (`// STUB(W6)`), otherwise it returns `this`;
     /// `TypeArray::findResolve` (type.cc:1470-1478) and the type-2 structured
-    /// overrides need the `Funcdata` cache (`// SEAM(W6)`).
+    /// overrides need the `Funcdata` cache (`// STUB(W6)`).
     pub fn find_resolve(
         self: &Rc<Datatype>,
-        _op: crate::seams::OpId,
+        _op: crate::context::OpId,
         _slot: int4,
     ) -> KunaResult<Rc<Datatype>> {
         match &self.kind {
             DatatypeKind::Pointer { ptrto, .. } => {
                 if ptrto.get_metatype() == type_metatype::TYPE_UNION {
                     Err(KunaError::lowlevel(
-                        "SEAM(W6): TypePointer::findResolve (pointer-to-union) needs \
+                        "STUB(W6): TypePointer::findResolve (pointer-to-union) needs \
                          Funcdata union-field cache",
                     ))
                 } else {
@@ -3195,12 +3195,12 @@ impl Datatype {
                 }
             }
             DatatypeKind::Array { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypeArray::findResolve needs Funcdata union-field cache",
+                "STUB(W6): TypeArray::findResolve needs Funcdata union-field cache",
             )),
             DatatypeKind::Struct { .. }
             | DatatypeKind::Union { .. }
             | DatatypeKind::PartialUnion { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::findResolve structured override not yet ported",
+                "STUB(W6): Datatype::findResolve structured override not yet ported",
             )),
             _ => Ok(Rc::clone(self)),
         }
@@ -3341,7 +3341,7 @@ impl Datatype {
         &self,
         off: int8,
         sz: int4,
-        _op: crate::seams::OpId,
+        _op: crate::context::OpId,
         _slot: int4,
     ) -> KunaResult<Option<(int4, int8)>> {
         match &self.kind {
@@ -3384,7 +3384,7 @@ impl Datatype {
     pub fn resolve_truncation(
         &self,
         _offset: int8,
-        _op: crate::seams::OpId,
+        _op: crate::context::OpId,
         _slot: int4,
     ) -> KunaResult<Option<(int4, int8)>> {
         match &self.kind {
@@ -3782,10 +3782,10 @@ impl Datatype {
 
     /// Print a description of the type to a stream (C++ `printRaw`).
     ///
-    /// SEAM(W6): printing is part of the type-rendering subsystem (W6/W9).
+    /// STUB(W6): printing is part of the type-rendering subsystem (W6/W9).
     pub fn print_raw(&self) -> KunaResult<String> {
         Err(KunaError::lowlevel(
-            "SEAM(W6): Datatype::printRaw not yet ported",
+            "STUB(W6): Datatype::printRaw not yet ported",
         ))
     }
 }
@@ -3814,8 +3814,8 @@ pub struct EnumRepresentation {
 /// `typecache` matrix, decode) is heavy W6 logic.  This trait freezes the
 /// *method set* the W8 rule porters call so they can be written against a
 /// `&dyn TypeFactory` (or a concrete W6 factory) without that factory existing
-/// yet.  Every method is a `// SEAM(W6)` — a W6 type factory implements them;
-/// until then a caller that needs one is itself seam-noted.
+/// yet.  Every method is a `// STUB(W6)` — a W6 type factory implements them;
+/// until then a caller that needs one is itself stub-noted.
 ///
 /// The method list is the union of the `TypeFactory::getX`/`concretize`/
 /// `getExactPiece`/size-query surface that `ruleaction.cc`/`coreaction.cc`/
@@ -3859,7 +3859,7 @@ pub trait TypeFactory {
     /// Create a `TypeCode` carrying a specific function prototype (C++
     /// `getTypeCode(const PrototypePieces&)`, type.cc:4476-4482).  Used by the
     /// nested function-pointer `buildType` path (`FunctionModifier::modType`).
-    /// The default body errs (the lightweight test/seam factories never run the
+    /// The default body errs (the lightweight test/stub factories never run the
     /// C-declaration construction); the concrete `TypeFactoryImpl` overrides it.
     fn get_type_code_proto(
         &self,
@@ -4017,7 +4017,7 @@ pub trait TypeFactory {
     // -- In-place construction mutators (type.cc:3919-4019, 4292, 4618-4655) --
     // These re-key an already-interned type and return the completed `Rc` (see
     // the impl on `TypeFactoryImpl` for the Rc re-keying model).  Default bodies
-    // are provided so the lightweight test/seam factories (which never run the
+    // are provided so the lightweight test/stub factories (which never run the
     // C-declaration construction paths) need not implement them; the concrete
     // `TypeFactoryImpl` overrides every one.
 
@@ -4088,7 +4088,7 @@ pub trait TypeFactory {
 /// `DatatypeCompare::operator()` orders by `compareDependency` and breaks ties on
 /// `getId()`.  `compareDependency` is fallible in the Rust port only for the
 /// not-yet-ported `TypeCode` *prototype recursion* (a complete code data-type
-/// with a bound `FuncProto`, `// SEAM(W6)`); every data-type the construction
+/// with a bound `FuncProto`, `// STUB(W6)`); every data-type the construction
 /// getters intern is free of that case, so the `Err` branch is unreachable in
 /// practice.  To keep a *total* `Ord` (required by `BTreeSet`) we fall back to the
 /// id tie-break on the (unreachable here) error, which is consistent and
@@ -4168,7 +4168,7 @@ impl FactoryStore {
 /// a single construction.  Interned data-types are shared as `Rc<Datatype>` and
 /// never mutated after insertion in the paths this item ports (the
 /// `setFields`/`setName`/`recalcPointerSubmeta` mutate-in-place paths belong to
-/// the decode subsystem — `// SEAM(W6)`).
+/// the decode subsystem — `// STUB(W6)`).
 ///
 /// Size configuration (the C++ members `sizeOfInt`/`sizeOfLong`/… and the
 /// `alignMap`) is carried as plain fields, set by [`TypeFactoryImpl::setup_sizes`]
@@ -4332,7 +4332,7 @@ impl TypeFactoryImpl {
     /// queried — the `glb` accessors the C++ reads are W4 surfaces).
     ///
     /// `stack_pointer_size` is the stack pointer width (or `None` if there is no
-    /// stack space — `// SEAM(W4)` `glb->getStackSpace`); `default_data_addr_size`
+    /// stack space — `// STUB(W4)` `glb->getStackSpace`); `default_data_addr_size`
     /// is the default data space address size (C++
     /// `glb->getDefaultDataSpace()->getAddrSize()`); `default_size` is the
     /// architecture default size (C++ `glb->getDefaultSize()`).
@@ -4365,7 +4365,7 @@ impl TypeFactoryImpl {
         if self.size_of_pointer.get() == 0 {
             self.size_of_pointer.set(default_data_addr_size);
         }
-        // SEAM(W4): the segmented far-pointer adjustment (glb->getSegmentOp) is a
+        // STUB(W4): the segmented far-pointer adjustment (glb->getSegmentOp) is a
         // W4 surface; without it sizeOfAltPointer stays 0, as for a flat space.
         if self.align_map.borrow().is_empty() {
             self.set_default_alignment_map();
@@ -4627,7 +4627,7 @@ impl TypeFactoryImpl {
     }
 
     /// C++ `TypeFactory::setFields(...,TypeStruct*,...)` (type.cc:3960-3973):
-    /// re-key a completed struct into the trees.  // SEAM(W6 recalcPointerSubmeta):
+    /// re-key a completed struct into the trees.  // STUB(W6 recalcPointerSubmeta):
     /// the C++ also recomputes the submeta of pointers that already point at this
     /// struct; the console construction flow has no such prior pointers, so that
     /// refinement is a no-op here.
@@ -4728,7 +4728,7 @@ impl TypeFactoryImpl {
         self.insert(Rc::clone(&resrc))?;
         // C++ also stashes incomplete typedefs for later completion
         // (`incompleteTypedef`); the console parse_C flow only typedefs complete
-        // types, so that deferred list is unused here.  // SEAM(W6)
+        // types, so that deferred list is unused here.  // STUB(W6)
         Ok(resrc)
     }
 
@@ -4739,7 +4739,7 @@ impl TypeFactoryImpl {
         if ct.is_core_type() {
             return Err(KunaError::lowlevel("Cannot destroy core type"));
         }
-        // C++ removeWarning(ct) on hasWarning(); the warning channel is a W5 seam,
+        // C++ removeWarning(ct) on hasWarning(); the warning channel is a W5 stub,
         // so there is no warning list to prune here.
         self.erase_interned(ct, true);
         Ok(())
@@ -5603,16 +5603,16 @@ impl TypeFactoryImpl {
 
     /// `Datatype::getSubType` with the bound factory available, resolving the two
     /// factory-dependent overrides that the bare [`Datatype::get_sub_type`] routes
-    /// to a `// SEAM(W6)` `Err`:
+    /// to a `// STUB(W6)` `Err`:
     ///
     ///   * `TypeCode::getSubType` (type.cc:3284-3290) returns
     ///     `getBase(1,TYPE_CODE)` with `newoff = 0` (this RESOLVES the type-2
-    ///     leftover seam noted on the bare method);
+    ///     leftover stub noted on the bare method);
     ///   * every other kind delegates to the bare [`Datatype::get_sub_type`]
     ///     (which is factory-independent).
     ///
     /// `TypeSpacebase::getSubType` still needs the symbol-table `Scope`
-    /// (`// SEAM(W6)`), so it remains an `Err` from the bare method.
+    /// (`// STUB(W6)`), so it remains an `Err` from the bare method.
     fn get_sub_type_via_factory(
         &self,
         ct: &Rc<Datatype>,
@@ -6644,11 +6644,11 @@ mod tests {
 
     /// LOSS-050 restored: `resolveInFlow`/`findResolve` return the receiver
     /// unchanged for every kind without a union override; the array and
-    /// pointer-to-union paths still SEAM.
+    /// pointer-to-union paths still STUB.
     #[test]
     fn resolve_in_flow_returns_self_for_plain_kinds() {
         let int_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
-        let op = crate::seams::OpId::default();
+        let op = crate::context::OpId::default();
         let r = int_t.resolve_in_flow(op, 0).unwrap();
         assert!(Rc::ptr_eq(&r, &int_t));
         let f = int_t.find_resolve(op, -1).unwrap();
@@ -6659,11 +6659,11 @@ mod tests {
         let rp = p.resolve_in_flow(op, 0).unwrap();
         assert!(Rc::ptr_eq(&rp, &p));
 
-        // Array always SEAMs (needs Funcdata scoring).
+        // Array always stubs out (needs Funcdata scoring).
         let a: Rc<Datatype> = Rc::new(make_array(Rc::clone(&int_t), 2, 8));
         assert!(a.resolve_in_flow(op, 0).is_err());
 
-        // Pointer to a UNION -> SEAM (needs Funcdata).
+        // Pointer to a UNION -> STUB (needs Funcdata).
         let mut u = Datatype::new_with_align(8, -1, type_metatype::TYPE_UNION);
         u.kind = DatatypeKind::Union { field: vec![] };
         let p_u: Rc<Datatype> = Rc::new(make_pointer(Rc::new(u), None, 1));
@@ -7048,13 +7048,13 @@ mod tests {
         assert_eq!(off2, 0);
     }
 
-    /// `get_sub_type_via_factory` RESOLVES the type-2 `TypeCode::getSubType` seam:
+    /// `get_sub_type_via_factory` RESOLVES the type-2 `TypeCode::getSubType` stub:
     /// a bound factory returns `getBase(1,TYPE_CODE)` with newoff 0.
     #[test]
-    fn factory_resolves_typecode_get_sub_type_seam() {
+    fn factory_resolves_typecode_get_sub_type_stub() {
         let f = factory();
         let code = f.get_type_code().unwrap();
-        // The bare method still seams (no bound factory on the value itself).
+        // The bare method still stubs out (no bound factory on the value itself).
         assert!(code.get_sub_type(0).is_err());
         // The factory-aware path resolves to getBase(1, TYPE_CODE), newoff 0.
         let (sub, newoff) = f.get_sub_type_via_factory(&code, 0).unwrap();

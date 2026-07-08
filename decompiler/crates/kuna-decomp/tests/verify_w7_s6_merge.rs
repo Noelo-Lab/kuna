@@ -39,7 +39,7 @@ use kuna_decomp::merge::{
     compare_copy_by_in_varnode, compare_high_by_block, AddrTiedRange, BlockVarnode,
     HighGroupInfo, Merge, MergeContext, MergeIntersect, MergePieceId,
 };
-use kuna_decomp::seams::{BlockId, HighVariableId, OpId, VarnodeId};
+use kuna_decomp::context::{BlockId, HighVariableId, OpId, VarnodeId};
 use kuna_decomp::variable::{
     CompareNameView, HighContext, HighIntersectTest, VarnodeView, VarnodeViewLoc,
 };

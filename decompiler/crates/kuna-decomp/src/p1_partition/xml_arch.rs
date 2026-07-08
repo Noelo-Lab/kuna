@@ -211,7 +211,7 @@ impl XmlArchitecture {
     ///
     /// `((LoadImageXml *)loader)->open(translate); if (adjustvma) loader->adjustVma(adjustvma);`
     ///
-    /// SEAM(W4/W6/W8): the C++ `postSpecFile` first calls
+    /// STUB(W4/W6/W8): the C++ `postSpecFile` first calls
     /// `Architecture::postSpecFile` (the segmented-pointer + read-only-from-loader
     /// chain); only the image-open + vma-adjust tail is wired here (it needs just
     /// the translator's address-space manager, which the built base supplies).
@@ -288,7 +288,7 @@ impl XmlArchitecture {
                 next = iter.next();
             }
         }
-        // init(store);  -- SEAM(W6/W8): the type-factory/print/spec-decode flow.
+        // init(store);  -- STUB(W6/W8): the type-factory/print/spec-decode flow.
         // if (iter != list.end()) { register *iter; SleighArchitecture::restoreXml(store); }
         let rest = next.map(Rc::clone);
         Ok(XmlRestore { to_register: registered, rest })

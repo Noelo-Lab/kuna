@@ -36,7 +36,7 @@ use std::rc::Rc;
 use super::expression::{get_pull_field, InsertExpression};
 use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// `sizeof(uintb)*8` — the C++ `uintb` is `uint8`, i.e. 64 bits.
 const UINTB_BITS: int4 = 64;

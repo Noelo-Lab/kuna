@@ -24,7 +24,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::architecture::Architecture;
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 use crate::typeop::{type_op_info, TypeOpClass};
 use crate::varnode::varnode_flags;
 

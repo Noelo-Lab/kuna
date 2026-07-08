@@ -28,7 +28,7 @@ use kuna_num::opcodes::OpCode;
 
 use kuna_decomp::dtype::{type_metatype, Datatype, DatatypeKind, TypeFactoryImpl, TypeField};
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, OpId, TypeOp, VarnodeId};
 use kuna_decomp::unionresolve_run::ScoreUnionFields;
 
 fn build_manager() -> AddrSpaceManager {
@@ -54,7 +54,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> (Funcdata, Rc<TypeFactoryImpl>) {
     let manage = build_manager();
-    let mut arch = Architecture::new(manage);
+    let mut arch = ArchContext::new(manage);
     let tf = Rc::new(TypeFactoryImpl::new());
     arch.types = Some(Rc::clone(&tf));
     let glb = Rc::new(arch);

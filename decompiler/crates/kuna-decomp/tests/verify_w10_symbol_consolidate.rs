@@ -2,7 +2,7 @@
 //! (the type-FORCE half of the global query, driving the displayformat render).
 //!
 //! These exercise the faithfulness-fragile spots of
-//! [`kuna_decomp::seams::GlobalQuery::sized_type_geometry`] — the wire for the
+//! [`kuna_decomp::context::GlobalQuery::sized_type_geometry`] — the wire for the
 //! type-force half of `Funcdata::setVarnodeProperties`
 //! (`funcdata_varnode.cc:31`) → `Varnode::setSymbolProperties` (`varnode.cc:429`)
 //! → `SymbolEntry::updateType` (`database.cc:136`):
@@ -32,7 +32,7 @@ use kuna_base::address::{Address, RangeList};
 use kuna_base::partmap::PartMap;
 use kuna_base::space::{spacetype, AddrSpace};
 use kuna_decomp::dtype::{type_metatype, Datatype};
-use kuna_decomp::seams::{GlobalEntry, GlobalQuery};
+use kuna_decomp::context::{GlobalEntry, GlobalQuery};
 use kuna_decomp::varnode::varnode_flags;
 
 fn ram_space(index: i32) -> Rc<AddrSpace> {

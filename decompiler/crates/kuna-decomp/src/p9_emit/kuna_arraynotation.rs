@@ -60,11 +60,11 @@ impl OptionArrayNotation {
     /// Returns the resolved flag plus the confirmation message.  The caller does
     /// the `dynamic_cast<PrintC *>` (and the `"Can only set array notation for C
     /// language"` error if the active printer is not C) and calls
-    /// `lng->setArrayNotation(val)` (SEAM: W4/W9 option dispatch).
+    /// `lng->setArrayNotation(val)` (STUB: W4/W9 option dispatch).
     pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
         // bool val = onOrOff(p1);
         let val = on_or_off(p1)?;
-        // lng->setArrayNotation(val);  -- left to the caller (SEAM(W4/W9)).
+        // lng->setArrayNotation(val);  -- left to the caller (STUB(W4/W9)).
         // string prop = val ? "on" : "off";
         let prop = if val { "on" } else { "off" };
         // return "Array notation for pointer arithmetic turned "+prop;

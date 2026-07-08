@@ -11,7 +11,7 @@
 //! `ov_less_simplify` (option `ovlesssimplify on|off`, shipped default `on`);
 //! inert when off, byte-identical to upstream.
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! As in `kuna_booleanmask`, the C++ `if (!data.getArch()->ov_less_simplify)
 //! return 0;` gate is resolved at construction (the seam `Funcdata::glb` does not
@@ -20,7 +20,7 @@
 //! W8 threads the live `Architecture::ov_less_simplify`; [`specs`] uses the
 //! shipped default (`on`).
 //!
-//! ## SEAM(W6) — opcode-flag resolution
+//! ## STUB(W6) — opcode-flag resolution
 //!
 //! `opSetOpcode(op, CPUI_INT_SLESS)` resolves `glb->inst[CPUI_INT_SLESS]` in C++
 //! (the W6 typeop `inst` table); the rewrite builds the [`TypeOp`] skeleton with
@@ -32,12 +32,12 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 
 /// (kuna GH-7190) Collapse the OV-flag signed-less-than idiom to `INT_SLESS(V,-K)`
 /// (C++ `RuleOvLessSimplify`).
 pub struct RuleOvLessSimplify {
-    /// Resolved `glb->ov_less_simplify` gate (SEAM(W4); see module docs).
+    /// Resolved `glb->ov_less_simplify` gate (STUB(W4); see module docs).
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -194,7 +194,7 @@ impl Rule for RuleOvLessSimplify {
         let negk: uintb = (ksigned.wrapping_neg() as uintb) & calc_mask(sz);
 
         // data.opSetOpcode(op,CPUI_INT_SLESS);
-        // SEAM(W6): glb->inst[CPUI_INT_SLESS] property flags.
+        // STUB(W6): glb->inst[CPUI_INT_SLESS] property flags.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_SLESS, 0, "INT_SLESS"));
         // data.opSetInput(op,base1,0);
         data.op_set_input(op, base1, 0)

@@ -21,7 +21,7 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 
 fn build_manager(big: bool) -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -44,7 +44,7 @@ fn build_manager(big: bool) -> AddrSpaceManager {
 
 fn build_fd(big: bool) -> Funcdata {
     let manage = build_manager(big);
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()

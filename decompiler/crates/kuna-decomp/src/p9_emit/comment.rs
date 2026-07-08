@@ -23,7 +23,7 @@
 //! That live-IR query surface is captured by the [`SorterFuncdata`] trait so the
 //! sorter can be exercised and verified without depending on the full
 //! `Funcdata` mutation API; the W4/W5 wiring point implements [`SorterFuncdata`]
-//! for the real `Funcdata`.  // SEAM(W5)
+//! for the real `Funcdata`.  // STUB(W5)
 
 use std::collections::BTreeMap;
 
@@ -507,7 +507,7 @@ impl Subsort {
 
 /// \brief The live-IR query surface the [`CommentSorter`] needs from a function.
 ///
-/// SEAM(W5): `CommentSorter::findPosition`/`setupFunctionList` read the op-tree
+/// STUB(W5): `CommentSorter::findPosition`/`setupFunctionList` read the op-tree
 /// and basic-block geometry of a live [`Funcdata`].  The exact C++ calls are
 /// captured here so the sorter can be transcribed and verified independently of
 /// the full `Funcdata` API; the integration point implements this trait for the
@@ -552,13 +552,13 @@ pub trait SorterFuncdata {
 }
 
 /// An opaque cursor into a [`SorterFuncdata`]'s op-tree (the C++
-/// `PcodeOpTree::const_iterator`).  // SEAM(W5)
+/// `PcodeOpTree::const_iterator`).  // STUB(W5)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpCursor(pub usize);
 
 /// The result of `beginOp(addr)`: either a real [`OpCursor`] or the at-end
 /// sentinel (`opiter == endOpAll()`).  Carries enough to run the C++
-/// `--opiter` in [`SorterFuncdata::prev_op`].  // SEAM(W5)
+/// `--opiter` in [`SorterFuncdata::prev_op`].  // STUB(W5)
 #[derive(Debug, Clone, Copy)]
 pub enum OpProbe {
     /// `opiter` points at a real op (the op at or after the comment address).
@@ -826,7 +826,7 @@ impl CommentSorter {
 }
 
 /// The p-code landmark passed to [`CommentSorter::setup_op_list`] (C++
-/// `op->getParent()->getIndex()` / `op->getSeqNum().getOrder()`).  // SEAM(W5)
+/// `op->getParent()->getIndex()` / `op->getSeqNum().getOrder()`).  // STUB(W5)
 #[derive(Debug, Clone, Copy)]
 pub struct OpListLandmark {
     /// The op's basic-block index.

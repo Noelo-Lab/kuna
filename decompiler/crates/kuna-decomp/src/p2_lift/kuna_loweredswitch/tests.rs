@@ -20,7 +20,7 @@ use kuna_num::opcodes::OpCode;
 
 use super::*;
 use crate::action::ActionContext;
-use crate::seams::{Architecture, BlockId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, BlockId, TypeOp, VarnodeId};
 
 // -----------------------------------------------------------------------------
 // Harness (mirrors coreaction_early/tests.rs fixtures)
@@ -47,7 +47,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -412,7 +412,7 @@ fn empty_store_has_no_record() {
 // ActionLowerSwitchInstall (the install half).
 //
 // The CFG surgery (Funcdata::kunaInstallLoweredSwitch) is a documented
-// SEAM(W7/W4) — getHeritagePass, a real JumpTable registry, kunaSetTrivialModel,
+// STUB(W7/W4) — getHeritagePass, a real JumpTable registry, kunaSetTrivialModel,
 // and removeUnreachableBlocks are all unported — so `install` always declines
 // (0).  These cover the ported structure: gate-off, no-record short-circuit, the
 // has-record path still declining at the surgery seam, and clone filtering.

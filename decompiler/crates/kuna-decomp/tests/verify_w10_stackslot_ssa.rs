@@ -6,7 +6,7 @@
 //! inputs of a phi (the reloaded spilled register on two paths) must be CSE'd
 //! into a single copy before the CFG can structure into `&&`/`||`.  C++
 //! `RuleMultiCollapse` does this via `functionalEquality` + `cseFindInBlock`.
-//! The Rust port of that rule body was a SEAM stub returning 0; this wave
+//! The Rust port of that rule body was a STUB stub returning 0; this wave
 //! un-seams it.  These tests prove the un-seamed rule:
 //!   1. collapses a MULTIEQUAL of two IDENTICAL inputs (absolute equality)
 //!      into a COPY of that input (the simplest spill/reload — no divergence);
@@ -30,7 +30,7 @@ use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::ruleaction_3::RuleMultiCollapse;
 use kuna_decomp::action::Rule;
-use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
 use kuna_num::opcodes::OpCode;
 
@@ -50,7 +50,7 @@ fn build_fd() -> Funcdata {
         1,
     )))
     .unwrap();
-    let glb = Rc::new(Architecture::new(m));
+    let glb = Rc::new(ArchContext::new(m));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

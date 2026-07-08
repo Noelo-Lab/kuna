@@ -5,11 +5,11 @@
 //! [`ContextDatabase`], plus the protection/read-only flags and the whole bag of
 //! analysis-tuning configuration values.
 //!
-//! ## What this port wires vs. what it seams
+//! ## What this port wires vs. what it stubs
 //!
 //! The C++ `Architecture` is the single largest class in the decompiler and
 //! reaches into nearly every subsystem.  This port faithfully ports the parts
-//! whose dependencies already exist in the kuna Rust tree, and seam-notes the
+//! whose dependencies already exist in the kuna Rust tree, and stub-notes the
 //! rest:
 //!
 //! - **Wired now**: the configuration fields and the kuna anchor flags (a
@@ -20,10 +20,10 @@
 //!   injection library; the `getModel`/`hasModel` registry lookups; the
 //!   `getMinimumLanedRegisterSize`/`getLanedRegister` laned-register lookups;
 //!   `nameFunction` (the kuna angr-style and upstream `func_` policies); and the
-//!   construction of a [`Funcdata`] tied to this architecture (the W3 boot seam:
+//!   construction of a [`Funcdata`] tied to this architecture (the W3 boot boundary:
 //!   `vbank`'s analysis unique-start comes from `Translate::getUniqueStart`).
 //!
-//! - **Seamed**: the data-type factory ([`crate::dtype`], W6), the prototype
+//! - **Stubbed**: the data-type factory ([`crate::dtype`], W6), the prototype
 //!   models (`fspec`, W6), the print language (W8), the loader (`loadimage`, its
 //!   own item), the read-only/volatile/global-range decode (needs the W6 type
 //!   factory + W4 symbol markup), and the full [`Architecture::init`] /
@@ -31,7 +31,7 @@
 //!   language, and runs the spec decode — all reaching W6/W8 subsystems).  The
 //!   `restoreXml`/`encode` marshaling and the segmented-pointer resolver are
 //!   likewise deferred to their dependency waves.  Each is documented inline with
-//!   `// SEAM(...)`.
+//!   `// STUB(...)`.
 //!
 //! ## The kuna anchor flags
 //!
@@ -65,7 +65,7 @@ use crate::options::{
     split_datatype, ArchOptionContext, BraceCategory, NamespaceStrategy, OptionDatabase,
 };
 use crate::printc::PrintC;
-use crate::seams::{ArchHandle, Architecture as ArchSeam};
+use crate::context::{ArchHandle, ArchContext};
 use crate::userop::UserOpManage;
 
 // ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ pub mod comment_type {
 /// One stored warning comment (the slice of C++ `Comment` the warning sink
 /// records: type + function address + instruction address + text).
 ///
-/// SEAM(comment.cc): the full `CommentDatabase` (ordered set, de-duplication,
+/// STUB(comment.cc): the full `CommentDatabase` (ordered set, de-duplication,
 /// encode) is its own item; this is the minimal sink `Funcdata::warning`/
 /// `warningHeader` (`funcdata.cc:119`) need, so the architecture can record an
 /// analysis warning without the whole comment subsystem.
@@ -133,7 +133,7 @@ pub struct ArchWarning {
 
 /// \brief A minimal stand-in for the C++ `CommentDatabase` warning sink.
 ///
-/// SEAM(comment.cc): `decompiler/cpp/comment.{cc,hh}` is a separate port item.
+/// STUB(comment.cc): `decompiler/cpp/comment.{cc,hh}` is a separate port item.
 /// `Architecture` owns this so the [`Funcdata::warning`](crate::funcdata::Funcdata)
 /// path (when it lands) has a place to deposit a warning; `add_comment_no_duplicate`
 /// transcribes the *de-duplication contract* of C++
@@ -213,7 +213,7 @@ impl CommentDatabase {
 /// address-space manager lives inside the owned `Translate` engine (the Sleigh
 /// `SleighBase` *is* the manager), so [`Architecture::manage`] forwards to it.
 /// The W3 IR boundary ([`Funcdata::glb`](crate::funcdata::Funcdata)) takes a
-/// lightweight [`ArchSeam`] handle carrying just the address-space slice it
+/// lightweight [`ArchContext`] handle carrying just the address-space slice it
 /// reaches (built by [`Architecture::new_funcdata`]); the heavy subsystems live
 /// here.
 pub struct Architecture {
@@ -364,7 +364,7 @@ pub struct Architecture {
     pub unrolled_guard: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
-    /// known-no-return list as no-return at the `query_call_no_return` flow seam,
+    /// known-no-return list as no-return at the `query_call_no_return` flow hook,
     /// even when the address-keyed `noreturn_known` scan emitted no fact (an
     /// ET_REL `.o` undefined extern such as `__stack_chk_fail`). DIV-13 default-on
     /// (clean 0/675 ablation; a no-op on a normal ELF since the proto flag is
@@ -546,7 +546,7 @@ pub struct Architecture {
     /// SEPARATE pass from `entry_disc` (whose always-on oracle 5 ports only a
     /// minimal three-prologue subset). When on, a stripped binary recovers many
     /// more function starts (e.g. `push rbx; mov rbx,rdi` after NOP padding); the
-    /// commit seam adds each as `sub_<addr>`, idempotent against the funcsym stream
+    /// commit hook adds each as `sub_<addr>`, idempotent against the funcsym stream
     /// + the `entry_disc` entries. Default-off ⇒ the pass's facts are dropped at
     /// commit (`engine.rs::analysis_pass_enabled`) and every parity gate is
     /// byte-identical. Real-ELF/PE/Mach-O path only ⇒ the XML datatest oracle is
@@ -648,7 +648,7 @@ pub struct Architecture {
     /// byte-identical (real-ELF path only). Default **on** (DIV-19).
     pub analysis_noreturn_reach: bool,
     /// (kuna, Ghidra-gap) `call error(nonzero,…)` call-site addresses whose fall-through
-    /// the decompile seam must prune (as `CALL_RETURN` flow overrides). Populated at the
+    /// the decompile stage must prune (as `CALL_RETURN` flow overrides). Populated at the
     /// analysis commit from `AnalysisOutput::no_fallthru_calls` (empty unless `listing` +
     /// `noreturn_error` are on); read by `decompile-all` per function. glibc `error()`
     /// with a nonzero status never returns, so without the prune the flow-follower walks
@@ -761,22 +761,22 @@ pub struct Architecture {
     /// Manager of decoded strings (C++ `stringManager`, a `StringManager*`).
     /// `sleigh_arch.cc:250` seeds this with a `StringManagerUnicode(this,2048)`.
     /// Held behind `Rc<RefCell<..>>` so the same instance can be *shared* into
-    /// the per-function W4 [`ArchSeam`] (`glb`): `Funcdata::getInternalString`
-    /// (driven through the seam during `RuleStringStore`/`RuleStringCopy`) must
+    /// the per-function W4 [`ArchContext`] (`glb`): `Funcdata::getInternalString`
+    /// (driven through the ArchContext during `RuleStringStore`/`RuleStringCopy`) must
     /// `registerInternalStringData` into the very map the printer later reads back
     /// via `getStringData` on this real `Architecture`.
     pub string_manager:
         Rc<std::cell::RefCell<crate::stringmanage::StringManagerUnicode>>,
     /// P-code injection manager (C++ `pcodeinjectlib`).  SLEIGH-backed.
     pub pcodeinjectlib: PcodeInjectLibrarySleigh,
-    /// Comments for this architecture (C++ `commentdb`).  // SEAM(comment.cc)
+    /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
     // --- W6/W8 subsystems wired by `init` (architecture.hh:211-233) -------
     /// Data-type factory (C++ `types`, a `TypeFactory*`).  Empty until
     /// [`build_typegrp`](Architecture::build_typegrp) + `build_core_types`.
     ///
-    /// Held as an [`Rc`] so the analysis-side seam [`ArchSeam`](crate::seams::Architecture)
+    /// Held as an [`Rc`] so the analysis-side [`ArchContext`](crate::context::ArchContext)
     /// (`glb`) can share the *same* populated factory: `ActionInferTypes` reaches
     /// `getBase`/`getTypePointer` through `glb.types()` and must see the identical
     /// interned core types this side cached.  Interior mutability (`Cell`/`RefCell`)
@@ -848,7 +848,7 @@ pub struct Architecture {
     /// The disassembly engine for this binary (C++ `translate`, a `Translate*`).
     ///
     /// Owned behind the [`EngineTranslate`] trait object (the
-    /// `Architecture`↔translator seam) rather than a concrete [`Sleigh`], so a
+    /// `Architecture`↔translator boundary) rather than a concrete [`Sleigh`], so a
     /// ghidra-mode translator can replace `Sleigh` without `kuna-decomp` naming
     /// a ghidra-specific type (see `crate::engine_translate` /
     /// `docs/rust-port/ghidra-phase2-plan.md` §2.2).  The C++ `Architecture`
@@ -870,7 +870,7 @@ impl Architecture {
     /// `getUniqueStart(INJECT)` tempbase for the injection library.
     pub fn new(archid: &str, translate: Sleigh) -> Architecture {
         // The standalone (SLEIGH) engine: box the concrete `Sleigh` into the
-        // `EngineTranslate` seam and share the construction with the ghidra-mode
+        // `EngineTranslate` boundary and share the construction with the ghidra-mode
         // path.  `EngineTranslate::manager()` / the provided
         // `Translate::get_unique_start` on the boxed `Sleigh` are the very calls
         // the former direct-`Sleigh` body made (`base().manager()` /
@@ -880,7 +880,7 @@ impl Architecture {
     }
 
     /// Construct an `Architecture` over an already-initialized disassembly
-    /// engine behind the [`EngineTranslate`] seam — the shared body of
+    /// engine behind the [`EngineTranslate`] boundary — the shared body of
     /// [`Architecture::new`] (the standalone `Sleigh`) and the ghidra-mode
     /// bridge (`kuna-ghidra`'s query-backed `GhidraTranslate`, which
     /// `kuna-decomp` cannot name as a concrete type here — the whole reason the
@@ -1035,7 +1035,7 @@ impl Architecture {
             lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
-            // The engine behind the `EngineTranslate` seam: a boxed `Sleigh` on
+            // The engine behind the `EngineTranslate` boundary: a boxed `Sleigh` on
             // the standalone path, a query-backed `GhidraTranslate` on the
             // ghidra-mode path (already boxed by the caller).
             translate,
@@ -1421,14 +1421,14 @@ impl Architecture {
     /// Reset options modifiable by the OptionDatabase, including the action
     /// database (C++ `Architecture::resetDefaults`, `architecture.cc:1463`).
     ///
-    /// SEAM(W5/W8): the C++ also calls `allacts.resetDefaults()` (the
+    /// STUB(W5/W8): the C++ also calls `allacts.resetDefaults()` (the
     /// `ActionDatabase` default-group reset, a W5 surface not yet exposed) and
     /// resets every `PrintLanguage` in `printlist` (W8).  Only the internal
     /// option reset runs here; the action/print resets land with their waves.
     pub fn reset_defaults(&mut self) {
         self.reset_defaults_internal();
-        // allacts.resetDefaults();                                 -- SEAM(W5)
-        // for printlang in printlist: printlang.reset_defaults();  -- SEAM(W8)
+        // allacts.resetDefaults();                                 -- STUB(W5)
+        // for printlang in printlist: printlang.reset_defaults();  -- STUB(W8)
     }
 
     // -----------------------------------------------------------------------
@@ -1443,7 +1443,7 @@ impl Architecture {
     }
 
     /// Borrow the disassembly engine (C++ `translate`) through the
-    /// [`EngineTranslate`] seam.  External callers reach the `Translate` /
+    /// [`EngineTranslate`] boundary.  External callers reach the `Translate` /
     /// `RegisterLookup` surface directly; those needing the concrete standalone
     /// engine downcast via [`EngineTranslate::as_sleigh`].
     pub fn translate(&self) -> &dyn EngineTranslate {
@@ -1569,7 +1569,7 @@ impl Architecture {
     }
 
     // -----------------------------------------------------------------------
-    // Funcdata construction (the W3 boot seam)
+    // Funcdata construction (the W3 boot boundary)
     // -----------------------------------------------------------------------
 
     /// Build a [`Funcdata`] tied to this architecture (the C++ `Funcdata`
@@ -1577,7 +1577,7 @@ impl Architecture {
     ///
     /// The W3 [`Funcdata::new`] needs an [`ArchHandle`] carrying the IR-boundary
     /// address-space slice and the analysis unique-start.  Per the established
-    /// W3 seam shape (and because the lift emits varnodes carrying their *own*
+    /// W3 boundary shape (and because the lift emits varnodes carrying their *own*
     /// (engine) spaces directly — see `verify_w3_ir_flow`), the IR-boundary
     /// manager is built fresh from this architecture's const/unique/iop/fspec
     /// spaces, and the analysis unique-start comes from
@@ -1589,7 +1589,7 @@ impl Architecture {
         Funcdata::new(name, name, glb, addr, uniq_start, size)
     }
 
-    /// Build the [`ArchHandle`] (the [`ArchSeam`] the W3 IR holds as `glb`).
+    /// Build the [`ArchHandle`] (the [`ArchContext`] the W3 IR holds as `glb`).
     ///
     /// LOSS-132 keystone: the handle **shares the engine's single
     /// `AddrSpaceManager`** (the `Rc` the SLEIGH translator populated, with
@@ -1600,152 +1600,152 @@ impl Architecture {
     /// now one manager, faithful to the C++ `Architecture : AddrSpaceManager`.
     pub fn build_arch_handle(&self) -> ArchHandle {
         let manage = self.translate.manager_rc();
-        let mut seam = ArchSeam::new_shared(manage);
-        seam.min_laned_register_size = self.get_minimum_laned_register_size();
+        let mut ctx = ArchContext::new_shared(manage);
+        ctx.min_laned_register_size = self.get_minimum_laned_register_size();
         // Carry the laned-register table so the per-function Funcdata reaches
         // `glb->getLanedRegister` (C++ `Architecture::lanerecords`); cheap clones
         // of the small (size,mask) records.  ActionLaneDivide reads these to
         // split XMM/ZMM vector lanes.
-        seam.lanerecords = self.lanerecords.clone();
+        ctx.lanerecords = self.lanerecords.clone();
         // Share the engine's OpBehavior emulation table with `glb` (the C++
         // `Architecture` owns the `TypeOp`s, so `glb->inst[opc]->getBehavior()`
         // reaches them directly).  The `Rc<dyn OpBehavior>` entries are cheap
         // clones; the IR-transform passes (RuleCollapseConstants) fold constants
         // through `glb.op_behavior(opc)`.
-        seam.opbehaviors = self.opbehaviors.clone();
+        ctx.opbehaviors = self.opbehaviors.clone();
         // Share the processor's float formats with `glb` (the C++ `Architecture`
         // IS-A `Translate`, so `glb->translate->getFloatFormat` reaches them).
         // `SubfloatFlow` reads them off the per-function `glb` to drive the
         // float-precision narrowing (`RuleSubfloatConvert`); cheap clones of the
         // small format records.
-        seam.floatformats = self.translate.float_formats().to_vec();
+        ctx.floatformats = self.translate.float_formats().to_vec();
         // Share the prototype-model registry handles (C++ `glb->defaultfp` /
         // `evalfp_current`) so the proto-recovery actions can set the function's
         // model and run output recovery against the real param lists.
-        seam.defaultfp = self.defaultfp.clone();
-        seam.evalfp_current = self.evalfp_current.clone();
+        ctx.defaultfp = self.defaultfp.clone();
+        ctx.evalfp_current = self.evalfp_current.clone();
         // Carry the cspec's return-address storage (C++ `glb->defaultReturnAddr`)
         // so the per-function `Funcdata::testForReturnAddress` can detect a
         // BRANCHIND that is really a tail return through the return-address
         // register (the Switch-return jump-table failure mode `fail_return`).
-        seam.default_return_addr = self.default_return_addr.clone();
-        seam.trim_recurse_max = self.trim_recurse_max;
-        seam.max_implied_ref = self.max_implied_ref;
-        seam.max_term_duplication = self.max_term_duplication;
-        seam.return_single = self.return_single;
+        ctx.default_return_addr = self.default_return_addr.clone();
+        ctx.trim_recurse_max = self.trim_recurse_max;
+        ctx.max_implied_ref = self.max_implied_ref;
+        ctx.max_term_duplication = self.max_term_duplication;
+        ctx.return_single = self.return_single;
         // (kuna GH-9218) carry the unjustified-input forward-absorb gate so
         // `ActionUnjustifiedParams` reaches it via `glb`.
-        seam.input_varnode_adjust = self.input_varnode_adjust;
-        seam.name_style_angr = self.name_style_angr;
+        ctx.input_varnode_adjust = self.input_varnode_adjust;
+        ctx.name_style_angr = self.name_style_angr;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
-        // (which reads the seam `arch`) sees `option dedupvardecls`.
-        seam.dedup_var_decls = self.dedup_var_decls;
+        // (which reads the ArchContext `arch`) sees `option dedupvardecls`.
+        ctx.dedup_var_decls = self.dedup_var_decls;
         // (kuna GH-558) carry the comparison-presentation gate so the
         // `compareform canonical|original` option reaches
-        // `ActionPresentCompareForm` via `glb` (the seam read site).
-        seam.present_lessequal = self.present_lessequal;
+        // `ActionPresentCompareForm` via `glb` (the ArchContext read site).
+        ctx.present_lessequal = self.present_lessequal;
         // (kuna) carry the remaining stage-model rule gates so their `option
         // <name> on|off` reaches the consuming Rule/Action via `glb` (each rule
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
-        seam.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
-        seam.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
-        seam.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
-        seam.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
-        seam.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
-        seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
-        seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
-        seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
-        seam.region_structure = self.region_structure; // regionstructure
-        seam.region_loop_refine = self.region_loop_refine; // regionlooprefine
-        seam.region_edge_order = self.region_edge_order; // regionedgeorder
-        seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
-        seam.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
-        seam.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
-        seam.dup_return_call_tails = self.dup_return_call_tails; // taildup
-        seam.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
-        seam.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
-        seam.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
-        seam.early_return = self.early_return; // earlyreturn
-        seam.switch_return = self.switch_return; // switchreturn
-        seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
-        seam.fold_call_returns = self.fold_call_returns; // foldcallret
-        seam.strip_stack_guard = self.strip_stack_guard; // stackguard
-        seam.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
+        ctx.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
+        ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
+        ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
+        ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
+        ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
+        ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
+        ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
+        ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        ctx.region_structure = self.region_structure; // regionstructure
+        ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
+        ctx.region_edge_order = self.region_edge_order; // regionedgeorder
+        ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
+        ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
+        ctx.dup_return_call_tails = self.dup_return_call_tails; // taildup
+        ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
+        ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
+        ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
+        ctx.early_return = self.early_return; // earlyreturn
+        ctx.switch_return = self.switch_return; // switchreturn
+        ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
+        ctx.fold_call_returns = self.fold_call_returns; // foldcallret
+        ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
+        ctx.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
-        seam.condexe_block_placement = self.condexe_block_placement;
+        ctx.condexe_block_placement = self.condexe_block_placement;
         // (kuna) carry the whiledo->for reroll gate (C++ `glb->analyze_for_loops`)
         // so `ActionStructureTransform` reaches it for
         // `Funcdata::finalize_forloop_transform`.
-        seam.analyze_for_loops = self.analyze_for_loops;
+        ctx.analyze_for_loops = self.analyze_for_loops;
         // Carry the `nanignore all` flag (C++ `glb->nan_ignore_all`) so
         // `RuleIgnoreNan` reaches it via `glb`.
-        seam.nan_ignore_all = self.nan_ignore_all;
+        ctx.nan_ignore_all = self.nan_ignore_all;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
-        seam.types = Some(self.types_rc());
+        ctx.types = Some(self.types_rc());
         // Share the decoded-string manager (C++ `glb->stringManager`) so the
         // per-function `Funcdata::getInternalString` registers internal strings
         // into the very instance the printer reads back on this architecture.
-        seam.internal_strings = Some(Rc::clone(&self.string_manager));
+        ctx.internal_strings = Some(Rc::clone(&self.string_manager));
         // Jump-table recovery constants (C++ `glb->max_jumptable_size` /
         // `funcptr_align`) and the load image (C++ `glb->loader`) so the
         // jump-table emulator reaches the read-only switch table.
-        seam.max_jumptable_size = self.max_jumptable_size;
-        seam.alias_block_level = self.alias_block_level;
-        seam.funcptr_align = self.funcptr_align;
+        ctx.max_jumptable_size = self.max_jumptable_size;
+        ctx.alias_block_level = self.alias_block_level;
+        ctx.funcptr_align = self.funcptr_align;
         // (kuna GH-8471) Carry the Thumb-funcptr preservation gate so
         // `RulePtrsubUndo`'s thumb guard reads `glb->preserve_thumb_funcptr`.
-        seam.preserve_thumb_funcptr = self.preserve_thumb_funcptr;
+        ctx.preserve_thumb_funcptr = self.preserve_thumb_funcptr;
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
-        seam.switch_modulo_bound = self.switch_modulo_bound;
+        ctx.switch_modulo_bound = self.switch_modulo_bound;
         // (kuna, angr) carry the CBRANCH-guard jump-table index-bound gate
         // (`option switchguardbound`) so `JumpBasic::recoverModel` reaches it.
-        seam.switch_guard_bound = self.switch_guard_bound;
+        ctx.switch_guard_bound = self.switch_guard_bound;
         // (kuna, angr) carry the loop-carried-base relative-offset jump-table gate
         // (`option switchsharedcase`) so `JumpBasic::recoverModel` reaches it.
-        seam.switch_shared_case = self.switch_shared_case;
+        ctx.switch_shared_case = self.switch_shared_case;
         // (kuna, angr) carry the multi-predecessor unrolled-guard jump-table gate
         // (`option switchmultipred`) so `JumpBasic::checkUnrolledGuard` reaches it.
-        seam.switch_multi_pred = self.switch_multi_pred;
+        ctx.switch_multi_pred = self.switch_multi_pred;
         // (kuna, angr) carry the interleaved unrolled-guard partial-flow gate
         // (`option unrolledguard`) so `FlowInfo::collectEdges` reaches it.
-        seam.unrolled_guard = self.unrolled_guard;
-        seam.loader = Some(self.translate.loader_rc());
+        ctx.unrolled_guard = self.unrolled_guard;
+        ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
         // `Funcdata::fillinReadOnly` (the readonly-RAM-global constant fold).
-        seam.readonlypropagate = self.readonlypropagate;
+        ctx.readonlypropagate = self.readonlypropagate;
         // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
         // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.
-        seam.split_datatype_config = self.split_datatype_config;
+        ctx.split_datatype_config = self.split_datatype_config;
         // Snapshot the global symbol table onto `glb` so the per-function
         // `setVarnodeProperties` can run `localmap->queryProperties`'s walk into
         // the global scope (C++ `glb` reaches the live `symboltab`; the merged
         // kuna `glb` is a skeleton, so the global scope is wired here, after every
         // `map addr`).  Global-mapped varnodes then pick up `persist`/`addrtied`
         // and their stores survive `ActionDeadCode`.
-        seam.global_query = Some(Rc::new(self.symboltab.build_global_query()));
+        ctx.global_query = Some(Rc::new(self.symboltab.build_global_query()));
         // Snapshot every source-declared callee prototype (parked on the global
         // FunctionSymbols by `set_function_prototype_pieces`) so the per-function
         // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
-        seam.callee_protos = self.symboltab.build_callee_proto_pieces();
+        ctx.callee_protos = self.symboltab.build_callee_proto_pieces();
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers` /
         // `infer_funcentry`) and the ordered inferable-pointer spaces (C++
         // `glb->inferPtrSpaces`, built by cacheAddrSpaceProperties) so
         // `ActionConstantPtr` (run via `glb`) can rewrite a mapped global-constant
         // address into a typed `PTRSUB(spacebase,off)`.
-        seam.infer_pointers = self.infer_pointers;
-        seam.infer_funcentry = self.infer_funcentry;
-        seam.infer_ptr_spaces = self.infer_ptr_spaces.clone();
+        ctx.infer_pointers = self.infer_pointers;
+        ctx.infer_funcentry = self.infer_funcentry;
+        ctx.infer_ptr_spaces = self.infer_ptr_spaces.clone();
         // Snapshot the tracked-register database (C++ `glb->context`'s track base,
         // populated by `set track`) so `ActionConstbase` can query it for the
         // function entry address through the detached per-function skeleton.
-        seam.tracked_sets = self.with_context_db_mut(|db| db.clone_trackbase());
-        Rc::new(seam)
+        ctx.tracked_sets = self.with_context_db_mut(|db| db.clone_trackbase());
+        Rc::new(ctx)
     }
 
     /// Insert the analysis-only fspec/iop/join spaces into the single engine
@@ -1965,7 +1965,7 @@ impl Architecture {
     /// resolveConstant`, viewed as an `AddrSpaceManager`).  A thin wrapper over the
     /// shared engine manager so callers that hold `&self` (not the manager) can run
     /// the resolve — the per-function `glb` carries its own
-    /// [`resolve_constant`](crate::seams::Architecture::resolve_constant), this is
+    /// [`resolve_constant`](crate::context::ArchContext::resolve_constant), this is
     /// the architecture-side analogue used while building `inferPtrSpaces`.
     pub fn resolve_constant(
         &self,
@@ -2075,7 +2075,7 @@ impl Architecture {
     /// is false).  The resulting `Range` is added to the global scope's rangetree
     /// via `symboltab->addRange(globalScope, spc, first, last)`.
     ///
-    /// This is THE seam the revisit / global-persist path depends on: with the
+    /// This is THE boundary the revisit / global-persist path depends on: with the
     /// global scope owning the `ram` range, `Scope::queryProperties`'s `inScope`
     /// discovery branch (database.cc:1276-1281) returns
     /// `mapped | addrtied | persist` for any RAM Varnode with no covering Symbol,
@@ -2084,9 +2084,9 @@ impl Architecture {
     ///
     /// LOSS: the C++ overlay-space duplication (`addToGlobalScope`,
     /// architecture.cc:838-846) and the `inferPtrSpaces` push (architecture.cc:836,
-    /// a pointer-inference seam) are not transcribed — no datatest exercises an
+    /// a pointer-inference stub) are not transcribed — no datatest exercises an
     /// overlay base space here, and `inferPtrSpaces` feeds only `TypeFactory`
-    /// pointer inference (a separate seam).  General over any processor's cspec:
+    /// pointer inference (a separate stub).  General over any processor's cspec:
     /// the space names are read from the XML and resolved through the engine, with
     /// NO processor-name special-casing.
     fn decode_global(&mut self) -> KunaResult<()> {
@@ -2291,7 +2291,7 @@ impl Architecture {
         // The SnippetLanguage is the loaded `SleighBase`; drive parse_inject over
         // it (the &SleighBase read does not alias the &mut library).  Injection
         // compilation is a Sleigh-engine concern, so reach the concrete engine's
-        // `SleighBase` through the downcast (only `Sleigh` implements the seam).
+        // `SleighBase` through the downcast (only `Sleigh` implements the boundary).
         //
         // In ghidra mode there is no local `.sla` to compile snippets against —
         // the host supplies inject p-code on demand via a `getPcodeInject` query
@@ -2314,7 +2314,7 @@ impl Architecture {
     /// display, and typed parameters.  Mirrors the lazy
     /// `userops.registerBuiltin(BUILTIN_*)` calls in `ArraySequence::buildStringCopy`
     /// and `Funcdata::getInternalString` (C++ does these on demand during the
-    /// transform; the kuna seam can't reach the real `userops`, so they are
+    /// transform; the kuna ArchContext can't reach the real `userops`, so they are
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
@@ -2370,7 +2370,7 @@ impl Architecture {
         &self.types
     }
 
-    /// Share the data-type factory `Rc` so the analysis-side seam (`glb`) reaches
+    /// Share the data-type factory `Rc` so the analysis-side ArchContext (`glb`) reaches
     /// the same populated factory (`ActionInferTypes` -> `glb.types()`).
     pub fn types_rc(&self) -> Rc<TypeFactoryImpl> {
         Rc::clone(&self.types)
@@ -2449,7 +2449,7 @@ impl Architecture {
         &self,
         f: impl FnOnce(&mut dyn kuna_sleigh::globalcontext::ContextDatabase) -> R,
     ) -> R {
-        // The engine seam exposes the object-safe `with_context_db_dyn` (a
+        // The engine boundary exposes the object-safe `with_context_db_dyn` (a
         // `&mut dyn FnMut`, so it survives the `Box<dyn EngineTranslate>` trait
         // object); adapt the generic, value-returning closure over it.  The
         // protocol is synchronous — the closure runs exactly once — so `f` and
@@ -2707,7 +2707,7 @@ impl Architecture {
     /// `extrapop` option has a target.  Mirrors the C++ post-`parseCompilerConfig`
     /// invariant that `defaultfp != 0`.
     ///
-    /// SEAM(W6 cspec): the *real* default proto model comes from the cspec
+    /// STUB(W6 cspec): the *real* default proto model comes from the cspec
     /// `<default_proto><prototype …>` decode (`ProtoModel::decode` building the
     /// param lists from `<input>`/`<output>` `<pentry>` records).  When the
     /// frontend supplied the cspec XML (via [`set_cspec_xml`](Architecture::set_cspec_xml))
@@ -2785,7 +2785,7 @@ impl Architecture {
     /// `<context_set><set name="addrsize" val="2"/>…` is what tells SLEIGH to
     /// disassemble as 64-bit.
     ///
-    /// SEAM(W6 pspec): the remaining `<processor_spec>` children (volatile,
+    /// STUB(W6 pspec): the remaining `<processor_spec>` children (volatile,
     /// incidentalcopy, jumpassist, segmentop, …) decode with their own waves;
     /// this wires the `<context_data>` branch — the one that steers the
     /// disassembly mode and therefore gates every multi-byte lift — and the
@@ -2834,7 +2834,7 @@ impl Architecture {
         // to those addresses into `read_volatile`/`write_volatile` user-ops (the
         // CALLOTHER form survives dead-code, which a plain COPY to an SFR-space
         // varnode does not).  Must run before the global-query snapshot is taken
-        // (build_arch_handle) so the painted flagbase reaches the per-function seam.
+        // (build_arch_handle) so the painted flagbase reaches the per-function ArchContext.
         if let Some(volatile_el) = find_child(&pspec, "volatile") {
             self.decode_volatile(&volatile_el)?;
         }
@@ -3026,7 +3026,7 @@ impl Architecture {
     /// downstream binary searches are valid.
     ///
     /// The C++ also handles the `volatile` attribute (painting a volatile
-    /// property range); that property subsystem is a separate seam and is not
+    /// property range); that property subsystem is a separate stub and is not
     /// wired here — only the lane-size half is decoded.
     fn decode_register_data(
         &mut self,
@@ -3042,7 +3042,7 @@ impl Architecture {
             }
             // string laneSizes; ... if (attribId == ATTRIB_VECTOR_LANE_SIZES) ...
             let Some(lane_sizes) = attr_str(reg, "vector_lane_sizes") else {
-                continue; // no lane sizes (and volatile is a separate seam)
+                continue; // no lane sizes (and volatile is a separate stub)
             };
             if lane_sizes.is_empty() {
                 continue;
@@ -3655,9 +3655,9 @@ impl Architecture {
     /// [`typeop::type_op_for`](crate::typeop::type_op_for) when the table is
     /// empty (the architecture was constructed but `build_instructions` has not
     /// run yet) so the flow engine always gets the right property flags.
-    pub fn resolve_typeop(&self, opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
+    pub fn resolve_typeop(&self, opc: kuna_num::opcodes::OpCode) -> crate::context::TypeOp {
         match self.inst.get(opc as usize).and_then(|o| o.as_ref()) {
-            Some(info) => info.to_seam(),
+            Some(info) => info.to_type_op(),
             None => crate::typeop::type_op_for(opc),
         }
     }
@@ -3756,7 +3756,7 @@ impl Architecture {
         // `userops.registerBuiltin` is called from
         // `ArraySequence::buildStringCopy` / `Funcdata::getInternalString` during
         // the `RuleStringStore`/`RuleStringCopy` transform).  Those transforms run
-        // through the per-function W4 seam (`glb`), which carries no mutable
+        // through the per-function ArchContext (`glb`), which carries no mutable
         // `userops` handle; the printer, however, reads back the builtin
         // name/display/typed-params on *this* real architecture (`opCallother` ->
         // `userops.getOp`).  The builtin set + their typed signatures are fixed,
@@ -3824,7 +3824,7 @@ impl Architecture {
 // (w9x-arch-engine-glue, item #2)
 //
 // Each method is the `glb->…` body the matching `ArchOption::apply`
-// (options.cc) reaches; the `// SEAM(...)` markers in the options.rs trait doc
+// (options.cc) reaches; the `// STUB(...)` markers in the options.rs trait doc
 // are now wired to the real subsystems this `Architecture` owns.
 // ---------------------------------------------------------------------------
 
@@ -3901,7 +3901,7 @@ impl ArchOptionContext for Architecture {
         // `fd->getFuncProto().setExtraPop(expop)`.  The per-function FuncProto
         // mutation needs a resolved Funcdata; the symbol-table function query +
         // FuncProto write is the W4 symboltab + W6 fspec surface.
-        // SEAM(W4 symboltab + W6 fspec): no function is resolvable here yet.
+        // STUB(W4 symboltab + W6 fspec): no function is resolvable here yet.
         Err(KunaError::recov(format!("Unknown function name: {name}")))
     }
     fn set_default_model(&mut self, name: &str) -> KunaResult<()> {
@@ -4026,7 +4026,7 @@ impl ArchOptionContext for Architecture {
     }
     fn toggle_action(&mut self, _group: &str, _sub: &str, _val: bool) {
         // C++ `glb->allacts.toggleAction(grp,sub,val)`.
-        // SEAM(W5): `ActionDatabase::toggleAction` (action.cc:1036) is not yet
+        // STUB(W5): `ActionDatabase::toggleAction` (action.cc:1036) is not yet
         // ported onto the Rust `ActionDatabase`; the plain `option NAME VALUE`
         // path (the most-used datatest command) does not reach it — only the
         // `setaction GROUP SUB on/off` form does.  Recorded as a loss.

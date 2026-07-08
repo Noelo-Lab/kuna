@@ -10,38 +10,38 @@
 //! through.  Mixed-sign comparisons and wrapping arithmetic are made explicit per
 //! the porting rules.
 //!
-//! # Cross-wave seams
+//! # Cross-wave stubs
 //!
 //! Several upstream `Funcdata`/global helpers are not yet ported; the rule that
 //! needs one transcribes every early-out guard *up to* the call and then returns
-//! `0` (no change) at the seam, with a `// SEAM(...)` note and a recorded loss.
+//! `0` (no change) at the stub, with a `// STUB(...)` note and a recorded loss.
 //! The affected calls:
 //!
-//! * `op_set_output` / `new_varnode_out` / `new_unique_out` (W3 IR seam — the
+//! * `op_set_output` / `new_varnode_out` / `new_unique_out` (W3 IR stub — the
 //!   `Funcdata::banks_mut()` split-borrow accessor is missing, so any rule that
 //!   *creates a new op with an output* defers at the output-creation step):
 //!   `RuleCollectTerms`, `RuleNotDistribute`, `RuleAndDistribute`,
 //!   `RulePullsubMulti`, `RulePullsubIndirect`.
 //!   (`RulePushMulti` no longer defers — its full body, including
 //!   `findSubstitute`, is ported below.)
-//! * `deadRemovalAllowedSeen` (heritage seam): `RuleEarlyRemoval`.
-//! * `cseEliminateList` (funcdata CSE seam): `RuleSelectCse`.
-//! * `replaceLessequal` (funcdata compare-form seam): `RuleIntLessEqual`.
-//! * `distributeIntMultAdd` + `TermOrder` (expression seam): `RuleCollectTerms`.
-//! * `functionalEquality` / `functionalEqualityLevel` (expression seam):
+//! * `deadRemovalAllowedSeen` (heritage stub): `RuleEarlyRemoval`.
+//! * `cseEliminateList` (funcdata CSE stub): `RuleSelectCse`.
+//! * `replaceLessequal` (funcdata compare-form stub): `RuleIntLessEqual`.
+//! * `distributeIntMultAdd` + `TermOrder` (expression stub): `RuleCollectTerms`.
+//! * `functionalEquality` / `functionalEqualityLevel` (expression stub):
 //!   `RuleEquality`, `RuleRangeMeld`.
-//! * `getOpFromConst` / `newIndirectCreation` (W3/W4 seam): `RulePullsubIndirect`.
-//! * `findJoin` (W5 join-record seam): `RulePullsubMulti::build_subpiece`.
+//! * `getOpFromConst` / `newIndirectCreation` (W3/W4 stub): `RulePullsubIndirect`.
+//! * `findJoin` (W5 join-record stub): `RulePullsubMulti::build_subpiece`.
 //!   (`cseFindInBlock` / `earliestUse` for `RulePushMulti` are now wired to the
 //!   ported `Funcdata::cse_find_in_block` / `block_earliest_use`.)
 //! * `CircleRange::pullBack`/`circleUnion`/`translate2Op`/`intersect`
-//!   (rangeutil seam): `RuleRangeMeld`.
+//!   (rangeutil stub): `RuleRangeMeld`.
 //! * `op_set_opcode` requires a fully-formed `TypeOp` (opcode + property flags +
 //!   name); the `glb->inst[opc]` table that supplies the **property flags** is
-//!   the W6 `TypeFactory`.  [`set_opcode_seam`] builds the `TypeOp` with the
+//!   the W6 `TypeFactory`.  [`set_opcode_typed`] builds the `TypeOp` with the
 //!   correct opcode value and an empty flag word (`0`).  The opcode *value* — the
 //!   load-bearing part for these rules and the action engine's per-op dispatch —
-//!   is correct; the cached flag bits are filled when W6 lands.  // SEAM(W6)
+//!   is correct; the cached flag bits are filled when W6 lands.  // STUB(W6)
 
 use std::rc::Rc;
 
@@ -53,14 +53,14 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::expression::TermOrder;
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// `sizeof(uintb)` from the C++ — the rules cap at 8-byte precision
 /// (`if (size > sizeof(uintb)) return 0`).
 const SIZEOF_UINTB: int4 = 8;
 
 /// Resolve an [`OpCode`] to the [`TypeOp`] that [`Funcdata::op_set_opcode`]
-/// expects (C++ `glb->inst[opc]`).  // SEAM(W6)
+/// expects (C++ `glb->inst[opc]`).  // STUB(W6)
 ///
 /// The C++ `Funcdata::opSetOpcode` does `obank.changeOpcode(op, glb->inst[opc])`,
 /// resolving the singleton `TypeOp` (opcode value + cached property flags +
@@ -69,7 +69,7 @@ const SIZEOF_UINTB: int4 = 8;
 /// value, an empty property-flag word, and the debug name.  The opcode value is
 /// what the rules and the action engine's per-op dispatch read; the flags are a
 /// W6 fill.
-fn set_opcode_seam(data: &mut Funcdata, op: OpId, opc: OpCode) {
+fn set_opcode_typed(data: &mut Funcdata, op: OpId, opc: OpCode) {
     // obank.changeOpcode(op, glb->inst[opc]).  The canonical `type_op_info` table
     // carries the real `opflags` (eval-type, commutative, booloutput, …) — exactly
     // what `glb->inst[opc]` would; resolving through it rather than a flag-less
@@ -317,7 +317,7 @@ impl Rule for RuleCollectTerms {
                             .new_unique_out(vn1sz, nextop)
                             .expect("RuleCollectTerms: new_unique_out");
                         // data.opSetOpcode(nextop,CPUI_INT_MULT);
-                        set_opcode_seam(data, nextop, OpCode::CPUI_INT_MULT);
+                        set_opcode_typed(data, nextop, OpCode::CPUI_INT_MULT);
                         // data.opSetInput(nextop,vn1,0); data.opSetInput(nextop,newcoeff,1);
                         data.op_set_input(nextop, vn1, 0).expect("RuleCollectTerms: mult in0");
                         data.op_set_input(nextop, newcoeff, 1).expect("RuleCollectTerms: mult in1");
@@ -517,7 +517,7 @@ impl Rule for RulePiece2Zext {
         // data.opRemoveInput(op,0);	// Remove the constant
         data.op_remove_input(op, 0);
         // data.opSetOpcode(op,CPUI_INT_ZEXT);
-        set_opcode_seam(data, op, OpCode::CPUI_INT_ZEXT);
+        set_opcode_typed(data, op, OpCode::CPUI_INT_ZEXT);
         1
     }
 }
@@ -601,7 +601,7 @@ impl Rule for RulePiece2Sext {
         // data.opRemoveInput(op,0);
         data.op_remove_input(op, 0);
         // data.opSetOpcode(op,CPUI_INT_SEXT);
-        set_opcode_seam(data, op, OpCode::CPUI_INT_SEXT);
+        set_opcode_typed(data, op, OpCode::CPUI_INT_SEXT);
         1
     }
 }
@@ -636,7 +636,7 @@ impl Rule for RuleBxor2NotEqual {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);
-        set_opcode_seam(data, op, OpCode::CPUI_INT_NOTEQUAL);
+        set_opcode_typed(data, op, OpCode::CPUI_INT_NOTEQUAL);
         1
     }
 }
@@ -696,7 +696,7 @@ impl Rule for RuleOrMask {
             return 0;
         }
         // data.opSetOpcode(op,CPUI_COPY);
-        set_opcode_seam(data, op, OpCode::CPUI_COPY);
+        set_opcode_typed(data, op, OpCode::CPUI_COPY);
         // data.opSetInput(op,constvn,0);
         data.op_set_input(op, constvn, 0).expect("RuleOrMask: op_set_input");
         // data.opRemoveInput(op,1);
@@ -795,7 +795,7 @@ impl Rule for RuleAndMask {
         }
 
         // data.opSetOpcode(op,CPUI_COPY);
-        set_opcode_seam(data, op, OpCode::CPUI_COPY);
+        set_opcode_typed(data, op, OpCode::CPUI_COPY);
         // data.opRemoveInput(op,1);
         data.op_remove_input(op, 1);
         // data.opSetInput(op,vn,0);
@@ -856,7 +856,7 @@ impl Rule for RuleOrConsume {
             //   data.opRemoveInput(op,0);
             data.op_remove_input(op, 0);
             //   data.opSetOpcode(op, CPUI_COPY);
-            set_opcode_seam(data, op, OpCode::CPUI_COPY);
+            set_opcode_typed(data, op, OpCode::CPUI_COPY);
             return 1;
         }
         // else if ((consume & op->getIn(1)->getNZMask()) == 0) {
@@ -868,7 +868,7 @@ impl Rule for RuleOrConsume {
             //   data.opRemoveInput(op,1);
             data.op_remove_input(op, 1);
             //   data.opSetOpcode(op, CPUI_COPY);
-            set_opcode_seam(data, op, OpCode::CPUI_COPY);
+            set_opcode_typed(data, op, OpCode::CPUI_COPY);
             return 1;
         }
         0
@@ -936,7 +936,7 @@ impl Rule for RuleOrCollapse {
         }
 
         // data.opSetOpcode(op,CPUI_COPY);
-        set_opcode_seam(data, op, OpCode::CPUI_COPY);
+        set_opcode_typed(data, op, OpCode::CPUI_COPY);
         // data.opRemoveInput(op,0);
         data.op_remove_input(op, 0);
         1
@@ -1109,7 +1109,7 @@ impl Rule for RuleNegateIdentity {
             // data.opRemoveInput(logicOp,1);
             data.op_remove_input(logic_op, 1);
             // data.opSetOpcode(logicOp,CPUI_COPY);
-            set_opcode_seam(data, logic_op, OpCode::CPUI_COPY);
+            set_opcode_typed(data, logic_op, OpCode::CPUI_COPY);
             return 1;
         }
         0
@@ -1452,7 +1452,7 @@ impl Rule for RuleEquality {
     fn apply_op(&mut self, op: OpId, _data: &mut Funcdata) -> int4 {
         // if (!functionalEquality(op->getIn(0),op->getIn(1))) return 0;
         //   ... opSetOpcode(COPY); opRemoveInput(1); newConstant; opSetInput ...
-        // SEAM(expression): `functionalEquality` lives in expression.cc (not yet
+        // STUB(expression): `functionalEquality` lives in expression.cc (not yet
         // ported), so the gating predicate is unavailable and the rule defers
         // before any mutation.  No change.
         let _ = op;
@@ -2198,7 +2198,7 @@ impl RulePushMulti {
         data: &Funcdata,
         in1: VarnodeId,
         in2: VarnodeId,
-        bb: crate::seams::BlockId,
+        bb: crate::context::BlockId,
         earliest: Option<OpId>,
     ) -> Option<OpId> {
         // iter = in1->beginDescend(); while(iter != enditer) { ... }
@@ -2417,7 +2417,7 @@ impl Rule for RulePushMulti {
                             data.obank().get(op).expect("RulePushMulti: stale op").get_addr().clone();
                         let substitute = data.new_op(2, op_addr);
                         // data.opSetOpcode(substitute,CPUI_MULTIEQUAL);
-                        set_opcode_seam(data, substitute, OpCode::CPUI_MULTIEQUAL);
+                        set_opcode_typed(data, substitute, OpCode::CPUI_MULTIEQUAL);
                         // Try to preserve the storage location if the input varnodes share it
                         // But don't propagate addrtied varnode (thru MULTIEQUAL)
                         let b1_addr =
@@ -2543,7 +2543,7 @@ impl Rule for RuleNotDistribute {
         // data.opInsertBefore(newneg1,op);
         let newneg1 = data.new_op(1, op_addr.clone());
         let newout1 = data.new_unique_out(1, newneg1).expect("RuleNotDistribute: newout1");
-        set_opcode_seam(data, newneg1, OpCode::CPUI_BOOL_NEGATE);
+        set_opcode_typed(data, newneg1, OpCode::CPUI_BOOL_NEGATE);
         data.op_set_input(newneg1, comp_in0, 0).expect("RuleNotDistribute: newneg1 in0");
         data.op_insert_before(newneg1, op);
 
@@ -2554,14 +2554,14 @@ impl Rule for RuleNotDistribute {
         // data.opInsertBefore(newneg2,op);
         let newneg2 = data.new_op(1, op_addr);
         let newout2 = data.new_unique_out(1, newneg2).expect("RuleNotDistribute: newout2");
-        set_opcode_seam(data, newneg2, OpCode::CPUI_BOOL_NEGATE);
+        set_opcode_typed(data, newneg2, OpCode::CPUI_BOOL_NEGATE);
         data.op_set_input(newneg2, comp_in1, 0).expect("RuleNotDistribute: newneg2 in0");
         data.op_insert_before(newneg2, op);
 
         // data.opSetOpcode(op,opc);
         // data.opSetInput(op,newout1,0);
         // data.opInsertInput(op,newout2,1);
-        set_opcode_seam(data, op, opc);
+        set_opcode_typed(data, op, opc);
         data.op_set_input(op, newout1, 0).expect("RuleNotDistribute: op in0");
         data.op_insert_input(op, newout2, 1).expect("RuleNotDistribute: op insert in1");
         1
@@ -2656,7 +2656,7 @@ impl Rule for RuleHighOrderAnd {
             }
 
             // data.opSetOpcode(op,CPUI_INT_ADD);
-            set_opcode_seam(data, op, OpCode::CPUI_INT_ADD);
+            set_opcode_typed(data, op, OpCode::CPUI_INT_ADD);
             // data.opSetInput(op,xalign,0);
             data.op_set_input(op, xalign, 0).expect("RuleHighOrderAnd: op_set_input xalign");
             // val = val & cvn2->getOffset();
@@ -2736,7 +2736,7 @@ impl Rule for RuleHighOrderAnd {
                 // data.opRemoveInput(op,1);
                 data.op_remove_input(op, 1);
                 // data.opSetOpcode(op,CPUI_COPY);
-                set_opcode_seam(data, op, OpCode::CPUI_COPY);
+                set_opcode_typed(data, op, OpCode::CPUI_COPY);
                 return 1;
             }
             0
@@ -2877,8 +2877,8 @@ impl Rule for RuleAndDistribute {
         }
         // Do distribution -- builds two new INT_AND ops with newUniqueOut, then
         // rewires op into an INT_OR of their outputs.
-        // SEAM(W3): the two distributed INT_AND ops need `newUniqueOut` (the W3
-        // output-creation seam).  Every match/early-out guard above is ported; the
+        // STUB(W3): the two distributed INT_AND ops need `newUniqueOut` (the W3
+        // output-creation stub).  Every match/early-out guard above is ported; the
         // distribution body defers here.  No change.
         0
     }
@@ -2936,7 +2936,7 @@ impl Rule for RuleLessOne {
         }
 
         // data.opSetOpcode(op,CPUI_INT_EQUAL);
-        set_opcode_seam(data, op, OpCode::CPUI_INT_EQUAL);
+        set_opcode_typed(data, op, OpCode::CPUI_INT_EQUAL);
         // if (val != 0) data.opSetInput(op,data.newConstant(constvn->getSize(),0),1);
         if val != 0 {
             let constvn_size = data.vbank().get(constvn).expect("RuleLessOne: stale constvn").get_size();
@@ -3092,7 +3092,7 @@ impl Rule for RuleRangeMeld {
                 let new_const = data.new_constant(a1_size, resc);
                 // (markup propagation is a W6 symbol nicety; dropped, matching the
                 // jumptable pull-back's recorded markup loss.)
-                set_opcode_seam(data, op, opc);
+                set_opcode_typed(data, op, opc);
                 let _ = data.op_set_input(op, a1, 1 - resslot);
                 let _ = data.op_set_input(op, new_const, resslot);
                 return 1;
@@ -3104,13 +3104,13 @@ impl Rule for RuleRangeMeld {
         }
         if restype == 1 {
             // Pieces cover everything, condition is always true.
-            set_opcode_seam(data, op, OpCode::CPUI_COPY);
+            set_opcode_typed(data, op, OpCode::CPUI_COPY);
             data.op_remove_input(op, 1);
             let one = data.new_constant(1, 1);
             let _ = data.op_set_input(op, one, 0);
         } else if restype == 3 {
             // Nothing left in intersection, condition is always false.
-            set_opcode_seam(data, op, OpCode::CPUI_COPY);
+            set_opcode_typed(data, op, OpCode::CPUI_COPY);
             data.op_remove_input(op, 1);
             let zero = data.new_constant(1, 0);
             let _ = data.op_set_input(op, zero, 0);

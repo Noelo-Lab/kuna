@@ -10,7 +10,7 @@
 //!   - `glb->translate->getRegister(nm)` — register lookup against a
 //!     **spec-loaded** `Translate`, reachable only through the full
 //!     `Architecture` build (no prototype-model-from-spec registry exists on the
-//!     kuna `Architecture` yet — see `ProtoModel`'s `// SEAM(w6-fspec-2)` note);
+//!     kuna `Architecture` yet — see `ProtoModel`'s `// STUB(w6-fspec-2)` note);
 //!   - `model->assignParameterStorage(...)` / `model->deriveInputMap(...)` —
 //!     these *are* ported (`ProtoModel::assign_parameter_storage`,
 //!     `ProtoModel::derive_input_map` in `fspec.rs`), but they consume the
@@ -29,7 +29,7 @@
 //! HighVariable / Cover / Merge / RegionId subsystems; none of those is on the
 //! blocking path here.  Every body needs (a) `getModel("__model1")` ->
 //! `glb->protoModels[nm]`, i.e. a prototype-model **registry** on a spec-loaded
-//! `Architecture`, populated by `ProtoModel::decode` (a hard SEAM in `fspec.rs`
+//! `Architecture`, populated by `ProtoModel::decode` (a hard STUB in `fspec.rs`
 //! that still requires the `<prototype>` marshaling decoder + register/stack/
 //! join spaces); (b) `parse_protopieces(pieces, s, glb)`, the prototype
 //! **grammar** parser (`grammar.cc`, unported); and (c)
@@ -45,7 +45,7 @@
 ///   res.size()==3; res[0].addr invalid (void return placeholder);
 ///   register_equal(res[1],"r12"); register_equal(res[2],"r11").
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar (parse_protopieces) + spec-loaded Architecture/Translate not ported"]
@@ -55,7 +55,7 @@ fn funcproto_register() {}
 ///   "int4 func(char a,int4 b,int2 c,int4 d);"): res.size()==5; output r12
 ///   ("int4"); r12("char"), r11("int4"), r10("int2"), r9("int4").
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -65,7 +65,7 @@ fn funcproto_smallregister() {}
 ///   "int4 func(int4 a,...,int2 f,int1 *g);"): six registers then stack at
 ///   offset 0 (int2) and offset 4 (TYPE_PTR).
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -75,7 +75,7 @@ fn funcproto_stackalign() {}
 ///   "int2 func(int4 a,int8 b,int4 c);"): res[2] is an indirect-storage pointer
 ///   to int8 in r11 (ParameterPieces::indirectstorage).
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -85,7 +85,7 @@ fn funcproto_pointeroverflow() {}
 ///   "char func(int4 a,int8 b,int4 c);"): int8 overflows to stack offset 0,
 ///   next param resumes at r9.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -95,7 +95,7 @@ fn funcproto_stackoverflow() {}
 ///   "void func(int4 a,float4 b,float4 c,int4 d,float4 d);"): float params land
 ///   in r3/r4/r5, generic in r10/r9.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -105,7 +105,7 @@ fn funcproto_floatreg() {}
 ///   "float4 func(int4 a,float4 b,...,float4 f);"): once float registers
 ///   exhausted, floats spill to generic registers r9/r8.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -115,7 +115,7 @@ fn funcproto_floattogeneric() {}
 ///   "float4 func(int4 a,float4 b,float4 c,int4 d,float4 e);"): grouped pentries
 ///   consume r10 then r4/r5; the rest spill to the stack.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -125,7 +125,7 @@ fn funcproto_grouped() {}
 ///   "int2 func(int8 a,int4 b,int4 c);"): int8 -> join space; r10/r9 consumed,
 ///   resume at r8; last int4 to stack offset 0.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -135,7 +135,7 @@ fn funcproto_join() {}
 ///   "int4 func(int4 a,int8 b,int4 c);"): big param goes to stack (can't use
 ///   join because r10 already consumed), next param back to r9.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -146,7 +146,7 @@ fn funcproto_nojoin() {}
 ///   (ParameterPieces::hiddenretparm, TYPE_PTR to int8), formals shift to
 ///   r11/r10.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -156,7 +156,7 @@ fn funcproto_hiddenreturn() {}
 ///   "int4 func(char *a,int4 b,float4 c,int4 *d);"): pointers land in
 ///   ptr-pentries r1/r2, generic in r10, float in r3.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -170,7 +170,7 @@ fn funcproto_mixedmeta() {}
 /// C++ `funcproto_recoverbasic` (`__model1`): trials r11/r10/r12 ->
 ///   deriveInputMap orders r12,r11,r10.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -178,7 +178,7 @@ fn funcproto_recoverbasic() {}
 
 /// C++ `funcproto_recoversmallreg` (`__model1`): trials r11/r12l(2)/r10l(2).
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -187,7 +187,7 @@ fn funcproto_recoversmallreg() {}
 /// C++ `funcproto_recoverstack` (`__model2`): mixed register/stack trials ->
 ///   10 trials, first five unref/unused, then r10,r9,r8,stack0:2,stack4:4.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -196,7 +196,7 @@ fn funcproto_recoverstack() {}
 /// C++ `funcproto_recoverunrefregister` (`__model1`): r12,r10 active ->
 ///   r11 trial inserted as unref.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -205,7 +205,7 @@ fn funcproto_recoverunrefregister() {}
 /// C++ `funcproto_recoverunrefstack` (`__model2`): stack4/stack12 + r8/r9/r10
 ///   -> 12 trials with unref holes at stack0 and stack8.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -213,7 +213,7 @@ fn funcproto_recoverunrefstack() {}
 
 /// C++ `funcproto_recovergroups` (`__model3`): r3,r5,r9 -> r3,r9,r5.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -222,7 +222,7 @@ fn funcproto_recovergroups() {}
 /// C++ `funcproto_recoverholes` (`__model1`): r8,r12,stack0 -> 6 trials, r12
 ///   used, the rest unref/unused.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -231,7 +231,7 @@ fn funcproto_recoverholes() {}
 /// C++ `funcproto_recoverfloat` (`__model2`): r10,r5,r3 -> r3,r4,r5,r10 with
 ///   two leading unref trials.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]
@@ -240,7 +240,7 @@ fn funcproto_recoverfloat() {}
 /// C++ `funcproto_recovermixedmeta` (`__model2`): r10,r4,r1 ->
 ///   r1,(unref),r3,r4,(unref),r10.
 // DEFER(W8): needs the prototype grammar (parse_protopieces) + a spec-loaded
-// Architecture prototype-model registry (ProtoModel::decode, a hard SEAM) +
+// Architecture prototype-model registry (ProtoModel::decode, a hard STUB) +
 // translate->getRegister; none on the W7 (HighVariable/Cover/Merge) path.
 #[test]
 #[ignore = "DEFER(W8): prototype grammar + spec-loaded Architecture/Translate not ported"]

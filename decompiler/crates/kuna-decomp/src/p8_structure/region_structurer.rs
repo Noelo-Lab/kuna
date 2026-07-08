@@ -75,7 +75,7 @@ use kuna_base::types::{int4, uintb};
 use crate::block::BlockGraph;
 use crate::funcdata::Funcdata;
 use crate::options::on_or_off;
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 use kuna_base::marshal::ElementId;
 

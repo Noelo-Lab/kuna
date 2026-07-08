@@ -9,7 +9,7 @@
 //! the **computed minimal rewind scope** (`stage-model.md` section 12), which
 //! `kassert list` REPORTS (Ghidra-actual re-run remains whole-function).
 //!
-//! ## What this module owns vs. SEAM(W5)
+//! ## What this module owns vs. STUB(W5)
 //!
 //! The C++ `IfcKunaAssert::execute` is a console command bound to
 //! `IfaceDecompData` (the `dcp->conf`/`dcp->fd`, the `Override`/`FuncProto`/
@@ -27,7 +27,7 @@
 //!     sub-stage routes to, and whether it is latent/unroutable), transcribed
 //!     from the C++ `if/else` chain — the actual store mutation is the W5 seam.
 //!
-//! SEAM(W5): the live dispatch (`Override::insertForceGoto`, `FuncProto`
+//! STUB(W5): the live dispatch (`Override::insertForceGoto`, `FuncProto`
 //! locks, `OptionDatabase::set`, symbol retype/rename) and the console parsing
 //! of `<args>` land with the console wave on top of [`Dispatch`].
 

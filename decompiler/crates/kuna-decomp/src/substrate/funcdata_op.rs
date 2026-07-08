@@ -35,7 +35,7 @@
 //!
 //! ## Cross-wave seams (precise missing-API notes)
 //!
-//! This is a **parallel** porter: per the SEAM rule it owns only
+//! This is a **parallel** porter: per the STUB rule it owns only
 //! `funcdata_op.rs` and may NOT edit `seams.rs`/`dtype.rs`.  The methods of
 //! `funcdata_op.cc` that build *new Varnodes* (`newConstant`, `newUnique`,
 //! `newUniqueOut`, `newVarnode`, `newVarnodeOut`, `newVarnodeIop`,
@@ -43,7 +43,7 @@
 //! `newSpacebasePtr`, `newVarnodeCallSpecs`) are the **funcdata_varnode**
 //! (`w3-ir-funcdata-varnode`) wave's factories — a sibling parallel item whose
 //! module is still a stub at this item's merge base.  The op-manipulation
-//! methods that depend on those factories are therefore deferred (`// SEAM`):
+//! methods that depend on those factories are therefore deferred (`// STUB`):
 //!
 //!   - `opSetOpcode(op, OpCode)` resolves `glb->inst[opc]` (the W6 `TypeOp`
 //!     table) to a `TypeOp`; that table is W6's.  The faithful bank call
@@ -52,7 +52,7 @@
 //!     [`op_set_opcode`](Funcdata::op_set_opcode) which takes the resolved
 //!     [`TypeOp`] (caller / W6 supplies it) — matching the op.rs test harness.
 //!   - `opSetInput`'s constant-duplication guard calls `newConstant`/`copySymbol`
-//!     (funcdata_varnode + W4 symbol).  Transcribed with a `// SEAM`-noted
+//!     (funcdata_varnode + W4 symbol).  Transcribed with a `// STUB`-noted
 //!     fallback: a constant with an existing non-spacebase descendant is *not*
 //!     re-duplicated (the W3 IR never shares constants across reads until the
 //!     factory lands), and the link is made directly.  The exact note is in the
@@ -60,11 +60,11 @@
 //!   - `cloneOp` clones the input/output Varnodes (`cloneVarnode`); deferred.
 //!   - `opDestroy`/`opDestroyRaw`/`opDestroyRecursive` destroy Varnodes
 //!     (`destroyVarnode`); the op-graph half (unset inputs, dead-list move) is
-//!     ported, the varnode destruction is `// SEAM(W3-varnode)`-noted.
+//!     ported, the varnode destruction is `// STUB(W3-varnode)`-noted.
 //!
 //! `opInsertAfter`'s INDIRECT-marker special case (`getOpFromConst` decoding an
 //! `OpId` from an iop-space address offset) needs the iop-encoding the
-//! funcdata_varnode `newVarnodeIop` establishes; that branch is `// SEAM`-noted.
+//! funcdata_varnode `newVarnodeIop` establishes; that branch is `// STUB`-noted.
 
 use std::rc::Rc;
 
@@ -75,7 +75,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 impl Funcdata {
@@ -91,7 +91,7 @@ impl Funcdata {
     /// (W6) and hands it to the bank.  That table is the W6 seam; this surface
     /// takes the already-resolved [`TypeOp`] (the caller / W6 supplies it,
     /// exactly as the op.rs bank tests call `change_opcode` with an explicit
-    /// `TypeOp`).  SEAM(W6): `glb->inst[opc]`.
+    /// `TypeOp`).  STUB(W6): `glb->inst[opc]`.
     pub fn op_set_opcode(&mut self, op: OpId, t_op: TypeOp) {
         // obank.changeOpcode(op, glb->inst[opc]);
         self.obank_mut().change_opcode(op, t_op);
@@ -413,7 +413,7 @@ impl Funcdata {
     /// read.  Now that the funcdata_varnode factory has landed, the
     /// re-duplication is ported faithfully.
     ///
-    /// SEAM(W4): `cvn->copySymbol(vn)` propagates the original constant's
+    /// STUB(W4): `cvn->copySymbol(vn)` propagates the original constant's
     /// data-type and `SymbolEntry`/`typelock|namelock` markup onto the duplicate.
     /// The type-/symbol-propagation machinery (mapentry, `HighVariable`,
     /// `TypeFactory`) is W4/W6; until it lands the duplicate carries the unknown
@@ -619,7 +619,7 @@ impl Funcdata {
         } else {
             self.op_insert_before(addop, op);
         }
-        // SEAM(flat-stack): the SEGMENTOP container arm (glb->userops.getSegmentOp
+        // STUB(flat-stack): the SEGMENTOP container arm (glb->userops.getSegmentOp
         // on spc->getContain()) only fires for segmented spacebases; the flat x86
         // stack has no segment user-op, so addout is the reference directly.
         Ok(addout)
@@ -981,7 +981,7 @@ impl Funcdata {
     /// if a valid replacement was performed (the constant operand becomes `±1`
     /// adjusted and the op-code drops the `EQUAL`).
     ///
-    /// SEAM(W6): `opSetOpcode` resolves the new `INT_LESS`/`INT_SLESS` through the
+    /// STUB(W6): `opSetOpcode` resolves the new `INT_LESS`/`INT_SLESS` through the
     /// `glb->inst[opc]` table — routed through [`w6_type_op`](Funcdata::w6_type_op)
     /// with the verbatim typeop.cc opflags.
     ///
@@ -1044,7 +1044,7 @@ impl Funcdata {
         let res = val.wrapping_add(diff as u64) & kuna_base::address::calc_mask(size);
         // Varnode *newvn = newConstant(size,res);
         let newvn = self.new_constant(size, res);
-        // newvn->copySymbol(vn);  -- SEAM(W4): type/symbol propagation (see op_set_input).
+        // newvn->copySymbol(vn);  -- STUB(W4): type/symbol propagation (see op_set_input).
         // opSetInput(op,newvn,i);
         self.op_set_input(op, newvn, i)?;
         // op->setCanonicalLessequal();  -- (kuna) provenance recorder.
@@ -1123,7 +1123,7 @@ impl Funcdata {
     /// second input is a constant.  Distributes the coefficient to the `INT_ADD`
     /// inputs, turning `op` itself into the resulting `INT_ADD`.  Returns `true`.
     ///
-    /// SEAM(W6): `opSetOpcode` for the new `INT_MULT`/`INT_ADD` ops is routed
+    /// STUB(W6): `opSetOpcode` for the new `INT_MULT`/`INT_ADD` ops is routed
     /// through [`w6_type_op`](Funcdata::w6_type_op) (verbatim typeop.cc opflags).
     pub fn distribute_int_mult_add(&mut self, op: OpId) -> KunaResult<bool> {
         // PcodeOp *addop = op->getIn(0)->getDef();
@@ -1210,7 +1210,7 @@ impl Funcdata {
     /// the remaining (dominating) op.  If neither dominates, both are eliminated
     /// and a new op is built at a commonly accessible point (`findCommonBlock`).
     ///
-    /// SEAM(W6): `opSetOpcode(replace, op1->code())` for the freshly built op is
+    /// STUB(W6): `opSetOpcode(replace, op1->code())` for the freshly built op is
     /// routed through [`w6_type_op`](Funcdata::w6_type_op).
     pub fn cse_elimination(&mut self, op1: OpId, op2: OpId) -> KunaResult<OpId> {
         let par1 = self.obank().get(op1).expect("cse_elimination: stale op1").get_parent()
@@ -1384,7 +1384,7 @@ impl Funcdata {
         &self,
         op: OpId,
         vn: VarnodeId,
-        bl: crate::seams::BlockId,
+        bl: crate::context::BlockId,
         earliest: Option<OpId>,
     ) -> Option<OpId> {
         let outvn1 = self.obank().get(op).expect("cse_find_in_block: stale op").get_out();
@@ -1440,7 +1440,7 @@ impl Funcdata {
     /// The earliest op (by within-block order) in block `bl` that reads `vn`
     /// (C++ `BlockBasic::earliestUse`, `block.cc:2826`).  Returns `None` if no
     /// descendant of `vn` lies in `bl`.
-    pub fn block_earliest_use(&self, bl: crate::seams::BlockId, vn: VarnodeId) -> Option<OpId> {
+    pub fn block_earliest_use(&self, bl: crate::context::BlockId, vn: VarnodeId) -> Option<OpId> {
         let descend: Vec<OpId> =
             self.vbank().get(vn).expect("block_earliest_use: stale vn").descend_iter().collect();
         let mut res: Option<OpId> = None;
@@ -1618,21 +1618,21 @@ impl Funcdata {
 
     /// The HighVariable of `vn` (C++ `vn->getHigh()`), via the public banks so
     /// the for-loop helpers below need no access to the merge-bank private API.
-    fn vn_high_pub(&self, vn: VarnodeId) -> Option<crate::seams::HighVariableId> {
+    fn vn_high_pub(&self, vn: VarnodeId) -> Option<crate::context::HighVariableId> {
         self.vbank().get(vn).and_then(|v| v.get_high())
     }
     /// `high->isMark()` via the public high bank.
-    fn high_is_mark_pub(&self, high: crate::seams::HighVariableId) -> bool {
+    fn high_is_mark_pub(&self, high: crate::context::HighVariableId) -> bool {
         self.high_bank().get(high).map(|h| h.is_mark()).unwrap_or(false)
     }
     /// `high->setMark()` via the public high bank.
-    fn bank_set_mark_pub(&mut self, high: crate::seams::HighVariableId) {
+    fn bank_set_mark_pub(&mut self, high: crate::context::HighVariableId) {
         if let Some(h) = self.high_bank_mut().get_mut(high) {
             h.set_mark();
         }
     }
     /// `high->clearMark()` via the public high bank.
-    fn bank_clear_mark_pub(&mut self, high: crate::seams::HighVariableId) {
+    fn bank_clear_mark_pub(&mut self, high: crate::context::HighVariableId) {
         if let Some(h) = self.high_bank_mut().get_mut(high) {
             h.clear_mark();
         }
@@ -1649,7 +1649,7 @@ impl Funcdata {
     fn high_mark_expression(
         &mut self,
         vn: VarnodeId,
-        high_list: &mut Vec<crate::seams::HighVariableId>,
+        high_list: &mut Vec<crate::context::HighVariableId>,
     ) -> int4 {
         let high = self.vn_high_pub(vn).expect("high_mark_expression: vn has no high");
         self.bank_set_mark_pub(high);
@@ -1743,7 +1743,7 @@ impl Funcdata {
         }
         let rootvn =
             self.obank().get(op).unwrap().get_out().expect("op_move_respecting_cover: out");
-        let mut high_list: Vec<crate::seams::HighVariableId> = Vec::new();
+        let mut high_list: Vec<crate::context::HighVariableId> = Vec::new();
         let type_val = self.high_mark_expression(rootvn, &mut high_list);
         let mut cur_op = op;
         loop {
@@ -1793,7 +1793,7 @@ impl Funcdata {
     /// outputs are both heritaged (or null) are eliminated, the surviving output
     /// pushed onto `outlist`.
     ///
-    /// SEAM(W7): the C++ `isHeritaged(outvn)` is `heritage.heritagePass(addr)>=0`
+    /// STUB(W7): the C++ `isHeritaged(outvn)` is `heritage.heritagePass(addr)>=0`
     /// on the `Heritage` instance the C++ `Funcdata` owns.  This Rust `Funcdata`
     /// does not own a `Heritage` yet (W7 heritage-deps), so the heritaged test is
     /// passed in as the `is_heritaged` predicate — the W7 caller supplies
@@ -1910,7 +1910,7 @@ impl Funcdata {
     ///
     /// `obank.markAlive(op); bl->insert(iter,op);` — the block insert is the
     /// cross-arena [`bb_insert_op`](Funcdata::bb_insert_op).
-    pub fn op_insert(&mut self, op: OpId, bl: crate::seams::BlockId, before: Option<OpId>) {
+    pub fn op_insert(&mut self, op: OpId, bl: crate::context::BlockId, before: Option<OpId>) {
         // obank.markAlive(op);
         self.obank_mut().mark_alive(op);
         // bl->insert(iter,op);
@@ -2115,7 +2115,7 @@ impl Funcdata {
     /// Insert the given op immediately after `prev`, honoring the SSA op ordering
     /// invariants (C++ `Funcdata::opInsertAfter`, `funcdata_op.cc:373`).
     ///
-    /// SEAM(W3-varnode): the INDIRECT-marker redirect
+    /// STUB(W3-varnode): the INDIRECT-marker redirect
     ///
     /// ```text
     ///   if (prev->isMarker()) {
@@ -2137,7 +2137,7 @@ impl Funcdata {
     pub fn op_insert_after(&mut self, op: OpId, prev: OpId) {
         let mut prev = prev;
         // if (prev->isMarker()) { if INDIRECT { ... getOpFromConst ... } }
-        //   -- SEAM(W3-varnode): getOpFromConst decode deferred (see doc).
+        //   -- STUB(W3-varnode): getOpFromConst decode deferred (see doc).
         if self.obank().get(prev).expect("op_insert_after: stale prev").is_marker()
             && self.obank().get(prev).expect("op_insert_after").code() == OpCode::CPUI_INDIRECT
         {
@@ -2219,7 +2219,7 @@ impl Funcdata {
     /// Insert the given op as the \e first op in the basic block, honoring the
     /// MULTIEQUAL-first invariant (C++ `Funcdata::opInsertBegin`,
     /// `funcdata_op.cc:413`).
-    pub fn op_insert_begin(&mut self, op: OpId, bl: crate::seams::BlockId) {
+    pub fn op_insert_begin(&mut self, op: OpId, bl: crate::context::BlockId) {
         // iter = bl->beginOp();
         let mut point: Option<OpId> = self.bb_op_head(bl);
         // if (op->code()!=MULTIEQUAL) { while(iter!=endOp()) { if (*iter != MULTIEQUAL) break; ++iter; } }
@@ -2241,7 +2241,7 @@ impl Funcdata {
 
     /// Insert the given op as the \e last op in the basic block, honoring the
     /// branch-last invariant (C++ `Funcdata::opInsertEnd`, `funcdata_op.cc:435`).
-    pub fn op_insert_end(&mut self, op: OpId, bl: crate::seams::BlockId) {
+    pub fn op_insert_end(&mut self, op: OpId, bl: crate::context::BlockId) {
         // iter = bl->endOp();
         // if (iter != bl->beginOp()) { --iter; if (!(*iter)->isFlowBreak()) ++iter; }
         let head = self.bb_op_head(bl);

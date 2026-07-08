@@ -26,7 +26,7 @@
 //! later rule items, dereference the W6 `Datatype`/`TypeStruct`/`TypeBitField`
 //! and W4 `Symbol` surfaces, and the task scopes this item to "equality/term-
 //! order machinery".  They are NOT transcribed here; recorded as a loss so the
-//! ledger is visible.  // SEAM(W6) — see losses.
+//! ledger is visible.  // STUB(W6) — see losses.
 //!
 //! # API-surface adaptation (the "method needs the bank" pattern)
 //!
@@ -37,14 +37,14 @@
 //! yet ported on `varnode.rs` (W3) and this item does not own that file, so the
 //! comparator's term-order primitive lives here as the free fn [`term_order`]
 //! reading through the banks; it hoists to `Varnode::termOrder` when varnode.rs
-//! ports it.  // SEAM(W3-varnode) — see losses.
+//! ports it.  // STUB(W3-varnode) — see losses.
 
 use kuna_base::address::{calc_mask, signbit_negative};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::{get_booleanflip, OpCode};
 
 use crate::op::PcodeOpBank;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::varnode::VarnodeBank;
 
 // =============================================================================
@@ -93,7 +93,7 @@ impl PcodeOpNode {
     /// `expression.hh:54-58`): `a.op->getIn(a.slot)->getHigh() <
     /// b.op->getIn(b.slot)->getHigh()`.
     ///
-    /// SEAM(W7): `Varnode::getHigh` returns an `Option<HighVariableId>` that is
+    /// STUB(W7): `Varnode::getHigh` returns an `Option<HighVariableId>` that is
     /// `None` until merging builds the HighVariables (the C++ `getHigh()`
     /// likewise throws until then).  The `HighVariable *` pointer-order the C++
     /// compares is modelled by the `HighVariableId` `Ord`; until W7 every high is
@@ -105,7 +105,7 @@ impl PcodeOpNode {
         let bvn = obank.get(b.op).expect("compare_by_high: stale op").get_in(b.slot).expect("compare_by_high: null in");
         let ahigh = vbank.get(avn).expect("compare_by_high: stale vn").get_high();
         let bhigh = vbank.get(bvn).expect("compare_by_high: stale vn").get_high();
-        ahigh < bhigh // SEAM(W7): HighVariable order
+        ahigh < bhigh // STUB(W7): HighVariable order
     }
 }
 
@@ -718,7 +718,7 @@ impl TermOrder {
 /// peel off a leading `INT_MULT` by a constant coefficient and then compare by
 /// storage address.
 ///
-/// SEAM(W3-varnode): the canonical home is `Varnode::termOrder` on `varnode.rs`,
+/// STUB(W3-varnode): the canonical home is `Varnode::termOrder` on `varnode.rs`,
 /// which is not yet ported and this item does not own.  Transcribed here reading
 /// through the banks (the `op.rs` "method needs the bank" pattern); hoists to
 /// `Varnode::termOrder` when varnode.rs ports it.  // see losses

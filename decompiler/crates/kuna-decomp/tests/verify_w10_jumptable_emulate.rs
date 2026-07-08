@@ -22,7 +22,7 @@ use kuna_base::space::{
 
 use kuna_sleigh::loadimage::LoadImage;
 
-use kuna_decomp::seams::Architecture;
+use kuna_decomp::context::ArchContext;
 
 /// A trivial in-memory load image over a single base address, mirroring the
 /// corpus's read-only `<bytechunk>`.  `load_fill` copies the window's bytes,
@@ -72,9 +72,9 @@ fn manager(big_endian: bool) -> (Rc<AddrSpaceManager>, Rc<AddrSpace>) {
     (Rc::new(m), ram)
 }
 
-fn arch_with_image(big_endian: bool, base: u64, bytes: Vec<u8>) -> (Architecture, Rc<AddrSpace>) {
+fn arch_with_image(big_endian: bool, base: u64, bytes: Vec<u8>) -> (ArchContext, Rc<AddrSpace>) {
     let (manage, ram) = manager(big_endian);
-    let mut arch = Architecture::new_shared(manage);
+    let mut arch = ArchContext::new_shared(manage);
     arch.loader = Some(Rc::new(RefCell::new(
         Box::new(MemImage { base, bytes }) as Box<dyn LoadImage>
     )));
@@ -120,7 +120,7 @@ fn w10_no_loader_is_a_caught_error_not_a_panic() {
     // A hand-built fixture without a shared loader must surface a LowlevelError,
     // never panic (the recovery treats it as a failed emulation path).
     let (manage, ram) = manager(false);
-    let arch = Architecture::new_shared(manage);
+    let arch = ArchContext::new_shared(manage);
     let addr = Address::new(Rc::clone(&ram), 0);
     assert!(arch.get_load_image_value(&addr, 4).is_err());
 }

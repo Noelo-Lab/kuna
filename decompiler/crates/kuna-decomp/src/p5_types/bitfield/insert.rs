@@ -24,7 +24,7 @@ use super::{BitFieldNodeState, BitFieldTransform, BitRange, ALLOWED_FINAL_WRITES
 use crate::dtype::{type_metatype, Datatype};
 use crate::expression::{pointer_equality, root_pointer};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use std::rc::Rc;
 
 /// `sizeof(uintb)` — the C++ `uintb` is `uint8`, i.e. 8 bytes.
@@ -617,7 +617,7 @@ impl BitFieldInsertTransform {
 
     /// Return true if specified bits in a Varnode are overwritten in the same
     /// basic block (C++ `BitFieldTransform::findOverwrite`, bitfield.cc:571-650).
-    fn find_overwrite(data: &Funcdata, vn: VarnodeId, bl: crate::seams::BlockId, range: &BitRange) -> bool {
+    fn find_overwrite(data: &Funcdata, vn: VarnodeId, bl: crate::context::BlockId, range: &BitRange) -> bool {
         let mut min_range = *range;
         min_range.minimize_container();
         let base_addr = data.vbank().get(vn).unwrap().get_addr().clone();

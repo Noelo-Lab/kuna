@@ -19,7 +19,7 @@
 //! The C++ writes to an `ostream`; the port appends to a `String` (the same
 //! ASCII text).  C++ `dec`/`hex` stream-state is made explicit per field.
 //!
-//! SEAM(W4): `print_varnode_vertex` calls `Varnode::printRawNoMarkup`, whose
+//! STUB(W4): `print_varnode_vertex` calls `Varnode::printRawNoMarkup`, whose
 //! register-name branch needs the W4 `Translate` (reached through `glb`).  That
 //! markup is supplied by the local [`GraphVarnodePrinter`] seam; the
 //! shortcut+offset fallback (`else` branch of the C++) is otherwise fully
@@ -32,7 +32,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::block::{block_get_start, block_get_stop, BlockGraph};
 use crate::funcdata::Funcdata;
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 /// Number of component blocks in the graph (C++ `BlockGraph::getSize`).
 ///
@@ -55,10 +55,10 @@ fn graph_block(graph: &BlockGraph, i: int4) -> BlockId {
 }
 
 // ---------------------------------------------------------------------------
-// SEAM(W4): the varnode register-markup printer.
+// STUB(W4): the varnode register-markup printer.
 // ---------------------------------------------------------------------------
 
-/// SEAM(W4): supplies the `Varnode::printRawNoMarkup` register-name markup that
+/// STUB(W4): supplies the `Varnode::printRawNoMarkup` register-name markup that
 /// needs the W4 `Translate`.
 ///
 /// The C++ `printRawNoMarkup` first tries `trans->getRegisterName(...)`; if the
@@ -120,7 +120,7 @@ fn push_dec_i32(s: &mut String, v: int4) {
 /// the C++ early-returns on null / already-marked / fspec / iop varnodes.
 fn print_varnode_vertex(
     data: &mut Funcdata,
-    vn: Option<crate::seams::VarnodeId>,
+    vn: Option<crate::context::VarnodeId>,
     s: &mut String,
     printer: &dyn GraphVarnodePrinter,
 ) {
@@ -225,7 +225,7 @@ fn dump_varnode_vertex(data: &mut Funcdata, s: &mut String, printer: &dyn GraphV
 
     // C++ `for(oiter=beginOpAlive(); ...; ++oiter)`: snapshot the alive order
     // so the mutable mark side-effects don't disturb iteration.
-    let alive: Vec<crate::seams::OpId> = data.obank().iter_alive().collect();
+    let alive: Vec<crate::context::OpId> = data.obank().iter_alive().collect();
     for &op in alive.iter() {
         let (out, code, num_input) = {
             let o = data.obank().get(op).expect("dump_varnode_vertex: stale op");
@@ -256,7 +256,7 @@ fn dump_varnode_vertex(data: &mut Funcdata, s: &mut String, printer: &dyn GraphV
 }
 
 /// Print one op vertex (C++ static `print_op_vertex`).
-fn print_op_vertex(data: &Funcdata, op: crate::seams::OpId, s: &mut String) {
+fn print_op_vertex(data: &Funcdata, op: crate::context::OpId, s: &mut String) {
     let o = data.obank().get(op).expect("print_op_vertex: stale op");
     s.push('o');
     push_dec_u32(s, o.get_time());
@@ -302,7 +302,7 @@ fn dump_op_vertex(data: &Funcdata, s: &mut String) {
 }
 
 /// Print the def/use edges for one op (C++ static `print_edges`).
-fn print_edges(data: &Funcdata, op: crate::seams::OpId, s: &mut String) {
+fn print_edges(data: &Funcdata, op: crate::context::OpId, s: &mut String) {
     let o = data.obank().get(op).expect("print_edges: stale op");
     let time = o.get_time();
     if let Some(vn) = o.get_out() {
@@ -361,7 +361,7 @@ fn dump_edges(data: &Funcdata, s: &mut String) {
 /// Serialize the data-flow graph of a function in Renoir format
 /// (C++ `dump_dataflow_graph`).
 ///
-/// SEAM(W4): the varnode register markup comes from `printer`.
+/// STUB(W4): the varnode register markup comes from `printer`.
 pub fn dump_dataflow_graph(data: &mut Funcdata, s: &mut String, printer: &dyn GraphVarnodePrinter) {
     s.push_str("*CMD=NewGraphWindow, WindowName=");
     s.push_str(data.get_name());
@@ -446,7 +446,7 @@ pub fn dump_dataflow_graph(data: &mut Funcdata, s: &mut String, printer: &dyn Gr
 // ---------------------------------------------------------------------------
 
 /// Print one basic-block vertex (C++ static `print_block_vertex`).
-fn print_block_vertex(graph: &BlockGraph, bl: crate::seams::BlockId, s: &mut String) {
+fn print_block_vertex(graph: &BlockGraph, bl: crate::context::BlockId, s: &mut String) {
     let blk = graph.block(bl);
     s.push(' ');
     push_dec_i32(s, blk.size_out());
@@ -463,7 +463,7 @@ fn print_block_vertex(graph: &BlockGraph, bl: crate::seams::BlockId, s: &mut Str
 
 /// Print the in-edges of one basic block as `inIndex blIndex` lines
 /// (C++ static `print_block_edge`).
-fn print_block_edge(graph: &BlockGraph, bl: crate::seams::BlockId, s: &mut String) {
+fn print_block_edge(graph: &BlockGraph, bl: crate::context::BlockId, s: &mut String) {
     let blk = graph.block(bl);
     let blindex = blk.get_index();
     for i in 0..blk.size_in() {
@@ -514,7 +514,7 @@ fn dump_block_edges(graph: &BlockGraph, s: &mut String) {
 }
 
 /// Print one dominator-tree edge (C++ static `print_dom_edge`).
-fn print_dom_edge(graph: &BlockGraph, bl: crate::seams::BlockId, s: &mut String, falsenode: bool) {
+fn print_dom_edge(graph: &BlockGraph, bl: crate::context::BlockId, s: &mut String, falsenode: bool) {
     let blk = graph.block(bl);
     let blindex = blk.get_index();
     match blk.get_immed_dom() {

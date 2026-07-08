@@ -4,7 +4,7 @@
 //! Each test hand-builds the input op pattern on a real [`Funcdata`] and asserts
 //! the exact transformation the C++ `applyOp` performs (opcode changes, input
 //! rewiring, created constants), plus negative tests exercising each early-out
-//! guard.  Rules whose body sits behind a cross-wave seam (the W3 output-creation
+//! guard.  Rules whose body sits behind a cross-wave stub (the W3 output-creation
 //! API, expression helpers, rangeutil, funcdata CSE/compare-form, heritage) are
 //! exercised only at their portable guards (they return 0 = no change), since the
 //! transforming body is deferred — see the module docs.
@@ -22,7 +22,7 @@ use kuna_num::opcodes::OpCode;
 
 use super::*;
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{Architecture, TypeOp, VarnodeId};
+use crate::context::{ArchContext, TypeOp, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 // -----------------------------------------------------------------------------
@@ -52,7 +52,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -353,7 +353,7 @@ fn ormask_full_mask_completes_copy_of_duplicated_constant() {
     // re-duplication guard in `opSetInput` is now ported (funcdata_op.rs), the
     // shared constant is re-duplicated into a fresh `newConstant` instead of being
     // aliased: the transform completes end-to-end (formerly a W3 constant-dup
-    // seam panic).
+    // stub panic).
     let mut fd = build_fd();
     let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_OR);
     let w = make_reg(&mut fd, 0x40, 4);
@@ -796,7 +796,7 @@ fn shiftbitops_add_with_right_shift_declines() {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn highorderand_constant_branch_declines_until_nzmask_seam() {
+fn highorderand_constant_branch_declines_until_nzmask_stub() {
     // The constant-`cvn2` branch requires `addop->getIn(0)` (xalign) to be
     // unaffected by the AND: `(xalign->getNZMask() & val) == xalign->getNZMask()`.
     // A heritage-known input register carries the full 64-bit NZ mask until the
@@ -1033,11 +1033,11 @@ fn min_max_use_tracks_subpiece_bytes() {
 }
 
 // -----------------------------------------------------------------------------
-// Seam-deferred rules: portable guards return 0 (no change)
+// Stub-deferred rules: portable guards return 0 (no change)
 // -----------------------------------------------------------------------------
 
 #[test]
-fn equality_defers_at_functional_equality_seam() {
+fn equality_defers_at_functional_equality_stub() {
     let mut fd = build_fd();
     let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_EQUAL);
     let a = make_reg(&mut fd, 0x40, 4);
@@ -1045,7 +1045,7 @@ fn equality_defers_at_functional_equality_seam() {
     wire_input(&mut fd, op, a, 0);
     wire_input(&mut fd, op, b, 1);
     let mut r = RuleEquality::new("analysis");
-    // functionalEquality is a seam -> rule declines without mutating.
+    // functionalEquality is a stub -> rule declines without mutating.
     assert_eq!(r.apply_op(op, &mut fd), 0);
     assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_EQUAL);
 }
@@ -1196,7 +1196,7 @@ fn earlyremoval_destroys_unused_op() {
 }
 
 #[test]
-fn selectcse_declines_at_csehash_seam() {
+fn selectcse_declines_at_csehash_stub() {
     let mut fd = build_fd();
     let op = make_op(&mut fd, 0x1000, OpCode::CPUI_SUBPIECE);
     let v = make_reg(&mut fd, 0x40, 4);

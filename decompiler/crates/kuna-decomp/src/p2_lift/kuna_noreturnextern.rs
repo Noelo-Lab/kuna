@@ -38,12 +38,12 @@
 //! at the decompiler flow seam so it catches the undefined-extern case the
 //! address-keyed pass cannot reach.
 //!
-//! ## SEAM(W4): the gate
+//! ## STUB(W4): the gate
 //!
 //!   - the **gate** `glb->noreturn_extern_calls` (default \b false, shipped
 //!     `option noreturn_extern off`): the Architecture-owned bool flipped by
 //!     `option noreturn_extern on|off`.  Read once at flow time on the main arch
-//!     (no ArchSeam copy — flow runs on the main arch, like
+//!     (no ArchContext copy — flow runs on the main arch, like
 //!     [`is_tail_call_branch`](crate::kuna_tailcalljump)).
 //!   - the **callee resolution** `query_call(dest)` (the resolved display name) is
 //!     done by the caller (`decompile_drive.rs`) and the name passed in here.

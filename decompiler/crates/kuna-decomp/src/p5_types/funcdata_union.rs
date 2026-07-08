@@ -27,7 +27,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
-use crate::seams::OpId;
+use crate::context::OpId;
 use crate::unionresolve::{ResolveEdge, ResolvedUnion};
 
 impl Funcdata {

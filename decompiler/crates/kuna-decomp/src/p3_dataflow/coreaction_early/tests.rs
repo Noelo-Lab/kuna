@@ -25,7 +25,7 @@ use kuna_num::opcodes::OpCode;
 
 use super::*;
 use crate::action::{ruleflags, ActionContext, ActionGroupList};
-use crate::seams::{Architecture, BlockId, OpId, TypeOp};
+use crate::context::{ArchContext, BlockId, OpId, TypeOp};
 
 // -----------------------------------------------------------------------------
 // Harness (mirrors funcdata_block.rs / action/tests.rs fixtures)
@@ -52,7 +52,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -183,7 +183,7 @@ fn normalizesetup_reset_sets_normalization() {
     act.reset(&mut fd);
     assert!(fd.is_normalization_on(), "reset must setNormalization(true)");
 
-    // apply body is the W4-seamed lock-stripping => no change count.
+    // apply body is the W4-stubbed lock-stripping => no change count.
     let res = act.apply(&mut fd, &mut ctx);
     assert_eq!(res, 0);
     assert_eq!(act.base().count, 0);
@@ -204,7 +204,7 @@ fn constbase_no_blocks_early_return() {
     assert_eq!(res, 0);
     assert_eq!(act.base().count, 0, "no blocks => no injected COPYs");
 
-    // With a block present the W4 inject/track surface is seamed => still 0.
+    // With a block present the W4 inject/track surface is stubbed => still 0.
     let root = fd.bblocks_root_pub();
     let _bb = fd.bblocks_mut().new_block_basic(root);
     let res = act.apply(&mut fd, &mut ctx);
@@ -390,11 +390,11 @@ fn determinedbranch_ignores_empty_and_non_cbranch_blocks() {
 }
 
 // -----------------------------------------------------------------------------
-// Seamed wrappers: apply is a clean no-op returning 0 (no panic)
+// Stubbed wrappers: apply is a clean no-op returning 0 (no panic)
 // -----------------------------------------------------------------------------
 
 #[test]
-fn seamed_wrappers_apply_cleanly() {
+fn stubbed_wrappers_apply_cleanly() {
     let mut fd = build_fd();
     let mut ctx = ActionContext::new();
     for mut act in [

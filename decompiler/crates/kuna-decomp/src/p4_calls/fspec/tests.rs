@@ -5,7 +5,7 @@
 //!
 //! Address spaces are built directly with `AddrSpace::new` (no manager wiring
 //! needed for the non-float-extension paths), and parameter entries with the
-//! `ParamEntry::seed` builder seam that runs the real post-decode resolution
+//! `ParamEntry::seed` builder hook that runs the real post-decode resolution
 //! chain.
 
 use std::rc::Rc;
@@ -829,7 +829,7 @@ fn single_small_out_model(reg: &Rc<AddrSpace>, mgr: &AddrSpaceManager) -> ParamL
 
 #[test]
 fn assign_map_standard_out_hidden_return_emits_indirect_output_plus_pointer_param() {
-    // w10-struct-return un-seam: a too-big (8-byte) return value that does not
+    // w10-struct-return de-stub: a too-big (8-byte) return value that does not
     // fit the model's 4-byte output register is returned through a hidden
     // pointer parameter (C++ `ParamListStandardOut::assignMap` fspec.cc:1584+).
     use crate::dtype::TypeFactoryImpl;
@@ -1478,7 +1478,7 @@ fn func_proto_return_bytes_consumed_takes_smallest() {
 }
 
 #[test]
-fn func_proto_seam_methods_error() {
+fn func_proto_stub_methods_error() {
     let mut fp = FuncProto::new();
     assert!(fp.set_scope().is_err());
     assert!(fp.update_input_types().is_err());
@@ -1496,7 +1496,7 @@ fn func_proto_seam_methods_error() {
 use crate::funcdata::Funcdata;
 use crate::kuna_restartlog::RestartLog;
 use crate::op::pcodeop_flags;
-use crate::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, OpId, TypeOp, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 /// A manager carrying const / unique / ram (code) / stack (spacebase) spaces,
@@ -1539,7 +1539,7 @@ fn fcs_manager() -> AddrSpaceManager {
 }
 
 fn fcs_fd() -> Funcdata {
-    let glb = Rc::new(Architecture::new(fcs_manager()));
+    let glb = Rc::new(ArchContext::new(fcs_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let entry = Address::new(ram, 0x1000);
     Funcdata::new("caller", "caller", glb, entry, 0x10000000, 0x40).unwrap()

@@ -32,7 +32,7 @@ use kuna_decomp::kuna_restartlog::{KunaRestartReason, RestartLog};
 use kuna_decomp::kuna_phases::{
     emit_settable_json, KunaPhase, KunaStrength, KunaSettable,
 };
-use kuna_decomp::seams::Architecture;
+use kuna_decomp::context::ArchContext;
 
 // A bare settable used to drive the JSON emitter with hand-built `values`.
 fn settable_with_values(values: &'static str, shipped: &'static str) -> KunaSettable {
@@ -278,7 +278,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd(name: &str, off: u64) -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, off);
     Funcdata::new(name, name, glb, addr, 0x10000000, 0x40).unwrap()

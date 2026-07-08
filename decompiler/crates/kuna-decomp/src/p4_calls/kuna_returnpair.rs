@@ -38,7 +38,7 @@
 //!   `ActionReturnRecovery` port (in `coreaction.cc`) calls one shared helper
 //!   instead of re-deriving the condition.
 //!
-//! ## SEAM(W4/W9) — the `ArchOption`/console wiring
+//! ## STUB(W4/W9) — the `ArchOption`/console wiring
 //!
 //! Upstream `OptionReturnPair : ArchOption` is registered with the option
 //! database and invoked by the console.  Wiring a new `ArchOption` subclass
@@ -47,7 +47,7 @@
 //! Until then the parse/decision is exposed as a free function; the live flag
 //! flows through [`Architecture::return_single`].  Noted in the structured losses.
 //!
-//! ## SEAM (cross-file) — the `buildReturnOutput` resize site
+//! ## STUB (cross-file) — the `buildReturnOutput` resize site
 //!
 //! `ActionReturnRecovery::buildReturnOutput` (the consumer of this gate) lives in
 //! `coreaction.cc`, which is not yet ported and is **outside this pack's owned

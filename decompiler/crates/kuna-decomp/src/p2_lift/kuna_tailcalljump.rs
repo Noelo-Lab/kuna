@@ -33,7 +33,7 @@
 //! (a `FlowEnvironment` predicate consulted inside `xref_control_flow`, gated by an
 //! Architecture bool flag).
 //!
-//! ## SEAM(W4): the gate + the symbol-table query
+//! ## STUB(W4): the gate + the symbol-table query
 //!
 //!   - the **gate** `glb->tail_call_jumps` (default \b false, shipped
 //!     `option tailcalljump off`): modelled by [`TailCallJumpOption`], whose
@@ -44,7 +44,7 @@
 //!     convention) and passed in as `dest_is_known_function` / `dest_is_self`.
 
 use crate::funcdata::Funcdata;
-use crate::seams::OpId;
+use crate::context::OpId;
 use kuna_base::marshal::ElementId;
 use kuna_num::opcodes::OpCode;
 
@@ -54,7 +54,7 @@ pub const ELEM_TAILCALLJUMP: ElementId = ElementId::new("tailcalljump", 4101);
 
 /// (kuna) Toggle `-O2` tail-jump recognition: `tailcalljump on|off`.
 ///
-/// SEAM(W4): the flag is carried as a plain `bool` whose [`Default`] mirrors the
+/// STUB(W4): the flag is carried as a plain `bool` whose [`Default`] mirrors the
 /// *shipped* default (`option tailcalljump off`, i.e. \b false — kept opt-in
 /// default-off because default-on regresses 2 datatests (`Long double #1/#2`),
 /// matching `Architecture::reset_defaults_internal`).  W9's option dispatch flips
@@ -109,8 +109,8 @@ impl TailCallJumpOption {
 /// entry there) and so never match.
 ///
 /// `dest_is_known_function` / `dest_is_self` are the already-resolved
-/// symbol-table queries (the v850 register-name SEAM convention; `decompile_drive`
-/// wires the real `query_call` / `fd.getAddress()` calls).  // SEAM(W4)
+/// symbol-table queries (the v850 register-name STUB convention; `decompile_drive`
+/// wires the real `query_call` / `fd.getAddress()` calls).  // STUB(W4)
 pub fn kuna_is_tail_call_branch(
     data: &Funcdata,
     op: OpId,

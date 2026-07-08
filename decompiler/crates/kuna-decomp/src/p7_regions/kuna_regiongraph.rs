@@ -33,7 +33,7 @@
 //! `int4 -> i32`); the one place the C++ relies on wrapping — the `_sort_edge`
 //! address-sum key, which detects 2^64 carry — is transcribed with [`Wrap`].
 //!
-//! ## SEAM(W7): the region payload
+//! ## STUB(W7): the region payload
 //!
 //! `KunaRegionNode` in C++ carries a `KunaGraphRegion *region` (the collapsed
 //! region payload, defined in `kuna_regionid.hh`).  `kuna_regionid` is not yet
@@ -45,11 +45,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uint4, uintb, Wrap};
 
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 /// Opaque handle to a collapsed region payload (C++ `KunaGraphRegion *`).
 ///
-/// SEAM(W7): `kuna_regionid`'s `KunaGraphRegion` is not yet ported; the graph
+/// STUB(W7): `kuna_regionid`'s `KunaGraphRegion` is not yet ported; the graph
 /// substrate only stores and copies this handle, never dereferences it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RegionPayloadId(pub u32);
@@ -94,7 +94,7 @@ pub struct KunaRegionNode {
     region: Option<RegionPayloadId>,
     /// `k_block`: does the wrapped block end with `CPUI_BRANCHIND`/`CPUI_CBRANCH`?
     ///
-    /// SEAM(W7): the C++ `endsWithBranchindOrCbranch` reaches
+    /// STUB(W7): the C++ `endsWithBranchindOrCbranch` reaches
     /// `FlowBlock::lastOp()->code()` live; the basic-block CFG never mutates
     /// during region identification, so the block-graph adapter
     /// ([`crate::kuna_regionid::KunaRegionIdentifier::build_from_block_graph`])
@@ -139,7 +139,7 @@ impl KunaRegionNode {
         self.block = Some(block);
     }
     /// `k_block`: does the wrapped block end with `CPUI_BRANCHIND`/`CPUI_CBRANCH`?
-    /// (SEAM(W7) precomputed predicate, see [`KunaRegionNode::branchy`]).
+    /// (STUB(W7) precomputed predicate, see [`KunaRegionNode::branchy`]).
     pub fn ends_with_branchind_or_cbranch(&self) -> bool {
         self.branchy
     }

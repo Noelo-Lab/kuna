@@ -10,8 +10,8 @@
 //!   - `specs()` registration and the `Rule`/`Action` group-clone contract.
 //!
 //! The mutation path (`execute`/`doReplacement`/`RuleOrPredicate::applyOp`'s
-//! op-creation tail) routes through the `opSetOutput` seam (LOSS-035/036) and is
-//! covered by a seam-pinning test that asserts the documented `Err`.
+//! op-creation tail) routes through the `opSetOutput` stub (LOSS-035/036) and is
+//! covered by a stub-pinning test that asserts the documented `Err`.
 
 use std::rc::Rc;
 
@@ -26,7 +26,7 @@ use crate::action::{Action, ActionGroupList, Rule};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 use super::{ActionConditionalExe, ConditionalExecution, MultiPredicate, RuleOrPredicate};
@@ -57,7 +57,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -578,12 +578,12 @@ fn action_apply_bails_on_unreachable_blocks() {
 }
 
 // =============================================================================
-// Seam pins (opSetOutput / W6 opSetOpcode)
+// Stub pins (opSetOutput / W6 opSetOpcode)
 // =============================================================================
 
 /// `RuleOrPredicate::applyOp` returns 0 (no change) when neither input is a
 /// zero-predicated MULTIEQUAL — the early `(test0==false)&&(test1==false)`
-/// return, reached without touching any seam.
+/// return, reached without touching any stub.
 #[test]
 fn orpredicate_noop_on_nonpredicate_inputs() {
     let mut fd = build_fd();
@@ -602,18 +602,18 @@ fn orpredicate_noop_on_nonpredicate_inputs() {
     assert_eq!(rule.apply_op(or, &mut fd), 0, "no predicate form => no change");
 }
 
-/// PIN the W6 opcode-resolution seam: building the predicate form and driving
+/// PIN the W6 opcode-resolution stub: building the predicate form and driving
 /// `applyOp` to the `opSetOpcode(op,CPUI_COPY)` step surfaces the documented
 /// `Err` from `resolve_typeop`; the public `apply_op` degrades it to 0.
 ///
 /// We reach the single-form (`checkSingle`) path: `result = tmp1 | val2` where
 /// tmp1 = MULTIEQUAL(COPY(#0), val1) and val2 plays the (val2==0)?val1:0 role.
 /// The discovery succeeds through `opSetInput`/`opSetOpcode`; with the W6
-/// `resolve_typeop` seam now closed (it resolves through the canonical
+/// `resolve_typeop` stub now closed (it resolves through the canonical
 /// `typeop::type_op_for` op-info table), `apply_op_inner` runs the rewrite to
 /// completion and returns `Ok`.
 #[test]
-fn orpredicate_single_form_applies_w6_seam_closed() {
+fn orpredicate_single_form_applies_w6_stub_closed() {
     let mut fd = build_fd();
     let condb = new_bb(&mut fd);
     let zero_bl = new_bb(&mut fd);
@@ -671,7 +671,7 @@ fn orpredicate_single_form_applies_w6_seam_closed() {
     fd.structure_reset();
 
     let rule = RuleOrPredicate::new("condexe");
-    // apply_op_inner now runs to completion (the W6 resolve_typeop seam is closed).
+    // apply_op_inner now runs to completion (the W6 resolve_typeop stub is closed).
     let res = rule.apply_op_inner(or, &mut fd);
     assert!(res.is_ok(), "discovery reaches opSetOpcode and now completes: {res:?}");
     assert_eq!(res.unwrap(), 1, "the OR-predicate rewrite reports a change");
@@ -680,7 +680,7 @@ fn orpredicate_single_form_applies_w6_seam_closed() {
 /// `new_unique_out` (the `newUniqueOut`→`opSetOutput` helper): the
 /// w4x-flow-linkage wave filled `Funcdata::op_set_output`, so this now creates
 /// a real unique-space output linked to the op (formerly the pinned
-/// LOSS-035/036 seam Err).
+/// LOSS-035/036 stub Err).
 #[test]
 fn condexe_new_unique_out_links_unique_output() {
     let mut fd = build_fd();

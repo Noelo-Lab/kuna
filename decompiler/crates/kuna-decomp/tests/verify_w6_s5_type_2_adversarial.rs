@@ -25,7 +25,7 @@ use std::rc::Rc;
 use kuna_decomp::dtype::{
     flags, type_metatype, Datatype, DatatypeKind, TypeBitField, TypeField,
 };
-use kuna_decomp::seams::OpId;
+use kuna_decomp::context::OpId;
 
 fn scalar(size: i32, align: i32, m: type_metatype) -> Rc<Datatype> {
     let mut dt = Datatype::new_with_align(size, align, m);

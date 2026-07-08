@@ -49,7 +49,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_decomp::flow::{FlowEnvironment, FlowInfo};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::op::pcodeop_flags;
-use kuna_decomp::seams::{Architecture as IrArch, TypeOp};
+use kuna_decomp::context::{ArchContext as IrArch, TypeOp};
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase};
 use kuna_decomp::xml_arch::{XmlArchitecture, XmlArchitectureCapability};
 
@@ -462,7 +462,7 @@ fn drive_real_flow_and_render(
 ///   `  OPNAME <out> <in0> <in1> ...`
 /// where varnodes render as `(space,0x<offset>,size)`, a missing output is `-`,
 /// and the LOAD/STORE slot-0 spaceid constant renders by space NAME.
-fn render_op(fd: &Funcdata, op: kuna_decomp::seams::OpId, manager: *const AddrSpaceManager) -> String {
+fn render_op(fd: &Funcdata, op: kuna_decomp::context::OpId, manager: *const AddrSpaceManager) -> String {
     let o = fd.obank().get(op).expect("stale op");
     let opc = o.code();
     let mut s = format!("  {} ", get_opname(opc));
@@ -487,7 +487,7 @@ fn render_op(fd: &Funcdata, op: kuna_decomp::seams::OpId, manager: *const AddrSp
 /// offset stores the engine-manager space INDEX, resolved via that manager).
 fn render_vn(
     fd: &Funcdata,
-    vn: kuna_decomp::seams::VarnodeId,
+    vn: kuna_decomp::context::VarnodeId,
     spaceid: bool,
     manager: *const AddrSpaceManager,
 ) -> String {

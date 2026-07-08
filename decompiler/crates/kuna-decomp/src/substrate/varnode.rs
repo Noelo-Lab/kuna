@@ -42,7 +42,7 @@ use smallvec::SmallVec;
 
 use crate::cover::{Cover, CoverContext};
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{HighVariableId, OpId, VarnodeId};
+use crate::context::{HighVariableId, OpId, VarnodeId};
 
 /// Boolean attributes of a [`Varnode`] (C++ `Varnode::varnode_flags`).
 ///
@@ -463,11 +463,11 @@ pub struct Varnode {
     /// Cached `SeqNum` of the defining op (C++ reads it live via
     /// `def->getSeqNum()`; the SeqNum is immutable for a given def, so the
     /// comparator keys cache it here to stay self-contained without the
-    /// op arena — SEAM(W3): set alongside `def`, kept in sync by the bank).
+    /// op arena — STUB(W3): set alongside `def`, kept in sync by the bank).
     def_seqnum: Option<SeqNum>,
-    /// High-level variable of which this is an instantiation (SEAM(W7))
+    /// High-level variable of which this is an instantiation (STUB(W7))
     high: Option<HighVariableId>,
-    /// Datatype associated with this varnode (SEAM(W6): minimal skeleton)
+    /// Datatype associated with this varnode (STUB(W6): minimal skeleton)
     type_: Rc<Datatype>,
     /// Temporary Datatype used during type propagation (C++ `union temp { Datatype
     /// *dataType; ... } temp` — the `dataType` field).  Set/read only by
@@ -479,7 +479,7 @@ pub struct Varnode {
     defiter: Option<DefKey>,
     /// Every op reading this varnode as input (C++ `list<PcodeOp *> descend`)
     descend: DescendVec,
-    /// Addresses covered by def->use of this Varnode (SEAM(W7))
+    /// Addresses covered by def->use of this Varnode (STUB(W7))
     cover: Option<Cover>,
     /// What parts of this varnode are used (C++ `uintb consumed`)
     consumed: uintb,
@@ -588,14 +588,14 @@ impl Varnode {
     /// the reading op.  Union mid-flow resolution (`needsResolution`/`findResolve`)
     /// is a deferred W8 surface, so when the type does not need resolution this is
     /// exactly `getType()` — faithful for the pointer/array/struct corpus (no
-    /// unions). // SEAM(W8 union findResolve)
+    /// unions). // STUB(W8 union findResolve)
     pub fn get_type_read_facing(&self, _op: OpId) -> &Rc<Datatype> {
         // if (!type->needsResolution()) return type; return type->findResolve(op, op->getSlot(this));
         &self.type_
     }
     /// C++ `Varnode::getTypeDefFacing()` (varnode.cc:645).  The def-facing analogue
     /// of [`get_type_read_facing`]; identical when the type does not need union
-    /// resolution. // SEAM(W8 union findResolve)
+    /// resolution. // STUB(W8 union findResolve)
     pub fn get_type_def_facing(&self) -> &Rc<Datatype> {
         &self.type_
     }
@@ -607,7 +607,7 @@ impl Varnode {
     /// `mapentry` link, so the partial-symbol arm is a documented seam — this
     /// returns the Varnode's own `type` when it `isPieceStructured()`, which is
     /// the full-Varnode case (a whole struct value flowing through a CONCAT tree).
-    /// // SEAM(W4): `mapentry->getSymbol()->getType()` partial path.
+    /// // STUB(W4): `mapentry->getSymbol()->getType()` partial path.
     pub fn get_structured_type(&self) -> Option<Rc<Datatype>> {
         // Datatype *ct; if (mapentry != 0) ct = mapentry->getSymbol()->getType(); else ct = type;
         let ct = &self.type_;
@@ -1110,11 +1110,11 @@ impl Varnode {
 
     /// C++ `setFlags` (`varnode.cc:371`): set the bits.  The HighVariable
     /// `flagsDirty`/`coverDirty` notification is reconciled at the Funcdata level
-    /// (see the block comment above) — SEAM(W7).
+    /// (see the block comment above) — STUB(W7).
     fn set_flags(&mut self, fl: uint4) {
         self.flags |= fl;
         // if (high != null) { high->flagsDirty(); if (fl&coverdirty) high->coverDirty(); }
-        //   -- SEAM(W7): high lives in Funcdata::high_bank; reconciled there.
+        //   -- STUB(W7): high lives in Funcdata::high_bank; reconciled there.
     }
 
     /// Copy the masked clone flags from a source Varnode onto `self`
@@ -1142,10 +1142,10 @@ impl Varnode {
     }
 
     /// C++ `clearFlags` (`varnode.cc:384`): clear the bits.  HighVariable
-    /// notification reconciled at the Funcdata level — SEAM(W7) (see set_flags).
+    /// notification reconciled at the Funcdata level — STUB(W7) (see set_flags).
     fn clear_flags(&mut self, fl: uint4) {
         self.flags &= !fl;
-        // SEAM(W7): HighVariable notification reconciled in Funcdata.
+        // STUB(W7): HighVariable notification reconciled in Funcdata.
     }
 
     /// C++ `setUnaffected`.
@@ -1418,9 +1418,9 @@ impl Varnode {
     /// Only the cases the W3 data-model can decide without an op/def graph are
     /// transcribed: the `useAnnotation` annotation case and the size-1 +
     /// `TYPE_BOOL` case.  The `def->code()` opcode test requires the PcodeOp
-    /// graph (SEAM(W3): op) and is deferred to the op-aware caller.
+    /// graph (STUB(W3): op) and is deferred to the op-aware caller.
     pub fn is_boolean_value(&self, use_annotation: bool) -> bool {
-        // if (isWritten()) return (def->code() == CPUI_...);  -- SEAM(W3): op
+        // if (isWritten()) return (def->code() == CPUI_...);  -- STUB(W3): op
         if self.is_written() {
             return false; // op-graph branch deferred to the op-aware caller
         }
@@ -1445,7 +1445,7 @@ impl Varnode {
             return false;
         }
         self.type_ = ct;
-        // if (high != null) high->typeDirty();  -- SEAM(W7)
+        // if (high != null) high->typeDirty();  -- STUB(W7)
         true
     }
 
@@ -1466,7 +1466,7 @@ impl Varnode {
             self.flags |= varnode_flags::typelock;
         }
         self.type_ = ct;
-        // if (high != null) high->typeDirty();  -- SEAM(W7)
+        // if (high != null) high->typeDirty();  -- STUB(W7)
         true
     }
 
@@ -1483,11 +1483,11 @@ impl Varnode {
     /// otherwise be `TYPE_UNKNOWN`).
     pub fn copy_symbol_fields(&mut self, src_type: Rc<Datatype>, src_flags: uint4) {
         self.type_ = src_type; // Copy any type
-        // mapentry = vn->mapentry;  -- SEAM(W4): no mapentry link in the merged tree
+        // mapentry = vn->mapentry;  -- STUB(W4): no mapentry link in the merged tree
         self.flags &= !(varnode_flags::typelock | varnode_flags::namelock);
         self.flags |= (varnode_flags::typelock | varnode_flags::namelock) & src_flags;
         // if (high != 0) { high->typeDirty(); if (mapentry) high->setSymbol(this); }
-        //   -- SEAM(W7): high typeDirty / setSymbol notification
+        //   -- STUB(W7): high typeDirty / setSymbol notification
     }
 }
 
@@ -1514,7 +1514,7 @@ fn same_space(a: &Address, b: &Address) -> bool {
 /// replaced by *constructed bound keys* in the range queries; no mutable
 /// search node is needed.
 ///
-/// SEAM: the def-op `SeqNum`/`getTime`/`getAddr` lookups used by `find` are
+/// STUB: the def-op `SeqNum`/`getTime`/`getAddr` lookups used by `find` are
 /// supplied through accessors the caller passes in (filled by `op`/`funcdata`,
 /// `w3-ir-op`).  The trees store the `SeqNum` in their keys so ordering is
 /// self-contained; only `find`'s exact `getTime` match needs to observe an op
@@ -1539,7 +1539,7 @@ pub struct VarnodeBank {
 /// A defining op's identity, as the [`VarnodeBank`] needs it to build keys for
 /// written varnodes (the def's `SeqNum`).
 ///
-/// SEAM(W3): the real `PcodeOp` (with `getSeqNum`/`getTime`/`getAddr`) is
+/// STUB(W3): the real `PcodeOp` (with `getSeqNum`/`getTime`/`getAddr`) is
 /// `op`'s.  The bank operations that turn a varnode *written* (`set_def`,
 /// `create_def`) take this small carrier so the def tree can sort on the op's
 /// SeqNum without naming `PcodeOp`.
@@ -1553,7 +1553,7 @@ pub struct DefOpInfo {
 
 /// Callback type for the `replace(oldvn, newvn)` op-rewiring that `xref`
 /// performs when it unifies a varnode with an equivalent existing one.  The
-/// real rewiring touches the op graph and is the caller's (SEAM(W3):
+/// real rewiring touches the op graph and is the caller's (STUB(W3):
 /// `funcdata`); the bank only sequences it.
 pub type ReplaceReads<'a> =
     dyn FnMut(&mut VarnodeBank, VarnodeId, VarnodeId) -> KunaResult<()> + 'a;
@@ -1565,7 +1565,7 @@ impl VarnodeBank {
     /// (`getUniqueStart(Translate::ANALYSIS)`); that Translate is the
     /// sleigh-runtime's but is not wired into the W3 data-model boot yet, so
     /// the analysis unique-start is passed in by the caller (`uniq_start`).
-    /// SEAM(W3): `funcdata`/`op` supply it from the program's Translate.
+    /// STUB(W3): `funcdata`/`op` supply it from the program's Translate.
     pub fn new(manage: &AddrSpaceManager, uniq_start: uintm) -> KunaResult<VarnodeBank> {
         let uniq_space = manage
             .get_unique_space()
@@ -1734,7 +1734,7 @@ impl VarnodeBank {
     ///
     /// `def` carries the op id and its `SeqNum` (the comparator's def order).
     /// The error addresses in the C++ are rendered with the op address (the
-    /// op-address accessor is SEAM(W3)); the error condition is identical.
+    /// op-address accessor is STUB(W3)); the error condition is identical.
     pub fn set_def(
         &mut self,
         vn: VarnodeId,
@@ -1889,7 +1889,7 @@ impl VarnodeBank {
     /// defined (C++ `find`).
     ///
     /// `uniq == None` means "don't care about uniq" (the C++ `~0` sentinel).
-    /// `def_addr_time` maps an `OpId` to its `(getAddr, getTime)` (SEAM(W3):
+    /// `def_addr_time` maps an `OpId` to its `(getAddr, getTime)` (STUB(W3):
     /// op), used to confirm the candidate's defining op matches `pc`/`uniq`.
     pub fn find(
         &self,

@@ -25,7 +25,7 @@
 //! 0003 `uintb -> u64`, `int4 -> i32`, `int8 -> i64`; the guard caps are
 //! computed in 64-bit exactly as the C++ adversarial review pinned them.
 //!
-//! # SEAM(W7): the `buildFromBlockGraph` / console-command surface
+//! # STUB(W7): the `buildFromBlockGraph` / console-command surface
 //!
 //! The C++ also exposes Input A (`buildFromBlockGraph`, which reads a decompiler
 //! `BlockGraph` read-only) and three console commands (`IfcKunaRegionTree`,
@@ -35,7 +35,7 @@
 //! off).  This port realizes the full identifier algorithm over the synthetic
 //! input API (`add_synthetic_block`/`add_synthetic_edge`), exactly what the
 //! `testkunaregion.cc` unit tests drive; the block-graph adapter and the
-//! console bindings are `// SEAM(W7)` (see `losses`).
+//! console bindings are `// STUB(W7)` (see `losses`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -171,7 +171,7 @@ pub trait KunaRegionVisitor {
     /// Called after a region's nodes (C++ `exitRegion`).
     fn exit_region(&mut self, _region: &KunaGraphRegion) {}
     /// Called for each leaf block: `(wrapped block, addr)` (C++ `visitBlock`).
-    fn visit_block(&mut self, block: Option<crate::seams::BlockId>, addr: uintb);
+    fn visit_block(&mut self, block: Option<crate::context::BlockId>, addr: uintb);
 }
 
 /// (kuna) The region identification analysis (port of angr's
@@ -303,11 +303,11 @@ impl KunaRegionIdentifier {
     /// Input A: build the working graph from a real basic-block CFG
     /// (C++ `KunaRegionIdentifier::buildFromBlockGraph`).
     ///
-    /// SEAM(W7): closes the block-graph adapter the C++ exposes for the
+    /// STUB(W7): closes the block-graph adapter the C++ exposes for the
     /// `IfcKunaRegion*` console commands.  Reads the decompiler's `bblocks`
     /// read-only — never mutated by this analysis-only pass — emitting one
     /// `k_block` node per basic block (keyed on its start address, carrying the
-    /// real [`crate::seams::BlockId`]) and one edge per CFG out-edge, with the
+    /// real [`crate::context::BlockId`]) and one edge per CFG out-edge, with the
     /// entry address set to the first block's start.
     ///
     /// Each node parks `endsWithBranchindOrCbranch` (the `lastOp()->code()`
@@ -339,7 +339,7 @@ impl KunaRegionIdentifier {
         // First pass: one k_block node per basic block, in CFG index order.  The
         // node carries the real BlockId and the precomputed branchy predicate;
         // map BlockId -> node so the edge pass can resolve CFG out-edges.
-        let mut node: StdBTreeMap<crate::seams::BlockId, KunaNodeId> = StdBTreeMap::new();
+        let mut node: StdBTreeMap<crate::context::BlockId, KunaNodeId> = StdBTreeMap::new();
         let mut entry_addr: Option<uintb> = None;
         for i in 0..size {
             let bl = fd.bblocks_get_block(i);
@@ -2294,7 +2294,7 @@ mod tests {
                 }
             }
         }
-        fn visit_block(&mut self, _block: Option<crate::seams::BlockId>, addr: uintb) {
+        fn visit_block(&mut self, _block: Option<crate::context::BlockId>, addr: uintb) {
             self.addrs.push(addr);
             // Record into every open cyclic region's body, and set the head of
             // the innermost open region from its first block.
@@ -2437,7 +2437,7 @@ mod tests {
     }
 
     //
-    // SEAM(W7) block-graph adapter coverage (Input A: build_from_block_graph)
+    // STUB(W7) block-graph adapter coverage (Input A: build_from_block_graph)
     //
 
     mod block_graph {
@@ -2452,7 +2452,7 @@ mod tests {
         use crate::funcdata::Funcdata;
         use crate::kuna_regionid::KunaRegionIdentifier;
         use crate::op::pcodeop_flags;
-        use crate::seams::{Architecture, BlockId, TypeOp};
+        use crate::context::{ArchContext, BlockId, TypeOp};
 
         fn build_manager() -> AddrSpaceManager {
             let mut m = AddrSpaceManager::new();
@@ -2475,7 +2475,7 @@ mod tests {
 
         fn build_fd() -> Funcdata {
             let manage = build_manager();
-            let glb = Rc::new(Architecture::new(manage));
+            let glb = Rc::new(ArchContext::new(manage));
             let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
             let addr = Address::new(ram, 0x1000);
             Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

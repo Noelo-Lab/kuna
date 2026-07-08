@@ -17,7 +17,7 @@
 //! and its body is exactly the blocks visited while that region is open).
 
 use kuna_decomp::kuna_regionid::{KunaGraphRegion, KunaRegionIdentifier, KunaRegionVisitor};
-use kuna_decomp::seams::BlockId;
+use kuna_decomp::context::BlockId;
 
 /// Collect every leaf block address (in walk order) and every cyclic region.
 ///

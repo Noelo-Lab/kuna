@@ -12,7 +12,7 @@
 //!     `LowlevelError` thrown from `assignMap` propagates.  The port routes
 //!     every error through `unassigned_err` (built as a *Lowlevel* variant) and
 //!     catches with a bare `Err(_)`, so a non-ParamUnassigned error (e.g. the
-//!     SEAM hidden-return path) is SWALLOWED instead of propagating.  (F1)
+//!     STUB hidden-return path) is SWALLOWED instead of propagating.  (F1)
 //!   - **`ScoreProtoModel::doScore` arithmetic** (fspec.cc:2743): the slot
 //!     comparator is slot-only (`sort_unstable_by_key`), the hole penalty table
 //!     saturates past index 4 (`penaltyfinal`), and the duplication branch
@@ -285,7 +285,7 @@ impl TypeFactory for VoidTypeFactory {
 
 /// C++ `assignParameterStorage(..., ignoreOutputError=true)` (fspec.cc:2437)
 /// catches ONLY `ParamUnassignedError`.  In the kuna port the output assign of
-/// a return value too big for the output register reaches the SEAM(W4)
+/// a return value too big for the output register reaches the STUB(W4)
 /// hidden-return path, which returns a *Lowlevel* error (NOT ParamUnassigned).
 ///
 /// After the F1 repair the catch is `Err(KunaError::ParamUnassigned { .. })`
@@ -299,7 +299,7 @@ fn assign_parameter_storage_ignore_output_propagates_nonparamunassigned_w6s4f2()
     let model = two_reg_proto_model(&mgr, &reg);
     let tf = VoidTypeFactory;
     // 8-byte return, only a 4-byte output register -> output assign fails ->
-    // hidden-return SEAM(W4) Lowlevel error.
+    // hidden-return STUB(W4) Lowlevel error.
     let proto = PrototypePieces {
         name: "f".to_string(),
         outtype: Some(int8_type()),
@@ -310,26 +310,26 @@ fn assign_parameter_storage_ignore_output_propagates_nonparamunassigned_w6s4f2()
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     // ignore_output_error = true: C++ catches ParamUnassignedError only.  A
-    // non-ParamUnassigned Lowlevel (seam) error must escape, NOT be swallowed.
+    // non-ParamUnassigned Lowlevel (stub) error must escape, NOT be swallowed.
     let r = model.assign_parameter_storage(&proto, &mut res, true, &tf, &mgr);
     assert!(
         matches!(r, Err(KunaError::Lowlevel { .. })),
-        "the SEAM Lowlevel error must propagate past the ParamUnassigned-only \
+        "the STUB Lowlevel error must propagate past the ParamUnassigned-only \
          catch (got {:?})",
         r
     );
 }
 
 /// `FuncProto::updateAllTypes` (fspec.cc:4199) calls `assignParameterStorage`
-/// with `ignoreOutputError=false`, so the SEAM(W4) hidden-return Lowlevel error
+/// with `ignoreOutputError=false`, so the STUB(W4) hidden-return Lowlevel error
 /// propagates INTO updateAllTypes' own `try`.  C++ catches ONLY
 /// `ParamUnassignedError`; a `LowlevelError` escapes `updateAllTypes` entirely.
 ///
 /// After the F1 repair the catch is `Err(KunaError::ParamUnassigned { .. })`
-/// only, so the SEAM Lowlevel error PROPAGATES out of `update_all_types` rather
+/// only, so the STUB Lowlevel error PROPAGATES out of `update_all_types` rather
 /// than being swallowed into `error_inputparam` — matching C++ control flow.
 #[test]
-fn update_all_types_propagates_seam_lowlevel_w6s4f1() {
+fn update_all_types_propagates_stub_lowlevel_w6s4f1() {
     let mgr = AddrSpaceManager::new();
     let reg = reg_space_le();
     let model = Rc::new(two_reg_proto_model(&mgr, &reg));
@@ -338,7 +338,7 @@ fn update_all_types_propagates_seam_lowlevel_w6s4f1() {
     let mut fp = FuncProto::new();
     fp.set_internal(Rc::clone(&model), void_type());
 
-    // 8-byte return -> output assign hits the SEAM hidden-return Lowlevel error.
+    // 8-byte return -> output assign hits the STUB hidden-return Lowlevel error.
     let proto = PrototypePieces {
         name: "g".to_string(),
         outtype: Some(int8_type()),

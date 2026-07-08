@@ -41,7 +41,7 @@
 //! user-op table (`glb->userops`, the CALLOTHER-injected check), the p-code
 //! injection library (`glb->pcodeinjectlib`), and the per-function `Override`
 //! hooks (`data.getOverride()`).  None of those live on the W3 `Architecture`
-//! skeleton ([`crate::seams::Architecture`]).
+//! skeleton ([`crate::context::ArchContext`]).
 //!
 //! Rather than half-wire them, this module declares a **local seam trait**
 //! [`FlowEnvironment`] carrying exactly the slice `FlowInfo` needs: the
@@ -53,7 +53,7 @@
 //! `Architecture`-backed impl by wiring the trait, without touching the ported
 //! algorithm bodies.
 //!
-//! ## Deferred surfaces (`// SEAM(W4)` / `// SEAM(W6)`) — losses
+//! ## Deferred surfaces (`// STUB(W4)` / `// STUB(W6)`) — losses
 //!
 //! The op-building emitter (C++ `PcodeEmitFd::dump`) needs `newVarnodeOut`
 //! (→ `opSetOutput` → the `(vbank,obank)` split-borrow accessor that only the
@@ -65,16 +65,16 @@
 //! `injectUserOp`/`inlineSubFunction`/the inline-clone family), `Override` hooks,
 //! and the `warning`/`warningHeader`/`removeUnreachableBlocks` reporting are all
 //! W4 subsystems — their methods are present as faithful skeletons that drive the
-//! W3-portable parts and return a precise [`KunaError`] / `// SEAM(W4)` note at
+//! W3-portable parts and return a precise [`KunaError`] / `// STUB(W4)` note at
 //! the subsystem boundary.  Recorded in the structured `losses`.
 //!
 //! ## GH-8817 V850 anchor (`flow.cc:278`)
 //!
 //! The kuna `xref_control_flow` anchor edit (reclassify a V850 `jmp [reg]` CALLIND
 //! to BRANCHIND for switch recovery) is transcribed; the `option
-//! v850indirectbranch` read is the `// SEAM(W4): ArchOption v850indirectbranch`
+//! v850indirectbranch` read is the `// STUB(W4): ArchOption v850indirectbranch`
 //! default-false predicate on [`FlowEnvironment`] (and the SPARC struct-return
-//! `// SEAM` anchor of `flow.cc:326` likewise).
+//! `// STUB` anchor of `flow.cc:326` likewise).
 
 use kuna_base::address::{Address, SeqNum};
 use kuna_base::error::{KunaError, KunaResult};
@@ -86,7 +86,7 @@ use std::collections::BTreeMap;
 use crate::funcdata::Funcdata;
 use crate::jumptable::RecoveryMode;
 use crate::op::pcodeop_flags;
-use crate::seams::{BlockId, OpId, TypeOp};
+use crate::context::{BlockId, OpId, TypeOp};
 
 /// Boolean options for flow following (C++ anonymous `enum` in `class FlowInfo`,
 /// `flow.hh:60-74`).  Verbatim transcription of the bit values.
@@ -126,7 +126,7 @@ pub mod flow_flags {
 
 /// The kuna flow-override modes (C++ `Override::NONE`/... , `override.hh`).
 ///
-/// SEAM(W4): the per-function `Override` subsystem (`override.{hh,cc}`) is W4;
+/// STUB(W4): the per-function `Override` subsystem (`override.{hh,cc}`) is W4;
 /// only the `NONE` sentinel is reached by `process_instruction`'s override branch,
 /// so the W3-portable shell carries the `NONE` discriminant and the
 /// [`FlowEnvironment::flow_override`] hook reports it.
@@ -190,7 +190,7 @@ pub trait FlowEnvironment {
     fn translate(&self) -> &dyn Translate;
 
     /// Resolve an [`OpCode`] to its behavioral-class [`TypeOp`]
-    /// (C++ `glb->inst[opc]`).  // SEAM(W6)
+    /// (C++ `glb->inst[opc]`).  // STUB(W6)
     ///
     /// The returned `TypeOp` must carry the op-code's property-flag word
     /// (`pcodeop_flags::branch`/`call`/`coderef`/`marker`/…) so that, after
@@ -200,7 +200,7 @@ pub trait FlowEnvironment {
     fn resolve_typeop(&self, opc: OpCode) -> TypeOp;
 
     /// Get the flow-override mode registered for `addr` (C++
-    /// `data.getOverride().getFlowOverride(addr)`).  // SEAM(W4)
+    /// `data.getOverride().getFlowOverride(addr)`).  // STUB(W4)
     ///
     /// The W3 shell always reports [`FlowOverride::NONE`].
     fn flow_override(&self, _addr: &Address) -> FlowOverride {
@@ -208,7 +208,7 @@ pub trait FlowEnvironment {
     }
 
     /// Does the function have any registered flow-override instructions (C++
-    /// `data.getOverride().hasFlowOverride()`).  // SEAM(W4)
+    /// `data.getOverride().hasFlowOverride()`).  // STUB(W4)
     fn has_flow_override(&self) -> bool {
         false
     }
@@ -309,7 +309,7 @@ pub trait FlowEnvironment {
     /// (kuna) GH-8817: is `op` a V850 `jmp [reg]` CALLIND to reclassify as
     /// BRANCHIND? (C++ `kunaIsV850IndirectJmp`).
     ///
-    /// // SEAM(W4): ArchOption v850indirectbranch — gated on `option
+    /// // STUB(W4): ArchOption v850indirectbranch — gated on `option
     /// v850indirectbranch on|off`, default \b false (upstream byte-identical).
     fn is_v850_indirect_jmp(&self, _fd: &Funcdata, _op: OpId) -> bool {
         false
@@ -317,7 +317,7 @@ pub trait FlowEnvironment {
 
     /// (kuna) GH-6882: is `op` a SPARC struct-return `unimp`-after-call trap
     /// BRANCHIND to drop as a fall-through no-op? (C++ `kunaIsSparcStructRetTrap`).
-    /// // SEAM(W4).
+    /// // STUB(W4).
     fn is_sparc_struct_ret_trap(&self, _fd: &Funcdata, _op: OpId) -> bool {
         false
     }
@@ -327,7 +327,7 @@ pub trait FlowEnvironment {
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
     /// callee)?  See [`kuna_tailcalljump`](crate::kuna_tailcalljump).
     ///
-    /// // SEAM(W4): ArchOption tailcalljump — gated on `option tailcalljump
+    /// // STUB(W4): ArchOption tailcalljump — gated on `option tailcalljump
     /// on|off`, default \b false (default-pipeline byte-identical).
     fn is_tail_call_branch(&self, _fd: &Funcdata, _op: OpId, _dest: &Address) -> bool {
         false
@@ -463,7 +463,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     flags: uint4,
     /// Number of discovered call sites (C++ `qlst.size()`).
     ///
-    /// SEAM(W4): the `FuncCallSpecs` objects themselves are W4; the count tracks
+    /// STUB(W4): the `FuncCallSpecs` objects themselves are W4; the count tracks
     /// the call-site cadence so the injection/`paramshift` bookkeeping order is
     /// preserved.
     qlst_count: usize,
@@ -593,7 +593,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     }
     /// Mark that there may be unreachable ops (C++ `setPossibleUnreachable`).
     ///
-    /// SEAM(W4): the sole W3-portable caller is [`inline_sub_function`](Self::inline_sub_function),
+    /// STUB(W4): the sole W3-portable caller is [`inline_sub_function`](Self::inline_sub_function),
     /// itself a W4 skeleton (no W3 caller yet); kept as the faithful private helper
     /// the W4 inline wave drives.
     #[allow(dead_code)]
@@ -896,17 +896,17 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// Generate warning or throw for out-of-bounds flow (C++ `handleOutOfBounds`,
     /// `flow.cc:537`).
     ///
-    /// SEAM(W4): the `data.warning`/`warningHeader` reporting is the W4 comment
+    /// STUB(W4): the `data.warning`/`warningHeader` reporting is the W4 comment
     /// store; the W3 shell sets the discovery flag and returns the error in the
     /// `error_outofbounds` case (faithful), suppressing only the warning text.
     fn handle_out_of_bounds(&mut self, fromaddr: &Address, toaddr: &Address) -> KunaResult<()> {
         if (self.flags & flow_flags::ignore_outofbounds) == 0 {
             let msg = Self::out_of_bounds_message(fromaddr, toaddr);
             if (self.flags & flow_flags::error_outofbounds) == 0 {
-                // data.warning(msg, toaddr);  -- SEAM(W4): warning store.
+                // data.warning(msg, toaddr);  -- STUB(W4): warning store.
                 if !self.has_out_of_bounds() {
                     self.flags |= flow_flags::outofbounds_present;
-                    // data.warningHeader("Function flows out of bounds");  -- SEAM(W4)
+                    // data.warningHeader("Function flows out of bounds");  -- STUB(W4)
                 }
             } else {
                 return Err(KunaError::lowlevel(msg));
@@ -933,7 +933,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// Generate warning/exception for a \e reinterpreted address (C++
     /// `reinterpreted`, `flow.cc:624`).
     ///
-    /// SEAM(W4): warning store; the `error_reinterpreted` exception is faithful.
+    /// STUB(W4): warning store; the `error_reinterpreted` exception is faithful.
     fn reinterpreted(&mut self, addr: &Address) -> KunaResult<()> {
         // iter = visited.upper_bound(addr); if (begin) return; --iter;
         let addr2 = match self.visited_last_le_owned(addr) {
@@ -963,7 +963,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
         if (self.flags & flow_flags::reinterpreted_present) == 0 {
             self.flags |= flow_flags::reinterpreted_present;
-            // data.warningHeader(s);  -- SEAM(W4)
+            // data.warningHeader(s);  -- STUB(W4)
         }
         Ok(())
     }
@@ -1000,7 +1000,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// each.  `start` here is the first op (in dead-list order) to delete; the
     /// dead-list slice from `start` to the end is the C++ `[oiter, endDead())`.
     ///
-    /// SEAM(W3-funcdata): `opDestroyRaw` needs `destroyVarnode` (funcdata_varnode);
+    /// STUB(W3-funcdata): `opDestroyRaw` needs `destroyVarnode` (funcdata_varnode);
     /// the `funcdata_op` wave's `op_destroy_raw` returns the seam error.  The set
     /// of ops to delete is computed faithfully; the destruction is deferred and
     /// recorded as a loss.  Returns the list of ops the C++ would have destroyed.
@@ -1023,7 +1023,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
         for op in victims {
             // data.opDestroyRaw(op);
-            //   -- SEAM(W3-funcdata): op_destroy_raw needs destroyVarnode; the
+            //   -- STUB(W3-funcdata): op_destroy_raw needs destroyVarnode; the
             //      funcdata_op wave defers it.  Propagate the seam error so the
             //      missing surface is explicit (faithful: the C++ destroys here).
             self.data.op_destroy_raw(op)?;
@@ -1043,7 +1043,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// The op-creation/classification order here is **observable** (it drives the
     /// SeqNum allocation and the basic-block start marks); transcribed exactly.
     ///
-    /// SEAM(W4): `setupCallSpecs`/`setupCallindSpecs` (the CALL/CALLIND cases) need
+    /// STUB(W4): `setupCallSpecs`/`setupCallindSpecs` (the CALL/CALLIND cases) need
     /// `FuncCallSpecs` (W4); those branches call the W4 skeletons, which return the
     /// seam note.  The CALLOTHER-injected check uses the [`FlowEnvironment`]
     /// predicate.  The `fc` injection-context parameter is the W4 `FuncCallSpecs *`.
@@ -1180,7 +1180,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     // (kuna) GH-6882: SPARC struct-return `unimp` after a call.
                     if self.env.is_sparc_struct_ret_trap(&self.data, curop) {
                         // data.opDestroyRaw(op); op = 0; isfallthru = true; break;
-                        //   -- SEAM(W3-funcdata): op_destroy_raw deferred (loss).
+                        //   -- STUB(W3-funcdata): op_destroy_raw deferred (loss).
                         self.data.op_destroy_raw(curop)?;
                         op = None;
                         *isfallthru = true;
@@ -1270,7 +1270,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     ///
     /// Returns `true` if the processed instruction has a fall-thru flow.
     ///
-    /// SEAM(W4)/SEAM(W3-funcdata): the actual op-building emitter
+    /// STUB(W4)/STUB(W3-funcdata): the actual op-building emitter
     /// ([`FlowEmit`]) defers `newVarnodeOut`/`newCodeRef`; when a decoded
     /// instruction needs either, this method surfaces the precise missing-surface
     /// error (the op shells are still created).  The `oneInstruction` decode, the
@@ -1294,10 +1294,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 // still runs after the too-many halt is planted), so the value has
                 // no observable effect; the load-bearing action is the halt.
                 self.artificial_halt(curaddr, pcodeop_flags::badinstruction)?;
-                // data.warning("Too many instructions -- Truncating flow here", curaddr);  -- SEAM(W4)
+                // data.warning("Too many instructions -- Truncating flow here", curaddr);  -- STUB(W4)
                 if !self.has_too_many_instructions() {
                     self.flags |= flow_flags::toomanyinstructions_present;
-                    // data.warningHeader("Exceeded maximum allowable instructions ...");  -- SEAM(W4)
+                    // data.warningHeader("Exceeded maximum allowable instructions ...");  -- STUB(W4)
                 }
             }
         }
@@ -1391,7 +1391,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     let step = *instruction_length;
                     if !self.has_unimplemented() {
                         self.flags |= flow_flags::unimplemented_present;
-                        // data.warningHeader("Control flow ignored unimplemented instructions");  -- SEAM(W4)
+                        // data.warningHeader("Control flow ignored unimplemented instructions");  -- STUB(W4)
                     }
                     Ok(step)
                 } else if (self.flags & flow_flags::error_unimplemented) != 0 {
@@ -1399,10 +1399,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 } else {
                     // Add infinite loop instruction (pretend size 1).
                     self.artificial_halt(curaddr, pcodeop_flags::unimplemented)?;
-                    // data.warning("Unimplemented instruction - Truncating control flow here", curaddr);  -- SEAM(W4)
+                    // data.warning("Unimplemented instruction - Truncating control flow here", curaddr);  -- STUB(W4)
                     if !self.has_unimplemented() {
                         self.flags |= flow_flags::unimplemented_present;
-                        // data.warningHeader("Control flow encountered unimplemented instructions");  -- SEAM(W4)
+                        // data.warningHeader("Control flow encountered unimplemented instructions");  -- STUB(W4)
                     }
                     Ok(1)
                 }
@@ -1412,10 +1412,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     Err(err) // rethrow
                 } else {
                     self.artificial_halt(curaddr, pcodeop_flags::badinstruction)?;
-                    // data.warning("Bad instruction - Truncating control flow here", curaddr);  -- SEAM(W4)
+                    // data.warning("Bad instruction - Truncating control flow here", curaddr);  -- STUB(W4)
                     if !self.has_bad_data() {
                         self.flags |= flow_flags::baddata_present;
-                        // data.warningHeader("Control flow encountered bad instruction data");  -- SEAM(W4)
+                        // data.warningHeader("Control flow encountered bad instruction data");  -- STUB(W4)
                     }
                     Ok(1)
                 }
@@ -1566,7 +1566,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// branch.  The `mark` discipline for de-duplicating BRANCHIND table edges is
     /// transcribed (the C++ `setMark`/`clearMark` over `block_edge` tails).
     ///
-    /// SEAM(W4): `data.findJumpTable(op)` (the BRANCHIND case) needs the W4
+    /// STUB(W4): `data.findJumpTable(op)` (the BRANCHIND case) needs the W4
     /// `JumpTable`; the W3 shell treats every BRANCHIND as having no table (the
     /// "partial flow analysis: assume no branches out" C++ path), which is exactly
     /// the C++ behavior when `findJumpTable` returns null.
@@ -1767,7 +1767,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// jump-table pipeline runner is available (the `build_and_follow_flow`
     /// caller, which owns `&mut Architecture` for the "jumptable" action set).
     /// `injectPcode`/`checkContainedCall`/`checkMultistageJumptables` remain
-    /// `// SEAM(W4)`.
+    /// `// STUB(W4)`.
     pub fn generate_ops(&mut self) -> KunaResult<()> {
         self.clear_properties();
         self.addrlist.push(self.data.get_address().clone());
@@ -1794,7 +1794,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// caller binds it to the real [`Architecture`]'s action root).  For each
     /// recovered table, `newAddress` re-fills as much flow as possible.
     ///
-    /// SEAM(W4): `checkContainedCall` / `checkMultistageJumptables` (the PIC /
+    /// STUB(W4): `checkContainedCall` / `checkMultistageJumptables` (the PIC /
     /// multistage outer loop) need the override table + FuncCallSpecs; the single
     /// recovery pass over the current `tablelist` is the load-bearing part for the
     /// corpus and runs fully.
@@ -1820,7 +1820,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     self.fallthru()?;
                 }
             }
-            // SEAM(W4): checkContainedCall + checkMultistageJumptables (outer
+            // STUB(W4): checkContainedCall + checkMultistageJumptables (outer
             // do/while) — the multistage/inline restart that could re-populate
             // tablelist is the W4 override table; the single pass suffices for the
             // corpus switches.
@@ -1831,7 +1831,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// Generate basic blocks from the raw control-flow (C++ `generateBlocks`,
     /// `flow.cc:826`).
     ///
-    /// SEAM(W4): `removeUnreachableBlocks` is the W4 structuring sweep; the new
+    /// STUB(W4): `removeUnreachableBlocks` is the W4 structuring sweep; the new
     /// entry-block insertion when the start block has incoming edges, and the
     /// fillin/collect/split/connect pipeline, are faithful.
     pub fn generate_blocks(&mut self) -> KunaResult<()> {
@@ -1852,7 +1852,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
         if self.has_possible_unreachable() {
-            // data.removeUnreachableBlocks(false, true);  -- SEAM(W4): structuring.
+            // data.removeUnreachableBlocks(false, true);  -- STUB(W4): structuring.
         }
         Ok(())
     }
@@ -1876,7 +1876,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// the inputs as parameters), and resolves the callee symbol via
     /// [`queryCall`](Self::query_call).
     ///
-    /// SEAM(W4): `Override::applyPrototype` and the no-return /
+    /// STUB(W4): `Override::applyPrototype` and the no-return /
     /// `checkForFlowModification` flow-modification family are W4; the proto query
     /// returns only the callee name (the full proto copy lands at
     /// `ActionDefaultParams` time, exactly as the C++ `queryCall` postpone notes).
@@ -2084,7 +2084,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             //         fc->setModel(evalfp);
             //     } else fc->setInternal(evalfp, voidtype);
             //   }
-            // RELOCATION SEAM(W4 callee-Funcdata copy): the C++ does this copy at
+            // RELOCATION STUB(W4 callee-Funcdata copy): the C++ does this copy at
             // ActionDefaultParams time; flow.cc:683-686 deliberately POSTPONES the
             // full copy from queryCall to ActionDefaultParams "so last-second
             // prototype changes can come in".  kuna performs the copy HERE instead
@@ -2318,7 +2318,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
             res = 1;
             // Clone any jumptables from the inline piece.
-            //   -- SEAM(W4): inlinefd->jumpvec is the recovered-table list; an
+            //   -- STUB(W4): inlinefd->jumpvec is the recovered-table list; an
             //      inline callee with a jumptable (none in the corpus) would clone
             //      them here.  No jumptable in the inline corpus, so this is empty.
             // flow.inlineClone(inlineflow, retaddr);
@@ -2501,7 +2501,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// injection (CALLOTHER).  Recursion is truncated so a sub-function is not
     /// in-lined more than once.
     ///
-    /// SEAM(W4): the payload-injection arms (`injectUserOp` / `injectSubFunction`,
+    /// STUB(W4): the payload-injection arms (`injectUserOp` / `injectSubFunction`,
     /// which need the `PcodeInjectLibrary` payload + `doInjection`) are deferred to
     /// the injection wave; the in-lining arm (`inlineSubFunction`) — the load-
     /// bearing path for `inline.xml` — is fully wired.
@@ -2756,7 +2756,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// is being inlined).  `run_pipeline` runs the "jumptable" action set on the
     /// partial Funcdata.
     ///
-    /// SEAM(W4): the `notreached` re-queue (a BRANCHIND not yet reachable through
+    /// STUB(W4): the `notreached` re-queue (a BRANCHIND not yet reachable through
     /// partial flow) needs the multistage outer loop; here every BRANCHIND in the
     /// list is attempted once (the corpus switches are reachable in one pass).
     #[allow(clippy::mutable_key_type)]
@@ -2816,7 +2816,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
         self.setup_callind_specs(op)?;
         // The no-return / thunk fc bookkeeping (fc->setBadJumpTable / setNoReturn /
-        // setInternal) is the W4 FuncCallSpecs surface -- SEAM(W4); the op-code
+        // setInternal) is the W4 FuncCallSpecs surface -- STUB(W4); the op-code
         // change to CALLIND is the load-bearing CFG effect.
         // Create an artificial return after the call.
         let return_type = if mode == RecoveryMode::FailCallother {
@@ -2828,12 +2828,12 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // C++ flow.cc:766/773 emits a warning in the callother/normal failure modes.
         match mode {
             RecoveryMode::FailCallother => {
-                // fc->setNoReturn(true) is the SEAM(W4) FuncCallSpecs surface.
+                // fc->setNoReturn(true) is the STUB(W4) FuncCallSpecs surface.
                 self.data.warning("Does not return", &addr);
             }
             RecoveryMode::FailThunk => {}
             _ => {
-                // fc->setBadJumpTable(true) is the SEAM(W4) FuncCallSpecs surface.
+                // fc->setBadJumpTable(true) is the STUB(W4) FuncCallSpecs surface.
                 self.data.warning("Treating indirect jump as call", &addr);
             }
         }

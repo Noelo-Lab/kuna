@@ -130,7 +130,7 @@ pub struct IfaceDecompData {
     /// seam the `Funcdata` (`dcp.fd`) is built later by `load function`/`load addr`
     /// (`build_and_follow_flow` makes a fresh one), so the pieces are stashed here
     /// when the named function symbol exists and applied at load time.
-    /// // SEAM(W4 queryFunction/FuncProto restore)
+    /// // STUB(W4 queryFunction/FuncProto restore)
     pub pending_prototypes:
         std::collections::BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
     /// Flow overrides installed by `override flow <addr> <type>`, keyed by
@@ -430,7 +430,7 @@ fn read_varnode(
     defsize: int4,
     pc: &kuna_base::address::Address,
     uq: uintm,
-) -> Result<Option<kuna_decomp::seams::VarnodeId>, String> {
+) -> Result<Option<kuna_decomp::context::VarnodeId>, String> {
     use kuna_base::address::SeqNum;
     use kuna_base::space::spacetype;
     let no_uq = uq == !0u32;
@@ -613,7 +613,7 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
             // symboltab), and `dcp.fd` is built later by `load function`.  So the
             // pieces are captured here and stashed (applied at load time) rather
             // than rejected — letting `parse line extern` take effect and the test
-            // proceed to decompile.  // SEAM(W4 queryFunction/FuncProto restore)
+            // proceed to decompile.  // STUB(W4 queryFunction/FuncProto restore)
             *captured.borrow_mut() = Some(pieces);
             Ok(())
         });
@@ -1658,7 +1658,7 @@ decomp_command!(
 /// constant we take its offset; otherwise we follow its single defining op and
 /// look for a constant input that is *not* the spacebase/zero base.  Returns the
 /// resolved code-space offset (the format-string VMA) or `None`.
-fn resolve_const_pointer(fd: &Funcdata, vn_id: kuna_decomp::seams::VarnodeId) -> Option<uintb> {
+fn resolve_const_pointer(fd: &Funcdata, vn_id: kuna_decomp::context::VarnodeId) -> Option<uintb> {
     let vn = fd.vbank().get(vn_id)?;
     if vn.is_constant() {
         return Some(vn.get_offset());
@@ -2909,7 +2909,7 @@ impl kuna_decomp::overrides::FuncProtoOverride for PiecesProtoOverride {
         // the W4 FuncProto-backed override lands.
     }
     fn encode(&self, _encoder: &mut dyn kuna_base::marshal::Encoder) -> kuna_base::error::KunaResult<()> {
-        // SEAM(W4): FuncProto::encode of an override is a debug/save surface absent
+        // STUB(W4): FuncProto::encode of an override is a debug/save surface absent
         // from the datatest corpus.
         Err(kuna_base::error::KunaError::lowlevel(
             "kuna rust port: prototype-override encode needs the W4 FuncProto::encode",

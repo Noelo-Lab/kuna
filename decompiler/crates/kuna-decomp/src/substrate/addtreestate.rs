@@ -19,7 +19,7 @@
 //! `buildTree` (`forceFacingType`/`inheritUnionField`) are guarded by
 //! `needs_resolution()`, which is `false` for plain pointers — faithful no-ops
 //! there.  The `warningHeader`/`warning` emit a comment (a print-markup surface,
-//! not part of the transform); those are SEAM-noted no-ops, only reachable on a
+//! not part of the transform); those are STUB-noted no-ops, only reachable on a
 //! distribution failure that does not occur on the targeted corpus.
 
 use std::rc::Rc;
@@ -31,7 +31,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// The mutable analysis state for one `RulePtrArith` application
 /// (C++ `class AddTreeState`).
@@ -41,7 +41,7 @@ pub struct AddTreeState<'a> {
     base_op: OpId,
     /// The slot of the pointer in the root op (C++ `baseSlot`).  Read by the C++
     /// `buildTree` union path (`inheritUnionField(..., baseOp, baseSlot)`), which
-    /// is a no-op for plain pointers here (SEAM(W8 union)); kept for faithful
+    /// is a no-op for plain pointers here (STUB(W8 union)); kept for faithful
     /// restoration when union mid-flow resolution lands.
     #[allow(dead_code)]
     base_slot: int4,
@@ -709,7 +709,7 @@ impl<'a> AddTreeState<'a> {
             self.calc_subtype();
         }
         if !self.valid {
-            // SEAM(print-markup): warningHeader emits a comment ("Problems
+            // STUB(print-markup): warningHeader emits a comment ("Problems
             // distributing in pointer arithmetic at <addr>"); the comment surface
             // is not part of the transform.  Only reachable on a distribution
             // failure (not exercised by the pointer/array/struct corpus).
@@ -797,7 +797,7 @@ impl<'a> AddTreeState<'a> {
         let newop = match newop {
             Some(o) => o,
             None => {
-                // SEAM(print-markup): data.warning("ptrarith problems", addr); comment
+                // STUB(print-markup): data.warning("ptrarith problems", addr); comment
                 // emission only — never reached when a multiple/subtype/extra exists.
                 return;
             }

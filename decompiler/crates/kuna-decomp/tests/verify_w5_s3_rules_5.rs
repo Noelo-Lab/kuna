@@ -7,7 +7,7 @@
 //!     routes through `get_booleanflip`, which returns *eight* op-codes besides
 //!     {COPY, INT_EQUAL, INT_NOTEQUAL, BOOL_NEGATE} (INT_SLESS<->INT_SLESSEQUAL,
 //!     INT_LESS<->INT_LESSEQUAL, FLOAT_EQUAL/NOTEQUAL/LESS/LESSEQUAL).  The
-//!     port's `type_op_seam` only knows the four; every other flip hits the
+//!     port's `type_op_lookup` only knows the four; every other flip hits the
 //!     `other => TypeOp::new(other, 0, ..)` fallback (flags = 0), so the flipped
 //!     op loses its C++ `opflags` (`binary | booloutput`).  C++
 //!     `opSetOpcode(flip_op, opc)` resolves `glb->inst[opc]`, which carries the
@@ -40,7 +40,7 @@ use kuna_decomp::op::pcodeop_flags;
 use kuna_decomp::ruleaction_5::{
     RuleBoolNegate, RuleEqual2Constant, RuleEqual2Zero, RuleSLess2Zero,
 };
-use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
 use kuna_num::opcodes::OpCode;
 
@@ -69,7 +69,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -150,7 +150,7 @@ fn in_of(fd: &Funcdata, op: OpId, slot: int4) -> VarnodeId {
 /// `glb->inst[CPUI_INT_SLESSEQUAL]`, whose opflags are `binary | booloutput`
 /// (typeop.cc).  After `setOpcode`, the def op is STILL a boolean output.
 ///
-/// The port's `type_op_seam(CPUI_INT_SLESSEQUAL)` hits the `other =>` fallback
+/// The port's `type_op_lookup(CPUI_INT_SLESSEQUAL)` hits the `other =>` fallback
 /// (flags = 0), so the def op ends with `booloutput` cleared.  This asserts the
 /// C++ contract (`is_bool_output()` after the flip); under the current port it
 /// FAILS — the divergence trace backing the finding.
@@ -185,7 +185,7 @@ fn boolnegate_sless_flip_keeps_booloutput_flag() {
     let flipped = fd.obank().get(flip).unwrap();
     assert!(
         flipped.is_bool_output(),
-        "flipped INT_SLESSEQUAL lost its booloutput flag: flags={:#x} (type_op_seam fallback set flags=0)",
+        "flipped INT_SLESSEQUAL lost its booloutput flag: flags={:#x} (type_op_lookup fallback set flags=0)",
         flipped.get_flags()
     );
     // And it must retain its binary flag.
@@ -223,7 +223,7 @@ fn boolnegate_less_flip_keeps_booloutput_flag() {
     );
 }
 
-/// Control: the `INT_EQUAL -> INT_NOTEQUAL` flip *is* in `type_op_seam`'s known
+/// Control: the `INT_EQUAL -> INT_NOTEQUAL` flip *is* in `type_op_lookup`'s known
 /// set, so the flipped op keeps `booloutput`.  This passes today and guards
 /// against a regression that would also break the handled case.
 #[test]

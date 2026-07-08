@@ -8,7 +8,7 @@
 //! aborts ("Too many branches").  When `option switchmodbound on`, the recovery
 //! re-bounds the table to `N` (resp. `mask+1`) entries.
 //!
-//! ## What this module owns vs. SEAM(W4)
+//! ## What this module owns vs. STUB(W4)
 //!
 //! The assigned C++ scope (`kuna_switchmodbound.cc/.hh`) contains **only** the
 //! `ElementId` and the `ArchOption` that sets the arch flag — *not* the recovery
@@ -20,7 +20,7 @@
 //! wave, on the `JumpBasic` model — see the loss note below; only the gate
 //! (`Architecture::switch_modulo_bound`, default off) is owned here.
 //!
-//! SEAM(W4): `JumpBasic::kunaTryModuloBoundTable` walks the strictly-linear
+//! STUB(W4): `JumpBasic::kunaTryModuloBoundTable` walks the strictly-linear
 //! chain `BRANCHIND <- LOAD( index*stride + base )` with `index` bounded by
 //! `% N` (`CPUI_INT_REM`/`CPUI_INT_SREM`) or `& mask` (`CPUI_INT_AND`, a clean
 //! `coveringmask`), allowing only the realigning ops `INT_ADD`/`INT_MULT`/
@@ -34,7 +34,7 @@
 /// (kuna) Toggle bounding a LOAD-table jumptable by a modulo/and-mask on its
 /// index (C++ `OptionSwitchModBound`, GH-9191).
 ///
-/// SEAM(W4): the C++ `OptionSwitchModBound::apply` flips
+/// STUB(W4): the C++ `OptionSwitchModBound::apply` flips
 /// `glb->switch_modulo_bound`; here the flag is carried as a plain `bool` whose
 /// [`Default`] is the *shipped* default (`option switchmodbound off`, i.e.
 /// \b false — upstream byte-identical; `architecture.cc:1440`).  W4's

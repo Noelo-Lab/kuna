@@ -51,7 +51,7 @@ use kuna_base::types::{int2, int4, uint4};
 
 use crate::cover::{Cover, PcodeOpSet};
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{HighVariableId, VarnodeId};
+use crate::context::{HighVariableId, VarnodeId};
 
 // =============================================================================
 // Arena keys for the VariableGroup / VariablePiece overlap model
@@ -2349,7 +2349,7 @@ mod tests {
         bank.get_mut(id).unwrap().highflags |= high_flags::coverdirty;
 
         let op_pt = |u: u64| CoverPoint::Op {
-            id: crate::seams::OpId::from(KeyData::from_ffi(u + 1)),
+            id: crate::context::OpId::from(KeyData::from_ffi(u + 1)),
             uindex: u as kuna_base::types::uintm,
             code: kuna_num::opcodes::OpCode::CPUI_COPY,
         };
@@ -2383,7 +2383,7 @@ mod tests {
     #[test]
     fn high_edge_order_and_cache() {
         let populate = || Vec::new();
-        let affects = |_: crate::seams::OpId, _: &kuna_base::address::Address| false;
+        let affects = |_: crate::context::OpId, _: &kuna_base::address::Address| false;
         let opset = PcodeOpSet::new(Box::new(populate), Box::new(affects));
         let mut test = HighIntersectTest::new(opset);
         let a = HighVariableId(1);
@@ -2401,7 +2401,7 @@ mod tests {
     #[test]
     fn move_intersect_tests_transfers_yes() {
         let populate = || Vec::new();
-        let affects = |_: crate::seams::OpId, _: &kuna_base::address::Address| false;
+        let affects = |_: crate::context::OpId, _: &kuna_base::address::Address| false;
         let opset = PcodeOpSet::new(Box::new(populate), Box::new(affects));
         let mut test = HighIntersectTest::new(opset);
         let high1 = HighVariableId(10);

@@ -33,7 +33,7 @@ use kuna_num::opcodes::OpCode;
 use crate::expression::PcodeOpNode;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 /// Description of a point in control-flow where a Varnode can propagate as a
 /// constant down a conditional branch (C++ `ActionConditionalConst::ConstPoint`,

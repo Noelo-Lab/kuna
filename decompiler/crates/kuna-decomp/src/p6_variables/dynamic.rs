@@ -49,7 +49,7 @@ use kuna_base::crc32::crc_update;
 use kuna_num::opcodes::OpCode;
 
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// Table for how to hash opcodes; lumps certain operators (e.g. ADD SUB PTRADD
 /// PTRSUB) into one hash.  Zero indicates the operator should be skipped
@@ -688,7 +688,7 @@ impl DynamicHash {
     /// (kuna GH-8467) the same-address collision budget `maxduplicates` is 8 by
     /// default and 16 when `dynamichashmax` is on.  The C++ reads the flag
     /// `fd->getArch()->dynamic_hash_maxdup_high` inline; the seam
-    /// [`Funcdata::get_arch`] does not carry kuna analysis flags (SEAM(W4) — the
+    /// [`Funcdata::get_arch`] does not carry kuna analysis flags (STUB(W4) — the
     /// same gate-threading the sibling kuna modules use), so the resolved
     /// budget is passed in.  Use
     /// [`DynamicHashMaxOption::max_duplicates`](crate::kuna_dynamichashmax::DynamicHashMaxOption::max_duplicates)

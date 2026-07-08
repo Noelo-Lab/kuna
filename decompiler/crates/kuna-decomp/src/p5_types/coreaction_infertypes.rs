@@ -49,7 +49,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::typeop::type_op_info;
 
 /// Resolve `op->outputTypeLocal()` / `op->inputTypeLocal(slot)` faithfully via the
@@ -147,7 +147,7 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
     // writes.  The guard mirrors the C++ exactly: non-VOID output type whose size
     // equals the input Varnode's size; otherwise the generic `getBase(size, UNKNOWN)`
     // default applies (the `bb == null` arm is implicit — a live RETURN op always has
-    // a parent).  The `has_store()` precondition is the W4 no-store SEAM guard: an
+    // a parent).  The `has_store()` precondition is the W4 no-store STUB guard: an
     // unrecovered proto has no output type to consult (typeop.cc:917 `getFuncProto`
     // is always backed by a store in C++; the merged tree may lack one).
     if opcode == OpCode::CPUI_RETURN && slot >= 1 && data.get_func_proto().has_store() {

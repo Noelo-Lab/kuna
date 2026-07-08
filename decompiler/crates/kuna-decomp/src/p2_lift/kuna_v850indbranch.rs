@@ -14,7 +14,7 @@
 //! driven by `flow.rs` at `FlowInfo::xrefControlFlow`; this module only owns
 //! the *decision*.
 //!
-//! ## SEAM(W4): Rule/Action + ArchOption wrappers
+//! ## STUB(W4): Rule/Action + ArchOption wrappers
 //!
 //! Two pieces of the C++ live on the W4 `Architecture` and are taken here as
 //! resolved inputs / a closure rather than reached through `glb`:
@@ -34,13 +34,13 @@
 use kuna_base::space::spacetype;
 
 use crate::funcdata::Funcdata;
-use crate::seams::OpId;
+use crate::context::OpId;
 use kuna_num::opcodes::OpCode;
 
 /// (kuna) Toggle V850 "jmp [reg]" CALLIND -> BRANCHIND reclassification
 /// (C++ `OptionV850IndirectBranch`, GH-8817).
 ///
-/// SEAM(W4): the C++ `OptionV850IndirectBranch::apply` flips
+/// STUB(W4): the C++ `OptionV850IndirectBranch::apply` flips
 /// `glb->v850_indirect_branch`; here the flag is carried as a plain `bool` whose
 /// [`Default`] is the *shipped* default (`option v850indirectbranch off`,
 /// i.e. \b false — upstream byte-identical).  W4's `ArchOption` registry plugs
@@ -100,7 +100,7 @@ impl V850IndirectBranchOption {
 /// `gate` is the resolved `glb->v850_indirect_branch` (see
 /// [`V850IndirectBranchOption`]).  `register_name` is the already-resolved
 /// `glb->translate->getRegisterName(...)` of `op`'s input-0 varnode: `None`
-/// transcribes the C++ empty string ("not a named register").  // SEAM(W4)
+/// transcribes the C++ empty string ("not a named register").  // STUB(W4)
 pub fn kuna_is_v850_indirect_jmp(
     data: &Funcdata,
     op: OpId,

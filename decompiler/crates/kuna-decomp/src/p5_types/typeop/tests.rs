@@ -516,18 +516,18 @@ fn register_instructions_vector_shape() {
     assert_eq!(populated, REGISTERED_OPCODES.len(), "no extra/missing slots");
 }
 
-/// `to_seam`/`type_op_for` carry the `(opcode, flags, name)` triple the W3 seam
+/// `to_type_op`/`type_op_for` carry the `(opcode, flags, name)` triple the W3
 /// `setOpcode` consumes — identical to what the per-wave local helpers built.
 #[test]
-fn seam_triple_matches_table() {
+fn type_op_triple_matches_table() {
     for &opc in REGISTERED_OPCODES {
         let info = type_op_info(opc);
-        let seam = type_op_for(opc);
-        assert_eq!(seam.get_opcode(), info.opcode);
-        assert_eq!(seam.get_flags(), info.opflags);
-        assert_eq!(seam.get_name(), info.name);
+        let triple = type_op_for(opc);
+        assert_eq!(triple.get_opcode(), info.opcode);
+        assert_eq!(triple.get_flags(), info.opflags);
+        assert_eq!(triple.get_name(), info.name);
     }
-    // Spot-check the literal the old `ruleaction_5::type_op_seam` produced for
+    // Spot-check the literal the old `ruleaction_5::type_op_lookup` produced for
     // INT_EQUAL: binary|booloutput|commutative, "==".
     let eq = type_op_for(OpCode::CPUI_INT_EQUAL);
     assert_eq!(eq.get_flags(), pf::binary | pf::booloutput | pf::commutative);

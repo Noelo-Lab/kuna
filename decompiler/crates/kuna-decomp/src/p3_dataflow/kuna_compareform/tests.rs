@@ -22,7 +22,7 @@ use kuna_base::types::{int4, uintb};
 
 use crate::action::ActionContext;
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{Architecture, TypeOp, VarnodeId};
+use crate::context::{ArchContext, TypeOp, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 fn build_manager() -> AddrSpaceManager {
@@ -48,7 +48,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let mut arch = Architecture::new(manage);
+    let mut arch = ArchContext::new(manage);
     // These unit fixtures drive the gate purely through the `ActionPresentCompareForm`
     // `enabled` constructor arg (the original seam-style contract); clear the
     // arch-flag default (DIV-2 default-on) so the flag does not also open the gate.

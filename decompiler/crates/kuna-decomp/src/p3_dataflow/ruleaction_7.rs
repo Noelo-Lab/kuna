@@ -18,19 +18,19 @@
 //!   (`funcdata_op.rs`: it needs a `banks_mut()` split-borrow for
 //!   `vbank.setDef`).  Rules that fabricate a *new* output Varnode
 //!   (`RuleSignNearMult`, `RulePtrFlow::truncatePointer`) match fully but bail at
-//!   the construction step.  // SEAM(W3-output)
+//!   the construction step.  // STUB(W3-output)
 //! * **`glb->inst[opc]`** — the `OpCode`→`TypeOp` resolver (W6).  The
 //!   [`typeop_for`] helper below is the local stand-in; it carries the exact
 //!   `opflags` from `typeop.cc` so downstream `isBoolOutput`/eval-type checks
 //!   stay faithful, but the `OpBehavior`/`addlflags` (e.g.
-//!   `isFloatingPointOp()`) are *not* modelled.  // SEAM(W6)
+//!   `isFloatingPointOp()`) are *not* modelled.  // STUB(W6)
 //! * **W4 subsystems** — `RuleSegment` needs `userops.getSegmentOp`,
 //!   `SegmentOp::execute`, `getSpaceFromConst`, and the `contiguous_test`/
 //!   `findContiguousWhole` expression helpers; `RulePtrFlow` needs the
 //!   `Architecture` (`glb`), `getDefaultCodeSpace`, and `isTruncated`;
 //!   `RuleConditionalMove` needs `opBoolNegate` and the
 //!   `CloneBlockOps` expression cloner.  These match as far as the available IR
-//!   surface allows and bail at the unported step.  // SEAM(W4)
+//!   surface allows and bail at the unported step.  // STUB(W4)
 //!
 //! `RuleIgnoreNan` is now fully ported (the comparison-based NaN removal +
 //! `nan_ignore_all` arm), folding the x87 status-word `(NAN||NAN||a<b)||
@@ -56,10 +56,10 @@ use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::expression::functional_equality;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{BlockId, OpId, TypeOp, VarnodeId};
+use crate::context::{BlockId, OpId, TypeOp, VarnodeId};
 
 // =============================================================================
-// SEAM(W6): glb->inst[opc] resolver
+// STUB(W6): glb->inst[opc] resolver
 // =============================================================================
 
 /// Resolve an [`OpCode`] to the singleton `TypeOp` the architecture caches in
@@ -69,7 +69,7 @@ use crate::seams::{BlockId, OpId, TypeOp, VarnodeId};
 /// exact `opflags` from `typeop.cc` for the op-codes these rules produce, so the
 /// op's cached property bits (eval-type, `booloutput`) match what the C++ would
 /// install.  The `addlflags`/`OpBehavior` are *not* modelled (a rule that wrote
-/// e.g. INT_SDIV does not gain its `arithmetic_op` addlflag here).  // SEAM(W6)
+/// e.g. INT_SDIV does not gain its `arithmetic_op` addlflag here).  // STUB(W6)
 fn typeop_for(opc: OpCode) -> TypeOp {
     use pcodeop_flags as f;
     // opflags transcribed verbatim from typeop.cc constructors.
@@ -639,7 +639,7 @@ impl Rule for RuleSignForm2 {
 /// `RuleSignNearMult` — simplify division form:
 /// `(V + (V s>> 0x1f)>>(32-n)) & (-1<<n)  =>  (V s/ 2^n) * 2^n`.
 ///
-/// // SEAM(W3-output): the transformation fabricates a new INT_SDIV op with a
+/// // STUB(W3-output): the transformation fabricates a new INT_SDIV op with a
 /// fresh unique output (`newOp` + `newUniqueOut`).  `newUniqueOut` routes through
 /// `Funcdata::opSetOutput`, which is the deferred split-borrow seam; the full
 /// pattern match is ported, the construction bails when the seam errors.
@@ -774,11 +774,11 @@ impl Rule for RuleSignNearMult {
         // data.opSetOpcode(newdiv,CPUI_INT_SDIV);
         data.op_set_opcode(newdiv, typeop_for(OpCode::CPUI_INT_SDIV));
         // Varnode *divvn = data.newUniqueOut(x->getSize(),newdiv);
-        // -- SEAM(W3-output): newUniqueOut -> opSetOutput (deferred split-borrow).
+        // -- STUB(W3-output): newUniqueOut -> opSetOutput (deferred split-borrow).
         let xsize = vn_size(data, x);
         let divvn = data.new_unique(xsize, None);
         if data.op_set_output(newdiv, divvn).is_err() {
-            return 0; // SEAM(W3-output): construction deferred; see module doc.
+            return 0; // STUB(W3-output): construction deferred; see module doc.
         }
         // data.opSetInput(newdiv,x,0);
         data.op_set_input(newdiv, x, 0).expect("signnearmult: newdiv in0");
@@ -1368,7 +1368,7 @@ impl RuleSignMod2nOpt2 {
     /// Verify an \e if block like `V = (V s< 0) ? V + 2^n-1 : V` (C++
     /// `RuleSignMod2nOpt2::checkMultiequalForm`).  Returns V or `None`.
     ///
-    /// // SEAM(W7): uses block topology (`getParent`, `getIn`, `sizeOut`/`sizeIn`,
+    /// // STUB(W7): uses block topology (`getParent`, `getIn`, `sizeOut`/`sizeIn`,
     /// `lastOp`, `getTrueOut`/`getFalseOut`).  The basic-block graph IS available
     /// (W3-block), so this is fully ported.
     fn check_multiequal_form(data: &Funcdata, op: OpId, npow: uintb) -> Option<VarnodeId> {
@@ -1572,7 +1572,7 @@ impl Rule for RuleSignMod2nOpt2 {
 
 /// `RuleSegment` — propagate constants through a SEGMENTOP.
 ///
-/// // SEAM(W4): needs `getSpaceFromConst`, `userops.getSegmentOp`,
+/// // STUB(W4): needs `getSpaceFromConst`, `userops.getSegmentOp`,
 /// `SegmentOp::execute`, `hasFarPointerSupport`, and the `contiguous_test`/
 /// `findContiguousWhole` expression helpers (none ported yet).  The body is a
 /// no-op until W4 fills these in; recorded as a loss.
@@ -1605,7 +1605,7 @@ impl Rule for RuleSegment {
     }
 
     fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
-        // SEAM(W4): SegmentOp *segdef =
+        // STUB(W4): SegmentOp *segdef =
         //   data.getArch()->userops.getSegmentOp(op->getIn(0)->getSpaceFromConst()->getIndex());
         // ... segdef->execute(bindlist) / hasFarPointerSupport / contiguous_test /
         // findContiguousWhole are all unported W4 surfaces.  No change here.
@@ -1620,7 +1620,7 @@ impl Rule for RuleSegment {
 /// `RulePtrFlow` — mark Varnode/PcodeOp objects carrying or operating on
 /// pointers (only installed when the default data space is truncated).
 ///
-/// // SEAM(W4): the constructor reads `glb->getDefaultDataSpace()->isTruncated()`
+/// // STUB(W4): the constructor reads `glb->getDefaultDataSpace()->isTruncated()`
 /// to decide `hasTruncations`; `applyOp` reaches `getSpaceFromConst`,
 /// `getDefaultCodeSpace`, and `truncatePointer` (which fabricates a SUBPIECE with
 /// a fresh output via `newUniqueOut`/`newVarnodeOut` — the W3-output seam).  The
@@ -1631,7 +1631,7 @@ pub struct RulePtrFlow {
     /// `hasTruncations` (C++ field).  Without W4's `getDefaultDataSpace()`, this
     /// item cannot compute it; defaulted to `false` so the rule installs nothing
     /// (its `getOpList` early-returns) — the faithful behavior on a non-truncated
-    /// architecture.  // SEAM(W4)
+    /// architecture.  // STUB(W4)
     has_truncations: bool,
 }
 
@@ -1639,7 +1639,7 @@ impl RulePtrFlow {
     /// Constructor (C++ `RulePtrFlow(g,conf)`), name "ptrflow".
     ///
     /// C++: `glb = conf; hasTruncations = glb->getDefaultDataSpace()->isTruncated();`
-    /// // SEAM(W4): `getDefaultDataSpace` unavailable; `has_truncations=false`.
+    /// // STUB(W4): `getDefaultDataSpace` unavailable; `has_truncations=false`.
     pub fn new() -> RulePtrFlow {
         RulePtrFlow { has_truncations: false }
     }
@@ -1740,13 +1740,13 @@ impl Rule for RulePtrFlow {
         let mut made_change = 0;
         match op_code(data, op) {
             OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
-                // SEAM(W4): spc = op->getIn(0)->getSpaceFromConst();
+                // STUB(W4): spc = op->getIn(0)->getSpaceFromConst();
                 //   if (vn->getSize() > spc->getAddrSize()) truncatePointer(...);  (W3-output)
                 //   then propagateFlowToDef(vn).  Deferred entirely.
                 return 0;
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_BRANCHIND => {
-                // SEAM(W4): spc = data.getArch()->getDefaultCodeSpace();
+                // STUB(W4): spc = data.getArch()->getDefaultCodeSpace();
                 //   if (vn->getSize() > spc->getAddrSize()) truncatePointer(...);  (W3-output)
                 return 0;
             }

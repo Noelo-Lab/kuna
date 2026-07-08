@@ -23,7 +23,7 @@
 //! structuring) are seam stubs, so the IR reaching the printer is *raw lifted
 //! p-code* (no HighVariables-with-symbols, no recovered types, **empty
 //! `sblocks`**, a `void NAME(void)` proto stub).  Printing it would emit non-C
-//! garbage, not byte-parity.  Those edges are `// SEAM(decompile-passes)`
+//! garbage, not byte-parity.  Those edges are `// STUB(decompile-passes)`
 //! (LOSS-130 / W10) and fall to the upstream pass items; the RPN engine they
 //! feed is in place.  The parity gate `tests/printc_parity.rs` measures this
 //! honestly: it decompiles + prints >= 8 corpus functions and byte-compares
@@ -44,7 +44,7 @@
 //!      `resetDefaultsPrintC` defaults (printc.cc:1649-1664, including the kuna
 //!      DIV-2 default-on `option_arraynotation`), and the `set*` toggles
 //!      (printc.hh:242-255).  These are the PrintC side of the options.cc
-//!      `// SEAM(W8)` markers (`setNULLPrinting`/`setInplaceOps`/… on the
+//!      `// STUB(W8)` markers (`setNULLPrinting`/`setInplaceOps`/… on the
 //!      print object).
 //!   5. **The self-contained constant/type formatting** — the byte-for-byte
 //!      token-string builders that the M2/M3 datatests match:
@@ -374,7 +374,7 @@ pub mod display_format {
 ///
 /// `resetDefaultsPrintC` (printc.cc:1649-1664) establishes the defaults; the
 /// `set*` methods (printc.hh:242-255) are the toggles wired from the options.cc
-/// `// SEAM(W8)` markers (`PrintC::setNULLPrinting(val)` etc.).  The kuna
+/// `// STUB(W8)` markers (`PrintC::setNULLPrinting(val)` etc.).  The kuna
 /// `arraynotation` toggle (printc.hh:250-251) and its DIV-2 default-on
 /// (printc.cc:1658) are carried here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -942,7 +942,7 @@ pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
 // stubs, so the IR reaching the printer is raw lifted p-code with no
 // HighVariables-with-symbols, no recovered types, and **empty `sblocks`**.
 // Printing it would emit non-C garbage, not byte-parity.  Those edges are
-// `// SEAM(decompile-passes)` (LOSS-130 / W10) and fall to the upstream pass
+// `// STUB(decompile-passes)` (LOSS-130 / W10) and fall to the upstream pass
 // items; the RPN engine they feed is in place here.
 //
 // The remaining data this module provides (the token table, negate links,
@@ -1138,7 +1138,7 @@ fn to_emit_brace(style: BraceStyle) -> EmitBraceStyle {
 /// → … → `closeBraceIndent` → `endFunction` → `flush` — driving the **real**
 /// [`Emit`] primitives.  The function **body** (`emitLocalVarDecls` +
 /// `emitBlockGraph`, the per-statement RPN expression emission) is the
-/// `// SEAM(W9-emit)` RPN/`Emit` driver documented in this module's header
+/// `// STUB(W9-emit)` RPN/`Emit` driver documented in this module's header
 /// (`pushVn`/`recurse`/`emitOp` against the IR), absent from the merged tree;
 /// the body slot emits a single seam-marker comment line so the C output is a
 /// structurally-complete, compilable-looking function shell (a real signature +
@@ -1249,7 +1249,7 @@ impl PrintC {
     /// Faithful transcription of the **shell** of C++ `PrintC::docFunction`
     /// (printc.cc:2790) + `emitFunctionDeclaration` (printc.cc:2726), driving
     /// the real [`Emit`] primitives.  The body (`emitBlockGraph`) is the
-    /// `// SEAM(W9-emit)` RPN driver; this emits a seam-marker line in its place.
+    /// `// STUB(W9-emit)` RPN driver; this emits a seam-marker line in its place.
     ///
     /// `display_name` is `fd->getDisplayName()`; `model_name` is the prototype
     /// model name when `printModelInDecl()` (None when the model is hidden);
@@ -1340,7 +1340,7 @@ impl PrintC {
         self.emit.output_str().to_string()
     }
 
-    // --- the options.cc `// SEAM(W8)` print setters (now wired) -----------
+    // --- the options.cc `// STUB(W8)` print setters (now wired) -----------
 
     /// C++ `PrintC::setNULLPrinting` (options.cc:444).
     pub fn set_null_printing(&mut self, val: bool) {
@@ -1364,7 +1364,7 @@ impl PrintC {
     }
     /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524).
     pub fn set_max_line_size(&mut self, _val: int4) -> KunaResult<()> {
-        // SEAM(W8 prettyprint): EmitNoMarkup ignores line size; EmitPrettyPrint
+        // STUB(W8 prettyprint): EmitNoMarkup ignores line size; EmitPrettyPrint
         // honours it.  Recorded so the option succeeds (the C++ validates the
         // range inside Emit::setMaxLineSize; the no-markup path is unbounded).
         Ok(())
@@ -1425,7 +1425,7 @@ impl PrintC {
     }
     /// C++ `PrintC::setCommentStyle` (options.cc:570).
     pub fn set_comment_style(&mut self, _style: &str) {
-        // SEAM(comment): the slash-star vs slash-slash comment delimiters live
+        // STUB(comment): the slash-star vs slash-slash comment delimiters live
         // with the comment item; recorded as a no-op so the option succeeds.
     }
 
@@ -1443,7 +1443,7 @@ impl PrintC {
     // seam stubs, so the IR reaching the printer is raw lifted p-code).  The
     // RPN *engine* below is therefore transcribed and unit-tested against
     // synthetic atoms/tokens (byte-faithful to `emitOp`/`emitAtom`/
-    // `parentheses`); the IR-leaf push is the `// SEAM(decompile-passes)`
+    // `parentheses`); the IR-leaf push is the `// STUB(decompile-passes)`
     // edge handed to the caller via [`push_atom`].
     // =====================================================================
 
@@ -1542,7 +1542,7 @@ impl PrintC {
     /// defining op (`defOp->getOpcode()->push`) and an explicit one becomes a
     /// leaf atom (`pushVnExplicit`).
     ///
-    /// SEAM(decompile-passes): the implied-op `push` dispatch and the explicit
+    /// STUB(decompile-passes): the implied-op `push` dispatch and the explicit
     /// `pushVnExplicit` symbol/constant resolution need the seamed
     /// Symbol/HighVariable/Datatype/TypeOp graph (absent in the merged tree).
     /// The `op_binary`/`op_unary` scaffold above therefore pushes already-
@@ -1559,7 +1559,7 @@ impl PrintC {
         while self.nodepend.len() > last_pending {
             if let Some(pend) = self.nodepend.pop() {
                 self.context.set_mods(pend.vnmod);
-                // SEAM(decompile-passes): no implied/explicit leaf expansion.
+                // STUB(decompile-passes): no implied/explicit leaf expansion.
             }
             self.pending = self.nodepend.len();
         }
@@ -1788,7 +1788,7 @@ impl PrintC {
 use crate::architecture::Architecture;
 use crate::cast::{CastContext, CastStrategy, CastStrategyC, OpRef, VnRef};
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 use kuna_num::opcodes::OpCode;
 
 /// One resolved member token of a partial-symbol access walk (C++
@@ -2092,8 +2092,8 @@ impl PrintC {
     pub fn emit_local_var_decls(&mut self, fd: &Funcdata, arch: &Architecture) -> bool {
         // Collect (name, type_name, storage_comment) for each named local high,
         // de-duplicated by high and ordered by name.
-        let mut decls: Vec<(crate::seams::HighVariableId, String)> = Vec::new();
-        let mut seen: std::collections::BTreeSet<crate::seams::HighVariableId> =
+        let mut decls: Vec<(crate::context::HighVariableId, String)> = Vec::new();
+        let mut seen: std::collections::BTreeSet<crate::context::HighVariableId> =
             std::collections::BTreeSet::new();
         // (kuna) The authoritative signature-parameter name set. The `is_param`
         // storage-containment test below false-positives on a LOCAL high that merely
@@ -2128,7 +2128,7 @@ impl PrintC {
             }
             s
         };
-        let vlist: Vec<crate::seams::VarnodeId> = fd.vbank().iter_loc().collect();
+        let vlist: Vec<crate::context::VarnodeId> = fd.vbank().iter_loc().collect();
         for vn in vlist {
             let high = match fd.vbank().get(vn).and_then(|v| v.get_high()) {
                 Some(h) => h,
@@ -2212,7 +2212,7 @@ impl PrintC {
             if is_global {
                 continue;
             }
-            // SEAM A — C++ `emitScopeVarDecls`: `if (entry->isPiece()) continue;`
+            // STUB A — C++ `emitScopeVarDecls`: `if (entry->isPiece()) continue;`
             // (printc.cc:2688) plus the multi-entry `getFirstWholeMap() != entry`
             // skip (printc.cc:2697).  A register-returned struct is split into
             // per-field proto-partial pieces (`RulePieceStructure`); each piece's
@@ -2244,7 +2244,7 @@ impl PrintC {
             if is_proto_partial_piece {
                 continue;
             }
-            // SEAM A (scalar analogue) — C++ `emitScopeVarDecls` walks the ScopeLocal
+            // STUB A (scalar analogue) — C++ `emitScopeVarDecls` walks the ScopeLocal
             // *Symbol* table ONCE per Symbol (printc.cc:2667/2696), so a tied SCALAR
             // local read at several widths (the int8 `local` of LOSS-245, accessed as
             // int4/int2 sub-fields that `mergeAddrTied`/`groupWith` grouped) yields ONE
@@ -2491,7 +2491,7 @@ impl PrintC {
         &self,
         fd: &Funcdata,
         arch: &Architecture,
-        high: crate::seams::HighVariableId,
+        high: crate::context::HighVariableId,
     ) -> (String, Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>) {
         let h = match fd.high_bank().get(high) {
             Some(h) => h,
@@ -3292,7 +3292,7 @@ impl PrintC {
     /// C++ `PrintC::emitBlockGoto` (printc.cc:2915): emit the block's body
     /// (no_branch) then the trailing `goto`/`break`/`continue` statement.
     ///
-    /// SEAM(W7): `BlockGoto::gotoPrints` consults `getParent()->nextFlowAfter` to
+    /// STUB(W7): `BlockGoto::gotoPrints` consults `getParent()->nextFlowAfter` to
     /// suppress a `goto` to the very next printed block; `nextFlowAfter` is not
     /// yet ported, so the goto is always emitted when a target is present (an
     /// over-emit, never an under-emit — a redundant `goto LAB_x;` to the
@@ -4235,7 +4235,7 @@ impl PrintC {
         // data-type to a unique allocation, so `Rc::ptr_eq` is the faithful identity
         // check.  As a structural fallback (the element types here are scalars whose
         // `compare` is implemented) a `compare == 0` also counts as equal; a compare
-        // SEAM (`Err`) is treated as not-equal (conservative: never collapses a cast
+        // STUB (`Err`) is treated as not-equal (conservative: never collapses a cast
         // it cannot prove redundant).
         let base_eq = std::rc::Rc::ptr_eq(&base0, &base1)
             || matches!(base0.compare(&base1, 10), Ok(0));
@@ -4287,7 +4287,7 @@ impl PrintC {
                                 // The virtual `getSubType` is `TypeSpacebase::getSubType`
                                 // (type.cc:3411) for a spacebase root — it indexes the
                                 // symbol-table Scope, which the bare `Datatype::get_sub_type`
-                                // cannot reach (it routes to a `SEAM(W6)` Err).  Route a
+                                // cannot reach (it routes to a `STUB(W6)` Err).  Route a
                                 // spacebase through `Funcdata::spacebase_get_sub_type` (the
                                 // ported `TypeSpacebase::getSubType`, funcdata_spacebase.rs),
                                 // exactly as the spacebase-PTRSUB cast wave does; every other
@@ -4593,7 +4593,7 @@ impl PrintC {
     /// (printc.cc:809/822).  Resolved through the bare-Varnode facing accessors
     /// (the W10 printc convention: by print-time the merged HighVariable type is
     /// already pinned onto the Varnode, so `getTypeDefFacing`/`getTypeReadFacing`
-    /// equal the high-facing types the C++ reads). // SEAM(W8 union findResolve)
+    /// equal the high-facing types the C++ reads). // STUB(W8 union findResolve)
     fn sext_zext_facing_types(
         &self,
         fd: &Funcdata,
@@ -4811,7 +4811,7 @@ impl PrintC {
     /// `false` when nothing resolved (the C++ "Just push original op" arm), so the
     /// caller falls back to expanding the defining op.
     ///
-    /// SEAM(merge high-type retention): the C++ reads the *unresolved* union parent
+    /// STUB(merge high-type retention): the C++ reads the *unresolved* union parent
     /// off `vn->getHigh()->getType()`, then resolves the field through the cache.
     /// In the merged rust tree the implied Varnode's bare `get_type()` (the
     /// print-time high surface) has already been *updated* to the resolved field
@@ -6148,7 +6148,7 @@ impl PrintC {
     /// The SPACEBASE arm (a PTRSUB off a stack/global spacebase, requiring the
     /// Symbol/ScopeLocal surface) and the union arm are not on the pointer/array/
     /// struct corpus; they fall through to a functional render.
-    /// SEAM(W4 spacebase symbol) / SEAM(W8 union).
+    /// STUB(W4 spacebase symbol) / STUB(W8 union).
     /// C++ `PrintC::pushTypePointerRel` (printc.hh:372-377): a PTRSUB acting
     /// relative to a `TypePointerRel` parent prints the `ADJ(...)` macro — a
     /// `function_call` op wrapping the `ADJ` token (rendered `funcname_color`).
@@ -6973,8 +6973,8 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
 /// array-declarator fallback (GH-9184) so both anchor on the same Varnode.
 fn decl_rep_varnode(
     fd: &Funcdata,
-    high: crate::seams::HighVariableId,
-) -> Option<crate::seams::VarnodeId> {
+    high: crate::context::HighVariableId,
+) -> Option<crate::context::VarnodeId> {
     let h = fd.high_bank().get(high)?;
     (0..h.num_instances())
         .map(|i| h.get_instance(i))
@@ -7204,7 +7204,7 @@ fn realtype_unknown_base(size: int4, under_pointer: bool, long_is_8: bool) -> Op
     })
 }
 
-/// SEAM A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
+/// STUB A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
 /// (printc.cc:2697): is there a *whole-symbol* sibling high (the proto-partial
 /// ROOT) sharing `name` whose `kuna_symbol_offset == -1`?  A register-returned
 /// struct's per-field pieces are all bound to the root's shared name; the root
@@ -7214,7 +7214,7 @@ fn realtype_unknown_base(size: int4, under_pointer: bool, long_is_8: bool) -> Op
 /// piece itself (excluded so a lone whole high is not its own sibling).
 fn high_name_has_whole_sibling(
     fd: &Funcdata,
-    except: crate::seams::HighVariableId,
+    except: crate::context::HighVariableId,
     name: &str,
 ) -> bool {
     fd.high_bank().iter().any(|(id, h)| {
@@ -7232,7 +7232,7 @@ fn high_name_has_whole_sibling(
 /// lone partial that has no whole cover.
 fn high_name_has_scalar_whole_sibling(
     fd: &Funcdata,
-    except: crate::seams::HighVariableId,
+    except: crate::context::HighVariableId,
     name: &str,
 ) -> bool {
     fd.high_bank().iter().any(|(id, h)| {
@@ -7351,7 +7351,7 @@ fn cast_strategy_for(arch: &Architecture) -> Option<CastStrategyC> {
 ///
 /// Read-facing types resolve through the bare-Varnode accessor (the W10 print
 /// convention; by print-time the merged HighVariable type is pinned onto the
-/// Varnode). // SEAM(W8 union findResolve)
+/// Varnode). // STUB(W8 union findResolve)
 struct PrintCastContext<'a> {
     fd: &'a Funcdata,
     vn_intern: std::cell::RefCell<Vec<VarnodeId>>,
@@ -7468,7 +7468,7 @@ impl CastContext for PrintCastContext<'_> {
     fn vn_high_type(&self, vn: VnRef) -> std::rc::Rc<crate::dtype::Datatype> {
         let vnk = self.vn_key(vn);
         // Bare-Varnode type (the W10 print convention; high type pinned by
-        // print-time). // SEAM(W8 union findResolve)
+        // print-time). // STUB(W8 union findResolve)
         self.fd.vbank().get(vnk).expect("print cast ctx: stale vn").get_type().clone()
     }
 
@@ -7476,7 +7476,7 @@ impl CastContext for PrintCastContext<'_> {
         let vnk = self.vn_key(vn);
         let opk = self.op_key(op);
         // vn->getHighTypeReadFacing(op): bare read-facing type by print-time.
-        // // SEAM(W8 union findResolve)
+        // // STUB(W8 union findResolve)
         self.fd
             .vbank()
             .get(vnk)

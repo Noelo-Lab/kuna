@@ -57,7 +57,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::block::BlockKind;
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 /// Does Varnode `ptr` address `<base> + 0x28` (the x86-64 TLS canary slot)?
 /// (C++ `ptrIsCanarySlot`, `kuna_stackguard.cc:34`).
@@ -216,7 +216,7 @@ fn block_has_call(bb: BlockId, data: &Funcdata) -> bool {
 /// block.  Inert (returns 0) when the option is off or no canary is present.
 pub struct ActionStripStackGuard {
     base: ActionBase,
-    /// Resolved `glb->strip_stack_guard` gate (SEAM(W4); see module docs).  The
+    /// Resolved `glb->strip_stack_guard` gate (STUB(W4); see module docs).  The
     /// C++ reads `data.getArch()->strip_stack_guard` inline, but the seam
     /// [`Funcdata::get_arch`] does not carry kuna analysis flags, so — as in the
     /// sibling kuna Actions/Rules — the gate is resolved at construction.

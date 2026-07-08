@@ -38,7 +38,7 @@
 //! merged `rust-port` tree does not yet expose at the `Architecture` level (the
 //! same integration gap `ifacedecomp.rs` documents): the print language
 //! (`Architecture::print`, for `stage status`'s `arraynotation` line), the
-//! restart side-table (`Architecture`-owned `RestartLog`, `SEAM(W5)`), the
+//! restart side-table (`Architecture`-owned `RestartLog`, `STUB(W5)`), the
 //! reduced-pipeline decompile drive (`allacts.getCurrent()->reset/perform`,
 //! `clearAnalysis`), and `FlowBlock::nextFlowAfter` (for `BlockGoto::gotoPrints`
 //! in the `quality` metric). Each of these commands ports faithfully every part
@@ -53,7 +53,7 @@
 //!
 //! The S7 region commands (`region tree`/`blocks`/`walk`, C++ `IfcKunaRegion*`
 //! from `kuna_regionid.cc`) register through this capability in C++; their
-//! `buildFromBlockGraph` block-graph adapter is explicitly `SEAM(W7)` in the
+//! `buildFromBlockGraph` block-graph adapter is explicitly `STUB(W7)` in the
 //! ported `kuna_regionid` module, so they are registered with a placeholder that
 //! routes through [`engine_unavailable`] (see [`register_kuna_commands`]).
 //!
@@ -137,7 +137,7 @@ fn dcp_ref(status: &IfaceStatus) -> Option<&IfaceDecompData> {
 fn engine_unavailable(entry: &str) -> IfaceError {
     IfaceError::execution(format!(
         "engine integration not yet ported: {entry} (Architecture print/loader/context + the \
-         decompile drive and SEAM(W5/W7/W8) side-tables are a later W-item)"
+         decompile drive and STUB(W5/W7/W8) side-tables are a later W-item)"
     ))
 }
 
@@ -145,7 +145,7 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 /// `None` if it cannot be determined — port of `kuna_console.cc kunaLiveValue`.
 ///
 /// The C++ `arraynotation` reader dereferences `conf->print` (the owned
-/// `PrintC`); that accessor is `SEAM(W8)` in the merged tree (no `print` field
+/// `PrintC`); that accessor is `STUB(W8)` in the merged tree (no `print` field
 /// on [`Architecture`]), so `arraynotation` returns `None` here — exactly the
 /// `kunaLiveValue` `""` path that suppresses the `current` field. Every other
 /// option reads a flag/string that [`Architecture`] does expose, so the
@@ -440,7 +440,7 @@ impl IfaceCommandAction for IfcKunaStageMap {
 ///
 /// The first two lines (pipeline variant, compareform) read accessors the
 /// merged tree exposes; the third (`arraynotation`) dereferences `conf->print`
-/// (`SEAM(W8)`), which the architecture does not expose. Because the exact
+/// (`STUB(W8)`), which the architecture does not expose. Because the exact
 /// three-line output cannot be reproduced byte-for-byte today, the engine read
 /// is routed through [`engine_unavailable`] after the `No load image present`
 /// guard, exactly as the merged `ifacedecomp` commands do for unported `print`
@@ -781,7 +781,7 @@ impl IfaceCommandAction for IfcKunaAssert {
 /// C++ calls `kunaDumpRestarts(*status->fileoptr, *dcp->fd)` over the global
 /// restart side table; the ported [`kuna_decomp::kuna_restartlog::RestartLog`]
 /// is `Architecture`-owned, but the architecture does not yet hold one
-/// (`SEAM(W5)`: the log and its trigger sites land together), so the dump is
+/// (`STUB(W5)`: the log and its trigger sites land together), so the dump is
 /// routed through [`engine_unavailable`] after the `No function selected`
 /// guard.
 pub struct IfcKunaRestarts;
@@ -942,7 +942,7 @@ impl IfaceCommandAction for IfcKunaPipeline {
 /// The goto-count walk (`kunaCountGotos`) operates on the ported `BlockGraph` /
 /// `FlowBlock` arena, but the `goto nodes: N (printed: M)` line needs
 /// `BlockGoto::gotoPrints`, which depends on `FlowBlock::nextFlowAfter`
-/// (`SEAM(W7)`, unported). Because that exact line cannot be reproduced today,
+/// (`STUB(W7)`, unported). Because that exact line cannot be reproduced today,
 /// the metric is routed through [`engine_unavailable`] after the `No function
 /// selected` and `hasNoStructBlocks` guards (both fully expressible).
 pub struct IfcKunaQuality;
@@ -1087,7 +1087,7 @@ struct RegionWalkVisitor {
 }
 
 impl kuna_decomp::kuna_regionid::KunaRegionVisitor for RegionWalkVisitor {
-    fn visit_block(&mut self, _block: Option<kuna_decomp::seams::BlockId>, addr: u64) {
+    fn visit_block(&mut self, _block: Option<kuna_decomp::context::BlockId>, addr: u64) {
         self.out.push_str(&format!("walk 0x{addr:x}\n"));
     }
 }

@@ -36,7 +36,7 @@
 //! stub), and reaches the data-flow graph through `Funcdata`-mediated Varnode/
 //! PcodeOp accessors and the pure-virtual `push*`/`emit*` methods that `PrintC`
 //! supplies (also a separate W8 item).  Those methods are **seam-noted** here
-//! (`SEAM(printc/prettyprint)`) rather than transcribed against stubs: their
+//! (`STUB(printc/prettyprint)`) rather than transcribed against stubs: their
 //! bodies are byte-for-byte print logic that only becomes testable once the
 //! `Emit` trait and the `PrintC` virtuals exist, and they are wired in the W9
 //! m1-bodies closure together with the rest of `printc`.
@@ -52,7 +52,7 @@ use kuna_base::types::{int4, uint4, uintb};
 
 /// Syntax-highlight class for an emitted token.
 ///
-/// SEAM(prettyprint): this is `EmitMarkup::syntax_highlight` (prettyprint.hh:
+/// STUB(prettyprint): this is `EmitMarkup::syntax_highlight` (prettyprint.hh:
 /// 110-122), owned by the (stub) `prettyprint` module.  A forward placeholder is
 /// kept here — with the exact discriminants, which "must match constants in
 /// ClangToken" — so [`Atom`]'s `highlight` field is laid out faithfully before
@@ -225,7 +225,7 @@ pub struct ReversePolish {
     /// True if parentheses are required (C++ `paren`).
     pub paren: bool,
     /// The PcodeOp associated with the token (C++ `op`).
-    /// SEAM(printc): opaque op index; `None` where the C++ holds a null op.
+    /// STUB(printc): opaque op index; `None` where the C++ holds a null op.
     pub op: Option<usize>,
     /// The id of the token group this belongs to (C++ `id`).
     pub id: int4,
@@ -237,7 +237,7 @@ pub struct ReversePolish {
 /// `PrintLanguage::NodePending`, printlanguage.hh:196-204).
 #[derive(Debug, Clone)]
 pub struct NodePending {
-    /// The implied Varnode (C++ `vn`).  SEAM(printc): opaque varnode index.
+    /// The implied Varnode (C++ `vn`).  STUB(printc): opaque varnode index.
     pub vn: usize,
     /// The single operator consuming the implied Varnode (C++ `op`).
     pub op: usize,
@@ -255,7 +255,7 @@ impl NodePending {
 /// The meta-data a non-`casetoken` [`Atom`] carries beside its name (C++ union
 /// `Atom::ptr_second`, printlanguage.hh:216-221).  Carried as a Rust enum (a
 /// tagged union) so the right variant is statically tracked.  The pointer
-/// members are opaque indices (SEAM(printc)); `IntValue` is a real `uintb`.
+/// members are opaque indices (STUB(printc)); `IntValue` is a real `uintb`.
 #[derive(Debug, Clone, Copy)]
 pub enum AtomData {
     /// No associated data-flow annotation.
@@ -286,7 +286,7 @@ pub struct Atom {
     pub tag: TagType,
     /// The highlighting to use when emitting (C++ `highlight`).
     pub highlight: SyntaxHighlight,
-    /// A p-code operation associated with the token (C++ `op`).  SEAM(printc).
+    /// A p-code operation associated with the token (C++ `op`).  STUB(printc).
     pub op: Option<usize>,
     /// Other meta-data associated with the token (C++ union `ptr_second`).
     pub data: AtomData,
@@ -401,7 +401,7 @@ pub const OPEN_PAREN: &str = "(";
 pub const CLOSE_PAREN: &str = ")";
 
 /// Comment-type bits this base touches (C++ `Comment::*`, comment.hh).  Only the
-/// bits `resetDefaultsInternal` ORs together are needed here.  SEAM(comment): the
+/// bits `resetDefaultsInternal` ORs together are needed here.  STUB(comment): the
 /// full set lives in the (stub) `comment` module.
 pub mod comment_type {
     use super::uint4;
@@ -425,12 +425,12 @@ pub mod comment_type {
 /// since every method that touches them also drives `Emit` or the IR.
 ///
 /// Scopes are carried as opaque indices (a `const Scope *` in C++; the symbol
-/// table is W4).  SEAM(printc).
+/// table is W4).  STUB(printc).
 #[derive(Debug, Clone)]
 pub struct PrintContext {
     /// Printing modification stack (C++ `modstack`).
     modstack: Vec<uint4>,
-    /// The symbol scope stack (C++ `scopestack`).  SEAM(printc): opaque scope ids.
+    /// The symbol scope stack (C++ `scopestack`).  STUB(printc): opaque scope ids.
     scopestack: Vec<usize>,
     /// The current symbol scope (C++ `curscope`).  `None` when the stack is empty.
     curscope: Option<usize>,

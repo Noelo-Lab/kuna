@@ -14,7 +14,7 @@
 //!   architecture's `inst` table; the Rust [`Funcdata::op_set_opcode`] takes the
 //!   already-resolved [`TypeOp`].  W6 is not ported, so [`op_typeop`] is a local
 //!   resolver that builds a `TypeOp` carrying the upstream `typeop.cc` flag word
-//!   for exactly the opcodes this batch emits.  // SEAM(W6)
+//!   for exactly the opcodes this batch emits.  // STUB(W6)
 //! * **`newUniqueOut`/`newVarnodeOut`**: the C++ helpers create a free varnode
 //!   and make it the op's output via `opSetOutput`.  The Rust
 //!   [`Funcdata::op_set_output`] is blocked on a `banks_mut()` split-borrow the
@@ -22,18 +22,18 @@
 //!   readers yet) the `replace_reads` callback never fires, so [`new_unique_out`]
 //!   / [`new_varnode_out`] perform the `set_def` + `set_output` directly with a
 //!   no-op replace closure — correct precisely because the varnode is brand new.
-//!   // SEAM(W3): proper `op_set_output` once `banks_mut()` lands.
+//!   // STUB(W3): proper `op_set_output` once `banks_mut()` lands.
 //! * **`Varnode::copySymbol` / `copySymbolIfValid`**: copies the data-type,
 //!   symbol map-entry, and type/name lock flags.  These are W4/W6 symbol+type
 //!   surfaces (not ported); the structural transform is unaffected, only the
-//!   annotation of the new constant.  // SEAM(W6) — recorded as a loss.
+//!   annotation of the new constant.  // STUB(W6) — recorded as a loss.
 //! * **`RuleBooleanUndistribute`**: depends on `BooleanMatch::evaluate`
 //!   (`expression.cc`, a different wave's module — currently a stub) and
 //!   `Funcdata::opBoolNegate`.  The rule structure is transcribed in full;
 //!   `op_bool_negate` is implemented locally (it only needs the op factories),
 //!   but `is_match` routes the non-trivial comparison through the
 //!   [`boolean_match`] seam, which handles only the `vn1 == vn2` trivial case and
-//!   otherwise reports "uncorrelated".  // SEAM(W5-expression) — recorded as a
+//!   otherwise reports "uncorrelated".  // STUB(W5-expression) — recorded as a
 //!   loss.
 
 use kuna_base::address::{calc_mask, leastsigbit_set, signbit_negative, Address};
@@ -43,7 +43,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
 use crate::op::{is_cse_match, pcodeop_flags};
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
@@ -51,7 +51,7 @@ use crate::varnode::DefOpInfo;
 // =============================================================================
 
 /// Build the [`TypeOp`] singleton for an [`OpCode`] this batch emits
-/// (C++ `glb->inst[opc]`).  // SEAM(W6)
+/// (C++ `glb->inst[opc]`).  // STUB(W6)
 ///
 /// The flag word mirrors the corresponding `TypeOp*::TypeOp*` constructor in
 /// `decompiler/cpp/typeop.cc` (the bits `PcodeOp::setOpcode` caches into the
@@ -99,7 +99,7 @@ fn op_typeop(opc: OpCode) -> TypeOp {
 }
 
 /// `Funcdata::opSetOpcode(op, opc)` — resolve the [`OpCode`] to its [`TypeOp`]
-/// and hand it to the bank.  // SEAM(W6): `glb->inst[opc]`.
+/// and hand it to the bank.  // STUB(W6): `glb->inst[opc]`.
 fn op_set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
     data.op_set_opcode(op, op_typeop(opc));
 }
@@ -110,7 +110,7 @@ fn op_set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
 /// The C++ is `Varnode *tmp = newUnique(s); opSetOutput(op, tmp); return tmp;`.
 /// Because the new unique varnode has no readers, the `opSetOutput`
 /// def-rewiring (`vbank.setDef` + `replace_reads`) never repoints anything, so
-/// it is reproduced inline with a no-op replace closure.  // SEAM(W3)
+/// it is reproduced inline with a no-op replace closure.  // STUB(W3)
 fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
     let tmp = data.new_unique(s, None);
     set_fresh_output(data, op, tmp);
@@ -119,7 +119,7 @@ fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
 
 /// `Funcdata::newVarnodeOut(s, m, op)` — create a storage-addressed output for
 /// the (freshly created) op `op`.  Like [`new_unique_out`] the output is brand
-/// new, so the def-rewiring is a no-op.  // SEAM(W3)
+/// new, so the def-rewiring is a no-op.  // STUB(W3)
 fn new_varnode_out(data: &mut Funcdata, s: int4, m: &Address, op: OpId) -> VarnodeId {
     let tmp = data.new_varnode(s, m, None);
     set_fresh_output(data, op, tmp);
@@ -130,7 +130,7 @@ fn new_varnode_out(data: &mut Funcdata, s: int4, m: &Address, op: OpId) -> Varno
 ///
 /// Equivalent to the def-rewiring half of `Funcdata::opSetOutput` for the case
 /// where `vn` has no descendants (so the `replace_reads` callback is a no-op)
-/// and `op` currently has no output.  // SEAM(W3): subsumed by a proper
+/// and `op` currently has no output.  // STUB(W3): subsumed by a proper
 /// `op_set_output` once `Funcdata::banks_mut()` exists.
 fn set_fresh_output(data: &mut Funcdata, op: OpId, vn: VarnodeId) {
     debug_assert!(
@@ -153,7 +153,7 @@ fn set_fresh_output(data: &mut Funcdata, op: OpId, vn: VarnodeId) {
 ///
 /// Creates a `BOOL_NEGATE` of `vn` and inserts it before/after `op`, returning
 /// the negated output.  Implemented locally because it only needs the op
-/// factories (the wider `funcdata_op` port has not lifted it).  // SEAM(W3)
+/// factories (the wider `funcdata_op` port has not lifted it).  // STUB(W3)
 fn op_bool_negate(data: &mut Funcdata, vn: VarnodeId, op: OpId, insertafter: bool) -> VarnodeId {
     let addr = data.obank().get(op).expect("opBoolNegate: stale op").get_addr().clone();
     let negateop = data.new_op(1, addr);
@@ -790,7 +790,7 @@ impl Rule for RuleAndCompare {
         if baseconst == andconst {
             // If no effective change in constant (except varnode size)
             // constvn->copySymbol(andop->getIn(1)): copy the data-type/symbol.
-            // SEAM(W6): copySymbol (data-type + symbol map-entry) — deferred.
+            // STUB(W6): copySymbol (data-type + symbol map-entry) — deferred.
         }
         // New version of and with bigger inputs
         let and_addr = op_addr(data, andop);
@@ -1559,7 +1559,7 @@ impl Rule for RuleTrivialArith {
         Some(Box::new(RuleTrivialArith))
     }
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // LOCAL SEAM(jumptable-recovery): C++ keeps this fold active during the
+        // LOCAL STUB(jumptable-recovery): C++ keeps this fold active during the
         // dedicated jump-table recovery sub-pass (`isJumptableRecoveryOn`) and
         // relies on `ActionRestructureVarnode::protectSwitchPaths`
         // (coreaction.cc:2320) to mark the switch value's INDIRECT data-flow
@@ -1743,7 +1743,7 @@ impl Rule for RuleZextEliminate {
             // Is zero extension unnecessary
             let newvn = data.new_constant(smallsize, val);
             // newvn->copySymbolIfValid(vn2): copy data-type/symbol if valid.
-            // SEAM(W6): copySymbolIfValid — deferred.
+            // STUB(W6): copySymbolIfValid — deferred.
             let _ = newvn;
             let zin0 = op_in(data, zext, 0);
             data.op_set_input(op, zin0, zextslot).expect("set input");
@@ -1973,7 +1973,7 @@ mod boolean_match {
     pub const UNCORRELATED: i32 = 3;
 }
 
-/// `BooleanMatch::evaluate(vn1, vn2, depth)` — // SEAM(W5-expression).
+/// `BooleanMatch::evaluate(vn1, vn2, depth)` — // STUB(W5-expression).
 ///
 /// The real algorithm lives in `expression.cc` (a different wave's module, still
 /// a stub).  This seam handles only the trivial `vn1 == vn2 => same` head of the
@@ -1984,7 +1984,7 @@ fn boolean_match_evaluate(_data: &Funcdata, vn1: VarnodeId, vn2: VarnodeId, _dep
     if vn1 == vn2 {
         return boolean_match::SAME;
     }
-    // SEAM(W5-expression): the recursive structural/complementary match is in
+    // STUB(W5-expression): the recursive structural/complementary match is in
     // expression.cc; until ported, decline.
     let _ = boolean_match::COMPLEMENTARY;
     boolean_match::UNCORRELATED

@@ -22,29 +22,29 @@
 //! [`ActionPool`] holds.  [`specs`] lists the rules in C++ definition order for
 //! the W8 `universalAction` assembler.
 //!
-//! # Cross-wave seams (the parts that cannot transcribe end-to-end yet)
+//! # Cross-wave stubs (the parts that cannot transcribe end-to-end yet)
 //!
 //! The rule *bodies* are transcribed verbatim; where a body reaches a subsystem
-//! that later waves own, the call is routed through a `// SEAM`-noted local
+//! that later waves own, the call is routed through a `// STUB`-noted local
 //! helper that returns the C++ guard's *failing* value, so the rule becomes a
 //! faithful no-op exactly when (and only when) that guard would block it.  None
 //! of these helpers invents type/flow/call behavior.
 //!
-//! * **SEAM(W6) — opcode → `TypeOp`.**  `data.opSetOpcode(op, OPC)` resolves
+//! * **STUB(W6) — opcode → `TypeOp`.**  `data.opSetOpcode(op, OPC)` resolves
 //!   `glb->inst[OPC]` (the interned behavioral class carrying the op-code's
 //!   property-flag word).  That table is W6; [`resolve_typeop`] reproduces the
 //!   flag words for exactly the op-codes these rules set, copied verbatim from
 //!   `typeop.cc`, and [`rule_set_opcode`] feeds them to the ported
-//!   `Funcdata::op_set_opcode`.  This is the same local-seam pattern `flow.rs`
+//!   `Funcdata::op_set_opcode`.  This is the same local-stub pattern `flow.rs`
 //!   uses (`FlowEnvironment::resolve_typeop`).
-//! * **SEAM(W3) — `newUniqueOut`.**  `Funcdata::op_set_output` is gated behind a
+//! * **STUB(W3) — `newUniqueOut`.**  `Funcdata::op_set_output` is gated behind a
 //!   missing `banks_mut()` split-borrow accessor (it returns `Err`), so the
 //!   `newUniqueOut` composite (`newUnique` + `opSetOutput`) cannot complete.
 //!   Rules that build a fresh op with a unique output
 //!   (`RuleUnsigned2Float`/`RuleInt2FloatCollapse`/`RuleLzcountShiftBool`/
 //!   `RuleOrCompare`/`RuleExpandLoad`) bail at that point via
-//!   [`new_unique_out`] returning the seam error.  Recorded as losses.
-//! * **SEAM(W6) — type queries.**  `TypeOpFloatInt2Float::preferredZextSize`,
+//!   [`new_unique_out`] returning the stub error.  Recorded as losses.
+//! * **STUB(W6) — type queries.**  `TypeOpFloatInt2Float::preferredZextSize`,
 //!   `Varnode::getTypeReadFacing`/`getTypeDefFacing`, and `TypePointer::getPtrTo`
 //!   are W6.  The local [`preferred_zext_size`] helper returns the guard-failing
 //!   value so the dependent rules no-op.  `TypeOp::floatSignManipulation` is now
@@ -65,10 +65,10 @@
 //!   (`CONCAT44(v1,a0)`) instead of `float8 a0`; the 8-byte float register pair
 //!   is not merged.  Locus: float-register-pair param type recovery / merge,
 //!   NOT a float-conversion ruleaction.
-//! * **`FlowBlock::findCondition` (formerly SEAM(W3-block)).**  Used only by
+//! * **`FlowBlock::findCondition` (formerly STUB(W3-block)).**  Used only by
 //!   `RuleInt2FloatCollapse`; transcribed here as the local [`find_condition`]
 //!   helper (faithful to `block.cc:839`), so that rule now completes.
-//! * **SEAM(W4) — `Architecture::funcptr_align` and `FuncCallSpecs`.**  The W4
+//! * **STUB(W4) — `Architecture::funcptr_align` and `FuncCallSpecs`.**  The W4
 //!   `Architecture` skeleton has no `funcptr_align` (defaults to the "disabled"
 //!   value 0, so `RuleFuncPtrEncoding` no-ops) and no call-spec table (so
 //!   `RulePiecePathology` no-ops).
@@ -84,7 +84,7 @@ use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 
 /// The stage group every rule in this batch registers against (the C++
 /// `Rule::getGroup()` for these classes is the analysis family; the worked
@@ -92,11 +92,11 @@ use crate::seams::{OpId, TypeOp, VarnodeId};
 const RULE_GROUP: &str = "analysis";
 
 // =============================================================================
-// Local SEAM helpers (see the module docs)
+// Local STUB helpers (see the module docs)
 // =============================================================================
 
 /// Resolve an [`OpCode`] to the [`TypeOp`] behavioral class the C++
-/// `opSetOpcode` would fetch from `glb->inst[opc]`.  // SEAM(W6)
+/// `opSetOpcode` would fetch from `glb->inst[opc]`.  // STUB(W6)
 ///
 /// The property-flag word (which `PcodeOp::setOpcode` caches into the op's
 /// `flags`, and which then governs `code()`/`isBoolOutput()`/`isCommutative()`
@@ -133,7 +133,7 @@ pub(crate) fn resolve_typeop(opc: OpCode) -> TypeOp {
         CPUI_FLOAT_INT2FLOAT => (unary, "INT2FLOAT"),
         _ => panic!(
             "ruleaction_8 resolve_typeop: opcode {opc:?} is not written by any rule in this batch \
-             (SEAM(W6) table is intentionally minimal)"
+             (STUB(W6) table is intentionally minimal)"
         ),
     };
     TypeOp::new(opc, flags, name)
@@ -141,7 +141,7 @@ pub(crate) fn resolve_typeop(opc: OpCode) -> TypeOp {
 
 /// `data.opSetOpcode(op, opc)` — the C++ `Funcdata::opSetOpcode(PcodeOp*,OpCode)`
 /// overload, resolving the op-code to its W6 [`TypeOp`] via [`resolve_typeop`].
-/// // SEAM(W6): `glb->inst[opc]`.
+/// // STUB(W6): `glb->inst[opc]`.
 pub(crate) fn rule_set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
     data.op_set_opcode(op, resolve_typeop(opc));
 }
@@ -149,7 +149,7 @@ pub(crate) fn rule_set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
 /// `data.newUniqueOut(s, op)` — allocate a fresh unique-space output Varnode for
 /// `op` (C++ `Funcdata::newUniqueOut`).
 ///
-/// SEAM(W3): the C++ body is `Varnode *outvn = newUnique(s); opSetOutput(op,outvn)`.
+/// STUB(W3): the C++ body is `Varnode *outvn = newUnique(s); opSetOutput(op,outvn)`.
 /// `Funcdata::op_set_output` is itself gated behind a not-yet-ported `banks_mut`
 /// split-borrow accessor and returns `Err`; this surface propagates that error so
 /// the dependent rule aborts its transformation cleanly.  Recorded as a loss.
@@ -179,7 +179,7 @@ fn descend_ops(data: &Funcdata, vn: VarnodeId) -> Vec<OpId> {
 
 /// Last op of a basic block (C++ `BlockBasic::lastOp` = `op.back()`); `None` for
 /// an empty block or a non-basic FlowBlock.
-fn last_op_of(data: &Funcdata, bl: crate::seams::BlockId) -> Option<OpId> {
+fn last_op_of(data: &Funcdata, bl: crate::context::BlockId) -> Option<OpId> {
     match data.bblocks_ref().block(bl).kind() {
         crate::block::BlockKind::Basic(bd) => bd.op_tail,
         _ => None,
@@ -195,11 +195,11 @@ fn last_op_of(data: &Funcdata, bl: crate::seams::BlockId) -> Option<OpId> {
 /// the block id (the C++ passes this back through `slot1`).
 fn find_condition(
     data: &Funcdata,
-    mut bl1: crate::seams::BlockId,
+    mut bl1: crate::context::BlockId,
     mut edge1: int4,
-    mut bl2: crate::seams::BlockId,
+    mut bl2: crate::context::BlockId,
     mut edge2: int4,
-) -> Option<(crate::seams::BlockId, int4)> {
+) -> Option<(crate::context::BlockId, int4)> {
     let g = data.bblocks_ref();
     // FlowBlock *cond = bl1->getIn(edge1);
     let mut cond = g.block(bl1).get_in(edge1);
@@ -272,7 +272,7 @@ fn float_sign_manipulation(data: &Funcdata, op: OpId) -> OpCode {
 /// `TypeOpFloatInt2Float::preferredZextSize(inSize)` (C++ `typeop.cc:1893`): the
 /// preferred size for the INT_ZEXT feeding an unsigned FLOAT_INT2FLOAT.
 ///
-/// Faithful transcription of the upstream body (the W6 seam note no longer
+/// Faithful transcription of the upstream body (the W6 stub note no longer
 /// applies — `RuleUnsigned2Float`/`RuleInt2FloatCollapse` complete through
 /// `new_unique_out`, so the exact zext size is load-bearing).
 fn preferred_zext_size(in_size: int4) -> int4 {
@@ -285,7 +285,7 @@ fn preferred_zext_size(in_size: int4) -> int4 {
     }
 }
 
-/// `data.getArch()->funcptr_align` (C++).  // SEAM(W4)
+/// `data.getArch()->funcptr_align` (C++).  // STUB(W4)
 ///
 /// The W4 `Architecture` skeleton does not carry `funcptr_align`; it defaults to
 /// 0 ("encoding disabled"), so `RuleFuncPtrEncoding` no-ops.  Recorded as a loss.
@@ -434,7 +434,7 @@ impl Rule for RuleUnsigned2Float {
             // data.opSetOpcode(zextop, CPUI_INT_ZEXT);
             rule_set_opcode(data, zextop, OpCode::CPUI_INT_ZEXT);
             // Varnode *zextout = data.newUniqueOut(preferredZextSize(basevn->getSize()), zextop);
-            //   -- SEAM(W3): newUniqueOut; SEAM(W6): preferredZextSize.
+            //   -- STUB(W3): newUniqueOut; STUB(W6): preferredZextSize.
             match new_unique_out(data, preferred_zext_size(base_size), zextop) {
                 Ok(zextout) => {
                     // data.opSetOpcode(addop, CPUI_FLOAT_INT2FLOAT);
@@ -450,7 +450,7 @@ impl Rule for RuleUnsigned2Float {
                     return 1;
                 }
                 Err(_) => {
-                    // SEAM(W3): newUniqueOut unavailable; abort this transformation.
+                    // STUB(W3): newUniqueOut unavailable; abort this transformation.
                     return 0;
                 }
             }
@@ -647,7 +647,7 @@ impl Rule for RuleFuncPtrEncoding {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // int4 align = data.getArch()->funcptr_align; if (align == 0) return 0;
-        //   -- SEAM(W4): funcptr_align defaults to 0, so the rule no-ops.
+        //   -- STUB(W4): funcptr_align defaults to 0, so the rule no-ops.
         let align: int4 = funcptr_align(data);
         if align == 0 {
             return 0;
@@ -1375,17 +1375,17 @@ impl Rule for RulePiecePathology {
         // setInputBytesConsumed / setReturnBytesConsumed), which is the W4 call-
         // specification subsystem and is not ported.  Without it the rule cannot
         // confirm a pathology and so no-ops, exactly as the C++ does when no
-        // pathology is detected.  SEAM(W4): FuncCallSpecs / FuncProto.
+        // pathology is detected.  STUB(W4): FuncCallSpecs / FuncProto.
         if opc == OpCode::CPUI_SUBPIECE {
             // if (subOp->getIn(1)->getOffset() == 0) return 0;
             let sub_in1 = data.obank().get(sub_op).expect("pp").get_in(1).expect("pp: sub in1");
             if data.vbank().get(sub_in1).expect("pp").get_offset() == 0 {
                 return 0;
             }
-            // if (!isPathology(subOp->getIn(0),data)) return 0;  -- SEAM(W4)
+            // if (!isPathology(subOp->getIn(0),data)) return 0;  -- STUB(W4)
             0
         } else if opc == OpCode::CPUI_INDIRECT {
-            // if (!subOp->isIndirectCreation()) return 0;  -- SEAM(W4) for the rest
+            // if (!subOp->isIndirectCreation()) return 0;  -- STUB(W4) for the rest
             if !data.obank().get(sub_op).expect("pp").is_indirect_creation() {
                 return 0;
             }
@@ -1509,10 +1509,10 @@ impl Rule for RuleLzcountShiftBool {
                 let op_in0 = data.obank().get(op).expect("lsb").get_in(0).expect("lsb: op in0");
                 data.op_set_input(new_op, op_in0, 0).expect("lsb: set");
                 data.op_set_input(new_op, b, 1).expect("lsb: set");
-                // Varnode* eqResVn = data.newUniqueOut(1, newOp);  -- SEAM(W3)
+                // Varnode* eqResVn = data.newUniqueOut(1, newOp);  -- STUB(W3)
                 let eq_res_vn = match new_unique_out(data, 1, new_op) {
                     Ok(v) => v,
-                    Err(_) => return 0, // SEAM(W3): newUniqueOut unavailable
+                    Err(_) => return 0, // STUB(W3): newUniqueOut unavailable
                 };
                 // data.opInsertBefore(newOp, baseOp);
                 data.op_insert_before(new_op, base_op);
@@ -1587,7 +1587,7 @@ impl Rule for RuleFloatSign {
             if data.vbank().get(vn).expect("fs").is_written() {
                 // PcodeOp *signOp = vn->getDef();
                 let sign_op = data.vbank().get(vn).expect("fs").get_def().expect("fs: vn def");
-                // OpCode resCode = TypeOp::floatSignManipulation(signOp);  -- SEAM(W6)
+                // OpCode resCode = TypeOp::floatSignManipulation(signOp);  -- STUB(W6)
                 let res_code = float_sign_manipulation(data, sign_op);
                 if res_code != OpCode::CPUI_MAX {
                     data.op_remove_input(sign_op, 1);
@@ -1617,7 +1617,7 @@ impl Rule for RuleFloatSign {
         let outvn = data.obank().get(op).expect("fs").get_out().expect("fs: out");
         // for(iter over outvn descendants) { readOp ... }
         for read_op in descend_ops(data, outvn) {
-            // OpCode resCode = TypeOp::floatSignManipulation(readOp);  -- SEAM(W6)
+            // OpCode resCode = TypeOp::floatSignManipulation(readOp);  -- STUB(W6)
             let res_code = float_sign_manipulation(data, read_op);
             if res_code != OpCode::CPUI_MAX {
                 data.op_remove_input(read_op, 1);
@@ -1748,10 +1748,10 @@ impl Rule for RuleOrCompare {
             rule_set_opcode(data, eq_w, opc);
             data.op_set_input(eq_w, w, 0).expect("oc: set");
             data.op_set_input(eq_w, zero_w, 1).expect("oc: set");
-            // Varnode* eq_V_out = data.newUniqueOut(1, eq_V); eq_W_out likewise  -- SEAM(W3)
+            // Varnode* eq_V_out = data.newUniqueOut(1, eq_V); eq_W_out likewise  -- STUB(W3)
             let eq_v_out = match new_unique_out(data, 1, eq_v) {
                 Ok(o) => o,
-                Err(_) => return 0, // SEAM(W3): newUniqueOut unavailable
+                Err(_) => return 0, // STUB(W3): newUniqueOut unavailable
             };
             let eq_w_out = match new_unique_out(data, 1, eq_w) {
                 Ok(o) => o,
@@ -2072,7 +2072,7 @@ mod tests {
     //! rules (the intricate ones): `RuleXorSwap`, `RuleFuncPtrEncoding`,
     //! `RulePopcountBoolXor` (+ `get_boolean_result`), `RuleThreeWayCompare`
     //! (+ `test_compare_equivalence`/`detect_three_way`), `RuleOrCompare`,
-    //! `RuleFloatSignCleanup`, and the SEAM helpers (`resolve_typeop`,
+    //! `RuleFloatSignCleanup`, and the STUB helpers (`resolve_typeop`,
     //! `new_unique_out`, `lone_descend`).
 
     use std::rc::Rc;
@@ -2089,7 +2089,7 @@ mod tests {
     use crate::action::ActionGroupList;
     use crate::dtype::{type_metatype, Datatype};
     use crate::funcdata::Funcdata;
-    use crate::seams::{Architecture, OpId, VarnodeId};
+    use crate::context::{ArchContext, OpId, VarnodeId};
     use crate::varnode::{DefOpInfo, VarnodeBank};
 
     use super::*;
@@ -2119,7 +2119,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -2142,17 +2142,17 @@ mod tests {
     }
 
     /// A fresh basic block under the bblocks root.
-    fn mk_block(fd: &mut Funcdata) -> crate::seams::BlockId {
+    fn mk_block(fd: &mut Funcdata) -> crate::context::BlockId {
         let root = fd.bblocks_ref().root.expect("bblocks root");
         fd.bblocks_mut().new_block_basic(root)
     }
 
     /// Create an op with `inputs` slots and a given opcode at `off`, INSERTED into
-    /// block `bl`, returning its id.  Uses the W6 seam resolver so the op's
+    /// block `bl`, returning its id.  Uses the W6 typed-opcode resolver so the op's
     /// cached flags match the rules' expectations.
     fn mk_op(
         fd: &mut Funcdata,
-        bl: crate::seams::BlockId,
+        bl: crate::context::BlockId,
         inputs: int4,
         off: u64,
         opc: OpCode,
@@ -2167,7 +2167,7 @@ mod tests {
     /// Build a TypeOp for any opcode (uses the rule resolver where defined, else a
     /// flagless skeleton — fine for opcodes that only appear as *fixture* defs and
     /// are never re-written by a rule).
-    fn resolve_typeop_for_test(opc: OpCode) -> crate::seams::TypeOp {
+    fn resolve_typeop_for_test(opc: OpCode) -> crate::context::TypeOp {
         // The batch resolver panics on opcodes it never writes; for those (e.g.
         // INT_OR, INT_RIGHT, INT_ADD, LOAD) we need a skeleton.  Match the small
         // set the rule resolver knows, else flagless.
@@ -2178,7 +2178,7 @@ mod tests {
             | CPUI_BOOL_AND | CPUI_BOOL_OR | CPUI_SUBPIECE | CPUI_FLOAT_EQUAL
             | CPUI_FLOAT_NOTEQUAL | CPUI_FLOAT_LESS | CPUI_FLOAT_LESSEQUAL | CPUI_FLOAT_ADD
             | CPUI_FLOAT_NEG | CPUI_FLOAT_ABS | CPUI_FLOAT_INT2FLOAT => resolve_typeop(opc),
-            other => crate::seams::TypeOp::new(other, 0, format!("{other:?}")),
+            other => crate::context::TypeOp::new(other, 0, format!("{other:?}")),
         }
     }
 
@@ -2194,7 +2194,7 @@ mod tests {
     }
 
     /// Make `op` define a fresh varnode at (off,size) as its output, returning the
-    /// output id.  Bypasses the `op_set_output` W3 seam via the low-level
+    /// output id.  Bypasses the `op_set_output` W3 stub via the low-level
     /// `set_def`/`set_output` pair (the W3 verifier fixture pattern), with the
     /// given data-type.
     fn set_output(fd: &mut Funcdata, op: OpId, off: u64, ct: Rc<Datatype>) -> VarnodeId {
@@ -2405,13 +2405,13 @@ mod tests {
     }
 
     // =====================================================================
-    // RuleFuncPtrEncoding  —  guards + the W4 funcptr_align SEAM no-op
+    // RuleFuncPtrEncoding  —  guards + the W4 funcptr_align STUB no-op
     // =====================================================================
 
     #[test]
-    fn funcptrencoding_noops_under_w4_seam() {
+    fn funcptrencoding_noops_under_w4_stub() {
         // Even with a perfect AND-mask pattern feeding a CALLIND, the rule no-ops
-        // because funcptr_align() is the W4 seam (returns 0).
+        // because funcptr_align() is the W4 stub (returns 0).
         let mut fd = build_fd();
         let bl = mk_block(&mut fd);
         let ptr = {
@@ -2425,7 +2425,7 @@ mod tests {
         let masked = set_output(&mut fd, andop, 0x20, unk(8));
         let callind = mk_op(&mut fd, bl, 1, 0x104, OpCode::CPUI_CALLIND);
         wire(&mut fd, masked, callind, 0);
-        // align == 0 (W4 seam) => no-op.
+        // align == 0 (W4 stub) => no-op.
         assert_eq!(RuleFuncPtrEncoding.apply_op(callind, &mut fd), 0);
         assert_eq!(code(&fd, andop), OpCode::CPUI_INT_AND); // mask not stripped
     }
@@ -2584,7 +2584,7 @@ mod tests {
 
     // =====================================================================
     // RuleOrCompare  —  descend guard passes, then bails on the W3 newUniqueOut
-    //                   seam (returns 0 with the original op intact).
+    //                   stub (returns 0 with the original op intact).
     // =====================================================================
 
     #[test]
@@ -2677,7 +2677,7 @@ mod tests {
     }
 
     // =====================================================================
-    // RuleFloatSignCleanup  —  type guard + the W6 floatSignManipulation seam
+    // RuleFloatSignCleanup  —  type guard + the W6 floatSignManipulation stub
     // =====================================================================
 
     #[test]
@@ -2702,7 +2702,7 @@ mod tests {
         // Float output passes the first guard; `x & 0x7fffffff` clears the float
         // sign bit, so `floatSignManipulation` classifies it as FLOAT_ABS and the
         // rule rewrites the op (input 1 removed, op-code -> FLOAT_ABS).
-        // (Was the W6 seam no-op; the classifier is now wired to
+        // (Was the W6 stub no-op; the classifier is now wired to
         // `typeop::float_sign_manipulation`.)
         let mut fd = build_fd();
         let bl = mk_block(&mut fd);

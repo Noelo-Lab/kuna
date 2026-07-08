@@ -33,7 +33,7 @@
 //! Action's [`enabled`](ActionLowerSwitchDetect) gate carries `true` in the
 //! shipped [`specs`].
 //!
-//! # What this port covers (and the install SEAM it cannot)
+//! # What this port covers (and the install STUB it cannot)
 //!
 //! Ported faithfully (self-contained, read-only over the merged tree):
 //!
@@ -77,7 +77,7 @@
 //! restart; the Install half reads the *same* (shared) store on the restart and
 //! manufactures the artifact.  The structurer + printer then emit the `switch`.
 //!
-//! ## SEAM(W9) — `ArchOption` / pass-schedule wiring
+//! ## STUB(W9) — `ArchOption` / pass-schedule wiring
 //!
 //! Upstream `OptionLowerSwitch : ArchOption` is registered with the option
 //! database; the two Actions are inserted into `ActionDatabase::universalAction`
@@ -100,7 +100,7 @@ use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyRes
 use crate::block::{block_get_start, BlockType};
 use crate::funcdata::Funcdata;
 use crate::options::on_or_off;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 use kuna_base::marshal::ElementId;
 
@@ -874,7 +874,7 @@ fn advance_past_guards(
 pub struct ActionLowerSwitchDetect {
     /// Engine-owned bookkeeping (C++ inherited `Action` base fields).
     base: ActionBase,
-    /// Resolved `glb->recover_lowered_switch` gate (SEAM(W4); the seams
+    /// Resolved `glb->recover_lowered_switch` gate (STUB(W4); the seams
     /// `Architecture` skeleton on `Funcdata` does not carry the flag yet, so it
     /// is resolved at construction by the W9 assembler — the
     /// `kuna_compareform`/`kuna_arraystride` convention).
@@ -1040,7 +1040,7 @@ impl ActionLowerSwitchDetect {
         self.store.borrow_mut().push(data, rec.clone());
         // data.setRestartPending(true);
         data.set_restart_pending(true);
-        // kunaRecordRestart(data,krestart_lowered_switch,rec.branchAddr);  // SEAM(W7): no
+        // kunaRecordRestart(data,krestart_lowered_switch,rec.branchAddr);  // STUB(W7): no
         //   &mut RestartLog in the Action::apply signature yet (the heritage port
         //   threads it explicitly); the restart-pending flag is realized.
         1 // a record was added (the C++ returns 0 to quiesce; see apply note)
@@ -1122,7 +1122,7 @@ impl Action for ActionLowerSwitchDetect {
 pub struct ActionLowerSwitchInstall {
     /// Engine-owned bookkeeping (C++ inherited `Action` base fields).
     base: ActionBase,
-    /// Resolved `glb->recover_lowered_switch` gate (SEAM(W4); resolved at
+    /// Resolved `glb->recover_lowered_switch` gate (STUB(W4); resolved at
     /// construction, the `ActionLowerSwitchDetect` convention).
     enabled: bool,
     /// The sticky side table (C++ file-static `loweredStore`), shared with the
@@ -1278,11 +1278,11 @@ impl OptionLowerSwitch {
     ///
     /// Returns the resolved flag plus the confirmation message.  The caller
     /// writes the flag into `Architecture::recover_lowered_switch` (threaded by
-    /// the W9 option dispatch; SEAM noted in the module docs).
+    /// the W9 option dispatch; STUB noted in the module docs).
     pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
         // bool val = onOrOff(p1);
         let val = on_or_off(p1)?;
-        // glb->recover_lowered_switch = val;  -- left to the caller (SEAM(W4/W9)).
+        // glb->recover_lowered_switch = val;  -- left to the caller (STUB(W4/W9)).
         // string prop = val ? "on" : "off";
         let prop = if val { "on" } else { "off" };
         // return "Lowered comparison-cascade switch recovery turned "+prop;

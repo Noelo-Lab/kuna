@@ -12,7 +12,7 @@
 //!
 //! Both return 0 immediately when the gate is off, byte-identical to upstream.
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! Identical to `kuna_booleanmask`/`kuna_ovlesssimplify`: the C++
 //! `if (!data.getArch()->fold_flag_compare) return 0;` gate is resolved at
@@ -20,7 +20,7 @@
 //! W8 threads `Architecture::fold_flag_compare`; [`specs`] uses the shipped
 //! default (`on`).
 //!
-//! ## SEAM(W6) — opcode-flag resolution
+//! ## STUB(W6) — opcode-flag resolution
 //!
 //! `opSetOpcode(op, ...)` resolves `glb->inst[opc]` (the W6 typeop `inst` table);
 //! the rewrites build the [`TypeOp`] skeleton with a zero flag word until W6
@@ -32,7 +32,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 
 // ===========================================================================
 // GH-1276: (b << k) s< 0   ->   b != 0
@@ -41,7 +41,7 @@ use crate::seams::{OpId, TypeOp, VarnodeId};
 /// (kuna GH-1276) Fold `(b << k) s< 0` (a boolean shifted into the sign bit) to
 /// `b != 0` (C++ `RuleBoolSignLess`).
 pub struct RuleBoolSignLess {
-    /// Resolved `glb->fold_flag_compare` gate (SEAM(W4)).
+    /// Resolved `glb->fold_flag_compare` gate (STUB(W4)).
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -73,7 +73,7 @@ impl Rule for RuleBoolSignLess {
 
     /// C++ `RuleBoolSignLess::applyOp` (`kuna_flagcompare.cc:23`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (SEAM(W4))
+        // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (STUB(W4))
         if !self.enabled && !data.get_arch().fold_flag_compare {
             return 0;
         }
@@ -138,7 +138,7 @@ impl Rule for RuleBoolSignLess {
 
         // Rewrite `(b << sa) s< 0`  =>  `b != 0`.
         // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);
-        // SEAM(W6): glb->inst[CPUI_INT_NOTEQUAL] property flags.
+        // STUB(W6): glb->inst[CPUI_INT_NOTEQUAL] property flags.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_NOTEQUAL, 0, "INT_NOTEQUAL"));
         // data.opSetInput(op,boolvn,0);
         data.op_set_input(op, boolvn, 0)
@@ -158,7 +158,7 @@ impl Rule for RuleBoolSignLess {
 /// (kuna GH-8777) Fold the `N == V` signed-overflow idiom to a clean signed
 /// compare `INT_SLESSEQUAL(K, V)` (C++ `RuleSborrowGe`).
 pub struct RuleSborrowGe {
-    /// Resolved `glb->fold_flag_compare` gate (SEAM(W4)).
+    /// Resolved `glb->fold_flag_compare` gate (STUB(W4)).
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -190,7 +190,7 @@ impl Rule for RuleSborrowGe {
 
     /// C++ `RuleSborrowGe::applyOp` (`kuna_flagcompare.cc:242`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (SEAM(W4))
+        // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (STUB(W4))
         if !self.enabled && !data.get_arch().fold_flag_compare {
             return 0;
         }
@@ -217,7 +217,7 @@ impl Rule for RuleSborrowGe {
 
         // Rewrite the whole boolean tree to INT_SLESSEQUAL(K, V)  (K <= V).
         // data.opSetOpcode(op,CPUI_INT_SLESSEQUAL);
-        // SEAM(W6): glb->inst[CPUI_INT_SLESSEQUAL] property flags.
+        // STUB(W6): glb->inst[CPUI_INT_SLESSEQUAL] property flags.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_SLESSEQUAL, 0, "INT_SLESSEQUAL"));
         // data.opSetInput(op,data.newConstant(sz,kval),0);
         let kvn = data.new_constant(sz, kval);

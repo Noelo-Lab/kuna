@@ -3,10 +3,10 @@
 // Each ported rule is exercised by hand-building the exact input op pattern on a
 // real `Funcdata` and asserting the precise transformation per the C++ body
 // (ops created/destroyed, opcode changes, constants), with negative tests for
-// the early-out guards.  The three SEAM-stubbed pointer rules
+// the early-out guards.  The three STUB-stubbed pointer rules
 // (RulePtrArith/RuleStructOffset0/RulePushPtr) are verified only for their
 // structural surface (name/getOpList/group filtering); their `applyOp` is a
-// no-op stub by design (see the module-level SEAM notes).
+// no-op stub by design (see the module-level STUB notes).
 
 use super::*;
 
@@ -18,7 +18,7 @@ use kuna_base::space::{
 };
 
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{Architecture, VarnodeId};
+use crate::context::{ArchContext, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // --- harness -----------------------------------------------------------------
@@ -44,7 +44,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -60,7 +60,7 @@ fn dt(size: int4) -> Rc<Datatype> {
 
 /// Minimal flag bits for input ops in the test fixtures (so def ops carry the
 /// right `booloutput` bit when a rule reads `isBoolOutput`).  Transcribed from
-/// the same `typeop.cc` values [`type_op_seam`] uses.
+/// the same `typeop.cc` values [`type_op_lookup`] uses.
 fn opcode_flags(opc: OpCode) -> uint4 {
     match opc {
         OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
@@ -796,7 +796,7 @@ fn specs_lists_nine_rules_in_order() {
 
 #[test]
 fn pointer_rules_are_noop_stubs() {
-    // SEAM-stubbed: applyOp returns 0 (no transform) regardless of input.
+    // STUB-stubbed: applyOp returns 0 (no transform) regardless of input.
     let mut fd = build_fd();
     let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_ADD);
     let v0 = mk_vn(&mut fd, 0x10, 8);

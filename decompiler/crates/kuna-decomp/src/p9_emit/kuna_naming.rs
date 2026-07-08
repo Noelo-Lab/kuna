@@ -240,7 +240,7 @@ impl OptionNameStyle {
         } else {
             return Err(KunaError::parse("namestyle must be \"angr\" or \"ghidra\""));
         };
-        // glb->name_style_angr = val;  -- left to the caller (SEAM(W4/W9)).
+        // glb->name_style_angr = val;  -- left to the caller (STUB(W4/W9)).
         Ok((val, format!("Naming scheme set to {p1}")))
     }
 }

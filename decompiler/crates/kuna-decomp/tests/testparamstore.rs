@@ -16,7 +16,7 @@
 //!   - `model->getArch()->findAddJoin(pieces, size)` /
 //!     `translate->getRegister(regname)` / `getStackSpace()` — all reachable
 //!     only through the spec-loaded `Architecture` (the kuna `Architecture` has
-//!     no SLEIGH-spec / prototype-model registry yet — `// SEAM(w6-fspec-2)`).
+//!     no SLEIGH-spec / prototype-model registry yet — `// STUB(w6-fspec-2)`).
 //!
 //! None of those pieces are owned by this porter, and the wave's library
 //! foundation does not provide them.  Each `TEST(name)` is therefore reproduced

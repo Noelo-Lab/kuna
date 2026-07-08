@@ -63,7 +63,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::funcdata::Funcdata;
 use crate::options::on_or_off;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// (kuna) Is the call output `vn` order-safe to fold into its single use?
 ///
@@ -140,7 +140,7 @@ fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
     data.obank().get(op).map(|o| o.is_marker()).unwrap_or(true)
 }
 
-fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::seams::BlockId> {
+fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
     data.obank().get(op).and_then(|o| o.get_parent())
 }
 

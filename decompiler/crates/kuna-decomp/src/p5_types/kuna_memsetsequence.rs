@@ -57,7 +57,7 @@
 //! direct-construction `collectFillRun`); the live path collects via
 //! `StringSequence::build_for_fill` instead, so it is unused.
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! As in the sibling kuna rules, the C++
 //! `if (!data.getArch()->memset_recover) return 0;` gate is resolved at
@@ -81,7 +81,7 @@ use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::constseq::{ArraySequence, StringSequence, WriteNode};
 use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
-use crate::seams::OpId;
+use crate::context::OpId;
 
 /// (kuna GH-9230) A constant-fill run of COPY ops collapsed into builtin_memset
 /// (C++ `class MemsetSequence : public StringSequence`).
@@ -108,7 +108,7 @@ impl MemsetSequence {
     /// any base state, runs `collectFillRun`, and (if anything was collected)
     /// `formFillRun` (C++ `MemsetSequence::MemsetSequence`).
     ///
-    /// SEAM: `collect_fill_run` is seam-blocked (see module docs), so in the
+    /// STUB: `collect_fill_run` is seam-blocked (see module docs), so in the
     /// current port the live driver supplies the collected `move_ops` directly
     /// via [`MemsetSequence::from_collected`] and this constructor leaves the run
     /// empty.  The C++ control flow is preserved for restoration.
@@ -181,7 +181,7 @@ impl MemsetSequence {
 
     /// Collect the contiguous constant COPY run (C++ `MemsetSequence::collectFillRun`).
     ///
-    /// SEAM(W4/W6): walks the Symbol's type to the containing array
+    /// STUB(W4/W6): walks the Symbol's type to the containing array
     /// (`entry->getSymbol()->getType()`, `getSubType`/`resolveTruncation`), then
     /// iterates `data.beginLoc(startAddr)..endLoc(endAddr)` — the address-only
     /// location-set overload — gathering same-block constant uniform-fill COPYs.
@@ -189,7 +189,7 @@ impl MemsetSequence {
     /// surface) are not yet ported, so this is a documented stub; the live driver
     /// feeds the collected run through [`from_collected`].  Recorded as a loss.
     fn collect_fill_run(&mut self, _data: &Funcdata) {
-        // SEAM(W4/W6): entry/Symbol::getType + getSubType/resolveTruncation walk,
+        // STUB(W4/W6): entry/Symbol::getType + getSubType/resolveTruncation walk,
         // data.beginLoc(addr)/endLoc(addr) address-only loc-set overload, per-op
         // block membership, uniform-byte constant check.  Leaves move_ops empty.
     }
@@ -225,7 +225,7 @@ impl MemsetSequence {
 /// Mirrors `RuleStringCopy` but, when `option memsetrecover on`, routes a run of
 /// COPYs writing the SAME constant byte into a char array to builtin_memset.
 pub struct RuleMemsetCopy {
-    /// Resolved `glb->memset_recover` gate (SEAM(W4); see module docs).
+    /// Resolved `glb->memset_recover` gate (STUB(W4); see module docs).
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,

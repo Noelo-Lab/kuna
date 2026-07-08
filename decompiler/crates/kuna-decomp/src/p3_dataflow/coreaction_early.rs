@@ -23,21 +23,21 @@
 //!
 //! | C++ class | `name()` | group/flags | status |
 //! |---|---|---|---|
-//! | `ActionStart` | `"start"` | `0` | wrapper, SEAM body |
-//! | `ActionStop` | `"stop"` | `0` | wrapper, SEAM body |
-//! | `ActionStartCleanUp` | `"startcleanup"` | `0` | wrapper, SEAM body |
+//! | `ActionStart` | `"start"` | `0` | wrapper, STUB body |
+//! | `ActionStop` | `"stop"` | `0` | wrapper, STUB body |
+//! | `ActionStartCleanUp` | `"startcleanup"` | `0` | wrapper, STUB body |
 //! | `ActionStartTypes` | `"starttypes"` | `0` | realized (`start_type_recovery`) |
-//! | `ActionConstbase` | `"constbase"` | `0` | SEAM body (W4 inject/track) |
-//! | `ActionSpacebase` | `"spacebase"` | `0` | wrapper, SEAM body |
-//! | `ActionHeritage` | `"heritage"` | `0` | wrapper, SEAM body (W4 driver) |
-//! | `ActionNonzeroMask` | `"nonzeromask"` | `0` | wrapper, SEAM body |
-//! | `ActionVarnodeProps` | `"varnodeprops"` | `0` | SEAM body (W3-vn/W4) |
-//! | `ActionUnreachable` | `"unreachable"` | `0` | partial (read realized, surgery SEAM) |
-//! | `ActionDoNothing` | `"donothing"` | `rule_repeatapply` | partial (flags realized, surgery SEAM) |
-//! | `ActionLateDoNothing` | `"latedonothing"` | `0` | partial (flags realized, surgery SEAM) |
-//! | `ActionRedundBranch` | `"redundbranch"` | `0` | partial (splice realized, removeBranch SEAM) |
+//! | `ActionConstbase` | `"constbase"` | `0` | STUB body (W4 inject/track) |
+//! | `ActionSpacebase` | `"spacebase"` | `0` | wrapper, STUB body |
+//! | `ActionHeritage` | `"heritage"` | `0` | wrapper, STUB body (W4 driver) |
+//! | `ActionNonzeroMask` | `"nonzeromask"` | `0` | wrapper, STUB body |
+//! | `ActionVarnodeProps` | `"varnodeprops"` | `0` | STUB body (W3-vn/W4) |
+//! | `ActionUnreachable` | `"unreachable"` | `0` | partial (read realized, surgery STUB) |
+//! | `ActionDoNothing` | `"donothing"` | `rule_repeatapply` | partial (flags realized, surgery STUB) |
+//! | `ActionLateDoNothing` | `"latedonothing"` | `0` | partial (flags realized, surgery STUB) |
+//! | `ActionRedundBranch` | `"redundbranch"` | `0` | partial (splice realized, removeBranch STUB) |
 //! | `ActionDeterminedBranch` | `"determinedbranch"` | `0` | realized (detect + `removeBranch`) |
-//! | `ActionNormalizeSetup` | `"normalizesetup"` | `rule_onceperfunc` | realized `reset`, SEAM body (W4 proto) |
+//! | `ActionNormalizeSetup` | `"normalizesetup"` | `rule_onceperfunc` | realized `reset`, STUB body (W4 proto) |
 //!
 //! **The boundary** is the next class, [`ActionDeadCode`] (`coreaction.hh:565`,
 //! `name() == "deadcode"`).  Its `apply` body needs `FuncCallSpecs` /
@@ -55,7 +55,7 @@
 //!
 //! * SSA / processing primitives `startProcessing`, `stopProcessing`,
 //!   `startCleanUp`, `spacebase`, `opHeritage`, `calcNZMask` (W3-op / W4 — the
-//!   heritage driver itself is `// SEAM(W4)` in `heritage.rs`).
+//!   heritage driver itself is `// STUB(W4)` in `heritage.rs`).
 //! * Block-graph surgery `removeUnreachableBlocks`, `removeBranch`,
 //!   `removeDoNothingBlock`, and the predicates `BlockBasic::isDoNothing`,
 //!   `unblockedMulti`, `hasNoImmediateCopy` (W3-block / `funcdata_block`).
@@ -68,7 +68,7 @@
 //!
 //! Where a primitive is **realized** the body calls it and is exercised by a
 //! test.  Where it is **seamed** the body transcribes the C++ structure and
-//! routes the unrealized mutation through a `// SEAM(...)`-noted private helper
+//! routes the unrealized mutation through a `// STUB(...)`-noted private helper
 //! that performs the realized read/predicate work and returns `0` changes (the
 //! C++ contract: changes are signalled by incrementing `count`).  Every seam is
 //! reported in this item's `losses` so the owning wave can finish the wiring.
@@ -120,7 +120,7 @@ impl Action for ActionStart {
     }
     fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++: data.startProcessing(); return 0;
-        // SEAM(W3-op/W4): Funcdata::startProcessing (the per-function p-code
+        // STUB(W3-op/W4): Funcdata::startProcessing (the per-function p-code
         // gather / processing-start bookkeeping) is not in the merged tree.
         0
     }
@@ -156,7 +156,7 @@ impl Action for ActionStop {
     }
     fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++: data.stopProcessing(); return 0;
-        // SEAM(W3-op/W4): Funcdata::stopProcessing not in the merged tree.
+        // STUB(W3-op/W4): Funcdata::stopProcessing not in the merged tree.
         0
     }
 }
@@ -291,7 +291,7 @@ impl Action for ActionConstbase {
         let bb = data.bblocks_get_block(0);
         let bb_start = data.bblocks_block_start(bb);
 
-        // SEAM(W4): getFuncProto().getInjectUponEntry + doLiveInject are the
+        // STUB(W4): getFuncProto().getInjectUponEntry + doLiveInject are the
         // upon-entry pcode-inject surface (FuncProto is an empty Default
         // placeholder in seams.rs).  None of the tracked-register datatests drive
         // it, so it stays deferred; the tracked-set COPY injection below is the
@@ -497,7 +497,7 @@ impl Action for ActionVarnodeProps {
         // The C++ advances the iterator before vn may be deleted/rewritten; the
         // faithful Rust mirror snapshots the loc-set order once (a vn only ever
         // loses descendants here, never gains them, so a snapshot is sound).
-        let locs: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+        let locs: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
         for vn in locs {
             // The varnode may have been freed by an earlier replace (the C++
             // `*iter++` already moved past it; a freed-mid-loop vn is simply
@@ -786,7 +786,7 @@ impl ActionLateDoNothing {
     /// already leads to `bl`'s single successor (`outbl`, possibly via `bl`),
     /// removing `bl` would create a redundant edge.  Pure block-graph read; all
     /// accessors (`size_out`/`size_in`/`get_out`/`get_in`) are realized.
-    fn removing_creates_redundancy(data: &Funcdata, bl: crate::seams::BlockId) -> bool {
+    fn removing_creates_redundancy(data: &Funcdata, bl: crate::context::BlockId) -> bool {
         let graph = data.bblocks_ref();
         let outbl = graph.block(bl).get_out(0);
         let size_in = graph.block(bl).size_in();
@@ -838,7 +838,7 @@ impl Action for ActionLateDoNothing {
         //
         // Collect the removable delayed-do-nothing blocks, then remove them.
         let size = data.bblocks_get_size();
-        let mut remove_list: Vec<crate::seams::BlockId> = Vec::new();
+        let mut remove_list: Vec<crate::context::BlockId> = Vec::new();
         for i in 0..size {
             let bb = data.bblocks_get_block(i);
             if !data.bblocks_ref().block(bb).is_delayed_donothing() {
@@ -913,7 +913,7 @@ impl Action for ActionRedundBranch {
         //   data.removeBranch(bb,1); count += 1;    // duplicate n-way -> remove edge
         //
         // The single-out **splice** path is realized (Funcdata::splice_block_basic
-        // exists, though it itself `Err`s on a trailing branch op — SEAM(W3-op));
+        // exists, though it itself `Err`s on a trailing branch op — STUB(W3-op));
         // the n-way `removeBranch` is a funcdata_block seam.
         let mut i: i32 = 0;
         while i < data.bblocks_get_size() {
@@ -932,7 +932,7 @@ impl Action for ActionRedundBranch {
                 // prevents possible second-stage recovery.
                 if bl_size_in == 1 && !bl_is_entry && !bb_is_switch {
                     // splice_block_basic Errs when the spliced block ends in a
-                    // branch op (SEAM(W3-op)); a successful splice counts as a
+                    // branch op (STUB(W3-op)); a successful splice counts as a
                     // change and resets the scan, exactly as C++ `i = -1`.
                     if data.splice_block_basic(bb).is_ok() {
                         self.base.count += 1;
@@ -1099,7 +1099,7 @@ impl Action for ActionNormalizeSetup {
         //   fp.setModelLock(false);   // forces model re-evaluation
         //   fp.setOutputLock(false);
         //   return 0;
-        // SEAM(W4): FuncProto is an empty Default placeholder in seams.rs;
+        // STUB(W4): FuncProto is an empty Default placeholder in seams.rs;
         // clearInput / setModelLock / setOutputLock are W4 prototype surfaces.
         // The realized `reset` already flips the function into normalization mode;
         // the lock-stripping is deferred to the prototype wave (no change count).

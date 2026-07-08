@@ -63,7 +63,7 @@
 //! * `Funcdata` has **no** `numCalls`/`getCallSpecs` accessors — the `qlst`
 //!   field is seam-noted out (`funcdata.rs` struct docs: "`activeoutput`,
 //!   ... `qlst` are seam-noted and omitted until their waves").
-//! * `Funcdata::funcp` is the **placeholder** [`seams::FuncProto`](crate::seams)
+//! * `Funcdata::funcp` is the **placeholder** [`context::FuncProto`](crate::context)
 //!   (an empty `struct FuncProto;`), *not* the real W6
 //!   [`fspec::FuncProto`](crate::fspec) that the merged dependency added — the
 //!   bridge that rewires `Funcdata` onto the real prototype object is a later
@@ -81,7 +81,7 @@
 //!
 //! 1. transcribes the C++ `apply` structure verbatim **as commented pseudocode**
 //!    (same iteration order, tie-breakers, and `count += 1` points), and
-//! 2. routes the unrealized mutation through a `// SEAM(W7/W8-funcdata)` note
+//! 2. routes the unrealized mutation through a `// STUB(W7/W8-funcdata)` note
 //!    and returns `0` changes.
 //!
 //! Each seam is reported in this item's `losses` so the owning wave can finish
@@ -183,14 +183,14 @@ impl Action for ActionPrototypeTypes {
         // win, so it now runs UNCONDITIONALLY (matching C++ `funcp.setScope`'s
         // `resetLocalWindow` at funcdata.cc:70).
         data.reset_local_window();
-        // funcp.hasThisPointer() -> prepareThisPointer(): SEAM(W4) — the default
+        // funcp.hasThisPointer() -> prepareThisPointer(): STUB(W4) — the default
         // models in the recovery path have no `this` pointer.
 
         // Strip the indirect register from all RETURN ops (so the compiler's
         // return-address mechanism does not appear in the high-level output):
         //   for op in RETURN ops: if (!getIn(0)->isConstant())
         //       opSetInput(op, newConstant(getIn(0)->getSize(), 0), 0);
-        let return_ops: Vec<crate::seams::OpId> = data.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        let return_ops: Vec<crate::context::OpId> = data.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in &return_ops {
             let in0 = match data.obank().get(*op).and_then(|o| o.get_in(0)) {
                 Some(v) => v,
@@ -249,7 +249,7 @@ impl Action for ActionPrototypeTypes {
             self.base.count += 1;
         }
 
-        // Truncated-space INT_ZEXT setup: SEAM(W4) — the recovery path has no
+        // Truncated-space INT_ZEXT setup: STUB(W4) — the recovery path has no
         // truncated stack space (only the 8051-family default code space is).
 
         // Force locked inputs to exist as Varnodes.  Needed so a big locked input
@@ -319,11 +319,11 @@ impl Action for ActionPrototypeTypes {
 /// the top block writing the full-size container from `invn`.
 fn extend_input(
     data: &mut Funcdata,
-    invn: crate::seams::VarnodeId,
+    invn: crate::context::VarnodeId,
     in_addr: &kuna_base::address::Address,
     in_size: int4,
     param_type: &Rc<crate::dtype::Datatype>,
-    topbl: crate::seams::BlockId,
+    topbl: crate::context::BlockId,
 ) {
     use kuna_num::pcoderaw::VarnodeData;
     let mut vdata = VarnodeData::default();
@@ -495,7 +495,7 @@ impl Action for ActionDefaultParams {
                     }
                 }
             }
-            // fc->insertPcode(data): inject any uponreturn p-code.  SEAM(W4
+            // fc->insertPcode(data): inject any uponreturn p-code.  STUB(W4
             // pcodeinjectlib): the default models on the datatest path declare no
             // uponreturn injection, so this is a no-op here.
         }
@@ -683,7 +683,7 @@ impl ActionFuncLink {
             // exists.  rust also recovers an 8-byte RAX return (`xunknown8 v1` +
             // `SUB84`/`(int4)` truncation) where C++ recovers the 4-byte EAX
             // (`int4 v1`).  Both stem from the call-effect / return-storage trial
-            // scoring: FIX SEAM is the `killedbycall` indirect-creation suppression
+            // scoring: FIX STUB is the `killedbycall` indirect-creation suppression
             // for `othercall` (so RDI is not regenerated) plus the return-trial
             // size pruning (RAX vs EAX) in the active-param recovery
             // (`ActionActiveParam`/`checkInputTrialUse` + `ParamActive` return
@@ -1065,9 +1065,9 @@ impl Action for ActionParamDouble {
         //   //   find locked primitive-whole params split into SUBPIECE hi/lo,
         //   //   mark piece Varnodes setPrecisLo/setPrecisHi; count += 1 each.
         //
-        // SEAM(W7/W8-funcdata): the per-call arms iterate
+        // STUB(W7/W8-funcdata): the per-call arms iterate
         // `Funcdata::getCallSpecs(i)` (absent); the function-level arm reads
-        // `Funcdata::funcp` (the empty `seams::FuncProto` placeholder, not the
+        // `Funcdata::funcp` (the empty `context::FuncProto` placeholder, not the
         // real `fspec::FuncProto`).  Deferred (count stays 0).  `isDoublePrecisOn`
         // IS realized on `Funcdata` but is only a guard for the seamed work.
         0
@@ -1286,14 +1286,14 @@ impl ActionReturnRecovery {
     /// when needed.  `in0` (the stripped return-indirect reference) is kept first.
     fn build_return_output(
         active: &crate::fspec::ParamActive,
-        retop: crate::seams::OpId,
+        retop: crate::context::OpId,
         data: &mut Funcdata,
         return_single: bool,
     ) {
         use kuna_num::pcoderaw::VarnodeData;
         let _ = VarnodeData::default;
         // newparam = [ retop->getIn(0) ] + used trial varnodes (in order).
-        let mut newparam: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut newparam: Vec<crate::context::VarnodeId> = Vec::new();
         if let Some(in0) = data.obank().get(retop).and_then(|o| o.get_in(0)) {
             newparam.push(in0);
         }
@@ -1374,12 +1374,12 @@ impl ActionReturnRecovery {
         // walk the contiguous used trials, building a PIECE chain at the earliest
         // address.  Not reached by the default x86-64 register models (which
         // recover at most two pieces); kept faithful for completeness.
-        let mut chained: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut chained: Vec<crate::context::VarnodeId> = Vec::new();
         if let Some(in0) = data.obank().get(retop).and_then(|o| o.get_in(0)) {
             chained.push(in0);
         }
         let mut offmatch: int4 = 0;
-        let mut preexist: Option<crate::seams::VarnodeId> = None;
+        let mut preexist: Option<crate::context::VarnodeId> = None;
         let nin = data.obank().get(retop).map(|o| o.num_input()).unwrap_or(0);
         for i in 0..active.get_num_trials() {
             let (used, slot, toff, tsize) = {
@@ -1431,7 +1431,7 @@ impl ActionReturnRecovery {
                 _ => break,
             }
         }
-        let mut finalparam: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut finalparam: Vec<crate::context::VarnodeId> = Vec::new();
         if let Some(in0) = data.obank().get(retop).and_then(|o| o.get_in(0)) {
             finalparam.push(in0);
         }
@@ -1464,7 +1464,7 @@ impl Action for ActionReturnRecovery {
             None => return 0,
         };
         let maxancestor = data.get_arch().trim_recurse_max;
-        let return_ops: Vec<crate::seams::OpId> =
+        let return_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for &op in &return_ops {
             let o = match data.obank().get(op) {
@@ -1647,7 +1647,7 @@ impl Action for ActionInputPrototype {
         //   data.getScopeLocal()->clearCategory(Symbol::fake_input): the W4 scope
         //   fake-input category is not on the merged-tree ScopeLocal (no
         //   `fake_input` symbols are created without the W4 markup), so this is a
-        //   faithful no-op here.  // SEAM(W4 ScopeLocal::clearCategory)
+        //   faithful no-op here.  // STUB(W4 ScopeLocal::clearCategory)
         data.get_func_proto_mut().clear_unlocked_input();
 
         // The unlocked recovery reads the prototype model (`resolveModel` /
@@ -1663,8 +1663,8 @@ impl Action for ActionInputPrototype {
             // the heritage collected).  `triallist[i]` is the i-th registered
             // trial's Varnode (1-based slot in ParamTrial).
             let mut active = crate::fspec::ParamActive::new(false);
-            let mut triallist: Vec<crate::seams::VarnodeId> = Vec::new();
-            let input_vns: Vec<crate::seams::VarnodeId> =
+            let mut triallist: Vec<crate::context::VarnodeId> = Vec::new();
+            let input_vns: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
             for vn in input_vns {
                 let (addr, size, no_descend) = {
@@ -1733,7 +1733,7 @@ impl Action for ActionInputPrototype {
 /// `&mut Funcdata` HighVariable reads are available.
 fn update_input_types(
     data: &mut Funcdata,
-    triallist: &[crate::seams::VarnodeId],
+    triallist: &[crate::context::VarnodeId],
     active: &mut crate::fspec::ParamActive,
 ) {
     if data.get_func_proto().is_input_locked() {
@@ -1754,7 +1754,7 @@ fn update_input_types(
         // pieces.addr = trial.getAddress(); pieces.type = vn->getHigh()->getType()
         // (the isPersist/findDisjointCover global-input branch is the W4 persist
         // surface — function-input registers/stack are never persistent here, so
-        // it is a narrow SEAM(W4 findDisjointCover) that does not fire).
+        // it is a narrow STUB(W4 findDisjointCover) that does not fire).
         let is_persist = data.vbank().get(vn).map(|v| v.is_persist()).unwrap_or(false);
         let addr = active.get_trial(i).get_address().clone();
         let ty = data
@@ -1779,7 +1779,7 @@ fn update_input_types(
 /// `FuncProto::updateInputNoTypes`, fspec.cc:4102).
 fn update_input_no_types(
     data: &mut Funcdata,
-    triallist: &[crate::seams::VarnodeId],
+    triallist: &[crate::context::VarnodeId],
     active: &mut crate::fspec::ParamActive,
 ) {
     if data.get_func_proto().is_input_locked() {
@@ -1971,10 +1971,10 @@ impl Action for ActionPrototypeWarnings {
         //       if (fc->hasOutputErrors()) data.warning("Cannot assign location
         //           of return value for function <...>: ...", entryAddr);
         //
-        // SEAM(W7/W8-funcdata): the override-message generation reads
+        // STUB(W7/W8-funcdata): the override-message generation reads
         // `Funcdata::getOverride()` (the local override store is not on
         // `Funcdata` in the merged tree); the function-level headers read
-        // `Funcdata::funcp` (the empty `seams::FuncProto` placeholder, not the
+        // `Funcdata::funcp` (the empty `context::FuncProto` placeholder, not the
         // real `fspec::FuncProto` with `hasInputErrors`/`isModelUnknown`/...);
         // and the per-call loop iterates `Funcdata::getCallSpecs(i)` (absent).
         // The warning channel (`ActionContext::warnings`) IS realized, but with
@@ -2024,7 +2024,7 @@ mod tests {
 
     use super::*;
     use crate::action::ruleflags;
-    use crate::seams::Architecture;
+    use crate::context::ArchContext;
 
     // Mirrors the coreaction_early.rs test harness (funcdata_block fixtures).
     fn build_manager() -> AddrSpaceManager {
@@ -2048,7 +2048,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

@@ -8,7 +8,7 @@
 //! After the structurer collapses the CFG into a structured AST, an edge that
 //! leaves a loop to the loop's *single successor* is the semantic `break;`.
 //! kuna's port of `ActionFinalStructure` ran `finalizePrinting` and
-//! `markUnstructured` but left `scopeBreak` an explicit SEAM stub
+//! `markUnstructured` but left `scopeBreak` an explicit STUB stub
 //! (`p8_structure/blockaction.rs`, `docs/rust-port/losses.md`): every such
 //! loop-exit edge therefore rendered as a raw `goto <successor-label>;` plus a
 //! synthesized label on the successor.  angr recovers the structured `break;`.
@@ -56,7 +56,7 @@
 //! unconditionally); `option loopbreak_recovery off` restores the byte-identical
 //! raw-`goto` rendering.
 //!
-//! ## SEAM(W9) — `ArchOption` wiring
+//! ## STUB(W9) — `ArchOption` wiring
 //!
 //! Upstream `scopeBreak` is not optional (it always runs).  kuna gates it behind
 //! [`OptionLoopBreakRecovery`] so the rendering stays flippable per
@@ -68,7 +68,7 @@ use kuna_base::types::uint4;
 
 use crate::block::{block_flags, BlockGraph, BlockKind, BlockType};
 use crate::options::on_or_off;
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 use kuna_base::marshal::ElementId;
 

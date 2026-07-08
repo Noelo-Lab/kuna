@@ -29,7 +29,7 @@ use kuna_num::opcodes::OpCode;
 use crate::dtype::TypeFactory;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::varnode_flags;
 
 #[cfg(test)]
@@ -197,7 +197,7 @@ impl Funcdata {
     ///
     /// The pure `Datatype::get_sub_type` cannot reach the symbol table that a
     /// `TypeSpacebase` indexes (the C++ `TypeSpacebase` carries `glb`); the global
-    /// arm here routes through the frozen [`GlobalQuery`](crate::seams::GlobalQuery)
+    /// arm here routes through the frozen [`GlobalQuery`](crate::context::GlobalQuery)
     /// snapshot (`glb.resolve_constant` + `glb.query_container_global`), exactly as
     /// `ActionConstantPtr::isPointer` does, and the local arm delegates to the
     /// existing [`ScopeLocal::spacebase_get_sub_type`].  Returns
@@ -341,7 +341,7 @@ impl Funcdata {
     /// `map addr`-mapped stack range carries.  Returns `0` when there is no local
     /// scope or the range is not in its map.  This is the local-scope half of the
     /// `Heritage::guard` property walk; the global-scope half is
-    /// [`crate::seams::ArchHandle::query_global_properties`].
+    /// [`crate::context::ArchHandle::query_global_properties`].
     pub fn query_local_properties(
         &self,
         addr: &Address,
@@ -603,7 +603,7 @@ impl Funcdata {
 
         // C++ `restructureVarnode` tail (varmap.cc:1272-1285).  The unlocked-category
         // cleanup / fake-input-symbol synthesis / `markUnaliased` are W4 ScopeLocal
-        // surfaces still seamed (`clearUnlockedCategory`/`fakeInputSymbols`/
+        // surfaces still stubbed (`clearUnlockedCategory`/`fakeInputSymbols`/
         // `markUnaliased` need the `Symbol::category` + alias-block bookkeeping —
         // LOSS recorded).  The one tail step the typed-stack-access rendering needs
         // is the raw-stack-pointer placeholder:
@@ -1026,8 +1026,8 @@ impl Funcdata {
         bounds: Option<&crate::varmap::ProtoBoundaries>,
     ) {
         // checker.gather(&fd, spaceid, false): build the alias base/offset lists.
-        let mut seam = FuncdataAliasSeam { fd: self };
-        state.checker_mut().gather(Rc::clone(space), bounds, false, &mut seam);
+        let mut access = FuncdataAliasAccess { fd: self };
+        state.checker_mut().gather(Rc::clone(space), bounds, false, &mut access);
 
         // For each AddBase, add an open range at its alias offset.
         let addbase: Vec<(uintb, Option<VarnodeId>, VarnodeId)> = {
@@ -1355,14 +1355,14 @@ fn proto_boundaries(proto: &crate::fspec::FuncProto) -> Option<crate::varmap::Pr
     })
 }
 
-/// The live-IR realization of the [`AliasGatherSeam`](crate::varmap::AliasGatherSeam):
+/// The live-IR realization of the [`AliasGatherAccess`](crate::varmap::AliasGatherAccess):
 /// `findSpacebaseInput` / `gatherAdditiveBase` / `gatherOffset` over the function's
 /// def/use graph (C++ `AliasChecker`'s Varnode walks, `varmap.cc:736-858`).
-pub(crate) struct FuncdataAliasSeam<'a> {
+pub(crate) struct FuncdataAliasAccess<'a> {
     fd: &'a Funcdata,
 }
 
-impl crate::varmap::AliasGatherSeam for FuncdataAliasSeam<'_> {
+impl crate::varmap::AliasGatherAccess for FuncdataAliasAccess<'_> {
     fn find_spacebase_input(
         &self,
         space: &Rc<kuna_base::space::AddrSpace>,
@@ -1384,13 +1384,13 @@ impl crate::varmap::AliasGatherSeam for FuncdataAliasSeam<'_> {
 }
 
 impl Funcdata {
-    /// Build the live-IR [`AliasGatherSeam`](crate::varmap::AliasGatherSeam) over
+    /// Build the live-IR [`AliasGatherAccess`](crate::varmap::AliasGatherAccess) over
     /// this function's def/use graph, so an [`AliasChecker`](crate::varmap::AliasChecker)
     /// can lazily gather stack-pointer aliases (`findSpacebaseInput`/
     /// `gatherAdditiveBase`/`gatherOffset`).  Used by the call-site input recovery
     /// (`checkInputTrialUse`'s spacebase branch).
-    pub(crate) fn alias_gather_seam(&self) -> FuncdataAliasSeam<'_> {
-        FuncdataAliasSeam { fd: self }
+    pub(crate) fn alias_gather_access(&self) -> FuncdataAliasAccess<'_> {
+        FuncdataAliasAccess { fd: self }
     }
 
     /// Build the deferred local-alias checker the call-site input recovery uses
@@ -1403,8 +1403,8 @@ impl Funcdata {
         let stackspc = self.get_arch().manage().get_stack_space().map(Rc::clone)?;
         let bounds = proto_boundaries(self.get_func_proto());
         let mut checker = crate::varmap::AliasChecker::new();
-        let mut seam = self.alias_gather_seam();
-        checker.gather(stackspc, bounds.as_ref(), true, &mut seam);
+        let mut access = self.alias_gather_access();
+        checker.gather(stackspc, bounds.as_ref(), true, &mut access);
         Some(checker)
     }
 
@@ -1412,7 +1412,7 @@ impl Funcdata {
     /// `ScopeLocal::markNotMapped`, reached via `getScopeLocal()` from
     /// `buildInputFromTrials` for a stack-passed parameter).
     ///
-    /// SEAM(W4 ScopeLocal::markNotMapped): the `RangeHint`/`markNotMapped` range
+    /// STUB(W4 ScopeLocal::markNotMapped): the `RangeHint`/`markNotMapped` range
     /// surface on `ScopeLocal` is not yet ported (LOSS recorded in the structured
     /// output).  The register-parameter recovery path the call-rendering datatests
     /// exercise never reaches this (only stack-passed params do); a stack-passed

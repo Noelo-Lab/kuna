@@ -16,18 +16,18 @@
 //! op's parent block `isLoopIn` (the same edge the C++ reads through
 //! `op->getParent()->isLoopIn(slot)`).
 //!
-//! # Seams
+//! # Stubs
 //!
 //! * The `justproto` constructor path needs the recovered [`FuncProto`] from
 //!   `Funcdata::getFuncProto()` (`numParams`/`getParam`/`getOutput`).  In the
 //!   merged tree `Funcdata::funcp` is still the W3/W4 placeholder
-//!   (`crate::seams::FuncProto`), not the real `fspec::FuncProto`, so the
+//!   (`crate::context::FuncProto`), not the real `fspec::FuncProto`, so the
 //!   prototype-driven measure collection cannot run yet — [`ParamIDAnalysis::new`]
-//!   returns a `SEAM(W4)` error for `justproto = true`.  The non-prototype path
+//!   returns a `STUB(W4)` error for `justproto = true`.  The non-prototype path
 //!   (input Varnodes outside the model, via `beginDef(input)`) is fully ported.
 //! * `ParamMeasure::encode` needs `Datatype::encodeRef` and the W8 marshal of the
 //!   `<rank>`/`<addr>` children; the address-space attribute encode exists, the
-//!   type-ref does not, so [`ParamMeasure::encode`] SEAMs.  `savePretty` is fully
+//!   type-ref does not, so [`ParamMeasure::encode`] stubs out.  `savePretty` is fully
 //!   ported (it prints only the `VarnodeData` fields).
 
 use std::rc::Rc;
@@ -40,7 +40,7 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::varnode::varnode_flags;
 
 // ===========================================================================
@@ -369,7 +369,7 @@ impl ParamMeasure {
     /// The C++ writes `<addr>` (the space attributes), then `vntype->encodeRef`,
     /// then (if `moredetail`) the `<rank>` child.  The `vntype->encodeRef` is the
     /// W8 type-marshal surface (`Datatype::encodeRef`), which is not yet ported,
-    /// so the whole encode SEAMs.
+    /// so the whole encode stubs out.
     pub fn encode(&self, _moredetail: bool) -> KunaResult<()> {
         // The encode genuinely consumes `vntype` (the `<addr>` type-ref child).
         let _has_type = self.vntype.is_some();
@@ -404,7 +404,7 @@ impl ParamIDAnalysis {
     /// `justproto = true` restricts collection to the recovered prototype; that
     /// path needs the real [`FuncProto`](crate::fspec::FuncProto) from
     /// `Funcdata::getFuncProto`, which is still the W3/W4 placeholder in the
-    /// merged tree, so it SEAMs.  `justproto = false` lists the input Varnodes
+    /// merged tree, so it stubs out.  `justproto = false` lists the input Varnodes
     /// outside the model (the `beginDef(input)` range) and is fully ported.
     pub fn new(fd: &Funcdata, justproto: bool) -> KunaResult<ParamIDAnalysis> {
         let mut analysis = ParamIDAnalysis {
@@ -415,8 +415,8 @@ impl ParamIDAnalysis {
         if justproto {
             // const FuncProto &fproto( fd->getFuncProto() );
             //   numParams()/getParam(i)/getOutput() + findVarnodeInput + the
-            //   RETURN-op output scan.  SEAM(W4): Funcdata::funcp is still the
-            //   placeholder (crate::seams::FuncProto), not fspec::FuncProto, so
+            //   RETURN-op output scan.  STUB(W4): Funcdata::funcp is still the
+            //   placeholder (crate::context::FuncProto), not fspec::FuncProto, so
             //   the recovered prototype is unavailable here.
             return Err(KunaError::lowlevel(
                 "kuna rust port: ParamIDAnalysis(justproto=true) needs the recovered \
@@ -461,7 +461,7 @@ impl ParamIDAnalysis {
     /// The C++ leading line also prints the function's address and the recovered
     /// model/extrapop; those read the W3/W4 `FuncProto` placeholder, so this port
     /// prints the function name + the measures (the prototype-derived header
-    /// fields SEAM with the prototype itself).
+    /// fields STUB with the prototype itself).
     pub fn save_pretty(&self, s: &mut String, moredetail: bool) {
         s.push_str(&format!("Param Measures\nFunction: {}\n", self.fdname));
         s.push_str(&format!("Num Params: {}\n", self.input_param_measures.len()));
@@ -478,7 +478,7 @@ impl ParamIDAnalysis {
     /// Encode the analysis (C++ `ParamIDAnalysis::encode`, paramid.cc:237-262).
     ///
     /// Needs the recovered `FuncProto` (model/extrapop) and
-    /// `ParamMeasure::encode` (`Datatype::encodeRef`); both SEAM.
+    /// `ParamMeasure::encode` (`Datatype::encodeRef`); both STUB.
     pub fn encode(&self) -> KunaResult<()> {
         // Reference the element ids so they stay live until the marshal surface
         // (W4 FuncProto + W8 type-ref) is threaded.
@@ -499,7 +499,7 @@ mod tests {
         addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
     };
 
-    use crate::seams::{Architecture, BlockId, TypeOp};
+    use crate::context::{ArchContext, BlockId, TypeOp};
 
     fn build_manager() -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
@@ -522,7 +522,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -646,9 +646,9 @@ mod tests {
         assert!(s.contains("Rank: 2"), "got: {s}");
     }
 
-    /// The justproto path SEAMs (prototype unavailable in the merged tree).
+    /// The justproto path stubs out (prototype unavailable in the merged tree).
     #[test]
-    fn justproto_is_seam() {
+    fn justproto_is_stub() {
         let fd = build_fd();
         assert!(ParamIDAnalysis::new(&fd, true).is_err());
     }

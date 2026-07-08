@@ -35,7 +35,7 @@
 //!      output-type assignment in `setPrototype`/`updateAllTypes`, and (because a
 //!      second distinct method field is present) the newly-activated
 //!      `TypeCode::compare` / `compareDependency` per-parameter + output-type
-//!      recursion that were `SEAM(W6)` `Err` stubs before this item.  Asserts the
+//!      recursion that were `STUB(W6)` `Err` stubs before this item.  Asserts the
 //!      whole thing DECODES (no EXEC-FAILURE / parse error).
 //!
 //! The `.sla` specs are build artifacts; if the x86-64 spec is absent the test

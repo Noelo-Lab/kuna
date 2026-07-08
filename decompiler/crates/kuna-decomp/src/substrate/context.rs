@@ -1,4 +1,4 @@
-//! Cross-wave seam placeholders for the W3 IR data-model.
+//! Cross-wave stub placeholders for the W3 IR data-model.
 //!
 //! Per ADR 0001 the IR is three `Funcdata`-owned slotmap arenas keyed by the
 //! newtypes [`VarnodeId`], [`OpId`], [`BlockId`].  The keys live here (the one
@@ -26,21 +26,21 @@ new_key_type! {
 
     /// Arena key for a `PcodeOp` (ADR 0001).
     ///
-    /// SEAM(W3): the `PcodeOp` arena and its accessors are `op`/`funcdata`'s
+    /// STUB(W3): the `PcodeOp` arena and its accessors are `op`/`funcdata`'s
     /// (`w3-ir-op`).  `varnode.rs` stores `OpId`s for `def` and `descend`
     /// links, exactly as the C++ stores `PcodeOp *`.
     pub struct OpId;
 
     /// Arena key for a `FlowBlock` (ADR 0001).
     ///
-    /// SEAM(W3): filled by `block` (`w3-ir-block`); declared here so the shared
+    /// STUB(W3): filled by `block` (`w3-ir-block`); declared here so the shared
     /// key set is in one place.
     pub struct BlockId;
 }
 
 /// HighVariable — the high-level variable an instance of which a Varnode is.
 ///
-/// SEAM(W7): filled by `merge`/`HighVariable` (`w7`).  `Varnode` holds an
+/// STUB(W7): filled by `merge`/`HighVariable` (`w7`).  `Varnode` holds an
 /// `Option<HighVariableId>` where the C++ holds a `HighVariable *`; until W7
 /// every varnode's high is `None` (the C++ `getHigh()` likewise throws until
 /// merging builds it).  Modelled as an opaque arena key so the eventual
@@ -50,7 +50,7 @@ pub struct HighVariableId(pub u32);
 
 /// Cover — the def/use address coverage of a Varnode.
 ///
-/// SEAM(W7): filled by `cover`/`Cover` (`w7`).  The C++ `Varnode::cover` is a
+/// STUB(W7): filled by `cover`/`Cover` (`w7`).  The C++ `Varnode::cover` is a
 /// lazily-built, mutable `Cover *`; the W3 data-model only needs to track the
 /// presence/absence and the `coverdirty` flag (carried in `flags`), so a unit
 /// placeholder suffices until W7 supplies the real geometry.
@@ -59,7 +59,7 @@ pub struct Cover;
 
 /// TypeOp — the behavioral class (opcode) attached to a [`PcodeOp`].
 ///
-/// SEAM(W6): filled by `typeop`/`type` (`w6`).  The C++ `TypeOp` (`typeop.hh`)
+/// STUB(W6): filled by `typeop`/`type` (`w6`).  The C++ `TypeOp` (`typeop.hh`)
 /// bundles an [`OpCode`] value, a cached property-flag word
 /// (`getFlags()`/`opflags`, transcribed as [`type_op_flags`]), a display
 /// `name`, an `OpBehavior` for emulation, and the `TypeFactory`-backed local
@@ -68,28 +68,28 @@ pub struct Cover;
 /// `op.cc` reaches only a thin slice of that surface: `PcodeOp::setOpcode`
 /// caches `getFlags()` into the op's `flags`, `code()` returns `getOpcode()`,
 /// the op-code lists key on `code()`, and the print/eval/type-local methods
-/// dispatch through the `OpBehavior`/`TypeFactory`.  This seam carries exactly
+/// dispatch through the `OpBehavior`/`TypeFactory`.  This boundary carries exactly
 /// the first three (`opcode`/`flags`/`name`); the emulation+type-local methods
 /// stay in W6 (the W3 `collapse`/`executeSimple`/`outputTypeLocal` paths defer
 /// or take the behavior as an explicit argument — see `op.rs`).
 #[derive(Debug, Clone)]
 pub struct TypeOp {
-    /// The op-code value (C++ `TypeOp::opcode`).  // SEAM(W6)
+    /// The op-code value (C++ `TypeOp::opcode`).  // STUB(W6)
     pub opcode: OpCode,
     /// Cached pcode-op properties for this op-code (C++ `TypeOp::opflags`,
-    /// the `PcodeOp::*` flag bits `setOpcode` ORs in).  // SEAM(W6)
+    /// the `PcodeOp::*` flag bits `setOpcode` ORs in).  // STUB(W6)
     pub flags: uint4,
-    /// Symbol denoting this operation (C++ `TypeOp::name`).  // SEAM(W6)
+    /// Symbol denoting this operation (C++ `TypeOp::name`).  // STUB(W6)
     pub name: String,
 }
 
 impl TypeOp {
-    /// Construct a minimal behavioral-class skeleton (SEAM(W6)).
+    /// Construct a minimal behavioral-class skeleton (STUB(W6)).
     pub fn new(opcode: OpCode, flags: uint4, name: impl Into<String>) -> TypeOp {
         TypeOp { opcode, flags, name: name.into() }
     }
 
-    /// Get the op-code value (C++ `TypeOp::getOpcode`).  // SEAM(W6)
+    /// Get the op-code value (C++ `TypeOp::getOpcode`).  // STUB(W6)
     pub fn get_opcode(&self) -> OpCode {
         self.opcode
     }
@@ -99,7 +99,7 @@ impl TypeOp {
         self.flags
     }
 
-    /// Get the display name of the op-code (C++ `TypeOp::getName`).  // SEAM(W6)
+    /// Get the display name of the op-code (C++ `TypeOp::getName`).  // STUB(W6)
     pub fn get_name(&self) -> &str {
         &self.name
     }
@@ -171,7 +171,7 @@ pub struct GlobalEntry {
 ///
 /// The C++ `glb` is the live `Architecture`, so `localmap->queryProperties` walks
 /// the parent chain up to the live global scope.  The merged kuna `glb`
-/// ([`Architecture`]) is a separate IR-boundary skeleton, and the function's
+/// ([`ArchContext`]) is a separate IR-boundary skeleton, and the function's
 /// `localmap` owns its own detached `Database`; this snapshot is the wire that
 /// reconnects the global symbol table onto `glb` so global-mapped varnodes get
 /// `persist`/`addrtied` painted and survive `ActionDeadCode`.  Built once per
@@ -389,7 +389,7 @@ impl GlobalQuery {
 /// Global configuration data for the program being decompiled (C++
 /// `Architecture`, owned by `Funcdata` as `glb`).
 ///
-/// SEAM(W4): the full `decompiler/cpp/architecture.{hh,cc}` `Architecture` is a
+/// STUB(W4): the full `decompiler/cpp/architecture.{hh,cc}` `Architecture` is a
 /// large W4 subsystem (the address-space manager, the `TypeFactory`, the symbol
 /// table, the loader, prototype models, user-op table, the action database,
 /// p-code injection).  This skeleton carries only the slice the W3 `Funcdata`
@@ -407,28 +407,28 @@ impl GlobalQuery {
 /// `ScopeLocal` (W4 / [`Scope`]), the loader, the prototype models, the user-op
 /// table, and the `ActionDatabase` (`glb->allacts`, used by `stageJumpTable`)
 /// are **not** part of this skeleton; the W3 callers that need them are either
-/// seam-noted with an explicit `Err`/`None` or take the value as an argument.
-pub struct Architecture {
+/// stub-noted with an explicit `Err`/`None` or take the value as an argument.
+pub struct ArchContext {
     /// The address-space manager (`Architecture` derives from
-    /// `AddrSpaceManager` in C++).  // SEAM(W4)
+    /// `AddrSpaceManager` in C++).  // STUB(W4)
     ///
     /// Held as an [`Rc`] (LOSS-132): the **single** space set the SLEIGH engine
     /// lifted into is *shared* here, so `glb.manage()` returns the same
     /// `Rc<AddrSpace>` identities and indices the lifted varnodes carry and the
     /// analysis passes key state by.  Hand-built test fixtures still pass an
-    /// owned [`AddrSpaceManager`] through [`Architecture::new`] (wrapped here);
+    /// owned [`AddrSpaceManager`] through [`ArchContext::new`] (wrapped here);
     /// the real lift+analyze path shares the engine's `Rc` via
-    /// [`Architecture::new_shared`].
+    /// [`ArchContext::new_shared`].
     pub manage: Rc<AddrSpaceManager>,
     /// Minimum Varnode size to check as a laned register (C++
-    /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
+    /// `Architecture::getMinimumLanedRegisterSize`).  // STUB(W4)
     pub min_laned_register_size: int4,
     /// Vector registers that have preferred lane sizes (C++
     /// `Architecture::lanerecords`), built from the pspec `<register_data>`
     /// `vector_lane_sizes` attributes by `Architecture::decodeRegisterData`.
     /// Each [`LanedRegister`](crate::transform::LanedRegister) is keyed by its
     /// whole size (the records are sorted ascending by whole size, one per size),
-    /// so [`Architecture::get_laned_register`] can binary-search on size exactly
+    /// so [`ArchContext::get_laned_register`] can binary-search on size exactly
     /// as the C++ `Architecture::getLanedRegister` does.  Empty for hand-built
     /// fixtures and non-vector architectures.
     pub lanerecords: Vec<crate::transform::LanedRegister>,
@@ -774,23 +774,23 @@ pub struct Architecture {
     pub tracked_sets: kuna_base::partmap::PartMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
 }
 
-impl Architecture {
-    /// Construct the skeleton from an owned [`AddrSpaceManager`] (SEAM(W4)).
+impl ArchContext {
+    /// Construct the skeleton from an owned [`AddrSpaceManager`] (STUB(W4)).
     ///
     /// Used by hand-built test fixtures; the real path shares the engine's
     /// manager through [`Architecture::new_shared`].
-    pub fn new(manage: AddrSpaceManager) -> Architecture {
-        Architecture::new_shared(Rc::new(manage))
+    pub fn new(manage: AddrSpaceManager) -> ArchContext {
+        ArchContext::new_shared(Rc::new(manage))
     }
 
     /// Construct the skeleton sharing the engine's single [`AddrSpaceManager`]
     /// (LOSS-132 keystone).  The `Rc` is the one the SLEIGH translator
     /// populated (with fspec/iop/join inserted by `Architecture::restoreFromSpec`),
     /// so the lifted varnodes and the analysis passes see the same spaces.
-    pub fn new_shared(manage: Rc<AddrSpaceManager>) -> Architecture {
+    pub fn new_shared(manage: Rc<AddrSpaceManager>) -> ArchContext {
         // C++ default: getMinimumLanedRegisterSize() returns the configured
         // minimum; the upstream default when unset is 4.
-        Architecture {
+        ArchContext {
             manage,
             min_laned_register_size: 4,
             lanerecords: Vec::new(),
@@ -819,7 +819,7 @@ impl Architecture {
             // (kuna) the real arch overwrites each of these in `build_arch_handle`;
             // hand-built fixtures (no `build_arch_handle`) get `false`, so a rule
             // registered `enabled=false` is inert there — matching the gate-off
-            // unit tests (and the `infer_funcentry` seam-default convention).
+            // unit tests (and the `infer_funcentry` stub-default convention).
             fold_boolean_mask: false,    // GH-1282 booleanmask
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
@@ -994,7 +994,7 @@ impl Architecture {
     /// (C++ the callee `Funcdata`'s locked `FuncProto`), or `None` if that callee
     /// had no `parse line extern` declaration.  Read by `ActionDefaultParams::apply`
     /// to copy the locked callee prototype into the call site.  Matched by
-    /// `(space_index, offset)` — the seam carries no `Rc<AddrSpace>` identities for
+    /// `(space_index, offset)` — the ArchContext carries no `Rc<AddrSpace>` identities for
     /// the global scope, only the snapshotted indices.
     pub fn callee_proto_pieces(&self, addr: &Address) -> Option<&crate::fspec::PrototypePieces> {
         let space_index = addr.get_space()?.get_index();
@@ -1033,7 +1033,7 @@ impl Architecture {
     }
 
     /// Borrow the address-space manager (C++ `glb` viewed as an
-    /// `AddrSpaceManager`).  // SEAM(W4)
+    /// `AddrSpaceManager`).  // STUB(W4)
     pub fn manage(&self) -> &AddrSpaceManager {
         &self.manage
     }
@@ -1106,7 +1106,7 @@ impl Architecture {
     }
 
     /// Get the minimum laned-register size (C++
-    /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
+    /// `Architecture::getMinimumLanedRegisterSize`).  // STUB(W4)
     pub fn get_minimum_laned_register_size(&self) -> int4 {
         self.min_laned_register_size
     }
@@ -1142,7 +1142,7 @@ impl Architecture {
     }
 
     /// Create a constant Varnode storage address in the constant space
-    /// (C++ `AddrSpaceManager::getConstant`).  // SEAM(W4)
+    /// (C++ `AddrSpaceManager::getConstant`).  // STUB(W4)
     pub fn get_constant(&self, val: u64) -> Address {
         self.manage.get_constant(val)
     }
@@ -1356,7 +1356,7 @@ impl GlobalContainer {
 
 /// The local-variable scope of a function (C++ `ScopeLocal`, `Funcdata::localmap`).
 ///
-/// SEAM(W4): the symbol scope machinery (`decompiler/cpp/database.{hh,cc}`,
+/// STUB(W4): the symbol scope machinery (`decompiler/cpp/database.{hh,cc}`,
 /// `varmap.{hh,cc}`) is a W4 subsystem.  `Funcdata` holds an `Option<Scope>`
 /// where the C++ holds a `ScopeLocal *`; the W3 IR data-model never reads symbol
 /// state, so the placeholder is empty.  The varnode-property look-ups
@@ -1367,7 +1367,7 @@ pub struct Scope;
 
 /// The recovered prototype of a function (C++ `FuncProto`, `Funcdata::funcp`).
 ///
-/// SEAM(W4): the prototype model subsystem (`decompiler/cpp/fspec.{hh,cc}`) is
+/// STUB(W4): the prototype model subsystem (`decompiler/cpp/fspec.{hh,cc}`) is
 /// W4.  `Funcdata` holds a `FuncProto` placeholder so the struct layout and the
 /// `getFuncProto` accessor exist; the W3 IR construction never queries the
 /// prototype.
@@ -1377,7 +1377,7 @@ pub struct FuncProto;
 impl FuncProto {
     /// Is the output (return value) storage locked? (C++ `FuncProto::isOutputLocked`).
     ///
-    /// SEAM(W6): the proto-recovery passes are seam stubs and never lock the
+    /// STUB(W6): the proto-recovery passes are stubs and never lock the
     /// output, so this reports the un-recovered default (`false`).  `ActionDeadCode::
     /// gatherConsumedReturn` reads it to decide whether the return value is fully
     /// consumed; with no locked proto it falls through to the NZ-mask scan.
@@ -1388,7 +1388,7 @@ impl FuncProto {
     /// Number of bytes of the return value that are consumed, or 0 if unknown
     /// (C++ `FuncProto::getReturnBytesConsumed`).
     ///
-    /// SEAM(W6): no recovered proto, so 0 ("no restriction") — the faithful
+    /// STUB(W6): no recovered proto, so 0 ("no restriction") — the faithful
     /// un-recovered default.
     pub fn get_return_bytes_consumed(&self) -> i32 {
         0
@@ -1396,18 +1396,18 @@ impl FuncProto {
 }
 
 // ===========================================================================
-// DatabaseArch / TranslateSeam / TypeFactorySeam on the real seam Architecture.
+// DatabaseArch / TranslateAccess / TypeFactoryAccess on the ArchContext.
 // ===========================================================================
 //
-// SEAM(W4/W5/W6) closure: `database.rs` declares these traits (the slice of
+// STUB(W4/W5/W6) closure: `database.rs` declares these traits (the slice of
 // `glb` the symbol database needs) and the in-crate `TestArch` implements them
 // for unit tests.  There was no NON-test impl, so the ghidra-style naming in
 // `Database::build_variable_name` / `build_default_name` was unreachable in the
 // live pipeline (`ActionNameVars` hardcoded `format!("v{base}")`).  Implementing
-// the traits here on the real seam `Architecture` wires the live engine to that
+// the traits here on the `ArchContext` wires the live engine to that
 // renderer so `option namestyle ghidra` produces `iVarN` locals.
 
-impl crate::database::TranslateSeam for Architecture {
+impl crate::database::TranslateAccess for ArchContext {
     /// C++ `Translate::getRegisterName(spc,off,sz)` — forward to the engine's
     /// register lookup installed on the shared `AddrSpaceManager`.
     fn get_register_name(&self, space: &Rc<AddrSpace>, off: u64, size: int4) -> String {
@@ -1418,7 +1418,7 @@ impl crate::database::TranslateSeam for Architecture {
     }
 }
 
-impl crate::database::TypeFactorySeam for Architecture {
+impl crate::database::TypeFactoryAccess for ArchContext {
     /// C++ `TypeFactory::getBase(size,metatype)` — forward to the shared
     /// `TypeFactoryImpl`, falling back to a bare placeholder when no factory is
     /// shared (hand-built fixtures) or the lookup errs.
@@ -1449,18 +1449,18 @@ impl crate::database::TypeFactorySeam for Architecture {
     }
 }
 
-impl crate::database::DatabaseArch for Architecture {
+impl crate::database::DatabaseArch for ArchContext {
     fn num_spaces(&self) -> int4 {
         self.manage.num_spaces()
     }
-    fn types(&self) -> &dyn crate::database::TypeFactorySeam {
+    fn types(&self) -> &dyn crate::database::TypeFactoryAccess {
         self
     }
-    fn translate(&self) -> &dyn crate::database::TranslateSeam {
+    fn translate(&self) -> &dyn crate::database::TranslateAccess {
         self
     }
     fn min_funcsymbol_size(&self) -> int4 {
-        // The seam Architecture carries no `min_funcsymbol_size`; the symbol
+        // The ArchContext carries no `min_funcsymbol_size`; the symbol
         // database's only use of it is `FunctionSymbol` mapping (not the naming
         // path), and the engine default is 1.
         1
@@ -1481,7 +1481,7 @@ impl crate::database::DatabaseArch for Architecture {
 /// Shared handle to the [`Architecture`] (C++ `Funcdata::glb`, a borrowed
 /// `Architecture *`).
 ///
-/// SEAM(W4): the C++ `glb` is a non-owning back-pointer to the long-lived
+/// STUB(W4): the C++ `glb` is a non-owning back-pointer to the long-lived
 /// `Architecture`.  Modeled as `Rc<Architecture>` so multiple `Funcdata`
 /// snapshots (ADR 0007) can share it; the W3 code only reads through it.
-pub type ArchHandle = Rc<Architecture>;
+pub type ArchHandle = Rc<ArchContext>;

@@ -11,7 +11,7 @@
 //!
 //! Several C++ collaborators of `pcodeinject.cc` belong to later waves; this
 //! file carries minimal local seam surfaces for exactly the members the C++
-//! reaches, each annotated `// SEAM`:
+//! reaches, each annotated `// STUB`:
 //!   - [`InjectArchitecture`] — the `Architecture *glb` slice
 //!     `ExecutablePcode::build`/`evaluate` and `PcodeInjectLibrary` touch
 //!     (`getUniqueSpace`, etc.). `Architecture` is W4/W6.
@@ -172,7 +172,7 @@ impl InjectParameter {
 /// the three context addresses and the input/output storage locations — are
 /// modelled here as a plain struct that the concrete contexts embed.
 ///
-/// SEAM(W4/W6): the C++ holds an `Architecture *glb`; this port leaves the
+/// STUB(W4/W6): the C++ holds an `Architecture *glb`; this port leaves the
 /// architecture handle to the concrete context in `inject_sleigh.rs` (the only
 /// consumer), so the neutral half carries just the addresses and storage.
 #[derive(Debug, Clone, Default)]
@@ -430,7 +430,7 @@ pub trait InjectPayload {
 // InjectArchitecture seam (the `Architecture *glb` slice this file uses)
 // ---------------------------------------------------------------------------
 
-/// SEAM(W4/W6): the slice of the C++ `Architecture *glb` that
+/// STUB(W4/W6): the slice of the C++ `Architecture *glb` that
 /// `ExecutablePcode::build`/`evaluate` and `PcodeInjectLibrary` reach.
 ///
 /// `Architecture` is W4/W6; this minimal trait mirrors exactly the spaces the
@@ -447,7 +447,7 @@ pub trait InjectArchitecture {
 // InjectEngine seam (the kuna-sleigh emit path, currently non-public)
 // ---------------------------------------------------------------------------
 
-/// SEAM: the SLEIGH p-code **emit** path used by `InjectPayload::inject` and
+/// STUB: the SLEIGH p-code **emit** path used by `InjectPayload::inject` and
 /// `ExecutablePcode::build`.
 ///
 /// The C++ `inject()` body drives `SleighBuilder`/`PcodeCacher`/

@@ -27,18 +27,18 @@
 //!     C++ `list<SymbolEntry>::iterator` stored in `Symbol::mapentry` becomes an
 //!     [`EntryRef`] (which map + which handle).
 //!
-//! ## Seams (W4/W5/W6 — this porter owns only `database.rs`)
+//! ## Boundaries (W4/W5/W6 — this porter owns only `database.rs`)
 //!
 //! `database.cc` reaches deep into subsystems this porter does not own:
 //! `Architecture` (`glb`), the `TypeFactory` (`glb->types`), `Funcdata`,
-//! `Varnode`, `Translate` (register names), and `JoinRecord`.  Per the SEAM
-//! rule, these are satisfied by **local seam traits** defined here
-//! ([`DatabaseArch`], [`TypeFactorySeam`], [`TranslateSeam`]) plus the
-//! [`crate::dtype::Datatype`] seam; the W4 architecture porter / W6 type porter
+//! `Varnode`, `Translate` (register names), and `JoinRecord`.  Per the STUB
+//! rule, these are satisfied by **local access traits** defined here
+//! ([`DatabaseArch`], [`TypeFactoryAccess`], [`TranslateAccess`]) plus the
+//! [`crate::dtype::Datatype`] boundary; the W4 architecture porter / W6 type porter
 //! implement them in their own modules.  Where a path needs a fully-wired
-//! subsystem that no seam can stand in for (the `Funcdata`/`Varnode`-dependent
+//! subsystem that no stub can stand in for (the `Funcdata`/`Varnode`-dependent
 //! `buildDefaultName` Varnode arm, `getSizedType`, `updateType`), the method
-//! takes the dependency as an explicit argument or returns a seam-noted result.
+//! takes the dependency as an explicit argument or returns a stub-noted result.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -59,16 +59,16 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::varnode::varnode_flags;
 
 // ===========================================================================
-// Local seams (W4/W5/W6) — see module docs.
+// Local access traits (W4/W5/W6) — see module docs.
 // ===========================================================================
 
-/// Seam for the `TypeFactory` (`glb->types`, C++ `type.hh`, W6).
+/// Access trait for the `TypeFactory` (`glb->types`, C++ `type.hh`, W6).
 ///
-/// SEAM(W6): `database.cc` reaches `glb->types` to fabricate placeholder
+/// STUB(W6): `database.cc` reaches `glb->types` to fabricate placeholder
 /// data-types for symbols (`getBase`, `getTypeCode`, `getExactPiece`).  Only the
 /// thin slice the database touches is declared here; W6 implements it on the
 /// real `TypeFactory`.
-pub trait TypeFactorySeam {
+pub trait TypeFactoryAccess {
     /// C++ `TypeFactory::getBase(size,metatype)` — a base data-type of the given
     /// size and meta-type.
     fn get_base(&self, size: int4, meta: type_metatype) -> Rc<Datatype>;
@@ -77,45 +77,45 @@ pub trait TypeFactorySeam {
     fn get_type_code(&self) -> Rc<Datatype>;
 }
 
-/// Seam for the `Translate`/`Architecture` register-name lookup
+/// Access trait for the `Translate`/`Architecture` register-name lookup
 /// (`glb->translate->getRegisterName`, W5).
 ///
-/// SEAM(W5): `buildVariableName` and the kuna storage-comment helper render
+/// STUB(W5): `buildVariableName` and the kuna storage-comment helper render
 /// register-backed storage by name.  W5 routes this onto the real `Translate`.
-pub trait TranslateSeam {
+pub trait TranslateAccess {
     /// C++ `Translate::getRegisterName(spc,off,sz)` — the register name covering
     /// the given storage, or empty if none.
     fn get_register_name(&self, space: &Rc<AddrSpace>, off: uintb, size: int4) -> String;
 }
 
-/// Seam for the slice of `Architecture` (C++ `glb`) the symbol database needs.
+/// Access trait for the slice of `Architecture` (C++ `glb`) the symbol database needs.
 ///
-/// SEAM(W4/W5): the full `Architecture` is a separate W4 item (owned by the
+/// STUB(W4/W5): the full `Architecture` is a separate W4 item (owned by the
 /// fw-architecture serial porter).  `database.cc` reaches it for: the address
 /// space count (`numSpaces`), the type factory (`types`), the translator
 /// (`translate`), the minimum function-symbol size (`min_funcsymbol_size`), and
-/// the kuna angr-naming toggle (`name_style_angr`).  This local seam carries
+/// the kuna angr-naming toggle (`name_style_angr`).  This local trait carries
 /// exactly that slice so `database.rs` compiles and tests standalone; the
 /// architecture porter implements it on the real `Architecture`.
 pub trait DatabaseArch {
     /// Number of address spaces (C++ `AddrSpaceManager::numSpaces`).
     fn num_spaces(&self) -> int4;
-    /// Borrow the type factory (C++ `Architecture::types`).  // SEAM(W6)
-    fn types(&self) -> &dyn TypeFactorySeam;
-    /// Borrow the translator (C++ `Architecture::translate`).  // SEAM(W5)
-    fn translate(&self) -> &dyn TranslateSeam;
+    /// Borrow the type factory (C++ `Architecture::types`).  // STUB(W6)
+    fn types(&self) -> &dyn TypeFactoryAccess;
+    /// Borrow the translator (C++ `Architecture::translate`).  // STUB(W5)
+    fn translate(&self) -> &dyn TranslateAccess;
     /// Minimum bytes a FunctionSymbol map consumes (C++
     /// `Architecture::min_funcsymbol_size`).
     fn min_funcsymbol_size(&self) -> int4;
     /// C++ (kuna) `Architecture::name_style_angr` — is angr-style naming active?
-    /// SEAM(W4-p0pack): namestyle.  Default angr (per the `settableTable`
+    /// STUB(W4-p0pack): namestyle.  Default angr (per the `settableTable`
     /// registration in `kuna_stages.cc`); the architecture porter wires this to
     /// the `option namestyle` toggle.
     fn name_style_angr(&self) -> bool;
     /// C++ `Datatype::printNameBase` (`type.hh:286`): the (recursive) data-type
     /// name prefix `buildVariableName` prepends in the ghidra naming style
-    /// (`iVar`/`<type>Ram`, etc).  SEAM(W6): the real per-type renderer lives in
-    /// the type subsystem; the architecture seam forwards to it.  The base
+    /// (`iVar`/`<type>Ram`, etc).  STUB(W6): the real per-type renderer lives in
+    /// the type subsystem; the architecture access forwards to it.  The base
     /// renderer is "first char of the type name", empty for a nameless type.
     fn type_name_base(&self, dt: &Datatype) -> String;
 }
@@ -511,7 +511,7 @@ pub enum SymbolKind {
     Function {
         /// Minimum bytes a SymbolEntry consumes (C++ `consumeSize`).
         consume_size: int4,
-        /// Has an associated Funcdata been built?  SEAM(W5): the C++ owns a
+        /// Has an associated Funcdata been built?  STUB(W5): the C++ owns a
         /// `Funcdata *fd`; the function-data subsystem is a later wave, so the
         /// arena stores only whether one exists.
         has_funcdata: bool,
@@ -934,7 +934,7 @@ pub struct Scope {
     pub display_name: String,
     /// True if this is the local scope for a function (C++ `fd != null`).
     ///
-    /// SEAM(W5): the C++ holds a `Funcdata *fd`; the function-data subsystem is a
+    /// STUB(W5): the C++ holds a `Funcdata *fd`; the function-data subsystem is a
     /// later wave.  The arena tracks only whether this scope is functional
     /// (`isGlobal() == !is_functional`), which is all `database.cc` reads of `fd`
     /// (the `clearResolve`/`fillResolve` "does not apply to functional scopes"
@@ -1111,7 +1111,7 @@ impl ScopeResolve {
 // original symbol.  `kuna-base::error::KunaError` does not own this variant
 // (error.rs is not this porter's file; its module docs explicitly defer
 // `DuplicateFunctionError` to this wave).  Until error.rs grows the variant, the
-// payload lives here and maps onto `KunaError::Recov` at the seam.
+// payload lives here and maps onto `KunaError::Recov` at the boundary.
 
 /// C++ `DuplicateFunctionError` — a function added more than once to the
 /// database.  Local mapping (see module note); convertible to [`KunaError`].
@@ -1887,7 +1887,7 @@ impl Database {
     /// SymbolEntry (mapping the whole Symbol) into the range maps, marking
     /// persistence / address-tying and unraveling join addresses.
     ///
-    /// SEAM(W5): the join-address arm (`addr.isJoin()` → split into pieces via
+    /// STUB(W5): the join-address arm (`addr.isJoin()` → split into pieces via
     /// `glb->findJoin`) needs the `JoinRecord` table, a W5 subsystem.  Until W5
     /// supplies it, a join address is mapped as a single entry and a
     /// [`KunaError`]-free note is returned via `joined_pieces == false`.
@@ -2062,8 +2062,8 @@ impl Database {
         addr: &Address,
         usepoint: &Address,
     ) -> KunaResult<(SymbolId, EntryRef)> {
-        // C++ strips a "stripped" type first; the W6 Datatype seam has no
-        // hasStripped yet, so it is a no-op here (SEAM(W6)).
+        // C++ strips a "stripped" type first; the W6 Datatype stub has no
+        // hasStripped yet, so it is a no-op here (STUB(W6)).
         let sym = self.symbols.insert(Symbol::new(scope, nm, Some(ct)));
         self.add_symbol_internal(scope, sym)?;
         let eref = self.add_map_point(scope, sym, addr, usepoint)?;
@@ -2071,7 +2071,7 @@ impl Database {
     }
 
     /// C++ `Scope::addFunction` (`database.cc:1620-1637`): create a FunctionSymbol
-    /// at `addr`.  `min_funcsymbol_size` comes from the architecture seam.
+    /// at `addr`.  `min_funcsymbol_size` comes from the architecture access.
     pub fn add_function(
         &mut self,
         scope: ScopeId,
@@ -2081,7 +2081,7 @@ impl Database {
         type_code: Rc<Datatype>,
     ) -> KunaResult<SymbolId> {
         // C++ warns (printMessage) on overlap; the message channel is W5, so the
-        // overlap query is performed but the warning is dropped (SEAM(W5)).
+        // overlap query is performed but the warning is dropped (STUB(W5)).
         let mut sym = Symbol::new_empty(scope);
         sym.dtype = Some(type_code);
         sym.flags |= varnode_flags::namelock | varnode_flags::typelock; // FunctionSymbol::buildType
@@ -2160,7 +2160,7 @@ impl Database {
     }
 
     /// C++ `Scope::addEquateSymbol` (`database.cc:1717-1729`).
-    #[allow(clippy::too_many_arguments)] // mirrors the C++ addEquateSymbol signature (+ type seam arg)
+    #[allow(clippy::too_many_arguments)] // mirrors the C++ addEquateSymbol signature (+ type access arg)
     pub fn add_equate_symbol(
         &mut self,
         scope: ScopeId,
@@ -2659,7 +2659,7 @@ impl Database {
     /// The `FuncProto::injectid` parked on the FunctionSymbol `sid` (C++
     /// `fd->getFuncProto().getInjectId()`), or `-1` if `sid` is not a Function
     /// symbol (or carries no inject id). The by-id companion of
-    /// [`Database::set_function_inject_id`], used by the call-fixup commit seam to
+    /// [`Database::set_function_inject_id`], used by the call-fixup commit hook to
     /// replicate Ghidra's `getCallFixup()==null` guard — only auto-apply a fixup
     /// when none is already set (`CallFixupAnalyzer.java:89`).
     pub fn function_inject_id_for_symbol(&self, sid: SymbolId) -> int4 {
@@ -3043,8 +3043,8 @@ impl Database {
     }
 
     /// Flatten the global scope's mapped storage + owned ranges + the property map
-    /// into a read-only [`GlobalQuery`](crate::seams::GlobalQuery) the per-function
-    /// `glb` [`ArchHandle`](crate::seams::ArchHandle) carries.
+    /// into a read-only [`GlobalQuery`](crate::context::GlobalQuery) the per-function
+    /// `glb` [`ArchHandle`](crate::context::ArchHandle) carries.
     ///
     /// This is the wire for `localmap->queryProperties`'s walk up to the global
     /// scope: the C++ `glb` reaches the live `Database`, but the merged kuna `glb`
@@ -3055,8 +3055,8 @@ impl Database {
     /// carries exactly what `findContainer`/`inUse`/`getAllFlags` read; the owned
     /// `RangeList` is the global `Scope::rangetree`; the flagbase is the C++
     /// `Database::flagbase`.
-    pub fn build_global_query(&self) -> crate::seams::GlobalQuery {
-        use crate::seams::{GlobalEntry, GlobalQuery};
+    pub fn build_global_query(&self) -> crate::context::GlobalQuery {
+        use crate::context::{GlobalEntry, GlobalQuery};
         let gid = match self.globalscope {
             Some(g) => g,
             None => return GlobalQuery::default(),
@@ -3136,7 +3136,7 @@ impl Database {
             }
         }
         let scope = &self.scopes[gid];
-        crate::seams::GlobalQuery {
+        crate::context::GlobalQuery {
             entries,
             owned: scope.rangetree.clone(),
             flagbase: self.flagbase.clone(),
@@ -3144,7 +3144,7 @@ impl Database {
     }
 
     /// Snapshot every global FunctionSymbol's source-declared prototype, keyed by
-    /// `(space_index, entry_offset)`, for the seam architecture (the kuna stand-in
+    /// `(space_index, entry_offset)`, for the ArchContext (the kuna stand-in
     /// for the C++ callee `Funcdata`'s lazily-built locked `FuncProto`, read by
     /// `ActionDefaultParams::apply`'s `fc->copy(otherfunc->getFuncProto())`).  Only
     /// functions whose prototype was parked by `set_function_proto_pieces` (i.e.
@@ -3276,7 +3276,7 @@ impl Database {
     /// `removeSymbol`/`removeRange` loop exactly:
     ///
     /// - a type-locked overlap is left in place and the walk stops (C++ warns via
-    ///   `warningHeader` and `return`s; the warning channel is the W5 seam, the early
+    ///   `warningHeader` and `return`s; the warning channel is the W5 stub, the early
     ///   return is reproduced);
     /// - a `fake_input` overlap (a stack input) is left in place and the walk stops;
     /// - otherwise the Symbol is removed and `findOverlap` is re-queried.
@@ -3311,7 +3311,7 @@ impl Database {
                 // special case of a shared return call sharing the parameter location
                 // of the original function (no warning); either way: stop (C++ return).
                 let _ = (parameter, symcat == symbol_category::FUNCTION_PARAMETER);
-                // SEAM(W5 warning channel): C++ `fd->warningHeader(...)` text is dropped.
+                // STUB(W5 warning channel): C++ `fd->warningHeader(...)` text is dropped.
                 return;
             } else if symcat == symbol_category::FAKE_INPUT {
                 return; // Inputs in the stack space should not be unmapped.
@@ -3325,7 +3325,7 @@ impl Database {
     /// C++ `Database::setPropertyRange` (`database.cc:3246-3265`): OR boolean
     /// properties over a memory range.  `last_open` is `range.getLastAddrOpen(glb)`
     /// (the architecture-relative one-past-the-end address; the caller supplies it
-    /// since the AddrSpaceManager lives in the architecture seam).
+    /// since the AddrSpaceManager lives in the ArchContext).
     pub fn set_property_range(&mut self, flags: uint4, addr1: &Address, addr2: &Address) {
         self.flagbase.split(addr1);
         if !addr2.is_invalid() {
@@ -3374,8 +3374,8 @@ impl Database {
     /// address, usepoint, data-type, index and flags, build a variable name.
     ///
     /// `arch` supplies the translator (register names), the angr toggle, and the
-    /// type-name-base renderer (the W5/W6 seams).
-    #[allow(clippy::too_many_arguments)] // mirrors the C++ buildVariableName signature (+ arch seam)
+    /// type-name-base renderer (the W5/W6 stubs).
+    #[allow(clippy::too_many_arguments)] // mirrors the C++ buildVariableName signature (+ arch access)
     pub fn build_variable_name(
         &self,
         scope: ScopeId,
@@ -3626,7 +3626,7 @@ impl Database {
 
 /// A precomputed representative-Varnode view for [`Database::build_default_name`].
 ///
-/// SEAM(W5/W7): the C++ `buildDefaultName(sym, base, Varnode *vn)` reads
+/// STUB(W5/W7): the C++ `buildDefaultName(sym, base, Varnode *vn)` reads
 /// `vn->getAddr()`, `vn->getFlags()`, `vn->isConstant()`, `vn->getUsePoint(*fd)`,
 /// and `vn->getHigh()->isInput()` — all from the function-data / merge
 /// subsystems (later waves).  The caller in those waves materializes those
@@ -4105,7 +4105,7 @@ mod tests {
         Rc::clone(m.get_space(idx).unwrap())
     }
 
-    /// A test architecture seam (register names + namestyle toggle).
+    /// A test architecture access impl (register names + namestyle toggle).
     struct TestArch {
         num_spaces: int4,
         angr: bool,
@@ -4114,7 +4114,7 @@ mod tests {
     }
 
     struct TestTypes;
-    impl TypeFactorySeam for TestTypes {
+    impl TypeFactoryAccess for TestTypes {
         fn get_base(&self, size: int4, meta: type_metatype) -> Rc<Datatype> {
             Rc::new(Datatype::new(size, meta))
         }
@@ -4123,7 +4123,7 @@ mod tests {
         }
     }
 
-    impl TranslateSeam for TestArch {
+    impl TranslateAccess for TestArch {
         fn get_register_name(&self, sp: &Rc<AddrSpace>, off: uintb, size: int4) -> String {
             self.regnames
                 .get(&(sp.get_index(), off, size))
@@ -4136,10 +4136,10 @@ mod tests {
         fn num_spaces(&self) -> int4 {
             self.num_spaces
         }
-        fn types(&self) -> &dyn TypeFactorySeam {
+        fn types(&self) -> &dyn TypeFactoryAccess {
             &TestTypes
         }
-        fn translate(&self) -> &dyn TranslateSeam {
+        fn translate(&self) -> &dyn TranslateAccess {
             self
         }
         fn min_funcsymbol_size(&self) -> int4 {
@@ -4149,7 +4149,7 @@ mod tests {
             self.angr
         }
         fn type_name_base(&self, _dt: &Datatype) -> String {
-            String::new() // base Datatype seam has no name (SEAM(W6))
+            String::new() // base Datatype stub has no name (STUB(W6))
         }
     }
 
@@ -4767,7 +4767,7 @@ mod tests {
     /// Adversarial (Convert B1): a source-declared callee prototype parked on a
     /// global FunctionSymbol (`set_function_proto_pieces`) round-trips through
     /// `function_proto_pieces` (by address) and `build_callee_proto_pieces` (the
-    /// snapshot the seam reads in `ActionDefaultParams`), keyed by `(space, offset)`.
+    /// snapshot `ActionDefaultParams` reads via the ArchContext), keyed by `(space, offset)`.
     /// Functions WITHOUT a declared prototype never appear — so the proto-copy fires
     /// only for genuinely declared callees, generic over the proto (no hardcoded
     /// names / parameter sizes / the convert constants).
@@ -4799,7 +4799,7 @@ mod tests {
         assert_eq!(got.intypes.len(), 1);
         assert!(db.function_proto_pieces(g, &plain_addr).is_none());
 
-        // The seam snapshot carries exactly the one declared callee, keyed by
+        // The ArchContext snapshot carries exactly the one declared callee, keyed by
         // (space_index, offset) — generic, address-driven, no special-casing.
         let snap = db.build_callee_proto_pieces();
         assert_eq!(snap.len(), 1);

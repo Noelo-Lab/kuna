@@ -25,19 +25,19 @@
 //! | C++ class | `name()` | flags | C++ `apply` body |
 //! |---|---|---|---|
 //! | `ActionAssignHigh` | `"assignhigh"` | `rule_onceperfunc` | `data.setHighLevel()` (**realized**) |
-//! | `ActionMergeRequired` | `"mergerequired"` | `rule_onceperfunc` | `merge.mergeAddrTied/groupPartials/mergeMarker` (seam) |
-//! | `ActionMarkExplicit` | `"markexplicit"` | `rule_onceperfunc` | `coreaction.cc:3340` (seam) |
-//! | `ActionMarkImplied` | `"markimplied"` | `rule_onceperfunc` | `coreaction.cc:3519` (seam) |
-//! | `ActionMergeMultiEntry` | `"mergemultientry"` | `rule_onceperfunc` | `merge.mergeMultiEntry()` (seam) |
-//! | `ActionMergeCopy` | `"mergecopy"` | `rule_onceperfunc` | `merge.mergeOpcode(CPUI_COPY)` (seam) |
-//! | `ActionDominantCopy` | `"dominantcopy"` | `rule_onceperfunc` | `merge.processCopyTrims()` (seam) |
-//! | `ActionMarkIndirectOnly` | `"markindirectonly"` | `rule_onceperfunc` | `data.markIndirectOnly()` (seam) |
-//! | `ActionMergeAdjacent` | `"mergeadjacent"` | `rule_onceperfunc` | `merge.mergeAdjacent()` (seam) |
-//! | `ActionMergeType` | `"mergetype"` | `rule_onceperfunc` | `merge.mergeByDatatype(beginLoc,endLoc)` (seam) |
-//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:5085` (seam) |
-//! | `ActionCopyMarker` | `"copymarker"` | `rule_onceperfunc` | `merge.markInternalCopies()` (seam) |
-//! | `ActionNameVars` | `"namevars"` | `rule_onceperfunc` | `coreaction.cc:3076` (seam) |
-//! | `ActionSetCasts` | `"setcasts"` | `rule_onceperfunc` | `coreaction.cc:2812` (seam) |
+//! | `ActionMergeRequired` | `"mergerequired"` | `rule_onceperfunc` | `merge.mergeAddrTied/groupPartials/mergeMarker` (stub) |
+//! | `ActionMarkExplicit` | `"markexplicit"` | `rule_onceperfunc` | `coreaction.cc:3340` (stub) |
+//! | `ActionMarkImplied` | `"markimplied"` | `rule_onceperfunc` | `coreaction.cc:3519` (stub) |
+//! | `ActionMergeMultiEntry` | `"mergemultientry"` | `rule_onceperfunc` | `merge.mergeMultiEntry()` (stub) |
+//! | `ActionMergeCopy` | `"mergecopy"` | `rule_onceperfunc` | `merge.mergeOpcode(CPUI_COPY)` (stub) |
+//! | `ActionDominantCopy` | `"dominantcopy"` | `rule_onceperfunc` | `merge.processCopyTrims()` (stub) |
+//! | `ActionMarkIndirectOnly` | `"markindirectonly"` | `rule_onceperfunc` | `data.markIndirectOnly()` (stub) |
+//! | `ActionMergeAdjacent` | `"mergeadjacent"` | `rule_onceperfunc` | `merge.mergeAdjacent()` (stub) |
+//! | `ActionMergeType` | `"mergetype"` | `rule_onceperfunc` | `merge.mergeByDatatype(beginLoc,endLoc)` (stub) |
+//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:5085` (stub) |
+//! | `ActionCopyMarker` | `"copymarker"` | `rule_onceperfunc` | `merge.markInternalCopies()` (stub) |
+//! | `ActionNameVars` | `"namevars"` | `rule_onceperfunc` | `coreaction.cc:3076` (stub) |
+//! | `ActionSetCasts` | `"setcasts"` | `rule_onceperfunc` | `coreaction.cc:2812` (stub) |
 //!
 //! All fourteen are `rule_onceperfunc` in the C++ constructors.  Group strings in
 //! the schedule are all `"merge"` **except** `ActionSetCasts` (`"casts"`); but the
@@ -58,7 +58,7 @@
 //! interleave in the same schedule region but belong to the S5 dynamic/global
 //! symbol plane (not the merge group) and are left for their own items.
 //!
-//! # Seams (the `Funcdata`<->`Merge`/HighVariable/Cast bridge is not in the tree)
+//! # Stubs (the `Funcdata`<->`Merge`/HighVariable/Cast bridge is not in the tree)
 //!
 //! The S6 [`Merge`](crate::merge::Merge) engine **is** fully ported in the merged
 //! `merge.rs`, but it is a *standalone* engine driven through a
@@ -74,7 +74,7 @@
 //!
 //! 1. transcribes the C++ `apply` structure verbatim **as commented pseudocode**
 //!    (same iteration order, tie-breakers, and `count += 1` points), and
-//! 2. routes the unrealized mutation through a `// SEAM(W7/W8-funcdata)` note and
+//! 2. routes the unrealized mutation through a `// STUB(W7/W8-funcdata)` note and
 //!    returns `0` changes (the C++ contract: changes are signalled by `count`).
 //!
 //! The marking/cast bodies (`ActionMarkExplicit`/`ActionMarkImplied`/
@@ -83,7 +83,7 @@
 //! tunables (`max_implied_ref`/`max_term_duplication`), the HighVariable type
 //! surface, the `CastStrategy`/`print` rendering machinery, and the
 //! symbol/scope/callspec link surface — none present in the merged tree — so they
-//! are seamed in full.  Each seam is reported in this item's `losses` so the
+//! are stubbed in full.  Each stub is reported in this item's `losses` so the
 //! owning wave finishes the wiring by replaying the commented body against the
 //! real accessors.
 //!
@@ -240,9 +240,9 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
     //     the LOSS-206 gate below).
     // This is an IR-shape + recovered-output test, not a name/address special
     // case.
-    let targets: Vec<crate::seams::VarnodeId> =
+    let targets: Vec<crate::context::VarnodeId> =
         data.vbank().iter_loc_size_addr(size, &addr).collect();
-    let written: Vec<crate::seams::VarnodeId> = targets
+    let written: Vec<crate::context::VarnodeId> = targets
         .iter()
         .copied()
         .filter(|&vn| {
@@ -277,7 +277,7 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
     // special case: a register joining constants or stack/transient locals (boolless
     // `ACC` joining `#1`, condconst) is NOT all-persist and stays tied, so the
     // byte-identical clusters are unaffected.
-    let marker_writes: Vec<crate::seams::VarnodeId> = written
+    let marker_writes: Vec<crate::context::VarnodeId> = written
         .iter()
         .copied()
         .filter(|&vn| {
@@ -558,14 +558,14 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
                 Some(o) => o,
                 None => return false,
             };
-            let mut visited: Vec<crate::seams::VarnodeId> = Vec::new();
-            let mut stack: Vec<crate::seams::VarnodeId> = vec![mout];
+            let mut visited: Vec<crate::context::VarnodeId> = Vec::new();
+            let mut stack: Vec<crate::context::VarnodeId> = vec![mout];
             while let Some(cur) = stack.pop() {
                 if visited.contains(&cur) {
                     continue;
                 }
                 visited.push(cur);
-                let descs: Vec<crate::seams::OpId> = match data.vbank().get(cur) {
+                let descs: Vec<crate::context::OpId> = match data.vbank().get(cur) {
                     Some(v) => v.descend_iter().collect(),
                     None => continue,
                 };
@@ -713,7 +713,7 @@ impl Action for ActionMergeRequired {
 /// the printer reads only the explicit bit, so this never produces *less*
 /// inlining than the oracle for the addrtied case.  The PTRSUB-spacebase
 /// maxref-lift is ported faithfully.
-fn base_explicit(data: &Funcdata, vn: crate::seams::VarnodeId, mut maxref: int4) -> int4 {
+fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int4) -> int4 {
     let v = data.vbank().get(vn).expect("baseExplicit: stale vn");
     let def = match v.get_def() {
         Some(d) => d,
@@ -744,7 +744,7 @@ fn base_explicit(data: &Funcdata, vn: crate::seams::VarnodeId, mut maxref: int4)
     // versions (e.g. the `if`-arm def of `XMM0_Qa` joined with its post-`if`
     // MULTIEQUAL) is rendered as a single named local, so its representative must
     // be explicit and nameable — exactly the keystone that lets `ActionNameVars`
-    // give it a `vN` with a `float8 vN;` decl.  Previously seamed (the comment
+    // give it a `vN` with a `float8 vN;` decl.  Previously stubbed (the comment
     // claimed `numInstances == 1` by construction); the S6 merge now produces
     // genuine multi-instance highs, so the check is live.
     if let Some(high) = v.get_high() {
@@ -845,7 +845,7 @@ fn base_explicit(data: &Funcdata, vn: crate::seams::VarnodeId, mut maxref: int4)
 /// `ActionMarkExplicit::OpStackElement`, `coreaction.cc:3140`).
 struct OpStackElement {
     /// The Varnode at this point in the path.
-    vn: crate::seams::VarnodeId,
+    vn: crate::context::VarnodeId,
     /// Slot of the first input Varnode to traverse in this subexpression.
     slot: int4,
     /// Slot(+1) of the last input Varnode to traverse in this subexpression.
@@ -854,7 +854,7 @@ struct OpStackElement {
 
 impl OpStackElement {
     /// C++ `OpStackElement::OpStackElement(Varnode *v)` (`coreaction.cc:3140`).
-    fn new(data: &Funcdata, vn: crate::seams::VarnodeId) -> OpStackElement {
+    fn new(data: &Funcdata, vn: crate::context::VarnodeId) -> OpStackElement {
         let mut slot = 0;
         let mut slotback = 0;
         let v = data.vbank().get(vn).expect("OpStackElement: stale vn");
@@ -881,7 +881,7 @@ impl OpStackElement {
 /// For a given multi-descendant Varnode, decide if it should be explicit by
 /// counting the terminal terms duplicated through its expression (C++
 /// `ActionMarkExplicit::processMultiplier`, `coreaction.cc:3211`).
-fn process_multiplier(data: &mut Funcdata, vn: crate::seams::VarnodeId, max: int4) {
+fn process_multiplier(data: &mut Funcdata, vn: crate::context::VarnodeId, max: int4) {
     let mut opstack: Vec<OpStackElement> = vec![OpStackElement::new(data, vn)];
     let mut finalcount = 0;
     while let Some(top) = opstack.last_mut() {
@@ -927,8 +927,8 @@ fn process_multiplier(data: &mut Funcdata, vn: crate::seams::VarnodeId, max: int
 /// Find multiple-descendant chains and promote interacting implieds to explicit
 /// (C++ `ActionMarkExplicit::multipleInteraction`, `coreaction.cc:3177`).
 /// Returns the number of Varnodes promoted to explicit.
-fn multiple_interaction(data: &mut Funcdata, multlist: &[crate::seams::VarnodeId]) -> int4 {
-    let mut purgelist: Vec<crate::seams::VarnodeId> = Vec::new();
+fn multiple_interaction(data: &mut Funcdata, multlist: &[crate::context::VarnodeId]) -> int4 {
+    let mut purgelist: Vec<crate::context::VarnodeId> = Vec::new();
     for &vn in multlist {
         // All elements in this list should have a defining op.
         let def = data
@@ -1019,7 +1019,7 @@ impl Action for ActionMarkExplicit {
         // C++ coreaction.cc:3340 — ActionMarkExplicit::apply.
         let maxref = data.get_arch().max_implied_ref;
         // beginDef()..beginDef(0): iterate the non-free (input|written) varnodes.
-        let candidates: Vec<crate::seams::VarnodeId> = data
+        let candidates: Vec<crate::context::VarnodeId> = data
             .vbank()
             .iter_def()
             .filter(|&vn| {
@@ -1027,7 +1027,7 @@ impl Action for ActionMarkExplicit {
                 v.is_input() || v.is_written()
             })
             .collect();
-        let mut multlist: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut multlist: Vec<crate::context::VarnodeId> = Vec::new();
         let mut count = 0;
         for vn in candidates {
             let desccount = base_explicit(data, vn, maxref);
@@ -1108,7 +1108,7 @@ impl Action for ActionMarkImplied {
         // each leaf as implied (if its cover permits) or explicit.
         let mut count = 0;
         // C++ iterates beginLoc()..endLoc(); iter_loc() is the loc-set order.
-        let seeds: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+        let seeds: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
         for seed in seeds {
             {
                 let v = match data.vbank().get(seed) {
@@ -1120,7 +1120,7 @@ impl Action for ActionMarkImplied {
                 }
             }
             // Depth-first stack: (varnode, next-descendant-index, snapshot).
-            let mut varstack: Vec<(crate::seams::VarnodeId, usize, Vec<crate::seams::OpId>)> =
+            let mut varstack: Vec<(crate::context::VarnodeId, usize, Vec<crate::context::OpId>)> =
                 vec![(seed, 0, data.descend_snapshot(seed))];
             while let Some((vncur, idx, descs)) = varstack.last().cloned() {
                 if idx == descs.len() {
@@ -1164,7 +1164,7 @@ impl Action for ActionMarkImplied {
 /// `MergeContext` import).
 fn op_cover_pair(
     data: &Funcdata,
-    op: crate::seams::OpId,
+    op: crate::context::OpId,
 ) -> (int4, crate::cover::CoverPoint) {
     let parent = data.obank().get(op).and_then(|o| o.get_parent());
     let blk = parent.map(|p| data.block_index_pub(p)).unwrap_or(0);
@@ -1176,8 +1176,8 @@ fn op_cover_pair(
 /// Order of the Varnodes is not important.
 fn is_possible_alias_step(
     data: &Funcdata,
-    vn1: crate::seams::VarnodeId,
-    vn2: crate::seams::VarnodeId,
+    vn1: crate::context::VarnodeId,
+    vn2: crate::context::VarnodeId,
 ) -> bool {
     let var = [vn1, vn2];
     for i in 0..2 {
@@ -1216,8 +1216,8 @@ fn is_possible_alias_step(
 /// bounds the recursion.
 fn is_possible_alias(
     data: &Funcdata,
-    vn1: crate::seams::VarnodeId,
-    vn2: crate::seams::VarnodeId,
+    vn1: crate::context::VarnodeId,
+    vn2: crate::context::VarnodeId,
     depth: int4,
 ) -> bool {
     if vn1 == vn2 {
@@ -1270,7 +1270,7 @@ fn is_possible_alias(
         return true; // Couldn't find absolute difference
     }
     let depth = depth - 1;
-    let fe = |a: crate::seams::VarnodeId, b: crate::seams::VarnodeId| {
+    let fe = |a: crate::context::VarnodeId, b: crate::context::VarnodeId| {
         crate::expression::functional_equality(a, b, data.vbank(), data.obank())
     };
     match opc1 {
@@ -1346,7 +1346,7 @@ fn is_possible_alias(
 /// layer.  The LOAD/CALL-crossing arm IS ported faithfully (it is what the
 /// array datatests need and is self-contained on the Cover the merge pass
 /// already builds).
-fn check_implied_cover(data: &mut Funcdata, vn: crate::seams::VarnodeId) -> bool {
+fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bool {
     let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
         Some(d) => d,
         None => return true,
@@ -1372,7 +1372,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::seams::VarnodeId) -> bool
             .map(|s| s.get_offset())
             .unwrap_or(0);
         let load_ptr = data.obank().get(def).and_then(|o| o.get_in(1));
-        let store_ops: Vec<crate::seams::OpId> =
+        let store_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_STORE).collect();
         for storeop in store_ops {
             let sop = match data.obank().get(storeop) {
@@ -1453,7 +1453,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::seams::VarnodeId) -> bool
         Some(h) => h,
         None => return true,
     };
-    let inputs: Vec<crate::seams::VarnodeId> = {
+    let inputs: Vec<crate::context::VarnodeId> = {
         let o = data.obank().get(def).expect("checkImpliedCover: stale def (inflate)");
         let n = o.num_input();
         (0..n).filter_map(|i| o.get_in(i)).collect()
@@ -1650,7 +1650,7 @@ impl Action for ActionMarkIndirectOnly {
         // C++ coreaction.hh:358 — ActionMarkIndirectOnly::apply
         //   data.markIndirectOnly(); return 0;
         //
-        // SEAM(W7/W8-funcdata): `Funcdata::markIndirectOnly`
+        // STUB(W7/W8-funcdata): `Funcdata::markIndirectOnly`
         // (funcdata_varnode.cc) — which sets the `indirect_creation` /
         // `indirectonly` Varnode flags by scanning the def-set — is not ported in
         // the merged tree.  No change applied (count stays 0).
@@ -1742,7 +1742,7 @@ impl Action for ActionMergeType {
         //
         // Drive `Merge::merge_by_datatype` over the loc-ordered Varnode slice
         // (`beginLoc()..endLoc()`) via the persistent `covermerge`.
-        let range: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+        let range: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
         data.with_covermerge(|merge, data| {
             let _ = merge.merge_by_datatype(data, &range);
         });
@@ -1797,7 +1797,7 @@ impl Action for ActionHideShadow {
         // The walk visits the *written* def-set, dedups HighVariables via the
         // high mark flag, and calls the ported `Merge::hide_shadows(ctx, high)`.
         //
-        // SEAM(W7/W8-funcdata): no `beginDef`/`endDef(flags)` def-set iterator on
+        // STUB(W7/W8-funcdata): no `beginDef`/`endDef(flags)` def-set iterator on
         // `Funcdata`, the HighVariable mark surface needs the high bridge, and
         // `hideShadows` needs the `getMerge()`/`MergeContext` bridge.  Body
         // transcribed; no change applied (count stays 0).
@@ -1914,10 +1914,10 @@ impl Action for ActionCopyMarker {
 /// the piece was bound (caller skips the `vN` allocator).
 fn bind_proto_partial_piece(
     data: &mut Funcdata,
-    piece_vn: crate::seams::VarnodeId,
-    piece_high: crate::seams::HighVariableId,
+    piece_vn: crate::context::VarnodeId,
+    piece_high: crate::context::HighVariableId,
     base: &mut int4,
-    recmap: &std::collections::BTreeMap<crate::seams::HighVariableId, OpRecommend>,
+    recmap: &std::collections::BTreeMap<crate::context::HighVariableId, OpRecommend>,
 ) -> bool {
     // Varnode *rootVn = PieceNode::findRoot(vn);  if (rootVn == vn) return;
     let root_vn = data.piece_find_root(piece_vn);
@@ -2233,8 +2233,8 @@ struct OpRecommend {
 /// recommendation when one high is fed by several calls (`makeRec`'s `typeOrder` check).
 fn build_func_param_name_recmap(
     data: &mut Funcdata,
-) -> std::collections::BTreeMap<crate::seams::HighVariableId, OpRecommend> {
-    use crate::seams::HighVariableId;
+) -> std::collections::BTreeMap<crate::context::HighVariableId, OpRecommend> {
+    use crate::context::HighVariableId;
     let mut recmap: std::collections::BTreeMap<HighVariableId, OpRecommend> =
         std::collections::BTreeMap::new();
 
@@ -2357,7 +2357,7 @@ fn build_func_param_name_recmap(
 /// no prefix (so the ghidra name degenerates to `Var<index>`, matching the C++
 /// empty-`printNameBase` case).
 fn kuna_default_local_name(
-    arch: &crate::seams::Architecture,
+    arch: &crate::context::ArchContext,
     ct: Option<&crate::dtype::Datatype>,
     base: &mut int4,
 ) -> String {
@@ -2386,9 +2386,9 @@ fn kuna_default_local_name(
 /// `vN` default.
 fn func_param_name_for_high(
     data: &mut Funcdata,
-    recmap: &std::collections::BTreeMap<crate::seams::HighVariableId, OpRecommend>,
-    high: crate::seams::HighVariableId,
-    name_rep: crate::seams::VarnodeId,
+    recmap: &std::collections::BTreeMap<crate::context::HighVariableId, OpRecommend>,
+    high: crate::context::HighVariableId,
+    name_rep: crate::context::VarnodeId,
 ) -> Option<String> {
     if recmap.is_empty() {
         return None;
@@ -2411,7 +2411,7 @@ fn func_param_name_for_high(
 }
 
 fn name_local_highs_angr(data: &mut Funcdata) {
-    use crate::seams::HighVariableId;
+    use crate::context::HighVariableId;
     // Materialize the recovered/locked parameters as Symbols in the local scope
     // (C++ `ProtoStoreSymbol::setInput` did this at recovery time; the kuna
     // `ProtoStoreInternal` does not, so it is done here before the walk).
@@ -2428,7 +2428,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // Iterate Varnodes in C++ location order; hit each high once at its name
     // representative (the highest-priority member), matching `linkSymbols`'
     // `getNameRepresentative()` dedup.
-    let vlist: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+    let vlist: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
     let mut base: int4 = 1;
     // C++ `ActionNameVars::apply`'s namerec rename (coreaction.cc:3087-3094) for the
     // spacebase `&symbol` references recorded by `linkSpacebaseSymbol` (3016): rename
@@ -2715,7 +2715,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // `buildDefaultName`'s `dat_<addr>` arm (database.cc:1778-1782) fires for a
         // **persistent** Varnode that is **not a register**.  In C++ that persist
         // flag is painted by `localmap->queryProperties` from the *global* scope's
-        // range flags; the W4 global-scope queryProperties surface is a seam in this
+        // range flags; the W4 global-scope queryProperties surface is a stub in this
         // port, so an input read of read-only global RAM reaches here with
         // `persist == false`.  The faithful proxy for "this is a global, route to
         // `dat_`" is the same predicate `PrintC::pushUnnamedLocation` uses to emit
@@ -2825,7 +2825,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // offset-constant highs, so its placement does not perturb the local naming.
     // `iter_loc` yields every space in C++ location order (const space first), so a
     // single walk reproduces both the const-space and per-space calls.
-    let all_locs: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+    let all_locs: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
     for vn in &all_locs {
         if data.vbank().get(*vn).map(|v| v.is_spacebase()).unwrap_or(false) {
             data.link_spacebase_symbol(*vn);
@@ -2983,7 +2983,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::seams::Architecture;
+    use crate::context::ArchContext;
 
     // Mirrors the coreaction_protos.rs test harness (funcdata_block fixtures).
     fn build_manager() -> AddrSpaceManager {
@@ -3007,7 +3007,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -3089,10 +3089,10 @@ mod tests {
         assert!(fd.is_high_on());
     }
 
-    /// The merge-delegation actions are seamed (no `getMerge()` bridge yet): each
+    /// The merge-delegation actions are stubbed (no `getMerge()` bridge yet): each
     /// `apply` runs cleanly and signals no change on a hand-built empty function.
     #[test]
-    fn seamed_merge_actions_apply_as_noop() {
+    fn stubbed_merge_actions_apply_as_noop() {
         let mut fd = build_fd();
         let mut ctx = ActionContext::new();
         let mut acts: Vec<Box<dyn Action>> = vec![
@@ -3107,15 +3107,15 @@ mod tests {
         ];
         for act in &mut acts {
             let r = act.apply(&mut fd, &mut ctx);
-            assert_eq!(r, 0, "{} seam returns 0", act.get_name());
-            assert_eq!(act.base().count, 0, "{} seam makes no change", act.get_name());
+            assert_eq!(r, 0, "{} stub returns 0", act.get_name());
+            assert_eq!(act.base().count, 0, "{} stub makes no change", act.get_name());
         }
     }
 
-    /// The marking/name/cast actions are seamed (HighVariable/symbol/cast bridge
+    /// The marking/name/cast actions are stubbed (HighVariable/symbol/cast bridge
     /// absent): each `apply` runs cleanly and signals no change.
     #[test]
-    fn seamed_marking_actions_apply_as_noop() {
+    fn stubbed_marking_actions_apply_as_noop() {
         let mut fd = build_fd();
         let mut ctx = ActionContext::new();
         let mut acts: Vec<Box<dyn Action>> = vec![
@@ -3127,8 +3127,8 @@ mod tests {
         ];
         for act in &mut acts {
             let r = act.apply(&mut fd, &mut ctx);
-            assert_eq!(r, 0, "{} seam returns 0", act.get_name());
-            assert_eq!(act.base().count, 0, "{} seam makes no change", act.get_name());
+            assert_eq!(r, 0, "{} stub returns 0", act.get_name());
+            assert_eq!(act.base().count, 0, "{} stub makes no change", act.get_name());
         }
     }
 

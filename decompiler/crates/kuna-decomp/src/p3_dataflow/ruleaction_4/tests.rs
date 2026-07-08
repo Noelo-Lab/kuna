@@ -20,7 +20,7 @@ use kuna_base::space::{
 };
 
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{Architecture, BlockId};
+use crate::context::{ArchContext, BlockId};
 
 // ---------------------------------------------------------------------------
 // Fixtures (mirroring funcdata_op/tests.rs)
@@ -47,7 +47,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -925,7 +925,7 @@ fn concatcommute_or_lower() {
 }
 
 // ---------------------------------------------------------------------------
-// Seam-affected rules: assert the documented early-out
+// Stub-affected rules: assert the documented early-out
 // ---------------------------------------------------------------------------
 
 // RuleLoadVarnode: a LOAD whose space operand (0x18) is not a valid spacebase
@@ -935,7 +935,7 @@ fn concatcommute_or_lower() {
 // gather, the symbol paint, the stack-pointer-flow solve) is pinned directly by
 // the unit tests in `coreaction_stackptr` / `funcdata_spacebase`'s test modules.
 #[test]
-fn loadvarnode_seam_noop() {
+fn loadvarnode_stub_noop() {
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let ptr = mk_vn(&mut fd, 8, 0x10);

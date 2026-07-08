@@ -22,10 +22,10 @@
 //! Integer rules: `uintb`→`u64`, `int4`→`i32`; wrapping arithmetic on offsets;
 //! `getSeqNum().getOrder()` is a `u32` order index.
 //!
-//! # Cross-wave seams
+//! # Cross-wave stubs
 //!
 //! `double.cc` reaches several subsystems later waves own.  Where a body reaches
-//! one, the call routes through a `// SEAM(...)`-noted helper that returns the
+//! one, the call routes through a `// STUB(...)`-noted helper that returns the
 //! C++ guard's *failing* value, so the matcher declines exactly when (and only
 //! when) the absent subsystem would block it — a conservative no-op, never a
 //! wrong rewrite.  The affected surfaces (each ledgered as a loss):
@@ -42,7 +42,7 @@
 //! * `Funcdata::markReturnCopy` / `Varnode::setWriteMask`-style RETURN-copy form
 //!   (W4): `replaceCopyForce`.
 //!
-//! Two formerly-seamed surfaces are now ported (`rport/w10-doublemove`):
+//! Two formerly-stubbed surfaces are now ported (`rport/w10-doublemove`):
 //! `Funcdata::combineInputVarnodes` (the input-varnode merge feeding
 //! `RuleDoubleOut::applyOp`, `funcdata_varnode.cc:383`), and
 //! `TypeOp::isArithmeticOp`/`isFloatingPointOp` (the W6 `addlflags`, read via
@@ -51,9 +51,9 @@
 //! (the typelock gate) was already present.
 //!
 //! `op_set_opcode` needs a fully-formed `TypeOp` (opcode + property flags); the
-//! flag word is the W6 `TypeFactory` fill, so [`set_opcode_seam`] builds the
+//! flag word is the W6 `TypeFactory` fill, so [`set_opcode_typed`] builds the
 //! `TypeOp` with the correct opcode value and an empty flag word — correct for
-//! the rule's own dispatch, flags deferred.  // SEAM(W6)
+//! the rule's own dispatch, flags deferred.  // STUB(W6)
 
 use kuna_base::address::{calc_mask, Address};
 use kuna_base::space::spacetype;
@@ -62,7 +62,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 /// `sizeof(uintb)` from the C++ — constants cannot exceed 8-byte precision.
 const SIZEOF_UINTB: int4 = 8;
@@ -73,7 +73,7 @@ const SIZEOF_UINTB: int4 = 8;
 /// flag-less `TypeOp::new(opc,0,..)` leaves the op with `getEvalType()==0`, which
 /// blocks `RuleCollapseConstants` from folding a constant SUBPIECE/PIECE the
 /// `SubvariableFlow` split produces.
-fn set_opcode_seam(data: &mut Funcdata, op: OpId, opc: OpCode) {
+fn set_opcode_typed(data: &mut Funcdata, op: OpId, opc: OpCode) {
     data.op_set_opcode(op, crate::typeop::type_op_for(opc));
 }
 
@@ -996,7 +996,7 @@ impl SplitVarnode {
                 .new_unique_out(self.wholesize, concatop)
                 .expect("fcw: new_unique_out");
             self.whole = Some(whole);
-            set_opcode_seam(data, concatop, OpCode::CPUI_PIECE);
+            set_opcode_typed(data, concatop, OpCode::CPUI_PIECE);
             op_set_output(data, concatop, whole);
             op_set_input(data, concatop, hi, 0);
             op_set_input(data, concatop, self.lo.expect("fcw: lo"), 1);
@@ -1006,7 +1006,7 @@ impl SplitVarnode {
                 .new_unique_out(self.wholesize, concatop)
                 .expect("fcw: new_unique_out");
             self.whole = Some(whole);
-            set_opcode_seam(data, concatop, OpCode::CPUI_INT_ZEXT);
+            set_opcode_typed(data, concatop, OpCode::CPUI_INT_ZEXT);
             op_set_output(data, concatop, whole);
             op_set_input(data, concatop, self.lo.expect("fcw: lo"), 0);
         }
@@ -1051,7 +1051,7 @@ impl SplitVarnode {
             Some(addr) => addr,
             None => {
                 // newaddr = data.getArch()->constructJoinAddress(...)
-                // SEAM(W4): Architecture::constructJoinAddress (the join address
+                // STUB(W4): Architecture::constructJoinAddress (the join address
                 // space) is not ported; without it we cannot fabricate the
                 // logical whole's storage for the non-contiguous case.  The
                 // caller (IndirectForm) has already passed its verify guards, so
@@ -1081,24 +1081,24 @@ impl SplitVarnode {
                 // Reinsert so we don't break the MULTIEQUAL sequence at block top
                 let bl = op_get_parent(data, loop_).expect("blfw: parent");
                 data.op_uninsert(loop_);
-                set_opcode_seam(data, loop_, OpCode::CPUI_SUBPIECE);
+                set_opcode_typed(data, loop_, OpCode::CPUI_SUBPIECE);
                 op_set_all_input(data, loop_, &inlist);
                 data.op_insert_begin(loop_, bl);
             }
             OpCode::CPUI_INDIRECT => {
                 // Reinsert AFTER the affector
                 // PcodeOp *affector = PcodeOp::getOpFromConst(loop->getIn(1)->getAddr());
-                // SEAM(W3-varnode): getOpFromConst (decode an IOP annotation back
-                // to a PcodeOp) is deferred (funcdata_op.rs op_insert_after seam).
+                // STUB(W3-varnode): getOpFromConst (decode an IOP annotation back
+                // to a PcodeOp) is deferred (funcdata_op.rs op_insert_after stub).
                 // Without the affector we cannot reinsert after it; transform the
                 // op in place (matching the C++ non-INDIRECT fallthrough) so the
                 // SUBPIECE is still well-formed.  The only visible delta is the
                 // reinsert position relative to a dead/live affector.
-                set_opcode_seam(data, loop_, OpCode::CPUI_SUBPIECE);
+                set_opcode_typed(data, loop_, OpCode::CPUI_SUBPIECE);
                 op_set_all_input(data, loop_, &inlist);
             }
             _ => {
-                set_opcode_seam(data, loop_, OpCode::CPUI_SUBPIECE);
+                set_opcode_typed(data, loop_, OpCode::CPUI_SUBPIECE);
                 op_set_all_input(data, loop_, &inlist);
             }
         }
@@ -1117,18 +1117,18 @@ impl SplitVarnode {
             OpCode::CPUI_MULTIEQUAL => {
                 let bl = op_get_parent(data, hiop).expect("bhfw: parent");
                 data.op_uninsert(hiop);
-                set_opcode_seam(data, hiop, OpCode::CPUI_SUBPIECE);
+                set_opcode_typed(data, hiop, OpCode::CPUI_SUBPIECE);
                 op_set_all_input(data, hiop, &inlist);
                 data.op_insert_begin(hiop, bl);
             }
             OpCode::CPUI_INDIRECT => {
-                // SEAM(W3-varnode): getOpFromConst affector reinsert deferred (see
+                // STUB(W3-varnode): getOpFromConst affector reinsert deferred (see
                 // build_lo_from_whole); transform in place.
-                set_opcode_seam(data, hiop, OpCode::CPUI_SUBPIECE);
+                set_opcode_typed(data, hiop, OpCode::CPUI_SUBPIECE);
                 op_set_all_input(data, hiop, &inlist);
             }
             _ => {
-                set_opcode_seam(data, hiop, OpCode::CPUI_SUBPIECE);
+                set_opcode_typed(data, hiop, OpCode::CPUI_SUBPIECE);
                 op_set_all_input(data, hiop, &inlist);
             }
         }
@@ -1212,7 +1212,7 @@ fn space_from_const_index(data: &Funcdata, vn: VarnodeId) -> Option<i32> {
 /// `SplitVarnode::testContiguousPointers`).  Returns `(first, second,
 /// space_index)` on success.
 ///
-/// SEAM(W4): the space resolution goes through [`space_from_const_index`], which
+/// STUB(W4): the space resolution goes through [`space_from_const_index`], which
 /// is deferred, so this always returns `None` today.  The full pointer-adjacency
 /// logic is transcribed for when the space surface lands.
 fn test_contiguous_pointers(
@@ -1262,7 +1262,7 @@ fn test_contiguous_pointers(
 }
 
 /// Resolve a space index's endianness (C++ `spc->isBigEndian()`).  Pairs with
-/// [`space_from_const_index`]; both are W4 seams (a space index off a constant is
+/// [`space_from_const_index`]; both are W4 stubs (a space index off a constant is
 /// not resolvable today), so this is only reachable once that lands.
 fn space_is_big_endian_by_index(data: &Funcdata, idx: i32) -> bool {
     data.get_arch()
@@ -1282,7 +1282,7 @@ fn is_addr_tied_contiguous(data: &Funcdata, lo: VarnodeId, hi: VarnodeId) -> Opt
         return None;
     }
 
-    // SEAM(W4): the C++ also rejects when the pieces carry conflicting
+    // STUB(W4): the C++ also rejects when the pieces carry conflicting
     // SymbolEntrys (Varnode::getSymbolEntry, the W4 symbol table).  Without the
     // symbol surface we cannot read the entries; we omit this extra rejection.
     // This is *less* conservative than the C++ (it could accept a pair the C++
@@ -1504,7 +1504,7 @@ fn create_binary_op(
         // The output whole didn't previously exist
         let addr = op_get_addr(data, existop);
         let newop = data.new_op(2, addr);
-        set_opcode_seam(data, newop, opc);
+        set_opcode_typed(data, newop, opc);
         op_set_output(data, newop, out.get_whole().expect("cbo: out whole"));
         op_set_input(data, newop, in1.get_whole().expect("cbo: in1 whole"), 0);
         op_set_input(data, newop, in2.get_whole().expect("cbo: in2 whole"), 1);
@@ -1513,7 +1513,7 @@ fn create_binary_op(
         out.build_hi_from_whole(data);
     } else {
         // The whole previously existed
-        set_opcode_seam(data, existop, opc);
+        set_opcode_typed(data, existop, opc);
         op_set_input(data, existop, in1.get_whole().expect("cbo: in1 whole"), 0);
         op_set_input(data, existop, in2.get_whole().expect("cbo: in2 whole"), 1);
     }
@@ -1547,7 +1547,7 @@ fn create_shift_op(
     if op_code(data, existop) != OpCode::CPUI_PIECE {
         let addr = op_get_addr(data, existop);
         let newop = data.new_op(2, addr);
-        set_opcode_seam(data, newop, opc);
+        set_opcode_typed(data, newop, opc);
         op_set_output(data, newop, out.get_whole().expect("cso: out whole"));
         op_set_input(data, newop, in_.get_whole().expect("cso: in whole"), 0);
         op_set_input(data, newop, sa, 1);
@@ -1555,7 +1555,7 @@ fn create_shift_op(
         out.build_lo_from_whole(data);
         out.build_hi_from_whole(data);
     } else {
-        set_opcode_seam(data, existop, opc);
+        set_opcode_typed(data, existop, opc);
         op_set_input(data, existop, in_.get_whole().expect("cso: in whole"), 0);
         op_set_input(data, existop, sa, 1);
     }
@@ -1589,7 +1589,7 @@ fn replace_bool_op(
 ) {
     in1.find_create_whole(data);
     in2.find_create_whole(data);
-    set_opcode_seam(data, boolop, opc);
+    set_opcode_typed(data, boolop, opc);
     op_set_input(data, boolop, in1.get_whole().expect("rbo: in1 whole"), 0);
     op_set_input(data, boolop, in2.get_whole().expect("rbo: in2 whole"), 1);
 }
@@ -1612,7 +1612,7 @@ fn create_bool_op(
     in2.find_create_whole(data);
     let addr = op_get_addr(data, addrop);
     let newop = data.new_op(2, addr);
-    set_opcode_seam(data, newop, opc);
+    set_opcode_typed(data, newop, opc);
     let newbool = data.new_unique_out(1, newop).expect("create_bool_op: newbool");
     op_set_input(data, newop, in1.get_whole().expect("cbo2: in1 whole"), 0);
     op_set_input(data, newop, in2.get_whole().expect("cbo2: in2 whole"), 1);
@@ -1661,7 +1661,7 @@ fn create_phi_op(
 
     let addr = op_get_addr(data, existop);
     let newop = data.new_op(numin as int4, addr);
-    set_opcode_seam(data, newop, OpCode::CPUI_MULTIEQUAL);
+    set_opcode_typed(data, newop, OpCode::CPUI_MULTIEQUAL);
     op_set_output(data, newop, out.get_whole().expect("create_phi_op: out whole"));
     for (i, item) in inlist.iter().enumerate().take(numin) {
         op_set_input(data, newop, item.get_whole().expect("create_phi_op: in whole"), i as int4);
@@ -1689,7 +1689,7 @@ fn replace_indirect_op(
     in_.find_create_whole(data);
     let addr = op_get_addr(data, affector);
     let newop = data.new_op(2, addr);
-    set_opcode_seam(data, newop, OpCode::CPUI_INDIRECT);
+    set_opcode_typed(data, newop, OpCode::CPUI_INDIRECT);
     op_set_output(data, newop, out.get_whole().expect("rio: out whole"));
     op_set_input(data, newop, in_.get_whole().expect("rio: in whole"), 0);
     let iopvn = data.new_varnode_iop(affector);
@@ -1720,7 +1720,7 @@ fn replace_copy_force(
         }
         let op_addr = op_get_addr(data, other_point1);
         let other_copy = data.new_op(1, op_addr);
-        set_opcode_seam(data, other_copy, OpCode::CPUI_COPY);
+        set_opcode_typed(data, other_copy, OpCode::CPUI_COPY);
         let vn = data
             .new_varnode_out(in_.get_size(), addr, other_copy)
             .expect("rcf: new_varnode_out");
@@ -1730,7 +1730,7 @@ fn replace_copy_force(
     }
     let copyhi_addr = op_get_addr(data, copyhi);
     let whole_copy = data.new_op(1, copyhi_addr);
-    set_opcode_seam(data, whole_copy, OpCode::CPUI_COPY);
+    set_opcode_typed(data, whole_copy, OpCode::CPUI_COPY);
     let out_vn = data
         .new_varnode_out(in_.get_size(), addr, whole_copy)
         .expect("rcf: new_varnode_out");
@@ -4486,7 +4486,7 @@ impl PhiForm {
 
 /// `Varnode::getSpaceFromConst`/`getSpace()->getType()` for an INDIRECT iop
 /// operand — is it in the IOP space?  The IOP-space annotation is read directly
-/// off the Varnode's space (the W3 IR carries it), so this is **not** a seam.
+/// off the Varnode's space (the W3 IR carries it), so this is **not** a stub.
 fn vn_space_type(data: &Funcdata, vn: VarnodeId) -> spacetype {
     data.vbank().get(vn).expect("vn_space_type").get_space().get_type()
 }
@@ -4494,14 +4494,14 @@ fn vn_space_type(data: &Funcdata, vn: VarnodeId) -> spacetype {
 /// `PcodeOp::getOpFromConst(vn->getAddr())` — decode an IOP-space annotation back
 /// to the PcodeOp it references.
 ///
-/// SEAM(W3-varnode): the iop encoding/decoding (`op->getIn(1)->getAddr()` ->
+/// STUB(W3-varnode): the iop encoding/decoding (`op->getIn(1)->getAddr()` ->
 /// `PcodeOp*`) is the same surface deferred in `funcdata_op.rs`'s
 /// `op_insert_after` INDIRECT special-case.  Without it we cannot recover the
 /// affector op from an INDIRECT's second operand, so `IndirectForm::verify` and
 /// the LOAD/STORE INDIRECT handling decline.  Returns `None`; the callers treat
 /// that as "can't resolve" and bail — a conservative no-op.  Recorded as a loss.
 fn get_op_from_const(_data: &Funcdata, _vn: VarnodeId) -> Option<OpId> {
-    // SEAM(W3-varnode): PcodeOp::getOpFromConst
+    // STUB(W3-varnode): PcodeOp::getOpFromConst
     None
 }
 
@@ -4544,7 +4544,7 @@ impl IndirectForm {
         self.affector = get_op_from_const(data, op_get_in(data, ind, 1));
         let affector = match self.affector {
             Some(a) => a,
-            // SEAM(W3-varnode): getOpFromConst unavailable -> can't recover the
+            // STUB(W3-varnode): getOpFromConst unavailable -> can't recover the
             // affector; decline (conservative no-op).
             None => return false,
         };
@@ -4734,7 +4734,7 @@ impl CopyForceForm {
 }
 
 // =============================================================================
-// RuleDoubleIn / RuleDoubleOut marking helpers (W6 typeop seam)
+// RuleDoubleIn / RuleDoubleOut marking helpers (W6 typeop stub)
 // =============================================================================
 
 /// `TypeOp::isArithmeticOp() || TypeOp::isFloatingPointOp()` for the op defining
@@ -4895,7 +4895,7 @@ impl Rule for RuleDoubleIn {
 /// inspect a return value), so this returns `true`.  A `LowlevelError` from the
 /// merge (non-input or non-contiguous pieces) would be a real invariant
 /// violation; it is surfaced via `expect`, mirroring the C++ `throw`.
-fn combine_input_varnodes_seam(data: &mut Funcdata, vnhi: VarnodeId, vnlo: VarnodeId) -> bool {
+fn combine_input_varnodes_checked(data: &mut Funcdata, vnhi: VarnodeId, vnlo: VarnodeId) -> bool {
     data.combine_input_varnodes(vnhi, vnlo)
         .expect("RuleDoubleOut: combineInputVarnodes on non-input/non-contiguous pieces");
     true
@@ -4924,7 +4924,7 @@ impl RuleDoubleOut {
             return 0;
         }
 
-        // SEAM(W4): the C++ also rejects when vnhi/vnlo carry conflicting
+        // STUB(W4): the C++ also rejects when vnhi/vnlo carry conflicting
         // SymbolEntrys (Varnode::getSymbolEntry, the W4 symbol table).  Without
         // the symbol surface we cannot read the entries; we omit this extra
         // rejection (less conservative — could accept a pair the C++ rejects on a
@@ -4983,7 +4983,7 @@ impl Rule for RuleDoubleOut {
             return 0;
         }
         // data.combineInputVarnodes(vnhi,vnlo);  return 1;  (double.cc:3353-3354)
-        if !combine_input_varnodes_seam(data, vnhi, vnlo) {
+        if !combine_input_varnodes_checked(data, vnhi, vnlo) {
             return 0;
         }
         1
@@ -5163,7 +5163,7 @@ impl Rule for RuleDoubleLoad {
         let newload = data.new_op(2, latest_addr.clone());
         let vnout = data.new_unique_out(size, newload).expect("dload: vnout");
         let spcvn = space_index_to_varnode(data, spc);
-        set_opcode_seam(data, newload, OpCode::CPUI_LOAD);
+        set_opcode_typed(data, newload, OpCode::CPUI_LOAD);
         op_set_input(data, newload, spcvn, 0);
         let mut addrvn = op_get_in(data, loadlo, 1);
         let mut latest = latest;
@@ -5173,7 +5173,7 @@ impl Rule for RuleDoubleLoad {
             let addout = data
                 .new_unique_out(vn_get_size(data, addrvn), newadd)
                 .expect("dload: addout");
-            set_opcode_seam(data, newadd, OpCode::CPUI_INT_ADD);
+            set_opcode_typed(data, newadd, OpCode::CPUI_INT_ADD);
             op_set_input(data, newadd, addrvn, 0);
             let c = data.new_constant(vn_get_size(data, addrvn), offset as uintb);
             op_set_input(data, newadd, c, 1);
@@ -5187,7 +5187,7 @@ impl Rule for RuleDoubleLoad {
 
         // Change the concatenation to a copy from the big load
         data.op_remove_input(op, 1);
-        set_opcode_seam(data, op, OpCode::CPUI_COPY);
+        set_opcode_typed(data, op, OpCode::CPUI_COPY);
         op_set_input(data, op, vnout, 0);
 
         1
@@ -5372,7 +5372,7 @@ impl Rule for RuleDoubleStore {
                     let latest_addr = op_get_addr(data, latest);
                     let newstore = data.new_op(3, latest_addr);
                     let spcvn = space_index_to_varnode(data, spc);
-                    set_opcode_seam(data, newstore, OpCode::CPUI_STORE);
+                    set_opcode_typed(data, newstore, OpCode::CPUI_STORE);
                     op_set_input(data, newstore, spcvn, 0);
                     let mut addrvn = op_get_in(data, storelo, 1);
                     if vn_is_constant(data, addrvn) {
@@ -5425,13 +5425,13 @@ pub fn specs() -> Vec<RuleSpec> {
 
 #[cfg(test)]
 mod tests {
-    //! Tests for the seam-free decision logic: the static matchers
+    //! Tests for the stub-free decision logic: the static matchers
     //! (`verifyMultNegOne`, `adjacentOffsets`, `isAddrTiedContiguous`), the
     //! pairing discovery (`wholeList` / `findWholeSplitToPieces` /
     //! `findWholeBuiltFromPieces` / `inHandLo*`), and a `LogicalForm::verify`
-    //! form-matrix entry.  Op-graph mutation that reaches a cross-wave seam
+    //! form-matrix entry.  Op-graph mutation that reaches a cross-wave stub
     //! (`getOpFromConst`, `getSpaceFromConst`, `combineInputVarnodes`, the W6
-    //! arithmetic/float op classification) is exercised only up to the seam.
+    //! arithmetic/float op classification) is exercised only up to the stub.
 
     use super::*;
     use std::rc::Rc;
@@ -5443,7 +5443,7 @@ mod tests {
 
     use crate::dtype::{type_metatype, Datatype};
     use crate::op::pcodeop_flags;
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
 
     fn build_manager() -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
@@ -5466,7 +5466,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -5505,7 +5505,7 @@ mod tests {
 
     /// Build a block, append `op` to it (so it gains a parent/order), and return
     /// the block id.  `op` must already have its opcode set.
-    fn mk_block_with(fd: &mut Funcdata, ops: &[OpId]) -> crate::seams::BlockId {
+    fn mk_block_with(fd: &mut Funcdata, ops: &[OpId]) -> crate::context::BlockId {
         let root = fd.bblocks_ref().root.expect("root");
         let bl = fd.bblocks_mut().new_block_basic(root);
         for &op in ops {
@@ -5523,7 +5523,7 @@ mod tests {
         off: u64,
         outsize: int4,
         out_off: u64,
-        bl: crate::seams::BlockId,
+        bl: crate::context::BlockId,
     ) -> VarnodeId {
         let r = ram(fd);
         let out = fd.new_varnode_out(outsize, &Address::new(r, out_off), op).unwrap();

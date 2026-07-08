@@ -11,7 +11,7 @@
 //! a `FlowBlock *`, and a `BlockGraph` *owns* its components through a
 //! `vector<FlowBlock *> list` (its destructor `delete`s them).  Per ADR 0001
 //! every block lives in a [`BlockArena`] (a `slotmap` generational arena) keyed
-//! by the newtype [`BlockId`](crate::seams::BlockId); the pointer members
+//! by the newtype [`BlockId`](crate::context::BlockId); the pointer members
 //! become `Option<BlockId>` and the component list becomes `Vec<BlockId>`.
 //! Edge endpoints (`BlockEdge.point`) are likewise `BlockId`s.
 //!
@@ -47,13 +47,13 @@
 //! The structuring *decision* logic and all printing depend on subsystems not
 //! yet ported:
 //!   - `emit`/`printRaw`/`printHeader`/`printTree` need `PrintLanguage` (W8);
-//!     they are seam-noted (`// SEAM(W8)`) and not transcribed here.
+//!     they are seam-noted (`// STUB(W8)`) and not transcribed here.
 //!   - The SSA/data-flow-heavy `BlockBasic` methods (`isComplex`,
 //!     `unblockedMulti`, `noInterveningStatement`, `findMultiequal`,
 //!     `earliestUse`, …), `BlockWhileDo::findLoopVariable` and friends,
 //!     `flipInPlaceTest`/`flipInPlaceExecute`, and `preferComplement` need
 //!     `Funcdata`/`Varnode`/`HighVariable` (W7); they are seam-noted
-//!     (`// SEAM(W7)`) and left to the funcdata/blockaction wave.
+//!     (`// STUB(W7)`) and left to the funcdata/blockaction wave.
 //!   - `getJumptable`/`getSwitchType`/`grabCaseBasic` need `JumpTable` and the
 //!     type system (W4/W7); the switch *structure* (`CaseOrder`, edge handling)
 //!     is carried, the jump-table-driven label assignment is seam-noted.
@@ -63,7 +63,7 @@
 //!
 //! ## op.rs seam surfaces fulfilled here
 //!
-//! op.rs documented (`// SEAM(W3-block)`) that `PcodeOp::nextOp`/`previousOp`/
+//! op.rs documented (`// STUB(W3-block)`) that `PcodeOp::nextOp`/`previousOp`/
 //! `target`/`compareOrder` and `IopSpace::printRaw`'s branch arm need the block
 //! graph.  `compareOrder` needs only [`FlowBlock::find_common_block`] (provided
 //! here) plus the two ops' parents; the others need *both* the op intrusive
@@ -84,7 +84,7 @@ use kuna_num::opcodes::{get_opname, OpCode};
 use slotmap::SlotMap;
 
 use crate::op::PcodeOp;
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 // ---------------------------------------------------------------------------
 // Marshaling ids (block-local in C++ `block.cc:22-31`)
@@ -328,7 +328,7 @@ pub enum BlockKind {
     Plain,
     /// `t_basic` — a [`BlockBasic`].  The op list lives as basic-block intrusive
     /// links on the ops (op.rs); here we keep the `Funcdata` owner is implicit,
-    /// the original address `cover`, and the op-list head/tail (SEAM(W7): the
+    /// the original address `cover`, and the op-list head/tail (STUB(W7): the
     /// `Funcdata *data` back-pointer is supplied by funcdata).
     Basic(BasicData),
     /// `t_graph` — a generic BlockGraph (components only).
@@ -345,12 +345,12 @@ pub enum BlockKind {
     Condition { opc: OpCode },
     /// `t_if` — a formal "if" structure.
     If { gototype: uint4, gototarget: Option<BlockId> },
-    /// `t_whiledo` — top-tested loop.  SEAM(W7): the `initializeOp`/`iterateOp`/
+    /// `t_whiledo` — top-tested loop.  STUB(W7): the `initializeOp`/`iterateOp`/
     /// `loopDef` (for-loop detection) are filled by the structuring wave.
     WhileDo {
-        initialize_op: Option<crate::seams::OpId>,
-        iterate_op: Option<crate::seams::OpId>,
-        loop_def: Option<crate::seams::OpId>,
+        initialize_op: Option<crate::context::OpId>,
+        iterate_op: Option<crate::context::OpId>,
+        loop_def: Option<crate::context::OpId>,
     },
     /// `t_dowhile` — bottom-tested loop (components only).
     DoWhile,
@@ -367,7 +367,7 @@ pub enum BlockKind {
 
 /// The BlockBasic-specific data (C++ `BlockBasic` non-edge members).
 ///
-/// SEAM(W7): the op sequence (`list<PcodeOp*> op`) is realized as basic-block
+/// STUB(W7): the op sequence (`list<PcodeOp*> op`) is realized as basic-block
 /// intrusive links on the ops themselves (op.rs `ListKind::Basic`), driven
 /// through `Funcdata`; this struct keeps the head/tail [`OpId`]s and the
 /// original address `cover`.  The `Funcdata *data` back-pointer is the owning
@@ -375,9 +375,9 @@ pub enum BlockKind {
 #[derive(Debug, Clone, Default)]
 pub struct BasicData {
     /// First op in the block (C++ `op.front()`), `None` when empty
-    pub op_head: Option<crate::seams::OpId>,
+    pub op_head: Option<crate::context::OpId>,
     /// Last op in the block (C++ `op.back()`), `None` when empty
-    pub op_tail: Option<crate::seams::OpId>,
+    pub op_tail: Option<crate::context::OpId>,
     /// Number of ops in the block (C++ `op.size()`)
     pub op_len: usize,
     /// Original range of addresses covered by this basic block (C++ `RangeList cover`)
@@ -510,40 +510,40 @@ impl FlowBlock {
     }
     /// The iterate op of a `BlockWhileDo` (C++ `BlockWhileDo::getIterateOp`), or
     /// `None`.  When set, the while-do is emitted as a `for` loop.
-    pub fn get_iterate_op(&self) -> Option<crate::seams::OpId> {
+    pub fn get_iterate_op(&self) -> Option<crate::context::OpId> {
         match &self.kind {
             BlockKind::WhileDo { iterate_op, .. } => *iterate_op,
             _ => None,
         }
     }
     /// The initializer op of a `BlockWhileDo` (C++ `BlockWhileDo::getInitializeOp`).
-    pub fn get_initialize_op(&self) -> Option<crate::seams::OpId> {
+    pub fn get_initialize_op(&self) -> Option<crate::context::OpId> {
         match &self.kind {
             BlockKind::WhileDo { initialize_op, .. } => *initialize_op,
             _ => None,
         }
     }
     /// The loop-def MULTIEQUAL of a `BlockWhileDo` (C++ `loopDef`).
-    pub fn get_loop_def(&self) -> Option<crate::seams::OpId> {
+    pub fn get_loop_def(&self) -> Option<crate::context::OpId> {
         match &self.kind {
             BlockKind::WhileDo { loop_def, .. } => *loop_def,
             _ => None,
         }
     }
     /// Set the iterate op of a `BlockWhileDo` (C++ `iterateOp = ...`).
-    pub fn set_iterate_op(&mut self, op: Option<crate::seams::OpId>) {
+    pub fn set_iterate_op(&mut self, op: Option<crate::context::OpId>) {
         if let BlockKind::WhileDo { iterate_op, .. } = &mut self.kind {
             *iterate_op = op;
         }
     }
     /// Set the initializer op of a `BlockWhileDo` (C++ `initializeOp = ...`).
-    pub fn set_initialize_op(&mut self, op: Option<crate::seams::OpId>) {
+    pub fn set_initialize_op(&mut self, op: Option<crate::context::OpId>) {
         if let BlockKind::WhileDo { initialize_op, .. } = &mut self.kind {
             *initialize_op = op;
         }
     }
     /// Set the loop-def MULTIEQUAL of a `BlockWhileDo` (C++ `loopDef = ...`).
-    pub fn set_loop_def(&mut self, op: Option<crate::seams::OpId>) {
+    pub fn set_loop_def(&mut self, op: Option<crate::context::OpId>) {
         if let BlockKind::WhileDo { loop_def, .. } = &mut self.kind {
             *loop_def = op;
         }
@@ -1485,7 +1485,7 @@ impl BlockGraph {
     ///   * `t_if` (`block.cc:3167`): only an `ifgoto` (size 1) has a last op —
     ///     `getBlock(0)->lastOp()`.
     ///   * everything else (base default, `block.hh`): `None`.
-    pub fn struct_last_op(&self, this_id: BlockId) -> Option<crate::seams::OpId> {
+    pub fn struct_last_op(&self, this_id: BlockId) -> Option<crate::context::OpId> {
         match &self.arena[this_id].kind {
             BlockKind::Basic(bd) => bd.op_tail,
             BlockKind::Ls => {
@@ -2174,7 +2174,7 @@ impl BlockGraph {
     /// Build a new BlockBasic and add it to the graph
     /// (C++ `BlockGraph::newBlockBasic`, `block.cc:1673`).
     ///
-    /// SEAM(W7): the C++ takes `Funcdata *fd`; here the funcdata back-pointer is
+    /// STUB(W7): the C++ takes `Funcdata *fd`; here the funcdata back-pointer is
     /// implicit (the function owns the arena), so we only build the basic data.
     pub fn new_block_basic(&mut self, graph_id: BlockId) -> BlockId {
         let ret =
@@ -3973,12 +3973,12 @@ impl BlockMap {
 }
 
 // ---------------------------------------------------------------------------
-// op.rs seam surfaces (SEAM(W3-block) fulfilled)
+// op.rs seam surfaces (STUB(W3-block) fulfilled)
 // ---------------------------------------------------------------------------
 
 /// Yield the `(shortcut_char, target_start_addr)` of a branch op's non-fallthru
 /// target's start block, for [`crate::op::iop_space_print_raw`]'s `block_info`
-/// closure (op.rs `// SEAM(W3-block)`, `op.cc:41-59`).
+/// closure (op.rs `// STUB(W3-block)`, `op.cc:41-59`).
 ///
 /// The C++ `IopSpace::printRaw` branch arm reads `bs = op->getParent();` then
 /// `bl = bs->getOut(0); if (bl->getStart()==op->getAddr()) bl = bs->getOut(1);`
@@ -3986,7 +3986,7 @@ impl BlockMap {
 /// parent block id; `arena`/`shortcut_of` provide the block graph + the
 /// space-shortcut char.
 ///
-/// SEAM(W3-block): the full wiring (op→parent, addr-of-op) lives in
+/// STUB(W3-block): the full wiring (op→parent, addr-of-op) lives in
 /// `funcdata_op`, which owns both banks; this provides the block-side decode.
 pub fn iop_block_info(
     arena: &BlockArena,
@@ -4029,7 +4029,7 @@ pub fn block_get_stop(arena: &BlockArena, this_id: BlockId) -> Address {
 /// `op.cc:808`).  Returns -1 if `op_a` executes earlier (dominates), 1 if `op_b`
 /// does, 0 if there is no absolute order.
 ///
-/// This is the block-graph-dependent half op.rs deferred (`// SEAM(W3-block)`).
+/// This is the block-graph-dependent half op.rs deferred (`// STUB(W3-block)`).
 /// `op_a`/`op_b` are the two ops (the caller resolves them from the op bank);
 /// their parent block ids and instruction orders are passed alongside so the
 /// op crate need not be borrowed mutably here.

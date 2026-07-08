@@ -20,12 +20,12 @@
 //!     (records are emitted in `CheapSorter` order, each as a `<ref>` followed
 //!     by a `<cpoolrec>`).
 //!
-//! SEAM(W6): the data-type half of the record (`Datatype *type`,
+//! STUB(W6): the data-type half of the record (`Datatype *type`,
 //! `type->encodeRef`, `typegrp.decodeType`/`decodeTypeWithCodeFlags`) belongs
 //! to the W6 `type.{hh,cc}` / `TypeFactory` port.  Until then the record holds
 //! an [`Rc<Datatype>`](crate::dtype::Datatype) (the W6 skeleton, exactly where
 //! the C++ holds `Datatype *`) and the encode/decode of the type reference goes
-//! through the local [`CPoolTypeFactory`] / [`CPoolTypeRef`] seam traits; W6
+//! through the local [`CPoolTypeFactory`] / [`CPoolTypeRef`] access traits; W6
 //! supplies an impl of these over the real `TypeFactory`.
 
 use std::collections::BTreeMap;
@@ -64,15 +64,15 @@ pub const ELEM_REF: ElementId = ElementId::new("ref", 111);
 pub const ELEM_TOKEN: ElementId = ElementId::new("token", 112);
 
 // ---------------------------------------------------------------------------
-// SEAM(W6): the TypeFactory / Datatype-reference operations cpool reaches.
+// STUB(W6): the TypeFactory / Datatype-reference operations cpool reaches.
 // ---------------------------------------------------------------------------
 
-/// SEAM(W6): the slice of a `Datatype` reference cpool needs to *encode*
+/// STUB(W6): the slice of a `Datatype` reference cpool needs to *encode*
 /// (`type->encodeRef(encoder)`).
 ///
 /// W6's real `Datatype` implements this over its `encodeRef`; until then the
 /// record carries an [`Rc<Datatype>`](crate::dtype::Datatype) and the encode
-/// path is the W6 seam.  The [`crate::dtype::Datatype`] skeleton itself only
+/// path is the W6 stub.  The [`crate::dtype::Datatype`] skeleton itself only
 /// carries `size`/`metatype`/`id`, not enough to reproduce `encodeRef`, so the
 /// encode is parameterized on a borrowed `&dyn CPoolTypeRef` rather than
 /// reaching into the skeleton.
@@ -81,7 +81,7 @@ pub trait CPoolTypeRef {
     fn encode_ref(&self, encoder: &mut dyn Encoder) -> KunaResult<()>;
 }
 
-/// SEAM(W6): the slice of `TypeFactory` cpool needs to *decode* a data-type
+/// STUB(W6): the slice of `TypeFactory` cpool needs to *decode* a data-type
 /// reference (`typegrp.decodeType` / `typegrp.decodeTypeWithCodeFlags`).
 ///
 /// W6's real `TypeFactory` implements this; the W4/W6 caller supplies it to
@@ -159,7 +159,7 @@ pub struct CPoolRecord {
     value: uintb,
     /// Data-type associated with the object (C++ `Datatype *type`).
     ///
-    /// SEAM(W6): `None` == the C++ null `type` pointer.  An empty (just
+    /// STUB(W6): `None` == the C++ null `type` pointer.  An empty (just
     /// `createRecord`'d) record has no type until `decode`/`putRecord` sets it.
     type_: Option<Rc<Datatype>>,
     /// For string literals, the raw byte data of the string (C++ `byteData`).
@@ -206,7 +206,7 @@ impl CPoolRecord {
 
     /// Get the data-type associated with \b this (C++ `getType`).
     ///
-    /// SEAM(W6): `None` == the C++ null `type` pointer.
+    /// STUB(W6): `None` == the C++ null `type` pointer.
     pub fn get_type(&self) -> Option<&Rc<Datatype>> {
         self.type_.as_ref()
     }
@@ -229,7 +229,7 @@ impl CPoolRecord {
     /// Encode \b this CPoolRecord description as a \<cpoolrec> element
     /// (C++ `CPoolRecord::encode`).
     ///
-    /// SEAM(W6): the trailing `type->encodeRef(encoder)` goes through the
+    /// STUB(W6): the trailing `type->encodeRef(encoder)` goes through the
     /// `type_ref` argument (the W6 `Datatype` reference encoder).  The C++
     /// dereferences `type` unconditionally here, so an encode with no type is
     /// an internal-invariant violation.
@@ -301,7 +301,7 @@ impl CPoolRecord {
     /// Initialize \b this CPoolRecord instance from a \<cpoolrec> element
     /// (C++ `CPoolRecord::decode`).
     ///
-    /// SEAM(W6): the trailing data-type resolution goes through `typegrp`
+    /// STUB(W6): the trailing data-type resolution goes through `typegrp`
     /// (the W6 `TypeFactory`).
     pub fn decode(
         &mut self,
@@ -489,7 +489,7 @@ pub trait ConstantPool {
     /// Encode all records in this container to a stream
     /// (C++ pure-virtual `encode`).
     ///
-    /// SEAM(W6): the per-record `type->encodeRef` goes through `type_provider`,
+    /// STUB(W6): the per-record `type->encodeRef` goes through `type_provider`,
     /// which resolves a record's [`Datatype`] to its W6 reference encoder.
     fn encode(
         &self,
@@ -545,7 +545,7 @@ pub trait ConstantPool {
     }
 }
 
-/// SEAM(W6): resolves a [`CPoolRecord`]'s [`Datatype`] to its reference encoder
+/// STUB(W6): resolves a [`CPoolRecord`]'s [`Datatype`] to its reference encoder
 /// for the container `encode` path.
 ///
 /// The C++ calls `record.type->encodeRef(encoder)` directly; with the W6
@@ -688,7 +688,7 @@ impl ConstantPool for ConstantPoolInternal {
             // The C++ calls `record.encode(encoder)`, which ends in
             // `type->encodeRef(encoder)`.  With the W6 type skeleton lacking
             // `encodeRef`, route the record's type-ref through the provider via
-            // a per-record adaptor (SEAM(W6)).
+            // a per-record adaptor (STUB(W6)).
             let adaptor = ProviderTypeRef {
                 provider: type_provider,
                 record,
@@ -720,7 +720,7 @@ impl ConstantPool for ConstantPoolInternal {
 /// Per-record adaptor that satisfies [`CPoolTypeRef`] (needed by
 /// [`CPoolRecord::encode`]) by delegating to a [`CPoolTypeRefProvider`].
 ///
-/// SEAM(W6): bridges the C++ `record.type->encodeRef(encoder)` call — which
+/// STUB(W6): bridges the C++ `record.type->encodeRef(encoder)` call — which
 /// the W6 `Datatype` skeleton cannot do directly — to the provider supplied to
 /// the container `encode`.
 struct ProviderTypeRef<'a> {
@@ -745,17 +745,17 @@ mod tests {
     use kuna_base::space::AddrSpaceManager;
     use crate::dtype::type_metatype;
 
-    /// A trivial type factory/provider seam impl for round-trip tests: every
+    /// A trivial type factory/provider access impl for round-trip tests: every
     /// data-type reference encodes as an empty `<void/>` element and decodes
     /// back to a fixed skeleton.  This lets the cpool encode/decode round-trip
     /// be exercised without the W6 `TypeFactory`.
-    struct VoidTypeSeam;
+    struct VoidTypeAccess;
 
     fn void_type() -> Rc<Datatype> {
         Rc::new(Datatype::new(0, type_metatype::TYPE_VOID))
     }
 
-    impl CPoolTypeRef for VoidTypeSeam {
+    impl CPoolTypeRef for VoidTypeAccess {
         fn encode_ref(&self, encoder: &mut dyn Encoder) -> KunaResult<()> {
             encoder.open_element(&kuna_base::marshal::ELEM_VOID);
             encoder.close_element(&kuna_base::marshal::ELEM_VOID);
@@ -763,7 +763,7 @@ mod tests {
         }
     }
 
-    impl CPoolTypeRefProvider for VoidTypeSeam {
+    impl CPoolTypeRefProvider for VoidTypeAccess {
         fn encode_record_type_ref(
             &self,
             _record: &CPoolRecord,
@@ -773,7 +773,7 @@ mod tests {
         }
     }
 
-    impl CPoolTypeFactory for VoidTypeSeam {
+    impl CPoolTypeFactory for VoidTypeAccess {
         fn decode_type(&mut self, decoder: &mut dyn Decoder) -> KunaResult<Rc<Datatype>> {
             let id = decoder.open_element()?;
             decoder.close_element(id)?;
@@ -810,12 +810,12 @@ mod tests {
         let mut buf: Vec<u8> = Vec::new();
         {
             let mut enc = XmlEncode::new(&mut buf);
-            pool.encode(&mut enc, &VoidTypeSeam).unwrap();
+            pool.encode(&mut enc, &VoidTypeAccess).unwrap();
         }
         let mut dec = XmlDecode::new(&mgr, &reg);
         dec.ingest_stream(&buf).unwrap();
         let mut out = ConstantPoolInternal::new();
-        out.decode(&mut dec, &mut VoidTypeSeam).unwrap();
+        out.decode(&mut dec, &mut VoidTypeAccess).unwrap();
         out
     }
 
@@ -963,6 +963,6 @@ mod tests {
         let mut dec = XmlDecode::new(&mgr, &reg);
         dec.ingest_stream(&buf).unwrap();
         let mut rec = CPoolRecord::new();
-        assert!(rec.decode(&mut dec, &mut VoidTypeSeam).is_err());
+        assert!(rec.decode(&mut dec, &mut VoidTypeAccess).is_err());
     }
 }

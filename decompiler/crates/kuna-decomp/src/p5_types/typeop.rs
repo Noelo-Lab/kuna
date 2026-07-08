@@ -1,7 +1,7 @@
 //! Port of `decompiler/cpp/typeop.{cc,hh}` — the data-type and behavior
 //! information associated with each p-code op-code (S5 type-lattice edges).
 //!
-//! ## What this module is (and the seam it replaces)
+//! ## What this module is (and the per-wave stubs it replaces)
 //!
 //! The C++ `TypeOp` is a per-op-code object: it bundles an [`OpCode`], a cached
 //! property-flag word (`opflags`, the `PcodeOp::*` bits `setOpcode` ORs in), an
@@ -13,12 +13,12 @@
 //! cached `opflags` into the op's `flags`, and the rules read the op-code
 //! properties through `op->code()`-keyed lookups into `inst[]`.
 //!
-//! The W3 IR carried only a thin slice of this in [`crate::seams::TypeOp`]
+//! The W3 IR carried only a thin slice of this in [`crate::context::TypeOp`]
 //! (`opcode`/`flags`/`name`).  Each W6/W8 wave that needed to retype an op built
 //! that triple from a small **local** helper transcribing the `typeop.cc`
 //! `opflags` literals inline:
 //!
-//!   * `ruleaction_5::type_op_seam`
+//!   * `ruleaction_5::type_op_lookup`
 //!   * `funcdata_op::Funcdata::w6_type_op`
 //!   * `ruleaction_2`/`ruleaction_7`/`ruleaction_8` `typeop_for`/local builders
 //!   * `ruleaction_1`/`ruleaction_3`/`ruleaction_4` `opflags_for`/`opcode_seam_flags`
@@ -27,9 +27,9 @@
 //! [`type_op_info`] is the single source for `(opflags, addlflags, name,
 //! metaout, metain, class)` per op-code, transcribed field-for-field from the
 //! per-op-code `TypeOp*` constructors in `typeop.cc`; [`type_op_for`] produces
-//! the [`crate::seams::TypeOp`] triple `op_set_opcode` wants, and
+//! the [`crate::context::TypeOp`] triple `op_set_opcode` wants, and
 //! [`register_instructions`] returns the `inst[]` vector the engine docs expect
-//! (the W6 seam in `op.rs` notes `inst[opc]` is "filled by `typeop`/`type`").
+//! (the W6 stub in `op.rs` notes `inst[opc]` is "filled by `typeop`/`type`").
 //!
 //! ### W8 cleanup (not done here, per the work order)
 //!
@@ -38,7 +38,7 @@
 //! deleted here (each lives in a file this porter does not own); the migration is
 //! tracked for W8.
 //!
-//! ## Cross-wave seams (the per-op `propagateType`/`getInputCast`/`getOutputToken`)
+//! ## Cross-wave stubs (the per-op `propagateType`/`getInputCast`/`getOutputToken`)
 //!
 //! The full type-propagation surface of `typeop.cc` —
 //! `propagateType`/`getInputCast`/`getOutputToken` per op-code and the
@@ -47,7 +47,7 @@
 //! `TypePointer::downChain`, `TypePointerRel`, the `Architecture`, and the
 //! `ConstantPool` — subsystems still unported at the W6-partial boundary (cast.cc
 //! is W8; the full `TypeFactory`/`Architecture` are W6/W8).  Those methods are
-//! **seam-noted** rather than transcribed against stubs; what this module ports
+//! **stub-noted** rather than transcribed against stubs; what this module ports
 //! faithfully is the part whose result depends only on the op-code, the operand
 //! **sizes**, and the [`TypeFactory`] `getBase` surface:
 //!
@@ -63,7 +63,7 @@
 //!
 //! The `propagateToPointer`/`propagateFromPointer` statics are deferred to W8
 //! with the propagation bodies that call them (they need `TypePointerRel`/
-//! `getTypePartialEnum` accessors not exposed here) — see the seam note at the
+//! `getTypePartialEnum` accessors not exposed here) — see the stub note at the
 //! end of the file.
 
 use std::rc::Rc;
@@ -75,7 +75,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::op::pcodeop_flags as pf;
-use crate::seams::TypeOp;
+use crate::context::TypeOp;
 
 /// `TypeOp::addlflags` attribute bits (`typeop.hh:41-48`, the anonymous `enum`
 /// in `class TypeOp`).  These are the per-op-code *display/typing* attributes
@@ -236,11 +236,11 @@ impl TypeOpInfo {
         self.name
     }
 
-    /// Build the [`crate::seams::TypeOp`] triple `PcodeOp::setOpcode`/
-    /// `Funcdata::op_set_opcode` consume (the W3 seam carrying
+    /// Build the [`crate::context::TypeOp`] triple `PcodeOp::setOpcode`/
+    /// `Funcdata::op_set_opcode` consume (the W3 boundary type carrying
     /// `opcode`/`flags`/`name`).  This is the canonical replacement for the
-    /// per-wave `type_op_seam`/`w6_type_op`/`typeop_for` local helpers.
-    pub fn to_seam(&self) -> TypeOp {
+    /// per-wave `type_op_lookup`/`w6_type_op`/`typeop_for` local helpers.
+    pub fn to_type_op(&self) -> TypeOp {
         TypeOp::new(self.opcode, self.opflags, self.name)
     }
 
@@ -313,7 +313,7 @@ impl TypeOpInfo {
             // TypeOpCbranch::getInputLocal: slot 1 is a bool; slot 0 is a code
             // pointer needing getTypeCode + the in0 space wordsize -> NOT
             // size-only.  Only slot 1 is resolved here (typeop.cc:611-621).
-            // SEAM(W8): slot-0 code-pointer path needs the op's address space.
+            // STUB(W8): slot-0 code-pointer path needs the op's address space.
             OpCode::CPUI_CBRANCH if slot == 1 => tlst.get_base(in_size, TYPE_BOOL),
             // TypeOpInsert::getInputLocal: slots <=1 -> getBase(size,TYPE_UNKNOWN);
             // else the TypeOpFunc default getBase(size, metain) (typeop.cc:2537-2543).
@@ -968,10 +968,10 @@ pub fn register_instructions() -> Vec<Option<TypeOpInfo>> {
     inst
 }
 
-/// Build the `seams::TypeOp` triple for an op-code (canonical replacement for the
-/// per-wave `type_op_seam`/`w6_type_op`/`typeop_for` local helpers).
+/// Build the `context::TypeOp` triple for an op-code (canonical replacement for the
+/// per-wave `type_op_lookup`/`w6_type_op`/`typeop_for` local helpers).
 pub fn type_op_for(opc: OpCode) -> TypeOp {
-    type_op_info(opc).to_seam()
+    type_op_info(opc).to_type_op()
 }
 
 /// Every op-code that `TypeOp::registerInstructions` assigns an `inst[]` entry,
@@ -1144,7 +1144,7 @@ pub fn float_sign_manipulation(opc: OpCode, in1: Option<(int4, uintb)>) -> OpCod
     OpCode::CPUI_MAX
 }
 
-// SEAM(W8): TypeOp::propagateToPointer / propagateFromPointer (typeop.cc:187-229)
+// STUB(W8): TypeOp::propagateToPointer / propagateFromPointer (typeop.cc:187-229)
 // are the pointer-up/pointer-down helpers used only by the per-op-code
 // propagateType bodies (LOAD/STORE).  They depend on `TypePointerRel::getParent`,
 // `TypeFactory::getTypePartialEnum`, and `TypePartialStruct::getComponentForPtr`,

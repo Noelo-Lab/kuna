@@ -54,7 +54,7 @@
 //!   - `glb` ([`ArchHandle`]) for the constant/unique/iop spaces and
 //!     `minLanedSize`; `min_laned_size`, the create-index phase fields, and the
 //!     `flags` word with `is_high_on()`;
-//!   - [`Funcdata::set_varnode_properties`] (a `// SEAM(W4)` no-op standing in
+//!   - [`Funcdata::set_varnode_properties`] (a `// STUB(W4)` no-op standing in
 //!     for `localmap->queryProperties` + `Cover` calc) that `opSetOutput` and
 //!     the `newVarnode*` factories call.
 //!
@@ -62,7 +62,7 @@
 //!
 //! Most of `funcdata.cc` is W4+ subsystem glue (the `Architecture`/`TypeFactory`
 //! / `ScopeLocal` / `FuncProto` / `JumpTable` / `Override` / `Heritage` / `Merge`
-//! / union-resolution machinery).  Those are seam-noted ([`crate::seams`]'
+//! / union-resolution machinery).  Those are seam-noted ([`crate::context`]'
 //! `Architecture`/`Scope`/`FuncProto`, [`crate::dtype`]) and either return an
 //! explicit `Err`/`None` or are left out; printing (`printRaw`/`printBlockTree`)
 //! is W8.  This module carries the IR-ownership skeleton, the flag/phase state
@@ -76,7 +76,7 @@ use kuna_base::types::{int2, int4, uint4, uint8, uintm, Wrap};
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
 use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive};
 use crate::op::PcodeOpBank;
-use crate::seams::{ArchHandle, BlockId, OpId, VarnodeId};
+use crate::context::{ArchHandle, BlockId, OpId, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// Boolean properties associated with a [`Funcdata`] (C++ anonymous `enum` in
@@ -198,7 +198,7 @@ pub struct Funcdata {
     laned_map: std::collections::BTreeMap<LanedKey, (Address, int4, crate::transform::LanedRegister)>,
     /// Number of bytes of binary data in function body (C++ `size`)
     size: int4,
-    /// Global configuration data (C++ `glb`).  // SEAM(W4)
+    /// Global configuration data (C++ `glb`).  // STUB(W4)
     glb: ArchHandle,
     /// Name of function (C++ `name`)
     name: String,
@@ -237,12 +237,12 @@ pub struct Funcdata {
     bblocks: BlockGraph,
     /// Structured block hierarchy on top of basic blocks (C++ `sblocks`)
     sblocks: BlockGraph,
-    /// The HighVariable / VariableGroup / VariablePiece arena (W7, SEAM(W7)).
+    /// The HighVariable / VariableGroup / VariablePiece arena (W7, STUB(W7)).
     ///
     /// The C++ `HighVariable`s are allocated by `new HighVariable` from
     /// `Funcdata::assignHigh`/`Merge` and reverse-linked from each member
     /// `vn->high`; per ADR 0001 they live in this [`HighVariableBank`] keyed by
-    /// [`crate::seams::HighVariableId`], the back-link being the `Varnode::high`
+    /// [`crate::context::HighVariableId`], the back-link being the `Varnode::high`
     /// field already wired in `varnode.rs`.
     high_bank: crate::variable::HighVariableBank,
     /// SSA-construction manager (C++ `Heritage heritage`, `funcdata.hh:90`).
@@ -301,7 +301,7 @@ pub struct Funcdata {
     /// `glb->commentdb`; `funcdata.cc:119,135`).
     ///
     /// The merged Rust tree owns the `CommentDatabase` on the console
-    /// `Architecture`, not on the W3 `glb` ([`crate::seams::ArchHandle`]), so a
+    /// `Architecture`, not on the W3 `glb` ([`crate::context::ArchHandle`]), so a
     /// `Funcdata` produced during flow follow buffers its analysis comments here
     /// and the decompile drive ([`crate::decompile_drive`]) flushes them into
     /// `arch.commentdb` once it has the `&mut Architecture` back (the same
@@ -313,7 +313,7 @@ pub struct Funcdata {
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
 ///
-/// SEAM(W4): the `JumpTable` type and all recovery logic (`recoverJumpTable`,
+/// STUB(W4): the `JumpTable` type and all recovery logic (`recoverJumpTable`,
 /// `stageJumpTable`, …) are W4; `Funcdata` only needs to track table identity at
 /// W3 so `structureReset`'s dead-table sweep and `installSwitchDefaults` can run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -328,7 +328,7 @@ impl Funcdata {
     /// `AddrSpaceManager`); the `VarnodeBank` analysis unique-start is supplied
     /// by the caller (`uniq_start`, the program's `Translate` —
     /// `getUniqueStart(ANALYSIS)`), exactly as `varnode.rs` documents.  The
-    /// `ScopeLocal` attachment is `// SEAM(W4)`; here `localmap` is created empty
+    /// `ScopeLocal` attachment is `// STUB(W4)`; here `localmap` is created empty
     /// when a name is given (the C++ `nm.size()==0` "filled in by decode" branch
     /// leaves it `None`).
     pub fn new(
@@ -563,7 +563,7 @@ impl Funcdata {
         let void_type =
             Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID));
         // The type factory + manager live on the architecture, shared into `glb`.
-        // Clone the `Rc<ArchSeam>` (cheap refcount bump) so the factory/manager
+        // Clone the `Rc<ArchContext>` (cheap refcount bump) so the factory/manager
         // borrows come from the clone, leaving `self.funcp` freely mutable.
         let glb = self.glb.clone();
         let types = glb.types().ok_or_else(|| {
@@ -904,7 +904,7 @@ impl Funcdata {
 
     /// Get the LoadGuard associated with a STORE op, if any (C++
     /// `Funcdata::getStoreGuard`, `funcdata.hh:278` — `heritage.getStoreGuard(op)`).
-    pub fn get_store_guard(&self, op: crate::seams::OpId) -> Option<&crate::heritage::LoadGuard> {
+    pub fn get_store_guard(&self, op: crate::context::OpId) -> Option<&crate::heritage::LoadGuard> {
         self.heritage.get_store_guard(op)
     }
 
@@ -1519,7 +1519,7 @@ impl Funcdata {
     /// only and is handed the bank as its first argument, exactly as
     /// [`crate::varnode::ReplaceReads`] is typed.
     ///
-    /// SEAM(W3-op): the op-side read iteration/repointing is the funcdata_op
+    /// STUB(W3-op): the op-side read iteration/repointing is the funcdata_op
     /// wave's; this method establishes the closure shape and where it captures.
     /// Until funcdata_op ports `opSetInput`, the bodies that *call* `xref`
     /// (`setInputVarnode`, `opSetOutput`) live in funcdata_op; this thunk is the
@@ -2015,10 +2015,10 @@ impl Funcdata {
         self.cast_phase_index = 0;
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
 
-        // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- SEAM(W4)
+        // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- STUB(W4)
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.
         self.clear_active_output();
-        // funcp.clearUnlockedOutput();                               -- SEAM(W4)
+        // funcp.clearUnlockedOutput();                               -- STUB(W4)
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
         self.clear_blocks();
@@ -2062,7 +2062,7 @@ impl Funcdata {
 pub type DefOp = DefOpInfo;
 
 // =============================================================================
-// W7 HighVariable / Cover lifecycle wiring (SEAM(W7))
+// W7 HighVariable / Cover lifecycle wiring (STUB(W7))
 // =============================================================================
 //
 // The C++ `Varnode::cover` rebuild (`Cover::rebuild`) and the `HighVariable`
@@ -2099,7 +2099,7 @@ impl Funcdata {
         &mut self,
         op: OpId,
         slot: int4,
-        entry: &crate::seams::GlobalContainer,
+        entry: &crate::context::GlobalContainer,
         rampoint: &Address,
         origval: u64,
         origsize: int4,
@@ -2844,7 +2844,7 @@ impl Funcdata {
     /// input (`true`).
     pub(crate) fn high_tied_or_input_varnode(
         &self,
-        high: crate::seams::HighVariableId,
+        high: crate::context::HighVariableId,
         input: bool,
     ) -> Option<VarnodeId> {
         let Funcdata { high_bank, vbank, obank, .. } = self;
@@ -2862,25 +2862,25 @@ impl Funcdata {
     /// the read-view borrow is released (the merge never reads `vn->high`).
     pub(crate) fn bank_merge_with_log(
         &mut self,
-        high1: crate::seams::HighVariableId,
-        high2: crate::seams::HighVariableId,
+        high1: crate::context::HighVariableId,
+        high2: crate::context::HighVariableId,
         isspeculative: bool,
         cache: &mut crate::variable::HighIntersectTest,
-        set_high_log: &mut Vec<(VarnodeId, crate::seams::HighVariableId, int2)>,
-        mark_set: &std::cell::RefCell<std::collections::BTreeSet<crate::seams::HighVariableId>>,
+        set_high_log: &mut Vec<(VarnodeId, crate::context::HighVariableId, int2)>,
+        mark_set: &std::cell::RefCell<std::collections::BTreeSet<crate::context::HighVariableId>>,
     ) -> KunaResult<()> {
         let Funcdata { high_bank, vbank, obank, .. } = self;
         let ctx = HighReadView::new(vbank, obank);
-        let mut set_high = |vn: VarnodeId, id: crate::seams::HighVariableId, mg: int2| {
+        let mut set_high = |vn: VarnodeId, id: crate::context::HighVariableId, mg: int2| {
             set_high_log.push((vn, id, mg));
         };
-        let mut set_mark = |id: crate::seams::HighVariableId| {
+        let mut set_mark = |id: crate::context::HighVariableId| {
             mark_set.borrow_mut().insert(id);
         };
-        let mut clear_mark = |id: crate::seams::HighVariableId| {
+        let mut clear_mark = |id: crate::context::HighVariableId| {
             mark_set.borrow_mut().remove(&id);
         };
-        let is_mark = |id: crate::seams::HighVariableId| mark_set.borrow().contains(&id);
+        let is_mark = |id: crate::context::HighVariableId| mark_set.borrow().contains(&id);
         high_bank.merge(
             high1,
             high2,
@@ -2924,7 +2924,7 @@ impl Funcdata {
     /// types in the merged tree).
     pub(crate) fn build_dominant_copy_impl(
         &mut self,
-        high: crate::seams::HighVariableId,
+        high: crate::context::HighVariableId,
         copy: &[OpId],
         pos: int4,
         size: int4,
@@ -3071,7 +3071,7 @@ impl Funcdata {
 
     /// `outVn->getHigh()->remove(outVn)` across the bank field split (the high
     /// loses one member; its cover is marked dirty).
-    pub(crate) fn high_remove_member(&mut self, high: crate::seams::HighVariableId, vn: VarnodeId) {
+    pub(crate) fn high_remove_member(&mut self, high: crate::context::HighVariableId, vn: VarnodeId) {
         let has_symbol_entry = false; // no symbol entries in the merged tree
         let Funcdata { high_bank, vbank, obank, .. } = self;
         let ctx = HighReadView::new(vbank, obank);
@@ -3084,14 +3084,14 @@ impl Funcdata {
     /// edges yet), matching the C++ pass of `data.getMerge()`'s `testCache`.
     fn merge_two_highs(
         &mut self,
-        high1: crate::seams::HighVariableId,
-        high2: crate::seams::HighVariableId,
+        high1: crate::context::HighVariableId,
+        high2: crate::context::HighVariableId,
         isspeculative: bool,
     ) -> KunaResult<()> {
         let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
         let mut cache = crate::variable::HighIntersectTest::new(opset);
-        let mut set_high_log: Vec<(VarnodeId, crate::seams::HighVariableId, int2)> = Vec::new();
-        let mark_set: std::cell::RefCell<std::collections::BTreeSet<crate::seams::HighVariableId>> =
+        let mut set_high_log: Vec<(VarnodeId, crate::context::HighVariableId, int2)> = Vec::new();
+        let mark_set: std::cell::RefCell<std::collections::BTreeSet<crate::context::HighVariableId>> =
             std::cell::RefCell::new(std::collections::BTreeSet::new());
         let res = self.bank_merge_with_log(high1, high2, isspeculative, &mut cache, &mut set_high_log, &mark_set);
         for (vn, id, mg) in set_high_log {
@@ -3104,7 +3104,7 @@ impl Funcdata {
 
     /// Rebuild a Varnode's Cover, driving `Varnode::updateCover` across the arena
     /// boundary (the C++ `vn->updateCover()` / `Cover::rebuild`).  Called by the
-    /// Merge driver after data-flow changes.  This is the `// SEAM(W7)` cover
+    /// Merge driver after data-flow changes.  This is the `// STUB(W7)` cover
     /// rebuild that `funcdata_block`/merge will invoke.
     pub fn update_varnode_cover(&mut self, vn: VarnodeId) {
         // C++ `Varnode::updateCover`: if coverdirty, and hasCover & cover!=0,
@@ -3228,10 +3228,10 @@ impl Funcdata {
     /// If HighVariables are enabled, ensure the given Varnode has one assigned
     /// (C++ `Funcdata::assignHigh`, `funcdata_varnode.cc:48-61`).
     ///
-    /// SEAM(W4): the `hasWarning`/`issueDatatypeWarning` datatype-warning step
+    /// STUB(W4): the `hasWarning`/`issueDatatypeWarning` datatype-warning step
     /// (`glb->types`) is a W4 surface and is omitted.  The `calcCover` + `new
     /// HighVariable(vn)` + `vn->setHigh(id,0)` lifecycle is wired here.
-    pub fn assign_high_var(&mut self, vn: VarnodeId) -> Option<crate::seams::HighVariableId> {
+    pub fn assign_high_var(&mut self, vn: VarnodeId) -> Option<crate::context::HighVariableId> {
         if !self.is_high_on() {
             return None;
         }
@@ -3268,7 +3268,7 @@ impl Funcdata {
     /// if the Varnode has no HighVariable yet.
     ///
     /// `symbol_submeta` is the backing-symbol metatype for the `stripType`
-    /// partial-union case (SEAM(W4): `None` until the Varnode-Symbol link lands).
+    /// partial-union case (STUB(W4): `None` until the Varnode-Symbol link lands).
     pub fn high_get_type(&mut self, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
         let id = self.vbank.get(vn)?.get_high()?;
         Some(self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().get_type(ctx, None)))
@@ -3277,14 +3277,14 @@ impl Funcdata {
     /// Drive a HighVariable's external cover update (the C++
     /// `HighVariable::updateCover`, called by Merge).  Convenience over
     /// [`with_high_split`] for the bank's `update_cover`.
-    pub fn high_update_cover(&mut self, id: crate::seams::HighVariableId) {
+    pub fn high_update_cover(&mut self, id: crate::context::HighVariableId) {
         self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
     }
 
     /// The HighVariable's name representative Varnode (C++
     /// `HighVariable::getNameRepresentative`), across the bank field-split.
     /// `None` if the high is gone.
-    pub fn high_name_representative(&mut self, id: crate::seams::HighVariableId) -> Option<VarnodeId> {
+    pub fn high_name_representative(&mut self, id: crate::context::HighVariableId) -> Option<VarnodeId> {
         self.high_bank.get(id)?;
         Some(self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().get_name_representative(ctx)))
     }
@@ -3292,7 +3292,7 @@ impl Funcdata {
     /// Whether a HighVariable can carry a name (C++ `HighVariable::hasName`),
     /// across the bank field-split.  `false` if the high is gone or its
     /// coverability check errors (the C++ `LowlevelError` -> conservative `false`).
-    pub fn high_has_name(&mut self, id: crate::seams::HighVariableId) -> bool {
+    pub fn high_has_name(&mut self, id: crate::context::HighVariableId) -> bool {
         if self.high_bank.get(id).is_none() {
             return false;
         }
@@ -3551,7 +3551,7 @@ impl Funcdata {
     /// find the Varnode a dynamic SymbolEntry maps to (via [`DynamicHash`]) and
     /// attach the Symbol's NAME to it.  Returns `true` if a Varnode was adjusted.
     ///
-    /// SEAM(W4): the merged tree has no Varnode→SymbolEntry retype link, so the
+    /// STUB(W4): the merged tree has no Varnode→SymbolEntry retype link, so the
     /// `vn->setSymbolEntry(entry)` effect is expressed as the kuna stand-in: the
     /// matched HighVariable's `kuna_name` is set to the Symbol's name (read by the
     /// printer as `getSymbol()->getDisplayName()`), and the matched Varnode is
@@ -3789,7 +3789,7 @@ mod tests {
     use kuna_num::opcodes::OpCode;
 
     use crate::dtype::{type_metatype, Datatype};
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
 
     /// Build an AddrSpaceManager with constant/unique/ram spaces, mirroring the
     /// op.rs/block.rs test harness.
@@ -3818,7 +3818,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

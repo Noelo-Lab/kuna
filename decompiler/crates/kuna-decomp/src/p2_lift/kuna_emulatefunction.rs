@@ -36,7 +36,7 @@ use kuna_sleigh::emulate::{Emulate, EmulateCore};
 
 use crate::funcdata::Funcdata;
 use crate::jumptable::{LoadTable, PathMeld};
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// C++ `EmulateFunction` (jumptable.hh:110), folding in the `EmulatePcodeOp`
 /// base (emulateutil.hh:43).

@@ -18,7 +18,7 @@
 //! userop names, the inject library, the type factory, the symbol table, the
 //! default data space). The type-factory/symbol-table paths feed the
 //! `getOutputLocal`/`getInputLocal` data-type virtuals, which belong to W6/W4;
-//! they are seam-deferred (`// SEAM`). The decode + registration + lookup paths
+//! they are seam-deferred (`// STUB`). The decode + registration + lookup paths
 //! — the test target — use only the [`UseropArchitecture`] slice defined here
 //! (translator userop names + the inject library) and are fully ported.
 
@@ -198,15 +198,15 @@ pub struct JumpAssistOp {
 /// \brief Generic user-op providing input/output data-types
 /// (C++ `DatatypeUserOp`).
 ///
-/// SEAM(W6): the C++ holds `Datatype *outType` / `vector<Datatype*> inTypes`,
+/// STUB(W6): the C++ holds `Datatype *outType` / `vector<Datatype*> inTypes`,
 /// consumed by `getOutputLocal`/`getInputLocal`. The W6 `TypeFactory` builds
 /// those; until then this variant carries the type handles as
 /// [`Rc<Datatype>`](crate::dtype::Datatype) seam skeletons.
 #[derive(Debug, Clone)]
 pub struct DatatypeUserOp {
-    /// Data-type of the output (C++ `outType`). SEAM(W6).
+    /// Data-type of the output (C++ `outType`). STUB(W6).
     pub out_type: Option<Rc<crate::dtype::Datatype>>,
-    /// Data-types of the inputs (C++ `inTypes`). SEAM(W6).
+    /// Data-types of the inputs (C++ `inTypes`). STUB(W6).
     pub in_types: Vec<Rc<crate::dtype::Datatype>>,
 }
 
@@ -713,7 +713,7 @@ use crate::pcodeinject::ELEM_ADDR_PCODE;
 // UseropArchitecture seam (the `Architecture *glb` slice userop.cc uses)
 // ---------------------------------------------------------------------------
 
-/// SEAM(W4/W6): the `Architecture *glb` surface `userop.cc` reaches for decode
+/// STUB(W4/W6): the `Architecture *glb` surface `userop.cc` reaches for decode
 /// and initialization.
 ///
 /// `Architecture`/`TypeFactory`/`SymbolTable` are W4/W6. This trait names
@@ -758,7 +758,7 @@ pub trait UseropArchitecture: InjectArchitecture {
     fn payload_io_sizes(&self, injectid: int4) -> KunaResult<(int4, int4, int4, int4)>;
 }
 
-/// SEAM(W6): the type-factory slice that builds the BUILTIN_MEM* DatatypeUserOp
+/// STUB(W6): the type-factory slice that builds the BUILTIN_MEM* DatatypeUserOp
 /// types and the volatile-op local types.
 ///
 /// `TypeFactory` is W6, so [`UserOpManage::register_builtin`] takes this as a
@@ -1131,7 +1131,7 @@ impl UserOpManage {
     /// \brief Manually install an InjectedUserOp given just names of the user
     /// defined op and the p-code snippet (C++ `manualCallOtherFixup`).
     ///
-    /// SEAM(`inject_sleigh.rs`): the actual snippet compile
+    /// STUB(`inject_sleigh.rs`): the actual snippet compile
     /// (`pcodeinjectlib->manualCallOtherFixup`) is the SLEIGH library's; the
     /// caller passes the resulting injectid through.
     pub fn manual_call_other_fixup(

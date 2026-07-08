@@ -438,23 +438,23 @@ fn add_fixed_type_plain_type_is_a_fixed_hint() {
 
 // --- AliasChecker: offset gather / sort / boundary ------------------------
 
-/// A mock `AliasGatherSeam` that replays a pre-canned spacebase input,
+/// A mock `AliasGatherAccess` that replays a pre-canned spacebase input,
 /// additive-base set, and per-base offset map (so the offset/sort/boundary
 /// logic can be tested without the W7 Varnode descend graph).
 struct MockGather {
-    spacebase: Option<crate::seams::VarnodeId>,
+    spacebase: Option<crate::context::VarnodeId>,
     bases: Vec<AddBase>,
     offsets: std::collections::BTreeMap<u64, uintb>,
 }
 
-impl AliasGatherSeam for MockGather {
-    fn find_spacebase_input(&self, _space: &Rc<AddrSpace>) -> Option<crate::seams::VarnodeId> {
+impl AliasGatherAccess for MockGather {
+    fn find_spacebase_input(&self, _space: &Rc<AddrSpace>) -> Option<crate::context::VarnodeId> {
         self.spacebase
     }
-    fn gather_additive_base(&mut self, _startvn: crate::seams::VarnodeId, addbase: &mut Vec<AddBase>) {
+    fn gather_additive_base(&mut self, _startvn: crate::context::VarnodeId, addbase: &mut Vec<AddBase>) {
         addbase.extend(self.bases.iter().copied());
     }
-    fn gather_offset(&mut self, vn: crate::seams::VarnodeId) -> uintb {
+    fn gather_offset(&mut self, vn: crate::context::VarnodeId) -> uintb {
         // Key the canned offset by the slotmap key's index bits (stable per id).
         let k = vn_key(vn);
         *self.offsets.get(&k).unwrap_or(&0)
@@ -462,14 +462,14 @@ impl AliasGatherSeam for MockGather {
 }
 
 /// Stable u64 key for a VarnodeId (its slotmap internal representation).
-fn vn_key(id: crate::seams::VarnodeId) -> u64 {
+fn vn_key(id: crate::context::VarnodeId) -> u64 {
     use slotmap::Key;
     id.data().as_ffi()
 }
 
 /// Mint a few distinct VarnodeIds via a throwaway slotmap.
-fn mint_varnodes(n: usize) -> Vec<crate::seams::VarnodeId> {
-    let mut sm: slotmap::SlotMap<crate::seams::VarnodeId, ()> = slotmap::SlotMap::with_key();
+fn mint_varnodes(n: usize) -> Vec<crate::context::VarnodeId> {
+    let mut sm: slotmap::SlotMap<crate::context::VarnodeId, ()> = slotmap::SlotMap::with_key();
     (0..n).map(|_| sm.insert(())).collect()
 }
 
@@ -1018,10 +1018,10 @@ fn adv_w10_compare_signed_start_on_real_stack_offsets() {
 /// branch, the one literal in the gatherOffset port.
 #[test]
 fn adv_w10_gather_offset_ptradd_multiplier_one_vs_not() {
-    use crate::seams::VarnodeId;
+    use crate::context::VarnodeId;
     use kuna_num::opcodes::OpCode;
 
-    // A tiny stand-in implementing only what gather_offset reads via the seam:
+    // A tiny stand-in implementing only what gather_offset reads via the access trait:
     // a constant table + a def-op table.  We reproduce the C++ recursion by
     // mirroring the exact switch arithmetic the port transcribes.
     //

@@ -112,7 +112,7 @@ use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::userop::{BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRNCPY, BUILTIN_WCSNCPY};
 
 /// Helper holding a data-flow edge and optionally a memory offset being COPYed
@@ -350,7 +350,7 @@ impl ArraySequence {
     /// (C++ `ArraySequence::selectStringCopyFunction`).  Returns
     /// `(builtin_id, index)` where `index` is the count passed back.
     ///
-    /// SEAM(W6): the C++ compares `charType` *by pointer identity* against
+    /// STUB(W6): the C++ compares `charType` *by pointer identity* against
     /// `types->getTypeChar(getSizeOfChar())` / `getTypeChar(getSizeOfWChar())`.
     /// The live `TypeFactory` is not wired into `Architecture` yet, so the
     /// identity match cannot be performed; this falls through to the C++ default
@@ -408,7 +408,7 @@ struct HeapSequence {
     /// The root STORE (C++ `ArraySequence::rootOp`).
     root_op: OpId,
     /// The basic block of the root STORE (C++ `ArraySequence::block`).
-    block: crate::seams::BlockId,
+    block: crate::context::BlockId,
     /// Space being STOREd into (C++ `storeSpace`).
     store_space: Rc<kuna_base::space::AddrSpace>,
     /// Pointer multiplier matching the char element, in address units
@@ -1052,7 +1052,7 @@ pub(crate) struct StringSequence {
     /// The root COPY (C++ `ArraySequence::rootOp`).
     root_op: OpId,
     /// The basic block of the root COPY (C++ `ArraySequence::block`).
-    block: crate::seams::BlockId,
+    block: crate::context::BlockId,
     /// Address being COPYed into by the root op (C++ `rootAddr`).
     root_addr: Address,
     /// Starting address of the array containing the character data (C++ `startAddr`).

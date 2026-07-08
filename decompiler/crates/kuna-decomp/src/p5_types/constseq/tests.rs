@@ -23,7 +23,7 @@ use kuna_base::types::{int4, uint4};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 
 fn build_manager(big: bool) -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -46,7 +46,7 @@ fn build_manager(big: bool) -> AddrSpaceManager {
 
 fn build_fd(big: bool) -> Funcdata {
     let manage = build_manager(big);
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -349,9 +349,9 @@ fn form_byte_array_big_endian_multibyte() {
 
 // --- RuleStringCopy / RuleStringStore ----------------------------------------
 //
-// The drivers' deep bodies are seam-blocked (W4 symbol table + W6 type-facing),
+// The drivers' deep bodies are stub-blocked (W4 symbol table + W6 type-facing),
 // so these cover the reachable surface: getOpList, group-filtered clone, the
-// constant-input guard, and the seam decline (a constant-input COPY/STORE still
+// constant-input guard, and the stub decline (a constant-input COPY/STORE still
 // returns 0 because the build/transform is deferred — byte-identical to the
 // rule being disabled).
 
@@ -390,8 +390,8 @@ fn string_copy_non_constant_input_declines() {
 }
 
 #[test]
-fn string_copy_constant_input_declines_at_seam() {
-    // A constant-input COPY passes the ported guard but the W4/W6-seamed
+fn string_copy_constant_input_declines_at_stub() {
+    // A constant-input COPY passes the ported guard but the W4/W6-stubbed
     // StringSequence build is deferred, so the rule still declines (0).
     let mut fd = build_fd(false);
     let bl = mk_block(&mut fd);
@@ -400,7 +400,7 @@ fn string_copy_constant_input_declines_at_seam() {
 }
 
 #[test]
-fn string_store_constant_value_declines_at_seam() {
+fn string_store_constant_value_declines_at_stub() {
     // STORE(space, ptr, const): input-2 is the constant value.  The ported guard
     // passes; the HeapSequence build is deferred, so the rule declines (0).
     let mut fd = build_fd(false);

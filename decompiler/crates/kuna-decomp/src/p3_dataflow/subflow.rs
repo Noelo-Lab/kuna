@@ -23,13 +23,13 @@
 //!     full split engine (`setReplacement`/`addOp`/`traceForward`/`traceBackward`/
 //!     `processNextWork`/`doTrace`) and the `RuleSplitFlow` detection head are
 //!     ported here.  `RuleSplitFlow::applyOp` runs `doTrace` (fully executable)
-//!     then `TransformManager::apply` (W6-seamed in the merged transform.rs —
+//!     then `TransformManager::apply` (W6-stubbed in the merged transform.rs —
 //!     `createReplacement` needs `glb->inst[opc]`).
 //!   * `SubfloatFlow` / `RuleSubfloatConvert` (item `w8x-subflow-splits`).  The
 //!     precision-tracing engine is ported verbatim, including the `FloatFormat`
 //!     acquisition (`f->getArch()->translate->getFloatFormat`) and the
 //!     constant-conversion (`FloatFormat::convertEncoding`); only the
-//!     `preserveAddress` override remains a transform seam.
+//!     `preserveAddress` override remains a transform stub.
 //!   * `SplitDatatype` / `RuleSplit{Copy,Load,Store}` / `RuleDumptyHumpLate`
 //!     (item `w8x-subflow-splits`).  The datatype-splitting engine
 //!     (`RootPointer`/`Component`, `categorizeDatatype`/`testDatatypeCompatibility`/
@@ -37,10 +37,10 @@
 //!     The graph-mutation and type-facing calls that need the (still-stub)
 //!     `Architecture`→`TypeFactory`/`Translate` bridge, `getTypeReadFacing`/
 //!     `getTypeDefFacing`, `ResolveCache::addResolution`/`inheritResolution`, and
-//!     `Funcdata::buildCopyTemp`/`getMerge` route through arch/W6 seam helpers (see
+//!     `Funcdata::buildCopyTemp`/`getMerge` route through arch/W6 stub helpers (see
 //!     the losses output); the size/offset categorization logic is fully
 //!     executable.
-//!   * `LaneDivide`: **SEAM(W5-transform-lanedivide)** — not named by this item;
+//!   * `LaneDivide`: **STUB(W5-transform-lanedivide)** — not named by this item;
 //!     it is the last `TransformManager` subclass in `subflow.cc` and is left for
 //!     a dedicated lane-divide item.  Recorded as a loss.
 //!
@@ -54,18 +54,18 @@
 //! once).  Pushing only ever appends, so indices are stable — matching the C++
 //! guarantee that a `ReplaceVarnode *` stays valid for the engine's lifetime.
 //!
-//! # Cross-wave seams (do not invent behavior — recorded as losses)
+//! # Cross-wave stubs (do not invent behavior — recorded as losses)
 //!
 //!   * `Funcdata::opSetOutput` (the W3-funcdata `(vbank,obank)` split-borrow) and
-//!     opcode→`TypeOp` resolution (`glb->inst[opc]`, W6) are both still seam-gated
+//!     opcode→`TypeOp` resolution (`glb->inst[opc]`, W6) are both still stub-gated
 //!     in the foundation.  Every graph *mutation* in [`SubvariableFlow::do_replacement`]
 //!     and in the rules routes through them; the mutation **structure/order** is
-//!     transcribed, but the calls return the foundation's seam error until those
-//!     land.  // SEAM(W3-funcdata)/SEAM(W6)
+//!     transcribed, but the calls return the foundation's stub error until those
+//!     land.  // STUB(W3-funcdata)/STUB(W6)
 //!   * `FuncCallSpecs`/`FuncProto` call-site state (W4), `JumpTable` (W5/W7), and
 //!     `TypeOpFloatInt2Float::preferredZextSize` (W6): the `try*Pull`/`try*Push`
 //!     helpers that need them transcribe their guard structure and return a
-//!     seam-gated `false`/error.  The integer/shift/compare/copy/extension trace
+//!     stub-gated `false`/error.  The integer/shift/compare/copy/extension trace
 //!     paths — the bulk of the discovery semantics — are fully executable.
 
 // Faithful-transcription lint relaxations (each mirrors the C++ subflow.cc):
@@ -94,7 +94,7 @@ use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{ArchHandle, OpId, TypeOp, VarnodeId};
+use crate::context::{ArchHandle, OpId, TypeOp, VarnodeId};
 use crate::transform::{LaneDescription, TVarRef, TransformManager};
 use std::rc::Rc;
 
@@ -110,9 +110,9 @@ type RopId = usize;
 /// Placeholder node for a Varnode holding a smaller logical value
 /// (C++ `SubvariableFlow::ReplaceVarnode`).
 ///
-/// `val`/`replacement` are written by discovery and read by the seam-gated
+/// `val`/`replacement` are written by discovery and read by the stub-gated
 /// [`SubvariableFlow::do_replacement`] (W3-funcdata/W6); kept here so the
-/// placeholder layout is the faithful C++ one.  // SEAM(W3-funcdata)/SEAM(W6)
+/// placeholder layout is the faithful C++ one.  // STUB(W3-funcdata)/STUB(W6)
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct ReplaceVarnode {
@@ -131,9 +131,9 @@ struct ReplaceVarnode {
 /// The possible types of patches on ops being performed
 /// (C++ `SubvariableFlow::PatchRecord::patchtype`).
 ///
-/// `Int2FloatPatch` is produced only by the W6-seamed `try_int2float_pull`; the
+/// `Int2FloatPatch` is produced only by the W6-stubbed `try_int2float_pull`; the
 /// full enum mirrors the C++ patchtype so [`SubvariableFlow::do_replacement`]
-/// dispatches on the exact same set.  // SEAM(W6)
+/// dispatches on the exact same set.  // STUB(W6)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 enum PatchType {
@@ -155,7 +155,7 @@ enum PatchType {
 /// unchanged (C++ `SubvariableFlow::PatchRecord`).
 ///
 /// Fields are written by the `add_*_patch` discovery builders and read only by
-/// the seam-gated [`SubvariableFlow::do_replacement`].  // SEAM(W3-funcdata)
+/// the stub-gated [`SubvariableFlow::do_replacement`].  // STUB(W3-funcdata)
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct PatchRecord {
@@ -174,9 +174,9 @@ struct PatchRecord {
 /// Placeholder node for a PcodeOp operating on smaller logical values
 /// (C++ `SubvariableFlow::ReplaceOp`).
 ///
-/// `op`/`replacement`/`opc`/`numparams` are read by the seam-gated
+/// `op`/`replacement`/`opc`/`numparams` are read by the stub-gated
 /// [`SubvariableFlow::do_replacement`] when it materialises the new ops.
-/// // SEAM(W3-funcdata)
+/// // STUB(W3-funcdata)
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct ReplaceOp {
@@ -204,7 +204,7 @@ struct ReplaceOp {
 /// See module docs.  The engine has two halves: [`SubvariableFlow::do_trace`]
 /// (the executable discovery: build the placeholder subgraph + patch list) and
 /// [`SubvariableFlow::do_replacement`] (materialise it, routed through the
-/// seam-gated Funcdata mutation API).
+/// stub-gated Funcdata mutation API).
 pub struct SubvariableFlow {
     /// Size of the logical data-flow in bytes.
     flowsize: int4,
@@ -482,7 +482,7 @@ impl SubvariableFlow {
     }
 
     // -------------------------------------------------------------------------
-    // try* terminal helpers (subflow.cc:208-367) — W4/W6/jumptable seams
+    // try* terminal helpers (subflow.cc:208-367) — W4/W6/jumptable stubs
     // -------------------------------------------------------------------------
 
     /// Determine if the given subgraph variable can act as a parameter to the
@@ -624,7 +624,7 @@ impl SubvariableFlow {
     /// Determine if the given subgraph variable can act as a \e created value for
     /// the given INDIRECT/CALL op (C++ `SubvariableFlow::tryCallReturnPush`).
     ///
-    /// SEAM(W4): `fd->getCallSpecs(op)` / `isOutputLocked` / `isOutputActive`.
+    /// STUB(W4): `fd->getCallSpecs(op)` / `isOutputLocked` / `isOutputActive`.
     fn try_call_return_push(
         &mut self,
         data: &Funcdata,
@@ -647,7 +647,7 @@ impl SubvariableFlow {
         let _ = op;
         Err(KunaError::lowlevel(
             "kuna rust port: SubvariableFlow::tryCallReturnPush needs FuncCallSpecs \
-             (isOutputLocked / isOutputActive) — SEAM(W4)",
+             (isOutputLocked / isOutputActive) — STUB(W4)",
         ))
     }
 
@@ -680,7 +680,7 @@ impl SubvariableFlow {
     /// Determine if the subgraph variable flows naturally into a terminal
     /// FLOAT_INT2FLOAT operation (C++ `SubvariableFlow::tryInt2FloatPull`).
     ///
-    /// SEAM(W6): `TypeOpFloatInt2Float::preferredZextSize(flowsize)`.  The NZ/size
+    /// STUB(W6): `TypeOpFloatInt2Float::preferredZextSize(flowsize)`.  The NZ/size
     /// guards are executable; the preferred-size check that decides whether the
     /// patch counts as a modification needs the W6 type-op.
     fn try_int2float_pull(&mut self, data: &Funcdata, op: OpId, rvn: RvId) -> KunaResult<bool> {
@@ -698,7 +698,7 @@ impl SubvariableFlow {
         let _ = op;
         Err(KunaError::lowlevel(
             "kuna rust port: SubvariableFlow::tryInt2FloatPull needs \
-             TypeOpFloatInt2Float::preferredZextSize — SEAM(W6)",
+             TypeOpFloatInt2Float::preferredZextSize — STUB(W6)",
         ))
     }
 
@@ -1897,7 +1897,7 @@ impl SubvariableFlow {
     }
 
     // -------------------------------------------------------------------------
-    // replacement geometry (subflow.cc:1258-1345) — W3-funcdata mutation seams
+    // replacement geometry (subflow.cc:1258-1345) — W3-funcdata mutation stubs
     // -------------------------------------------------------------------------
 
     /// Decide if we use the same memory range of the original Varnode for the
@@ -1999,7 +1999,7 @@ impl SubvariableFlow {
             let val = self.rv(rvn).val;
             let new_vn = data.new_constant(self.flowsize, val);
             // newVn->copySymbolIfValid(rvn->vn);
-            // SEAM(W4): EquateSymbol propagation — getSymbolEntry is null in the W4
+            // STUB(W4): EquateSymbol propagation — getSymbolEntry is null in the W4
             // symbol-scope skeleton (no equate symbols are constructed on this path),
             // so copySymbolIfValid is a no-op here; faithful (recorded as a loss).
             return Ok(new_vn);
@@ -2100,7 +2100,7 @@ impl SubvariableFlow {
             return Ok(sf); // fd = 0; return;
         }
         sf.valid = true;
-        // C++ builds the root link in the constructor; if a seam aborts it, the
+        // C++ builds the root link in the constructor; if a stub aborts it, the
         // C++ destructor still clears the marks `setReplacement` set.  Mirror that:
         // on an error, clear every mark recorded in `varmap` before propagating, so
         // a subsequent SubvariableFlow run does not see a stale mark (which would
@@ -2140,7 +2140,7 @@ impl SubvariableFlow {
                         break;
                     }
                     Err(e) => {
-                        // A seam aborted the trace; clear marks (below) before
+                        // A stub aborted the trace; clear marks (below) before
                         // surfacing it, so the next run does not see stale marks.
                         retval = false;
                         traced = Err(e);
@@ -2151,7 +2151,7 @@ impl SubvariableFlow {
         }
 
         // Clear marks (the C++ destructor's mark cleanup) — runs on every exit
-        // path, including the seam-abort above.
+        // path, including the stub-abort above.
         self.clear_marks(data);
 
         traced?;
@@ -2167,12 +2167,12 @@ impl SubvariableFlow {
     /// Perform the discovered transform, making logical values explicit
     /// (C++ `SubvariableFlow::doReplacement`).
     ///
-    /// SEAM(W3-funcdata)/SEAM(W6): every `fd->opSet*`/`newOp`/`newVarnode*` here
+    /// STUB(W3-funcdata)/STUB(W6): every `fd->opSet*`/`newOp`/`newVarnode*` here
     /// routes through `Funcdata::opSetOutput` (the unported `(vbank,obank)`
     /// split-borrow) and opcode→`TypeOp` resolution (`glb->inst[opc]`).  The
     /// patch *order* (call-return push patches first, then define outputs, then
     /// inputs, then the terminal patches in list order) is transcribed; the
-    /// concrete mutations return the foundation's seam error until those land.
+    /// concrete mutations return the foundation's stub error until those land.
     pub fn do_replacement(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         // Do up front processing of the call return patches, which will be at the
         // front of the list.  Walk while type == push_patch; the index where we
@@ -2350,12 +2350,12 @@ impl SubvariableFlow {
 
     /// `vn->isZeroExtended(flowsize)` (C++ `Varnode::isZeroExtended`).
     ///
-    /// SEAM(W3-varnode): `Varnode::isZeroExtended` is not yet on the W3 varnode
+    /// STUB(W3-varnode): `Varnode::isZeroExtended` is not yet on the W3 varnode
     /// surface.  The INT_DIV/INT_REM trace paths that call it are reachable only
-    /// for whole-byte divides; until the accessor lands this seam-gates them.
+    /// for whole-byte divides; until the accessor lands this stub-gates them.
     fn is_zero_extended(_data: &Funcdata, _vn: VarnodeId, _flowsize: int4) -> KunaResult<bool> {
         Err(KunaError::lowlevel(
-            "kuna rust port: Varnode::isZeroExtended not on the W3 varnode surface — SEAM(W3-varnode)",
+            "kuna rust port: Varnode::isZeroExtended not on the W3 varnode surface — STUB(W3-varnode)",
         ))
     }
 }
@@ -2699,8 +2699,8 @@ impl Rule for RuleSubvarSext {
 
     fn reset(&mut self, _data: &mut Funcdata) {
         // isaggressive = data.getArch()->aggressive_ext_trim;
-        // SEAM(W4): Architecture::aggressive_ext_trim is not on the W3 arch seam
-        // (Funcdata::getArch returns the seams::Architecture skeleton).  The C++
+        // STUB(W4): Architecture::aggressive_ext_trim is not on the W3 ArchContext
+        // (Funcdata::getArch returns the context::ArchContext skeleton).  The C++
         // default is `false`; we keep that until the W4 arch surface lands.
         self.isaggressive = 0;
     }
@@ -2710,9 +2710,9 @@ impl Rule for RuleSubvarSext {
 /// (C++ `TypeOpFloatInt2Float::preferredZextSize`).
 ///
 /// Used by the `Int2FloatPatch` arm of [`SubvariableFlow::do_replacement`].
-/// SEAM(W6): the `TypeOpFloatInt2Float` precision table is not yet present; the
+/// STUB(W6): the `TypeOpFloatInt2Float` precision table is not yet present; the
 /// conservative default returns the input size.  That arm is only produced by the
-/// W6-seamed `try_int2float_pull` (which aborts the trace before reaching here),
+/// W6-stubbed `try_int2float_pull` (which aborts the trace before reaching here),
 /// so the default never affects a completing path (recorded as a loss).
 fn preferred_zext_size(in_size: int4) -> int4 {
     in_size
@@ -2733,7 +2733,7 @@ fn run_subflow(
 ) -> int4 {
     let mut subflow = match SubvariableFlow::new(data, root, mask, aggr, sext, big) {
         Ok(sf) => sf,
-        Err(_) => return 0, // construction reached a seam (e.g. sext constant check)
+        Err(_) => return 0, // construction reached a stub (e.g. sext constant check)
     };
     match subflow.do_trace(data) {
         Ok(true) => {}
@@ -2743,7 +2743,7 @@ fn run_subflow(
     match subflow.do_replacement(data) {
         Ok(()) => 1,
         // C++ doReplacement() returns void; a structured error (e.g. a residual
-        // symbol/iop seam) is treated as "no change" rather than aborting the pass.
+        // symbol/iop stub) is treated as "no change" rather than aborting the pass.
         Err(_) => 0,
     }
 }
@@ -3227,7 +3227,7 @@ impl Rule for RuleSplitFlow {
         match split_flow.apply(data) {
             Ok(()) => 1,
             // C++ apply() returns void; a structured error here (e.g. an iop/symbol
-            // seam) is treated as "no change made" rather than aborting the pass.
+            // stub) is treated as "no change made" rather than aborting the pass.
             Err(_) => 0,
         }
     }
@@ -3246,7 +3246,7 @@ impl Rule for RuleSplitFlow {
 // getTypeDefFacing (W6), ResolveCache::addResolution/inheritResolution (W6),
 // and Funcdata::buildCopyTemp/getMerge — none of which are on the surface the
 // merged W6 wave wired into Funcdata.  Those call sites route through
-// [`split_datatype_seam`]; the rules detect the seam and return 0 (no change).
+// the stub-gated split build-helpers; the rules detect the stub and return 0 (no change).
 
 /// `OptionSplitDatatypes` config bits (C++ `OptionSplitDatatypes`,
 /// `options.hh`).  `split_datatype_config` is a bit-mask of these.
@@ -3261,10 +3261,10 @@ mod option_split_datatypes {
 /// A pair of matching data-types for one logical piece of the split (C++
 /// `SplitDatatype::Component`).
 ///
-/// Read by the seam-gated `split{Copy,Load,Store}` build-helpers (which materialize
+/// Read by the stub-gated `split{Copy,Load,Store}` build-helpers (which materialize
 /// per-component ops); until the Funcdata arch bridge lands those mutation paths
-/// return the seam error, so the fields are exercised only by the categorization
-/// tests.  // SEAM(arch/W6)
+/// return the stub error, so the fields are exercised only by the categorization
+/// tests.  // STUB(arch/W6)
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct Component {
@@ -3291,7 +3291,7 @@ struct Component {
 // `TypeFactory *types`, and a `ResolveCache resolver`; in Rust `data` is threaded
 // as a `&mut Funcdata` argument, `types` is a cloned `Rc<TypeFactoryImpl>` handle
 // (held across the `&mut Funcdata` borrow the build helpers need), and `resolver`
-// is owned here.  Union resolution is the only piece still seamed (W6/W7): every
+// is owned here.  Union resolution is the only piece still stubbed (W6/W7): every
 // `ResolveCache` method short-circuits on `!dt->needsResolution()` (unionresolve.cc
 // :1230/1269), so for the non-union corpus the resolver is a faithful no-op.
 pub struct SplitDatatype {
@@ -3350,7 +3350,7 @@ impl SplitDatatype {
     /// Obtain the component of the given data-type at the specified offset (C++
     /// `SplitDatatype::getComponent`, subflow.cc:2219).  Returns
     /// `(component, is_hole)`.
-    #[allow(dead_code)] // consumed by the seam-gated splitCopy/Load/Store build path
+    #[allow(dead_code)] // consumed by the stub-gated splitCopy/Load/Store build path
     fn get_component(
         &self,
         types: &dyn crate::dtype::TypeFactory,
@@ -3387,7 +3387,7 @@ impl SplitDatatype {
     ///
     /// Returns -1 (not splittable), 0 (struct-based), 1 (array-based), 2
     /// (primitive splittable multiple ways).
-    #[allow(dead_code)] // consumed by the seam-gated splitCopy/Load/Store build path
+    #[allow(dead_code)] // consumed by the stub-gated splitCopy/Load/Store build path
     fn categorize_datatype(&self, ct: &Rc<Datatype>) -> int4 {
         match ct.get_metatype() {
             type_metatype::TYPE_ARRAY => {
@@ -3440,7 +3440,7 @@ impl SplitDatatype {
     /// components (C++ `SplitDatatype::testDatatypeCompatibility`,
     /// subflow.cc:2300).  Populates `data_type_pieces` and returns `true` on a
     /// compatible split.
-    #[allow(dead_code)] // consumed by the seam-gated splitCopy/Load/Store build path
+    #[allow(dead_code)] // consumed by the stub-gated splitCopy/Load/Store build path
     fn test_datatype_compatibility(
         &mut self,
         types: &dyn crate::dtype::TypeFactory,
@@ -4601,7 +4601,7 @@ impl Rule for RuleDumptyHumpLate {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // The funcdata mutations (opSetInput/totalReplace) return KunaResult; the
-        // C++ applyOp is infallible, so we run the body and map any seam error to
+        // C++ applyOp is infallible, so we run the body and map any stub error to
         // 0 (no change) at this boundary.
         Self::apply_op_inner(op, data).unwrap_or(0)
     }
@@ -4676,7 +4676,7 @@ impl RuleDumptyHumpLate {
             // Exact match but output address fixed.  Change SUBPIECE to COPY.
             remove_op = data.vbank().get(in0).expect("stale in0").get_def().expect("in0 def");
             data.op_remove_input(op, 1);
-            // fd->opSetOpcode(op, CPUI_COPY).  SEAM(W6): glb->inst[CPUI_COPY] — the
+            // fd->opSetOpcode(op, CPUI_COPY).  STUB(W6): glb->inst[CPUI_COPY] — the
             // TypeOp flag word is transcribed inline from typeop.cc
             // (TypeOpCopy: unary | nocollapse), mirroring Funcdata::w6_type_op.
             data.op_set_opcode(
@@ -4712,7 +4712,7 @@ impl RuleDumptyHumpLate {
 // FloatFormat acquisition (`f->getArch()->translate->getFloatFormat`, held as
 // the `arch` handle) and the `setReplacement` constant-conversion
 // (`format->convertEncoding`).  Only SubfloatFlow's `preserveAddress` override
-// (`return vn->isInput()`) remains a transform seam — it cannot be injected into
+// (`return vn->isInput()`) remains a transform stub — it cannot be injected into
 // the merged `TransformManager::new_piece` (transform.rs, not owned).
 
 /// Internal state for walking floating-point data-flow (C++
@@ -5967,7 +5967,7 @@ impl LaneDivide {
     }
 
     /// Apply the constructed transform (C++ base `TransformManager::apply`).
-    /// SEAM(W6): the merged apply reaches `glb->inst[opc]`.
+    /// STUB(W6): the merged apply reaches `glb->inst[opc]`.
     pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         self.tm.apply(data)
     }
@@ -6103,7 +6103,7 @@ mod tests {
     };
 
     use crate::dtype::{type_metatype, Datatype, TypeFactory};
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
     use crate::varnode::DefOpInfo;
 
     // ---- scaffolding (mirrors funcdata_varnode.rs test scaffolding) --------
@@ -6131,7 +6131,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -6711,8 +6711,8 @@ mod tests {
     }
 
     #[test]
-    fn split_load_store_get_value_datatype_is_seam_none() {
-        // getValueDatatype needs getTypeReadFacing off the arch seam -> None, so
+    fn split_load_store_get_value_datatype_is_stub_none() {
+        // getValueDatatype needs getTypeReadFacing off the arch stub -> None, so
         // RuleSplitLoad / RuleSplitStore return 0 (no change).
         let mut fd = build_fd();
         let spaceid = mk_const(&mut fd, 8, 0);
@@ -6728,8 +6728,8 @@ mod tests {
     }
 
     #[test]
-    fn rule_split_copy_is_seam_gated() {
-        // RuleSplitCopy's getTypeReadFacing/getTypeDefFacing are arch-seamed, so
+    fn rule_split_copy_is_stub_gated() {
+        // RuleSplitCopy's getTypeReadFacing/getTypeDefFacing are arch-stubbed, so
         // the rule returns 0 cleanly.
         let mut fd = build_fd();
         let src = mk_input(&mut fd, 0x40, 8);
@@ -6881,7 +6881,7 @@ mod tests {
 
     #[test]
     fn subfloat_flow_no_format_does_not_trace() {
-        // The Funcdata arch seam exposes no Translate/FloatFormat, so SubfloatFlow
+        // The Funcdata arch stub exposes no Translate/FloatFormat, so SubfloatFlow
         // reports no format and doTrace returns false (the C++ null-format path).
         let mut fd = build_fd();
         let root = mk_input(&mut fd, 0x40, 8);
@@ -6891,9 +6891,9 @@ mod tests {
     }
 
     #[test]
-    fn rule_subfloat_convert_returns_zero_under_seam() {
+    fn rule_subfloat_convert_returns_zero_under_stub() {
         // FLOAT_FLOAT2FLOAT widening (out>in): SubfloatFlow can't acquire a format
-        // (arch seam) so doTrace is false and the rule returns 0.
+        // (arch stub) so doTrace is false and the rule returns 0.
         let mut fd = build_fd();
         let invn = mk_input(&mut fd, 0x40, 4);
         let f2f = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
@@ -6906,7 +6906,7 @@ mod tests {
 
     // ---- tryReturnPull (subflow.cc:238-284) — verifier adversarial tests ----
     // item: rport/w10-return-narrow (round 1).  These target the three fragile
-    // decision branches of the now-closed seam: the slot==0 return-address bail,
+    // decision branches of the now-closed stub: the slot==0 return-address bail,
     // the non-aggressive consume-outside-mask bail, and the terminal trim patch
     // (which sets returnsTraversed and emits exactly one parameter_patch).
 

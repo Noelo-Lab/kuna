@@ -20,7 +20,7 @@ use kuna_num::opcodes::OpCode;
 
 use super::*;
 use crate::action::{ActionGroupList, Rule};
-use crate::seams::{Architecture, BlockId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, BlockId, TypeOp, VarnodeId};
 
 // -----------------------------------------------------------------------------
 // Harness: a register space + a "stack" spacebase space with a base register.
@@ -72,7 +72,7 @@ fn build_fd() -> Funcdata {
     // addSpacebasePointer(stack, sp_data, SP_SIZE, stack_growth=true)
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
 
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let code = Rc::clone(glb.manage().get_space_by_name("register").unwrap());
     let entry = Address::new(code, 0x1000);
     Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap()

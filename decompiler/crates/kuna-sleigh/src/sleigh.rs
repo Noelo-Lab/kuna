@@ -15,7 +15,7 @@
 //!   from `sleigh.{hh,cc}`.
 //!
 //! The walker implements the `SymbolWalker`/`SymbolWalkerChange`/
-//! `PatternExpressionContext` seams (slghsymbol.rs / slghpatexpress.rs):
+//! `PatternExpressionContext` hooks (slghsymbol.rs / slghpatexpress.rs):
 //! constructor resolution returns a `ConstructorRef`, and the walker borrows
 //! the [`SymbolTable`] so it can navigate constructors/operands during a walk.
 //!
@@ -1479,7 +1479,7 @@ pub struct Sleigh {
     /// The mapped bytes of the program (C++ `LoadImage *loader`).
     ///
     /// Wrapped in an [`Rc`] so the IR-boundary `glb` skeleton (the
-    /// `crate::seams::Architecture` the Funcdata holds) can share read access for
+    /// `kuna_decomp::context::ArchContext` the Funcdata holds) can share read access for
     /// jump-table LOAD emulation (`EmulateFunction::executeLoad`); the C++
     /// `Architecture::loader` is a long-lived `LoadImage *` reached identically
     /// from both the engine and the emulator.

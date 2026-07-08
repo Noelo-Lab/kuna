@@ -28,7 +28,7 @@
 //!
 //! 3. **roadmap #9 "re-run jump-table recovery after type recovery"** — the
 //!    decompiler-internal MULTISTAGE re-recovery (`recover_count > 1`, gated behind
-//!    the `Override::queryMultistageJumptable` SEAM in jumptable.rs). It is
+//!    the `Override::queryMultistageJumptable` STUB in jumptable.rs). It is
 //!    ENGINE-RESIDENT (S2), **not** an analyzer-tier item. This pass does NOT
 //!    attempt it; #9 is a separate, deferred *engine* task (see
 //!    `docs/missing-analyses.md` §7 and `docs/analysis-port-log.md`).

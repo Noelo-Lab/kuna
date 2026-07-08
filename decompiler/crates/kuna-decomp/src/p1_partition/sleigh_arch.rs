@@ -61,7 +61,7 @@
 //!   bootstrap gate does exactly this).  `buildSymbols` (the `<default_symbols>`
 //!   → `Database::addSymbol` markup) reaches the W4 symbol-scope `addSymbol`
 //!   surface that is itself a later seam.  Each is documented inline with
-//!   `// SEAM(...)`.
+//!   `// STUB(...)`.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::filemanage::FileManage;
@@ -858,7 +858,7 @@ impl SleighArchitecture {
     /// \brief Encode basic attributes of the active executable (C++
     /// `SleighArchitecture::encodeHeader`, `sleigh_arch.cc:464`).
     ///
-    /// Writes the `name` (filename) and `target` attributes.  SEAM(W*-encode):
+    /// Writes the `name` (filename) and `target` attributes.  STUB(W*-encode):
     /// the full `Encoder` marshaling surface lands with the marshaling waves; the
     /// header is the slice the leaf-frontend `encode` paths prepend.  Returns the
     /// two attribute pairs the C++ would write, in C++ order.

@@ -70,7 +70,7 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::flow::{FlowEnvironment, FlowInfo};
-use kuna_decomp::seams::{Architecture as IrArch, TypeOp};
+use kuna_decomp::context::{ArchContext as IrArch, TypeOp};
 use kuna_decomp::op::pcodeop_flags;
 use kuna_decomp::sleigh_arch::{
     normalize_architecture, register_sleigh_arch_ids, LanguageDatabase,

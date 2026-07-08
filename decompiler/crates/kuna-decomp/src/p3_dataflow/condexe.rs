@@ -38,11 +38,11 @@
 //!     `execute`, `apply`, and `RuleOrPredicate::apply_op`/`check_single` return
 //!     `KunaResult` and the seam is visible, never silently mis-ported.
 //!   - **`Funcdata::opSetOpcode`** (W6 `glb->inst[opc]`): the rule needs the
-//!     resolved [`crate::seams::TypeOp`] for a target opcode; the W6 op-info table
-//!     is not present, so [`resolve_typeop`] surfaces a seam `Err`.  // SEAM(W6)
+//!     resolved [`crate::context::TypeOp`] for a target opcode; the W6 op-info table
+//!     is not present, so [`resolve_typeop`] surfaces a seam `Err`.  // STUB(W6)
 //!   - **`Funcdata::numHeritagePasses`** (W7 heritage): `buildHeritageArray`
 //!     queries per-space heritage progress; the W7 `Heritage` subsystem is not
-//!     present, so it reports "no pass yet" (every space `false`).  // SEAM(W7)
+//!     present, so it reports "no pass yet" (every space `false`).  // STUB(W7)
 //!
 //! These deferrals are recorded as losses; the verify-path content — the genuine
 //! algorithmic novelty of this file — is complete.
@@ -57,7 +57,7 @@ use crate::action::{
 };
 use crate::expression::BooleanExpressionMatch;
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, TypeOp, VarnodeId};
+use crate::context::{BlockId, OpId, TypeOp, VarnodeId};
 
 /// Resolve an [`OpCode`] to the [`TypeOp`] `opSetOpcode` needs.
 ///
@@ -159,12 +159,12 @@ impl ConditionalExecution {
                 continue;
             }
             // if (fd->numHeritagePasses(spc) > 0) heritageyes[index] = true;
-            // SEAM(W7): numHeritagePasses queries the W7 Heritage subsystem, which
+            // STUB(W7): numHeritagePasses queries the W7 Heritage subsystem, which
             // is not present at this item's boundary.  Treated as "no pass yet"
             // (every heritaged space stays false); the heritage-gated guard in
             // test_removability is then conservative (refuses to remove ops whose
             // output has no descendants).  Recorded as a loss.
-            let num_heritage_passes = 0; // SEAM(W7): fd.num_heritage_passes(spc)
+            let num_heritage_passes = 0; // STUB(W7): fd.num_heritage_passes(spc)
             if num_heritage_passes > 0 {
                 self.heritageyes[index as usize] = true;
             }
@@ -356,7 +356,7 @@ impl ConditionalExecution {
     /// defined by a MULTIEQUAL in the iblock, in which case the duplicate's input
     /// is selected from the MULTIEQUAL input; any other inputs must be constants.
     ///
-    /// SEAM(W6/opSetOutput): creating the new op's output (`newVarnodeOut` →
+    /// STUB(W6/opSetOutput): creating the new op's output (`newVarnodeOut` →
     /// `opSetOutput`) and resolving its opcode (`opSetOpcode` → W6) both surface
     /// the documented seam `Err`.  The op-shell creation, input wiring, and
     /// insertion are reproduced.
@@ -393,7 +393,7 @@ impl ConditionalExecution {
         let out_addr = fd.vbank().get(orig_out_vn).expect("pullbackOp").get_addr().clone();
         // Varnode *outVn = fd->newVarnodeOut(origOutVn->getSize(),origOutVn->getAddr(),newOp);
         let out_vn = self.new_varnode_out(out_size, &out_addr, new_op, fd)?;
-        // fd->opSetOpcode(newOp,op->code());   -- SEAM(W6)
+        // fd->opSetOpcode(newOp,op->code());   -- STUB(W6)
         let opc = fd.obank().get(op).expect("pullbackOp").code();
         fd.op_set_opcode(new_op, resolve_typeop(opc)?);
         // fd->opSetInput(newOp,invn,0);
@@ -413,7 +413,7 @@ impl ConditionalExecution {
     /// Create a MULTIEQUAL in the given block that will hold data-flow from the
     /// given PcodeOp (C++ `ConditionalExecution::getNewMulti`, `condexe.cc:198-217`).
     ///
-    /// SEAM(W6/opSetOutput): `newUniqueOut`→`opSetOutput` and `opSetOpcode`→W6
+    /// STUB(W6/opSetOutput): `newUniqueOut`→`opSetOutput` and `opSetOpcode`→W6
     /// surface the documented seam `Err`; the op-shell + input wiring + insert are
     /// reproduced.
     fn get_new_multi(&mut self, op: OpId, bl: BlockId, fd: &mut Funcdata) -> KunaResult<VarnodeId> {
@@ -427,7 +427,7 @@ impl ConditionalExecution {
         // Using the original outvn address may cause merge conflicts (see C++ comment);
         // newoutvn = fd->newUniqueOut(outvn->getSize(),newop);
         let newoutvn = self.new_unique_out(outsize, newop, fd)?;
-        // fd->opSetOpcode(newop,CPUI_MULTIEQUAL);   -- SEAM(W6)
+        // fd->opSetOpcode(newop,CPUI_MULTIEQUAL);   -- STUB(W6)
         fd.op_set_opcode(newop, resolve_typeop(OpCode::CPUI_MULTIEQUAL)?);
         // We create NEW references to outvn; for(i=0;i<bl->sizeIn();++i) fd->opSetInput(newop,outvn,i);
         for i in 0..sizein {
@@ -441,7 +441,7 @@ impl ConditionalExecution {
     /// `newVarnodeOut(s,m,op)` — create a defined output Varnode for `op` (C++
     /// `Funcdata::newVarnodeOut`, `funcdata_varnode.cc:106`).
     ///
-    /// SEAM(opSetOutput, LOSS-035/036): `newVarnodeOut` is `newVarnode(s,m,ct)`
+    /// STUB(opSetOutput, LOSS-035/036): `newVarnodeOut` is `newVarnode(s,m,ct)`
     /// then `op->setOutput(vn)` (`createDef`→xref).  The free varnode is created
     /// faithfully via [`Funcdata::new_varnode`]; the def-linking step routes
     /// through [`Funcdata::op_set_output`], which currently returns the documented
@@ -454,7 +454,7 @@ impl ConditionalExecution {
         fd: &mut Funcdata,
     ) -> KunaResult<VarnodeId> {
         let vn = fd.new_varnode(s, m, None);
-        fd.op_set_output(op, vn)?; // SEAM(opSetOutput)
+        fd.op_set_output(op, vn)?; // STUB(opSetOutput)
         Ok(vn)
     }
 
@@ -463,7 +463,7 @@ impl ConditionalExecution {
     /// [`new_varnode_out`](ConditionalExecution::new_varnode_out).
     fn new_unique_out(&self, s: int4, op: OpId, fd: &mut Funcdata) -> KunaResult<VarnodeId> {
         let vn = fd.new_unique(s, None);
-        fd.op_set_output(op, vn)?; // SEAM(opSetOutput)
+        fd.op_set_output(op, vn)?; // STUB(opSetOutput)
         Ok(vn)
     }
 
@@ -579,7 +579,7 @@ impl ConditionalExecution {
     /// Replace the data-flow for the given PcodeOp in \b iblock (C++
     /// `ConditionalExecution::doReplacement`, `condexe.cc:320-356`).
     ///
-    /// SEAM(opSetOutput / W6): the RETURN-input COPY creation and any pullback
+    /// STUB(opSetOutput / W6): the RETURN-input COPY creation and any pullback
     /// MULTIEQUAL creation surface the documented seam `Err`s through the helpers.
     fn do_replacement(&mut self, op: OpId, fd: &mut Funcdata) -> KunaResult<()> {
         self.replacement.clear();
@@ -612,7 +612,7 @@ impl ConditionalExecution {
                     // PcodeOp *newcopyop = fd->newOp(1,readop->getAddr());
                     let raddr = fd.obank().get(readop).expect("doReplacement").get_addr().clone();
                     let newcopyop = fd.new_op(1, raddr);
-                    // fd->opSetOpcode(newcopyop,CPUI_COPY);   -- SEAM(W6)
+                    // fd->opSetOpcode(newcopyop,CPUI_COPY);   -- STUB(W6)
                     fd.op_set_opcode(newcopyop, resolve_typeop(OpCode::CPUI_COPY)?);
                     // Varnode *outvn = fd->newVarnodeOut(vn->getSize(),vn->getAddr(),newcopyop); // Preserve storage
                     let vsize = fd.vbank().get(vn).expect("doReplacement: stale vn").get_size();
@@ -765,7 +765,7 @@ impl ConditionalExecution {
     /// `ConditionalExecution::execute`, `condexe.cc:456-475`).
     ///
     /// We assume the last call to [`verify`](ConditionalExecution::verify)
-    /// returned \b true.  SEAM(opSetOutput / W6): the data-flow rewrite
+    /// returned \b true.  STUB(opSetOutput / W6): the data-flow rewrite
     /// (`doReplacement`) surfaces the documented seam `Err`s.
     pub fn execute(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         let iblock = self.iblock.expect("execute: no iblock");
@@ -841,7 +841,7 @@ impl Action for ActionConditionalExe {
     /// blocks) is reproduced exactly; `count += numhits` lands on
     /// [`ActionBase::count`].
     ///
-    /// SEAM(opSetOutput / W6): a successful trial whose `condexe.execute()` then
+    /// STUB(opSetOutput / W6): a successful trial whose `condexe.execute()` then
     /// surfaces the documented seam `Err` cannot abort an `apply` that returns a
     /// bare `int4`; such an execute degrades to "no change made this trial" (the
     /// hit is not counted and the round does not loop on it).  This is the only
@@ -1129,7 +1129,7 @@ impl RuleOrPredicate {
     /// Check for the \e alternate form `tmp1 = (val2 == 0) ? val1 : 0;` (C++
     /// `RuleOrPredicate::checkSingle`, `condexe.cc:637-651`).
     ///
-    /// SEAM(opSetOutput / W6): `data.opSetOpcode(op,CPUI_COPY)` surfaces the W6
+    /// STUB(opSetOutput / W6): `data.opSetOpcode(op,CPUI_COPY)` surfaces the W6
     /// seam; the input rewiring (`opSetInput`/`opRemoveInput`) is reproduced.
     fn check_single(
         &self,
@@ -1166,7 +1166,7 @@ impl RuleOrPredicate {
         data.op_set_input(branch_op, vn, branch.zero_slot)?;
         // data.opRemoveInput(op,1);
         data.op_remove_input(op, 1);
-        // data.opSetOpcode(op,CPUI_COPY);   -- SEAM(W6)
+        // data.opSetOpcode(op,CPUI_COPY);   -- STUB(W6)
         data.op_set_opcode(op, resolve_typeop(OpCode::CPUI_COPY)?);
         // data.opSetInput(op,branch.op->getOut(),0);
         data.op_set_input(op, branch_out, 0)?;
@@ -1179,7 +1179,7 @@ impl Rule for RuleOrPredicate {
         // Note: the C++ returns int4; the seam `Err` paths cannot return through
         // an `int4`, so a seam error degrades to "no change" (0) here and is
         // reported by the helper's `Err`.  The applyOp structure is otherwise
-        // faithful.  See SEAM notes.
+        // faithful.  See STUB notes.
         self.apply_op_inner(op, data).unwrap_or(0)
     }
 
@@ -1201,7 +1201,7 @@ impl RuleOrPredicate {
     /// The `KunaResult`-returning body of [`Rule::apply_op`] (C++
     /// `RuleOrPredicate::applyOp`, `condexe.cc:653-709`).
     ///
-    /// SEAM(opSetOutput / W6): `newOp`+`newUniqueOut`+`opSetOpcode(MULTIEQUAL)` for
+    /// STUB(opSetOutput / W6): `newOp`+`newUniqueOut`+`opSetOpcode(MULTIEQUAL)` for
     /// the new MULTIEQUAL, and the final `opSetOpcode(op,CPUI_COPY)`, surface the
     /// documented seam `Err`s.
     fn apply_op_inner(&self, op: OpId, data: &mut Funcdata) -> KunaResult<int4> {
@@ -1286,7 +1286,7 @@ impl RuleOrPredicate {
         // PcodeOp *newMulti = data.newOp(2,finalBlock->getStart());
         let start = crate::block::block_get_start(&data.bblocks_ref().arena, final_block);
         let new_multi = data.new_op(2, start);
-        // data.opSetOpcode(newMulti,CPUI_MULTIEQUAL);   -- SEAM(W6)
+        // data.opSetOpcode(newMulti,CPUI_MULTIEQUAL);   -- STUB(W6)
         data.op_set_opcode(new_multi, resolve_typeop(OpCode::CPUI_MULTIEQUAL)?);
         let b0_other = branch0.other_vn.expect("applyOp: branch0 no otherVn");
         let b1_other = branch1.other_vn.expect("applyOp: branch1 no otherVn");
@@ -1308,7 +1308,7 @@ impl RuleOrPredicate {
         data.op_remove_input(op, 1);
         // data.opSetInput(op,newvn,0);
         data.op_set_input(op, newvn, 0)?;
-        // data.opSetOpcode(op,CPUI_COPY);   -- SEAM(W6)
+        // data.opSetOpcode(op,CPUI_COPY);   -- STUB(W6)
         data.op_set_opcode(op, resolve_typeop(OpCode::CPUI_COPY)?);
         Ok(1)
     }
@@ -1317,7 +1317,7 @@ impl RuleOrPredicate {
     /// [`ConditionalExecution::new_unique_out`]).
     fn new_unique_out_data(&self, s: int4, op: OpId, data: &mut Funcdata) -> KunaResult<VarnodeId> {
         let vn = data.new_unique(s, None);
-        data.op_set_output(op, vn)?; // SEAM(opSetOutput)
+        data.op_set_output(op, vn)?; // STUB(opSetOutput)
         Ok(vn)
     }
 

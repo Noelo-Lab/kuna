@@ -15,24 +15,24 @@
 //!   print->docFunction(fd)                      -> PrintC::doc_function shell
 //! ```
 //!
-//! ## What runs end-to-end today (and what seams)
+//! ## What runs end-to-end today (and what stubs out)
 //!
 //! * **Flow following is real.**  [`FlowInfo::generate_ops`] (C++
 //!   `Funcdata::followFlow` -> `generateOps`) lifts and links every
 //!   straight-line instruction's p-code into the `Funcdata`; CALL / jump-table
-//!   sites hit the documented W4 `FlowInfo` seams (FuncCallSpecs / JumpTable),
+//!   sites hit the documented W4 `FlowInfo` stubs (FuncCallSpecs / JumpTable),
 //!   which are no-ops here (faithful partial flow), so `generate_ops` returns
 //!   the IR built up to those boundaries rather than erroring.
 //! * **The universalAction perform loop is real.**  The 252-pass `decompile`
 //!   root is installed and run; the *boot* passes (`ActionStart` -> the C++
-//!   `Funcdata::startProcessing`) are W3/W4 seam no-ops in the merged tree
+//!   `Funcdata::startProcessing`) are W3/W4 stub no-ops in the merged tree
 //!   (which is why the flow follow is driven explicitly here, outside the
 //!   pipeline, exactly as the C++ `followFlow` runs before `perform`), so the
 //!   pass scheduler/status state-machine executes without rebuilding the IR.
-//! * **The printer body is the W9-emit seam.**  [`PrintC::doc_function`] emits a
+//! * **The printer body is the W9-emit stub.**  [`PrintC::doc_function`] emits a
 //!   structurally-complete C function *shell* (real signature + matched braces)
 //!   driving the real [`Emit`](crate::prettyprint::Emit) primitives; the
-//!   per-statement RPN expression body is the `// SEAM(W9-emit)` driver absent
+//!   per-statement RPN expression body is the `// STUB(W9-emit)` driver absent
 //!   from the merged tree (see `printc.rs`).
 //!
 //! This proves the full path RUNS and emits plausible C — not byte-parity (the
@@ -50,7 +50,7 @@ use crate::action::ActionContext;
 use crate::architecture::Architecture;
 use crate::flow::{FlowEnvironment, FlowInfo};
 use crate::funcdata::{funcdata_flags, Funcdata};
-use crate::seams::TypeOp;
+use crate::context::TypeOp;
 
 use kuna_sleigh::translate::Translate;
 
@@ -267,7 +267,7 @@ impl FlowEnvironment for ArchFlowEnv {
     ) -> KunaResult<Option<crate::fspec::FuncProto>> {
         // C++ `IfcProtooverride`: `new FuncProto; setInternal(pieces.model,
         // getTypeVoid()); setPieces(pieces)`.  The pieces carry no model
-        // back-pointer in the merged tree (// SEAM(w6-fspec-2)), so use the default
+        // back-pointer in the merged tree (// STUB(w6-fspec-2)), so use the default
         // model (the console parses `override prototype` against the default model
         // unless a `__model` was named — not exercised by the corpus).
         let arch = self.arch();
@@ -286,7 +286,7 @@ impl FlowEnvironment for ArchFlowEnv {
         Ok(Some(proto))
     }
 
-    fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::seams::OpId) -> bool {
+    fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         // (kuna) GH-8817: wire the ported `kunaIsV850IndirectJmp` predicate.  The
         // gate is the architecture-owned `v850_indirect_branch` flag (`option
         // v850indirectbranch on|off`, default off / upstream byte-identical); the
@@ -329,7 +329,7 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
-    fn is_sparc_struct_ret_trap(&self, fd: &Funcdata, op: crate::seams::OpId) -> bool {
+    fn is_sparc_struct_ret_trap(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         // (kuna) GH-6882: wire the ported `kunaIsSparcStructRetTrap` predicate.
         // The gate is the architecture-owned `sparc_struct_return` flag (`option
         // sparcstructret on|off`, default off / upstream byte-identical); the
@@ -353,7 +353,7 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
-    fn is_tail_call_branch(&self, fd: &Funcdata, op: crate::seams::OpId, dest: &Address) -> bool {
+    fn is_tail_call_branch(&self, fd: &Funcdata, op: crate::context::OpId, dest: &Address) -> bool {
         // (kuna) tee-O2 tail-jump: wire the ported `kuna_is_tail_call_branch`
         // predicate.  The gate is the architecture-owned `tail_call_jumps` flag
         // (`option tailcalljump on|off`, default-off opt-in / default-pipeline
@@ -383,7 +383,7 @@ impl FlowEnvironment for ArchFlowEnv {
 /// `Funcdata::followFlow`).
 ///
 /// The Funcdata is built through [`Architecture::new_funcdata`] (the W3 boot
-/// seam: it carries the IR-boundary address-space slice + the analysis
+/// boundary: it carries the IR-boundary address-space slice + the analysis
 /// unique-start).  Flow following runs the real [`FlowInfo`] against an
 /// [`ArchFlowEnv`]; on success the `processing_started` flag is set so the
 /// printer's `isProcStarted` gate (and the pipeline's resume bookkeeping) see a
@@ -515,7 +515,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // ordering AND the forward dominator tree (`bblocks.calcForwardDominator`).
     // `ActionHeritage::buildADT` *requires* that dominator tree, so the reset is
     // part of the heritage-application prerequisite (the merged tree's
-    // `ActionStart` is a seam, so it is driven here, exactly as the C++
+    // `ActionStart` is a stub, so it is driven here, exactly as the C++
     // `followFlow`→`startProcessing` order runs it before the action pipeline).
     data.structure_reset();
     // C++ startProcessing also calls sortCallSpecs() (dominance order for the
@@ -523,7 +523,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     data.sort_call_specs();
     // startProcessing then sets the processing_started flag (so isProcStarted()
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
-    // applyDeadCodeDelay — is W4 seam or handled lazily in op_heritage).
+    // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
     Ok(data)
 }
@@ -564,7 +564,7 @@ fn run_jumptable_pipeline(
             .get_current_mut()
             .ok_or_else(|| KunaError::lowlevel("no current jumptable action"))?;
         root.reset(partial);
-        // catch_unwind so an un-ported pass seam in the sub-pipeline degrades to a
+        // catch_unwind so an un-ported pass stub in the sub-pipeline degrades to a
         // recoverable error (the recovery falls back to truncating the BRANCHIND),
         // never an abort — same policy as the main `decompile_func_full` drive.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -676,7 +676,7 @@ fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
 #[allow(clippy::mutable_key_type)]
 fn refollow_flow(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<()> {
     // C++ `glb->clearAnalysis(&data)` == fd->clear() (the comment-DB clear is the
-    // W4 seam) — drops ops/vbank/blocks/qlst/heritage but keeps `localoverride`.
+    // W4 stub) — drops ops/vbank/blocks/qlst/heritage but keeps `localoverride`.
     fd.clear();
     // Move the cleared shell out so `follow_flow_on_fd` can re-flow it (it takes
     // `fd` by value, mirroring the fresh-build path), then put the re-flowed IR
@@ -826,11 +826,11 @@ pub fn decompile_func_full_with_override_dyn(
         // With the single-manager unification (LOSS-132) the universalAction passes
         // now reach the *real* lifted varnodes, so the pipeline genuinely executes
         // heritage / simplification / merge / … on live IR.  Some pass BODIES are
-        // still un-ported seams (LOSS-131, the M3 grind): a hand-built fixture never
+        // still un-ported stubs (LOSS-131, the M3 grind): a hand-built fixture never
         // reached them, but a real corpus function can hit, e.g.,
-        // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those seams abort via
-        // `unimplemented_seam` (a deliberate `#[cold] panic!`).  Convert such a
-        // seam-abort into a recoverable `Err` at this orchestration boundary so the
+        // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those stubs abort via
+        // `unimplemented_stub` (a deliberate `#[cold] panic!`).  Convert such a
+        // stub-abort into a recoverable `Err` at this orchestration boundary so the
         // end-to-end harnesses degrade to the documented "honest partial parity"
         // (the pipeline ran; a body declined at a seam) instead of taking down the
         // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
@@ -867,7 +867,7 @@ pub fn decompile_func_full_with_override_dyn(
 /// (the C++ save/switch/perform/restore around `allacts.setCurrent`).  The
 /// resulting [`Funcdata`] holds whatever IR the reduced pipeline produced (for
 /// `normalize`, no `sblocks` — `quality` then hits its `hasNoStructBlocks`
-/// guard).  Seam aborts degrade to a recoverable `Err`, like the full drive.
+/// guard).  Stub aborts degrade to a recoverable `Err`, like the full drive.
 pub fn run_named_pipeline_variant(
     arch: &mut Architecture,
     name: &str,
@@ -906,7 +906,7 @@ pub fn run_named_pipeline_variant(
 }
 
 /// Best-effort extraction of a panic payload's message (the `panic!` string),
-/// for surfacing an un-ported-seam abort as a recoverable [`KunaError`].
+/// for surfacing an un-ported-stub abort as a recoverable [`KunaError`].
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_string()

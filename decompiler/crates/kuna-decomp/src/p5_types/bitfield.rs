@@ -40,14 +40,14 @@
 //!
 //! * `Datatype::getPtrInto` on a `TypePointerRel` (the relative-pointer case the
 //!   rules use to resolve the bitfield struct from the pointer operand) — only
-//!   the non-relative `getPtrInto` is ported.  // SEAM(W10)
+//!   the non-relative `getPtrInto` is ported.  // STUB(W10)
 //! * The `INSERT` / `ZPULL` / `SPULL` `OpBehavior`s/`TypeOp`s and the new-op
 //!   creation / back-and-forward graph traversal the transforms emit
 //!   (`Funcdata` exposes the op/varnode factory and `op_destroy_recursive`, but
 //!   the bitfield emission sequence — `doTrace`/`apply`, `foldLoad`,
 //!   `foldPtrsub`, the `INT_EQUAL`-group compare folding — is unported), and the
 //!   printc `pushBitfield`/`checkBitFieldMember` rendering of the resulting
-//!   field accesses.  // SEAM(W10)
+//!   field accesses.  // STUB(W10)
 //!
 //! Each rule below transcribes the guards it *can* evaluate with the ported type
 //! surface (`hasBitfields`, `getTypeReadFacing`/`getTypeDefFacing`, the
@@ -79,7 +79,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, BitFieldTriple, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::VarnodeId;
+use crate::context::VarnodeId;
 
 /// `func->getArch()->getDefaultDataSpace()->isBigEndian()` — the endianness the
 /// `BitFieldTransform` base records.  All bitfield rule bodies read it the same
@@ -792,7 +792,7 @@ impl Rule for RuleBitFieldStore {
         Some(Box::new(RuleBitFieldStore))
     }
 
-    fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
+    fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1677-1692):
         //   Datatype *ptr = op->getIn(1)->getTypeReadFacing(op);
         //   Datatype *dt = ptr->getPtrInto(off);
@@ -853,7 +853,7 @@ impl Rule for RuleBitFieldOut {
         Some(Box::new(RuleBitFieldOut))
     }
 
-    fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
+    fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1701-1712):
         //   Datatype *dt = op->getOut()->getTypeDefFacing();
         //   if (!dt->hasBitfields()) return 0;
@@ -893,7 +893,7 @@ impl Rule for RuleBitFieldLoad {
         Some(Box::new(RuleBitFieldLoad))
     }
 
-    fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
+    fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1720-1734):
         //   Datatype *ptr = op->getIn(1)->getTypeReadFacing(op);
         //   Datatype *dt = ptr->getPtrInto(off);
@@ -966,7 +966,7 @@ impl Rule for RuleBitFieldIn {
         Some(Box::new(RuleBitFieldIn))
     }
 
-    fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
+    fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1748-1759):
         //   Varnode *invn = op->getIn(0);
         //   Datatype *dt = invn->getTypeReadFacing(op);
@@ -1007,7 +1007,7 @@ impl Rule for RulePullAbsorb {
         Some(Box::new(RulePullAbsorb))
     }
 
-    fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
+    fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:2168-2208): walks the descendants of the
         // ZPULL/SPULL output and dispatches into the absorb* helpers, all of
         // which emit/destroy ops.  Ported in `absorb::pull_absorb_apply`.
@@ -1029,7 +1029,7 @@ impl Rule for RuleInsertAbsorb {
         Some(Box::new(RuleInsertAbsorb))
     }
 
-    fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
+    fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:2363-2400): switches on the def opcode of the
         // INSERT value input and dispatches into the absorb* helpers.  Ported in
         // `absorb::insert_absorb_apply`.

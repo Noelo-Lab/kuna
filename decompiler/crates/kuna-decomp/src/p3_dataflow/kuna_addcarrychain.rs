@@ -15,7 +15,7 @@
 //! `add_carry_chain` (option `addcarrychain on|off`, shipped default `on`); inert
 //! when off, byte-identical to upstream.
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! As in the sibling kuna simplification rules, the C++
 //! `if (!data.getArch()->add_carry_chain) return 0;` gate is resolved at
@@ -37,7 +37,7 @@
 //! internal-invariant violation).  Noted in the structured losses as the
 //! `op_set_output` seam workaround.
 //!
-//! ## SEAM(W6) — opcode-flag resolution
+//! ## STUB(W6) — opcode-flag resolution
 //!
 //! `opSetOpcode(...)` resolves `glb->inst[opc]` (the W6 typeop `inst` table); the
 //! op-shells are built with the [`TypeOp`] skeleton (zero flag word) until W6
@@ -53,13 +53,13 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// (kuna GH-8913) Fuse an 8-bit carry-chained 16-bit add reassembled by CONCAT
 /// (C++ `RuleAddCarryChain`).
 pub struct RuleAddCarryChain {
-    /// Resolved `glb->add_carry_chain` gate (SEAM(W4); see module docs).
+    /// Resolved `glb->add_carry_chain` gate (STUB(W4); see module docs).
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,

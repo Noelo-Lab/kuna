@@ -25,7 +25,7 @@
 //! tree, the angr/`ScopeLocal` stand-in carried on the [`HighVariable`]
 //! (`kuna_symbol_type`/`kuna_symbol_offset`); a recovery reads the symbol's type
 //! and in-symbol offset off the high exactly where the C++ reads them off the
-//! Symbol.  // SEAM(W4 symbol) — mirrors `printc::push_vn_explicit_ir`.
+//! Symbol.  // STUB(W4 symbol) — mirrors `printc::push_vn_explicit_ir`.
 
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
@@ -34,7 +34,7 @@ use std::rc::Rc;
 use super::BitRange;
 use crate::dtype::{type_metatype, Datatype, TypeBitField};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// `sizeof(uintb)` — the C++ `uintb` is `uint8`, i.e. 8 bytes.
 const SIZEOF_UINTB: int4 = 8;

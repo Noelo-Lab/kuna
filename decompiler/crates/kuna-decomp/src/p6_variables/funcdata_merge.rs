@@ -45,7 +45,7 @@ use crate::dtype::Datatype;
 use crate::expression::PcodeOpNode;
 use crate::funcdata::Funcdata;
 use crate::merge::{AddrTiedRange, HighGroupInfo, MergeContext, MergePieceId};
-use crate::seams::{BlockId, HighVariableId, OpId, VarnodeId};
+use crate::context::{BlockId, HighVariableId, OpId, VarnodeId};
 use crate::variable::{
     CompareNameView, HighContext, HighIntersectTest, VariablePieceId, VarnodeView, VarnodeViewLoc,
 };

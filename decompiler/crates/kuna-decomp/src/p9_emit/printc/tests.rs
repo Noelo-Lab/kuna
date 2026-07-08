@@ -7,7 +7,7 @@
 //! the byte-for-byte integer / float / char token strings, the generic
 //! name builders, and the opcode→token dispatch — plus the `resetDefaultsPrintC`
 //! defaults including the kuna `arraynotation` default-on.  The RPN/`Emit`
-//! driver bodies are the W9 seam (see the module docs) and are not testable
+//! driver bodies are the W9 stub (see the module docs) and are not testable
 //! until `prettyprint` lands.
 
 use super::*;
@@ -428,7 +428,7 @@ fn format_integer_negative_unsigned_sized() {
 /// `0xfffffe00` with a forced `dec` format renders `-512`, and the forced
 /// `oct`/`bin` formats negate likewise (printc.cc:1381-1391).  This pins the
 /// generic `resolve_integer_format`/`format_integer_token` free functions (NOT the
-/// reserved `printc.rs` render dispatch — see the B3 seam in PROGRESS.md); generic
+/// reserved `printc.rs` render dispatch — see the B3 stub in PROGRESS.md); generic
 /// over the value/format, no convert-specific constants baked in.
 #[test]
 fn resolve_integer_signed_equate_negates_under_forced_format() {
@@ -691,7 +691,7 @@ fn op_emit_kind_dispatch() {
 
 // ---------------------------------------------------------------------------
 // PrintC::doc_function shell (w9x-arch-engine-glue): a real signature + matched
-// braces driven through the Emit primitives.  The body is the W9-emit seam.
+// braces driven through the Emit primitives.  The body is the W9-emit stub.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -728,7 +728,7 @@ fn doc_function_renders_a_real_prototype() {
 // emit_op / emit_atom / parentheses), realized in printc.rs.  These drive the
 // real `EmitNoMarkup` back-end and assert byte-faithful token emission against
 // the C++ `emitOp`/`emitAtom`/`parentheses` logic (printlanguage.cc:129-580),
-// independent of the seamed IR.
+// independent of the stubbed IR.
 // ---------------------------------------------------------------------------
 
 use crate::printlanguage::{Atom as PlAtom, SyntaxHighlight as PlHl, TagType as PlTag};
@@ -874,7 +874,7 @@ fn rpn_stack_drains_to_empty() {
 mod w10_enum_render {
     use super::*;
     use crate::dtype::{flags, type_metatype, Datatype, DatatypeKind};
-    use crate::seams::{OpId, VarnodeId};
+    use crate::context::{OpId, VarnodeId};
     use std::collections::BTreeMap;
 
     /// Build an enum (value -> name) the way `TypeEnum` looks after decode:
@@ -1089,7 +1089,7 @@ mod w10_float_family {
     use crate::dtype::{type_metatype, Datatype};
     use crate::funcdata::Funcdata;
     use crate::printc::{absorb_zext, declarator_parts};
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
     use kuna_base::address::Address;
     use kuna_base::space::{
         addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
@@ -1118,7 +1118,7 @@ mod w10_float_family {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -1256,7 +1256,7 @@ mod w10_float_family {
 // Oracle: PrintC::opTypeCast (printc.cc:468):
 //
 //   Datatype *dt = op->getOut()->getHighTypeDefFacing();
-//   if (dt->isPointerToArray()) { ... addressof ... }      // SEAM (not these)
+//   if (dt->isPointerToArray()) { ... addressof ... }      // STUB (not these)
 //   if (!option_nocasts) { pushOp(&typecast,op); pushType(dt); }
 //   pushVn(op->getIn(0),op,mods);
 //
@@ -1282,7 +1282,7 @@ mod w10_printc_cast_render {
     use super::*;
     use crate::dtype::{type_metatype, Datatype};
     use crate::funcdata::Funcdata;
-    use crate::seams::{Architecture as SeamArch, TypeOp};
+    use crate::context::{ArchContext as ContextArch, TypeOp};
     use kuna_base::address::Address;
     use kuna_base::error::{KunaError, KunaResult};
     use kuna_base::space::{
@@ -1338,7 +1338,7 @@ mod w10_printc_cast_render {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(SeamArch::new(manage));
+        let glb = Rc::new(ContextArch::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()

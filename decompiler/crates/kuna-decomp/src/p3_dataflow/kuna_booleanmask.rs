@@ -7,10 +7,10 @@
 //! `fold_boolean_mask` (option `booleanmask on|off`, shipped default `on`); inert
 //! when off, byte-identical to upstream.
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! The C++ first line is `if (!data.getArch()->fold_boolean_mask) return 0;`.
-//! The W3 `Funcdata::glb` is the *seam* [`Architecture`](crate::seams::Architecture),
+//! The W3 `Funcdata::glb` is the *seam* [`Architecture`](crate::context::ArchContext),
 //! which carries only the address-space manager and not the kuna analysis flags
 //! (those live on the full `architecture.rs` [`Architecture`](crate::architecture::Architecture),
 //! unreachable through the `&mut Funcdata` of the fixed [`Rule::apply_op`]
@@ -22,7 +22,7 @@
 //! flag through [`RuleBoolSignShift::new`]; [`specs`] builds the rule with the
 //! shipped default (`on`).
 //!
-//! ## SEAM(W6) — opcode-flag resolution
+//! ## STUB(W6) — opcode-flag resolution
 //!
 //! The rewrite calls `opSetOpcode(op, CPUI_INT_2COMP)`, which the C++ resolves to
 //! `glb->inst[CPUI_INT_2COMP]` (the interned [`TypeOp`] carrying the op-code's
@@ -37,13 +37,13 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 
 /// (kuna GH-1282) Fold `(b << k) s>> k` into the sign-extended-mask form `0 - b`
 /// (C++ `RuleBoolSignShift`).
 ///
 /// `enabled` is the resolved `Architecture::fold_boolean_mask` gate — see the
-/// module docs (SEAM(W4)).
+/// module docs (STUB(W4)).
 pub struct RuleBoolSignShift {
     /// Resolved `glb->fold_boolean_mask` gate (the C++ `data.getArch()->...`).
     enabled: bool,
@@ -169,7 +169,7 @@ impl Rule for RuleBoolSignShift {
 
         // Rewrite `(b << sa) s>> sa`  =>  `0 - b`  (INT_2COMP gives 0 or all-ones).
         // data.opSetOpcode(op,CPUI_INT_2COMP);
-        // SEAM(W6): glb->inst[CPUI_INT_2COMP] property flags (see module docs).
+        // STUB(W6): glb->inst[CPUI_INT_2COMP] property flags (see module docs).
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_2COMP, 0, "INT_2COMP"));
         // data.opSetInput(op,boolvn,0);
         data.op_set_input(op, boolvn, 0)

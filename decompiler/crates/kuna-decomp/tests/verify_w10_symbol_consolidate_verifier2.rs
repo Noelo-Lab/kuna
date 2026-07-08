@@ -31,7 +31,7 @@ use kuna_base::address::{Address, RangeList};
 use kuna_base::partmap::PartMap;
 use kuna_base::space::{spacetype, AddrSpace, ConstantSpace};
 use kuna_decomp::dtype::Datatype;
-use kuna_decomp::seams::{GlobalEntry, GlobalQuery};
+use kuna_decomp::context::{GlobalEntry, GlobalQuery};
 use kuna_decomp::varnode::varnode_flags;
 
 fn ram_space(index: i32) -> Rc<AddrSpace> {

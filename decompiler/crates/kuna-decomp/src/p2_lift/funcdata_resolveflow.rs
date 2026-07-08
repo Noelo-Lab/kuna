@@ -25,7 +25,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype, DatatypeKind, TypeFactory};
 use crate::funcdata::Funcdata;
-use crate::seams::OpId;
+use crate::context::OpId;
 use crate::unionresolve::ResolvedUnion;
 use crate::unionresolve_run::ScoreUnionFields;
 

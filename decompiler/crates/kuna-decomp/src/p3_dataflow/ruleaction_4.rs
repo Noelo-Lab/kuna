@@ -24,26 +24,26 @@
 //! `Funcdata` methods the upstream bodies call are not yet available to this
 //! parallel item (it owns only `ruleaction_4.rs`).  Where a method is missing the
 //! body is still transcribed and the missing call is routed through a local
-//! `// SEAM`-noted shim; the affected rules are listed in this item's losses.
+//! `// STUB`-noted shim; the affected rules are listed in this item's losses.
 //! The notable seams:
 //!
 //!   - **`opSetOpcode(op, OpCode)`** resolves `glb->inst[opc]` (the W6 `TypeOp`
 //!     table) to cache the op's property flags.  That table is W6's; [`set_opcode`]
 //!     builds a minimal [`TypeOp`] with the branch/return flag bits that matter
 //!     to later passes (the only flags any of these rules' new opcodes carry).
-//!     SEAM(W6).
+//!     STUB(W6).
 //!   - **`newUniqueOut`/`newVarnodeOut`** (the output-Varnode factories) are the
 //!     funcdata_varnode wave's; `Funcdata::opSetOutput` itself is deferred on a
 //!     `banks_mut()` split-borrow accessor.  [`new_unique_out`]/[`new_varnode_out`]
 //!     compose the public `VarnodeBank::create_def*` primitives directly — exact
-//!     for a fresh unique output (which never unifies), with a `// SEAM(W3)` note
+//!     for a fresh unique output (which never unifies), with a `// STUB(W3)` note
 //!     for the register-address unification corner of `new_varnode_out`.
 //!   - **W4 `Architecture`/`Scope` surfaces** — `getSpaceBySpacebase`,
 //!     `Varnode::getSpaceFromConst`, `getCallSpecs`, `getScopeLocal`,
 //!     `findJumpTable`, `opNormalizeFlip`/`opFlipCondition` — are not ported.
 //!     The rules that depend on them (`RuleLoadVarnode`, `RuleStoreVarnode`,
 //!     `RuleSwitchSingle`, `RuleCondNegate`) transcribe the body but short-circuit
-//!     at the missing call (returning the C++ early-out) with a `// SEAM` note.
+//!     at the missing call (returning the C++ early-out) with a `// STUB` note.
 
 use kuna_base::address::{calc_mask, leastsigbit_set, sign_extend_sized, Address, SeqNum};
 use kuna_base::types::{int4, uintb, Wrap};
@@ -53,7 +53,7 @@ use std::rc::Rc;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
@@ -74,7 +74,7 @@ fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
 }
 
 /// The unknown-base [`Datatype`] of size `s` (C++ `glb->types->getBase(s,
-/// TYPE_UNKNOWN)`).  SEAM(W6): the `TypeFactory` is W6; the skeleton is built
+/// TYPE_UNKNOWN)`).  STUB(W6): the `TypeFactory` is W6; the skeleton is built
 /// directly, exactly as the funcdata_varnode factories do.
 fn type_base_unknown(s: int4) -> Rc<Datatype> {
     Rc::new(Datatype::new(s, type_metatype::TYPE_UNKNOWN))
@@ -105,7 +105,7 @@ fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
 /// `data.newVarnodeOut(s, m, op)` (C++ `funcdata_varnode.cc:106`): allocate a
 /// Varnode at storage address `m` as the output of `op`.
 ///
-/// Composed from `VarnodeBank::create_def`.  SEAM(W3): a register-address output
+/// Composed from `VarnodeBank::create_def`.  STUB(W3): a register-address output
 /// can in principle unify with an existing equivalent free Varnode, in which case
 /// the genuine `opSetOutput` would run the `replace_reads` op-rewiring; the
 /// `banks_mut()` split-borrow that needs is the funcdata serial chain's, so the
@@ -146,7 +146,7 @@ fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> Varnod
 /// here `vn` is always a just-created unique with no pre-existing equivalent, so
 /// the unify branch of `set_def` is dead and the no-op `replace_reads` is exact.
 /// The C++ prologue (unset `op`'s old output, steal `vn` from any prior def) is
-/// transcribed.  SEAM(W3).
+/// transcribed.  STUB(W3).
 fn op_set_output(data: &mut Funcdata, op: OpId, vn: VarnodeId) {
     // if (vn == op->getOut()) return;
     if data.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
@@ -240,7 +240,7 @@ fn seqnum_of(data: &Funcdata, op: OpId) -> SeqNum {
 /// \brief Convert LOAD operations using a constant offset to COPY (C++
 /// `RuleLoadVarnode`).
 ///
-/// SEAM(W4): the C++ classifies the pointer with `checkSpacebase`, which calls
+/// STUB(W4): the C++ classifies the pointer with `checkSpacebase`, which calls
 /// `Varnode::getSpaceFromConst` and `Architecture::getSpaceBySpacebase` — neither
 /// is on the W4 `Architecture`/`Varnode` skeleton.  The conversion body is fully
 /// transcribed below the classification, but the classifier short-circuits to
@@ -446,7 +446,7 @@ impl Rule for RuleLoadVarnode {
 // =============================================================================
 
 /// \brief Convert STORE operations using a constant offset to COPY (C++
-/// `RuleStoreVarnode`).  SEAM(W4): shares `RuleLoadVarnode::checkSpacebase` and
+/// `RuleStoreVarnode`).  STUB(W4): shares `RuleLoadVarnode::checkSpacebase` and
 /// `getScopeLocal()->markNotMapped`; see [`RuleLoadVarnode`]'s seam note.
 pub struct RuleStoreVarnode;
 
@@ -2128,7 +2128,7 @@ impl Rule for RuleHumptyOr {
 /// \brief Convert BRANCHIND with only one computed destination to a BRANCH
 /// (C++ `RuleSwitchSingle`).
 ///
-/// SEAM(W?-jumptable): the body needs `Funcdata::findJumpTable`,
+/// STUB(W?-jumptable): the body needs `Funcdata::findJumpTable`,
 /// `removeJumpTable`, `getStructure`, `newCodeRef`, and `warningHeader` plus the
 /// `JumpTable` accessors — none ported to this wave's `Funcdata`.  The guard
 /// `bb->sizeOut() != 1` and the no-jumptable early-out are transcribed; with
@@ -2171,7 +2171,7 @@ impl Rule for RuleSwitchSingle {
             return 0;
         }
         // JumpTable *jt = data.findJumpTable(op); if (jt == 0) return 0;
-        //   -- SEAM(W?-jumptable): findJumpTable + JumpTable accessors + newCodeRef
+        //   -- STUB(W?-jumptable): findJumpTable + JumpTable accessors + newCodeRef
         //   + removeJumpTable + getStructure().clear() + warningHeader unported.
         //   The remaining body (label scan, BRANCHIND->BRANCH conversion) is
         //   transcribed in the C++ but unreachable until the jumptable surface lands.
@@ -2188,7 +2188,7 @@ impl Rule for RuleSwitchSingle {
 /// Structuring assigns a preferred true/false meaning to branch directions; this
 /// rule inserts a BOOL_NEGATE so the boolean calculation feeding a CBRANCH aligns.
 ///
-/// SEAM(W3-block): the body needs `Funcdata::opNormalizeFlip` and
+/// STUB(W3-block): the body needs `Funcdata::opNormalizeFlip` and
 /// `opFlipCondition` (the CBRANCH condition-flip block primitives) — not ported
 /// to this wave's `Funcdata`.  The `isBooleanFlip` guard and the new-op shell are
 /// transcribed; the two flip calls are routed to seam shims, so the BOOL_NEGATE

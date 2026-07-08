@@ -81,7 +81,7 @@ use kuna_num::opcodes::OpCode;
 use smallvec::SmallVec;
 
 use crate::funcdata::Funcdata;
-use crate::seams::OpId;
+use crate::context::OpId;
 
 // =============================================================================
 // Flag enums (transcribed from action.hh)
@@ -319,7 +319,7 @@ impl ActionBase {
 /// `Architecture` console (`glb->printMessage`) or the comment database
 /// (`Funcdata::warningHeader`).
 ///
-/// LOCAL SEAM(W4/W9): the W4 `Architecture` console and the comment DB are not
+/// LOCAL STUB(W4/W9): the W4 `Architecture` console and the comment DB are not
 /// yet ported.  W9 (the console) and the comment subsystem will drain this; for
 /// now it makes the warning emission points observable and testable without a
 /// global side channel.  The C++ `printMessage`/`warningHeader` text format is
@@ -553,7 +553,7 @@ pub trait Action {
 /// The engine-side context the C++ reaches through `glb` (the console message
 /// channel and, later, the comment database).  Threaded into every
 /// [`Action::apply`] / [`Action::perform`] so the warning emission points are
-/// observable.  // LOCAL SEAM(W4/W9)
+/// observable.  // LOCAL STUB(W4/W9)
 #[derive(Debug, Default)]
 pub struct ActionContext {
     /// Where `issueWarning` / `warningHeader` text lands.
@@ -913,7 +913,7 @@ impl Action for ActionRestartGroup {
                 return 0;
             }
             // C++ `data.getArch()->clearAnalysis(&data);` — fd->clear() plus the
-            // comment-DB clear (comment subsystem not yet ported // SEAM(W4)).
+            // comment-DB clear (comment subsystem not yet ported // STUB(W4)).
             data.clear();
 
             // Reset everything but ourselves (the sub-actions, not the group base).
@@ -1105,7 +1105,7 @@ pub struct ActionPool {
     /// Messages emitted mid-[`process_op`] (rule warnings).  `process_op` is a
     /// faithful `(op, data)` 1:1 of the C++ body and so cannot also carry the
     /// [`ActionContext`]; warnings stash here and [`drain_into`](ActionPool::drain_into)
-    /// flushes them at the [`apply`](ActionPool::apply) boundary.  // LOCAL SEAM(W4/W9)
+    /// flushes them at the [`apply`](ActionPool::apply) boundary.  // LOCAL STUB(W4/W9)
     warnings: WarningSink,
     /// An invariant-violation message (C++ "Rule changed op without returning
     /// result of 1!") stashed for the same reason as [`warnings`](ActionPool::warnings).
@@ -1224,7 +1224,7 @@ impl ActionPool {
                 };
                 if opc != newopc {
                     // C++ prints an ERROR via glb->printMessage; routed to the
-                    // sink so the invariant violation stays observable. // SEAM(W4)
+                    // sink so the invariant violation stays observable. // STUB(W4)
                     self.pending_error = Some(format!(
                         "ERROR: Rule {} changed op without returning result of 1!",
                         self.allrules[rl_idx].state.name

@@ -25,7 +25,7 @@ use kuna_num::opcodes::OpCode;
 use super::{BitFieldNodeState, BitFieldTransform, BitRange};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use std::rc::Rc;
 
 /// `sizeof(uintb)` — the C++ `uintb` is `uint8`, i.e. 8 bytes.

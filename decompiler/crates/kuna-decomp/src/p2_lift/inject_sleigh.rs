@@ -528,7 +528,7 @@ impl PcodeInjectLibrarySleigh {
         } else {
             return Err(KunaError::lowlevel("Unknown p-code inject type"));
         }
-        // SEAM: parseInject(payload) compiles the SLEIGH `parsestring` into a
+        // STUB: parseInject(payload) compiles the SLEIGH `parsestring` into a
         // ConstructTpl via PcodeSnippet (see parse_inject). It needs a wired
         // SnippetLanguage, so the driving caller invokes parse_inject after
         // register_inject.

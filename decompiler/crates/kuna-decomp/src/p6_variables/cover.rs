@@ -30,7 +30,7 @@ use kuna_base::address::Address;
 use kuna_base::types::{int4, uintm};
 use kuna_num::opcodes::OpCode;
 
-use crate::seams::OpId;
+use crate::context::OpId;
 
 /// A boundary point of a [`CoverBlock`] (the C++ `const PcodeOp *` with its three
 /// sentinel encodings).
@@ -449,7 +449,7 @@ impl Cover {
     /// Varnode is built from `addDefPoint(domVn)` followed by `addRefPoint(*iter,
     /// outVn)` for each read `*iter` of a *different* Varnode (`outVn`), so it is
     /// distinct from the [`Cover::rebuild`] single-varnode walk.
-    pub fn add_ref_point_for(&mut self, ctx: &dyn CoverContext, ref_op: OpId, vn: crate::seams::VarnodeId) {
+    pub fn add_ref_point_for(&mut self, ctx: &dyn CoverContext, ref_op: OpId, vn: crate::context::VarnodeId) {
         let (bl, ref_point, is_multiequal, pred_blocks) = ctx.ref_point(ref_op, vn);
         self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks);
     }
@@ -564,7 +564,7 @@ impl Cover {
     ///
     /// The def/use graph walk is driven by [`CoverContext`]; the implied-output
     /// chase (`outVn->isImplied()`) keeps the exact `path` BFS order of the C++.
-    pub fn rebuild(&mut self, ctx: &dyn CoverContext, vn: crate::seams::VarnodeId) {
+    pub fn rebuild(&mut self, ctx: &dyn CoverContext, vn: crate::context::VarnodeId) {
         let mut path = vec![vn];
         let mut pos = 0usize;
 
@@ -701,9 +701,9 @@ pub trait CoverContext {
     fn get_in(&self, bl: int4, j: int4) -> int4;
     /// `addDefPoint`'s resolution of `vn`: the `(block_index, CoverPoint)` of its
     /// defining op (`None` if it has no def), and whether `vn->isInput()`.
-    fn def_point(&self, vn: crate::seams::VarnodeId) -> (Option<(int4, CoverPoint)>, bool);
+    fn def_point(&self, vn: crate::context::VarnodeId) -> (Option<(int4, CoverPoint)>, bool);
     /// `vn->beginDescend()..endDescend()` — the reading ops, in C++ order.
-    fn descend(&self, vn: crate::seams::VarnodeId) -> Vec<OpId>;
+    fn descend(&self, vn: crate::context::VarnodeId) -> Vec<OpId>;
     /// `addRefPoint` inputs for reading op `op` of Varnode `vn`:
     /// `(block_index, ref_point, is_multiequal, multiequal_pred_blocks)`.
     /// `multiequal_pred_blocks` lists the predecessor block index for each input
@@ -711,11 +711,11 @@ pub trait CoverContext {
     fn ref_point(
         &self,
         op: OpId,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
     ) -> (int4, CoverPoint, bool, Vec<int4>);
     /// `op->getOut()` when it exists and `isImplied()` (the rebuild path-chase);
     /// `None` otherwise.
-    fn out_implied(&self, op: OpId) -> Option<crate::seams::VarnodeId>;
+    fn out_implied(&self, op: OpId) -> Option<crate::context::VarnodeId>;
 }
 
 /// One entry of a [`PcodeOpSet`] — a `PcodeOp *` resolved into the fields the set
@@ -1131,23 +1131,23 @@ mod tests {
                 _ => panic!("bad pred"),
             }
         }
-        fn def_point(&self, _vn: crate::seams::VarnodeId) -> (Option<(int4, CoverPoint)>, bool) {
+        fn def_point(&self, _vn: crate::context::VarnodeId) -> (Option<(int4, CoverPoint)>, bool) {
             // defined at block 0, order 5
             (Some((0, op_point(5))), false)
         }
-        fn descend(&self, _vn: crate::seams::VarnodeId) -> Vec<OpId> {
+        fn descend(&self, _vn: crate::context::VarnodeId) -> Vec<OpId> {
             // single reader op
             vec![OpId::from(KeyData::from_ffi(100))]
         }
         fn ref_point(
             &self,
             _op: OpId,
-            _vn: crate::seams::VarnodeId,
+            _vn: crate::context::VarnodeId,
         ) -> (int4, CoverPoint, bool, Vec<int4>) {
             // read in block 3 at order 9, not a MULTIEQUAL
             (3, op_point(9), false, vec![])
         }
-        fn out_implied(&self, _op: OpId) -> Option<crate::seams::VarnodeId> {
+        fn out_implied(&self, _op: OpId) -> Option<crate::context::VarnodeId> {
             None
         }
     }
@@ -1156,7 +1156,7 @@ mod tests {
     fn cover_rebuild_diamond() {
         let ctx = DiamondCtx;
         let mut c = Cover::new();
-        let vn = crate::seams::VarnodeId::from(KeyData::from_ffi(1));
+        let vn = crate::context::VarnodeId::from(KeyData::from_ffi(1));
         c.rebuild(&ctx, vn);
         // block 0: def at 5, filled to bottom (End)
         let cb0 = c.get_cover_block(0);
@@ -1193,21 +1193,21 @@ mod tests {
                 _ => panic!("bad pred"),
             }
         }
-        fn def_point(&self, _vn: crate::seams::VarnodeId) -> (Option<(int4, CoverPoint)>, bool) {
+        fn def_point(&self, _vn: crate::context::VarnodeId) -> (Option<(int4, CoverPoint)>, bool) {
             (Some((0, op_point(3))), false)
         }
-        fn descend(&self, _vn: crate::seams::VarnodeId) -> Vec<OpId> {
+        fn descend(&self, _vn: crate::context::VarnodeId) -> Vec<OpId> {
             vec![OpId::from(KeyData::from_ffi(200))]
         }
         fn ref_point(
             &self,
             _op: OpId,
-            _vn: crate::seams::VarnodeId,
+            _vn: crate::context::VarnodeId,
         ) -> (int4, CoverPoint, bool, Vec<int4>) {
             // MULTIEQUAL in block 1 reading vn from the back-edge slot (pred 2)
             (1, meq_point(0), true, vec![2])
         }
-        fn out_implied(&self, _op: OpId) -> Option<crate::seams::VarnodeId> {
+        fn out_implied(&self, _op: OpId) -> Option<crate::context::VarnodeId> {
             None
         }
     }
@@ -1216,7 +1216,7 @@ mod tests {
     fn cover_rebuild_loop_multiequal() {
         let ctx = LoopCtx;
         let mut c = Cover::new();
-        let vn = crate::seams::VarnodeId::from(KeyData::from_ffi(1));
+        let vn = crate::context::VarnodeId::from(KeyData::from_ffi(1));
         c.rebuild(&ctx, vn);
         // def block 0 present, filled to bottom
         let cb0 = c.get_cover_block(0);

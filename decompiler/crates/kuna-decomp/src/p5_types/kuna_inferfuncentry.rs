@@ -18,7 +18,7 @@
 //! `bit_transitions` rejection when this returns `true`) is W4/W5
 //! (`ruleaction`/`coreaction`); this module owns only the *decision*.
 //!
-//! ## SEAM(W4): Action + ArchOption wrappers
+//! ## STUB(W4): Action + ArchOption wrappers
 //!
 //! The two architecture-side resolutions the C++ reaches through `glb` are taken
 //! here as already-resolved facts:
@@ -39,7 +39,7 @@ use kuna_base::address::Address;
 /// (kuna) Toggle inference of function entries at single-bit image bases
 /// (C++ `OptionInferFuncEntry`, GH-6930).
 ///
-/// SEAM(W4): the C++ `OptionInferFuncEntry::apply` flips `glb->infer_funcentry`;
+/// STUB(W4): the C++ `OptionInferFuncEntry::apply` flips `glb->infer_funcentry`;
 /// here the flag is carried as a plain `bool` whose [`Default`] is the *shipped*
 /// default (`option inferfuncentry on`, i.e. \b true — DIV-2 default-on;
 /// `architecture.cc:1430`).
@@ -93,9 +93,9 @@ impl InferFuncEntryOption {
 ///
 /// `gate` is the resolved `glb->infer_funcentry` (see [`InferFuncEntryOption`]).
 /// `rampoint` is the resolved `glb->resolveConstant(...)`: `None` transcribes
-/// the C++ invalid address (`rampoint.isInvalid()`).  // SEAM(W4)
+/// the C++ invalid address (`rampoint.isInvalid()`).  // STUB(W4)
 /// `function_entry` is the entry address of the function `queryFunction(rampoint)`
-/// returns, or `None` if no function is at `rampoint`.  // SEAM(W4)
+/// returns, or `None` if no function is at `rampoint`.  // STUB(W4)
 ///
 /// Returns `true` only for an *exact* function-entry match — the C++
 /// `fd->getAddress() == rampoint` — so an ordinary single-bit integer constant

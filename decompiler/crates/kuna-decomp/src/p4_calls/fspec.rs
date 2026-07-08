@@ -42,7 +42,7 @@
 //!
 //! ## Seams
 //!
-//! - `// SEAM(w6-modelrules)` — [`ModelRule`] and the `AssignAction` machinery
+//! - `// STUB(w6-modelrules)` — [`ModelRule`] and the `AssignAction` machinery
 //!   live in `modelrules.cc` (owned by a later item in this wave).  Until then
 //!   `ParamListStandard` carries an **empty** `model_rules` list; the
 //!   `assignAddress` walk therefore falls straight through to
@@ -50,7 +50,7 @@
 //!   `<modelrule>`s), and the `<modelrule>`-affected output paths take the
 //!   legacy fallback (`useFillinFallback == true`).  The `ModelRule` type is a
 //!   local uninhabitable placeholder enum.
-//! - `// SEAM(w6-fspec-2)` — the back-pointer to the owning [`Architecture`]
+//! - `// STUB(w6-fspec-2)` — the back-pointer to the owning [`Architecture`]
 //!   (C++ `ProtoModel::glb`) is **not** held: the kuna `Architecture` (W4) has
 //!   no prototype-model registry / `types` / `defaultReturnAddr` / `getModel`
 //!   yet.  Instead [`ProtoModel`] threads the [`AddrSpaceManager`] (for the
@@ -60,10 +60,10 @@
 //!   [`PrototypePieces`] carries no `model` back-pointer for the same reason.
 //!   The reserved [`FSPEC_SPACE_NAME`] is the only `FspecSpace` survivor (the
 //!   full `FspecSpace`/`FuncCallSpecs` is `fspec-3`).
-//! - `// SEAM(W4)` — `decode`/`encode` paths reach fspec-owned marshaling
+//! - `// STUB(W4)` — `decode`/`encode` paths reach fspec-owned marshaling
 //!   ElementIds/AttributeIds (`<pentry>`, `<group>`, ...) and the
 //!   `ProtoModel`/`Architecture` wiring that are not yet ported.  These methods
-//!   return `Err(KunaError::lowlevel("SEAM(W4) ..."))`; the pure-algorithm
+//!   return `Err(KunaError::lowlevel("STUB(W4) ..."))`; the pure-algorithm
 //!   surfaces above do not depend on them and are exercised directly in tests
 //!   via the `seed`/`push_entry` builder seams.  The `FuncProto` input/output
 //!   trial-update paths (`updateInputTypes`, `updateOutputTypes`, ...) and
@@ -85,7 +85,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use crate::dtype::{metatype2typeclass, type_class, type_metatype, Datatype, TypeFactory};
 
 // =============================================================================
-// AssignAction response codes (modelrules.hh:264-270)  // SEAM(w6-modelrules)
+// AssignAction response codes (modelrules.hh:264-270)  // STUB(w6-modelrules)
 // =============================================================================
 
 /// The response code returned by `AssignAction::assignAddress` and the
@@ -94,7 +94,7 @@ use crate::dtype::{metatype2typeclass, type_class, type_metatype, Datatype, Type
 ///
 /// The discriminants are load-bearing: `ParamListStandard::assignMap` treats
 /// `fail`/`no_assignment` as errors, and `ParamListStandardOut::assignMap`
-/// branches on the three `hiddenret_*` codes.  // SEAM(w6-modelrules)
+/// branches on the three `hiddenret_*` codes.  // STUB(w6-modelrules)
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AssignActionResponse {
@@ -810,7 +810,7 @@ impl ParamEntry {
 
     /// Decode a `<pentry>` element into this object (C++ `decode`).
     ///
-    /// SEAM(W4): reaches the fspec-owned marshaling ElementIds/AttributeIds
+    /// STUB(W4): reaches the fspec-owned marshaling ElementIds/AttributeIds
     /// (`<pentry>`, `minsize`, `maxsize`, `align`, ...) and `Address::decode`,
     /// which are not yet ported.  Tests build [`ParamEntry`] objects directly
     /// via [`ParamEntry::seed`].
@@ -821,7 +821,7 @@ impl ParamEntry {
         _prev_list: &[ParamEntry],
     ) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(W4) ParamEntry::decode: fspec marshaling element ids not yet ported",
+            "STUB(W4) ParamEntry::decode: fspec marshaling element ids not yet ported",
         ))
     }
 
@@ -1821,7 +1821,7 @@ pub struct ParamListStandard {
     /// `ParamListStandardOut::useFillinFallback`).  Stays true here: the
     /// output-side `fillinOutputMap`/`canAffectFillinOutput` wiring (C++
     /// `ParamListStandardOut::initialize`, fspec.cc:1616-1628) is a separate
-    /// SEAM — the output TRIAL recovery keeps the legacy fallback while only the
+    /// STUB — the output TRIAL recovery keeps the legacy fallback while only the
     /// `assignAddress` (locked-param storage) rule chain is wired.
     use_fillin_fallback: bool,
 }
@@ -2440,7 +2440,7 @@ impl ParamListStandard {
 
     /// Fill in the Address and details for the given parameter (C++
     /// `assignAddress`).  With no model rules (the current seam state) this
-    /// falls straight through to the fallback.  // SEAM(w6-modelrules)
+    /// falls straight through to the fallback.  // STUB(w6-modelrules)
     #[allow(clippy::too_many_arguments)] // mirrors C++ ParamListStandard::assignAddress
     pub fn assign_address(
         &self,
@@ -3331,12 +3331,12 @@ impl ParamListStandard {
 
     /// Restore the model from an `<input>`/`<output>` element (C++ `decode`).
     ///
-    /// SEAM(W4): reaches the fspec-owned marshaling ElementIds/AttributeIds and
-    /// the `<modelrule>` decode (SEAM(w6-modelrules)).  Not yet ported; tests
+    /// STUB(W4): reaches the fspec-owned marshaling ElementIds/AttributeIds and
+    /// the `<modelrule>` decode (STUB(w6-modelrules)).  Not yet ported; tests
     /// construct models directly via [`ParamListStandard::push_entry`].
     pub fn decode(&mut self, _normalstack: bool) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(W4) ParamListStandard::decode: fspec marshaling element ids not yet ported",
+            "STUB(W4) ParamListStandard::decode: fspec marshaling element ids not yet ported",
         ))
     }
 
@@ -3464,7 +3464,7 @@ fn unassigned_err(dt: &Rc<Datatype>) -> KunaError {
 /// `Architecture` (W4) has no prototype-model registry, so a `PrototypePieces`
 /// cannot point at a registered model.  The methods that read it in the C++
 /// (`ProtoStoreInternal::decode`, `paramShift`) take the [`ProtoModel`] as an
-/// explicit argument instead.  // SEAM(w6-fspec-2)
+/// explicit argument instead.  // STUB(w6-fspec-2)
 #[derive(Debug, Clone, Default)]
 pub struct PrototypePieces {
     /// Identifier (function name) associated with prototype (C++ `name`).
@@ -3492,7 +3492,7 @@ pub struct PrototypePieces {
 }
 
 // =============================================================================
-// FspecSpace (fspec.hh:341-351, fspec.cc:2109-2178)  // SEAM(W4)
+// FspecSpace (fspec.hh:341-351, fspec.cc:2109-2178)  // STUB(W4)
 // =============================================================================
 
 /// Reserved name for the fspec space (C++ `FspecSpace::NAME`).
@@ -3500,7 +3500,7 @@ pub struct PrototypePieces {
 /// The full `FspecSpace` (`AddrSpace` subclass that encodes a `FuncCallSpecs`
 /// pointer as an address) reaches `FuncCallSpecs` (a `fspec-3` type) and the
 /// marshaling encoder, so only its reserved name is carried here.
-/// // SEAM(w6-fspec-2)
+/// // STUB(w6-fspec-2)
 pub const FSPEC_SPACE_NAME: &str = "fspec";
 
 // =============================================================================
@@ -3524,7 +3524,7 @@ pub const EXTRAPOP_UNKNOWN: int4 = 0x8000;
 /// the stack space or float-extension construction take an [`AddrSpaceManager`]
 /// and the type factory explicitly.  The merged-model variant
 /// ([`ProtoModelMerged`]) is folded in as the `merged` field, mirroring the C++
-/// subclass.  // SEAM(w6-fspec-2)
+/// subclass.  // STUB(w6-fspec-2)
 #[derive(Debug, Clone)]
 pub struct ProtoModel {
     /// Name of the model (C++ `name`).
@@ -4122,14 +4122,14 @@ impl ProtoModel {
 
     /// Restore this model from a `<prototype>` element (C++ `decode`).
     ///
-    /// SEAM(w6-fspec-2): reaches the marshaling [`kuna_base::marshal::Decoder`],
+    /// STUB(w6-fspec-2): reaches the marshaling [`kuna_base::marshal::Decoder`],
     /// the fspec ElementIds/AttributeIds, and `glb` (stack space,
     /// `defaultReturnAddr`, `pcodeinjectlib`) — the `Architecture` registry is
     /// not yet ported.  Tests build models via [`ProtoModel::build_param_list`]
     /// + the `ParamListStandard` builder seams.
     pub fn decode(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-2) ProtoModel::decode: marshaling + Architecture registry not yet ported",
+            "STUB(w6-fspec-2) ProtoModel::decode: marshaling + Architecture registry not yet ported",
         ))
     }
 
@@ -4852,7 +4852,7 @@ pub mod func_proto_flags {
 /// registry; with no registry the kuna `FuncProto` owns the model by
 /// reference-counted clone ([`Rc<ProtoModel>`]).  The storage interface is a
 /// boxed [`ProtoStore`] (an internal store here; the symbol-backed store is a
-/// `Scope` seam).  // SEAM(w6-fspec-2)
+/// `Scope` seam).  // STUB(w6-fspec-2)
 pub struct FuncProto {
     /// Model for this prototype (C++ `model`); `None` is the C++ null.
     model: Option<Rc<ProtoModel>>,
@@ -5018,12 +5018,12 @@ impl FuncProto {
 
     /// Set a backing symbol `Scope` for this (C++ `setScope`).
     ///
-    /// SEAM(w6-fspec-2): `ProtoStoreSymbol` reaches `Scope`/`Symbol` (W3) and
+    /// STUB(w6-fspec-2): `ProtoStoreSymbol` reaches `Scope`/`Symbol` (W3) and
     /// `glb->defaultfp` (the Architecture registry).  Use [`FuncProto::set_internal`]
     /// in the meantime.
     pub fn set_scope(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-2) FuncProto::setScope: ProtoStoreSymbol needs Scope + defaultfp",
+            "STUB(w6-fspec-2) FuncProto::setScope: ProtoStoreSymbol needs Scope + defaultfp",
         ))
     }
 
@@ -6035,39 +6035,39 @@ impl FuncProto {
 
     /// Update input parameters based on Varnode trials (C++ `updateInputTypes`).
     ///
-    /// SEAM(w6-fspec-2): reaches `Funcdata`/`Varnode` (W3) — the trial list is a
+    /// STUB(w6-fspec-2): reaches `Funcdata`/`Varnode` (W3) — the trial list is a
     /// `vector<Varnode *>` and the body reads each Varnode's high data-type.
     pub fn update_input_types(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-2) FuncProto::updateInputTypes: needs Funcdata/Varnode trials",
+            "STUB(w6-fspec-2) FuncProto::updateInputTypes: needs Funcdata/Varnode trials",
         ))
     }
     /// Update input parameters from trials without types (C++
-    /// `updateInputNoTypes`).  SEAM(w6-fspec-2): needs `Funcdata`/`Varnode`.
+    /// `updateInputNoTypes`).  STUB(w6-fspec-2): needs `Funcdata`/`Varnode`.
     pub fn update_input_no_types(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-2) FuncProto::updateInputNoTypes: needs Funcdata/Varnode trials",
+            "STUB(w6-fspec-2) FuncProto::updateInputNoTypes: needs Funcdata/Varnode trials",
         ))
     }
     /// Update the return value based on Varnode trials (C++
-    /// `updateOutputTypes`).  SEAM(w6-fspec-2): needs `Funcdata`/`Varnode`.
+    /// `updateOutputTypes`).  STUB(w6-fspec-2): needs `Funcdata`/`Varnode`.
     pub fn update_output_types(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-2) FuncProto::updateOutputTypes: needs Funcdata/Varnode trials",
+            "STUB(w6-fspec-2) FuncProto::updateOutputTypes: needs Funcdata/Varnode trials",
         ))
     }
     /// Update the return value from trials without types (C++
-    /// `updateOutputNoTypes`).  SEAM(w6-fspec-2): needs `Funcdata`/`Varnode`.
+    /// `updateOutputNoTypes`).  STUB(w6-fspec-2): needs `Funcdata`/`Varnode`.
     pub fn update_output_no_types(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-2) FuncProto::updateOutputNoTypes: needs Funcdata/Varnode trials",
+            "STUB(w6-fspec-2) FuncProto::updateOutputNoTypes: needs Funcdata/Varnode trials",
         ))
     }
     /// Restore this from a `<prototype>` element (C++ `decode`).
-    /// SEAM(w6-fspec-2): needs the marshaling Decoder + Architecture registry.
+    /// STUB(w6-fspec-2): needs the marshaling Decoder + Architecture registry.
     pub fn decode(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-2) FuncProto::decode: needs marshaling + Architecture registry",
+            "STUB(w6-fspec-2) FuncProto::decode: needs marshaling + Architecture registry",
         ))
     }
 
@@ -6099,7 +6099,7 @@ impl FuncProto {
 // `Funcdata`** (`opStackLoad`, `getOverride`, `warningHeader`, `opSetAllInput`,
 // `newVarnodeOut`, `newIndirectCreation`, `opMarkCalculatedBool`, the W6 `glb->
 // inst[opc]` `TypeOp` resolution for `opSetOpcode`).  Those paths are marked
-// `// SEAM(w6-fspec-3 W4)` and return `Err(KunaError::lowlevel(...))`, matching
+// `// STUB(w6-fspec-3 W4)` and return `Err(KunaError::lowlevel(...))`, matching
 // the established `fspec-2` convention (`updateInputTypes`, etc.).
 //
 // The **pure** state machine (the trial lifecycle, `checkInputJoin`/
@@ -6115,7 +6115,7 @@ pub const OFFSET_UNKNOWN: uintb = 0xBADBEEF;
 
 use crate::funcdata::Funcdata;
 use crate::kuna_restartlog::{KunaRestartReason, RestartLog};
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// A class for analyzing parameters to a sub-function call (C++
 /// `FuncCallSpecs`, `fspec.hh:1645`).
@@ -6343,7 +6343,7 @@ impl FuncCallSpecs {
     ///
     /// Its only C++ callers — `createPlaceholder` and `commitNewInputs` — reach
     /// W4 `Funcdata` factories (`opStackLoad`/`opSetAllInput`) that are not yet
-    /// on the W3 `Funcdata`, so both are seamed (`// SEAM(w6-fspec-3 W4)`); the
+    /// on the W3 `Funcdata`, so both are seamed (`// STUB(w6-fspec-3 W4)`); the
     /// bookkeeping itself is transcribed and lands here.
     #[allow(dead_code)] // exercised once createPlaceholder/commitNewInputs de-seam (W4)
     fn set_stack_placeholder_slot(&mut self, slot: int4) {
@@ -6656,7 +6656,7 @@ impl FuncCallSpecs {
     /// output Varnode lists are passed back.  When `restricted_proto` is
     /// input/output locked the transfer of the existing Varnodes reaches the W3
     /// CALL operands; that transfer (`transferLockedInput`/`Output`) is the
-    /// `// SEAM(w6-fspec-3 W4)` path below.  The unlocked compatibility gate
+    /// `// STUB(w6-fspec-3 W4)` path below.  The unlocked compatibility gate
     /// (`hasModel`/`isCompatible`/dotdotdot) is ported in full.
     pub fn late_restriction(
         &mut self,
@@ -6702,7 +6702,7 @@ impl FuncCallSpecs {
     /// reference).  The state mutation on `data` (the CALL op becomes a direct
     /// `CPUI_CALL` annotated with the call-spec handle, the override store
     /// gets an indirect override) reaches W4 `Funcdata` surfaces and is the
-    /// `// SEAM(w6-fspec-3 W4)` path.  The **decision** — whether
+    /// `// STUB(w6-fspec-3 W4)` path.  The **decision** — whether
     /// `lateRestriction` succeeds, and the restart-recorder call when it does
     /// not — is ported in full and observable through `restartlog`.
     #[allow(clippy::too_many_arguments)]
@@ -6771,7 +6771,7 @@ impl FuncCallSpecs {
     /// The C++ records the recovered prototype into the override manager
     /// (`insertProtoOverride`), tries `lateRestriction`, commits or schedules a
     /// restart, then locks the input.  The override insertion and the
-    /// success-commit are W4 `Funcdata` surfaces (`// SEAM(w6-fspec-3 W4)`); the
+    /// success-commit are W4 `Funcdata` surfaces (`// STUB(w6-fspec-3 W4)`); the
     /// restart-recorder branch and the input-lock bookkeeping are ported in full.
     pub fn force_set(
         &mut self,
@@ -6783,10 +6783,10 @@ impl FuncCallSpecs {
         let mut newoutput: Vec<VarnodeId> = Vec::new();
 
         // data.getOverride().insertProtoOverride(op->getAddr(), copy(fp));
-        // SEAM(w6-fspec-3 W4): the override store is a W4 Funcdata surface.
+        // STUB(w6-fspec-3 W4): the override store is a W4 Funcdata surface.
 
         if self.late_restriction(data, fp, &mut newinput, &mut newoutput)? {
-            // commitNewInputs/commitNewOutputs — SEAM(w6-fspec-3 W4)
+            // commitNewInputs/commitNewOutputs — STUB(w6-fspec-3 W4)
         } else {
             // Too late to make restrictions to correct prototype: force a restart.
             data.set_restart_pending(true);
@@ -6860,7 +6860,7 @@ impl FuncCallSpecs {
     /// as the last CALL input, records the slot via `setStackPlaceholderSlot`,
     /// and marks it as a spacebase placeholder.  `opStackLoad` is a W4
     /// `Funcdata` surface not yet on the W3 `Funcdata`, so the build is the
-    /// `// SEAM(w6-fspec-3 W4)` step; the slot/insert/mark bookkeeping (the part
+    /// `// STUB(w6-fspec-3 W4)` step; the slot/insert/mark bookkeeping (the part
     /// that uses [`FuncCallSpecs::set_stack_placeholder_slot`]) is transcribed.
     pub fn create_placeholder(
         &mut self,
@@ -6918,7 +6918,7 @@ impl FuncCallSpecs {
     ///
     /// `phvn` is the Varnode in the placeholder slot.  The `data.warningHeader`
     /// emission on a non-spacebase reference is a W4 `Funcdata` surface and is
-    /// noted but not emitted here (`// SEAM(w6-fspec-3 W4)`); the offset
+    /// noted but not emitted here (`// STUB(w6-fspec-3 W4)`); the offset
     /// arithmetic, the placeholder-abort short circuit, and the input-locked
     /// branch are ported in full.
     pub fn resolve_spacebase_relative(
@@ -6939,7 +6939,7 @@ impl FuncCallSpecs {
         let spacebase = Rc::clone(refvn.get_space());
         // if (spacebase->getType() != IPTR_SPACEBASE)
         //   data.warningHeader("This function may have set the stack pointer");
-        // SEAM(w6-fspec-3 W4): warningHeader is a W4 Funcdata surface.
+        // STUB(w6-fspec-3 W4): warningHeader is a W4 Funcdata surface.
         self.stackoffset = refvn.get_offset();
 
         if self.stack_placeholder_slot >= 0 {

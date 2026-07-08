@@ -21,18 +21,18 @@
 //! Several rules reach subsystems that are not yet ported.  Where a rule hits
 //! such a seam it transcribes every surrounding guard faithfully and returns `0`
 //! ("rule did not apply", the conservative value the C++ also returns on every
-//! early-out) at the precise seam point, with a `// SEAM(...)` note:
+//! early-out) at the precise seam point, with a `// STUB(...)` note:
 //!
-//! * `SEAM(expression)` — `expression.cc` is a *separate* W5 file (still a stub):
+//! * `STUB(expression)` — `expression.cc` is a *separate* W5 file (still a stub):
 //!   `BooleanMatch::evaluate` (RuleBooleanDedup), `AddExpression`
 //!   (RuleSborrow/RuleScarry), `functionalEquality`/`cseFindInBlock` (the
 //!   functional-equality branch of RuleMultiCollapse).
-//! * `SEAM(W6)` — the `TypeFactory`/`OpBehavior`/cpool surfaces:
+//! * `STUB(W6)` — the `TypeFactory`/`OpBehavior`/cpool surfaces:
 //!   `op->collapse`/`getArch()->getConstant`/`collapseConstantSymbol`
 //!   (RuleCollapseConstants), the cpool record lookup (RuleTransformCpool),
 //!   `Varnode::getSymbolEntry`/`copySymbolIfValid`/`updateType` (the symbol-copy
 //!   tails of RuleXorCollapse / RuleAddMultCollapse).
-//! * `SEAM(W4)` — `data.warning` (the partial-INDIRECT note in
+//! * `STUB(W4)` — `data.warning` (the partial-INDIRECT note in
 //!   RuleIndirectCollapse), `getStoreGuard`/`LoadGuard` (the STORE-guard branch
 //!   of RuleIndirectCollapse).
 //!
@@ -50,7 +50,7 @@
 //!   `banks_mut()` split-borrow accessor the serial-chain `funcdata` owner must
 //!   add (documented in `funcdata_op.rs`), but the *unique* path needs no xref
 //!   unification, so it is done here at the bank level (assignHigh is the W7
-//!   no-op stub; checkForLanedRegister is skipped — SEAM(W7)).
+//!   no-op stub; checkForLanedRegister is skipped — STUB(W7)).
 
 use std::rc::Rc;
 
@@ -65,7 +65,7 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::expression::AddExpression;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
@@ -75,7 +75,7 @@ use crate::varnode::DefOpInfo;
 /// The cached `opflags` property word for an [`OpCode`], transcribed verbatim
 /// from the `TypeOpXXX` constructors in `decompiler/cpp/typeop.cc`.
 ///
-/// SEAM(W6): the real `glb->inst[opc]` (the `TypeFactory`-built `TypeOp` table)
+/// STUB(W6): the real `glb->inst[opc]` (the `TypeFactory`-built `TypeOp` table)
 /// owns this.  Only the opcodes these 22 rules ever *produce* via `opSetOpcode`
 /// are listed; an unlisted opcode panics (it would mean a rule body produced an
 /// opcode not covered here — an internal-invariant violation).
@@ -131,7 +131,7 @@ fn opflags_for(opc: OpCode) -> u32 {
 
 /// `data.opSetOpcode(op, opc)` with the W6 inst-table resolution folded in.
 ///
-/// SEAM(W6): builds the [`TypeOp`] from [`opflags_for`] and the debug name (the
+/// STUB(W6): builds the [`TypeOp`] from [`opflags_for`] and the debug name (the
 /// `{opc:?}` rendering the merged production code uses), then routes through the
 /// real [`Funcdata::op_set_opcode`].
 fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
@@ -142,13 +142,13 @@ fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
 /// `funcdata_varnode.cc:131`): create a fresh unique Varnode as the output of
 /// `op`.
 ///
-/// `Datatype *ct = glb->types->getBase(s,TYPE_UNKNOWN);` (SEAM(W6), built as the
+/// `Datatype *ct = glb->types->getBase(s,TYPE_UNKNOWN);` (STUB(W6), built as the
 /// unknown-base skeleton exactly as the funcdata_varnode factories do);
 /// `vn = vbank.createDefUnique(s,ct,op); op->setOutput(vn);`.  The fresh uniqid
 /// guarantees `createDefUnique`'s xref never unifies, so the replace-reads
 /// callback is the no-op (matching the C++, where a brand-new unique has no
 /// pre-existing equivalent).  `assignHigh` is the W7 no-op stub and the
-/// `checkForLanedRegister` laned-register probe is skipped (SEAM(W7); it affects
+/// `checkForLanedRegister` laned-register probe is skipped (STUB(W7); it affects
 /// only later analysis, never the op graph this rule edits).
 fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
     let ct: Rc<Datatype> = Rc::new(Datatype::new(s, type_metatype::TYPE_UNKNOWN));
@@ -795,7 +795,7 @@ impl Rule for RuleIndirectCollapse {
                         data.op_insert_after(op, indop);
                         return 1;
                     }
-                    // SEAM(W4): data.warning("Ignoring partial resolution of indirect", indop->getAddr())
+                    // STUB(W4): data.warning("Ignoring partial resolution of indirect", indop->getAddr())
                     // The comment database is the W4 console seam; the message is
                     // dropped here.  The C++ then returns 0 (partial overlap).
                     return 0; // Partial overlap, not sure what to do
@@ -813,7 +813,7 @@ impl Rule for RuleIndirectCollapse {
             } else if data.obank().get(indop).expect("RuleIndirectCollapse: stale indop").uses_spacebase_ptr()
             {
                 if op_code(data, indop) == OpCode::CPUI_STORE {
-                    // SEAM(W4): const LoadGuard *guard = data.getStoreGuard(indop);
+                    // STUB(W4): const LoadGuard *guard = data.getStoreGuard(indop);
                     // getStoreGuard / LoadGuard are the heritage/W4 store-guard
                     // subsystem (not ported).  The C++ keeps the INDIRECT (returns
                     // 0) when the STORE is guarded for op's address OR when there
@@ -839,7 +839,7 @@ impl Rule for RuleIndirectCollapse {
 /// decode the offset back to the [`OpId`] it encodes (the inverse of
 /// `funcdata_varnode::op_iop_encode`, which packs the slotmap key's FFI form).
 ///
-/// SEAM(W3-varnode): `funcdata_op.rs` documents the encode side as established by
+/// STUB(W3-varnode): `funcdata_op.rs` documents the encode side as established by
 /// `newVarnodeIop`; this is the matching decode.  Returns `None` if the decoded
 /// key is stale (the op was destroyed).
 fn op_from_iop_const(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
@@ -1969,7 +1969,7 @@ impl Rule for RuleTransformCpool {
         if data.obank().get(op).expect("RuleTransformCpool: stale op").is_cpool_transformed() {
             return 0;
         }
-        // SEAM(W4): data.opMarkCpoolTransformed(op) marks the visit, then the body
+        // STUB(W4): data.opMarkCpoolTransformed(op) marks the visit, then the body
         // looks up `data.getArch()->cpool->getRecord(refs)` and rewrites the op
         // (COPY of the primitive, calculated-bool mark, or tag-append).  The
         // constant-pool record store (`glb->cpool`, W4) and the
@@ -2033,7 +2033,7 @@ impl Rule for RulePropagateCopy {
                 if data.vbank().get(vn).expect("RulePropagateCopy: stale vn").is_addr_force() {
                     continue; // Don't propagate if we are keeping the COPY anyway
                 }
-                // SEAM(W3-varnode): the addrtied merge-safety guard reads
+                // STUB(W3-varnode): the addrtied merge-safety guard reads
                 // invn->isAddrTied(), op->getOut()->isAddrTied(), and the two
                 // addresses.  isAddrTied is available; the address comparison is a
                 // straight Address::!=.  We transcribe it faithfully.
@@ -2254,7 +2254,7 @@ impl Rule for RuleXorCollapse {
             return 0;
         }
         let constvn = data.new_constant(vn_size(data, in1), coeff1 ^ coeff2);
-        // SEAM(W6): constvn->copySymbolIfValid(xorvn) -- the symbol-entry copy is
+        // STUB(W6): constvn->copySymbolIfValid(xorvn) -- the symbol-entry copy is
         // the W6 TypeFactory/symbol surface; the constant value (coeff1^coeff2) is
         // ported, the symbol annotation is skipped.  Recorded as a loss.
         data.op_set_input(op, constvn, 1).expect("RuleXorCollapse: opSetInput");
@@ -2342,7 +2342,7 @@ impl Rule for RuleAddMultCollapse {
                 let c0sz = vn_size(data, c0);
                 let val = eval_binary(opc, c0sz, vn_offset(data, c0), vn_offset(data, c1));
                 let newvn = data.new_constant(c0sz, val);
-                // SEAM(W6): copySymbolIfValid(c0 or c1) -- symbol-entry copy skipped.
+                // STUB(W6): copySymbolIfValid(c0 or c1) -- symbol-entry copy skipped.
                 let opaddr = data.obank().get(op).expect("RuleAddMultCollapse: stale op").get_addr().clone();
                 let newop = data.new_op(2, opaddr);
                 set_opcode(data, newop, OpCode::CPUI_INT_ADD);
@@ -2364,7 +2364,7 @@ impl Rule for RuleAddMultCollapse {
         let c0sz = vn_size(data, c0);
         let val = eval_binary(opc, c0sz, vn_offset(data, c0), vn_offset(data, c1));
         let newvn = data.new_constant(c0sz, val);
-        // SEAM(W6): copySymbolIfValid(c0 or c1) -- symbol-entry copy skipped.
+        // STUB(W6): copySymbolIfValid(c0 or c1) -- symbol-entry copy skipped.
         data.op_set_input(op, newvn, 1).expect("RuleAddMultCollapse: opSetInput"); // Replace c0 with c0(+|*)c1
         data.op_set_input(op, sub2, 0).expect("RuleAddMultCollapse: opSetInput"); // Replace sub with sub2
         1
@@ -2374,7 +2374,7 @@ impl Rule for RuleAddMultCollapse {
 /// `op->getOpcode()->evaluateBinary(sizeout,sizein,in1,in2)` for the two opcodes
 /// RuleAddMultCollapse folds constants for (`INT_ADD`, `INT_MULT`).
 ///
-/// SEAM(W6): the real path dispatches through the op's `OpBehavior`.  For these
+/// STUB(W6): the real path dispatches through the op's `OpBehavior`.  For these
 /// two pure-arithmetic opcodes the behavior is fully determined by the opcode, so
 /// the kuna_num `OpBehavior` for that opcode is invoked directly (faithful, no
 /// invented behavior — `OpBehaviorIntAdd`/`OpBehaviorIntMult` are the same
@@ -2454,7 +2454,7 @@ mod tests {
     use kuna_base::types::int4;
     use kuna_num::opcodes::OpCode;
 
-    use crate::seams::Architecture;
+    use crate::context::ArchContext;
 
     // --- harness ----------------------------------------------------------
 
@@ -2483,7 +2483,7 @@ mod tests {
     /// call `opInsertBefore`/`opInsertAfter` find a parent).
     struct Fd {
         fd: Funcdata,
-        block: crate::seams::BlockId,
+        block: crate::context::BlockId,
     }
 
     impl std::ops::Deref for Fd {
@@ -2500,7 +2500,7 @@ mod tests {
 
     fn build_fd() -> Fd {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         let mut fd = Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap();
@@ -3619,7 +3619,7 @@ mod tests {
         manage
             .insert_space(Rc::new(SpacebaseSpace::new("stack", 5, 8, &ram, 0, true, false)))
             .unwrap();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let r = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(r, 0x1000);
         let mut fd = Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap();

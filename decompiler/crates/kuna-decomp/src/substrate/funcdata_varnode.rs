@@ -26,7 +26,7 @@
 //! sequenced through the public op/varnode accessors), the storage-range finders
 //! (`findCoveredInput`/`findCoveringInput`/`hasInputIntersection`/
 //! `findVarnodeInput`/`findVarnodeWritten`, each a `vbank` range query), the
-//! `descend` iteration helpers, `checkForLanedRegister` (a `// SEAM(W4)` no-op),
+//! `descend` iteration helpers, `checkForLanedRegister` (a `// STUB(W4)` no-op),
 //! and `totalReplace` (def-use rewiring, sequenced — see below) are all ported in
 //! full.  `setInputVarnode`'s overlap pre-check (the pure `vbank` read half) is
 //! ported as [`Funcdata::find_input_overlap`].
@@ -89,13 +89,13 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::varnode::{varnode_flags, DefOpInfo};
 
-/// Effect classes a [`crate::seams::FuncProto`] reports for a storage range
+/// Effect classes a [`crate::context::FuncProto`] reports for a storage range
 /// (C++ `EffectRecord::effecttype`, `fspec.hh:392-397`).
 ///
-/// SEAM(W4): the prototype model subsystem (`fspec.{hh,cc}`) is W4.  The W3
+/// STUB(W4): the prototype model subsystem (`fspec.{hh,cc}`) is W4.  The W3
 /// `funcp` placeholder reports no records, so the `setInputVarnode` tail always
 /// sees `UNKNOWN_EFFECT` (the "absence of an EffectRecord" value) and never marks
 /// an input `unaffected`/`return_address`.  The constants are transcribed
@@ -131,7 +131,7 @@ impl Funcdata {
 
     /// Stand-in for `glb->types->getBase(s, TYPE_UNKNOWN)` (C++ `TypeFactory`).
     ///
-    /// SEAM(W6): the `TypeFactory` (`glb->types`, `type.{hh,cc}`) is W6; the W3
+    /// STUB(W6): the `TypeFactory` (`glb->types`, `type.{hh,cc}`) is W6; the W3
     /// data-model has no factory, so the varnode factories construct the
     /// unknown-base [`Datatype`] skeleton directly (size `s`, metatype
     /// `TYPE_UNKNOWN`), exactly as the merged `funcdata.rs`/`varnode.rs` tests do.
@@ -414,7 +414,7 @@ impl Funcdata {
     ///
     /// `ct == None` means "use the unknown base of size `s`".
     ///
-    /// SEAM(W4): the C++ then runs `localmap->queryProperties` to seed boolean
+    /// STUB(W4): the C++ then runs `localmap->queryProperties` to seed boolean
     /// flags/type from a symbol entry; the W3 `localmap` placeholder reports no
     /// entry, so [`Funcdata::set_varnode_properties`] (the merged `funcdata.rs`
     /// W4 no-op) is called instead, preserving the call cadence.
@@ -425,7 +425,7 @@ impl Funcdata {
         if s >= self.get_min_laned_size() {
             self.check_for_laned_register(s, m);
         }
-        // uint4 vflags=0; entry = localmap->queryProperties(...); ...  -- SEAM(W4)
+        // uint4 vflags=0; entry = localmap->queryProperties(...); ...  -- STUB(W4)
         self.set_varnode_properties(vn);
         vn
     }
@@ -641,7 +641,7 @@ impl Funcdata {
     /// an address in the \e fspec space; the W3 model has no `FuncCallSpecs`
     /// (W4), so the encoded handle is supplied by the caller as a `uintb`.
     ///
-    /// SEAM(W4): when the `FuncCallSpecs` type lands, the caller passes the call
+    /// STUB(W4): when the `FuncCallSpecs` type lands, the caller passes the call
     /// spec and this encodes it; the body (`vbank.create` in the fspec space) is
     /// unchanged.
     pub fn new_varnode_call_specs(&mut self, fc_encoded: uintb) -> VarnodeId {
@@ -674,7 +674,7 @@ impl Funcdata {
     /// it split-borrows both banks ([`Funcdata::banks_mut`]) and runs
     /// [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over `obank`.
     ///
-    /// SEAM(W4): the `localmap->queryProperties` symbol look-up + `setSymbolProperties`/
+    /// STUB(W4): the `localmap->queryProperties` symbol look-up + `setSymbolProperties`/
     /// `setFlags(vflags & ~typelock)` tail is the W4 symbol scope; the W3 placeholder
     /// reports no entry, so it is the [`Funcdata::set_varnode_properties`] no-op,
     /// preserving the call cadence (and never touching the (space,offset,size) the
@@ -698,7 +698,7 @@ impl Funcdata {
         if s >= self.get_min_laned_size() {
             self.check_for_laned_register(s, m);
         }
-        // uint4 vflags=0; entry = localmap->queryProperties(...); ...  -- SEAM(W4)
+        // uint4 vflags=0; entry = localmap->queryProperties(...); ...  -- STUB(W4)
         self.set_varnode_properties(vn);
         Ok(vn)
     }
@@ -736,7 +736,7 @@ impl Funcdata {
     /// Varnode at `m` that holds no value in the data-flow.  The C++ then sets
     /// `Varnode::annotation` on it.
     ///
-    /// SEAM(W6): `glb->types->getTypeCode()` (the W6 `TypeFactory`'s code type) is
+    /// STUB(W6): `glb->types->getTypeCode()` (the W6 `TypeFactory`'s code type) is
     /// replaced with the unknown base (size 1), as the rest of this wave does.
     ///
     /// `vn->setFlags(Varnode::annotation)` is now expressed: LOSS-077 added a
@@ -744,7 +744,7 @@ impl Funcdata {
     /// private `set_flags`, so the `annotation` property bit (the previously
     /// carried LOSS-036/LOSS-037 loss) is set faithfully.
     pub fn new_code_ref(&mut self, m: &Address) -> VarnodeId {
-        // ct = glb->types->getTypeCode();  -- SEAM(W6): unknown base of size 1.
+        // ct = glb->types->getTypeCode();  -- STUB(W6): unknown base of size 1.
         let ct = Self::type_base_unknown(1);
         // vn = vbank.create(1,m,ct);
         let vn = self.vbank_mut().create(1, m.clone(), ct);
@@ -813,7 +813,7 @@ impl Funcdata {
     /// the [`banks_mut`](Funcdata::banks_mut) split-borrow), `setVarnodeProperties`,
     /// and the `funcp.hasEffect` unaffected/return-address marking.
     ///
-    /// SEAM(W10 spacebase-typing render): the C++ `funcp.hasEffect` tail marks
+    /// STUB(W10 spacebase-typing render): the C++ `funcp.hasEffect` tail marks
     /// saved-register / return-address *inputs* `unaffected`/`return_address` (the
     /// effect list is now populated by the RSP keystone, so `has_effect` returns the
     /// right class — see the transcribed ladder below).  Activating it on its own is
@@ -1970,7 +1970,7 @@ impl Funcdata {
                 let off = v.get_offset();
                 let cvn = self.new_constant(sz, off);
                 // cvn->copySymbol(vn): copy the data-type; the symbol/typelock
-                // markup is the W4 symbol seam.  -- SEAM(W4): mapentry/typelock.
+                // markup is the W4 symbol seam.  -- STUB(W4): mapentry/typelock.
                 let ty = self.vbank().get(vn).expect("op_set_input: stale vn").get_type().clone();
                 self.vbank_mut().get_mut(cvn).expect("op_set_input: stale cvn").update_type(ty);
                 vn = cvn;
@@ -2474,7 +2474,7 @@ impl Funcdata {
         main_flags: kuna_base::types::uint4,
     ) -> bool {
         use crate::expression::{traverse_flags, TraverseNode};
-        use crate::seams::OpId as OId;
+        use crate::context::OpId as OId;
         let mut res = true;
         // varlist holds (vn, flags); invn marked to prevent infinite loops.
         let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4)> = Vec::with_capacity(64);
@@ -3323,7 +3323,7 @@ mod tests {
     use kuna_num::opcodes::OpCode;
 
     use crate::dtype::{type_metatype, Datatype};
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
     use crate::varnode::{DefOpInfo, VarnodeBank};
 
     /// Build an AddrSpaceManager with constant/unique/iop/fspec/ram spaces.
@@ -3350,7 +3350,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

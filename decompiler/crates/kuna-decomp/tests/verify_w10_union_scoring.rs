@@ -25,7 +25,7 @@ use kuna_num::opcodes::OpCode;
 
 use kuna_decomp::dtype::{type_metatype, Datatype, DatatypeKind, TypeFactoryImpl, TypeField};
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, OpId, TypeOp, VarnodeId};
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -50,7 +50,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let mut arch = Architecture::new(manage);
+    let mut arch = ArchContext::new(manage);
     // Attach a bare type factory so `resolve_in_flow` reaches `*glb->types`
     // (the offset-0 same-size union arms exercised here never call into the
     // factory's pointer/array builders, only `ResolvedUnion::getDepend`).

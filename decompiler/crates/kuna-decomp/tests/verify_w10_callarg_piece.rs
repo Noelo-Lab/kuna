@@ -25,7 +25,7 @@
 //! (coreaction.cc:2385): kuna performs it where `queryCall` already associates the
 //! callee (flow.cc:678-688) rather than in the reserved `coreaction_protos.rs`.
 //! The postpone is a documented no-op on the kuna path (the declared callee
-//! signature is locked by `parse line extern` before flow runs — see the SEAM
+//! signature is locked by `parse line extern` before flow runs — see the STUB
 //! comment in flow.rs).
 //!
 //! These drive the *real* gate path: the committed Rust `decomp_test_dbg`

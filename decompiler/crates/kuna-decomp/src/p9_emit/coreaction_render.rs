@@ -83,7 +83,7 @@
 //! 1. transcribes the C++ `apply` (and the `reset` override, if any) as commented
 //!    pseudocode, preserving iteration order, tie-breakers, and the `count += 1`
 //!    points, then
-//! 2. routes the unrealized mutation through a `// SEAM(W8-funcdata)` note and
+//! 2. routes the unrealized mutation through a `// STUB(W8-funcdata)` note and
 //!    returns `0` changes (the C++ contract: changes are signalled by `count`).
 //!
 //! The realized portion of each stateful action — the `localcount`/`numpass`/
@@ -114,7 +114,7 @@ use kuna_base::types::uintb;
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
-use crate::seams::GlobalContainer;
+use crate::context::GlobalContainer;
 use crate::subflow::LaneDivide;
 use crate::transform::{LaneDescription, LanedRegister};
 
@@ -454,7 +454,7 @@ impl Action for ActionSegmentize {
         // (`localcount`) is the only realizable part and is left to the seam since
         // the body it gates cannot run.
         //
-        // SEAM(W8-funcdata): the `SegmentOp` user-op table (`getArch()->userops`),
+        // STUB(W8-funcdata): the `SegmentOp` user-op table (`getArch()->userops`),
         // `SegmentOp::unify`, and the CALLOTHER->SEGMENTOP rewrite
         // (`opSetOpcode`/`opSetInput`/`newVarnodeSpace`/`opRemoveInput`) are not
         // present.  Body transcribed; no change applied (count stays 0).
@@ -497,7 +497,7 @@ impl Action for ActionForceGoto {
         //   data.getOverride().applyForceGoto(data);
         //   return 0;
         //
-        // SEAM(W8-funcdata): the `Override` store (`Funcdata::getOverride`) and
+        // STUB(W8-funcdata): the `Override` store (`Funcdata::getOverride`) and
         // `Override::applyForceGoto` (which rewrites flow per user goto overrides)
         // are not in the merged tree.  Body transcribed; no change applied
         // (count stays 0 — the C++ `return 0` never bumps count either).
@@ -547,7 +547,7 @@ impl Action for ActionMultiCse {
         // MULTIEQUAL ops (via `findMatch`/`preferredOutput`) and folds the
         // redundant one, bumping `count` through the Funcdata edit surface.
         //
-        // SEAM(W8-funcdata): the block graph (`getBasicBlocks`) and the
+        // STUB(W8-funcdata): the block graph (`getBasicBlocks`) and the
         // MULTIEQUAL fold (`opSetOutput`/`totalReplace`/`opDestroy`) are not in the
         // merged tree.  Body transcribed; no change applied (count stays 0).
         0
@@ -607,7 +607,7 @@ impl Action for ActionShadowVar {
         //               break;
         //   return 0;
         //
-        // SEAM(W8-funcdata): the block graph, the MULTIEQUAL input-set comparison,
+        // STUB(W8-funcdata): the block graph, the MULTIEQUAL input-set comparison,
         // the Varnode mark bit, and the shadow->COPY collapse
         // (`opSetOpcode`/`opSetAllInput`) are not in the merged tree.  Body
         // transcribed; no change applied (count stays 0).
@@ -1440,7 +1440,7 @@ impl Action for ActionLikelyTrash {
         //           count += 1;
         //   return 0;
         //
-        // SEAM(W8-funcdata): the proto trash list (`proto.trashBegin`),
+        // STUB(W8-funcdata): the proto trash list (`proto.trashBegin`),
         // `findCoveredInput`, `traceTrash` (coreaction.cc:2147-2196, the
         // COPY/AND/INDIRECT trash-flow walk), and `markIndirectCreation` are not in
         // the merged tree.  Body transcribed; no change applied (count stays 0).
@@ -1570,7 +1570,7 @@ impl Action for ActionMappedLocalSync {
         if data.sync_varnodes_with_symbols(true, true) {
             count += 1;
         }
-        // SEAM(W8-funcdata): `Funcdata::warningHeader` on `hasOverlapProbems` is
+        // STUB(W8-funcdata): `Funcdata::warningHeader` on `hasOverlapProbems` is
         // not modeled (a diagnostic header, not output-determining).
         count
     }
@@ -1613,7 +1613,7 @@ impl Action for ActionMapGlobals {
         // C++ coreaction.hh:900 — ActionMapGlobals::apply (inline)
         //   data.mapGlobals(); return 0;
         //
-        // SEAM(W8-funcdata): `Funcdata::mapGlobals` (which promotes discovered
+        // STUB(W8-funcdata): `Funcdata::mapGlobals` (which promotes discovered
         // global Varnodes into the global scope) is not on the merged `Funcdata`.
         // Body transcribed; no change applied (the C++ `return 0` never bumps
         // count either).
@@ -1669,7 +1669,7 @@ impl Action for ActionDeadCode {
 // all ported here on the real, now-heritaged IR.
 // ---------------------------------------------------------------------------
 
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use kuna_base::address::{calc_mask, coveringmask, leastsigbit_set, minimalmask};
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
@@ -1816,7 +1816,7 @@ fn dc_propagate_consumed(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) {
                 .map(|s| s.get_type() == spacetype::IPTR_IOP)
                 .unwrap_or(false);
             if i1_is_iop {
-                // SEAM(op-from-const): getOpFromConst not ported; indirect-source
+                // STUB(op-from-const): getOpFromConst not ported; indirect-source
                 // marking skipped (does not affect boolless / the consume fixpoint).
             }
         }
@@ -2604,7 +2604,7 @@ impl Action for ActionUnjustifiedParams {
         // Snapshot the input list once; `adjustInputVarnodes` rewrites it, so we
         // re-seek (C++ resets the iterator after each adjustment).
         loop {
-            let inputs: Vec<crate::seams::VarnodeId> =
+            let inputs: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
             let mut adjusted = false;
             'scan: for (idx, &vn) in inputs.iter().enumerate() {

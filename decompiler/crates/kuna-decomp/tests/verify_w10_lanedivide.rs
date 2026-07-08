@@ -39,7 +39,7 @@ use kuna_base::space::{
 use kuna_base::address::Address;
 use kuna_base::types::int4;
 
-use kuna_decomp::seams::Architecture;
+use kuna_decomp::context::ArchContext;
 use kuna_decomp::transform::LanedRegister;
 
 use kuna_sleigh::globalcontext::ContextInternal;
@@ -83,7 +83,7 @@ fn build_manager() -> AddrSpaceManager {
     m
 }
 
-fn ram_addr(arch: &Architecture, off: u64) -> Address {
+fn ram_addr(arch: &ArchContext, off: u64) -> Address {
     let ram = Rc::clone(arch.manage().get_space_by_name("ram").unwrap());
     Address::new(ram, off)
 }
@@ -95,7 +95,7 @@ fn ram_addr(arch: &Architecture, off: u64) -> Address {
 /// C++ architecture.cc:291 (`getLanedRegister`) + :313 (`getMinimumLanedRegisterSize`).
 #[test]
 fn w10_lanedivide_empty_table_lookup_is_none_not_panic() {
-    let arch = Architecture::new(build_manager());
+    let arch = ArchContext::new(build_manager());
     assert!(arch.lanerecords.is_empty());
     // getLanedRegister over an empty table is the C++ (LanedRegister*)0 == None,
     // for any size, with NO out-of-bounds access / debug panic on the
@@ -118,7 +118,7 @@ fn w10_lanedivide_empty_table_lookup_is_none_not_panic() {
 /// the C++.  architecture.cc:291.
 #[test]
 fn w10_lanedivide_binary_search_exact_and_miss() {
-    let mut arch = Architecture::new(build_manager());
+    let mut arch = ArchContext::new(build_manager());
     // Size-sorted ascending, one record per whole size — the invariant
     // `decodeRegisterData` establishes (maskList walked by ascending index).
     arch.lanerecords = vec![

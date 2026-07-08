@@ -62,7 +62,7 @@ use kuna_base::types::{int4, uint4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 // =============================================================================
 // TransformVar / TransformOp flag + type enums (transform.hh:31-91)

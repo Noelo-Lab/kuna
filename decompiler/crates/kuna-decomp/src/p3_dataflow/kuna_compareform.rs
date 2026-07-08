@@ -20,7 +20,7 @@
 //! re-validated from scratch and an op reshaped by a later transform dies
 //! gracefully (no rewrite).
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! As in the sibling kuna sub-stages, the C++
 //! `if (!data.getArch()->present_lessequal) return 0;` gate is resolved at
@@ -38,14 +38,14 @@
 //! [`Architecture::present_lessequal`]) and surfaces the C++ `throw ParseError(...)`
 //! as a [`KunaError::parse`].
 //!
-//! ## SEAM(W6) — opcode-flag resolution
+//! ## STUB(W6) — opcode-flag resolution
 //!
 //! `opSetOpcode(...)` resolves `glb->inst[opc]` (the W6 typeop `inst` table); the
 //! restored `INT_LESSEQUAL`/`INT_SLESSEQUAL` op-shells carry the verbatim
 //! `typeop.cc` opflags (`binary | booloutput`) — mirroring `w6_type_op` in
 //! `funcdata_op.rs`.  Noted in the structured losses.
 //!
-//! ## SEAM(W4) — `copySymbol`
+//! ## STUB(W4) — `copySymbol`
 //!
 //! The C++ `restoreLessequal` calls `newvn->copySymbol(vn)` to carry the original
 //! constant's data-type/Symbol (e.g. enum typing) onto the re-adjusted constant.
@@ -61,14 +61,14 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 
 /// (kuna GH-558) Restore canonicalized comparisons to their original LESSEQUAL
 /// form for presentation (C++ `ActionPresentCompareForm`).
 pub struct ActionPresentCompareForm {
     /// Engine-owned bookkeeping (C++ inherited `Action` base fields).
     base: ActionBase,
-    /// Resolved `glb->present_lessequal` gate (SEAM(W4); see module docs).
+    /// Resolved `glb->present_lessequal` gate (STUB(W4); see module docs).
     enabled: bool,
 }
 
@@ -205,7 +205,7 @@ fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
         // data.opSetOpcode(op,CPUI_INT_LESSEQUAL);
         OpCode::CPUI_INT_LESSEQUAL
     };
-    // data.opSetOpcode(op,...);  // SEAM(W6): glb->inst[opc] (binary | booloutput)
+    // data.opSetOpcode(op,...);  // STUB(W6): glb->inst[opc] (binary | booloutput)
     data.op_set_opcode(op, lessequal_type_op(newcode));
 
     // uintb res = (val + diff) & calc_mask(vn->getSize());
@@ -218,7 +218,7 @@ fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
     // rather than reverting to TYPE_UNKNOWN; the fresh-UNKNOWN constant would
     // otherwise be re-typed `char` by `ActionSetCasts` (getBase(1,TYPE_INT)
     // returns char) and mis-render `'a'` instead of `0x61`.  The mapentry/Symbol
-    // copy stays a W4 SEAM (no mapentry link in the merged tree).
+    // copy stays a W4 STUB (no mapentry link in the merged tree).
     let src_info =
         data.vbank().get(vn).map(|s| (std::rc::Rc::clone(s.get_type()), s.get_flags()));
     if let Some((src_type, src_flags)) = src_info {
@@ -233,7 +233,7 @@ fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
     true
 }
 
-/// SEAM(W6): the `glb->inst[opc]` lookup for the restored LESSEQUAL ops, supplying
+/// STUB(W6): the `glb->inst[opc]` lookup for the restored LESSEQUAL ops, supplying
 /// the verbatim `typeop.cc` opflags (`TypeOpIntLessEqual` / `TypeOpIntSlessEqual`
 /// are `binary | booloutput`).  Mirrors `Funcdata::w6_type_op` (`funcdata_op.rs`).
 fn lessequal_type_op(opc: OpCode) -> TypeOp {

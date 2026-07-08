@@ -47,7 +47,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uintm};
 
 use crate::cover::Cover;
-use crate::seams::{HighVariableId, OpId, VarnodeId};
+use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::variable::{HighContext, HighIntersectTest};
 
 use kuna_num::opcodes::OpCode;
@@ -185,7 +185,7 @@ pub trait MergeContext: HighContext {
     //     does not expose `high->piece`/group offsets/size publicly) ----------
     /// `high->piece->getGroup()` plus `(piece->getSize(), group->getSize())` if
     /// `high` is part of an overlap group (the `mergeTestRequired` whole-group
-    /// check), else `None`.  SEAM(W7-variable): the bank does not expose pieces.
+    /// check), else `None`.  STUB(W7-variable): the bank does not expose pieces.
     fn high_group_info(&self, high: HighVariableId) -> Option<HighGroupInfo>;
     /// `high->piece` id, if any (modelled as an opaque `MergePieceId`).
     fn high_piece(&self, high: HighVariableId) -> Option<MergePieceId>;
@@ -229,11 +229,11 @@ pub trait MergeContext: HighContext {
     fn bank_clear_copy_ins(&mut self, high: HighVariableId);
 
     // --- Symbol reads on a HighVariable (W4 surface; seams) ----------------
-    /// `high->getSymbol()` identity, if any.  SEAM(W4-symbol).
+    /// `high->getSymbol()` identity, if any.  STUB(W4-symbol).
     fn bank_symbol(&self, high: HighVariableId) -> Option<u64>;
-    /// `high->getSymbolOffset()`.  SEAM(W4-symbol).
+    /// `high->getSymbolOffset()`.  STUB(W4-symbol).
     fn bank_symbol_offset(&self, high: HighVariableId) -> int4;
-    /// `high->getSymbol()->isIsolated()`.  SEAM(W4-symbol).
+    /// `high->getSymbol()->isIsolated()`.  STUB(W4-symbol).
     fn bank_symbol_isolated(&self, high: HighVariableId) -> bool;
     /// `high->getTiedVarnode()->getAddr()` (the addr-tied address compare).
     fn bank_tied_addr(&self, high: HighVariableId) -> kuna_base::address::Address;
@@ -263,7 +263,7 @@ pub trait MergeContext: HighContext {
     fn vn_is_proto_partial(&self, vn: VarnodeId) -> bool;
     /// `vn->isAnnotation()`.
     fn vn_is_annotation(&self, vn: VarnodeId) -> bool;
-    /// `vn->isIllegalInput()`.  SEAM(W4-symbol) for the input classification.
+    /// `vn->isIllegalInput()`.  STUB(W4-symbol) for the input classification.
     fn vn_is_illegal_input(&self, vn: VarnodeId) -> bool;
     /// `vn->isIndirectOnly()`.
     fn vn_is_indirect_only(&self, vn: VarnodeId) -> bool;
@@ -288,10 +288,10 @@ pub trait MergeContext: HighContext {
     /// `vn->getSymbolEntry()->getOffset()` (the CONCAT-tree base offset).
     fn vn_symbol_entry_offset(&self, vn: VarnodeId) -> Option<int4>;
     /// `a->copyShadow(b)` — `b` is a COPY-chain shadow of `a` (same value).
-    /// SEAM(W7-varnode): `Varnode::copyShadow` (varnode.cc) is not yet ported.
+    /// STUB(W7-varnode): `Varnode::copyShadow` (varnode.cc) is not yet ported.
     fn vn_copy_shadow(&self, a: VarnodeId, b: VarnodeId) -> bool;
     /// `a->partialCopyShadow(b,off)` — partial copy-shadow at byte offset `off`.
-    /// SEAM(W7-varnode): `Varnode::partialCopyShadow` is not yet ported.
+    /// STUB(W7-varnode): `Varnode::partialCopyShadow` is not yet ported.
     fn vn_partial_copy_shadow(&self, a: VarnodeId, b: VarnodeId, off: int4) -> bool;
     /// `a->characterizeOverlap(b)` — 0=no overlap, 1=partial, 2=identical range.
     fn vn_characterize_overlap(&self, a: VarnodeId, b: VarnodeId) -> int4;
@@ -318,7 +318,7 @@ pub trait MergeContext: HighContext {
     /// `op->numInput()`.
     fn op_num_input(&self, op: OpId) -> int4;
     /// `op->getParent()` — the parent block id.
-    fn op_parent(&self, op: OpId) -> crate::seams::BlockId;
+    fn op_parent(&self, op: OpId) -> crate::context::BlockId;
     /// `op->getParent()->getIndex()` (the defining block index).
     fn op_parent_index(&self, op: OpId) -> int4;
     /// `op->getAddr()`.
@@ -356,22 +356,22 @@ pub trait MergeContext: HighContext {
     /// `data.opInsertAfter(op,prev)`.
     fn op_insert_after(&mut self, op: OpId, prev: OpId);
     /// `data.opInsertBegin(op,bl)`.
-    fn op_insert_begin(&mut self, op: OpId, bl: crate::seams::BlockId);
+    fn op_insert_begin(&mut self, op: OpId, bl: crate::context::BlockId);
     /// `data.opInsertEnd(copyop, (BlockBasic*)op->getParent()->getIn(slot))` —
     /// the MULTIEQUAL trim insertion at the predecessor block of `slot`.
     fn op_insert_end_pred(&mut self, copyop: OpId, op: OpId, slot: int4);
-    /// `data.opMarkNonPrinting(op)`.  SEAM(W7-funcdata): not yet on Funcdata.
+    /// `data.opMarkNonPrinting(op)`.  STUB(W7-funcdata): not yet on Funcdata.
     fn op_mark_non_printing(&mut self, op: OpId);
 
     // --- Block reads -------------------------------------------------------
     /// `data.getBasicBlocks().getSize()`.
     fn bblocks_get_size(&self) -> int4;
     /// `data.getBasicBlocks().getBlock(i)`.
-    fn bblocks_get_block(&self, i: int4) -> crate::seams::BlockId;
+    fn bblocks_get_block(&self, i: int4) -> crate::context::BlockId;
     /// `bl->beginOp()..endOp()` — the block's op list (linear order).
-    fn block_ops(&self, bl: crate::seams::BlockId) -> Vec<OpId>;
+    fn block_ops(&self, bl: crate::context::BlockId) -> Vec<OpId>;
     /// `domBlock->dominates(subBlock)`.
-    fn block_dominates(&self, dom: crate::seams::BlockId, sub: crate::seams::BlockId) -> bool;
+    fn block_dominates(&self, dom: crate::context::BlockId, sub: crate::context::BlockId) -> bool;
 
     // --- Function-level op iteration ---------------------------------------
     /// `data.beginOpAlive()..endOpAlive()` — the alive-op list in C++ order.
@@ -403,13 +403,13 @@ pub trait MergeContext: HighContext {
     fn snip_reads_insert_point(
         &self,
         vn: VarnodeId,
-    ) -> (crate::seams::BlockId, kuna_base::address::Address, Option<OpId>);
+    ) -> (crate::context::BlockId, kuna_base::address::Address, Option<OpId>);
     /// `Merge::mergeIndirect` union-field inherit for the snipped INDIRECT.
     fn indirect_inherit_union(&mut self, outvn: VarnodeId, newop: OpId, indop: OpId);
     /// `PcodeOpNode::compareByHigh` sort over the collected inputs.
     fn sort_op_nodes_by_high(&self, nodes: &mut Vec<crate::expression::PcodeOpNode>);
     /// `Merge::buildDominantCopy` body (findCommonBlock / totalReplace / opDestroy).
-    /// SEAM(W7-funcdata): `FlowBlock::findCommonBlock`/`totalReplace` surgery.
+    /// STUB(W7-funcdata): `FlowBlock::findCommonBlock`/`totalReplace` surgery.
     fn build_dominant_copy(
         &mut self,
         high: HighVariableId,
@@ -420,9 +420,9 @@ pub trait MergeContext: HighContext {
 
     // --- mergeAddrTied / mergeMultiEntry seams (overlapLoc/scope; W7/W4) ----
     /// `Merge::mergeAddrTied` range collection (`overlapLoc` over the location set).
-    /// SEAM(W7-funcdata): `Funcdata::overlapLoc` is not yet ported.
+    /// STUB(W7-funcdata): `Funcdata::overlapLoc` is not yet ported.
     fn addr_tied_ranges(&self) -> Vec<AddrTiedRange>;
-    /// `getScopeLocal()->beginMultiEntry()..endMultiEntry()`.  SEAM(W4-symbol).
+    /// `getScopeLocal()->beginMultiEntry()..endMultiEntry()`.  STUB(W4-symbol).
     fn multi_entry_symbols(&self) -> Vec<u64>;
     /// `findLinkedVarnodes` over a multi-entry symbol: `(varnodes, skipCount)`.
     fn symbol_linked_varnodes(&self, symbol: u64) -> (Vec<VarnodeId>, int4);
@@ -430,7 +430,7 @@ pub trait MergeContext: HighContext {
     fn symbol_set_merge_problems(&mut self, symbol: u64);
     /// `data.warningHeader(...)` for the multi-entry merge failure.
     fn symbol_merge_warning(&mut self, symbol: u64, merge_count: int4, skip_count: int4, conflict_count: int4);
-    /// `StackAffectingOps::populate` into the cache's `PcodeOpSet`.  SEAM(W7).
+    /// `StackAffectingOps::populate` into the cache's `PcodeOpSet`.  STUB(W7).
     fn populate_affecting_ops(&self, op_set: &mut crate::cover::PcodeOpSet);
     /// `PieceNode::gatherPieces(pieces, vn, vn->getDef(), baseOffset, baseOffset)`:
     /// the CONCAT-tree nodes as `(node_varnode, typeOffset)` pairs (groupPartialRoot).
@@ -1625,7 +1625,7 @@ impl Merge {
     /// Force the merge of address-tied Varnodes (C++ `Merge::mergeAddrTied`,
     /// `merge.cc:609-648`).
     ///
-    /// SEAM(W7-funcdata): the body iterates `data.beginLoc()/endLoc(spc)` with
+    /// STUB(W7-funcdata): the body iterates `data.beginLoc()/endLoc(spc)` with
     /// `overlapLoc` and calls `mergeRangeMust`/`groupWith`; `Funcdata::overlapLoc`
     /// is not yet ported, so the iteration is driven through
     /// [`MergeContext::addr_tied_ranges`] which returns the maximally-overlapping
@@ -1947,7 +1947,7 @@ impl Merge {
     /// Replace a set of COPYs from the same Varnode with a dominant COPY (C++
     /// `Merge::buildDominantCopy`, `merge.cc:1151-1238`).
     ///
-    /// SEAM(W7-funcdata): builds a new dominating COPY at `findCommonBlock`, then
+    /// STUB(W7-funcdata): builds a new dominating COPY at `findCommonBlock`, then
     /// totalReplaces non-intersecting outputs; routed through
     /// [`MergeContext::build_dominant_copy`] which performs the IR surgery (the
     /// `FlowBlock::findCommonBlock`/`totalReplace`/`opDestroy` sequence) and reports
@@ -2245,7 +2245,7 @@ impl Merge {
     /// Merge together Varnodes mapped to SymbolEntrys of the same Symbol (C++
     /// `Merge::mergeMultiEntry`, `merge.cc:908-963`).
     ///
-    /// SEAM(W4-symbol): iterates `getScopeLocal()->beginMultiEntry()` and calls
+    /// STUB(W4-symbol): iterates `getScopeLocal()->beginMultiEntry()` and calls
     /// `findLinkedVarnodes`; the symbol scope is a W4 surface.  Driven through
     /// [`MergeContext::multi_entry_symbols`] (a seam; recorded as a loss).
     pub fn merge_multi_entry(&mut self, ctx: &mut dyn MergeContext) -> KunaResult<()> {
@@ -2719,8 +2719,8 @@ mod tests {
         fn op_num_input(&self, _op: OpId) -> int4 {
             0
         }
-        fn op_parent(&self, _op: OpId) -> crate::seams::BlockId {
-            crate::seams::BlockId::from(KeyData::from_ffi(1))
+        fn op_parent(&self, _op: OpId) -> crate::context::BlockId {
+            crate::context::BlockId::from(KeyData::from_ffi(1))
         }
         fn op_parent_index(&self, op: OpId) -> int4 {
             self.op_parent_idx.get(&okey(op)).copied().unwrap_or(0)
@@ -2769,19 +2769,19 @@ mod tests {
         }
         fn op_insert_before(&mut self, _op: OpId, _follow: OpId) {}
         fn op_insert_after(&mut self, _op: OpId, _prev: OpId) {}
-        fn op_insert_begin(&mut self, _op: OpId, _bl: crate::seams::BlockId) {}
+        fn op_insert_begin(&mut self, _op: OpId, _bl: crate::context::BlockId) {}
         fn op_insert_end_pred(&mut self, _copyop: OpId, _op: OpId, _slot: int4) {}
         fn op_mark_non_printing(&mut self, _op: OpId) {}
         fn bblocks_get_size(&self) -> int4 {
             0
         }
-        fn bblocks_get_block(&self, _i: int4) -> crate::seams::BlockId {
-            crate::seams::BlockId::from(KeyData::from_ffi(1))
+        fn bblocks_get_block(&self, _i: int4) -> crate::context::BlockId {
+            crate::context::BlockId::from(KeyData::from_ffi(1))
         }
-        fn block_ops(&self, _bl: crate::seams::BlockId) -> Vec<OpId> {
+        fn block_ops(&self, _bl: crate::context::BlockId) -> Vec<OpId> {
             Vec::new()
         }
-        fn block_dominates(&self, _dom: crate::seams::BlockId, _sub: crate::seams::BlockId) -> bool {
+        fn block_dominates(&self, _dom: crate::context::BlockId, _sub: crate::context::BlockId) -> bool {
             false
         }
         fn ops_alive(&self) -> Vec<OpId> {
@@ -2802,7 +2802,7 @@ mod tests {
         fn trim_op_input_prep(&self, _op: OpId, _slot: int4) -> (VarnodeId, Address, bool) {
             panic!("mock: trim_op_input_prep not under test")
         }
-        fn snip_reads_insert_point(&self, _vn: VarnodeId) -> (crate::seams::BlockId, Address, Option<OpId>) {
+        fn snip_reads_insert_point(&self, _vn: VarnodeId) -> (crate::context::BlockId, Address, Option<OpId>) {
             panic!("mock: snip_reads_insert_point not under test")
         }
         fn indirect_inherit_union(&mut self, _outvn: VarnodeId, _newop: OpId, _indop: OpId) {}

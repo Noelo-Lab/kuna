@@ -19,7 +19,7 @@
 //! between the guard test and the table load, so the guarded varnode never
 //! `value_match`es the normalized index.
 //!
-//! ## What this module owns vs. SEAM(W4)
+//! ## What this module owns vs. STUB(W4)
 //!
 //! As with `kuna_switchmodbound`, the assigned scope here is **only** the
 //! `ElementId` and the `ArchOption` that flips the arch flag — *not* the
@@ -49,7 +49,7 @@ pub const ELEM_SWITCHGUARDBOUND: ElementId = ElementId::new("switchguardbound", 
 /// (kuna) Toggle bounding a LOAD-table jumptable by an out-of-band CBRANCH range
 /// guard on its index (C++ `OptionSwitchGuardBound`).
 ///
-/// SEAM(W4): the C++ `OptionSwitchGuardBound::apply` flips
+/// STUB(W4): the C++ `OptionSwitchGuardBound::apply` flips
 /// `glb->switch_guard_bound`; here the flag is carried as a plain `bool` whose
 /// [`Default`] is the *shipped* default (`option switchguardbound off`, i.e.
 /// \b false — upstream byte-identical). W4's `JumpBasic::recoverModel` reads this

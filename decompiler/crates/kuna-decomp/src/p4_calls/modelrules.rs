@@ -20,7 +20,7 @@
 //!   - [`ModelRule`] — a rule combining a [`DatatypeFilter`], an optional
 //!     [`QualifierFilter`], an [`AssignAction`], and pre-/side-effect actions.
 //!
-//! ## Seam (`SEAM(w6-modelrules)` in `fspec.rs`)
+//! ## Seam (`STUB(w6-modelrules)` in `fspec.rs`)
 //!
 //! The C++ `AssignAction` holds a `const ParamListStandard *resource`
 //! back-pointer, and `ParamListStandard::modelRules` owns a

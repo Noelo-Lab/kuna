@@ -41,7 +41,7 @@
 //! # The B0 allowlist (now empty)
 //!
 //! Earlier waves left a handful of Rules/Actions referenced by `universalAction`
-//! un-ported (SEAM markers in their home modules), omitted from the materialized
+//! un-ported (STUB markers in their home modules), omitted from the materialized
 //! tree and enumerated in [`UNPORTED_ALLOWLIST`].  As of
 //! `w8x-universalaction-wire` all of them (`splitflow`, `subfloat_convert`,
 //! `stackprobeloop`, `lowerswitchinstall`, `dumptyhumplate`, `splitcopy`,

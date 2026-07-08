@@ -41,7 +41,7 @@
 //! `getTypedef`, `setName`) and an `Architecture` prototype-model registry
 //! (`getModel` / `defaultfp` / `setPrototype`) that the W6/W4 ports left as
 //! seams (the kuna `Architecture` has **no** type-factory field or model
-//! registry; `// SEAM(w6-fspec-2)`).  The grammar *parses* these forms (the AST
+//! registry; `// STUB(w6-fspec-2)`).  The grammar *parses* these forms (the AST
 //! is built and `is_valid` runs), but completing them errs with the same
 //! C++-faithful explain text, deferred to the type-factory/model wave.  The
 //! nested-function-pointer `buildType` path (`FunctionModifier::modType` ->
@@ -74,7 +74,7 @@ use kuna_decomp::fspec::PrototypePieces;
 /// The kuna `Architecture` (W4) does not yet own a [`TypeFactory`] field, so the
 /// C++ `Architecture *glb` argument is split into the read-mostly factory the
 /// callers pass plus this small data-organization record (the only `glb` state
-/// the C-declaration grammar actually consults).  // SEAM(w6-fspec-2)
+/// the C-declaration grammar actually consults).  // STUB(w6-fspec-2)
 #[derive(Debug, Clone, Copy)]
 pub struct DataOrg {
     /// Byte size of an address in the default data space (C++
@@ -812,7 +812,7 @@ impl TypeModifier {
                 // proto.model = decl->getModel(glb): a parsed function-pointer
                 // field carries no model name, so getModel returns glb->defaultfp;
                 // the factory supplies it inside getTypeCode(proto).  The kuna
-                // PrototypePieces carries no `model` field (// SEAM(w6-fspec-2)).
+                // PrototypePieces carries no `model` field (// STUB(w6-fspec-2)).
                 let proto = PrototypePieces {
                     outtype: Some(outtype),
                     intypes,
@@ -966,7 +966,7 @@ impl TypeDeclarator {
     /// Returns `Ok(false)` if the leading modification is not a function
     /// modifier (the C++ `return false`); otherwise fills `pieces` with the
     /// function's input/return types and names.  The kuna [`PrototypePieces`]
-    /// carries no `model` field (`// SEAM(w6-fspec-2)`), so `pieces.model` is not
+    /// carries no `model` field (`// STUB(w6-fspec-2)`), so `pieces.model` is not
     /// set — the model is supplied separately by the proto-model wave.
     pub fn get_prototype(
         &self,
@@ -984,7 +984,7 @@ impl TypeDeclarator {
             _ => unreachable!(),
         };
 
-        // pieces.model = getModel(glb);  // SEAM: no model registry on Architecture.
+        // pieces.model = getModel(glb);  // STUB: no model registry on Architecture.
         pieces.name = self.ident.clone();
         pieces.intypes.clear();
         pieces.intypes = function_get_in_types(paramlist, factory, org)?;
@@ -1171,7 +1171,7 @@ pub struct CParse<'a> {
     factory: &'a dyn TypeFactory,
     /// The data-organization record (the `glb` state `build_type`/`get_prototype`
     /// read).  In C++ this is part of the `Architecture *glb` the parser holds; the
-    /// kuna split carries it alongside the factory.  // SEAM(w6-fspec-2)
+    /// kuna split carries it alongside the factory.  // STUB(w6-fspec-2)
     org: DataOrg,
     keywords: BTreeMap<String, uint4>,
     lexer: GrammarLexer,
@@ -1292,7 +1292,7 @@ impl<'a> CParse<'a> {
         }
         // glb->hasModel(nm) -> FUNCTION_SPECIFIER.  The kuna Architecture has no
         // model registry, so this never fires (it would classify e.g.
-        // "__stdcall" as a function specifier).  // SEAM(w6-fspec-2)
+        // "__stdcall" as a function specifier).  // STUB(w6-fspec-2)
         IdentClass::Identifier
     }
 
@@ -2043,7 +2043,7 @@ impl<'a> CParse<'a> {
     /// The mutating factory orchestrator (`assignRawFields` re-keys the interned
     /// stub) is a W6 type-factory seam, so this errs after validating the
     /// declarators (preserving the C++ "Invalid structure declarator" message).
-    /// // SEAM(w6-fspec-2) — see LOSS-006 restoration.
+    /// // STUB(w6-fspec-2) — see LOSS-006 restoration.
     fn new_struct(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
         // res = glb->types->getTypeStruct(ident): create the (incomplete) stub for
         // recursion before any field references it.
@@ -2140,7 +2140,7 @@ impl<'a> CParse<'a> {
     /// `TypeEnum::assignValues` (the duplicate-value check + free-value fill,
     /// `Datatype::assign_values`).  Installing the resulting value-map into the
     /// interned enum stub (`glb->types->setEnumValues`) is the W6 type-factory
-    /// seam, so this errs after the value computation.  // SEAM(w6-fspec-2)
+    /// seam, so this errs after the value computation.  // STUB(w6-fspec-2)
     fn new_enum(&mut self, ident: &str, vecenum: Vec<Enumerator>) -> KunaResult<Rc<Datatype>> {
         // res = glb->types->getTypeEnum(ident): an interned (incomplete) enum stub.
         let res = self.factory.get_type_enum(ident)?;
@@ -2228,7 +2228,7 @@ impl<'a> CParse<'a> {
 ///
 /// Drives `doc_parameter_declaration`; the kuna `Architecture` info is supplied
 /// as the [`TypeFactory`] plus the [`DataOrg`] (the only `glb` state the grammar
-/// reads).  // SEAM(w6-fspec-2)
+/// reads).  // STUB(w6-fspec-2)
 pub fn parse_type(
     input: &str,
     factory: &dyn TypeFactory,

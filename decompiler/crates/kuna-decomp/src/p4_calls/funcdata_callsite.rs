@@ -22,7 +22,7 @@
 //! (`coreaction.cc:1769`/`1817`).
 //!
 //! `uintb` is `u64` with wrapping ops; the `AliasChecker` graph walk routes
-//! through the live-IR [`AliasGatherSeam`](crate::varmap::AliasGatherSeam) already
+//! through the live-IR [`AliasGatherAccess`](crate::varmap::AliasGatherAccess) already
 //! built in `funcdata_spacebase.rs`.
 
 use kuna_base::address::Address;
@@ -34,7 +34,7 @@ use kuna_num::opcodes::OpCode;
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
 use crate::funcdata_varnode::AncestorRealistic;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::varmap::AliasChecker;
 
 /// C++ `FuncCallSpecs::checkInputTrialUse` (`fspec.cc:5592`).
@@ -102,8 +102,8 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
         if is_spacebase {
             // hasLocalAlias(vn): build the alias info lazily on first use.
             let has_alias = {
-                let mut seam = data.alias_gather_seam();
-                aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut seam)
+                let mut access = data.alias_gather_access();
+                aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut access)
             };
             let trial_addr =
                 data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_address().clone();
@@ -398,7 +398,7 @@ pub fn check_output_trial_use(fc: &mut FuncCallSpecs, data: &mut Funcdata) -> Ve
 /// C++ `FuncCallSpecs::buildOutputFromTrials` (`fspec.cc:5777`).
 ///
 /// Move the single active output trial to be the CALL's output Varnode (the
-/// two-piece concat and join-space cases are the multi-register return seam —
+/// two-piece concat and join-space cases are the multi-register return stub —
 /// see the inline note); destroy the INDIRECT ops that were holding the trials.
 pub fn build_output_from_trials(
     fc: &mut FuncCallSpecs,
@@ -438,8 +438,8 @@ pub fn build_output_from_trials(
         // `getArch()->translate`), which the merged ArchHandle does not carry onto
         // the IR; the default models on the recovery path return a single output
         // register, so this branch is not reached on the live datatest path.
-        // SEAM(W4 translate-on-handle): leave the trials in place rather than
-        // fabricate a malformed concat (mirrors the same seam in
+        // STUB(W4 translate-on-handle): leave the trials in place rather than
+        // fabricate a malformed concat (mirrors the same stub in
         // ActionReturnRecovery::build_return_output).
         return;
     }

@@ -63,7 +63,7 @@ use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyRes
 use crate::block::{block_flags, BlockType};
 use crate::funcdata::Funcdata;
 use crate::options::on_or_off;
-use crate::seams::{BlockId, VarnodeId};
+use crate::context::{BlockId, VarnodeId};
 
 use kuna_base::marshal::ElementId;
 
@@ -468,7 +468,7 @@ fn leaves_emit_same_c(data: &Funcdata, a: BlockId, b: BlockId) -> bool {
 /// artifact, not a difference in printed code.  A `CPUI_CBRANCH` (a conditional, the
 /// terminator of an `if`-condition block) *is* kept — it distinguishes condition
 /// blocks, which must match exactly.
-fn printed_ops(data: &Funcdata, bb: BlockId) -> Vec<crate::seams::OpId> {
+fn printed_ops(data: &Funcdata, bb: BlockId) -> Vec<crate::context::OpId> {
     let mut out = Vec::new();
     let mut op = data.bb_op_head(bb);
     while let Some(o) = op {
@@ -573,7 +573,7 @@ fn vn_equiv(
 /// match iff their [`FuncCallSpecs`](crate::fspec::FuncCallSpecs) entry addresses are
 /// equal and valid.  An indirect call (invalid/empty entry address) conservatively
 /// declines — it would need a same-function-pointer-storage proof we don't attempt.
-fn callee_op_equiv(data: &Funcdata, oa: crate::seams::OpId, ob: crate::seams::OpId) -> bool {
+fn callee_op_equiv(data: &Funcdata, oa: crate::context::OpId, ob: crate::context::OpId) -> bool {
     let ia = match data.get_call_specs_index(oa) {
         Some(i) => i,
         None => return false,

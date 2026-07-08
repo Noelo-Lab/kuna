@@ -26,7 +26,7 @@
 //!     These encode the iteration order / tie-breakers that determine which
 //!     field wins, transcribed verbatim.
 //!
-//! # What is seamed (SEAM(W4)/SEAM(W6)/SEAM(W7)) — see module `losses`
+//! # What is seamed (STUB(W4)/STUB(W6)/STUB(W7)) — see module `losses`
 //!
 //! The *driver* `ScoreUnionFields::run`/`runOneLevel`/`newTrials`/`newTrialsDown`
 //! and the three `ScoreUnionFields` constructors walk the live `Funcdata`
@@ -34,15 +34,15 @@
 //! `getTypeDefFacing`/`isTypeLock`, `PcodeOp::getSlot`, `Funcdata::getCallSpecs`/
 //! `getFuncProto`).  Several of those surfaces are unported seams:
 //!
-//!   * `Funcdata::getCallSpecs` is a `// SEAM(W4)` (no `FuncCallSpecs`/`FuncProto`
-//!     yet — `seams::FuncProto` is a placeholder), so the locked-parameter and
+//!   * `Funcdata::getCallSpecs` is a `// STUB(W4)` (no `FuncCallSpecs`/`FuncProto`
+//!     yet — `context::FuncProto` is a placeholder), so the locked-parameter and
 //!     locked-return branches of [`score_parameter`]/[`score_return_type`] take
 //!     a resolved [`LockedProtoFacts`] input instead of querying a live proto.
-//!   * `Varnode::getTypeReadFacing`/`getTypeDefFacing` are `// SEAM(W6)` (the
+//!   * `Varnode::getTypeReadFacing`/`getTypeDefFacing` are `// STUB(W6)` (the
 //!     facing-type machinery is not ported), so the locked-Varnode short-circuit
 //!     of `newTrials`/`newTrialsDown` is not wired here.
 //!   * `Funcdata::unionMap` / `getUnionResolution` / `setUnionField` /
-//!     `Varnode::updateType` are `// SEAM(W6)`/`// SEAM(W7)`; [`ResolveCache`]
+//!     `Varnode::updateType` are `// STUB(W6)`/`// STUB(W7)`; [`ResolveCache`]
 //!     (which is *entirely* those surfaces) is therefore left as documented
 //!     stubs that return the unresolved data-type (the C++ "no entry" behavior),
 //!     and the `Funcdata` `unionMap` wiring is reported partial.
@@ -50,7 +50,7 @@
 //!     is a `typeop.cc` surface not yet ported; the SUBPIECE arm of
 //!     [`score_trial_down`] takes the offset as a parameter.
 //!   * `glb->translate->getFloatFormat` and `glb->getDefaultDataSpace` (the
-//!     constant-fit float class + pointer-bounds check) are `// SEAM(W4)`, so
+//!     constant-fit float class + pointer-bounds check) are `// STUB(W4)`, so
 //!     [`score_constant_fit`] takes a resolved [`ConstantFitFacts`] input.
 //!
 //! The scoring *decisions* (every branch of every opcode arm) are ported in full
@@ -466,29 +466,29 @@ pub fn score_locked_type(ct: &Rc<Datatype>, lock_type: &Rc<Datatype>) -> int4 {
 /// Resolved facts about a (possibly locked) function prototype, standing in for
 /// `Funcdata::getCallSpecs(op)` / `Funcdata::getFuncProto()` (C++ `FuncProto`).
 ///
-/// SEAM(W4): `Funcdata::getCallSpecs` and the `FuncProto`/`FuncCallSpecs` query
+/// STUB(W4): `Funcdata::getCallSpecs` and the `FuncProto`/`FuncCallSpecs` query
 /// surface (`isInputLocked`/`isOutputLocked`/`numParams`/`getParam`/
-/// `getOutputType`) are not yet ported (`seams::FuncProto` is a placeholder).
+/// `getOutputType`) are not yet ported (`context::FuncProto` is a placeholder).
 /// The locked branch of [`score_parameter`]/[`score_return_type`] consumes the
 /// already-resolved query results here; W4 produces them from a live proto.
 #[derive(Debug, Clone)]
 pub struct LockedProtoFacts {
-    /// `proto->isInputLocked()` (or `false` if the proto is null). // SEAM(W4)
+    /// `proto->isInputLocked()` (or `false` if the proto is null). // STUB(W4)
     pub input_locked: bool,
-    /// `proto->isOutputLocked()` (or `false` if the proto is null). // SEAM(W4)
+    /// `proto->isOutputLocked()` (or `false` if the proto is null). // STUB(W4)
     pub output_locked: bool,
-    /// `proto->numParams()`. // SEAM(W4)
+    /// `proto->numParams()`. // STUB(W4)
     pub num_params: int4,
-    /// `proto->getParam(i)->getType()` for `i` in `0..num_params`. // SEAM(W4)
+    /// `proto->getParam(i)->getType()` for `i` in `0..num_params`. // STUB(W4)
     pub param_types: Vec<Rc<Datatype>>,
-    /// `proto->getOutputType()`. // SEAM(W4)
+    /// `proto->getOutputType()`. // STUB(W4)
     pub output_type: Option<Rc<Datatype>>,
 }
 
 /// Score a trial data-type against a parameter (C++
 /// `ScoreUnionFields::scoreParameter`, `unionresolve.cc:230-240`).
 ///
-/// SEAM(W4): the C++ queries `Funcdata::getCallSpecs(op)`; here the proto facts
+/// STUB(W4): the C++ queries `Funcdata::getCallSpecs(op)`; here the proto facts
 /// arrive as [`LockedProtoFacts`] (`None` transcribes a null proto).
 pub fn score_parameter(
     ct: &Rc<Datatype>,
@@ -514,7 +514,7 @@ pub fn score_parameter(
 /// Score a trial data-type against the return data-type of a function (C++
 /// `ScoreUnionFields::scoreReturnType`, `unionresolve.cc:246-256`).
 ///
-/// SEAM(W4): proto facts arrive as [`LockedProtoFacts`].
+/// STUB(W4): proto facts arrive as [`LockedProtoFacts`].
 pub fn score_return_type(ct: &Rc<Datatype>, proto: Option<&LockedProtoFacts>) -> int4 {
     use type_metatype::*;
     // if (proto != 0 && proto->isOutputLocked()) return scoreLockedType(ct,proto->getOutputType());
@@ -691,7 +691,7 @@ pub fn score_truncation(
 /// Resolved facts for [`score_constant_fit`] standing in for the constant's
 /// arch-derived classification.
 ///
-/// SEAM(W4): the C++ reaches `glb->translate->getFloatFormat(size)` (the float
+/// STUB(W4): the C++ reaches `glb->translate->getFloatFormat(size)` (the float
 /// class + exponent) and `glb->getDefaultDataSpace()` (the pointer-bounds
 /// check).  Those `Architecture`/`Translate` surfaces are not ported, so the
 /// classifications arrive resolved here.
@@ -699,12 +699,12 @@ pub fn score_truncation(
 pub struct ConstantFitFacts {
     /// For a [`type_metatype::TYPE_FLOAT`] trial: the float classification of
     /// the constant.  `None` transcribes `getFloatFormat(size) == 0` (no format
-    /// for the size).  // SEAM(W4)
+    /// for the size).  // STUB(W4)
     pub float_fact: Option<FloatConstFact>,
     /// For an int/uint/ptr trial with nonzero `val`: whether the value looks
     /// like a pointer.  This is the C++
     /// `val >= spc->getPointerLowerBound() && val <= spc->getPointerUpperBound()
-    /// && bit_transitions(val,size) >= 3`.  // SEAM(W4)
+    /// && bit_transitions(val,size) >= 3`.  // STUB(W4)
     pub looks_like_pointer: bool,
 }
 
@@ -734,7 +734,7 @@ pub enum FloatConstFact {
 /// \param size is `trial.vn->getSize()`
 /// \param val is `trial.vn->getOffset()`
 /// \param fit_meta is `trial.fitType->getMetatype()`
-/// \param facts are the arch-derived classifications (SEAM(W4))
+/// \param facts are the arch-derived classifications (STUB(W4))
 pub fn score_constant_fit(
     size: int4,
     val: uintb,
@@ -784,7 +784,7 @@ pub fn score_constant_fit(
 ///
 /// `val >= spc->getPointerLowerBound() && val <= spc->getPointerUpperBound()`
 /// then `bit_transitions(val,size) >= 3`.  The pointer bounds come from the
-/// default data space (SEAM(W4)); the [`bit_transitions`] half is ported in full
+/// default data space (STUB(W4)); the [`bit_transitions`] half is ported in full
 /// and shared so the resolved fact can be produced once the bounds are wired.
 pub fn looks_like_pointer(val: uintb, size: int4, ptr_lower: uintb, ptr_upper: uintb) -> bool {
     if val >= ptr_lower && val <= ptr_upper {
@@ -840,7 +840,7 @@ pub struct TrialScore {
 /// (`unionresolve.cc:735-916`) whose arms set a plain `score` with no
 /// `resType`/`newTrials` recursion.  The arms that *do* recurse or read live
 /// varnodes (COPY/LOAD/STORE/ADD-with-constant/SUBPIECE/CALL*/RETURN) are kept in
-/// the driver (SEAM(W4)/SEAM(W6)) and call the dedicated helpers above; this
+/// the driver (STUB(W4)/STUB(W6)) and call the dedicated helpers above; this
 /// table is the pure remainder, exercised directly by the scoring-matrix tests.
 pub mod score_tables {
     use super::*;
@@ -1359,15 +1359,15 @@ pub mod score_tables {
 }
 
 // =============================================================================
-// ResolveCache (unionresolve.hh:180-207, unionresolve.cc:1230-1291) — SEAM(W6)
+// ResolveCache (unionresolve.hh:180-207, unionresolve.cc:1230-1291) — STUB(W6)
 // =============================================================================
 
 /// A collection of specific union data-types and how they resolve in a given
 /// context (C++ `ResolveCache`, `unionresolve.hh:180`).
 ///
-/// SEAM(W6)/SEAM(W7): every method of `ResolveCache` calls
+/// STUB(W6)/STUB(W7): every method of `ResolveCache` calls
 /// `Funcdata::getUnionResolution` / `setUnionField` / `Varnode::updateType`
-/// (`funcdata.rs`'s `unionMap` is a `// SEAM(W6)` placeholder — those surfaces do
+/// (`funcdata.rs`'s `unionMap` is a `// STUB(W6)` placeholder — those surfaces do
 /// not exist yet), so the cache is left as documented stubs.  `add_resolution`
 /// is a no-op (nothing to read out of a missing `unionMap`); [`ResolveCache::resolve`]
 /// returns the unresolved data-type (the C++ "no entry" fallthrough at
@@ -1409,7 +1409,7 @@ impl ResolveCache {
     ///
     /// If a matching record exists and its `fieldNum >= 0`, return the
     /// `fieldNum`-th component; otherwise return the original data-type.  (The
-    /// `add_resolution` population path is SEAM(W6), so in practice the list is
+    /// `add_resolution` population path is STUB(W6), so in practice the list is
     /// empty and this returns `dt`.)
     pub fn resolve(&self, key: int4, dt: &Rc<Datatype>) -> Rc<Datatype> {
         for rec in &self.records {
@@ -1809,7 +1809,7 @@ mod tests {
     fn resolve_cache_empty_returns_unresolved() {
         let cache = ResolveCache::new();
         let int_t = base_type(4, type_metatype::TYPE_INT);
-        // No records (population is SEAM(W6)) -> returns the original data-type.
+        // No records (population is STUB(W6)) -> returns the original data-type.
         assert!(Rc::ptr_eq(&cache.resolve(0, &int_t), &int_t));
     }
 

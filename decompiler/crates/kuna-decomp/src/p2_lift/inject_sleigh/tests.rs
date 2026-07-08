@@ -350,7 +350,7 @@ use kuna_sleigh::translate::PcodeEmit;
 
 use crate::funcdata::Funcdata;
 use crate::pcodeinject::InjectContext;
-use crate::seams::{Architecture as ArchSeam, TypeOp};
+use crate::context::{ArchContext, TypeOp};
 
 /// A `SnippetLanguage` with a code space `ram`, the const/unique spaces, and a
 /// couple of x86-style registers (EAX/ESP).  Enough to compile the simple real
@@ -445,7 +445,7 @@ struct FuncdataEmitter<'a> {
     outputs_linked: usize,
 }
 impl FuncdataEmitter<'_> {
-    fn resolve(&mut self, vn: &VarnodeData) -> crate::seams::VarnodeId {
+    fn resolve(&mut self, vn: &VarnodeData) -> crate::context::VarnodeId {
         let space = vn.space.clone().expect("emitted varnode has a space");
         if Rc::ptr_eq(&space, &self.const_space) {
             self.fd.new_constant(vn.size as i32, vn.offset)
@@ -493,7 +493,7 @@ fn emit_funcdata() -> (Funcdata, Rc<AddrSpace>) {
     )))
     .unwrap();
     let const_space = Rc::clone(m.get_constant_space().unwrap());
-    let glb = Rc::new(ArchSeam::new(m));
+    let glb = Rc::new(ArchContext::new(m));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let entry = Address::new(Rc::clone(&ram), 0x1000);
     let fd = Funcdata::new("inj", "inj", glb, entry, 0x10000000, 0x40).unwrap();

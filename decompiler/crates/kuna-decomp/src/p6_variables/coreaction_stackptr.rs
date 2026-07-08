@@ -1,7 +1,7 @@
 //! `ActionStackPtrFlow` — stack-pointer flow analysis (C++ `coreaction.cc:40-512`).
 //!
 //! This is the realized body of [`ActionStackPtrFlow`](crate::coreaction_render)
-//! (its `apply` previously a `// SEAM(W8-funcdata)` stub).  It is the third link
+//! (its `apply` previously a `// STUB(W8-funcdata)` stub).  It is the third link
 //! of the stack-variable promotion chain: after `Funcdata::spacebase` marks the
 //! stack-pointer Varnodes (link 1) and `RuleLoad/StoreVarnode` rewrites
 //! stack-relative LOAD/STORE into spacebase accesses (link 2), this pass repairs
@@ -46,7 +46,7 @@ use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 #[cfg(test)]
 mod tests;

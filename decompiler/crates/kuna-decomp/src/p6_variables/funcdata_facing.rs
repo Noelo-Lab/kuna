@@ -42,7 +42,7 @@ use std::rc::Rc;
 
 use crate::dtype::{type_metatype, Datatype, DatatypeKind};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 impl Funcdata {
     /// `Datatype::findResolve(op, slot)` dispatched against the live union cache

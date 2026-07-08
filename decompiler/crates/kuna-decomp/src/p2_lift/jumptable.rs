@@ -34,11 +34,11 @@
 //!     and `calcRange`/`analyzeGuards`/`pullBack` are built on its
 //!     `pullBack`/`intersect`/`contains`/`getNext` API.  Modeled here as a
 //!     local placeholder [`CircleRange`] carrying only the fields the *ported*
-//!     code constructs; the value-set operators are `// SEAM(W5)` shells.
+//!     code constructs; the value-set operators are `// STUB(W5)` shells.
 //!   - **`EmulateFunction`/`EmulatePcodeOp`** — emulation over the syntax tree
 //!     (LOSS-023: `EmulatePcodeOp` deferred to this wave but needs `glb->userops`
 //!     and `glb->loader`, which are W4 [`Architecture`] slices not in the seam);
-//!     `buildAddresses`/`emulatePath`/`trialNorm` are `// SEAM(W4)` shells.
+//!     `buildAddresses`/`emulatePath`/`trialNorm` are `// STUB(W4)` shells.
 //!   - **`MemoryImage`/loader reads** — `backup2Switch`/`findNormalized`/
 //!     `sanityCheck` read the LoadImage (`glb->loader`), W4.
 //!   - **`TypeOp::recoverInputBinary`/`recoverInputUnary`** — `backup2Switch`
@@ -72,7 +72,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use crate::block::block_get_start;
 use crate::funcdata::Funcdata;
 use crate::kuna_emulatefunction::EmulateFunction;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 // ---------------------------------------------------------------------------
 // Marshaling identifiers (jumptable.cc:24-33)
@@ -1248,8 +1248,8 @@ impl JumpValues for JumpValuesRangeDefault {
 /// the Address Table, the Normalized/Unnormalized Switch Variables, the case
 /// labels, and the guards.
 ///
-/// SEAM note: many model methods require absent subsystems (emulation, the
-/// loader, TypeOp reverse-eval, structuring).  Those are `// SEAM(...)` `Err`
+/// STUB note: many model methods require absent subsystems (emulation, the
+/// loader, TypeOp reverse-eval, structuring).  Those are `// STUB(...)` `Err`
 /// shells.  The trait surface itself is the faithful C++ virtual interface.
 pub trait JumpModel {
     /// Return \b true if \b this model was manually overridden (C++ `isOverride`).
@@ -1878,7 +1878,7 @@ struct LoopCarriedWalk {
 /// `checkUnrolledGuard`, which need `BlockBasic::findMultiequal`/
 /// `liftVerifyUnroll`/`noInterveningStatement`/`Funcdata::pushBranch`) and the
 /// reverse-emulation label recovery (`backup2Switch`, TypeOp reverse eval) are
-/// `// SEAM(structuring/W6)` — recorded as losses; they are reached only at
+/// `// STUB(structuring/W6)` — recorded as losses; they are reached only at
 /// label/guard-fold time, after the BRANCHIND addresses are recovered.
 pub struct JumpBasicModel {
     /// Range of values for the (normalized) switch variable (C++ `jrange`).
@@ -2433,7 +2433,7 @@ impl JumpBasicModel {
     /// bound range onto the melded switch variable and the table is bounded).
     ///
     /// Gated by `option switchmultipred` (default off / upstream byte-identical):
-    /// when the gate is off the method is a no-op, exactly as the old SEAM stub.
+    /// when the gate is off the method is a no-op, exactly as the old STUB stub.
     fn check_unrolled_guard(
         &mut self,
         fd: &Funcdata,
@@ -2442,7 +2442,7 @@ impl JumpBasicModel {
         usenzmask: bool,
     ) {
         if !fd.get_arch().switch_multi_pred {
-            // SEAM default: unrolled-guard detection stays off; upstream
+            // STUB default: unrolled-guard detection stays off; upstream
             // byte-identical (the guard duplicated across predecessors is left
             // undetected exactly as before).
             return;
@@ -4766,7 +4766,7 @@ impl JumpTable {
     /// address computation (C++ `JumpTable::foldInNormalization`,
     /// `jumptable.cc:2724`).
     ///
-    /// SEAM(W5): `minimalmask`/nzmask exist, but this calls
+    /// STUB(W5): `minimalmask`/nzmask exist, but this calls
     /// `jmodel->foldInNormalization`, whose `JumpBasic` body needs the model
     /// state (`switchvn`) recovered by the W5-dependent `recoverModel`.  The
     /// driver is faithful; the model body returns the seam `Err`.
@@ -4971,7 +4971,7 @@ impl JumpTable {
     /// (C++ `JumpTable::recoverModel`, `jumptable.cc:2408`).
     ///
     /// Walks `JumpBasic` then `JumpBasic2` (the `JumpAssisted`/CALLOTHER model is
-    /// the `jumpassist` userop family — `// SEAM(W4)`, recorded as a loss).  Each
+    /// the `jumpassist` userop family — `// STUB(W4)`, recorded as a loss).  Each
     /// model's `recoverModel` emulation-drives the index range over the landed
     /// [`EmulateFunction`].
     fn recover_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
@@ -4989,7 +4989,7 @@ impl JumpTable {
             // Otherwise this is an old attempt we should remove.
             self.jmodel = None;
         }
-        // SEAM(W4): the CALLOTHER `JumpAssisted` (jumpassist userop) model — not
+        // STUB(W4): the CALLOTHER `JumpAssisted` (jumpassist userop) model — not
         // yet ported (needs pcodeinjectlib/ExecutablePcode).  Recorded as a loss;
         // the basic models cover the corpus switches.
 
@@ -5065,7 +5065,7 @@ impl JumpTable {
     /// Recover jump-table addresses keeping track of a possible previous stage
     /// (C++ `JumpTable::recoverMultistage`, `jumptable.cc:2803`).
     ///
-    /// SEAM(W4/W5): the save/restore-on-failure control flow is faithful; the
+    /// STUB(W4/W5): the save/restore-on-failure control flow is faithful; the
     /// inner `recoverAddresses` needs the absent subsystems.
     pub fn recover_multistage(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         self.save_model();
@@ -5080,7 +5080,7 @@ impl JumpTable {
                 self.restore_saved_model();
                 self.addresstable = oldaddresstable;
                 // fd->warning("Second-stage recovery error", indirect->getAddr())
-                // SEAM(W4): warning sink lives on Funcdata; recorded as a loss.
+                // STUB(W4): warning sink lives on Funcdata; recorded as a loss.
             }
         }
         self.partial_table = false;
@@ -5091,7 +5091,7 @@ impl JumpTable {
     /// Set manual override information on \b this jump-table
     /// (C++ `JumpTable::setOverride`, `jumptable.cc:2616`).
     ///
-    /// SEAM(W4): builds a `JumpBasicOverride`, which is a seam shell. Records the
+    /// STUB(W4): builds a `JumpBasicOverride`, which is a seam shell. Records the
     /// override intent on the table but cannot wire the model body yet.
     pub fn set_override(
         &mut self,
@@ -5109,7 +5109,7 @@ impl JumpTable {
     /// Try to match the JumpTable model to the existing function
     /// (C++ `JumpTable::matchModel`, `jumptable.cc:2833`).
     ///
-    /// SEAM(W4): the multistage-restart accounting on a table-size mismatch
+    /// STUB(W4): the multistage-restart accounting on a table-size mismatch
     /// (`Override::insertMultistageJump` + `setRestartPending`) is the W4 override
     /// table; here a mismatch is recorded as a loss and the table keeps its (flow-
     /// recovered) addresses.  The model recovery itself is real.
@@ -5126,13 +5126,13 @@ impl JumpTable {
                 self.save_model();
             } else {
                 self.clear_saved_model();
-                // fd->warning("Switch is manually overridden", opaddress) SEAM(W4)
+                // fd->warning("Switch is manually overridden", opaddress) STUB(W4)
             }
         }
         self.recover_model(fd)?; // Create a current instance of the model
         if let Some(model) = self.jmodel.as_ref() {
             if model.get_table_size() != self.addresstable.len() as int4 {
-                // SEAM(W4): the multistage-restart path
+                // STUB(W4): the multistage-restart path
                 // (Override::insertMultistageJump / setRestartPending) is the W4
                 // override table; a (1 -> >1) mismatch would request a restart.
                 // Recorded as a loss: the flow-recovered address table is kept.
@@ -5144,7 +5144,7 @@ impl JumpTable {
     /// Recover the case labels for \b this jump-table
     /// (C++ `JumpTable::recoverLabels`, `jumptable.cc:2865`).
     ///
-    /// SEAM(W4/W5/W6): findUnnormalized/buildLabels on JumpBasic need
+    /// STUB(W4/W5/W6): findUnnormalized/buildLabels on JumpBasic need
     /// `backup2Switch` (TypeOp reverse eval, W6) and the model state; the trivial
     /// fallback needs `recoverModel`/`buildAddresses` (W4). The two-phase
     /// structure is faithful.
@@ -5199,7 +5199,7 @@ impl JumpTable {
     /// Check if this jump-table requires an additional recovery stage
     /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:3003`).
     ///
-    /// SEAM(W4): the override-table query (`fd->getOverride().queryMultistageJumptable`)
+    /// STUB(W4): the override-table query (`fd->getOverride().queryMultistageJumptable`)
     /// is W4; the structural guards are faithful and short-circuit before the
     /// query whenever possible.
     pub fn check_for_multistage(&mut self, _fd: &Funcdata) -> KunaResult<bool> {
@@ -5215,7 +5215,7 @@ impl JumpTable {
         if self.recover_count > 1 {
             return Ok(false);
         }
-        // fd->getOverride().queryMultistageJumptable(indirect->getAddr()) SEAM(W4)
+        // fd->getOverride().queryMultistageJumptable(indirect->getAddr()) STUB(W4)
         Err(KunaError::lowlevel(
             "JumpTable::checkForMultistage: Override::queryMultistageJumptable is W4",
         ))
@@ -5274,7 +5274,7 @@ impl JumpTable {
         }
         if sz != self.addresstable.len() {
             // If address table was resized
-            // fd->warning("Sanity check requires truncation of jumptable", opaddress) SEAM(W4)
+            // fd->warning("Sanity check requires truncation of jumptable", opaddress) STUB(W4)
         }
         Ok(())
     }
@@ -5321,7 +5321,7 @@ impl JumpTable {
     /// Decode \b this jump-table from a \<jumptable> element
     /// (C++ `JumpTable::decode`, `jumptable.cc:2950`).
     ///
-    /// SEAM(W4): a `<basicoverride>` child instantiates `JumpBasicOverride`,
+    /// STUB(W4): a `<basicoverride>` child instantiates `JumpBasicOverride`,
     /// which is a seam shell; that branch returns the precise `Err`. The address/
     /// label/loadtable parsing is fully ported.
     pub fn decode(&mut self, decoder: &mut dyn Decoder) -> KunaResult<()> {

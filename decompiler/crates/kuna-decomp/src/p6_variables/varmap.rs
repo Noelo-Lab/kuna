@@ -26,19 +26,19 @@
 //! logic and is transcribed in full, including the mixed-sign `int8` modulus
 //! in `reconcile` and the `resType` 0/1/2 dispatch in `merge`.
 //!
-//! ## Cross-wave seams
+//! ## Cross-wave boundaries
 //!
 //! `ScopeLocal` is a `ScopeInternal` subclass in C++ (`varmap.hh:212`) and is
 //! wired tightly to `Funcdata` (the Varnode location/def sets, the spacebase
 //! input, the load guards, warning emission, varnode remapping) and to the
 //! symbol `Database` (category clearing, `addSymbol`, `findOverlap`,
 //! `makeNameUnique`, attribute setting).  At this wave boundary the
-//! `Funcdata`/`Database` surfaces those methods need are largely still seams
+//! `Funcdata`/`Database` surfaces those methods need are largely still stubs
 //! (the descend list, `findSpacebaseInput`, `beginLoc`/`beginDef`,
 //! `getLoadGuards`, `warningHeader`, `remapVarnode`, `clearUnlockedCategory`,
 //! `setCategory`, the per-scope `EntryMap` iteration).  The self-contained core
 //! is ported and unit-tested here; the `Funcdata`/`Database`-bound methods are
-//! transcribed against documented [`ScopeLocalSeam`] hooks and otherwise
+//! transcribed against documented [`ScopeLocalAccess`] hooks and otherwise
 //! recorded as a loss (see `docs/rust-port/losses.md`, w7-s6-varmap).
 //!
 //! Per ADR 0002 all collections are ordered; per ADR 0003 every legitimate
@@ -545,19 +545,19 @@ impl RangeHint {
 /// `AliasChecker::AddBase`, `varmap.hh:140-144`).
 ///
 /// The C++ holds `Varnode *base` / `Varnode *index`; in the arena IR model
-/// (ADR 0001) these are [`crate::seams::VarnodeId`]s.  `index` is `None` for
+/// (ADR 0001) these are [`crate::context::VarnodeId`]s.  `index` is `None` for
 /// the C++ `(Varnode *)0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AddBase {
     /// The Varnode holding the base pointer (C++ `base`).
-    pub base: crate::seams::VarnodeId,
+    pub base: crate::context::VarnodeId,
     /// The index value or NULL (C++ `index`).
-    pub index: Option<crate::seams::VarnodeId>,
+    pub index: Option<crate::context::VarnodeId>,
 }
 
 impl AddBase {
     /// C++ constructor `AddBase(Varnode *b,Varnode *i)` (`varmap.hh:143`).
-    pub fn new(base: crate::seams::VarnodeId, index: Option<crate::seams::VarnodeId>) -> AddBase {
+    pub fn new(base: crate::context::VarnodeId, index: Option<crate::context::VarnodeId>) -> AddBase {
         AddBase { base, index }
     }
 }
@@ -569,11 +569,11 @@ impl AddBase {
 /// the stack); `hasLocalAlias` then checks if a specific Varnode within that
 /// space is (possibly) aliased by one of the gathered pointer references.
 ///
-/// SEAM: the C++ `gatherInternal`/`gatherAdditiveBase` walk the Varnode
+/// STUB: the C++ `gatherInternal`/`gatherAdditiveBase` walk the Varnode
 /// descend graph and call `Funcdata::findSpacebaseInput`, neither of which is
 /// available at this wave boundary.  The boundary-derivation, offset-gathering
 /// (`gatherOffset`), alias sort, and the `hasLocalAlias` decision are ported in
-/// full; the graph walk routes through [`AliasGatherSeam`].
+/// full; the graph walk routes through [`AliasGatherAccess`].
 pub struct AliasChecker {
     /// AddressSpace in which to search (C++ `space`).
     space: Option<Rc<AddrSpace>>,
@@ -651,7 +651,7 @@ impl AliasChecker {
         spc: Rc<AddrSpace>,
         bounds: Option<&ProtoBoundaries>,
         defer: bool,
-        seam: &mut dyn AliasGatherSeam,
+        access: &mut dyn AliasGatherAccess,
     ) {
         let dir = if spc.stack_grows_negative() { 1 } else { -1 };
         self.space = Some(Rc::clone(&spc));
@@ -661,35 +661,35 @@ impl AliasChecker {
         self.direction = dir; // direction == 1 for normal negative stack growth
         self.derive_boundaries(bounds);
         if !defer {
-            self.gather_internal(seam);
+            self.gather_internal(access);
         }
     }
 
     /// Run through Varnodes looking for pointers into the stack (C++
     /// `gatherInternal`, `varmap.cc:660-684`).
     ///
-    /// SEAM: `gatherAdditiveBase` (the Varnode descend walk) and the
-    /// spacebase-input lookup come from [`AliasGatherSeam`].  The
+    /// STUB: `gatherAdditiveBase` (the Varnode descend walk) and the
+    /// spacebase-input lookup come from [`AliasGatherAccess`].  The
     /// offset-conversion and `aliasBoundary` accumulation are transcribed
     /// exactly.
-    fn gather_internal(&mut self, seam: &mut dyn AliasGatherSeam) {
+    fn gather_internal(&mut self, access: &mut dyn AliasGatherAccess) {
         self.calculated = true;
         self.alias_boundary = self.local_extreme;
         let space = match &self.space {
             Some(s) => Rc::clone(s),
             None => return,
         };
-        let spacebase = match seam.find_spacebase_input(&space) {
+        let spacebase = match access.find_spacebase_input(&space) {
             Some(vn) => vn,
             None => return, // No possible alias
         };
 
-        seam.gather_additive_base(spacebase, &mut self.add_base);
+        access.gather_additive_base(spacebase, &mut self.add_base);
         // C++ iterates addBase, computing one alias offset per AddBase.
         let word_size = space.get_word_size();
-        let entries: Vec<crate::seams::VarnodeId> = self.add_base.iter().map(|ab| ab.base).collect();
+        let entries: Vec<crate::context::VarnodeId> = self.add_base.iter().map(|ab| ab.base).collect();
         for base in entries {
-            let mut offset = seam.gather_offset(base);
+            let mut offset = access.gather_offset(base);
             offset = AddrSpace::address_to_byte(offset, word_size); // Convert to byte offset
             self.alias.push(offset);
             if self.direction == 1 {
@@ -712,14 +712,14 @@ impl AliasChecker {
     pub fn has_local_alias(
         &mut self,
         vn: Option<(Rc<AddrSpace>, uintb)>,
-        seam: &mut dyn AliasGatherSeam,
+        access: &mut dyn AliasGatherAccess,
     ) -> bool {
         let (vn_space, vn_offset) = match vn {
             Some(v) => v,
             None => return false,
         };
         if !self.calculated {
-            self.gather_internal(seam);
+            self.gather_internal(access);
         }
         let space = match &self.space {
             Some(s) => Rc::clone(s),
@@ -757,7 +757,7 @@ impl AliasChecker {
 /// Stack-layout boundary inputs extracted from a `FuncProto`
 /// (C++ `AliasChecker::deriveBoundaries`'s reads of the prototype model).
 ///
-/// SEAM(W4): the C++ reads `proto.hasModel()` and the first local / last param
+/// STUB(W4): the C++ reads `proto.hasModel()` and the first local / last param
 /// `Range`s directly off the prototype model; that surface is a later wave.
 /// The caller pre-extracts the four offsets so `deriveBoundaries` is a pure
 /// function of them, transcribed exactly.
@@ -777,20 +777,20 @@ pub struct ProtoBoundaries {
 /// `Funcdata::findSpacebaseInput` and `AliasChecker::gatherAdditiveBase`/
 /// `gatherOffset`, the latter two static but reading the def graph).
 ///
-/// SEAM(W7): the descend list and the spacebase input are `Funcdata` surfaces
+/// STUB(W7): the descend list and the spacebase input are `Funcdata` surfaces
 /// not present at this boundary.  `Funcdata` will implement this trait, at
 /// which point the alias gather runs against the real IR; the offset/sort/
 /// boundary logic above is already final.
-pub trait AliasGatherSeam {
+pub trait AliasGatherAccess {
     /// C++ `Funcdata::findSpacebaseInput(space)` — the input Varnode that is the
     /// stack pointer for the space, if any.
-    fn find_spacebase_input(&self, space: &Rc<AddrSpace>) -> Option<crate::seams::VarnodeId>;
+    fn find_spacebase_input(&self, space: &Rc<AddrSpace>) -> Option<crate::context::VarnodeId>;
     /// C++ `AliasChecker::gatherAdditiveBase(startvn, addbase)` — collect the
     /// roots of every additive expression tree rooted at `startvn`.
-    fn gather_additive_base(&mut self, startvn: crate::seams::VarnodeId, addbase: &mut Vec<AddBase>);
+    fn gather_additive_base(&mut self, startvn: crate::context::VarnodeId, addbase: &mut Vec<AddBase>);
     /// C++ `AliasChecker::gatherOffset(vn)` — the constant portion of the sum
     /// the given Varnode is the result of.
-    fn gather_offset(&mut self, vn: crate::seams::VarnodeId) -> uintb;
+    fn gather_offset(&mut self, vn: crate::context::VarnodeId) -> uintb;
 }
 
 /// The Symbol overlap facts `Funcdata::syncVarnodesWithSymbols` needs for one
@@ -879,7 +879,7 @@ pub struct StringContainerEntry {
 /// In C++ the `ScopeLocal` is a child of the architecture's global symbol
 /// table (`glb->symboltab->attachScope(localmap, scope)`).  The merged Rust
 /// tree carries the global `Database` on the *console* `Architecture`, not on
-/// the `glb` [`ArchHandle`](crate::seams::ArchHandle) the `Funcdata` holds, so
+/// the `glb` [`ArchHandle`](crate::context::ArchHandle) the `Funcdata` holds, so
 /// — faithful to the `ScopeInternal` self-containment (its `nametree` /
 /// `maptable` / `category` / `rangetree` are all private members) — the
 /// `ScopeLocal` owns its **own** single-scope [`Database`] here.  The only
@@ -894,7 +894,7 @@ pub struct StringContainerEntry {
 /// `restructure`, `createEntry`, `adjustFit`, `markNotMapped`,
 /// `buildVariableName`, plus the `addSymbol`/`addCodeLabel` entry points the
 /// console `map` commands reach.  The IR-mutating `restructureVarnode` gather
-/// and `syncVarnodesWithSymbols` remain a documented seam (LOSS-109): the
+/// and `syncVarnodesWithSymbols` remain a documented stub (LOSS-109): the
 /// `MapState` gather is supplied by the driver against the live IR.
 pub struct ScopeLocal {
     /// The owned local symbol database (one functional scope).
@@ -1075,7 +1075,7 @@ impl ScopeLocal {
     /// `localmap->queryProperties` walk `Heritage::guard` runs to mark a mapped
     /// stack range address-tied (so its def chain is guarded across calls and
     /// survives `ActionDeadCode`); the global-scope half is
-    /// [`ArchHandle::query_global_properties`](crate::seams::ArchHandle::query_global_properties).
+    /// [`ArchHandle::query_global_properties`](crate::context::ArchHandle::query_global_properties).
     pub fn query_properties(&self, addr: &Address, size: int4, usepoint: &Address) -> uint4 {
         let (_, flags) = self.db.query_properties(self.scope, addr, size, usepoint);
         flags
@@ -1140,7 +1140,7 @@ impl ScopeLocal {
     /// scope, mirroring `ProtoStoreSymbol::setInput`'s `scope->addSymbol(nm,type,
     /// addr,usepoint)` + `scope->setCategory(sym, function_parameter, i)`
     /// (`fspec.cc:3174`).  The kuna `FuncProto` stores its parameters in a
-    /// `ProtoStoreInternal` (no backing symbol scope, the `setScope` seam), so the
+    /// `ProtoStoreInternal` (no backing symbol scope, the `setScope` stub), so the
     /// param Symbols that `Funcdata::linkSymbol`/`Scope::queryProperties` would
     /// otherwise find do not exist; this method creates them so the body Varnodes
     /// bind to the parameter names (`ptr`/`a`/`b`) instead of the raw registers.
@@ -2445,12 +2445,12 @@ impl MapState {
     }
 
     /// Get a mutable handle to the alias checker (so the driver can run the
-    /// seam-bound gather; C++ `MapState::gatherOpen` calls `checker.gather`).
+    /// access-driven gather; C++ `MapState::gatherOpen` calls `checker.gather`).
     pub fn checker_mut(&mut self) -> &mut AliasChecker {
         &mut self.checker
     }
 
-    /// Append a fixed-type hint (the public entry the seam-driven
+    /// Append a fixed-type hint (the public entry the externally-driven
     /// `gatherVarnodes` uses; C++ `addFixedType` is private but is the only
     /// thing `gatherVarnodes` calls into `MapState`).
     pub fn add_fixed_type_pub(

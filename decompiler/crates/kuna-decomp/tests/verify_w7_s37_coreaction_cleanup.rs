@@ -2,13 +2,13 @@
 //! (the S6/S7 merge-group `Action` shells in
 //! `decompiler/crates/kuna-decomp/src/coreaction_cleanup.rs`).
 //!
-//! This item is a SEAM port: 13 of the 14 `Action` classes return 0 with the
+//! This item is a STUB port: 13 of the 14 `Action` classes return 0 with the
 //! C++ `apply` body carried as commented pseudocode; only `ActionAssignHigh`
 //! is realized (it drives `Funcdata::set_high_level`).  The fragile surface is
 //! therefore (a) the exact `name()`/group/`flags` strings vs the C++
 //! constructors, (b) the relative schedule order + the lone `"casts"` outlier
 //! in `merge_actions()` vs `universalAction` (coreaction.cc:6002-6028), (c)
-//! seam *totality* — every seamed body is a pure no-op leaving `count == 0`
+//! stub *totality* — every stubbed body is a pure no-op leaving `count == 0`
 //! regardless of `Funcdata` state or how often it is applied, and (d)
 //! `clone_filtered` producing an independent action whose counter does not
 //! leak from / to the original.
@@ -31,7 +31,7 @@ use kuna_decomp::coreaction_cleanup::{
     ActionSetCasts,
 };
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::Architecture;
+use kuna_decomp::context::ArchContext;
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -54,7 +54,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -148,22 +148,22 @@ fn w7_s37_merge_actions_exact_schedule_and_groups() {
     assert_eq!(casts, vec!["setcasts"], "ActionSetCasts is the sole casts-group leaf");
 }
 
-/// (c) Seam totality: EVERY seamed `apply` is a pure no-op that leaves
+/// (c) Stub totality: EVERY stubbed `apply` is a pure no-op that leaves
 /// `count == 0` and returns 0 — and stays that way across repeated application
 /// (the C++ `rule_onceperfunc` bodies are change-signalled by `count`, and a
-/// seam that "accidentally" mutated would show up as a non-zero count or a
+/// stub that "accidentally" mutated would show up as a non-zero count or a
 /// changed Funcdata).  This is checked on a non-empty Funcdata (the high layer
-/// turned on first) to make sure the seam bodies do not read uninitialised
+/// turned on first) to make sure the stub bodies do not read uninitialised
 /// state into a panic and do not piggy-back on the realized assignhigh.
 ///
 /// The realized `ActionAssignHigh` is checked separately for its idempotence
 /// and for signalling NO change (C++ `return 0` with no `count += 1`).
 #[test]
-fn w7_s37_seam_bodies_are_total_noops_under_repetition() {
+fn w7_s37_stub_bodies_are_total_noops_under_repetition() {
     let mut fd = build_fd();
     let mut ctx = ActionContext::new();
 
-    // Realize the one live body first so the seams run against a "hot" Funcdata.
+    // Realize the one live body first so the stubs run against a "hot" Funcdata.
     let mut assign = ActionAssignHigh::boxed("merge");
     assert!(!fd.is_high_on());
     assert_eq!(assign.apply(&mut fd, &mut ctx), 0);
@@ -174,9 +174,9 @@ fn w7_s37_seam_bodies_are_total_noops_under_repetition() {
     assert_eq!(assign.base().count, 0);
     assert!(fd.is_high_on());
 
-    // The 13 seamed leaves: apply each five times; every call returns 0 and the
+    // The 13 stubbed leaves: apply each five times; every call returns 0 and the
     // accumulated count stays 0 (no hidden mutation, no spurious change-signal).
-    let mut seams: Vec<Box<dyn Action>> = vec![
+    let mut stubs: Vec<Box<dyn Action>> = vec![
         ActionMergeRequired::boxed("merge"),
         ActionMarkExplicit::boxed("merge"),
         ActionMarkImplied::boxed("merge"),
@@ -192,20 +192,20 @@ fn w7_s37_seam_bodies_are_total_noops_under_repetition() {
         ActionSetCasts::boxed("casts"),
     ];
     let high_before = fd.is_high_on();
-    for act in &mut seams {
+    for act in &mut stubs {
         for _ in 0..5 {
             let r = act.apply(&mut fd, &mut ctx);
-            assert_eq!(r, 0, "{} seam must return 0", act.get_name());
+            assert_eq!(r, 0, "{} stub must return 0", act.get_name());
         }
         assert_eq!(
             act.base().count,
             0,
-            "{} seam must signal no change even after 5 applies",
+            "{} stub must signal no change even after 5 applies",
             act.get_name()
         );
     }
-    // No seam touched the one observable flag we can read here.
-    assert_eq!(fd.is_high_on(), high_before, "seams must not alter Funcdata state");
+    // No stub touched the one observable flag we can read here.
+    assert_eq!(fd.is_high_on(), high_before, "stubs must not alter Funcdata state");
 }
 
 /// (d) `clone_filtered` is the C++ `clone(grouplist)` group filter: present iff

@@ -12,7 +12,7 @@ use kuna_base::types::int4;
 
 use super::*;
 use crate::block::{BlockGraph, BlockKind, FlowBlock};
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -336,22 +336,22 @@ fn loopbody_compare_head_is_signed_three_way() {
 }
 
 // ---------------------------------------------------------------------------
-// Action / switch seam visibility
+// Action / switch stub visibility
 // ---------------------------------------------------------------------------
 
 #[test]
-fn new_block_switch_seam_is_err() {
-    // The switch factory (getExitLeaf + grabCaseBasic) is a documented seam; the
+fn new_block_switch_stub_is_err() {
+    // The switch factory (getExitLeaf + grabCaseBasic) is a documented stub; the
     // engine surfaces it as an Err rather than silently mis-porting.
-    assert!(new_block_switch_seam(true).is_err());
-    assert!(new_block_switch_seam(false).is_err());
+    assert!(new_block_switch_stub(true).is_err());
+    assert!(new_block_switch_stub(false).is_err());
 }
 
 // ---------------------------------------------------------------------------
 // ConditionalJoin::execute (blockaction.cc:2094) — the node-join mutation path
 // ---------------------------------------------------------------------------
 //
-// `execute` is no longer a seam: `nodeJoinCreateBlock` + `setupMultiequals` +
+// `execute` is no longer a stub: `nodeJoinCreateBlock` + `setupMultiequals` +
 // `moveCbranch` + `cutDownMultiequals` are all available at this merge base.  We
 // build the canonical \e split-condition CFG by hand (two condition blocks with
 // the SAME boolean condition Varnode, sharing two exits, with a MULTIEQUAL in one
@@ -370,7 +370,7 @@ use std::rc::Rc;
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, OpId, TypeOp, VarnodeId};
 
 fn cj_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -392,7 +392,7 @@ fn cj_manager() -> AddrSpaceManager {
 }
 
 fn cj_fd() -> Funcdata {
-    let glb = Rc::new(Architecture::new(cj_manager()));
+    let glb = Rc::new(ArchContext::new(cj_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("nj", "nj", glb, addr, 0x10000000, 0x40).unwrap()
@@ -515,14 +515,14 @@ fn conditional_join_execute_joins_split_condition() {
     // Match + execute the join (mirrors ActionNodeJoin's inner call).
     let mut cj = ConditionalJoin::new();
     assert!(cj.match_blocks(block1, block2, &fd), "split-condition pattern must match");
-    cj.execute(&mut fd).expect("ConditionalJoin::execute must succeed (no longer a seam)");
+    cj.execute(&mut fd).expect("ConditionalJoin::execute must succeed (no longer a stub)");
 
     // A new join block was created (nodeJoinCreateBlock).
     assert_eq!(fd.bblocks_get_size(), n_blocks_before + 1, "execute must add one join block");
 
     // The duplicate CBRANCH (cbr2) was destroyed (marked dead, unlinked from its
     // block); the surviving one (cbr1) is still alive.  (opDestroy marks dead +
-    // removes from parent; the op shell stays in the bank per the W3-varnode seam.)
+    // removes from parent; the op shell stays in the bank per the W3-varnode boundary.)
     let cbr2_op = fd.obank().get(cbr2).expect("cbr2 shell remains in bank");
     assert!(cbr2_op.is_dead(), "moveCbranch must opDestroy (mark dead) the duplicate CBRANCH");
     assert_eq!(cbr2_op.get_parent(), None, "the destroyed CBRANCH is removed from its block");

@@ -7,9 +7,9 @@
 //!   4. [`RuleSLess2Zero`]      — INT_SLESS against 0 / -1
 //!   5. [`RuleEqual2Zero`]      — `0 == V + W*-1  =>  V == W`
 //!   6. [`RuleEqual2Constant`]  — `V op c == d  =>  V == d'`
-//!   7. [`RulePtrArith`]        — INT_ADD tree -> PTRADD/PTRSUB  *(SEAM-stubbed)*
-//!   8. [`RuleStructOffset0`]   — LOAD/STORE of first struct field -> PTRSUB *(SEAM-stubbed)*
-//!   9. [`RulePushPtr`]         — push a pointer to the bottom of its add tree *(SEAM-stubbed)*
+//!   7. [`RulePtrArith`]        — INT_ADD tree -> PTRADD/PTRSUB  *(STUB-stubbed)*
+//!   8. [`RuleStructOffset0`]   — LOAD/STORE of first struct field -> PTRSUB *(STUB-stubbed)*
+//!   9. [`RulePushPtr`]         — push a pointer to the bottom of its add tree *(STUB-stubbed)*
 //!
 //! Each rule keeps its exact upstream `name()` string (`Rule(g,0,"<name>")`),
 //! the exact `getOpList` contents, and an `applyOp` body transcribed
@@ -20,17 +20,17 @@
 //! [`specs`] lists the rules in C++ definition order with their groups for the
 //! W8 `universalAction` assembly.
 //!
-//! ## SEAM notes (do NOT invent type behavior)
+//! ## STUB notes (do NOT invent type behavior)
 //!
 //! `Funcdata::opSetOpcode(op, OpCode)` resolves `glb->inst[opc]` — the W6
 //! `TypeOp` table — to a [`TypeOp`] before handing it to the op bank.  That
 //! table is W6's.  The merged W3/W5 IR exposes only
 //! [`Funcdata::op_set_opcode`](crate::funcdata::Funcdata) taking an
-//! already-resolved [`TypeOp`].  The small [`type_op_seam`] helper builds the
+//! already-resolved [`TypeOp`].  The small [`type_op_lookup`] helper builds the
 //! `TypeOp` for the handful of op-codes these rules set, transcribing the exact
 //! `opflags` from `typeop.cc` (the same values `glb->inst[opc]` would cache).
 //! `op.cc`'s `set_opcode` ORs those flags into the op's flag word, so
-//! `isBoolOutput()` etc. stay correct.  SEAM(W6): `glb->inst[opc]`.
+//! `isBoolOutput()` etc. stay correct.  STUB(W6): `glb->inst[opc]`.
 //!
 //! `RulePtrArith`/`RuleStructOffset0`/`RulePushPtr` (and the `AddTreeState`
 //! machinery and the static helpers they own) require *unported* surfaces:
@@ -45,7 +45,7 @@
 //!     IR (`Funcdata::op_set_output` itself is an `Err` stub there).
 //!
 //! These three are ported as structurally-present rules (name/getOpList/specs)
-//! whose `applyOp` is a SEAM stub returning `0` (no transform).  Each is in the
+//! whose `applyOp` is a STUB stub returning `0` (no transform).  Each is in the
 //! structured `losses` output.
 
 use std::rc::Rc;
@@ -58,13 +58,13 @@ use kuna_num::opcodes::{get_booleanflip, OpCode};
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 
 // =============================================================================
-// SEAM(W6): opcode -> TypeOp resolution (glb->inst[opc])
+// STUB(W6): opcode -> TypeOp resolution (glb->inst[opc])
 // =============================================================================
 
-/// Build the [`TypeOp`] for `opc` the way `glb->inst[opc]` would (SEAM(W6)).
+/// Build the [`TypeOp`] for `opc` the way `glb->inst[opc]` would (STUB(W6)).
 ///
 /// `Funcdata::opSetOpcode(op, OpCode)` in C++ is `obank.changeOpcode(op,
 /// glb->inst[opc])`: it looks up the singleton [`TypeOp`] in the architecture's
@@ -87,8 +87,8 @@ use crate::seams::{OpId, TypeOp, VarnodeId};
 /// the right `binary`/`booloutput`/`commutative` bits.  Any other op-code is a
 /// porting bug (the rules below set only these), so the fallback uses the debug
 /// symbol with no flags.
-fn type_op_seam(opc: OpCode) -> TypeOp {
-    // opflags transcribed verbatim from decompiler/cpp/typeop.cc.  SEAM(W6).
+fn type_op_lookup(opc: OpCode) -> TypeOp {
+    // opflags transcribed verbatim from decompiler/cpp/typeop.cc.  STUB(W6).
     let (flags, name): (uint4, &str) = match opc {
         // TypeOpCopy: PcodeOp::unary | PcodeOp::nocollapse
         OpCode::CPUI_COPY => (pcodeop_flags::unary | pcodeop_flags::nocollapse, "copy"),
@@ -198,14 +198,14 @@ impl Rule for RuleBoolNegate {
             return 0;
         }
         // data.opSetOpcode(flip_op,opc); // Set the negated opcode
-        data.op_set_opcode(flip_op, type_op_seam(opc));
+        data.op_set_opcode(flip_op, type_op_lookup(opc));
         // if (flipyes) data.opSwapInput(flip_op,0,1);
         if flipyes {
             data.op_swap_input(flip_op, 0, 1);
         }
         // for(...) data.opSetOpcode(*iter,CPUI_COPY); // Remove all the negates
         for &decop in &descend {
-            data.op_set_opcode(decop, type_op_seam(OpCode::CPUI_COPY));
+            data.op_set_opcode(decop, type_op_lookup(OpCode::CPUI_COPY));
         }
         1
     }
@@ -258,13 +258,13 @@ impl Rule for RuleLess2Zero {
             // if (lvn->getOffset() == 0)
             if l.get_offset() == 0 {
                 // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);  // ->  NOT_EQUAL
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_INT_NOTEQUAL));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_NOTEQUAL));
                 return 1;
             }
             // else if (lvn->getOffset() == calc_mask(lvn->getSize()))
             else if l.get_offset() == calc_mask(l.get_size()) {
                 // data.opSetOpcode(op,CPUI_COPY); // Always false
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_COPY));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
                 // data.opRemoveInput(op,1);
                 data.op_remove_input(op, 1);
                 // data.opSetInput(op,data.newConstant(1,0),0);
@@ -276,7 +276,7 @@ impl Rule for RuleLess2Zero {
             // if (rvn->getOffset() == 0)
             if r.get_offset() == 0 {
                 // data.opSetOpcode(op,CPUI_COPY); // Always false
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_COPY));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
                 data.op_remove_input(op, 1);
                 let c = data.new_constant(1, 0);
                 data.op_set_input(op, c, 0).expect("RuleLess2Zero: opSetInput");
@@ -285,7 +285,7 @@ impl Rule for RuleLess2Zero {
             // else if (rvn->getOffset() == calc_mask(rvn->getSize()))  // -> NOT_EQUAL
             else if r.get_offset() == calc_mask(r.get_size()) {
                 // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_INT_NOTEQUAL));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_NOTEQUAL));
                 return 1;
             }
         }
@@ -339,7 +339,7 @@ impl Rule for RuleLessEqual2Zero {
         if l.is_constant() {
             if l.get_offset() == 0 {
                 // data.opSetOpcode(op,CPUI_COPY); // All values => true
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_COPY));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
                 data.op_remove_input(op, 1);
                 // data.opSetInput(op,data.newConstant(1,1),0);
                 let c = data.new_constant(1, 1);
@@ -347,17 +347,17 @@ impl Rule for RuleLessEqual2Zero {
                 return 1;
             } else if l.get_offset() == calc_mask(l.get_size()) {
                 // data.opSetOpcode(op,CPUI_INT_EQUAL); // No value is true except -1
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_INT_EQUAL));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_EQUAL));
                 return 1;
             }
         } else if r.is_constant() {
             if r.get_offset() == 0 {
                 // data.opSetOpcode(op,CPUI_INT_EQUAL); // No value is true except 0
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_INT_EQUAL));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_EQUAL));
                 return 1;
             } else if r.get_offset() == calc_mask(r.get_size()) {
                 // data.opSetOpcode(op,CPUI_COPY); // All values => true
-                data.op_set_opcode(op, type_op_seam(OpCode::CPUI_COPY));
+                data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
                 data.op_remove_input(op, 1);
                 let c = data.new_constant(1, 1);
                 data.op_set_input(op, c, 0).expect("RuleLessEqual2Zero: opSetInput");
@@ -390,7 +390,7 @@ impl RuleSLess2Zero {
     ///
     /// If `op` pieces together 2 Varnodes only one of which determines the high
     /// bit, return that Varnode (else `None`).
-    fn get_hi_bit(op: OpId, data: &Funcdata) -> Option<crate::seams::VarnodeId> {
+    fn get_hi_bit(op: OpId, data: &Funcdata) -> Option<crate::context::VarnodeId> {
         // OpCode opc = op->code();
         let o = data.obank().get(op).expect("getHiBit: stale op");
         let opc = o.code();
@@ -485,7 +485,7 @@ impl Rule for RuleSLess2Zero {
                         data.op_set_input(op, hibit, 1).expect("sless2zero: setInput");
                     }
                     // data.opSetOpcode(op, CPUI_INT_EQUAL);
-                    data.op_set_opcode(op, type_op_seam(OpCode::CPUI_INT_EQUAL));
+                    data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_EQUAL));
                     // data.opSetInput(op, data.newConstant(hibit->getSize(), 0), 0);
                     let sz = data.vbank().get(hibit).unwrap().get_size();
                     let c = data.new_constant(sz, 0);
@@ -584,7 +584,7 @@ impl Rule for RuleSLess2Zero {
                     }
                     // We have -1 s< (bool << #8*sz-1)
                     // data.opSetOpcode(op, CPUI_BOOL_NEGATE);
-                    data.op_set_opcode(op, type_op_seam(OpCode::CPUI_BOOL_NEGATE));
+                    data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_BOOL_NEGATE));
                     // data.opRemoveInput(op, 1);
                     data.op_remove_input(op, 1);
                     // data.opSetInput(op, avn, 0);
@@ -616,7 +616,7 @@ impl Rule for RuleSLess2Zero {
                         data.op_set_input(op, hibit, 0).expect("sless2zero: setInput");
                     }
                     // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);
-                    data.op_set_opcode(op, type_op_seam(OpCode::CPUI_INT_NOTEQUAL));
+                    data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_NOTEQUAL));
                     return 1;
                 } else if feed_opcode == OpCode::CPUI_SUBPIECE {
                     let avn = data.obank().get(feed_op).unwrap().get_in(0).unwrap();
@@ -784,7 +784,7 @@ impl Rule for RuleEqual2Zero {
             let val = Address::new(space, uintb_negate(vn2_off.wrapping_sub(1), vn2_size));
             // unnegvn = data.newVarnode(vn2->getSize(),val);
             let uvn = data.new_varnode(vn2_size, &val, None);
-            // unnegvn->copySymbolIfValid(vn2);  // SEAM(W4): equate-symbol markup
+            // unnegvn->copySymbolIfValid(vn2);  // STUB(W4): equate-symbol markup
             //   propagation (Varnode::copySymbolIfValid). The W3 IR carries no
             //   symbol entries (mapentry always null), so this is a no-op now.
             unnegvn = uvn;
@@ -977,13 +977,13 @@ impl Rule for RuleEqual2Constant {
 }
 
 // =============================================================================
-// RulePtrArith (ruleaction.cc:6639)   --- SEAM-stubbed (W6 + W3-varnode)
+// RulePtrArith (ruleaction.cc:6639)   --- STUB-stubbed (W6 + W3-varnode)
 // =============================================================================
 
 /// \brief Transform pointer arithmetic: convert a string of INT_ADDs into
 /// PTRADDs and PTRSUBs (C++ `RulePtrArith`).
 ///
-/// SEAM(W6)/SEAM(W3-varnode): the `applyOp` body drives `AddTreeState`, which
+/// STUB(W6)/STUB(W3-varnode): the `applyOp` body drives `AddTreeState`, which
 /// reads `Varnode::getTypeReadFacing(op)` and `TypePointer`/`TypePointerRel`
 /// internals (W6, unported) and rewrites the tree with `newOpBefore`/
 /// `newUniqueOut`/`newVarnodeOut`/`opSetOutput` and
@@ -1193,13 +1193,13 @@ fn verify_preferred_pointer(data: &Funcdata, op: OpId, slot: int4) -> bool {
 }
 
 // =============================================================================
-// RuleStructOffset0 (ruleaction.cc:6688)   --- SEAM-stubbed (W6 + W3-varnode)
+// RuleStructOffset0 (ruleaction.cc:6688)   --- STUB-stubbed (W6 + W3-varnode)
 // =============================================================================
 
 /// \brief Convert a LOAD or STORE to the first element of a structure to a
 /// PTRSUB (C++ `RuleStructOffset0`).
 ///
-/// SEAM(W6)/SEAM(W3-varnode): the body reads `Varnode::getTypeReadFacing(op)`,
+/// STUB(W6)/STUB(W3-varnode): the body reads `Varnode::getTypeReadFacing(op)`,
 /// `TypePointer::getPtrTo`, `TypePointerRel::evaluateThruParent`/`getByteOffset`,
 /// `Datatype::getSubType`, `TypeArray::numElements` (W6, unported) and builds a
 /// PTRSUB with `newOpBefore` + `inheritUnionField` + `setStopTypePropagation`
@@ -1373,18 +1373,18 @@ impl Rule for RuleStructOffset0 {
 }
 
 // =============================================================================
-// RulePushPtr (ruleaction.cc:6786)   --- SEAM-stubbed (W6 + W3-varnode)
+// RulePushPtr (ruleaction.cc:6786)   --- STUB-stubbed (W6 + W3-varnode)
 // =============================================================================
 
 /// \brief Push a Varnode with known pointer data-type to the bottom of its
 /// additive expression (C++ `RulePushPtr`).
 ///
-/// SEAM(W6)/SEAM(W3-varnode): `applyOp` reads `Varnode::getTypeReadFacing(op)`
+/// STUB(W6)/STUB(W3-varnode): `applyOp` reads `Varnode::getTypeReadFacing(op)`
 /// (W6, unported) and rewrites the tree with `newOp`/`newUniqueOut`/
 /// `newVarnodeOut`/`opInsertBefore`/`opDestroy` plus the static helpers
 /// `buildVarnodeOut`/`collectDuplicateNeeds`/`duplicateNeed` (W3-varnode
 /// op-creation with outputs, deferred).  It also calls the in-range static
-/// `RulePtrArith::evaluatePointerExpression`, which is itself a W6 seam.  Ported
+/// `RulePtrArith::evaluatePointerExpression`, which is itself a W6 stub.  Ported
 /// structurally; transform is a no-op stub.
 pub struct RulePushPtr {
     group: &'static str,

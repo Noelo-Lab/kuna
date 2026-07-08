@@ -40,7 +40,7 @@ struct RecordingContext {
     header_comment: uint4,
     instruction_comment: uint4,
     current_action: String,
-    // Lookup-failure injection for the SEAM methods that can error in C++.
+    // Lookup-failure injection for the STUB methods that can error in C++.
     unknown_function: bool,
     unknown_model: bool,
     bad_action_warning: bool,

@@ -206,7 +206,7 @@ impl RawBinaryArchitecture {
     ///
     /// `((RawLoadImage *)loader)->attachToSpace(getDefaultCodeSpace());`
     ///
-    /// SEAM(W4): the C++ `postSpecFile` first calls `Architecture::postSpecFile`
+    /// STUB(W4): the C++ `postSpecFile` first calls `Architecture::postSpecFile`
     /// (the segmented-pointer + read-only chain); only the attach tail is wired
     /// here.  (The C++ `postSpecFile` does NOT re-apply `adjustvma` — that is done
     /// once in `buildLoader`; see [`Self::build_loader`].)
@@ -248,7 +248,7 @@ impl RawBinaryArchitecture {
                 next = iter.next();
             }
         }
-        // init(store);  -- SEAM(W6/W8)
+        // init(store);  -- STUB(W6/W8)
         // if (iter != list.end()) { register *iter; SleighArchitecture::restoreXml(store); }
         let rest = next.map(Rc::clone);
         Ok(RawRestore { to_register: registered, rest })

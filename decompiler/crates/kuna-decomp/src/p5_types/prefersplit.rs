@@ -48,7 +48,7 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// Marshaling element `<prefersplit>` (C++ `ELEM_PREFERSPLIT = ElementId("prefersplit",225)`).
 pub const ELEM_PREFERSPLIT: ElementId = ElementId::new("prefersplit", 225);

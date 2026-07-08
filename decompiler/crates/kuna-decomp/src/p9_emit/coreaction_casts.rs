@@ -63,7 +63,7 @@ use crate::cast::{CastContext, CastStrategy, CastStrategyC, OpRef, VnRef};
 use crate::coreaction_infertypes::{input_type_local, output_type_local};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::unionresolve::ResolvedUnion;
 
 // =============================================================================
@@ -1808,7 +1808,7 @@ mod verify_w10_merge_casts_r2 {
     use crate::cast::CastStrategy;
     use crate::dtype::{type_metatype, Datatype, TypeFactoryImpl};
     use crate::funcdata::Funcdata;
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
     use kuna_base::address::Address;
     use kuna_base::space::{
         addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, FspecSpace,
@@ -1843,7 +1843,7 @@ mod verify_w10_merge_casts_r2 {
         tf.set_max_basetype_size(8);
         let tf = Rc::new(tf);
 
-        let mut arch = Architecture::new(m);
+        let mut arch = ArchContext::new(m);
         arch.types = Some(Rc::clone(&tf));
         let glb = Rc::new(arch);
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());

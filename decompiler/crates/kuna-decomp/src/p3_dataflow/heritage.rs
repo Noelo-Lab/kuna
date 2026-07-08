@@ -46,16 +46,16 @@
 //!   `depth[k]` — `merge` ends holding the phi-placement blocks in the exact
 //!   C++ order.
 //!
-//! # Cross-wave seams (what is *not* fully realized here)
+//! # Cross-wave stubs (what is *not* fully realized here)
 //!
 //! `heritage.cc` is the most subsystem-entangled file in the decompiler.  The
 //! algorithmic core above is self-contained at the W3 IR + W3 block-dominator
 //! level and is ported and tested.  The data-flow *construction* surface it
 //! drives needs `Funcdata` SSA-construction primitives and W4/W6 subsystems
-//! that are not present in the merged tree.  Each is seam-noted at its method
+//! that are not present in the merged tree.  Each is stub-noted at its method
 //! and recorded in the porter's `losses`:
 //!
-//!   * `// SEAM(W3-op)` — `setInputVarnode`, `newVarnodeOut`, `newUniqueOut`,
+//!   * `// STUB(W3-op)` — `setInputVarnode`, `newVarnodeOut`, `newUniqueOut`,
 //!     `markReturnCopy`, `newIndirectCreation`/`newIndirectOp`,
 //!     `opInsertBefore/After`-by-iterator, and the single-address
 //!     `beginLoc(addr)`/`endLoc(addr)` location-set range.  These belong to the
@@ -63,19 +63,19 @@
 //!     renaming write/input creation, the MULTIEQUAL output construction, the
 //!     normalize/concat/split helpers, and the `collect` driver cannot be
 //!     realized.  Their algorithm structure is transcribed in comments at the
-//!     seam so the wave that supplies the primitive can fill the body verbatim.
-//!   * `// SEAM(W4)` — the guard machinery (`guardCalls`/`guardStores`/
+//!     stub so the wave that supplies the primitive can fill the body verbatim.
+//!   * `// STUB(W4)` — the guard machinery (`guardCalls`/`guardStores`/
 //!     `guardLoads`/`guardReturns` and helpers) needs `FuncCallSpecs`,
 //!     `ParamActive`, `EffectRecord`, the `Architecture` stack/proto/join
 //!     surface, `Override`, and `PreferSplitManager`.
-//!   * `// SEAM(W6)` — [`LoadGuard::establish_range`]/[`LoadGuard::finalize_range`]
+//!   * `// STUB(W6)` — [`LoadGuard::establish_range`]/[`LoadGuard::finalize_range`]
 //!     and [`Heritage::analyze_new_load_guards`] need the value-set solver
 //!     (`ValueSetSolver`/`ValueSetRead`/`CircleRange`).
 //!
 //! The [`Heritage::bump_deadcode_delay`] recorder anchor (the kuna restart
 //! observability hook) is realized against the merged [`Override`] and
 //! [`RestartLog`]: because `Funcdata` does not yet own either handle (a W4
-//! seam), the method takes them as explicit `&mut` parameters — see its doc.
+//! stub), the method takes them as explicit `&mut` parameters — see its doc.
 
 use kuna_base::address::Address;
 use kuna_base::space::{spacetype, AddrSpace};
@@ -85,7 +85,7 @@ use std::rc::Rc;
 
 use crate::kuna_restartlog::{KunaRestartReason, RestartLog};
 use crate::overrides::Override;
-use crate::seams::BlockId;
+use crate::context::BlockId;
 use crate::varnode::varnode_flags;
 
 // =============================================================================
@@ -95,7 +95,7 @@ use crate::varnode::varnode_flags;
 /// Container holding the stack system for the renaming algorithm.  Every
 /// disjoint address range (indexed by its initial address) maps to its own
 /// Varnode stack (C++ `typedef map<Address,vector<Varnode *> > VariableStack`).
-pub type VariableStack = BTreeMap<Address, Vec<crate::seams::VarnodeId>>;
+pub type VariableStack = BTreeMap<Address, Vec<crate::context::VarnodeId>>;
 
 // =============================================================================
 // LocationMap (heritage.hh:38, heritage.cc:34)
@@ -343,7 +343,7 @@ impl MemRange {
 /// constructs a disjoint list by taking the union of overlapping ranges.  The
 /// C++ uses a `list<MemRange>` (stable iterators across mid-list inserts); the
 /// only callers that hold an iterator across mutation are the refinement path
-/// (`// SEAM(W3-op)` — not realized), so a `Vec` suffices for the realized
+/// (`// STUB(W3-op)` — not realized), so a `Vec` suffices for the realized
 /// surface, with `insert`/`erase` keyed by index.
 #[derive(Debug, Clone, Default)]
 pub struct TaskList {
@@ -598,7 +598,7 @@ impl HeritageInfo {
 #[derive(Debug, Clone)]
 pub struct LoadGuard {
     /// The LOAD/STORE op (C++ `op`).
-    pub op: crate::seams::OpId,
+    pub op: crate::context::OpId,
     /// The stack space being loaded from / stored to (C++ `spc`).
     pub spc: Rc<AddrSpace>,
     /// Base offset of the pointer (C++ `pointerBase`).
@@ -616,7 +616,7 @@ pub struct LoadGuard {
 impl LoadGuard {
     /// Set a new unanalyzed LOAD guard that initially guards everything
     /// (C++ `LoadGuard::set`, `heritage.hh:159`).
-    pub fn set(op: crate::seams::OpId, s: &Rc<AddrSpace>, off: uintb) -> LoadGuard {
+    pub fn set(op: crate::context::OpId, s: &Rc<AddrSpace>, off: uintb) -> LoadGuard {
         LoadGuard {
             op,
             spc: Rc::clone(s),
@@ -667,7 +667,7 @@ impl LoadGuard {
 
     // establishRange / finalizeRange (heritage.cc:741 / 788)
     //
-    // SEAM(W6): both convert a `ValueSetRead` (value-set analysis result,
+    // STUB(W6): both convert a `ValueSetRead` (value-set analysis result,
     // `CircleRange`) into a guard range.  The value-set solver
     // (`ValueSetSolver`/`ValueSetRead`/`CircleRange`) is not in the merged
     // tree.  The arithmetic on `minimumOffset`/`maximumOffset`/`step` is fully
@@ -695,7 +695,7 @@ mod heritage_flags {
 
 /// Path-traversal configuration flags for the indexed-stack-pointer DFS (C++
 /// `Heritage::StackNode` anonymous enum).  Carried for the load/store guard
-/// discovery — `// SEAM(W4)`.
+/// discovery — `// STUB(W4)`.
 mod stacknode_flags {
     #![allow(non_upper_case_globals)]
     #![allow(dead_code)]
@@ -718,7 +718,7 @@ mod stacknode_flags {
 /// augmented-dominator-tree phi-placement math, and the dead-code-delay
 /// machinery); the data-flow *mutation* surface (renaming write/input creation,
 /// MULTIEQUAL construction, guards, normalization, refinement, joins) is
-/// seam-noted per method (`// SEAM(W3-op)` / `// SEAM(W4)` / `// SEAM(W6)`).
+/// stub-noted per method (`// STUB(W3-op)` / `// STUB(W4)` / `// STUB(W6)`).
 ///
 /// Unlike the C++, this does not hold a `Funcdata *` back-pointer: Rust's
 /// borrow rules make a self-owned `&mut Funcdata` field unusable from methods
@@ -757,12 +757,12 @@ pub struct Heritage {
     store_guard: Vec<LoadGuard>,
     /// List of COPY ops generated by load guards (C++ `loadCopyOps`).
     ///
-    /// Only the seam-noted `handleNewLoadCopies`/`generateLoadGuard`
-    /// (`// SEAM(W4)`) read/write this; carried so the struct layout matches the
+    /// Only the stub-noted `handleNewLoadCopies`/`generateLoadGuard`
+    /// (`// STUB(W4)`) read/write this; carried so the struct layout matches the
     /// C++ exactly and the W4 guard wave can fill the bodies without
     /// re-declaring the field.
     #[allow(dead_code)]
-    load_copy_ops: Vec<crate::seams::OpId>,
+    load_copy_ops: Vec<crate::context::OpId>,
 }
 
 impl Heritage {
@@ -834,7 +834,7 @@ impl Heritage {
 
     /// Get the LoadGuard record associated with a STORE op, if any
     /// (C++ `getStoreGuard`, `heritage.cc:2766`).
-    pub fn get_store_guard(&self, op: crate::seams::OpId) -> Option<&LoadGuard> {
+    pub fn get_store_guard(&self, op: crate::context::OpId) -> Option<&LoadGuard> {
         self.store_guard.iter().find(|g| g.op == op)
     }
 
@@ -1091,7 +1091,7 @@ impl Heritage {
     /// blocks where the normalized writes occur (the C++ derives these from
     /// `write[i]->getDef()->getParent()`; the caller resolves the op→block
     /// step since the realized [`place_multiequals`](Heritage::place_multiequals)
-    /// driver owns the write Varnode list — `// SEAM(W3-op)`).
+    /// driver owns the write Varnode list — `// STUB(W3-op)`).
     pub fn calc_multiequals(&mut self, fd: &crate::funcdata::Funcdata, write_blocks: &[BlockId]) {
         self.pq.reset(self.maxdepth);
         self.merge.clear();
@@ -1150,15 +1150,15 @@ impl Heritage {
     ///   4. otherwise insert `deadcodeDelay+1`, set restart pending, and record
     ///      `krestart_deadcode_bump`.
     ///
-    /// # Seam
+    /// # Stub
     ///
     /// The C++ reaches `fd->getOverride()` and the file-static restart table
     /// via `kunaRecordRestart(*fd, ...)`.  `Funcdata` does not yet own either
-    /// (a W4 seam), so this method takes the merged [`Override`] and
+    /// (a W4 stub), so this method takes the merged [`Override`] and
     /// [`RestartLog`] as explicit `&mut` parameters and the function as `&mut`
     /// (for `setRestartPending`).  When `Funcdata` gains `get_override()` /
     /// the restart-log handle the W7/W8 assembler can drop the extra params and
-    /// route through `fd`.  // SEAM(W7)
+    /// route through `fd`.  // STUB(W7)
     pub fn bump_deadcode_delay(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -1199,11 +1199,11 @@ impl Heritage {
     // =========================================================================
     // collect / guard / rename / placeMultiequals / heritage — the SSA driver
     // (heritage.cc:308-2762).  Transcribed faithfully.  Where a sub-path reaches
-    // a subsystem the merged tree still seams (W4 callspecs, W4/W6 proto
+    // a subsystem the merged tree still stubs (W4 callspecs, W4/W6 proto
     // active-output, W4 local-scope queryProperties), the transcription routes
     // through the existing merged accessors, which report "none" — exactly the
     // C++ behavior for a function with no calls, no recovered prototype, and no
-    // recovered local scope.  Each such point is marked `SEAM`.
+    // recovered local scope.  Each such point is marked `STUB`.
     // =========================================================================
 
     /// Collect the reads/writes/inputs of a memory range (C++
@@ -1213,10 +1213,10 @@ impl Heritage {
         &self,
         fd: &crate::funcdata::Funcdata,
         memrange: &mut MemRange,
-        read: &mut Vec<crate::seams::VarnodeId>,
-        write: &mut Vec<crate::seams::VarnodeId>,
-        input: &mut Vec<crate::seams::VarnodeId>,
-        remove: &mut Vec<crate::seams::VarnodeId>,
+        read: &mut Vec<crate::context::VarnodeId>,
+        write: &mut Vec<crate::context::VarnodeId>,
+        input: &mut Vec<crate::context::VarnodeId>,
+        remove: &mut Vec<crate::context::VarnodeId>,
     ) -> int4 {
         read.clear();
         write.clear();
@@ -1233,7 +1233,7 @@ impl Heritage {
         // wraparound case is "everything from start to the space's end".
         let wraparound = endaddr.get_offset() < start;
         let space_ids = fd.vbank().loc_space_ids(&spc);
-        let ids: Vec<crate::seams::VarnodeId> = space_ids
+        let ids: Vec<crate::context::VarnodeId> = space_ids
             .into_iter()
             .filter(|&id| {
                 let off = fd.vbank().get(id).expect("collect: stale vn").get_addr().get_offset();
@@ -1286,8 +1286,8 @@ impl Heritage {
         addr: &Address,
         size: int4,
         add_indirects: bool,
-        read: &mut [crate::seams::VarnodeId],
-        write: &mut Vec<crate::seams::VarnodeId>,
+        read: &mut [crate::context::VarnodeId],
+        write: &mut Vec<crate::context::VarnodeId>,
     ) {
         for slot in 0..read.len() {
             let vn = read[slot];
@@ -1349,7 +1349,7 @@ impl Heritage {
             // to the global scope.  The merged kuna `localmap`
             // ([`crate::varmap::ScopeLocal`]) owns a detached `Database`, so its
             // *global* reach is supplied by the snapshot wired onto `glb`
-            // ([`crate::seams::GlobalQuery`], built after every `map addr`):
+            // ([`crate::context::GlobalQuery`], built after every `map addr`):
             // `query_global_properties` returns the same `mapped | addrtied |
             // persist` a global-mapped range would.  This is what lets the persist
             // RETURN-COPY branch of `guard_returns` fire, so a global store's
@@ -1359,7 +1359,7 @@ impl Heritage {
             // (The recovered-*local* persist surface — a stack range inside the
             // global discovery range — would add to `fl` through the local scope's
             // own `queryProperties`; that local symbol-map query is the naming
-            // wave's `ScopeLocal` and is left as a documented seam.  Local stack
+            // wave's `ScopeLocal` and is left as a documented stub.  Local stack
             // ranges are not persistent, so `fl`'s persist bit comes only from the
             // global query here, which is faithful for the global-store cases.)
             //
@@ -1398,9 +1398,9 @@ impl Heritage {
             self.guard_calls(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             // if (fd->getArch()->highPtrPossible(addr,size)) { guardStores; guardLoads; }
-            // SEAM(W4/W6): highPtrPossible queries the recovered type system /
+            // STUB(W4/W6): highPtrPossible queries the recovered type system /
             // pointer analysis (`glb->highPtrPossible`), absent from the merged
-            // `seams::Architecture` (which carries only the space manager).  With
+            // `context::ArchContext` (which carries only the space manager).  With
             // no recovered high pointers it is false, so the STORE/LOAD index-
             // alias guards are not reached (faithful for a function whose stack
             // is not indexed by a recovered pointer).
@@ -1414,7 +1414,7 @@ impl Heritage {
 
     /// Guard CALL ops (C++ `Heritage::guardCalls`, `heritage.cc:1444`).
     ///
-    /// SEAM(W4): iterating call sites needs `Funcdata::numCalls`/`getCallSpecs`
+    /// STUB(W4): iterating call sites needs `Funcdata::numCalls`/`getCallSpecs`
     /// (the `qlst` callspec subsystem), which the merged tree does not own.  A
     /// function with no calls has `numCalls()==0`, so this loop is empty — the
     /// faithful behavior here.  When the callspec subsystem lands, the C++ body
@@ -1426,7 +1426,7 @@ impl Heritage {
         fl: uint4,
         addr: &Address,
         size: int4,
-        write: &mut Vec<crate::seams::VarnodeId>,
+        write: &mut Vec<crate::context::VarnodeId>,
     ) {
         use crate::fspec::{effect_type, Containment, OFFSET_UNKNOWN};
         use kuna_base::space::spacetype;
@@ -1495,8 +1495,8 @@ impl Heritage {
                         // tryOutputOverlapGuard: a partial-range output (SUBPIECE off
                         // the return register / stack-join overlap).  `getBiggestContainedOutput`
                         // + `guardOutputOverlap` (heritage.cc:1249/1293) are the
-                        // multi-piece return seam, not reached by the whole-register
-                        // return datatests.  SEAM(W4 output-overlap guard).
+                        // multi-piece return stub, not reached by the whole-register
+                        // return datatests.  STUB(W4 output-overlap guard).
                     } else {
                         // active->whichTrial(transAddr,size)<0 ? registerTrial : possibleoutput
                         if fc.get_active_output().which_trial(&trans_addr, size) < 0 {
@@ -1546,7 +1546,7 @@ impl Heritage {
                     let _ = fd.op_insert_input(op, vn, nin);
                 }
                 // ContainedBy → guardCallOverlappingInput (the partial-range
-                // sub-register argument): SEAM(W4 guardCallOverlappingInput), not
+                // sub-register argument): STUB(W4 guardCallOverlappingInput), not
                 // reached by the whole-register-argument datatests.
             }
 
@@ -1623,7 +1623,7 @@ impl Heritage {
         trans_addr: &Address,
         size: int4,
         output_character: crate::fspec::Containment,
-        write: &mut Vec<crate::seams::VarnodeId>,
+        write: &mut Vec<crate::context::VarnodeId>,
     ) -> bool {
         use kuna_num::opcodes::OpCode;
         use kuna_num::pcoderaw::VarnodeData;
@@ -1665,7 +1665,7 @@ impl Heritage {
         let ret_size = fc.proto().get_output().get_size();
         // outvn = callOp->getOut();  (None — ActionFuncLink delayed it)
         let mut outvn = fd.obank().get(call_op).and_then(|o| o.get_out());
-        let mut vn_final: Option<crate::seams::VarnodeId> = None;
+        let mut vn_final: Option<crate::context::VarnodeId> = None;
         if outvn.is_none() {
             let v = fd
                 .new_varnode_out(ret_size, &ret_addr, call_op)
@@ -1705,12 +1705,12 @@ impl Heritage {
     fn guard_output_overlap_stack(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
-        call_op: crate::seams::OpId,
+        call_op: crate::context::OpId,
         addr: &Address,
         size: int4,
         ret_addr: &Address,
         ret_size: int4,
-        write: &mut Vec<crate::seams::VarnodeId>,
+        write: &mut Vec<crate::context::VarnodeId>,
     ) {
         use kuna_num::opcodes::OpCode;
         let size_front = (ret_addr.get_offset().wrapping_sub(addr.get_offset())) as i64 as int4;
@@ -1822,7 +1822,7 @@ impl Heritage {
         fl: uint4,
         addr: &Address,
         size: int4,
-        _write: &mut [crate::seams::VarnodeId],
+        _write: &mut [crate::context::VarnodeId],
     ) {
         use kuna_num::opcodes::OpCode;
         // ParamActive *active = fd->getActiveOutput();
@@ -1838,7 +1838,7 @@ impl Heritage {
                 // for op in RETURN ops (skip dead / haltType!=0):
                 //   invn = newVarnode(size, addr); invn->setActiveHeritage();
                 //   opInsertInput(op, invn, op->numInput());
-                let return_ops: Vec<crate::seams::OpId> =
+                let return_ops: Vec<crate::context::OpId> =
                     fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
                 for op in return_ops {
                     let o = match fd.obank().get(op) {
@@ -1872,7 +1872,7 @@ impl Heritage {
         // The `addrforce` output makes the COPY `isAutoLive()`, so `ActionDeadCode`
         // keeps the whole def chain of the global store alive (the store survives
         // and renders as `glob = ...`).
-        let return_ops: Vec<crate::seams::OpId> =
+        let return_ops: Vec<crate::context::OpId> =
             fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in return_ops {
             let (dead, ret_addr) = match fd.obank().get(op) {
@@ -1941,7 +1941,7 @@ impl Heritage {
         if vspace.is_big_endian() {
             offset = (size - vdata.size as int4) - offset;
         }
-        let return_ops: Vec<crate::seams::OpId> =
+        let return_ops: Vec<crate::context::OpId> =
             fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in return_ops {
             let o = match fd.obank().get(op) {
@@ -1973,7 +1973,7 @@ impl Heritage {
 
     /// Guard STORE ops (C++ `Heritage::guardStores`, `heritage.cc:1539`).
     ///
-    /// SEAM(W4): adding an INDIRECT across an aliasing STORE needs
+    /// STUB(W4): adding an INDIRECT across an aliasing STORE needs
     /// `Funcdata::newIndirectOp` (the INDIRECT-marker factory, a W4 op-build
     /// primitive) and `Varnode::getSpaceFromConst` on the STORE's space-id
     /// input.  This is only reached when `highPtrPossible` is true (a recovered
@@ -1984,9 +1984,9 @@ impl Heritage {
         _fd: &mut crate::funcdata::Funcdata,
         _addr: &Address,
         _size: int4,
-        _write: &mut [crate::seams::VarnodeId],
+        _write: &mut [crate::context::VarnodeId],
     ) {
-        unimplemented_seam("Heritage::guard_stores (needs Funcdata::newIndirectOp)");
+        unimplemented_stub("Heritage::guard_stores (needs Funcdata::newIndirectOp)");
     }
 
     /// Guard LOAD ops in the load-guard list (C++ `Heritage::guardLoads`,
@@ -2002,7 +2002,7 @@ impl Heritage {
         fl: uint4,
         _addr: &Address,
         _size: int4,
-        _write: &mut [crate::seams::VarnodeId],
+        _write: &mut [crate::context::VarnodeId],
     ) {
         // C++: if ((fl & Varnode::addrtied)==0) return;  -- only address-tied
         // ranges can index-alias a stack LOAD.  The `loadGuard` list is empty
@@ -2025,7 +2025,7 @@ impl Heritage {
     fn remove_revisited_markers(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
-        remove: &[crate::seams::VarnodeId],
+        remove: &[crate::context::VarnodeId],
         addr: &Address,
         size: int4,
     ) {
@@ -2035,11 +2035,11 @@ impl Heritage {
         // if (info->deadremoved > 0) { bumpDeadcodeDelay(...); warningHeader once. }
         let space = addr.get_space().expect("remove_revisited_markers: addr space").clone();
         if self.get_info(&space).deadremoved > 0 {
-            self.bump_deadcode_delay_seamed(fd, &space);
+            self.bump_deadcode_delay_persisted(fd, &space);
             if !self.get_info(&space).warningissued {
                 self.get_info_mut(&space).warningissued = true;
                 // fd->warningHeader("Heritage AFTER dead removal. Revisit: <addr>")
-                // SEAM(W8): the warning text needs Varnode::printRaw on `addr` (the
+                // STUB(W8): the warning text needs Varnode::printRaw on `addr` (the
                 // W8 print surface); the header is cosmetic (a block comment, not
                 // IR) and the dead-code-delay bump above already records the event,
                 // exactly as the `heritage()` deadremoved warning is handled.
@@ -2065,7 +2065,7 @@ impl Heritage {
 
             // `pos` is the C++ block iterator the SUBPIECE is inserted *before*;
             // `None` denotes `bl->endOp()` (append at the block's end).
-            let pos: Option<crate::seams::OpId> = if code == OpCode::CPUI_INDIRECT {
+            let pos: Option<crate::context::OpId> = if code == OpCode::CPUI_INDIRECT {
                 // Varnode *iopVn = op->getIn(1);
                 // PcodeOp *targetOp = PcodeOp::getOpFromConst(iopVn->getAddr());
                 let iop_vn = fd
@@ -2185,7 +2185,7 @@ impl Heritage {
         fd: &crate::funcdata::Funcdata,
         addr: &Address,
         size: int4,
-        op: crate::seams::OpId,
+        op: crate::context::OpId,
     ) -> bool {
         use kuna_num::opcodes::OpCode;
         let code = fd.obank().get(op).expect("call_op_indirect_effect: stale op").code();
@@ -2210,11 +2210,11 @@ impl Heritage {
     fn normalize_read_size(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
-        op: crate::seams::OpId,
+        vn: crate::context::VarnodeId,
+        op: crate::context::OpId,
         addr: &Address,
         size: int4,
-    ) -> crate::seams::VarnodeId {
+    ) -> crate::context::VarnodeId {
         use kuna_num::opcodes::OpCode;
         let op_addr = fd.obank().get(op).expect("normalize_read_size: stale op").get_addr().clone();
         let newop = fd.new_op(2, op_addr);
@@ -2263,17 +2263,17 @@ impl Heritage {
     ///
     /// The `op->isCall()` indirect-creation branch (`newIndirectCreation` +
     /// `callOpIndirectEffect`) needs the W4 FuncCallSpecs call-machinery that is
-    /// still a seam; it is reached only for a CALL that writes a partial range,
-    /// so it is the one narrow sub-seam left (the simple register/stack
+    /// still a stub; it is reached only for a CALL that writes a partial range,
+    /// so it is the one narrow sub-stub left (the simple register/stack
     /// multi-size writes on the analysis critical path take the SUBPIECE/PIECE
     /// path fully ported here).
     fn normalize_write_size(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         addr: &Address,
         size: int4,
-    ) -> crate::seams::VarnodeId {
+    ) -> crate::context::VarnodeId {
         use kuna_num::opcodes::OpCode;
 
         // op = vn->getDef(); overlap = vn->overlap(addr,size);
@@ -2304,7 +2304,7 @@ impl Heritage {
         let addr_size = addr.get_space().expect("normalize_write_size: addr space").get_addr_size();
 
         // --- Most-significant missing piece -------------------------------
-        let mut mostvn: Option<crate::seams::VarnodeId> = None;
+        let mut mostvn: Option<crate::context::VarnodeId> = None;
         if mostsigsize != 0 {
             // pieceaddr = big-endian ? addr : addr + (overlap+vn->getSize())
             let pieceaddr = if addr.is_big_endian() {
@@ -2335,7 +2335,7 @@ impl Heritage {
         }
 
         // --- Least-significant missing piece ------------------------------
-        let mut leastvn: Option<crate::seams::VarnodeId> = None;
+        let mut leastvn: Option<crate::context::VarnodeId> = None;
         if overlap != 0 {
             // pieceaddr = big-endian ? addr + (size-overlap) : addr
             let pieceaddr = if addr.is_big_endian() {
@@ -2365,7 +2365,7 @@ impl Heritage {
         }
 
         // --- Recombine the existing write with the least piece ------------
-        let midvn: crate::seams::VarnodeId = if overlap != 0 {
+        let midvn: crate::context::VarnodeId = if overlap != 0 {
             let newop = fd.new_op(2, op_addr.clone());
             // big-endian ? out at vn->getAddr() : out at addr, size overlap+vn->getSize()
             let midaddr = if addr.is_big_endian() { vaddr.clone() } else { addr.clone() };
@@ -2383,7 +2383,7 @@ impl Heritage {
         };
 
         // --- Recombine the most piece on top ------------------------------
-        let bigout: crate::seams::VarnodeId = if mostsigsize != 0 {
+        let bigout: crate::context::VarnodeId = if mostsigsize != 0 {
             let newop = fd.new_op(2, op_addr.clone());
             let bvn = fd
                 .new_varnode_out(size, addr, newop)
@@ -2419,7 +2419,7 @@ impl Heritage {
         fd: &mut crate::funcdata::Funcdata,
         addr: &Address,
         size: int4,
-        input: &[crate::seams::VarnodeId],
+        input: &[crate::context::VarnodeId],
     ) {
         if input.is_empty() {
             return;
@@ -2435,7 +2435,7 @@ impl Heritage {
         let mut i = 0usize;
         let mut cur = addr.get_offset();
         let end = cur.wrapping_add(size as u64);
-        let mut newinput: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut newinput: Vec<crate::context::VarnodeId> = Vec::new();
         while cur < end {
             let vn = if i < input.len() {
                 let candidate = input[i];
@@ -2477,8 +2477,8 @@ impl Heritage {
     fn split_join_level(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        lastcombo: &[crate::seams::VarnodeId],
-        nextlev: &mut Vec<Option<crate::seams::VarnodeId>>,
+        lastcombo: &[crate::context::VarnodeId],
+        nextlev: &mut Vec<Option<crate::context::VarnodeId>>,
         joinrec: &Rc<kuna_base::space::JoinRecord>,
     ) {
         let numpieces = joinrec.num_pieces();
@@ -2534,7 +2534,7 @@ impl Heritage {
     fn split_join_read(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         joinrec: &Rc<kuna_base::space::JoinRecord>,
     ) {
         use kuna_num::opcodes::OpCode;
@@ -2550,9 +2550,9 @@ impl Heritage {
         };
 
         let piece_typeop = typeop_skeleton(OpCode::CPUI_PIECE);
-        let mut lastcombo: Vec<crate::seams::VarnodeId> = vec![vn];
+        let mut lastcombo: Vec<crate::context::VarnodeId> = vec![vn];
         while (lastcombo.len() as i32) < joinrec.num_pieces() {
-            let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+            let mut nextlev: Vec<Option<crate::context::VarnodeId>> = Vec::new();
             self.split_join_level(fd, &lastcombo, &mut nextlev, joinrec);
 
             for (i, &curvn) in lastcombo.iter().enumerate() {
@@ -2588,7 +2588,7 @@ impl Heritage {
     fn split_join_write(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         joinrec: &Rc<kuna_base::space::JoinRecord>,
     ) {
         use kuna_num::opcodes::OpCode;
@@ -2608,9 +2608,9 @@ impl Heritage {
         };
         let sub_typeop = typeop_skeleton(OpCode::CPUI_SUBPIECE);
 
-        let mut lastcombo: Vec<crate::seams::VarnodeId> = vec![vn];
+        let mut lastcombo: Vec<crate::context::VarnodeId> = vec![vn];
         while (lastcombo.len() as i32) < joinrec.num_pieces() {
-            let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+            let mut nextlev: Vec<Option<crate::context::VarnodeId>> = Vec::new();
             self.split_join_level(fd, &lastcombo, &mut nextlev, joinrec);
             for (i, &curvn) in lastcombo.iter().enumerate() {
                 let mosthalf = nextlev[2 * i];
@@ -2665,7 +2665,7 @@ impl Heritage {
     fn float_extension_read(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         joinrec: &Rc<kuna_base::space::JoinRecord>,
     ) {
         use kuna_num::opcodes::OpCode;
@@ -2687,7 +2687,7 @@ impl Heritage {
     fn float_extension_write(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         joinrec: &Rc<kuna_base::space::JoinRecord>,
     ) {
         use kuna_num::opcodes::OpCode;
@@ -2779,7 +2779,7 @@ impl Heritage {
     /// Clear stack placeholders before heritaging the stack space (C++
     /// `Heritage::clearStackPlaceholders`, `heritage.cc:2048`).
     ///
-    /// SEAM(W4): the per-call `abortSpacebaseRelative` needs the callspec
+    /// STUB(W4): the per-call `abortSpacebaseRelative` needs the callspec
     /// subsystem (`numCalls`/`getCallSpecs`).  With no calls the loop is empty;
     /// only the flag is cleared (faithful).
     fn clear_stack_placeholders(&mut self, info_idx: usize) {
@@ -2812,10 +2812,10 @@ impl Heritage {
         varstack: &mut VariableStack,
     ) {
         use kuna_num::opcodes::OpCode;
-        let mut writelist: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut writelist: Vec<crate::context::VarnodeId> = Vec::new();
 
         // for(oiter=bl->beginOp(); oiter!=bl->endOp(); ++oiter)
-        let ops: Vec<crate::seams::OpId> = self.block_ops(fd, bl);
+        let ops: Vec<crate::context::OpId> = self.block_ops(fd, bl);
         for op in ops {
             let code = fd.obank().get(op).expect("rename_recurse: stale op").code();
             if code != OpCode::CPUI_MULTIEQUAL {
@@ -2862,13 +2862,13 @@ impl Heritage {
                     if same_time {
                         let def = fd.vbank().get(vnnew).expect("rename_recurse: vnnew").get_def().unwrap();
                         // PcodeOp::getOpFromConst(def->getIn(1)->getAddr()) == op
-                        // SEAM(W4): the INDIRECT "same time" carve-out resolves
+                        // STUB(W4): the INDIRECT "same time" carve-out resolves
                         // the IOP-space constant in[1] back to its PcodeOp via
                         // `getOpFromConst`, which needs the IOP→op map.  This is
                         // only reached when a renamed value's top-of-stack is
                         // INDIRECT-defined (calls/stores), which the no-call/
                         // no-store critical path never produces.
-                        let from_op = op_from_const_seam(fd, def);
+                        let from_op = op_from_const(fd, def);
                         if from_op == Some(op) {
                             let stacklen = varstack.get(&key).map(|s| s.len()).unwrap_or(0);
                             if stacklen == 1 {
@@ -2908,7 +2908,7 @@ impl Heritage {
         for i in 0..size_out {
             let subbl = fd.bblocks_ref().block(bl).get_out(i);
             let slot = fd.bblocks_ref().block(bl).get_out_rev_index(i);
-            let subops: Vec<crate::seams::OpId> = self.block_ops(fd, subbl);
+            let subops: Vec<crate::context::OpId> = self.block_ops(fd, subbl);
             for multiop in subops {
                 if fd.obank().get(multiop).expect("rename_recurse: stale multiop").code()
                     != OpCode::CPUI_MULTIEQUAL
@@ -2964,7 +2964,7 @@ impl Heritage {
         &self,
         fd: &crate::funcdata::Funcdata,
         bl: BlockId,
-    ) -> Vec<crate::seams::OpId> {
+    ) -> Vec<crate::context::OpId> {
         fd.bb_ops(bl)
     }
 
@@ -2999,7 +2999,7 @@ impl Heritage {
     // BLOCKED next-locus — "Stack string #9" (`stackstring.xml`, `alterString`):
     // the 1-byte store `mov [rsp+9], dil` into a `char v1[40]` (the array typing
     // comes from the `customPrint(char *)` callee proto) must render `v1[9] = a0`
-    // but renders `v1[8] = CONCAT11(a0,v1[8])`.  The seam is purely a single op in
+    // but renders `v1[8] = CONCAT11(a0,v1[8])`.  The stub is purely a single op in
     // the raw IR at the store instruction (0x100170):
     //
     //   CPP:  a3: s0x..d1:1 = DIL                       (byte's own v1[9] stack home)
@@ -3024,10 +3024,10 @@ impl Heritage {
     fn concat_pieces(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vnlist: &[crate::seams::VarnodeId],
-        insertop: Option<crate::seams::OpId>,
-        finalvn: crate::seams::VarnodeId,
-    ) -> crate::seams::VarnodeId {
+        vnlist: &[crate::context::VarnodeId],
+        insertop: Option<crate::context::OpId>,
+        finalvn: crate::context::VarnodeId,
+    ) -> crate::context::VarnodeId {
         use kuna_num::opcodes::OpCode;
         let mut preexist = vnlist[0];
         let isbigendian =
@@ -3089,11 +3089,11 @@ impl Heritage {
     fn split_pieces(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vnlist: &[crate::seams::VarnodeId],
-        insertop: Option<crate::seams::OpId>,
+        vnlist: &[crate::context::VarnodeId],
+        insertop: Option<crate::context::OpId>,
         addr: &Address,
         size: int4,
-        startvn: crate::seams::VarnodeId,
+        startvn: crate::context::VarnodeId,
     ) {
         use kuna_num::opcodes::OpCode;
         let isbigendian = addr.is_big_endian();
@@ -3105,7 +3105,7 @@ impl Heritage {
         // Resolve the block + insertion point + op address.  For a non-null
         // insertop we insert AFTER the write (C++ `++insertiter`), realized via
         // op_insert before the op following `insertop` (or end-of-block).
-        let (bl, opaddress, after_anchor): (BlockId, Address, Option<crate::seams::OpId>) =
+        let (bl, opaddress, after_anchor): (BlockId, Address, Option<crate::context::OpId>) =
             match insertop {
                 None => {
                     let root = fd.bblocks_ref().root.expect("split_pieces: bblocks root");
@@ -3165,7 +3165,7 @@ impl Heritage {
         fd: &crate::funcdata::Funcdata,
         refine: &mut [int4],
         addr: &Address,
-        vnlist: &[crate::seams::VarnodeId],
+        vnlist: &[crate::context::VarnodeId],
     ) {
         for &vn in vnlist {
             let v = fd.vbank().get(vn).expect("build_refinement: vn");
@@ -3183,10 +3183,10 @@ impl Heritage {
     fn split_by_refinement(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         addr: &Address,
         refine: &[int4],
-        split: &mut Vec<crate::seams::VarnodeId>,
+        split: &mut Vec<crate::context::VarnodeId>,
     ) {
         let (mut curaddr, mut sz, spc) = {
             let v = fd.vbank().get(vn).expect("split_by_refinement: vn");
@@ -3219,10 +3219,10 @@ impl Heritage {
     fn refine_read(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         addr: &Address,
         refine: &[int4],
-        newvn: &mut Vec<crate::seams::VarnodeId>,
+        newvn: &mut Vec<crate::context::VarnodeId>,
     ) {
         newvn.clear();
         self.split_by_refinement(fd, vn, addr, refine, newvn);
@@ -3249,10 +3249,10 @@ impl Heritage {
     fn refine_write(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         addr: &Address,
         refine: &[int4],
-        newvn: &mut Vec<crate::seams::VarnodeId>,
+        newvn: &mut Vec<crate::context::VarnodeId>,
     ) {
         newvn.clear();
         self.split_by_refinement(fd, vn, addr, refine, newvn);
@@ -3279,10 +3279,10 @@ impl Heritage {
     fn refine_input(
         &self,
         fd: &mut crate::funcdata::Funcdata,
-        vn: crate::seams::VarnodeId,
+        vn: crate::context::VarnodeId,
         addr: &Address,
         refine: &[int4],
-        newvn: &mut Vec<crate::seams::VarnodeId>,
+        newvn: &mut Vec<crate::context::VarnodeId>,
     ) {
         newvn.clear();
         self.split_by_refinement(fd, vn, addr, refine, newvn);
@@ -3334,9 +3334,9 @@ impl Heritage {
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         idx: usize,
-        readvars: &[crate::seams::VarnodeId],
-        writevars: &[crate::seams::VarnodeId],
-        inputvars: &[crate::seams::VarnodeId],
+        readvars: &[crate::context::VarnodeId],
+        writevars: &[crate::context::VarnodeId],
+        inputvars: &[crate::context::VarnodeId],
     ) -> Option<usize> {
         let size = self.disjoint.get(idx).size;
         if size > 1024 {
@@ -3362,7 +3362,7 @@ impl Heritage {
         }
         refine[lastpos] = size - lastpos as int4;
         self.remove13_refinement(&mut refine);
-        let mut newvn: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut newvn: Vec<crate::context::VarnodeId> = Vec::new();
         for &vn in readvars {
             self.refine_read(fd, vn, &addr, &refine, &mut newvn);
         }
@@ -3410,10 +3410,10 @@ impl Heritage {
     /// constructing the MULTIEQUAL ops at each merge block.
     pub fn place_multiequals(&mut self, fd: &mut crate::funcdata::Funcdata) {
         use kuna_num::opcodes::OpCode;
-        let mut readvars: Vec<crate::seams::VarnodeId> = Vec::new();
-        let mut writevars: Vec<crate::seams::VarnodeId> = Vec::new();
-        let mut inputvars: Vec<crate::seams::VarnodeId> = Vec::new();
-        let mut removevars: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut readvars: Vec<crate::context::VarnodeId> = Vec::new();
+        let mut writevars: Vec<crate::context::VarnodeId> = Vec::new();
+        let mut inputvars: Vec<crate::context::VarnodeId> = Vec::new();
+        let mut removevars: Vec<crate::context::VarnodeId> = Vec::new();
 
         // C++ iterates `for(iter=disjoint.begin();iter!=disjoint.end();++iter)`.
         // refinement() may erase the current range and insert N partition ranges
@@ -3520,7 +3520,7 @@ impl Heritage {
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         offset: uintb,
-        op: crate::seams::OpId,
+        op: crate::context::OpId,
         spc: &Rc<AddrSpace>,
     ) {
         let uses = fd.obank().get(op).expect("generate_load_guard: stale op").uses_spacebase_ptr();
@@ -3536,7 +3536,7 @@ impl Heritage {
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         offset: uintb,
-        op: crate::seams::OpId,
+        op: crate::context::OpId,
         spc: &Rc<AddrSpace>,
     ) {
         let uses = fd.obank().get(op).expect("generate_store_guard: stale op").uses_spacebase_ptr();
@@ -3552,10 +3552,10 @@ impl Heritage {
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         spc: &Rc<AddrSpace>,
-        free_stores: &mut Vec<crate::seams::OpId>,
+        free_stores: &mut Vec<crate::context::OpId>,
     ) -> bool {
         use kuna_num::opcodes::OpCode;
-        let stores: Vec<crate::seams::OpId> = fd.obank().iter_code(OpCode::CPUI_STORE).collect();
+        let stores: Vec<crate::context::OpId> = fd.obank().iter_code(OpCode::CPUI_STORE).collect();
         let mut has_new = false;
         for op in stores {
             let dead = fd.obank().get(op).expect("protect_free_stores: stale op").is_dead();
@@ -3619,7 +3619,7 @@ impl Heritage {
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         spc: &Rc<AddrSpace>,
-        free_stores: &mut Vec<crate::seams::OpId>,
+        free_stores: &mut Vec<crate::context::OpId>,
         check_free_stores: bool,
     ) -> bool {
         use kuna_num::opcodes::OpCode;
@@ -3627,16 +3627,16 @@ impl Heritage {
         /// One node of the DFS over stack-pointer descendants (C++
         /// `Heritage::StackNode`, with the live iterator replaced by a snapshot).
         struct StackNode {
-            vn: crate::seams::VarnodeId,
+            vn: crate::context::VarnodeId,
             offset: uintb,
             traversals: uint4,
-            descend: Vec<crate::seams::OpId>,
+            descend: Vec<crate::context::OpId>,
             iter: usize,
         }
 
         // We mark Varnodes independently of the depth-first path to avoid
         // exponential ladders.
-        let mut marked_vn: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut marked_vn: Vec<crate::context::VarnodeId> = Vec::new();
         let mut path: Vec<StackNode> = Vec::new();
         let mut unknown_stack_storage = false;
 
@@ -3654,7 +3654,7 @@ impl Heritage {
                 Some(v) => v,
                 None => continue,
             };
-            let descend: Vec<crate::seams::OpId> =
+            let descend: Vec<crate::context::OpId> =
                 fd.vbank().get(sp_input).expect("sp_input vn").descend_iter().collect();
             path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0 });
 
@@ -3684,7 +3684,7 @@ impl Heritage {
                 macro_rules! descend_into {
                     ($outvn:expr, $newoff:expr, $newtrav:expr) => {{
                         let ov = $outvn;
-                        let d: Vec<crate::seams::OpId> =
+                        let d: Vec<crate::context::OpId> =
                             fd.vbank().get(ov).expect("descend_into: stale outvn").descend_iter().collect();
                         if !d.is_empty() {
                             fd.vbank_mut().get_mut(ov).expect("descend_into: mark outvn").set_mark();
@@ -3805,7 +3805,7 @@ impl Heritage {
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         spc: &Rc<AddrSpace>,
-        free_stores: &mut Vec<crate::seams::OpId>,
+        free_stores: &mut Vec<crate::context::OpId>,
     ) {
         use kuna_num::opcodes::OpCode;
         for &op in free_stores.iter() {
@@ -3814,7 +3814,7 @@ impl Heritage {
 
         self.discover_indexed_stack_pointers(fd, spc, free_stores, false);
 
-        let free: Vec<crate::seams::OpId> = free_stores.clone();
+        let free: Vec<crate::context::OpId> = free_stores.clone();
         for op in free {
             // If the STORE is now marked as using a spacebase ptr, it was
             // appropriately marked to begin with; nothing to clean up.
@@ -3837,7 +3837,7 @@ impl Heritage {
                 {
                     break;
                 }
-                if Some(op) != op_from_const_seam(fd, iop) {
+                if Some(op) != op_from_const(fd, iop) {
                     break;
                 }
                 let next_op = fd.op_previous_op(iop);
@@ -3863,7 +3863,7 @@ impl Heritage {
     /// runs phi placement and renaming, and advances `pass`.  The
     /// PreferSplitManager (pass-0 SIMD split) and the load-guard discovery
     /// (`discoverIndexedStackPointers`/`analyzeNewLoadGuards`/
-    /// `handleNewLoadCopies`/`reprocessFreeStores`) sub-systems are SEAM-marked;
+    /// `handleNewLoadCopies`/`reprocessFreeStores`) sub-systems are STUB-marked;
     /// they are inert for a function with no split records and no indexed-stack
     /// LOAD/STOREs (the realized critical path).
     ///
@@ -3882,7 +3882,7 @@ impl Heritage {
         // never reaches `heritage()` in that state (it runs after `followFlow`/
         // `structureReset` built the CFG), and `buildADT` indexes the block list
         // (`z[0]`), so guard the degenerate empty-CFG case as a no-op — faithful
-        // for an action invoked on a not-yet-built function (the seam-wrapper
+        // for an action invoked on a not-yet-built function (the stub-wrapper
         // unit test) without changing the populated-CFG behavior.
         let block_count = {
             let bblocks = fd.bblocks_ref();
@@ -3896,13 +3896,13 @@ impl Heritage {
             self.build_adt(fd);
         }
         self.process_joins(fd);
-        // if (pass == 0) splitmanage.init/split;  SEAM(W6): PreferSplitManager
+        // if (pass == 0) splitmanage.init/split;  STUB(W6): PreferSplitManager
         // is a no-op for an architecture with no <splitrecords> (the critical
         // path); it splits SIMD-style registers when present.
 
         let mut reprocess_stack_count = 0;
         let mut stack_space: Option<Rc<AddrSpace>> = None;
-        let mut free_stores: Vec<crate::seams::OpId> = Vec::new();
+        let mut free_stores: Vec<crate::context::OpId> = Vec::new();
 
         let nspaces = fd.get_arch().manage().num_spaces() as usize;
         for i in 0..nspaces {
@@ -3939,7 +3939,7 @@ impl Heritage {
                 // records for STOREs/LOADs reached through a non-constant ADD or
                 // a MULTIEQUAL.  The store-guard set is the W7 `StackAffectingOps`
                 // cross-call test source.  ValueSet-based range refinement
-                // (`analyzeNewLoadGuards`) is still a seam; the initial guard
+                // (`analyzeNewLoadGuards`) is still a stub; the initial guard
                 // covers the whole space (`LoadGuard::set`), which is faithful and
                 // is exactly what `Merge::testUntiedCallIntersection` consults.
                 if self.discover_indexed_stack_pointers(fd, &space, &mut free_stores, true) {
@@ -3948,9 +3948,9 @@ impl Heritage {
                 }
             }
             let mut needwarning = false;
-            let mut warnvn: Option<crate::seams::VarnodeId> = None;
+            let mut warnvn: Option<crate::context::VarnodeId> = None;
 
-            let ids: Vec<crate::seams::VarnodeId> = fd.vbank().loc_space_ids(&space);
+            let ids: Vec<crate::context::VarnodeId> = fd.vbank().loc_space_ids(&space);
             for vn in ids {
                 let v = fd.vbank().get(vn).expect("heritage: stale vn");
                 if !v.is_written() && v.has_no_descend() && !v.is_unaffected() && !v.is_input() {
@@ -3981,7 +3981,7 @@ impl Heritage {
                         && !fd.is_jumptable_recovery_on()
                     {
                         needwarning = true;
-                        self.bump_deadcode_delay_seamed(fd, &space);
+                        self.bump_deadcode_delay_persisted(fd, &space);
                         warnvn = Some(vn);
                     }
                     self.disjoint.add(key, resolved_size, memrange_flags::old_addresses);
@@ -4001,7 +4001,7 @@ impl Heritage {
                             continue;
                         }
                         needwarning = true;
-                        self.bump_deadcode_delay_seamed(fd, &space);
+                        self.bump_deadcode_delay_persisted(fd, &space);
                         warnvn = Some(vn);
                     }
                 }
@@ -4009,7 +4009,7 @@ impl Heritage {
             if needwarning && !self.infolist[i].warningissued {
                 self.infolist[i].warningissued = true;
                 // fd->warningHeader("Heritage AFTER dead removal...")
-                // SEAM(W8): the warning text needs Varnode::printRawNoMarkup (W8
+                // STUB(W8): the warning text needs Varnode::printRawNoMarkup (W8
                 // print surface); the warning is suppressed (a cosmetic header,
                 // not IR), the dead-code-delay bump already recorded the event.
                 let _ = warnvn;
@@ -4025,10 +4025,10 @@ impl Heritage {
             let spc = stack_space.expect("heritage: reprocess set without a stack space");
             self.reprocess_free_stores(fd, &spc, &mut free_stores);
         }
-        // analyzeNewLoadGuards / handleNewLoadCopies: SEAM(W6) — ValueSet range
+        // analyzeNewLoadGuards / handleNewLoadCopies: STUB(W6) — ValueSet range
         // refinement + LOAD-COPY handling; the initial whole-space store guard
         // already serves the merge cross-call test.
-        // splitmanage.splitAdditional() on pass 0: SEAM(W6) PreferSplitManager.
+        // splitmanage.splitAdditional() on pass 0: STUB(W6) PreferSplitManager.
         self.pass += 1;
     }
 
@@ -4055,7 +4055,7 @@ impl Heritage {
     /// can take both `&mut Funcdata` for `setRestartPending` and `&mut Override`)
     /// and moved back; the [`RestartLog`] remains function-local (cosmetic — it
     /// records restart events for diagnostics, no behavioral effect).
-    fn bump_deadcode_delay_seamed(
+    fn bump_deadcode_delay_persisted(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         spc: &Rc<AddrSpace>,
@@ -4073,10 +4073,10 @@ impl Heritage {
 /// Heritage creates MULTIEQUAL (the phi, which must carry the `marker` flag so
 /// `is_marker()` / the renameRecurse MULTIEQUAL test see it), SUBPIECE (the
 /// read-size normalizer), and PIECE (the write-size normalizer's concat).  The
-/// merged `Funcdata` reaches only the `seams::Architecture` (no `inst` table),
+/// merged `Funcdata` reaches only the `context::ArchContext` (no `inst` table),
 /// so the property triple is built inline with the exact flags upstream's
 /// `TypeOpMulti`/`TypeOpSubpiece`/`TypeOpPiece` carry.
-fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
+fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::context::TypeOp {
     use crate::op::pcodeop_flags as f;
     use kuna_num::opcodes::OpCode;
     let (flags, name) = match opc {
@@ -4088,7 +4088,7 @@ fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
         OpCode::CPUI_PIECE => (f::binary, "CONCAT"),
         _ => panic!("heritage typeop_skeleton: unexpected opcode {opc:?}"),
     };
-    crate::seams::TypeOp::new(opc, flags, name)
+    crate::context::TypeOp::new(opc, flags, name)
 }
 
 /// `PcodeOp::getOpFromConst(def->getIn(1)->getAddr())` for the INDIRECT
@@ -4100,10 +4100,10 @@ fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
 /// offset ([`op_iop_encode`]/[`op_iop_decode`], `funcdata_varnode.rs`), so the
 /// decode round-trips the `OpId`.  `None` when `def` has no in[1] (defensive;
 /// every INDIRECT carries its iop input).
-fn op_from_const_seam(
+fn op_from_const(
     fd: &crate::funcdata::Funcdata,
-    indirect_def: crate::seams::OpId,
-) -> Option<crate::seams::OpId> {
+    indirect_def: crate::context::OpId,
+) -> Option<crate::context::OpId> {
     let iop_vn = fd.obank().get(indirect_def)?.get_in(1)?;
     let off = fd.vbank().get(iop_vn)?.get_addr().get_offset();
     Some(crate::funcdata_varnode::op_iop_decode(off))
@@ -4115,20 +4115,20 @@ impl Default for Heritage {
     }
 }
 
-/// Panic helper for the seam methods whose `Funcdata` SSA-construction
+/// Panic helper for the stub methods whose `Funcdata` SSA-construction
 /// primitives are not yet present.  Centralizes the message so the W3-op /
-/// W4 / W6 waves can grep the seams.
+/// W4 / W6 waves can grep the stubs.
 #[inline(never)]
 #[cold]
-fn unimplemented_seam(what: &str) -> ! {
-    panic!("kuna heritage SEAM not yet realized: {what}");
+fn unimplemented_stub(what: &str) -> ! {
+    panic!("kuna heritage STUB not yet realized: {what}");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::funcdata::Funcdata;
-    use crate::seams::Architecture;
+    use crate::context::ArchContext;
     use kuna_base::space::{
         addrspace_flags, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
     };
@@ -4156,7 +4156,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -4667,7 +4667,7 @@ mod tests {
     /// MULTIEQUAL construction → rename) builds real SSA on a hand-built diamond.
     ///
     /// A single-manager `Funcdata` (glb's manager *is* the `ram` space the
-    /// Varnodes use — the dual-manager seam the corpus B3 gate documents is
+    /// Varnodes use — the dual-manager boundary the corpus B3 gate documents is
     /// absent here), so heritage reaches the Varnodes.  CFG:
     /// ```text
     ///   0 (entry) ─┬─▶ 1 ─┐
@@ -4699,7 +4699,7 @@ mod tests {
             0,
         )))
         .unwrap();
-        let glb = Rc::new(Architecture::new(m));
+        let glb = Rc::new(ArchContext::new(m));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let entry = Address::new(Rc::clone(&ram), 0x2000);
         let mut fd = Funcdata::new("func", "func", glb, entry, 0x10000000, 0x40).unwrap();
@@ -4710,7 +4710,7 @@ mod tests {
             fd.set_basic_block_range(bl, &a, &a);
         }
         let loc = raddr(&fd, 0x100); // the heritaged ram location
-        let copy = |fl: u32| crate::seams::TypeOp::new(OpCode::CPUI_COPY, fl, "copy");
+        let copy = |fl: u32| crate::context::TypeOp::new(OpCode::CPUI_COPY, fl, "copy");
 
         // Block 1: ram[0x100] = #0xaa  (a free write at 0x2001).
         let w1 = fd.new_op(1, raddr(&fd, 0x2001));
@@ -4745,7 +4745,7 @@ mod tests {
         h.heritage(&mut fd, None);
 
         // Exactly one MULTIEQUAL, at block 3 (the join).
-        let phis: Vec<crate::seams::OpId> = fd
+        let phis: Vec<crate::context::OpId> = fd
             .obank()
             .iter_alive()
             .filter(|&op| fd.obank().get(op).unwrap().code() == OpCode::CPUI_MULTIEQUAL)
@@ -4772,7 +4772,7 @@ mod tests {
         // The phi's two inputs are the two write Varnodes (def-use of the writes).
         let in0 = fd.obank().get(phi).unwrap().get_in(0).unwrap();
         let in1 = fd.obank().get(phi).unwrap().get_in(1).unwrap();
-        let in_defs: Vec<crate::seams::OpId> = [in0, in1]
+        let in_defs: Vec<crate::context::OpId> = [in0, in1]
             .iter()
             .filter_map(|&v| fd.vbank().get(v).unwrap().get_def())
             .collect();
@@ -4807,7 +4807,7 @@ mod tests {
 
     fn build_fd_with_join() -> Funcdata {
         let manage = build_manager_with_join();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -4848,7 +4848,7 @@ mod tests {
 
     fn build_fd_iop() -> Funcdata {
         let manage = build_manager_iop();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -4872,7 +4872,7 @@ mod tests {
         let curvn = fd.new_unique(16, None);
 
         let h = Heritage::new();
-        let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+        let mut nextlev: Vec<Option<crate::context::VarnodeId>> = Vec::new();
         h.split_join_level(&mut fd, &[curvn], &mut nextlev, &joinrec);
 
         // 2-1 mapping: exactly two entries, both Some (this vn was split).
@@ -4907,7 +4907,7 @@ mod tests {
         // An already-8-byte Varnode equal to piece[0].size -> fast path.
         let small = fd.new_unique(8, None);
         let h = Heritage::new();
-        let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+        let mut nextlev: Vec<Option<crate::context::VarnodeId>> = Vec::new();
         h.split_join_level(&mut fd, &[small], &mut nextlev, &joinrec);
 
         assert_eq!(nextlev.len(), 2, "fast path still emits a 2-1 pair");
@@ -4947,11 +4947,11 @@ mod tests {
         out_addr: &Address,
         out_size: int4,
         ninputs: int4,
-    ) -> (crate::seams::OpId, crate::seams::VarnodeId) {
+    ) -> (crate::context::OpId, crate::context::VarnodeId) {
         let pc = raddr(fd, 0x2000);
         let op = fd.new_op(ninputs, pc);
         // `remove_revisited_markers` branches only on `op.code()`; resolve the
-        // opcode through the generic `inst[]` seam (works for COPY/INDIRECT/
+        // opcode through the generic `inst[]` resolution (works for COPY/INDIRECT/
         // MULTIEQUAL alike).
         fd.op_set_opcode_code(op, code);
         let out = fd.new_varnode_out(out_size, out_addr, op).expect("marker out");

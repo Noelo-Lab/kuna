@@ -19,7 +19,7 @@ use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
 
-use crate::seams::{Architecture, BlockId, TypeOp};
+use crate::context::{ArchContext, BlockId, TypeOp};
 
 // SP register location (in the "register" processor space) and size.
 const SP_OFF: u64 = 0x20;
@@ -64,7 +64,7 @@ fn build_fd() -> Funcdata {
     let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
 
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let code = Rc::clone(glb.manage().get_space_by_name("register").unwrap());
     let entry = Address::new(code, 0x1000);
     Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap()
@@ -452,7 +452,7 @@ fn adv_w10_repair_overlapping_store_rejects_fold() {
 ///
 /// NOTE (w10-rsp-elim repair): the `apply` body that USES this cast is currently
 /// DEFERRED (it regresses jump-table index recovery until the propagateSpacebaseRef
-/// keystone lands — see the SEAM comment in `coreaction_protos.rs`).  This test is
+/// keystone lands — see the STUB comment in `coreaction_protos.rs`).  This test is
 /// retained as a forward contract: it pins the widening semantics so that when the
 /// per-call INT_ADD insertion is re-landed alongside the keystone, a `as u32 as u64`
 /// (zero-extend) or a masked widening will fail here.
@@ -496,7 +496,7 @@ fn adv_w10_rspelim_analyze_extrapop_known_defaultfp_suppresses_solve() {
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
 
     // Build an arch carrying a defaultfp with a KNOWN (non-unknown) extrapop.
-    let mut arch = Architecture::new(manage);
+    let mut arch = ArchContext::new(manage);
     let mut fp = crate::fspec::ProtoModel::new(arch.manage());
     fp.set_extra_pop(0x20); // known: callee pops 0x20 bytes
     arch.defaultfp = Some(Rc::new(fp));
@@ -529,7 +529,7 @@ fn adv_w10_rspelim_analyze_extrapop_unknown_defaultfp_does_not_suppress() {
     let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
 
-    let mut arch = Architecture::new(manage);
+    let mut arch = ArchContext::new(manage);
     let mut fp = crate::fspec::ProtoModel::new(arch.manage());
     fp.set_extra_pop(EXTRAPOP_UNKNOWN); // explicitly unknown
     arch.defaultfp = Some(Rc::new(fp));

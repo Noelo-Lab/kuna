@@ -51,7 +51,7 @@ use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyRes
 use crate::block::{block_flags, BlockType};
 use crate::funcdata::Funcdata;
 use crate::options::on_or_off;
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 use kuna_base::marshal::ElementId;
 

@@ -9,7 +9,7 @@
 //! arch flag `recover_array_stride` (option `arraystride on|off`, shipped default
 //! `on`); inert when off, byte-identical to upstream.
 //!
-//! ## Gate wiring — SEAM(W4)
+//! ## Gate wiring — STUB(W4)
 //!
 //! As in the sibling kuna simplification rules, the C++
 //! `if (!data.getArch()->recover_array_stride) return 0;` gate is resolved at
@@ -32,7 +32,7 @@
 //! MULTIEQUALs are all first), preserving the `cand->code() != CPUI_MULTIEQUAL ->
 //! break` early-out exactly.
 //!
-//! ## SEAM(W6) — opcode-flag resolution
+//! ## STUB(W6) — opcode-flag resolution
 //!
 //! `opSetOpcode(multop, CPUI_INT_MULT)` resolves `glb->inst[CPUI_INT_MULT]` (the
 //! W6 typeop `inst` table); the op-shell is built with the [`TypeOp`] skeleton
@@ -47,13 +47,13 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, TypeOp, VarnodeId};
+use crate::context::{BlockId, OpId, TypeOp, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// (kuna GH-8724) Re-expose a strided-induction index: rewrite a stride
 /// accumulator phi as `counter * stride` (C++ `RuleArrayStride`).
 pub struct RuleArrayStride {
-    /// Resolved `glb->recover_array_stride` gate (SEAM(W4); see module docs).
+    /// Resolved `glb->recover_array_stride` gate (STUB(W4); see module docs).
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -155,7 +155,7 @@ impl Rule for RuleArrayStride {
         // PcodeOp *multop = data.newOp(2,op->getAddr());
         let pc = data.obank().get(op).expect("op live").get_addr().clone();
         let multop = data.new_op(2, pc);
-        // data.opSetOpcode(multop,CPUI_INT_MULT);  // SEAM(W6): glb->inst[CPUI_INT_MULT]
+        // data.opSetOpcode(multop,CPUI_INT_MULT);  // STUB(W6): glb->inst[CPUI_INT_MULT]
         data.op_set_opcode(multop, TypeOp::new(OpCode::CPUI_INT_MULT, 0, "INT_MULT"));
         // Varnode *multout = data.newUniqueOut(accout->getSize(),multop);
         let multout = new_unique_out(data, vn_size(data, accout), multop)

@@ -1,8 +1,8 @@
 //! ADVERSARIAL tests for `rport/w10-printc-decl-render` — three render-only printc
-//! seams, all in the local declaration / cast emission arm (the underlying
+//! stubs, all in the local declaration / cast emission arm (the underlying
 //! data/types are already correct; these fix only what the C printer emits):
 //!
-//!  * SEAM A — struct-return declaration collapse.  A register-returned struct is
+//!  * STUB A — struct-return declaration collapse.  A register-returned struct is
 //!    split into per-field proto-partial pieces (`RulePieceStructure`), each bound
 //!    to the ROOT's shared name + the ROOT's whole-struct type + its own in-symbol
 //!    byte offset (`bind_proto_partial_piece`).  C++ `emitScopeVarDecls` skips a
@@ -12,14 +12,14 @@
 //!    name-local-highs loop emitted a SEPARATE decl per piece-high
 //!    (`int4 v1; foo v1; int4 v1;`).
 //!
-//!  * SEAM B — global-scope symbol mis-declared as a local.  A `&symbol` reference
+//!  * STUB B — global-scope symbol mis-declared as a local.  A `&symbol` reference
 //!    that `linkSpacebaseSymbol` resolves through the GLOBAL scope (a ram spacebase,
 //!    e.g. `myarray` materialized as a const base address) is rendered by name in
 //!    the body but NEVER declared as a local — C++ `emitLocalVarDecls` declares only
 //!    `fd->getScopeLocal()` (printc.cc:2336/2667).  Before the fix the Rust loop
 //!    emitted `undefined20 myarray [3];` in the function body.
 //!
-//!  * SEAM C — address-of-cast collapse.  A CAST whose target is a pointer-to-array
+//!  * STUB C — address-of-cast collapse.  A CAST whose target is a pointer-to-array
 //!    and whose input is `&array_symbol` renders as `&sym` (the array decays to the
 //!    pointer-to-array type directly), dropping the spurious `(T(*)[n])` cast — C++
 //!    `PrintC::checkAddressOfCast` + the `opTypeCast` pointer-to-array arm
@@ -114,7 +114,7 @@ fn count(hay: &str, needle: &str) -> usize {
 }
 
 // =============================================================================
-// (T1) SEAM A — concat shares ONE struct decl.  The register-returned struct's
+// (T1) STUB A — concat shares ONE struct decl.  The register-returned struct's
 //      per-field pieces collapse to a single whole-symbol declaration
 //      (`foo v1; // rax`), exactly as the C++ getFirstWholeMap behavior.  Before
 //      the fix concatreturn carried three decls (`int4 v1; foo v1; int4 v1;`).
@@ -138,7 +138,7 @@ fn t1_concat_struct_return_shares_one_whole_symbol_decl() {
     assert!(
         !body.contains("int4 v1;"),
         "concatreturn: a per-field piece (`int4 v1;`) still emits its own \
-         declaration — SEAM A did not collapse the split-return pieces. Body:\n{body}"
+         declaration — STUB A did not collapse the split-return pieces. Body:\n{body}"
     );
     // The body's field writes through the shared symbol are intact (the data was
     // always correct; this is a render-only collapse).
@@ -166,7 +166,7 @@ fn t1_concat_struct_return_shares_one_whole_symbol_decl() {
 }
 
 // =============================================================================
-// (T2) SEAM B — a GLOBAL is not locally declared.  The mapped global array
+// (T2) STUB B — a GLOBAL is not locally declared.  The mapped global array
 //      `myarray` is rendered by NAME in the body (`myarray[globindex][...]`) but
 //      carries NO local declaration — it lives in the global scope, which
 //      `emitLocalVarDecls` never walks.  Before the fix the body declared
@@ -222,7 +222,7 @@ fn t2_global_spacebase_array_is_not_locally_declared() {
 }
 
 // =============================================================================
-// (T2b) SEAM B IS SCOPE-DRIVEN, NOT CONST-DRIVEN.  A LOCAL-frame spacebase symbol
+// (T2b) STUB B IS SCOPE-DRIVEN, NOT CONST-DRIVEN.  A LOCAL-frame spacebase symbol
 //       referenced via the same const-materialized `&symbol` path (the stack array
 //       `c` in passPtrToArray) MUST still be declared as a local — only the GLOBAL
 //       scope is skipped.  This pins that the fix discriminates by SCOPE, not by
@@ -243,7 +243,7 @@ fn t2b_local_frame_spacebase_symbol_still_declared() {
 }
 
 // =============================================================================
-// (T3) SEAM C — address-of-array renders `&name`.  The pointer-to-array CAST over
+// (T3) STUB C — address-of-array renders `&name`.  The pointer-to-array CAST over
 //      `&c` collapses to `&c` (no spurious `(int4 *[16])` cast), via the faithful
 //      `checkAddressOfCast` (the input's PTRSUB root resolves the array symbol of
 //      matching size through `getSubType`).  Before the fix: `(int4 *[16])c`.
@@ -269,14 +269,14 @@ fn t3_address_of_array_cast_collapses_to_ampersand_name() {
 }
 
 // =============================================================================
-// (T4) SEAM C IS SURGICAL — it must NOT drop a legitimate cast.  A
+// (T4) STUB C IS SURGICAL — it must NOT drop a legitimate cast.  A
 //      pointer-to-array cast whose input is NOT an `&array_symbol` of matching size
 //      keeps its cast.  Pin that the legitimate scalar/precision casts elsewhere
 //      survive (the address-of arm is gated on `isPointerToArray()` + the strict
 //      `checkAddressOfCast` predicate, never opcode/name keyed).
 // =============================================================================
 #[test]
-fn t4_seam_c_does_not_remove_legitimate_casts() {
+fn t4_stub_c_does_not_remove_legitimate_casts() {
     if let Some(dump) = dump_print_c(&rust_harness(), "floatcast") {
         assert!(
             dump.contains("(float8)") && dump.contains("(float4)"),

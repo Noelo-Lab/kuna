@@ -30,7 +30,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::op::{pcodeop_flags, PcodeOpBank};
-use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp};
+use kuna_decomp::context::{ArchContext, BlockId, OpId, TypeOp};
 use kuna_decomp::varnode::VarnodeBank;
 
 fn build_manager() -> AddrSpaceManager {
@@ -54,7 +54,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -414,7 +414,7 @@ fn splice_clears_startbasic_on_merged_head() {
 // forbids multiple descendants), so these make oldvn a formal input.
 // ===========================================================================
 
-fn no_replace() -> impl FnMut(&mut VarnodeBank, kuna_decomp::seams::VarnodeId, kuna_decomp::seams::VarnodeId) -> kuna_base::error::KunaResult<()> {
+fn no_replace() -> impl FnMut(&mut VarnodeBank, kuna_decomp::context::VarnodeId, kuna_decomp::context::VarnodeId) -> kuna_base::error::KunaResult<()> {
     |_: &mut VarnodeBank, _, _| Ok(())
 }
 

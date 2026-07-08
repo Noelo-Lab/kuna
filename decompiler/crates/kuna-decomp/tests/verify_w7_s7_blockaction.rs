@@ -29,7 +29,7 @@
 use kuna_base::types::int4;
 use kuna_decomp::block::{BlockGraph, BlockKind, FlowBlock};
 use kuna_decomp::blockaction::LoopBody;
-use kuna_decomp::seams::BlockId;
+use kuna_decomp::context::BlockId;
 
 /// Build a bare BlockGraph with `n` components, returning them so the test can
 /// stamp explicit `index` values (mirrors how the production pipeline assigns

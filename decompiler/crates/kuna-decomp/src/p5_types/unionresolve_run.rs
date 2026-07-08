@@ -51,7 +51,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::unionresolve::{
     compute_best_index, deref_pointer, score_constant_fit, score_locked_type, score_parameter,
     score_return_type, score_tables, score_truncation, ConstantFitFacts, FloatConstFact,
@@ -300,7 +300,7 @@ impl<'a> ScoreUnionFields<'a> {
         use type_metatype::*;
         // FLOAT: const FloatFormat *format = translate->getFloatFormat(size);
         let float_fact = if fit_meta == TYPE_FLOAT {
-            // SEAM(W4 residual): the merged arch-handle does not expose
+            // STUB(W4 residual): the merged arch-handle does not expose
             // getFloatFormat; absent a format the C++ leaves score = -1, which
             // `float_fact: None` reproduces exactly (loss recorded).
             self.float_format_fact(size, val)
@@ -331,8 +331,8 @@ impl<'a> ScoreUnionFields<'a> {
     /// The float-format classification (`getClass`/`getExponent`) for the constant,
     /// or `None` when the arch exposes no format for the size (C++ `format == 0`).
     ///
-    /// SEAM(W4 residual) / LOSS: the merged arch-handle
-    /// ([`crate::seams::Architecture`]) does not carry a `FloatFormatProvider`
+    /// STUB(W4 residual) / LOSS: the merged arch-handle
+    /// ([`crate::context::ArchContext`]) does not carry a `FloatFormatProvider`
     /// (the float formats live only on the concrete
     /// [`crate::architecture::Architecture`] behind the lift path, not on the
     /// `glb` seam handle the `Funcdata` holds).  Absent the format, the C++

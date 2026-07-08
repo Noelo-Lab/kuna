@@ -35,7 +35,7 @@
 //! Following the kuna-option idiom ([`crate::kuna_arraynotation::OptionArrayNotation`]),
 //! `apply` parses + validates the `on`/`off` value and returns the resolved flag
 //! plus the confirmation message; the caller flips the architecture flag
-//! (`Architecture::dedup_var_decls`), which the printer reads via the ArchSeam.
+//! (`Architecture::dedup_var_decls`), which the printer reads via the ArchContext.
 
 use kuna_base::marshal::ElementId;
 use kuna_base::error::KunaResult;

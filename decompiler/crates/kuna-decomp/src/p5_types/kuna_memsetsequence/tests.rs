@@ -4,7 +4,7 @@
 //! [`RuleMemsetCopy`] gate and the `OptionMemsetRecover` parse.
 //!
 //! The collection (`collect_fill_run`), build (`build_memset`), transform, and
-//! the full `RuleMemsetCopy::apply_op` body reach W4/W6 seams (symbol table,
+//! the full `RuleMemsetCopy::apply_op` body reach W4/W6 stubs (symbol table,
 //! type-facing factory, address-only loc-set overload) and are exercised only at
 //! their gate/structure level here — see the module docs.
 
@@ -21,7 +21,7 @@ use kuna_base::types::int4;
 use crate::action::Rule;
 use crate::constseq::WriteNode;
 use crate::dtype::type_metatype;
-use crate::seams::{Architecture, BlockId, TypeOp};
+use crate::context::{ArchContext, BlockId, TypeOp};
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -44,7 +44,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -257,10 +257,10 @@ fn rule_gate_off_is_noop() {
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 
-/// Gate on, but the driver body is seam-blocked (W4 symbol table / W6 type
+/// Gate on, but the driver body is stub-blocked (W4 symbol table / W6 type
 /// facing) -> still declines today, byte-identical to the option being off.
 #[test]
-fn rule_gate_on_declines_until_seams_land() {
+fn rule_gate_on_declines_until_stubs_land() {
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let op = mk_copy_const(&mut fd, bl, 0, 1, 0x00);
@@ -319,7 +319,7 @@ fn specs_ship_default_on() {
     assert_eq!(s[0].group, "analysis");
     // The shipped ctor builds an enabled rule (memset_recover = true, DIV-2).
     let rule = (s[0].ctor)();
-    // A real apply still declines (seam-blocked), but the rule is constructed
+    // A real apply still declines (stub-blocked), but the rule is constructed
     // in the enabled state — exercise its op list to confirm it is RuleMemsetCopy.
     assert_eq!(rule.get_op_list(), vec![OpCode::CPUI_COPY]);
     // gate is on: clone in the analysis group survives.

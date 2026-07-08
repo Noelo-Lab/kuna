@@ -49,8 +49,8 @@ fn spacebase(spaceid: Option<Rc<AddrSpace>>, localframe: Address) -> Datatype {
 /// `compare` body, so two distinct spacebases (same submeta+size, different
 /// localframe) wrongly compare **equal** (`Ok(0)`).
 ///
-/// Since the porter's own rule seams every other subclass `compare` override to
-/// `Err(SEAM(W6))`, the faithful behavior here is *either* a SEAM error *or* the
+/// Since the porter's own rule stubs every other subclass `compare` override to
+/// `Err(STUB(W6))`, the faithful behavior here is *either* a STUB error *or* the
 /// real tie-break — never a silent `Ok(0)`. This asserts that contract; under the
 /// current routing it FAILS (the port returns `Ok(0)`), which is the divergence
 /// trace backing the REJECT.
@@ -71,11 +71,11 @@ fn w5_dtype_spacebase_compare_must_not_silently_equal_distinct_frames() {
             "Datatype::compare routed TYPE_SPACEBASE to the base body: two \
              distinct-localframe spacebases compared EQUAL (Ok(0)). C++ \
              TypeSpacebase::compare (type.cc:3498) tie-breaks on localframe and \
-             cannot return 0 here. The override must be SEAM(W6)'d like every \
+             cannot return 0 here. The override must be STUB(W6)'d like every \
              other subclass compare."
         ),
         Ok(_n) => { /* a real tie-break would also be acceptable */ }
-        Err(_seam) => { /* SEAM(W6) is the faithful interface-stage answer */ }
+        Err(_stub) => { /* STUB(W6) is the faithful interface-stage answer */ }
     }
 }
 
@@ -270,7 +270,7 @@ fn w5r2_find_compatible_resolve_override_partition() {
 /// base body -> (None, off). Array/Pointer ARE overriders, implemented in
 /// w6-s5-type-1; Struct is a type-2 overrider, now implemented (w6-s5-type-2).
 #[test]
-fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
+fn w5r2_get_sub_type_union_enum_are_base_not_stub() {
     let mut u = Datatype::new_with_align(8, -1, type_metatype::TYPE_UNION);
     u.kind = DatatypeKind::Union { field: vec![] };
     let (sub, newoff) = u.get_sub_type(5).unwrap();
@@ -306,7 +306,7 @@ fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
 /// `getPtrInto`'s relative offset math is now ported (rport/w10-rel-pointer):
 /// a relptr into a non-STRUCT/UNION points `offset` into the parent.
 #[test]
-fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
+fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_stubs() {
     let ptrto = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
     let parent = Rc::new(Datatype::new(16, type_metatype::TYPE_STRUCT));
     let mut pr = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTRREL);
@@ -350,14 +350,14 @@ fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
 /// return `this` for every type without a union override; the W6 port now honors
 /// that identity via the `self: &Rc<Datatype>` receiver. A plain int has no
 /// override, so both return the receiver unchanged (same `Rc` allocation). The
-/// union/pointer-to-union/array structured paths stay SEAM(W6) (they still need
+/// union/pointer-to-union/array structured paths stay STUB(W6) (they still need
 /// the `Funcdata` registry).
 #[test]
-fn w5r2_resolve_in_flow_base_is_seamed_loss_f2() {
+fn w5r2_resolve_in_flow_base_is_stubbed_loss_f2() {
     let int_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
     // OpId is a slotmap key newtype; its default (null) key is a valid opaque handle
     // (the identity path never reads it).
-    let op = kuna_decomp::seams::OpId::default();
+    let op = kuna_decomp::context::OpId::default();
     let resolved = int_t.resolve_in_flow(op, 0).expect("base resolveInFlow returns `this`");
     assert!(
         Rc::ptr_eq(&resolved, &int_t),

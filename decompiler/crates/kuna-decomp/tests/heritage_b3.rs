@@ -21,7 +21,7 @@
 //! gains an `ACC` operand from `guardReturns`' active-output path, which needs
 //! `Funcdata::getActiveOutput()` initialized by `ActionPrototypeTypes`
 //! (`initActiveOutput`) — a W4/W6 proto-recovery seam that is a no-op here
-//! (`ActionPrototypeTypes::apply` returns 0; `funcp` is the `seams::FuncProto`
+//! (`ActionPrototypeTypes::apply` returns 0; `funcp` is the `context::FuncProto`
 //! stub).  The gate documents that exact extra varnode and otherwise requires a
 //! match.
 
@@ -187,7 +187,7 @@ struct VnIdentity(String);
 /// Render a Varnode exactly as `Varnode::printRawNoMarkup` + `printRaw`
 /// (`varnode.cc:730`/`760`): register name (or shortcut + `printRaw` offset),
 /// optional `:size`, then the `(i)` / `(<defseq>)` / `(free)` class suffix.
-fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::VarnodeId) -> VnIdentity {
+fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::context::VarnodeId) -> VnIdentity {
     let v = fd.vbank().get(vn).expect("render_vn: stale vn");
     let loc = v.get_addr().clone();
     let size = v.get_size();
@@ -242,7 +242,7 @@ fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::Varnode
 /// offset to the space's address size, which is how the C++ B3 renders SeqNum
 /// addresses (`0x00010020`, `0x004076c8`), so the SSA-identity tokens match
 /// byte-for-byte instead of differing only in leading zeros.
-fn render_seqnum(fd: &Funcdata, op: kuna_decomp::seams::OpId) -> String {
+fn render_seqnum(fd: &Funcdata, op: kuna_decomp::context::OpId) -> String {
     let o = fd.obank().get(op).expect("render_seqnum: stale op");
     let sq: &SeqNum = o.get_seq_num();
     let pc = sq.get_addr();

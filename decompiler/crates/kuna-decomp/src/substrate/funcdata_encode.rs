@@ -47,7 +47,7 @@ use kuna_sleigh::translate::ELEM_OP;
 
 use crate::block::{ELEM_BLOCK, ELEM_BLOCKEDGE};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 // ---------------------------------------------------------------------------
 // New marshaling ids (DECOMPILER scope).
@@ -315,7 +315,7 @@ mod tests {
     use kuna_base::types::int4;
     use kuna_num::opcodes::OpCode;
 
-    use crate::seams::{Architecture, BlockId, OpId, TypeOp};
+    use crate::context::{ArchContext, BlockId, OpId, TypeOp};
 
     use super::*;
 
@@ -344,7 +344,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

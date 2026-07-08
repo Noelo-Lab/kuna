@@ -3,16 +3,16 @@
 //
 // Strategy (the merge base lacks opSetOpcode-by-OpCode, opSetOutput,
 // newUniqueOut, and the type-facing/type-factory surface — see the module-level
-// SEAM notes):
+// STUB notes):
 //
 //   * The PURE / read-only helpers are the load-bearing transcriptions and are
 //     fully testable: `RuleDivOpt::calc_divisor` (128-bit reciprocal-divisor
 //     math), `RuleDivTermAdd::find_subshift`, `RulePtrsubUndo::get_const_offset_back`
-//     / `get_extra_offset`, `RuleDivOpt::find_form` (the constant-extended seam
+//     / `get_extra_offset`, `RuleDivOpt::find_form` (the constant-extended stub
 //     forces None — asserted), `RuleDivOpt::move_sign_bit_extraction`
 //     (opSetInput-only, fully committed), `RulePieceStructure::spanning_range`.
 //   * The early-out GUARDS of the rules are exercised on hand-built op patterns:
-//     each guard that uses available API is hit, and the seam-blocked commit
+//     each guard that uses available API is hit, and the stub-blocked commit
 //     points are asserted to return 0 (no change), matching the C++ "made no
 //     change" contract while the next wave fills the primitives.
 
@@ -29,7 +29,7 @@ use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use crate::context::{ArchContext, OpId, TypeOp, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 // -----------------------------------------------------------------------------
@@ -57,7 +57,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -281,14 +281,14 @@ fn get_const_offset_back_depth_limit_stops() {
 }
 
 // =============================================================================
-// RuleDivOpt::find_form — the isConstantExtended seam forces None
+// RuleDivOpt::find_form — the isConstantExtended stub forces None
 // =============================================================================
 
 #[test]
-fn find_form_blocked_on_constant_extended_seam() {
+fn find_form_blocked_on_constant_extended_stub() {
     // sub(zext(x)*c, hi) with everything wired; the C++ would match, but
-    // isConstantExtended is a W3-varnode seam (returns None here), so the MULT's
-    // "there MUST be a constant" check fails -> None.  This pins the seam.
+    // isConstantExtended is a W3-varnode stub (returns None here), so the MULT's
+    // "there MUST be a constant" check fails -> None.  This pins the stub.
     let mut fd = build_fd();
     let xdef = mk_op(&mut fd, 0, 0x80, OpCode::CPUI_COPY);
     let x = give_output(&mut fd, xdef, 0x10, 4);
@@ -308,7 +308,7 @@ fn find_form_blocked_on_constant_extended_seam() {
 
     assert!(
         RuleDivOpt::find_form(&fd, sub).is_none(),
-        "isConstantExtended seam (None) makes the MULT constant check fail"
+        "isConstantExtended stub (None) makes the MULT constant check fail"
     );
 }
 
