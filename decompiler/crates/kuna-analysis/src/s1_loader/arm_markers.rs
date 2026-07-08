@@ -63,7 +63,7 @@
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage, SymFact, SymKind};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase, SymFact, SymKind};
 
 /// The SLEIGH processor-context variable steering ARM/Thumb instruction decode.
 /// Defined by the ARM `.pspec` (`ARMt.pspec` `<context_data>`); `0` = ARM (A32),
@@ -165,8 +165,8 @@ pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
 }
 
 impl AnalysisPass for ArmMarkerPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

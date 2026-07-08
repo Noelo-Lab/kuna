@@ -87,7 +87,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::listing::model::Insn;
 use crate::listing::Listing;
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};
 
 /// The structural no-return propagation consumer pass (the second Listing/xref
 /// consumer).
@@ -98,8 +98,8 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Stage
 pub struct NoReturnPropagatePass;
 
 impl AnalysisPass for NoReturnPropagatePass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -732,7 +732,7 @@ mod tests {
     fn pass_identity_wiring() {
         let p = NoReturnPropagatePass;
         assert_eq!(p.id(), "noreturn_propagate");
-        assert_eq!(p.stage(), Stage::S1);
+        assert_eq!(p.phase(), Phase::P1);
     }
 
     // --- reach walk: a conditional jump to a no-return target still returns via its

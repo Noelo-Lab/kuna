@@ -56,7 +56,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
 use crate::s1_fid::db::{FidDatabase, FidDb, FidRecord};
 use crate::s1_fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::s1_fid::skipper::{InstructionSkipper, X86InstructionSkipper};
@@ -82,8 +82,8 @@ pub const FID_DB_ENV: &str = "kuna_fid_db";
 pub struct FidPass;
 
 impl AnalysisPass for FidPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -227,7 +227,7 @@ mod tests {
     fn pass_identity() {
         let p = FidPass;
         assert_eq!(p.id(), "fid");
-        assert_eq!(p.stage(), Stage::S1);
+        assert_eq!(p.phase(), Phase::P1);
     }
 
     fn rec(full: u64, name: &str) -> FidRecord {

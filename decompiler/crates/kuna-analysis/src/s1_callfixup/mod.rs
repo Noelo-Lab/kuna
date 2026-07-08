@@ -68,7 +68,7 @@ use object::SymbolKind;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::inject_sleigh::SleighPayload;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 /// Prefix Ghidra strips from a conflicting library-imported function name before
 /// the target-map probe (`CallFixupAnalyzer.java:207-209`,
@@ -183,8 +183,8 @@ fn scan_call_fixups(file: &object::File, arch: &Architecture) -> AnalysisOutput 
 pub struct CallFixupPass;
 
 impl AnalysisPass for CallFixupPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

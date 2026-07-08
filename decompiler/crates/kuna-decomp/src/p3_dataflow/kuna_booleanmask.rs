@@ -17,8 +17,8 @@
 //! signature).  Following the established convention for these gated kuna modules
 //! (`kuna_v850indbranch`, `kuna_sparcstructret`, `kuna_switchmodbound`), the gate
 //! is carried as a resolved `enabled: bool` on the rule struct, set at
-//! construction time from the architecture flag / the merged `kuna_stages`
-//! [`OptionValues`](crate::kuna_stages::OptionValues).  W8 threads the live arch
+//! construction time from the architecture flag / the merged `kuna_phases`
+//! [`OptionValues`](crate::kuna_phases::OptionValues).  W8 threads the live arch
 //! flag through [`RuleBoolSignShift::new`]; [`specs`] builds the rule with the
 //! shipped default (`on`).
 //!

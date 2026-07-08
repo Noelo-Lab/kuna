@@ -6,7 +6,7 @@
 pub mod options;
 pub mod database;
 pub mod overrides;
-pub mod kuna_stages;
+pub mod kuna_phases;
 pub mod kuna_assert;
 pub mod kuna_restartlog;
 // (kuna) i386-PIE PLT-stub decode option gate (angr test_decompiling_nl_i386_pie).

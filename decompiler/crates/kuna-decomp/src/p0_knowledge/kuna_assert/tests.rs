@@ -5,7 +5,7 @@
 //! sub-stage -> store dispatch routing, and the `kassert list` rendering.
 
 use super::*;
-use crate::kuna_stages::KunaStage;
+use crate::kuna_phases::KunaPhase;
 use kuna_base::error::KunaError;
 
 // --- validate_assertion: precedence of the C++ IfaceParseError throws --------
@@ -61,12 +61,12 @@ fn validate_wrong_stage_for_substage() {
 #[test]
 fn validate_ok_uses_catalog_strength_by_default() {
     let v = validate_assertion("S5", "type-propagation", None).unwrap();
-    assert_eq!(v.stage, KunaStage::S5);
-    assert_eq!(v.substage, "type-propagation");
+    assert_eq!(v.phase, KunaPhase::S5);
+    assert_eq!(v.subphase, "type-propagation");
     // type-propagation is HARD in the catalog -> requested defaults to HARD.
     assert_eq!(v.requested, KunaStrength::Hard);
     assert_eq!(v.applied, KunaStrength::Hard);
-    assert_eq!(v.rewind, KunaStage::S5);
+    assert_eq!(v.rewind, KunaPhase::S5);
     assert_eq!(v.dispatch, Dispatch::Retype);
 }
 
@@ -86,21 +86,21 @@ fn minimal_rewind_matrix() {
     // format->S9, force-goto->S7, typelock->S5, proto->S4, jumptable/flow/
     // context->S2, deadcode-delay->S3.
     let cases = [
-        ("S9", "literal-format", KunaStage::S9),
-        ("S9", "naming-policy", KunaStage::S9),
-        ("S7", "edge-virtualization", KunaStage::S7),
-        ("S5", "type-propagation", KunaStage::S5),
-        ("S4", "prototype-source", KunaStage::S4),
-        ("S2", "switch-model", KunaStage::S2),
-        ("S2", "flow-classification", KunaStage::S2),
-        ("S2", "decode-context", KunaStage::S2),
-        ("S3", "dead-definition-gate", KunaStage::S3),
+        ("S9", "literal-format", KunaPhase::S9),
+        ("S9", "naming-policy", KunaPhase::S9),
+        ("S7", "edge-virtualization", KunaPhase::S7),
+        ("S5", "type-propagation", KunaPhase::S5),
+        ("S4", "prototype-source", KunaPhase::S4),
+        ("S2", "switch-model", KunaPhase::S2),
+        ("S2", "flow-classification", KunaPhase::S2),
+        ("S2", "decode-context", KunaPhase::S2),
+        ("S3", "dead-definition-gate", KunaPhase::S3),
         // explicit-implied is the one cross-stage rewind: S6 decision -> S9 rewind.
-        ("S6", "explicit-implied", KunaStage::S9),
+        ("S6", "explicit-implied", KunaPhase::S9),
         // external-refinement rewinds back to P0.
-        ("S9", "external-refinement", KunaStage::P0),
+        ("S9", "external-refinement", KunaPhase::P0),
         // pipeline-variant: a P0 decision whose rewind is S1.
-        ("P0", "pipeline-variant", KunaStage::S1),
+        ("P0", "pipeline-variant", KunaPhase::S1),
     ];
     for (stagecode, sub, expect) in cases {
         let v = validate_assertion(stagecode, sub, None)
@@ -180,12 +180,12 @@ fn list_renders_records_with_rewind() {
     let mut log = AssertLog::new();
     log.push(KunaAssertion {
         func_name: "main".to_string(),
-        stage: KunaStage::S5,
-        substage: "type-propagation".to_string(),
+        phase: KunaPhase::S5,
+        subphase: "type-propagation".to_string(),
         args: "x int".to_string(),
         strength: KunaStrength::Hard,
         applied: KunaStrength::Hard,
-        rewind: KunaStage::S5,
+        rewind: KunaPhase::S5,
     });
     let out = log.render_list();
     assert!(out.starts_with(
@@ -200,12 +200,12 @@ fn list_notes_hint_via_hard_mechanism() {
     let mut log = AssertLog::new();
     log.push(KunaAssertion {
         func_name: "(global)".to_string(),
-        stage: KunaStage::S5,
-        substage: "type-propagation".to_string(),
+        phase: KunaPhase::S5,
+        subphase: "type-propagation".to_string(),
         args: String::new(),
         strength: KunaStrength::Hint,
         applied: KunaStrength::Hard,
-        rewind: KunaStage::S5,
+        rewind: KunaPhase::S5,
     });
     let out = log.render_list();
     // strength=HINT but applied=HARD -> the "(applied via HARD mechanism)" note.

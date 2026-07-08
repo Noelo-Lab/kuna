@@ -61,7 +61,7 @@ use object::read::pe::{ImageNtHeaders, PeFile32, PeFile64};
 use object::read::Object;
 use object::{BinaryFormat, FileKind};
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, SymFact, SymKind};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 use crate::s1_demangle::demangle_rtti_class_name;
 use models::{
     read_base_class_array, BaseClassDescriptor, ClassHierarchyDescriptor, CompleteObjectLocator,
@@ -91,8 +91,8 @@ const MIN_TYPE_INFO_AGREEMENT: usize = 2;
 pub struct RttiPass;
 
 impl AnalysisPass for RttiPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -380,7 +380,7 @@ mod tests {
     fn pass_identity() {
         let p = RttiPass;
         assert_eq!(p.id(), "rtti");
-        assert_eq!(p.stage(), Stage::S1);
+        assert_eq!(p.phase(), Phase::P1);
     }
 
     #[test]

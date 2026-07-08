@@ -1,7 +1,7 @@
 //! Adversarial verification tests for item `w4-kuna-p0-pack` (round 1).
 //!
 //! Independent verifier tests targeting the hunt-list-flagged fragile spots of
-//! the P0 pack port (`kuna_stages`/`kuna_assert`/`kuna_restartlog`):
+//! the P0 pack port (`kuna_phases`/`kuna_assert`/`kuna_restartlog`):
 //!
 //!   - the `values` pipe-split's INCLUSIVE-loop port (C++ `while(pos<=vals.size())`),
 //!     where a trailing/lone `|` emits an extra empty `""` token — the highest
@@ -9,7 +9,7 @@
 //!   - `json_string` escaping (control chars < 0x20 collapse to one space, `\n`
 //!     special-cased, `"`/`\\` escaped) and the C++ byte-iteration vs Rust
 //!     char-iteration on multibyte input;
-//!   - `KunaStage::from_code` length/range boundaries and byte-index safety on a
+//!   - `KunaPhase::from_code` length/range boundaries and byte-index safety on a
 //!     multibyte input (must not panic);
 //!   - `RestartLog` per-function cap at exactly 32, monotone seq across funcs,
 //!     and `(space_index, offset)` key ordering (the transcribed `operator<`);
@@ -29,8 +29,8 @@ use kuna_base::space::{
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::kuna_assert::{AssertLog, KunaAssertion};
 use kuna_decomp::kuna_restartlog::{KunaRestartReason, RestartLog};
-use kuna_decomp::kuna_stages::{
-    emit_settable_json, KunaStage, KunaStrength, KunaSettable,
+use kuna_decomp::kuna_phases::{
+    emit_settable_json, KunaPhase, KunaStrength, KunaSettable,
 };
 use kuna_decomp::seams::Architecture;
 
@@ -41,10 +41,10 @@ fn settable_with_values(values: &'static str, shipped: &'static str) -> KunaSett
         values,
         shipped,
         destructive: false,
-        stage: KunaStage::S3,
-        substage: "simplification-quiescence",
+        phase: KunaPhase::S3,
+        subphase: "simplification-quiescence",
         strength: KunaStrength::Hard,
-        rewind: KunaStage::S3,
+        rewind: KunaPhase::S3,
         issue: "",
         summary: "",
         use_when: "",
@@ -120,7 +120,7 @@ fn w4_kuna_p0_pack_json_string_escaping_and_control_chars() {
     );
 }
 
-/// HUNT(off-by-one / byte-index safety): `KunaStage::from_code` requires exactly
+/// HUNT(off-by-one / byte-index safety): `KunaPhase::from_code` requires exactly
 /// 2 chars, `P0`/`p0`, or `[sS][1-9]`. The boundary chars `'0'` and `':'` (just
 /// outside `'1'..='9'`) must reject; a 1- or 3-char code rejects; and a 2-BYTE
 /// but multi-CODEPOINT input (e.g. "é" is 2 bytes) must not panic on byte
@@ -129,29 +129,29 @@ fn w4_kuna_p0_pack_json_string_escaping_and_control_chars() {
 #[test]
 fn w4_kuna_p0_pack_from_code_boundaries_and_byte_safety() {
     // Valid forms.
-    assert_eq!(KunaStage::from_code("P0"), Some(KunaStage::P0));
-    assert_eq!(KunaStage::from_code("p0"), Some(KunaStage::P0));
-    assert_eq!(KunaStage::from_code("S1"), Some(KunaStage::S1));
-    assert_eq!(KunaStage::from_code("s9"), Some(KunaStage::S9));
+    assert_eq!(KunaPhase::from_code("P0"), Some(KunaPhase::P0));
+    assert_eq!(KunaPhase::from_code("p0"), Some(KunaPhase::P0));
+    assert_eq!(KunaPhase::from_code("S1"), Some(KunaPhase::S1));
+    assert_eq!(KunaPhase::from_code("s9"), Some(KunaPhase::S9));
 
     // Range boundaries: '0' and ':' bracket '1'..='9'.
-    assert_eq!(KunaStage::from_code("S0"), None, "S0 below range");
-    assert_eq!(KunaStage::from_code("S:"), None, "S: above '9'");
+    assert_eq!(KunaPhase::from_code("S0"), None, "S0 below range");
+    assert_eq!(KunaPhase::from_code("S:"), None, "S: above '9'");
     // P only pairs with '0'.
-    assert_eq!(KunaStage::from_code("P1"), None);
-    assert_eq!(KunaStage::from_code("P9"), None);
+    assert_eq!(KunaPhase::from_code("P1"), None);
+    assert_eq!(KunaPhase::from_code("P9"), None);
 
     // Length boundaries.
-    assert_eq!(KunaStage::from_code("S"), None);
-    assert_eq!(KunaStage::from_code("S12"), None);
-    assert_eq!(KunaStage::from_code(""), None);
+    assert_eq!(KunaPhase::from_code("S"), None);
+    assert_eq!(KunaPhase::from_code("S12"), None);
+    assert_eq!(KunaPhase::from_code(""), None);
 
     // Multibyte: "é" is exactly 2 bytes in UTF-8 but len()==2; the C++ would
     // read two bytes and fail every comparison. Rust must not panic on
     // `as_bytes()[0/1]` and must return None.
-    assert_eq!(KunaStage::from_code("é"), None, "2-byte multibyte must not panic");
+    assert_eq!(KunaPhase::from_code("é"), None, "2-byte multibyte must not panic");
     // A single non-ascii char (1 codepoint, 2 bytes) -> len 2 -> compared as bytes.
-    assert_eq!(KunaStage::from_code("S\u{0080}"), None);
+    assert_eq!(KunaPhase::from_code("S\u{0080}"), None);
 }
 
 /// HUNT(off-by-one / iteration order): the `RestartLog` per-function ring cap is
@@ -220,12 +220,12 @@ fn w4_kuna_p0_pack_restartlog_keys_do_not_collide_interleaved() {
 fn w4_kuna_p0_pack_assertlog_hint_via_hard_annotation_gate() {
     let mk = |strength, applied| KunaAssertion {
         func_name: "(global)".into(),
-        stage: KunaStage::S3,
-        substage: "simplification-quiescence".into(),
+        phase: KunaPhase::S3,
+        subphase: "simplification-quiescence".into(),
         args: String::new(),
         strength,
         applied,
-        rewind: KunaStage::S3,
+        rewind: KunaPhase::S3,
     };
 
     // HINT requested, HARD applied -> annotation present.

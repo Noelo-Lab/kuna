@@ -9,7 +9,7 @@
 //! ([`super::walk`]); they never borrow the engine. The `FlowType` predicate set
 //! is the faithful projection of Ghidra's `FlowType` (`typeop.rs`/`op.rs` flags),
 //! derived once from the emitted p-code by [`super::classify::classify`], the
-//! lifted copy of `s2_lift/flow.rs::xref_control_flow`.
+//! lifted copy of `p2_lift/flow.rs::xref_control_flow`.
 
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;

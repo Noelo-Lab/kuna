@@ -2218,7 +2218,7 @@ impl BlockGraph {
     /// `BlockCopy` leaf is minted for each so the printer re-emits its ops on
     /// this path, then they are wrapped in a `BlockList` and attached as the
     /// `if`'s true clause, and the `if`'s goto target is dropped.  The caller
-    /// ([`crate::s8_structure::kuna_gotoreduce`], option-gated) has verified the
+    /// ([`crate::p8_structure::kuna_gotoreduce`], option-gated) has verified the
     /// chain is bounded and side-effect-safe.  Edges are intentionally not
     /// rewired — this runs after `ActionFinalStructure`, and the C printer walks
     /// only components / copy pointers (never edges) below the `if`.
@@ -2302,7 +2302,7 @@ impl BlockGraph {
     /// untouched.  Sound because a shared prefix executes unconditionally first in
     /// **both** arms: moving the single retained copy ahead of the `if` and dropping
     /// the duplicate changes neither which code runs nor its order.  The caller
-    /// ([`crate::s8_structure::kuna_dedupitetail`], option-gated) has verified each
+    /// ([`crate::p8_structure::kuna_dedupitetail`], option-gated) has verified each
     /// `(retained, duplicate)` pair are C-equivalent clean leaves and that both arms
     /// keep at least one component after the prefix.
     pub fn kuna_hoist_ite_prefix(
@@ -2378,7 +2378,7 @@ impl BlockGraph {
     ///
     /// The dual of [`kuna_hoist_ite_prefix`](Self::kuna_hoist_ite_prefix), and likewise
     /// a pure print-tree edit (component `list`/`parent` only).  Sound only because the
-    /// caller ([`crate::s8_structure::kuna_dedupitetail`], option-gated) has verified
+    /// caller ([`crate::p8_structure::kuna_dedupitetail`], option-gated) has verified
     /// each arm's divergent middle *falls through* to the suffix (so both arms always
     /// reach it) and that each `(retained, duplicate)` pair are C-equivalent clean
     /// leaves with at least one component left before the suffix in each arm.
@@ -2481,7 +2481,7 @@ impl BlockGraph {
     /// bblock in `bbchain` (so the printer re-emits its ops on this path), the leaves
     /// are appended after the body, and the node's kind is switched from `Goto` to
     /// `Ls` so it prints as a braced/flat list with **no** trailing `goto`.  The
-    /// caller ([`crate::s8_structure::kuna_crossjumpreverter`], option-gated) has
+    /// caller ([`crate::p8_structure::kuna_crossjumpreverter`], option-gated) has
     /// verified the chain is bounded, side-effect-safe, and *convergent* (the goto's
     /// own structured fall-through already reaches the tail's successor), so dropping
     /// the goto and falling through is semantics-preserving.  Edges are intentionally

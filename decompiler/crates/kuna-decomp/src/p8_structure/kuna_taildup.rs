@@ -31,11 +31,11 @@
 //! This is the **third** SAILR goto-reduction pass and fills the gap between the two
 //! merged siblings, both of which decline the morton shape:
 //!
-//! * [`crate::s8_structure::kuna_gotoreduce`] (`ActionGotoReduce`, option
+//! * [`crate::p8_structure::kuna_gotoreduce`] (`ActionGotoReduce`, option
 //!   `gotoreduce`) duplicates a **return tail** but **rejects any
 //!   `CALL`/`CALLIND`/`CALLOTHER`** in the tail — so it cannot handle a
 //!   `free(p); return;` epilogue (a return tail *with* a call).
-//! * [`crate::s8_structure::kuna_crossjumpreverter`] (`ActionCrossJumpReverter`,
+//! * [`crate::p8_structure::kuna_crossjumpreverter`] (`ActionCrossJumpReverter`,
 //!   option `crossjumprevert`) permits a call but only for a **non-return,
 //!   fall-through** cross-jump tail — it explicitly **declines a tail that ends in
 //!   `return`** (the closed-path case).
@@ -286,7 +286,7 @@ fn referenced_goto_targets(data: &Funcdata) -> std::collections::BTreeSet<BlockI
 /// bounded, side-effect-safe **return-call** tail.
 ///
 /// Unlike `return_tail_chain` in
-/// [`crate::s8_structure::kuna_gotoreduce`] (gotoreduce), which rejects *any* call,
+/// [`crate::p8_structure::kuna_gotoreduce`] (gotoreduce), which rejects *any* call,
 /// this permits up to [`MAX_TAIL_CALLS`] calls (angr's `max_calls_in_regions`).
 /// Duplicating a call is safe **only because the tail ends in a `return`**: the
 /// converted `if` arm reaches the duplicated call on exactly one structured path (the

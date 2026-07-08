@@ -67,7 +67,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::listing::{Listing, RefKind};
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};
 
 /// Ghidra's `FindNoReturnFunctionsAnalyzer` evidence threshold: a callee is
 /// concluded no-return once at least this many of its call sites show no valid
@@ -82,8 +82,8 @@ const EVIDENCE_THRESHOLD: usize = 3;
 pub struct NoReturnDiscoveredPass;
 
 impl AnalysisPass for NoReturnDiscoveredPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -297,6 +297,6 @@ mod tests {
         // is covered by the e2e; here we only assert the pass identity wiring.
         let p = NoReturnDiscoveredPass;
         assert_eq!(p.id(), "noreturn_disc");
-        assert_eq!(p.stage(), Stage::S1);
+        assert_eq!(p.phase(), Phase::P1);
     }
 }

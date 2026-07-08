@@ -588,7 +588,7 @@ fn w10_build_copy_from_empty_source() {
 
 // ---------------------------------------------------------------------------
 // kuna_flatten_ifelse — the if-else-flattening print-tree splice
-// (angr IfElseFlattener; s8_structure::kuna_ifelseflatten)
+// (angr IfElseFlattener; p8_structure::kuna_ifelseflatten)
 // ---------------------------------------------------------------------------
 
 /// Insert a leaf and parent it under `graph`'s `list`.

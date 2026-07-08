@@ -5,7 +5,7 @@
 //! # The structural gap
 //!
 //! Ghidra's `CollapseStructure` (the verbatim
-//! [`s8_structure::blockaction`](crate::blockaction) port of
+//! [`p8_structure::blockaction`](crate::blockaction) port of
 //! `CollapseStructure`/`TraceDAG`/`BlockTrace`) must express one in-edge of a
 //! shared, multi-predecessor *return tail* as an unstructured `goto` — it has no
 //! schema that duplicates a tail to avoid the goto.  On `dd::argmatch_to_argument`

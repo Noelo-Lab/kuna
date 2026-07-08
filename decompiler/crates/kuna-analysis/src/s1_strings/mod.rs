@@ -40,7 +40,7 @@
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, StringFact};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, StringFact};
 
 /// The default minimum visible string length (`MinStringLen.LEN_5`).
 const DEFAULT_MIN_LEN: usize = 5;
@@ -173,8 +173,8 @@ impl Default for StringLiteralPass {
 }
 
 impl AnalysisPass for StringLiteralPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

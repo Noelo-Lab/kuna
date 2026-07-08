@@ -18,7 +18,7 @@
 //! extra lines, and a duplicated call per cloned block.
 //!
 //! This is the exact **inverse** of the three SAILR goto-reduction passes
-//! ([`crate::s8_structure::kuna_gotoreduce`] / `kuna_crossjumpreverter` /
+//! ([`crate::p8_structure::kuna_gotoreduce`] / `kuna_crossjumpreverter` /
 //! `kuna_taildup`), which *duplicate* a shared tail to remove a `goto`.  Here kuna
 //! has *over-duplicated* a shared if/else head, and the readability win is to
 //! **merge** the identical copies back into one.

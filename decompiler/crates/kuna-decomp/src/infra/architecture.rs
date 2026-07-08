@@ -380,7 +380,7 @@ pub struct Architecture {
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
-    /// walking the [`KunaRegionIdentifier`](crate::s7_regions::kuna_regionid)
+    /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
     /// Ghidra's `CollapseStructure` (option `regionstructure`, DIV-12 default-on:
     /// the primary structuring path; falls back to `CollapseStructure` on irreducible code).
@@ -1236,7 +1236,7 @@ impl Architecture {
             }
             "regionstructure" => {
                 let (val, msg) =
-                    crate::s8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
+                    crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
                 self.region_structure = val;
                 Ok(msg)
             }
@@ -1250,53 +1250,53 @@ impl Architecture {
             ),
             "gotoreduce" => {
                 let (val, msg) =
-                    crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
+                    crate::p8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
                 self.reduce_return_gotos = val;
                 Ok(msg)
             }
             "ifelseflatten" => {
                 let (val, msg) =
-                    crate::s8_structure::kuna_ifelseflatten::OptionIfElseFlatten.apply(p1)?;
+                    crate::p8_structure::kuna_ifelseflatten::OptionIfElseFlatten.apply(p1)?;
                 self.flatten_ifelse = val;
                 Ok(msg)
             }
             "crossjumprevert" => {
                 let (val, msg) =
-                    crate::s8_structure::kuna_crossjumpreverter::OptionCrossJumpReverter.apply(p1)?;
+                    crate::p8_structure::kuna_crossjumpreverter::OptionCrossJumpReverter.apply(p1)?;
                 self.revert_cross_jumps = val;
                 Ok(msg)
             }
             "taildup" => {
-                let (val, msg) = crate::s8_structure::kuna_taildup::OptionTailDup.apply(p1)?;
+                let (val, msg) = crate::p8_structure::kuna_taildup::OptionTailDup.apply(p1)?;
                 self.dup_return_call_tails = val;
                 Ok(msg)
             }
             "dedupitetail" => {
                 let (val, msg) =
-                    crate::s8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
+                    crate::p8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
                 self.dedup_ite_tail = val;
                 Ok(msg)
             }
             "iteregion" => {
-                let (val, msg) = crate::s8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
+                let (val, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
                 self.iteregion = val;
                 Ok(msg)
             }
             "returndup" => {
                 let (val, msg) =
-                    crate::s8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
+                    crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
                 self.duplicate_shared_returns = val;
                 Ok(msg)
             }
             "earlyreturn" => {
                 let (val, msg) =
-                    crate::s8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
+                    crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
                 self.early_return = val;
                 Ok(msg)
             }
             "switchreturn" => {
                 let (val, msg) =
-                    crate::s8_structure::kuna_switchreturn::OptionSwitchReturn.apply(p1)?;
+                    crate::p8_structure::kuna_switchreturn::OptionSwitchReturn.apply(p1)?;
                 self.switch_return = val;
                 Ok(msg)
             }

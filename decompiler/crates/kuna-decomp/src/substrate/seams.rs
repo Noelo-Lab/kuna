@@ -532,7 +532,7 @@ pub struct Architecture {
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
-    /// walking the [`KunaRegionIdentifier`](crate::s7_regions::kuna_regionid)
+    /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
     /// Ghidra's `CollapseStructure` (`region_structure`, DIV-12 default-on: the
     /// primary structuring path; falls back to `CollapseStructure` on irreducible code).
@@ -544,7 +544,7 @@ pub struct Architecture {
     /// refined (secondary exits & latches virtualized to break/continue gotos) so
     /// they fold into structured loops instead of falling back to
     /// `CollapseStructure`.  Read by
-    /// [`crate::s8_structure::region_structurer::run_region_structurer`].
+    /// [`crate::p8_structure::region_structurer::run_region_structurer`].
     pub region_loop_refine: bool,
     /// (kuna) region structurer last-resort edge-virtualization ORDERING (SAILR P2,
     /// `region_edge_order`, opt-in default-off).  When set (and `region_structure`
@@ -552,52 +552,52 @@ pub struct Architecture {
     /// dominance-tiered bucketing (crossing / secondary / other) + the H2 post-
     /// dominator heuristic (capped), instead of the flat H1/H3 + address ordering.
     /// Only changes WHICH goto is chosen when virtualizing, so OFF is byte-identical.
-    /// Read by [`crate::s8_structure::region_structurer::run_region_structurer`].
+    /// Read by [`crate::p8_structure::region_structurer::run_region_structurer`].
     pub region_edge_order: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
+    /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
     pub reduce_return_gotos: bool,
     /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a terminating-if
     /// 3-component `if` (`flatten_ifelse`, opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_ifelseflatten`]'s `ActionIfElseFlatten`.
+    /// [`crate::p8_structure::kuna_ifelseflatten`]'s `ActionIfElseFlatten`.
     pub flatten_ifelse: bool,
     /// (kuna) angr SAILR `CrossJumpReverter`: duplicate a small *non-return*
     /// cross-jump tail into the `goto` source (`revert_cross_jumps`, opt-in
     /// default-off).  Read by
-    /// [`crate::s8_structure::kuna_crossjumpreverter`]'s `ActionCrossJumpReverter`.
+    /// [`crate::p8_structure::kuna_crossjumpreverter`]'s `ActionCrossJumpReverter`.
     pub revert_cross_jumps: bool,
     /// (kuna) angr SAILR `ReturnDuplicatorLow`: duplicate a small **return tail that
     /// contains a call** (e.g. `free(p); return;`) into the `goto` source
     /// (`dup_return_call_tails`, opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_taildup`]'s `ActionTailDup`.
+    /// [`crate::p8_structure::kuna_taildup`]'s `ActionTailDup`.
     pub dup_return_call_tails: bool,
     /// (kuna) angr structurer ITE region-dedup: merge a duplicated `if/else` tail
     /// (shared prefix/suffix across both arms) by hoisting the shared blocks out of
     /// the `if` — the inverse of the SAILR duplication passes (`dedup_ite_tail`,
     /// opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_dedupitetail`]'s `ActionDedupIteTail`.
+    /// [`crate::p8_structure::kuna_dedupitetail`]'s `ActionDedupIteTail`.
     pub dedup_ite_tail: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
     /// (`if (c) v = A; else v = B;`) to a `?:` ternary (`v = c ? A : B;`)
     /// (`iteregion`, opt-in default-off — a **runtime choice**: matches source only
     /// when the source used a ternary).  Read by
-    /// [`crate::s8_structure::kuna_iteregion`]'s `ActionIteRegion`.
+    /// [`crate::p8_structure::kuna_iteregion`]'s `ActionIteRegion`.
     pub iteregion: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block into each predecessor but one so a
     /// `if (c) { body; return X; } return Y;` guard shape structures as per-predecessor
     /// early returns (`duplicate_shared_returns`, opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_returndup`]'s `ActionReturnDup`.
+    /// [`crate::p8_structure::kuna_returndup`]'s `ActionReturnDup`.
     pub duplicate_shared_returns: bool,
     /// (kuna) hoist a leading const-guard into an early return by peeling only the
     /// CONSTANT arm of a mixed return phi (`early_return`, opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_earlyreturn`]'s `ActionEarlyReturn`.
+    /// [`crate::p8_structure::kuna_earlyreturn`]'s `ActionEarlyReturn`.
     pub early_return: bool,
     /// (kuna) continuation of `early_return` to the WIDE multi-way switch-phi return: peel
     /// each constant case arm to per-case `return K` past earlyreturn's 16-in-edge cap
     /// (`switch_return`, opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_switchreturn`]'s `ActionSwitchReturn`.
+    /// [`crate::p8_structure::kuna_switchreturn`]'s `ActionSwitchReturn`.
     pub switch_return: bool,
     /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-10 default-on).  Read by
@@ -614,7 +614,7 @@ pub struct Architecture {
     pub strip_stack_guard: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
-    /// [`crate::s8_structure::kuna_branchflip`]'s `ActionBranchFlip`.
+    /// [`crate::p8_structure::kuna_branchflip`]'s `ActionBranchFlip`.
     pub branch_flip: bool,
     /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
     /// to materialize a propagated constant as a COPY inside a loop predecessor

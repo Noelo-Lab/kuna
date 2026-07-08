@@ -28,8 +28,8 @@
 //!
 //! # What this pass does
 //!
-//! This is the **sibling** of [`crate::s8_structure::kuna_gotoreduce`]
-//! ([`ActionGotoReduce`](crate::s8_structure::kuna_gotoreduce::ActionGotoReduce)):
+//! This is the **sibling** of [`crate::p8_structure::kuna_gotoreduce`]
+//! ([`ActionGotoReduce`](crate::p8_structure::kuna_gotoreduce::ActionGotoReduce)):
 //! `gotoreduce` duplicates a tail that ends in `return` (a *closed* path — no
 //! fall-through to reconcile), while this pass duplicates a **non-return,
 //! fall-through** cross-jump tail, which additionally requires a

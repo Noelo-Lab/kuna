@@ -13,7 +13,7 @@
 //! ```
 //!
 //! Most of this work is already done in kuna by the region structurer
-//! (`s8_structure::region_structurer`, default-on since DIV-12): for a clean
+//! (`p8_structure::region_structurer`, default-on since DIV-12): for a clean
 //! diamond it forms an if/then (not an if/else) and the printer's guard
 //! inversion already produces the flat early-return form.  What is left over —
 //! and what this pass catches — is the residual case where the structurer (or

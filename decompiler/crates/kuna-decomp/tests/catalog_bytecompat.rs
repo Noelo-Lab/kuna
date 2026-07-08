@@ -1,6 +1,6 @@
 //! Catalog byte-compatibility gate (ADR 0006, item w4-kuna-p0-pack).
 //!
-//! The Rust catalog JSON emitter (`kuna_stages::emit_catalog_json`) must
+//! The Rust catalog JSON emitter (`kuna_phases::emit_catalog_json`) must
 //! reproduce `kuna_console.cc kunaEmitSettableJson`'s output **byte for byte**:
 //! `tests/stages/kuna-catalog.xml` (a C++ datatest) string-matches the raw
 //! emitter output, and `python -m kuna.catalog` parses it, so any drift in key
@@ -35,10 +35,10 @@
 //! cp /tmp/cap.json decompiler/crates/kuna-decomp/tests/fixtures/stage_catalog.json
 //! ```
 //!
-//! Regenerate it whenever `stages.toml` gains/loses a settable or a settable's
+//! Regenerate it whenever `phases.toml` gains/loses a settable or a settable's
 //! catalog text changes.
 
-use kuna_decomp::kuna_stages::{emit_catalog_json, emit_catalog_json_one, lookup_settable};
+use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, lookup_settable};
 
 /// The captured C++ `stage catalog` output (no program loaded -> no `current`).
 const FIXTURE: &str = include_str!("fixtures/stage_catalog.json");
@@ -160,8 +160,8 @@ fn single_settable_rows_match_their_slice_of_the_catalog() {
     // `stage catalog <option>` (one-argument form) must emit exactly the same
     // bytes as that option's row in the full catalog, minus the leading "  "
     // is preserved and minus the trailing comma (the full form joins with ',').
-    for i in 0..kuna_decomp::kuna_stages::kuna_num_settables() {
-        let st = kuna_decomp::kuna_stages::kuna_settable_by_index(i);
+    for i in 0..kuna_decomp::kuna_phases::kuna_num_settables() {
+        let st = kuna_decomp::kuna_phases::kuna_settable_by_index(i);
         let one = emit_catalog_json_one(st.option, None).expect("known option");
         // The one-row form is the bare object + a single newline.
         assert!(one.starts_with("  {\"option\": "));

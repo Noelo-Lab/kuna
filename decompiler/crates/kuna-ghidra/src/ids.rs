@@ -124,7 +124,7 @@ pub const ELEM_SIGSETTINGS: ElementId = ElementId::new("sigsettings", 268);
 
 /// Marshaling attribute "maxsize" (upstream `fspec.cc:27`, id 120), used by
 /// the getStringData query.  kuna's port of this id lives in
-/// `kuna-decomp/src/s4_calls/modelrules.rs:99`, which phase 1 deliberately
+/// `kuna-decomp/src/p4_calls/modelrules.rs:99`, which phase 1 deliberately
 /// does not depend on; the constant is duplicated here with the same
 /// upstream number.  TODO(phase-2): drop this duplicate once kuna-ghidra
 /// links against kuna-decomp for the engine bridge.

@@ -85,7 +85,7 @@
 use object::read::{Object, ObjectSection, ObjectSymbol};
 use object::{SectionKind, SymbolKind};
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase};
 use crate::s1_loader::format::FormatKind;
 
 mod macho_entry;
@@ -101,8 +101,8 @@ mod pe_entry;
 pub struct EntryDiscoveryPass;
 
 impl AnalysisPass for EntryDiscoveryPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -161,8 +161,8 @@ impl AnalysisPass for EntryDiscoveryPass {
 pub struct EhFrameLsdaPass;
 
 impl AnalysisPass for EhFrameLsdaPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -226,8 +226,8 @@ impl AnalysisPass for EhFrameLsdaPass {
 pub struct FuncStartPatternPass;
 
 impl AnalysisPass for FuncStartPatternPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

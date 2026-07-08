@@ -18,7 +18,7 @@
 //! kuna-base / kuna-num -> kuna-sleigh -> kuna-decomp -> kuna-analysis -> kuna-console / kuna-cli
 //! ```
 //!
-//! # Stage-aligned modules
+//! # Phase-aligned modules
 //!
 //! Analyses are grouped by the stage they feed (mostly P0/S1, before/around the
 //! deep decompiler):

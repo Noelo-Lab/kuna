@@ -1,7 +1,7 @@
 //! (kuna) Guard-bounded jump-table index option — `option switchguardbound`
 //! (angr port: `test_decompiling_missing_function_call`; S2 switch-model).
 //!
-//! Sibling of [`kuna_switchmodbound`](crate::s2_lift::kuna_switchmodbound)
+//! Sibling of [`kuna_switchmodbound`](crate::p2_lift::kuna_switchmodbound)
 //! (GH-9191). Both address the same recovery failure — the basic `JumpBasic`
 //! model cannot bound a LOAD-table index, so `JumpTable::recoverAddresses`
 //! aborts with *"Too many branches"* and `FlowInfo::truncateIndirectJump`

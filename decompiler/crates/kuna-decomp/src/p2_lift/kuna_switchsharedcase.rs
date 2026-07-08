@@ -1,8 +1,8 @@
 //! (kuna) Loop-carried-base PIC jump-table option — `option switchsharedcase`
 //! (angr port: `test_switch_case_shared_case_nodes_b2sum_digest`; S2 switch-model).
 //!
-//! Third sibling of [`kuna_switchmodbound`](crate::s2_lift::kuna_switchmodbound)
-//! and [`kuna_switchguardbound`](crate::s2_lift::kuna_switchguardbound).  All
+//! Third sibling of [`kuna_switchmodbound`](crate::p2_lift::kuna_switchmodbound)
+//! and [`kuna_switchguardbound`](crate::p2_lift::kuna_switchguardbound).  All
 //! three address the same surface failure — the basic `JumpBasic` model cannot
 //! bound a LOAD-table index, `JumpTable::recoverAddresses` aborts with *"Too many
 //! branches"*, and `FlowInfo::truncateIndirectJump` rewrites the `BRANCHIND` into

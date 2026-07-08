@@ -1,7 +1,7 @@
 //! Flow classification of a decoded instruction's p-code (design doc §4.3).
 //!
 //! [`classify`] is a faithful transliteration of the decompiler's single source
-//! of truth, `s2_lift/flow.rs::xref_control_flow` (`flow.rs:1039-1185`). It maps
+//! of truth, `p2_lift/flow.rs::xref_control_flow` (`flow.rs:1039-1185`). It maps
 //! the flat p-code op list the SLEIGH decoder emits for one machine instruction
 //! into a [`FlowType`], the list of static control targets, and the fall-through
 //! VMA. It performs no decode and needs no engine — it is pure over the ops, so

@@ -1,5 +1,5 @@
 //! S8 **switch const-case return hoisting** — the direct continuation of
-//! [`ActionEarlyReturn`](crate::s8_structure::kuna_earlyreturn), extended from the narrow
+//! [`ActionEarlyReturn`](crate::p8_structure::kuna_earlyreturn), extended from the narrow
 //! if/else-if diamond to the **multi-way switch** const-phi return (angr's SAILR
 //! `ReturnDuplicatorHigh`, per-edge const narrowing; Basque et al., USENIX Security 2024).
 //!
@@ -25,7 +25,7 @@
 //!
 //! # Why the shipped `earlyreturn` cannot reach it
 //!
-//! [`ActionEarlyReturn`](crate::s8_structure::kuna_earlyreturn) already runs the exact same
+//! [`ActionEarlyReturn`](crate::p8_structure::kuna_earlyreturn) already runs the exact same
 //! per-edge const-peel machinery ([`Funcdata::earlyreturn_const_edges`] +
 //! [`Funcdata::node_split`]) and DOES recover per-case returns for a switch whose merge block
 //! has ≤ `MAX_EARLYRETURN_INEDGES` (16) predecessors (e.g. findutils `get_fts_info_name`, a

@@ -33,7 +33,7 @@
 //!
 //! Running once after [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure)
 //! (the structured tree is final and goto targets are labelled) — alongside
-//! [`ActionDedupIteTail`](crate::s8_structure::kuna_dedupitetail::ActionDedupIteTail)
+//! [`ActionDedupIteTail`](crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail)
 //! and the other post-structuring rewrites — [`ActionIteRegion`] finds every
 //! narrow, unambiguous assignment diamond and marks it for ternary rendering:
 //!

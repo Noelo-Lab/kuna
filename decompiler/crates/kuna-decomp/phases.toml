@@ -1,256 +1,255 @@
-# stages.toml -- the kuna stage registry (ADR 0006): the SINGLE SOURCE OF TRUTH
+# phases.toml -- the kuna phase registry (ADR 0006): the SINGLE SOURCE OF TRUTH
 # for the four static tables transcribed from decompiler/cpp/kuna_stages.cc
 # (groupTable, substageTable, surfaceTable, settableTable). build.rs reads this
 # file and generates the static tables, the typed OptionValues struct, and the
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=98, settable=65
-# (41 stage-model knobs + 21 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=75.
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
 # ---------------------------------------------------------------------------
 [[group]]
 group = "base"
-stage = "infra"
-substage = ""
+phase = "infra"
+subphase = ""
 note = "setup/teardown (ActionStart/Stop/Constbase) + core passes shared by every variant"
 
 [[group]]
 group = "protorecovery"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "ActionActiveParam/ActionReturnRecovery/ActionFuncLink trial recovery"
 
 [[group]]
 group = "protorecovery_a"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "ActionDirectWrite (propagation on)"
 
 [[group]]
 group = "protorecovery_b"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "ActionDirectWrite (propagation off)"
 
 [[group]]
 group = "noproto"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "jumptable-variant stand-in (ActionFuncLinkOutOnly)"
 
 [[group]]
 group = "siganalysis"
-stage = "S4"
-substage = ""
+phase = "S4"
+subphase = ""
 note = "paramid/signature variant analysis"
 
 [[group]]
 group = "normalanalysis"
-stage = "infra"
-substage = ""
+phase = "infra"
+subphase = ""
 note = "normalize-variant setup (ActionNormalizeSetup)"
 
 [[group]]
 group = "deindirect"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "indirect call -> direct (proto change may restart: edge 5)"
 
 [[group]]
 group = "localrecovery"
-stage = "S6"
-substage = "stack-frame-layout"
+phase = "S6"
+subphase = "stack-frame-layout"
 note = "RestrictLocal/RestructureVarnode/MappedLocalSync/OutputPrototype"
 
 [[group]]
 group = "deadcode"
-stage = "S5"
-substage = ""
+phase = "S5"
+subphase = ""
 note = "STRADDLER (s15): consume-bit fact propagation; destroys S2 ops; gated by S3 dead-definition gate (edge 3)"
 
 [[group]]
 group = "typerecovery"
-stage = "S5"
-substage = "type-propagation"
+phase = "S5"
+subphase = "type-propagation"
 note = "ActionInferTypes/ActionConstantPtr/oppool2 Ptr rules"
 
 [[group]]
 group = "stackptrflow"
-stage = "S6"
-substage = "stack-frame-layout"
+phase = "S6"
+subphase = "stack-frame-layout"
 note = "ActionStackPtrFlow"
 
 [[group]]
 group = "blockrecovery"
-stage = "S7"
-substage = ""
+phase = "S7"
+subphase = ""
 note = "STRADDLER (s15): BlockStructure/StructureTransform/FinalStructure span S7/S8; ForceGoto consumes the S7 force-goto assertion"
 
 [[group]]
 group = "stackvars"
-stage = "S6"
-substage = "stack-frame-layout"
+phase = "S6"
+subphase = "stack-frame-layout"
 note = "Load/StoreVarnode rules (stack var promotion)"
 
 [[group]]
 group = "deadcontrolflow"
-stage = "S2"
-substage = "reachability-pruning"
+phase = "S2"
+subphase = "reachability-pruning"
 note = "ActionRedundBranch/ActionDoNothing (CFG edge removal)"
 
 [[group]]
 group = "switchnorm"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "ActionSwitchNorm (jump-table phase-2 normalization)"
 
 [[group]]
 group = "cleanup"
-stage = "infra"
-substage = ""
+phase = "infra"
+subphase = ""
 note = "cleanup pool: deferred after fullloop as termination policy (stage-model s14); rules act on S3's artifact"
 
 [[group]]
 group = "splitcopy"
-stage = "S5"
-substage = "aggregate-union"
+phase = "S5"
+subphase = "aggregate-union"
 note = "RuleSplitCopy (splitdatatype option)"
 
 [[group]]
 group = "splitpointer"
-stage = "S5"
-substage = "aggregate-union"
+phase = "S5"
+subphase = "aggregate-union"
 note = "RuleSplitLoad/Store via pointer (splitdatatype option)"
 
 [[group]]
 group = "merge"
-stage = "S6"
-substage = "merge-aggressiveness"
+phase = "S6"
+subphase = "merge-aggressiveness"
 note = "merge phalanx (HighVariable formation) + MarkExplicit/Implied + NameVars"
 
 [[group]]
 group = "dynamic"
-stage = "S6"
-substage = "alias-facets"
+phase = "S6"
+subphase = "alias-facets"
 note = "ActionDynamicMapping/ActionDynamicSymbols (DynamicHash symbols)"
 
 [[group]]
 group = "casts"
-stage = "S9"
-substage = "cast-policy"
+phase = "S9"
+subphase = "cast-policy"
 note = "ActionSetCasts"
 
 [[group]]
 group = "analysis"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = "the main simplification rule pool (oppool1) + MultiCse/ShadowVar/ConditionalConst"
 
 [[group]]
 group = "canonicalcompare"
-stage = "S3"
-substage = "comparison-canonicalization"
+phase = "S3"
+subphase = "comparison-canonicalization"
 note = "(kuna) GH-558: RuleIntLessEqual split out of analysis"
 
 [[group]]
 group = "presentcompare"
-stage = "S9"
-substage = "comparison-canonicalization"
+phase = "S9"
+subphase = "comparison-canonicalization"
 note = "(kuna) GH-558: ActionPresentCompareForm at the S8->S9 boundary"
 
 [[group]]
 group = "fixateglobals"
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 note = "ActionMapGlobals: the C++ side's late write-back into the global/data map"
 
 [[group]]
 group = "fixateproto"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "ActionInputPrototype (commit recovered signature -> P0)"
 
 [[group]]
 group = "constsequence"
-stage = "S5"
-substage = ""
+phase = "S5"
+subphase = ""
 note = "RuleStringCopy/RuleStringStore (builtin memcpy/strncpy recognition)"
 
 [[group]]
 group = "bitfields"
-stage = "S5"
-substage = "aggregate-union"
+phase = "S5"
+subphase = "aggregate-union"
 note = "RuleBitfield*"
 
 [[group]]
 group = "segment"
-stage = "S2"
-substage = ""
+phase = "S2"
+subphase = ""
 note = "RuleSegment/ActionSegmentize (segmented address spaces)"
 
 [[group]]
 group = "returnsplit"
-stage = "S4"
-substage = ""
+phase = "S4"
+subphase = ""
 note = "ActionReturnSplit"
 
 [[group]]
 group = "nodejoin"
-stage = "S3"
-substage = ""
+phase = "S3"
+subphase = ""
 note = "ActionNodeJoin (phi/def-web node joining)"
 
 [[group]]
 group = "doubleload"
-stage = "S5"
-substage = ""
+phase = "S5"
+subphase = ""
 note = "double-precision load pairing"
 
 [[group]]
 group = "doubleprecis"
-stage = "S5"
-substage = ""
+phase = "S5"
+subphase = ""
 note = "double-precision arithmetic recovery"
 
 [[group]]
 group = "unreachable"
-stage = "S2"
-substage = "reachability-pruning"
+phase = "S2"
+subphase = "reachability-pruning"
 note = "ActionDeterminedBranch/ActionUnreachable (edge 6: S5 facts remove CFG edges)"
 
 [[group]]
 group = "subvar"
-stage = "S3"
-substage = ""
+phase = "S3"
+subphase = ""
 note = "subvariable-flow transforms"
 
 [[group]]
 group = "floatprecision"
-stage = "S5"
-substage = ""
+phase = "S5"
+subphase = ""
 note = "float precision normalization"
 
 [[group]]
 group = "conditionalexe"
-stage = "S3"
-substage = ""
+phase = "S3"
+subphase = ""
 note = "ActionConditionalExe/RuleOrPredicate"
 
 [[group]]
 group = "normalizebranches"
-stage = "S8"
-substage = ""
+phase = "S8"
+subphase = ""
 note = "ActionNormalizeBranches (branch normalization for structuring)"
 
 # ---------------------------------------------------------------------------
 # substageTable: every named decision point (40 rows).
 # ---------------------------------------------------------------------------
-[[substage]]
+[[subphase]]
 name = "assertion-admission"
-stage = "P0"
+phase = "P0"
 decision = "is an incoming fact ground truth or a bias; does it clear caches or only reflow"
 assertion = "per-fact lock / cache policy"
 strength = "HARD"
@@ -258,9 +257,9 @@ rewind = "P0"
 latent = true
 exposure = "LATENT: confidence-graded admission (roadmap 16.6); kuna kassert records hard|hint"
 
-[[substage]]
+[[subphase]]
 name = "pipeline-variant"
-stage = "P0"
+phase = "P0"
 decision = "which named pipeline/preset runs; restart budget"
 assertion = "configuration assertion"
 strength = "HARD"
@@ -268,9 +267,9 @@ rewind = "S1"
 latent = false
 exposure = "option setaction; command pipeline (kuna)"
 
-[[substage]]
+[[subphase]]
 name = "environment-binding"
-stage = "S1"
+phase = "S1"
 decision = "loader, architecture, platform/ABI, load address"
 assertion = "environment assertion"
 strength = "HARD"
@@ -278,9 +277,9 @@ rewind = "S1"
 latent = false
 exposure = "option setlanguage; .ldefs/.cspec selection at SleighArchitecture build"
 
-[[substage]]
+[[subphase]]
 name = "code-data-partition"
-stage = "S1"
+phase = "S1"
 decision = "which gaps are code; which data cells are code pointers; segment permissions"
 assertion = "segment/global annotation"
 strength = "HARD"
@@ -288,9 +287,9 @@ rewind = "S1"
 latent = false
 exposure = "command global add/remove/spaces; command readonly; option readonly"
 
-[[substage]]
+[[subphase]]
 name = "decode-context"
-stage = "S2"
+phase = "S2"
 decision = "which decoder context (THUMB, addr16/32, ...) applies at each address"
 assertion = "context-set at address"
 strength = "HARD"
@@ -298,9 +297,9 @@ rewind = "S2"
 latent = false
 exposure = "command set context; option allowcontextset"
 
-[[substage]]
+[[subphase]]
 name = "decode-error-policy"
-stage = "S2"
+phase = "S2"
 decision = "unimplemented/bad-data/out-of-bounds/too-many-instructions: truncate vs throw vs ignore"
 assertion = "flow option flags"
 strength = "HARD"
@@ -308,9 +307,9 @@ rewind = "S2"
 latent = false
 exposure = "options ignoreunimplemented/errorunimplemented/errorreinterpreted/errortoomanyinstructions/maxinstruction"
 
-[[substage]]
+[[subphase]]
 name = "flow-classification"
-stage = "S2"
+phase = "S2"
 decision = "call-vs-branch (PIC, thunk, tail call); noreturn kills fall-through"
 assertion = "flow override"
 strength = "HARD"
@@ -318,9 +317,9 @@ rewind = "S2"
 latent = false
 exposure = "command override flow; option noreturn"
 
-[[substage]]
+[[subphase]]
 name = "inline-inject"
-stage = "S2"
+phase = "S2"
 decision = "clone callee body vs splice fixup p-code vs keep call"
 assertion = "inline/inject directive"
 strength = "HARD"
@@ -328,9 +327,9 @@ rewind = "S2"
 latent = false
 exposure = "option inline; command fixup call / fixup callother"
 
-[[substage]]
+[[subphase]]
 name = "switch-model"
-stage = "S2"
+phase = "S2"
 decision = "which model explains a BRANCHIND (Basic/Basic2/Trivial/Assisted/Override); table bounds; case count"
 assertion = "explicit jump table"
 strength = "HARD"
@@ -338,9 +337,9 @@ rewind = "S2"
 latent = false
 exposure = "command override jumptable; Override::insertMultistageJump; options jumptablemax/jumpload"
 
-[[substage]]
+[[subphase]]
 name = "reachability-pruning"
-stage = "S2"
+phase = "S2"
 decision = "remove or keep unreachable blocks"
 assertion = "unreachable policy"
 strength = "HINT"
@@ -348,9 +347,9 @@ rewind = "S2"
 latent = true
 exposure = "LATENT at user level (removeUnreachableBlocks flag-gated in flow)"
 
-[[substage]]
+[[subphase]]
 name = "heritage-staging"
-stage = "S3"
+phase = "S3"
 decision = "per-space order and delay of SSA construction (stack delayed to collect varnodes first)"
 assertion = "per-space delay"
 strength = "HARD"
@@ -358,9 +357,9 @@ rewind = "S3"
 latent = true
 exposure = "LATENT at user level (HeritageInfo.delay from arch spec)"
 
-[[substage]]
+[[subphase]]
 name = "dead-definition-gate"
-stage = "S3"
+phase = "S3"
 decision = "when dead-code removal is allowed per space (pass > deadcodedelay); premature removal -> restart"
 assertion = "deadcode-delay"
 strength = "HARD"
@@ -368,9 +367,9 @@ rewind = "S3"
 latent = false
 exposure = "command deadcode delay (Override::insertDeadcodeDelay; auto-bumped, survives restart - edge 3)"
 
-[[substage]]
+[[subphase]]
 name = "phi-range-granularity"
-stage = "S3"
+phase = "S3"
 decision = "split a memory range at gaps before placing phis (hardcoded size>4 && max<size)"
 assertion = "(none today)"
 strength = "NONE"
@@ -378,9 +377,9 @@ rewind = "S3"
 latent = true
 exposure = "LATENT everywhere (matters for struct-heavy frames)"
 
-[[substage]]
+[[subphase]]
 name = "simplification-quiescence"
-stage = "S3"
+phase = "S3"
 decision = "which algebraic/peephole rules fire; when the local fixed point is declared"
 assertion = "per-rule enable/disable"
 strength = "HARD"
@@ -388,9 +387,9 @@ rewind = "S3"
 latent = false
 exposure = "option togglerule; arch extra_pool_rules injection slot"
 
-[[substage]]
+[[subphase]]
 name = "comparison-canonicalization"
-stage = "S3"
+phase = "S3"
 decision = "canonicalize V <= c into V < c+1 for analysis (3 sites via replaceLessequal)"
 assertion = "compareform canonical|original"
 strength = "HARD"
@@ -398,9 +397,9 @@ rewind = "S3"
 latent = false
 exposure = "(kuna GH-558) option compareform; groups canonicalcompare/presentcompare"
 
-[[substage]]
+[[subphase]]
 name = "prototype-source"
-stage = "S4"
+phase = "S4"
 decision = "locked/declared signature vs trial recovery"
 assertion = "locked prototype"
 strength = "HARD"
@@ -408,9 +407,9 @@ rewind = "S4"
 latent = false
 exposure = "commands prototype lock / override prototype / parse line; map param/return"
 
-[[substage]]
+[[subphase]]
 name = "trial-budget"
-stage = "S4"
+phase = "S4"
 decision = "how many passes before param/return trials freeze (numpasses >= maxpass)"
 assertion = "pass budget"
 strength = "HINT"
@@ -418,9 +417,9 @@ rewind = "S4"
 latent = true
 exposure = "LATENT as a user assertion (maxpass per prototype model)"
 
-[[substage]]
+[[subphase]]
 name = "abi-trust"
-stage = "S4"
+phase = "S4"
 decision = "trust platform ABI for trashed/preserved vs infer from dataflow"
 assertion = "ABI-trust flag"
 strength = "HINT"
@@ -428,9 +427,9 @@ rewind = "S4"
 latent = false
 exposure = "options defaultprototype/protoeval"
 
-[[substage]]
+[[subphase]]
 name = "extrapop"
-stage = "S4"
+phase = "S4"
 decision = "stack adjustment across calls when underdetermined (StackSolver)"
 assertion = "extrapop override"
 strength = "HARD"
@@ -438,9 +437,9 @@ rewind = "S4"
 latent = false
 exposure = "option extrapop"
 
-[[substage]]
+[[subphase]]
 name = "interproc-regime"
-stage = "S4"
+phase = "S4"
 decision = "per-function-with-restart vs bottom-up SCC summaries vs on-demand whole-program"
 assertion = "regime selection"
 strength = "NONE"
@@ -448,9 +447,9 @@ rewind = "S4"
 latent = true
 exposure = "LATENT in all three decompilers (each regime hardcoded)"
 
-[[substage]]
+[[subphase]]
 name = "range-facts"
-stage = "S5"
+phase = "S5"
 decision = "widening strategy and iteration cutoffs; feeds S2 jump-table bounds and determined branches"
 assertion = "range assertion"
 strength = "HARD"
@@ -458,9 +457,9 @@ rewind = "S5"
 latent = true
 exposure = "LATENT everywhere (only indirect: option jumptablemax caps case count)"
 
-[[substage]]
+[[subphase]]
 name = "const-pointer"
-stage = "S5"
+phase = "S5"
 decision = "is this constant an address? (space attribute > usage inference)"
 assertion = "pointer/equate annotation"
 strength = "HARD"
@@ -468,9 +467,9 @@ rewind = "S5"
 latent = false
 exposure = "option inferconstptr; commands map address / global add"
 
-[[substage]]
+[[subphase]]
 name = "type-propagation"
-stage = "S5"
+phase = "S5"
 decision = "per-opcode flow direction; lattice solve; type locks are HARD stops"
 assertion = "type lock | type hint"
 strength = "HARD"
@@ -478,9 +477,9 @@ rewind = "S5"
 latent = false
 exposure = "commands retype / type varnode (typelock); Ghidra-actual rewind: whole function"
 
-[[substage]]
+[[subphase]]
 name = "aggregate-union"
-stage = "S5"
+phase = "S5"
 decision = "when to synthesize struct/array; which union field wins (ScoreUnionFields weights)"
 assertion = "union facet | must-struct"
 strength = "HARD"
@@ -488,9 +487,9 @@ rewind = "S5"
 latent = false
 exposure = "command map unionfacet (DynamicHash); option splitdatatype; scoring weights LATENT"
 
-[[substage]]
+[[subphase]]
 name = "solver-budget"
-stage = "S5"
+phase = "S5"
 decision = "type-propagation pass cap (7, compile-time)"
 assertion = "solver budget"
 strength = "HINT"
@@ -498,9 +497,9 @@ rewind = "S5"
 latent = true
 exposure = "LATENT (compile-time constant)"
 
-[[substage]]
+[[subphase]]
 name = "merge-aggressiveness"
-stage = "S6"
+phase = "S6"
 decision = "forced (phi/address-tied) vs speculative (cover/type) vs adjacent merges"
 assertion = "isolate"
 strength = "HARD"
@@ -508,9 +507,9 @@ rewind = "S6"
 latent = false
 exposure = "command isolate (Symbol::setIsolated blocks speculative merge)"
 
-[[substage]]
+[[subphase]]
 name = "stack-frame-layout"
-stage = "S6"
+phase = "S6"
 decision = "overlapping RangeHint conflict policy: typelock > rangeType > type specificity"
 assertion = "stack symbol + type lock"
 strength = "HARD"
@@ -518,9 +517,9 @@ rewind = "S6"
 latent = false
 exposure = "command map address + retype (locked stack symbols)"
 
-[[substage]]
+[[subphase]]
 name = "alias-facets"
-stage = "S6"
+phase = "S6"
 decision = "which stack offsets a pointer may alias; binding symbols to temporaries by dataflow hash"
 assertion = "dynamic-hash symbol"
 strength = "HARD"
@@ -528,9 +527,9 @@ rewind = "S6"
 latent = false
 exposure = "command map hash; option aliasblock (boundary policy itself LATENT)"
 
-[[substage]]
+[[subphase]]
 name = "explicit-implied"
-stage = "S6"
+phase = "S6"
 decision = "does a value get its own named token or inline into its parent expression"
 assertion = "per-variable visibility"
 strength = "HINT"
@@ -538,9 +537,9 @@ rewind = "S9"
 latent = true
 exposure = "LATENT per-variable everywhere (high-value readability knob)"
 
-[[substage]]
+[[subphase]]
 name = "loop-refinement"
-stage = "S7"
+phase = "S7"
 decision = "how aggressively to absorb nodes into loops; force single-exit via guarded successors"
 assertion = "region-shaping options"
 strength = "HINT"
@@ -548,9 +547,9 @@ rewind = "S7"
 latent = true
 exposure = "LATENT in Ghidra/Reko (angr-only options); kuna `region tree/blocks/walk` (KunaRegionIdentifier) = observable half"
 
-[[substage]]
+[[subphase]]
 name = "edge-virtualization"
-stage = "S7"
+phase = "S7"
 decision = "which edge to cut (become goto) when a region won't structure"
 assertion = "force-goto (per-edge)"
 strength = "HARD"
@@ -558,9 +557,9 @@ rewind = "S7"
 latent = false
 exposure = "command force goto (Override::insertForceGoto)"
 
-[[substage]]
+[[subphase]]
 name = "reident-batching"
-stage = "S7"
+phase = "S7"
 decision = "defer graph-topology updates so de-optimization passes can iterate"
 assertion = "pass-set selection"
 strength = "HINT"
@@ -568,9 +567,9 @@ rewind = "S7"
 latent = true
 exposure = "LATENT in Ghidra (angr delay_graph_updates)"
 
-[[substage]]
+[[subphase]]
 name = "schema-precedence"
-stage = "S8"
+phase = "S8"
 decision = "rule order when structuring patterns overlap (greedy: Goto,Cat,If,IfElse,While,DoWhile,InfLoop,Switch)"
 assertion = "structurer selection"
 strength = "HINT"
@@ -578,9 +577,9 @@ rewind = "S8"
 latent = true
 exposure = "LATENT rule order in Ghidra/Reko (angr structurer_cls)"
 
-[[substage]]
+[[subphase]]
 name = "goto-quality-acceptance"
-stage = "S8"
+phase = "S8"
 decision = "accept or roll back a graph edit based on measured structure quality (goto count, loop shape)"
 assertion = "quality policy"
 strength = "HINT"
@@ -588,9 +587,9 @@ rewind = "S8"
 latent = true
 exposure = "LATENT - no rollback in Ghidra (kuna command quality = observable half; roadmap 16.4)"
 
-[[substage]]
+[[subphase]]
 name = "readability-rewrites"
-stage = "S8"
+phase = "S8"
 decision = "switch-vs-if-cascade, for-recognition, condition complexity"
 assertion = "structuring options"
 strength = "HINT"
@@ -598,9 +597,9 @@ rewind = "S8"
 latent = false
 exposure = "options analyzeforloops / jumptablemax"
 
-[[substage]]
+[[subphase]]
 name = "naming-policy"
-stage = "S9"
+phase = "S9"
 decision = "auto vs symbol-derived vs semantic-pattern names; preservation of user names; angr-style (vN/aN/dat_/sub_/label_) vs Ghidra-style default names"
 assertion = "name lock (cosmetic); namestyle angr|ghidra"
 strength = "HARD"
@@ -608,9 +607,9 @@ rewind = "S9"
 latent = false
 exposure = "commands rename / name varnode (namelock); option namespacestrategy; option namestyle"
 
-[[substage]]
+[[subphase]]
 name = "cast-policy"
-stage = "S9"
+phase = "S9"
 decision = "minimal-necessary vs always vs never (CastStrategyC)"
 assertion = "cast option"
 strength = "HARD"
@@ -618,9 +617,9 @@ rewind = "S9"
 latent = false
 exposure = "option nocastprinting (global; per-expression LATENT everywhere)"
 
-[[substage]]
+[[subphase]]
 name = "literal-format"
-stage = "S9"
+phase = "S9"
 decision = "integer base, NULL-vs-0, per-symbol display format"
 assertion = "format assertion (per-symbol or global)"
 strength = "HARD"
@@ -628,9 +627,9 @@ rewind = "S9"
 latent = false
 exposure = "options integerformat/nullprinting; commands force varnode / force datatype / map convert"
 
-[[substage]]
+[[subphase]]
 name = "pointer-notation"
-stage = "S9"
+phase = "S9"
 decision = "render standalone PTRADD as base + index vs &base[index]"
 assertion = "arraynotation on|off"
 strength = "HARD"
@@ -638,9 +637,9 @@ rewind = "S9"
 latent = false
 exposure = "(kuna GH-558) option arraynotation -> PrintC::opPtradd"
 
-[[substage]]
+[[subphase]]
 name = "external-refinement"
-stage = "S9"
+phase = "S9"
 decision = "proposed renames/retypes/summaries: an assertion writer into P0 for the next run"
 assertion = "any P0 assertion"
 strength = "HINT"
@@ -653,590 +652,590 @@ exposure = "the console itself; kassert (kuna) is the uniform writer"
 # ---------------------------------------------------------------------------
 [[surface]]
 surface = "option extrapop"
-stage = "S4"
-substage = "extrapop"
+phase = "S4"
+subphase = "extrapop"
 note = ""
 
 [[surface]]
 surface = "option readonly"
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 note = "treat read-only memory as constant"
 
 [[surface]]
 surface = "option defaultprototype"
-stage = "S4"
-substage = "abi-trust"
+phase = "S4"
+subphase = "abi-trust"
 note = ""
 
 [[surface]]
 surface = "option protoeval"
-stage = "S4"
-substage = "abi-trust"
+phase = "S4"
+subphase = "abi-trust"
 note = "evaluation model for called functions"
 
 [[surface]]
 surface = "option inferconstptr"
-stage = "S5"
-substage = "const-pointer"
+phase = "S5"
+subphase = "const-pointer"
 note = ""
 
 [[surface]]
 surface = "option analyzeforloops"
-stage = "S8"
-substage = "readability-rewrites"
+phase = "S8"
+subphase = "readability-rewrites"
 note = ""
 
 [[surface]]
 surface = "option inline"
-stage = "S2"
-substage = "inline-inject"
+phase = "S2"
+subphase = "inline-inject"
 note = ""
 
 [[surface]]
 surface = "option noreturn"
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 note = ""
 
 [[surface]]
 surface = "option warning"
-stage = "P0"
-substage = ""
+phase = "P0"
+subphase = ""
 note = "diagnostic routing (cross-cutting)"
 
 [[surface]]
 surface = "option nullprinting"
-stage = "S9"
-substage = "literal-format"
+phase = "S9"
+subphase = "literal-format"
 note = ""
 
 [[surface]]
 surface = "option inplaceops"
-stage = "S9"
-substage = "literal-format"
+phase = "S9"
+subphase = "literal-format"
 note = "+=/-= rendering"
 
 [[surface]]
 surface = "option conventionprinting"
-stage = "S9"
-substage = "naming-policy"
+phase = "S9"
+subphase = "naming-policy"
 note = ""
 
 [[surface]]
 surface = "option nocastprinting"
-stage = "S9"
-substage = "cast-policy"
+phase = "S9"
+subphase = "cast-policy"
 note = ""
 
 [[surface]]
 surface = "option integerformat"
-stage = "S9"
-substage = "literal-format"
+phase = "S9"
+subphase = "literal-format"
 note = ""
 
 [[surface]]
 surface = "option maxlinewidth"
-stage = "S9"
-substage = ""
+phase = "S9"
+subphase = ""
 note = "pure formatting"
 
 [[surface]]
 surface = "option indentincrement"
-stage = "S9"
-substage = ""
+phase = "S9"
+subphase = ""
 note = "pure formatting"
 
 [[surface]]
 surface = "option commentstyle"
-stage = "S9"
-substage = ""
+phase = "S9"
+subphase = ""
 note = "pure formatting"
 
 [[surface]]
 surface = "option braceformat"
-stage = "S9"
-substage = ""
+phase = "S9"
+subphase = ""
 note = "pure formatting"
 
 [[surface]]
 surface = "option setaction"
-stage = "P0"
-substage = "pipeline-variant"
+phase = "P0"
+subphase = "pipeline-variant"
 note = ""
 
 [[surface]]
 surface = "option currentaction"
-stage = "P0"
-substage = "pipeline-variant"
+phase = "P0"
+subphase = "pipeline-variant"
 note = ""
 
 [[surface]]
 surface = "option allowcontextset"
-stage = "S2"
-substage = "decode-context"
+phase = "S2"
+subphase = "decode-context"
 note = ""
 
 [[surface]]
 surface = "option setlanguage"
-stage = "S1"
-substage = "environment-binding"
+phase = "S1"
+subphase = "environment-binding"
 note = ""
 
 [[surface]]
 surface = "option jumptablemax"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "also S8 readability straddler"
 
 [[surface]]
 surface = "option jumpload"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = ""
 
 [[surface]]
 surface = "option togglerule"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = ""
 
 [[surface]]
 surface = "option aliasblock"
-stage = "S6"
-substage = "alias-facets"
+phase = "S6"
+subphase = "alias-facets"
 note = ""
 
 [[surface]]
 surface = "option maxinstruction"
-stage = "S2"
-substage = "decode-error-policy"
+phase = "S2"
+subphase = "decode-error-policy"
 note = ""
 
 [[surface]]
 surface = "option ignoreunimplemented"
-stage = "S2"
-substage = "decode-error-policy"
+phase = "S2"
+subphase = "decode-error-policy"
 note = ""
 
 [[surface]]
 surface = "option errorunimplemented"
-stage = "S2"
-substage = "decode-error-policy"
+phase = "S2"
+subphase = "decode-error-policy"
 note = ""
 
 [[surface]]
 surface = "option errorreinterpreted"
-stage = "S2"
-substage = "decode-error-policy"
+phase = "S2"
+subphase = "decode-error-policy"
 note = ""
 
 [[surface]]
 surface = "option errortoomanyinstructions"
-stage = "S2"
-substage = "decode-error-policy"
+phase = "S2"
+subphase = "decode-error-policy"
 note = ""
 
 [[surface]]
 surface = "option namespacestrategy"
-stage = "S9"
-substage = "naming-policy"
+phase = "S9"
+subphase = "naming-policy"
 note = ""
 
 [[surface]]
 surface = "option splitdatatype"
-stage = "S5"
-substage = "aggregate-union"
+phase = "S5"
+subphase = "aggregate-union"
 note = ""
 
 [[surface]]
 surface = "option nanignore"
-stage = "S5"
-substage = ""
+phase = "S5"
+subphase = ""
 note = "float NaN-test simplification policy"
 
 [[surface]]
 surface = "option compareform"
-stage = "S3"
-substage = "comparison-canonicalization"
+phase = "S3"
+subphase = "comparison-canonicalization"
 note = "(kuna GH-558)"
 
 [[surface]]
 surface = "option arraynotation"
-stage = "S9"
-substage = "pointer-notation"
+phase = "S9"
+subphase = "pointer-notation"
 note = "(kuna GH-558)"
 
 [[surface]]
 surface = "option returnpair"
-stage = "S4"
-substage = "trial-budget"
+phase = "S4"
+subphase = "trial-budget"
 note = "(kuna GH-6990) keep multi-register returns single"
 
 [[surface]]
 surface = "option addcarrychain"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = "(kuna GH-8913) fuse 8-bit carry-chain 16-bit adds"
 
 [[surface]]
 surface = "option booleanmask"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = "(kuna GH-1282) fold (b<<k) s>> k boolean sign-extension-mask idioms"
 
 [[surface]]
 surface = "option thumbfuncptr"
-stage = "S5"
-substage = "const-pointer"
+phase = "S5"
+subphase = "const-pointer"
 note = "(kuna GH-8471) preserve mode-bit-encoded function pointers"
 
 [[surface]]
 surface = "option inferfuncentry"
-stage = "S5"
-substage = "const-pointer"
+phase = "S5"
+subphase = "const-pointer"
 note = "(kuna GH-6930) infer function entries at single-bit image bases"
 
 [[surface]]
 surface = "option memsetrecover"
-stage = "S5"
-substage = "constsequence"
+phase = "S5"
+subphase = "constsequence"
 note = "(kuna GH-9230) collapse constant-fill runs into builtin_memset"
 
 [[surface]]
 surface = "option v850indirectbranch"
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 note = "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery"
 
 [[surface]]
 surface = "option tailcalljump"
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 note = "(kuna tee-O2 tail-jumps) recover a direct jmp to another function's entry (e.g. jmp setlocale@plt) as a tail call (CALL + RETURN) instead of inlining the callee"
 
 [[surface]]
 surface = "option sparcstructret"
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 note = "(kuna GH-6882) SPARC struct-return post-call unimp falls through instead of becoming a non-returning CALLIND"
 
 [[surface]]
 surface = "option ovlesssimplify"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS"
 
 [[surface]]
 surface = "option inputvarnodeadjust"
-stage = "S6"
-substage = "stack-frame-layout"
+phase = "S6"
+subphase = "stack-frame-layout"
 note = "(kuna GH-9218) absorb overlapping input varnodes instead of aborting on adjust"
 
 [[surface]]
 surface = "option condexeplace"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = "(kuna GH-9203) keep ActionConditionalConst from placing a const COPY in a loop block (malformed do/while)"
 
 [[surface]]
 surface = "option arraystride"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = "(kuna GH-8724) re-express a strided-induction offset accumulator as counter*stride to recover the array index"
 
 [[surface]]
 surface = "option stackprobeloop"
-stage = "S2"
-substage = "stack-pointer-normalization"
+phase = "S2"
+subphase = "stack-pointer-normalization"
 note = "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset"
 
 [[surface]]
 surface = "option flagcompare"
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 note = "(kuna GH-1276/8777) fold flag-modelled comparison idioms (boolean-into-sign-bit, N==V signed compare)"
 
 [[surface]]
 surface = "option stackguard"
-stage = "S7"
-substage = "edge-virtualization"
+phase = "S7"
+subphase = "edge-virtualization"
 note = "(kuna angr-port) strip the -fstack-protector canary epilogue so the shared-return goto is eliminated"
 
 [[surface]]
 surface = "option branchflip"
-stage = "S8"
-substage = "readability-rewrites"
+phase = "S8"
+subphase = "readability-rewrites"
 note = "(kuna angr-port) flip negated-guard if/else branches for linearity (if (x==0) -> if (x!=0), arms swapped)"
 
 [[surface]]
 surface = "force goto"
-stage = "S7"
-substage = "edge-virtualization"
+phase = "S7"
+subphase = "edge-virtualization"
 note = "Override::insertForceGoto"
 
 [[surface]]
 surface = "override jumptable"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "JumpBasicOverride"
 
 [[surface]]
 surface = "override flow"
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 note = "Override::insertFlowOverride"
 
 [[surface]]
 surface = "override prototype"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "Override::insertProtoOverride"
 
 [[surface]]
 surface = "deadcode delay"
-stage = "S3"
-substage = "dead-definition-gate"
+phase = "S3"
+subphase = "dead-definition-gate"
 note = "Override::insertDeadcodeDelay"
 
 [[surface]]
 surface = "prototype lock"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "FuncProto input/output lock"
 
 [[surface]]
 surface = "prototype unlock"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = ""
 
 [[surface]]
 surface = "parse line"
-stage = "S4"
-substage = "prototype-source"
+phase = "S4"
+subphase = "prototype-source"
 note = "declared signature (also seeds S5 types)"
 
 [[surface]]
 surface = "retype"
-stage = "S5"
-substage = "type-propagation"
+phase = "S5"
+subphase = "type-propagation"
 note = "symbol typelock - HARD stop in propagateTypeEdge"
 
 [[surface]]
 surface = "type varnode"
-stage = "S5"
-substage = "type-propagation"
+phase = "S5"
+subphase = "type-propagation"
 note = ""
 
 [[surface]]
 surface = "map unionfacet"
-stage = "S5"
-substage = "aggregate-union"
+phase = "S5"
+subphase = "aggregate-union"
 note = "DynamicHash-keyed UnionFacetSymbol"
 
 [[surface]]
 surface = "map hash"
-stage = "S6"
-substage = "alias-facets"
+phase = "S6"
+subphase = "alias-facets"
 note = "DynamicHash symbol attachment"
 
 [[surface]]
 surface = "map address"
-stage = "S6"
-substage = "stack-frame-layout"
+phase = "S6"
+subphase = "stack-frame-layout"
 note = "also S1 globals when address is global"
 
 [[surface]]
 surface = "map convert"
-stage = "S9"
-substage = "literal-format"
+phase = "S9"
+subphase = "literal-format"
 note = ""
 
 [[surface]]
 surface = "force varnode"
-stage = "S9"
-substage = "literal-format"
+phase = "S9"
+subphase = "literal-format"
 note = ""
 
 [[surface]]
 surface = "force datatype"
-stage = "S9"
-substage = "literal-format"
+phase = "S9"
+subphase = "literal-format"
 note = ""
 
 [[surface]]
 surface = "rename"
-stage = "S9"
-substage = "naming-policy"
+phase = "S9"
+subphase = "naming-policy"
 note = "namelock"
 
 [[surface]]
 surface = "name varnode"
-stage = "S9"
-substage = "naming-policy"
+phase = "S9"
+subphase = "naming-policy"
 note = ""
 
 [[surface]]
 surface = "isolate"
-stage = "S6"
-substage = "merge-aggressiveness"
+phase = "S6"
+subphase = "merge-aggressiveness"
 note = "Symbol::setIsolated"
 
 [[surface]]
 surface = "set context"
-stage = "S2"
-substage = "decode-context"
+phase = "S2"
+subphase = "decode-context"
 note = "ContextDatabase"
 
 [[surface]]
 surface = "global add"
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 note = ""
 
 [[surface]]
 surface = "global remove"
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 note = ""
 
 [[surface]]
 surface = "volatile"
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 note = "userop semantics straddle S3/S5 (s15)"
 
 [[surface]]
 surface = "readonly"
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 note = ""
 
 [[surface]]
 surface = "fixup call"
-stage = "S2"
-substage = "inline-inject"
+phase = "S2"
+subphase = "inline-inject"
 note = "p-code injection"
 
 [[surface]]
 surface = "fixup callother"
-stage = "S2"
-substage = "inline-inject"
+phase = "S2"
+subphase = "inline-inject"
 note = ""
 
 [[surface]]
 surface = "structure blocks"
-stage = "S7"
-substage = ""
+phase = "S7"
+subphase = ""
 note = "direct structurer sub-query on an arbitrary graph"
 
 [[surface]]
 surface = "region tree"
-stage = "S7"
-substage = "loop-refinement"
+phase = "S7"
+subphase = "loop-refinement"
 note = "(kuna angr-port) analysis-only nested region tree over bblocks (KunaRegionIdentifier; angr GraphRegion.dbg_print)"
 
 [[surface]]
 surface = "region blocks"
-stage = "S7"
-substage = "loop-refinement"
+phase = "S7"
+subphase = "loop-refinement"
 note = "(kuna angr-port) flat regions_by_block_addrs dump per identified region"
 
 [[surface]]
 surface = "region walk"
-stage = "S7"
-substage = "loop-refinement"
+phase = "S7"
+subphase = "loop-refinement"
 note = "(kuna angr-port) recursive region-order walk over every leaf basic block"
 
 [[surface]]
 surface = "kassert"
-stage = "P0"
-substage = "assertion-admission"
+phase = "P0"
+subphase = "assertion-admission"
 note = "(kuna) uniform typed assertion writer"
 
 [[surface]]
 surface = "pipeline"
-stage = "P0"
-substage = "pipeline-variant"
+phase = "P0"
+subphase = "pipeline-variant"
 note = "(kuna) reduced-pipeline sub-query (mechanism c-prime)"
 
 [[surface]]
 surface = "quality"
-stage = "S8"
-substage = "goto-quality-acceptance"
+phase = "S8"
+subphase = "goto-quality-acceptance"
 note = "(kuna) goto-count metric, observable half"
 
 [[surface]]
 surface = "restarts"
-stage = "P0"
-substage = ""
+phase = "P0"
+subphase = ""
 note = "(kuna) feedback-edge observability (mechanism c)"
 
 [[surface]]
 surface = "option switchmodbound"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index"
 
 [[surface]]
 surface = "option switchguardbound"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "(kuna, angr) bound a LOAD-table jumptable by an out-of-band CBRANCH range guard the guard analysis missed"
 
 [[surface]]
 surface = "option switchsharedcase"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "(kuna, angr) recover a GCC PIC relative-offset jump table whose base register is loop-carried (getopt switch); rebuild the meld to the guarded load index"
 
 [[surface]]
 surface = "option switchmultipred"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "(kuna, angr) recover an image-base-relative jump table whose bound guard is unrolled across MULTIPLE dispatch predecessors (abnormal switch case); union the per-path guard prefixes across the dispatch MULTIEQUAL"
 
 [[surface]]
 surface = "option unrolledguard"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "(kuna, angr) recover the interleaved jump tables of an MSVC optimized memcpy/memmove (Duff's device): skip a recovered sibling table's undecoded case-target edge in the partial-flow collect_edges instead of throwing"
 
 [[surface]]
 surface = "option noreturn_externmatch"
-stage = "S2"
-substage = "flow-follow"
+phase = "S2"
+subphase = "flow-follow"
 note = "(kuna, angr) treat a name-matched known-no-return extern as no-return at the flow query seam (closes the ET_REL `.o` __stack_chk_fail dead-padding gap)"
 
 [[surface]]
 surface = "option dynamichashmax"
-stage = "S6"
-substage = "alias-facets"
+phase = "S6"
+subphase = "alias-facets"
 note = "(kuna GH-8467) raise DynamicHash same-address collision budget 8->16 for dense unrolled code"
 
 [[surface]]
 surface = "option stackalias"
-stage = "S6"
-substage = "alias-facets"
+phase = "S6"
+subphase = "alias-facets"
 note = "(kuna GH-8500) hold a store-through-a-stack-pointer-alias across the deadcode race"
 
 [[surface]]
 surface = "option loweredswitch"
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 note = "(kuna angr-port) reconstruct a compiler-lowered comparison cascade into a switch jump-table"
 
 [[surface]]
 surface = "option loopbreak_recovery"
-stage = "S8"
-substage = "goto-quality-acceptance"
+phase = "S8"
+subphase = "goto-quality-acceptance"
 note = "(kuna angr-port) lower loop-exit `goto <successor>` edges to structured `break;` (port of Ghidra BlockGraph::scopeBreak)"
 
 [[surface]]
 surface = "option namestyle"
-stage = "S9"
-substage = "naming-policy"
+phase = "S9"
+subphase = "naming-policy"
 note = "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming"
 
 # ---------------------------------------------------------------------------
@@ -1251,8 +1250,8 @@ option = "compareform"
 values = "canonical|original"
 default = "original"
 destructive = false
-stage = "S3"
-substage = "comparison-canonicalization"
+phase = "S3"
+subphase = "comparison-canonicalization"
 strength = "HARD"
 rewind = "S3"
 issue = "GH-558"
@@ -1271,8 +1270,8 @@ option = "arraynotation"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S9"
-substage = "pointer-notation"
+phase = "S9"
+subphase = "pointer-notation"
 strength = "HARD"
 rewind = "S9"
 issue = "GH-558"
@@ -1291,8 +1290,8 @@ option = "thumbfuncptr"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S5"
-substage = "const-pointer"
+phase = "S5"
+subphase = "const-pointer"
 strength = "HARD"
 rewind = "S5"
 issue = "GH-8471"
@@ -1311,8 +1310,8 @@ option = "inferfuncentry"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S5"
-substage = "const-pointer"
+phase = "S5"
+subphase = "const-pointer"
 strength = "HARD"
 rewind = "S5"
 issue = "GH-6930"
@@ -1331,8 +1330,8 @@ option = "booleanmask"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 strength = "HARD"
 rewind = "S3"
 issue = "GH-1282"
@@ -1351,8 +1350,8 @@ option = "ovlesssimplify"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 strength = "HARD"
 rewind = "S3"
 issue = "GH-7190"
@@ -1371,8 +1370,8 @@ option = "addcarrychain"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S5"
-substage = "simplification-quiescence"
+phase = "S5"
+subphase = "simplification-quiescence"
 strength = "HARD"
 rewind = "S5"
 issue = "GH-8913"
@@ -1391,8 +1390,8 @@ option = "memsetrecover"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S5"
-substage = "constsequence"
+phase = "S5"
+subphase = "constsequence"
 strength = "HARD"
 rewind = "S5"
 issue = "GH-9230/1537"
@@ -1411,8 +1410,8 @@ option = "returnpair"
 values = "pair|single"
 default = "pair"
 destructive = true
-stage = "S4"
-substage = "trial-budget"
+phase = "S4"
+subphase = "trial-budget"
 strength = "HARD"
 rewind = "S4"
 issue = "GH-6990"
@@ -1431,8 +1430,8 @@ option = "v850indirectbranch"
 values = "on|off"
 default = "off"
 destructive = true
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 strength = "HARD"
 rewind = "S2"
 issue = "GH-8817"
@@ -1451,8 +1450,8 @@ option = "tailcalljump"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-tee-O2-tail-jumps"
@@ -1471,8 +1470,8 @@ option = "noreturn_extern"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-tail-tail-bytes-ret-dup"
@@ -1491,8 +1490,8 @@ option = "flagcompare"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 strength = "HARD"
 rewind = "S3"
 issue = "GH-1276/8777"
@@ -1511,8 +1510,8 @@ option = "switchmodbound"
 values = "on|off"
 default = "off"
 destructive = true
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 strength = "HARD"
 rewind = "S2"
 issue = "GH-9191"
@@ -1531,8 +1530,8 @@ option = "switchguardbound"
 values = "on|off"
 default = "off"
 destructive = true
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-missing-function-call"
@@ -1551,8 +1550,8 @@ option = "switchsharedcase"
 values = "on|off"
 default = "on"
 destructive = true
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-switch-case-shared-case-node"
@@ -1571,8 +1570,8 @@ option = "switchmultipred"
 values = "on|off"
 default = "on"
 destructive = true
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-abnormal-switch-case-case3"
@@ -1591,8 +1590,8 @@ option = "unrolledguard"
 values = "on|off"
 default = "off"
 destructive = true
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-optimized-memcpy-6301a9"
@@ -1611,8 +1610,8 @@ option = "noreturn_externmatch"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S2"
-substage = "flow-follow"
+phase = "S2"
+subphase = "flow-follow"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-incorrect-duplication-chcon"
@@ -1631,8 +1630,8 @@ option = "stackprobeloop"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S2"
-substage = "stack-pointer-normalization"
+phase = "S2"
+subphase = "stack-pointer-normalization"
 strength = "HARD"
 rewind = "S2"
 issue = "GH-8017/6858"
@@ -1651,8 +1650,8 @@ option = "dynamichashmax"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S6"
-substage = "alias-facets"
+phase = "S6"
+subphase = "alias-facets"
 strength = "HARD"
 rewind = "S6"
 issue = "GH-8467"
@@ -1671,8 +1670,8 @@ option = "stackalias"
 values = "on|off"
 default = "off"
 destructive = true
-stage = "S6"
-substage = "alias-facets"
+phase = "S6"
+subphase = "alias-facets"
 strength = "HARD"
 rewind = "S6"
 issue = "GH-8500"
@@ -1691,8 +1690,8 @@ option = "arraystride"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 strength = "HARD"
 rewind = "S3"
 issue = "GH-8724"
@@ -1711,8 +1710,8 @@ option = "sparcstructret"
 values = "on|off"
 default = "off"
 destructive = true
-stage = "S2"
-substage = "flow-classification"
+phase = "S2"
+subphase = "flow-classification"
 strength = "HARD"
 rewind = "S2"
 issue = "GH-6882"
@@ -1731,8 +1730,8 @@ option = "condexeplace"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S3"
-substage = "simplification-quiescence"
+phase = "S3"
+subphase = "simplification-quiescence"
 strength = "HARD"
 rewind = "S3"
 issue = "GH-9203"
@@ -1751,8 +1750,8 @@ option = "inputvarnodeadjust"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S6"
-substage = "stack-frame-layout"
+phase = "S6"
+subphase = "stack-frame-layout"
 strength = "HARD"
 rewind = "S6"
 issue = "GH-9218"
@@ -1771,8 +1770,8 @@ option = "loweredswitch"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S2"
-substage = "switch-model"
+phase = "S2"
+subphase = "switch-model"
 strength = "HARD"
 rewind = "S2"
 issue = "angr-LoweredSwitchSimplifier"
@@ -1788,8 +1787,8 @@ option = "regionstructure"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-region-structurer"
@@ -1805,8 +1804,8 @@ option = "regionlooprefine"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-tr-o2-parse-str"
@@ -1822,8 +1821,8 @@ option = "regionedgeorder"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-sailr-edge-ordering"
@@ -1839,8 +1838,8 @@ option = "gotoreduce"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-ReturnDuplicator"
@@ -1856,8 +1855,8 @@ option = "ifelseflatten"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-IfElseFlattener"
@@ -1873,8 +1872,8 @@ option = "crossjumprevert"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-CrossJumpReverter"
@@ -1890,8 +1889,8 @@ option = "taildup"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-ReturnDuplicatorLow-call-tail"
@@ -1907,8 +1906,8 @@ option = "dedupitetail"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-ITE-region-dedup"
@@ -1924,8 +1923,8 @@ option = "iteregion"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-ITE-region-converter"
@@ -1941,8 +1940,8 @@ option = "returndup"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-ReturnDuplicatorHigh"
@@ -1958,8 +1957,8 @@ option = "earlyreturn"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-ReturnDuplicatorHigh-peredge"
@@ -1975,8 +1974,8 @@ option = "switchreturn"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality"
+phase = "S8"
+subphase = "goto-quality"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-ReturnDuplicatorHigh-switchphi"
@@ -1992,8 +1991,8 @@ option = "foldcallret"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S6"
-substage = "explicit-marking"
+phase = "S6"
+subphase = "explicit-marking"
 rewind = "S6"
 strength = "HINT"
 issue = "angr-call-return-variable-folding"
@@ -2009,8 +2008,8 @@ option = "stackguard"
 values = "on|off"
 default = "on"
 destructive = true
-stage = "S7"
-substage = "edge-virtualization"
+phase = "S7"
+subphase = "edge-virtualization"
 strength = "HARD"
 rewind = "S7"
 issue = "angr-StackCanarySimplifier"
@@ -2026,8 +2025,8 @@ option = "branchflip"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "readability-rewrites"
+phase = "S8"
+subphase = "readability-rewrites"
 strength = "HINT"
 rewind = "S8"
 issue = "angr-SAILR-condition-polarity"
@@ -2043,8 +2042,8 @@ option = "loopbreak_recovery"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S8"
-substage = "goto-quality-acceptance"
+phase = "S8"
+subphase = "goto-quality-acceptance"
 strength = "HARD"
 rewind = "S8"
 issue = "angr-1after909-doit"
@@ -2060,8 +2059,8 @@ option = "namestyle"
 values = "angr|ghidra"
 default = "angr"
 destructive = false
-stage = "S9"
-substage = "naming-policy"
+phase = "S9"
+subphase = "naming-policy"
 strength = "HARD"
 rewind = "S9"
 issue = "angr-naming"
@@ -2077,8 +2076,8 @@ option = "realtypes"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S9"
-substage = "literal-format"
+phase = "S9"
+subphase = "literal-format"
 strength = "HARD"
 rewind = "S9"
 issue = "kuna-realtypes"
@@ -2097,8 +2096,8 @@ option = "dedupvardecls"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S9"
-substage = "naming-policy"
+phase = "S9"
+subphase = "naming-policy"
 strength = "HARD"
 rewind = "S9"
 issue = "angr-duplicate-decls"
@@ -2127,8 +2126,8 @@ option = "noreturn_known"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-noreturn"
@@ -2143,8 +2142,8 @@ option = "libproto"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-libproto"
@@ -2159,8 +2158,8 @@ option = "strings"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-strings"
@@ -2175,8 +2174,8 @@ option = "entry_disc"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-entry"
@@ -2191,8 +2190,8 @@ option = "eh_frame_full"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-ehframe-lsda"
@@ -2207,8 +2206,8 @@ option = "funcstart_patterns"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-funcstart-patterns"
@@ -2223,8 +2222,8 @@ option = "arm_markers"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-armmarkers"
@@ -2239,8 +2238,8 @@ option = "mips_gp"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-mipsgp"
@@ -2255,8 +2254,8 @@ option = "i386_pie_plt"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-i386pieplt"
@@ -2271,8 +2270,8 @@ option = "mips_isa"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-mipsisa"
@@ -2287,8 +2286,8 @@ option = "dwarf"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-dwarf"
@@ -2303,8 +2302,8 @@ option = "dwarf_lines"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-dwarf-lines"
@@ -2319,8 +2318,8 @@ option = "callfixup"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-callfixup"
@@ -2335,8 +2334,8 @@ option = "addrtable"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-addrtable"
@@ -2351,8 +2350,8 @@ option = "operand_refs"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-operand-refs"
@@ -2367,8 +2366,8 @@ option = "formatstring"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-formatstring"
@@ -2383,8 +2382,8 @@ option = "listing"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-listing"
@@ -2399,8 +2398,8 @@ option = "noreturn_disc"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-noreturn-disc"
@@ -2415,8 +2414,8 @@ option = "fid"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-fid"
@@ -2431,8 +2430,8 @@ option = "rtti"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-rtti"
@@ -2447,8 +2446,8 @@ option = "noreturn_propagate"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-noreturn-propagate"
@@ -2463,8 +2462,8 @@ option = "noreturn_error"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-noreturn-error"
@@ -2479,8 +2478,8 @@ option = "noreturn_reach"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-noreturn-reach"
@@ -2495,8 +2494,8 @@ option = "aif"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-aif"
@@ -2511,8 +2510,8 @@ option = "gopclntab"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-gopclntab"
@@ -2527,8 +2526,8 @@ option = "objc"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-objc"
@@ -2544,8 +2543,8 @@ option = "pdb"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "external-refinement"
+phase = "S1"
+subphase = "external-refinement"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-analysis-pdb"
@@ -2568,8 +2567,8 @@ option = "relocobjects"
 values = "on|off"
 default = "on"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "angr-CLE-ET_REL"
@@ -2590,8 +2589,8 @@ option = "macho-arm64e"
 values = "on|off"
 default = "off"
 destructive = false
-stage = "S1"
-substage = "code-data-partition"
+phase = "S1"
+subphase = "code-data-partition"
 strength = "HARD"
 rewind = "S1"
 issue = "kuna-multiformat-macho-arm64e"

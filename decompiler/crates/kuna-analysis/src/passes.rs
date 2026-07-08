@@ -61,7 +61,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // require-NUL-end). Plants a typelocked `char[N]` data symbol (`s_<addr>`)
         // at each detected `.rodata` string. ENABLED by default since the printer
         // change (the readonly-char-array literal route in
-        // `s9_emit/printc.rs::op_ptrsub_ir`): a pointer to a readonly char-printable
+        // `p9_emit/printc.rs::op_ptrsub_ir`): a pointer to a readonly char-printable
         // array symbol now renders as the string LITERAL (Ghidra behavior), so the
         // data symbol and the literal coexist instead of the symbol name shadowing
         // it. See docs/analysis-port-log.md (the strings/printer increment).
@@ -184,7 +184,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // run of in-range aligned values reads as a "table" (real false-positive
         // risk), and the relocation guard that defends it is weak on non-PIE EXEC
         // (absolute .text pointers carry no relocation). NOTE this is NOT switch
-        // recovery (that is the INHERITED S2 engine machinery, s2_lift/jumptable.rs)
+        // recovery (that is the INHERITED S2 engine machinery, p2_lift/jumptable.rs)
         // and NOT the roadmap-#9 post-typing refinement (that is an engine S2 feedback
         // change behind the Override::queryMultistageJumptable seam) — it is only the
         // application-layer absolute-pointer-table discovery. See docs/analysis-port-log.md.
@@ -537,7 +537,7 @@ pub fn run_default_analyses(
 /// This is the per-run-gating entry: the console stashes the per-pass split at
 /// load and commits only the **enabled** passes' facts at `read symbols` (after
 /// the per-pass `--option <id> on|off` flags have been applied). The id is the
-/// pass's `id()` string, which doubles as its settable-option name (`stages.toml`
+/// pass's `id()` string, which doubles as its settable-option name (`phases.toml`
 /// + `KUNA_OPTION_NAMES`). A parse failure yields an empty list (additive, never
 /// fails). Pairs preserve pass order so the commit order is deterministic.
 pub fn run_default_analyses_per_pass(

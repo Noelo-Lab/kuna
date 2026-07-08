@@ -43,7 +43,7 @@
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, SymFact, SymKind};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 
 /// The four `pcHeader` magics Ghidra recognizes (`GoPcHeader.java:45-48`), each
 /// keyed to the layout family it selects.
@@ -499,8 +499,8 @@ fn recover_go_functions(file: &object::File) -> Vec<GoFunc> {
 pub struct GoPclntabPass;
 
 impl AnalysisPass for GoPclntabPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

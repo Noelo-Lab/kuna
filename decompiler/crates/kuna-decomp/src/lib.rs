@@ -14,7 +14,7 @@
 //!   `paramid`, `varmap`
 //! - `print*` (`printlanguage.cc`, `printc.cc`, `printjava.cc`, `prettyprint.cc`)
 //! - the kuna stage registry (`kuna_stages.cc` and friends -- regenerated from
-//!   `stages.toml` per ADR 0006)
+//!   `phases.toml` per ADR 0006)
 //!
 //! Action/Rule dispatch and scheduling follow ADR 0005; re-runability and the
 //! P0 store follow ADR 0007.
@@ -30,15 +30,15 @@
 //!
 //! - `substrate/`     -- shared IR & containers used by every stage (varnode/op/block/funcdata*, dtype, ...)
 //! - `p0_knowledge/`  -- P0: knowledge & configuration plane (symbol DB, options, overrides, the stage registry)
-//! - `s1_partition/`  -- S1: image & code partition (architecture/loader binding)
-//! - `s2_lift/`       -- S2: flow & op-graph recovery (lift, CFG, jump tables, injection)
-//! - `s3_dataflow/`   -- S3: definition web (SSA/heritage + the simplification rule pools)
-//! - `s4_calls/`      -- S4: call & prototype model
-//! - `s5_types/`      -- S5: value & type facts (type system + inference)
-//! - `s6_variables/`  -- S6: variable & storage model (HighVariables, merge, stack layout)
-//! - `s7_regions/`    -- S7: region hierarchy (the angr RegionIdentifier port)
-//! - `s8_structure/`  -- S8: structured AST & goto quality (the structuring engine)
-//! - `s9_emit/`       -- S9: surface rendering & refinement (PrintC, casts, strings, naming)
+//! - `p1_partition/`  -- S1: image & code partition (architecture/loader binding)
+//! - `p2_lift/`       -- S2: flow & op-graph recovery (lift, CFG, jump tables, injection)
+//! - `p3_dataflow/`   -- S3: definition web (SSA/heritage + the simplification rule pools)
+//! - `p4_calls/`      -- S4: call & prototype model
+//! - `p5_types/`      -- S5: value & type facts (type system + inference)
+//! - `p6_variables/`  -- S6: variable & storage model (HighVariables, merge, stack layout)
+//! - `p7_regions/`    -- S7: region hierarchy (the angr RegionIdentifier port)
+//! - `p8_structure/`  -- S8: structured AST & goto quality (the structuring engine)
+//! - `p9_emit/`       -- S9: surface rendering & refinement (PrintC, casts, strings, naming)
 //! - `infra/`         -- orchestration & framework (the schedule, the Action/Rule engine, ...)
 //!
 //! The stage folders are private module groups; the `pub use ::*` re-exports keep
@@ -49,26 +49,26 @@
 
 mod substrate;
 mod p0_knowledge;
-mod s1_partition;
-mod s2_lift;
-mod s3_dataflow;
-mod s4_calls;
-mod s5_types;
-mod s6_variables;
-mod s7_regions;
-mod s8_structure;
-mod s9_emit;
+mod p1_partition;
+mod p2_lift;
+mod p3_dataflow;
+mod p4_calls;
+mod p5_types;
+mod p6_variables;
+mod p7_regions;
+mod p8_structure;
+mod p9_emit;
 mod infra;
 
 pub use substrate::*;
 pub use p0_knowledge::*;
-pub use s1_partition::*;
-pub use s2_lift::*;
-pub use s3_dataflow::*;
-pub use s4_calls::*;
-pub use s5_types::*;
-pub use s6_variables::*;
-pub use s7_regions::*;
-pub use s8_structure::*;
-pub use s9_emit::*;
+pub use p1_partition::*;
+pub use p2_lift::*;
+pub use p3_dataflow::*;
+pub use p4_calls::*;
+pub use p5_types::*;
+pub use p6_variables::*;
+pub use p7_regions::*;
+pub use p8_structure::*;
+pub use p9_emit::*;
 pub use infra::*;

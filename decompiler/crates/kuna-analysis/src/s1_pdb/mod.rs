@@ -54,7 +54,7 @@ pub mod walk;
 use object::read::pe::{ImageNtHeaders, PeFile, PeFile32, PeFile64};
 use object::{FileKind, Object};
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Stage, SymFact, SymKind};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase, SymFact, SymKind};
 
 /// The PE PDB-consuming pass (gate id `pdb`, default-off).
 ///
@@ -68,8 +68,8 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Stage, Sy
 pub struct PdbPass;
 
 impl AnalysisPass for PdbPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -165,7 +165,7 @@ mod tests {
     fn pass_identity() {
         let p = PdbPass;
         assert_eq!(p.id(), "pdb");
-        assert_eq!(p.stage(), Stage::S1);
+        assert_eq!(p.phase(), Phase::P1);
     }
 
     /// `pe_image_base` reads the PE ImageBase from the real `pdb_min.exe` fixture

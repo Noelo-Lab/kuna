@@ -39,7 +39,7 @@
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};
 use crate::s1_sourcelang::Compiler;
 
 /// The known-no-return name list, vendored verbatim from Ghidra
@@ -252,8 +252,8 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
 }
 
 impl AnalysisPass for NoReturnKnownPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

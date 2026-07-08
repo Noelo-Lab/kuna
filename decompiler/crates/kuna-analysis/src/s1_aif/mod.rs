@@ -107,7 +107,7 @@ use kuna_base::space::AddrSpace;
 use kuna_sleigh::translate::Translate;
 
 use crate::listing::{decode::decode_one, FlowKind, Listing};
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 /// Ghidra's `MINIMUM_FUNCTION_COUNT`: AIF does nothing on a program with fewer
 /// discovered functions than this (too small a corpus to fingerprint reliably).
@@ -140,8 +140,8 @@ const MAX_FOLLOW_INSNS: usize = 4000;
 pub struct AggressiveInstructionFinderPass;
 
 impl AnalysisPass for AggressiveInstructionFinderPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -495,7 +495,7 @@ mod tests {
     fn pass_identity_wiring() {
         let p = AggressiveInstructionFinderPass;
         assert_eq!(p.id(), "aif");
-        assert_eq!(p.stage(), Stage::S1);
+        assert_eq!(p.phase(), Phase::P1);
     }
 
     #[test]

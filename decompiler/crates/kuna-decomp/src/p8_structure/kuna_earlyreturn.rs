@@ -21,7 +21,7 @@
 //!
 //! # Why the existing `returndup` cannot reach it
 //!
-//! [`ActionReturnDup`](crate::s8_structure::kuna_returndup) (option `returndup`) gates on
+//! [`ActionReturnDup`](crate::p8_structure::kuna_returndup) (option `returndup`) gates on
 //! [`Funcdata::returndup_is_const_ret`](crate::funcdata::Funcdata) — the **whole** return
 //! value must be constant.  That gate exists because broad, variable-return duplication
 //! diverged from the source's merged short-circuit form on the aggregate (decbench: ~976

@@ -5,7 +5,7 @@
 //! # The presentation gap
 //!
 //! Ghidra/kuna force **every** call output to be *explicit* in
-//! [`ActionMarkExplicit::base_explicit`](crate::s6_variables::coreaction_cleanup)
+//! [`ActionMarkExplicit::base_explicit`](crate::p6_variables::coreaction_cleanup)
 //! (`coreaction.cc:3105`, the `if (op->isCall()) return -1;` arm), so a call
 //! result always spills to its own named local:
 //!

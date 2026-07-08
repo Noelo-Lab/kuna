@@ -98,7 +98,7 @@ use kuna_base::types::uint4;
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
 use kuna_decomp::fspec::PrototypePieces;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, SymFact, SymKind};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 
 /// The `.debug_line` source-line side of the DWARF analyzer (`DwarfLinesPass`,
 /// the kuna analog of `DWARFLineInfoCommentScript`). Separate pass + gate
@@ -575,8 +575,8 @@ fn collect_fbreg_locals(
 }
 
 impl AnalysisPass for DwarfPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

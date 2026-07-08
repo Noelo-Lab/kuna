@@ -3,7 +3,7 @@
 //!
 //! `kassert` is a thin facade over the existing battle-tested stores (Override,
 //! Symbol-DB locks, FuncProto locks, the option database): it validates a
-//! `<stage> <substage>` pair against the stage registry ([`kuna_stages`]) and
+//! `<stage> <substage>` pair against the stage registry ([`kuna_phases`]) and
 //! dispatches to the store for that sub-stage. What it ADDS is the model —
 //! every applied assertion is recorded with its stage, sub-stage, strength, and
 //! the **computed minimal rewind scope** (`stage-model.md` section 12), which
@@ -31,7 +31,7 @@
 //! locks, `OptionDatabase::set`, symbol retype/rename) and the console parsing
 //! of `<args>` land with the console wave on top of [`Dispatch`].
 
-use crate::kuna_stages::{lookup_substage, KunaStage, KunaStrength};
+use crate::kuna_phases::{lookup_subphase, KunaPhase, KunaStrength};
 use kuna_base::error::{KunaError, KunaResult};
 
 /// (kuna) One recorded typed assertion (session log entry) — C++ `KunaAssertion`.
@@ -40,9 +40,9 @@ pub struct KunaAssertion {
     /// Function it applies to, or "(global)".
     pub func_name: String,
     /// Stage asserted.
-    pub stage: KunaStage,
+    pub phase: KunaPhase,
     /// Sub-stage name (validated against the catalog).
-    pub substage: String,
+    pub subphase: String,
     /// The assertion arguments as given.
     pub args: String,
     /// Requested strength (hard/hint).
@@ -50,7 +50,7 @@ pub struct KunaAssertion {
     /// Strength of the underlying mechanism actually used.
     pub applied: KunaStrength,
     /// Computed minimal rewind stage (REPORTED, not enacted).
-    pub rewind: KunaStage,
+    pub rewind: KunaPhase,
 }
 
 /// Which existing store a sub-stage's assertion routes to — the *decision*
@@ -129,9 +129,9 @@ impl Dispatch {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedAssertion {
     /// The validated stage.
-    pub stage: KunaStage,
+    pub phase: KunaPhase,
     /// The validated sub-stage name.
-    pub substage: String,
+    pub subphase: String,
     /// The requested strength (the catalog default, or the trailing hard|hint
     /// override).
     pub requested: KunaStrength,
@@ -139,7 +139,7 @@ pub struct ValidatedAssertion {
     /// catalog strength — Ghidra stores are uniformly HARD mechanisms).
     pub applied: KunaStrength,
     /// The computed minimal rewind stage (REPORTED; section 12).
-    pub rewind: KunaStage,
+    pub rewind: KunaPhase,
     /// Which store the sub-stage routes to.
     pub dispatch: Dispatch,
 }
@@ -167,7 +167,7 @@ pub fn validate_assertion(
     strength_override: Option<KunaStrength>,
 ) -> KunaResult<ValidatedAssertion> {
     // C++: if (!kunaStageFromCode(stagecode,stage)) throw IfaceParseError(...)
-    let stage = KunaStage::from_code(stagecode).ok_or_else(|| KunaError::Parse {
+    let phase = KunaPhase::from_code(stagecode).ok_or_else(|| KunaError::Parse {
         explain: format!("Bad stage code (expecting P0 or S1..S9): {stagecode}"),
     })?;
     // C++: if (subname.empty()) throw IfaceParseError("Missing sub-stage name ...")
@@ -177,15 +177,15 @@ pub fn validate_assertion(
         });
     }
     // C++: sub = kunaLookupSubStage(subname); if (sub==0) throw ...
-    let sub = lookup_substage(subname).ok_or_else(|| KunaError::Parse {
+    let sub = lookup_subphase(subname).ok_or_else(|| KunaError::Parse {
         explain: format!("Unknown sub-stage: {subname} (see `stage list`)"),
     })?;
     // C++: if (sub->stage != stage) throw IfaceParseError(...)
-    if sub.stage != stage {
+    if sub.phase != phase {
         return Err(KunaError::Parse {
             explain: format!(
                 "Sub-stage {subname} belongs to stage {}, not {stagecode}",
-                sub.stage.code()
+                sub.phase.code()
             ),
         });
     }
@@ -194,8 +194,8 @@ pub fn validate_assertion(
     let requested = strength_override.unwrap_or(sub.strength);
 
     Ok(ValidatedAssertion {
-        stage,
-        substage: subname.to_string(),
+        phase,
+        subphase: subname.to_string(),
         requested,
         applied: sub.strength, // C++: rec.applied = sub->strength
         rewind: sub.rewind,    // C++: rec.rewind = sub->rewind (minimal rewind)
@@ -252,9 +252,9 @@ impl AssertLog {
             os.push_str(": [");
             os.push_str(&rec.func_name);
             os.push_str("] ");
-            os.push_str(rec.stage.code());
+            os.push_str(rec.phase.code());
             os.push('/');
-            os.push_str(&rec.substage);
+            os.push_str(&rec.subphase);
             if !rec.args.is_empty() {
                 os.push(' ');
                 os.push_str(&rec.args);

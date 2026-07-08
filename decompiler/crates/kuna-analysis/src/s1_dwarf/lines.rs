@@ -49,7 +49,7 @@
 
 use object::Object;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, CommentFact, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, CommentFact, Phase};
 
 use super::{dwarf_section_data, Reader};
 
@@ -68,8 +68,8 @@ struct FuncRange {
 }
 
 impl AnalysisPass for DwarfLinesPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

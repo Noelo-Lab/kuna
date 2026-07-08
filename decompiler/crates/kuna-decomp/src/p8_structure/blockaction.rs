@@ -3486,7 +3486,7 @@ impl Action for ActionBlockStructure {
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
         if data.get_arch().region_structure {
-            match crate::s8_structure::region_structurer::run_region_structurer(data) {
+            match crate::p8_structure::region_structurer::run_region_structurer(data) {
                 Ok((true, flips)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same

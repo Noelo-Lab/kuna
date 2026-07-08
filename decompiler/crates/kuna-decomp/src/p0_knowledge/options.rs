@@ -239,7 +239,7 @@ pub const ELEM_HIDEEXTENSIONS: ElementId = ElementId::new("hideextensions", 4090
 /// [`crate::architecture::Architecture::set_kuna_option`].  Listed here so the
 /// registration set is documented in one place and a missing wiring is a visible
 /// gap, not silent — this list must equal the `SETTABLE_TABLE` rows
-/// (`stages.toml`), which `kuna catalog --check` cross-checks.
+/// (`phases.toml`), which `kuna catalog --check` cross-checks.
 pub const KUNA_OPTION_NAMES: &[&str] = &[
     "compareform",
     "arraynotation",

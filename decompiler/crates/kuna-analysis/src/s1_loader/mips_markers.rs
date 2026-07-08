@@ -60,7 +60,7 @@ use object::read::{Object, ObjectSymbol};
 use object::{SymbolFlags, SymbolKind};
 
 use crate::pass::{
-    AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage, SymFact, SymKind, TrackedRegFact,
+    AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase, SymFact, SymKind, TrackedRegFact,
 };
 
 /// The MIPS PIC global-pointer setup register. A function is reached via
@@ -149,8 +149,8 @@ fn scan_mips_markers(file: &object::File) -> AnalysisOutput {
 }
 
 impl AnalysisPass for MipsMarkerPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
@@ -292,8 +292,8 @@ pub(crate) fn scan_mips_isa_markers(file: &object::File) -> AnalysisOutput {
 }
 
 impl AnalysisPass for MipsIsaModePass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

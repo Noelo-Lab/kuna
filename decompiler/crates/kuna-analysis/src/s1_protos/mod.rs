@@ -32,7 +32,7 @@ use kuna_base::types::uint4;
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
 use kuna_decomp::fspec::PrototypePieces;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 /// Port of `ApplyDataArchiveAnalyzer`: seed built-in libc prototypes onto matching
 /// FunctionSymbols so call arguments get typed.
@@ -181,8 +181,8 @@ fn present_function_names(file: &object::File, bytes: &[u8]) -> std::collections
 }
 
 impl AnalysisPass for LibProtoPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

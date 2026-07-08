@@ -2904,7 +2904,7 @@ impl Funcdata {
     /// (kuna) Duplicate a shared **bare-epilogue** RETURN block into each of its
     /// predecessors but one — kuna's analog of angr's SAILR gotoless
     /// `ReturnDuplicatorHigh` (driver for
-    /// [`ActionReturnDup`](crate::s8_structure::kuna_returndup::ActionReturnDup),
+    /// [`ActionReturnDup`](crate::p8_structure::kuna_returndup::ActionReturnDup),
     /// option `returndup`).  Returns the number of edges split.
     ///
     /// Unlike [`Self::return_split_apply`] (the goto-driven `ReturnDuplicatorLow`
@@ -3130,9 +3130,9 @@ impl Funcdata {
     /// last remaining edge (leaves the variable body merged).
     ///
     /// The shared core behind both [`Self::earlyreturn_apply`] (the narrow diamond, capped
-    /// at 16 in-edges by [`ActionEarlyReturn`](crate::s8_structure::kuna_earlyreturn)) and
+    /// at 16 in-edges by [`ActionEarlyReturn`](crate::p8_structure::kuna_earlyreturn)) and
     /// [`Self::switchreturn_apply`] (the wide multi-case switch-phi that exceeds that cap,
-    /// gated by [`ActionSwitchReturn`](crate::s8_structure::kuna_switchreturn)) — the ONLY
+    /// gated by [`ActionSwitchReturn`](crate::p8_structure::kuna_switchreturn)) — the ONLY
     /// difference between the two is the `max_inedges` / `max_splits` caps.
     fn const_return_peel(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
         let mut count = 0;

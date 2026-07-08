@@ -20,8 +20,8 @@
 //!
 //! 2. **switch / jump-table recovery (`JumpTable::recoverAddresses`)** — INHERITED
 //!    🟡. The SSA/data-flow-driven, in-function switch recovery in the engine
-//!    (`decompiler/cpp/jumptable.{cc,hh}` → kuna `s2_lift/jumptable.rs`, driven
-//!    from `s2_lift/flow.rs::recover_jump_tables`). It is the analog of Ghidra's
+//!    (`decompiler/cpp/jumptable.{cc,hh}` → kuna `p2_lift/jumptable.rs`, driven
+//!    from `p2_lift/flow.rs::recover_jump_tables`). It is the analog of Ghidra's
 //!    `DecompilerSwitchAnalyzer`. **This pass does NOT do that** and must not be
 //!    confused with it — the switch table the `switchtab_x86_64` fixture also
 //!    carries is recovered by that inherited engine machinery, independently.
@@ -77,7 +77,7 @@
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, SymFact, SymKind};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 
 // --- Upstream constants (AddressTable.java / AddressTableAnalyzer.java) --------
 
@@ -414,8 +414,8 @@ impl Default for AddrTablePass {
 }
 
 impl AnalysisPass for AddrTablePass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {

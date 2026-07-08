@@ -17,17 +17,17 @@ use kuna_decomp::architecture::Architecture;
 use crate::listing::Listing;
 use crate::loadimage_object::ObjectLoadImage;
 
-/// The stage a pass feeds, mirroring the kuna stage model (`docs/stages.md`).
-/// Program-prep analyses are P0/S1; a few (e.g. jump-table post-typing
-/// refinement) feed back into S2.
+/// The phase a pass feeds, mirroring the kuna phase model (`docs/stages.md`).
+/// Program-prep analyses are P0/P1; a few (e.g. jump-table post-typing
+/// refinement) feed back into P2.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Stage {
+pub enum Phase {
     /// P0 -- knowledge & configuration plane (symbol DB facts).
     P0,
-    /// S1 -- image & code partition (the loader/analyzer tier).
-    S1,
-    /// S2 -- flow & op-graph recovery (post-typing feedback).
-    S2,
+    /// P1 -- image & code partition (the loader/analyzer tier).
+    P1,
+    /// P2 -- flow & op-graph recovery (post-typing feedback).
+    P2,
 }
 
 /// What kind of symbol a [`SymFact`] names.
@@ -412,9 +412,9 @@ pub struct AnalysisCtx<'a> {
 /// over the context, additive, never failing.
 pub trait AnalysisPass {
     /// The stage this pass feeds (for ordering + `stage map` registry parity).
-    fn stage(&self) -> Stage;
+    fn phase(&self) -> Phase;
     /// Stable id used to gate the pass on/off as a settable assertion
-    /// (registered in `stages.toml`, flippable via `--option <id> on|off`).
+    /// (registered in `phases.toml`, flippable via `--option <id> on|off`).
     fn id(&self) -> &'static str;
     /// Gather facts. Pure over `ctx`; produces output, performs no engine mutation.
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput;

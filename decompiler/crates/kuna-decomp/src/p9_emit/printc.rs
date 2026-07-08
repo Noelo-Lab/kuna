@@ -3035,8 +3035,8 @@ impl PrintC {
         &self,
         fd: &Funcdata,
         blk: BlockId,
-    ) -> Option<crate::s8_structure::kuna_iteregion::IteAssignMatch> {
-        let m = crate::s8_structure::kuna_iteregion::match_ite_assignment(fd, blk)?;
+    ) -> Option<crate::p8_structure::kuna_iteregion::IteAssignMatch> {
+        let m = crate::p8_structure::kuna_iteregion::match_ite_assignment(fd, blk)?;
         let marked = fd
             .obank()
             .get(m.cbranch)
@@ -3063,7 +3063,7 @@ impl PrintC {
         &mut self,
         fd: &Funcdata,
         arch: &Architecture,
-        m: crate::s8_structure::kuna_iteregion::IteAssignMatch,
+        m: crate::p8_structure::kuna_iteregion::IteAssignMatch,
     ) {
         use crate::prettyprint::Emit;
 

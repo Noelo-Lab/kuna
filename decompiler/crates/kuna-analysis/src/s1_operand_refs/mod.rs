@@ -124,7 +124,7 @@ use kuna_sleigh::translate::{PcodeEmit, Translate};
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, StringFact};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, StringFact};
 
 // --- Upstream constants (ScalarOperandAnalyzer.java) ---------------------------
 
@@ -428,8 +428,8 @@ fn emit_facts(file: &object::File, refs: &[ScalarRef]) -> AnalysisOutput {
 pub struct OperandRefsPass;
 
 impl AnalysisPass for OperandRefsPass {
-    fn stage(&self) -> Stage {
-        Stage::S1
+    fn phase(&self) -> Phase {
+        Phase::P1
     }
 
     fn id(&self) -> &'static str {
