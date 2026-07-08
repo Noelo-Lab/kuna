@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Theory/design-rationale document (the 2026-06 Ghidra/angr/Reko side-by-side study). Its upstream C++/Python anchors describe trees not in this repo. The live, normative description of what kuna actually does is the chaptered spec under `docs/spec/` (until that lands: `docs/stages.md`). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # The kuna Stage Model
 
 **Decompiler stages, sub-stages, and feedback edges — derived from Ghidra, angr, and Reko.**

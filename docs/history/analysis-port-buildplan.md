@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Build-order plan for the analyzer-tier port (complete). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Build-plan: the infeasible-at-tier / non-ELF / huge-subsystem analyzers
 
 A concrete, sequenced **build-plan** (not an implementation) for the Ghidra

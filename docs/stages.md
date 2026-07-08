@@ -4,11 +4,11 @@ The kuna stage model: **ordered stages + explicit typed feedback edges**, with o
 orthogonal plane and one fixed-point band. This is the model kuna is organized around —
 the runtime registry (`decompiler/cpp/kuna_stages.cc`, queryable via the `stage
 list`/`stage map`/`stage catalog` console commands), the per-file source mapping
-(`docs/stage-mapping.md`), the assertion catalog (`docs/assertions.md`), and the issue
+(`docs/history/stage-mapping.md`), the assertion catalog (`docs/assertions.md`), and the issue
 testcases (`tests/stages/`) all speak it.
 
 Full normative model with evidence, sub-stage catalogs, and code anchors:
-**`docs/stage-model.md`** (derived 2026-06 from a side-by-side study of Ghidra, angr,
+**`docs/history/stage-model.md`** (derived 2026-06 from a side-by-side study of Ghidra, angr,
 and Reko; the rationale for rejecting a linear compiler-style pipeline is its §1).
 
 A decompiler is not a feed-forward pipeline: stages fire in order on the *first* pass,
@@ -41,7 +41,7 @@ The decompiler source is **physically organized by stage**: every module file un
 canonical `Sx` code so it greps against this doc and the registry, and adds a plain word so the
 tree reads to a newcomer). Module *names* stay flat (`kuna_decomp::flow`) via re-exports in
 `lib.rs`, so the layout is documentation, not an API change. The per-file assignment is
-`docs/stage-mapping.md`; the live group→stage registry is `stages.toml`.
+`docs/history/stage-mapping.md`; the live group→stage registry is `stages.toml`.
 
 | Stage | Folder | Reads as |
 |---|---|---|
@@ -70,7 +70,7 @@ heuristic, human, or LLM agent — changes the stage's artifact and everything d
 Every sub-stage names the **assertion** that overrides it, with strength **HARD** (blocks
 inference, e.g. typelock) or **HINT** (biases it), a **re-run scope**, and a **LATENT**
 flag when the decision is hardcoded with no override today (the LATENT set is the kuna
-roadmap). Full catalogs per stage: `docs/stage-model.md` §4–§10; the machine-readable,
+roadmap). Full catalogs per stage: `docs/history/stage-model.md` §4–§10; the machine-readable,
 flippable subset is `docs/assertions.md` (`kuna catalog --json`).
 
 ## Feedback mechanisms
@@ -94,14 +94,14 @@ surviving state:
 - **(f)** worklist re-enqueue (address-grain) and **(g)** lazy-dirty recompute
   (object-grain) as edge annotations
 
-Edge table with anchors: `docs/stage-model.md` §11.
+Edge table with anchors: `docs/history/stage-model.md` §11.
 
 ## Interventions
 
 All interventions are durable typed assertions written to P0 and consulted on (re-)run —
 never imperative mid-pipeline edits: `assert(stage, anchor, type, value, strength)`. An
 LLM agent is just another assertion writer driving the feedback edges deliberately.
-Symptom→sub-stage navigation table: `docs/stage-model.md` §13 (caveat from practice: a
+Symptom→sub-stage navigation table: `docs/history/stage-model.md` §13 (caveat from practice: a
 symptom's stage is not always its decision's stage — wrong-looking constants in the
 rendered C are usually destroyed in Band B, not mis-rendered at S9).
 
@@ -120,8 +120,8 @@ The model is physical in kuna:
   port — `docs/regions.md`).
 - **Issues fixed through the model** (each pinned by a `tests/stages/` testcase
   asserting both directions of the decision): GH-558, 2786, 8471, 6930, 6990, 1282,
-  7190, 8817, 8913, 9230, 1537. Per-stage changelog: `docs/stage-implementation.md`.
+  7190, 8817, 8913, 9230, 1537. Per-stage changelog: `docs/history/stage-implementation.md`.
 - **Defaults**: eight sub-stage fixes are kuna defaults (DIV-2); the destructive ones
   stay opt-in per the ablation evidence. Record: `docs/divergences.md`.
 - **Empirical critique** of the model against those fixes (stage-fit, ablations,
-  navigation score, per-stage verdicts): `docs/stage-critique.md`.
+  navigation score, per-stage verdicts): `docs/history/stage-critique.md`.

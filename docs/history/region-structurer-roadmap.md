@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Roadmap for the angr Phoenix/SAILR region structurer -- landed and default-on (DIV-12); live description in `docs/spec/08-structuring.md`. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Region-based (Phoenix/SAILR) structurer for kuna — staged roadmap
 
 **Status:** LANDED & DEFAULT-ON. Inc 0–5 are implemented; `regionstructure` is the primary

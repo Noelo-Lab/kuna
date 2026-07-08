@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Per-session changelog of aligning the code to the phase model; superseded by the phase folders themselves and `docs/spec/`. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Stage implementation manifest
 
 How kuna's code was modified to match the stage model (`docs/stages.md`,

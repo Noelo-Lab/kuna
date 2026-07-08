@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Prototype notes for the GH-558 comparison-canonicalization work (landed as the compareform option). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Prototype: fixing Ghidra GH-558 through the kuna stage model
 
 **Issue:** [NationalSecurityAgency/ghidra#558](https://github.com/NationalSecurityAgency/ghidra/issues/558)

@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Design doc for the metadata analyzers (landed). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # PROPOSAL: kuna PE/Mach-O Deep-Metadata Analyzers
 
 **Status:** for go/no-go. **Scope:** add gated, default-off, real-binary-path analysis passes that recover runtime/debug metadata from Windows (PE) and macOS (Mach-O) targets, feeding the decompiler richer names, types, and vtable/dispatch resolution — the next analysis-porting frontier after the ELF/DWARF/FID tier.

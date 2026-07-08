@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Empirical critique of the stage model (ablations, navigation scoring); retained as evidence. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Critiquing the kuna stage model — empirical evidence
 
 Does the stage model (`docs/stages.md`, `docs/stage-model.md`) actually help fix real

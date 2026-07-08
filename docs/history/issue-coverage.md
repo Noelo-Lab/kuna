@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Session-state ledger for a finished improvement campaign. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # PHADE issue coverage ledger
 
 Durable, resumable state for the "all remaining reproduced issues" work session. One row

@@ -13,8 +13,8 @@ what affects naming and symbol resolution for ELF binaries (the class of problem
 that produced `sub_400510(...)` instead of `puts(...)`).
 
 The live, normative stage model is in [`stages.md`](stages.md) /
-[`stage-model.md`](stage-model.md); every upstream *decompiler* module is mapped
-to a stage in [`stage-mapping.md`](stage-mapping.md). The items below are the
+[`history/stage-model.md`](history/stage-model.md); every upstream *decompiler* module is mapped
+to a stage in [`history/stage-mapping.md`](history/stage-mapping.md). The items below are the
 *application-layer* steps that sit **outside** that stage model.
 
 ## Where these live: the `kuna-analysis` crate
@@ -68,7 +68,7 @@ structurally untouched.
 > readonly-char-array symbols as string literals. The PLT path still commits
 > inline in `loadimage_object` (lifting it onto the pass list is cosmetic and
 > deferred). The running process log is
-> **[`analysis-port-log.md`](analysis-port-log.md)**; the per-analysis roadmap
+> **[`history/analysis-port-log.md`](history/analysis-port-log.md)**; the per-analysis roadmap
 > with testcases is at the bottom of this file.
 
 ## Legend
@@ -165,7 +165,7 @@ warns "MAY CREATE A LOT OF BAD CODE!") and requires a post-disassembly
 Listing/FunctionManager (≥20 found functions) + a PseudoDisassembler — none of which
 exist at the kuna-analysis tier (which runs before decompilation). Its sound output (new
 entries) is subsumed by `s1-entry-disc` + `s1-eh-frame` for kuna's given-entries model.
-Documented ⛔ out-of-scope (see [`analysis-port-log.md`](analysis-port-log.md) Increment 4),
+Documented ⛔ out-of-scope (see [`history/analysis-port-log.md`](history/analysis-port-log.md) Increment 4),
 the same call as `FindNoReturnFunctionsAnalyzer`.
 
 ## 5. Demangling (C++ / Rust / Go / Swift) — ⛔ Gap
@@ -202,7 +202,7 @@ only *removes* bad `.got`/`.plt` references (which `elf_plt.rs` already names co
 one relevant idea — typing a scalar that points at a `.rodata` string as `char*` — is blocked
 by the same printer/MapGlobals shadowing that disables `s1-strings`, and is already delivered
 by `s1-libproto` + S5 usage. Documented ⛔ (see
-[`analysis-port-log.md`](analysis-port-log.md) Increment 4).
+[`history/analysis-port-log.md`](history/analysis-port-log.md) Increment 4).
 
 ## 7. Switch / jump-table recovery — 🟡 Inherited (core) / ⛔ refinement gap
 
@@ -222,7 +222,7 @@ inherited core):**
   loop below. Faithfully ported in `s1_addrtable` (the scanner finds the 8-entry table @
   `0x402008` in the `switchtab_x86_64` fixture) but **disabled by default** — Ghidra ships
   it `setDefaultEnablement(false)` and a pointer-run scanner over-accepts (false-positive
-  risk). See [`analysis-port-log.md`](analysis-port-log.md) Increment 4.
+  risk). See [`history/analysis-port-log.md`](history/analysis-port-log.md) Increment 4.
 - **Post-typing refinement loop (roadmap #9) — ⛔ engine S2, not analyzer-tier.** The
   decompiler-internal multistage re-recovery (`recover_count > 1`), gated behind the
   `Override::queryMultistageJumptable` engine seam. It is an *engine* (S2-feedback) change,
@@ -257,7 +257,7 @@ already work:
 > PE/Mach-O loaders, …), the dependency-ordered build-plan — what kuna would have
 > to BUILD first to make each feasible (notably a post-disassembly Listing tier),
 > with effort sizing and verdicts — is in
-> [`analysis-port-buildplan.md`](analysis-port-buildplan.md).
+> [`history/analysis-port-buildplan.md`](history/analysis-port-buildplan.md).
 
 Each row is a future `AnalysisPass` (or extension) under `kuna-analysis/src/s1_*`.
 Difficulty: **easy** = self-contained byte/string transform, no new heavy dep;
@@ -270,7 +270,7 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 |---|----------|-------|------|------------------------------------------|
 | ✅ | PLT/GOT import names | S1 | done | **fauxware**: `0x400510→puts`, no symbol at `0x0`, no `@` in names (`kuna-analysis` tests + console e2e). Per-arch e2e: x86-64 (`verify_w11_elf_plt_names`), AArch64 (`verify_aarch64_plt`), RISC-V64 (`verify_riscv64_plt`), **MIPS32** (`verify_mips_plt`: `plt_mips32` `puts`/`printf` via the `.MIPS.stubs`/GOT layout — Increment 27) |
 | ✅ | **Foundation: generic commit seam** | S1 | done | `bootstrap_from_elf` runs `run_default_analyses` + `commit_analysis_output`; no funcsym regression (`make test` PARITY OK) |
-| ✅ | **No-return detection** | S1 | done | **fauxware** `rejected` calls `exit`: no dead fall-through after `exit(1)` (5 unit tests + e2e). See [`analysis-port-log.md`](analysis-port-log.md) increment 1 |
+| ✅ | **No-return detection** | S1 | done | **fauxware** `rejected` calls `exit`: no dead fall-through after `exit(1)` (5 unit tests + e2e). See [`history/analysis-port-log.md`](history/analysis-port-log.md) increment 1 |
 | ✅ | **Demangling** (Itanium C++ / Rust) | S1 | done | `cpp_mangled` `main` renders `foo::Bar::baz(...)` (cpp_demangle + rustc-demangle; needed the cross-scope call-resolution fix). Increment 2 |
 | ✅ | **Library prototype seeding** | S1 | done | **fauxware** `main`: `puts("Username: ")`, `puts("Password: ")` (libproto types arg `char*`; the route that actually renders literals in kuna). Increment 3 |
 | 🟡 | String-literal detection | S1 | n/a | implemented + tested but **disabled by default**: kuna's printer renders a named `char[]` symbol as its name (`s_400915`), shadowing the literal; literals come from prototype/usage `char*` typing instead. Increment 3 |
@@ -296,9 +296,9 @@ debug-format reader or a discovery loop). Vendored fixtures live in
    (`char*` arg typing + readonly + StringManager), *not* via planting `char[]` data
    symbols — kuna's printer prefers a symbol name over the literal, so the plant-a-symbol
    `StringsAnalyzer` mechanism is implemented but disabled. See
-   [`analysis-port-log.md`](analysis-port-log.md) Increment 3 for the full finding.
+   [`history/analysis-port-log.md`](history/analysis-port-log.md) Increment 3 for the full finding.
 
 DWARF, entry discovery, the printer change that re-enables the strings pass, and **per-run
 option gating** (each pass flippable via `--option <id> on|off`, conflict #4) are all DONE —
-see [`analysis-port-log.md`](analysis-port-log.md) Increments 5–13. None of the work touches
+see [`history/analysis-port-log.md`](history/analysis-port-log.md) Increments 5–13. None of the work touches
 the XML datatest parity path — both gates stay green.

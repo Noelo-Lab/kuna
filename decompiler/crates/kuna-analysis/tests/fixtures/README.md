@@ -521,7 +521,7 @@ The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, desig
   `{cputype,cpusubtype,offset,size,align}`; both slices page-aligned at
   `2^14`). The dispatch peels one slice (default x86-64; `--slice arm64` selects
   the other) before `object::File::parse`, which cannot parse a fat header.
-  Rebuild: the Python snippet in `Increment 45` of `docs/analysis-port-log.md`
+  Rebuild: the Python snippet in `Increment 45` of `docs/history/analysis-port-log.md`
   (read each thin slice's header, emit the wrapper) — or `llvm-lipo a b -create
   -output macho_fat` if a `lipo` is available.
 

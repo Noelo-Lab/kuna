@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Planning doc for the analyzer-tier port (complete). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Analysis-tier port — execution plan for the remaining gaps
 
 Generated 2026-06-22 from a 13-agent planning workflow (each agent deep-read its assigned Ghidra analyzer + the kuna seam). Companion to [`analysis-port-log.md`](analysis-port-log.md) (what's done) and [`missing-analyses.md`](missing-analyses.md) (the gap inventory). This is the **how-to-finish** doc: the remaining ~14 gaps organized into dependency-ordered waves for parallel worktree sub-agents.

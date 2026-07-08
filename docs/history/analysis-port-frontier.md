@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Feasibility frontier for the analyzer-tier port (the feasible set shipped). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Analysis-port frontier — Docker-enabled (post-Increment-17)
 
 ## Context

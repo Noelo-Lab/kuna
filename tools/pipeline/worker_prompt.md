@@ -71,7 +71,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 ## Protocol
 
 ### 1. analyze — reproduce and localize the gap
-- Read `AGENTS.md`, `docs/stages.md`, `docs/stage-mapping.md`, `docs/divergences.md`, `docs/assertions.md`,
+- Read `AGENTS.md`, `docs/stages.md`, `docs/history/stage-mapping.md`, `docs/divergences.md`, `docs/assertions.md`,
   `tests/stages/README.md`, and the **loweredswitch** feature as the canonical template:
   `git log --oneline | grep loweredswitch`, then read
   `decompiler/crates/kuna-decomp/src/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /
@@ -80,7 +80,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - Reproduce the gap: `{{KUNA_PY}} -m scripts.pipeline.compare --entry {{TEST_NAME}}` (read both
   decompilations and the metrics/signals). Confirm angr really is better and pin down the *one*
   concrete structural difference you will fix. Name the owning stage/sub-stage from
-  `docs/stage-mapping.md` and the real pass order in `coreaction*.rs` / `universalaction.rs`.
+  `docs/history/stage-mapping.md` and the real pass order in `coreaction*.rs` / `universalaction.rs`.
 - Write `docs/features/{{SLUG}}/analysis.md` (what angr does better, the exact construct, the owning stage,
   and your hypothesis for the kuna change) and save the side-by-side as `docs/features/{{SLUG}}/angr-vs-kuna.txt`
   (`... compare --entry {{TEST_NAME}}` output).
@@ -148,7 +148,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 
 ### 7. docs + record
 - `docs/UPSTREAM.md` *Divergence*: add a row per ported-core file you touched.
-- `docs/stage-mapping.md`: note the new sub-stage/option if relevant.
+- `docs/history/stage-mapping.md`: note the new sub-stage/option if relevant.
 - `docs/PROGRESS.md`: a `## Session ({{DATE}}) — {{SLUG}} (option {{SLUG}}[, DIV-N])` entry: the angr testcase,
   why angr was better, the mechanism, the ablation result, on/off default decision.
 - Finalise `docs/features/{{SLUG}}/record.json`: `{ "opportunity": "{{OPPORTUNITY_ID}}", "test_name", "binary",

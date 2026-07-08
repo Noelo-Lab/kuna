@@ -8,7 +8,7 @@ Go, and a pinned Rust toolchain.
 
 The single most important thing this container fixes: the original build host had **no ARM
 linker**, which blocked the documented "ARM decode end-to-end test" (see
-`docs/analysis-port-log.md`, Increment 17). The container ships every cross toolchain *with*
+`docs/history/analysis-port-log.md`, Increment 17). The container ships every cross toolchain *with*
 its `binutils` (assembler + `ld`), so a **linked** ARM Thumb ELF — not just a bare `.o` — can
 now be produced in-env.
 

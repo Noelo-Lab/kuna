@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Design doc for the Listing tier (landed); live description in `docs/spec/01-program-prep.md`. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # kuna Listing/Xref Tier — Implementation Plan
 
 > **Transcriber's note (folded-in corrections):** the settable count test asserts **34**

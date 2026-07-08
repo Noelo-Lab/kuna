@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Working log of the analyzer-tier port campaign (complete); the live description is `docs/spec/01-program-prep.md`. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Analysis-tier port log
 
 A running record of porting Ghidra's Java **analyzer / loader tier** (the "Run

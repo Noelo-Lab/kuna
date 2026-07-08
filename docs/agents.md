@@ -33,8 +33,8 @@ full what/why/how/validation. The SLEIGH `specs/` and the XML regression corpus
 | `integrations/` | The Ghidra extension: a plugin that makes the **stock Ghidra GUI** spawn kuna's `kuna_ghidra` binary as its decompiler core (reflection exepath swap; binary ships in the module's `os/<platform>/`). See `docs/ghidra-integration.md`. |
 | `docs/RUST_PORT.md` | **The port summary**: what was ported (decompiler + SLEIGH compiler), why, how, and the validation gates. Detailed port history lives under `docs/rust-port/` (ADRs, `losses.md`, `verification.md`, `plan.md`). |
 | `docs/ghidra-integration.md` | Using kuna as Ghidra's decompiler core (Phases 1–4, seams, wire protocol); the core-agnostic interface spec is `docs/decompiler-core-interface.md`. |
-| `docs/stages.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
-| `docs/stage-mapping.md` | Maps every upstream source module to a stage (P0/S1–S9). The live registry is queryable at the console (`stage list/map/catalog`); the Rust implementation is under `decompiler/crates/kuna-decomp/`. |
+| `docs/stages.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/history/stage-model.md`. |
+| `docs/history/stage-mapping.md` | Maps every upstream source module to a stage (P0/S1–S9). The live registry is queryable at the console (`stage list/map/catalog`); the Rust implementation is under `decompiler/crates/kuna-decomp/`. |
 | `docs/baseline.json` | Recorded test-pass oracle (parity check) — the **kuna** oracle since DIV-2 (`docs/divergences.md`), no longer pristine-upstream. |
 
 ## Build
@@ -112,7 +112,7 @@ stage-model settable (zero output change for any function that converges; the co
 `--json` for an agent, `--markdown` to regenerate `docs/assertions.md`, `--check` to fail
 on catalog/registration drift (CI; cross-checks the catalog against
 `kuna_decomp::options::KUNA_OPTION_NAMES` in-process). The full catalog also renders to
-`docs/assertions.md`; the model behind it is `docs/stages.md` / `docs/stage-model.md`, and
+`docs/assertions.md`; the model behind it is `docs/stages.md` / `docs/history/stage-model.md`, and
 the defaults are recorded in `docs/divergences.md`.
 
 The still-Python feature pipeline (`scripts/pipeline/`, out of scope for the engine) imports
@@ -201,7 +201,7 @@ When you update the baseline after an intentional upstream behavior change, rege
   baseline `docs/baseline-stages.json`); see `tests/stages/README.md`.
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`) — they're gitignored.
 - To understand a source file's role, start from `docs/stages.md` (the stage→folder layout)
-  and `docs/stage-mapping.md`, then the real pass order in
+  and `docs/history/stage-mapping.md`, then the real pass order in
   `decompiler/crates/kuna-decomp/src/infra/universalaction.rs` + the `coreaction_*.rs` files
   (now under their stage folders, e.g. `s5_types/coreaction_infertypes.rs`,
   `s9_emit/coreaction_render.rs`). **Code comments cite their C++ origin as `decompiler/cpp/<file>.{cc,hh}`** —

@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Maps the 115 upstream C++ translation units (a tree removed after the Rust port) to phases, with the legacy 19-stage numbering. The Rust tree is phase-foldered and self-describing; see `docs/spec/`. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # Kuna Stage Mapping
 
 This document maps every upstream Ghidra decompiler source module — the C++ tree kuna was ported from (anchored as `decompiler/cpp/<file>.{cc,hh}`) — to the decompilation stage model. There are **115 upstream translation units** (`.cc`), each with a matching header (`.hh`); a header always maps to the same stage as its `.cc`, so they are listed as a single `file` entry. The Rust port under `decompiler/crates/kuna-decomp/src/` is **physically organized into stage-named folders** matching this mapping (`s1_partition/`…`s9_emit/`, plus `substrate/`, `p0_knowledge/`, `infra/`; see the layout table in `docs/stages.md`), and the live registry is queryable at the console (`stage list/map/catalog`).

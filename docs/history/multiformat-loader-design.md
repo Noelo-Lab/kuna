@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** Design doc for the multi-format loader (landed). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
 # kuna Multi-Format Expansion — Implementation Plan
 
 **ELF → PE / Mach-O / COFF, with the analysis tier and decompiler core riding unchanged**
