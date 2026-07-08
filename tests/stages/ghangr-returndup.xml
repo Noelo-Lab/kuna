@@ -61,10 +61,11 @@
 <symbol space="ram" offset="0x100000" name="f"/>
 </binaryimage>
 <script>
-  <!-- earlyreturn (DIV-23 default-on) is the per-edge const-guard sibling of returndup and
-       ALSO peels this all-const shared epilogue, so turn it off throughout to isolate the
-       returndup transform under test. -->
+  <!-- earlyreturn (DIV-23) + switchreturn (DIV-25) are the per-edge const-guard siblings of
+       returndup and ALSO peel this all-const shared epilogue, so turn both off throughout to
+       isolate the returndup transform under test. -->
   <com>option earlyreturn off</com>
+  <com>option switchreturn off</com>
   <!-- returndup is default-OFF; set it explicitly in pass 1 to guard against a future
        default-on sweep, then flip it on for pass 2 (the only change between passes). -->
   <com>option returndup off</com>
