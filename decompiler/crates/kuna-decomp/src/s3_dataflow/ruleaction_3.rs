@@ -113,15 +113,15 @@ fn opflags_for(opc: OpCode) -> u32 {
         OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_RIGHT => binary,
         // TypeOpIntLess: binary | booloutput (typeop.cc:1069)
         OpCode::CPUI_INT_LESS => binary | booloutput,
-        // TypeOpEqual / TypeOpNotEqual: binary | commutative | booloutput
-        // (typeop.cc TypeOpEqual/TypeOpNotEqual ctors).  RuleMultiCollapse can
-        // rebuild an equality guard while re-flowing a recovered jump table
-        // (`generate_ops_with_jumptables` -> `stage_jump_table`); without these the
-        // shim panicked (LOSS-131) on some fully-native switch functions, e.g. mv
-        // -O2 sub_12280.
-        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
-            binary | commutative | booloutput
-        }
+        // TypeOpEqual / TypeOpNotEqual: binary | booloutput | commutative
+        // (typeop.cc:929/993).  Reachable since the `markLabelBumpUp` port (#150)
+        // hoists loop-head labels out of loop *conditions* (driving a rule to re-set an
+        // `==`/`!=` guard opcode through this seam), and likewise when `RuleMultiCollapse`
+        // rebuilds an equality guard re-flowing a recovered jump table
+        // (`generate_ops_with_jumptables` -> `stage_jump_table`) — without these the shim
+        // panicked (LOSS-131) on some fully-native switch functions (e.g. mv -O2 sub_12280,
+        // unmasked once the loweredswitch over-fire on that function is declined).
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => binary | booloutput | commutative,
         other => panic!(
             "ruleaction_3::opflags_for: no W6 opflags entry for {other:?} \
              (a rule produced an opcode not covered by this seam shim)"
@@ -2433,6 +2433,18 @@ pub fn specs() -> Vec<RuleSpec> {
 mod tests {
     use super::*;
     use std::rc::Rc;
+
+    /// Regression: `opflags_for` must cover the equality comparisons (a
+    /// `markLabelBumpUp`-hoisted loop-head `==`/`!=` guard re-set its opcode
+    /// through this seam and panicked — #150 regression).  The flags match
+    /// Ghidra `TypeOpEqual`/`TypeOpNotEqual` (binary | booloutput | commutative).
+    #[test]
+    fn opflags_for_covers_int_equality() {
+        use pcodeop_flags::*;
+        let expect = binary | booloutput | commutative;
+        assert_eq!(opflags_for(OpCode::CPUI_INT_EQUAL), expect);
+        assert_eq!(opflags_for(OpCode::CPUI_INT_NOTEQUAL), expect);
+    }
 
     use kuna_base::address::Address;
     use kuna_base::space::{

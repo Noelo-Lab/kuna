@@ -3116,16 +3116,25 @@ impl Funcdata {
         edges
     }
 
-    /// (kuna) Peel the **constant guard arms** out of a shared RETURN block into their own
-    /// per-predecessor `return K`, so `if (c) { return K; } body; return <var>;` recovers as
-    /// an early-return guard — angr SAILR `ReturnDuplicatorHigh`, but PER-EDGE (see
-    /// [`Self::earlyreturn_const_edges`]).  Distinct from [`Self::returndup_apply`], which
-    /// requires the *whole* return const and so cannot reach the mixed const/variable
-    /// diamond; this only ever splits a **constant** arm, so it cannot re-introduce the
-    /// variable-return over-firing that made broad `returndup` regress the aggregate.
-    /// Same reuse of [`Self::return_split_is_splittable`] + [`Self::node_split`], same
-    /// caps, and it never splits the last remaining edge (leaves the variable body merged).
-    pub(crate) fn earlyreturn_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
+    /// (kuna) Peel the **constant arms** out of a shared RETURN block into their own
+    /// per-predecessor `return K`, so `if (c) { return K; } body; return <var>;` (the
+    /// early-return guard) and `switch (x) { case A: return K0; ... }` (the multi-way
+    /// const dispatch) recover per-predecessor instead of kuna's merged
+    /// `v = MULTIEQUAL(#K0, #K1, …); return v;` — angr SAILR `ReturnDuplicatorHigh`, but
+    /// PER-EDGE (see [`Self::earlyreturn_const_edges`]).  Distinct from
+    /// [`Self::returndup_apply`], which requires the *whole* return const and so cannot
+    /// reach the mixed const/variable diamond; this only ever splits a **constant** arm,
+    /// so it cannot re-introduce the variable-return over-firing that made broad
+    /// `returndup` regress the aggregate.  Same reuse of
+    /// [`Self::return_split_is_splittable`] + [`Self::node_split`], and it never splits the
+    /// last remaining edge (leaves the variable body merged).
+    ///
+    /// The shared core behind both [`Self::earlyreturn_apply`] (the narrow diamond, capped
+    /// at 16 in-edges by [`ActionEarlyReturn`](crate::s8_structure::kuna_earlyreturn)) and
+    /// [`Self::switchreturn_apply`] (the wide multi-case switch-phi that exceeds that cap,
+    /// gated by [`ActionSwitchReturn`](crate::s8_structure::kuna_switchreturn)) — the ONLY
+    /// difference between the two is the `max_inedges` / `max_splits` caps.
+    fn const_return_peel(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
         let mut count = 0;
         // Collect candidates up front — node_split mutates the CFG.
         let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
@@ -3182,6 +3191,27 @@ impl Funcdata {
             }
         }
         count
+    }
+
+    /// (kuna, `earlyreturn`) Peel the const guard arm(s) of a **narrow** shared-return
+    /// diamond (`if (c) return K; body; return <var>;`) — the ActionEarlyReturn driver.
+    /// Thin wrapper over [`Self::const_return_peel`] with earlyreturn's caps (≤16 in-edges).
+    pub(crate) fn earlyreturn_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
+        self.const_return_peel(max_splits, max_inedges)
+    }
+
+    /// (kuna, `switchreturn`) Peel the const case arms of a **wide multi-way switch-phi**
+    /// shared-return block (`switch (x) { case A: v = K0; break; … } return v;` →
+    /// `case A: return K0; …`) — the ActionSwitchReturn driver.  The direct continuation of
+    /// [`Self::earlyreturn_apply`]: identical per-edge const-peel machinery
+    /// ([`Self::earlyreturn_const_edges`] + [`Self::node_split`]), but with a wider in-edge
+    /// cap so the many-case dispatch table that overflows earlyreturn's ≤16 limit
+    /// (e.g. libedit `tty__getcharindex`, 17 const cases) is reached too.  Because it still
+    /// only ever splits a **constant** arm (never a `return <variable>` share), it inherits
+    /// earlyreturn's safety: it cannot cause the variable-return over-firing that made broad
+    /// `returndup` regress the aggregate.
+    pub(crate) fn switchreturn_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
+        self.const_return_peel(max_splits, max_inedges)
     }
 
     // --- Block-cover helpers (BlockBasic::setInitialRange/copyRange/mergeRange)

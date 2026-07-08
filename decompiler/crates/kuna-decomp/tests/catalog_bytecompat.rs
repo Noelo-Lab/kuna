@@ -150,7 +150,9 @@ fn fixture_has_all_68_settables() {
     // knob (decbench F5, default-off opt-in runtime choice).
     // +1 for the `earlyreturn` angr SAILR `ReturnDuplicatorHigh` per-edge const-guard
     // early-return hoisting gate (the mixed-diamond narrowing returndup cannot reach).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 74);
+    // +1 for the `switchreturn` continuation of earlyreturn to the WIDE multi-way
+    // switch-phi return (per-case `return K` past earlyreturn's 16-in-edge cap).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 75);
 }
 
 #[test]

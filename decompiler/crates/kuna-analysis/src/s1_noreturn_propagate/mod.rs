@@ -543,7 +543,22 @@ fn reaches_only_noreturn_walk(
                 let call_idx = win.len() - 1;
                 error_recog.call_is_terminal_error(&win, call_idx)
             };
-        if transfers_to_noreturn || transfers_to_error {
+        // A CONDITIONAL jump (`ja`/`jne`/… — a jump that also FALLS THROUGH) to a
+        // no-return target ends only its TAKEN arm; the fall-through (the normal,
+        // non-taken path) must still be walked. This is the GCC -O2 hot/cold-split
+        // shape: an assertion / stack-canary check `jcc <.cold fragment>` where the
+        // `.cold` fragment is `call abort`/`__stack_chk_fail` (no-return), while the
+        // function returns on the fall-through. Short-circuiting here (as an
+        // unconditional transfer does) skips that returning path and wrongly
+        // concludes the whole function no-return — which then propagates up every
+        // caller (the coreutils `quotearg_*` family → `fmt`/main's dropped file-open
+        // `error()` path). IDA Pro / Ghidra both treat such a function as returning.
+        // So only short-circuit an UNCONDITIONAL transfer (a call whose no-return
+        // callee makes its fall-through dead, or a jump with no fall-through); a
+        // conditional jump falls into the `is_jump` handler below, which walks BOTH
+        // its taken (→ terminal) and fall-through arms.
+        let conditional_jump = insn.flow.is_jump && insn.flow.has_fallthrough;
+        if (transfers_to_noreturn || transfers_to_error) && !conditional_jump {
             hit_noreturn = true;
             continue;
         }
@@ -718,6 +733,64 @@ mod tests {
         let p = NoReturnPropagatePass;
         assert_eq!(p.id(), "noreturn_propagate");
         assert_eq!(p.stage(), Stage::S1);
+    }
+
+    // --- reach walk: a conditional jump to a no-return target still returns via its
+    //     fall-through (the GCC hot/cold-split regression) --------------------------
+
+    fn mk_insn(addr: u64, ft: Option<u64>, flow: crate::listing::model::FlowType, flows: Vec<u64>) -> crate::listing::model::Insn {
+        crate::listing::model::Insn {
+            addr,
+            len: 2,
+            fall_through: ft,
+            flow,
+            flows,
+            mnemonic: String::new(),
+            operands: String::new(),
+            pcode: None,
+        }
+    }
+
+    /// A function guarded by an assertion / stack-canary branch to a no-return
+    /// `.cold` fragment — `jcc <terminal>; …; RET` — RETURNS on the fall-through.
+    /// The reach walk must follow that fall-through and conclude it returns. Before
+    /// the fix the `transfers_to_noreturn` fast-path `continue`d past the conditional
+    /// jump, skipping the returning arm, and wrongly marked the whole coreutils
+    /// `quotearg_*` family no-return (dropping `fmt`/main's file-open `error()` path).
+    #[test]
+    fn reach_walk_follows_conditional_jump_fallthrough_to_ret() {
+        use std::collections::{BTreeMap, BTreeSet};
+        let straight = crate::listing::model::FlowType { has_fallthrough: true, ..Default::default() };
+        let cjump = crate::listing::model::FlowType {
+            is_jump: true,
+            is_conditional: true,
+            has_fallthrough: true,
+            ..Default::default()
+        };
+        let ret = crate::listing::model::FlowType { is_terminal: true, ..Default::default() };
+        // entry → cjump[→ 0x100 terminal] (fall-through) → RET
+        let insns = vec![
+            mk_insn(0x0, Some(0x2), straight, vec![]),
+            mk_insn(0x2, Some(0x4), cjump, vec![0x100]),
+            mk_insn(0x4, Some(0x6), straight, vec![]),
+            mk_insn(0x6, None, ret, vec![]),
+        ];
+        let body: BTreeMap<u64, &crate::listing::model::Insn> = insns.iter().map(|i| (i.addr, i)).collect();
+        let terminal: BTreeSet<u64> = [0x100].into_iter().collect();
+        let recog = super::ErrorRecognizer::disabled();
+        assert!(
+            !super::reaches_only_noreturn_walk(&body, 0x0, Some(0x100), &terminal, &recog),
+            "a function that returns on the conditional-jump fall-through must NOT be no-return"
+        );
+
+        // Control: an UNCONDITIONAL jump to the terminal (no fall-through) IS no-return.
+        let ujump = crate::listing::model::FlowType { is_jump: true, ..Default::default() };
+        let only = vec![mk_insn(0x0, None, ujump, vec![0x100])];
+        let body2: BTreeMap<u64, &crate::listing::model::Insn> = only.iter().map(|i| (i.addr, i)).collect();
+        assert!(
+            super::reaches_only_noreturn_walk(&body2, 0x0, Some(0x100), &terminal, &recog),
+            "an unconditional jump whose only target is no-return IS no-return"
+        );
     }
 
     // --- error(nonzero,…) recognizer predicates (decbench F2) ------------------

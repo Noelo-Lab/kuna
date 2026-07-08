@@ -594,6 +594,11 @@ pub struct Architecture {
     /// CONSTANT arm of a mixed return phi (`early_return`, opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_earlyreturn`]'s `ActionEarlyReturn`.
     pub early_return: bool,
+    /// (kuna) continuation of `early_return` to the WIDE multi-way switch-phi return: peel
+    /// each constant case arm to per-case `return K` past earlyreturn's 16-in-edge cap
+    /// (`switch_return`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_switchreturn`]'s `ActionSwitchReturn`.
+    pub switch_return: bool,
     /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-10 default-on).  Read by
     /// [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure) to gate
@@ -834,6 +839,7 @@ impl Architecture {
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
+            switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)

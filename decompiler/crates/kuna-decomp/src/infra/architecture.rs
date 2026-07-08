@@ -459,6 +459,12 @@ pub struct Architecture {
     /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
     /// const gate cannot reach (`early_return`, opt-in default-off).
     pub early_return: bool,
+    /// (kuna) The direct continuation of `early_return`: the same per-edge const peel, but
+    /// with a wider in-edge cap so a WIDE multi-way switch-phi return
+    /// (`switch (x) { case A: v = K0; break; … } return v;` with more cases than
+    /// earlyreturn's 16-in-edge limit) is peeled to per-case `return K`
+    /// (`switch_return`, opt-in default-off).
+    pub switch_return: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -962,6 +968,7 @@ impl Architecture {
             iteregion: false,
             duplicate_shared_returns: false,
             early_return: false,
+            switch_return: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -1087,6 +1094,7 @@ impl Architecture {
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_shared_returns = false; // (kuna) default: upstream byte-identical (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4 returndup — opt-in). DIV-18 flipped this default-on, but the decbench re-run showed the aggregate GED perfect count REGRESSED ~976 (returndup fired 21768x, and early-return recovery diverges from the source's merged short-circuit form on the majority), so it is reverted to a per-function runtime choice (`--option returndup on`).
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
+        self.switch_return = false; // (kuna) default: OFF opt-in. The continuation of earlyreturn to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` with > earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only constant arms). Default-off pending the decbench ablation of the wide-switch delta on top of default earlyreturn-on. Restore per function with `option switchreturn on`.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-13 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
@@ -1284,6 +1292,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::s8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
                 self.early_return = val;
+                Ok(msg)
+            }
+            "switchreturn" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_switchreturn::OptionSwitchReturn.apply(p1)?;
+                self.switch_return = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -1653,6 +1667,7 @@ impl Architecture {
         seam.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         seam.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         seam.early_return = self.early_return; // earlyreturn
+        seam.switch_return = self.switch_return; // switchreturn
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard

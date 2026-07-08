@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr ReturnDuplicatorHigh, per-edge const narrowing extended to the WIDE
+    multi-way SWITCH const-phi return (option switchreturn, default-OFF; ELEM 4112),
+    S8 goto-quality sub-stage.  The direct continuation of ActionEarlyReturn.
+
+    ActionSwitchReturn peels each CONSTANT case arm of a shared switch-dispatch
+    RETURN block (v = MULTIEQUAL(#K0, #K1, ...); return v) into its own per-case
+    return K, via the SAME earlyreturn_const_edges + node_split machinery
+    (const_return_peel) earlyreturn uses, but with the in-edge cap lifted (256 vs
+    earlyreturn's 16) so the WIDE dispatch table earlyreturn structurally skips is
+    reached.  earlyreturn (default-ON) ALREADY hoists switches with <= 16
+    predecessors; this witness is a 17-case dispatch (18 in-edges counting the
+    default), > earlyreturn's MAX_EARLYRETURN_INEDGES=16, so earlyreturn leaves it
+    merged and ONLY switchreturn changes it: the test toggles switchreturn alone,
+    earlyreturn stays at its default.
+
+    Witness (self-contained, no relocations): a 17-case dense jump-table switch,
+    every case landing a constant in the return register and jumping to one exit
+    epilogue, the exact shape of libedit tty__getcharindex (@0x1f145) that motivated
+    the pass.  Source (gcc -O0 -no-pie, absolute-linked so the RIP-relative table
+    needs no relocation):
+
+        unsigned long f(unsigned int x) {
+            switch (x) {
+                case 0:  return 0;     case 9:  return 0xe;
+                case 1:  return 1;     case 10: return 0xa;
+                case 2:  return 2;     case 11: return 0xc;
+                case 3:  return 3;     case 12: return 0xd;
+                case 4:  return 4;     case 13: return 0xf;
+                case 5:  return 0xb;   case 14: return 6;
+                case 6:  return 0x10;  case 15: return 5;
+                case 7:  return 8;     case 16: return 7;
+                case 8:  return 9;     default: return 0xffffffff;
+            }
+        }
+
+    At -O0 every case compiles to `mov $K, %eax; jmp .Lepilogue`, merged at one
+    `pop %rbp; ret`, so kuna reconstructs `eax = MULTIEQUAL(#0, #1, ..., #-1); return
+    eax` in the exit block, kept structurally by default as the merged switch below.
+    Bytes [0x401106, 0x4011b8) of the linked executable; the 4-byte-relative jump
+    table (17 entries) at 0x402004.
+
+    Pass 1 (option switchreturn off, the default): kuna keeps the merged dispatch,
+    `switch (a0) { case 0: v1 = 0; break; ... } return v1;`, one trailing `return v1`
+    reached from every case; the default constant 0xffffffff is a plain assignment
+    (`v1 = 0xffffffff`), NOT a return.
+    Pass 2 (option switchreturn on): every constant case arm is peeled to its own
+    return (`case 0: return 0; ... default: return 0xffffffff;`), the switch head
+    preserved and the merged `return v1` gone; the `switchreturn: hoisted` line is
+    logged exactly once.
+-->
+<bytechunk space="ram" offset="0x401106" readonly="true">
+554889e5897dfc837dfc100f879a0000008b45fc488d148500000000488d05
+db0e00008b04024898488d15cf0e00004801d0ffe0b800000000eb75b80100
+0000eb6eb802000000eb67b803000000eb60b804000000eb59b80b000000eb
+52b810000000eb4bb808000000eb44b809000000eb3db80e000000eb36b80a
+000000eb2fb80c000000eb28b80d000000eb21b80f000000eb1ab806000000
+eb13b805000000eb0cb807000000eb05b8ffffffff5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x402004" readonly="true">
+36f1ffff3df1ffff44f1ffff4bf1ffff52f1ffff59f1ffff60f1ffff67f1ff
+ff6ef1ffff75f1ffff7cf1ffff83f1ffff8af1ffff91f1ffff98f1ffff9ff1
+ffffa6f1ffff
+</bytechunk>
+<symbol space="ram" offset="0x401106" name="f"/>
+</binaryimage>
+<script>
+  <com>option switchreturn off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchreturn on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="switchreturn #1: the switch dispatch head survives in BOTH passes (only the case bodies change)" min="2" max="2">switch\(a0\) \{</stringmatch>
+<stringmatch name="switchreturn #2: ON hoists each const case into its own return, so the default 0xffffffff becomes a return exactly once (ON pass only)" min="1" max="1">return 0xffffffff;</stringmatch>
+<stringmatch name="switchreturn #3: ON logs the const-case return hoist exactly once" min="1" max="1">switchreturn: hoisted</stringmatch>
+</decompilertest>

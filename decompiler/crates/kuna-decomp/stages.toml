@@ -1971,6 +1971,23 @@ inspiration = "decbench:O0-coreutils-realpath-relpath; O0-tar-tar-from_header; R
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "switchreturn"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-ReturnDuplicatorHigh-switchphi"
+summary = "The direct continuation of `earlyreturn` (the per-edge const narrowing of angr SAILR `ReturnDuplicatorHigh`), extended from the narrow if/else-if diamond to the WIDE multi-way SWITCH const-phi return. An enum/switch dispatch whose every case assigns a constant to a shared temp and breaks to one exit compiles to `v = MULTIEQUAL(#K0, #K1, …); return v` with one `break` per case; kuna keeps the merged `switch (x) { case A: v = K0; break; … } return v;` (~2 CFG nodes/case more than the source's per-case `case A: return K0;`). `earlyreturn` ALREADY recovers per-case returns for a switch whose merge block has <= 16 predecessors (findutils get_fts_info_name, a 14-case switch, hoists to `case 1: return \"FTS_D\"; …`), but its MAX_EARLYRETURN_INEDGES=16 cap leaves the WIDE dispatch table merged: a 17-case switch merges 17 in-edges (> 16) so earlyreturn skips it (libedit tty__getcharindex). switchreturn is the SAME peel with the in-edge cap lifted (256): it splits each constant case in-edge (all but the last, which keeps the block alive) via the SAME `earlyreturn_const_edges` + `node_split` machinery, so every case ends in its own `return K`. Because it still only ever splits a CONSTANT case arm (never a `return <variable>` share), it inherits earlyreturn's safety and CANNOT re-introduce the variable-return over-firing that made broad returndup regress the aggregate GED-perfect count ~976; any non-const body/default/fall-through arm is left merged. Orthogonal to earlyreturn (a separate option): when both are on, the narrower earlyreturn consumes the <= 16-edge cases first, so switchreturn's incremental effect is precisely the wide dispatch tables earlyreturn's cap skips. Bounded: return-only epilogue (the splittable filter rejects calls/stores), never splits the last edge, <= 256 predecessors, <= 256 splits/function; each hoist logged (`switchreturn:`)."
+use_when = "Set ON per function/binary to recover the source's per-case `switch (x) { case A: return K0; … }` where kuna emits the merged `switch (x) { case A: v = K0; break; … } return v;` for a WIDE multi-way const dispatch (more cases than earlyreturn's 16-in-edge cap; e.g. libedit tty__getcharindex, iproute2 accept_msg, coreutils stat fmt_to_mask). DEFAULT OFF (byte-identical to upstream when off): it lifts earlyreturn's in-edge cap, so the wide-switch aggregate effect on top of default earlyreturn-on must be measured before any default-on flip -- but by construction it cannot cause the variable-return over-firing that reverted returndup (it splits only constant case arms)."
+example = "option switchreturn on"
+source_decompiler = "angr"
+inspiration = "decbench:O0-libedit-tty__getcharindex; O0-iproute2-ip-accept_msg; O0-coreutils-stat-fmt_to_mask; ReturnDuplicatorHigh._is_simple_return_graph (angr/analyses/decompiler/optimization_passes/return_duplicator_{high,base}.py)"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "foldcallret"
 values = "on|off"
 default = "on"

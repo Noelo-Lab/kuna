@@ -746,6 +746,22 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   e2e gates (which stay green with the rule on). Real-binary behavior verified on the decbench
   openssh corpus (ssh_tun_confirm, sshd_hostkey_sign).
 - **Date**: 2026-07-05.
+- **Fix (2026-07-08, conditional-jump fall-through)**: the reachability walk over-concluded on
+  the **GCC `-O2` hot/cold-split** shape — an assertion / stack-canary check
+  `jcc <.cold fragment>` where the outlined `.cold` fragment is `call abort`/`__stack_chk_fail`
+  (correctly no-return via the strict rule), while the function **returns** on the fall-through.
+  The `transfers_to_noreturn` fast-path treated the conditional jump like an *unconditional*
+  transfer and `continue`d past it, skipping the returning fall-through arm — so the whole
+  function was wrongly concluded no-return, then propagated up **every** caller. On coreutils
+  `fmt`/main this marked the entire `quotearg_*` family no-return and dropped the file-open
+  `error()` path (`quotearg_style(4,file)` rendered `/* Subroutine does not return */`).
+  **IDA Pro and Ghidra both treat such a function as returning.** Fix: only short-circuit an
+  *unconditional* transfer (a call whose no-return callee makes its fall-through dead, or a
+  jump with no fall-through); a conditional jump now falls into the `is_jump` handler, which
+  walks BOTH its taken (→ terminal) and fall-through arms. Regression test
+  `reach_walk_follows_conditional_jump_fallthrough_to_ret`; the `my_die`/mv/tee legit
+  no-return cases (`verify_noreturn_propagate`) stay green (`abort` remains no-return via the
+  strict rule). `source_decompiler = ida` (parity target for the returning-function shape).
 
 ## DIV-20: `decompile-all` defaults `funcstart_patterns` ON for non-x86-64 (ARM discovery)
 
@@ -853,3 +869,30 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   generalization. Bounded (≤16 predecessors, ≤32 splits/function); each hoist logged.
 - **Testcase**: `tests/stages/ghangr-earlyreturn.xml` (two-pass off/on flip on factor `sub_eb2e`).
 - **Date**: 2026-07-07.
+
+## DIV-24: name data globals from DWARF (`dat_<addr>` → `max_width`), matching IDA Pro / Ghidra
+
+- **Change**: a bug fix, default-on, no flag. `ActionNameVars` already queries the global scope
+  for a memory-access global varnode (`name_for_global_varnode_scoped`, `coreaction.cc:3061`
+  `linkSymbol`) — but a DWARF data global was mapped into the global scope with a **size-1 code
+  type**, so a 4-/8-byte access (`mov [max_width], eax`) queried `queryContainer(addr, 4)` and
+  found no covering `SymbolEntry`. Only 1-byte globals (`uniform`/`crown`) coincidentally matched
+  the size-1 entry and rendered by name; every `int`/`long`/pointer global rendered `dat_<addr>`.
+- **Fix**: the DWARF pass (`s1_dwarf`) resolves each top-level `DW_TAG_variable`'s `DW_AT_type`
+  to its byte size and emits a `DataObjectFact{addr,name,size}`; the commit maps it with an
+  `undefined<size>` type (`get_base(size, TYPE_UNKNOWN)`, `namelock` only — the type is NOT
+  typelocked, so propagation still infers the real type). The container query then matches at the
+  access width and the name binds. `fmt/main` now renders `max_width`, `goal_width`, `prefix`,
+  `prefix_length`, `prefix_full_length`, `prefix_lead_space`, `Version` instead of `dat_<addr>`.
+- **Provenance**: matched from **IDA Pro** (`decompiler decompile main --backend ida` on `fmt`
+  renders `max_width`/`goal_width`/`optind`) and **Ghidra** — both name data globals from the
+  symbol table (`ApplyDataArchiveAnalyzer` / the `.symtab`/DWARF import).
+- **Byte-identical on the corpus**: `make test` 675/675 + `make test-stages` 256/256 hold (no
+  datatest binary carries a DWARF data global), `make rust-test` green (+2 new).
+- **Follow-up (not in this change)**: libc extern data symbols (`optind`/`stdin`/`stdout`/
+  `optarg`) are NOT in the program's DWARF (they are external declarations); naming them needs an
+  ELF `.symtab` `STT_OBJECT` reader — a separate change. They still render `dat_<addr>`.
+- **Testcase**: `crates/kuna-console/tests/verify_data_global_symbols.rs` +
+  `crates/kuna-analysis/tests/fixtures/dwarf_globals_x86_64` (gcc `-O2 -g`; `int`/`long`/`char*`
+  globals).
+- **Date**: 2026-07-08.
