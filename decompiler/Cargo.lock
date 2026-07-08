@@ -164,6 +164,7 @@ dependencies = [
  "kuna-num",
  "kuna-sleigh",
  "object",
+ "regex",
 ]
 
 [[package]]
