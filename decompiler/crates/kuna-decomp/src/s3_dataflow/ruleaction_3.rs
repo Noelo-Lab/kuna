@@ -113,6 +113,15 @@ fn opflags_for(opc: OpCode) -> u32 {
         OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_RIGHT => binary,
         // TypeOpIntLess: binary | booloutput (typeop.cc:1069)
         OpCode::CPUI_INT_LESS => binary | booloutput,
+        // TypeOpEqual / TypeOpNotEqual: binary | commutative | booloutput
+        // (typeop.cc TypeOpEqual/TypeOpNotEqual ctors).  RuleMultiCollapse can
+        // rebuild an equality guard while re-flowing a recovered jump table
+        // (`generate_ops_with_jumptables` -> `stage_jump_table`); without these the
+        // shim panicked (LOSS-131) on some fully-native switch functions, e.g. mv
+        // -O2 sub_12280.
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
+            binary | commutative | booloutput
+        }
         other => panic!(
             "ruleaction_3::opflags_for: no W6 opflags entry for {other:?} \
              (a rule produced an opcode not covered by this seam shim)"
