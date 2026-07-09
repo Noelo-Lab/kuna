@@ -20,7 +20,7 @@
 //! WS5 landed those two **in `kuna-sleigh`** (`SleighBase::encode` /
 //! `SleighBase::encode_sla_space`, next to `SleighBase::decode`) because they
 //! need `&self` access to the private symbol-table / address-space / template
-//! state and the private `SlaTrans` `ConstructTpl`-encode seam.  The plan
+//! state and the private `SlaTrans` `ConstructTpl`-encode boundary.  The plan
 //! (`docs/rust-port/sleigh-compiler/map.md` WS5) explicitly allows this and
 //! records it as a freeze interface.  This module is the compiler-side wiring:
 //! it drives `SleighBase::encode` through a `FormatEncode` (header + packed

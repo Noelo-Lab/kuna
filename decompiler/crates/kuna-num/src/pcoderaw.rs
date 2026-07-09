@@ -190,9 +190,6 @@ impl VarnodeData {
                 self.space = Some(spc);
                 break;
             } else if attrib_id == ATTRIB_NAME.get_id() {
-                // C++: trans = decoder.getAddrSpaceManager()
-                //              ->getDefaultCodeSpace()->getTrans();
-                //      point = trans->getRegister(decoder.readString()); *this=point;
                 // In the kuna port the `Translate` back-pointer is the manager's
                 // installed `RegisterLookup` (the same stand-in
                 // `Range::decode_from_attributes` uses for its `name=` register

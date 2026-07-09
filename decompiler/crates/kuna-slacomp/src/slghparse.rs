@@ -7,7 +7,7 @@
 //! the symbol-table / constructor / template objects (the already-ported
 //! `kuna-sleigh` types).
 //!
-//! ## The driver seam ([`ParserActions`])
+//! ## The driver boundary ([`ParserActions`])
 //!
 //! The bison grammar's actions are `slgh->...` calls on a `SleighCompile`.  In the
 //! Rust port those land in WS4 (`slgh_compile.rs`), still `todo!()` while WS2 is
@@ -91,7 +91,7 @@ pub enum ConstOp {
 /// [`crate::slgh_compile::SymbolId`]).
 pub type SymId = crate::slgh_compile::SymbolId;
 
-/// The driver builder seam the parser drives (see module docs).  Every method
+/// The driver builder boundary the parser drives (see module docs).  Every method
 /// corresponds 1:1 to a `slgh->...` (or `slgh->pcode....`) call in `slghparse.y`;
 /// the `u32` ids are the driver-owned arena handles that stand in for the C++
 /// `*` semantic values.

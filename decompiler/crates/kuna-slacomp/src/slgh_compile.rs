@@ -152,7 +152,6 @@ impl SectionVector {
     /// `SectionVector::append(ConstructTpl *rtl,SymbolScope *scope)`
     /// (slgh_compile.cc:76): grow `named` to fit `nextindex`, store the pair.
     pub fn append(&mut self, rtl: u32, scope: Option<u32>) {
-        // C++ `while(named.size() <= nextindex) named.emplace_back();`
         while (self.named.len() as i64) <= i64::from(self.nextindex) {
             self.named.push(RtlPair::default());
         }
@@ -1756,7 +1755,7 @@ fn is_absolute_path(p: &[u8]) -> bool {
 }
 
 // ===========================================================================
-// CompilerHost (WS3 seam: SleighPcode/MacroBuilder back-pointer)
+// CompilerHost (WS3 boundary: SleighPcode/MacroBuilder back-pointer)
 // ===========================================================================
 
 /// C++ `UNIQUE_CROSSBUILD_POSITION` / `UNIQUE_CROSSBUILD_NUMBITS`
@@ -2261,7 +2260,6 @@ impl SleighCompile {
 
     /// `specificsymbol ':' INTEGER` -> `createBitRange(sym,0,nbytes*8)`.
     pub fn pcode_create_bitrange_colon(&mut self, spec: SymbolId, nbytes: u64) -> u32 {
-        // C++ `createBitRange($1,0,(uint4)(*$3 * 8))`.
         self.create_bit_range_action(spec, 0, (nbytes as u32).wrapping_mul(8))
     }
 
@@ -2390,8 +2388,6 @@ impl SleighCompile {
 
     /// `jumpdest` builders (slghparse.y:490-497).
     pub fn jumpdest_jumpsym(&mut self, sym: SymbolId) -> u32 {
-        // `VarnodeTpl *sym = $1->getVarnode(); new VarnodeTpl(j_curspace,
-        // sym->getOffset(), j_curspace_size); delete sym;`
         let symvn = self.symbol_varnode(sym);
         let vn = VarnodeTpl::new(
             ConstTpl::new_type(ConstType::JCurspace),
@@ -2409,7 +2405,6 @@ impl SleighCompile {
         self.alloc_vntpl(vn)
     }
     pub fn jumpdest_operandsym(&mut self, sym: SymbolId) -> u32 {
-        // `$$ = $1->getVarnode(); $1->setCodeAddress();`
         let vn = self.symbol_varnode(sym);
         if let Some(s) = self.base.symtab_mut().find_symbol_by_id_mut(sym) {
             if let SymbolKind::Operand(op) = s.kind_mut() {
@@ -2429,8 +2424,6 @@ impl SleighCompile {
         self.alloc_vntpl(vn)
     }
     pub fn jumpdest_label(&mut self, label: SymbolId) -> u32 {
-        // `new VarnodeTpl(constspace, j_relative(label->getIndex()),
-        // real(sizeof(uintm))); label->incrementRefCount();`
         let idx = self
             .base
             .symtab()
@@ -2509,7 +2502,6 @@ impl SleighCompile {
     }
     /// `label: '<' STRING '>'` -> `pcode.defineLabel`: create a LabelTableSymbol.
     pub fn pcode_define_label(&mut self, name: &[u8]) -> u32 {
-        // C++ `PcodeCompile::defineLabel`: `new LabelSymbol(name, local_labelcount++)`.
         let count = self.pcode.local_labelcount;
         self.pcode.local_labelcount = count.wrapping_add(1);
         let sym = SleighSymbol::new(name, SymbolKind::Label(LabelTableSymbol::new(count)));
@@ -2518,7 +2510,6 @@ impl SleighCompile {
 
     /// `statement: label` -> `pcode.placeLabel`: build the LABELBUILD op.
     pub fn pcode_place_label(&mut self, label: SymbolId) -> u32 {
-        // C++ `PcodeCompile::placeLabel(LabelSymbol *)`.
         let placed = self
             .base
             .symtab()
@@ -2963,7 +2954,6 @@ impl SleighCompile {
                 continue;
             }
             let hand = outvn.get_offset().get_handle_index();
-            // macroop = sym->getOperand(i)
             let macroop = self
                 .base
                 .symtab()
@@ -2980,7 +2970,6 @@ impl SleighCompile {
             if !is_code {
                 continue;
             }
-            // parentop = (curct ? curct : curmacro)->getOperand(hand)
             let parentop = if let Some(curct) = self.curct {
                 let (table_id, ct_idx) = self.ctmap[curct as usize];
                 self.base
@@ -3517,7 +3506,7 @@ impl PcodeCompile for SleighCompile {
 }
 
 // ===========================================================================
-// ScannerHost + ParserActions impls (WS2 driver seam)
+// ScannerHost + ParserActions impls (WS2 driver boundary)
 // ===========================================================================
 
 impl ScannerHost for SleighCompile {
