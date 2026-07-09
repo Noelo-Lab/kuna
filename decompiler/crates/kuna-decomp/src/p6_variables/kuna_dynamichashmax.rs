@@ -25,7 +25,7 @@
 //! the exact ceiling of that range).  `unique_hash` reads the live flag
 //! [`Architecture::dynamic_hash_maxdup_high`](crate::architecture::Architecture).
 //!
-//! ## What this port covers (and the seam it cannot)
+//! ## What this port covers (and the boundary it cannot)
 //!
 //! The whole upstream `kuna_dynamichashmax.cc` IS the option class
 //! `OptionDynamicHashMax::apply`, which parses on/off and writes
@@ -63,14 +63,8 @@ impl Default for DynamicHashMaxOption {
 }
 
 impl DynamicHashMaxOption {
-    /// Apply the option (C++ `OptionDynamicHashMax::apply`):
-    /// ```text
-    ///   bool val = onOrOff(p1);
-    ///   glb->dynamic_hash_maxdup_high = val;
-    ///   string prop = val ? "on" : "off";
-    ///   return "DynamicHash wide collision budget turned "+prop;
-    /// ```
-    /// The caller writes `enabled` into
+    /// Apply the option (C++ `OptionDynamicHashMax::apply`).  The caller writes
+    /// `enabled` into
     /// [`Architecture::dynamic_hash_maxdup_high`](crate::architecture::Architecture).
     pub fn apply(&mut self, val: bool) -> String {
         self.enabled = val;

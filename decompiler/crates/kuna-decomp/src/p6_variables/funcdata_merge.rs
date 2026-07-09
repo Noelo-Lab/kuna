@@ -17,7 +17,7 @@
 //!  * the IR-surgery mutators (`copy_trim_op`, `trim_op_*`, `op_insert_*`) ->
 //!    `Funcdata::newOp`/`newUnique`/`opSet*`/`opInsert*` (`merge.cc:411-712`).
 //!
-//! ## Seams (documented losses, narrow on the merged-tree default)
+//! ## Boundaries (documented losses, narrow on the merged-tree default)
 //!  * The W4 Symbol/ScopeLocal layer is not present (`localmap` is a unit stub):
 //!    `bank_symbol`/`multi_entry_symbols`/`symbol_*` return the un-recovered
 //!    default (no symbol, no multi-entry groups), so `mergeMultiEntry` is a true
@@ -277,7 +277,7 @@ impl Funcdata {
     }
 }
 
-/// Decode a [`MergePieceId`] (the seam's opaque `u64` handle) back to the
+/// Decode a [`MergePieceId`] (the boundary's opaque `u64` handle) back to the
 /// bank's [`VariablePieceId`].  The encoding is `u64::from(piece.0)`, so the
 /// narrowing is exact (`piece.0` was a `u32`).
 fn decode_piece(piece: MergePieceId) -> VariablePieceId {
@@ -351,7 +351,7 @@ impl MergeContext for Funcdata {
 
     // --- Bank-mediated piece introspection --------------------------------
     //     The `VariableGroup`/`VariablePiece` overlap model lives in the
-    //     `high_bank` arena (variable.rs); these read it back across the seam so
+    //     `high_bank` arena (variable.rs); these read it back across the boundary so
     //     `mergeTestRequired`'s piece-group arm (merge.cc:147-154),
     //     `markInternalCopies`'s PIECE/SUBPIECE self-assign suppression
     //     (merge.cc:1478-1528), and `inflateTest`'s extended-cover walk
@@ -361,7 +361,6 @@ impl MergeContext for Funcdata {
     //     widened to `u64` (a stable per-group identity, exactly what the C++
     //     `groupIn == groupOut` pointer compare needs).
     fn high_group_info(&self, high: HighVariableId) -> Option<HighGroupInfo> {
-        // high->piece != 0 ? { piece->getGroup(), piece->getSize(), group->getSize() }
         let pid = self.high_bank().high_piece_id(high)?;
         let group = self.high_bank().piece_group(pid)?;
         Some(HighGroupInfo {
@@ -407,8 +406,8 @@ impl MergeContext for Funcdata {
         isspeculative: bool,
         cache: &mut HighIntersectTest,
     ) -> KunaResult<()> {
-        // high1->merge(high2,&testCache,isspeculative): drive the bank-level merge
-        // across the field-split.  The bank's `merge` reads the moved members'
+        // Drive the bank-level merge across the field-split.  The bank's `merge`
+        // reads the moved members'
         // `merge_group`/loc through the read view and reports each `vn->setHigh`
         // via `set_high`; since the merge never reads `vn->high`, we *defer* the
         // back-pointer writes into a side buffer (`set_high_log`) so the read
@@ -435,8 +434,8 @@ impl MergeContext for Funcdata {
         self.refresh_high_cover(high);
     }
     fn bank_group_with(&mut self, high2: HighVariableId, off: int4, high1: HighVariableId) -> KunaResult<()> {
-        // vn2->getHigh()->groupWith(off, vn1->getHigh()): the C++ reads each high's
-        // getInstance(0)->getSize() for the piece sizes.
+        // The C++ `groupWith` reads each high's `getInstance(0)->getSize()` for the
+        // piece sizes.
         let first_size = self
             .high_bank()
             .get(high2)
@@ -518,10 +517,9 @@ impl MergeContext for Funcdata {
         self.kuna_mapped_symbol_offset(high).unwrap_or_else(|| h.get_symbol_offset())
     }
     fn bank_symbol_isolated(&self, high: HighVariableId) -> bool {
-        // (kuna L2) C++ `Merge::mergeTestAdjacent` (merge.cc:196-205):
-        //   Symbol *symbol = high->getSymbol();
-        //   if (symbol != 0 && symbol->isIsolated()) return false;
-        // Resolve the SAME Symbol `bank_symbol` resolves, then read its
+        // (kuna L2) C++ `Merge::mergeTestAdjacent` (merge.cc:196-205) bails out
+        // when `high->getSymbol()` is a non-null isolated Symbol.  Resolve the
+        // SAME Symbol `bank_symbol` resolves, then read its
         // `Symbol::isIsolated()` (database.hh:241).  A dynamic-hash / equate
         // Symbol is bound directly on the high (`type varnode`/equate); a
         // `map addr` access resolves through the covering SymbolEntry.  Mirrors
@@ -574,7 +572,6 @@ impl MergeContext for Funcdata {
         false
     }
     fn bank_tied_addr(&self, high: HighVariableId) -> Address {
-        // high->getTiedVarnode()->getAddr(): the addr-tied member's address.
         match self.high_tied_or_input_varnode(high, false) {
             Some(vn) => self.vbank().get(vn).map(|v| v.get_addr().clone()).unwrap_or_else(Address::new_invalid),
             None => Address::new_invalid(),
@@ -770,7 +767,6 @@ impl MergeContext for Funcdata {
         (blk, self.op_cover_point_pub(op))
     }
     fn indirect_effect_op(&self, indop: OpId) -> OpId {
-        // getOpFromConst(indop->getIn(1)->getAddr())
         let addr = self
             .obank()
             .get(indop)
@@ -795,7 +791,6 @@ impl MergeContext for Funcdata {
         Funcdata::op_insert_begin(self, op, bl);
     }
     fn op_insert_end_pred(&mut self, copyop: OpId, op: OpId, slot: int4) {
-        // opInsertEnd(copyop, (BlockBasic*)op->getParent()->getIn(slot))
         let parent = self.obank().get(op).and_then(|o| o.get_parent()).expect("op_insert_end_pred: no parent");
         let pred = self.bblocks_ref().block(parent).get_in(slot);
         Funcdata::op_insert_end(self, copyop, pred);
@@ -831,7 +826,7 @@ impl MergeContext for Funcdata {
         self.build_copy_pair_range(dom_op, sub_op)
     }
 
-    // --- IR-surgery seams -------------------------------------------------
+    // --- IR-surgery hooks -------------------------------------------------
     fn copy_trim_op(&mut self, in_vn: VarnodeId, addr: Address, trim_op: OpId) -> KunaResult<OpId> {
         self.build_copy_trim_op(in_vn, addr, trim_op)
     }
@@ -844,7 +839,6 @@ impl MergeContext for Funcdata {
         let is_multiequal = o.code() == OpCode::CPUI_MULTIEQUAL;
         let in_vn = o.get_in(slot).expect("trim_op_input_prep: null input");
         let pc = if is_multiequal {
-            // pc = ((BlockBasic*)op->getParent()->getIn(slot))->getStop()
             let parent = o.get_parent().expect("trim_op_input_prep: no parent");
             let pred = self.bblocks_ref().block(parent).get_in(slot);
             self.block_stop_addr(pred)
@@ -880,7 +874,7 @@ impl MergeContext for Funcdata {
         self.build_dominant_copy_impl(high, copy, pos, size)
     }
 
-    // --- mergeAddrTied / mergeMultiEntry seams ----------------------------
+    // --- mergeAddrTied / mergeMultiEntry hooks ----------------------------
     fn addr_tied_ranges(&self) -> Vec<AddrTiedRange> {
         // Faithful `Merge::mergeAddrTied` range collection (merge.cc:609-648) over
         // the loc-ordered Varnode set, driving `VarnodeBank::overlapLoc`
@@ -1013,7 +1007,6 @@ impl MergeContext for Funcdata {
                 if let Some(high1) = high1 {
                     for (k, lst) in groups.iter().skip(1) {
                         if let Some(high2) = self.vbank().get(lst[0]).and_then(|v| v.get_high()) {
-                            // off = (int4)(vn2->getOffset() - vn1->getOffset())
                             // cast: uintb difference -> int4 storage offset, the C++
                             // `(int4)` narrowing; an in-window offset delta is small.
                             let off = (k.0.wrapping_sub(off1)) as int4;
@@ -1103,7 +1096,6 @@ impl MergeContext for Funcdata {
         }));
     }
     fn gather_pieces(&self, vn: VarnodeId, base_offset: int4) -> Vec<(VarnodeId, int4)> {
-        // PieceNode::gatherPieces(pieces, vn, vn->getDef(), baseOffset, baseOffset)
         let def = match self.vbank().get(vn).and_then(|v| v.get_def()) {
             Some(d) => d,
             None => return Vec::new(),

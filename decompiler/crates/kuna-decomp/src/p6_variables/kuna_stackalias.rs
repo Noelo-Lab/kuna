@@ -53,8 +53,7 @@ impl Default for StackAliasOption {
 }
 
 impl StackAliasOption {
-    /// (kuna) Set the gate (C++ `OptionStackAlias::apply`: `bool val =
-    /// onOrOff(p1); glb->stack_alias_deadstore = val;`).
+    /// (kuna) Set the gate (C++ `OptionStackAlias::apply`).
     pub fn apply(&mut self, val: bool) -> &'static str {
         self.enabled = val;
         if val {

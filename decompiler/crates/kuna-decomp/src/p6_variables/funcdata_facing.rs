@@ -4,15 +4,7 @@
 //! `ActionSetCasts` (the S9 cast plane) decides whether a CAST/PTRSUB op must be
 //! inserted by comparing the type a PcodeOp *expects* at a slot against the type a
 //! Varnode's merged HighVariable *carries* at that read/write.  That second type is
-//! the **facing type**.  In C++ the four facing accessors live on `Varnode`
-//! (`varnode.cc:645-691`):
-//!
-//! ```text
-//! Varnode::getTypeDefFacing()              -> type / type->findResolve(def,-1)
-//! Varnode::getTypeReadFacing(op)           -> type / type->findResolve(op,slot)
-//! Varnode::getHighTypeDefFacing()          -> high->getType() / ct->findResolve(def,-1)
-//! Varnode::getHighTypeReadFacing(op)       -> high->getType() / ct->findResolve(op,slot)
-//! ```
+//! the **facing type**.
 //!
 //! The `findResolve` overrides (`type.cc:590-2986`: `TypePointer`/`TypeArray`/
 //! `TypeStruct`/`TypeUnion`/`TypePartialUnion`) all reach the per-function union
@@ -124,7 +116,6 @@ impl Funcdata {
         if !ty.needs_resolution() {
             return ty;
         }
-        // return type->findResolve(def,-1);
         let def = v.get_def().expect("getTypeDefFacing: Varnode must be written");
         self.find_resolve_facing(&ty, def, -1)
     }
@@ -137,7 +128,6 @@ impl Funcdata {
         if !ty.needs_resolution() {
             return ty;
         }
-        // return type->findResolve(op, op->getSlot(this));
         let slot = self.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
         self.find_resolve_facing(&ty, op, slot)
     }
@@ -147,14 +137,12 @@ impl Funcdata {
     /// union resolution.  This is the def-facing node of the type graph the Casts
     /// stage walks.
     pub fn vn_high_type_def_facing(&mut self, vn: VarnodeId) -> Rc<Datatype> {
-        // Datatype *ct = high->getType();
         let ct = self
             .high_get_type(vn)
             .unwrap_or_else(|| Rc::clone(self.vbank().get(vn).expect("stale vn").get_type()));
         if !ct.needs_resolution() {
             return ct;
         }
-        // return ct->findResolve(def,-1);
         let def = self
             .vbank()
             .get(vn)
@@ -168,14 +156,12 @@ impl Funcdata {
     /// resolution.  This is the read-facing node of the type graph
     /// `ActionSetCasts::castInput`/`castOutput` query.
     pub fn vn_high_type_read_facing(&mut self, vn: VarnodeId, op: OpId) -> Rc<Datatype> {
-        // Datatype *ct = high->getType();
         let ct = self
             .high_get_type(vn)
             .unwrap_or_else(|| Rc::clone(self.vbank().get(vn).expect("stale vn").get_type()));
         if !ct.needs_resolution() {
             return ct;
         }
-        // return ct->findResolve(op, op->getSlot(this));
         let slot = self.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
         self.find_resolve_facing(&ct, op, slot)
     }

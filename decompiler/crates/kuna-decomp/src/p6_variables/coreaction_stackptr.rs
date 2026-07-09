@@ -22,14 +22,14 @@
 //! match the unsigned C++ arithmetic, and the magic constants (`65535` unknown
 //! marker, the `4` extra-pop guess, the `-1` multiply test) are the verbatim C++
 //! literals.  The two surfaces the merged tree does not yet build — the
-//! per-call `FuncCallSpecs` (`getCallSpecs`/`setEffectiveExtraPop`, a W6/W7 seam,
+//! per-call `FuncCallSpecs` (`getCallSpecs`/`setEffectiveExtraPop`, a W6/W7 boundary,
 //! `numCalls()==0` here) and the IOP-space `getOpFromConst` decode (W3-varnode
-//! seam) — are reached exactly where the C++ reaches them: with no call specs
+//! boundary) — are reached exactly where the C++ reaches them: with no call specs
 //! the INDIRECT companion takes the C++ `fc==0` *guess* branch (`rhs=4`), and the
 //! `setEffectiveExtraPop` write lands on an absent call spec (a no-op).  The
 //! solver's INT_ADD rewrite of the solution runs regardless, so the in-scope
 //! repair is real; only the cross-call extra-pop *propagation into call specs*
-//! is gated behind the proto-recovery seam (tracked as a loss).
+//! is gated behind the proto-recovery boundary (tracked as a loss).
 //!
 //! The `lower_bound(vnlist, othervn, comparePointers)` index search is replaced
 //! by a linear `position()` over the loc-ordered `vnlist`: in the C++ it is a
@@ -295,17 +295,14 @@ impl StackSolver {
                         .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
                         .unwrap_or(false);
                     if is_iop {
-                        // PcodeOp *iop = getOpFromConst(iopvn->getAddr());
                         let off = iopvn
                             .and_then(|v| data.vbank().get(v))
                             .map(|v| v.get_addr().get_offset());
                         if let Some(off) = off {
                             let iop = crate::funcdata_varnode::op_iop_decode(off);
-                            // FuncCallSpecs *fc = data.getCallSpecs(iop);
                             if let Some(fc_idx) = data.get_call_specs_index(iop) {
                                 let extrapop = data.get_call_specs(fc_idx).get_extra_pop();
                                 if extrapop != EXTRAPOP_UNKNOWN {
-                                    // eqn.rhs = fc->getExtraPop(); eqs.push_back(eqn);
                                     self.eqs.push(StackEqn {
                                         var1: i as int4,
                                         var2: idx,
@@ -316,7 +313,7 @@ impl StackSolver {
                             }
                         }
                     }
-                    // eqn.rhs = 4; guess.push_back(eqn);  // Otherwise make a guess
+                    // Otherwise make a guess.
                     self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs: 4 });
                 }
                 OpCode::CPUI_MULTIEQUAL => {
@@ -428,7 +425,7 @@ fn adjust_load(data: &mut Funcdata, loadop: OpId, storeop: OpId) -> bool {
         Some(v) => v,
         None => return false,
     };
-    // vn = storeop->getIn(2); if const make a fresh const; if free bail.
+    // The stored value: a constant makes a fresh const; a free varnode bails.
     let vn = {
         let sv = match data.vbank().get(storedvn) {
             Some(v) => v,
@@ -613,7 +610,6 @@ pub(crate) fn check_clog(data: &mut Funcdata, id: &Rc<AddrSpace>, spcbase: int4)
                 continue;
             }
         }
-        // loadop = y->getDef()
         let mut loadop = match data.vbank().get(y).and_then(|v| v.get_def()) {
             Some(o) => o,
             None => continue,
@@ -671,10 +667,7 @@ pub(crate) fn analyze_extra_pop(
 ) -> int4 {
     use crate::fspec::EXTRAPOP_UNKNOWN;
 
-    // C++ `ActionStackPtrFlow::analyzeExtraPop` (coreaction.cc:279-282):
-    //   ProtoModel *myfp = data.getArch()->evalfp_called;
-    //   if (myfp == 0) myfp = data.getArch()->defaultfp;
-    //   if (myfp->getExtraPop() != extrapop_unknown) return;
+    // C++ `ActionStackPtrFlow::analyzeExtraPop` (coreaction.cc:279-282).
     // The `evalfp_called ?: defaultfp` fallback is load-bearing: when no
     // evaluation model is set, the C++ reads `defaultfp`'s extrapop, so a known
     // default extrapop suppresses the solve (matching the byte oracle).
@@ -727,38 +720,27 @@ pub(crate) fn analyze_extra_pop(
         // for the switch index — so L0's INT_ADD/INDIRECT is cleanly solved
         // instead of leaking stack-relative residue into the switch index.
         if data.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_INDIRECT) {
-            // Varnode *iopvn = op->getIn(1);
             let iopvn = data.obank().get(op).and_then(|o| o.get_in(1));
-            // if (iopvn->getSpace()->getType()==IPTR_IOP) {
             let is_iop = iopvn
                 .and_then(|v| data.vbank().get(v))
                 .and_then(|v| v.get_addr().get_space())
                 .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
                 .unwrap_or(false);
             if is_iop {
-                // PcodeOp *iop = PcodeOp::getOpFromConst(iopvn->getAddr());
                 let iop_off = iopvn
                     .and_then(|v| data.vbank().get(v))
                     .map(|v| v.get_addr().get_offset());
                 if let Some(off) = iop_off {
                     let iop = crate::funcdata_varnode::op_iop_decode(off);
-                    // FuncCallSpecs *fc = data.getCallSpecs(iop);
-                    // if (fc != 0) {
                     if let Some(fc_idx) = data.get_call_specs_index(iop) {
-                        // int4 soln2 = 0;
-                        // int4 comp = solver.getCompanion(i);
-                        // if (comp >= 0) soln2 = solver.getSolution(comp);
                         let comp = solver.companion[i];
                         let soln2 = if comp >= 0 { solver.soln[comp as usize] } else { 0 };
-                        // fc->setEffectiveExtraPop(soln-soln2);
                         data.get_call_specs_mut(fc_idx).set_effective_extra_pop(soln - soln2);
                     }
                 }
             }
         }
 
-        // paramlist = { invn, newConstant(sz, soln & calc_mask(sz)) };
-        // opSetOpcode(op, INT_ADD); opSetAllInput(op, paramlist).
         let sz = data.vbank().get(invn).map(|v| v.get_size()).unwrap_or(0);
         let cmask = calc_mask(sz);
         let cval = (soln as uintb) & cmask;

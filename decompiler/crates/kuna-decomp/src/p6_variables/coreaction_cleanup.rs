@@ -356,8 +356,8 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
 
     // (kuna LOSS-206 ScopeLocal-ownership gate) The C++ `addrtied` derivation for a
     // register that "Could not find any symbol" reduces to one query
-    // (`funcdata_varnode.cc:993` `syncVarnodesWithSymbols`):
-    //   if (lm->inScope(addr,size,usepoint))  fl = Varnode::mapped|Varnode::addrtied;
+    // (`funcdata_varnode.cc:993` `syncVarnodesWithSymbols`): mark it
+    // `mapped|addrtied` iff `lm->inScope(addr,size,usepoint)`.
     // For a *processor register* (not the stack/local space `lm` owns) `inScope`
     // (`database.hh:599` -> `rangetree.inRange`) is ALWAYS false, so C++ leaves the
     // return register un-tied; `baseExplicit` then marks the forward-computed value
@@ -1429,12 +1429,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
             }
         }
     }
-    // The `Merge::inflateTest` input-intersection arm (coreaction.cc:3509-3514):
-    //   for(i=0;i<op->numInput();++i) {
-    //     defvn = op->getIn(i);
-    //     if (defvn->isConstant()) continue;
-    //     if (data.getMerge().inflateTest(defvn, vn->getHigh())) return false;
-    //   }
+    // The `Merge::inflateTest` input-intersection arm (coreaction.cc:3509-3514).
     // A non-constant defining input whose HighVariable would intersect `vn`'s
     // internalCover after inflation forces `vn` EXPLICIT — this is what GAINS
     // Partial Merge #4/#5 (the `EAX = glob1.a + ESI` register-param temp earns
@@ -1784,15 +1779,6 @@ impl Action for ActionHideShadow {
     }
     fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5085 — ActionHideShadow::apply
-        //   enditer = data.endDef(Varnode::written);
-        //   for (iter = data.beginDef(); iter != enditer; ++iter):
-        //       high = (*iter)->getHigh();
-        //       if (high->isMark()) continue;
-        //       if (data.getMerge().hideShadows(high)) count += 1;
-        //       high->setMark();
-        //   for (iter = data.beginDef(); iter != enditer; ++iter):
-        //       (*iter)->getHigh()->clearMark();
-        //   return 0;
         //
         // The walk visits the *written* def-set, dedups HighVariables via the
         // high mark flag, and calls the ported `Merge::hide_shadows(ctx, high)`.
@@ -1884,21 +1870,6 @@ impl Action for ActionCopyMarker {
 /// the merged tree's HighVariable `kuna_*` naming fields: bind a CONCAT-tree piece
 /// to its root structure's symbol so it renders `root.field` (e.g. `v1.A`).
 ///
-/// ```text
-/// HighVariable *high = vn->getHigh();
-/// if (high->getSymbol() != 0) return;            // already bound
-/// Varnode *rootVn = PieceNode::findRoot(vn);
-/// if (rootVn == vn) return;                       // vn IS the root
-/// HighVariable *rootHigh = rootVn->getHigh();
-/// if (!rootHigh->isSameGroup(high)) return;
-/// Varnode *nameRep = rootHigh->getNameRepresentative();
-/// Symbol *sym = linkSymbol(nameRep);              // name the root on demand
-/// if (sym == 0) return;
-/// rootHigh->establishGroupSymbolOffset();
-/// SymbolEntry *entry = sym->getFirstWholeMap();
-/// vn->setSymbolEntry(entry);                      // piece inherits root's symbol
-/// ```
-///
 /// The kuna model has no `SymbolEntry`; the equivalent of "the piece inherits the
 /// root's symbol" is stamping the root's display name + the root's struct type +
 /// the piece's group-relative in-symbol byte offset onto the piece's HighVariable
@@ -1919,7 +1890,6 @@ fn bind_proto_partial_piece(
     base: &mut int4,
     recmap: &std::collections::BTreeMap<crate::context::HighVariableId, OpRecommend>,
 ) -> bool {
-    // Varnode *rootVn = PieceNode::findRoot(vn);  if (rootVn == vn) return;
     let root_vn = data.piece_find_root(piece_vn);
     if root_vn == piece_vn {
         return false;
@@ -1928,12 +1898,11 @@ fn bind_proto_partial_piece(
         Some(h) => h,
         None => return false,
     };
-    // if (!rootHigh->isSameGroup(high)) return;
     if !data.high_bank().is_same_group(root_high, piece_high) {
         return false;
     }
-    // Symbol *sym = linkSymbol(rootHigh->getNameRepresentative());  — name the root
-    // on demand (`funcdata_varnode.cc:1164-1166`).  The root's name representative is
+    // Name the root's name-representative on demand (C++ `linkSymbol`,
+    // `funcdata_varnode.cc:1164-1166`).  The root's name representative is
     // the addr-tied/mapped storage whose smallest containing Symbol is the whole
     // structure the pieces feed (the unified `mypiece/8` stack symbol formed by the
     // `propagateSpacebaseRef` seed).  `linkSymbol` queries the localmap, binds that
@@ -2241,7 +2210,6 @@ fn build_func_param_name_recmap(
     let numfunc = data.num_calls();
     for i in 0..numfunc {
         let fc = data.get_call_specs(i);
-        // if (!fc->isInputLocked()) continue;
         if !fc.proto().is_input_locked() {
             continue;
         }
@@ -2251,18 +2219,14 @@ fn build_func_param_name_recmap(
             Some(o) => o.num_input(),
             None => continue,
         };
-        // if (numparam >= op->numInput()) numparam = op->numInput()-1;
         let numparam = if numparam >= op_ninput { op_ninput - 1 } else { numparam };
         for j in 0..numparam {
-            // ProtoParameter *param = fc->getParam(j);  Varnode *vn = op->getIn(j+1);
             let fc = data.get_call_specs(i);
             let param = match fc.proto().get_param(j) {
                 Some(p) => p,
                 None => continue,
             };
-            // makeRec gates (coreaction.cc:2916-2918):
-            //   if (!param->isNameLocked()) return;
-            //   if (param->isNameUndefined()) return;
+            // makeRec gates (coreaction.cc:2916-2918).
             if !param.is_name_locked() || param.is_name_undefined() {
                 continue;
             }
@@ -2278,7 +2242,6 @@ fn build_func_param_name_recmap(
                 Some(v) => v,
                 None => continue,
             };
-            // if (vn->getSize() != param->getSize()) return;
             let vn_size = match data.vbank().get(arg_vn) {
                 Some(v) => v.get_size(),
                 None => continue,
@@ -2286,9 +2249,8 @@ fn build_func_param_name_recmap(
             if vn_size != param_size {
                 continue;
             }
-            // if (vn->isImplied() && vn->isWritten()) { skip a CPUI_CAST into the
-            // function } (coreaction.cc:2920-2926): unwrap the cast and mark the
-            // recommendation less-preferred (null type).
+            // On an implied, written CPUI_CAST arg (coreaction.cc:2920-2926):
+            // unwrap the cast and mark the recommendation less-preferred (null type).
             let mut vn = arg_vn;
             let (is_implied, is_written) = match data.vbank().get(vn) {
                 Some(v) => (v.is_implied(), v.is_written()),
@@ -2304,13 +2266,12 @@ fn build_func_param_name_recmap(
                     }
                 }
             }
-            // HighVariable *high = vn->getHigh();
             let high = match data.vbank().get(vn).and_then(|v| v.get_high()) {
                 Some(h) => h,
                 None => continue,
             };
-            // if (high->isAddrTied()) return;  — the C++ guard reads the high's
-            // addr-tied flag; the rust high mirrors the representative Varnode's flag.
+            // The C++ addr-tied guard reads the high's flag; the rust high mirrors
+            // the representative Varnode's flag.
             let high_addr_tied = data
                 .high_name_representative(high)
                 .and_then(|rep| data.vbank().get(rep))
@@ -2322,12 +2283,11 @@ fn build_func_param_name_recmap(
             // recmap dedup with the typeOrder tiebreak (coreaction.cc:2931-2946).
             match recmap.get(&high) {
                 Some(existing) => {
-                    // if (ct == null) return;  — cannot override with a casted (null) type.
+                    // cannot override with a casted (null) type.
                     let newt = match ct.as_ref() {
                         Some(t) => t,
                         None => continue,
                     };
-                    // if (oldtype != null && oldtype->typeOrder(*ct) <= 0) return;
                     if let Some(oldtype) = existing.ct.as_ref() {
                         if oldtype.type_order(newt).map(|ord| ord <= 0).unwrap_or(false) {
                             continue; // oldtype is more specified
@@ -2393,7 +2353,6 @@ fn func_param_name_for_high(
     if recmap.is_empty() {
         return None;
     }
-    // if (vn->isFree()) continue;  if (vn->isInput()) continue;
     let (is_free, is_input) = match data.vbank().get(name_rep) {
         Some(v) => (v.is_free(), v.is_input()),
         None => return None,
@@ -2401,8 +2360,7 @@ fn func_param_name_for_high(
     if is_free || is_input {
         return None;
     }
-    // if (high->getNumMergeClasses() > 1) continue;  — don't inherit a name if
-    // speculatively merged.
+    // Don't inherit a name if speculatively merged.
     let merge_classes = data.high_bank().get(high).map(|h| h.get_num_merge_classes()).unwrap_or(1);
     if merge_classes > 1 {
         return None;
@@ -2544,9 +2502,9 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             .get_scope_local()
             .and_then(|lm| lm.query_container_for_link(&v_addr, &usepoint));
         if let Some(info) = container {
-            // C++ `handleSymbolConflict(entry, vn)` (`funcdata_varnode.cc:1018`):
-            //   if (vn->isInput() || vn->isAddrTied() || vn->isPersist() ||
-            //       vn->isConstant() || entry->isDynamic())  -> reuse the entry.
+            // C++ `handleSymbolConflict(entry, vn)` (`funcdata_varnode.cc:1018`)
+            // reuses the entry when the Varnode is input/addr-tied/persist/constant
+            // or `entry->isDynamic()`.
             // (`entry->isDynamic()` is `entry->getAddr().isInvalid()`; a mapped
             // local entry is never dynamic here, so the predicate reduces to the
             // four Varnode flags.)
@@ -2863,21 +2821,6 @@ impl Action for ActionNameVars {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:3076 — ActionNameVars::apply
-        //   vector<Varnode *> namerec;
-        //   linkSymbols(data, namerec);
-        //   data.getScopeLocal()->recoverNameRecommendationsForSymbols();
-        //   lookForBadJumpTables(data);
-        //   lookForFuncParamNames(data, namerec);
-        //   int4 base = 1;
-        //   for (i = 0; i < namerec.size(); ++i):
-        //       vn = namerec[i];
-        //       sym = vn->getHigh()->getSymbol();
-        //       if (sym->isNameUndefined()):
-        //           scope = sym->getScope();
-        //           newname = scope->buildDefaultName(sym, base, vn);
-        //           scope->renameSymbol(sym, newname);
-        //   data.getScopeLocal()->assignDefaultNames(base);
-        //   return 0;
         //
         // The W4 ScopeLocal/`Symbol` surface (`getScopeLocal`/`buildDefaultName`/
         // `renameSymbol`, the HighVariable->Symbol attachment, the callspec list)

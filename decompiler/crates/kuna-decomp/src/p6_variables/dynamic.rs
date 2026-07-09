@@ -169,7 +169,6 @@ pub struct ToOpEdge {
 }
 
 impl ToOpEdge {
-    /// Constructor (C++ `ToOpEdge(const PcodeOp *o,int4 s)`).
     pub fn new(op: OpId, slot: int4) -> ToOpEdge {
         ToOpEdge { op, slot }
     }
@@ -189,11 +188,6 @@ impl ToOpEdge {
     ///
     /// Edges are sorted to provide consistency to the hash: first the PcodeOp
     /// sequence-number address, then the order, then the Varnode slot.
-    /// ```text
-    ///   if (addr1 != addr2) return (addr1 < addr2);
-    ///   if (ord1 != ord2)   return (ord1 < ord2);
-    ///   return (slot < op2.slot);
-    /// ```
     /// `data` resolves both ops' [`SeqNum`]s.
     fn less_than(&self, op2: &ToOpEdge, data: &Funcdata) -> bool {
         let seq1 = data.obank().get(self.op).expect("ToOpEdge::operator<: op").get_seq_num();
@@ -217,13 +211,6 @@ impl ToOpEdge {
     /// Accumulates the Varnode slot, the (translated) op-code, and the address
     /// of the PcodeOp.  The op-code translation makes the hash invariant under
     /// common variants.
-    /// ```text
-    ///   reg = crc_update(reg,(uint4)slot);
-    ///   reg = crc_update(reg,DynamicHash::transtable[op->code()]);
-    ///   uintb val = op->getSeqNum().getAddr().getOffset();
-    ///   int4 sz   = op->getSeqNum().getAddr().getAddrSize();
-    ///   for(int4 i=0;i<sz;++i){ reg = crc_update(reg,(uint4)val); val >>= 8; }
-    /// ```
     fn hash(&self, reg: uint4, data: &Funcdata) -> uint4 {
         let op = data.obank().get(self.op).expect("ToOpEdge::hash: op");
         let mut reg = crc_update(reg, self.slot as uint4);
@@ -306,11 +293,9 @@ impl DynamicHash {
     fn build_vn_down(&mut self, vn: VarnodeId, data: &Funcdata) {
         let insize = self.opedge.len();
 
-        // for(iter=vn->beginDescend();iter!=vn->endDescend();++iter)
         for descop in data.descend_snapshot(vn) {
             let mut op: Option<OpId> = Some(descop);
             let mut tmpvn: VarnodeId = vn;
-            // while(transtable[op->code()]==0) { ... }
             while {
                 let cur = op.expect("buildVnDown: op present in while-cond");
                 transcode(data.obank().get(cur).expect("buildVnDown: op").code()) == 0
@@ -337,7 +322,6 @@ impl DynamicHash {
             let slot = data.obank().get(op).expect("buildVnDown: final op").get_slot(tmpvn);
             self.opedge.push(ToOpEdge::new(op, slot));
         }
-        // if ((uint4)opedge.size()-insize > 1) sort(opedge.begin()+insize,opedge.end());
         if self.opedge.len() - insize > 1 {
             // sort_by transcribes ToOpEdge::operator< (a strict weak ordering).
             let tail = &mut self.opedge[insize..];
@@ -494,14 +478,12 @@ impl DynamicHash {
 
         self.vnedge.push(root);
         self.gather_unmarked_vn(data);
-        // for(uint4 i=vnproc;i<markvn.size();++i) buildVnUp(markvn[i]);
         let mut i = self.vnproc as usize;
         while i < self.markvn.len() {
             let mvn = self.markvn[i];
             self.build_vn_up(mvn, data);
             i += 1;
         }
-        // for(;vnproc<markvn.size();++vnproc) buildVnDown(markvn[vnproc]);
         while (self.vnproc as usize) < self.markvn.len() {
             let mvn = self.markvn[self.vnproc as usize];
             self.build_vn_down(mvn, data);
@@ -648,10 +630,10 @@ impl DynamicHash {
     fn move_off_skip(mut op: OpId, mut slot: int4, data: &Funcdata) -> (Option<OpId>, int4) {
         while transcode(data.obank().get(op).expect("moveOffSkip: op").code()) == 0 {
             if slot >= 0 {
-                // C++ `const Varnode *vn = op->getOut(); op = vn->loneDescend();`
-                // dereferences `getOut()` unconditionally (a skip op always has
-                // an output, so this is reachable only on a well-formed op).
-                // ADR 0004: an absent output is C++ UB here, so panic.
+                // The C++ dereferences `getOut()` unconditionally (a skip op
+                // always has an output, so this is reachable only on a
+                // well-formed op).  ADR 0004: an absent output is C++ UB here,
+                // so panic.
                 let vn = data
                     .obank()
                     .get(op)
@@ -687,7 +669,7 @@ impl DynamicHash {
     ///
     /// (kuna GH-8467) the same-address collision budget `maxduplicates` is 8 by
     /// default and 16 when `dynamichashmax` is on.  The C++ reads the flag
-    /// `fd->getArch()->dynamic_hash_maxdup_high` inline; the seam
+    /// `fd->getArch()->dynamic_hash_maxdup_high` inline; the boundary at
     /// [`Funcdata::get_arch`] does not carry kuna analysis flags (STUB(W4) — the
     /// same gate-threading the sibling kuna modules use), so the resolved
     /// budget is passed in.  Use
@@ -783,7 +765,7 @@ impl DynamicHash {
             }
             tmphash = self.hash;
             tmpaddr = self.addrresult.clone();
-            // Faithful transcription of an upstream quirk (`dynamic.cc:519`):
+            // Upstream quirk, transcribed as-is (`dynamic.cc:519`):
             // `oplist` was filled by gatherOpsAtAddress BEFORE the method loop,
             // but the loop body re-runs `oplist.clear()` every iteration, so the
             // inner `for(i<oplist.size())` always iterates over the *cleared*

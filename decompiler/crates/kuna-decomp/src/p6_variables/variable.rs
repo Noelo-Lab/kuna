@@ -10,7 +10,7 @@
 //! The C++ `HighVariable` is a heap object holding `vector<Varnode *> inst` and
 //! reverse-referenced by each member `vn->high`.  Per ADR 0001 HighVariables
 //! live in a [`HighVariableBank`] slotmap-style arena keyed by
-//! [`HighVariableId`] (the seam key); `inst` becomes `Vec<VarnodeId>` and the
+//! [`HighVariableId`] (the arena key); `inst` becomes `Vec<VarnodeId>` and the
 //! back-link is the `Varnode::high` `Option<HighVariableId>` already wired in
 //! `varnode.rs`.  Every HighVariable method that reads member-Varnode state
 //! (`getFlags`/`getType`/`getCover`/`isTypeLock`/…) takes a [`HighContext`]
@@ -32,7 +32,7 @@
 //! both `(a,b)` and `(b,a)` are always inserted/purged together, so the cache
 //! semantics are order-independent under any consistent total order).
 //!
-//! ## Seams (W4 Symbol link, W7 merge)
+//! ## Boundaries (W4 Symbol link, W7 merge)
 //!
 //! The current `Varnode` carries no `SymbolEntry` back-link (the W4 symbol-merge
 //! wiring is not yet on the Varnode), and `Varnode::copyShadow`/`partialCopyShadow`
@@ -483,7 +483,6 @@ impl HighVariable {
     /// (it needs the piece/group arenas); the internal-cover bit is set here.
     pub fn cover_dirty(&mut self) {
         self.highflags |= high_flags::coverdirty;
-        // if (piece != 0) piece->markExtendCoverDirty();  -- bank-level (arena)
     }
 
     /// Is the cover returned by `getCover()` up-to-date (C++ inline
@@ -1046,7 +1045,6 @@ pub struct HighIntersectTest {
 }
 
 impl HighIntersectTest {
-    /// Constructor (C++ `HighIntersectTest(PcodeOpSet &)`).
     pub fn new(affecting_ops: PcodeOpSet) -> HighIntersectTest {
         HighIntersectTest { highedgemap: BTreeMap::new(), affecting_ops }
     }
@@ -1253,7 +1251,6 @@ impl HighVariableBank {
             None => return,
             Some(p) => (p.high, p.intersection.clone()),
         };
-        // if (high->highflags & intersectdirty) != 0 return;
         if let Some(h) = self.highs.get(&high) {
             if (h.highflags & high_flags::intersectdirty) != 0 {
                 return; // intersection list dirty, covers recomputed anyway
@@ -1318,7 +1315,6 @@ impl HighVariableBank {
             None => return,
             Some(p) => (p.high, p.group_offset, p.size, p.group),
         };
-        // if ((high->highflags & intersectdirty)==0) return;
         if let Some(h) = self.highs.get(&high) {
             if (h.highflags & high_flags::intersectdirty) == 0 {
                 return;
@@ -1368,7 +1364,6 @@ impl HighVariableBank {
                 return;
             }
         }
-        // high->updateInternalCover(); cover = high->internalCover;
         if let Some(h) = self.highs.get_mut(&high) {
             h.update_internal_cover(ctx);
         }
@@ -1484,18 +1479,8 @@ impl HighVariableBank {
     /// compute the group's `symbolOffset` so every other HighVariable in the group
     /// can derive its own in-symbol offset.
     ///
-    /// ```text
-    /// VariableGroup *group = piece->getGroup();
-    /// int4 off = symboloffset;
-    /// if (off < 0) off = 0;
-    /// off -= piece->getOffset();
-    /// if (off < 0) throw LowlevelError("Symbol offset is incompatible with VariableGroup");
-    /// group->setSymbolOffset(off);
-    /// ```
-    ///
     /// Returns `Err` on the `off < 0` invariant violation (the C++ `throw`), so the
-    /// caller can fall back rather than abort.  Faithful transcription of
-    /// `variable.cc:623`.
+    /// caller can fall back rather than abort.
     pub fn establish_group_symbol_offset(
         &mut self,
         id: HighVariableId,
@@ -1593,11 +1578,11 @@ impl HighVariableBank {
         ctx: &dyn HighContext,
         set_high: &mut dyn FnMut(VarnodeId, HighVariableId, int2),
     ) {
-        // high->remove(this);  // remove origvn from origHigh
+        // Remove origvn from origHigh.
         if let Some(h) = self.highs.get_mut(&orig_high) {
             h.remove(origvn, vn_has_symbol_entry, ctx);
         }
-        // replaceHigh->inst[0] = this;  // replaceHigh now holds origvn (singleton)
+        // replaceHigh now holds origvn (singleton).
         if let Some(rh) = self.highs.get_mut(&replace_high) {
             // replacevn was the sole member; overwrite it with origvn.
             rh.inst.clear();
@@ -1607,7 +1592,7 @@ impl HighVariableBank {
                 | high_flags::coverdirty
                 | high_flags::typedirty;
         }
-        // high->insert(replacevn,mergegroup);  // origHigh now holds replacevn
+        // origHigh now holds replacevn.
         if let Some(h) = self.highs.get_mut(&orig_high) {
             h.insert(replacevn, ctx);
             h.highflags |= high_flags::flagsdirty

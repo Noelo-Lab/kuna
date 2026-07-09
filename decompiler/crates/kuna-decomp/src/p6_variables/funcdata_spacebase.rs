@@ -161,7 +161,6 @@ impl Funcdata {
                             (Some(lm), Some(t)) => (lm, t),
                             _ => return false,
                         };
-                    // newoff = addressToByteInt(off, wordsize)
                     let new_off =
                         kuna_base::space::AddrSpace::address_to_byte_int(off, word_size);
                     let (sub_type, new_off2) =
@@ -169,8 +168,8 @@ impl Funcdata {
                             Ok(r) => r,
                             Err(_) => return false,
                         };
-                    // if (subType == 0 || newoff != 0) return false;  (subType is
-                    // always Some here — TypeSpacebase::getSubType never returns null)
+                    // subType is always Some here (TypeSpacebase::getSubType never
+                    // returns null), so only newoff must be zero.
                     if new_off2 != 0 {
                         return false;
                     }
@@ -369,26 +368,22 @@ impl Funcdata {
     ///    saved value is stashed in — unmap it so it is not promoted to a spurious
     ///    `undefined8 v//rsp` local.
     ///
-    /// Faithful transcription of the two C++ loops (no name/register/offset
+    /// Transcribes the two C++ loops (no name/register/offset
     /// special-casing; the spacebase/join classification and the unaffected/COPY
     /// walk are purely structural).
     pub fn restrict_local(&mut self) {
         use kuna_base::space::spacetype;
 
         // --- Loop 1: stack-passed params of input-locked locked calls -----------
-        // for(i=0;i<data.numCalls();++i)
         let numcalls = self.num_calls();
         for i in 0..numcalls {
-            // fc = data.getCallSpecs(i);  (op = fc->getOp(); unused below)
             let (input_locked, spacebase_off) = {
                 let fc = self.get_call_specs(i);
                 (fc.is_input_locked(), fc.get_spacebase_offset())
             };
-            // if (!fc->isInputLocked()) continue;
             if !input_locked {
                 continue;
             }
-            // if (fc->getSpacebaseOffset() == FuncCallSpecs::offset_unknown) continue;
             if spacebase_off == crate::fspec::OFFSET_UNKNOWN {
                 continue;
             }
@@ -458,12 +453,10 @@ impl Funcdata {
             .collect();
 
         for (sz, addr) in saved {
-            // vn = data.findVarnodeInput(size, addr);
             let vn = match self.find_varnode_input(sz, &addr) {
                 Some(v) => v,
                 None => continue,
             };
-            // if (vn != 0 && vn->isUnaffected())
             let unaffected = self.vbank().get(vn).map(|v| v.is_unaffected()).unwrap_or(false);
             if !unaffected {
                 continue;
@@ -480,7 +473,6 @@ impl Funcdata {
                     Some(o) => o,
                     None => continue,
                 };
-                // if (op->code() != CPUI_COPY) continue;
                 if o.code() != OpCode::CPUI_COPY {
                     continue;
                 }
@@ -493,7 +485,6 @@ impl Funcdata {
                     None => continue,
                 };
                 let ospace = Rc::clone(ov.get_space());
-                // if (!data.getScopeLocal()->isUnaffectedStorage(outvn)) continue;
                 let is_unaff_storage = self
                     .get_scope_local()
                     .map(|lm| lm.is_unaffected_storage(&ospace))
@@ -606,17 +597,12 @@ impl Funcdata {
         // surfaces still stubbed (`clearUnlockedCategory`/`fakeInputSymbols`/
         // `markUnaliased` need the `Symbol::category` + alias-block bookkeeping —
         // LOSS recorded).  The one tail step the typed-stack-access rendering needs
-        // is the raw-stack-pointer placeholder:
-        //
-        //   state.sortAlias();
-        //   if (!state.getAlias().empty() && state.getAlias()[0] == 0)
-        //       annotateRawStackPtr();
+        // is the raw-stack-pointer placeholder.
         //
         // A zero-offset use of the stack pointer (e.g. `&v1` passed to a call) gets
         // a `PTRSUB(sp,#0)` placeholder so the data-type system renders `&local`.
         state.sort_alias();
-        // C++ `restructureVarnode` tail (varmap.cc:1280-1285):
-        //   if (aliasyes) { markUnaliased(state.getAlias()); checkUnaliasedReturn(...); }
+        // C++ `restructureVarnode` tail (varmap.cc:1280-1285).
         // markUnaliased paints `nolocalalias` on every stack Symbol no alias
         // crosses, which is the gate `RuleIndirectCollapse` needs to drop the
         // per-call INDIRECT the heritage stack-guard layer puts on each local.
@@ -652,12 +638,10 @@ impl Funcdata {
         space: &Rc<kuna_base::space::AddrSpace>,
         alias: &[uintb],
     ) {
-        // PcodeOp *retOp = fd->getFirstReturnOp();
         let retop = match self.get_first_return_op() {
             Some(r) => r,
             None => return,
         };
-        // if (retOp == 0 || retOp->numInput() < 2) return;
         let invn = {
             let o = match self.obank().get(retop) {
                 Some(o) => o,
@@ -666,13 +650,11 @@ impl Funcdata {
             if o.num_input() < 2 {
                 return;
             }
-            // Varnode *vn = retOp->getIn(1);
             match o.get_in(1) {
                 Some(v) => v,
                 None => return,
             }
         };
-        // if (vn->getSpace() != space) return;
         let (vn_space, vn_off, vn_size) = {
             let v = match self.vbank().get(invn) {
                 Some(v) => v,
@@ -756,11 +738,9 @@ impl Funcdata {
     /// Reached from [`Funcdata::restructure_varnode`] when a zero-offset use of the
     /// stack pointer exists (the first alias offset is 0).
     pub fn annotate_raw_stack_ptr(&mut self, space: &Rc<kuna_base::space::AddrSpace>) {
-        // if (!fd->hasTypeRecoveryStarted()) return;
         if !self.has_type_recovery_started() {
             return;
         }
-        // spVn = fd->findSpacebaseInput(space); if 0 return;
         let sp_vn = match self.find_spacebase_input(space) {
             Some(v) => v,
             None => return,
@@ -778,11 +758,9 @@ impl Funcdata {
                 Some(o) => o,
                 None => continue,
             };
-            // if (op->getEvalType() == special && !op->isCall()) continue;
             if o.get_eval_type() == crate::op::pcodeop_flags::special && !o.is_call() {
                 continue;
             }
-            // if (opc == INT_ADD || PTRSUB || PTRADD) continue;
             match o.code() {
                 OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD => continue,
                 _ => {}
@@ -984,10 +962,8 @@ impl Funcdata {
                     OpCode::CPUI_PIECE => {
                         // C++ varmap.cc:1099 — a PIECE that merely copies `vn` back
                         // into the SAME storage (the slot whose sub-address equals
-                        // `vn`'s) is NOT an active read.  Compute the slot's address:
-                        //   addr = out.getAddr(); slot = bigEndian ? 0 : 1;
-                        //   if (in[slot] != vn) addr = addr + in[slot].getSize();
-                        //   active iff vn.getAddr() != addr
+                        // `vn`'s) is NOT an active read: it is active iff `vn`'s
+                        // address differs from the computed slot address below.
                         let out_addr = match o
                             .get_out()
                             .and_then(|ov| self.vbank().get(ov).map(|x| x.get_addr().clone()))

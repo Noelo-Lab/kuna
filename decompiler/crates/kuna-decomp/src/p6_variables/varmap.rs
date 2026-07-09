@@ -225,7 +225,6 @@ impl RangeHint {
         }
         let meta = a.type_.get_metatype();
         if meta != type_metatype::TYPE_STRUCT && meta != type_metatype::TYPE_UNION {
-            // if (meta != TYPE_ARRAY || ((TypeArray *)a->type)->getBase()->getMetatype() != TYPE_UNKNOWN)
             let array_base_unknown = meta == type_metatype::TYPE_ARRAY
                 && a
                     .type_
@@ -256,7 +255,6 @@ impl RangeHint {
         if self.sstart == b.sstart {
             return true;
         }
-        // if (b->sstart+b->size-1 <= sstart+size-1) return true;
         let b_end = b.sstart.wadd(b.size as intb).wsub(1);
         let a_end = self.sstart.wadd(self.size as intb).wsub(1);
         if b_end <= a_end {
@@ -307,7 +305,7 @@ impl RangeHint {
             return Ok(self.size > b.size);
         }
 
-        // return (0 > type->typeOrder(*b->type));  -- Prefer the more specific
+        // Prefer the more specific.
         Ok(0 > self.type_.type_order(&b.type_)?)
     }
 
@@ -975,15 +973,13 @@ impl ScopeLocal {
     /// `protect_switch_paths` shields the switch INDIRECTs in the jump-table-
     /// recovery partial clone.
     pub fn is_unmapped_unaliased(&self, vn_space: &Rc<AddrSpace>, vn_offset: uintb) -> bool {
-        // if (vn->getSpace() != space) return false;
         if !(Rc::ptr_eq(vn_space, &self.space) || vn_space.get_index() == self.space.get_index()) {
             return false;
         }
-        // if (maxParamOffset < minParamOffset) return true;  (no known stack params)
+        // (no known stack params)
         if self.max_param_offset < self.min_param_offset {
             return true;
         }
-        // if (off < minParamOffset || off > maxParamOffset) return true;
         vn_offset < self.min_param_offset || vn_offset > self.max_param_offset
     }
 
@@ -994,7 +990,7 @@ impl ScopeLocal {
     /// `minParamOffset`/`maxParamOffset` (so a stack parameter passed to a locked
     /// sub-function call is excised above the parameter boundary).
     ///
-    /// Faithful transcription of the C++ head (the `last` wrap/clamp + the
+    /// Transcribes the C++ head (the `last` wrap/clamp + the
     /// parameter-boundary update); the symbol-removal loop and `removeRange` are the
     /// owned-database [`Database::mark_not_mapped_core`].
     pub fn mark_not_mapped(
@@ -1004,11 +1000,10 @@ impl ScopeLocal {
         sz: int4,
         parameter: bool,
     ) {
-        // if (space != spc) return;
         if !self.is_unaffected_storage(spc) {
             return;
         }
-        // uintb last = first + sz - 1;  (uintb wrapping)
+        // uintb wrapping
         let mut last = first.wrapping_add(sz as uintb).wrapping_sub(1);
         // Do not allow the range to cover the split point between "negative" and
         // "positive" stack offsets.
@@ -1850,16 +1845,7 @@ impl ScopeLocal {
     /// `(addr, size)` is covered by a SymbolEntry whose owning Symbol *is*
     /// type-locked, the local data-type is seeded from the exact piece of the
     /// Symbol's type at the access offset, rather than floating from the local
-    /// def/use flow (`Varnode::getLocalType`):
-    ///
-    /// ```text
-    /// SymbolEntry *entry = vn->getSymbolEntry();
-    /// if (entry && !vn->isTypeLock() && entry->getSymbol()->isTypeLocked()) {
-    ///   curOff = (vn->getAddr().getOffset() - entry->getAddr().getOffset()) + entry->getOffset();
-    ///   ct = typegrp->getExactPiece(entry->getSymbol()->getType(), curOff, vn->getSize());
-    ///   if (ct == 0 || ct->getMetatype() == TYPE_UNKNOWN) ct = vn->getLocalType(...);  // float
-    /// }
-    /// ```
+    /// def/use flow (`Varnode::getLocalType`).
     ///
     /// Returns:
     /// * `Some(ct)` — the seeded exact-piece type (the caller adopts it),
@@ -1889,11 +1875,9 @@ impl ScopeLocal {
             return None;
         }
         let sym_type = Rc::clone(symbol.dtype.as_ref()?);
-        // curOff = (vn->getAddr().getOffset() - entry->getAddr().getOffset()) + entry->getOffset();
         let cur_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
-        // ct = typegrp->getExactPiece(symbolType, curOff, size);
         let ct = types.get_exact_piece(sym_type, cur_off, size).ok().flatten()?;
-        // if (ct->getMetatype() == TYPE_UNKNOWN) let the type float.
+        // TYPE_UNKNOWN piece: let the type float.
         if ct.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
             return None;
         }
@@ -2005,7 +1989,7 @@ impl ScopeLocal {
                 next_addr = &addr + 32;
             }
         }
-        // if (nextAddr < addr) return -1;  // Don't let the address wrap
+        // Don't let the address wrap.
         if next_addr.get_offset() < addr.get_offset() {
             return (-1, off, 0);
         }
@@ -2236,7 +2220,7 @@ impl MapState {
         dt: Rc<Datatype>,
     ) -> MapState {
         let mut range = rn.clone();
-        // for(pmiter : pm) range.removeRange(...)  -- Clear possible input symbols
+        // Clear possible input symbols.
         for r in pm.iter() {
             range.remove_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
         }
@@ -2249,7 +2233,6 @@ impl MapState {
     /// data-type falls back to the default.  Hints outside the analysis range
     /// are dropped.
     fn add_range(&mut self, st: uintb, ct: Option<Rc<Datatype>>, fl: uint4, rt: RangeType, hi: int4) {
-        // if (ct == null || ct->getSize() == 0) ct = defaultType;
         let ct = match ct {
             Some(c) if c.get_size() != 0 => c,
             _ => Rc::clone(&self.default_type),

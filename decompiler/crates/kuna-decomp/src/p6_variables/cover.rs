@@ -14,7 +14,7 @@
 //! pure (no op-arena access), exactly mirroring the C++ where those reads are on
 //! the already-held pointer.  The single place that *resolves* a `PcodeOp *`
 //! into its `uindex`/code is [`CoverContext`], filled by `Funcdata` (the cross-
-//! arena seam the W7 wave wires per `varnode.rs`/`funcdata.rs`).
+//! arena boundary the W7 wave wires per `varnode.rs`/`funcdata.rs`).
 //!
 //! ## ADR 0002 (ordered containers) realization
 //!
@@ -220,7 +220,6 @@ impl CoverBlock {
         }
         let val = CoverBlock::uindex(point);
         if CoverBlock::uindex(self.start) == val {
-            // if (start != (const PcodeOp *)0) return 2;
             if self.start.is_some() {
                 return 2;
             }
@@ -523,7 +522,6 @@ impl Cover {
                 let ustop = CoverBlock::uindex(block.get_stop());
                 if ustop >= CoverBlock::uindex(startop) {
                     if let Some(opcode) = op.and_then(|p| p.code()) {
-                        // (op != 0) && (op != 2) && code==MULTIEQUAL && startop==0
                         // op is real (Some, not Input) by virtue of code() match.
                         if op != Some(CoverPoint::Input)
                             && opcode == OpCode::CPUI_MULTIEQUAL
@@ -645,7 +643,6 @@ impl Cover {
         let mut set_block = 0usize;
         let mut op_index = op_set.block_start[set_block] as usize;
         let mut set_index = op_set.op_list[op_index].block_index;
-        // cover.lower_bound(opSet.opList[0]->getParent()->getIndex())
         let first_block = op_set.op_list[0].block_index;
         let mut cover_iter = self.cover.range(first_block..).peekable();
         while let Some((&cover_index, cover_block)) = cover_iter.peek().copied() {
@@ -693,7 +690,7 @@ impl Cover {
 
 /// Cross-arena graph access for the [`Cover`] def/use walk (the C++ reads off the
 /// held `Varnode *`/`PcodeOp *`/`FlowBlock *` directly; here `Funcdata` supplies
-/// them).  Implemented in `funcdata.rs` per the W7 seam.
+/// them).  Implemented in `funcdata.rs` per the W7 boundary.
 pub trait CoverContext {
     /// `bl->sizeIn()` — number of predecessor blocks of block index `bl`.
     fn size_in(&self, bl: int4) -> int4;

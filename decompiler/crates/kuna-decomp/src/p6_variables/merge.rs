@@ -28,9 +28,9 @@
 //! real `Funcdata` impl).  Where the underlying `Funcdata` mutator is itself not
 //! yet ported (e.g. `opMarkNonPrinting`, `overlapLoc`, `findLinkedVarnodes`,
 //! `inheritUnionField`, `copyShadow`, the callspec list), the trait method is a
-//! seam recorded in `docs/rust-port/losses.md`; the *structure*, iteration order,
+//! boundary recorded in `docs/rust-port/losses.md`; the *structure*, iteration order,
 //! and tie-breakers of every `merge.cc` routine are transcribed verbatim so the
-//! body fills in deterministically once the seam is supplied.
+//! body fills in deterministically once the hook is supplied.
 //!
 //! ## Order / tie-break fidelity (output-determining)
 //!
@@ -136,9 +136,9 @@ pub type BoundType = int4;
 /// helpers (`copyShadow`/`characterizeOverlap`).
 ///
 /// Implemented by `Funcdata` in the W7/W8 wave.  Methods whose underlying
-/// `Funcdata`/`Varnode` operation is itself not yet ported are seams (recorded in
+/// `Funcdata`/`Varnode` operation is itself not yet ported are boundaries (recorded in
 /// `docs/rust-port/losses.md`); the [`Merge`] routine that calls them transcribes
-/// the surrounding structure verbatim so the body is correct once the seam fills.
+/// the surrounding structure verbatim so the body is correct once the hook fills.
 pub trait MergeContext: HighContext {
     // --- HighVariable flag/type reads (the C++ direct `high->is*`/`getType`) --
     // The bank lazily re-derives flags/type from members on read, so these take
@@ -181,7 +181,7 @@ pub trait MergeContext: HighContext {
     /// rebuild step; the cache purge stays in [`MergeIntersect`]).
     fn bank_update_cover_for(&mut self, high: HighVariableId);
 
-    // --- Bank-mediated HighVariable / piece introspection (seam: variable.rs
+    // --- Bank-mediated HighVariable / piece introspection (boundary: variable.rs
     //     does not expose `high->piece`/group offsets/size publicly) ----------
     /// `high->piece->getGroup()` plus `(piece->getSize(), group->getSize())` if
     /// `high` is part of an overlap group (the `mergeTestRequired` whole-group
@@ -228,7 +228,7 @@ pub trait MergeContext: HighContext {
     /// `high->clearCopyIns()`.
     fn bank_clear_copy_ins(&mut self, high: HighVariableId);
 
-    // --- Symbol reads on a HighVariable (W4 surface; seams) ----------------
+    // --- Symbol reads on a HighVariable (W4 surface; hooks) ----------------
     /// `high->getSymbol()` identity, if any.  STUB(W4-symbol).
     fn bank_symbol(&self, high: HighVariableId) -> Option<u64>;
     /// `high->getSymbolOffset()`.  STUB(W4-symbol).
@@ -385,7 +385,7 @@ pub trait MergeContext: HighContext {
     /// then `addRefPoint(subOp,subOp->getIn(0))`).
     fn copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover;
 
-    // --- IR-surgery seams (mutators not all yet on Funcdata) ----------------
+    // --- IR-surgery hooks (mutators not all yet on Funcdata) ----------------
     /// `Merge::allocateCopyTrim` body: build a COPY of `in_vn` into a fresh unique
     /// with the union-field resolution, returning the new COPY op.
     fn copy_trim_op(
@@ -418,7 +418,7 @@ pub trait MergeContext: HighContext {
         size: int4,
     ) -> KunaResult<()>;
 
-    // --- mergeAddrTied / mergeMultiEntry seams (overlapLoc/scope; W7/W4) ----
+    // --- mergeAddrTied / mergeMultiEntry hooks (overlapLoc/scope; W7/W4) ----
     /// `Merge::mergeAddrTied` range collection (`overlapLoc` over the location set).
     /// STUB(W7-funcdata): `Funcdata::overlapLoc` is not yet ported.
     fn addr_tied_ranges(&self) -> Vec<AddrTiedRange>;
@@ -437,7 +437,7 @@ pub trait MergeContext: HighContext {
     fn gather_pieces(&self, vn: VarnodeId, base_offset: int4) -> Vec<(VarnodeId, int4)>;
 }
 
-/// Opaque id for a `VariablePiece` as seen across the [`MergeContext`] seam (the
+/// Opaque id for a `VariablePiece` as seen across the [`MergeContext`] boundary (the
 /// bank does not expose `VariablePieceId` publicly; the `Funcdata` impl maps).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MergePieceId(pub u64);
@@ -456,7 +456,7 @@ pub struct HighGroupInfo {
 }
 
 /// One maximally-overlapping address-tied Varnode range from `mergeAddrTied`
-/// (`merge.cc:609-648`).  The `overlapLoc`-driven collection is a seam; this
+/// (`merge.cc:609-648`).  The `overlapLoc`-driven collection is a boundary; this
 /// carries its result.
 pub struct AddrTiedRange {
     /// Whether the range is address tied (`flags & Varnode::addrtied`).
@@ -1082,7 +1082,6 @@ impl Merge {
         if MergeIntersect::intersection(ctx, &mut self.test_cache, high1, high2) {
             return Ok(false);
         }
-        // high1->merge(high2,&testCache,isspeculative); high1->updateCover();
         ctx.bank_merge_highs(high1, high2, isspeculative, &mut self.test_cache)?;
         ctx.bank_update_cover(high1);
         Ok(true)
@@ -1180,7 +1179,6 @@ impl Merge {
                 return true;
             }
         }
-        // VariablePiece *piece = ahigh->piece;
         let piece = ctx.high_piece(ahigh);
         if let Some(piece) = piece {
             ctx.bank_update_piece_intersections(piece);
@@ -1629,7 +1627,7 @@ impl Merge {
     /// `overlapLoc` and calls `mergeRangeMust`/`groupWith`; `Funcdata::overlapLoc`
     /// is not yet ported, so the iteration is driven through
     /// [`MergeContext::addr_tied_ranges`] which returns the maximally-overlapping
-    /// ranges (a seam; recorded as a loss).
+    /// ranges (a boundary; recorded as a loss).
     pub fn merge_addr_tied(&mut self, ctx: &mut dyn MergeContext) -> KunaResult<()> {
         let ranges = ctx.addr_tied_ranges();
         for range in ranges {
@@ -2247,7 +2245,7 @@ impl Merge {
     ///
     /// STUB(W4-symbol): iterates `getScopeLocal()->beginMultiEntry()` and calls
     /// `findLinkedVarnodes`; the symbol scope is a W4 surface.  Driven through
-    /// [`MergeContext::multi_entry_symbols`] (a seam; recorded as a loss).
+    /// [`MergeContext::multi_entry_symbols`] (a boundary; recorded as a loss).
     pub fn merge_multi_entry(&mut self, ctx: &mut dyn MergeContext) -> KunaResult<()> {
         let symbols = ctx.multi_entry_symbols();
         for sym in symbols {
