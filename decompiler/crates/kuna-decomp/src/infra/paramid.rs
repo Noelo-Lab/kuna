@@ -210,7 +210,7 @@ impl ParamMeasure {
             state.depth -= 1;
             return;
         }
-        // Snapshot the descend list (C++ vn->beginDescend()..endDescend()).
+        // Snapshot the descend list.
         let descend = fd.descend_snapshot(vn);
         let mut iter = descend.iter();
         while self.rank != state.terminalrank {
@@ -424,7 +424,6 @@ impl ParamIDAnalysis {
             ));
         } else {
             // Need to list input varnodes that are outside of the model.
-            // VarnodeDefSet: beginDef(Varnode::input)..endDef(Varnode::input).
             let inputs: Vec<VarnodeId> = fd.vbank().iter_def_flag(varnode_flags::input).collect();
             for invn in inputs {
                 let v = fd.vbank().get(invn).expect("ParamIDAnalysis: stale input vn");

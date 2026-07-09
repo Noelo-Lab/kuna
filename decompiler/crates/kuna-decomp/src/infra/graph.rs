@@ -21,7 +21,7 @@
 //!
 //! STUB(W4): `print_varnode_vertex` calls `Varnode::printRawNoMarkup`, whose
 //! register-name branch needs the W4 `Translate` (reached through `glb`).  That
-//! markup is supplied by the local [`GraphVarnodePrinter`] seam; the
+//! markup is supplied by the local [`GraphVarnodePrinter`] hook; the
 //! shortcut+offset fallback (`else` branch of the C++) is otherwise fully
 //! portable.  W4 supplies a printer over the real `Translate`.
 
@@ -65,7 +65,7 @@ fn graph_block(graph: &BlockGraph, i: int4) -> BlockId {
 /// varnode lands on a named register it prints `name[+off]`, else it prints the
 /// space shortcut char followed by `Address::printRaw`.  The fallback branch is
 /// available without W4 ([`default_varnode_markup`]); the register-name branch
-/// is this seam.  W4 supplies an impl over the real `Translate`.
+/// is this hook.  W4 supplies an impl over the real `Translate`.
 pub trait GraphVarnodePrinter {
     /// Markup for a varnode at `(addr, size)` — the C++
     /// `Varnode::printRawNoMarkup` text.  The default impl is the
@@ -168,7 +168,6 @@ fn print_varnode_vertex(
 
     match def {
         Some(op) => {
-            // op->getAddr().getOffset() in hex
             let off = data
                 .obank()
                 .get(op)
@@ -223,8 +222,8 @@ fn dump_varnode_vertex(data: &mut Funcdata, s: &mut String, printer: &dyn GraphV
     s.push_str("          {Name=Address, Location=5});\n\n");
     s.push_str("//START:varnodes\n");
 
-    // C++ `for(oiter=beginOpAlive(); ...; ++oiter)`: snapshot the alive order
-    // so the mutable mark side-effects don't disturb iteration.
+    // Snapshot the alive order so the mutable mark side-effects don't disturb
+    // iteration.
     let alive: Vec<crate::context::OpId> = data.obank().iter_alive().collect();
     for &op in alive.iter() {
         let (out, code, num_input) = {
@@ -239,7 +238,7 @@ fn dump_varnode_vertex(data: &mut Funcdata, s: &mut String, printer: &dyn GraphV
         }
     }
     s.push_str("*END_COLUMNS\n");
-    // Second pass: clear all the marks (C++ clears out + every input).
+    // Second pass: clear all the marks.
     for &op in alive.iter() {
         let out = data.obank().get(op).unwrap().get_out();
         if let Some(vn) = out {
@@ -311,7 +310,6 @@ fn print_edges(data: &Funcdata, op: crate::context::OpId, s: &mut String) {
             .get(vn)
             .expect("print_edges: stale out varnode")
             .get_create_index();
-        // 'o' << dec time << " v" << dec create_index << " output\n"
         s.push('o');
         push_dec_u32(s, time);
         s.push_str(" v");
@@ -322,7 +320,7 @@ fn print_edges(data: &Funcdata, op: crate::context::OpId, s: &mut String) {
     for i in start..stop {
         let in_vn = o.get_in(i);
         let vn = match in_vn {
-            None => continue, // C++ dereferences unconditionally; guard the seam
+            None => continue, // C++ dereferences unconditionally; guard against null
             Some(v) => v,
         };
         let v = data
@@ -331,7 +329,6 @@ fn print_edges(data: &Funcdata, op: crate::context::OpId, s: &mut String) {
             .expect("print_edges: stale in varnode");
         let tp = v.get_space().get_type();
         if tp != spacetype::IPTR_FSPEC && tp != spacetype::IPTR_IOP {
-            // 'v' << dec create_index << " o" << dec time << " input\n"
             s.push('v');
             push_dec_u32(s, v.get_create_index());
             s.push_str(" o");

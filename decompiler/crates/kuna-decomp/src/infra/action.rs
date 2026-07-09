@@ -520,7 +520,6 @@ pub trait Action {
 
             self.base_mut().status = statusflags::status_repeat;
 
-            // while((lcount<count)&&((flags&rule_repeatapply)!=0))
             if !((self.base().lcount < self.base().count)
                 && ((self.base().flags & ruleflags::rule_repeatapply) != 0))
             {
@@ -904,7 +903,6 @@ impl Action for ActionRestartGroup {
             }
             self.curstart += 1;
             if self.curstart > self.maxrestarts {
-                // C++ `data.warningHeader("Exceeded maximum restarts with more pending");`
                 ctx.warnings.messages.push(warning_header_text(
                     data,
                     "Exceeded maximum restarts with more pending",
@@ -927,7 +925,7 @@ impl Action for ActionRestartGroup {
 
 /// Reproduce `Funcdata::warningHeader`'s text prefix (`funcdata.cc:135`): the
 /// jumptable-recovery flag selects `"WARNING (jumptable): "` vs `"WARNING: "`.
-/// The comment-DB insertion is the W4 seam; only the text is formed here.
+/// The comment-DB insertion is the W4 boundary; only the text is formed here.
 fn warning_header_text(data: &Funcdata, txt: &str) -> String {
     if data.is_jumptable_recovery_on() {
         format!("WARNING (jumptable): {txt}")
@@ -1182,10 +1180,8 @@ impl ActionPool {
     /// re-enters to resume).  The `op_state` cursor and `rule_index` carry the
     /// resume position.
     fn process_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (op->isDead()) { op_state++; data.opDeadAndGone(op); rule_index=0; return 0; }
         if data.obank().get(op).map(|o| o.is_dead()).unwrap_or(true) {
             self.advance_op_state(data, op);
-            // data.opDeadAndGone(op) == obank.destroy(op)
             data.obank_mut().destroy(op);
             self.rule_index = 0;
             return 0;
@@ -1202,12 +1198,11 @@ impl ActionPool {
             if res > 0 {
                 self.allrules[rl_idx].state.count_apply += 1;
                 self.base.count += res;
-                // rl->issueWarning(data.getArch()): route to the pool's stash.
+                // Route the rule warning to the pool's stash.
                 self.allrules[rl_idx].state.issue_warning(&mut self.warnings);
                 if self.allrules[rl_idx].state.check_action_break() {
                     return -1;
                 }
-                // if (op->isDead()) break;
                 if data.obank().get(op).map(|o| o.is_dead()).unwrap_or(true) {
                     break;
                 }
@@ -1343,10 +1338,9 @@ impl Action for ActionPool {
     /// C++ `ActionPool::apply`, `action.cc:877`.
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         if self.base.status != statusflags::status_mid {
-            self.op_state = OpCursor::Unstarted; // op_state = data.beginOpAll()
+            self.op_state = OpCursor::Unstarted;
             self.rule_index = 0;
         }
-        // for(;op_state!=data.endOpAll();)
         let mut ops_since_deadline_probe: u32 = 0;
         while let Some(op) = self.current_op(data) {
             // (kuna decompile-all watchdog) Cooperative deadline in the tight
@@ -1485,7 +1479,7 @@ pub struct ActionDatabase {
 }
 
 impl ActionDatabase {
-    /// Constructor (C++ `ActionDatabase::ActionDatabase`).
+    /// C++ `ActionDatabase::ActionDatabase`.
     pub fn new() -> ActionDatabase {
         ActionDatabase::default()
     }

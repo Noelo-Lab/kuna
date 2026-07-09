@@ -32,7 +32,7 @@
 //! (ADR 0003); the CRC mixing is `kuna_base::crc32::crc_update` (the W1 port of
 //! `crc32.hh`).
 //!
-//! # Seams
+//! # Boundaries
 //!
 //! Three pieces of the marshalling/print surface are not yet ported and are
 //! routed through `STUB` errors so the *algorithm* (the testable substance)
@@ -287,8 +287,7 @@ impl Signature {
                 // CopySignature::encode (signature.cc:652-659)
                 encoder.open_element(&ELEM_COPYSIG);
                 encoder.write_unsigned_integer(&ATTRIB_HASH, self.get_hash() as u64);
-                // encoder.writeSignedInteger(ATTRIB_INDEX, bl->getIndex());
-                //   -- the caller passes the block index in via encode_with_index.
+                // The block index (ATTRIB_INDEX) is written by the caller via encode_with_index.
                 encoder.close_element(&ELEM_COPYSIG);
                 Ok(())
             }
@@ -725,7 +724,7 @@ impl GraphSigManager {
             )));
         }
 
-        // for(iter=f->beginLoc(); iter!=f->endLoc(); ++iter) — location order.
+        // Iterate varnodes in location order.
         for vn in fd.vbank().iter_loc() {
             let entry = SignatureEntry::from_varnode(fd, vn, self.sigmods);
             let ci = fd.vbank().get(vn).expect("setCurrentFunction: stale vn").get_create_index();
@@ -734,14 +733,12 @@ impl GraphSigManager {
         if (self.sigmods & sig_mods::SIG_COLLAPSE_INDNOISE) != 0 {
             self.remove_noise(fd);
         } else {
-            // for(sigiter ...) (*sigiter).second->calculateShadow(sigmap);
-            //   Collect keys (sigmap iteration is create_index order); calculate per key.
+            // Collect keys (sigmap iteration is create_index order); calculate per key.
             let keys: Vec<u32> = self.sigmap.keys().copied().collect();
             for k in keys {
                 self.calculate_shadow(fd, k);
             }
         }
-        // for(sigiter ...) entry->localHash(sigmods);
         let keys: Vec<u32> = self.sigmap.keys().copied().collect();
         for k in keys {
             self.local_hash(fd, k);
@@ -1007,12 +1004,10 @@ impl GraphSigManager {
         }
         // Set the final shadow field by collapsing the dominator tree to bases.
         for &k in &post_order {
-            // base = entry; while(base->shadow != 0) base = base->shadow;
             let mut base = k;
             while let Some(s) = self.entry_shadow(base, &virt_map) {
                 base = s;
             }
-            // while(entry->shadow != 0) { tmp=entry; entry=entry->shadow; tmp->shadow=base; }
             let mut entry = k;
             while let Some(s) = self.entry_shadow(entry, &virt_map) {
                 let tmp = entry;
@@ -1117,7 +1112,6 @@ impl GraphSigManager {
     ) {
         let n = post_order.len();
         let virtual_root = post_order[n - 1]; // The official start node
-        // b->shadow = b;
         self.set_entry_shadow(virtual_root, virt_map, Some(virtual_root));
         let mut changed = true;
         while changed {

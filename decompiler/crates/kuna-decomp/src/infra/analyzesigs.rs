@@ -6,7 +6,7 @@
 //! the [`signature`](crate::signature) pipeline over the current (or every)
 //! decompiled function.
 //!
-//! # Seams (the W9 console surface)
+//! # Boundaries (the W9 console surface)
 //!
 //! The whole file hangs off the W9 interactive-console subsystem
 //! (`IfaceCapability` / `IfaceDecompCommand` / `IfaceStatus` / `IfaceDecompData`

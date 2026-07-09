@@ -1,18 +1,6 @@
 //! Port of `decompiler/cpp/libdecomp.{cc,hh}` (item `w4-fw-architecture`): the
 //! library bootstrap, `startDecompilerLibrary` and `shutdownDecompilerLibrary`.
 //!
-//! ## The C++ init order, made explicit
-//!
-//! The C++ `startDecompilerLibrary` runs, in order:
-//!
-//! ```text
-//!   AttributeId::initialize();          // build the global attribute-id table
-//!   ElementId::initialize();            // build the global element-id table
-//!   CapabilityPoint::initializeAll();   // finish every registered extension
-//!   ArchitectureCapability::sortCapabilities();   // raw architecture goes last
-//!   // optionally scan a sleigh-home / extra spec paths
-//! ```
-//!
 //! Per the W1 `IdRegistry` convention there is **no** global mutable id table in
 //! the Rust port: the attribute/element ids are values, and a caller builds an
 //! [`IdRegistry`] (via `with_base_ids` + the per-module `register_ids`) instead
@@ -77,13 +65,9 @@ pub fn start_decompiler_library(
     extra_paths: &[String],
     mut capabilities: CapabilityRegistry,
 ) -> DecompilerLibrary {
-    // AttributeId::initialize(); ElementId::initialize();
     let registry = build_id_registry();
-    // CapabilityPoint::initializeAll(); ArchitectureCapability::sortCapabilities();
     capabilities.initialize_all();
 
-    // SleighArchitecture::scanForSleighDirectories(sleighhome) /
-    //   specpaths.addDir2Path(extrapaths[i])  -- recorded for the sleigh_arch item.
     let mut spec_paths: Vec<String> = Vec::new();
     if let Some(home) = sleighhome {
         // C++ scanForSleighDirectories walks `home`; the scan itself is the

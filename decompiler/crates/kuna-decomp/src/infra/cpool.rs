@@ -353,7 +353,6 @@ impl CPoolRecord {
             self.token = decoder.read_string_id(&ATTRIB_CONTENT)?;
         } else {
             let val: int8 = decoder.read_signed_integer_id(&ATTRIB_LENGTH)?;
-            // Faithful transcription of the C++ `if (val < 0 || val >= MAX_STRING_SIZE)`.
             #[allow(clippy::manual_range_contains)]
             if val < 0 || val >= MAX_STRING_SIZE {
                 return Err(KunaError::lowlevel(
@@ -367,7 +366,7 @@ impl CPoolRecord {
             let mut data: Vec<uint1> = Vec::with_capacity(byte_data_len as usize);
             let mut toks = HexByteTokens::new(&content);
             for _ in 0..byte_data_len {
-                // C++ reads a uint4 then narrows to uint1 (`byteData[i] = (uint1)val`).
+                // C++ reads a uint4 then narrows to uint1.
                 let v: uint4 = toks.next_hex_u32();
                 data.push(v as uint1);
             }

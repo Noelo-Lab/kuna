@@ -196,10 +196,7 @@ impl FlowEnvironment for ArchFlowEnv {
         context: &mut crate::pcodeinject::InjectContext,
         emit: &mut dyn kuna_sleigh::translate::PcodeEmit,
     ) -> KunaResult<()> {
-        // C++ `FlowInfo::injectUserOp`'s emit step:
-        //   InjectedUserOp *userop = (InjectedUserOp *)glb->userops.getOp(idx);
-        //   InjectPayload *payload = glb->pcodeinjectlib->getPayload(userop->getInjectId());
-        //   payload->inject(icontext, emitter);
+        // C++ `FlowInfo::injectUserOp`'s emit step.
         let arch = self.arch();
         let injectid = arch
             .userops
@@ -228,9 +225,7 @@ impl FlowEnvironment for ArchFlowEnv {
         context: &mut crate::pcodeinject::InjectContext,
         emit: &mut dyn kuna_sleigh::translate::PcodeEmit,
     ) -> KunaResult<()> {
-        // C++ `FlowInfo::injectSubFunction`'s emit step:
-        //   InjectPayload *payload = glb->pcodeinjectlib->getPayload(fc->getInjectId());
-        //   payload->inject(icontext, emitter);
+        // C++ `FlowInfo::injectSubFunction`'s emit step.
         let arch = self.arch();
         let payload = arch.pcodeinjectlib.get_payload(inject_id);
         let tpl = arch.pcodeinjectlib.get_tpl(inject_id).ok_or_else(|| {
@@ -466,10 +461,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     let mut flow = FlowInfo::new(fd, &env);
     // C++ Funcdata::followFlow (decompiler/cpp/funcdata_op.cc:765): after the
     // FlowInfo is constructed (and its range set), followFlow applies the global
-    // flow options and the instruction bound:
-    //   uint4 fl = 0; fl |= glb->flowoptions;   // Global flow options
-    //   flow.setFlags(fl);
-    //   flow.setMaximumInstructions(glb->max_instructions);
+    // flow options and the instruction bound.
     // `flowoptions` defaults to `error_toomanyinstructions` and
     // `max_instructions` to 100000 (`resetDefaultsInternal`); the console
     // options `maxinstruction` / `errortoomanyinstructions` / `unimplemented` /

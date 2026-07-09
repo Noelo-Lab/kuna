@@ -64,7 +64,7 @@ use crate::action::{
 // Allowlist of genuinely-unported passes (documented B0 dump diff)
 // =============================================================================
 
-/// A pass named by `universalAction` but not yet ported, with the wave/seam
+/// A pass named by `universalAction` but not yet ported, with the wave/boundary
 /// blocking it.  Materialization skips these; the B0 listing test treats them as
 /// an explicit, named diff against the C++ oracle dump.
 #[derive(Debug, Clone, Copy)]
@@ -73,7 +73,7 @@ pub struct UnportedEntry {
     pub name: &'static str,
     /// The `universalAction` group argument it was registered under.
     pub group: &'static str,
-    /// The wave/seam that must land it.
+    /// The wave/boundary that must land it.
     pub blocked_by: &'static str,
 }
 
@@ -527,11 +527,10 @@ pub fn universal_sched(
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
         // (kuna) GH-8017/6858: gated by the live arch flag model_stack_probe_loop,
-        // carried on the seam and read in apply_op; registered `false` so the flag
+        // carried on the ArchContext and read in apply_op; registered `false` so the flag
         // (default-on, DIV-3) drives both the default and the `stackprobeloop off` toggle.
         rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(false, "analysis")),
     ];
-    // C++: `for(iter=conf->extra_pool_rules...) actprop->addRule(*iter);`
     oppool1_rules.extend(extra_pool_rules);
 
     // --- oppool2 (post-blockstructure, type-pointer rules) ----------------

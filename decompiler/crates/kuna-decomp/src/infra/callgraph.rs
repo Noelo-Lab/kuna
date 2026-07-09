@@ -24,7 +24,7 @@
 //! `setFuncdata`, `buildAllNodes`, and `buildEdges` reach into the W4
 //! `Architecture` (`symboltab`, `nameFunction`), the `Scope` iteration, and the
 //! `Funcdata` prototype / call-spec machinery (`FuncCallSpecs`, `fillinExtrapop`).
-//! Those live behind the local seam traits [`CallGraphFunc`] (the
+//! Those live behind the local boundary traits [`CallGraphFunc`] (the
 //! `Funcdata`-shaped slice `addNode`/`setFuncdata` read) and
 //! [`CallGraphArch`] (the `Architecture`-shaped slice `buildAllNodes`/
 //! `buildEdges` read); W4 supplies impls over the real types.  The pure graph
@@ -76,7 +76,7 @@ pub trait CallGraphFunc {
 /// The full `buildAllNodes`/`buildEdges` drivers depend on the W4 symbol-table
 /// scope iteration and the W5 `FuncCallSpecs` call-site machinery, so they are
 /// deferred (see [`CallGraph::build_all_nodes`] / [`CallGraph::build_edges`]).
-/// This trait names the surface so the seam is explicit.
+/// This trait names the surface so the boundary is explicit.
 pub trait CallGraphArch {
     /// Resolve a default name for the function at the given address
     /// (C++ `Architecture::nameFunction`).
@@ -462,7 +462,6 @@ impl CallGraph {
         self.nodes[node].outedge.push(CallGraphEdge::new());
         let outsize = self.nodes[node].outedge.len();
         if outsize > 1 {
-            // for(i = outedge.size()-2; i>=slot; --i) { newi=i+1; edge[newi]=edge[i]; ... }
             let mut i = (outsize as int4) - 2;
             while i >= slot {
                 let newi = i + 1;
@@ -501,7 +500,6 @@ impl CallGraph {
         let toi = self.nodes[to].inedge.len() as int4;
         self.nodes[to].inedge.push(CallGraphEdge::new());
 
-        // fromedge = from->outedge[from_slot]
         {
             let fromedge = &mut self.nodes[from].outedge[from_slot as usize];
             fromedge.from = from;
@@ -509,7 +507,6 @@ impl CallGraph {
             fromedge.callsiteaddr = addr.clone();
             fromedge.complement = toi;
         }
-        // toedge = to->inedge.back()
         {
             let last = self.nodes[to].inedge.len() - 1;
             let toedge = &mut self.nodes[to].inedge[last];
@@ -528,7 +525,6 @@ impl CallGraph {
         let from = self.nodes[node].inedge[i as usize].from;
         let fromsize = self.nodes[from].outedge.len() as int4;
 
-        // for(j=i+1;j<tosize;++j) { inedge[j-1]=inedge[j]; if(complement>=fromi) complement-=1; }
         let mut j = i + 1;
         while j < tosize {
             let moved = self.nodes[node].inedge[j as usize].clone();
@@ -540,7 +536,6 @@ impl CallGraph {
         }
         self.nodes[node].inedge.pop();
 
-        // for(j=fromi+1;j<fromsize;++j) { outedge[j-1]=outedge[j]; if(complement>=i) complement-=1; }
         let mut j = fromi + 1;
         while j < fromsize {
             let moved = self.nodes[from].outedge[j as usize].clone();
@@ -670,7 +665,6 @@ impl CallGraph {
             allcovered = self.find_no_entry();
             while (walked as usize) < self.seeds.len() {
                 let rootnode = self.seeds[walked as usize];
-                // C++: rootnode->parentedge = walked;
                 self.nodes[rootnode].parentedge = walked as int4;
                 self.snip_cycles(rootnode);
                 walked += 1;

@@ -899,9 +899,7 @@ impl Architecture {
         // C++ PcodeInjectLibrarySleigh(g): tempbase = g->translate->getUniqueStart(INJECT).
         let inject_tempbase = translate.get_unique_start(UniqueLayout::INJECT);
 
-        // C++ buildDatabase(store): symboltab = new Database(this,true);
-        //   Scope *globscope = new ScopeInternal(0,"",this);
-        //   symboltab->attachScope(globscope,(Scope*)0);
+        // C++ buildDatabase(store): create the symbol table + attach the global scope.
         // ScopeInternal sizes its per-space maps to numSpaces(); count before the
         // translate is moved into the struct (the manager accessor borrows it).
         let space_count = translate.manager().num_spaces();
@@ -1525,7 +1523,6 @@ impl Architecture {
             // (kuna) angr-style: sub_<addr>
             return crate::database::kuna_function_name(addr);
         }
-        // C++: ostringstream defname; defname << "func_"; addr.printRaw(defname);
         // kuna-base `Address::print_raw` is the faithful transcription of
         // `Address::printRaw` -> `AddrSpace::printRaw` (zero-padded `0x<offset>`,
         // word-size division, no space-name prefix).  A function address is a
@@ -1944,7 +1941,6 @@ impl Architecture {
         let Some(fp) = find_child(&root, "funcptr") else {
             return Ok(()); // no <funcptr> in this cspec: funcptr_align stays 0
         };
-        // int4 align = decoder.readSignedInteger(ATTRIB_ALIGN);
         let align: i64 = match attr_str(&fp, "align").and_then(|s| parse_int(&s)) {
             Some(a) => a as i64,
             None => return Ok(()), // malformed/absent attr: leave default
@@ -2128,10 +2124,7 @@ impl Architecture {
         for child in global_el.get_children().iter() {
             let nm = child.get_name();
             if nm == "register" {
-                // C++ `Range::Range` register branch (address.cc:239-245):
-                //   point = trans->getRegister(properties.spaceName);
-                //   spc = point.space; first = point.offset;
-                //   last = (first-1) + point.size;
+                // C++ `Range::Range` register branch (address.cc:239-245).
                 // We resolve through the Translate (the reliably-installed register
                 // lookup, the same path decode_stack_pointer uses) rather than
                 // kuna-base's `Range::from_properties`, whose `manage.register_lookup()`
@@ -2901,10 +2894,9 @@ impl Architecture {
 
         let manager = self.translate.manager_rc();
         let registry = IdRegistry::with_base_ids();
-        // C++ `decodeVolatile`: while peekElement() != 0 { Range r; r.decode(decoder);
-        // symboltab->setPropertyRange(Varnode::volatil, r); }.  Each child is a
-        // `<range>`; resolve it through `Range::from_properties` exactly as
-        // `decode_global` does, then paint [first, lastOpen) with `volatil`.
+        // C++ `decodeVolatile`: each child is a `<range>`; resolve it through
+        // `Range::from_properties` exactly as `decode_global` does, then paint
+        // [first, lastOpen) with `volatil`.
         for child in volatile_el.get_children().iter() {
             if child.get_name() != "range" {
                 continue;
@@ -3057,21 +3049,14 @@ impl Architecture {
             };
             let storage = self.translate.get_register_varnode(name.as_bytes())?;
             let storage_size = storage.size as int4;
-            // LanedRegister lanedRegister; lanedRegister.parseSizes(storage.size,laneSizes);
             let mut laned_register = LanedRegister::new();
             laned_register.parse_sizes(storage_size, &lane_sizes)?;
-            // int4 sizeIndex = lanedRegister.getWholeSize();
             let size_index = laned_register.get_whole_size();
-            // while (maskList.size() <= sizeIndex) maskList.push_back(0);
             while (mask_list.len() as int4) <= size_index {
                 mask_list.push(0);
             }
-            // maskList[sizeIndex] |= lanedRegister.getSizeBitMask();
             mask_list[size_index as usize] |= laned_register.get_size_bit_mask();
         }
-        // lanerecords.clear();
-        // for(i=0;i<maskList.size();++i) { if (maskList[i]==0) continue;
-        //   lanerecords.push_back(LanedRegister(i,maskList[i])); }
         self.lanerecords.clear();
         for (i, &mask) in mask_list.iter().enumerate() {
             if mask == 0 {
@@ -3186,8 +3171,6 @@ impl Architecture {
                 _ => {}
             }
         }
-        // C++ fspec.cc: if (!sawretaddr && glb->defaultReturnAddr.space != 0)
-        //   effectlist.push_back(EffectRecord(glb->defaultReturnAddr, return_address));
         // `glb->defaultReturnAddr` is decoded from the cspec's top-level
         // <returnaddress> (C++ Architecture::parseExtraRules / decode); parse that
         // root element directly here so the per-call retaddr store is modeled even
@@ -3398,8 +3381,7 @@ impl Architecture {
                 plist.push_model_rule(rule);
             }
         }
-        // C++ tail: resourceStart.push_back(numgroup); calcDelay();
-        // populateResolver().
+        // C++ tail: resourceStart / calcDelay / populateResolver.
         plist.finish_decode();
         // C++ fspec.cc:1507-1512: if pointermax > 0, append a trailing
         // ConvertToPointer rule (a SizeRestrictedFilter(pointermax+1,0) feeding a
@@ -3930,8 +3912,7 @@ impl ArchOptionContext for Architecture {
 
     // --- per-function properties (C++ OptionInline / OptionNoReturn) -------
     fn set_function_inline(&mut self, name: &str, val: bool) -> KunaResult<()> {
-        // C++ `OptionInline::apply`: `infd = symboltab->getGlobalScope()->queryFunction(p1);
-        // if (infd==0) throw RecovError("Unknown function name: "+p1); infd->getFuncProto().setInline(val)`.
+        // C++ `OptionInline::apply`: query the global function, then set its proto inline flag.
         // The FunctionSymbol's lazily-built Funcdata/FuncProto is W5; the inline flag
         // is parked on the symbol (read back by FlowInfo::queryCall at flow time).
         let sid = self.query_global_function(name)?;
