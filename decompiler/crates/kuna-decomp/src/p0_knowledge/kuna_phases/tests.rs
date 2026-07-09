@@ -483,7 +483,7 @@ fn emit_settable_json_first_row_shape() {
     assert!(!out.contains("\"current\""));
     // ... and the tail order (issue ... change_kind).
     assert!(out.contains("\"strength\": \"HARD\", \"rewind\": \"P3\", \"issue\": \"GH-558\""));
-    assert!(out.ends_with("\"change_kind\": \"presentation-default\"}"));
+    assert!(out.ends_with("\"change_kind\": \"presentation-default\", \"tier\": \"core\"}"));
 }
 
 #[test]

@@ -52,6 +52,7 @@ fn settable_with_values(values: &'static str, shipped: &'static str) -> KunaSett
         source_decompiler: "",
         inspiration: "",
         change_kind: "",
+        tier: "core",
     }
 }
 

@@ -241,6 +241,11 @@ pub struct KunaSettable {
     pub inspiration: &'static str,
     /// (kuna) Gates default-on eligibility.
     pub change_kind: &'static str,
+    /// Catalog tier: "transform" (restructures/duplicates/removes/inserts
+    /// code -- the on/off control surface), "core" (near-always-better
+    /// rendering/naming/peephole defaults), or "analysis" (analysis/loader
+    /// pass enablement).
+    pub tier: &'static str,
 }
 
 // --- The STAGE_* string tables (C++ kuna_stages.cc:16-43) --------------------
@@ -437,6 +442,8 @@ pub fn emit_settable_json(out: &mut String, st: &KunaSettable, live: Option<&str
     json_string(out, st.inspiration);
     out.push_str(", \"change_kind\": ");
     json_string(out, st.change_kind);
+    out.push_str(", \"tier\": ");
+    json_string(out, st.tier);
     out.push('}');
 }
 

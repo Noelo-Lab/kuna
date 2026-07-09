@@ -268,6 +268,12 @@ fn gen_settables(out: &mut String, rows: &[Row]) {
         .unwrap();
         writeln!(out, "        inspiration: {},", rlit(req(r, "inspiration").as_str())).unwrap();
         writeln!(out, "        change_kind: {},", rlit(req(r, "change_kind").as_str())).unwrap();
+        let tier = req(r, "tier").as_str();
+        match tier {
+            "core" | "transform" | "analysis" => {}
+            other => panic!("phases.toml: bad tier `{other}` (need core|transform|analysis)"),
+        }
+        writeln!(out, "        tier: {},", rlit(tier)).unwrap();
         writeln!(out, "    }},").unwrap();
     }
     writeln!(out, "];\n").unwrap();
