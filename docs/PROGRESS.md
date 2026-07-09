@@ -1,5 +1,52 @@
 # kuna Progress Log
 
+## Session (2026-07-08) — Grand consolidation: compiler vocabulary, tiered catalog, the live spec, and a comment strip
+
+A large, cross-cutting cleanup landed on one branch (`refactor/consolidation`, ~31 commits, each
+gate-green). Five threads:
+
+**1. Compiler terminology (rename).** The port-era vocabulary is gone. "Stage" → **phase**
+everywhere: `KunaStage`→`KunaPhase`, `stages.toml`→`phases.toml`, the phase folders
+`s1_partition..s9_emit`→`p1_partition..p9_emit`, and the phase codes `S1..S9`→**`P1..P9`** in the
+catalog JSON, `kassert` syntax, and console output (`from_code` still accepts the legacy `S`
+spellings as input aliases). The console `stage list/map/status/catalog` commands are now
+`phase ...` with `stage ...` kept as deprecated aliases. **"Seam" is eradicated from code**:
+`substrate/seams.rs`→`substrate/context.rs`, the per-function snapshot struct (the second
+`Architecture`) is now **`ArchContext`**, the view/DI traits are `*Access`, and the 1,014
+`SEAM(Wn)` markers are `STUB(...)`.
+
+**2. Tiered, symptom-indexed option catalog.** Every settable row in `phases.toml` gains a
+**`tier`** (`transform` / `analysis` / `core` — 35/24/16) and a **`symptoms`** field (output-shaped
+phrases). `docs/assertions.md` is retired for the generated **`docs/options.md`**: tier-grouped
+(the *transforms* are the on/off control surface), one block per option, behind a generated
+symptom index — so an LLM with a short natural-language symptom finds the flag. `kuna catalog
+--markdown` renders it in-process; a `make rust-test` fence keeps it fresh; `--tier` filters.
+
+**3. The live spec (`docs/spec/`).** A chaptered, normative description of every decompiler
+algorithm (00-overview … 09-emission), anchored to the code by file+symbol, with non-Ghidra
+algorithms tagged `(angr)`/`(ida)`/`(kuna)`. Each chapter was drafted from the live code and
+then re-checked by a separate adversarial verifier (≈60 findings applied). `make check-spec`
+(new fourth gate) verifies anchors resolve, every phase folder is owned by exactly one chapter,
+and every option is mentioned. **CLAUDE.md now mandates the spec is live** — any behavior change
+updates the owning chapter in the same PR.
+
+**4. Layout.** `kuna-analysis`'s `s1_*` module dirs (which collided with the decompiler's phase
+folders) are reorganized into `loader/` + `analyzers/`; its `lib.rs` states the hand-off contract
+(the tier never calls the pipeline live). `kuna-decomp/lib.rs` states folders-are-a-taxonomy-not-
+the-schedule; `reset_defaults_internal` is documented as the single source of effective defaults
+(the phantom `set_analysis_defaults` comment removed); ten module headers that lied about their
+DIV-flipped defaults were corrected; 13 superseded design docs moved to `docs/history/`.
+
+**5. Comment reduction.** The port's C++ line-mirror comments, fenced "faithful transcription"
+blocks, and signature-restating `/// Constructor (C++ ...)` docs are stripped workspace-wide
+(**≈4,360 net comment lines removed**), keeping file-header provenance, one `.cc` anchor per
+fn/type, and every load-bearing NOTE/STUB/DIV/LOSS/GH/invariant comment. Every batch was verified
+comment-only by `tools/comment_diff_check.py` (a Rust-aware strip-and-compare) before commit; the
+marker inventory is preserved (no provenance lost).
+
+Gates (all four): `make test` 675/675 PARITY OK, `make test-stages` PARITY OK, `make rust-test`
+green, `make check-spec` green (strict), `kuna catalog --check` clean.
+
 ## Session (2026-07-04) — decbench F1 `benchlisting`: decompile-all builds the Listing by default (DIV-15)
 
 The first decbench campaign feature (`docs/decbench-loop.md`; cluster F1 in
