@@ -3,7 +3,7 @@
 //
 // Covered:
 //   - the option decision body (`OptionStackGuard::apply`): on/off flips
-//     `enabled` and returns the confirmation message; default off.
+//     `enabled` and returns the confirmation message; default on since DIV-14.
 //   - `ptr_is_canary_slot`: recognizes `<base> + 0x28` (both operand orders,
 //     through COPY/CAST peeling), rejects other offsets and non-add pointers.
 //   - `derives_from_canary_load`: peels COPY/CAST/zext/sext/INDIRECT/zero-

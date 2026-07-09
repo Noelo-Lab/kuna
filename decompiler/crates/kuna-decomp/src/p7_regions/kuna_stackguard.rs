@@ -1,6 +1,6 @@
 //! Port of `decompiler/cpp/kuna_stackguard.{cc,hh}` — strip the glibc
 //! `-fstack-protector` canary epilogue (port of angr's StackCanarySimplifier),
-//! kuna option-gated, default off.
+//! kuna option-gated, default on since DIV-14 (per-test opt-outs keep the corpus byte-identical).
 //!
 //! ## What it strips
 //!
@@ -226,7 +226,7 @@ pub struct ActionStripStackGuard {
 impl ActionStripStackGuard {
     /// Constructor (C++ `ActionStripStackGuard(const string &g)` — flags 0,
     /// name "stripstackguard").  `enabled` is the resolved `strip_stack_guard`
-    /// gate (default off = upstream byte-identical / inert).
+    /// gate (default on per DIV-14; `option stackguard off` restores the upstream rendering).
     pub fn new(enabled: bool, g: impl Into<String>) -> ActionStripStackGuard {
         ActionStripStackGuard { base: ActionBase::new(0, "stripstackguard", g), enabled }
     }
