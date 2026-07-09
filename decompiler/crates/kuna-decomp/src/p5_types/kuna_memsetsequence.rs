@@ -113,9 +113,6 @@ impl MemsetSequence {
     /// via [`MemsetSequence::from_collected`] and this constructor leaves the run
     /// empty.  The C++ control flow is preserved for restoration.
     pub fn new(char_type: Rc<Datatype>, data: &Funcdata) -> MemsetSequence {
-        // : StringSequence(...) { fillValue=0; fillCount=0; numElements=0;
-        //   moveOps.clear(); collectFillRun(); if (moveOps.empty()) return;
-        //   formFillRun(); }
         let mut seq = MemsetSequence {
             base: ArraySequence::new(char_type),
             fill_value: 0,
@@ -258,11 +255,9 @@ impl Rule for RuleMemsetCopy {
     /// C++ `RuleMemsetCopy::applyOp` (`kuna_memsetsequence.cc:188`) — gate +
     /// structure ported; the seam-blocked body declines.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->memset_recover) return 0;  // (kuna) gate (seam-carried)
         if !self.enabled && !data.get_arch().memset_recover {
             return 0;
         }
-        // if (!op->getIn(0)->isConstant()) return 0;   // Constant
         let in0 = match data.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
             None => return 0,
@@ -270,29 +265,24 @@ impl Rule for RuleMemsetCopy {
         if !data.vbank().get(in0).map(|v| v.is_constant()).unwrap_or(false) {
             return 0;
         }
-        // Varnode *outvn = op->getOut();
         let outvn = match data.obank().get(op).and_then(|o| o.get_out()) {
             Some(v) => v,
             None => return 0,
         };
-        // Datatype *ct = outvn->getTypeDefFacing(); if (!ct->isCharPrint()) return 0;
         let ct = Rc::clone(
             data.vbank().get(outvn).expect("RuleMemsetCopy: stale outvn").get_type_def_facing(),
         );
         if !ct.is_char_print() {
             return 0;
         }
-        // if (ct->isOpaqueString()) return 0;
         if ct.is_opaque_string() {
             return 0;
         }
-        // if (!outvn->isAddrTied()) return 0;
         if !data.vbank().get(outvn).unwrap().is_addr_tied() {
             return 0;
         }
-        // SymbolEntry *entry = data.getScopeLocal()->queryContainer(outvn->getAddr(),
-        //   outvn->getSize(), op->getAddr());  — local stack scope first, then the
-        // frozen global-scope snapshot (mirrors `RuleStringCopy::apply_op`).
+        // Local stack scope first, then the frozen global-scope snapshot
+        // (mirrors `RuleStringCopy::apply_op`).
         let out_addr = data.vbank().get(outvn).unwrap().get_addr().clone();
         let out_size = data.vbank().get(outvn).unwrap().get_size();
         let op_addr = data.obank().get(op).unwrap().get_addr().clone();
@@ -314,19 +304,16 @@ impl Rule for RuleMemsetCopy {
             Some(e) => e,
             None => return 0,
         };
-        // MemsetSequence sequence(data,ct,entry,op,outvn->getAddr()): the array
-        // type-walk + COPY collection (reusing the StringSequence machinery), then
-        // the single-value-fill detection.
+        // The array type-walk + COPY collection (reusing the StringSequence
+        // machinery), then the single-value-fill detection.
         let mut sequence = match StringSequence::build_for_fill(data, ct, entry, op, out_addr) {
             Some(s) => s,
             None => return 0,
         };
-        // if (!sequence.isValidFill()) return 0;
         let (fill_value, fill_count) = match detect_fill_run(data, sequence.fill_move_ops_mut()) {
             Some(fv) => fv,
             None => return 0,
         };
-        // if (!sequence.transform()) return 0; return 1;
         if !sequence.transform_memset(data, fill_value, fill_count) {
             return 0;
         }
@@ -356,25 +343,17 @@ impl MemsetRecoverForm {
 /// Parse the `option memsetrecover on|off` argument and produce the resolved
 /// form plus the confirmation message (C++ `OptionMemsetRecover::apply`).
 ///
-/// ```text
-///   bool val = onOrOff(p1);
-///   glb->memset_recover = val;
-///   string prop = val ? "on" : "off";
-///   return "Constant-fill (memset) recovery turned "+prop;
-/// ```
 ///
 /// `onOrOff` is the shared parser ([`on_or_off`](crate::options::on_or_off)): an
 /// empty string or `"on"` is `true`, `"off"` is `false`, anything else is a parse
 /// error.  The caller writes [`MemsetRecoverForm::memset_recover`] into
 /// [`Architecture::memset_recover`].
 pub fn parse_memset_recover_form(p1: &str) -> KunaResult<(MemsetRecoverForm, String)> {
-    // bool val = onOrOff(p1);
     let val = crate::options::on_or_off(p1).map_err(|_: KunaError| {
         KunaError::parse("Must specify toggle value, on/off")
     })?;
-    // glb->memset_recover = val;  -- left to the caller (Architecture::memset_recover).
+    // The memset_recover flag is left to the caller (Architecture::memset_recover).
     let form = if val { MemsetRecoverForm::On } else { MemsetRecoverForm::Off };
-    // string prop = val ? "on" : "off"; return "Constant-fill (memset) recovery turned "+prop;
     let prop = if val { "on" } else { "off" };
     Ok((form, format!("Constant-fill (memset) recovery turned {prop}")))
 }
@@ -415,36 +394,34 @@ fn copy_const_offset(data: &Funcdata, op: OpId) -> uintb {
 /// `(fill_byte, total_bytes)` is returned.  Each `WriteNode.slot` carries the
 /// COPY's byte stride.
 pub(crate) fn detect_fill_run(data: &Funcdata, move_ops: &mut Vec<WriteNode>) -> Option<(u8, int4)> {
-    // if (moveOps.size() < 1) return;
     if move_ops.is_empty() {
         return None;
     }
     // sort by offset.
     move_ops.sort_by(|a, b| a.offset.cmp(&b.offset));
-    // uint1 fb = (uint1)(moveOps[0].op->getIn(0)->getOffset() & 0xff);
     let fb: u8 = (copy_const_offset(data, move_ops[0].op) & 0xff) as u8;
     let run_start: u64 = move_ops[0].offset;
     let mut expect: u64 = run_start;
     let mut last_idx: i64 = -1;
     for i in 0..move_ops.len() {
-        // if (moveOps[i].offset != expect) break;  // Gap or overlap
+        // Gap or overlap
         if move_ops[i].offset != expect {
             break;
         }
-        // if ((uint1)(v & 0xff) != fb) break;       // Different fill byte
+        // Different fill byte
         if (copy_const_offset(data, move_ops[i].op) & 0xff) as u8 != fb {
             break;
         }
-        // expect = moveOps[i].offset + moveOps[i].slot;  // slot holds the COPY byte-size
+        // slot holds the COPY byte-size
         expect = move_ops[i].offset + move_ops[i].slot as u64;
         last_idx = i as i64;
     }
-    // if (lastIdx < 1) return;   // A memset is a RUN: require at least 2 COPYs
+    // A memset is a RUN: require at least 2 COPYs
     if last_idx < 1 {
         return None;
     }
     let total_bytes: int4 = (expect - run_start) as int4;
-    // if (totalBytes < 16) return;   // ...and a minimum fill footprint
+    // ...and a minimum fill footprint
     if total_bytes < MemsetSequence::MINIMUM_FILL_BYTES {
         return None;
     }

@@ -814,7 +814,6 @@ impl PreferSplitManager {
             _ => {}
         }
 
-        // while(vn->beginDescend() != vn->endDescend()) { readop = *vn->beginDescend(); ... }
         loop {
             let readop = {
                 let v = data.vbank().get(vn).expect("splitTemporary: stale vn");
@@ -860,9 +859,7 @@ impl PreferSplitManager {
         let tkey = templ.cmp_key();
         // lower_bound: first record whose key is >= tkey.
         let idx = self.records.partition_point(|r| r.cmp_key() < tkey);
-        // if (iter == records->end()) return 0;
         let rec = self.records.get(idx)?;
-        // if (templ < *iter) return 0;  (templ.key < rec.key)
         if tkey < rec.cmp_key() {
             return None;
         }
@@ -877,7 +874,6 @@ impl PreferSplitManager {
 
     /// Run the split over all records (C++ `split`).
     pub fn split(&mut self, data: &mut Funcdata) {
-        // for(i=0;i<records->size();++i) splitRecord((*records)[i]);
         let recs = std::mem::take(&mut self.records);
         for rec in &recs {
             self.split_record(data, rec);

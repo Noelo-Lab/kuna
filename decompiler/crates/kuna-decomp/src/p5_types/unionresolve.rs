@@ -99,10 +99,6 @@ impl ResolvedUnion {
     /// a single field, an array with a single element, or a pointer to one of
     /// these.  The object is set up to resolve to the parent.
     pub fn new(unres_type: Rc<Datatype>) -> ResolvedUnion {
-        // baseType = unresType;
-        // if (baseType->getMetatype() == TYPE_PTR) baseType = ((TypePointer*)baseType)->getPtrTo();
-        // else if (baseType->getMetatype() == TYPE_PARTIALUNION)
-        //   baseType = ((TypePartialUnion*)baseType)->getParentUnion();
         let base_type = match unres_type.get_metatype() {
             type_metatype::TYPE_PTR => unres_type
                 .get_ptr_to()
@@ -134,18 +130,14 @@ impl ResolvedUnion {
         let resolve: Rc<Datatype>;
         match unres_type.get_metatype() {
             type_metatype::TYPE_PARTIALUNION => {
-                // TypePartialUnion *partial = (TypePartialUnion *)unresType;
-                // baseType = partial->getParentUnion();
                 base_type = unres_type.get_partial_base().ok_or_else(|| {
                     KunaError::lowlevel("ResolvedUnion: partial union missing parent")
                 })?;
                 if fld_num < 0 {
-                    // resolve = unresType->getStripped();
                     resolve = unres_type.get_stripped().ok_or_else(|| {
                         KunaError::lowlevel("ResolvedUnion: partial union missing stripped")
                     })?;
                 } else {
-                    // const TypeField *field = partial->getParentUnion()->getField(fldNum);
                     let field = base_type.get_field(fld_num).ok_or_else(|| {
                         KunaError::lowlevel("ResolvedUnion: parent union field out of range")
                     })?;
@@ -154,8 +146,6 @@ impl ResolvedUnion {
                         KunaError::lowlevel("ResolvedUnion: partial union missing offset")
                     })?;
                     let size = unres_type.get_size();
-                    // resolve = typegrp.getExactPiece(field->type, partial->getOffset(), partial->getSize());
-                    // if (resolve == 0) resolve = partial->getStripped();
                     match typegrp.get_exact_piece(field_type, offset, size)? {
                         Some(piece) => resolve = piece,
                         None => {
@@ -169,19 +159,15 @@ impl ResolvedUnion {
                 }
             }
             type_metatype::TYPE_PTR => {
-                // TypePointer *pointer = (TypePointer *)unresType;
-                // baseType = pointer->getPtrTo();
                 base_type = unres_type.get_ptr_to().ok_or_else(|| {
                     KunaError::lowlevel("ResolvedUnion: pointer missing ptrto")
                 })?;
                 if fld_num < 0 {
                     resolve = Rc::clone(&unres_type);
                 } else {
-                    // Datatype *field = pointer->getPtrTo()->getDepend(fldNum);
                     let field = base_type.get_depend(fld_num).ok_or_else(|| {
                         KunaError::lowlevel("ResolvedUnion: pointer ptrto field out of range")
                     })?;
-                    // resolve = typegrp.getTypePointerStripArray(unresType->getSize(),field,pointer->getWordSize());
                     let wordsize = unres_type.get_word_size().ok_or_else(|| {
                         KunaError::lowlevel("ResolvedUnion: pointer missing wordsize")
                     })?;
@@ -193,7 +179,6 @@ impl ResolvedUnion {
                 if fld_num < 0 {
                     resolve = Rc::clone(&unres_type);
                 } else {
-                    // resolve = unresType->getDepend(fldNum);
                     resolve = unres_type.get_depend(fld_num).ok_or_else(|| {
                         KunaError::lowlevel("ResolvedUnion: field out of range")
                     })?;
@@ -244,11 +229,9 @@ impl ResolvedUnion {
     ///
     /// \return `true` if any change is made.
     pub fn update(&mut self, op: &ResolvedUnion) -> bool {
-        // if (lock && fieldNum != op.fieldNum) return false;
         if self.lock && self.field_num != op.field_num {
             return false; // Lock protects the fieldNum resolution not the resolved data-type
         }
-        // if (fieldNum == op.fieldNum && resolve == op.resolve) return false;
         if self.field_num == op.field_num && Rc::ptr_eq(&self.resolve, &op.resolve) {
             return false;
         }
@@ -310,13 +293,11 @@ impl ResolveEdge {
     /// \param op_time is `op->getTime()` (the PcodeOp's unique id)
     /// \param slot is the slot (>=0 for input, -1 for output)
     pub fn new_op(unres_type: &Datatype, op_time: uintm, slot: int4) -> ResolveEdge {
-        // opTime = op->getTime();
-        // encoding = slot;
         let mut encoding = slot;
         let type_id = match unres_type.get_metatype() {
             type_metatype::TYPE_PTR => {
-                // typeId = ((TypePointer*)unresType)->getPtrTo()->getId();  // Strip pointer
-                // encoding += 0x1000;  // Encode the fact that a pointer is getting accessed
+                // Strip pointer
+                // Encode the fact that a pointer is getting accessed
                 encoding += 0x1000;
                 unres_type
                     .get_ptr_to()
@@ -339,8 +320,6 @@ impl ResolveEdge {
     /// The C++ ignores the `slot` parameter for the address form and always
     /// encodes `0x2000`.
     pub fn new_addr(unres_type: &Datatype, addr: &Address, _slot: int4) -> ResolveEdge {
-        // opTime = addr.getOffset();
-        // encoding = 0x2000;
         // (uintm) cast: the C++ stores addr.getOffset() (uintb/u64) into the
         // uintm (u32) `opTime` member, truncating to 32 bits.
         let op_time = addr.get_offset() as uintm;
@@ -365,15 +344,12 @@ impl Ord for ResolveEdge {
     /// (C++ `ResolveEdge::operator<`, `unionresolve.hh:212-220`): order by
     /// `typeId`, then `encoding`, then `opTime`.
     fn cmp(&self, op2: &ResolveEdge) -> std::cmp::Ordering {
-        // if (typeId != op2.typeId) return (typeId < op2.typeId);
         if self.type_id != op2.type_id {
             return self.type_id.cmp(&op2.type_id);
         }
-        // if (encoding != op2.encoding) return (encoding < op2.encoding);
         if self.encoding != op2.encoding {
             return self.encoding.cmp(&op2.encoding);
         }
-        // return (opTime < op2.opTime);
         self.op_time.cmp(&op2.op_time)
     }
 }
@@ -410,12 +386,10 @@ pub fn score_locked_type(ct: &Rc<Datatype>, lock_type: &Rc<Datatype>) -> int4 {
     use type_metatype::*;
     let mut score: int4 = 0;
 
-    // if (lockType == ct) score += 5;  // Perfect match (pointer identity)
     if Rc::ptr_eq(lock_type, ct) {
         score += 5;
     }
 
-    // while(ct->getMetatype() == TYPE_PTR) { if (lockType->getMetatype() != TYPE_PTR) break; ... }
     let mut ct: Rc<Datatype> = Rc::clone(ct);
     let mut lock_type: Rc<Datatype> = Rc::clone(lock_type);
     while ct.get_metatype() == TYPE_PTR {
@@ -423,7 +397,6 @@ pub fn score_locked_type(ct: &Rc<Datatype>, lock_type: &Rc<Datatype>) -> int4 {
             break;
         }
         score += 5;
-        // ct = ((TypePointer*)ct)->getPtrTo(); lockType = ((TypePointer*)lockType)->getPtrTo();
         let next_ct = match ct.get_ptr_to() {
             Some(p) => p,
             None => break,
@@ -496,8 +469,6 @@ pub fn score_parameter(
     param_slot: int4,
 ) -> int4 {
     use type_metatype::*;
-    // if (proto != 0 && proto->isInputLocked() && proto->numParams() > paramSlot)
-    //   return scoreLockedType(ct,proto->getParam(paramSlot)->getType());
     if let Some(p) = proto {
         if p.input_locked && p.num_params > param_slot {
             // cast: paramSlot is a valid parameter index (the > check guards it).
@@ -517,7 +488,6 @@ pub fn score_parameter(
 /// STUB(W4): proto facts arrive as [`LockedProtoFacts`].
 pub fn score_return_type(ct: &Rc<Datatype>, proto: Option<&LockedProtoFacts>) -> int4 {
     use type_metatype::*;
-    // if (proto != 0 && proto->isOutputLocked()) return scoreLockedType(ct,proto->getOutputType());
     if let Some(p) = proto {
         if p.output_locked {
             if let Some(out) = &p.output_type {
@@ -557,14 +527,10 @@ pub fn deref_pointer(
     typegrp: &dyn TypeFactory,
 ) -> KunaResult<DerefResult> {
     use type_metatype::*;
-    // score = 0;
     if fit_type.get_metatype() == TYPE_PTR {
-        // Datatype *ptrto = ((TypePointer*)trial.fitType)->getPtrTo();
         let ptrto = fit_type
             .get_ptr_to()
             .ok_or_else(|| KunaError::lowlevel("derefPointer: pointer missing ptrto"))?;
-        // Datatype *subType = ptrto;
-        // while(subType != 0 && subType->getSize() > vn->getSize()) { int8 newoff; subType = subType->getSubType(0,&newoff); }
         let mut sub_type: Option<Rc<Datatype>> = Some(Rc::clone(&ptrto));
         while let Some(st) = &sub_type {
             if st.get_size() <= vn_size {
@@ -573,15 +539,11 @@ pub fn deref_pointer(
             let (next, _newoff) = st.get_sub_type(0)?;
             sub_type = next;
         }
-        // if (subType != 0 && subType->getSize() == vn->getSize()) { score = 10; return subType; }
         if let Some(st) = &sub_type {
             if st.get_size() == vn_size {
                 return Ok(DerefResult { score: 10, res_type: Some(Rc::clone(st)) });
             }
         }
-        // if (trial.maxLength != 0 && (vn->getSize() % ptrto->getSize()) == 0) {
-        //   score = -4; return typegrp.getTypeArray(vn->getSize()/ptrto->getSize(), ptrto);
-        // }
         if max_length != 0 && ptrto.get_size() != 0 && (vn_size % ptrto.get_size()) == 0 {
             let arr = typegrp.get_type_array(vn_size / ptrto.get_size(), ptrto)?;
             return Ok(DerefResult { score: -4, res_type: Some(arr) });
@@ -615,7 +577,6 @@ pub fn score_truncation(
     let score: int4;
     let mut ct_out: Option<Rc<Datatype>> = Some(Rc::clone(ct));
     if ct.get_metatype() == TYPE_UNION {
-        // TypeUnion *unionDt = (TypeUnion *)ct;
         // ct = 0;  // Don't recurse a data-type from truncation of a union
         ct_out = None;
         // score = -10;  // Negative score if the union has no field matching the size
@@ -627,7 +588,6 @@ pub fn score_truncation(
                 .ok_or_else(|| KunaError::lowlevel("scoreTruncation: union field out of range"))?;
             if field.offset == offset && field.field_type.get_size() == vn_size {
                 score_local = 10;
-                // if (result.getBase() == unionDt) score += 5;
                 if let Some(base) = result_base {
                     if Rc::ptr_eq(base, ct) {
                         score_local += 5;
@@ -640,9 +600,7 @@ pub fn score_truncation(
     } else {
         // score = 10;  // If we can find a size match for the truncation
         let mut score_local = 10;
-        // int8 curOff = offset;
         let mut cur_off: int8 = offset as int8;
-        // while(ct != 0 && (curOff != 0 || ct->getSize() != vn->getSize())) { ... }
         // The `ct != 0` half is the `while` guard; the `(curOff != 0 || size
         // mismatch)` half is the loop-continuation check, inverted to a `break`.
         // (Cannot use `while let Some(c) = &ct_out` — the body reassigns `ct_out`.)
@@ -653,19 +611,16 @@ pub fn score_truncation(
             }
             let meta = cur.get_metatype();
             if meta == TYPE_INT || meta == TYPE_UINT {
-                // if (ct->getSize() >= vn->getSize() + curOff) { score = 1; break; }
                 if cur.get_size() as int8 >= vn_size as int8 + cur_off {
                     score_local = 1; // Size doesn't match, but still possibly a reasonable operation
                     break;
                 }
             } else if meta == TYPE_ARRAY {
-                // Datatype *elType = ct->getDepend(0);
                 let el_type = cur.get_depend(0).ok_or_else(|| {
                     KunaError::lowlevel("scoreTruncation: array missing element type")
                 })?;
                 let align = el_type.get_align_size();
                 if align < vn_size {
-                    // if ((curOff + vn->getSize()) % elType->getAlignSize() != 0) score = -5; else score = 1;
                     if align != 0 && (cur_off + vn_size as int8) % align as int8 != 0 {
                         score_local = -5; // Varnode is unaligned with array elements
                     } else {
@@ -674,12 +629,10 @@ pub fn score_truncation(
                     break;
                 }
             }
-            // ct = ct->getSubType(curOff,&curOff);
             let (next, new_off) = cur.get_sub_type(cur_off)?;
             cur_off = new_off;
             ct_out = next;
         }
-        // if (ct == 0) score = -10;
         if ct_out.is_none() {
             score_local = -10;
         }
@@ -744,17 +697,12 @@ pub fn score_constant_fit(
     use type_metatype::*;
     let meta = fit_meta;
     if meta == TYPE_BOOL {
-        // score = (size == 1 && val < 2) ? 2 : -2;
         if size == 1 && val < 2 { 2 } else { -2 }
     } else if meta == TYPE_FLOAT {
-        // score = -1;
-        // const FloatFormat *format = typegrp.getArch()->translate->getFloatFormat(size);
-        // if (format != 0) { fClass = format->getClass(val); ... }
         match facts.float_fact {
             None => -1,
             Some(FloatConstFact::Zero) => 2,
             Some(FloatConstFact::Normalized { exponent }) => {
-                // if (exp < 7 && exp > -4) score = 2;  else stays -1
                 if exponent < 7 && exponent > -4 { 2 } else { -1 }
             }
             Some(FloatConstFact::Other) => -1,
@@ -800,10 +748,8 @@ pub fn looks_like_pointer(val: uintb, size: int4, ptr_lower: uintb, ptr_upper: u
 /// (renormalized to a field index, `-1` for the whole union).  Ties keep the
 /// earliest (lowest) index — the C++ uses strict `>`.
 pub fn compute_best_index(scores: &[int4]) -> (int4, int4) {
-    // int4 bestScore = scores[0]; int4 bestIndex = 0;
     let mut best_score = scores[0];
     let mut best_index: int4 = 0;
-    // for(int4 i=1;i<scores.size();++i) if (scores[i] > bestScore) { ... }
     for (i, &s) in scores.iter().enumerate().skip(1) {
         if s > best_score {
             best_score = s;
@@ -1417,7 +1363,6 @@ impl ResolveCache {
                 if rec.field_num < 0 {
                     return Rc::clone(dt);
                 }
-                // return dt->getDepend((*iter).fieldNum);
                 if let Some(dep) = dt.get_depend(rec.field_num) {
                     return dep;
                 }

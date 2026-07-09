@@ -79,17 +79,7 @@ impl InferFuncEntryOption {
 /// (kuna) Does the constant resolve exactly to a known function entry?
 /// (C++ `kunaIsFunctionEntry`, GH-6930).
 ///
-/// Faithful transcription of `decompiler/cpp/kuna_inferfuncentry.cc:12-26`:
-///
-/// ```text
-///   if (!glb->infer_funcentry) return false;                  // gate
-///   uintb fullEncoding;
-///   Address rampoint = glb->resolveConstant(spc, off, size, op->getAddr(),
-///                                            fullEncoding);
-///   if (rampoint.isInvalid()) return false;
-///   Funcdata *fd = scope->getParent()->queryFunction(rampoint);
-///   return (fd != 0 && fd->getAddress() == rampoint);          // exact match
-/// ```
+/// C++ `kuna_inferfuncentry.cc:12-26`.
 ///
 /// `gate` is the resolved `glb->infer_funcentry` (see [`InferFuncEntryOption`]).
 /// `rampoint` is the resolved `glb->resolveConstant(...)`: `None` transcribes
@@ -105,19 +95,15 @@ pub fn kuna_is_function_entry(
     rampoint: Option<&Address>,
     function_entry: Option<&Address>,
 ) -> bool {
-    // if (!glb->infer_funcentry) return false;
     if !gate {
         return false;
     }
-    // Address rampoint = ...; if (rampoint.isInvalid()) return false;
     let rampoint = match rampoint {
         // C++ `rampoint.isInvalid()` is true for the null/sentinel address; a
         // `Some` carrying an invalid Address must also be rejected.
         Some(addr) if !addr.is_invalid() => addr,
         _ => return false,
     };
-    // Funcdata *fd = scope->getParent()->queryFunction(rampoint);
-    // return (fd != 0 && fd->getAddress() == rampoint);
     match function_entry {
         Some(entry) => entry == rampoint,
         None => false,

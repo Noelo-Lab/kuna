@@ -190,7 +190,6 @@ impl<'a> ScoreUnionFields<'a> {
         };
         let base_size = self.result.get_base().get_size();
         if o.code() == OpCode::CPUI_INT_ADD {
-            // Varnode *vn = op->getIn(1 - inslot);
             let vn = match o.get_in(1 - inslot) {
                 Some(v) => v,
                 None => return false,
@@ -200,12 +199,10 @@ impl<'a> ScoreUnionFields<'a> {
                 None => return false,
             };
             if v.is_constant() {
-                // if (vn->getOffset() >= result.baseType->getSize()) return true;
                 if v.get_offset() >= base_size as uintb {
                     return true;
                 }
             } else if v.is_written() {
-                // PcodeOp *multOp = vn->getDef();
                 let mult_op = match v.get_def() {
                     Some(m) => m,
                     None => return false,
@@ -215,7 +212,6 @@ impl<'a> ScoreUnionFields<'a> {
                     None => return false,
                 };
                 if mo.code() == OpCode::CPUI_INT_MULT {
-                    // Varnode *vn2 = multOp->getIn(1);
                     if let Some(vn2) = mo.get_in(1) {
                         if let Some(v2) = self.data.vbank().get(vn2) {
                             if v2.is_constant() && v2.get_offset() >= base_size as uintb {
@@ -226,7 +222,6 @@ impl<'a> ScoreUnionFields<'a> {
                 }
             }
         } else if o.code() == OpCode::CPUI_PTRADD {
-            // Varnode *vn = op->getIn(2);
             if let Some(vn) = o.get_in(2) {
                 if let Some(v) = self.data.vbank().get(vn) {
                     if v.get_offset() >= base_size as uintb {
@@ -241,12 +236,10 @@ impl<'a> ScoreUnionFields<'a> {
     /// C++ `ScoreUnionFields::testSimpleCases` (unionresolve.cc:171-183).
     fn test_simple_cases(&self, op: OpId, inslot: int4, parent: &Rc<Datatype>) -> bool {
         let is_marker = self.data.obank().get(op).map(|o| o.is_marker()).unwrap_or(false);
-        // if (op->isMarker() && inslot < 0) return true;
         if is_marker && inslot < 0 {
             return true; // Propagate raw union across MULTIEQUAL and INDIRECT
         }
         if parent.get_metatype() == type_metatype::TYPE_PTR {
-            // if (inslot < 0) return true;
             if inslot < 0 {
                 return true; // Don't resolve pointers "up"
             }
@@ -282,7 +275,6 @@ impl<'a> ScoreUnionFields<'a> {
         // Snapshot every param type so the leaf indexes `param_types[paramSlot]`.
         let mut param_types: Vec<Rc<Datatype>> = Vec::with_capacity(num_params.max(0) as usize);
         for i in 0..num_params {
-            // proto->getParam(i)->getType()
             let ty = proto
                 .get_param(i)
                 .and_then(|p| p.get_type().cloned())
@@ -298,7 +290,6 @@ impl<'a> ScoreUnionFields<'a> {
     /// consumes, folding in the C++ `getFloatFormat`/`getDefaultDataSpace` seams).
     fn constant_facts(&self, size: int4, val: uintb, fit_meta: type_metatype) -> ConstantFitFacts {
         use type_metatype::*;
-        // FLOAT: const FloatFormat *format = translate->getFloatFormat(size);
         let float_fact = if fit_meta == TYPE_FLOAT {
             // STUB(W4 residual): the merged arch-handle does not expose
             // getFloatFormat; absent a format the C++ leaves score = -1, which
@@ -352,11 +343,9 @@ impl<'a> ScoreUnionFields<'a> {
 
     /// C++ `ScoreUnionFields::newTrialsDown` (unionresolve.cc:297-315).
     fn new_trials_down(&mut self, vn: VarnodeId, ct: Rc<Datatype>, score_index: int4, max: int4) {
-        // if (!visited.insert(mark).second) return;
         if !self.visited.insert(VisitMark(vn, score_index)) {
             return; // Already visited this Varnode
         }
-        // if (vn->isTypeLock()) { ... scoreLockedType(ct,vn->getTypeDefFacing()) ... }
         let is_lock = self.data.vbank().get(vn).map(|v| v.is_type_lock()).unwrap_or(false);
         if is_lock {
             let lock_type = self.data.vn_type_def_facing(vn);
@@ -365,7 +354,6 @@ impl<'a> ScoreUnionFields<'a> {
                 return; // Don't propagate through locked Varnode
             }
         }
-        // for(piter = vn->beginDescend(); ...) trialNext.emplace_back(op,op->getSlot(vn),...)
         let descends: Vec<OpId> = self
             .data
             .vbank()
@@ -380,18 +368,15 @@ impl<'a> ScoreUnionFields<'a> {
 
     /// C++ `ScoreUnionFields::newTrials` (unionresolve.cc:323-346).
     fn new_trials(&mut self, op: OpId, slot: int4, ct: Rc<Datatype>, score_index: int4, max: int4) {
-        // Varnode *vn = op->getIn(slot);
         let vn = match self.data.obank().get(op).and_then(|o| o.get_in(slot)) {
             Some(v) => v,
             None => return,
         };
-        // if (!visited.insert(mark).second) return;
         if !self.visited.insert(VisitMark(vn, score_index)) {
             return; // Already visited this Varnode
         }
         let is_lock = self.data.vbank().get(vn).map(|v| v.is_type_lock()).unwrap_or(false);
         if is_lock {
-            // Datatype *lockType = vn->getTypeReadFacing(op);
             let lock_type = self.data.vn_type_read_facing(vn, op);
             if !lock_type.needs_resolution() {
                 self.scores[score_index as usize] += score_locked_type(&ct, &lock_type);
@@ -400,7 +385,6 @@ impl<'a> ScoreUnionFields<'a> {
         }
         // trialNext.emplace_back(vn,ct,scoreIndex,max);  // Try to fit up
         self.trial_next.push(Trial::new_up(vn, Rc::clone(&ct), score_index, max));
-        // for(iter=vn->beginDescend(); ...) { if (readOp==op && inslot==slot) continue; ... }
         let descends: Vec<OpId> = self
             .data
             .vbank()
@@ -458,7 +442,6 @@ impl<'a> ScoreUnionFields<'a> {
                 }
                 OpCode::CPUI_STORE => {
                     if trial.inslot == 1 {
-                        // Datatype *ptrto = derefPointer(trial,op->getIn(2),score);
                         let in2 = self.data.obank().get(op).and_then(|o| o.get_in(2));
                         if let Some(in2vn) = in2 {
                             let vn_size =
@@ -480,7 +463,6 @@ impl<'a> ScoreUnionFields<'a> {
                         if meta == type_metatype::TYPE_CODE {
                             score = -5;
                         } else {
-                            // Datatype *storePtr = op->getIn(1)->getTypeReadFacing(op);
                             let in1 = self.data.obank().get(op).and_then(|o| o.get_in(1));
                             if let Some(in1vn) = in1 {
                                 let store_ptr = self.data.vn_type_read_facing(in1vn, op);
@@ -542,7 +524,6 @@ impl<'a> ScoreUnionFields<'a> {
                     max_length = ml;
                 }
                 OpCode::CPUI_SUBPIECE => {
-                    // int4 offset = TypeOpSubpiece::computeByteOffsetForComposite(op);
                     let offset = self.subpiece_composite_byte_offset(op);
                     let out = self.data.obank().get(op).and_then(|o| o.get_out());
                     let vn_size = out
@@ -568,9 +549,7 @@ impl<'a> ScoreUnionFields<'a> {
                 }
             }
         }
-        // scores[trial.scoreIndex] += score;
         self.scores[trial.score_index as usize] += score;
-        // if (resType != 0 && !lastLevel) newTrialsDown(op->getOut(), resType, ...)
         if let Some(rt) = res_type {
             if !last_level {
                 if let Some(outvn) = self.data.obank().get(op).and_then(|o| o.get_out()) {
@@ -595,7 +574,6 @@ impl<'a> ScoreUnionFields<'a> {
         let mut max_length: int4 = 0;
         if meta == TYPE_PTR {
             if trial.inslot >= 0 {
-                // Varnode *vn = op->getIn(1-inslot);
                 let vn = self.data.obank().get(op).and_then(|o| o.get_in(1 - trial.inslot));
                 let vn = match vn {
                     Some(v) => v,
@@ -606,9 +584,7 @@ impl<'a> ScoreUnionFields<'a> {
                 if is_const {
                     let vsize = vref.map(|v| v.get_size()).unwrap_or(0);
                     let voff = vref.map(|v| v.get_offset()).unwrap_or(0);
-                    // TypePointer *baseType = (TypePointer *)trial.fitType;
                     let mut base_type: Option<Rc<Datatype>> = Some(Rc::clone(&trial.fit_type));
-                    // int8 off = sign_extend(vn->getOffset(),vn->getSize()*8-1);
                     // cast: the C++ `sign_extend(uintb,int4)` takes the raw bit
                     // pattern; `voff as i64` reinterprets the same bits (the value
                     // is a constant Varnode offset, sign-extended next).
@@ -621,7 +597,6 @@ impl<'a> ScoreUnionFields<'a> {
                             max_length = trial.max_length;
                         }
                     }
-                    // while(off != 0 && baseType != 0) baseType = baseType->downChain(...)
                     while off != 0 {
                         let bt = match &base_type {
                             Some(b) => Rc::clone(b),
@@ -634,9 +609,6 @@ impl<'a> ScoreUnionFields<'a> {
                         base_type = next;
                     }
                     if let Some(bt) = &base_type {
-                        // resType = baseType;
-                        // maxLength = baseType->getPtrTo()->getSize();
-                        // score = 5;
                         let ptr_sz = bt.get_ptr_to().map(|p| p.get_size()).unwrap_or(0);
                         res_type = Some(Rc::clone(bt));
                         max_length = ptr_sz;
@@ -664,7 +636,6 @@ impl<'a> ScoreUnionFields<'a> {
                                 }
                             }
                         }
-                        // if (baseType->getPtrTo()->getAlignSize() == elSize) { ... }
                         let align =
                             trial.fit_type.get_ptr_to().map(|p| p.get_align_size()).unwrap_or(-1);
                         if align == el_size {
@@ -704,8 +675,6 @@ impl<'a> ScoreUnionFields<'a> {
         let mut res_type: Option<Rc<Datatype>> = None;
         if meta == TYPE_PTR {
             if trial.inslot == 0 {
-                // Datatype *ptrto = ((TypePointer *)trial.fitType)->getPtrTo();
-                // if (ptrto->getAlignSize() == op->getIn(2)->getOffset()) ...
                 let align = trial.fit_type.get_ptr_to().map(|p| p.get_align_size()).unwrap_or(-1);
                 let in2off = self
                     .data
@@ -742,7 +711,6 @@ impl<'a> ScoreUnionFields<'a> {
         }
         let is_written = self.data.vbank().get(trial.vn).map(|v| v.is_written()).unwrap_or(false);
         if !is_written {
-            // if (trial.vn->isConstant()) scoreConstantFit(trial);
             if self.data.vbank().get(trial.vn).map(|v| v.is_constant()).unwrap_or(false) {
                 self.score_constant_fit(trial);
             }
@@ -771,7 +739,6 @@ impl<'a> ScoreUnionFields<'a> {
                     newslot = 0;
                 }
                 OpCode::CPUI_LOAD => {
-                    // resType = getTypePointerStripArray(def->getIn(1)->getSize(),fitType,1);
                     let in1sz = self
                         .data
                         .obank()
@@ -820,8 +787,6 @@ impl<'a> ScoreUnionFields<'a> {
                     // unionresolve.cc:900-912 — live read of def->getIn(2)->getOffset().
                     use type_metatype::*;
                     if meta == TYPE_PTR {
-                        // Datatype *ptrto = ((TypePointer *)trial.fitType)->getPtrTo();
-                        // if (ptrto->getAlignSize() == def->getIn(2)->getOffset())
                         let align =
                             trial.fit_type.get_ptr_to().map(|p| p.get_align_size()).unwrap_or(-1);
                         let in2off = self
@@ -870,14 +835,11 @@ impl<'a> ScoreUnionFields<'a> {
         use type_metatype::*;
         if meta == TYPE_PTR {
             let mut score = 5;
-            // if (trial.maxLength == 0 && def->getIn(1)->isConstant()) { ... }
             if trial.max_length == 0 {
                 let in1 = self.data.obank().get(def).and_then(|o| o.get_in(1));
                 if let Some(in1vn) = in1 {
                     if let Some(v) = self.data.vbank().get(in1vn) {
                         if v.is_constant() {
-                            // Datatype *ptrto = ((TypePointer *)fitType)->getPtrTo();
-                            // if (ptrto->getAlignSize() == (int4)def->getIn(1)->getOffset()) score += 1;
                             let align =
                                 trial.fit_type.get_ptr_to().map(|p| p.get_align_size()).unwrap_or(-1);
                             if align == v.get_offset() as int4 {
@@ -937,17 +899,14 @@ impl<'a> ScoreUnionFields<'a> {
             Some(o) => o,
             None => return 0,
         };
-        // int4 outSize = op->getOut()->getSize();
         let out_size = o
             .get_out()
             .and_then(|v| self.data.vbank().get(v))
             .map(|v| v.get_size())
             .unwrap_or(0);
-        // int4 lsb = (int4)op->getIn(1)->getOffset();
         let lsb =
             o.get_in(1).and_then(|v| self.data.vbank().get(v)).map(|v| v.get_offset()).unwrap_or(0)
                 as int4;
-        // const Varnode *vn = op->getIn(0);
         let in0 = match o.get_in(0) {
             Some(v) => v,
             None => return lsb,
@@ -957,7 +916,6 @@ impl<'a> ScoreUnionFields<'a> {
             None => return lsb,
         };
         if in0v.get_space().is_big_endian() {
-            // byteOff = vn->getSize() - outSize - lsb;
             in0v.get_size() - out_size - lsb
         } else {
             lsb
@@ -987,7 +945,6 @@ impl<'a> ScoreUnionFields<'a> {
     /// C++ `ScoreUnionFields::computeBestIndex` (unionresolve.cc:1050-1063).
     fn compute_best_index(&mut self) {
         let (field_num, best_index) = compute_best_index(&self.scores);
-        // result.fieldNum = bestIndex - 1; result.resolve = fields[bestIndex];
         self.result.set_field_num(field_num);
         self.result.set_resolve(Rc::clone(&self.fields[best_index as usize]));
     }
@@ -1006,7 +963,6 @@ impl<'a> ScoreUnionFields<'a> {
                 self.run_one_level(true)?;
             } else {
                 self.run_one_level(false)?;
-                // trialCurrent.swap(trialNext); trialNext.clear();
                 std::mem::swap(&mut self.trial_current, &mut self.trial_next);
                 self.trial_next.clear();
             }
@@ -1038,11 +994,9 @@ impl<'a> ScoreUnionFields<'a> {
             result,
             trial_count: 0,
         };
-        // if (testSimpleCases(op, slot, parentType)) return;
         if s.test_simple_cases(op, slot, &parent_type) {
             return Ok(s);
         }
-        // int4 wordSize = (parentType->getMetatype()==TYPE_PTR) ? getWordSize() : 0;
         let word_size: int4 = if parent_type.get_metatype() == type_metatype::TYPE_PTR {
             parent_type.get_word_size().unwrap_or(0) as int4
         } else {
@@ -1052,7 +1006,6 @@ impl<'a> ScoreUnionFields<'a> {
         s.scores = vec![0; (num_fields + 1) as usize];
         s.fields = vec![Rc::clone(&parent_type); (num_fields + 1) as usize];
         let parent_size = parent_type.get_size();
-        // Varnode *vn = (slot<0) ? op->getOut() : op->getIn(slot);
         let vn = if slot < 0 {
             s.data.obank().get(op).and_then(|o| o.get_out())
         } else {
@@ -1076,7 +1029,6 @@ impl<'a> ScoreUnionFields<'a> {
         }
         s.fields[0] = Rc::clone(&parent_type);
         let opc = s.data.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY);
-        // if (wordSize == 0 || opc in {INT_ADD,PTRADD,PTRSUB,STORE,LOAD}) scores[0] -= 1;
         if word_size == 0
             || opc == OpCode::CPUI_INT_ADD
             || opc == OpCode::CPUI_PTRADD
@@ -1088,7 +1040,6 @@ impl<'a> ScoreUnionFields<'a> {
         }
         s.visited.insert(VisitMark(vn, 0));
         for i in 0..num_fields {
-            // Datatype *fieldType = result.baseType->getDepend(i);
             let mut field_type = match s.result.get_base().get_depend(i) {
                 Some(f) => f,
                 None => continue,
@@ -1101,7 +1052,6 @@ impl<'a> ScoreUnionFields<'a> {
                 } else if field_type.get_size() < s.result.get_base().get_size() {
                     max_length = field_type.get_size();
                 }
-                // fieldType = getTypePointerStripArray(parentType->getSize(),fieldType,wordSize);
                 field_type = s.typegrp.get_type_pointer_strip_array(
                     parent_size,
                     field_type,
@@ -1169,21 +1119,18 @@ impl<'a> ScoreUnionFields<'a> {
             let field_type = Rc::clone(&union_field.field_type);
             let field_offset = union_field.offset;
             s.fields[(i + 1) as usize] = Rc::clone(&field_type);
-            // if (field->type->getSize() != vn->getSize() || field->offset != offset) {score=-10; continue;}
             if field_type.get_size() != vn_size || field_offset != offset {
                 s.scores[(i + 1) as usize] = -10;
                 continue;
             }
             s.new_trials_down(vn, field_type, i + 1, 0);
         }
-        // trialCurrent.swap(trialNext);
         std::mem::swap(&mut s.trial_current, &mut s.trial_next);
         s.trial_next.clear();
         if s.trial_current.len() > 1 {
             s.run()?;
         }
         s.compute_best_index();
-        // result.resolve = typegrp.getExactPiece(result.resolve, offset, vn->getSize());
         Self::finalize_exact_piece(&mut s, offset, vn_size)?;
         Ok(s)
     }
@@ -1211,7 +1158,6 @@ impl<'a> ScoreUnionFields<'a> {
             result,
             trial_count: 0,
         };
-        // if (testSimpleCases(op, slot, unionType)) return;
         if s.test_simple_cases(op, slot, &union_type) {
             return Ok(s);
         }
@@ -1238,7 +1184,6 @@ impl<'a> ScoreUnionFields<'a> {
             let field_type = Rc::clone(&union_field.field_type);
             let field_offset = union_field.offset;
             s.fields[(i + 1) as usize] = Rc::clone(&field_type);
-            // Datatype *ct = scoreTruncation(field->type,vn,offset-field->offset,i+1);
             let ct = s.score_truncation_driver(&field_type, vn, offset - field_offset, i + 1)?;
             if let Some(ct) = ct {
                 if slot < 0 {

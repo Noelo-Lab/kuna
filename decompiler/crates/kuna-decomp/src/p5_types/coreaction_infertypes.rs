@@ -261,11 +261,9 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
     }
     let fc = fc?;
     let proto = fc.proto();
-    // if (!fc->isOutputLocked()) return default;
     if !proto.is_output_locked() {
         return None;
     }
-    // ct = fc->getOutputType(); if (ct->metatype == VOID) return default; return ct.
     let ct = proto.get_output_type()?;
     if ct.get_metatype() == type_metatype::TYPE_VOID {
         return None;
@@ -279,13 +277,11 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
 /// and whether up-propagation should be blocked (`def->stopsTypePropagation()`).
 fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
     let v = data.vbank().get(vn).expect("get_local_type: stale vn");
-    // if (isTypeLock()) return type;  (not a partial lock)
     if v.is_type_lock() {
         return (Rc::clone(v.get_type()), false);
     }
     let mut ct: Option<Rc<Datatype>> = None;
     let mut blockup = false;
-    // if (def != null) { ct = def->outputTypeLocal(); if (def->stopsTypePropagation()) ... }
     if let Some(def) = v.get_def() {
         ct = Some(output_type_local(data, def));
         let stops = data
@@ -343,11 +339,6 @@ fn build_localtypes(data: &mut Funcdata) {
             vn_type_lock = v.is_type_lock();
         }
         // C++ buildLocaltypes type-locked-symbol seed (coreaction.cc:5275-5281):
-        //   SymbolEntry *entry = vn->getSymbolEntry();
-        //   if (entry && !vn->isTypeLock() && entry->getSymbol()->isTypeLocked()) {
-        //     ct = typegrp->getExactPiece(symbolType, curOff, vn->getSize());
-        //     if (ct == 0 || ct->getMetatype() == TYPE_UNKNOWN) ct = vn->getLocalType(...);
-        //   } else ct = vn->getLocalType(...);
         // The seed is consulted only when the Varnode is itself not type-locked
         // (a type-locked Varnode already carries its own definitive type via the
         // getLocalType `isTypeLock` fast-path).
@@ -441,15 +432,10 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         Some(v) => v,
         None => return false,
     };
-    // alttype = invn->getTempType();
     let mut alttype = match data.vbank().get(invn).and_then(|v| v.get_temp_type().cloned()) {
         Some(t) => t,
         None => return false,
     };
-    // if (alttype->needsResolution()) {
-    //   Datatype *resType = alttype->resolveInFlow(op, inslot);
-    //   if (!op->isMarker()) alttype = resType;
-    // }
     // (C++ coreaction.cc:5335-5341)  Always give the incoming union/relative-pointer
     // a chance to resolve so the field choice is cached for later facing lookups,
     // but only adopt the resolved type for the propagation when `op` is not a MULTIEQUAL
@@ -492,7 +478,7 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         if ov.stops_up_propagation() && outslot >= 0 {
             return false; // Propagation is blocked
         }
-        // if (alttype is BOOL) only propagate if output can only take boolean values.
+        // alttype BOOL: only propagate if output can take only boolean values.
         if alttype.get_metatype() == type_metatype::TYPE_BOOL && ov.get_nz_mask() > 1 {
             return false;
         }
@@ -503,7 +489,6 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         None => return false,
     };
 
-    // if (0 > newtype->typeOrder(*outvn->getTempType())) { setTempType; return !isMark }
     let cur = match data.vbank().get(outvn).and_then(|v| v.get_temp_type().cloned()) {
         Some(t) => t,
         None => return false,
@@ -1225,7 +1210,6 @@ fn propagate_add_in2_out(
         let op_code = data.obank().get(op)?.code();
         let allow_wrap = op_code != OpCode::CPUI_PTRSUB;
         // C++ do { pointer = pointer->downChain(typeOffset,...); if (0) break; }
-        //      while(typeOffset != 0);
         while let Some(cur) = pointer.clone() {
             // C++ `TypePointer::downChain` (type.cc:1224-1257) dispatches the
             // pointed-to `getSubType(off,&off)` to `TypeSpacebase::getSubType`,
@@ -1348,7 +1332,6 @@ fn propagate_one_type(data: &mut Funcdata, root: VarnodeId) {
             st.slot = if has_out { -1 } else { 0 };
             st.inslot = data.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(0);
         } else {
-            // op = vn->getDef(); inslot=-1; slot=0.
             st.op = data.vbank().get(vn).and_then(|v| v.get_def());
             st.inslot = -1;
             st.slot = 0;
@@ -1407,7 +1390,6 @@ fn propagate_one_type(data: &mut Funcdata, root: VarnodeId) {
         let inslot = top.inslot;
         let slot = top.slot;
         if propagate_type_edge(data, op, inslot, slot) {
-            // newvn = (slot==-1) ? op->out : op->in(slot).
             let newvn = if slot == -1 {
                 data.obank().get(op).and_then(|o| o.get_out())
             } else {
@@ -1523,7 +1505,7 @@ fn propagate_ref(data: &mut Funcdata, vn: VarnodeId, addr: &Address) {
             Some(c) => Rc::clone(c),
             None => continue,
         };
-        // if (0 > lastct->typeOrder(*curvn->getTempType())) — the new type is more
+        // A negative typeOrder here means the new type is more
         // specific; adopt it and re-propagate.
         let cur_temp = match data.vbank().get(curvn).and_then(|v| v.get_temp_type().cloned()) {
             Some(t) => t,
@@ -1719,7 +1701,6 @@ fn propagate_across_returns(data: &mut Funcdata) {
             if is_bool && v.get_nz_mask() > 1 {
                 continue;
             }
-            // if (vn->getTempType() == ct) continue;  (already propagated)
             if v.get_temp_type().map(|t| Rc::ptr_eq(t, &ct)).unwrap_or(false) {
                 continue;
             }
@@ -1759,9 +1740,6 @@ pub fn run_infer_types(data: &mut Funcdata) -> bool {
     }
     propagate_across_returns(data);
     // C++ coreaction.cc:5663-5666 —
-    //   spcid = data.getScopeLocal()->getSpaceId();
-    //   spcvn = data.findSpacebaseInput(spcid);
-    //   if (spcvn != 0) propagateSpacebaseRef(data, spcvn);
     // Flow the recovered pointer type (e.g. a `mystruct *` call argument) from the
     // spacebase-relative ADD/PTRSUB/PTRADD outputs into the stack-frame slice they
     // address, so a stack struct/array carries its member type.

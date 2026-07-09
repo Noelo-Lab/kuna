@@ -351,7 +351,6 @@ impl SplitVarnode {
 
     /// Construct a double precision constant (C++ `SplitVarnode(int4,uintb)`).
     pub fn new_constant(sz: int4, v: uintb) -> SplitVarnode {
-        // val = v; wholesize = sz; lo = hi = whole = 0; defpoint = defblock = 0;
         let mut s = SplitVarnode::empty();
         s.val = v;
         s.wholesize = sz;
@@ -398,7 +397,6 @@ impl SplitVarnode {
             }
             Some(h) => {
                 if vn_is_constant(data, l) && vn_is_constant(data, h) {
-                    // val = h->getOffset(); val <<= (l->getSize()*8); val |= l->getOffset();
                     let mut val = vn_get_offset(data, h);
                     val = val.wshl((vn_get_size(data, l) * 8) as u32);
                     val |= vn_get_offset(data, l);
@@ -489,7 +487,6 @@ impl SplitVarnode {
             // We could check for double loads here
             if op_code(data, op) == OpCode::CPUI_SUBPIECE {
                 let w = op_get_in(data, op, 0);
-                // if (op->getIn(1)->getOffset() != (uintb)(w->getSize()-h->getSize()))
                 if vn_get_offset(data, op_get_in(data, op, 1))
                     != (vn_get_size(data, w) - vn_get_size(data, h)) as uintb
                 {
@@ -1050,7 +1047,6 @@ impl SplitVarnode {
         let newaddr = match is_addr_tied_contiguous(data, lo, hi) {
             Some(addr) => addr,
             None => {
-                // newaddr = data.getArch()->constructJoinAddress(...)
                 // STUB(W4): Architecture::constructJoinAddress (the join address
                 // space) is not ported; without it we cannot fabricate the
                 // logical whole's storage for the non-contiguous case.  The
@@ -1087,7 +1083,6 @@ impl SplitVarnode {
             }
             OpCode::CPUI_INDIRECT => {
                 // Reinsert AFTER the affector
-                // PcodeOp *affector = PcodeOp::getOpFromConst(loop->getIn(1)->getAddr());
                 // STUB(W3-varnode): getOpFromConst (decode an IOP annotation back
                 // to a PcodeOp) is deferred (funcdata_op.rs op_insert_after stub).
                 // Without the affector we cannot reinsert after it; transform the
@@ -1220,9 +1215,7 @@ fn test_contiguous_pointers(
     most: OpId,
     least: OpId,
 ) -> Option<(OpId, OpId, i32)> {
-    // spc = least->getIn(0)->getSpaceFromConst();
     let spc = space_from_const_index(data, op_get_in(data, least, 0))?;
-    // if (most->getIn(0)->getSpaceFromConst() != spc) return false;
     if space_from_const_index(data, op_get_in(data, most, 0)) != Some(spc) {
         return None;
     }
@@ -4540,7 +4533,6 @@ impl IndirectForm {
         if vn_space_type(data, op_get_in(data, ind, 1)) != spacetype::IPTR_IOP {
             return false;
         }
-        // affector = PcodeOp::getOpFromConst(indhi->getIn(1)->getAddr());
         self.affector = get_op_from_const(data, op_get_in(data, ind, 1));
         let affector = match self.affector {
             Some(a) => a,
@@ -4777,7 +4769,6 @@ pub struct RuleDoubleIn {
 }
 
 impl RuleDoubleIn {
-    /// Constructor (C++ `RuleDoubleIn(const string &g)`, name `"doublein"`).
     pub fn new(g: impl Into<String>) -> RuleDoubleIn {
         RuleDoubleIn { group: g.into() }
     }
@@ -4908,7 +4899,6 @@ pub struct RuleDoubleOut {
 }
 
 impl RuleDoubleOut {
-    /// Constructor (C++ `RuleDoubleOut(const string &g)`, name `"doubleout"`).
     pub fn new(g: impl Into<String>) -> RuleDoubleOut {
         RuleDoubleOut { group: g.into() }
     }
@@ -5007,7 +4997,6 @@ pub struct RuleDoubleLoad {
 }
 
 impl RuleDoubleLoad {
-    /// Constructor (C++ `RuleDoubleLoad(const string &g)`, name `"doubleload"`).
     pub fn new(g: impl Into<String>) -> RuleDoubleLoad {
         RuleDoubleLoad { group: g.into() }
     }
@@ -5217,7 +5206,6 @@ pub struct RuleDoubleStore {
 }
 
 impl RuleDoubleStore {
-    /// Constructor (C++ `RuleDoubleStore(const string &g)`, name `"doublestore"`).
     pub fn new(g: impl Into<String>) -> RuleDoubleStore {
         RuleDoubleStore { group: g.into() }
     }
@@ -5400,14 +5388,7 @@ impl Rule for RuleDoubleStore {
 
 /// The [`RuleSpec`] rows for the four `RuleDouble*` rules, in the exact order
 /// and with the exact groups the C++ `ActionDatabase::universalAction` registers
-/// them into the `actprop` pool (`coreaction.cc:5913-5916`):
-///
-/// ```text
-/// actprop->addRule( new RuleDoubleLoad("doubleload") );
-/// actprop->addRule( new RuleDoubleStore("doubleprecis") );
-/// actprop->addRule( new RuleDoubleIn("doubleprecis") );
-/// actprop->addRule( new RuleDoubleOut("doubleprecis") );
-/// ```
+/// them into the `actprop` pool (`coreaction.cc:5913-5916`).
 ///
 /// The order and the `getGroup()` string are output-determining (the engine's
 /// per-op rule list preserves insertion order, and `clone(grouplist)` filters on

@@ -635,7 +635,6 @@ impl BitFieldTransform {
             parent_struct = Some(Rc::clone(dt));
             initial_offset = off;
         } else if meta == type_metatype::TYPE_PARTIALSTRUCT {
-            // TypePartialStruct *part = (TypePartialStruct *)dt; dt = part->getParent();
             // (`getParent` returns the `container`, which is `get_partial_base` for a
             // partial-struct; `getOffset` is `get_partial_offset`.)
             if let (Some(parent), Some(part_off)) =
@@ -794,13 +793,6 @@ impl Rule for RuleBitFieldStore {
 
     fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1677-1692):
-        //   Datatype *ptr = op->getIn(1)->getTypeReadFacing(op);
-        //   Datatype *dt = ptr->getPtrInto(off);
-        //   if (dt == 0) return 0;
-        //   if (!dt->hasBitfields()) return 0;
-        //   Varnode *vn = op->getIn(2);
-        //   if (vn->isWritten() && vn->getDef()->code() == CPUI_INSERT) return 0;
-        //   BitFieldInsertTransform transform(&data,op,dt,off);  ...
         let in1 = match data.obank().get(op).and_then(|o| o.get_in(1)) {
             Some(v) => v,
             None => return 0,
@@ -855,9 +847,6 @@ impl Rule for RuleBitFieldOut {
 
     fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1701-1712):
-        //   Datatype *dt = op->getOut()->getTypeDefFacing();
-        //   if (!dt->hasBitfields()) return 0;
-        //   BitFieldInsertTransform transform(&data,op,dt,0);  ...
         let outvn = match data.obank().get(op).and_then(|o| o.get_out()) {
             Some(v) => v,
             None => return 0,
@@ -895,12 +884,6 @@ impl Rule for RuleBitFieldLoad {
 
     fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1720-1734):
-        //   Datatype *ptr = op->getIn(1)->getTypeReadFacing(op);
-        //   Datatype *dt = ptr->getPtrInto(off);
-        //   if (dt == 0) return 0;
-        //   if (!dt->hasBitfields()) return 0;
-        //   if (op->notPrinted()) return 0;     // LOAD visited before
-        //   BitFieldPullTransform transform(&data,op->getOut(),dt,off);  ...
         let in1 = match data.obank().get(op).and_then(|o| o.get_in(1)) {
             Some(v) => v,
             None => return 0,
@@ -968,10 +951,6 @@ impl Rule for RuleBitFieldIn {
 
     fn apply_op(&mut self, op: crate::context::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:1748-1759):
-        //   Varnode *invn = op->getIn(0);
-        //   Datatype *dt = invn->getTypeReadFacing(op);
-        //   if (!dt->hasBitfields()) return 0;
-        //   BitFieldPullTransform transform(&data,invn,dt,0);  ...
         let invn = match data.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
             None => return 0,

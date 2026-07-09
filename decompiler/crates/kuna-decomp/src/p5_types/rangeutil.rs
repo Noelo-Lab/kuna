@@ -1270,7 +1270,6 @@ impl CircleRange {
                     self.left = sign_extend_sized(in1.left, in_size, out_size);
                     self.right =
                         sign_extend_sized(in1.right.wsub(in1.step as uintb) & in1.mask, in_size, out_size);
-                    // if ((intb)right < (intb)left)
                     if (self.right as intb) < (self.left as intb) {
                         return false; // Extending causes 2 pieces
                     }

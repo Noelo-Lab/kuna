@@ -114,24 +114,7 @@ pub struct ThumbSubTypeFact {
 /// (kuna) Should `RulePtrsubUndo` preserve this PTRSUB as a mode-bit-encoded
 /// function pointer? (C++ `kunaPreserveThumbFuncPtr`, GH-8471).
 ///
-/// Faithful transcription of `decompiler/cpp/kuna_thumbfuncptr.cc:12-36`:
-///
-/// ```text
-///   if (!glb->preserve_thumb_funcptr || glb->funcptr_align == 0) return false;
-///   if (multiplier > 1) return false;
-///   Datatype *bt = basevn->getTypeReadFacing(op);
-///   if (bt->getMetatype() != TYPE_PTR) return false;
-///   TypePointer *ptype = (TypePointer *)bt;
-///   Datatype *pt = ptype->getPtrTo();
-///   if (pt->getMetatype() != TYPE_SPACEBASE) return false;
-///   int8 newoff = AddrSpace::addressToByteInt(val, ptype->getWordSize());
-///   Datatype *sub = pt->getSubType(newoff, &newoff);
-///   if (sub == 0 || newoff != 0) return false;
-///   if (sub->getMetatype() != TYPE_CODE) return false;       // a function symbol
-///   int8 bextra = AddrSpace::addressToByteInt(extra, ptype->getWordSize());
-///   if (bextra <= 0 || bextra >= ((int8)1 << glb->funcptr_align)) return false;
-///   return true;
-/// ```
+/// C++ `kuna_thumbfuncptr.cc:12-36`.
 ///
 /// `gate` is the resolved `glb->preserve_thumb_funcptr` (see
 /// [`ThumbFuncPtrOption`]); `funcptr_align` is `glb->funcptr_align`.  `facts`
@@ -146,31 +129,22 @@ pub fn kuna_preserve_thumb_funcptr(
     multiplier: int8,
     facts: &ThumbPtrTypeFacts,
 ) -> bool {
-    // if (!glb->preserve_thumb_funcptr || glb->funcptr_align == 0) return false;
     if !gate || funcptr_align == 0 {
         return false;
     }
-    // if (multiplier > 1) return false;
     // Multiplier 1 = byte-grain PTRADD form of the same constant offset.
     if multiplier > 1 {
         return false;
     }
-    // Datatype *bt = basevn->getTypeReadFacing(op);
-    // if (bt->getMetatype() != TYPE_PTR) return false;
     if facts.base_metatype != type_metatype::TYPE_PTR {
         return false;
     }
-    // Datatype *pt = ptype->getPtrTo();
-    // if (pt->getMetatype() != TYPE_SPACEBASE) return false;
     if facts.ptr_to_metatype != type_metatype::TYPE_SPACEBASE {
         return false;
     }
-    // int8 newoff = AddrSpace::addressToByteInt(val, ptype->getWordSize());
     // (newoff is recomputed inside the resolved getSubType fact; the conversion
     //  is recorded here to keep the byte-scaling visible against the C++.)
     let _newoff_in: int8 = AddrSpace::address_to_byte_int(val, facts.word_size);
-    // Datatype *sub = pt->getSubType(newoff, &newoff);
-    // if (sub == 0 || newoff != 0) return false;
     let sub = match facts.sub {
         Some(s) => s,
         None => return false, // sub == 0
@@ -179,13 +153,10 @@ pub fn kuna_preserve_thumb_funcptr(
         // newoff != 0: val did not land exactly on the symbol.
         return false;
     }
-    // if (sub->getMetatype() != TYPE_CODE) return false;  // a function/code symbol
     if sub.metatype != type_metatype::TYPE_CODE {
         return false;
     }
-    // int8 bextra = AddrSpace::addressToByteInt(extra, ptype->getWordSize());
     let bextra: int8 = AddrSpace::address_to_byte_int(extra, facts.word_size);
-    // if (bextra <= 0 || bextra >= ((int8)1 << glb->funcptr_align)) return false;
     // The offset must be exactly the alignment-encoding bits (the Thumb LSB).
     // `funcptr_align` is an `int4` (the C++ shift count); `as u32` is the C++
     // implicit shift-count promotion — it is a small alignment bit-count

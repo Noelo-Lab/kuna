@@ -187,7 +187,6 @@ impl ArraySequence {
     /// `end_op`; any `special`-eval op that is not one of the benign markers
     /// blocks.  Returns `true` if there is no interference.
     pub(crate) fn interfere_between(data: &Funcdata, start_op: OpId, end_op: OpId) -> bool {
-        // startOp = startOp->nextOp();
         let mut cur = match data.op_next_op(start_op) {
             Some(o) => o,
             None => return true, // C++ would loop until end; a null next can't equal end_op here
@@ -224,7 +223,6 @@ impl ArraySequence {
     pub(crate) fn check_interference(&mut self, data: &Funcdata, root_op: OpId) -> bool {
         // sort(moveOps) by block order
         self.move_ops.sort_by(|a, b| a.order.cmp(&b.order));
-        // for(pos=0;pos<size;++pos) if (moveOps[pos].op == rootOp) break;
         let mut pos = self.move_ops.len();
         for (i, node) in self.move_ops.iter().enumerate() {
             if node.op == root_op {
@@ -296,7 +294,6 @@ impl ArraySequence {
         let mut used: Vec<u8> = vec![0u8; sz_us];
         let el_size = self.char_type.get_size();
         for i in 0..self.move_ops.len() {
-            // bytePos = moveOps[i].offset - rootOff;   (int4, can be negative)
             let byte_pos: int4 = (self.move_ops[i].offset.wrapping_sub(root_off)) as int4;
             if byte_pos < 0 || byte_pos + el_size > sz {
                 continue;
@@ -432,7 +429,6 @@ impl HeapSequence {
         let block = data.obank().get(root).expect("HeapSequence: stale root").get_parent().expect(
             "HeapSequence: root has no parent block",
         );
-        // storeSpace = root->getIn(0)->getSpaceFromConst();
         let space_idx = {
             let in0 = op_get_in(data, root, 0);
             vn_get_offset(data, in0)
@@ -443,7 +439,6 @@ impl HeapSequence {
             .get_space(space_idx as int4)
             .cloned()
             .expect("HeapSequence: bad store space");
-        // ptrAddMult = byteToAddressInt(charType->getAlignSize(), storeSpace->getWordSize());
         let ptr_add_mult = kuna_base::space::AddrSpace::byte_to_address_int(
             ct.get_align_size() as i64,
             store_space.get_word_size(),
@@ -470,18 +465,14 @@ impl HeapSequence {
     /// when no viable sequence exists.
     fn build(data: &Funcdata, ct: Rc<Datatype>, root: OpId) -> HeapSequence {
         let mut seq = HeapSequence::new(data, ct, root);
-        // if (!collectStoreOps()) return;
         if !seq.collect_store_ops(data) {
             return seq;
         }
-        // if (!checkInterference()) return;
         if !seq.base.check_interference(data, seq.root_op) {
             return seq;
         }
-        // int4 arrSize = moveOps.size() * charType->getAlignSize();
         let arr_size = seq.base.move_ops.len() as int4 * seq.base.char_type.get_align_size();
         let big_endian = seq.store_space.is_big_endian();
-        // numElements = formByteArray(arrSize, 2, 0, bigEndian);
         seq.base.num_elements = seq.base.form_byte_array(data, arr_size, 2, 0, big_endian);
         seq
     }
@@ -492,10 +483,8 @@ impl HeapSequence {
 
     /// C++ `HeapSequence::findBasePointer`.
     fn find_base_pointer(&mut self, data: &Funcdata) {
-        // basePointer = rootOp->getIn(1); immedRead = rootOp;
         self.base_pointer = op_get_in(data, self.root_op, 1);
         self.immed_read = self.root_op;
-        // while(basePointer->isWritten()) { ... }
         loop {
             let v = data.vbank().get(self.base_pointer).expect("findBasePointer: stale vn");
             if !v.is_written() {
@@ -563,7 +552,6 @@ impl HeapSequence {
             {
                 break;
             }
-            // while(op->getIn(1)->isConstant());
             if !in1_const(data, op) {
                 break;
             }
@@ -731,12 +719,9 @@ impl HeapSequence {
         if (init_stores.len() as int4) + 1 < ArraySequence::MINIMUM_SEQUENCE_LENGTH {
             return false;
         }
-        // uint8 maxSize = MAXIMUM_SEQUENCE_LENGTH * charType->getAlignSize();
         let max_size =
             (ArraySequence::MAXIMUM_SEQUENCE_LENGTH as u64) * (self.base.char_type.get_align_size() as u64);
-        // uint8 wrapMask = calc_mask(storeSpace->getAddrSize());
         let wrap_mask = kuna_base::address::calc_mask(self.store_space.get_addr_size() as i32);
-        // baseOffset = calcPtraddOffset(rootOp->getIn(1), nonConstAdds);
         let root_in1 = op_get_in(data, self.root_op, 1);
         let mut non_const_adds = Vec::new();
         self.base_offset = self.calc_ptradd_offset(data, root_in1, &mut non_const_adds);
@@ -765,25 +750,19 @@ impl HeapSequence {
 
     /// C++ `HeapSequence::buildStringCopy`.
     fn build_string_copy(&self, data: &mut Funcdata) -> Option<OpId> {
-        // PcodeOp *insertPoint = moveOps[0].op;
         let insert_point = self.base.move_ops[0].op;
-        // Datatype *charPtrType = rootOp->getIn(1)->getTypeReadFacing(rootOp);
         let root_in1 = op_get_in(data, self.root_op, 1);
         let char_ptr_type = Rc::clone(
             data.vbank().get(root_in1).expect("buildStringCopy: stale ptr vn").get_type_read_facing(self.root_op),
         );
-        // int4 numBytes = numElements * charType->getSize();
         let num_bytes = self.base.num_elements * self.base.char_type.get_size();
         let insert_addr = data.obank().get(insert_point).unwrap().get_addr().clone();
-        // Varnode *srcPtr = data.getInternalString(byteArray.data(), numBytes, charPtrType, insertPoint);
         let byte_array = self.base.byte_array.clone();
         let src_ptr =
             data.get_internal_string(&byte_array, num_bytes, Rc::clone(&char_ptr_type), insert_point)?;
 
-        // Varnode *destPtr = basePointer;
         let mut dest_ptr = self.base_pointer;
         if self.base_offset != 0 || !self.non_const_adds.is_empty() {
-            // Datatype *intType = glb->types->getBase(basePointer->getSize(), TYPE_INT);
             let bp_size = data.vbank().get(self.base_pointer).unwrap().get_size();
             let int_type = data
                 .get_arch()
@@ -843,10 +822,7 @@ impl HeapSequence {
             // W6 follow-up (no current datatest exercises it).
             dest_ptr = dp;
         }
-        // uint4 builtInId = selectStringCopyFunction(index);
         let (built_in_id, index) = self.base.select_string_copy_function(data);
-        // glb->userops.registerBuiltin(builtInId);  (pre-registered at boot)
-        // PcodeOp *copyOp = data.newOp(4, insertPoint->getAddr());
         let copy_op = data.new_op(4, insert_addr.clone());
         data.op_set_opcode_code(copy_op, OpCode::CPUI_CALLOTHER);
         data.obank_mut().get_mut(copy_op).unwrap().clear_flag(pcodeop_flags::call);
@@ -854,7 +830,6 @@ impl HeapSequence {
         data.op_set_input(copy_op, id_con, 0).ok();
         data.op_set_input(copy_op, dest_ptr, 1).ok();
         data.op_set_input(copy_op, src_ptr, 2).ok();
-        // Varnode *lenVn = data.newConstant(4,index); lenVn->updateType(inputTypeLocal(3));
         let len_vn = data.new_constant(4, index as u64);
         // inputTypeLocal(3) for the builtin is its int4 length parameter; build it
         // directly from the factory (equivalent to the userop's typed param).
@@ -1086,19 +1061,15 @@ impl StringSequence {
             start_addr: addr.clone(),
             entry,
         };
-        // if (entry->getAddr().getSpace() != addr.getSpace()) return;
         let entry_space = seq.entry.addr.get_space()?.clone();
         let addr_space = addr.get_space()?.clone();
         if !Rc::ptr_eq(&entry_space, &addr_space) {
             return Some(seq); // invalid (num_elements stays 0)
         }
-        // int8 off = rootAddr.getOffset() - entry->getFirst();
         let mut off: int8 = seq.root_addr.get_offset().wrapping_sub(seq.entry.first) as int8;
-        // if (off >= entry->getSize()) return;
         if off >= seq.entry.size as int8 {
             return Some(seq);
         }
-        // if (rootOp->getIn(0)->getOffset() == 0) return;
         let in0 = op_get_in(data, seq.root_op, 0);
         if vn_get_offset(data, in0) == 0 {
             return Some(seq);
@@ -1113,14 +1084,12 @@ impl StringSequence {
                 Some(p) => Rc::clone(p),
                 None => break, // parentType == 0
             };
-            // if (parentType == ct) break;
             if Rc::ptr_eq(&pt, &seq.base.char_type) {
                 break;
             }
             array_type = Some(Rc::clone(&pt));
             last_off = off;
             if pt.needs_resolution() {
-                // const TypeField *field = parentType->resolveTruncation(off, root, -1, off);
                 match Self::resolve_field(data, &pt, off, root, -1) {
                     Some((field_ty, new_off)) => {
                         off = new_off;
@@ -1129,7 +1098,6 @@ impl StringSequence {
                     None => break,
                 }
             } else {
-                // parentType = parentType->getSubType(off, &off);
                 match pt.get_sub_type(off) {
                     Ok((Some(sub), new_off)) => {
                         off = new_off;
@@ -1140,7 +1108,6 @@ impl StringSequence {
                 }
             }
         }
-        // if (parentType != ct || arrayType == 0 || arrayType->getMetatype() != TYPE_ARRAY) return;
         let parent_matches_ct =
             parent_type.as_ref().map(|p| Rc::ptr_eq(p, &seq.base.char_type)).unwrap_or(false);
         if !parent_matches_ct {
@@ -1150,20 +1117,15 @@ impl StringSequence {
             Some(a) if a.get_metatype() == type_metatype::TYPE_ARRAY => a,
             _ => return Some(seq),
         };
-        // startAddr = rootAddr - lastOff;
         seq.start_addr = &seq.root_addr + (-last_off);
-        // if (!collectCopyOps(arrayType->getSize())) return;
         if !seq.collect_copy_ops(data, array_type.get_size()) {
             return Some(seq);
         }
-        // if (!checkInterference()) return;
         if !seq.base.check_interference(data, seq.root_op) {
             return Some(seq);
         }
-        // int4 arrSize = arrayType->getSize() - (int4)(rootAddr.getOffset() - startAddr.getOffset());
         let arr_size = array_type.get_size()
             - (seq.root_addr.get_offset().wrapping_sub(seq.start_addr.get_offset()) as int4);
-        // numElements = formByteArray(arrSize, 0, rootAddr.getOffset(), rootAddr.isBigEndian());
         let big_endian = seq.root_addr.is_big_endian();
         seq.base.num_elements =
             seq.base.form_byte_array(data, arr_size, 0, seq.root_addr.get_offset(), big_endian);
@@ -1202,15 +1164,12 @@ impl StringSequence {
     /// Returns `false` on a wrong-size COPY, a COPY to the element just before the
     /// root (root is not first), or fewer than the minimum number of COPYs.
     fn collect_copy_ops(&mut self, data: &Funcdata, size: int4) -> bool {
-        // Address endAddr = startAddr + (size - 1);
         let end_addr = &self.start_addr + i64::from(size - 1);
-        // Address beginAddr = startAddr; if (startAddr != rootAddr) beginAddr = rootAddr - charType->getAlignSize();
         let begin_addr = if self.start_addr != self.root_addr {
             &self.root_addr + (-(self.base.char_type.get_align_size() as i64))
         } else {
             self.start_addr.clone()
         };
-        // iter = beginLoc(beginAddr); enditer = endLoc(endAddr);  (address-only overload)
         // endLoc(endAddr) == lower_bound(endAddr + 1); the half-open window is
         // [beginAddr, endAddr + 1).
         let scan_end = &end_addr + 1;
@@ -1222,49 +1181,39 @@ impl StringSequence {
         let char_size = self.base.char_type.get_size();
         for vn in ids {
             let v = data.vbank().get(vn).expect("collectCopyOps: stale vn");
-            // if (!vn->isWritten()) continue;
             if !v.is_written() {
                 continue;
             }
             let op = v.get_def().expect("collectCopyOps: written vn has no def");
-            // if (op->code() != CPUI_COPY) continue;
             if data.obank().get(op).expect("collectCopyOps: stale op").code() != OpCode::CPUI_COPY {
                 continue;
             }
-            // if (op->getParent() != block) continue;
             if data.obank().get(op).unwrap().get_parent() != Some(self.block) {
                 continue;
             }
-            // if (!op->getIn(0)->isConstant()) continue;
             let in0 = op_get_in(data, op, 0);
             if !data.vbank().get(in0).map(|x| x.is_constant()).unwrap_or(false) {
                 continue;
             }
-            // if (vn->getSize() != charType->getSize()) return false;  (not yet split)
             if v.get_size() != char_size {
                 return false;
             }
-            // int4 tmpDiff = vn->getOffset() - startAddr.getOffset();
             let tmp_diff: int4 =
                 v.get_offset().wrapping_sub(self.start_addr.get_offset()) as int4;
             if tmp_diff < diff {
-                // if (tmpDiff + charType->getAlignSize() == diff) return false;
                 if tmp_diff + align == diff {
                     return false; // COPY to previous element, root is not first
                 }
                 continue;
             } else if tmp_diff > diff {
-                // if (tmpDiff - diff < charType->getAlignSize()) continue;
                 if tmp_diff - diff < align {
                     continue;
                 }
-                // if (tmpDiff - diff > charType->getAlignSize()) break;  (gap)
                 if tmp_diff - diff > align {
                     break;
                 }
                 diff = tmp_diff; // Advanced by one character
             }
-            // moveOps.emplace_back(vn->getOffset(), op, -1);
             let order = data.obank().get(op).unwrap().get_seq_num().get_order();
             self.base.move_ops.push(WriteNode::new(v.get_offset(), op, -1, order));
         }
@@ -1281,7 +1230,6 @@ impl StringSequence {
         let spc = self.root_addr.get_space()?.clone();
         let types = data.get_arch().types_rc()?;
         let insert_addr = data.obank().get(insert_point)?.get_addr().clone();
-        // spacePtr = (spc->getType()==IPTR_SPACEBASE) ? constructSpacebaseInput(spc) : constructConstSpacebase(spc);
         let mut space_ptr = if spc.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE {
             data.construct_spacebase_input(&spc).ok()?
         } else {
@@ -1293,22 +1241,18 @@ impl StringSequence {
         data.op_set_opcode_code(ptrsub, OpCode::CPUI_PTRSUB);
         data.op_set_input(ptrsub, space_ptr, 0).ok();
         let sp_size = data.vbank().get(space_ptr)?.get_size();
-        // uintb baseOff = byteToAddress(entry->getFirst(), spc->getWordSize());
         let mut base_off =
             kuna_base::space::AddrSpace::byte_to_address(self.entry.first, spc.get_word_size());
         let off_con = data.new_constant(sp_size, base_off);
         data.op_set_input(ptrsub, off_con, 1).ok();
         space_ptr = data.new_unique_out(sp_size, ptrsub).ok()?;
         data.op_insert_before(ptrsub, insert_point);
-        // TypePointer *curType = getTypePointerStripArray(sz, baseType, wordsize);
         let mut cur_type = types
             .get_type_pointer_strip_array(sp_size, Rc::clone(&base_type), spc.get_word_size())
             .ok()?;
         data.vbank_mut().get_mut(space_ptr)?.update_type(Rc::clone(&cur_type));
-        // int8 curOff = rootAddr.getOffset() - entry->getFirst();
         let mut cur_off: int8 = self.root_addr.get_offset().wrapping_sub(self.entry.first) as int8;
         while !Rc::ptr_eq(&base_type, &self.base.char_type) {
-            // int4 elSize = (baseType->getMetatype()==TYPE_ARRAY) ? base->getAlignSize() : -1;
             let el_size: int4 = if base_type.get_metatype() == type_metatype::TYPE_ARRAY {
                 base_type.get_array_base().map(|b| b.get_align_size()).unwrap_or(-1)
             } else {
@@ -1325,7 +1269,6 @@ impl StringSequence {
                     None => break,
                 }
             } else {
-                // baseType = baseType->getSubType(curOff, &newOff);
                 match base_type.get_sub_type(cur_off) {
                     Ok((Some(sub), no)) => {
                         base_type = sub;
@@ -1334,7 +1277,6 @@ impl StringSequence {
                     _ => break,
                 }
             }
-            // curOff -= newOff;
             cur_off -= new_off;
             base_off =
                 kuna_base::space::AddrSpace::byte_to_address(cur_off as u64, spc.get_word_size());
@@ -1361,7 +1303,6 @@ impl StringSequence {
                 data.op_set_input(ptr_op, boff_con, 1).ok();
             }
             data.op_set_input(ptr_op, space_ptr, 0).ok();
-            // if (curType->needsResolution()) inheritUnionFieldPtr(curType, ptrsub, 0, insertPoint, -1);
             if cur_type.needs_resolution() {
                 data.inherit_union_field_ptr(Rc::clone(&cur_type), ptr_op, 0, insert_point, -1).ok();
             }
@@ -1395,13 +1336,10 @@ impl StringSequence {
     /// C++ `StringSequence::buildStringCopy`.
     fn build_string_copy(&self, data: &mut Funcdata) -> Option<OpId> {
         use crate::dtype::TypeFactory;
-        // PcodeOp *insertPoint = moveOps[0].op;
         let insert_point = self.base.move_ops[0].op;
-        // int4 numBytes = moveOps.size() * charType->getSize();
         let num_bytes = self.base.move_ops.len() as int4 * self.base.char_type.get_size();
         let types = data.get_arch().types_rc()?;
         let word_size = self.root_addr.get_space()?.get_word_size();
-        // charPtrType = getTypePointer(getSizeOfPointer(), charType, rootAddr.getSpace()->getWordSize());
         let char_ptr_type = types
             .get_type_pointer(
                 types.get_size_of_pointer(),
@@ -1409,28 +1347,22 @@ impl StringSequence {
                 word_size,
             )
             .ok()?;
-        // Varnode *srcPtr = data.getInternalString(byteArray.data(), numBytes, charPtrType, insertPoint);
         let byte_array = self.base.byte_array.clone();
         let src_ptr = data.get_internal_string(&byte_array, num_bytes, char_ptr_type, insert_point)?;
-        // uint4 builtInId = selectStringCopyFunction(index);  (registerBuiltin pre-done at boot)
         let (built_in_id, index) = self.base.select_string_copy_function(data);
         let insert_addr = data.obank().get(insert_point)?.get_addr().clone();
-        // PcodeOp *copyOp = data.newOp(4, insertPoint->getAddr());
         let copy_op = data.new_op(4, insert_addr);
         data.op_set_opcode_code(copy_op, OpCode::CPUI_CALLOTHER);
         data.obank_mut().get_mut(copy_op)?.clear_flag(pcodeop_flags::call);
         let id_con = data.new_constant(4, built_in_id);
         data.op_set_input(copy_op, id_con, 0).ok();
-        // Varnode *destPtr = constructTypedPointer(insertPoint);
         let dest_ptr = self.construct_typed_pointer(data, insert_point)?;
         data.op_set_input(copy_op, dest_ptr, 1).ok();
         data.op_set_input(copy_op, src_ptr, 2).ok();
-        // if (destPtr->getType()->needsResolution()) inheritUnionFieldPtr(destPtr->getType(), copyOp, 1, insertPoint, -1);
         let dest_ty = Rc::clone(data.vbank().get(dest_ptr)?.get_type_def_facing());
         if dest_ty.needs_resolution() {
             data.inherit_union_field_ptr(dest_ty, copy_op, 1, insert_point, -1).ok();
         }
-        // Varnode *lenVn = data.newConstant(4, index); lenVn->updateType(copyOp->inputTypeLocal(3));
         let len_vn = data.new_constant(4, index as u64);
         if let Ok(int4t) = types.get_base(4, type_metatype::TYPE_INT) {
             data.vbank_mut().get_mut(len_vn)?.update_type(int4t);
@@ -1493,7 +1425,6 @@ impl StringSequence {
                 Some(v) => v,
                 None => continue,
             };
-            // if (vn->getDef()->code() != CPUI_INDIRECT) { ...build INDIRECT(0, iop)... }
             let is_indirect = data
                 .vbank()
                 .get(vn)
@@ -1708,7 +1639,6 @@ impl StringSequence {
         let insert_point = self.base.move_ops[0].op;
         let insert_addr = data.obank().get(insert_point)?.get_addr().clone();
         let types = data.get_arch().types_rc()?;
-        // PcodeOp *memsetOp = data.newOp(4, insertPoint->getAddr()); CALLOTHER.
         let memset_op = data.new_op(4, insert_addr);
         data.op_set_opcode_code(memset_op, OpCode::CPUI_CALLOTHER);
         data.obank_mut().get_mut(memset_op)?.clear_flag(pcodeop_flags::call);
@@ -1808,7 +1738,6 @@ impl Rule for RuleStringCopy {
 
     /// C++ `RuleStringCopy::applyOp` (`constseq.cc:981`).
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(0)->isConstant()) return 0;  // Constant
         let in0 = match data.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
             None => return 0,
@@ -1816,26 +1745,20 @@ impl Rule for RuleStringCopy {
         if !data.vbank().get(in0).map(|v| v.is_constant()).unwrap_or(false) {
             return 0;
         }
-        // Varnode *outvn = op->getOut();
         let outvn = match data.obank().get(op).and_then(|o| o.get_out()) {
             Some(v) => v,
             None => return 0,
         };
-        // Datatype *ct = outvn->getTypeDefFacing();
         let ct = Rc::clone(data.vbank().get(outvn).expect("RuleStringCopy: stale outvn").get_type_def_facing());
-        // if (!ct->isCharPrint()) return 0;
         if !ct.is_char_print() {
             return 0;
         }
-        // if (ct->isOpaqueString()) return 0;
         if ct.is_opaque_string() {
             return 0;
         }
-        // if (!outvn->isAddrTied()) return 0;
         if !data.vbank().get(outvn).unwrap().is_addr_tied() {
             return 0;
         }
-        // SymbolEntry *entry = data.getScopeLocal()->queryContainer(outvn->getAddr(), outvn->getSize(), op->getAddr());
         let out_addr = data.vbank().get(outvn).unwrap().get_addr().clone();
         let out_size = data.vbank().get(outvn).unwrap().get_size();
         let op_addr = data.obank().get(op).unwrap().get_addr().clone();
@@ -1866,16 +1789,13 @@ impl Rule for RuleStringCopy {
             Some(e) => e,
             None => return 0,
         };
-        // StringSequence sequence(data,ct,entry,op,outvn->getAddr());
         let sequence = match StringSequence::build(data, ct, entry, op, out_addr) {
             Some(s) => s,
             None => return 0,
         };
-        // if (!sequence.isValid()) return 0;
         if !sequence.is_valid() {
             return 0;
         }
-        // if (!sequence.transform()) return 0;
         if !sequence.transform(data) {
             return 0;
         }
@@ -1920,7 +1840,6 @@ impl Rule for RuleStringStore {
 
     /// C++ `RuleStringStore::applyOp` (`constseq.cc:1013`).
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(2)->isConstant()) return 0;  // Constant
         let in2 = match data.obank().get(op).and_then(|o| o.get_in(2)) {
             Some(v) => v,
             None => return 0,
@@ -1928,39 +1847,30 @@ impl Rule for RuleStringStore {
         if !data.vbank().get(in2).map(|v| v.is_constant()).unwrap_or(false) {
             return 0;
         }
-        // Varnode *ptrvn = op->getIn(1);
         let ptrvn = match data.obank().get(op).and_then(|o| o.get_in(1)) {
             Some(v) => v,
             None => return 0,
         };
-        // Datatype *ct = ptrvn->getTypeReadFacing(op);
         let ct = Rc::clone(
             data.vbank().get(ptrvn).expect("RuleStringStore: stale ptrvn").get_type_read_facing(op),
         );
-        // if (ct->getMetatype() != TYPE_PTR) return 0;
         if ct.get_metatype() != type_metatype::TYPE_PTR {
             return 0;
         }
-        // ct = ((TypePointer *)ct)->getPtrTo();
         let ct = match ct.get_ptr_to() {
             Some(c) => c,
             None => return 0,
         };
-        // if (!ct->isCharPrint()) return 0;
         if !ct.is_char_print() {
             return 0;
         }
-        // if (ct->isOpaqueString()) return 0;
         if ct.is_opaque_string() {
             return 0;
         }
-        // HeapSequence sequence(data,ct,op);
         let sequence = HeapSequence::build(data, ct, op);
-        // if (!sequence.isValid()) return 0;
         if !sequence.is_valid() {
             return 0;
         }
-        // if (!sequence.transform()) return 0;
         if !sequence.transform(data) {
             return 0;
         }
