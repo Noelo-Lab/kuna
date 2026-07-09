@@ -9,8 +9,8 @@
       - the applied assertions have exactly the effect of the legacy surfaces
         they wrap (compareform option; rename+namelock);
       - `kassert list` reports each assertion with its strength and its
-        COMPUTED MINIMAL REWIND SCOPE (S3 for the canonicalization config,
-        S9 for the cosmetic name) - the observable half of scoped re-run.
+        COMPUTED MINIMAL REWIND SCOPE (P3 for the canonicalization config,
+        P9 for the cosmetic name) - the observable half of scoped re-run.
 
     Reuses the GH-558 bytes (int gh558(int x) { if (x <= 8) return 1; return 0; }).
 -->
@@ -23,14 +23,14 @@
   <com>parse line extern int4 gh558(int4 x);</com>
   <com>lo fu gh558</com>
   <com>decompile</com>
-  <com>kassert S3 comparison-canonicalization original</com>
-  <com>kassert S9 naming-policy x xvar hint</com>
+  <com>kassert P3 comparison-canonicalization original</com>
+  <com>kassert P9 naming-policy x xvar hint</com>
   <com>decompile</com>
   <com>print C</com>
   <com>kassert list</com>
   <com>quit</com>
 </script>
 <stringmatch name="KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)" min="1" max="1">if \(xvar &lt;= 8\)</stringmatch>
-<stringmatch name="KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope" min="1" max="1">\[gh558\] S3/comparison-canonicalization original  strength=HARD  rewind-&gt;S3</stringmatch>
-<stringmatch name="KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism" min="1" max="1">\[gh558\] S9/naming-policy x xvar  strength=HINT \(applied via HARD mechanism\)  rewind-&gt;S9</stringmatch>
+<stringmatch name="KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope" min="1" max="1">\[gh558\] P3/comparison-canonicalization original  strength=HARD  rewind-&gt;P3</stringmatch>
+<stringmatch name="KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism" min="1" max="1">\[gh558\] P9/naming-policy x xvar  strength=HINT \(applied via HARD mechanism\)  rewind-&gt;P9</stringmatch>
 </decompilertest>

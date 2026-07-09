@@ -149,8 +149,8 @@ fn settable_count_is_68() {
 #[test]
 fn stage_codes() {
     assert_eq!(KunaPhase::P0.code(), "P0");
-    assert_eq!(KunaPhase::S1.code(), "S1");
-    assert_eq!(KunaPhase::S9.code(), "S9");
+    assert_eq!(KunaPhase::P1.code(), "P1");
+    assert_eq!(KunaPhase::P9.code(), "P9");
     // C++ STAGE_CODES[10] for infra.
     assert_eq!(KunaPhase::Infra.code(), "--");
 }
@@ -158,10 +158,10 @@ fn stage_codes() {
 #[test]
 fn stage_names_and_artifacts() {
     assert_eq!(KunaPhase::P0.name(), "Knowledge & Configuration Plane");
-    assert_eq!(KunaPhase::S9.name(), "Surface Rendering & Refinement");
+    assert_eq!(KunaPhase::P9.name(), "Surface Rendering & Refinement");
     assert_eq!(KunaPhase::Infra.name(), "Infrastructure / orchestration");
     assert_eq!(
-        KunaPhase::S7.artifact(),
+        KunaPhase::P7.artifact(),
         "region tree (sblocks - physically distinct from the CFG)"
     );
     assert_eq!(
@@ -174,15 +174,15 @@ fn stage_names_and_artifacts() {
 fn band_b_membership() {
     // C++ kunaStageInBandB: S3..S6 only.
     assert!(!KunaPhase::P0.in_band_b());
-    assert!(!KunaPhase::S1.in_band_b());
-    assert!(!KunaPhase::S2.in_band_b());
-    assert!(KunaPhase::S3.in_band_b());
-    assert!(KunaPhase::S4.in_band_b());
-    assert!(KunaPhase::S5.in_band_b());
-    assert!(KunaPhase::S6.in_band_b());
-    assert!(!KunaPhase::S7.in_band_b());
-    assert!(!KunaPhase::S8.in_band_b());
-    assert!(!KunaPhase::S9.in_band_b());
+    assert!(!KunaPhase::P1.in_band_b());
+    assert!(!KunaPhase::P2.in_band_b());
+    assert!(KunaPhase::P3.in_band_b());
+    assert!(KunaPhase::P4.in_band_b());
+    assert!(KunaPhase::P5.in_band_b());
+    assert!(KunaPhase::P6.in_band_b());
+    assert!(!KunaPhase::P7.in_band_b());
+    assert!(!KunaPhase::P8.in_band_b());
+    assert!(!KunaPhase::P9.in_band_b());
     assert!(!KunaPhase::Infra.in_band_b());
 }
 
@@ -191,12 +191,14 @@ fn stage_from_code() {
     // C++ kunaStageFromCode: P0/p0, S1..S9/s1..s9; everything else fails.
     assert_eq!(KunaPhase::from_code("P0"), Some(KunaPhase::P0));
     assert_eq!(KunaPhase::from_code("p0"), Some(KunaPhase::P0));
-    assert_eq!(KunaPhase::from_code("S3"), Some(KunaPhase::S3));
-    assert_eq!(KunaPhase::from_code("s3"), Some(KunaPhase::S3));
-    assert_eq!(KunaPhase::from_code("S9"), Some(KunaPhase::S9));
+    assert_eq!(KunaPhase::from_code("S3"), Some(KunaPhase::P3));
+    assert_eq!(KunaPhase::from_code("s3"), Some(KunaPhase::P3));
+    assert_eq!(KunaPhase::from_code("S9"), Some(KunaPhase::P9));
     // Failures.
+    assert_eq!(KunaPhase::from_code("P3"), Some(KunaPhase::P3));
+    assert_eq!(KunaPhase::from_code("p9"), Some(KunaPhase::P9));
     assert_eq!(KunaPhase::from_code("S0"), None);
-    assert_eq!(KunaPhase::from_code("P1"), None);
+    assert_eq!(KunaPhase::from_code("P0"), Some(KunaPhase::P0));
     assert_eq!(KunaPhase::from_code("X3"), None);
     assert_eq!(KunaPhase::from_code("S"), None);
     assert_eq!(KunaPhase::from_code("S33"), None);
@@ -209,8 +211,8 @@ fn stage_index_matches_cpp_enum() {
     // C++ enum: kstage_infra=-1, kstage_p0=0, kstage_s1=1 .. kstage_s9=9.
     assert_eq!(KunaPhase::Infra.index(), -1);
     assert_eq!(KunaPhase::P0.index(), 0);
-    assert_eq!(KunaPhase::S1.index(), 1);
-    assert_eq!(KunaPhase::S9.index(), 9);
+    assert_eq!(KunaPhase::P1.index(), 1);
+    assert_eq!(KunaPhase::P9.index(), 9);
 }
 
 // --- Lookup API (kunaLookup*) ------------------------------------------------
@@ -226,13 +228,13 @@ fn lookup_group_parity() {
     }
     // A couple of known entries (transcribed from groupTable).
     assert_eq!(lookup_group("base").unwrap().phase, KunaPhase::Infra);
-    assert_eq!(lookup_group("analysis").unwrap().phase, KunaPhase::S3);
-    assert_eq!(lookup_group("casts").unwrap().phase, KunaPhase::S9);
+    assert_eq!(lookup_group("analysis").unwrap().phase, KunaPhase::P3);
+    assert_eq!(lookup_group("casts").unwrap().phase, KunaPhase::P9);
     assert!(lookup_group("nonexistent").is_none());
 }
 
 #[test]
-fn lookup_substage_parity() {
+fn lookup_subphase_parity() {
     for i in 0..kuna_num_subphases() {
         let e = kuna_subphase_by_index(i);
         let found = lookup_subphase(e.name).expect("subphase findable");
@@ -242,15 +244,15 @@ fn lookup_substage_parity() {
     }
     // Known rewind targets (stage-model.md section 12).
     let typ = lookup_subphase("type-propagation").unwrap();
-    assert_eq!(typ.phase, KunaPhase::S5);
-    assert_eq!(typ.rewind, KunaPhase::S5);
+    assert_eq!(typ.phase, KunaPhase::P5);
+    assert_eq!(typ.rewind, KunaPhase::P5);
     let force = lookup_subphase("edge-virtualization").unwrap();
-    assert_eq!(force.phase, KunaPhase::S7);
-    assert_eq!(force.rewind, KunaPhase::S7);
+    assert_eq!(force.phase, KunaPhase::P7);
+    assert_eq!(force.rewind, KunaPhase::P7);
     // explicit-implied: rewinds to S9 (the only cross-stage rewind in the table).
     let ei = lookup_subphase("explicit-implied").unwrap();
-    assert_eq!(ei.phase, KunaPhase::S6);
-    assert_eq!(ei.rewind, KunaPhase::S9);
+    assert_eq!(ei.phase, KunaPhase::P6);
+    assert_eq!(ei.rewind, KunaPhase::P9);
     assert!(lookup_subphase("not-a-subphase").is_none());
 }
 
@@ -264,7 +266,7 @@ fn lookup_surface_parity() {
     }
     assert_eq!(
         lookup_surface("force goto").unwrap().phase,
-        KunaPhase::S7
+        KunaPhase::P7
     );
     assert_eq!(
         lookup_surface("option compareform").unwrap().subphase,
@@ -476,11 +478,11 @@ fn emit_settable_json_first_row_shape() {
     let st = lookup_settable("compareform").unwrap();
     let mut out = String::new();
     emit_settable_json(&mut out, st, None);
-    assert!(out.starts_with("  {\"option\": \"compareform\", \"values\": [\"canonical\", \"original\"], \"default\": \"original\", \"destructive_as_default\": false, \"stage\": \"S3\""));
+    assert!(out.starts_with("  {\"option\": \"compareform\", \"values\": [\"canonical\", \"original\"], \"default\": \"original\", \"destructive_as_default\": false, \"phase\": \"P3\""));
     // No `current` field when live is None.
     assert!(!out.contains("\"current\""));
     // ... and the tail order (issue ... change_kind).
-    assert!(out.contains("\"strength\": \"HARD\", \"rewind\": \"S3\", \"issue\": \"GH-558\""));
+    assert!(out.contains("\"strength\": \"HARD\", \"rewind\": \"P3\", \"issue\": \"GH-558\""));
     assert!(out.ends_with("\"change_kind\": \"presentation-default\"}"));
 }
 

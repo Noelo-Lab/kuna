@@ -41,10 +41,10 @@ fn settable_with_values(values: &'static str, shipped: &'static str) -> KunaSett
         values,
         shipped,
         destructive: false,
-        phase: KunaPhase::S3,
+        phase: KunaPhase::P3,
         subphase: "simplification-quiescence",
         strength: KunaStrength::Hard,
-        rewind: KunaPhase::S3,
+        rewind: KunaPhase::P3,
         issue: "",
         summary: "",
         use_when: "",
@@ -131,15 +131,18 @@ fn w4_kuna_p0_pack_from_code_boundaries_and_byte_safety() {
     // Valid forms.
     assert_eq!(KunaPhase::from_code("P0"), Some(KunaPhase::P0));
     assert_eq!(KunaPhase::from_code("p0"), Some(KunaPhase::P0));
-    assert_eq!(KunaPhase::from_code("S1"), Some(KunaPhase::S1));
-    assert_eq!(KunaPhase::from_code("s9"), Some(KunaPhase::S9));
+    assert_eq!(KunaPhase::from_code("P1"), Some(KunaPhase::P1));
+    // Legacy S-code aliases stay accepted.
+    assert_eq!(KunaPhase::from_code("S1"), Some(KunaPhase::P1));
+    assert_eq!(KunaPhase::from_code("s9"), Some(KunaPhase::P9));
 
     // Range boundaries: '0' and ':' bracket '1'..='9'.
-    assert_eq!(KunaPhase::from_code("S0"), None, "S0 below range");
+    assert_eq!(KunaPhase::from_code("S0"), None, "S0 below range (legacy alias has no 0)");
     assert_eq!(KunaPhase::from_code("S:"), None, "S: above '9'");
-    // P only pairs with '0'.
-    assert_eq!(KunaPhase::from_code("P1"), None);
-    assert_eq!(KunaPhase::from_code("P9"), None);
+    assert_eq!(KunaPhase::from_code("P:"), None, "P: above '9'");
+    // Only P/p and the legacy S/s prefixes pair with a digit.
+    assert_eq!(KunaPhase::from_code("Q1"), None);
+    assert_eq!(KunaPhase::from_code("X9"), None);
 
     // Length boundaries.
     assert_eq!(KunaPhase::from_code("S"), None);
@@ -220,39 +223,39 @@ fn w4_kuna_p0_pack_restartlog_keys_do_not_collide_interleaved() {
 fn w4_kuna_p0_pack_assertlog_hint_via_hard_annotation_gate() {
     let mk = |strength, applied| KunaAssertion {
         func_name: "(global)".into(),
-        phase: KunaPhase::S3,
+        phase: KunaPhase::P3,
         subphase: "simplification-quiescence".into(),
         args: String::new(),
         strength,
         applied,
-        rewind: KunaPhase::S3,
+        rewind: KunaPhase::P3,
     };
 
     // HINT requested, HARD applied -> annotation present.
     let mut log = AssertLog::new();
     log.push(mk(KunaStrength::Hint, KunaStrength::Hard));
     let out = log.render_list();
-    assert!(out.contains("strength=HINT (applied via HARD mechanism)  rewind->S3"), "got: {out}");
+    assert!(out.contains("strength=HINT (applied via HARD mechanism)  rewind->P3"), "got: {out}");
 
     // HARD requested, HARD applied -> NO annotation, label HARD.
     let mut log = AssertLog::new();
     log.push(mk(KunaStrength::Hard, KunaStrength::Hard));
     let out = log.render_list();
-    assert!(out.contains("strength=HARD  rewind->S3"));
+    assert!(out.contains("strength=HARD  rewind->P3"));
     assert!(!out.contains("applied via HARD"));
 
     // HINT requested, HINT applied -> NO annotation (applied not HARD).
     let mut log = AssertLog::new();
     log.push(mk(KunaStrength::Hint, KunaStrength::Hint));
     let out = log.render_list();
-    assert!(out.contains("strength=HINT  rewind->S3"));
+    assert!(out.contains("strength=HINT  rewind->P3"));
     assert!(!out.contains("applied via HARD"));
 
     // NONE strength -> "-" label.
     let mut log = AssertLog::new();
     log.push(mk(KunaStrength::None, KunaStrength::Hard));
     let out = log.render_list();
-    assert!(out.contains("strength=-  rewind->S3"), "got: {out}");
+    assert!(out.contains("strength=-  rewind->P3"), "got: {out}");
 }
 
 // --- test harness (mirrors src/kuna_restartlog/tests.rs) ---------------------

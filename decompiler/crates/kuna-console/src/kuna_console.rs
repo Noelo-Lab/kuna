@@ -86,15 +86,15 @@ const PIPELINE_VARIANTS: [&str; 6] =
 /// loop of `IfcKunaPhaseList::execute`.
 const STAGES_IN_ORDER: [KunaPhase; 10] = [
     KunaPhase::P0,
-    KunaPhase::S1,
-    KunaPhase::S2,
-    KunaPhase::S3,
-    KunaPhase::S4,
-    KunaPhase::S5,
-    KunaPhase::S6,
-    KunaPhase::S7,
-    KunaPhase::S8,
-    KunaPhase::S9,
+    KunaPhase::P1,
+    KunaPhase::P2,
+    KunaPhase::P3,
+    KunaPhase::P4,
+    KunaPhase::P5,
+    KunaPhase::P6,
+    KunaPhase::P7,
+    KunaPhase::P8,
+    KunaPhase::P9,
 ];
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 //! `kuna catalog` — the Rust port of `kuna/catalog.py`.
 //!
-//! Drives `decomp_dbg stage catalog [<option>]`, extracts the embedded JSON from
+//! Drives `decomp_dbg phase catalog [<option>]`, extracts the embedded JSON from
 //! the console transcript, and re-emits it.  Modes:
 //!   * (default) a human-readable table,
 //!   * `--json`     the catalog as `json.dumps(indent=2)` (byte-identical to the
@@ -23,7 +23,7 @@ use kuna_decomp::options::KUNA_OPTION_NAMES;
 use crate::jsonfmt::{dumps_indent2, extract_json_span, parse, Json};
 use crate::paths;
 
-/// Run `decomp_dbg stage catalog [<option>]` and return the parsed JSON value
+/// Run `decomp_dbg phase catalog [<option>]` and return the parsed JSON value
 /// (an array, or a single object when `option` is given).
 fn run_catalog(option: Option<&str>) -> Result<Json, String> {
     let bin = paths::decomp_dbg();
@@ -35,8 +35,8 @@ fn run_catalog(option: Option<&str>) -> Result<Json, String> {
     }
     let specs = paths::specs_dir();
     let cmd = match option {
-        None => "stage catalog\nquit\n".to_string(),
-        Some(o) => format!("stage catalog {o}\nquit\n"),
+        None => "phase catalog\nquit\n".to_string(),
+        Some(o) => format!("phase catalog {o}\nquit\n"),
     };
 
     let output = Command::new(&bin)
@@ -62,11 +62,11 @@ fn run_catalog(option: Option<&str>) -> Result<Json, String> {
     }
     let span = extract_json_span(&out).ok_or_else(|| {
         format!(
-            "could not parse `stage catalog` output; decompiler said:\n{}",
+            "could not parse `phase catalog` output; decompiler said:\n{}",
             out.trim().chars().take(2000).collect::<String>()
         )
     })?;
-    parse(span).ok_or_else(|| "could not parse `stage catalog` JSON".to_string())
+    parse(span).ok_or_else(|| "could not parse `phase catalog` JSON".to_string())
 }
 
 /// Normalize to a `Vec` of object entries (the catalog is an array; a single
@@ -157,24 +157,24 @@ pub fn cmd_markdown(option: Option<&str>) -> i32 {
     lines.push("# kuna assertion catalog".into());
     lines.push(String::new());
     lines.push(
-        "**Generated** from the decompiler's `stage catalog` command \
+        "**Generated** from the decompiler's `phase catalog` command \
          (`kuna catalog --markdown`) -- do not edit by hand; edit `settableTable` in \
-         `decompiler/crates/kuna-decomp/stages.toml` and regenerate."
+         `decompiler/crates/kuna-decomp/phases.toml` and regenerate."
             .into(),
     );
     lines.push(String::new());
     lines.push(
-        "These are the kuna stage-model sub-stage decisions an operator (human or LLM) \
+        "These are the kuna phase-model sub-phase decisions an operator (human or LLM) \
          can flip per decompilation. Defaults are the shipped values (post-DIV-2, see \
          `docs/divergences.md`). Set any of them with \
          `kuna decompile <bin> <fn> --option <name> <value>` (or, per \
-         function, `--kassert \"<stage> <substage> ...\"`); revert any one with its \
+         function, `--kassert \"<phase> <subphase> ...\"`); revert any one with its \
          `off`/`canonical` value."
             .into(),
     );
     lines.push(String::new());
     lines.push(
-        "| Option | Values | Default | Stage / sub-stage | Source | Kind | Decision | When to flip |"
+        "| Option | Values | Default | Phase / sub-phase | Source | Kind | Decision | When to flip |"
             .into(),
     );
     lines.push("|---|---|---|---|---|---|---|---|".into());
@@ -184,17 +184,17 @@ pub fn cmd_markdown(option: Option<&str>) -> i32 {
         if bool_field(e, "destructive_as_default") {
             default.push_str(" \u{26a0}\u{fe0f} opt-in");
         }
-        let stage = format!(
+        let phase = format!(
             "{} / {}",
-            field(e, "stage").unwrap_or(""),
-            field(e, "substage").unwrap_or("")
+            field(e, "phase").unwrap_or(""),
+            field(e, "subphase").unwrap_or("")
         );
         lines.push(format!(
             "| `{}` | {} | `{}` | {} | {} | {} | {} | {} |",
             field(e, "option").unwrap_or(""),
             vals,
             default,
-            stage,
+            phase,
             field(e, "source_decompiler").unwrap_or(""),
             field(e, "change_kind").unwrap_or(""),
             field(e, "summary").unwrap_or(""),
@@ -245,8 +245,8 @@ pub fn cmd_text(option: Option<&str>) -> i32 {
             field(e, "option").unwrap_or(""),
             values,
             field(e, "default").unwrap_or(""),
-            field(e, "stage").unwrap_or(""),
-            field(e, "substage").unwrap_or(""),
+            field(e, "phase").unwrap_or(""),
+            field(e, "subphase").unwrap_or(""),
             flag,
         );
         println!("    {}", field(e, "summary").unwrap_or(""));
@@ -271,10 +271,10 @@ pub fn cmd_text(option: Option<&str>) -> i32 {
 /// `--check`: verify the catalog documents exactly the registered kuna options.
 ///
 /// The Rust-only replacement for `catalog.check_drift`: compare the option names
-/// the binary's `stage catalog` emits against the in-process registered set
+/// the binary's `phase catalog` emits against the in-process registered set
 /// (`KUNA_OPTION_NAMES`).  A registered option with no catalog row is
 /// undiscoverable; a catalog row matching no registered option is stale.  The
-/// build-time codegen (`stages.toml` -> `SETTABLE_TABLE`) already fences the
+/// build-time codegen (`phases.toml` -> `SETTABLE_TABLE`) already fences the
 /// catalog/table consistency at compile time; this end-to-end check fences the
 /// catalog (what the binary emits) against the registration list.
 pub fn cmd_check() -> i32 {

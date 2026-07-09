@@ -106,14 +106,14 @@ fn stage_list_prints_the_stage_model_header_and_all_stages() {
         out.starts_with("Phases (kuna phase model, docs/stages.md):\n"),
         "out: {out:?}"
     );
-    // P0 is the orthogonal plane; S3..S6 are Band B.
+    // P0 is the orthogonal plane; P3..P6 are Band B.
     assert!(out.contains("  P0  Knowledge & Configuration Plane  [orthogonal plane]\n"));
-    assert!(out.contains("  S3  Definition Web  [Band B]\n"));
-    assert!(out.contains("  S6  Variable & Storage Model  [Band B]\n"));
-    // S1/S2/S7..S9 carry no bracket tag.
-    assert!(out.contains("  S1  Image & Code Partition\n"));
-    assert!(out.contains("  S9  Surface Rendering & Refinement\n"));
-    // The artifact line follows each stage.
+    assert!(out.contains("  P3  Definition Web  [Band B]\n"));
+    assert!(out.contains("  P6  Variable & Storage Model  [Band B]\n"));
+    // P1/P2/P7..P9 carry no bracket tag.
+    assert!(out.contains("  P1  Image & Code Partition\n"));
+    assert!(out.contains("  P9  Surface Rendering & Refinement\n"));
+    // The artifact line follows each phase.
     assert!(out.contains("        artifact: text + position maps\n"));
     // The sub-phase section header.
     assert!(out.contains(
@@ -148,10 +148,10 @@ fn stage_map_no_arg_dumps_both_tables() {
 
 #[test]
 fn stage_map_resolves_a_known_substage() {
-    // compareform's sub-phase is comparison-canonicalization (S3) in the registry.
+    // compareform's sub-phase is comparison-canonicalization (P3) in the registry.
     let out = run_one("phase map comparison-canonicalization");
     assert!(
-        out.contains("sub-phase comparison-canonicalization -> S3 (Definition Web)"),
+        out.contains("sub-phase comparison-canonicalization -> P3 (Definition Web)"),
         "out: {out:?}"
     );
     assert!(out.contains("  decision: "), "out: {out:?}");
@@ -211,7 +211,7 @@ fn stage_catalog_unknown_option_is_execution_error() {
 #[test]
 fn kassert_without_image_is_no_load_image_present() {
     // dcp->conf is null with no program loaded.
-    let out = run_one("kassert S3 comparison-canonicalization canonical");
+    let out = run_one("kassert P3 comparison-canonicalization canonical");
     assert!(out.contains("Execution error: No load image present"), "out: {out:?}");
 }
 
@@ -309,7 +309,7 @@ fn region_commands_without_function_are_no_function_selected() {
 /// (`while(!s.eof()){ s>>word>>ws; if(empty)break; if(!token.empty())token+=' ';
 /// token+=word; }`) must rebuild the SPACE-JOINED surface key "force goto", not
 /// resolve on the first token alone. This is the exact datatest KUNA-CONSOLE #5
-/// surface (`surface "force goto" -> S7 (Region Hierarchy) sub-phase
+/// surface (`surface "force goto" -> P7 (Region Hierarchy) sub-phase
 /// edge-virtualization`); a join bug would silently drop the second word and
 /// report "Unknown group/surface/sub-phase: force".
 #[test]
@@ -317,7 +317,7 @@ fn w9_con_kuna_console_stage_map_joins_multiword_surface_key() {
     let out = run_one("phase map force goto");
     assert!(
         out.contains(
-            "surface \"force goto\" -> S7 (Region Hierarchy) sub-phase edge-virtualization"
+            "surface \"force goto\" -> P7 (Region Hierarchy) sub-phase edge-virtualization"
         ),
         "multi-word surface key join lost: {out:?}"
     );
@@ -336,7 +336,7 @@ fn w9_con_kuna_console_stage_map_joins_multiword_surface_key() {
 fn w9_con_kuna_console_stage_map_collapses_irregular_whitespace() {
     let out = run_one("phase map   force   goto   ");
     assert!(
-        out.contains("surface \"force goto\" -> S7"),
+        out.contains("surface \"force goto\" -> P7"),
         "irregular whitespace not collapsed to single-space key: {out:?}"
     );
 }
@@ -351,6 +351,7 @@ fn w9_con_kuna_console_stage_map_collapses_irregular_whitespace() {
 fn w9_con_kuna_console_kassert_image_guard_precedes_validation() {
     // Valid S3 substage + trailing `hint`: were validation to run first this
     // would route/parse; the image guard must short-circuit it.
+    // Legacy S-code input alias driven on purpose.
     let out = run_one("kassert S3 comparison-canonicalization original hint");
     assert!(
         out.contains("Execution error: No load image present"),

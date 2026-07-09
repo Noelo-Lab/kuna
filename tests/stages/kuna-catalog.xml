@@ -12,7 +12,7 @@
     These assertions pin the JSON contract the Python tooling depends on:
       - the array opens (well-formed JSON the catalog parser balances);
       - representative settables are present with their post-DIV-2 shipped defaults
-        (compareform=original, arraynotation=on) and stage/sub-phase address;
+        (compareform=original, arraynotation=on) and phase/sub-phase address;
       - the two destructive options are flagged opt-in (default + destructive marker)
         so an agent does not enable them globally;
       - the live `current` value is joined in when a program is loaded.
@@ -31,8 +31,8 @@
   <com>phase catalog returnpair</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and S3 address" min="1" max="1">"option": "compareform", "values": \["canonical", "original"\], "default": "original", "current": "original", "destructive_as_default": false, "stage": "S3"</stringmatch>
-<stringmatch name="KUNA-CATALOG #2: arraynotation documented as default-on, S9 pointer-notation" min="1" max="1">"option": "arraynotation", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "stage": "S9"</stringmatch>
+<stringmatch name="KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and S3 address" min="1" max="1">"option": "compareform", "values": \["canonical", "original"\], "default": "original", "current": "original", "destructive_as_default": false, "phase": "P3"</stringmatch>
+<stringmatch name="KUNA-CATALOG #2: arraynotation documented as default-on, S9 pointer-notation" min="1" max="1">"option": "arraynotation", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P9"</stringmatch>
 <stringmatch name="KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in" min="2" max="2">"option": "returnpair", "values": \["pair", "single"\], "default": "pair", "current": "pair", "destructive_as_default": true</stringmatch>
 <stringmatch name="KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)" min="1" max="1">"option": "v850indirectbranch", "values": \["on", "off"\], "default": "off", "current": "off", "destructive_as_default": true</stringmatch>
 <stringmatch name="KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator" min="10" max="80">"use_when": </stringmatch>

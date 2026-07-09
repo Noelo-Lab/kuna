@@ -148,7 +148,7 @@ pub struct ValidatedAssertion {
 /// the console-independent core of `IfcKunaAssert::execute`
 /// (`kuna_assert.cc:51`), up to (but not including) the live store mutation.
 ///
-/// `stagecode` is the `<stage>` token ("P0"/"S1".."S9"); `subname` is the
+/// `stagecode` is the `<phase>` token ("P0".."P9", legacy "S1".."S9" accepted); `subname` is the
 /// `<substage>` token; `strength_override` is the optional trailing `hard|hint`
 /// (the C++ pops it off the token list). Errors mirror the C++ `IfaceParseError`
 /// throws (as [`KunaError::Parse`]), in the same precedence order:
@@ -159,8 +159,8 @@ pub struct ValidatedAssertion {
 ///   4. sub-stage belongs to a different stage.
 ///
 /// The **minimal-rewind computation** is the sub-stage's catalog `rewind`
-/// field (`stage-model.md` section 12: format->S9, force-goto->S7, typelock->S5,
-/// proto->S4, jumptable/flow/context->S2, deadcode-delay->S3), looked up here.
+/// field (`stage-model.md` section 12: format->P9, force-goto->P7, typelock->P5,
+/// proto->P4, jumptable/flow/context->P2, deadcode-delay->P3), looked up here.
 pub fn validate_assertion(
     stagecode: &str,
     subname: &str,
@@ -168,7 +168,7 @@ pub fn validate_assertion(
 ) -> KunaResult<ValidatedAssertion> {
     // C++: if (!kunaStageFromCode(stagecode,stage)) throw IfaceParseError(...)
     let phase = KunaPhase::from_code(stagecode).ok_or_else(|| KunaError::Parse {
-        explain: format!("Bad phase code (expecting P0 or S1..S9): {stagecode}"),
+        explain: format!("Bad phase code (expecting P0..P9): {stagecode}"),
     })?;
     // C++: if (subname.empty()) throw IfaceParseError("Missing sub-stage name ...")
     if subname.is_empty() {

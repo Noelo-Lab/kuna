@@ -35,23 +35,23 @@ pub enum KunaPhase {
     /// Knowledge & Configuration Plane (orthogonal) — C++ `kstage_p0`.
     P0,
     /// Image & Code Partition — C++ `kstage_s1`.
-    S1,
+    P1,
     /// Flow & Op-Graph Recovery — C++ `kstage_s2`.
-    S2,
+    P2,
     /// Definition Web (Band B) — C++ `kstage_s3`.
-    S3,
+    P3,
     /// Call & Prototype Model (Band B) — C++ `kstage_s4`.
-    S4,
+    P4,
     /// Value & Type Facts (Band B) — C++ `kstage_s5`.
-    S5,
+    P5,
     /// Variable & Storage Model (Band B) — C++ `kstage_s6`.
-    S6,
+    P6,
     /// Region Hierarchy — C++ `kstage_s7`.
-    S7,
+    P7,
     /// Structured AST & Goto Quality — C++ `kstage_s8`.
-    S8,
+    P8,
     /// Surface Rendering & Refinement — C++ `kstage_s9`.
-    S9,
+    P9,
 }
 
 impl KunaPhase {
@@ -61,31 +61,31 @@ impl KunaPhase {
         match self {
             KunaPhase::Infra => -1,
             KunaPhase::P0 => 0,
-            KunaPhase::S1 => 1,
-            KunaPhase::S2 => 2,
-            KunaPhase::S3 => 3,
-            KunaPhase::S4 => 4,
-            KunaPhase::S5 => 5,
-            KunaPhase::S6 => 6,
-            KunaPhase::S7 => 7,
-            KunaPhase::S8 => 8,
-            KunaPhase::S9 => 9,
+            KunaPhase::P1 => 1,
+            KunaPhase::P2 => 2,
+            KunaPhase::P3 => 3,
+            KunaPhase::P4 => 4,
+            KunaPhase::P5 => 5,
+            KunaPhase::P6 => 6,
+            KunaPhase::P7 => 7,
+            KunaPhase::P8 => 8,
+            KunaPhase::P9 => 9,
         }
     }
 
-    /// "P0".."S9" (or "--" for infra) — C++ `kunaStageCode`.
+    /// "P0".."P9" (or "--" for infra) — C++ `kunaStageCode`.
     pub fn code(self) -> &'static str {
-        STAGE_CODES[self.code_index()]
+        PHASE_CODES[self.code_index()]
     }
 
     /// Long stage name — C++ `kunaStageName`.
     pub fn name(self) -> &'static str {
-        STAGE_NAMES[self.code_index()]
+        PHASE_NAMES[self.code_index()]
     }
 
     /// The artifact the stage owns — C++ `kunaStageArtifact`.
     pub fn artifact(self) -> &'static str {
-        STAGE_ARTIFACTS[self.code_index()]
+        PHASE_ARTIFACTS[self.code_index()]
     }
 
     /// true for S3..S6 — C++ `kunaStageInBandB`.
@@ -93,7 +93,7 @@ impl KunaPhase {
         // C++: (stage >= kstage_s3 && stage <= kstage_s6); the enum ordering of
         // S3..S6 mirrors the numeric one (infra=-1 sorts below P0).
         let i = self.index();
-        (KunaPhase::S3.index()..=KunaPhase::S6.index()).contains(&i)
+        (KunaPhase::P3.index()..=KunaPhase::P6.index()).contains(&i)
     }
 
     /// Index into the `STAGE_*` arrays: 0..=9 for P0..S9, 10 for infra.
@@ -104,7 +104,7 @@ impl KunaPhase {
         }
     }
 
-    /// Parse "P0"/"s3"/... into the stage — C++ `kunaStageFromCode`.
+    /// Parse "P3"/"p3" (or the legacy "S3"/"s3") into the phase — C++ `kunaStageFromCode`.
     ///
     /// Returns `None` on a malformed code (the C++ returns `false` and leaves
     /// `res` unset).
@@ -118,18 +118,19 @@ impl KunaPhase {
         if (c0 == b'p' || c0 == b'P') && c1 == b'0' {
             return Some(KunaPhase::P0);
         }
-        if (c0 == b's' || c0 == b'S') && (b'1'..=b'9').contains(&c1) {
-            // C++: res = (KunaPhase)(c1 - '0'); S1..S9 are 1..9.
+        // "P1".."P9" primary; the pre-rename "S1".."S9" spellings stay
+        // accepted as input aliases (kassert scripts, older tooling).
+        if (c0 == b'p' || c0 == b'P' || c0 == b's' || c0 == b'S') && (b'1'..=b'9').contains(&c1) {
             return Some(match c1 - b'0' {
-                1 => KunaPhase::S1,
-                2 => KunaPhase::S2,
-                3 => KunaPhase::S3,
-                4 => KunaPhase::S4,
-                5 => KunaPhase::S5,
-                6 => KunaPhase::S6,
-                7 => KunaPhase::S7,
-                8 => KunaPhase::S8,
-                9 => KunaPhase::S9,
+                1 => KunaPhase::P1,
+                2 => KunaPhase::P2,
+                3 => KunaPhase::P3,
+                4 => KunaPhase::P4,
+                5 => KunaPhase::P5,
+                6 => KunaPhase::P6,
+                7 => KunaPhase::P7,
+                8 => KunaPhase::P8,
+                9 => KunaPhase::P9,
                 _ => unreachable!("c1 guaranteed in 1..=9"),
             });
         }
@@ -244,13 +245,13 @@ pub struct KunaSettable {
 
 // --- The STAGE_* string tables (C++ kuna_stages.cc:16-43) --------------------
 
-/// "P0".."S9","--" — index 10 is infra (C++ `STAGE_CODES`).
-static STAGE_CODES: [&str; 11] = [
-    "P0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "--",
+/// "P0".."P9","--" — index 10 is infra (C++ `STAGE_CODES`).
+static PHASE_CODES: [&str; 11] = [
+    "P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "--",
 ];
 
 /// Long stage names — index 10 is infra (C++ `STAGE_NAMES`).
-static STAGE_NAMES: [&str; 11] = [
+static PHASE_NAMES: [&str; 11] = [
     "Knowledge & Configuration Plane",
     "Image & Code Partition",
     "Flow & Op-Graph Recovery",
@@ -265,7 +266,7 @@ static STAGE_NAMES: [&str; 11] = [
 ];
 
 /// The artifact each stage owns — index 10 is infra (C++ `STAGE_ARTIFACTS`).
-static STAGE_ARTIFACTS: [&str; 11] = [
+static PHASE_ARTIFACTS: [&str; 11] = [
     "assertion store (Symbol DB + Override) + pipeline configuration",
     "bytes + segments + symbol/data map + code-vs-data partition",
     "lifted ops + CFG (bblocks) + jump tables (jumpvec) + work queues",
@@ -414,9 +415,9 @@ pub fn emit_settable_json(out: &mut String, st: &KunaSettable, live: Option<&str
     }
     out.push_str(", \"destructive_as_default\": ");
     out.push_str(if st.destructive { "true" } else { "false" });
-    out.push_str(", \"stage\": ");
+    out.push_str(", \"phase\": ");
     json_string(out, st.phase.code());
-    out.push_str(", \"substage\": ");
+    out.push_str(", \"subphase\": ");
     json_string(out, st.subphase);
     out.push_str(", \"strength\": ");
     json_string(out, st.strength.catalog_code());

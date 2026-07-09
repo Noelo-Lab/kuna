@@ -99,20 +99,20 @@ fn main() {
 // Stage / strength enum rendering (the codegen turns "S3" etc. into the variant)
 // -----------------------------------------------------------------------------
 
-/// Render a phase code ("P0".."S9" or "infra") as a `KunaPhase` variant path.
+/// Render a phase code ("P0".."P9" or "infra") as a `KunaPhase` variant path.
 fn phase_variant(code: &str) -> String {
     let v = match code {
         "infra" => "Infra",
         "P0" => "P0",
-        "S1" => "S1",
-        "S2" => "S2",
-        "S3" => "S3",
-        "S4" => "S4",
-        "S5" => "S5",
-        "S6" => "S6",
-        "S7" => "S7",
-        "S8" => "S8",
-        "S9" => "S9",
+        "P1" => "P1",
+        "P2" => "P2",
+        "P3" => "P3",
+        "P4" => "P4",
+        "P5" => "P5",
+        "P6" => "P6",
+        "P7" => "P7",
+        "P8" => "P8",
+        "P9" => "P9",
         other => panic!("phases.toml: bad phase code `{other}`"),
     };
     format!("KunaPhase::{v}")

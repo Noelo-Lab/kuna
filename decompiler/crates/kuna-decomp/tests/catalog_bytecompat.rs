@@ -9,8 +9,8 @@
 //!
 //! ## What is compared
 //!
-//! The fixture `tests/fixtures/stage_catalog.json` is the EXACT bytes the C++
-//! `decomp_dbg` binary emits for `stage catalog` **with no program loaded**
+//! The fixture `tests/fixtures/phase_catalog.json` is the EXACT bytes the C++
+//! `decomp_dbg` binary emits for `phase catalog` **with no program loaded**
 //! (so `kunaLiveValue` returns `""` for every option and no `current` field is
 //! present). We compare against the no-program form deliberately: the `current`
 //! field is architecture-dependent (it reads live `Architecture` flags), so it
@@ -30,9 +30,9 @@
 //! bytes), with no program loaded so `kunaLiveValue` returns `""` (no `current`):
 //!
 //! ```sh
-//! printf 'openfile write /tmp/cap.json\nstage catalog\nclosefile\nquit\n' \
+//! printf 'openfile write /tmp/cap.json\nphase catalog\nclosefile\nquit\n' \
 //!   | decompiler/target/release/decomp_dbg -s "$PWD/specs" >/dev/null 2>&1
-//! cp /tmp/cap.json decompiler/crates/kuna-decomp/tests/fixtures/stage_catalog.json
+//! cp /tmp/cap.json decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json
 //! ```
 //!
 //! Regenerate it whenever `phases.toml` gains/loses a settable or a settable's
@@ -40,8 +40,8 @@
 
 use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, lookup_settable};
 
-/// The captured C++ `stage catalog` output (no program loaded -> no `current`).
-const FIXTURE: &str = include_str!("fixtures/stage_catalog.json");
+/// The captured `phase catalog` output (no program loaded -> no `current`).
+const FIXTURE: &str = include_str!("fixtures/phase_catalog.json");
 
 #[test]
 fn full_catalog_matches_cpp_byte_for_byte() {
@@ -157,7 +157,7 @@ fn fixture_has_all_68_settables() {
 
 #[test]
 fn single_settable_rows_match_their_slice_of_the_catalog() {
-    // `stage catalog <option>` (one-argument form) must emit exactly the same
+    // `phase catalog <option>` (one-argument form) must emit exactly the same
     // bytes as that option's row in the full catalog, minus the leading "  "
     // is preserved and minus the trailing comma (the full form joins with ',').
     for i in 0..kuna_decomp::kuna_phases::kuna_num_settables() {

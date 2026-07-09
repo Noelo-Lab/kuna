@@ -8,7 +8,7 @@
       region tree    - nested region tree (angr GraphRegion.dbg_print analog)
       region blocks  - flat regions_by_block_addrs lists
       region walk    - recursive region-order walk over every leaf block
-      stage map      - routes the surfaces to S7 / loop-refinement
+      phase map      - routes the surfaces to P7 / loop-refinement
 
     Reuses the gh8724-arraystride bytes purely as a loadable loop+diamond CFG
     (the arraystride option itself is never touched):
@@ -56,7 +56,7 @@ e8cbfeffff4939dc75d64883c4085b5d415c415dc30f1f00c3
 <stringmatch name="KUNA-REGIONS #2: the region tree is rooted at the function entry 0x3c0" min="1" max="1">region head=0x3c0</stringmatch>
 <stringmatch name="KUNA-REGIONS #3: region blocks lists the single-block loop region on its own" min="1" max="1">\[0x3e0\]</stringmatch>
 <stringmatch name="KUNA-REGIONS #4: the recursive walker visits the entry block exactly once" min="1" max="1">walk 0x3c0</stringmatch>
-<stringmatch name="KUNA-REGIONS #5: stage map routes region tree to S7 loop-refinement" min="1" max="1">surface "region tree" -&gt; S7 \(Region Hierarchy\) sub-phase loop-refinement</stringmatch>
+<stringmatch name="KUNA-REGIONS #5: stage map routes region tree to S7 loop-refinement" min="1" max="1">surface "region tree" -&gt; P7 \(Region Hierarchy\) sub-phase loop-refinement</stringmatch>
 <stringmatch name="KUNA-REGIONS #6: the real-CFG top region keeps the CBRANCH entry, the nested region, and the early-out as three nodes" min="1" max="1">region head=0x3c0 nodes=3</stringmatch>
 <stringmatch name="KUNA-REGIONS #7: the loop's enclosing acyclic region pairs the cyclic self-loop with its 0x40a exit block" min="1" max="1">region head=0x3e0 nodes=2</stringmatch>
 <stringmatch name="KUNA-REGIONS #8: the cyclic self-loop region wraps exactly the single 0x3e0 block" min="1" max="1">block 0x40a</stringmatch>
