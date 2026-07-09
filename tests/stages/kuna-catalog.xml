@@ -7,7 +7,7 @@
     which sub-phase assertion to flip and how (then flips it via the
     kuna.decompile option/kassert flags). The catalog is a single C++
     table (kuna_stages.cc settableTable) emitted as JSON; `python -m kuna.catalog`
-    parses it and `docs/assertions.md` is generated from it.
+    parses it and `docs/options.md` is generated from the same registry.
 
     These assertions pin the JSON contract the Python tooling depends on:
       - the array opens (well-formed JSON the catalog parser balances);

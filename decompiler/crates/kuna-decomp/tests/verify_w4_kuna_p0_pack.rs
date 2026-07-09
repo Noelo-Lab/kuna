@@ -53,6 +53,10 @@ fn settable_with_values(values: &'static str, shipped: &'static str) -> KunaSett
         inspiration: "",
         change_kind: "",
         tier: "core",
+        // An empty string splits to one empty token, so the row tail carries a
+        // one-element [""] symptoms array; fine for these shape tests, which
+        // only assert on the `values` array and the escaping.
+        symptoms: "",
     }
 }
 

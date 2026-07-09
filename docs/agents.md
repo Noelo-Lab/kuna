@@ -109,17 +109,20 @@ stage-model settable (zero output change for any function that converges; the co
 `kuna catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
 `phase catalog` JSON (single source of truth: `settableTable`, generated from
 `decompiler/crates/kuna-decomp/phases.toml`) into the documented, flippable assertion list —
-`--json` for an agent, `--markdown` to regenerate `docs/assertions.md`, `--check` to fail
+`--json` for an agent, `--markdown` to regenerate `docs/options.md` (tier-grouped,
+symptom-indexed; `--tier transform` filters to the control surface), `--check` to fail
 on catalog/registration drift (CI; cross-checks the catalog against
 `kuna_decomp::options::KUNA_OPTION_NAMES` in-process). The full catalog also renders to
-`docs/assertions.md`; the model behind it is `docs/phases.md` / `docs/history/stage-model.md`, and
+`docs/options.md`; the model behind it is `docs/phases.md` / `docs/spec/`, and
 the defaults are recorded in `docs/divergences.md`.
 
 The still-Python feature pipeline (`scripts/pipeline/`, out of scope for the engine) imports
 the thin library shim `scripts/decompile.py::decompile`. There is no installable package —
 run it from the repo root (`python -m scripts.pipeline.<mod>`). See `docs/pipeline.md`. It
 obeys five **standing requirements** (one PR/feature; end-to-end binary→addr/func testcase;
-output-changing ⇒ logged + `--option`-flaggable; always measure+record decompile speed;
+output-changing ⇒ logged + `--option`-flaggable with a `tier` + `symptoms`
+assignment in `phases.toml` (a default-on flip of a `transform`-tier option needs a
+DIV entry AND the row prose updated); always measure+record decompile speed;
 large/multi-part features go through a `[PROPOSAL]` draft PR for human go/no-go) — see
 `docs/pipeline.md` → *Standing requirements*.
 

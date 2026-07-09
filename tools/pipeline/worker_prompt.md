@@ -45,12 +45,12 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
    `// (kuna)` comment, and record them in `docs/UPSTREAM.md` *Divergence*.
 2. **Never modify `docs/baseline.json`.** The loop must keep `kuna test --all --baseline docs/baseline.json`
    at PARITY OK without re-pinning. (You DO regenerate `docs/baseline-stages.json` to add your new stage test.)
-3. **ElementId** in the 4000+ range — grep the existing `kuna_*.rs` sources and `stages.toml`
+3. **ElementId** in the 4000+ range — grep the existing `kuna_*.rs` sources and `phases.toml`
    for the highest id already used and pick the next free one.
 4. **The option must be LLM-discoverable.** Add a `settableTable` row in
-   `decompiler/crates/kuna-decomp/stages.toml` with EVERY field populated, especially:
+   `decompiler/crates/kuna-decomp/phases.toml` with EVERY field populated, especially:
    `source_decompiler="angr"`, `inspiration="{{TEST_NAME}}; <angr pass/class>; {{SELECTOR}}"`,
-   `change_kind` ∈ correctness-fix|presentation-default|structure-recovery|opt-in-tool, plus `summary` (WHAT),
+   `change_kind` ∈ correctness-fix|presentation-default|structure-recovery|opt-in-tool, plus `summary` (WHAT), — plus `tier` (transform if it restructures/duplicates/removes/inserts code; core if near-always-better rendering; analysis for prep passes) and `symptoms` (2–5 output-shaped phrases an LLM would grep for).
    `use_when` (the angr-vs-kuna symptom = WHEN), `example` (HOW). Register the option in
    `decompiler/crates/kuna-decomp/src/options.rs` (so it appears in `KUNA_OPTION_NAMES`).
 5. **If an existing option already covers this gap** (check `kuna catalog --json`), do NOT
@@ -71,16 +71,16 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 ## Protocol
 
 ### 1. analyze — reproduce and localize the gap
-- Read `AGENTS.md`, `docs/phases.md`, `docs/history/stage-mapping.md`, `docs/divergences.md`, `docs/assertions.md`,
+- Read `AGENTS.md`, `docs/phases.md`, `docs/history/stage-mapping.md`, `docs/divergences.md`, `docs/options.md`,
   `tests/stages/README.md`, and the **loweredswitch** feature as the canonical template:
   `git log --oneline | grep loweredswitch`, then read
   `decompiler/crates/kuna-decomp/src/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /
-  `universalaction.rs` / `options.rs` / `architecture.rs` / `stages.toml`, and
+  `universalaction.rs` / `options.rs` / `architecture.rs` / `phases.toml`, and
   `tests/stages/ghangr-loweredswitch.xml`.
 - Reproduce the gap: `{{KUNA_PY}} -m scripts.pipeline.compare --entry {{TEST_NAME}}` (read both
   decompilations and the metrics/signals). Confirm angr really is better and pin down the *one*
   concrete structural difference you will fix. Name the owning stage/sub-stage from
-  `docs/history/stage-mapping.md` and the real pass order in `coreaction*.rs` / `universalaction.rs`.
+  the owning `docs/spec/` chapter and the real pass order in `coreaction*.rs` / `universalaction.rs`.
 - Write `docs/features/{{SLUG}}/analysis.md` (what angr does better, the exact construct, the owning stage,
   and your hypothesis for the kuna change) and save the side-by-side as `docs/features/{{SLUG}}/angr-vs-kuna.txt`
   (`... compare --entry {{TEST_NAME}}` output).
@@ -144,11 +144,11 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - `kuna catalog --check`  → "catalog OK"
 - `kuna test --all --baseline docs/baseline.json`  → PARITY OK
 - `make test-stages`  → all pass
-- Regenerate `docs/assertions.md`: `kuna catalog --markdown > docs/assertions.md`
+- Regenerate `docs/options.md`: `kuna catalog --markdown > docs/options.md` (freshness-fenced by `make rust-test`)
 
 ### 7. docs + record
 - `docs/UPSTREAM.md` *Divergence*: add a row per ported-core file you touched.
-- `docs/history/stage-mapping.md`: note the new sub-stage/option if relevant.
+- `docs/spec/`: update the chapter owning the phase you changed (find it via its `Anchors:` block); run `make check-spec`.
 - `docs/PROGRESS.md`: a `## Session ({{DATE}}) — {{SLUG}} (option {{SLUG}}[, DIV-N])` entry: the angr testcase,
   why angr was better, the mechanism, the ablation result, on/off default decision.
 - Finalise `docs/features/{{SLUG}}/record.json`: `{ "opportunity": "{{OPPORTUNITY_ID}}", "test_name", "binary",

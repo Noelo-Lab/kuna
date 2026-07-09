@@ -570,7 +570,7 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   `stackguard` strips the canary epilogue in this `cvs` main, changing the `0x3c` declaration
   count the test pins).
 - **Catalog / docs**: the byte-exact catalog fixture
-  (`decompiler/crates/kuna-decomp/tests/fixtures/stage_catalog.json`) and `docs/assertions.md`
+  (`decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json`) and `docs/options.md`
   are regenerated — the fourteen `default` fields flip `off`→`on`, and the three code-removing
   flags' `summary`/`use_when` gain the `REMOVES CODE:` prefix (so `kuna catalog --json`, which an
   LLM reads, surfaces the warning) plus the `switchsharedcase` slowness note. The settable count

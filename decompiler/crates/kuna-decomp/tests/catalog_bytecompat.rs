@@ -82,6 +82,8 @@ fn fixture_has_all_75_settables() {
     assert_eq!(FIXTURE.matches("\"option\": ").count(), 75);
     // Every row carries the tier field appended after change_kind.
     assert_eq!(FIXTURE.matches("\"tier\": ").count(), 75);
+    // ... and the symptoms array appended after tier (C3).
+    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 75);
 }
 
 #[test]

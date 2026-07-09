@@ -246,6 +246,11 @@ pub struct KunaSettable {
     /// rendering/naming/peephole defaults), or "analysis" (analysis/loader
     /// pass enablement).
     pub tier: &'static str,
+    /// (kuna) Pipe-separated output-shaped symptom phrases: what the decompiled
+    /// output looks like when this option is the one to reach for (grep bait
+    /// for an LLM matching a natural-language symptom to the option). Emitted
+    /// into the catalog JSON as the `symptoms` array (split on '|').
+    pub symptoms: &'static str,
 }
 
 // --- The STAGE_* string tables (C++ kuna_stages.cc:16-43) --------------------
@@ -444,6 +449,30 @@ pub fn emit_settable_json(out: &mut String, st: &KunaSettable, live: Option<&str
     json_string(out, st.change_kind);
     out.push_str(", \"tier\": ");
     json_string(out, st.tier);
+    out.push_str(", \"symptoms\": [");
+    // Split the pipe-separated symptom phrases into a JSON array, with the
+    // same inclusive walk as `values` above (a symptoms string never ends in
+    // '|', so no trailing empty token arises in practice).
+    let syms = st.symptoms;
+    let mut first = true;
+    let mut pos = 0usize;
+    loop {
+        let rest = &syms[pos..];
+        let (tok, next) = match rest.find('|') {
+            Some(bar) => (&rest[..bar], Some(pos + bar + 1)),
+            None => (rest, None),
+        };
+        if !first {
+            out.push_str(", ");
+        }
+        json_string(out, tok);
+        first = false;
+        match next {
+            Some(p) => pos = p,
+            None => break,
+        }
+    }
+    out.push(']');
     out.push('}');
 }
 
@@ -468,6 +497,139 @@ pub fn emit_catalog_json(live: impl Fn(&str) -> Option<&'static str>) -> String 
         out.push('\n');
     }
     out.push_str("]\n");
+    out
+}
+
+/// Render the whole settable catalog as the tier-grouped Markdown document
+/// committed at `docs/options.md` (regenerate: `kuna catalog --markdown >
+/// docs/options.md`; freshness fenced by `tests/options_md_fresh.rs`).
+///
+/// Built straight from [`SETTABLE_TABLE`] (no live values -- the document
+/// describes the shipped defaults). Sections run transform -> analysis ->
+/// core so the control surface leads; a generated symptom index maps
+/// output-shaped phrases to options.
+pub fn emit_catalog_markdown() -> String {
+    let mut out = String::new();
+    out.push_str("# kuna option catalog\n\n");
+    out.push_str(
+        "**Generated** by `kuna catalog --markdown` from `settableTable` in \
+         `decompiler/crates/kuna-decomp/phases.toml` -- do not edit by hand; \
+         edit the registry row and regenerate.\n\n",
+    );
+    out.push_str(
+        "Set any option per run: `kuna decompile <bin> <fn> --option <name> <value>` \
+         (repeatable), `kuna decompile-all <bin> --option <name> <value>`, or the \
+         console `option <name> <value>`. Defaults are the shipped values; every \
+         intentional default change is logged in `docs/divergences.md`. The \
+         algorithms behind these options are described in `docs/spec/`.\n\n",
+    );
+    out.push_str("Three tiers:\n\n");
+    out.push_str(
+        "- **Toggleable transforms** -- restructure, duplicate, remove, or insert \
+         code; near-always better on the right source shape and wrong on the wrong \
+         one. **This is the on/off control surface.**\n",
+    );
+    out.push_str(
+        "- **Analysis & loader passes** -- what gets discovered/decoded/named \
+         before decompilation.\n",
+    );
+    out.push_str(
+        "- **Core rendering defaults** -- near-always-better rendering/naming/\
+         peepholes; part of the decompiler, not the control surface. Flip only for \
+         upstream byte-parity or unusual consumers.\n\n",
+    );
+
+    // ---- symptom index ------------------------------------------------------
+    out.push_str("## Symptom index\n\n");
+    out.push_str("| If the output shows... | Try |\n|---|---|\n");
+    for tier in ["transform", "analysis", "core"] {
+        for i in 0..kuna_num_settables() {
+            let st = kuna_settable_by_index(i);
+            if st.tier != tier {
+                continue;
+            }
+            for phrase in st.symptoms.split('|') {
+                if phrase.is_empty() {
+                    continue;
+                }
+                out.push_str("| ");
+                out.push_str(phrase);
+                out.push_str(" | [`");
+                out.push_str(st.option);
+                out.push_str("`](#");
+                // GitHub-style slug of the `### `option`` heading.
+                for ch in st.option.chars() {
+                    match ch {
+                        'a'..='z' | '0'..='9' | '-' => out.push(ch),
+                        'A'..='Z' => out.push(ch.to_ascii_lowercase()),
+                        '_' => out.push('_'),
+                        _ => {}
+                    }
+                }
+                out.push_str(") |\n");
+            }
+        }
+    }
+    out.push('\n');
+
+    // ---- per-tier sections --------------------------------------------------
+    let sections = [
+        ("transform", "## Toggleable transforms", "The control surface: each of these can make output worse on the wrong source shape, so each stays flippable."),
+        ("analysis", "## Analysis & loader passes", "Program-prep enablement: what is discovered, decoded, and named before any function is decompiled."),
+        ("core", "## Core rendering defaults", "Part of the decompiler; not the control surface. Flip only to reproduce upstream Ghidra output byte-for-byte or for unusual downstream consumers."),
+    ];
+    for (tier, heading, blurb) in sections {
+        out.push_str(heading);
+        out.push_str("\n\n");
+        out.push_str(blurb);
+        out.push_str("\n\n");
+        for i in 0..kuna_num_settables() {
+            let st = kuna_settable_by_index(i);
+            if st.tier != tier {
+                continue;
+            }
+            out.push_str("### `");
+            out.push_str(st.option);
+            out.push_str("` -- ");
+            out.push_str(&st.values.replace('|', " | "));
+            out.push_str(", default `");
+            out.push_str(st.shipped);
+            out.push('`');
+            if st.destructive {
+                out.push_str(" (destructive opt-in)");
+            }
+            out.push_str("\n\n");
+            out.push_str("- **Symptoms:** ");
+            out.push_str(&st.symptoms.replace('|', "; "));
+            out.push_str(".\n- **What it does:** ");
+            out.push_str(st.summary);
+            out.push_str("\n- **When to flip:** ");
+            out.push_str(st.use_when);
+            out.push_str("\n- **Where / provenance:** ");
+            out.push_str(st.phase.code());
+            out.push('/');
+            out.push_str(st.subphase);
+            out.push_str(" \u{b7} ");
+            out.push_str(st.source_decompiler);
+            out.push_str(" \u{b7} ");
+            out.push_str(st.change_kind);
+            if !st.issue.is_empty() {
+                out.push_str(" \u{b7} ");
+                out.push_str(st.issue);
+            }
+            out.push('\n');
+            if !st.example.is_empty() {
+                out.push_str("- **Example:** `");
+                out.push_str(st.example);
+                out.push_str("`\n");
+            }
+            out.push('\n');
+        }
+    }
+    out.push_str(
+        "## Programmatic use\n\n```bash\n# discover (machine-readable; includes tier + symptoms):\nkuna catalog --json\n\n# transforms only:\nkuna catalog --tier transform\n\n# decompile with an option flipped (repeatable):\nkuna decompile ./a.out main --option gotoreduce off\nkuna decompile ./sparc.elf main --option returnpair single\n```\n",
+    )
+;
     out
 }
 

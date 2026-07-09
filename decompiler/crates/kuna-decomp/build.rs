@@ -274,6 +274,7 @@ fn gen_settables(out: &mut String, rows: &[Row]) {
             other => panic!("phases.toml: bad tier `{other}` (need core|transform|analysis)"),
         }
         writeln!(out, "        tier: {},", rlit(tier)).unwrap();
+        writeln!(out, "        symptoms: {},", rlit(req(r, "symptoms").as_str())).unwrap();
         writeln!(out, "    }},").unwrap();
     }
     writeln!(out, "];\n").unwrap();

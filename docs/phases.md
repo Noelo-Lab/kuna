@@ -4,7 +4,7 @@ The kuna phase model: **ordered phases + explicit typed feedback edges**, with o
 orthogonal plane and one fixed-point band. This is the model kuna is organized around —
 the runtime registry (`decompiler/cpp/kuna_stages.cc`, queryable via the `phase
 list`/`phase map`/`phase catalog` console commands), the per-file source mapping
-(`docs/history/stage-mapping.md`), the assertion catalog (`docs/assertions.md`), and the issue
+(`docs/history/stage-mapping.md`), the option catalog (`docs/options.md`), and the issue
 testcases (`tests/stages/`) all speak it.
 
 Full normative model with evidence, sub-phase catalogs, and code anchors:
@@ -71,7 +71,7 @@ Every sub-phase names the **assertion** that overrides it, with strength **HARD*
 inference, e.g. typelock) or **HINT** (biases it), a **re-run scope**, and a **LATENT**
 flag when the decision is hardcoded with no override today (the LATENT set is the kuna
 roadmap). Full catalogs per phase: `docs/history/stage-model.md` §4–§10; the machine-readable,
-flippable subset is `docs/assertions.md` (`kuna catalog --json`).
+flippable subset is `docs/options.md` (`kuna catalog --json`).
 
 ## Feedback mechanisms
 

@@ -35,113 +35,36 @@ fn surface_count_is_98() {
 }
 
 #[test]
-fn settable_count_is_68() {
-    // 32 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
-    // + `gotoreduce`
-    // + `switchguardbound`, angr test_decompiling_missing_function_call
-    // + `tailcalljump`, angr tee-O2 tail-jumps
-    // + `branchflip`, angr SAILR negated-guard branch flip, S8 readability
-    // + `regionstructure`, region-based Phoenix/SAILR structurer, Inc 1
-    // + `regionlooprefine`, region structurer multi-exit/irreducible loop-successor
-    //   refinement, default-off opt-in)
-    // + 20 analysis-tier
-    // gates: 14 per-run analysis-pass
-    // enablement (noreturn_known/libproto/strings/entry_disc/eh_frame_full/
-    // funcstart_patterns/arm_markers/mips_gp/mips_isa/dwarf/dwarf_lines/callfixup/addrtable/operand_refs;
-    // `eh_frame_full` is the `.eh_frame` LSDA landing-pad discovery sub-feature of the
-    // always-on entry_disc pass, GccExceptionAnalyzer, default-off; `funcstart_patterns`
-    // is the full Ghidra byte-pattern function-start set, FunctionStartAnalyzer, default-off)
-    // + the `formatstring` DecompilerDependent
-    // varargs-typing gate + the `listing` Listing/xref disassembly tier gate +
-    // the `noreturn_disc` discovered-no-return Listing consumer gate + the
-    // `noreturn_propagate` no-return propagation Listing consumer gate + the
-    // `fid` FID fingerprint-matcher Listing consumer gate + the
-    // `aif` Aggressive Instruction Finder gap-walk Listing consumer gate + the
-    // `gopclntab` Go pclntab function-name recovery gate.
-    // (mips_isa added with MIPS16 ISA_MODE painting, Increment 21; mips_gp with
-    // MIPS $gp recovery; formatstring with half B; listing with the Listing/xref
-    // tier, Increment 29; noreturn_disc with the first Listing consumer, Increment 33;
-    // gopclntab with Go pclntab name recovery, Increment 34;
-    // dwarf_lines with DWARF .debug_line source-line comments, default-off opt-in;
-    // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
-    // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
-    // gotoreduce with the angr SAILR return-tail goto-reduction pass;
-    // switchguardbound with guard-bounded GCC PIC jump-table recovery;
-    // switchsharedcase with loop-carried-base PIC jump-table recovery
-    // (angr test_switch_case_shared_case_nodes_b2sum_digest);
-    // regionstructure with the region-based Phoenix/SAILR structurer (Inc 1);
-    // noreturn_propagate with angr-style structural no-return propagation;
-    // operand_refs with the ScalarOperandAnalyzer scalar-operand reference markup,
-    // default-off — Ghidra getDefaultEnablement = !isElf;
-    // funcstart_patterns with the FULL Ghidra byte-pattern function-start set
-    //   (FunctionStartAnalyzer), default-off opt-in, output-changing;
-    // aif with the AggressiveInstructionFinder gap-walk consumer.)
-    // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
-    // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
-    // (DIV-9, angr test_decompiling_nl_i386_pie), and the `macho-arm64e` Mach-O
-    // arm64e Apple-Silicon spec-selection gate (multi-format loader PR-8) —
-    // settables that gate the loader rather than a per-function pass.
-    // (+1 for `tailcalljump`, the angr tee-O2 tail-jump S2 flow-classification
-    // knob, default-off opt-in; +1 for `branchflip`, the angr SAILR negated-guard
-    // S8 branch-flip readability knob, default-off opt-in; +1 for `regionstructure`,
-    // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in;
-    // +1 for `funcstart_patterns`, the full byte-pattern function-start set,
-    // default-off opt-in; +1 for `aif`, the AggressiveInstructionFinder gap-walk
-    // Listing consumer, default-off opt-in; +1 for `dwarf_lines`, the DWARF
-    // .debug_line source-line mapping, default-off opt-in;
-    // +1 for `noreturn_extern`, the undefined-extern name-based no-return S2
-    // flow-classification knob, angr test_tail_tail_bytes_ret_dup, default-off opt-in;
-    // +1 for `noreturn_externmatch`, the angr incorrect-duplication-chcon S2
-    // name-matched-extern no-return knob, DIV-13 default-on;
-    // +1 for `crossjumprevert`, the angr SAILR CrossJumpReverter cross-jump-tail
-    // duplication knob, default-off opt-in;
-    // +1 for `switchsharedcase`, the loop-carried-base PIC jump-table recovery S2
-    // knob (angr test_switch_case_shared_case_nodes_b2sum_digest), default-off opt-in;
-    // +1 for `switchmultipred`, the multi-predecessor unrolled-guard jump-table
-    // recovery S2 knob (angr test_decompiling_abnormal_switch_case_case3),
-    // default-off opt-in;
-    // +1 for `regionlooprefine`, the region structurer multi-exit/irreducible
-    // loop-successor refinement knob, default-off opt-in;
-    // +1 for `ifelseflatten`, the angr IfElseFlattener S8 terminating-if else-drop
-    // knob, default-off opt-in;
-    // +1 for `fid`, the FID fingerprint-matcher Listing consumer that re-identifies
-    // a stripped function by full-hash fingerprint (FUN_*/sub_* -> kuna_crc32),
-    // default-off opt-in, real-ELF path only;
-    // +1 for `taildup`, the angr SAILR ReturnDuplicatorLow return-tail-WITH-call
-    // duplication knob (the gap between gotoreduce and crossjumprevert), default-off
-    // opt-in;
-    // +1 for `unrolledguard`, the interleaved unrolled-guard jump-table
-    // partial-flow recovery S2 knob (angr test_decompiling_optimized_memcpy MSVC
-    // memcpy): the partial-clone collectEdges skips a recovered sibling table's
-    // undecoded case-target edge instead of throwing, default-off opt-in;
-    // +1 for `dedupitetail`, the angr structurer ITE region-dedup knob — the INVERSE
-    // of the duplication passes: it merges a duplicated if/else leaf prefix/suffix
-    // (one copy instead of two), default-off opt-in.
-    // +1 for `rtti`, the MSVC RTTI / vftable class-name recovery pass (the kuna
-    // analog of Ghidra's RttiAnalyzer): on a Windows PE, parse the
-    // CompleteObjectLocator -> RTTI3/2/1 -> RTTI0 graph in `.rdata`/`.data`,
-    // demangle each `.?A...@@` class name, and emit `<Class>::vftable` /
-    // `<Class>::RTTI_*` labels (Box/Shape) — PE-only, default-off opt-in,
-    // output-changing, so every ELF/XML parity gate is byte-identical.
-    // +1 for `objc`, the Mach-O Objective-C metadata recovery pass — renames an IMP
-    // function `-[Class sel]`/`+[Class sel]` from the `__objc_*` metadata
-    // (ObjcTypeMetadataAnalyzer), Mach-O-only, default-off opt-in.
-    // +1 for `pdb`, the PE PDB metadata recovery pass — renames a stripped FUN_*/sub_*
-    // function to its real name from the external `.pdb` (PdbUniversalAnalyzer): read
-    // the PE CodeView fingerprint, locate the `.pdb` (the `kuna_pdb_path` env var,
-    // the s1_fid `kuna_fid_db` precedent), fingerprint-gate it (guid/age must match —
-    // never apply a wrong/stale PDB), then walk S_PUB32/S_GPROC32. PE-only,
-    // default-off opt-in, inert without a fingerprint-matching `.pdb`.)
-    // +1 for `regionedgeorder`, the region structurer last-resort
-    // edge-virtualization ORDERING knob (SAILR P2: H2 post-dominator +
-    // dominance-tiered crossing/secondary/other bucketing), default-off opt-in:
-    // only reorders which goto is chosen when virtualizing, so OFF is byte-identical.
-    // +1 for `returndup` (decbench F4), +1 for `noreturn_error` (decbench F2),
-    // +1 for `iteregion`, the angr ITERegionConverter S8 assignment-diamond -> `?:`
-    // ternary knob (decbench F5).  +1 for `switchreturn`, the continuation of
-    // `earlyreturn` to the WIDE multi-way switch-phi return.
+fn settable_count_is_75() {
+    // One row per kuna ArchOption; the authoritative per-option list (with
+    // tier, symptoms, and provenance) is phases.toml settableTable.
     assert_eq!(kuna_num_settables(), 75);
     assert_eq!(SETTABLE_TABLE.len(), 75);
+}
+
+#[test]
+fn tier_counts_are_16_core_35_transform_24_analysis() {
+    let mut core = 0;
+    let mut transform = 0;
+    let mut analysis = 0;
+    for s in SETTABLE_TABLE.iter() {
+        match s.tier {
+            "core" => core += 1,
+            "transform" => transform += 1,
+            "analysis" => analysis += 1,
+            other => panic!("invalid tier {other:?} on {}", s.option),
+        }
+    }
+    assert_eq!((core, transform, analysis), (16, 35, 24));
+}
+
+#[test]
+fn noreturn_family_is_all_transform_tier() {
+    // The whole family can remove code at call sites, so it sits in the
+    // control-surface tier regardless of which tier mechanically hosts it.
+    for s in SETTABLE_TABLE.iter().filter(|s| s.option.starts_with("noreturn_")) {
+        assert_eq!(s.tier, "transform", "{} must sit in the transform tier", s.option);
+    }
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -481,9 +404,32 @@ fn emit_settable_json_first_row_shape() {
     assert!(out.starts_with("  {\"option\": \"compareform\", \"values\": [\"canonical\", \"original\"], \"default\": \"original\", \"destructive_as_default\": false, \"phase\": \"P3\""));
     // No `current` field when live is None.
     assert!(!out.contains("\"current\""));
-    // ... and the tail order (issue ... change_kind).
+    // ... and the tail order (issue ... change_kind ... tier ... symptoms).
     assert!(out.contains("\"strength\": \"HARD\", \"rewind\": \"P3\", \"issue\": \"GH-558\""));
-    assert!(out.ends_with("\"change_kind\": \"presentation-default\", \"tier\": \"core\"}"));
+    assert!(out.contains("\"change_kind\": \"presentation-default\", \"tier\": \"core\", \"symptoms\": [\""));
+    assert!(out.ends_with("\"]}"));
+}
+
+#[test]
+fn every_settable_has_nonempty_symptoms() {
+    // C3: every catalog row carries at least one nonempty, output-shaped
+    // symptom phrase (pipe-separated in the table, a JSON array in the
+    // catalog) so an LLM can grep a natural-language symptom to its option.
+    for i in 0..kuna_num_settables() {
+        let st = kuna_settable_by_index(i);
+        assert!(
+            !st.symptoms.is_empty(),
+            "settable `{}` has no symptoms",
+            st.option
+        );
+        for phrase in st.symptoms.split('|') {
+            assert!(
+                !phrase.trim().is_empty(),
+                "settable `{}` has an empty symptom phrase",
+                st.option
+            );
+        }
+    }
 }
 
 #[test]
