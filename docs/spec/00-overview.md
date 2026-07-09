@@ -134,7 +134,7 @@ oracle does not apply). Both yield to an explicit caller option; neither touches
 the engine default or the console/datatest surfaces.
 
 (kuna) **The watchdog.** `decompile-all --max-fn-seconds N` (default 120, `0`
-disables) is driver policy, not a stage-model option: it sets a per-function
+disables) is driver policy, not a phase-model option: it sets a per-function
 budget on the architecture (`decompiler/crates/kuna-cli/src/decompile_all.rs
 (decompile_all)`), which the drive arms as a wall-clock deadline covering
 flow-follow, the jump-table sub-pipeline, and the action pipeline
@@ -402,8 +402,8 @@ Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the
-in-tree repeat groups (§0.6), these are the edges where a *later* stage dirties
-an *earlier* stage's artifact, what each persists, and where each lives in kuna.
+in-tree repeat groups (§0.6), these are the edges where a *later* phase dirties
+an *earlier* phase's artifact, what each persists, and where each lives in kuna.
 (The mechanism taxonomy — local fixpoint, staged re-entry, restart-with-hints,
 reduced sub-query, knowledge-store re-run — derives from the study in
 `docs/history/stage-model.md`; every row below is re-verified against the Rust.)

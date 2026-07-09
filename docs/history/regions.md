@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-07).** The live description of region identification is `docs/spec/07-regions.md`; this design/prototype note is frozen (its file paths predate the p7_regions move and it cites removed C++ artifacts). Retained for provenance.
+
 # Region identification (S7) — the angr `RegionIdentifier` port
 
 kuna ships a faithful, **analysis-only** C++ reimplementation of the angr

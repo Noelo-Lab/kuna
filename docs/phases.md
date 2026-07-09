@@ -1,18 +1,21 @@
 # Decompiler Phases
 
+> **The phase model at a glance.** The normative, live description of what each phase
+> actually computes — algorithms, thresholds, failure modes, provenance — is the chaptered
+> spec under **`docs/spec/`** (start at `docs/spec/00-overview.md`). This page is the
+> one-screen map; the original 2026-06 derivation study (Ghidra/angr/Reko) is archived at
+> `docs/history/stage-model.md`.
+
 The kuna phase model: **ordered phases + explicit typed feedback edges**, with one
 orthogonal plane and one fixed-point band. This is the model kuna is organized around —
-the runtime registry (`decompiler/cpp/kuna_stages.cc`, queryable via the `phase
-list`/`phase map`/`phase catalog` console commands), the per-file source mapping
+the runtime registry (queryable via the `phase list`/`phase map`/`phase catalog` console
+commands; `stage ...` still works as a deprecated alias), the per-file source mapping
 (`docs/history/stage-mapping.md`), the option catalog (`docs/options.md`), and the issue
 testcases (`tests/stages/`) all speak it.
 
-Full normative model with evidence, sub-phase catalogs, and code anchors:
-**`docs/history/stage-model.md`** (derived 2026-06 from a side-by-side study of Ghidra, angr,
-and Reko; the rationale for rejecting a linear compiler-style pipeline is its §1).
-
-A decompiler is not a feed-forward pipeline: phases fire in order on the *first* pass,
-but information learned later routinely rewinds or modifies earlier phases.
+A decompiler is not a feed-forward pipeline: phases fire in order on the *first* pass, but
+information learned later routinely rewinds or modifies earlier phases (the feedback-edge
+model; `docs/spec/00-overview.md` §0.7 has the live edge inventory).
 
 ## Phases
 
@@ -37,9 +40,7 @@ per-decompiler scheduling regime, not part of the model.
 ## Source layout (the phases on disk)
 
 The decompiler source is **physically organized by phase**: every module file under
-`decompiler/crates/kuna-decomp/src/` lives in a phase-named folder (the folder name keeps the
-canonical `Sx` code so it greps against this doc and the registry, and adds a plain word so the
-tree reads to a newcomer). Module *names* stay flat (`kuna_decomp::flow`) via re-exports in
+`decompiler/crates/kuna-decomp/src/` lives in a phase-named folder (the folder name carries the phase code `pN` so it greps against this doc and the registry, plus a plain word so the tree reads to a newcomer). Module *names* stay flat (`kuna_decomp::flow`) via re-exports in
 `lib.rs`, so the layout is documentation, not an API change. The per-file assignment is
 `docs/history/stage-mapping.md`; the live group→phase registry is `phases.toml`.
 
@@ -47,21 +48,21 @@ tree reads to a newcomer). Module *names* stay flat (`kuna_decomp::flow`) via re
 |---|---|---|
 | — (substrate) | `substrate/` | shared IR & containers used by every phase (`varnode`/`op`/`block`/`funcdata*`, `dtype`, rewrite helpers) |
 | P0 | `p0_knowledge/` | knowledge & configuration plane (symbol DB, options, overrides, the phase registry) |
-| P1 | `s1_partition/` | image & code partition (architecture/loader binding) |
-| P2 | `s2_lift/` | flow & op-graph recovery (lift, CFG, jump tables, p-code injection) |
-| P3 | `s3_dataflow/` | definition web (SSA/heritage + the simplification rule pools) |
-| P4 | `s4_calls/` | call & prototype model |
-| P5 | `s5_types/` | value & type facts (type system + inference) |
-| P6 | `s6_variables/` | variable & storage model (HighVariables, merge, stack layout) |
-| P7 | `s7_regions/` | region hierarchy (the angr RegionIdentifier port) |
-| P8 | `s8_structure/` | structured AST & goto quality (the structuring engine, `blockaction`) |
-| P9 | `s9_emit/` | surface rendering & refinement (PrintC, casts, strings, naming) |
+| P1 | `p1_partition/` | image & code partition (architecture/loader binding) |
+| P2 | `p2_lift/` | flow & op-graph recovery (lift, CFG, jump tables, p-code injection) |
+| P3 | `p3_dataflow/` | definition web (SSA/heritage + the simplification rule pools) |
+| P4 | `p4_calls/` | call & prototype model |
+| P5 | `p5_types/` | value & type facts (type system + inference) |
+| P6 | `p6_variables/` | variable & storage model (HighVariables, merge, stack layout) |
+| P7 | `p7_regions/` | region hierarchy (the angr RegionIdentifier port) |
+| P8 | `p8_structure/` | structured AST & goto quality (the structuring engine, `blockaction`) |
+| P9 | `p9_emit/` | surface rendering & refinement (PrintC, casts, strings, naming) |
 | Infra | `infra/` | orchestration & framework (the schedule, the Action/Rule engine) |
 
 The **program-prep analyses** that sit *outside* this phase model (the loader/analyzer tier
 Ghidra runs as "Run Analysis": PLT/GOT markup, strings, DWARF, demangling, function-start
-discovery, …) live in their own crate, `kuna-analysis` (P0/P1), organized by the same scheme
-(`s1_loader/`, `s1_strings/`, …). See `docs/missing-analyses.md`.
+discovery, …) live in their own crate, `kuna-analysis` (P0/P1), organized as `loader/`
+(image-format markup) + `analyzers/` (one module per pass). See `docs/missing-analyses.md`.
 
 ## Sub-phases
 
@@ -117,7 +118,7 @@ The model is physical in kuna:
   assertion is phase-addressed in `kuna_phases.rs`; `phase list/map/status/catalog`,
   `kassert`, `pipeline`, `quality`, `restarts` operate it. The P7 region tree is
   directly observable via `region tree/blocks/walk` (the angr RegionIdentifier
-  port — `docs/regions.md`).
+  port — `docs/history/regions.md`).
 - **Issues fixed through the model** (each pinned by a `tests/stages/` testcase
   asserting both directions of the decision): GH-558, 2786, 8471, 6930, 6990, 1282,
   7190, 8817, 8913, 9230, 1537. Per-phase changelog: `docs/history/stage-implementation.md`.

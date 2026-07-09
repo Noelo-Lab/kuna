@@ -107,7 +107,7 @@ observability on the switchmulti multistage restart), `kuna-pipeline-quality.xml
 RegionIdentifier port over the REAL `bblocks` CFG — `build_from_block_graph`, the
 W7 block-graph adapter closed in regionstructure Inc 0, including the per-block
 `endsWithBranchindOrCbranch` `lastOp` probe — on a loop+diamond CFG;
-`docs/regions.md`), `kuna-listing-flag.xml`
+`docs/history/regions.md`), `kuna-listing-flag.xml`
 (the Listing/xref disassembly tier flag `option listing on|off`, default-off: parses,
 round-trips, and is inert on the XML path — PR1 of the Listing/xref tier,
 `docs/history/listing-tier-design.md`).

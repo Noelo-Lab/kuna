@@ -119,10 +119,11 @@ the defaults are recorded in `docs/divergences.md`.
 The still-Python feature pipeline (`scripts/pipeline/`, out of scope for the engine) imports
 the thin library shim `scripts/decompile.py::decompile`. There is no installable package —
 run it from the repo root (`python -m scripts.pipeline.<mod>`). See `docs/pipeline.md`. It
-obeys five **standing requirements** (one PR/feature; end-to-end binary→addr/func testcase;
+obeys six **standing requirements** (one PR/feature; end-to-end binary→addr/func testcase;
 output-changing ⇒ logged + `--option`-flaggable with a `tier` + `symptoms`
 assignment in `phases.toml` (a default-on flip of a `transform`-tier option needs a
-DIV entry AND the row prose updated); always measure+record decompile speed;
+DIV entry AND the row prose updated); update the owning `docs/spec/` chapter and pass
+`make check-spec`; always measure+record decompile speed;
 large/multi-part features go through a `[PROPOSAL]` draft PR for human go/no-go) — see
 `docs/pipeline.md` → *Standing requirements*.
 
@@ -144,7 +145,7 @@ large/multi-part features go through a `[PROPOSAL]` draft PR for human go/no-go)
 
 ## Tests
 
-Three gates, all Rust:
+Three test gates plus a docs gate, all Rust/stdlib:
 
 - `make test` — the datatest parity gate: the `kuna` CLI drives `decomp_test_dbg` over the
   83-file / 675-assertion XML corpus (`tests/datatests/`) and checks it against
@@ -153,7 +154,10 @@ Three gates, all Rust:
   `docs/baseline-stages.json`. **Run this too on every change** (expect **PARITY OK**,
   158/158 since #9). Any failure means a regression — confirm against `main` if unsure.
 - `make rust-test` — the full cargo workspace suite: the ported unit tests, the golden
-  differential vectors, and the SLEIGH-compiler `.sla` content-parity tests.
+  differential vectors, the SLEIGH-compiler `.sla` content-parity tests, and the generated
+  `docs/options.md` freshness fence.
+- `make check-spec` — the spec-honesty gate: `docs/spec/` anchors resolve, every phase folder
+  is owned by exactly one chapter, and every settable option is mentioned.
 
 `docs/baseline.json` is the recorded **kuna oracle**: since DIV-2 (`docs/divergences.md`)
 kuna's defaults intentionally diverge from upstream — 22 datatest assertions were re-pinned
@@ -161,8 +165,8 @@ in place to kuna's default output (eight phase-model sub-phase fixes on by defau
 `option <name> off` restores the upstream rendering).
 
 Any change to the build or the vendored tree must keep `make test` at **PARITY OK**,
-`make rust-test` green, and `make test-stages` with **no new failures beyond the 2 known**
-(above) — run all three before committing.
+`make rust-test` green, `make test-stages` with **no new failures beyond the 2 known**
+(above), and `make check-spec` green — run all four before committing.
 
 ## Porting upstream changes (kuna is derived from Ghidra)
 
@@ -195,6 +199,16 @@ When you update the baseline after an intentional upstream behavior change, rege
 ## Conventions
 
 - Commit at milestones with descriptive messages; keep `docs/PROGRESS.md` current.
+- **The spec is live** (`docs/spec/` — the chaptered, normative description of every decompiler
+  algorithm, anchored to the code that implements it). Any change that affects decompiler
+  behavior — a new pass, a changed heuristic or threshold, a changed default, a new/renamed
+  option, a new analysis — MUST update the affected `docs/spec/` chapter in the same commit/PR.
+  Find the chapter from its `Anchors:` header (chapters map one-to-one onto the phase folders).
+  A pure move/rename updates only the anchor paths; a test-only change touches nothing.
+  Non-Ghidra algorithms carry their source decompiler in parentheses — `(angr)`, `(ida)` —
+  matching `source_decompiler` in `phases.toml`. `make check-spec` verifies anchors resolve,
+  every phase folder is covered by exactly one chapter, and every settable option is mentioned;
+  run it with the three test gates.
 - Decompiler code lives in the `decompiler/` cargo workspace (`kuna-decomp` etc.); the SLEIGH
   compiler in `kuna-slacomp`. New functionality → new modules; match the surrounding code's
   conventions (the ported files name methods after their C++ originals).
@@ -203,11 +217,13 @@ When you update the baseline after an intentional upstream behavior change, rege
 - Issue-derived phase-model testcases go in `tests/stages/` (`make test-stages`,
   baseline `docs/baseline-stages.json`); see `tests/stages/README.md`.
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`) — they're gitignored.
-- To understand a source file's role, start from `docs/phases.md` (the stage→folder layout)
-  and `docs/history/stage-mapping.md`, then the real pass order in
-  `decompiler/crates/kuna-decomp/src/infra/universalaction.rs` + the `coreaction_*.rs` files
-  (now under their phase folders, e.g. `p5_types/coreaction_infertypes.rs`,
-  `p9_emit/coreaction_render.rs`). **Code comments cite their C++ origin as `decompiler/cpp/<file>.{cc,hh}`** —
+- To understand a source file's role, start from the `docs/spec/` chapter owning its phase
+  folder (each chapter's `Anchors:` header lists the files it describes); `docs/phases.md` is
+  the phase model at a glance and `docs/history/stage-mapping.md` the historical per-file
+  mapping. The real pass order is the `SchedNode` tree in
+  `decompiler/crates/kuna-decomp/src/infra/universalaction.rs` (`universal_sched`) + the
+  `coreaction_*.rs` files (under their phase folders, e.g. `p5_types/coreaction_infertypes.rs`,
+  `p9_emit/coreaction_render.rs`) — folders are a taxonomy, not the schedule. **Code comments cite their C++ origin as `decompiler/cpp/<file>.{cc,hh}`** —
   these are **upstream Ghidra** anchors (the tree kuna was ported from, at the `GHIDRA_REV` in
   `docs/UPSTREAM.md`, recoverable from git history or an upstream checkout), *not* paths in
   this repo's `decompiler/` workspace.
