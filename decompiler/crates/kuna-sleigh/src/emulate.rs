@@ -7,16 +7,16 @@
 //!   concrete data members `emu_halted` / `currentBehave`) and the
 //!   [`Emulate`] trait — the protected virtuals as required methods plus the
 //!   non-virtual `setHalt`/`getHalt`/`executeCurrentOp` as provided methods
-//!   (the `TranslateBase`/`Translate` seam precedent).
+//!   (the `TranslateBase`/`Translate` boundary precedent).
 //! - The C++ intermediate class `EmulateMemory` becomes the
 //!   [`EmulateMemory`] trait (accessors for its data members `memstate` /
-//!   `currentOp`, plus the manager seam below) together with the
+//!   `currentOp`, plus the manager boundary below) together with the
 //!   [`emulate_memory`] module holding its method bodies as free functions;
 //!   a concrete engine implements `Emulate::execute_*` by delegating there
 //!   — that delegation *is* the C++ inheritance edge, and an engine
 //!   overriding a method (as `EmulatePcodeCache` does for `executeBranch` /
 //!   `executeCallother`) simply provides its own body instead.
-//! - **Manager seam**: C++ `Translate` *is an* `AddrSpaceManager`, and
+//! - **Manager boundary**: C++ `Translate` *is an* `AddrSpaceManager`, and
 //!   `executeLoad`/`executeStore` reach the space table through
 //!   `getSpaceFromConst()` (a reinterpreted pointer).  The port stores a
 //!   manager index in the constant (see `kuna_num::pcoderaw`), so the
@@ -326,7 +326,7 @@ impl Default for EmulateCore {
 /// (The C++ protected virtuals are required methods here; Rust traits have
 /// no protected methods, so they are public.)
 pub trait Emulate {
-    /// Access the concrete C++ base-class members (kuna seam; see
+    /// Access the concrete C++ base-class members (kuna boundary; see
     /// [`EmulateCore`]).
     fn emulate_core(&self) -> &EmulateCore;
 
@@ -524,7 +524,7 @@ pub trait EmulateMemory: Emulate {
     /// The current op to execute (the C++ protected `currentOp` member).
     fn current_op_raw(&self) -> Option<&Rc<PcodeOpRaw>>;
 
-    /// kuna seam: the `AddrSpaceManager` that the C++ `Translate`
+    /// kuna boundary: the `AddrSpaceManager` that the C++ `Translate`
     /// inheritance made implicitly reachable (resolves `<spaceid>` constants
     /// through `VarnodeData::get_space_from_const`; module docs).
     fn addr_space_manager(&self) -> &AddrSpaceManager;
@@ -801,7 +801,7 @@ pub struct EmulatePcodeCache {
     current_op_ptr: Option<Rc<PcodeOpRaw>>,
     /// The SLEIGH translator
     trans: Rc<dyn Translate>,
-    /// kuna manager seam (module docs)
+    /// kuna manager boundary (module docs)
     manage: Rc<AddrSpaceManager>,
     /// The cache of current p-code ops (C++ also keeps a `varcache`; the
     /// Rust ops own their varnodes by value — module docs)
@@ -826,7 +826,7 @@ impl EmulatePcodeCache {
     ///
     /// \param t is the SLEIGH translator
     /// \param manage is the AddrSpaceManager the C++ `Translate` inherits
-    ///        (kuna seam; module docs)
+    ///        (kuna boundary; module docs)
     /// \param s is the MemoryState the emulator should manipulate
     /// \param b is the table of breakpoints the emulator should invoke
     pub fn new(
@@ -835,7 +835,6 @@ impl EmulatePcodeCache {
         s: Rc<RefCell<MemoryState>>,
         b: Rc<RefCell<dyn BreakTable>>,
     ) -> Self {
-        // OpBehavior::registerInstructions(inst,t)
         let mut inst: Vec<Option<Rc<dyn OpBehavior>>> = Vec::new();
         let provider: Rc<dyn FloatFormatProvider> =
             Rc::new(TranslateFloatFormats(Rc::clone(&t)));

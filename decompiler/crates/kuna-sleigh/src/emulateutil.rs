@@ -10,7 +10,7 @@
 //!   table — so the port stores those two slices directly
 //!   (`Rc<RefCell<dyn LoadImage>>` + `Rc<AddrSpaceManager>`, the same
 //!   substitution pattern as `FloatFormatProvider` in kuna-num and the
-//!   manager seam in `emulate.rs`).  The C++ `getArch()` accessor has no
+//!   manager boundary in `emulate.rs`).  The C++ `getArch()` accessor has no
 //!   meaning without `Architecture` and is not ported.
 //! - **`EmulatePcodeOp` is NOT yet ported.**  It emulates over the syntax
 //!   tree's `PcodeOp`/`Varnode`/`FlowBlock` objects (`op.hh`,
@@ -83,8 +83,8 @@ pub struct EmulateSnippet {
 }
 
 impl EmulateSnippet {
-    /// Constructor (C++ takes the `Architecture *g`; the port takes the two
-    /// slices of it this class uses — module docs).
+    /// The C++ constructor takes an `Architecture *g`; the port takes only the
+    /// two slices of it this class uses (module docs).
     pub fn new(loader: Rc<RefCell<dyn LoadImage>>, manage: Rc<AddrSpaceManager>) -> Self {
         EmulateSnippet {
             core: EmulateCore::new(),

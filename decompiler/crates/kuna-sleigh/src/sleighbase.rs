@@ -9,14 +9,14 @@
 //!   `AddrSpaceManager`, a [`TranslateBase`], the [`SymbolTable`], the
 //!   register cross-reference map, the user-op list, and the
 //!   `ConstructTpl` store (the `ConstructTplHandle` backing the
-//!   [`SleighBaseTrans`] seam).  The concrete `Sleigh` engine (sleigh.rs)
+//!   [`SleighBaseTrans`] boundary).  The concrete `Sleigh` engine (sleigh.rs)
 //!   embeds a `SleighBase` and adds the load image / context machinery.
 //! - The C++ register virtuals (`getRegister`/`getRegisterName`/...) are the
 //!   [`RegisterLookup`] surface; [`SleighBase`] is installed as the manager's
 //!   register lookup so kuna-base decode paths reach the symbol-table-backed
 //!   register map.  Because the lookup is shared by `Rc`, the register map is
 //!   built once after decode and stored behind a clone-on-read accessor.
-//! - The `SleighBaseTrans` seam needed by `SymbolTable::decode`
+//! - The `SleighBaseTrans` boundary needed by `SymbolTable::decode`
 //!   (`getConstantSpace` + `ConstructTpl` decode/encode) is satisfied by a
 //!   short-lived [`SlaTrans`] borrowing the constant space and the template
 //!   store, so it stays disjoint from the `&mut symtab` borrow.
@@ -167,7 +167,7 @@ pub struct SleighBase {
     pub(crate) num_sections: u32,
     /// C++ `indexer`.
     indexer: SourceFileIndexer,
-    /// The marshal id registry used to decode `.sla` (kuna seam for the C++
+    /// The marshal id registry used to decode `.sla` (kuna boundary for the C++
     /// global id registration).
     pub(crate) registry: IdRegistry,
 }
@@ -473,7 +473,7 @@ impl SleighBase {
         self.indexer.decode(decoder)?;
         self.decode_sla_spaces(decoder, big_end)?;
 
-        // SymbolTable::decode needs the SleighBaseTrans seam disjoint from the
+        // SymbolTable::decode needs the SleighBaseTrans boundary disjoint from the
         // &mut symtab borrow.  Move the symtab and templates out, decode, and
         // restore (the constant space is cloned out of the manager first).
         let const_space = self
@@ -492,7 +492,6 @@ impl SleighBase {
         decode_res?;
 
         decoder.close_element(el)?;
-        // root = symtab.getGlobalScope()->findSymbol("instruction")
         self.root = self
             .symtab
             .get_global_scope()
@@ -588,8 +587,8 @@ impl SleighBase {
         }
         encoder.close_element(&sla::ELEM_SPACES);
 
-        // SymbolTable::encode needs the SleighBaseTrans seam (for the per-section
-        // ConstructTpl encode).  The seam borrows the template store; encode only
+        // SymbolTable::encode needs the SleighBaseTrans boundary (for the per-section
+        // ConstructTpl encode).  The boundary borrows the template store; encode only
         // reads it, but SlaTrans holds `&mut`, so clone the store to satisfy the
         // signature (encode never mutates the templates).
         let const_space = self
@@ -656,16 +655,11 @@ fn register_name_from_xref(
     off: u64,
     size: i32,
 ) -> Vec<u8> {
-    // C++ builds the lookup key VarnodeData{space=base,offset=off,size}.
     let key = VarnodeStorage {
         space: Some(Rc::clone(base)),
         offset: off,
         size: size as u32, // C++ assigns int4 -> uint4 (size is non-negative)
     };
-    // C++:
-    //   iter = upper_bound(key);   // first key strictly greater than `key`
-    //   if (iter == begin()) return "";
-    //   iter--;                    // greatest element <= key
     // `--upper_bound(key)` is the greatest element <= key, so the starting
     // iterator is `range(.., Included(&key)).next_back()`.  (Using Excluded
     // here would skip an exact match — the F1 bug.)  `next_back() == None`
@@ -761,7 +755,7 @@ impl RegisterLookup for SnapshotRegisterLookup {
     }
 }
 
-/// Short-lived [`SleighBaseTrans`] seam used during `SymbolTable::decode`:
+/// Short-lived [`SleighBaseTrans`] boundary used during `SymbolTable::decode`:
 /// supplies the constant space and decodes/encodes `ConstructTpl` sections
 /// into the template store.  Borrows the store mutably so it stays disjoint
 /// from the `&mut symtab` borrow.
@@ -779,7 +773,7 @@ impl SleighBaseTrans for SlaTrans<'_> {
         &mut self,
         decoder: &mut dyn Decoder,
     ) -> KunaResult<(i32, ConstructTplHandle)> {
-        // ConstructTpl::decode needs the OpcodeDecoder surface; the seam only
+        // ConstructTpl::decode needs the OpcodeDecoder surface; the boundary only
         // hands a &mut dyn Decoder, so wrap it in a shim that reads opcodes
         // via the packed protocol (signed integer; the .sla format).
         let mut tpl = ConstructTpl::new();
@@ -1058,7 +1052,7 @@ impl SleighBase {
     }
 
     /// Push a parsed `ConstructTpl` into the arena, returning its handle
-    /// (C++ stores the `ConstructTpl *` directly; the kuna seam keys by index).
+    /// (C++ stores the `ConstructTpl *` directly; the kuna boundary keys by index).
     pub fn add_template(&mut self, tpl: ConstructTpl) -> ConstructTplHandle {
         let handle = self.templates.len();
         self.templates.push(tpl);

@@ -38,13 +38,13 @@
 //!   space the snippet holds — so the resolver uses the snippet constant
 //!   space, byte-equivalent to reading the (private) `const_space` member.
 //!
-//! ## The language seam
+//! ## The language boundary
 //!
 //! C++ `PcodeSnippet` holds a `const SleighBase *sleigh` and calls only
 //! `sleigh->findSymbol(name)`, `sleigh->numSpaces()`, `sleigh->getSpace(i)`,
 //! `sleigh->getDefaultCodeSpace()`, `sleigh->getConstantSpace()`,
 //! `sleigh->getUniqueSpace()` on it. `sleighbase.rs` is still a stub, so —
-//! following the W1/W2 seam convention — those operations are abstracted
+//! following the W1/W2 boundary convention — those operations are abstracted
 //! behind the [`SnippetLanguage`] trait, implemented by the decode-engine
 //! wave (`SleighBase`) and synthetically by tests. `findSymbol` returns a
 //! resolved [`SnippetSymbol`] (the parser-relevant projection of the C++
@@ -283,11 +283,11 @@ pub fn get_varnode_tpl(
 }
 
 // ---------------------------------------------------------------------------
-// The language seam (SleighBase, reduced to what PcodeSnippet uses)
+// The language boundary (SleighBase, reduced to what PcodeSnippet uses)
 // ---------------------------------------------------------------------------
 
 /// Stand-in for `const SleighBase *sleigh`, reduced to the surface
-/// `PcodeSnippet` pulls from it (`sleighbase.rs` is still a stub; W1/W2 seam
+/// `PcodeSnippet` pulls from it (`sleighbase.rs` is still a stub; W1/W2 boundary
 /// convention). Implemented by the decode-engine wave's `SleighBase` and by
 /// tests.
 pub trait SnippetLanguage {
@@ -1049,7 +1049,6 @@ impl<'a> PcodeSnippet<'a> {
             self.report_error(None, "Syntax error");
             return false;
         }
-        // C++ PcodeCompile::propagateSize(result)
         let propagated = match self.result.as_mut() {
             Some(ct) => crate::pcodecompile::propagate_size(ct),
             // C++ propagateSize(null) would dereference null; an empty/None
@@ -1257,7 +1256,6 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
         if !matches!(self.cur, Token::Endofstream) {
             return false;
         }
-        // pcode->setResult($1)
         self.pcode.result = Some(result);
         true
     }
@@ -1743,8 +1741,6 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
         match self.cur.clone() {
             Token::JumpSym(sym) => {
                 self.advance();
-                // VarnodeTpl *sym = $1->getVarnode();
-                // new VarnodeTpl(j_curspace, sym->getOffset(), j_curspace_size)
                 let symvn = get_varnode_tpl(&sym, &constspace)
                     .expect("JUMPSYM has no getVarnode (internal invariant)");
                 Some(VarnodeTpl::new(
@@ -1802,8 +1798,7 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
             Token::Char(b'<') => {
                 // jumpdest: label
                 let lab = self.parse_label()?;
-                // new VarnodeTpl(getConstantSpace, j_relative(index),
-                //                real(sizeof(uintm)=4)); incrementRefCount
+                // the relative offset's size is sizeof(uintm) = 4
                 lab.increment_ref_count();
                 Some(VarnodeTpl::new(
                     ConstTpl::new_space(constspace),
@@ -2168,8 +2163,6 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
             if !self.expect_char(b')') {
                 return None;
             }
-            // createOp(CPUI_SUBPIECE, new ExprTree(sym->getVarnode()),
-            //          new ExprTree(integervarnode))
             let symvn = specificsymbol_varnode(&sym, &constspace);
             return Some(self.pcode.create_op2(
                 OpCode::CPUI_SUBPIECE,

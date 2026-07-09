@@ -10,7 +10,7 @@
 //!   `set_page` (the latter two with the C++ default bodies as provided
 //!   methods) plus the non-virtual public interface (`set_value`,
 //!   `get_value`, `set_chunk`, `get_chunk`) as provided methods — following
-//!   the `TranslateBase`/`Translate` seam precedent in `translate.rs`.
+//!   the `TranslateBase`/`Translate` boundary precedent in `translate.rs`.
 //! - C++ `MemoryBank *` handles (the `underlie` links, the banks registered
 //!   in a `MemoryState`, the emulator's state) are
 //!   `Rc<RefCell<dyn MemoryBank>>`: the C++ pointers are shared and
@@ -189,7 +189,7 @@ impl MemoryBankCore {
 /// (C++ `insert`/`find`/`getPage`/`setPage` are protected; Rust traits have
 /// no protected methods, so they are public here.)
 pub trait MemoryBank {
-    /// Access the concrete C++ base-class members (kuna seam; see
+    /// Access the concrete C++ base-class members (kuna boundary; see
     /// [`MemoryBankCore`]).
     fn bank_core(&self) -> &MemoryBankCore;
 

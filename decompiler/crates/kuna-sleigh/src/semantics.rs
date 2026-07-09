@@ -7,7 +7,7 @@
 //!   (real constants, handle references with `v_field` selection including
 //!   `v_offset_plus` truncation, space ids, relative jump offsets, the
 //!   `j_*` placeholders).  `fix`/`fixSpace` resolve against the
-//!   `ParserWalker` seam ([`SymbolWalker`], defined by the symbol wave).
+//!   `ParserWalker` boundary ([`SymbolWalker`], defined by the symbol wave).
 //! - [`VarnodeTpl`] / [`OpTpl`] / [`HandleTpl`] / [`ConstructTpl`] with
 //!   their encode/decode paths (`.sla` FORMAT_SCOPE ids, see [`sla`]).
 //! - [`PcodeBuilder`]: the SLEIGH-specific p-code generator dispatch

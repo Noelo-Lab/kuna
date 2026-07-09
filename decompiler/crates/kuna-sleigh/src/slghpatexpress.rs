@@ -112,32 +112,16 @@ pub trait PatternExpressionContext {
 
     /// Stand-in for the body of C++ `OperandValue::getValue`
     /// (slghpatexpress.cc), which needs the symbol table and an out-of-band
-    /// walker.  The implementor (sleigh-core wave) must transcribe exactly:
-    ///
-    /// ```text
-    /// OperandSymbol *sym = ct->getOperand(index);     // ct from (table_id, ct_id)
-    /// PatternExpression *patexp = sym->getDefiningExpression();
-    /// if (patexp == 0) {
-    ///   TripleSymbol *defsym = sym->getDefiningSymbol();
-    ///   if (defsym != 0) patexp = defsym->getPatternExpression();
-    ///   if (patexp == 0) return 0;
-    /// }
-    /// ConstructState tempstate;
-    /// ParserWalker newwalker(walker.getParserContext());
-    /// newwalker.setOutOfBandState(ct,index,&tempstate,walker);
-    /// return patexp->getValue(newwalker);
-    /// ```
+    /// walker; the sleigh-core implementor transcribes that body exactly.
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64>;
 }
 
 /// Decode-time hook standing in for the `Translate*` (really `SleighBase*`)
 /// argument of `PatternExpression::decodeExpression`; see module docs.
 pub trait OperandValueResolver {
-    /// C++ `OperandValue::decode`:
-    /// `SubtableSymbol *tab =
-    /// dynamic_cast<SubtableSymbol*>(((SleighBase*)trans)->findSymbol(tabid))`
-    /// followed by `tab->getNumConstructors()`.  A failed lookup/downcast is
-    /// a null dereference (UB) in C++; implementors may error or panic.
+    /// C++ `OperandValue::decode`: look up the subtable by id and return its
+    /// `getNumConstructors()`.  A failed lookup/downcast is a null
+    /// dereference (UB) in C++; implementors may error or panic.
     fn num_constructors(&self, table_id: u32) -> KunaResult<i32>;
 }
 
@@ -1845,7 +1829,7 @@ fn build_single(mut startbit: i32, mut endbit: i32, mut byteval: u32) -> Pattern
         startbit -= 8;
         endbit -= 8;
     }
-    // mask = (~0) << (32 - size); shift count in [0,32) for valid fields
+    // shift count in [0,32) for valid fields
     let mut mask: u32 = (!0u32).wshl((32 - size) as u32);
     byteval = byteval.wshl((32 - size) as u32) & mask;
     mask = mask.wshr(startbit as u32);

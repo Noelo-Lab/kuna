@@ -153,8 +153,8 @@ impl LoadImageXml {
                 // string literal converts to the bool `true`
                 encoder.write_bool(&ATTRIB_READONLY, true);
             }
-            // s << '\n' << setfill('0'); then each byte "<< hex <<
-            // setw(2)", a '\n' after every 20th byte, and a trailing '\n'
+            // hex, width-2, zero-padded bytes; a '\n' after every 20th
+            // byte and a trailing '\n'
             let mut s = String::from("\n");
             for (i, b) in vec.iter().enumerate() {
                 s.push_str(&format!("{b:02x}"));
@@ -205,7 +205,6 @@ impl LoadImageXml {
                 let base = decoder.read_space_id(&ATTRIB_SPACE)?;
                 let addr =
                     Address::new(Rc::clone(&base), base.decode_attributes(&mut decoder, &mut sz)?);
-                // vector<uint1> &vec( chunk[addr] ); vec.clear();
                 let vec = self.chunk.entry(addr.clone()).or_default();
                 vec.clear();
                 decoder.rewind_attributes();
@@ -333,9 +332,8 @@ impl LoadImageXml {
                     maxsize = room as i32; // cast: (int4)room truncation as in C++
                 }
             }
-            // vector<uint1> &vec( chunk[endaddr] ): operator[] creates the
-            // entry if absent (it can hit the current chunk itself when its
-            // size is 0)
+            // operator[] creates the entry if absent (it can hit the
+            // current chunk itself when its size is 0)
             let vec = self.chunk.entry(endaddr).or_default();
             for _i in 0..maxsize {
                 vec.push(0);
@@ -356,8 +354,7 @@ impl LoadImage for LoadImageXml {
         let mut emptyhit = false;
 
         let mut curaddr: Address = addr.clone();
-        // iter = chunk.upper_bound(curaddr);  // First one greater than
-        // if (iter != chunk.begin()) --iter;  // Last one less or equal
+        // C++: the last chunk with key <= curaddr (upper_bound, then --iter)
         let mut iter_key: Option<Address> =
             match self.chunk.range(..=curaddr.clone()).next_back() {
                 Some((k, _)) => Some(k.clone()),
@@ -406,12 +403,10 @@ impl LoadImage for LoadImageXml {
     }
 
     fn open_symbols(&self) {
-        // cursymbol = addrtosymbol.begin()
         *self.cursymbol.borrow_mut() = self.addrtosymbol.keys().next().cloned();
     }
 
     fn get_next_symbol(&self, record: &mut LoadImageFunc) -> bool {
-        // if (cursymbol == addrtosymbol.end()) return false;
         let cur = self.cursymbol.borrow().clone();
         let Some(addr) = cur else {
             return false;
@@ -462,9 +457,8 @@ impl LoadImage for LoadImageXml {
         // draining the old map first is observationally identical)
         for (a, v) in std::mem::take(&mut self.chunk) {
             let spc = Rc::clone(addr_space(&a));
-            // int4 off = AddrSpace::addressToByte(adjust,wordsize): the
-            // long argument converts to uintb (sign-extension) and the
-            // uintb result truncates into the int4
+            // addressToByte: the long argument converts to uintb
+            // (sign-extension) and the uintb result truncates into the int4
             let off = AddrSpace::address_to_byte(adjust as u64, spc.get_word_size()) as i32;
             let newaddr = &a + i64::from(off); // int4 sign-extends into operator+
             newchunk.insert(newaddr, v);

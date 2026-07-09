@@ -384,7 +384,7 @@ impl Default for TranslateBase {
 /// [`TranslateBase`] reached via [`Translate::translate_base`], whose
 /// non-virtual methods are mirrored here as provided methods.
 pub trait Translate: RegisterLookup {
-    /// Access the concrete C++ base-class state (kuna seam; see trait docs).
+    /// Access the concrete C++ base-class state (kuna boundary; see trait docs).
     fn translate_base(&self) -> &TranslateBase;
 
     /// Mutable access to the concrete C++ base-class state.
