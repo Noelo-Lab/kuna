@@ -77,7 +77,7 @@
 //!   [`FINGERPRINT_INSNS`] instructions, not Ghidra's masked instruction bytes.**
 //!   Ghidra builds the fingerprint from `getInstructionMask` (the per-constructor
 //!   bit-mask that separates opcode bits from operand bits) — a SLEIGH capability
-//!   kuna's decoder does not surface (`docs/listing-tier-design.md` §8: the mask
+//!   kuna's decoder does not surface (`docs/history/listing-tier-design.md` §8: the mask
 //!   accessor "is the same one FID would need; build it independently only if FID
 //!   is taken"). The mnemonic sequence is the operand-insensitive opcode projection
 //!   the kuna decoder *does* expose (`print_assembly` splits mnemonic from operand
@@ -97,7 +97,7 @@
 //! - **DISABLED by default** (Ghidra `setDefaultEnablement(false)`): a speculative
 //!   gap-filler can create false-positive functions, so it ships behind its own
 //!   `aif` flag *and* requires `--option listing on`. The buildplan's verdict
-//!   (`docs/analysis-port-buildplan.md` §1.3) is "build the sound substitute" — this
+//!   (`docs/history/analysis-port-buildplan.md` §1.3) is "build the sound substitute" — this
 //!   is that substitute, kept off by default.
 
 use std::collections::{BTreeMap, BTreeSet};

@@ -1245,7 +1245,7 @@ fn scan_eh_frame_starts_sized(file: &object::File, ptr_size: usize) -> Vec<u64> 
 // deliberately NOT recovered here: kuna's own engine recovers the stack frame from
 // the code (S5 type inference + S7 frame analysis), so the CFA/saved-register
 // rules add nothing at the decompiler tier — CFI is INHERITED, not rebuilt. See
-// `docs/analysis-port-log.md`.
+// `docs/history/analysis-port-log.md`.
 
 /// Decoded CIE augmentation fields relevant to the LSDA walk: the FDE pointer
 /// encoding (`R`), and — when the augmentation carries an `L` — the LSDA pointer

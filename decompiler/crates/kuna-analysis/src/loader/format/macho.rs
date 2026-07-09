@@ -1,6 +1,6 @@
-//! The Mach-O [`ObjectFormat`] — the Apple object/exe arm of the loader seam.
+//! The Mach-O [`ObjectFormat`] — the Apple object/exe arm of the loader boundary.
 //!
-//! This wires Mach-O through the seam so a Mach-O image **parses, maps its
+//! This wires Mach-O through the boundary so a Mach-O image **parses, maps its
 //! sections, selects the right SLEIGH spec** (`gcc` for x86-64 — macOS x86-64
 //! follows the System V AMD64 ABI, the same cspec Ghidra labels `gcc`;
 //! `default` for arm64), and **names its imports** (PR-7): a `bl`/`callq`

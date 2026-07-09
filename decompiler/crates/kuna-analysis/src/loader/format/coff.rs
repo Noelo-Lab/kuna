@@ -1,4 +1,4 @@
-//! The COFF [`ObjectFormat`] — the relocatable-object arm of the loader seam
+//! The COFF [`ObjectFormat`] — the relocatable-object arm of the loader boundary
 //! (PR-5; the PR-2 skeleton, now exercised end-to-end by `coff_obj.obj`).
 //!
 //! ## COFF object vs COFF image (design §3.6)

@@ -40,7 +40,7 @@
 //!
 //! ## Why DEFAULT-OFF (the buildplan §1.2 net-negative)
 //!
-//! `docs/analysis-port-buildplan.md` §1.2 gives this family the verdict
+//! `docs/history/analysis-port-buildplan.md` §1.2 gives this family the verdict
 //! **never-for-an-ELF-decompiler (as producing passes)**, for reasons that all
 //! still hold and are why this pass ships gated off behind `--option operand_refs
 //! on` (default off):

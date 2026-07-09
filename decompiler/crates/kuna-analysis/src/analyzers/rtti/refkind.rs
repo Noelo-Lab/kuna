@@ -1,7 +1,7 @@
 //! The x86 / x64 reference-kind dispatch — the single place the MSVC-RTTI
 //! pointer/displacement ABI diverges between 32-bit and 64-bit PE images.
 //!
-//! This is §3.1f of `docs/metadata-analyzers-design.md`, the one place a faithful
+//! This is §3.1f of `docs/history/metadata-analyzers-design.md`, the one place a faithful
 //! port of `RttiAnalyzer` goes wrong if conflated. On **x86** every inter-structure
 //! reference inside the RTTI graph is a full **raw virtual address** the width of a
 //! pointer (4 bytes). On **x64** those same references are **32-bit image-base

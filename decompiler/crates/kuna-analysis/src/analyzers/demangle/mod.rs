@@ -20,7 +20,7 @@
 //! Itanium (`cpp_demangle`) covers ELF/Mach-O C++ and MinGW-PE; Rust
 //! (`rustc_demangle`) covers Rust. Neither recognizes **MSVC** mangling — the
 //! `cl.exe` scheme that starts with `?` (`?foo@Bar@@QEAAXXZ`), carried by MSVC
-//! PE/COFF objects (`docs/multiformat-loader-design.md` §5.5). Ghidra demangles
+//! PE/COFF objects (`docs/history/multiformat-loader-design.md` §5.5). Ghidra demangles
 //! it with `MicrosoftDemangler` (the hand-rolled `MDMang` C++ grammar, again not
 //! Java to transcribe), so the faithful move is identical: substitute a
 //! permissive crate — here [`msvc_demangler`] — and consume its string. This is

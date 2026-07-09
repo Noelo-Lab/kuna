@@ -21,7 +21,7 @@
 //!   `canAnalyze:172-177` requires `processor==ARM && getRegister("TMode")!=null`.
 //!
 //! This pass ports BOTH mechanisms as additive [`ContextPaint`] facts:
-//! `$t`/STT_FUNC-LSB → `TMode=1` (Thumb), `$a` → `TMode=0` (ARM). The commit seam
+//! `$t`/STT_FUNC-LSB → `TMode=1` (Thumb), `$a` → `TMode=0` (ARM). The commit boundary
 //! (`kuna-console`'s `commit_analysis_output`) paints each over the engine's
 //! `ContextDatabase`, the exact analog of `programContext.setValue(TMode,…)`.
 //! `TMode` defaults to 0 (ARM) — registered by the ARM `.pspec`
@@ -32,7 +32,7 @@
 //!
 //! The pass only fires on an ARM object (`object::Architecture::Arm`); on any
 //! other language it returns an empty output, mirroring `canAnalyze == false`.
-//! Belt-and-suspenders: the commit seam additionally swallows the
+//! Belt-and-suspenders: the commit boundary additionally swallows the
 //! "`TMode` not registered" error so painting can never regress a non-ARM
 //! decompile (see `commit_analysis_output`).
 //!
@@ -49,7 +49,7 @@
 //!   address. This pass additionally emits a [`SymFact`] (`SymKind::Function`) at
 //!   the normalized (even) entry — the address the `TMode=1` paint and the engine's
 //!   decode use — so `load function <name>` and a CALL resolve there. The commit
-//!   seam's symbol arm is idempotent (it skips an already-installed function), so
+//!   boundary's symbol arm is idempotent (it skips an already-installed function), so
 //!   the odd- and even-address installs coexist without a double-symbol collision.
 //! - **MIPS `$gp` / MIPS16 `ISA_MODE` are out of scope.** MIPS `$gp` is not a
 //!   decode-mode context paint at all — it is a *tracked register value* set at
@@ -58,7 +58,7 @@
 //!   constant propagation (S3). MIPS16 `ISA_MODE` is the exact `$t`/STT_FUNC-LSB
 //!   analog (`MIPS_ElfExtension.applyIsaMode:412-432`) and could be added here
 //!   with the identical mechanism (var `"ISA_MODE"`) given a MIPS16 fixture.
-//!   Both are deferred — see `docs/analysis-port-plan.md` (`arch-markers` risks).
+//!   Both are deferred — see `docs/history/analysis-port-plan.md` (`arch-markers` risks).
 
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
@@ -72,7 +72,7 @@ const TMODE: &str = "TMode";
 
 /// Port of the ARM mapping-symbol + STT_FUNC-LSB → `TMode` decode-mode painting
 /// (`ARM_ElfExtension.evaluateElfSymbol` + `ArmSymbolAnalyzer`). Additive,
-/// never-failing: emits [`ContextPaint`] facts the commit seam applies to the
+/// never-failing: emits [`ContextPaint`] facts the commit boundary applies to the
 /// engine's `ContextDatabase`. Fires only on an ARM object (the
 /// `canAnalyze == processor==ARM` gate); empty on any other language.
 #[derive(Clone, Copy, Default)]
@@ -146,7 +146,7 @@ pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
             // paint uses (the engine decodes at the even address). Ghidra moves the
             // symbol; kuna's `read_loader_symbols` installs it at the ODD address,
             // so this additive SymFact makes the even entry known too. The commit
-            // seam's symbol arm is idempotent (it skips an already-installed
+            // boundary's symbol arm is idempotent (it skips an already-installed
             // function), so the odd-address install and this even-address one
             // coexist without a double-symbol collision. Named symbols only — an
             // unnamed `.symtab` entry has no name to re-home (a NUL name is skipped
@@ -269,7 +269,7 @@ mod tests {
 
     /// A non-ARM object must emit ZERO paints — the `canAnalyze == processor==ARM`
     /// gate. This is the regression guard: without it, a `TMode` paint on a
-    /// non-ARM language would reach the commit seam (which must also no-op, but the
+    /// non-ARM language would reach the commit boundary (which must also no-op, but the
     /// pass-level gate is the first line). Driven over the x86-64 fauxware fixture.
     #[test]
     fn non_arm_object_emits_nothing() {

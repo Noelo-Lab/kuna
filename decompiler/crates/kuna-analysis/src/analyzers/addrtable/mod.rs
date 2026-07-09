@@ -31,7 +31,7 @@
 //!    the `Override::queryMultistageJumptable` STUB in jumptable.rs). It is
 //!    ENGINE-RESIDENT (S2), **not** an analyzer-tier item. This pass does NOT
 //!    attempt it; #9 is a separate, deferred *engine* task (see
-//!    `docs/missing-analyses.md` §7 and `docs/analysis-port-log.md`).
+//!    `docs/missing-analyses.md` §7 and `docs/history/analysis-port-log.md`).
 //!
 //! ## Origin (upstream Ghidra, the tree kuna was ported from)
 //!

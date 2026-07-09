@@ -12,7 +12,7 @@
 //!   **infeasible at the kuna-analysis tier** — it needs the disassembled
 //!   Listing / code blocks / references / FlowOverride that only exist *after*
 //!   decompilation, which the analyzer tier (object view only) does not have. It
-//!   is documented here as a deferred seam; see `docs/missing-analyses.md`.
+//!   is documented here as a deferred hook; see `docs/missing-analyses.md`.
 //!
 //! Origin (upstream Ghidra, the tree kuna was ported from):
 //! - matcher: `Ghidra/Features/Base/.../analysis/NoReturnFunctionAnalyzer.java`
@@ -372,7 +372,7 @@ mod tests {
         assert!(!out.noreturn.iter().any(|f| f.name == "read"), "read must not be flagged");
     }
 
-    /// The cross-pass seam fix: a C++ binary whose `.dynsym` carries the mangled
+    /// The cross-pass boundary fix: a C++ binary whose `.dynsym` carries the mangled
     /// no-return import `_ZSt9terminatev` (demangled `std::terminate`) and
     /// `__cxa_throw`. Both are UND in `.dynsym` (address 0); their real
     /// FunctionSymbols are installed at the PLT stub addresses (by `elf_plt`,

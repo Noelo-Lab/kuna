@@ -18,7 +18,7 @@
 //! - `Ghidra/Features/FunctionID/src/main/java/ghidra/feature/fid/hash/FidHashQuadImpl.java`
 //!   — the result record ([`FidHashQuad`]).
 //!
-//! # The critical interleave invariant (§4.2 of `docs/fid-design.md`)
+//! # The critical interleave invariant (§4.2 of `docs/history/fid-design.md`)
 //!
 //! Both digests (`full` and `specific`) run the **same instruction stream in the
 //! same order**; the only per-operand difference is `full_u` vs `spec_u`; and the

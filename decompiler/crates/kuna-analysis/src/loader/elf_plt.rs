@@ -592,7 +592,7 @@ fn decode_riscv(
 /// section the binary has no TOC-relative imports and we resolve nothing.
 ///
 /// PPC32 (`Architecture::PowerPc`, big-endian) uses a different secure-PLT stub
-/// shape that this routine does not model, so it no-ops there — left as a seam
+/// shape that this routine does not model, so it no-ops there — left as a hook
 /// (`decode_ppc_text` reads words honoring endianness, so a future PPC32 arm can
 /// slot in here).
 fn decode_ppc_text(

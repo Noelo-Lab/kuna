@@ -4,7 +4,7 @@
 //! FID re-identifies a function by fingerprinting its instruction stream with an
 //! operand-masked FNV-1a64 hash, then matching that fingerprint against a
 //! database of known-library hashes — the capability that renames a `FUN_<addr>`
-//! in a stripped binary back to (say) `kuna_crc32`. See `docs/fid-design.md` for
+//! in a stripped binary back to (say) `kuna_crc32`. See `docs/history/fid-design.md` for
 //! the full plan.
 //!
 //! # Module set
@@ -42,7 +42,7 @@
 //!
 //! The database path is read from the `kuna_fid_db` environment variable (mirroring
 //! how the i386-PIE-PLT loader gate reads `kuna_i386_pie_plt`); a real `--fidb
-//! <path>` flag is a deferred follow-on (`docs/fid-design.md` §7.2). Absent / empty
+//! <path>` flag is a deferred follow-on (`docs/history/fid-design.md` §7.2). Absent / empty
 //! / unreadable ⇒ the pass is a no-op.
 
 pub mod build;
@@ -64,7 +64,7 @@ use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
 /// The environment variable naming the `.fid` fingerprint database to match
 /// against. Mirrors the loader-tier `kuna_i386_pie_plt` env gate: the DB source is
 /// kept out of the per-decompilation `--option` surface in v1 (a real `--fidb
-/// <path>` flag is deferred, `docs/fid-design.md` §7.2). Absent / empty ⇒ the pass
+/// <path>` flag is deferred, `docs/history/fid-design.md` §7.2). Absent / empty ⇒ the pass
 /// is inert (no DB to match against).
 pub const FID_DB_ENV: &str = "kuna_fid_db";
 

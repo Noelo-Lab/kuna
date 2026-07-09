@@ -35,7 +35,7 @@
 //! "printable + NUL-terminated + min-len-5" test. The effect is *over*-acceptance
 //! relative to Ghidra (a random printable run that happens to be NUL-terminated
 //! and ≥5 chars is accepted) — harmless for real string literals, which all pass.
-//! Recorded in `docs/missing-analyses.md` / `docs/analysis-port-log.md`.
+//! Recorded in `docs/missing-analyses.md` / `docs/history/analysis-port-log.md`.
 
 use object::read::{Object, ObjectSection};
 use object::SectionKind;

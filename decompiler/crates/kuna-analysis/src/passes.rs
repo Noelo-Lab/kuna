@@ -1,5 +1,5 @@
 //! The default program-prep pass list + the driver entry point the bootstrap
-//! seam calls.
+//! boundary calls.
 //!
 //! [`default_passes`] is the registry of enabled analyses, in stage order. Each
 //! pass's [`AnalysisPass::id`](crate::pass::AnalysisPass::id) is its gate name;
@@ -64,7 +64,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `p9_emit/printc.rs::op_ptrsub_ir`): a pointer to a readonly char-printable
         // array symbol now renders as the string LITERAL (Ghidra behavior), so the
         // data symbol and the literal coexist instead of the symbol name shadowing
-        // it. See docs/analysis-port-log.md (the strings/printer increment).
+        // it. See docs/history/analysis-port-log.md (the strings/printer increment).
         Box::new(crate::strings::StringLiteralPass { min_len: 5 }),
         // S1 library prototypes: seed common libc signatures (puts(char*), …) so
         // call arguments get typed. Mirrors Ghidra's `ApplyDataArchiveAnalyzer`.
@@ -78,7 +78,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // idiom, and conservative prologue byte patterns. Fuses Ghidra's
         // EntryPointAnalyzer/ExternalEntryFunctionAnalyzer/FunctionStartAnalyzer
         // + the GccExceptionAnalyzer `.eh_frame` FDE oracle into one additive pass
-        // (the commit seam's `out.entries` arm names + adds each discovered VMA,
+        // (the commit boundary's `out.entries` arm names + adds each discovered VMA,
         // idempotent against the funcsym stream). After LibProtoPass so prototypes
         // are seeded first. Always-on, like noreturn/libproto.
         Box::new(crate::entry::EntryDiscoveryPass),
@@ -110,7 +110,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // facts are dropped at commit unless `--option funcstart_patterns on`
         // (`engine.rs::analysis_pass_enabled` reads `arch.analysis_funcstart_patterns`,
         // default false), so a default run is byte-identical. After EntryDiscoveryPass
-        // (its discoveries are a superset; the commit seam dedups against the entries
+        // (its discoveries are a superset; the commit boundary dedups against the entries
         // EntryDiscoveryPass already emits). See `entry::FuncStartPatternPass`.
         Box::new(crate::entry::FuncStartPatternPass),
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
@@ -119,7 +119,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // analog of ARM's `ARM_ElfExtension.evaluateElfSymbol` + the later
         // `ArmSymbolAnalyzer`. ARM-only: the pass returns an empty output on every
         // other language (its `canAnalyze == processor==ARM` gate), and the
-        // commit seam additionally swallows a "TMode not registered" error, so
+        // commit boundary additionally swallows a "TMode not registered" error, so
         // this is a strict no-op for every non-ARM binary (the parity gates are
         // structurally untouched). Always-on, like noreturn/libproto/entry.
         Box::new(crate::loader::arm_markers::ArmMarkerPass),
@@ -131,7 +131,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // ARM markers this is a register-VALUE seed (TrackedSet/TrackedContext), not
         // a decode-mode context bit. MIPS-only: the pass returns an empty output on
         // every other language (its `canAnalyze == processor==MIPS` gate), and the
-        // commit seam additionally swallows a "t9 not found" error, so this is a
+        // commit boundary additionally swallows a "t9 not found" error, so this is a
         // strict no-op for every non-MIPS binary (the parity gates are structurally
         // untouched). Always-on, like noreturn/libproto/entry/arm_markers;
         // `--option mips_gp off` restores the un-tracked (raw `$gp`) rendering.
@@ -145,7 +145,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // like `mips_gp`'s `t9`. The kuna analog of Ghidra's
         // `MIPS_ElfExtension.applyIsaMode`. MIPS-only: the pass returns an empty
         // output on every other language (its `processor==MIPS` gate), and the
-        // commit seam additionally swallows an "ISA_MODE not registered" error
+        // commit boundary additionally swallows an "ISA_MODE not registered" error
         // (the same context-paint arm the ARM `TMode` paints use), so this is a
         // strict no-op for every non-MIPS binary (the parity gates are structurally
         // untouched). Always-on, like arm_markers/mips_gp; `--option mips_isa off`
@@ -186,8 +186,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (absolute .text pointers carry no relocation). NOTE this is NOT switch
         // recovery (that is the INHERITED S2 engine machinery, p2_lift/jumptable.rs)
         // and NOT the roadmap-#9 post-typing refinement (that is an engine S2 feedback
-        // change behind the Override::queryMultistageJumptable seam) — it is only the
-        // application-layer absolute-pointer-table discovery. See docs/analysis-port-log.md.
+        // change behind the Override::queryMultistageJumptable hook) — it is only the
+        // application-layer absolute-pointer-table discovery. See docs/history/analysis-port-log.md.
         // Box::new(crate::addrtable::AddrTablePass { min_run: 2 }),
 
         // S1 scalar/operand reference markup (OperandRefsPass) is implemented +
@@ -206,7 +206,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `.got`/`.plt` refs kuna never creates; (b) its one useful product (a
         // `.rodata` string typed as `char*`) is already delivered by the always-on
         // `strings` + libproto/S5 typing for the common case; (c) a per-instruction
-        // immediate scan over-accepts. See docs/analysis-port-buildplan.md §1.2.
+        // immediate scan over-accepts. See docs/history/analysis-port-buildplan.md §1.2.
 
         // `AggressiveInstructionFinderAnalyzer` (AIF) is NOT a pure-`ctx` pass here:
         // it is the third *Listing/xref consumer* (`aif`, the sound substitute the
@@ -216,7 +216,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `aif::run_aif` inside `run_listing_consumers` (below), not from this
         // load-time pure-ctx list. The `AggressiveInstructionFinderPass` `AnalysisPass`
         // impl exists only for the `aif` gate identity (its `run` is a no-op). See
-        // `aif/mod.rs` + docs/analysis-port-log.md.
+        // `aif/mod.rs` + docs/history/analysis-port-log.md.
     ];
 
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
@@ -455,7 +455,7 @@ pub fn run_listing_consumers(
 /// symbols`, after `set_loader`), gated on `arch.analysis_operand_refs`
 /// (`--option operand_refs on`). `ctx.listing` is `None` — the pass does its own
 /// linear decode, independent of the Listing tier (which never populates the data
-/// references this pass needs; see `docs/listing-tier-design.md` §2.2).
+/// references this pass needs; see `docs/history/listing-tier-design.md` §2.2).
 ///
 /// A parse failure yields an empty output (additive, never fails). Bound to the
 /// real-ELF path: the XML datatest path never calls this, so the parity oracles

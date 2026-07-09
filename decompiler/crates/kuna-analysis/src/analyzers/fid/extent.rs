@@ -16,7 +16,7 @@
 //! [`crate::noreturn_disc`] already uses for its call-site / fall-through
 //! reasoning.
 //!
-//! # LOSS (documented, §1 of `docs/fid-design.md`)
+//! # LOSS (documented, §1 of `docs/history/fid-design.md`)
 //!
 //! This is **address-contiguous, not flow-reachable**: an interleaved or outlined
 //! body (code from another function physically sitting between `entry` and the

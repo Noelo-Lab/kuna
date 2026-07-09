@@ -32,7 +32,7 @@
 //!   directly off the ELF header (machine + endianness + class), which is
 //!   exactly what `SleighArchitecture::resolveArchitecture` consumes.  The
 //!   compiler field (`:gcc`) is the System V/Linux default (the only ABI a bare
-//!   ELF identifies); other ABIs are a seam.
+//!   ELF identifies); other ABIs are a hook.
 //! - `adjustVma(adjust)` shifts every segment/section/symbol vma by
 //!   `addressToByte(adjust,wordsize)`, exactly as `LoadImageBfd::adjustVma`
 //!   walks `thebfd->sections` adding the byte-scaled adjustment.
@@ -49,7 +49,7 @@
 //! machines kuna ships a `.sla` for (x86 32/64, ARM/AArch64, MIPS, PPC, SPARC,
 //! RISC-V).  An unmapped machine surfaces a `LowlevelError` naming the machine
 //! (the caller falls back to an explicit `--target`).  Non-ELF object formats
-//! (PE/Mach-O) are a seam — this loader is ELF-only, matching the W11 task.
+//! (PE/Mach-O) are a hook — this loader is ELF-only, matching the W11 task.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -189,7 +189,7 @@ impl ObjectLoadImage {
     /// unreadable file, an unrecognized object format, a non-ELF object, or a
     /// machine with no kuna `.sla`.
     pub fn open(filename: &str) -> KunaResult<ObjectLoadImage> {
-        // bfd_openr(filename): read the image file.
+        // Read the image file.
         let bytes = std::fs::read(filename).map_err(|e| {
             KunaError::lowlevel(format!("Unable to open image file: {filename}: {e}"))
         })?;
@@ -198,13 +198,13 @@ impl ObjectLoadImage {
 
     /// Open from an in-memory image (the testable core of [`Self::open`]).
     pub fn from_bytes(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
-        // bfd_check_format(thebfd, bfd_object): parse the object file.
+        // Parse the object file.
         let file = object::File::parse(bytes).map_err(|e| {
             KunaError::lowlevel(format!(
                 "File: {filename} : not in recognized object file format: {e}"
             ))
         })?;
-        // (B) Select the per-format `ObjectFormat` behind the seam. Today only ELF
+        // (B) Select the per-format `ObjectFormat` behind the boundary. Today only ELF
         // is constructible (`detect` rejects everything else, and the engine
         // dispatch only routes `\x7fELF` here), so this is the verbatim ELF path;
         // PE/Mach-O/COFF impls land behind this same call in later PRs. The error
@@ -257,7 +257,7 @@ impl ObjectLoadImage {
         segments.sort_by_key(|s| s.vma);
 
         // Snapshot the sections for the info walks (the BFD `asection` list).
-        // (C) The per-format section-flag translation goes through the seam; for
+        // (C) The per-format section-flag translation goes through the boundary; for
         // ELF this is the old `section_kind_flags` body, lifted verbatim into
         // `ElfFormat::section_bits`.
         let mut sections: Vec<SectionInfo> = Vec::new();
@@ -299,7 +299,7 @@ impl ObjectLoadImage {
             let addr = sym.address();
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
-                _ => continue, // a->name != (const char *)0
+                _ => continue,
             };
             if name.is_empty() {
                 continue;
@@ -311,7 +311,7 @@ impl ObjectLoadImage {
         }
 
         // 2. PLT stubs → imported library names.
-        // (F) Per-format import resolution goes through the seam; for ELF
+        // (F) Per-format import resolution goes through the boundary; for ELF
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
         for p in fmt.resolve_imports(&file, bytes) {
@@ -348,7 +348,7 @@ impl ObjectLoadImage {
         // `lw $t9, off($gp)` indirect-call load to the stub address and resolves the
         // call to the import name (the analog of Ghidra's `setConstant` on the GOT
         // pointer entries in `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS.
-        // Through the seam: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
+        // Through the boundary: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
         let const_ranges = fmt.const_ranges(&file, bytes);
 
         Ok(ObjectLoadImage {
@@ -494,7 +494,7 @@ impl ObjectLoadImage {
             let start = s.vma;
             let secsize = s.data.len() as u64; // cast: segment byte count
             let stop = start.wadd(secsize);
-            // (offset>=start)&&(offset<stop)  — C++ uses raw `<`/`>=`; a
+            // C++ uses raw `<`/`>=`; a
             // wrapped stop (segment at the top of the space) cannot occur for a
             // real ELF, matching the BFD assumption.
             if offset >= start && offset < stop {
@@ -532,7 +532,6 @@ impl LoadImage for ObjectLoadImage {
     fn load_fill(&mut self, ptr: &mut [u8], addr: &Address) -> KunaResult<()> {
         // cast: the C++ `int4 size` parameter (slice length; see trait docs).
         let size: i32 = ptr.len() as i32;
-        // if (addr.getSpace() != spaceid) throw DataUnavailError(...)
         let space = addr
             .get_space()
             .expect("ObjectLoadImage::loadFill: address with null space (C++ UB)");
@@ -550,7 +549,6 @@ impl LoadImage for ObjectLoadImage {
         let mut bufoffset = self.bufoffset.borrow_mut();
         let mut buffer = self.buffer.borrow_mut();
 
-        // if ((curaddr>=bufoffset)&&(curaddr+size<bufoffset+bufsize)) { ... }
         // The C++ comparison is exact uintb arithmetic (BUFSIZE is 512, so the
         // `+ size` cannot wrap for any real request).
         if curaddr0 >= *bufoffset
@@ -570,11 +568,10 @@ impl LoadImage for ObjectLoadImage {
         while cursize > 0 {
             let found = self.find_section(curaddr);
             let Some((idx, secsize)) = found else {
-                // p == 0
                 if offset == 0 {
                     break; // Initial address not mapped
                 }
-                // memset(buffer+offset,0,cursize): fill the rest with zero.
+                // Fill the rest with zero.
                 for b in &mut buffer[offset..offset + cursize as usize] {
                     *b = 0;
                 }
@@ -592,14 +589,13 @@ impl LoadImage for ObjectLoadImage {
                 if rs > cursize as u64 {
                     rs = cursize as u64;
                 }
-                // memset(buffer+offset,0,readsize): zeroes to the next section.
+                // Zeroes to the next section.
                 for b in &mut buffer[offset..offset + rs as usize] {
                     *b = 0;
                 }
                 readsize = rs;
             } else {
                 let mut rs = cursize as u64;
-                // if (curaddr+readsize>p->vma+secsize) readsize = p->vma+secsize-curaddr;
                 if curaddr.wadd(rs) > seg_vma.wadd(secsize) {
                     rs = seg_vma.wadd(secsize).wsub(curaddr);
                 }
@@ -618,7 +614,7 @@ impl LoadImage for ObjectLoadImage {
             addr.print_raw(&mut errmsg)?;
             return Err(KunaError::data_unavail(errmsg));
         }
-        // memcpy(ptr,buffer,size): copy the requested bytes out.
+        // Copy the requested bytes out.
         ptr.copy_from_slice(&buffer[..ptr.len()]);
         let _ = size; // size mirrors ptr.len(); kept for the C++ correspondence
         Ok(())
@@ -636,7 +632,6 @@ impl LoadImage for ObjectLoadImage {
         let sym = &self.funcsyms[*cur];
         *cur += 1;
         record.name = sym.name.clone();
-        // record.address = Address(spaceid,val)
         let space = self
             .spaceid
             .as_ref()
@@ -695,15 +690,14 @@ impl LoadImage for ObjectLoadImage {
     }
 
     fn adjust_vma(&mut self, adjust: i64) {
-        // adjust = AddrSpace::addressToByte(adjust,wordsize) (C++
-        // `LoadImageBfd::adjustVma`, `loadimage_bfd.cc:67`).
+        // C++ `LoadImageBfd::adjustVma` (`loadimage_bfd.cc:67`): scale the shift by wordsize.
         let spaceid = self
             .spaceid
             .as_ref()
             .expect("ObjectLoadImage::adjustVma before attachToSpace (C++ null space deref)");
         let badjust = AddrSpace::address_to_byte(adjust as u64, spaceid.get_word_size());
         for s in &mut self.segments {
-            s.vma = s.vma.wadd(badjust); // s->vma += adjust
+            s.vma = s.vma.wadd(badjust);
         }
         for s in &mut self.sections {
             s.vma = s.vma.wadd(badjust);

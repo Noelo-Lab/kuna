@@ -1,7 +1,7 @@
 //! The PE [`ObjectFormat`] — the Windows portable-executable arm of the loader
-//! seam (PR-2 skeleton).
+//! boundary (PR-2 skeleton).
 //!
-//! This PR enables `object`'s `pe` reader and wires PE through the seam so a PE
+//! This PR enables `object`'s `pe` reader and wires PE through the boundary so a PE
 //! image **parses, maps its sections with the right exec/readonly bits, and
 //! selects the Windows SLEIGH spec**. Import naming (IAT/INT) is deliberately
 //! out of scope here — [`PeFormat::resolve_imports`] returns empty; the real

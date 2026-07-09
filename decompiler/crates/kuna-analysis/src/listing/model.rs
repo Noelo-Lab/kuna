@@ -1,4 +1,4 @@
-//! Core data model for the Listing/xref tier (design doc `docs/listing-tier-design.md` §2).
+//! Core data model for the Listing/xref tier (design doc `docs/history/listing-tier-design.md` §2).
 //!
 //! Three sub-models behind one [`super::Listing`] facade: the instruction model
 //! ([`Insn`]/[`FlowType`]/[`FlowKind`]/[`RawOp`]), the cross-reference model

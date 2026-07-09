@@ -21,7 +21,7 @@
 //! already-discovered-no-return function is itself no-return.
 //!
 //! This was **infeasible at the kuna-analysis tier until the Listing/xref tier**
-//! (`docs/listing-tier-design.md`): it needs the program-wide disassembled Listing
+//! (`docs/history/listing-tier-design.md`): it needs the program-wide disassembled Listing
 //! (instructions + call sites + the discovered-function model) that only the
 //! `--option listing on` recursive-descent walk produces. With the Listing built
 //! and threaded into [`AnalysisCtx::listing`](crate::pass::AnalysisCtx::listing),

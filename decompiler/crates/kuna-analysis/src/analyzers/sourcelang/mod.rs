@@ -43,7 +43,7 @@
 //!   [`Compiler`] instead of `Unknown`; nothing downstream gates on them. They are
 //!   documented here so a future faithfulness audit is not misled.
 //!
-//! # Multi-format expansion (design `docs/multiformat-loader-design.md` §5.3 / §8
+//! # Multi-format expansion (design `docs/history/multiformat-loader-design.md` §5.3 / §8
 //! PR-14)
 //!
 //! The detection above is ELF-specific in its *signal sources* (the `.comment`

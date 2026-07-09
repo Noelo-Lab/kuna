@@ -2,7 +2,7 @@
 //! instruction/xref/function model that reuses the ported SLEIGH decoder.
 //!
 //! This is **scope-B**: an optional, default-OFF subsystem (the canonical spec
-//! is `docs/listing-tier-design.md`). It performs program-wide recursive-descent
+//! is `docs/history/listing-tier-design.md`). It performs program-wide recursive-descent
 //! disassembly over loadimage bytes — reusing [`Translate::one_instruction`] and
 //! a *lifted copy* of the S2 flow classifier ([`classify`]) — to build three
 //! sub-models behind one [`Listing`] facade:

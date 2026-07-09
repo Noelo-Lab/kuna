@@ -1,11 +1,11 @@
-//! The `ObjectFormat` seam — the single funnel for every piece of
+//! The `ObjectFormat` boundary — the single funnel for every piece of
 //! format-specific knowledge the loader needs (the kuna analog of Ghidra's
 //! per-format `Loader`/`*ProgramBuilder` hierarchy, here distilled to the four
 //! things kuna's ELF-faithful load path actually keys off).
 //!
 //! ## Why a trait
 //!
-//! Before this seam the load path (`crate::loadimage_object::from_bytes`) was
+//! Before this boundary the load path (`crate::loadimage_object::from_bytes`) was
 //! ELF-only by construction: `section_kind_flags`, `resolve_plt_imports`, the
 //! `:gcc` compiler model, and the MIPS GOT const-ranges were all hard-wired to
 //! the ELF case. This module lifts those four chokepoints behind one trait so
@@ -38,7 +38,7 @@ pub mod pe;
 /// and the clean imported name.
 ///
 /// Structurally identical to today's [`elf::PltSymCompat`] /
-/// `elf_plt::PltSym` — the universal currency of the import/symbol seam, so a
+/// `elf_plt::PltSym` — the universal currency of the import/symbol boundary, so a
 /// PE IAT slot, a Mach-O `__stubs` entry, and an ELF PLT stub all flow through
 /// the same downstream commit path (`seen`-dedup → `FuncSym` → `FunctionSymbol`).
 pub struct ImportSym {
