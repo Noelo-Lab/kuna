@@ -68,6 +68,23 @@
 //! is W8.  This module carries the IR-ownership skeleton, the flag/phase state
 //! machine, and the block-manipulation methods that are self-contained at the
 //! W3 IR level (`structureReset`, `clearBlocks`, the edge-rewiring wrappers).
+//!
+//! # The Funcdata impl map
+//!
+//! `Funcdata` is one struct with its impl blocks split by owning phase — the
+//! split IS the documentation of which phase mutates what:
+//!
+//! - `substrate/funcdata.rs`          — construction, arenas, core accessors
+//! - `substrate/funcdata_op.rs`       — op creation/mutation primitives
+//! - `substrate/funcdata_varnode.rs`  — varnode creation/lookup primitives
+//! - `substrate/funcdata_block.rs`    — CFG surgery + the jump-table drivers
+//! - `substrate/funcdata_encode.rs`   — marshaling
+//! - `substrate/funcdata_printraw.rs` — raw printing
+//! - `p2_lift/funcdata_resolveflow.rs`— flow resolution (P2)
+//! - `p5_types/funcdata_union.rs`     — union facet resolution (P5)
+//! - `p6_variables/funcdata_facing.rs`, `funcdata_merge.rs`,
+//!   `funcdata_spacebase.rs`          — variable/merge/stack tiers (P6)
+//! - `p9_emit/coreaction_casts.rs`    — cast insertion hooks (P9)
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;

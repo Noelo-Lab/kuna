@@ -30,7 +30,7 @@
 //!
 //! # What this does
 //!
-//! Gated by the `foldcallret` option (default-OFF), [`call_output_foldable`]
+//! Gated by the `foldcallret` option (default-ON per DIV-14), [`call_output_foldable`]
 //! relaxes the forced-explicit rule for call outputs that are provably order-safe
 //! to fold.  `base_explicit` consults it inside the `is_call()` arm; when it
 //! returns `true` the call output falls through to the normal descendant-count

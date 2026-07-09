@@ -1,5 +1,9 @@
 //! Port of the `decompiler/cpp/type.hh` `Datatype`/`TypeFactory` **interface**.
 //!
+//! Lives in `substrate/` because the type *data model* is shared IR (every
+//! Varnode carries a type); type *inference* — the passes that decide types —
+//! is `p5_types/` (see `docs/spec/05-types.md`).
+//!
 //! # Scope (W5 `w5-dtype-expand`)
 //!
 //! This file is the *full* `Datatype` interface surface that the 14 parallel W8

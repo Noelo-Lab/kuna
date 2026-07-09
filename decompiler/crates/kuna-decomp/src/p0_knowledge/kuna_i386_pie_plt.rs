@@ -6,7 +6,7 @@
 //!
 //! Closing `test_decompiling_nl_i386_pie::usage` (angr) is a **loader-tier**
 //! change: the actual decode lives in `kuna-analysis`
-//! (`s1_loader/elf_plt.rs::decode_i386`), the i386-PIE analog of the already-
+//! (`loader/elf_plt.rs::decode_i386`), the i386-PIE analog of the already-
 //! shipped `decode_x86_64`/`decode_aarch64` PLT decoders.  The PLT→name map is
 //! baked into the `ObjectLoadImage` at `load file`, which runs **upstream of
 //! every per-function `option` command** (options are applied *after* the image
@@ -26,7 +26,7 @@
 //! pre-fix rendering (the non-PIE `FF 25 <abs32>` arm is never touched).
 
 /// Environment variable that gates the i386-PIE `FF A3 <disp32>` PLT-stub decode
-/// (read by `kuna-analysis::s1_loader::elf_plt::decode_i386`).  Absent or any
+/// (read by `kuna-analysis::loader::elf_plt::decode_i386`).  Absent or any
 /// value other than the off-tokens ⇒ **enabled** (the default-on fidelity); set
 /// to `off`/`0`/`false` ⇒ disabled (pre-fix behavior).
 pub const I386_PIE_PLT_ENV: &str = "KUNA_I386_PIE_PLT";

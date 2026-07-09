@@ -541,7 +541,7 @@ pub struct Architecture {
     /// (kuna) Gate the **full byte-pattern function-start** pass
     /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
     /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
-    /// entire vendored pattern corpus (`s1_entry/patterns/*.xml`, the
+    /// entire vendored pattern corpus (`entry/patterns/*.xml`, the
     /// `<patternpairs>` pre/post sequences + bare `<funcstart/>` patterns), as a
     /// SEPARATE pass from `entry_disc` (whose always-on oracle 5 ports only a
     /// minimal three-prologue subset). When on, a stripped binary recovers many
@@ -557,7 +557,7 @@ pub struct Architecture {
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
     pub analysis_mips_gp: bool,
     /// (kuna) Gate the i386-PIE PLT-stub decode (`i386_pie_plt`); default on. The
-    /// loader (`kuna-analysis::s1_loader::elf_plt::decode_i386`) decodes the
+    /// loader (`kuna-analysis::loader::elf_plt::decode_i386`) decodes the
     /// GOT-relative `jmp *disp(%ebx)` (`FF A3 <disp32>`) PIE stub form so dynamic
     /// imports (`exit`/`dcgettext`/…) are named and `exit` is flagged no-return
     /// (collapsing the spurious fall-through loop). i386-only; a no-op on every
@@ -585,7 +585,7 @@ pub struct Architecture {
     /// (Ghidra ships the producing analyzer DISABLED for every ELF), the ELF
     /// subclass only *removes* bad `.got`/`.plt` refs kuna never creates, and the
     /// one useful product (a `.rodata` string typed `char*`) is already delivered
-    /// by the always-on `s1_strings` + libproto/S5 typing — so a per-instruction
+    /// by the always-on `strings` + libproto/S5 typing — so a per-instruction
     /// immediate scan is net-negative (over-accepts). When on, it linear-decodes the
     /// executable sections and plants a typed `char[N]`+readonly fact for each
     /// scalar immediate that points into allocated read-only data. Real-ELF path
@@ -718,7 +718,7 @@ pub struct Architecture {
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
     /// name-recovery half. On a Windows PE, read the CodeView fingerprint
     /// (`{guid, age, path}` from the debug directory), locate the external `.pdb`
-    /// (tier-1: the `kuna_pdb_path` env var, the s1_fid `kuna_fid_db` precedent),
+    /// (tier-1: the `kuna_pdb_path` env var, the fid `kuna_fid_db` precedent),
     /// **fingerprint-gate** it (the supplied `.pdb`'s `pdb_information().guid/age`
     /// must match the PE's CodeView record — a MISMATCH/ABSENT `.pdb` emits nothing,
     /// the FID full-hash-match discipline of never applying wrong external
@@ -981,7 +981,10 @@ impl Architecture {
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
 
-            // Analysis-pass gates: real defaults set by reset_defaults_internal.
+            // Analysis-pass gates: placeholder values -- `Architecture::new` calls
+            // `reset_defaults_internal()` below, the SINGLE source of every
+            // effective default (phases.toml's `default` column mirrors it;
+            // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_libproto: false,
             analysis_strings: false,
@@ -999,7 +1002,7 @@ impl Architecture {
             analysis_operand_refs: false,
             analysis_formatstring: false,
             analysis_listing: false,
-            analysis_noreturn_disc: true, // (kuna) DIV-22 default-on (Listing-gated); see set_analysis_defaults
+            analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
             analysis_noreturn_error: false,
             analysis_noreturn_reach: false,

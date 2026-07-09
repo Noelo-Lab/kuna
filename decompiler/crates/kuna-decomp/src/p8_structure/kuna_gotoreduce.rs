@@ -40,7 +40,7 @@
 //! The transform is bounded and conservative (≤ [`MAX_TAIL_BLOCKS`] blocks /
 //! [`MAX_TAIL_OPS`] ops, no `CALL`/`STORE` in the tail), so duplication stays
 //! cheap and side-effect-safe.  It is gated by `option gotoreduce on|off`
-//! (`reduce_return_gotos`, default-OFF) — when off, [`ActionGotoReduce::apply`]
+//! (`reduce_return_gotos`, default-ON per DIV-14) — when off, [`ActionGotoReduce::apply`]
 //! early-returns and output is byte-identical.
 
 use kuna_base::error::KunaResult;

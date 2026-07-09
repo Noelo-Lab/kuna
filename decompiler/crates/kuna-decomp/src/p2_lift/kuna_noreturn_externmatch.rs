@@ -5,7 +5,7 @@
 //! ## The gap
 //!
 //! On a normal dynamically-linked ELF, the `noreturn_known` analysis pass
-//! (`kuna-analysis` `s1_loader/noreturn.rs`, the kuna analog of Ghidra's
+//! (`kuna-analysis` `loader/noreturn.rs`, the kuna analog of Ghidra's
 //! `NoReturnFunctionAnalyzer`) marks `exit`/`abort`/`__stack_chk_fail`/… no-return
 //! by scanning the symbol table and emitting a `NoReturnFact` keyed by the
 //! function's **address**. The commit sets the `FunctionSymbol` proto's
@@ -86,7 +86,7 @@ fn base_and_namespace(name: &str) -> (&str, Option<&str>) {
 }
 
 /// `true` if `name` matches the vendored ELF known-no-return list, mirroring the
-/// `noreturn_known` matcher (`s1_loader/noreturn.rs::name_matches`): the namespace
+/// `noreturn_known` matcher (`loader/noreturn.rs::name_matches`): the namespace
 /// guard (only global / `std`, never a C++ class method like `Menu::_exit`),
 /// leading-`_` strip, then exact or trailing-`*` wildcard-prefix match.
 ///

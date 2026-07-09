@@ -17,12 +17,13 @@
 //! region with two single-assignment children converging on one tail — and
 //! rewrites it to `x = c ? a : b`.
 //!
-//! # Why this is a **runtime choice** (default-OFF, agent-flippable)
+//! # Why this is a **runtime choice** (default-ON since DIV-17, agent-flippable)
 //!
 //! The diamond → ternary rewrite reproduces the source *only when the source used
 //! a ternary*.  When the source instead wrote an explicit `if/else`, the same
 //! object code is produced, and rewriting it to `?:` **diverges** from the source.
-//! There is no way to tell the two apart from the binary, so this ships default-OFF
+//! There is no way to tell the two apart from the binary, so flipping it OFF per
+//! binary is legitimate (ablation-confirmed net-positive default-ON, DIV-17)
 //! and per-function agent-flippable (`kuna catalog` → `--option iteregion on`):
 //! turn it on for format/print/flag-heavy code (where the ternary form dominates),
 //! leave it off where explicit `if/else` is the likely source.  With the option off
@@ -60,7 +61,7 @@
 //! multi-statement arm, a labelled/goto leaf, or two arms writing different
 //! variables), so a follow-up fold of the single-def/single-use temp into its use
 //! site is left for a later increment.  It is gated by `option iteregion on|off`
-//! (`iteregion`, default-OFF); each function with matches is logged via
+//! (`iteregion`, default-ON per DIV-17); each function with matches is logged via
 //! [`Funcdata::warning_header`].
 
 use kuna_base::error::KunaResult;

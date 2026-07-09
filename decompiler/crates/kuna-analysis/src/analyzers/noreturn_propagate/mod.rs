@@ -77,9 +77,10 @@
 //! # Faithful scope / LOSS
 //!
 //! - Like `noreturn_disc`, this is **Listing-dependent** (`--option listing on`)
-//!   and **default-OFF** (`noreturn_propagate`): a no-return heuristic can be
-//!   wrong, so it ships behind its own flag, real-ELF path only ⇒ every parity
-//!   gate is byte-identical.
+//!   and **default-ON since DIV-14** (`noreturn_propagate`; the Listing itself
+//!   defaults off, so the datatest parity path never fires it — decompile-all
+//!   builds the Listing per DIV-15). A no-return heuristic can be wrong, so it
+//!   keeps its own flag: `option noreturn_propagate off` restores upstream.
 //! - The fixpoint is bounded (the candidate count + 2 sweeps); it never *removes*
 //!   a fact.
 

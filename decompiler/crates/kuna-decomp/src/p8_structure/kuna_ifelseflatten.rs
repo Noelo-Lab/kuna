@@ -48,7 +48,7 @@
 //!
 //! The transform is conservative (only the precise terminating-if /
 //! non-terminating-else shape, only when the parent can host the moved sibling)
-//! and gated by `option ifelseflatten on|off` (`flatten_ifelse`, default-OFF) —
+//! and gated by `option ifelseflatten on|off` (`flatten_ifelse`, default-ON per DIV-14) —
 //! when off, [`ActionIfElseFlatten::apply`] early-returns and output is
 //! byte-identical.  It logs an `ifelseflatten:` warning per function flattened so
 //! the effect is observable.

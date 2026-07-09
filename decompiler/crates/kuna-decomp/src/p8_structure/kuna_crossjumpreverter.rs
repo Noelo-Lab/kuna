@@ -62,7 +62,7 @@
 //!
 //! The transform is bounded and conservative, so duplication stays cheap and
 //! side-effect-safe.  It is gated by `option crossjumprevert on|off`
-//! (`revert_cross_jumps`, default-OFF) — when off, [`ActionCrossJumpReverter::apply`]
+//! (`revert_cross_jumps`, default-ON per DIV-14) — when off, [`ActionCrossJumpReverter::apply`]
 //! early-returns and output is byte-identical.
 
 use kuna_base::error::KunaResult;

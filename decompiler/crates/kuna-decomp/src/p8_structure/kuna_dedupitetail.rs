@@ -52,7 +52,7 @@
 //! constant, storage, callee, or a non-block-local temporary), and a leaf carrying
 //! its own label/goto annotation is never hoisted.  Each merge is logged via
 //! [`Funcdata::warning_header`].  It is gated by `option dedupitetail on|off`
-//! (`dedup_ite_tail`, default-OFF) — when off, [`ActionDedupIteTail::apply`]
+//! (`dedup_ite_tail`, default-ON per DIV-14) — when off, [`ActionDedupIteTail::apply`]
 //! early-returns and output is byte-identical.
 
 use kuna_base::error::KunaResult;

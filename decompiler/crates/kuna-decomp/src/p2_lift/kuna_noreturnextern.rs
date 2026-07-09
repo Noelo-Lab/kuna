@@ -13,7 +13,7 @@
 //! ```
 //!
 //! kuna's analysis-tier known-no-return pass (`noreturn_known`, default on,
-//! `kuna-analysis::s1_loader::noreturn`) keys its facts on the **address** of a
+//! `kuna-analysis::loader::noreturn`) keys its facts on the **address** of a
 //! *defined* `FUNC` symbol.  An UND extern has no definition, so it is never
 //! marked — even though its base name (`stack_chk_fail`) is on the shipped
 //! `ElfFunctionsThatDoNotReturn` list.
@@ -34,7 +34,7 @@
 //! `_` from its base, honoring a `std`-only namespace guard)?  The plant
 //! (`artificialHalt(noreturn)` + flow truncation) is driven by `flow.rs`, exactly
 //! as for an address-marked no-return callee.  This mirrors the analysis-tier
-//! matcher in `kuna-analysis::s1_loader::noreturn` (`name_matches`), but applied
+//! matcher in `kuna-analysis::loader::noreturn` (`name_matches`), but applied
 //! at the decompiler flow seam so it catches the undefined-extern case the
 //! address-keyed pass cannot reach.
 //!
@@ -101,7 +101,7 @@ fn base_and_namespace(name: &str) -> (&str, Option<&str>) {
 }
 
 /// (kuna) Does the resolved callee display `name` match a known ELF no-return
-/// name?  Mirrors `kuna-analysis::s1_loader::noreturn::name_matches` (the
+/// name?  Mirrors `kuna-analysis::loader::noreturn::name_matches` (the
 /// namespace guard + leading-`_` strip), restricted to an exact match against the
 /// closed [`ELF_NORETURN_NAMES`] set.
 ///

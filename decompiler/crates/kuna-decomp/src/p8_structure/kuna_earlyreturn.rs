@@ -51,7 +51,7 @@
 //! calls/stores), it never splits the last remaining edge (the body always keeps its
 //! return), and it is capped per function ([`MAX_EARLYRETURN_SPLITS`]) and per block
 //! in-degree ([`MAX_EARLYRETURN_INEDGES`]).  Gated by `option earlyreturn on|off`
-//! (`early_return`, default-OFF); when off, [`ActionEarlyReturn::apply`] early-returns and
+//! (`early_return`, default-ON per DIV-23); when off, [`ActionEarlyReturn::apply`] early-returns and
 //! output is byte-identical.
 
 use kuna_base::error::KunaResult;

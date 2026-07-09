@@ -54,7 +54,7 @@
 //! calls/stores), it never splits the last remaining edge (the block always keeps a
 //! predecessor), and it is capped per function ([`MAX_SWITCHRETURN_SPLITS`]) and per block
 //! in-degree ([`MAX_SWITCHRETURN_INEDGES`]).  Gated by `option switchreturn on|off`
-//! (`switch_return`, default-OFF); when off, [`ActionSwitchReturn::apply`] early-returns and
+//! (`switch_return`, default-ON per DIV-25); when off, [`ActionSwitchReturn::apply`] early-returns and
 //! output is byte-identical.
 
 use kuna_base::error::KunaResult;

@@ -43,7 +43,7 @@
 //! extensions — fail to bound the table.  Only the gate
 //! (`Architecture::switch_shared_case`, default off) is owned here.
 //!
-//! The option ships **default-off** (upstream byte-identical): rebuilding the
+//! The option ships **default-on** (DIV-14; per-test opt-outs keep the corpus byte-identical): rebuilding the
 //! meld and reading the relative-offset table at a base recovered heuristically
 //! across a loop phi is a control-flow heuristic that asserts the guarded value
 //! is the load index over a memory round-trip it cannot prove in dataflow, so a

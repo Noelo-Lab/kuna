@@ -398,7 +398,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "objc",
     // (kuna) PE PDB metadata recovery: on a Windows PE, read the CodeView
     // fingerprint (`{guid, age, path}`), locate the external `.pdb` (tier-1: the
-    // `kuna_pdb_path` env var, the s1_fid `kuna_fid_db` precedent), fingerprint-gate
+    // `kuna_pdb_path` env var, the fid `kuna_fid_db` precedent), fingerprint-gate
     // it (the supplied `.pdb`'s guid/age must match the PE's CodeView record — never
     // apply a wrong/stale PDB, the FID full-hash-match discipline), and on a match
     // walk the global symbols (`S_PUB32`/`S_GPROC32`) to rename each stripped

@@ -80,7 +80,7 @@
 //! in a `return`, a duplicated call is reached on *exactly one* of the two structured
 //! paths (the converted arm), never on both — duplicating it is semantics-preserving
 //! (no extra evaluation of the call).  It is gated by `option taildup on|off`
-//! (`dup_return_call_tails`, default-OFF) — when off,
+//! (`dup_return_call_tails`, default-ON per DIV-14) — when off,
 //! [`ActionTailDup::apply`] early-returns and output is byte-identical.
 
 use kuna_base::error::KunaResult;
