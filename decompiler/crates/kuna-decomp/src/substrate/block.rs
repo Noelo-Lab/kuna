@@ -47,21 +47,21 @@
 //! The structuring *decision* logic and all printing depend on subsystems not
 //! yet ported:
 //!   - `emit`/`printRaw`/`printHeader`/`printTree` need `PrintLanguage` (W8);
-//!     they are seam-noted (`// STUB(W8)`) and not transcribed here.
+//!     they are boundary-noted (`// STUB(W8)`) and not transcribed here.
 //!   - The SSA/data-flow-heavy `BlockBasic` methods (`isComplex`,
 //!     `unblockedMulti`, `noInterveningStatement`, `findMultiequal`,
 //!     `earliestUse`, …), `BlockWhileDo::findLoopVariable` and friends,
 //!     `flipInPlaceTest`/`flipInPlaceExecute`, and `preferComplement` need
-//!     `Funcdata`/`Varnode`/`HighVariable` (W7); they are seam-noted
+//!     `Funcdata`/`Varnode`/`HighVariable` (W7); they are boundary-noted
 //!     (`// STUB(W7)`) and left to the funcdata/blockaction wave.
 //!   - `getJumptable`/`getSwitchType`/`grabCaseBasic` need `JumpTable` and the
 //!     type system (W4/W7); the switch *structure* (`CaseOrder`, edge handling)
-//!     is carried, the jump-table-driven label assignment is seam-noted.
+//!     is carried, the jump-table-driven label assignment is boundary-noted.
 //!
 //! The deliverable is the **tree**: the FlowBlock data model, the edge
 //! primitives, the dominator/spanning-tree/loop algorithms, and encode/decode.
 //!
-//! ## op.rs seam surfaces fulfilled here
+//! ## op.rs boundary surfaces fulfilled here
 //!
 //! op.rs documented (`// STUB(W3-block)`) that `PcodeOp::nextOp`/`previousOp`/
 //! `target`/`compareOrder` and `IopSpace::printRaw`'s branch arm need the block
@@ -1328,7 +1328,7 @@ impl BlockGraph {
     /// point, return the first leaf block (BlockBasic/BlockCopy) that executes
     /// after `bl` completes — or `None` if the next block is not unique.
     ///
-    /// Faithful transcription of the virtual `nextFlowAfter` hierarchy:
+    /// The virtual `nextFlowAfter` hierarchy (per `FlowBlock` subclass):
     ///   * base `FlowBlock` (`block.hh:902`): `None`.
     ///   * `BlockGraph` (`block.cc:1336`): block after `bl` in `list`, front-leaf;
     ///     recurse into `getParent()` past the end of the list.
@@ -1552,11 +1552,9 @@ impl BlockGraph {
     /// edge from `cond` or never passes through `cond` at all — i.e. a constant
     /// known down one out-edge of `cond` provably holds throughout `this_id`.
     pub fn restricted_by_conditional(&self, this_id: BlockId, cond: BlockId) -> bool {
-        // if (sizeIn() == 1) return true;
         if self.arena[this_id].size_in() == 1 {
             return true;
         }
-        // if (getImmedDom() != cond) return false;
         if self.arena[this_id].get_immed_dom() != Some(cond) {
             return false;
         }
@@ -1571,7 +1569,6 @@ impl BlockGraph {
                 seen_cond = true;
                 continue;
             }
-            // while(inBlock != this) { if (inBlock == cond) return false; inBlock = inBlock->getImmedDom(); }
             let mut walk = Some(in_block);
             while walk != Some(this_id) {
                 match walk {
@@ -2748,7 +2745,6 @@ impl BlockGraph {
         switch_case_edges: &std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
     ) -> KunaResult<BlockId> {
         let rootbl = cs[0];
-        // const FlowBlock *leafbl = rootbl->getExitLeaf();
         let leafbl = self
             .get_exit_leaf(rootbl)
             .ok_or_else(|| KunaError::lowlevel("Could not get switch leaf"))?;
@@ -2759,7 +2755,7 @@ impl BlockGraph {
             caseblocks: Vec::new(),
             jt_index,
         }));
-        // uret->grabCaseBasic(leafbl->subBlock(0), cs);  -- the switch underlying
+        // The switch underlying
         // basic block is `leafbl->subBlock(0)` (the bblocks BlockBasic the copy
         // mirrors).  The case-topology (in/out indices) is computed against the
         // switch ROOT `rootbl` (its sblocks out-edges mirror the bblocks block's,
@@ -2768,9 +2764,7 @@ impl BlockGraph {
         if let BlockKind::Switch { caseblocks: cb, .. } = &mut self.arena[ret].kind {
             *cb = caseblocks;
         }
-        // identifyInternal(uret.get(), cs);
         self.identify_internal(graph_id, ret, cs);
-        // addBlock(ret);
         self.add_block(graph_id, ret);
         if has_exit {
             self.force_output_num(ret, 1); // exactly 1 out edge if there is an exit
@@ -2852,13 +2846,8 @@ impl BlockGraph {
         gt: uint4,
         switch_case_edges: &std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
     ) -> CaseOrder {
-        // const FlowBlock *basicbl = bl->getFrontLeaf()->subBlock(0);
         let front = self.get_front_leaf(bl);
         let basicblock = front.and_then(|f| self.sub_block(f, 0));
-        // int4 inindex = basicbl->getInIndex(switchbl);
-        // curcase.outindex = basicbl->getInRevIndex(inindex);
-        // curcase.isdefault = switchbl->isDefaultBranch(curcase.outindex);
-        //
         // C++ resolves this against the live `BlockBasic` (`bl->getFrontLeaf()->
         // subBlock(0)`), whose in/out edges to/from the underlying switch BlockBasic
         // are never severed by structuring.  In the dual-arena Rust port a case's
@@ -3426,7 +3415,6 @@ impl BlockGraph {
         let mut changed = true;
         while changed {
             changed = false;
-            // for(i=postorder.size()-2; i>=0; --i)
             let mut i = postorder.len() as int4 - 2;
             while i >= 0 {
                 let bb = postorder[i as usize];
@@ -3973,7 +3961,7 @@ impl BlockMap {
 }
 
 // ---------------------------------------------------------------------------
-// op.rs seam surfaces (STUB(W3-block) fulfilled)
+// op.rs boundary surfaces (STUB(W3-block) fulfilled)
 // ---------------------------------------------------------------------------
 
 /// Yield the `(shortcut_char, target_start_addr)` of a branch op's non-fallthru
@@ -3994,7 +3982,6 @@ pub fn iop_block_info(
     op_addr: &Address,
     shortcut_of: &dyn Fn(BlockId) -> char,
 ) -> (char, Address) {
-    // bl = bs->getOut(0); if (bl->getStart() == op->getAddr()) bl = bs->getOut(1);
     let mut bl = arena[parent].get_out(0);
     if block_get_start(arena, bl) == *op_addr {
         bl = arena[parent].get_out(1);

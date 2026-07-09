@@ -337,7 +337,7 @@ pub struct Funcdata {
 pub struct JumpTableId(pub u32);
 
 impl Funcdata {
-    /// Constructor (C++ `Funcdata::Funcdata`, `funcdata.cc:34`).
+    /// C++ `Funcdata::Funcdata` (`funcdata.cc:34`).
     ///
     /// The C++ pulls `vbank(scope->getArch())`, `minLanedSize` from
     /// `glb->getMinimumLanedRegisterSize()`, and attaches a `ScopeLocal` to the
@@ -1385,13 +1385,7 @@ impl Funcdata {
     /// `vbank.setInput`/`setDef`/`createDef` callers (`opSetOutput`,
     /// `setInputVarnode`, `newVarnodeOut`/`newUniqueOut`) split-borrow here and
     /// build [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over the `obank`
-    /// half while mutating the `vbank` half:
-    ///
-    /// ```text
-    ///   let (vbank, obank) = self.banks_mut();
-    ///   let mut replace = Funcdata::replace_reads_thunk(obank);
-    ///   let vn = vbank.set_def(vn, def, &mut replace)?;
-    /// ```
+    /// half while mutating the `vbank` half.
     ///
     /// `pub(crate)` so only the funcdata_op/funcdata_varnode ports reach it.
     pub(crate) fn banks_mut(&mut self) -> (&mut VarnodeBank, &mut PcodeOpBank) {
@@ -1543,18 +1537,10 @@ impl Funcdata {
     /// surface they use, declared here so they need no seam edit.
     pub fn replace_reads_thunk(obank: &mut PcodeOpBank) -> impl FnMut(&mut VarnodeBank, VarnodeId, VarnodeId) -> KunaResult<()> + '_ {
         move |bank: &mut VarnodeBank, oldvn: VarnodeId, newvn: VarnodeId| -> KunaResult<()> {
-            // Faithful transcription of `VarnodeBank::replace` (varnode.cc:1351).
+            // C++ `VarnodeBank::replace` (varnode.cc:1351).
             // C++ walks oldvn's descend list (one entry per op-read of oldvn) and,
             // for each non-skipped entry, severs *that one* link, repoints the
-            // single slot getSlot finds, and adds the op to newvn's descend:
-            //
-            //   while(iter!=oldvn->descend.end()) {
-            //     op = *iter; tmpiter = iter++;
-            //     if (op->output == newvn) continue;   // self-def: not an input
-            //     i = op->getSlot(oldvn);
-            //     oldvn->descend.erase(tmpiter);
-            //     op->clearInput(i); newvn->addDescend(op); op->setInput(newvn,i);
-            //   }
+            // single slot getSlot finds, and adds the op to newvn's descend.
             //
             // Iterate a snapshot in descend (push_back) order since we mutate the
             // list; mirror the `iter++` cursor by erasing exactly the visited link
@@ -1565,23 +1551,21 @@ impl Funcdata {
                 .map(|vn| vn.descend_iter().collect())
                 .unwrap_or_default();
             for op in readers {
-                // `if (op->output == newvn) continue;` — an op cannot be an input
-                // to its own definition; leave its slot reading oldvn and leave
-                // oldvn's descend link to it untouched.
+                // An op cannot be an input to its own definition; leave its slot
+                // reading oldvn and leave oldvn's descend link to it untouched.
                 if obank.get(op).and_then(|o| o.get_out()) == Some(newvn) {
                     continue;
                 }
-                // `i = op->getSlot(oldvn);` — the first slot reading oldvn; this
-                // descend entry corresponds to exactly that read.  (-1 only if a
-                // prior entry for the same op already consumed the read, leaving
-                // none — then there is no slot to repoint and no link to sever.)
+                // The first slot reading oldvn; this descend entry corresponds to
+                // exactly that read.  (-1 only if a prior entry for the same op
+                // already consumed the read, leaving none — then there is no slot
+                // to repoint and no link to sever.)
                 let i = obank.get(op).map(|o| o.get_slot(oldvn)).unwrap_or(-1);
                 if i < 0 {
                     continue;
                 }
-                // `oldvn->descend.erase(tmpiter);` — sever just this one link.
+                // Sever just this one link.
                 bank.erase_descend(oldvn, op);
-                // `op->clearInput(i); newvn->addDescend(op); op->setInput(newvn,i);`
                 bank.add_descend(newvn, op)?;
                 if let Some(o) = obank.get_mut(op) {
                     o.set_input(Some(newvn), i);
@@ -1637,19 +1621,6 @@ impl Funcdata {
     /// Look-up boolean properties and data-type information for a Varnode
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
     ///
-    /// The faithful C++ body is:
-    ///
-    /// ```text
-    ///   if (!vn->isMapped()) {
-    ///     uint4 vflags=0;
-    ///     SymbolEntry *entry = localmap->queryProperties(vn->getAddr(),vn->getSize(),
-    ///                                                     vn->getUsePoint(*this),vflags);
-    ///     if (entry != 0) vn->setSymbolProperties(entry);
-    ///     else            vn->setFlags(vflags & ~Varnode::typelock);
-    ///   }
-    ///   if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }
-    /// ```
-    ///
     /// where `localmap->queryProperties` reaches the global scope, so a
     /// global-mapped Varnode would pick up `mapped | addrtied | persist` at every
     /// Varnode-creation site (`newVarnode`/`newVarnodeOut`/`setInput`).
@@ -1675,21 +1646,19 @@ impl Funcdata {
     /// `docs/rust-port/reviews/w10-global-persist.md`).  When that seam lands the
     /// body above folds back in unchanged.
     pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
-        // C++ `if (!vn->isMapped())` — an already-mapped Varnode keeps its flags.
+        // An already-mapped Varnode keeps its flags.
         let already_mapped = match self.vbank().get(vn) {
             Some(v) => v.is_mapped(),
             None => return,
         };
         if !already_mapped {
-            // `localmap->queryProperties(vn->getAddr(), vn->getSize(),
-            // vn->getUsePoint(*this), vflags)`.  Both halves of the C++ walk are now
-            // wired: the LOCAL symbol-map half (recovered stack locals, via
-            // `ScopeLocal::query_properties`) and the GLOBAL half — the parent-scope
-            // reach that paints a global-mapped RAM store `mapped | addrtied |
-            // persist` (+ `readonly`/`volatile`), the `GlobalQuery` snapshot wired
-            // onto `glb`.  For a register / unique address both queries return 0, so
-            // such Varnodes are untouched, exactly as the C++ local-then-global walk
-            // leaves them with `vflags == 0`.
+            // Both halves of the C++ walk are now wired: the LOCAL symbol-map half
+            // (recovered stack locals, via `ScopeLocal::query_properties`) and the
+            // GLOBAL half — the parent-scope reach that paints a global-mapped RAM
+            // store `mapped | addrtied | persist` (+ `readonly`/`volatile`), the
+            // `GlobalQuery` snapshot wired onto `glb`.  For a register / unique
+            // address both queries return 0, so such Varnodes are untouched, exactly
+            // as the C++ local-then-global walk leaves them with `vflags == 0`.
             //
             // Marking `addrtied`/`persist` here is the keystone the merge + naming
             // seams need: `Merge::mergeTestSpeculative` (merge.cc:226-233) refuses to
@@ -1704,8 +1673,7 @@ impl Funcdata {
                 None => return,
             };
             use crate::varnode::varnode_flags;
-            // C++ `localmap->queryProperties(addr, size, usepoint, vflags)` — the
-            // LOCAL-scope half of `setVarnodeProperties` (funcdata_varnode.cc:30).
+            // The LOCAL-scope half of `setVarnodeProperties` (funcdata_varnode.cc:30).
             // A `map addr`/restructure-mapped stack range returns `mapped|addrtied`
             // here, so a Varnode freshly created at a mapped stack address (e.g. a
             // per-byte COPY output split out of a wide stack COPY by `RuleSplitCopy`
@@ -1715,10 +1683,9 @@ impl Funcdata {
             let mut vflags = self.query_local_properties(&addr, size, &usepoint);
             vflags |= self.get_arch().query_global_properties(&addr, size, &usepoint);
             if vflags != 0 {
-                // C++ `vn->setFlags(vflags & ~Varnode::typelock)` (typelock is set by
-                // `updateType`, never here).  These flags (`mapped|addrtied|persist`,
-                // plus any `readonly`/`volatile`) are what survival + merge + naming
-                // read.
+                // typelock is set by `updateType`, never here.  These flags
+                // (`mapped|addrtied|persist`, plus any `readonly`/`volatile`) are
+                // what survival + merge + naming read.
                 if let Some(v) = self.vbank_mut().get_mut(vn) {
                     v.set_flags_pub(vflags & !varnode_flags::typelock);
                 }
@@ -1735,16 +1702,15 @@ impl Funcdata {
             if let Some((symtype, off)) =
                 self.get_arch().sized_type_for_global_varnode(&addr, size, &usepoint)
             {
-                // dt = getExactPiece(symbol->getType(), off, size) against the shared
-                // TypeFactory; null (no exact piece) leaves the Varnode untyped, as
-                // C++ `getSizedType` returning NULL skips the `updateType`.
+                // The exact type piece against the shared TypeFactory; null (no
+                // exact piece) leaves the Varnode untyped, as C++ `getSizedType`
+                // returning NULL skips the `updateType`.
                 let dt = self
                     .get_arch()
                     .types()
                     .and_then(|t| t.get_exact_piece(symtype, off, size).ok().flatten());
                 if let Some(dt) = dt {
                     if let Some(v) = self.vbank_mut().get_mut(vn) {
-                        // updateType(dt, lock=true, override=true)
                         v.update_type_locked(dt, true, true);
                     }
                 }
@@ -1827,14 +1793,13 @@ impl Funcdata {
     /// Insert `op` into basic block `bl` immediately before `before` (or at the
     /// end if `before` is `None`), assigning the SeqNum order index.
     ///
-    /// Faithful transcription of `BlockBasic::insert` (`block.cc:2262`): set the
+    /// C++ `BlockBasic::insert` (`block.cc:2262`): set the
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
     /// recompute the whole order ([`bb_set_order`](Funcdata::bb_set_order)) or
     /// set the midpoint (overflow-aware).  The BRANCHIND `f_switch_out` mark is
     /// applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
-        // inst->setParent(this);
         self.obank.get_mut(op).expect("bb_insert_op: stale op").set_parent(Some(bl));
 
         // Determine the predecessor `prev` of the insertion point.  Inserting
@@ -1880,12 +1845,11 @@ impl Funcdata {
         if ordafter.wsub(ordbefore) <= 1 {
             self.bb_set_order(bl);
         } else {
-            // inst->setOrder(ordafter/2 + ordbefore/2);  // beware overflow
+            // beware overflow
             let mid = (ordafter / 2).wadd(ordbefore / 2);
             self.obank.get_mut(op).expect("bb_insert_op").set_order(mid);
         }
 
-        // if (inst->isBranch()) { if (code()==BRANCHIND) setFlag(f_switch_out); }
         if self.obank.get(op).expect("bb_insert_op").is_branch()
             && self.obank.get(op).expect("bb_insert_op").code()
                 == kuna_num::opcodes::OpCode::CPUI_BRANCHIND
@@ -1898,7 +1862,6 @@ impl Funcdata {
     /// `block.cc:2296`).  `op` \e must be in `bl`.  Clears the op's parent and
     /// splices it out of the per-op intrusive list, fixing head/tail/len.
     pub fn bb_remove_op(&mut self, bl: BlockId, op: OpId) {
-        // inst->setParent(0);
         self.obank.get_mut(op).expect("bb_remove_op: stale op").set_parent(None);
         let (prev, next) = self.obank.get(op).expect("bb_remove_op").basic_neighbours();
         match prev {
@@ -2129,8 +2092,6 @@ impl Funcdata {
         let spaceid = rampoint.get_space().expect("spacebaseConstant: rampoint has no space").clone();
         let wordsize = spaceid.get_word_size();
 
-        // sb_type = getTypePointer(sz, getTypeSpacebase(spaceid, Address()), wordsize)
-        // ptrentrytype = getTypePointerStripArray(sz, sym->getType(), wordsize)
         let types =
             self.get_arch().types_rc().ok_or_else(|| {
                 kuna_base::error::KunaError::lowlevel("spacebaseConstant: no type factory")
@@ -2138,7 +2099,7 @@ impl Funcdata {
         let invalid = Address::new_invalid();
         let sb_spacebase = types.get_type_spacebase(Rc::clone(&spaceid), &invalid)?;
         let sb_type = types.get_type_pointer(sz, sb_spacebase, wordsize)?;
-        // sym->getType(): the covering Symbol's declared type.
+        // The covering Symbol's declared type.
         let entrytype = entry
             .symbol_type
             .clone()
@@ -2146,7 +2107,6 @@ impl Funcdata {
         let ptrentrytype =
             types.get_type_pointer_strip_array(sz, Rc::clone(&entrytype), wordsize)?;
 
-        // extra = rampoint - entry->getAddr(); byteToAddress(extra, wordsize)
         let extra_bytes = rampoint.get_offset().wrapping_sub(entry.entry_addr.get_offset());
         let extra = AddrSpace::byte_to_address(extra_bytes, wordsize);
 
@@ -2163,7 +2123,7 @@ impl Funcdata {
             if sz < origsize {
                 zext_op = Some(op);
             } else {
-                // op->insertInput(1): PTRSUB/ADD/SUBPIECE all take 2 parameters.
+                // PTRSUB/ADD/SUBPIECE all take 2 parameters.
                 self.obank_mut().get_mut(op).expect("spacebaseConstant: stale op").insert_input(1);
                 if origsize < sz {
                     sub_op = Some(op);
@@ -2175,8 +2135,6 @@ impl Funcdata {
             }
         }
 
-        // spacebase_vn = newConstant(sz, 0); updateType(sb_type, true, true);
-        //                setFlags(Varnode::spacebase)
         let spacebase_vn = self.new_constant(sz, 0);
         {
             let v = self.vbank_mut().get_mut(spacebase_vn).expect("spacebaseConstant: spacebase vn");
@@ -2202,7 +2160,7 @@ impl Funcdata {
         let mut outvn =
             self.obank().get(add_op).expect("spacebaseConstant: addOp").get_out().expect("addOp out");
 
-        // newconstoff = origval - extra (all already in address units)
+        // origval - extra, all already in address units.
         let newconstoff = origval.wrapping_sub(extra);
         let newconst = self.new_constant(sz, newconstoff);
         self.vbank_mut().get_mut(newconst).expect("spacebaseConstant: newconst").set_ptr_check();
@@ -2212,7 +2170,7 @@ impl Funcdata {
         self.op_set_input(add_op, spacebase_vn, 0)?;
         self.op_set_input(add_op, newconst, 1)?;
 
-        // outvn->updateType(ptrentrytype, typelock, false)  — THE load-bearing line.
+        // THE load-bearing line (updateType with the entry pointer type).
         let mut typelock = entry.is_type_locked();
         if typelock && entrytype.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
             typelock = false;
@@ -2331,11 +2289,10 @@ impl Funcdata {
         let code = o.code();
         if o.is_marker() {
             if code == OpCode::CPUI_MULTIEQUAL {
-                // MULTIEQUALs are considered very beginning -> 0
+                // MULTIEQUALs are considered at the very beginning (order 0).
                 return (0, code);
             } else if code == OpCode::CPUI_INDIRECT {
-                // INDIRECTs are at the location of the op they are indirect for:
-                // getOpFromConst(getIn(1)->getAddr())->getSeqNum().getOrder()
+                // INDIRECTs are at the location of the op they are indirect for.
                 if let Some(in1) = o.get_in(1) {
                     if let Some(vn) = self.vbank.get(in1) {
                         let addr = vn.get_addr();
@@ -2458,7 +2415,6 @@ impl Funcdata {
                 if !wv.get_addr().is_constant() {
                     return false;
                 }
-                // off = whole->getOffset() >> least_byte*8; off &= calc_mask(vn->getSize())
                 let off = (wv.get_offset() >> (least_byte * 8))
                     & kuna_base::address::calc_mask(v.get_size());
                 return off == v.get_offset();
@@ -2476,7 +2432,6 @@ impl Funcdata {
                 Some(t) => t,
                 None => return false,
             };
-            // off = (int4)getIn(1)->getOffset()
             let off = o
                 .get_in(1)
                 .and_then(|c| self.vbank.get(c))
@@ -2722,7 +2677,6 @@ impl Funcdata {
     pub(crate) fn do_trim_op_output(&mut self, op: OpId) -> KunaResult<()> {
         let code = self.obank.get(op).expect("do_trim_op_output: stale op").code();
         let afterop = if code == OpCode::CPUI_INDIRECT {
-            // getOpFromConst(op->getIn(1)->getAddr())
             let addr = self
                 .obank
                 .get(op)
@@ -2826,10 +2780,6 @@ impl Funcdata {
     /// `Merge::eliminateIntersect` to decide whether the read crosses an
     /// intervening write at the same storage address.
     pub(crate) fn build_single_read_cover(&self, vn: VarnodeId, op: OpId) -> Cover {
-        // C++ `Merge::eliminateIntersect` (merge.cc:502-505):
-        //   Cover single;
-        //   single.addDefPoint(vn);
-        //   single.addRefPoint(op,vn);   // Build range for a single read
         // The `addRefPoint` extends the cover from `vn`'s def to the reading op so
         // intervening writes at the same storage address fall inside it; omitting it
         // collapses the cover to the def point and no intersection is ever found
@@ -2946,7 +2896,6 @@ impl Funcdata {
         pos: int4,
         size: int4,
     ) -> KunaResult<()> {
-        // blockSet = { copy[pos+i]->getParent() }; domBl = findCommonBlock(blockSet)
         let mut block_set: Vec<BlockId> = Vec::with_capacity(size as usize);
         for i in 0..size {
             let op = copy[(pos + i) as usize];
@@ -2961,7 +2910,6 @@ impl Funcdata {
         let dom_copy_parent = self.obank.get(dom_copy).and_then(|o| o.get_parent());
         let dom_copy_is_new = dom_copy_parent != Some(dom_bl);
         if dom_copy_is_new {
-            // domCopy = data.newOp(1, domBl->getStop()); SetOpcode(COPY)
             // (the needsResolution union-facing arm is the conservative default —
             //  no `needsResolution` types in the merged tree.)
             let stop_addr = self.block_stop_addr(dom_bl);
@@ -3002,7 +2950,7 @@ impl Funcdata {
                 if skip {
                     continue;
                 }
-                // bCover.merge(*vn->getCover()): the rebuilt member cover.
+                // The rebuilt member cover.
                 let vc = self.full_varnode_cover(vn);
                 b_cover.merge(&vc);
             }
@@ -3051,12 +2999,11 @@ impl Funcdata {
         for i in 0..size {
             let op = copy[(pos + i) as usize];
             if marked[i as usize] {
-                // op->clearMark() (the marked-set was local; nothing to clear)
+                // The marked-set was local; nothing to clear.
                 continue;
             }
             let out_vn = self.obank.get(op).and_then(|o| o.get_out()).expect("build_dominant_copy: copy out");
             if out_vn != dom_vn {
-                // outVn->getHigh()->remove(outVn)
                 if let Some(out_high) = self.vbank.get(out_vn).and_then(|v| v.get_high()) {
                     self.high_remove_member(out_high, out_vn);
                 }
@@ -3066,7 +3013,6 @@ impl Funcdata {
         }
 
         if count > 0 && dom_copy_is_new {
-            // high->merge(domVn->getHigh(), 0, true)
             if let Some(dom_high) = self.vbank.get(dom_vn).and_then(|v| v.get_high()) {
                 if dom_high != high {
                     self.merge_two_highs(high, dom_high, true)?;
@@ -3201,7 +3147,6 @@ impl<'a> CoverContext for FuncdataCoverCtx<'a> {
         let is_multiequal = o.code() == OpCode::CPUI_MULTIEQUAL;
         let mut preds = Vec::new();
         if is_multiequal {
-            // for j in 0..numInput: if getIn(j)==vn -> addRefRecurse(bl->getIn(j))
             let n = o.num_input();
             for j in 0..n {
                 if o.get_in(j) == Some(vn) {
@@ -3256,12 +3201,10 @@ impl Funcdata {
         if v.has_cover() {
             self.vbank_mut().get_mut(vn).unwrap().calc_cover();
         }
-        // if (!vn->isAnnotation()) return new HighVariable(vn);
         if self.vbank.get(vn).unwrap().is_annotation() {
             return None;
         }
         let id = self.high_bank.new_high(vn);
-        // vn->setHigh(this, numMergeClasses-1) == setHigh(id, 0)
         self.vbank_mut().get_mut(vn).unwrap().set_high(id, 0);
         Some(id)
     }
@@ -3343,7 +3286,6 @@ impl Funcdata {
         base1_unknown: std::rc::Rc<crate::dtype::Datatype>,
     ) -> KunaResult<()> {
         use kuna_base::error::KunaError;
-        // if (vn->isTypeLock()||vn->isNameLock()) throw RecovError(...)
         let v = self
             .vbank
             .get(vn)
@@ -3353,7 +3295,6 @@ impl Funcdata {
                 "Trying to build dynamic symbol on locked varnode",
             ));
         }
-        // if (!isHighOn()) throw RecovError(...)
         if !self.is_high_on() {
             return Err(KunaError::lowlevel(
                 "Cannot create dynamic symbols until decompile has completed",
@@ -3361,13 +3302,12 @@ impl Funcdata {
         }
         let is_constant = v.is_constant();
         let value = v.get_offset();
-        // HighVariable *high = vn->getHigh();
         let high = self
             .vbank
             .get(vn)
             .and_then(|v| v.get_high())
             .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: varnode has no high"))?;
-        // if (high->getSymbol() != 0) return;  // Symbol already exists
+        // Symbol already exists.
         if self
             .high_bank
             .get(high)
@@ -3376,10 +3316,8 @@ impl Funcdata {
         {
             return Ok(());
         }
-        // DynamicHash dhash; dhash.uniqueHash(vn,this);
         let (hash, addr) =
             crate::dynamic::dynamic_unique_hash(vn, maxduplicates, self)?;
-        // if (dhash.getHash() == 0) throw RecovError("Unable to find unique hash ...")
         if hash == 0 {
             return Err(KunaError::lowlevel("Unable to find unique hash for varnode"));
         }
@@ -3391,8 +3329,6 @@ impl Funcdata {
                 "kuna rust port: build_dynamic_symbol non-constant arm needs the W4 Varnode-SymbolEntry link",
             ));
         }
-        // sym = localmap->addEquateSymbol("",Symbol::force_hex,vn->getOffset(),
-        //                                 dhash.getAddress(),dhash.getHash());
         let localmap = self
             .localmap
             .as_mut()
@@ -3405,7 +3341,6 @@ impl Funcdata {
             hash,
             base1_unknown,
         )?;
-        // vn->setSymbolEntry(sym->getFirstWholeMap());  -> high->getSymbol() == sym
         if let Some(h) = self.high_bank.get_mut(high) {
             h.set_kuna_equate_symbol(sym);
         }
@@ -3491,7 +3426,6 @@ impl Funcdata {
             let sym = localmap.database().symbol(sym_id);
             (sym.get_category(), sym.get_name().to_string())
         };
-        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(entry,dhash);
         if category == symbol_category::UNION_FACET {
             return self.apply_union_facet(entry);
         }
@@ -3502,12 +3436,11 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // if (vn->getSymbolEntry() != 0) return false; — idempotent (the Varnode is
-        // already bound to a dynamic SymbolEntry; C++ checks `vn->getSymbolEntry()`,
-        // `funcdata_varnode.cc:1348`).  The binding is parked on the Varnode (not the
-        // HighVariable, which may not exist yet at this early mapping or be rebuilt
-        // each heritage pass), so the re-run of this `rule_repeatapply` action does
-        // not re-report a change and loop forever.
+        // Idempotent: the Varnode is already bound to a dynamic SymbolEntry (C++
+        // checks `vn->getSymbolEntry()`, `funcdata_varnode.cc:1348`).  The binding is
+        // parked on the Varnode (not the HighVariable, which may not exist yet at
+        // this early mapping or be rebuilt each heritage pass), so the re-run of this
+        // `rule_repeatapply` action does not re-report a change and loop forever.
         if self.vn_high_has_dynamic_binding(vn) {
             return Ok(false);
         }
@@ -3532,7 +3465,6 @@ impl Funcdata {
             }
             return Ok(true);
         }
-        // else if (entry->getSize() == vn->getSize()) { if (vn->setSymbolProperties(entry)) return true; }
         // C++ `Varnode::setSymbolProperties` (varnode.cc:429) updates the Varnode's
         // type and (only when the Symbol is type-locked) binds `mapentry`; in either
         // case the matched Varnode picks up the entry's flags (incl. `Varnode::mapped`
@@ -3583,9 +3515,9 @@ impl Funcdata {
         entry: &crate::database::SymbolEntry,
     ) -> KunaResult<bool> {
         use crate::database::symbol_category;
-        // Symbol *sym = entry->getSymbol(); — read the symbol's identity, category,
-        // name (for the warning), and size up front (snapshot so the `&mut self`
-        // DynamicHash search below does not alias the scope borrow).
+        // Read the symbol's identity, category, name (for the warning), and size up
+        // front (snapshot so the `&mut self` DynamicHash search below does not alias
+        // the scope borrow).
         let sym_id = entry.symbol;
         let (category, sym_name, sym_name_undefined, sym_type_locked, sym_type) = {
             let localmap = match self.localmap.as_ref() {
@@ -3601,11 +3533,9 @@ impl Funcdata {
                 sym.dtype.clone(),
             )
         };
-        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(entry,dhash);
         if category == symbol_category::UNION_FACET {
             return self.apply_union_facet(entry);
         }
-        // Varnode *vn = dhash.findVarnode(this, entry->getFirstUseAddress(), entry->getHash());
         let first_use = entry.get_first_use_address();
         let hash = entry.get_hash();
         let mut dhash = crate::dynamic::DynamicHash::new();
@@ -3613,13 +3543,11 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // if (vn->getSymbolEntry() != 0) return false; // Symbol already applied.
-        // Stand-in: the matched high already carries a name OR an equate binding
-        // (idempotent re-run; see vn_high_has_dynamic_binding).
+        // Symbol already applied.  Stand-in: the matched high already carries a name
+        // OR an equate binding (idempotent re-run; see vn_high_has_dynamic_binding).
         if self.vn_high_has_dynamic_binding(vn) {
             return Ok(false);
         }
-        // if (sym->getCategory() == Symbol::equate) { vn->setSymbolEntry(entry); return true; }
         if category == symbol_category::EQUATE {
             // C++ `setSymbolEntry` marks the Varnode `Varnode::mapped` (varnode.cc:448)
             // and binds the entry; mirror both here as in the early arm
@@ -3634,7 +3562,6 @@ impl Funcdata {
             }
             return Ok(true);
         }
-        // if (vn->getSize() != entry->getSize()) { warningHeader(...); return false; }
         let vn_size = self.vbank.get(vn).map(|v| v.get_size()).unwrap_or(0);
         if vn_size != entry.get_size() {
             let mut s = String::from("Unable to use symbol ");
@@ -3646,18 +3573,16 @@ impl Funcdata {
             self.warning_header(&s);
             return Ok(false);
         }
-        // if (vn->isImplied()) { ... use the explicit varnode on the other side of a CAST ... }
+        // When vn is implied, use the explicit varnode on the other side of a CAST.
         let mut vn = vn;
         if self.vbank.get(vn).map(|v| v.is_implied()).unwrap_or(false) {
             let mut newvn: Option<VarnodeId> = None;
-            // if (vn->isWritten() && def->code()==CPUI_CAST) newvn = def->getIn(0)
             let v = self.vbank.get(vn);
             let written = v.map(|v| v.is_written()).unwrap_or(false);
             let def = v.and_then(|v| v.get_def());
             if written && def.and_then(|d| self.obank.get(d)).map(|o| o.code()) == Some(OpCode::CPUI_CAST) {
                 newvn = def.and_then(|d| self.obank.get(d)).and_then(|o| o.get_in(0));
             } else {
-                // castop = vn->loneDescend(); if (castop->code()==CPUI_CAST) newvn = castop->getOut()
                 let mut it = self.vbank.get(vn).map(|v| v.descend_iter().collect::<Vec<_>>()).unwrap_or_default();
                 if it.len() == 1 {
                     let castop = it.pop().unwrap();
@@ -3666,7 +3591,6 @@ impl Funcdata {
                     }
                 }
             }
-            // if (newvn != 0 && newvn->isExplicit()) vn = newvn;
             if let Some(nv) = newvn {
                 if self.vbank.get(nv).map(|v| v.is_explicit()).unwrap_or(false) {
                     vn = nv;
@@ -3674,9 +3598,9 @@ impl Funcdata {
             }
         }
 
-        // vn->setSymbolEntry(entry);  -> bind the Symbol name to the matched high,
-        // and mark the Varnode `mapped` so ActionMarkExplicit forces it explicit.
-        // The binding goes on the Varnode too (C++ `setSymbolEntry`) for idempotency.
+        // Bind the Symbol name to the matched high, and mark the Varnode `mapped` so
+        // ActionMarkExplicit forces it explicit.  The binding goes on the Varnode too
+        // (C++ `setSymbolEntry`) for idempotency.
         if let Some(v) = self.vbank.get_mut(vn) {
             v.set_kuna_symbol_entry(sym_id);
         }

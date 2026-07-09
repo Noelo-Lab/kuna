@@ -183,7 +183,7 @@ impl FlagClass {
 
 impl Ord for FlagClass {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // C++: return ((f1-1) < (f2-1));  // -1 forces free varnodes to come last
+        // -1 forces free varnodes to come last
         self.0.wsub(1).cmp(&other.0.wsub(1))
     }
 }
@@ -199,13 +199,7 @@ fn flag_class_of(flags: uint4) -> FlagClass {
     FlagClass(flags & (varnode_flags::input | varnode_flags::written))
 }
 
-/// The seqnum step of the varnode comparators, faithful to C++:
-///
-/// ```text
-/// if (a->getDef()->getSeqNum() != b->getDef()->getSeqNum())
-///   return (a->getDef()->getSeqNum() < b->getDef()->getSeqNum());
-/// // else fall through (contributes Equal)
-/// ```
+/// The seqnum step of the varnode comparators.
 ///
 /// This is **not** `SeqNum::cmp`: `SeqNum::operator!=` compares only the
 /// `uniq` field (`address.rs`), while `operator<` orders by `(pc, uniq)`.  So
@@ -252,34 +246,27 @@ impl Ord for LocKey {
     /// Transcribes `VarnodeCompareLocDef::operator()` (`varnode.cc:34-53`).
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         use std::cmp::Ordering;
-        // if (a->getAddr() != b->getAddr()) return (a->getAddr() < b->getAddr());
         let ord = self.addr.cmp(&other.addr);
         if ord != Ordering::Equal {
             return ord;
         }
-        // if (a->getSize() != b->getSize()) return (a->getSize() < b->getSize());
         let ord = self.size.cmp(&other.size);
         if ord != Ordering::Equal {
             return ord;
         }
-        // f1 = ... ; f2 = ... ; if (f1!=f2) return ((f1-1)<(f2-1));
         let ord = self.flagclass.cmp(&other.flagclass);
         if ord != Ordering::Equal {
             return ord;
         }
         // f1 == f2 from here on
         if self.flagclass.raw() == varnode_flags::written {
-            // if (a->getDef()->getSeqNum() != b->getDef()->getSeqNum())
-            //   return (a->getDef()->getSeqNum() < b->getDef()->getSeqNum());
             let ord = seqnum_step(&self.seqnum, &other.seqnum);
             if ord != Ordering::Equal {
                 return ord;
             }
         } else if self.flagclass.raw() == 0 {
-            // both free: return (a->getCreateIndex() < b->getCreateIndex());
             return self.create_index.cmp(&other.create_index);
         }
-        // return false;  (equivalent)
         Ordering::Equal
     }
 }
@@ -315,33 +302,28 @@ impl Ord for DefKey {
     /// Transcribes `VarnodeCompareDefLoc::operator()` (`varnode.cc:60-79`).
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         use std::cmp::Ordering;
-        // f1 = ...; f2 = ...; if (f1!=f2) return ((f1-1)<(f2-1));
         let ord = self.flagclass.cmp(&other.flagclass);
         if ord != Ordering::Equal {
             return ord;
         }
-        // if (f1==Varnode::written) { compare seqnum (but DO NOT return on equal) }
+        // written: compare seqnum, but DO NOT return on equal
         if self.flagclass.raw() == varnode_flags::written {
             let ord = seqnum_step(&self.seqnum, &other.seqnum);
             if ord != Ordering::Equal {
                 return ord;
             }
         }
-        // if (a->getAddr() != b->getAddr()) return (a->getAddr() < b->getAddr());
         let ord = self.addr.cmp(&other.addr);
         if ord != Ordering::Equal {
             return ord;
         }
-        // if (a->getSize() != b->getSize()) return (a->getSize() < b->getSize());
         let ord = self.size.cmp(&other.size);
         if ord != Ordering::Equal {
             return ord;
         }
-        // if (f1==0) return (a->getCreateIndex() < b->getCreateIndex());
         if self.flagclass.raw() == 0 {
             return self.create_index.cmp(&other.create_index);
         }
-        // return false;
         Ordering::Equal
     }
 }
@@ -521,7 +503,6 @@ impl Varnode {
             nzm: 0,
             kuna_symbol_entry: None,
         };
-        // if (m.getSpace() == (AddrSpace *)0) { flags = 0; return; }
         let space = match vn.loc.get_space() {
             Some(spc) => Rc::clone(spc),
             None => {
@@ -590,7 +571,6 @@ impl Varnode {
     /// exactly `getType()` — faithful for the pointer/array/struct corpus (no
     /// unions). // STUB(W8 union findResolve)
     pub fn get_type_read_facing(&self, _op: OpId) -> &Rc<Datatype> {
-        // if (!type->needsResolution()) return type; return type->findResolve(op, op->getSlot(this));
         &self.type_
     }
     /// C++ `Varnode::getTypeDefFacing()` (varnode.cc:645).  The def-facing analogue
@@ -604,12 +584,11 @@ impl Varnode {
     ///
     /// C++ first prefers a mapped `SymbolEntry`'s symbol type
     /// (`mapentry->getSymbol()->getType()`); the merged W3/W4 Varnode carries no
-    /// `mapentry` link, so the partial-symbol arm is a documented seam — this
+    /// `mapentry` link, so the partial-symbol arm is a documented stub — this
     /// returns the Varnode's own `type` when it `isPieceStructured()`, which is
     /// the full-Varnode case (a whole struct value flowing through a CONCAT tree).
     /// // STUB(W4): `mapentry->getSymbol()->getType()` partial path.
     pub fn get_structured_type(&self) -> Option<Rc<Datatype>> {
-        // Datatype *ct; if (mapentry != 0) ct = mapentry->getSymbol()->getType(); else ct = type;
         let ct = &self.type_;
         if ct.is_piece_structured() {
             return Some(Rc::clone(ct));
@@ -667,7 +646,6 @@ impl Varnode {
     /// Delete the Cover object (C++ `Varnode::clearCover`, `varnode.cc:244-251`).
     /// Used for dead Varnodes before full deletion.
     pub fn clear_cover(&mut self) {
-        // if (cover != 0) { delete cover; cover = 0; }
         self.cover = None;
     }
     /// Is the cover-dirty flag set (C++ `(flags & Varnode::coverdirty) != 0`)?
@@ -718,7 +696,6 @@ impl Varnode {
     /// (C++ `Varnode::calcCover`, `varnode.cc:254-263`).
     pub fn calc_cover(&mut self) {
         if self.has_cover() {
-            // if (cover != 0) delete cover; cover = new Cover;
             self.cover = Some(Cover::new());
             self.set_flags(varnode_flags::coverdirty);
         }
@@ -733,7 +710,6 @@ impl Varnode {
     /// This is \b only called by the Merge class which knows when to call it.
     pub fn update_cover(&mut self, ctx: &dyn CoverContext, self_id: VarnodeId) {
         if (self.flags & varnode_flags::coverdirty) != 0 {
-            // if (hasCover() && (cover != 0)) cover->rebuild(this);
             if self.has_cover() {
                 if let Some(cover) = self.cover.as_mut() {
                     cover.rebuild(ctx, self_id);
@@ -1113,7 +1089,6 @@ impl Varnode {
     /// (see the block comment above) — STUB(W7).
     fn set_flags(&mut self, fl: uint4) {
         self.flags |= fl;
-        // if (high != null) { high->flagsDirty(); if (fl&coverdirty) high->coverDirty(); }
         //   -- STUB(W7): high lives in Funcdata::high_bank; reconciled there.
     }
 
@@ -1246,7 +1221,6 @@ impl Varnode {
     /// Returns an error if a free (non-spacebase) varnode would gain a second
     /// descendant (the C++ `LowlevelError`).
     fn add_descend(&mut self, op: OpId) -> KunaResult<()> {
-        // if (isFree() && !isSpacebase()) { if (!descend.empty()) throw ... }
         if self.is_free() && !self.is_spacebase() && !self.descend.is_empty() {
             return Err(KunaError::lowlevel("Free varnode has multiple descendants"));
         }
@@ -1282,11 +1256,9 @@ impl Varnode {
     ///
     /// Returns -1, 0, 1, 2, or 3 per the C++ contract (`varnode.cc:105`).
     pub fn contains(&self, op: &Varnode) -> int4 {
-        // if (loc.getSpace() != op.loc.getSpace()) return 3;
         if !same_space(&self.loc, &op.loc) {
             return 3;
         }
-        // if (loc.getSpace()->getType()==IPTR_CONSTANT) return 3;
         if self.get_space().get_type() == spacetype::IPTR_CONSTANT {
             return 3;
         }
@@ -1295,11 +1267,10 @@ impl Varnode {
         if b < a {
             return -1;
         }
-        // if (b>=a+size) return 2;  (uintb arithmetic, int4 size sign-extended)
+        // uintb arithmetic, int4 size sign-extended
         if b >= a.wadd(self.size as i64 as u64) {
             return 2;
         }
-        // if (b+op.size > a+size) return 1;
         if b.wadd(op.size as i64 as u64) > a.wadd(self.size as i64 as u64) {
             return 1;
         }
@@ -1324,13 +1295,11 @@ impl Varnode {
         let a = self.loc.get_offset();
         let b = op2loc.get_offset();
         if b < a {
-            // if (a>=b+op2size) return false;  return true;
             if a >= b.wadd(op2size as i64 as u64) {
                 return false;
             }
             return true;
         }
-        // if (b>=a+size) return false;  return true;
         if b >= a.wadd(self.size as i64 as u64) {
             return false;
         }
@@ -1353,7 +1322,7 @@ impl Varnode {
                 1
             }
         } else if off < opoff {
-            // uintb thisright = loc.getOffset() + (size-1);  Test if this ends before op begins
+            // Test if this ends before op begins
             let thisright = off.wadd((self.size - 1) as i64 as u64);
             if thisright < opoff {
                 0
@@ -1420,12 +1389,11 @@ impl Varnode {
     /// `TYPE_BOOL` case.  The `def->code()` opcode test requires the PcodeOp
     /// graph (STUB(W3): op) and is deferred to the op-aware caller.
     pub fn is_boolean_value(&self, use_annotation: bool) -> bool {
-        // if (isWritten()) return (def->code() == CPUI_...);  -- STUB(W3): op
+        // STUB(W3): op — the isWritten() `def->code()==CPUI_...` branch needs the op graph
         if self.is_written() {
             return false; // op-graph branch deferred to the op-aware caller
         }
         if use_annotation && !self.is_free() {
-            // if ((flags & (input|typelock)) == (input|typelock))
             if (self.flags & (varnode_flags::input | varnode_flags::typelock))
                 == (varnode_flags::input | varnode_flags::typelock)
             {
@@ -1440,12 +1408,12 @@ impl Varnode {
     /// Set the Datatype if not locked (C++ `updateType(Datatype*)`).
     /// Returns true if the Datatype changed.
     pub fn update_type(&mut self, ct: Rc<Datatype>) -> bool {
-        // if (type == ct || isTypeLock()) return false;  (pointer identity)
+        // pointer identity
         if Rc::ptr_eq(&self.type_, &ct) || self.is_type_lock() {
             return false;
         }
         self.type_ = ct;
-        // if (high != null) high->typeDirty();  -- STUB(W7)
+        // STUB(W7): high->typeDirty() reconciled at the Funcdata level
         true
     }
 
@@ -1466,7 +1434,7 @@ impl Varnode {
             self.flags |= varnode_flags::typelock;
         }
         self.type_ = ct;
-        // if (high != null) high->typeDirty();  -- STUB(W7)
+        // STUB(W7): high->typeDirty() reconciled at the Funcdata level
         true
     }
 
@@ -1486,7 +1454,6 @@ impl Varnode {
         // mapentry = vn->mapentry;  -- STUB(W4): no mapentry link in the merged tree
         self.flags &= !(varnode_flags::typelock | varnode_flags::namelock);
         self.flags |= (varnode_flags::typelock | varnode_flags::namelock) & src_flags;
-        // if (high != 0) { high->typeDirty(); if (mapentry) high->setSymbol(this); }
         //   -- STUB(W7): high typeDirty / setSymbol notification
     }
 }
@@ -1644,7 +1611,6 @@ impl VarnodeBank {
     /// Create a \e free Varnode and insert it into both trees (C++ `create`).
     pub fn create(&mut self, s: int4, m: Address, ct: Rc<Datatype>) -> VarnodeId {
         let mut vn = Varnode::new(s, m, ct);
-        // vn->create_index = create_index++;
         vn.create_index = self.create_index;
         self.create_index = self.create_index.wadd(1);
         let id = self.arena.insert(vn);
@@ -1660,7 +1626,6 @@ impl VarnodeBank {
 
     /// Create a temporary varnode in the unique space (C++ `createUnique`).
     pub fn create_unique(&mut self, s: int4, ct: Rc<Datatype>) -> VarnodeId {
-        // Address addr(uniq_space, uniqid);  uniqid += s;
         let addr = Address::new(Rc::clone(&self.uniq_space), self.uniqid as u64);
         self.uniqid = self.uniqid.wadd(s as uintm);
         self.create(s, addr, ct)
@@ -1668,7 +1633,6 @@ impl VarnodeBank {
 
     /// Remove a Varnode from the container and reclaim it (C++ `destroy`).
     pub fn destroy(&mut self, vn: VarnodeId) -> KunaResult<()> {
-        // if ((vn->getDef() != null) || (!vn->hasNoDescend())) throw ...
         let v = &self.arena[vn];
         if v.def.is_some() || !v.has_no_descend() {
             return Err(KunaError::lowlevel("Deleting integrated varnode"));
@@ -1690,7 +1654,6 @@ impl VarnodeBank {
     /// varnode is freshly inserted, marked `insert`, and added to the def tree.
     fn xref(&mut self, vn: VarnodeId, replace_reads: &mut ReplaceReads) -> KunaResult<VarnodeId> {
         let lk = self.loc_key_of(vn);
-        // check = loc_tree.insert(vn);  if (!check.second) { ... }
         if let Some(&othervn) = self.loc_tree.get(&lk) {
             // Set already contains this varnode.
             replace_reads(self, vn, othervn)?; // Patch ops using the old varnode
@@ -1899,7 +1862,6 @@ impl VarnodeBank {
         uniq: Option<uintm>,
         def_addr_time: &dyn Fn(OpId) -> (Address, uintm),
     ) -> Option<VarnodeId> {
-        // iter = beginLoc(s, loc, pc, uniq);  loop while iter != loc_tree.end()
         for id in self.iter_loc_probe(self.begin_loc_pc(s, loc, pc, uniq), LocProbe::End) {
             let vn = &self.arena[id];
             if vn.size != s {
@@ -1924,7 +1886,6 @@ impl VarnodeBank {
 
     /// Find an input Varnode of the given size and address (C++ `findInput`).
     pub fn find_input(&self, s: int4, loc: &Address) -> Option<VarnodeId> {
-        // iter = beginLoc(s, loc, Varnode::input);  if (iter != end) { ... }
         let begin = self.begin_loc_flag(s, loc, varnode_flags::input);
         if let Some(id) = self.iter_loc_probe(begin, LocProbe::End).next() {
             let vn = &self.arena[id];
@@ -2018,9 +1979,9 @@ impl VarnodeBank {
     /// `beginLoc(int4 s,const Address &addr,const Address &pc,uintm uniq)`
     /// (`varnode.cc:1751`).
     fn begin_loc_pc(&self, s: int4, addr: &Address, pc: &Address, uniq: Option<uintm>) -> LocProbe {
-        // if (uniq==~0) uniq = 0;  // find earliest
+        // find earliest
         let u = uniq.unwrap_or(0);
-        // SeqNum sq(pc, u);  searchvn{size=s, loc=addr, flags=written, def=&searchop(sq)} ; lower_bound
+        // searchvn{size=s, loc=addr, flags=written, def=&searchop(pc,u)} ; lower_bound
         LocProbe::Lower(LocKey {
             addr: addr.clone(),
             size: s,
@@ -2142,7 +2103,7 @@ impl VarnodeBank {
     /// `beginDef(uint4 fl)` (`varnode.cc:1850`).
     fn begin_def_flag(&self, fl: uint4) -> DefProbe {
         if fl == varnode_flags::input {
-            // return def_tree.begin();  -- inputs occur first
+            // inputs occur first
             return DefProbe::Begin;
         }
         if fl == varnode_flags::written {
@@ -2266,25 +2227,21 @@ impl VarnodeBank {
     pub fn find_covered_input(&self, s: int4, loc: &Address) -> KunaResult<Option<VarnodeId>> {
         let space = loc.get_space().expect("findCoveredInput on invalid address (C++ UB)");
         let highest = space.get_highest();
-        // uintb end = loc.getOffset() + s - 1;
         let end = loc.get_offset().wadd(s as i64 as u64).wsub(1);
 
         let begin = self.begin_def_flag_addr(varnode_flags::input, loc)?;
         // The C++ end iterator is `endDef(input, highest)` or `beginDef(input,
         // loc+s)`; either way it is a probe used in *end* position.
         let end_probe = if end == highest {
-            // enditer = endDef(input, Address(space, highest));
             let tmp = Address::new(Rc::clone(space), highest);
             self.end_def_flag_addr(varnode_flags::input, &tmp)?
         } else {
-            // enditer = beginDef(input, loc+s);
             let plus = loc + (s as i64);
             self.begin_def_flag_addr(varnode_flags::input, &plus)?
         };
 
         for id in self.iter_def_probe(begin, end_probe) {
             let vn = &self.arena[id];
-            // if (vn->getOffset()+vn->getSize()-1 <= end) return vn;
             if vn.get_offset().wadd(vn.size as i64 as u64).wsub(1) <= end {
                 return Ok(Some(id));
             }
@@ -2295,14 +2252,13 @@ impl VarnodeBank {
     /// Find the input Varnode that completely contains the given range
     /// (C++ `findCoveringInput`).
     pub fn find_covering_input(&self, s: int4, loc: &Address) -> KunaResult<Option<VarnodeId>> {
-        // iter = beginDef(input, loc);  then possibly step back one
+        // then possibly step back one
         let begin = self.begin_def_flag_addr(varnode_flags::input, loc)?;
         let cand = self.iter_def_probe(begin.clone(), DefProbe::End).next();
         let vn_id = match cand {
             None => return Ok(None), // iter == def_tree.end()
             Some(id) => {
                 let vn = &self.arena[id];
-                // if (vn->getAddr() != loc && iter != def_tree.begin()) { --iter; vn = *iter; }
                 if &vn.loc != loc {
                     // step back one: the last element strictly before the `begin`
                     // iterator position (so `begin` is used as an *end* bound)
@@ -2336,14 +2292,12 @@ impl VarnodeBank {
     /// (C++ `hasInputIntersection`).
     pub fn has_input_intersection(&self, s: int4, loc: &Address) -> KunaResult<bool> {
         let begin = self.begin_def_flag_addr(varnode_flags::input, loc)?;
-        // iter = beginDef(input, loc);  if (iter != end) { vn=*iter; ... }
         if let Some(id) = self.iter_def_probe(begin.clone(), DefProbe::End).next() {
             let vn = &self.arena[id];
             if vn.is_input() && vn.intersects_range(loc, s) {
                 return Ok(true);
             }
         }
-        // if (iter != def_tree.begin()) { --iter; vn=*iter; ... }
         // (the `begin` probe is used as an *end* bound to step back one)
         if let Some((_, &id)) = self.def_tree.range((Bound::Unbounded, begin.into_end())).next_back() {
             let vn = &self.arena[id];

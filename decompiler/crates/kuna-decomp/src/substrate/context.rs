@@ -1124,7 +1124,6 @@ impl ArchContext {
         _loc: &Address,
         size: int4,
     ) -> Option<&crate::transform::LanedRegister> {
-        // int4 min = 0; int4 max = lanerecords.size() - 1;
         let mut min: int4 = 0;
         let mut max: int4 = self.lanerecords.len() as int4 - 1;
         while min <= max {

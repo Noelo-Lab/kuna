@@ -35,7 +35,6 @@ use crate::varnode::varnode_flags;
 pub fn print_raw(arch: &Architecture, fd: &Funcdata) -> Result<String, String> {
     let mut s = String::new();
     if fd.bblocks_get_size() == 0 {
-        // C++: if (obank.empty()) throw RecovError("No operations to print");
         let ops: Vec<OpId> = fd.obank().iter_all().map(|(_, id)| id).collect();
         if ops.is_empty() {
             return Err("No operations to print".to_string());
@@ -87,7 +86,6 @@ fn print_basic_block_raw(
     fd: &Funcdata,
     bl: BlockId,
 ) -> Result<(), String> {
-    // C++ `BlockBasic::printHeader`: "Basic Block " + FlowBlock::printHeader.
     s.push_str("Basic Block ");
     print_flow_header(s, fd, bl);
     s.push('\n');
@@ -147,14 +145,13 @@ fn print_raw_implied_goto(
     if out_block == next_block {
         return Ok(());
     }
-    // if (!op.empty() && op.back()->isBranch()) return;
     let ops = fd.bb_ops(bl);
     if let Some(&last) = ops.last() {
         if fd.obank().get(last).map(|o| o.is_branch()).unwrap_or(false) {
             return Ok(());
         }
     }
-    // C++ `getStop().printRaw(s)`: the block's stop address.
+    // The block's stop address.
     let stop = crate::block::block_get_stop(&fd.bblocks_ref().arena, bl);
     let _ = stop.print_raw(s);
     s.push_str(":   \t[ goto ");
@@ -213,7 +210,6 @@ fn render_varnode(
     // `IopSpace::printRaw` leaves this to W3 (LOSS-012), so route it here where the
     // op arena is reachable: shortcut char `i` + the referenced op's seqnum.
     let expect = if addr.get_space().map(|sp| sp.get_type() == spacetype::IPTR_IOP) == Some(true) {
-        // s << loc.getShortcut(); expect = trans->getDefaultSize(); loc.printRaw(s);
         let space = addr.get_space().expect("render_varnode: iop space present");
         s.push(space.get_shortcut());
         let referenced = crate::funcdata_varnode::op_iop_decode(addr.get_offset());
@@ -228,13 +224,12 @@ fn render_varnode(
             })
             .map_err(|e| e.explain().to_string())?;
         }
-        // C++ `expect = trans->getDefaultSize()`.
         arch.manage().get_default_size()
     } else {
         render_varnode_no_markup(s, arch, &addr, size)?
     };
     if expect != size {
-        // C++ `s << ':' << setw(1) << size;` — a single decimal field.
+        // A single decimal field (C++ setw(1)).
         s.push(':');
         s.push_str(&format!("{size}"));
     }
@@ -278,7 +273,7 @@ fn render_varnode_no_markup(
     let off = addr.get_offset();
     // Register-name/storage resolution is a Sleigh-engine concern (the C++
     // `getTrans()` back-pointer); reach the concrete engine's `SleighBase`
-    // through the seam downcast (only `Sleigh` implements it; this print-raw
+    // through the boundary downcast (only `Sleigh` implements it; this print-raw
     // path only ever runs on the standalone engine).
     let sleigh = arch.translate().as_sleigh().expect("print_raw: standalone Sleigh engine");
     let name = sleigh.base().get_register_name(space, off, size);
@@ -293,13 +288,11 @@ fn render_varnode_no_markup(
         s.push_str(&String::from_utf8_lossy(&name));
         let off_delta = off.wrapping_sub(point_off);
         if off_delta != 0 {
-            // C++ `s << '+' << dec << off;`
             s.push('+');
             s.push_str(&format!("{off_delta}"));
         }
         Ok(point_size)
     } else {
-        // C++ `s << loc.getShortcut(); ... loc.printRaw(s);`
         s.push(space.get_shortcut());
         let expect = arch.manage().get_default_size();
         let _ = addr.print_raw(s);

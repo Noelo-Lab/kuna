@@ -298,7 +298,6 @@ pub fn metatype2string(metatype: type_metatype) -> KunaResult<String> {
         TYPE_BOOL => "bool",
         TYPE_CODE => "code",
         TYPE_FLOAT => "float",
-        // C++ `default: throw LowlevelError("Unknown metatype");`
     };
     Ok(res.to_string())
 }
@@ -529,7 +528,6 @@ impl TypeField {
         if self.name != op2.name {
             return if self.name < op2.name { -1 } else { 1 };
         }
-        // C++ `if (type != op2.type) return (type < op2.type) ? -1 : 1;`
         // (compare the pointers directly).
         Datatype::compare_dependency_ptr(&self.field_type, &op2.field_type)
     }
@@ -668,7 +666,6 @@ impl TypeBitField {
         if self.name != op2.name {
             return if self.name < op2.name { -1 } else { 1 };
         }
-        // C++ `if (type != op2.type) return (type < op2.type) ? -1 : 1;`
         // (compare the pointers directly).
         Datatype::compare_dependency_ptr(&self.field_type, &op2.field_type)
     }
@@ -945,7 +942,7 @@ impl Datatype {
     pub fn hash_name(nm: &str) -> uint8 {
         let mut res: uint8 = 123;
         for b in nm.bytes() {
-            // C++ `res = (res<<8) | (res >> 56);` — a left rotate by 8 on a u64.
+            // A left rotate by 8 on a u64.
             res = res.rotate_left(8);
             res = res.wrapping_add(b as uint8);
             if (res & 1) == 0 {
@@ -1450,15 +1447,12 @@ impl Datatype {
     pub fn evaluate_thru_parent(&self, addr_off: u64) -> Option<bool> {
         match &self.kind {
             DatatypeKind::PointerRel { ptrto, wordsize, parent, offset, .. } => {
-                // byteOff = addressToByte(addrOff, wordsize);
                 let byte_off = AddrSpace::address_to_byte(addr_off, *wordsize);
-                // if (ptrto STRUCT && byteOff < ptrto.size) return false;
                 if ptrto.get_metatype() == type_metatype::TYPE_STRUCT
                     && byte_off < ptrto.get_size() as u64
                 {
                     return Some(false);
                 }
-                // byteOff = (byteOff + offset) & calc_mask(size);
                 let byte_off = byte_off
                     .wrapping_add(*offset as u64)
                     & kuna_base::address::calc_mask(self.get_size());
@@ -1487,13 +1481,7 @@ impl Datatype {
     /// Order types for propagation (C++ `Datatype::compare`).
     ///
     /// The **base** `Datatype::compare` (type.cc:216-222) is implemented for
-    /// real — it reads only `submeta` and `size`:
-    ///
-    /// ```text
-    /// if (submeta != op.submeta) return (submeta < op.submeta) ? -1 : 1;
-    /// if (size != op.size) return (op.size - size);
-    /// return 0;
-    /// ```
+    /// real — it reads only `submeta` and `size`.
     ///
     /// The `TypePointer::compare` (type.cc:1074-1093) and `TypeArray::compare`
     /// (type.cc:1363-1375) overrides are implemented for real (W6, this item).
@@ -1731,7 +1719,6 @@ impl Datatype {
         // compareBasic == 2 implies both protos are present.
         let proto = proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
         let op_proto = op_proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
-        // for(i=0;i<nump;++i) param->compare(*opparam, level)
         let nump = proto.num_params();
         for i in 0..nump {
             let param = proto
@@ -1747,7 +1734,6 @@ impl Datatype {
                 return Ok(c);
             }
         }
-        // Datatype *otype = proto->getOutputType(); (may be null)
         let otype = proto.get_output_type();
         let opotype = op_proto.get_output_type();
         match (otype, opotype) {
@@ -2008,14 +1994,12 @@ impl Datatype {
         proto: Option<&Rc<crate::fspec::FuncProto>>,
         op_proto: Option<&Rc<crate::fspec::FuncProto>>,
     ) -> KunaResult<int4> {
-        // if (proto == 0) { if (op->proto == 0) return 0; return 1; }
         let proto = match proto {
             None => {
                 return Ok(if op_proto.is_none() { 0 } else { 1 });
             }
             Some(p) => p,
         };
-        // if (op->proto == 0) return -1;
         let op_proto = match op_proto {
             None => return Ok(-1),
             Some(p) => p,
@@ -2048,15 +2032,7 @@ impl Datatype {
     }
 
     /// Transcribe the C++ `spaceid` tie-break shared by `TypePointer::compare`
-    /// and `TypePointer::compareDependency` (type.cc:1082-1086, 1102-1106):
-    ///
-    /// ```text
-    /// if (spaceid != tp->spaceid) {
-    ///   if (spaceid == (AddrSpace *)0) return 1;   // ptrs with a space come earlier
-    ///   if (tp->spaceid == (AddrSpace *)0) return -1;
-    ///   return (spaceid->getIndex() < tp->spaceid->getIndex()) ? -1 : 1;
-    /// }
-    /// ```
+    /// and `TypePointer::compareDependency` (type.cc:1082-1086, 1102-1106).
     ///
     /// Returns `Some(ordering)` if the spaces differ (the C++ early return) or
     /// `None` if they are the same (C++ falls through).  `AddrSpace` identity is
@@ -2296,7 +2272,6 @@ impl Datatype {
             if f1.name != f2.name {
                 return Ok(if f1.name < f2.name { -1 } else { 1 });
             }
-            // C++ `if (fld1 != fld2) return (fld1 < fld2) ? -1 : 1;`.
             let cmp = Datatype::compare_dependency_ptr(&f1.field_type, &f2.field_type);
             if cmp != 0 {
                 return Ok(cmp);
@@ -2370,13 +2345,11 @@ impl Datatype {
                 .get_param(i)
                 .and_then(|p| p.get_type().cloned())
                 .ok_or_else(|| Datatype::code_invariant_err("compareDependency"))?;
-            // if (param != opparam) return (param < opparam) ? -1 : 1;
             let c = Datatype::compare_dependency_ptr(&param, &opparam);
             if c != 0 {
                 return Ok(c);
             }
         }
-        // Datatype *otype = proto->getOutputType(); (may be null)
         let otype = proto.get_output_type();
         let opotype = op_proto.get_output_type();
         match (otype, opotype) {
@@ -2402,16 +2375,14 @@ impl Datatype {
         let (op_spaceid, op_localframe) = op
             .as_spacebase()
             .ok_or_else(|| Datatype::spacebase_invariant_err("compareDependency"))?;
-        // C++ `if (spaceid != tsb->spaceid) return (spaceid < tsb->spaceid) ? -1:1;`
-        // — pointer comparison of the AddrSpace objects.
+        // Pointer comparison of the AddrSpace objects.
         if let Some(r) = Datatype::compare_spacebase_space(spaceid, op_spaceid) {
             return Ok(r);
         }
-        // C++ `if (localframe.isInvalid()) return 0;` — Global space base.
+        // Global space base.
         if localframe.is_invalid() {
             return Ok(0);
         }
-        // C++ `if (localframe != tsb->localframe) return (localframe < tsb->localframe) ? -1:1;`.
         if localframe != op_localframe {
             return Ok(if localframe < op_localframe { -1 } else { 1 });
         }
@@ -2427,14 +2398,12 @@ impl Datatype {
         whole: &Rc<Datatype>,
         offset: int4,
     ) -> KunaResult<int4> {
-        // C++ `if (submeta != op.getSubMeta()) return (submeta < op.getSubMeta()) ? -1 : 1;`
         if self.submeta != op.get_sub_meta() {
             return Ok(if self.submeta < op.get_sub_meta() { -1 } else { 1 });
         }
         let (op_whole, op_offset) = op
             .as_partial_whole()
             .ok_or_else(|| Datatype::partial_invariant_err("compareDependency"))?;
-        // C++ `if (container != tp->container) return (container < tp->container) ? -1 : 1;`
         // (compare absolute pointers).
         let cmp = Datatype::compare_dependency_ptr(whole, op_whole);
         if cmp != 0 {
@@ -2551,13 +2520,10 @@ impl Datatype {
             Some(pair) => pair,
             None => return,
         };
-        // upper_bound(bitfield.begin(),bitfield.end(),offset,TypeBitField::compareMaxByte)
         let start = Datatype::upper_bound_idx(bitfield, offset, TypeBitField::compare_max_byte);
         if start != bitfield.len() {
-            // BitRange range(offset,sz,(*iter).bits.isBigEndian)
             let range = BitRange::byte_range(offset, sz, bitfield[start].is_big_endian);
             for cur_bit_field in &bitfield[start..] {
-                // curBitField.bits.overlapTest(range)
                 let code = cur_bit_field.bits().overlap_test(&range);
                 if code == 1 {
                     break;
@@ -2568,7 +2534,6 @@ impl Datatype {
                 res.push(BitFieldTriple::new(cur_bit_field.clone(), base_offset));
             }
         }
-        // upper_bound(field.begin(),field.end(),offset,TypeField::compareMaxByte)
         let fstart = Datatype::upper_bound_idx(field, offset, TypeField::compare_max_byte);
         for cur_field in &field[fstart..] {
             if cur_field.offset >= offset + sz {
@@ -2707,7 +2672,6 @@ impl Datatype {
             // exists and `off` lands in its window, return it; else fall to base.
             DatatypeKind::Pointer { truncate, .. } => {
                 if let Some(trunc) = truncate {
-                    // C++: min = (flags & truncate_bigendian) ? size - trunc->getSize() : 0
                     let min: int8 = if (self.flags & flags::truncate_bigendian) != 0 {
                         (self.size - trunc.get_size()) as int8
                     } else {
@@ -2737,7 +2701,7 @@ impl Datatype {
                 // takes int4; the C++ implicitly narrows.  Mirror that narrowing.
                 let i = Datatype::get_field_iter(field, off as int4);
                 if i < 0 {
-                    // C++ `return Datatype::getSubType(off,newoff);` — base body.
+                    // Base body.
                     return Ok((None, off));
                 }
                 let curfield = &field[i as usize];
@@ -3077,7 +3041,7 @@ impl Datatype {
                         }
                     }
                     None => {
-                        // C++: extra += newoff; (newoff is the passed-back value)
+                        // newoff is the passed-back value.
                         extra += new_off2;
                         if (extra < 0 || extra >= typesize) && typesize != 0 {
                             return Ok(false);
@@ -3104,9 +3068,6 @@ impl Datatype {
         if !self.is_piece_structured() {
             return true;
         }
-        // C++: if (metatype == TYPE_ARRAY || metatype == TYPE_STRUCT) {
-        //        if (numDepend() > 0) { Datatype *component = getDepend(0);
-        //          if (component->getSize() == getSize()) return component->isPrimitiveWhole(); } }
         let is_struct_or_array = self.metatype == type_metatype::TYPE_ARRAY
             || self.metatype == type_metatype::TYPE_STRUCT;
         if is_struct_or_array && self.num_depend() > 0 {
@@ -3153,7 +3114,6 @@ impl Datatype {
                          Funcdata union-field resolution",
                     ))
                 } else {
-                    // C++ `return this;`
                     Ok(Rc::clone(self))
                 }
             }
@@ -3194,7 +3154,6 @@ impl Datatype {
                          Funcdata union-field cache",
                     ))
                 } else {
-                    // C++ `return this;`
                     Ok(Rc::clone(self))
                 }
             }
@@ -3229,7 +3188,6 @@ impl Datatype {
             // too (the `ptrto` member is shared), so use `get_ptr_to` (both kinds).
             DatatypeKind::Pointer { ptrto, .. } | DatatypeKind::PointerRel { ptrto, .. } => {
                 if ct.get_metatype() == type_metatype::TYPE_PTR {
-                    // ((TypePointer *)ct)->ptrto
                     let ct_ptrto = ct
                         .get_ptr_to()
                         .ok_or_else(|| Datatype::pointer_invariant_err("findCompatibleResolve"))?;
@@ -3247,7 +3205,7 @@ impl Datatype {
                 {
                     return Ok(0);
                 }
-                // C++ `if (arrayof == ct)` — pointer identity against the element.
+                // Pointer identity against the element.
                 if std::ptr::eq(Rc::as_ptr(arrayof), ct as *const Datatype) {
                     return Ok(0);
                 }
@@ -3264,7 +3222,7 @@ impl Datatype {
                 {
                     return Ok(0);
                 }
-                // C++ `if (fieldType == ct) return 0;` — pointer identity.
+                // Pointer identity.
                 if std::ptr::eq(Rc::as_ptr(field_type), ct as *const Datatype) {
                     return Ok(0);
                 }
@@ -3274,7 +3232,6 @@ impl Datatype {
             DatatypeKind::Union { field } => {
                 if !ct.needs_resolution() {
                     for (i, f) in field.iter().enumerate() {
-                        // C++ `if (field[i].type == ct && field[i].offset == 0)`.
                         if std::ptr::eq(Rc::as_ptr(&f.field_type), ct as *const Datatype)
                             && f.offset == 0
                         {
@@ -3940,8 +3897,6 @@ pub trait TypeFactory {
         if off > 0 {
             let mut curoff: int8 = off as int8;
             let mut base = base;
-            // do { base = base->getSubType(curoff,&curoff); }
-            //   while (curoff != 0 && base != 0);
             loop {
                 let (next, newoff) = base.get_sub_type(curoff)?;
                 curoff = newoff;
@@ -4307,7 +4262,6 @@ impl TypeFactoryImpl {
     pub fn decode_alignment_map(&self, entries: &[(int4, int4)]) -> KunaResult<()> {
         let mut m: Vec<int4> = Vec::new();
         for &(sz, val) in entries {
-            // while(alignMap.size() <= sz) alignMap.push_back(-1);
             while (m.len() as int4) <= sz {
                 m.push(-1);
             }
@@ -5024,14 +4978,7 @@ impl TypeFactoryImpl {
     }
 
     /// Create a `TypeCode` associated with a specific function prototype (C++
-    /// `TypeFactory::getTypeCode(const PrototypePieces&)`, type.cc:4476-4482):
-    ///
-    /// ```text
-    ///   TypeCode tc;                              // getFuncdata type, no name
-    ///   tc.setPrototype(this, proto, getTypeVoid());
-    ///   tc.markComplete();
-    ///   return (TypeCode *) findAdd(tc);
-    /// ```
+    /// `TypeFactory::getTypeCode(const PrototypePieces&)`, type.cc:4476-4482).
     ///
     /// `setPrototype` (type.cc:3177-3190) turns on `variable_length`, builds a
     /// fresh [`FuncProto`](crate::fspec::FuncProto), seeds the internal store
