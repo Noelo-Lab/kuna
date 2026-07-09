@@ -49,7 +49,6 @@ impl<K: Ord + Clone, V: Clone> PartMap<K, V> {
     /// the value object it maps to.  If there is no earlier split point
     /// return the default value.  (C++ `getValue`, const flavor.)
     pub fn get_value(&self, pnt: &K) -> &V {
-        // C++: iter = database.upper_bound(pnt); if begin -> default; --iter.
         match self.database.range((Unbounded, Included(pnt))).next_back() {
             Some((_, v)) => v,
             None => &self.defaultvalue,
@@ -78,11 +77,6 @@ impl<K: Ord + Clone, V: Clone> PartMap<K, V> {
     /// Returns the (possibly) new value object for the range starting at the
     /// point.  (C++ `split`.)
     pub fn split(&mut self, pnt: &K) -> &mut V {
-        // C++: iter = database.upper_bound(pnt);
-        //      if (iter != begin) { --iter;
-        //        if ((*iter).first == pnt) return (*iter).second;  // point matches exactly
-        //        newref = database[pnt] = (*iter).second; }        // copy of original partition value
-        //      else newref = database[pnt] = defaultvalue;         // copy of defaultvalue
         let newval = match self.database.range((Unbounded, Included(pnt))).next_back() {
             Some((k, v)) => {
                 if k == pnt {
@@ -122,9 +116,7 @@ impl<K: Ord + Clone, V: Clone> PartMap<K, V> {
     pub fn clear_range(&mut self, pnt1: &K, pnt2: &K) -> &mut V {
         self.split(pnt1);
         self.split(pnt2);
-        // C++: beg = lower_bound(pnt1); end = lower_bound(pnt2);
-        //      ++beg; database.erase(beg, end);
-        // i.e. erase every split point strictly between pnt1 and pnt2.
+        // Erase every split point strictly between pnt1 and pnt2.
         // (pnt1 == pnt2 is C++ UB through erase(beg,end) with beg past end;
         // here it simply erases nothing.)
         if pnt1 < pnt2 {
@@ -159,9 +151,7 @@ impl<K: Ord + Clone, V: Clone> PartMap<K, V> {
         if self.database.is_empty() {
             return (&self.defaultvalue, None, None, 3);
         }
-        // enditer = database.upper_bound(pnt)
         let enditer = self.database.range((Excluded(pnt), Unbounded)).next();
-        // iter = enditer - 1, valid only if enditer != begin()
         let previter = self.database.range((Unbounded, Included(pnt))).next_back();
         match previter {
             Some((before, value)) => match enditer {

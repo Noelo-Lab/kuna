@@ -250,10 +250,7 @@ impl<W: Write> CompressBuffer<W> {
     /// (failures silently set badbit); the Rust `Write` contract propagates
     /// them instead.
     fn flush_input(&mut self, last_buffer: bool) -> std::io::Result<()> {
-        // int len = pptr() - pbase(); compressor.input((uint1 *)pbase(),len);
         self.compressor.input(&self.in_buffer);
-        // do { outAvail = OUT_BUFFER_SIZE; outAvail = deflate(...); write(...);
-        // } while(outAvail == 0);
         loop {
             let out_avail = self
                 .compressor
@@ -264,7 +261,7 @@ impl<W: Write> CompressBuffer<W> {
                 break;
             }
         }
-        // pbump(-len): reset the put area
+        // reset the put area
         self.in_buffer.clear();
         Ok(())
     }
@@ -281,7 +278,7 @@ impl<W: Write> Write for CompressBuffer<W> {
         let mut written = 0;
         while written < buf.len() {
             if self.in_buffer.len() == IN_BUFFER_SIZE {
-                // overflow(c): pass the filled input buffer to the compressor
+                // pass the filled input buffer to the compressor
                 self.flush_input(false)?;
             }
             let take = (IN_BUFFER_SIZE - self.in_buffer.len()).min(buf.len() - written);

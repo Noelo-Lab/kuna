@@ -141,16 +141,12 @@ impl FileManage {
                 Some(s) => s,
                 None => continue, // non-UTF-8 name; see module docs
             };
-            // C++ nests: if (match.size() <= fullname.size())   [byte lengths]
-            //            { if (allowdot||(fullname[0] != '.')) { ...
             if match_.len() <= fullname.len() && (allowdot || !fullname.starts_with('.')) {
                 if is_suffix {
-                    // 0==fullname.compare(fullname.size()-match.size(),match.size(),match)
                     if fullname.ends_with(match_) {
                         res.push(format!("{}{}", dirfinal, fullname));
                     }
                 } else if fullname.starts_with(match_) {
-                    // 0==fullname.compare(0,match.size(),match)
                     res.push(format!("{}{}", dirfinal, fullname));
                 }
             }
@@ -231,7 +227,7 @@ impl FileManage {
             if &curpath[pos..] == matchname {
                 res.push(curpath.clone());
             } else {
-                Self::scan_directory_recursive(res, matchname, curpath, maxdepth - 1); // Recurse
+                Self::scan_directory_recursive(res, matchname, curpath, maxdepth - 1);
             }
         }
     }
@@ -251,8 +247,6 @@ impl FileManage {
             path.clear();
             return;
         }
-        // string::size_type end = full.size()-1;
-        // if (isSeparator(full[full.size()-1])) end = full.size()-2;
         // For full == "/" the C++ size_type wraps to a huge value;
         // find_last_of clamps the search to the whole string and the substr
         // count clamps to the string end.  `search_end`/`base_end` encode the
@@ -267,7 +261,6 @@ impl FileManage {
         } else {
             (bytes.len() - 1, bytes.len())
         };
-        // string::size_type pos = full.find_last_of(separatorClass,end);
         let pos = bytes[..=search_end].iter().rposition(|&c| Self::is_separator(c as char));
         match pos {
             None => {
@@ -276,7 +269,6 @@ impl FileManage {
                 path.clear();
             }
             Some(pos) => {
-                // base = full.substr(pos+1,end-pos); path = full.substr(0,pos+1);
                 *base = full[pos + 1..base_end].to_string();
                 *path = full[..pos + 1].to_string();
             }
@@ -296,7 +288,6 @@ impl FileManage {
     /// order, up to and including `pathels[level]`.  (C++ `buildPath`.)
     fn build_path(pathels: &[String], level: i32) -> String {
         let mut s = String::new();
-        // for(int i=pathels.size()-1;i>=level;--i)
         let mut i = pathels.len() as i32 - 1;
         while i >= level {
             s.push(SEPARATOR);
@@ -319,7 +310,6 @@ impl FileManage {
         if parent.len() < 11 {
             return false;
         }
-        // piecestr = parent.substr(0,7) / parent.substr(parent.size()-4)
         if !parent.as_bytes().starts_with(b"ghidra.") {
             return false;
         }
@@ -367,7 +357,6 @@ impl FileManage {
         let is_abs = Self::is_absolute_path(&cur);
 
         loop {
-            // int sizebefore = cur.size(); (i32 truncation immaterial here)
             let sizebefore = cur.len();
             // C++ calls splitPath(cur,cur,base) with full/path aliased; base
             // is assigned before path is touched, so a snapshot reproduces it
@@ -405,7 +394,7 @@ impl FileManage {
             }
         }
 
-        // for(int i=0;i<pathels.size();++i) — loop index is nonnegative
+        // loop index is nonnegative
         for (i, el) in pathels.iter().enumerate() {
             if el != "Ghidra" {
                 continue;
