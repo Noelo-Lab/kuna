@@ -14,7 +14,7 @@ BINDIR  := $(ENGINE)/target/$(PROFILE)
 SLACOMP := $(BINDIR)/slacomp
 PYTHON  ?= python3
 
-.PHONY: all binaries specs test test-stages rust rust-test clean
+.PHONY: all binaries specs test test-stages rust rust-test clean check-spec
 
 all: binaries specs
 
@@ -53,6 +53,11 @@ test-stages: $(BINDIR)/kuna
 
 $(BINDIR)/kuna:
 	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-cli
+
+# Spec honesty gate: docs/spec/ anchors resolve, every phase folder is owned by
+# exactly one chapter, and (strict) every settable option is mentioned.
+check-spec:
+	python3 tools/check_spec.py
 
 # The Rust workspace's own unit/integration tests (the ported TEST() suites, the
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).
