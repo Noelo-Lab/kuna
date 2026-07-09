@@ -30,7 +30,7 @@
 //! Two highs that render the same name but a *different* type or storage have
 //! different signatures and both survive (a genuine collision the reader must see).
 //!
-//! # Apply seam
+//! # Apply boundary
 //!
 //! Following the kuna-option idiom ([`crate::kuna_arraynotation::OptionArrayNotation`]),
 //! `apply` parses + validates the `on`/`off` value and returns the resolved flag

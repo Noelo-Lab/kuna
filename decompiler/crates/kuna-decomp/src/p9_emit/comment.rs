@@ -15,7 +15,7 @@
 //!     emission, keyed on the `Subsort` `(index, order, pos)` tuple, and walks
 //!     them with the `start`/`stop`/`opstop` cursor trio.
 //!
-//! ### Seams
+//! ### Boundaries
 //!
 //! `CommentSorter::findPosition` / `setupFunctionList` read the live
 //! [`Funcdata`] op-tree (`beginOp`/`endOpAll`/`beginOpAll`) and basic-block
@@ -106,13 +106,12 @@ pub struct Comment {
 }
 
 impl Comment {
-    /// Constructor (C++ `Comment(uint4 tp,const Address &fad,const Address &ad,int4 uq,const string &txt)`).
     pub fn new(tp: uint4, fad: Address, ad: Address, uq: int4, txt: &[u8]) -> Comment {
         Comment { type_: tp, uniq: uq, funcaddr: fad, addr: ad, text: txt.to_vec(), emitted: false }
     }
 
-    /// Constructor for use with decode (C++ `Comment(void)`): all fields are
-    /// overwritten by [`Comment::decode`].
+    /// C++ `Comment(void)`, for use with decode: all fields are overwritten by
+    /// [`Comment::decode`].
     pub fn empty() -> Comment {
         Comment {
             type_: 0,
@@ -329,7 +328,6 @@ pub struct CommentDatabaseInternal {
 }
 
 impl CommentDatabaseInternal {
-    /// Constructor (C++ `CommentDatabaseInternal(void)`).
     pub fn new() -> CommentDatabaseInternal {
         CommentDatabaseInternal { commentset: BTreeMap::new() }
     }
@@ -618,7 +616,6 @@ impl Default for CommentSorter {
 }
 
 impl CommentSorter {
-    /// Constructor (C++ `CommentSorter(void)`): `displayUnplacedComments = false`.
     pub fn new() -> CommentSorter {
         CommentSorter {
             commmap: BTreeMap::new(),
@@ -653,8 +650,7 @@ impl CommentSorter {
         }
 
         // Try to find the block containing the comment.  Find the op at the
-        // lowest address greater than or equal to the comment's address
-        // (C++ `opiter = fd->beginOp(comm->getAddr())`).
+        // lowest address greater than or equal to the comment's address.
         let opiter = fd.first_op_at_or_after(comm.get_addr());
         let mut backup_op: Option<OpCursor> = None;
         if let OpProbe::At(cursor) = opiter {
@@ -669,10 +665,9 @@ impl CommentSorter {
                 backup_op = Some(cursor);
             }
         }
-        // If there is a previous op (C++ `if (opiter != beginOpAll()) { --opiter; ...}`).
-        // `prev_op` performs the guarded `--opiter` on the probe, so the at-end
-        // probe over a non-empty tree decrements to the last op, exactly as in
-        // the C++.
+        // If there is a previous op: `prev_op` performs the guarded `--opiter`
+        // on the probe, so the at-end probe over a non-empty tree decrements to
+        // the last op, exactly as in the C++.
         let prev = fd.prev_op(&opiter);
         if let Some(cursor) = prev {
             let info = fd.op_block_info(&cursor, comm.get_addr())?;
@@ -747,8 +742,6 @@ impl CommentSorter {
             }
             Some(landmark) => {
                 let subsort = Subsort { index: landmark.index, order: landmark.order, pos: 0xffffffff };
-                // C++ `opstop = commmap.upper_bound(subsort)`: first key strictly
-                // greater than `subsort`.
                 self.opstop = self.upper_bound(&subsort);
             }
         }
@@ -787,7 +780,6 @@ impl CommentSorter {
     /// can flip its `emitted` flag (the C++ `emitLineComment` `setEmitted(true)`).
     pub fn get_next(&mut self) -> &Comment {
         let key = self.start.expect("CommentSorter::get_next past end (C++ UB on ++start)");
-        // ++start: the next key strictly greater than the current `start`.
         self.start = self.successor(&key);
         self.last_returned = Some(key);
         // Resolve the comment at the original `start` key.

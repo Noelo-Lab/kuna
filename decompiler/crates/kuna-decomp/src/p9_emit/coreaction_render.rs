@@ -67,7 +67,7 @@
 //! `coreaction_early ∪ coreaction_protos ∪ coreaction_cleanup ∪ coreaction_render`
 //! covers **every** live `class Action* : public Action` in `coreaction.hh`.
 //!
-//! # Seams (the `Funcdata` analysis/symbol/type surface is not in the merged tree)
+//! # Stubs (the `Funcdata` analysis/symbol/type surface is not in the merged tree)
 //!
 //! Like the other coreaction modules, every body here is gated on accessors that
 //! the merged `Funcdata` does not yet expose — the call-spec list
@@ -89,7 +89,7 @@
 //! The realized portion of each stateful action — the `localcount`/`numpass`/
 //! `analysis_finished` early-return gating, the `reset` that zeroes that counter,
 //! and the per-call `propagateIndirect`/`stackspace` configuration — **is** wired
-//! and tested, since it binds only to fields this file owns.  Each unrealized seam
+//! and tested, since it binds only to fields this file owns.  Each unrealized stub
 //! is reported in this item's `losses` so the owning wave finishes the wiring by
 //! replaying the commented body against the real accessors.
 //!
@@ -174,12 +174,6 @@ impl Action for ActionStackPtrFlow {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:496 — ActionStackPtrFlow::apply
-        //   if (analysis_finished) return 0;
-        //   if (stackspace == 0) { analysis_finished = true; return 0; }  // no stack
-        //   numchange = checkClog(data, stackspace, 0);
-        //   if (numchange > 0) count += 1;
-        //   if (numchange == 0) { analyzeExtraPop(data,stackspace,0); analysis_finished = true; }
-        //   return 0;
         if self.analysis_finished {
             return 0;
         }
@@ -240,32 +234,27 @@ impl Action for ActionLaneDivide {
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:600 — ActionLaneDivide::apply
         let mut count = 0;
-        // data.setLanedRegGenerated();
         data.set_laned_reg_generated();
         // The C++ iterates the lanedMap directly; the map is not mutated during
         // the apply (only the Varnode bank is), so we snapshot the access list
         // once up front and replay it (each mode re-reads the same storage set).
         let lane_access = data.lane_access_snapshot();
-        // for (int4 mode = 0; mode < 3; ++mode)
         for mode in 0..3 {
             let mut all_storage_processed = true;
-            // for (iter = beginLaneAccess(); iter != endLaneAccess(); ++iter)
             for (addr, sz, laned_reg) in lane_access.iter() {
                 let mut all_varnodes_processed = true;
-                // viter = beginLoc(sz,addr); venditer = endLoc(sz,addr);
                 let mut viter: Vec<VarnodeId> =
                     data.vbank().iter_loc_size_addr(*sz, addr).collect();
                 let mut idx = 0;
                 while idx < viter.len() {
                     let vn = viter[idx];
-                    // if (vn->hasNoDescend()) { ++viter; continue; }
                     if data.vbank().get(vn).expect("ActionLaneDivide: stale vn").has_no_descend() {
                         idx += 1;
                         continue;
                     }
                     if lane_divide_process_varnode(data, vn, laned_reg, mode) {
                         count += 1;
-                        // viter = beginLoc(sz,addr); venditer = endLoc(sz,addr); // recalc bounds
+                        // Recalculate the loc bounds after a split.
                         viter = data.vbank().iter_loc_size_addr(*sz, addr).collect();
                         idx = 0;
                         all_varnodes_processed = true;
@@ -282,7 +271,6 @@ impl Action for ActionLaneDivide {
                 break;
             }
         }
-        // data.clearLanedAccessMap();
         data.clear_laned_access_map();
         count
     }
@@ -301,7 +289,7 @@ fn lane_divide_collect_lane_sizes(
     let descend: Vec<OpId> = data.descend_snapshot(vn);
     // step 0: descendants
     for &op in descend.iter() {
-        // if (op->code() != CPUI_SUBPIECE) continue;  // big register split into pieces
+        // A big register split into pieces.
         if data.obank().get(op).expect("collect_lane_sizes: stale op").code()
             != OpCode::CPUI_SUBPIECE
         {
@@ -316,10 +304,10 @@ fn lane_divide_collect_lane_sizes(
     // step 1: the defining op
     let v = data.vbank().get(vn).expect("collect_lane_sizes: stale vn");
     if !v.is_written() {
-        return; // if (!vn->isWritten()) continue;  (=> step = 2 = done)
+        return;
     }
     let op = v.get_def().expect("collect_lane_sizes: written vn has def");
-    // if (op->code() != CPUI_PIECE) continue;  // big register formed from smaller pieces
+    // A big register formed from smaller pieces.
     if data.obank().get(op).expect("collect_lane_sizes: stale def op").code() != OpCode::CPUI_PIECE {
         return;
     }
@@ -352,7 +340,6 @@ fn lane_divide_process_varnode(
     if mode < 2 {
         lane_divide_collect_lane_sizes(data, vn, laned_register, &mut check_lanes);
     } else {
-        // int4 defaultSize = data.getArch()->types->getSizeOfPointer();
         let mut default_size = data
             .get_arch()
             .types()
@@ -364,16 +351,14 @@ fn lane_divide_process_varnode(
         check_lanes.add_lane_size(default_size);
     }
     let whole_size = laned_register.get_whole_size();
-    // for (iter = checkLanes.begin(); iter != checkLanes.end(); ++iter)
     let sizes: Vec<int4> = check_lanes.iter_sizes().collect();
     for cur_size in sizes {
-        // LaneDescription description(lanedRegister.getWholeSize(), curSize);
         let description = LaneDescription::uniform(whole_size, cur_size);
         let mut lane_divide = LaneDivide::new(data, vn, description, allow_downcast);
         if lane_divide.do_trace(data) {
             // The C++ unconditionally applies once the trace succeeds; the merged
-            // TransformManager::apply reaches `glb->inst[opc]` (the W6 seam) for
-            // the COPY/PIECE/SUBPIECE/MULTIEQUAL lane ops.  A seam error degrades
+            // TransformManager::apply reaches `glb->inst[opc]` (the W6 stub) for
+            // the COPY/PIECE/SUBPIECE/MULTIEQUAL lane ops.  A stub error degrades
             // to "no split" (return false) exactly as a failed trace would, so a
             // partially-built transform is never half-applied.
             if lane_divide.apply(data).is_err() {
@@ -451,7 +436,7 @@ impl Action for ActionSegmentize {
         //
         // The `userops.numSegmentOps()==0` / `localcount>0` early-outs would gate
         // the body; without `getArch()->userops` here, the *first*-pass guard
-        // (`localcount`) is the only realizable part and is left to the seam since
+        // (`localcount`) is the only realizable part and is left to the stub since
         // the body it gates cannot run.
         //
         // STUB(W8-funcdata): the `SegmentOp` user-op table (`getArch()->userops`),
@@ -889,7 +874,7 @@ fn select_infer_space(data: &Funcdata, vn: VarnodeId, op: OpId) -> Option<Rc<Add
 
 /// C++ `ActionConstantPtr::checkCopy` (coreaction.cc:1056): for a COPY feeding a
 /// RETURN of a non-pointer locked output, do not infer; otherwise honor
-/// `glb->infer_pointers`.  The output-lock surface is the proto recovery seam; the
+/// `glb->infer_pointers`.  The output-lock surface is the proto recovery stub; the
 /// merged `FuncProto::is_output_locked` reports the un-recovered default
 /// (`false`), so this reduces to `glb->infer_pointers` (the un-locked branch).
 fn check_copy(data: &Funcdata, _op: OpId) -> bool {
@@ -934,7 +919,7 @@ fn is_pointer(
                     return None;
                 }
                 // A constant parameter could be a pointer.  The input-lock check
-                // (fc->isInputLocked + getParam metatype) is the call-spec seam; with
+                // (fc->isInputLocked + getParam metatype) is the call-spec stub; with
                 // no locked input we fall through to the infer_pointers gate.
                 if !glb.infer_pointers() {
                     return None;
@@ -1106,13 +1091,11 @@ impl Action for ActionDeindirect {
         let mut count: int4 = 0;
         let ncalls = data.num_calls();
         for i in 0..ncalls {
-            // fc = data.getCallSpecs(i); op = fc->getOp();
             let op = data.get_call_specs(i).get_op();
-            // if (op->code() != CPUI_CALLIND) continue;
             if data.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_CALLIND) {
                 continue;
             }
-            // vn = op->getIn(0); while (vn isWritten && def==COPY) vn = def->getIn(0);
+            // Trace the call target back through COPYs.
             let mut vn = match data.obank().get(op).and_then(|o| o.get_in(0)) {
                 Some(v) => v,
                 None => continue,
@@ -1147,7 +1130,6 @@ impl Action for ActionDeindirect {
             let resolved: Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> =
                 if v.is_persist() && v.is_external_ref() {
                     // Check for a possible external reference.
-                    // newfd = scope->queryExternalRefFunction(vn->getAddr());
                     glb.query_function(v.get_addr())
                 } else if v.is_constant() {
                     // Assume the function is in the same space as the calling function;
@@ -1190,7 +1172,7 @@ impl Action for ActionDeindirect {
             // (coreaction.cc:1274-1293, fc->forceSet from an attached TypeCode
             // prototype) is not exercised by the deindirect datatests and its
             // commit path (`FuncCallSpecs::forceSet` -> commitNewInputs/Outputs) is
-            // still a W4 seam; left for a follow-up.  No change applied here.
+            // still a W4 stub; left for a follow-up.  No change applied here.
         }
         let _ = count; // change is observed through the rewritten ops / restart flag
         0
@@ -1281,8 +1263,8 @@ fn directwrite_apply(data: &mut Funcdata, propagate_indirect: bool) -> ApplyResu
                 data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
                 worklist.push(vn);
             } else if data.get_func_proto().possible_input_param(&addr, sz) {
-                // C++ `getFuncProto().possibleInputParam(...)` (coreaction.cc:1384),
-                // called unconditionally. The kuna `has_store() &&` pre-guard was
+                // C++ `getFuncProto().possibleInputParam(...)`, called
+                // unconditionally. The kuna `has_store() &&` pre-guard was
                 // dropped (L1): `possible_input_param` is now no-store/no-model
                 // robust, so a recovered register input (e.g. ESI) whose
                 // `ProtoStoreInternal` is not yet attached at main-loop time is
@@ -1491,13 +1473,6 @@ impl Action for ActionRestructureVarnode {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:2332 — ActionRestructureVarnode::apply
-        //   l1 = data.getScopeLocal();
-        //   aliasyes = (numpass != 0);            // aliases unreliable on first pass
-        //   l1->restructureVarnode(aliasyes);
-        //   if (data.syncVarnodesWithSymbols(l1, false, aliasyes)) count += 1;
-        //   if (data.isJumptableRecoveryOn()) protectSwitchPaths(data);
-        //   numpass += 1;
-        //   return 0;
         let mut count = 0;
         // aliases are unreliable on the first pass.
         let aliasyes = self.numpass != 0;
@@ -1509,8 +1484,6 @@ impl Action for ActionRestructureVarnode {
         if data.sync_varnodes_with_symbols(false, aliasyes) {
             count += 1;
         }
-        // C++ coreaction.cc:2342-2343:
-        //   if (data.isJumptableRecoveryOn()) protectSwitchPaths(data);
         // Only the inner jump-table-recovery clone has `jumptablerecovery_on`
         // set (Funcdata::stageJumpTable).  There, walk each BRANCHIND switch's
         // data-flow path and mark the earliest INDIRECT on a constant-origin
@@ -1560,18 +1533,14 @@ impl Action for ActionMappedLocalSync {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:2355 — ActionMappedLocalSync::apply
-        //   l1 = data.getScopeLocal();
-        //   if (data.syncVarnodesWithSymbols(l1, true, true)) count += 1;
-        //   if (l1->hasOverlapProbems())
-        //       data.warningHeader("Could not reconcile some variable overlaps");
-        //   return 0;
         let mut count = 0;
         // Final sync: update datatypes (true) and run the unmapped-alias check.
         if data.sync_varnodes_with_symbols(true, true) {
             count += 1;
         }
-        // STUB(W8-funcdata): `Funcdata::warningHeader` on `hasOverlapProbems` is
-        // not modeled (a diagnostic header, not output-determining).
+        // STUB(W8-funcdata): the C++ `Funcdata::warningHeader("Could not reconcile
+        // some variable overlaps")` on `hasOverlapProbems` is not modeled (a
+        // diagnostic header, not output-determining).
         count
     }
 }
@@ -1804,7 +1773,7 @@ fn dc_propagate_consumed(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) {
             dc_push_consumed(data, outc, i0, worklist);
             // The IOP-space inner block (getOpFromConst -> setIndirectSource /
             // characterizeOverlap) needs `IopSpace::getOpFromConst`
-            // (op.cc), an un-ported W-later seam.  Faithful note: the outer
+            // (op.cc), an un-ported W-later stub.  Faithful note: the outer
             // backward push above is the data-flow effect; the indirect-source
             // marking only influences later opDestroyRecursive pruning and is
             // skipped here (the conservative default — leave the source unmarked).
@@ -2202,7 +2171,7 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
 
     // The C++ `startProcessing` builds the per-space heritage info list before
     // any action runs; `deadRemovalAllowed`/`seenDeadcode` index it by space.
-    // The merged tree's `ActionStart` is a seam, so ensure it here (idempotent —
+    // The merged tree's `ActionStart` is a stub, so ensure it here (idempotent —
     // a real run already built it in `op_heritage`).
     data.ensure_heritage_info_list();
 
@@ -2283,7 +2252,6 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
                     }
                 }
             } else if opc == OpCode::CPUI_BRANCHIND {
-                // jt = findJumpTable(op); mask = (jt!=0) ? jt->getSwitchVarConsume() : ~0
                 let mask = match data.find_jump_table(op) {
                     Some(jt) => jt.get_switch_var_consume(),
                     None => !0u64,
@@ -2471,17 +2439,6 @@ impl Action for ActionSwitchNorm {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4782 — ActionSwitchNorm::apply
-        //   for (i = 0; i < data.numJumpTables(); ++i):
-        //       jt = data.getJumpTable(i);
-        //       if (!jt->isLabelled()):
-        //           jt->matchModel(&data);
-        //           jt->recoverLabels(&data);          // recover case labels
-        //           jt->foldInNormalization(&data);
-        //           count += 1;
-        //       if (jt->foldInGuards(&data)):
-        //           data.getStructure().clear();        // force re-structure
-        //           count += 1;
-        //   return 0;
         let n = data.num_jump_tables();
         for i in 0..n {
             // Take the table out of the function so it can be mutated against
@@ -2548,33 +2505,6 @@ impl Action for ActionUnjustifiedParams {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5018 — ActionUnjustifiedParams::apply
-        //   proto = data.getFuncProto();
-        //   for (vn in beginDef(input)..endDef(input)):
-        //       if (!proto.unjustifiedInputParam(vn->getAddr(),vn->getSize(),vdata)) continue;
-        //       do {                                  // widen container to absorb overlaps
-        //           newcontainer = false; overlaps = false;
-        //           // backward scan: widen DOWNWARD over earlier inputs that overlap
-        //           for (iter2 = iter; iter2 != beginDef(input); --iter2):
-        //               vn = *iter2;
-        //               if (vn->getSpace() != vdata.space) continue;
-        //               offset = vn->getOffset()+vn->getSize()-1;
-        //               if (offset >= vdata.offset && vn->getOffset() < vdata.offset):
-        //                   overlaps = true; endpoint = vdata.offset+vdata.size;
-        //                   vdata.offset = vn->getOffset(); vdata.size = endpoint - vdata.offset;
-        //           if (getArch()->input_varnode_adjust):   // (kuna GH-9218) forward scan UPWARD
-        //               for (fvn in [iter, endDef(input))):
-        //                   if (fvn->getSpace() != vdata.space) continue;
-        //                   if (fvn->getOffset() >= vdata.offset+vdata.size) break;   // address-ordered
-        //                   foffset = fvn->getOffset()+fvn->getSize()-1;
-        //                   if (foffset >= vdata.offset+vdata.size):
-        //                       overlaps = true; vdata.size = (foffset+1) - vdata.offset;
-        //           if (!overlaps) break;
-        //           newcontainer = proto.unjustifiedInputParam(vdata.getAddr(),vdata.size,vdata);
-        //       } while (newcontainer);
-        //       data.adjustInputVarnodes(vdata.getAddr(), vdata.size);
-        //       iter = data.beginDef(input, vdata.getAddr()); enditer = data.endDef(input);
-        //       count += 1;
-        //   return 0;
         //
         // (w10-mixfloatint) The input def-set iteration, `unjustifiedInputParam`,
         // the GH-9218 `input_varnode_adjust` forward-absorb, and
@@ -2584,9 +2514,6 @@ impl Action for ActionUnjustifiedParams {
         // because the return-register lane COPYs made the disjoint range's max
         // write size 4) back into one whole input — fixing Mixed float/int #1.
         use kuna_num::pcoderaw::VarnodeData;
-        // The unjustified-param query reads the prototype model/store; a model-less
-        // fixture (no ActionPrototypeTypes seed) has neither, so there is nothing
-        // to adjust — bail (mirrors ActionInputPrototype's `recoverable` guard).
         // The unjustified-param query reads the prototype model; a model-less
         // fixture (no ActionPrototypeTypes seed) has nothing to adjust.  The
         // unlocked-recovery merged-tree proto carries a model but no W4 symbol
@@ -2600,7 +2527,7 @@ impl Action for ActionUnjustifiedParams {
         }
         let input_adjust = data.get_arch().input_varnode_adjust;
 
-        // iter = beginDef(input); the def-set is Address-then-size ordered.
+        // The def-set is Address-then-size ordered.
         // Snapshot the input list once; `adjustInputVarnodes` rewrites it, so we
         // re-seek (C++ resets the iterator after each adjustment).
         loop {
@@ -2641,7 +2568,6 @@ impl Action for ActionUnjustifiedParams {
                         }
                         let ooff = v.get_addr().get_offset();
                         let last = ooff.wrapping_add((v.get_size() - 1) as u64);
-                        // if (offset >= vdata.offset && vn->getOffset() < vdata.offset)
                         if last >= vdata.offset && ooff < vdata.offset {
                             overlaps = true;
                             let endpoint = vdata.offset.wrapping_add(vdata.size as u64);
@@ -2735,17 +2661,13 @@ impl Action for ActionDynamicMapping {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5106 — ActionDynamicMapping::apply
-        //   localmap = data.getScopeLocal();
-        //   for (entry in localmap->beginDynamic()..endDynamic()):
-        //       if (data.attemptDynamicMapping(entry, dhash)) count += 1;
-        //   return 0;
         let entries = match data.get_scope_local() {
             Some(lm) => lm.database().dynamic_entries(lm.scope_id()),
             None => Vec::new(),
         };
         for entry in entries {
             match data.attempt_dynamic_mapping(&entry) {
-                Ok(true) => self.base.count += 1, // C++ `count += 1`
+                Ok(true) => self.base.count += 1,
                 Ok(false) => {}
                 Err(_) => {}
             }
@@ -2789,10 +2711,6 @@ impl Action for ActionDynamicSymbols {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5123 — ActionDynamicSymbols::apply
-        //   localmap = data.getScopeLocal();
-        //   for (entry in localmap->beginDynamic()..endDynamic()):
-        //       if (data.attemptDynamicMappingLate(entry, dhash)) count += 1;
-        //   return 0;
         // (the harness's `count` is the per-apply work tally; the body always
         // returns 0 / the action never re-schedules — `rule_onceperfunc`.)
         let entries = match data.get_scope_local() {
@@ -2801,7 +2719,7 @@ impl Action for ActionDynamicSymbols {
         };
         for entry in entries {
             match data.attempt_dynamic_mapping_late(&entry) {
-                Ok(true) => self.base.count += 1, // C++ `count += 1`
+                Ok(true) => self.base.count += 1,
                 Ok(false) => {}
                 Err(_) => {} // a search/warning failure is non-fatal (C++ returns false)
             }
@@ -2845,15 +2763,8 @@ impl Action for ActionInternalStorage {
         Some(Box::new(ActionInternalStorage { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:5192 — ActionInternalStorage::apply
-        //   proto = data.getFuncProto();
-        //   for (vdata in proto.internalBegin()..internalEnd()):
-        //       addr = vdata.getAddr(); sz = vdata.size;
-        //       for (vn in beginLoc(sz,addr)..endLoc(sz,addr)):
-        //           for (op in vn->beginDescend()..endDescend()):
-        //               if (op->code() == CPUI_STORE && vn->isEventualConstant(3,0)):
-        //                   op->setStoreUnmapped();
-        //   return 0;     // (no count bump: marking only)
+        // C++ coreaction.cc:5192 — ActionInternalStorage::apply (marking only, no
+        // count bump).
         //
         // An <internal_storage> register (e.g. MIPS `gp`, saved to the stack across
         // a call) that holds an eventual-constant is marked so the STORE of it gets
@@ -2862,7 +2773,7 @@ impl Action for ActionInternalStorage {
         // `nolocalalias` and RuleIndirectCollapse can drop the per-call INDIRECT
         // guarding the saved-register stack slot — letting the constant forward.
 
-        // C++ `data.getFuncProto()` always has a model; the rust seam/empty-Funcdata
+        // C++ `data.getFuncProto()` always has a model; the rust stub/empty-Funcdata
         // test fixtures do not, and `FuncProto::internal_list()` -> `model()` would
         // panic.  No model means no internal-storage list, so bail (matches an empty
         // `internalBegin()..internalEnd()` range).
@@ -2897,7 +2808,6 @@ impl Action for ActionInternalStorage {
                     if !is_store {
                         continue;
                     }
-                    // vn->isEventualConstant(3,0)
                     if dc_is_eventual_constant(data, vn, 3, 0) {
                         to_mark.push(op);
                     }
@@ -2956,14 +2866,13 @@ impl Action for ActionInferTypes {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5630 — ActionInferTypes::apply
-        //   if (!data.hasTypeRecoveryStarted()) return 0;
         if !data.has_type_recovery_started() {
             return 0;
         }
-        //   if (localcount >= 7):                       // empirical settle ceiling
+        // The empirical settle ceiling is 7 passes.
         if self.localcount >= 7 {
             if self.localcount == 7 {
-                // data.warningHeader("Type propagation algorithm not settling");
+                // C++: warningHeader("Type propagation algorithm not settling").
                 data.set_type_recovery_exceeded();
                 self.localcount += 1;
             }

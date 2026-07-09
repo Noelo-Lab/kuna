@@ -13,7 +13,7 @@
 //! [`crate::printc`].  This module owns only the option struct that flips it
 //! (C++ `OptionArrayNotation`).
 //!
-//! # Apply seam
+//! # Apply boundary
 //!
 //! C++ `OptionArrayNotation::apply` does `dynamic_cast<PrintC *>(glb->print)`,
 //! erroring `"Can only set array notation for C language"` when the active
@@ -46,28 +46,16 @@ impl OptionArrayNotation {
     /// The option name (C++ `name = "arraynotation"`).
     pub const NAME: &'static str = "arraynotation";
 
-    /// C++ `OptionArrayNotation::apply`:
-    ///
-    /// ```text
-    ///   bool val = onOrOff(p1);
-    ///   PrintC *lng = dynamic_cast<PrintC *>(glb->print);
-    ///   if (lng == 0) return "Can only set array notation for C language";
-    ///   lng->setArrayNotation(val);
-    ///   string prop = val ? "on" : "off";
-    ///   return "Array notation for pointer arithmetic turned "+prop;
-    /// ```
+    /// C++ `OptionArrayNotation::apply`.
     ///
     /// Returns the resolved flag plus the confirmation message.  The caller does
     /// the `dynamic_cast<PrintC *>` (and the `"Can only set array notation for C
     /// language"` error if the active printer is not C) and calls
     /// `lng->setArrayNotation(val)` (STUB: W4/W9 option dispatch).
     pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        // bool val = onOrOff(p1);
         let val = on_or_off(p1)?;
         // lng->setArrayNotation(val);  -- left to the caller (STUB(W4/W9)).
-        // string prop = val ? "on" : "off";
         let prop = if val { "on" } else { "off" };
-        // return "Array notation for pointer arithmetic turned "+prop;
         Ok((val, format!("Array notation for pointer arithmetic turned {prop}")))
     }
 }

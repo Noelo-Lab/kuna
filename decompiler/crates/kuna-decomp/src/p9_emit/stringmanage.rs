@@ -24,7 +24,7 @@
 //!   `\n`).  The `BTreeMap` keying replicates the C++ `map<Address,StringData>`
 //!   iteration order (ascending by `Address`).
 //!
-//! # Seams
+//! # Boundaries
 //!
 //! * [`StringManager::register_internal_string_data`] reaches the constant space
 //!   via `addr.getSpace()->getManager()->getConstant(hash)` in C++.  `AddrSpace`
@@ -154,7 +154,6 @@ impl StringManager {
         bigend: bool,
     ) {
         if charsize == 1 && num_chars < self.maximum_chars {
-            // data.byteData.assign(buf, buf+size);
             data.byte_data.clear();
             data.byte_data.reserve(size as usize);
             data.byte_data.extend_from_slice(&buf[..size as usize]);
@@ -197,7 +196,6 @@ impl StringManager {
         let size: int4;
 
         if codepoint < 0 {
-            // C++ throw LowlevelError("Negative unicode codepoint")
             panic!("Negative unicode codepoint");
         }
         if codepoint < 128 {
@@ -206,7 +204,6 @@ impl StringManager {
         }
         let bits = mostsigbit_set(codepoint as u64) + 1;
         if bits > 21 {
-            // C++ throw LowlevelError("Bad unicode codepoint")
             panic!("Bad unicode codepoint");
         }
         if bits < 12 {
@@ -237,7 +234,7 @@ impl StringManager {
     /// keyed on the constant address built from this hash), 0 otherwise.
     ///
     /// `manager` is the [`AddrSpaceManager`] reached in C++ via
-    /// `addr.getSpace()->getManager()` (seam: see module docs).
+    /// `addr.getSpace()->getManager()` (boundary: see module docs).
     pub fn register_internal_string_data(
         &mut self,
         addr: &Address,
@@ -252,10 +249,7 @@ impl StringManager {
             return 0; // Not a legal encoding
         }
         let hash = StringManager::calc_internal_hash(addr, buf, size);
-        // Address constAddr = addr.getSpace()->getManager()->getConstant(hash);
         let const_addr = manager.get_constant(hash);
-        // StringData &stringData(stringMap[constAddr]); stringData.byteData.clear();
-        // stringData.isTruncated = false;
         let mut data = StringData::default();
         // assignStringData borrows `self` immutably while mutating `data`; build
         // the StringData detached, then insert it (one `stringMap[constAddr]`
@@ -300,11 +294,9 @@ impl StringManager {
             addr.encode(encoder)?;
             encoder.open_element(&ELEM_BYTES);
             encoder.write_bool(&ATTRIB_TRUNC, string_data.is_truncated);
-            // ostringstream s; s << '\n' << setfill('0');
             let mut s = String::new();
             s.push('\n');
             for (i, b) in string_data.byte_data.iter().enumerate() {
-                // s << hex << setw(2) << (int4)byteData[i];
                 let _ = write!(s, "{:02x}", *b as int4);
                 if i % 20 == 19 {
                     s.push_str("\n  ");
@@ -391,8 +383,7 @@ impl StringManager {
     /// Make sure `buf` contains a valid bounded set of unicode.  Returns the
     /// number of characters, or -1 if there is an invalid encoding.
     pub fn check_characters(buf: &[uint1], size: int4, charsize: int4, bigend: bool) -> int4 {
-        // C++ `if (buf == (const uint1 *)0) return -1;` — an empty slice models a
-        // null buffer here.
+        // An empty slice models the C++ null-buffer check here.
         if buf.is_empty() {
             return -1;
         }
@@ -507,11 +498,9 @@ impl StringManager {
 /// (the body of C++ `StringManager::decode`'s `istringstream` loop,
 /// stringmanage.cc:242-266).
 fn decode_hex_bytes(content: &[u8], out: &mut Vec<uint1>) {
-    // istringstream is(content); is >> ws; c1 = is.get(); c2 = is.get();
     let mut pos = skip_ws(content, 0);
     let mut c1 = get_char(content, &mut pos);
     let mut c2 = get_char(content, &mut pos);
-    // while ((c1 > 0) && (c2 > 0))
     while c1 > 0 && c2 > 0 {
         let mut d1 = c1;
         let mut d2 = c2;
@@ -576,7 +565,7 @@ impl StringManagerUnicode {
     /// C++ `StringManagerUnicode::StringManagerUnicode(Architecture *g,int4 max)`.
     ///
     /// `glb`/`loader`/`translate` are threaded into [`Self::get_string_data`]
-    /// rather than stored (seam: see module docs).
+    /// rather than stored (boundary: see module docs).
     pub fn new(max: int4) -> StringManagerUnicode {
         StringManagerUnicode {
             base: StringManager::new(max),
@@ -600,14 +589,13 @@ impl StringManagerUnicode {
         loader: &mut dyn LoadImage,
         is_trunc: &mut bool,
     ) -> &[uint1] {
-        // iter = stringMap.find(addr);
         if self.base.string_map.contains_key(addr) {
             let d = &self.base.string_map[addr];
             *is_trunc = d.is_truncated;
             return &self.base.string_map[addr].byte_data;
         }
 
-        // StringData &stringData(stringMap[addr]);  // Allocate (initially empty)
+        // Allocate the map entry (initially empty).
         {
             let entry = self.base.string_map.entry(addr.clone()).or_default();
             entry.is_truncated = false;
@@ -622,7 +610,6 @@ impl StringManagerUnicode {
         let mut cur_buffer_size: int4 = 0;
         let charsize = char_type.get_size();
 
-        // try { do { ... } while(!foundTerminator); } catch(DataUnavailError)
         // A non-closure transcription of the C++ do/while: the `'fill` block
         // mirrors the `try` body, returning the load_fill Result so the
         // DataUnavail catch is handled below.
@@ -636,9 +623,9 @@ impl StringManagerUnicode {
                 amount = new_buffer_size - cur_buffer_size;
                 if amount == 0 {
                     // Could not find terminator — C++ `return stringData.byteData`
-                    // (stringmanage.cc:455-457) exits with the still-empty buffer
-                    // BEFORE checkCharacters/assignStringData run. Return the empty
-                    // cached buffer directly; do NOT fall through to the
+                    // exits with the still-empty buffer BEFORE
+                    // checkCharacters/assignStringData run. Return the empty cached
+                    // buffer directly; do NOT fall through to the
                     // check_characters/assign_string_data path below.
                     return &self.base.string_map[addr].byte_data;
                 }
@@ -682,7 +669,6 @@ impl StringManagerUnicode {
             // Return the empty buffer (invalid encoding)
             return &self.base.string_map[addr].byte_data;
         }
-        // assignStringData(stringData, testBuffer, curBufferSize, charsize, numChars, bigend)
         let mut data = std::mem::take(self.base.string_map.get_mut(addr).unwrap());
         let buf = self.test_buffer.clone();
         self.base.assign_string_data(

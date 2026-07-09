@@ -20,7 +20,7 @@
 //! printc.cc:2827-3514) and the real-prototype signature.  These are blocked
 //! **upstream of the printer**: the merged tree's decompilation passes
 //! (heritage / simplification / merge / type + proto recovery / block
-//! structuring) are seam stubs, so the IR reaching the printer is *raw lifted
+//! structuring) are stubs, so the IR reaching the printer is *raw lifted
 //! p-code* (no HighVariables-with-symbols, no recovered types, **empty
 //! `sblocks`**, a `void NAME(void)` proto stub).  Printing it would emit non-C
 //! garbage, not byte-parity.  Those edges are `// STUB(decompile-passes)`
@@ -58,17 +58,17 @@
 //!      inline `op*` overrides (printc.hh:289-351): which [`OpToken`] each
 //!      arithmetic/comparison op maps to and through which RPN form
 //!      (`opBinary`/`opUnary`/`opFunc`/`opTypeCast`).  The *emission* is the
-//!      seam; the *mapping* is faithful data.
+//!      stub; the *mapping* is faithful data.
 //!
 //! ## Compareform / arraynotation kuna hooks
 //!
 //! The kuna `compareform` rendering hook and the `arraynotation` `&base[index]`
 //! mode are both controlled from here: `arraynotation` is the
 //! [`PrintCOptions::array_notation`] toggle (default on, DIV-2), consulted by
-//! the seam `opPtradd` body; `compareform` is a stage-model assertion that
+//! the `opPtradd` body; `compareform` is a stage-model assertion that
 //! flips which comparison `OpToken` `op_emit_kind` selects (present vs.
 //! canonical).  The toggle state lives here; the emission that reads it is the
-//! W9 seam.
+//! W9 stub.
 
 use kuna_base::address::{calc_mask, Address};
 use kuna_base::space::AddrSpace;
@@ -259,7 +259,7 @@ pub mod tokens {
 /// In C++ these are stored in each `OpToken::negate` field, set in the
 /// constructor.  Because a `static OpToken` cannot hold a `&'static` reference
 /// to another `static` defined later (no self-referential statics), the link is
-/// realized here as a pointer-identity lookup — the only consumer is the (seam)
+/// realized here as a pointer-identity lookup — the only consumer is
 /// `op_binary` reading the complement under the `negatetoken` modifier.
 /// Returns `None` for any token without a complement (every C++ token whose
 /// `negate` stays null).
@@ -698,7 +698,7 @@ pub enum FloatClass {
 /// byte-for-byte token characters for a floating-point constant.
 ///
 /// The `FloatFormat` decode (`getHostFloat`/`extractSign`/`printDecimal`) is a
-/// W6 seam (`FloatFormat`, `float.cc`, a separate item).  In particular
+/// W6 boundary (`FloatFormat`, `float.cc`, a separate item).  In particular
 /// `printDecimal` is the shortest-round-trip precision loop at float.cc:446-479
 /// — **not** a fixed-precision `%g` — so it must come from `FloatFormat`, not be
 /// reinvented here.  This function therefore takes the *already-decoded*
@@ -797,7 +797,7 @@ pub fn generic_type_name(metatype: type_metatype, size: int4) -> String {
 ///
 /// This is the *data* half of those overrides: which [`OpToken`] and which RPN
 /// form.  The *emission* (the actual `opBinary`/`opUnary`/`opFunc`/`opTypeCast`
-/// call that pushes onto the stack and drives `Emit`) is the W9 seam.
+/// call that pushes onto the stack and drives `Emit`) is the W9 stub.
 #[derive(Debug, Clone, Copy)]
 pub enum OpEmitKind {
     /// `opBinary(&token, op)` — a binary operator (printc.hh `opBinary` form).
@@ -853,8 +853,8 @@ fn subpiece_byte_offset_for_composite(fd: &Funcdata, op: OpId) -> int8 {
 ///
 /// Returns the [`OpEmitKind`] for the opcodes whose override is a one-line
 /// `opBinary`/`opUnary`/`opFunc`/`opTypeCast` delegation; [`OpEmitKind::Custom`]
-/// for the opcodes with a hand-written body in printc.cc (those are seam-noted).
-/// This is the faithful dispatch table; the emission it feeds is the W9 seam.
+/// for the opcodes with a hand-written body in printc.cc (those are stub-noted).
+/// This is the faithful dispatch table; the emission it feeds is the W9 stub.
 pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
     use kuna_num::opcodes::OpCode::*;
     use tokens::*;
@@ -938,7 +938,7 @@ pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
 // and `pushVnExplicit`'s Symbol/HighVariable/Datatype/constant resolution) plus
 // the structured-/flat-block walk (`emitBlock*`).  Those are blocked NOT in the
 // printer but UPSTREAM: the merged tree's decompilation passes (heritage /
-// simplification / merge / type + proto recovery / block structuring) are seam
+// simplification / merge / type + proto recovery / block structuring) are
 // stubs, so the IR reaching the printer is raw lifted p-code with no
 // HighVariables-with-symbols, no recovered types, and **empty `sblocks`**.
 // Printing it would emit non-C garbage, not byte-parity.  Those edges are
@@ -952,7 +952,7 @@ pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
 //   - `push_integer`/`push_float`/`pushCharConstant` reduce to
 //     `format_integer_token`/`format_float_token`/`print_unicode`;
 //   - the `op*` overrides reduce to `op_emit_kind` + `op_binary`/`op_unary`/…;
-//   - the option toggles (`PrintCOptions`) gate the seam branches.
+//   - the option toggles (`PrintCOptions`) gate the stubbed branches.
 
 // ===========================================================================
 // PrintEmit — the emit back-end selector (static, no-vtable delegation)
@@ -1140,7 +1140,7 @@ fn to_emit_brace(style: BraceStyle) -> EmitBraceStyle {
 /// `emitBlockGraph`, the per-statement RPN expression emission) is the
 /// `// STUB(W9-emit)` RPN/`Emit` driver documented in this module's header
 /// (`pushVn`/`recurse`/`emitOp` against the IR), absent from the merged tree;
-/// the body slot emits a single seam-marker comment line so the C output is a
+/// the body slot emits a single marker comment line so the C output is a
 /// structurally-complete, compilable-looking function shell (a real signature +
 /// matched braces), not full byte-parity C.  The W9 closure fills the body in.
 pub struct PrintC {
@@ -1246,10 +1246,10 @@ impl PrintC {
     /// architecture; the printer needs no per-arch state beyond its options here.
     pub fn initialize_from_architecture(&mut self) {}
 
-    /// Faithful transcription of the **shell** of C++ `PrintC::docFunction`
-    /// (printc.cc:2790) + `emitFunctionDeclaration` (printc.cc:2726), driving
-    /// the real [`Emit`] primitives.  The body (`emitBlockGraph`) is the
-    /// `// STUB(W9-emit)` RPN driver; this emits a seam-marker line in its place.
+    /// The **shell** of C++ `PrintC::docFunction` (printc.cc:2790) +
+    /// `emitFunctionDeclaration` (printc.cc:2726), transcribed faithfully,
+    /// driving the real [`Emit`] primitives.  The body (`emitBlockGraph`) is the
+    /// `// STUB(W9-emit)` RPN driver; this emits a marker line in its place.
     ///
     /// `display_name` is `fd->getDisplayName()`; `model_name` is the prototype
     /// model name when `printModelInDecl()` (None when the model is hidden);
@@ -1266,11 +1266,9 @@ impl PrintC {
         self.emit.set_output_stream();
         let markup = MarkupRef::none();
 
-        // int4 id1 = emit->beginFunction(fd);
         let id1 = self.emit.begin_function();
-        // emitCommentFuncHeader(fd) — the header comment line (seam: full
-        // CommentSorter is the comment item; emit the seam-marker header).
-        // emit->tagLine();
+        // emitCommentFuncHeader(fd) — the header comment line (the full
+        // CommentSorter is the comment item; emit the marker header).
         self.emit.tag_line();
 
         // --- emitFunctionDeclaration -------------------------------------
@@ -1288,7 +1286,6 @@ impl PrintC {
             }
         }
         let id1g = self.emit.open_group();
-        // emit->tagFuncName(fd->getDisplayName(), funcname_color, fd, 0);
         self.emit.tag_func_name(display_name, SyntaxHighlight::FuncnameColor, &markup);
         // function_call spacing (C++ function_call.spacing==0,bump==0).
         let id2 = self.emit.open_paren("(", 0);
@@ -1312,7 +1309,6 @@ impl PrintC {
         self.emit.close_group(id1g);
         self.emit.end_func_proto(idp);
 
-        // int4 id = emit->openBraceIndent(OPEN_CURLY, option_brace_func);
         let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
         // emitLocalVarDecls(fd) + emitBlockGraph(...).  The RPN body *engine*
         // (push_op/push_atom/op_binary/op_unary/emit_op/emit_atom/parentheses)
@@ -1320,7 +1316,7 @@ impl PrintC {
         // C++ emitOp/emitAtom/parentheses).  Driving it over a real function
         // body is blocked NOT in the printer but UPSTREAM: the merged tree's
         // decompilation passes (heritage / simplification / merge / type +
-        // proto recovery / block structuring) are seam stubs, so the IR
+        // proto recovery / block structuring) are stubs, so the IR
         // reaching the printer is raw lifted p-code (no HighVariables with
         // symbols, no recovered types, no structured blocks) — printing it
         // would emit non-C garbage, not byte-parity (see LOSS-130 / W10).
@@ -1331,12 +1327,11 @@ impl PrintC {
             "/* WARNING: body emission blocked on upstream decompilation passes (raw p-code IR) */",
             SyntaxHighlight::CommentColor,
         );
-        // emit->closeBraceIndent(CLOSE_CURLY, id);
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
 
-        // C++ emit->flush() then the bound ostream holds the text.
+        // After the C++ flush the bound ostream holds the text.
         self.emit.output_str().to_string()
     }
 
@@ -1403,7 +1398,7 @@ impl PrintC {
     ///
     /// The option surface (`options::NamespaceStrategy`) and the print-context
     /// surface (`printlanguage::NamespaceStrategy`) are the same 3-variant
-    /// `minimal`/`none`/`all` enum (printlanguage.hh); convert across the seam.
+    /// `minimal`/`none`/`all` enum (printlanguage.hh); convert across the boundary.
     pub fn set_namespace_strategy(&mut self, strategy: NamespaceStrategy) {
         use crate::printlanguage::NamespaceStrategy as PlStrat;
         let pl = match strategy {
@@ -1437,10 +1432,10 @@ impl PrintC {
     //
     // The IR-coupled leaves of the driver (the implied-varnode `recurse` step
     // `defOp->getOpcode()->push(...)`, and `pushVnExplicit`'s symbol/constant
-    // resolution) need the seamed Symbol/HighVariable/Datatype/TypeOp
+    // resolution) need the stubbed Symbol/HighVariable/Datatype/TypeOp
     // subsystems and the proto-/type-/heritage-recovery passes, which the
     // merged tree leaves unported (LOSS-130: the decompilation passes are
-    // seam stubs, so the IR reaching the printer is raw lifted p-code).  The
+    // stubs, so the IR reaching the printer is raw lifted p-code).  The
     // RPN *engine* below is therefore transcribed and unit-tested against
     // synthetic atoms/tokens (byte-faithful to `emitOp`/`emitAtom`/
     // `parentheses`); the IR-leaf push is the `// STUB(decompile-passes)`
@@ -1543,7 +1538,7 @@ impl PrintC {
     /// leaf atom (`pushVnExplicit`).
     ///
     /// STUB(decompile-passes): the implied-op `push` dispatch and the explicit
-    /// `pushVnExplicit` symbol/constant resolution need the seamed
+    /// `pushVnExplicit` symbol/constant resolution need the stubbed
     /// Symbol/HighVariable/Datatype/TypeOp graph (absent in the merged tree).
     /// The `op_binary`/`op_unary` scaffold above therefore pushes already-
     /// resolved leaf [`Atom`]s directly (never via `push_vn`), so on the tested
@@ -1568,7 +1563,7 @@ impl PrintC {
 
     /// C++ `PrintLanguage::opBinary` (printlanguage.cc:553) — the data-flow-free
     /// scaffold: push the operator, then its two operand atoms (supplied by the
-    /// caller as the IR-leaf seam).  The negate-token flip is applied.
+    /// caller as the IR-leaf hook).  The negate-token flip is applied.
     pub fn op_binary(&mut self, tok: &'static OpToken, op: Option<usize>, lhs: &Atom, rhs: &Atom) {
         let tok = if self.context.is_set(modifiers::NEGATETOKEN) {
             self.context.unset_mod(modifiers::NEGATETOKEN);
@@ -1771,7 +1766,7 @@ impl PrintC {
 // ===========================================================================
 // The IR-coupled statement-body driver (w10-structure-printbody).
 //
-// This is the W9-emit seam closure: the per-statement RPN expression emission
+// This is the W9-emit closure: the per-statement RPN expression emission
 // over the *structured* `sblocks` tree (C++ `PrintC::emitBlockGraph` ->
 // `emitBlock{Copy,Basic,Ls,If,...}` -> `emitStatement` -> `emitExpression` ->
 // `op->getOpcode()->push(...)` -> `recurse`).  It drives the (already ported and
@@ -1807,7 +1802,7 @@ enum PartialEntry {
 }
 
 impl PrintC {
-    /// Faithful transcription of C++ `PrintC::docFunction` (printc.cc:2790)
+    /// C++ `PrintC::docFunction` (printc.cc:2790), transcribed faithfully and
     /// driven over a real [`Funcdata`] + [`Architecture`]: emit the signature
     /// shell (real return type from the recovered proto), then the **structured
     /// body** (`emitBlockGraph(&fd->getStructure())`) when `sblocks` is present,
@@ -2687,7 +2682,6 @@ impl PrintC {
     /// ([`block_label_name`]) so a `goto`/target pair render the same name.
     fn emit_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
         use crate::block::BlockType;
-        // if (isSet(only_branch)) return;
         if self.context.is_set(modifiers::ONLY_BRANCH) {
             return;
         }
@@ -2699,7 +2693,6 @@ impl PrintC {
         if fd.sblocks_ref().block(bl).get_type() != BlockType::Copy {
             return;
         }
-        // emit->tagLine(0); emitLabel(bl); emit->print(COLON);
         self.emit.tag_line_indent(0);
         self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
         self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
@@ -2712,11 +2705,10 @@ impl PrintC {
     /// loop-head label never lands inside the loop condition).  The block does not
     /// have to be a basic block; `get_front_leaf` finds the entry `t_copy` leaf.
     fn emit_any_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
-        // if (bl->isLabelBumpUp()) return;  // Label printed by someone else
+        // Label printed by someone else.
         if fd.sblocks_ref().block(bl).is_label_bump_up() {
             return;
         }
-        // bl = bl->getFrontLeaf(); if (bl == 0) return;
         let Some(front) = fd.sblocks_ref().get_front_leaf(bl) else {
             return;
         };
@@ -2752,7 +2744,6 @@ impl PrintC {
     fn emit_comment_group(&mut self, fd: &Funcdata, inst: Option<OpId>) {
         use crate::comment::comment_type as ct;
         let instr_comment_type = ct::USER2 | ct::WARNING;
-        // commsorter.setupOpList(inst).
         let landmark = inst.and_then(|op| {
             let o = fd.obank().get(op)?;
             let parent = o.get_parent()?;
@@ -2762,7 +2753,6 @@ impl PrintC {
             })
         });
         self.commsorter.setup_op_list(landmark);
-        // while (hasNext()) { comm=getNext(); if emitted/type-mismatch skip; emitLineComment }
         while self.commsorter.has_next() {
             let (emitted, tp, text, addr) = {
                 let comm = self.commsorter.get_next();
@@ -2913,10 +2903,9 @@ impl PrintC {
         let size = fd.sblocks_ref().block(blk).get_size();
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
 
-        // PendingBrace pendingBrace(option_brace_ifelse); if (isSet(pending_brace))
-        //   emit->setPendingPrint(&pendingBrace).  When *this* BlockIf is the
-        //   else-clause of a parent if, the parent set the pending_brace mod; we
-        //   register a brace that opens lazily so a real `else if` collapses.
+        // When *this* BlockIf is the else-clause of a parent if, the parent set
+        // the pending_brace mod; register a brace that opens lazily so a real
+        // `else if` collapses.
         let mut registered_pending = false;
         let mut my_pending_gen = 0u64;
         if self.context.is_set(modifiers::PENDING_BRACE) {
@@ -2939,14 +2928,14 @@ impl PrintC {
         self.context.set_mod(modifiers::NO_BRANCH);
         self.emit_block(fd, arch, cond_block);
         self.context.pop_mod();
-        // emitCommentBlockTree(condBlock) (printc.cc:3048): emit any comments under
-        // the condition subtree before deciding `else if` vs `else {` — a comment
-        // forces the pending brace to fire (suppressing the `else if` collapse).
+        // emitCommentBlockTree(condBlock): emit any comments under the condition
+        // subtree before deciding `else if` vs `else {` — a comment forces the
+        // pending brace to fire (suppressing the `else if` collapse).
         self.emit_comment_block_tree(fd, cond_block);
 
         // If a pending brace was issued but did not emit (no statements forced a
         // tag_line), cancel it to get `else if`; otherwise start `if` on a new
-        // line (C++ printc.cc:3049-3054).  When it *did* fire, snapshot the indent
+        // line.  When it *did* fire, snapshot the indent
         // id it opened into a local — the shared emitter slot can be overwritten
         // by a deeper BlockIf's own pending brace before we read it back.
         let mut my_pending_indent = -1;
@@ -2974,7 +2963,7 @@ impl PrintC {
         self.context.pop_mod();
 
         // If the if has an unstructured-branch target, emit a goto/break/continue
-        // instead of a braced body (C++ printc.cc:3063).
+        // instead of a braced body.
         let goto_target = fd.sblocks_ref().block(blk).get_if_goto_target();
         if let Some(target) = goto_target {
             self.emit.spaces(1, 0);
@@ -3017,9 +3006,9 @@ impl PrintC {
         }
         self.context.pop_mod();
 
-        // if (pendingBrace.getIndentId() >= 0) closeBraceIndent(...)  -- when our
-        // own pending brace actually fired (the else-clause had statements before
-        // its `if`, so it rendered `else { ... if`), close that brace.
+        // When our own pending brace actually fired (the else-clause had
+        // statements before its `if`, so it rendered `else { ... if`), close
+        // that brace.
         if my_pending_indent >= 0 {
             self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
         }
@@ -3193,7 +3182,7 @@ impl PrintC {
     /// `default:` label(s) for one case arm.
     fn emit_switch_case(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, casenum: usize) {
         let case = fd.sblocks_ref().block(blk).switch_caseblocks()[casenum].clone();
-        // op = getCaseBlock(casenum)->firstOp() — used only for markup tagging.
+        // The case block's first op — used only for markup tagging.
         let firstop = self.case_first_op(fd, case.block);
 
         if case.isdefault {
@@ -3235,7 +3224,6 @@ impl PrintC {
                 self.emit.tag_line();
                 self.emit.print(keywords::KEYWORD_CASE, SyntaxHighlight::KeywordColor);
                 self.emit.spaces(1, 0);
-                // pushConstant(val, ct, casetoken, 0, op, displayFormat); recurse();
                 let sz = self.switch_var_size(fd, blk);
                 // (kuna) Render the label signed when the recovered switch variable
                 // is signed (the lowered-switch install records this on the table;
@@ -3318,11 +3306,10 @@ impl PrintC {
     fn emit_for_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
-        // emitAnyLabelStatement(bl) (printc.cc:3097): hoist the loop-head label to
-        // its own line above the `for` (it was marked f_label_bumpup, so the inline
+        // emitAnyLabelStatement(bl): hoist the loop-head label to its own line
+        // above the `for` (it was marked f_label_bumpup, so the inline
         // emit_block_copy suppresses it).
         self.emit_any_label_statement(fd, blk);
-        // emitCommentBlockTree(condBlock) (printc.cc:3099).
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
         self.emit_comment_block_tree(fd, cond_block);
         self.emit.tag_line();
@@ -3379,7 +3366,7 @@ impl PrintC {
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
         let indent;
         if fd.sblocks_ref().block(blk).has_overflow_syntax() {
-            // while( true ) { conditionbody...; if (branch) break; }
+            // Renders: while( true ) { conditionbody...; break-on-branch }
             self.emit.tag_line();
             self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
             let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
@@ -3402,8 +3389,7 @@ impl PrintC {
             self.emit.spaces(1, 0);
             self.emit_goto_statement(fd, cond_block, cond_block, crate::block::block_flags::f_break_goto);
         } else {
-            // while(condition) {
-            // emitCommentBlockTree(condBlock) (printc.cc:3197).
+            // Renders: while(condition) { ... }
             self.emit_comment_block_tree(fd, cond_block);
             self.emit.tag_line();
             self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
@@ -3622,11 +3608,9 @@ impl PrintC {
         }
         let outvn = fd.obank().get(op).and_then(|o| o.get_out());
         if let Some(out) = outvn {
-            // pushOp(&assignment,op); pushSymbolDetail(outvn,op,false);
             self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
             self.push_vn_explicit_ir(fd, arch, out, op);
         }
-        // op->getOpcode()->push(this,op,(PcodeOp *)0)
         self.op_push_ir(fd, arch, op, None);
     }
 
@@ -3931,7 +3915,6 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
-        // UserPcodeOp *userop = glb->userops.getOp(op->getIn(0)->getOffset());
         let display = arch
             .userops
             .get_op(in0_off as u32)
@@ -3939,9 +3922,9 @@ impl PrintC {
             .unwrap_or(0);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         if display == 0 {
-            // Functional syntax: string nm = op->getOpcode()->getOperatorName(op);
-            // For CALLOTHER this resolves to the userop's name (the base
-            // getOperatorName), or the generic `CALLOTHER[index]` fallback.
+            // Functional syntax: for CALLOTHER the operator name resolves to the
+            // userop's name (the base getOperatorName), or the generic
+            // `CALLOTHER[index]` fallback.
             let nm = match arch.userops.get_op(in0_off as u32) {
                 Some(u) => String::from_utf8_lossy(u.get_name()).into_owned(),
                 None => format!("CALLOTHER[{:#x}]", in0_off),
@@ -3992,7 +3975,6 @@ impl PrintC {
                 self.push_vn_ir(fd, arch, vn, op);
             }
         } else if display == userop_flags::DISPLAY_STRING {
-            // const Varnode *vn = op->getOut(); Datatype *ct = vn->getType();
             let outvn = fd.obank().get(op).and_then(|o| o.get_out());
             let mut s = String::new();
             let mut ok = false;
@@ -4019,7 +4001,6 @@ impl PrintC {
             if !ok {
                 s.push_str("\"badstring\"");
             }
-            // pushAtom(Atom(str.str(), vartoken, const_color, op, vn))
             if let Some(ovn) = outvn {
                 self.push_atom(&Atom::with_op_vn(
                     s,
@@ -4049,14 +4030,11 @@ impl PrintC {
     /// With `option_nocasts` set the cast is suppressed and only the input
     /// prints.
     fn op_float_int2float_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        // const PcodeOp *zextOp = TypeOpFloatInt2Float::absorbZext(op);
-        // const Varnode *vn0 = zextOp ? zextOp->getIn(0) : op->getIn(0);
         let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
         let vn0 = absorb_zext(fd, op)
             .and_then(|zext| fd.obank().get(zext).and_then(|o| o.get_in(0)))
             .or(in0);
         if !self.options.nocasts {
-            // pushOp(&typecast,op); pushType(out->getHighTypeDefFacing()).
             self.push_op(&tokens::TYPECAST, Some(op_key(op)));
             let outvn = fd.obank().get(op).and_then(|o| o.get_out());
             if let Some(out) = outvn {
@@ -4065,7 +4043,6 @@ impl PrintC {
                 }
             }
         }
-        // pushVn(vn0,op,mods).
         if let Some(vn) = vn0 {
             self.push_vn_ir(fd, arch, vn, op);
         }
@@ -4076,16 +4053,7 @@ impl PrintC {
     /// (printc.hh:332-341, all `{ opTypeCast(op); }`).  The cast's target type is
     /// the op's **output** varnode's def-facing high type
     /// (`op->getOut()->getHighTypeDefFacing()`) — never a hardcoded or opcode-keyed
-    /// type — and the operand is in0:
-    ///
-    /// ```text
-    ///   Datatype *dt = op->getOut()->getHighTypeDefFacing();
-    ///   if (dt->isPointerToArray()) {
-    ///     if (checkAddressOfCast(op)) { pushOp(&addressof,op); pushVn(in0); return; }
-    ///   }
-    ///   if (!option_nocasts) { pushOp(&typecast,op); pushType(dt); }
-    ///   pushVn(op->getIn(0),op,mods);
-    /// ```
+    /// type — and the operand is in0.
     ///
     /// With `option_nocasts` the cast is suppressed and only the operand prints
     /// (the underlying value flows through, parenthesized by precedence).
@@ -4112,7 +4080,6 @@ impl PrintC {
         if out_def.as_ref().map(|t| t.is_pointer_to_array()).unwrap_or(false)
             && self.check_address_of_cast(fd, op)
         {
-            // pushOp(&addressof,op); pushVn(op->getIn(0),op,mods);
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                 self.push_vn_ir(fd, arch, vn, op);
@@ -4120,7 +4087,6 @@ impl PrintC {
             return;
         }
         if !self.options.nocasts {
-            // pushOp(&typecast,op); pushType(op->getOut()->getHighTypeDefFacing()).
             self.push_op(&tokens::TYPECAST, Some(op_key(op)));
             let outvn = fd.obank().get(op).and_then(|o| o.get_out());
             if let Some(out) = outvn {
@@ -4129,7 +4095,6 @@ impl PrintC {
                 }
             }
         }
-        // pushVn(op->getIn(0),op,mods).
         if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, vn, op);
         }
@@ -4141,43 +4106,8 @@ impl PrintC {
     /// array data-type of the same total size.  When this holds the CAST is the
     /// implicit array-to-pointer decay of taking `&sym`, so the cast is dropped in
     /// favor of `&sym`.  Returns `true` if the CAST can be rendered as `&`.
-    ///
-    /// ```text
-    ///   Datatype *dt0 = op->getOut()->getHighTypeDefFacing();
-    ///   const Varnode *vnin = op->getIn(0);
-    ///   Datatype *dt1 = vnin->getHighTypeReadFacing(op);
-    ///   if (dt0->getMetatype()!=TYPE_PTR || dt1->getMetatype()!=TYPE_PTR) return false;
-    ///   const Datatype *base0 = ((TypePointer*)dt0)->getPtrTo();
-    ///   const Datatype *base1 = ((TypePointer*)dt1)->getPtrTo();
-    ///   if (base0->getMetatype()!=TYPE_ARRAY) return false;
-    ///   int4 arraySize = base0->getSize();
-    ///   base0 = ((TypeArray*)base0)->getBase();
-    ///   while(base0->getTypedef()) base0 = base0->getTypedef();
-    ///   while(base1->getTypedef()) base1 = base1->getTypedef();
-    ///   if (base0 != base1) return false;
-    ///   Datatype *symbolType = 0;
-    ///   if (vnin->getSymbolEntry() && vnin->getHigh()->getSymbolOffset()==-1)
-    ///     symbolType = vnin->getSymbolEntry()->getSymbol()->getType();
-    ///   else if (vnin->isWritten()) {
-    ///     const PcodeOp *ptrsub = vnin->getDef();
-    ///     if (ptrsub->code()==CPUI_PTRSUB) {
-    ///       Datatype *rootType = ptrsub->getIn(0)->getHighTypeReadFacing(ptrsub);
-    ///       if (rootType->getMetatype()==TYPE_PTR) {
-    ///         rootType = ((TypePointer*)rootType)->getPtrTo();
-    ///         int8 off = ptrsub->getIn(1)->getOffset();
-    ///         symbolType = rootType->getSubType(off,&off);
-    ///         if (off != 0) return false;
-    ///       }
-    ///     }
-    ///   }
-    ///   if (symbolType==0) return false;
-    ///   if (symbolType->getMetatype()!=TYPE_ARRAY || symbolType->getSize()!=arraySize)
-    ///     return false;
-    ///   return true;
-    /// ```
     fn check_address_of_cast(&self, fd: &Funcdata, op: OpId) -> bool {
         use crate::dtype::type_metatype;
-        // dt0 = op->getOut()->getHighTypeDefFacing();
         let dt0 = match fd
             .obank()
             .get(op)
@@ -4188,7 +4118,6 @@ impl PrintC {
             Some(t) => t,
             None => return false,
         };
-        // const Varnode *vnin = op->getIn(0); dt1 = vnin->getHighTypeReadFacing(op);
         let vnin = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
             None => return false,
@@ -4197,13 +4126,11 @@ impl PrintC {
             Some(t) => t,
             None => return false,
         };
-        // if (dt0->getMetatype()!=TYPE_PTR || dt1->getMetatype()!=TYPE_PTR) return false;
         if dt0.get_metatype() != type_metatype::TYPE_PTR
             || dt1.get_metatype() != type_metatype::TYPE_PTR
         {
             return false;
         }
-        // base0 = dt0->getPtrTo(); base1 = dt1->getPtrTo();
         let base0 = match dt0.get_ptr_to() {
             Some(b) => b,
             None => return false,
@@ -4212,25 +4139,20 @@ impl PrintC {
             Some(b) => b,
             None => return false,
         };
-        // if (base0->getMetatype()!=TYPE_ARRAY) return false;
         if base0.get_metatype() != type_metatype::TYPE_ARRAY {
             return false;
         }
-        // int4 arraySize = base0->getSize(); base0 = ((TypeArray*)base0)->getBase();
         let array_size = base0.get_size();
         let mut base0 = match base0.get_array_base() {
             Some(b) => b,
             None => return false,
         };
-        // while(base0->getTypedef()) base0 = base0->getTypedef();
         while let Some(t) = base0.get_typedef().cloned() {
             base0 = t;
         }
-        // while(base1->getTypedef()) base1 = base1->getTypedef();
         while let Some(t) = base1.get_typedef().cloned() {
             base1 = t;
         }
-        // if (base0 != base1) return false;
         // C++ tests Datatype *pointer* identity; the kuna factory interns every
         // data-type to a unique allocation, so `Rc::ptr_eq` is the faithful identity
         // check.  As a structural fallback (the element types here are scalars whose
@@ -4242,9 +4164,6 @@ impl PrintC {
         if !base_eq {
             return false;
         }
-        // Datatype *symbolType = 0;
-        // if (vnin->getSymbolEntry() && vnin->getHigh()->getSymbolOffset()==-1)
-        //   symbolType = vnin->getSymbolEntry()->getSymbol()->getType();
         // The kuna `getSymbolEntry()` stand-in is the high's bound Symbol — a
         // `kuna_name` with the mapped `kuna_symbol_type`; `getSymbolOffset()==-1`
         // is the whole-symbol match.
@@ -4260,21 +4179,16 @@ impl PrintC {
         if let Some(st) = whole_sym {
             symbol_type = Some(st);
         } else if fd.vbank().get(vnin).map(|v| v.is_written()).unwrap_or(false) {
-            // else if (vnin->isWritten()) { ptrsub = vnin->getDef(); ... }
             let ptrsub = fd.vbank().get(vnin).and_then(|v| v.get_def());
             if let Some(ptrsub) = ptrsub {
                 if fd.obank().get(ptrsub).map(|o| o.code()) == Some(OpCode::CPUI_PTRSUB) {
-                    // rootType = ptrsub->getIn(0)->getHighTypeReadFacing(ptrsub);
                     let root_in0 = fd.obank().get(ptrsub).and_then(|o| o.get_in(0));
                     let root_type = root_in0
                         .and_then(|v| fd.vbank().get(v))
                         .map(|v| v.get_type_read_facing(ptrsub).clone());
                     if let Some(root_type) = root_type {
-                        // if (rootType->getMetatype()==TYPE_PTR) {
                         if root_type.get_metatype() == type_metatype::TYPE_PTR {
-                            // rootType = ((TypePointer*)rootType)->getPtrTo();
                             if let Some(root_ptr_to) = root_type.get_ptr_to() {
-                                // int8 off = ptrsub->getIn(1)->getOffset();
                                 let off = fd
                                     .obank()
                                     .get(ptrsub)
@@ -4282,8 +4196,6 @@ impl PrintC {
                                     .and_then(|v| fd.vbank().get(v))
                                     .map(|v| v.get_offset())
                                     .unwrap_or(0) as int8;
-                                // symbolType = rootType->getSubType(off,&off);
-                                // if (off != 0) return false;
                                 // The virtual `getSubType` is `TypeSpacebase::getSubType`
                                 // (type.cc:3411) for a spacebase root — it indexes the
                                 // symbol-table Scope, which the bare `Datatype::get_sub_type`
@@ -4318,13 +4230,10 @@ impl PrintC {
                 }
             }
         }
-        // if (symbolType==0) return false;
         let symbol_type = match symbol_type {
             Some(s) => s,
             None => return false,
         };
-        // if (symbolType->getMetatype()!=TYPE_ARRAY || symbolType->getSize()!=arraySize)
-        //   return false;
         if symbol_type.get_metatype() != type_metatype::TYPE_ARRAY
             || symbol_type.get_size() != array_size
         {
@@ -4339,7 +4248,6 @@ impl PrintC {
     /// evaluation order.  Used by `opIntSext`/`opIntZext` to suppress an
     /// extension that is implied by integer promotion.
     fn op_hidden_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        // pushOp(&hidden,op); pushVn(op->getIn(0),op,mods).
         self.push_op(&tokens::HIDDEN, Some(op_key(op)));
         if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, vn, op);
@@ -4352,17 +4260,6 @@ impl PrintC {
     /// implied by integer promotion in the surrounding expression
     /// (`option_hide_exts && isExtensionCastImplied`), and otherwise falls back to
     /// the functional `ZEXT(x)` form (`opFunc`).
-    ///
-    /// ```text
-    ///   if (castStrategy->isZextCast(out->getHighTypeDefFacing(),
-    ///                                in0->getHighTypeReadFacing(op))) {
-    ///     if (option_hide_exts && castStrategy->isExtensionCastImplied(op,readOp))
-    ///       opHiddenFunc(op);
-    ///     else
-    ///       opTypeCast(op);
-    ///   } else
-    ///     opFunc(op);
-    /// ```
     fn op_int_zext_ir(
         &mut self,
         fd: &Funcdata,
@@ -4430,15 +4327,12 @@ impl PrintC {
     fn op_subpiece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         use crate::dtype::type_metatype;
         if fd.obank().get(op).map(|o| o.does_special_printing()).unwrap_or(false) {
-            // const Varnode *vn = op->getIn(0);
             let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
             if let Some(vn) = in0 {
-                // Datatype *ct = vn->getHighTypeReadFacing(op);  (the bare-Varnode
-                // read-facing type, the printc convention).
+                // The bare-Varnode read-facing type (the printc convention).
                 let ct = fd.vbank().get(vn).map(|v| v.get_type_read_facing(op).clone());
                 if let Some(ct) = ct {
                     if ct.is_piece_structured() {
-                        // int8 byteOff = TypeOpSubpiece::computeByteOffsetForComposite(op);
                         let byte_off = subpiece_byte_offset_for_composite(fd, op);
                         let out_sz = fd
                             .obank()
@@ -4447,9 +4341,7 @@ impl PrintC {
                             .and_then(|v| fd.vbank().get(v))
                             .map(|v| v.get_size())
                             .unwrap_or(0);
-                        // Symbol *sym = vn->getHigh()->getSymbol();  (kuna: the
-                        // kuna_name binding stands in for getSymbol()).
-                        // if (sym != 0 && vn->isExplicit()) pushPartialSymbol(...).
+                        // The kuna_name binding stands in for C++ getSymbol().
                         let high = fd.vbank().get(vn).and_then(|v| v.get_high());
                         let is_explicit =
                             fd.vbank().get(vn).map(|v| v.is_explicit()).unwrap_or(false);
@@ -4459,13 +4351,10 @@ impl PrintC {
                             })
                         });
                         if let (Some((name, sym_off, Some(sym_type))), true) = (sym, is_explicit) {
-                            // int4 suboff = vn->getHigh()->getSymbolOffset();
-                            // if (suboff > 0) byteOff += suboff;
                             let mut boff = byte_off;
                             if sym_off > 0 {
                                 boff += sym_off as int8;
                             }
-                            // int4 slot = ct->needsResolution() ? 1 : 0;
                             let slot =
                                 if sym_type.needs_resolution() { 1 } else { 0 };
                             let smt = sym_type.get_metatype();
@@ -4488,9 +4377,8 @@ impl PrintC {
                             }
                             // Fall through to the cast/functional dispatch below.
                         } else {
-                            // const TypeField *field =
-                            //   ct->findTruncation(byteOff,outSize,op,1,offset);
-                            // if (field != 0 && offset == 0) { object_member }
+                            // A struct findTruncation hit at offset 0 renders as
+                            // an object_member access.
                             if ct.get_metatype() == type_metatype::TYPE_STRUCT {
                                 if let Ok(Some((idx, off2))) =
                                     ct.find_truncation(byte_off, out_sz, op, 1)
@@ -4523,12 +4411,10 @@ impl PrintC {
                 }
             }
         }
-        // Non-special-print SUBPIECE (printc.cc:892-897):
-        //   isSubpieceCast(out->getHighTypeDefFacing(),
-        //                  in0->getHighTypeReadFacing(op), in1->getOffset())
-        //     ? opTypeCast : opFunc
+        // Non-special-print SUBPIECE (printc.cc:892-897): isSubpieceCast decides
+        // between opTypeCast and opFunc.
         // The cast arm was previously gated out because it tripped a spurious
-        // `(int4)ptr` cast on condconstsub (a free SUBPIECE the call-return seam
+        // `(int4)ptr` cast on condconstsub (a free SUBPIECE the call-return stub
         // had left in the IR).  That IR bug is now fixed (the call-return-recovery
         // + ActionDeindirect wave landed: condconstsub's `process` returns the
         // recovered call output, no spurious SUBPIECE), so the faithful dispatch
@@ -4651,7 +4537,7 @@ impl PrintC {
     /// in0 (the registered call-spec name, else `func_<addr>`/`sub_<addr>`); the
     /// arguments are `in[1..]`.  For a CALLIND the callee is `(*funcptr)` where the
     /// funcptr is `in[0]` and the arguments are `in[1..]`.  The hidden-`this` slot
-    /// (`getHiddenThisSlot`) is the C++ method-invocation seam (always -1 here —
+    /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let opc = fd.obank().get(op).expect("op_call_ir: stale op").code();
@@ -4829,19 +4715,16 @@ impl PrintC {
         vn: VarnodeId,
         op: OpId,
     ) -> bool {
-        // Datatype *parent = vn->getHigh()->getType();  (bare type by print-time).
+        // The bare type is the print-time high surface here.
         let parent = match fd.vbank().get(vn).map(|v| v.get_type().clone()) {
             Some(t) => t,
             None => return false,
         };
         let mut field: Option<(String, int4)> = None; // (name, ident)
-        // if (parent->needsResolution() && parent->getMetatype() != TYPE_PTR) {
         if parent.needs_resolution()
             && parent.get_metatype() != crate::dtype::type_metatype::TYPE_PTR
         {
-            // int4 slot = op->getSlot(vn);
             let slot = fd.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
-            // res = fd->getUnionField(parent, op, slot);
             if let Some(res) = fd.get_union_field(&parent, op, slot) {
                 let field_num = res.get_field_num();
                 if field_num >= 0 {
@@ -4863,18 +4746,15 @@ impl PrintC {
                 }
             }
         }
-        // const PcodeOp *defOp = vn->getDef();
         let def_op = match fd.vbank().get(vn).and_then(|v| v.get_def()) {
             Some(d) => d,
             None => return false,
         };
         let (fieldname, fieldid) = match field {
             Some(f) => f,
-            // if (!proceed) { defOp->push(this,defOp,op); return; }  -> caller does it.
+            // C++: the no-proceed path pushes the def op; the caller does it here.
             None => return false,
         };
-        // pushOp(&object_member,op); defOp->push(this,defOp,op);
-        // pushAtom(Atom(field->name, fieldtoken, ..., parent, field->ident, op));
         self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
         self.op_push_ir(fd, arch, def_op, Some(op));
         let field_atom = Atom::field(
@@ -5087,7 +4967,7 @@ impl PrintC {
         let bitfield = match (expr.is_valid(), &expr.expr.bitfield, expr.insert_op, expr.struct_ptr) {
             (true, Some(b), Some(_), Some(_)) => b.clone(),
             _ => {
-                // op->getOpcode()->push(this,op,(PcodeOp *)0): the normal STORE.
+                // The normal STORE push.
                 self.op_store_ir(fd, arch, op);
                 return;
             }
@@ -5112,7 +4992,7 @@ impl PrintC {
         // first (LHS of `=`), then the value.
         self.push_vn_ir_m(fd, arch, struct_ptr, op, m);
         self.push_bitfield_atom(&bitfield, op);
-        // pushVn(expr.insertOp->getIn(1),op,mods): the value being written.
+        // The value being written.
         if let Some(val) = fd.obank().get(insert_op).and_then(|o| o.get_in(1)) {
             self.push_vn_ir_m(fd, arch, val, op, self.context.mods());
         }
@@ -5284,10 +5164,7 @@ impl PrintC {
         // v1.flagfield`); rendered as a leading `(cast)` before the member tokens.
         let mut finalcast: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
 
-        // while (ct != 0)  (printc.cc:2032).
         while let Some(cur) = ct.clone() {
-            // if (off == 0) { if (sz==0 || (sz==ct->getSize() && (!needsResolution
-            //   || metatype==TYPE_PTR))) break; }  (printc.cc:2033-2036).
             if off == 0
                 && (sz == 0
                     || (sz == cur.get_size()
@@ -5386,10 +5263,6 @@ impl PrintC {
                 // truncates it (a 1-byte read of the 8-byte `flagfield`).  When the
                 // truncation is a low-end SUBPIECE-style cast, render it as a leading
                 // `(outtype)` cast over the whole member: `(undefined1)v1.flagfield`.
-                //   outtype = vn->getHigh()->getType();
-                //   spc = sym->getFirstWholeMap()->getAddr().getSpace();  // for endian
-                //   if (castStrategy->isSubpieceCastEndian(outtype,ct,off,isBig))
-                //     { finalcast = outtype; ct = 0; succeeded = true; }
                 // `vn->getHigh()->getType()`: by the W10 print convention the high
                 // type is pinned to the Varnode's own type at print-time (the same
                 // stand-in `vn_high_type` uses), so read it directly.
@@ -5451,9 +5324,7 @@ impl PrintC {
             return false;
         }
 
-        // C++ `if (finalcast && !option_nocasts) { pushOp(&typecast,op);
-        // pushType(finalcast); }` (printc.cc:2119-2122): a leading `(cast)` over the
-        // whole member access.
+        // A leading `(cast)` over the whole member access.
         if let Some(fc) = &finalcast {
             if !self.options.nocasts {
                 self.push_op(&tokens::TYPECAST, Some(op_key(op)));
@@ -5478,7 +5349,7 @@ impl PrintC {
                 }
             }
         }
-        // pushSymbol(sym,vn,op) — the base name (the kuna_name stand-in).
+        // The base name (the kuna_name stand-in for pushSymbol).
         self.push_atom(&Atom::with_op_vn(
             name.to_string(),
             TagType::VarToken,
@@ -5782,11 +5653,8 @@ impl PrintC {
                 // C++ `pushConstant` TYPE_PTR/TYPE_PTRREL arm (printc.cc:1842-1880).
                 // After the `pushPtrCharConstant` string short-circuit (above) and
                 // the TYPE_CODE function-name sub-arm (a documented LOSS) fail, the
-                // C++ `break`s to the shared "Default printing" tail:
-                //   if (option_NULL && val==0) pushAtom(nullToken); return;   // gated
-                //   if (!option_nocasts) { pushOp(&typecast); pushType(ct); }
-                //   pushMod(); if (!isSet(force_dec)) setMod(force_hex);
-                //   push_integer(val, ct->getSize(), false, ...); popMod();
+                // C++ `break`s to the shared "Default printing" tail: the gated NULL
+                // token, the optional leading typecast, then a force_hex integer.
                 // This is what renders a pointer-typed null as `(int4 **)0x0` — the
                 // for-loop iterator compare `loopvar != (int4 **)0x0` — rather than a
                 // bare decimal `0`.  Previously this arm fell straight through to the
@@ -5807,8 +5675,6 @@ impl PrintC {
                     self.push_op(&tokens::TYPECAST, Some(op_key(op)));
                     self.push_cast_type(&ct);
                 }
-                // pushMod(); if (!isSet(force_dec)) setMod(force_hex); push_integer(
-                // val, size, /*sign*/ false, ...); popMod().
                 self.context.push_mod();
                 if !self.context.is_set(modifiers::FORCE_DEC) {
                     self.context.set_mod(modifiers::FORCE_HEX);
@@ -6228,15 +6094,14 @@ impl PrintC {
             let suboff_bytes = AddrSpace::address_to_byte_int(suboff, word_size);
             let (fieldname, fieldtype, fieldid) =
                 if metameta == crate::dtype::type_metatype::TYPE_UNION {
-                    // TYPE_UNION arm (printc.cc:1000-1014).
-                    // if (suboff != 0) throw "PTRSUB accesses union with non-zero offset";
+                    // TYPE_UNION arm (printc.cc:1000-1014).  A non-zero offset is the
+                    // C++ "PTRSUB accesses union with non-zero offset" throw.
                     if suboff_bytes != 0 {
                         // C++ throws; fall to the functional render so output stays
                         // parseable rather than aborting the whole function.
                         self.op_func_ir(fd, arch, op);
                         return;
                     }
-                    // resUnion = fd->getUnionField(ptype, op, -1);
                     // The cast plane (`ActionSetCasts::resolveUnion`) stored the
                     // resolution on this PTRSUB's write edge keyed on the
                     // pointer-to-union `ptype`; read it back here.
@@ -6386,9 +6251,6 @@ impl PrintC {
             // and parked the Symbol on the offset constant's HighVariable
             // (`Funcdata::link_symbol_reference` -> `kuna_name`/`symbol_offset`/
             // `kuna_symbol_type`), so this reads it back here.
-            //
-            //   HighVariable *high = op->getIn(1)->getHigh();
-            //   Symbol *symbol = high->getSymbol();
             // The kuna stand-in: read the reference triple off in1's high.
             let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
             let (sym_name, sym_off, sym_type) = match in1.and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_high()) {
@@ -6535,7 +6397,7 @@ impl PrintC {
             }
 
             if arrayvalue {
-                // push_integer(0, 4, ...) — the `[0]` subscript index.
+                // The `[0]` subscript index.
                 self.push_constant_ir(0, 4, op);
             }
         } else {
@@ -6600,7 +6462,7 @@ impl PrintC {
     /// possible (`matchname` empty) it falls back to the raw integer literal,
     /// honoring the enum's display format.
     ///
-    /// Faithful transcription of the C++ RPN push order (printc.cc:1741-1755):
+    /// The C++ RPN push order (printc.cc:1741-1755), transcribed faithfully:
     /// `shift_right` op (if shifted), then `bitwise_not` op (if complemented),
     /// then `matchname.size()-1` `enum_cat` (`|`) ops, then the flag-name atoms
     /// in forward order, then — when shifted — the shift-amount integer.  The
@@ -6646,9 +6508,8 @@ impl PrintC {
                     val,
                 ));
             }
-            // printc.cc:1750-1751 — `if (rep.shiftAmount != 0)
-            // push_integer(rep.shiftAmount,4,false,tag,vn,op,0);` (the `>> 0x20`
-            // shift amount, rendered as a 4-byte unsigned literal, no format).
+            // The `>> 0x20` shift amount, rendered as a 4-byte unsigned literal,
+            // no format (printc.cc:1750-1751).
             if rep.shift_amount != 0 {
                 self.push_constant_ir_fmt(rep.shift_amount as uintb, 4, op, display_format::NONE);
             }
@@ -6835,12 +6696,10 @@ impl PrintC {
         op: OpId,
         vn: VarnodeId,
     ) -> bool {
-        // AddrSpace *spc = glb->getDefaultDataSpace();
         let spc = match arch.manage().get_default_data_space() {
             Some(s) => std::rc::Rc::clone(s),
             None => return false,
         };
-        // Address stringaddr = glb->resolveConstant(spc,val,ct->getSize(),point,...)
         // `ptr_size` is the pointer-constant's width (C++ `ct->getSize()`).
         let mut full_encoding: uintb = 0;
         let stringaddr =
@@ -6851,8 +6710,7 @@ impl PrintC {
         if stringaddr.is_invalid() {
             return false;
         }
-        // Check that string location is readonly:
-        //   glb->symboltab->getGlobalScope()->isReadOnly(stringaddr,1,Address())
+        // Check that the string location is readonly (the global-scope query).
         let gscope = match arch.symboltab.get_global_scope() {
             Some(g) => g,
             None => return false,
@@ -6861,12 +6719,10 @@ impl PrintC {
         if !arch.symboltab.is_read_only(gscope, &stringaddr, 1, &nulladdr) {
             return false;
         }
-        // printCharacterConstant(str,stringaddr,subct)
         let mut s = String::new();
         if !self.print_character_constant(arch, &mut s, &stringaddr, subct) {
             return false;
         }
-        // pushAtom(Atom(str, vartoken, const_color, op, vn))
         self.push_atom(&Atom::with_op_vn(
             s,
             TagType::VarToken,
@@ -7475,8 +7331,7 @@ impl CastContext for PrintCastContext<'_> {
     fn vn_high_type_read_facing(&self, vn: VnRef, op: OpRef) -> std::rc::Rc<crate::dtype::Datatype> {
         let vnk = self.vn_key(vn);
         let opk = self.op_key(op);
-        // vn->getHighTypeReadFacing(op): bare read-facing type by print-time.
-        // // STUB(W8 union findResolve)
+        // The bare read-facing type by print-time.  STUB(W8 union findResolve)
         self.fd
             .vbank()
             .get(vnk)

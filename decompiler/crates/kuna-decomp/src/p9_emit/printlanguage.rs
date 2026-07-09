@@ -2,7 +2,7 @@
 //! class: the RPN token-stack driver and the printc-shared scoping/atom
 //! machinery shared by every high-level back-end.
 //!
-//! ## What this module owns vs. what it seams to
+//! ## What this module owns vs. what it defers to
 //!
 //! `PrintLanguage` (printlanguage.hh:138) is a large class that is *mostly*
 //! pure-virtual: the per-op-code `op*`/`emit*`/`push*` methods (printlanguage.hh:
@@ -26,7 +26,7 @@
 //!      [`PrintContext::set_integer_format`] helpers — none of which touch the
 //!      emitter or IR.
 //!
-//! ## Seam: the `Emit`/`EmitMarkup` driver and the IR/PrintC virtuals
+//! ## Boundary: the `Emit`/`EmitMarkup` driver and the IR/PrintC virtuals
 //!
 //! The token-*emitting* half of the driver — `pushOp`/`pushAtom`/`pushVn`/
 //! `pushVnExplicit`/`recurse`/`emitOp`/`emitAtom`/`opBinary`/`opUnary` and the
@@ -35,7 +35,7 @@
 //! `decompiler/cpp/prettyprint.{cc,hh}` (a **separate W8 item**, currently a
 //! stub), and reaches the data-flow graph through `Funcdata`-mediated Varnode/
 //! PcodeOp accessors and the pure-virtual `push*`/`emit*` methods that `PrintC`
-//! supplies (also a separate W8 item).  Those methods are **seam-noted** here
+//! supplies (also a separate W8 item).  Those methods are **stub-noted** here
 //! (`STUB(printc/prettyprint)`) rather than transcribed against stubs: their
 //! bodies are byte-for-byte print logic that only becomes testable once the
 //! `Emit` trait and the `PrintC` virtuals exist, and they are wired in the W9
@@ -43,7 +43,7 @@
 //!
 //! The `syntax_highlight` enum the [`Atom`] carries belongs to the `Emit`
 //! driver (`prettyprint.hh:110`); a forward placeholder [`SyntaxHighlight`] is
-//! provided here (mirroring the `seams.rs` cross-wave idiom) so the [`Atom`]
+//! provided here (the cross-wave stub idiom) so the [`Atom`]
 //! layout is faithful before `prettyprint` lands.
 
 use kuna_base::address::mostsigbit_set;
@@ -110,7 +110,7 @@ pub enum TokenType {
 /// associativity, spacing, and how it groups its inputs.  The `negate` link (a
 /// `OpToken *` in C++, pointing to the complementary token) is carried as a
 /// `&'static OpToken` so the static token tables in `printc` can cross-link
-/// without an allocation; the only consumer, the (seam) `op_binary`, reads it
+/// without an allocation; the only consumer, the (stub) `op_binary`, reads it
 /// behind the `negatetoken` modifier.
 #[derive(Debug)]
 pub struct OpToken {
@@ -215,7 +215,7 @@ pub enum NamespaceStrategy {
 ///
 /// `op` is carried as an opaque index (a `PcodeOp *` in C++; per ADR 0001 the IR
 /// is `Funcdata`-owned) and `id`/`id2` are the emitter group ids
-/// (`Emit::openGroup`/`openParen` return values, filled by the seam driver).
+/// (`Emit::openGroup`/`openParen` return values, filled by the printc driver).
 #[derive(Debug, Clone)]
 pub struct ReversePolish {
     /// The operator token (C++ `tok`, an `OpToken *`).
@@ -421,7 +421,7 @@ pub mod comment_type {
 /// This is the slice of `PrintLanguage`'s member state (printlanguage.hh:262-279)
 /// that is *not* coupled to the `Emit` driver or the IR — the mod/scope stacks
 /// and the comment/namespace defaults.  The RPN/nodepend stacks and the `emit`
-/// pointer (`revpol`/`nodepend`/`pending`/`emit`) live with the seam driver,
+/// pointer (`revpol`/`nodepend`/`pending`/`emit`) live with the printc driver,
 /// since every method that touches them also drives `Emit` or the IR.
 ///
 /// Scopes are carried as opaque indices (a `const Scope *` in C++; the symbol
@@ -526,7 +526,7 @@ impl PrintContext {
         self.mods
     }
 
-    /// Set the active mods word directly (used by the seam driver's
+    /// Set the active mods word directly (used by the printc driver's
     /// `recurse`/`clear`, which save and restore `mods`).
     #[inline]
     pub fn set_mods(&mut self, m: uint4) {
@@ -596,7 +596,7 @@ impl PrintContext {
     /// C++ `setIntegerFormat` (printlanguage.cc:705-719) — set the default
     /// integer display format, toggling the `force_hex`/`force_dec` mods.
     pub fn set_integer_format(&mut self, nm: &str) -> KunaResult<()> {
-        // C++ `nm.compare(0,3,"hex")==0` — prefix match on the first 3 chars.
+        // Prefix match on the first 3 chars, as the C++ does.
         let m = if nm.starts_with("hex") {
             modifiers::FORCE_HEX
         } else if nm.starts_with("dec") {
@@ -630,7 +630,7 @@ impl PrintContext {
 /// **pure** function of the two tokens' type/precedence/associativity and the
 /// top token's current `visited` stage (and, for `hiddenfunction`, the
 /// previous token on the stack), so it is transcribed exactly here including the
-/// kuna GH-2786 adjacent-sign fix (printlanguage.cc:292-294).
+/// kuna GH-2786 adjacent-sign fix.
 ///
 /// `prev_token` is `revpol[size-2].tok` (the token below `top`), needed only for
 /// the `HiddenFunction` arm; pass `None` when the stack has only one entry.
@@ -714,7 +714,7 @@ pub fn parentheses(top: &ReversePolish, op2: &OpToken, prev_token: Option<&OpTok
             true
         }
         TokenType::HiddenFunction => {
-            // If there is an unresolved previous token (C++ `revpol.size() > 1`).
+            // If there is an unresolved previous token.
             if stage == 0 {
                 if let Some(prev) = prev_token {
                     // New token is printed next to the previous token.
@@ -824,7 +824,6 @@ pub fn unicode_needs_escape(codepoint: int4) -> bool {
 /// An artificial field name `_<off>_<size>_` for a value extracted from a
 /// structured data-type when the natural name is unavailable.
 pub fn unnamed_field(off: int4, size: int4) -> String {
-    // C++ `s << '_' << dec << off << '_' << size << '_';`
     format!("_{off}_{size}_")
 }
 

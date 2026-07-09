@@ -50,7 +50,7 @@
 //!
 //! `TypeOp::getInputCast`/`getOutputCast` per op-code (typeop.cc) and the
 //! `PrintC` cast emission are the W9 callers of this module; they are
-//! seam-noted in `typeop.rs`.  The in-module tests below port the
+//! stub-noted in `typeop.rs`.  The in-module tests below port the
 //! `cast_basic`/`cast_pointer`/`cast_enum`/`cast_compare`/`cast_integertoken`
 //! decision matrices from `testtypes.cc` to pre-validate that closure: the
 //! lattice tests call [`CastStrategyC::cast_standard`] directly with the same
@@ -688,12 +688,10 @@ impl CastStrategy for CastStrategyC {
             if reqbase.get_word_size() != curbase.get_word_size() {
                 return Some(Rc::clone(reqtype));
             }
-            // reqptr->getSpace() != curptr->getSpace(): pointer identity of the
-            // bound AddrSpace (uniquely allocated by the space manager).
             let req_space = reqbase.get_pointer_space();
             let cur_space = curbase.get_pointer_space();
-            // Faithful C++ nesting (cast.cc:315-319): the outer block's implicit
-            // else carries the "one pointer doesn't have an address" comment.
+            // Faithful C++ nesting: the outer block's implicit else carries the
+            // "one pointer doesn't have an address" comment.
             #[allow(clippy::collapsible_if)]
             if !addr_space_eq(&req_space, &cur_space) {
                 if req_space.is_some() && cur_space.is_some() {
@@ -709,7 +707,7 @@ impl CastStrategy for CastStrategyC {
             care_uint_int = true;
             isptr = true;
         }
-        // Strip typedefs (`while(getTypedef()!=0) base=base->getTypedef()`).
+        // Strip typedefs.
         while let Some(td) = reqbase.get_typedef() {
             let td = Rc::clone(td);
             reqbase = td;
@@ -1151,7 +1149,7 @@ fn addr_space_eq(a: &Option<Rc<AddrSpace>>, b: &Option<Rc<AddrSpace>>) -> bool {
 /// `((TypeCode *)base)->getPrototype() == (const FuncProto *)0` — true if the
 /// code data-type carries no prototype (a generic code pointer).  The W6 `Code`
 /// kind stores `proto: Option<Rc<FuncProto>>`; the prototype model itself is a
-/// W6 seam, but the *presence* test cast.cc makes is just the `Option`.
+/// W6 stub, but the *presence* test cast.cc makes is just the `Option`.
 fn code_prototype_is_null(ct: &Datatype) -> bool {
     match &ct.kind {
         DatatypeKind::Code { proto } => proto.is_none(),

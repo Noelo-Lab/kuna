@@ -395,7 +395,6 @@ pub trait Emit {
     /// `bump` is the extra indent if the spaces force a line break (used only
     /// by [`EmitPrettyPrint`]; the base ignores it, exactly like C++).
     fn spaces(&mut self, num: int4, _bump: int4) {
-        // static const string spacearray[] = { "", " ", ... "          " };
         const SPACEARRAY: [&str; 11] = [
             "", " ", "  ", "   ", "    ", "     ", "      ", "       ", "        ", "         ",
             "          ",
@@ -1895,8 +1894,8 @@ impl EmitPrettyPrint {
             scanqueue: CircularQueue::new(3 * 100),
             tokqueue: CircularQueue::new(3 * 100),
         };
-        // spaceremain = maxlinesize; (maxlinesize still 0 here in C++ field
-        // order — it is set by resetDefaultsPrettyPrint below)
+        // maxlinesize is still 0 here (C++ field order) — it is set by
+        // resetDefaultsPrettyPrint below.
         pp.spaceremain = pp.maxlinesize;
         pp.needbreak = false;
         pp.commentmode = false;
@@ -2555,7 +2554,7 @@ impl EmitPrettyPrint {
 
     /// C++ `EmitPrettyPrint::clear()`.
     pub fn clear_pretty(&mut self) {
-        // Emit::clear()
+        // The base Emit::clear() body, inlined.
         self.base.parenlevel = 0;
         self.base.indentlevel = 0;
         match &mut self.lowlevel {
@@ -2605,7 +2604,6 @@ impl EmitPrettyPrint {
 
     /// C++ `EmitPrettyPrint::setMaxLineSize(int4 val)`.
     pub fn set_max_line_size_pretty(&mut self, val: int4) -> KunaResult<()> {
-        // C++ `if ((val<20)||(val>10000))` — the equivalent range check.
         if !(20..=10000).contains(&val) {
             return Err(KunaError::lowlevel("Bad maximum line size"));
         }

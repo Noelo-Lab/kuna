@@ -17,8 +17,8 @@
 //! # Where the pieces live
 //!
 //! The pure address-rendering helpers (`dat_`/`sub_`/`label_`/`a<n>`) were ported
-//! into [`crate::database`] as a self-contained DIV-5 seam (the symbol database
-//! is their only boundary consumer); this module **re-exports** them so the
+//! into [`crate::database`] as a self-contained DIV-5 boundary (the symbol
+//! database is their only consumer there); this module **re-exports** them so the
 //! `kuna_naming` surface is complete, and adds the two helpers the database
 //! doesn't need: [`kuna_is_generated_name`] (consumed by `coreaction.cc`'s
 //! parameter-comment skip) and [`kuna_storage_comment`] (consumed by
@@ -28,7 +28,7 @@
 //! `Architecture::name_style_angr`, so [`kuna_angr_naming`] takes the flag value
 //! directly (the caller reads `glb->name_style_angr`).
 //!
-//! # Storage-comment seam
+//! # Storage-comment boundary
 //!
 //! C++ `kunaStorageComment(glb,sym,loc)` reaches into the `Symbol` /
 //! `SymbolEntry` / `Funcdata` / `JoinRecord` / `Translate` graph to resolve a
@@ -91,7 +91,6 @@ fn kuna_to_lower(s: &mut String) {
 pub fn kuna_is_generated_name(nm: &str) -> bool {
     let bytes = nm.as_bytes();
     let start: usize;
-    // nm.compare(0,6,"param_") == 0
     if nm.len() >= 6 && &nm[0..6] == "param_" {
         start = 6;
     } else if bytes.len() >= 2
@@ -102,19 +101,17 @@ pub fn kuna_is_generated_name(nm: &str) -> bool {
     } else {
         return false;
     }
-    // for(i=start; i<nm.size(); ++i) if (!isdigit(nm[i])) return false;
     for &b in &bytes[start..] {
         if !b.is_ascii_digit() {
             return false;
         }
     }
-    // return nm.size() > start;
     nm.len() > start
 }
 
 /// The resolved storage facts [`kuna_storage_comment`] renders, gathered by the
 /// caller from the `Symbol`/`SymbolEntry`/`Funcdata`/`JoinRecord`/`Translate`
-/// graph (seam: see module docs).
+/// graph (boundary: see module docs).
 ///
 /// This mirrors exactly the data the C++ `kunaStorageComment` reads off `glb`
 /// and `sym`: the storage address+size after the dynamic-symbol fall-through,
@@ -158,7 +155,6 @@ pub struct StorageView<'a> {
 /// facts.  A `space == None` view models the "no representative storage at all"
 /// branch that yields `tmp`.
 pub fn kuna_storage_comment(view: &StorageView) -> String {
-    // if (addr.isInvalid()) { ... resolve ...; if (addr.isInvalid()) { out="tmp"; return true; } }
     let spc = match view.space {
         Some(s) => s,
         None => return "tmp".to_string(),
@@ -173,16 +169,12 @@ pub fn kuna_storage_comment(view: &StorageView) -> String {
 
     // Stack-backed storage -> a frame-relative signed offset ("stack - 0x10").
     if view.is_stack {
-        // intb soff = (intb)AddrSpace::byteToAddress(addr.getOffset(),spc->getWordSize());
         let mut soff: intb =
             AddrSpace::byte_to_address(view.offset, view.word_size as u32) as intb;
-        // soff = sign_extend(soff, addr.getAddrSize()*8 - 1);
         soff = sign_extend(soff, view.addr_size * 8 - 1);
         if soff < 0 {
-            // s << "stack - 0x" << hex << (uintb)(-soff);
             return format!("stack - 0x{:x}", soff.unsigned_abs());
         } else {
-            // s << "stack + 0x" << hex << (uintb)soff;
             return format!("stack + 0x{:x}", soff as uintb);
         }
     }
@@ -191,7 +183,6 @@ pub fn kuna_storage_comment(view: &StorageView) -> String {
     if spc.get_type() == spacetype::IPTR_JOIN {
         if let Some(pieces) = &view.join_pieces {
             if !pieces.is_empty() {
-                // for(i...) { if(i!=0) s<<':'; s<<piece; }
                 return pieces.join(":");
             }
         }
@@ -219,16 +210,7 @@ impl OptionNameStyle {
     /// The option name (C++ `name = "namestyle"`).
     pub const NAME: &'static str = "namestyle";
 
-    /// C++ `OptionNameStyle::apply`:
-    ///
-    /// ```text
-    ///   bool val;
-    ///   if (p1 == "angr") val = true;
-    ///   else if (p1 == "ghidra") val = false;
-    ///   else return "namestyle must be \"angr\" or \"ghidra\"";
-    ///   glb->name_style_angr = val;
-    ///   return "Naming scheme set to " + p1;
-    /// ```
+    /// C++ `OptionNameStyle::apply`.
     ///
     /// Returns `Ok((val, message))` on a valid value; an invalid value yields the
     /// exact upstream validation message as a `ParseError`.

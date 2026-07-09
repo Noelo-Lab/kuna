@@ -42,14 +42,14 @@
 //! which is exactly what the C++ does for any op whose `TypeOp` subclass does not
 //! override these virtuals.
 //!
-//! ## What stays seamed (and why it is faithful)
+//! ## What stays stubbed (and why it is faithful)
 //!
 //! `dt->resolveInFlow(op, slot)` — the *scoring* half of union resolution
-//! (`ScoreUnionFields::run`) — is still a seam in [`crate::unionresolve`].  The
+//! (`ScoreUnionFields::run`) — is still a stub in [`crate::unionresolve`].  The
 //! C++ `resolveUnion` calls `resolveInFlow` as a *last chance* when the cache
 //! misses, then re-reads the cache.  Here we call the landed
 //! [`Funcdata::find_resolve_facing`] lookup (which consults the populated cache)
-//! and, on a miss, attempt `resolve_in_flow`; when the scorer is seamed the
+//! and, on a miss, attempt `resolve_in_flow`; when the scorer is stubbed the
 //! lookup simply stays a miss and no PTRSUB is inserted for that edge — the same
 //! conservative outcome the C++ produces when no field scores.
 
@@ -292,36 +292,35 @@ pub(crate) fn get_input_cast(
             let curtype = data.vn_high_type_read_facing(invn, op);
             strat.cast_standard(&reqtype, &curtype, false, true)
         }
-        // TypeOpLoad::getInputCast (typeop.cc:441-471).
+        // TypeOpLoad::getInputCast.
         OpCode::CPUI_LOAD => get_input_cast_load(data, strat, op, slot),
-        // TypeOpStore::getInputCast (typeop.cc:521-563).
+        // TypeOpStore::getInputCast.
         OpCode::CPUI_STORE => get_input_cast_store(data, strat, op, slot),
         // EQUAL/NOTEQUAL share the "coerce both inputs to the common (most-ordered)
-        // input read-facing type" body (typeop.cc:934-944, :998-1008): reqtype =
-        // max-read-facing(in0,in1), castStandard(reqtype,curtype,false,false).
+        // input read-facing type" body: reqtype = max-read-facing(in0,in1),
+        // castStandard(reqtype,curtype,false,false).
         OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
             get_input_cast_equal(data, strat, op, slot)
         }
-        // SLESS/SLESSEQUAL and LESS/LESSEQUAL share the *inputTypeLocal* body
-        // (typeop.cc:1025-1033, :1051-1059, :1077-1085, :1101-1108): reqtype =
-        // op->inputTypeLocal(slot), gated by checkIntPromotionForCompare, then
-        // castStandard(reqtype,curtype,true,care_ptr_uint).  They differ ONLY in
-        // the final care_ptr_uint flag: SLESS/SLESSEQUAL pass TRUE (signed compare,
-        // typeop.cc:1032/:1058), LESS/LESSEQUAL pass FALSE (typeop.cc:1084/:1108).
+        // SLESS/SLESSEQUAL and LESS/LESSEQUAL share the *inputTypeLocal* body:
+        // reqtype = op->inputTypeLocal(slot), gated by checkIntPromotionForCompare,
+        // then castStandard(reqtype,curtype,true,care_ptr_uint).  They differ ONLY
+        // in the final care_ptr_uint flag: SLESS/SLESSEQUAL pass TRUE (signed
+        // compare), LESS/LESSEQUAL pass FALSE.
         OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL => {
             get_input_cast_less(data, strat, op, slot, true)
         }
         OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL => {
             get_input_cast_less(data, strat, op, slot, false)
         }
-        // TypeOpIntZext::getInputCast / TypeOpIntSext::getInputCast
-        // (typeop.cc:1133-1170): a cast is needed only when promotion forces it.
+        // TypeOpIntZext::getInputCast / TypeOpIntSext::getInputCast: a cast is
+        // needed only when promotion forces it.
         OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => {
             get_input_cast_extension(data, strat, op, slot)
         }
-        // TypeOpPtradd::getInputCast (typeop.cc:2252-2268).
+        // TypeOpPtradd::getInputCast.
         OpCode::CPUI_PTRADD => get_input_cast_ptradd(data, strat, op, slot),
-        // TypeOpPtrsub::getInputCast (typeop.cc:2322-2349).
+        // TypeOpPtrsub::getInputCast.
         OpCode::CPUI_PTRSUB => get_input_cast_ptrsub(data, strat, op, slot),
         // Ops that "never need a cast into <op>" (typeop.cc:2059-2063, 2138-2142,
         // 2422-2426, 2545-2549, 2572-2576, 2599-2603).
@@ -332,16 +331,16 @@ pub(crate) fn get_input_cast(
         | OpCode::CPUI_ZPULL
         | OpCode::CPUI_SPULL => None,
         // The signed/unsigned div/rem and the right-shifts gate the cast on the
-        // input's integer-promotion class (typeop.cc:1545-1599, 1641-1711).
+        // input's integer-promotion class.
         OpCode::CPUI_INT_DIV | OpCode::CPUI_INT_REM | OpCode::CPUI_INT_RIGHT => {
             get_input_cast_promote_div(data, strat, op, slot, false)
         }
         OpCode::CPUI_INT_SDIV | OpCode::CPUI_INT_SREM | OpCode::CPUI_INT_SRIGHT => {
             get_input_cast_promote_div(data, strat, op, slot, true)
         }
-        // TypeOpFloatInt2Float::getInputCast (typeop.cc:1849-1864).
+        // TypeOpFloatInt2Float::getInputCast.
         OpCode::CPUI_FLOAT_INT2FLOAT => get_input_cast_int2float(data, strat, op, slot),
-        // TypeOp::getInputCast default (typeop.cc:296-304).
+        // TypeOp::getInputCast default.
         _ => {
             let invn = data.obank().get(op)?.get_in(slot)?;
             if data.vbank().get(invn)?.is_annotation() {
@@ -478,7 +477,6 @@ fn get_input_cast_equal(
     let in1 = data.obank().get(op)?.get_in(1)?;
     let mut reqtype = data.vn_high_type_read_facing(in0, op);
     let othertype = data.vn_high_type_read_facing(in1, op);
-    // if (0 > othertype->typeOrder(*reqtype)) reqtype = othertype;
     if othertype.type_order(&reqtype).unwrap_or(0) < 0 {
         reqtype = othertype;
     }
@@ -530,7 +528,6 @@ fn get_input_cast_extension(
     op: OpId,
     slot: int4,
 ) -> Option<Rc<Datatype>> {
-    // if (castStrategy->checkIntPromotionForExtension(op)) return op->inputTypeLocal(slot);
     let needs = {
         let ctx = FuncdataCastContext::new(data);
         let opr = ctx.op_ref(op);
@@ -540,8 +537,8 @@ fn get_input_cast_extension(
         return Some(input_type_local(data, op, slot));
     }
     // ZEXT/SEXT do NOT fall through to the default tuple: the C++ tail is its own
-    // `castStandard(reqtype,curtype,true,false)` (typeop.cc:1139-1140 ZEXT,
-    // :1165-1166 SEXT) -- care_uint_int=TRUE, care_ptr_uint=FALSE.
+    // `castStandard(reqtype,curtype,true,false)` -- care_uint_int=TRUE,
+    // care_ptr_uint=FALSE.
     let reqtype = input_type_local(data, op, slot);
     let invn = data.obank().get(op)?.get_in(slot)?;
     let curtype = data.vn_high_type_read_facing(invn, op);
@@ -637,8 +634,7 @@ fn get_input_cast_promote_div(
     signed_ext: bool,
 ) -> Option<Rc<Datatype>> {
     // INT_RIGHT / INT_SRIGHT only special-case slot 0; their slot 1 defers to the
-    // binary default (typeop.cc:1545-1558, 1587-1600).  INT_DIV/SDIV/REM/SREM
-    // special-case every slot (typeop.cc:1641-1711).
+    // binary default.  INT_DIV/SDIV/REM/SREM special-case every slot.
     let opc = data.obank().get(op)?.code();
     let shift = matches!(opc, OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT);
     if shift && slot != 0 {
@@ -672,7 +668,7 @@ fn get_input_cast_int2float(
     op: OpId,
     slot: int4,
 ) -> Option<Rc<Datatype>> {
-    // if (absorbZext(op) != 0) return 0;  // absorbing an INT_ZEXT
+    // Absorbing an INT_ZEXT.
     if float_int2float_absorb_zext(data, op).is_some() {
         return None;
     }
@@ -685,7 +681,7 @@ fn get_input_cast_int2float(
     };
     let mut care_uint_int = true;
     if (vn_size as usize) <= std::mem::size_of::<uintb>() {
-        // val = nzmask >> (8*size - 1); high-bit set?
+        // Is the high-bit set in the nonzero mask?
         let shift = 8 * vn_size - 1;
         let val = if shift >= 64 { 0 } else { nzmask >> shift };
         care_uint_int = (val & 1) != 0;
@@ -754,11 +750,10 @@ pub(crate) fn get_output_token(
             }
             output_type_local(data, op)
         }
-        // TypeOpLoad::getOutputToken (typeop.cc:473-486).
+        // TypeOpLoad::getOutputToken.
         OpCode::CPUI_LOAD => get_output_token_load(data, op),
         // INT arithmetic getOutputToken overrides whose result depends on the
-        // operands' actual types -> arithmeticOutputStandard (typeop.cc:1177,
-        // 1328, 1390, 1404, 1418, 1451, 1484, 1627).
+        // operands' actual types -> arithmeticOutputStandard.
         OpCode::CPUI_INT_ADD
         | OpCode::CPUI_INT_SUB
         | OpCode::CPUI_INT_2COMP
@@ -768,7 +763,7 @@ pub(crate) fn get_output_token(
         | OpCode::CPUI_INT_OR
         | OpCode::CPUI_INT_MULT => arithmetic_output_standard(data, strat, op),
         // The shift getOutputToken overrides return the shiftee's read-facing type
-        // (bool -> int) (typeop.cc:1520-1527, 1560-1567, 1610-1617).
+        // (bool -> int).
         OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => {
             get_output_token_shift(data, op)
         }
@@ -779,11 +774,11 @@ pub(crate) fn get_output_token(
             }
             output_type_local(data, op)
         }
-        // TypeOpPtrsub::getOutputToken (typeop.cc:2351-2366).
+        // TypeOpPtrsub::getOutputToken.
         OpCode::CPUI_PTRSUB => get_output_token_ptrsub(data, op),
-        // TypeOpSubpiece::getOutputToken (typeop.cc:2144-2161).
+        // TypeOpSubpiece::getOutputToken.
         OpCode::CPUI_SUBPIECE => get_output_token_subpiece(data, op),
-        // TypeOpPiece::getOutputToken (typeop.cc:2065-2074).
+        // TypeOpPiece::getOutputToken.
         OpCode::CPUI_PIECE => get_output_token_piece(data, op),
         // INSERT/ZPULL/SPULL getOutputToken: the output's def-facing type
         // (typeop.cc:2551-2555, 2578-2582, 2605-2609).
@@ -798,7 +793,7 @@ pub(crate) fn get_output_token(
             Some(in2) => data.vn_high_type_read_facing(in2, op),
             None => output_type_local(data, op),
         },
-        // TypeOp::getOutputToken default (typeop.cc:283-287).
+        // TypeOp::getOutputToken default.
         _ => output_type_local(data, op),
     }
 }
@@ -843,14 +838,12 @@ fn get_output_token_ptrsub(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
         let ws = ptype.get_word_size().unwrap_or(1);
         (in1off, out_size, ws)
     };
-    // offset = AddrSpace::addressToByte((int8)in1->getOffset(), wordSize)
-    // (address_to_byte takes a uintb; in1off is already a uintb offset).
+    // address_to_byte takes a uintb; in1off is already a uintb offset.
     let offset = kuna_base::space::AddrSpace::address_to_byte(in1off, wordsize) as i64;
     let tlst = match data.get_arch().types_rc() {
         Some(t) => t,
         None => return output_type_local(data, op),
     };
-    // rettype = ptype->downChain(offset, unusedParent, unusedOffset, false, *tlst)
     // C++ downChain takes `offset` by REFERENCE and updates it to the residual
     // offset *within* the reached sub-type; the `if (offset==0)` test uses that
     // UPDATED value (the Rust port returns it as the 2nd tuple element).
@@ -871,8 +864,8 @@ fn get_output_token_ptrsub(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
         let r = data.spacebase_get_sub_type(&ptrto.expect("spacebase ptrto present"), offset);
         if let Some((subtype, residual_off)) = r {
             if residual_off == 0 {
-                // `!isArray -> getTypePointerStripArray(size, pt, wordsize)`
-                // (type.cc:1255-1256).  The spacebase itself is never an array.
+                // The spacebase itself is never an array, so the
+                // getTypePointerStripArray build applies.
                 if let Ok(p) = tlst.get_type_pointer_strip_array(out_size, subtype, wordsize) {
                     return p;
                 }
@@ -889,7 +882,6 @@ fn get_output_token_ptrsub(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
             }
         }
     }
-    // rettype = getBase(1, TYPE_UNKNOWN); getTypePointer(out_size, rettype, wordsize)
     match tlst.get_base(1, type_metatype::TYPE_UNKNOWN) {
         Ok(unk) => tlst
             .get_type_pointer(out_size, unk, wordsize)
@@ -918,8 +910,6 @@ fn get_output_token_subpiece(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
     };
     let ct = data.vn_high_type_read_facing(in0, op);
     let byte_off = subpiece_composite_byte_offset(data, op);
-    // field = ct->findTruncation(byteOff, out_size, op, 1, offset)  (typeop.cc:2152).
-    //
     // In C++ the slot-1 (artificial) truncation edge has already been written by
     // `TypeOpSubpiece::propagateType` -> `resolveTruncation(byteOff,op,1,byteOff)`
     // during `ActionInferTypes`, so `getOutputToken` only *reads* it.  In the Rust
@@ -998,9 +988,6 @@ fn subpiece_composite_byte_offset(data: &Funcdata, op: OpId) -> i64 {
         Some(o) => o,
         None => return 0,
     };
-    // C++ TypeOpSubpiece::computeByteOffsetForComposite (the SUBPIECE variant):
-    //   uintb truncSize = op->getIn(0)->getSize() - op->getOut()->getSize();
-    //   byteOff = isBigEndian ? (in0Size - outSize - in1Off) : in1Off
     // For the 1-arg SUBPIECE form this reduces to the constant in(1) offset
     // (little-endian) or the high-end offset (big-endian).
     let in0 = match o.get_in(0) {
@@ -1089,9 +1076,7 @@ impl Funcdata {
     /// `resolveUnion`/`castInput`/`castOutput`, inserting the explicit
     /// CAST/PTRSUB ops the rendered C needs.  Returns the number of changes made.
     pub fn action_set_casts(&mut self) -> int4 {
-        // data.startCastPhase();
         self.start_cast_phase();
-        // castStrategy = data.getArch()->print->getCastStrategy();
         let tlst = match self.get_arch().types_rc() {
             Some(t) => t as Rc<dyn crate::dtype::TypeFactory>,
             None => return 0,
@@ -1109,7 +1094,6 @@ impl Funcdata {
             // current op and are not revisited).
             let ops = self.bb_ops(bb);
             for op in ops {
-                // if (op->notPrinted()) continue;
                 let o = match self.obank().get(op) {
                     Some(o) => o,
                     None => continue,
@@ -1118,7 +1102,6 @@ impl Funcdata {
                     continue;
                 }
                 let opc = o.code();
-                // if (opc == CPUI_CAST) continue;
                 if opc == OpCode::CPUI_CAST {
                     continue;
                 }
@@ -1167,7 +1150,6 @@ impl Funcdata {
 
     /// PTRADD that no longer fits its pointer (coreaction.cc:2830-2836).
     fn cast_fixup_ptradd(&mut self, op: OpId) {
-        // sz = (int4)op->getIn(2)->getOffset()
         let (sz, in0) = {
             let o = match self.obank().get(op) {
                 Some(o) => o,
@@ -1213,7 +1195,6 @@ impl Funcdata {
             (in0, in1off)
         };
         let curtype = self.vn_type_read_facing(in0, op);
-        // !curtype->isPtrsubMatching(off, 0, 0)
         let matching = self.is_ptrsub_matching_scope(&curtype, in1off as i64, 0i64, 0i64);
         if !matching {
             if in1off == 0 {
@@ -1241,8 +1222,8 @@ impl Funcdata {
         if !dt.needs_resolution() {
             return 0;
         }
-        // resUnion = data.getUnionField(dt, op, slot); if miss -> resolveInFlow.
-        // The miss arm drives `ScoreUnionFields` via [`Funcdata::resolve_in_flow`]
+        // On a getUnionField cache miss, the miss arm drives `ScoreUnionFields`
+        // via [`Funcdata::resolve_in_flow`]
         // (the side effect is `setUnionField`, populating the cache), then re-reads
         // `getUnionField` exactly as C++ `dt->resolveInFlow(op,slot)` does.
         let field_and_dt = match self.get_union_field(&dt, op, slot) {
