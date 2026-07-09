@@ -36,7 +36,9 @@ chapter is anchored to the code that implements it.
 3. **Provenance tags.** Untagged prose describes the Ghidra-derived port (the default
    lineage). Everything else is tagged inline at the section heading and per pass:
    `(angr)`, `(ida)`, `(kuna)` — agreeing with `source_decompiler` in `phases.toml`
-   and `docs/features/*/record.json`.
+   and `docs/features/*/record.json`. One sanctioned exception: a kuna-original
+   implementation whose row records `ghidra-upstream` because an upstream *issue*
+   (not upstream code) inspired it may be tagged `(kuna)` with the GH issue named.
 4. **Depth contract.** For each algorithm: (a) the decision rule for the simple case,
    in one or two sentences of natural language; (b) the pathological-case machinery
    (restarts, fallbacks, thresholds, caps) with the *reason* each exists; (c) the
