@@ -21,7 +21,7 @@ full what/why/how/validation. The SLEIGH `specs/` and the XML regression corpus
 
 | Path | What |
 |---|---|
-| `decompiler/` | **The engine.** Cargo workspace: `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (the decompiler), `kuna-analysis` (the program-prep loader/analyzer tier — ELF markup, strings, DWARF, …; the Ghidra "Run Analysis" layer), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (the SLEIGH compiler, binary `slacomp`), `kuna-cli` (the user-facing `kuna` binary), `kuna-ghidra` (the ghidra-mode process front-end — the `kuna_ghidra` binary that speaks Ghidra's decompiler-process protocol; see `docs/ghidra-integration.md` and `integrations/`), `kuna-harness`/`kuna-lift-diff` (dev test harness). `kuna-decomp/src/` is organized into stage-named folders (`s1_partition/`…`s9_emit/`, `substrate/`, `p0_knowledge/`, `infra/`) per `docs/stages.md`. See `docs/RUST_PORT.md`. |
+| `decompiler/` | **The engine.** Cargo workspace: `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (the decompiler), `kuna-analysis` (the program-prep loader/analyzer tier — ELF markup, strings, DWARF, …; the Ghidra "Run Analysis" layer), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (the SLEIGH compiler, binary `slacomp`), `kuna-cli` (the user-facing `kuna` binary), `kuna-ghidra` (the ghidra-mode process front-end — the `kuna_ghidra` binary that speaks Ghidra's decompiler-process protocol; see `docs/ghidra-integration.md` and `integrations/`), `kuna-harness`/`kuna-lift-diff` (dev test harness). `kuna-decomp/src/` is organized into phase-named folders (`p1_partition/`…`p9_emit/`, `substrate/`, `p0_knowledge/`, `infra/`) per `docs/phases.md`. See `docs/RUST_PORT.md`. |
 | `tests/datatests/` | Upstream XML regression tests (83 files → 675 assertions). The corpus `make test` runs. Vendored. |
 | `tests/stages/` | kuna-owned stage-model issue testcases (`make test-stages`, baseline `docs/baseline-stages.json`). |
 | `tests/golden/` | Differential golden vectors for the workspace test suite (`make rust-test`). |
@@ -33,8 +33,8 @@ full what/why/how/validation. The SLEIGH `specs/` and the XML regression corpus
 | `integrations/` | The Ghidra extension: a plugin that makes the **stock Ghidra GUI** spawn kuna's `kuna_ghidra` binary as its decompiler core (reflection exepath swap; binary ships in the module's `os/<platform>/`). See `docs/ghidra-integration.md`. |
 | `docs/RUST_PORT.md` | **The port summary**: what was ported (decompiler + SLEIGH compiler), why, how, and the validation gates. Detailed port history lives under `docs/rust-port/` (ADRs, `losses.md`, `verification.md`, `plan.md`). |
 | `docs/ghidra-integration.md` | Using kuna as Ghidra's decompiler core (Phases 1–4, seams, wire protocol); the core-agnostic interface spec is `docs/decompiler-core-interface.md`. |
-| `docs/stages.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/history/stage-model.md`. |
-| `docs/history/stage-mapping.md` | Maps every upstream source module to a stage (P0/S1–S9). The live registry is queryable at the console (`stage list/map/catalog`); the Rust implementation is under `decompiler/crates/kuna-decomp/`. |
+| `docs/phases.md` | The normative phase model (P0 knowledge plane, P1-P9, Band B, feedback edges); the original derivation study is archived at `docs/history/stage-model.md`. |
+| `docs/history/stage-mapping.md` | Maps every upstream source module to a stage (P0/S1–S9). The live registry is queryable at the console (`phase list/map/catalog`); the Rust implementation is under `decompiler/crates/kuna-decomp/`. |
 | `docs/baseline.json` | Recorded test-pass oracle (parity check) — the **kuna** oracle since DIV-2 (`docs/divergences.md`), no longer pristine-upstream. |
 
 ## Build
@@ -85,7 +85,7 @@ kuna decompile ./sparc.elf main --option returnpair single
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
 `kuna decompile` drives `decomp_dbg` as a subprocess and captures `print C` via
 `openfile write` so interactive prompts never pollute the output; `--option NAME VALUE`
-(repeatable) and `--kassert "<args>"` flip stage-model sub-stage assertions per run.
+(repeatable) and `--kassert "<args>"` flip phase-model sub-phase assertions per run.
 `kuna decompile-all` / `kuna functions` are the **whole-binary, machine-readable** surface
 (the benchmark + LLM path): they run *in-process* (`kuna_console::engine::bootstrap_from_object`
 → `commit_pending_analysis` → loop `decompile_func` + `print_c`), loading + analyzing the
@@ -107,12 +107,12 @@ stage-model settable (zero output change for any function that converges; the co
 `decomp_dbg` parity path never arms it). The decbench backend
 (`decbench/decompilers/raw/kuna_raw.py`) shells out to `kuna decompile-all --json`.
 `kuna catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
-`stage catalog` JSON (single source of truth: `settableTable`, generated from
-`decompiler/crates/kuna-decomp/stages.toml`) into the documented, flippable assertion list —
+`phase catalog` JSON (single source of truth: `settableTable`, generated from
+`decompiler/crates/kuna-decomp/phases.toml`) into the documented, flippable assertion list —
 `--json` for an agent, `--markdown` to regenerate `docs/assertions.md`, `--check` to fail
 on catalog/registration drift (CI; cross-checks the catalog against
 `kuna_decomp::options::KUNA_OPTION_NAMES` in-process). The full catalog also renders to
-`docs/assertions.md`; the model behind it is `docs/stages.md` / `docs/history/stage-model.md`, and
+`docs/assertions.md`; the model behind it is `docs/phases.md` / `docs/history/stage-model.md`, and
 the defaults are recorded in `docs/divergences.md`.
 
 The still-Python feature pipeline (`scripts/pipeline/`, out of scope for the engine) imports
@@ -154,7 +154,7 @@ Three gates, all Rust:
 
 `docs/baseline.json` is the recorded **kuna oracle**: since DIV-2 (`docs/divergences.md`)
 kuna's defaults intentionally diverge from upstream — 22 datatest assertions were re-pinned
-in place to kuna's default output (eight stage-model sub-stage fixes on by default; per-option
+in place to kuna's default output (eight phase-model sub-phase fixes on by default; per-option
 `option <name> off` restores the upstream rendering).
 
 Any change to the build or the vendored tree must keep `make test` at **PARITY OK**,
@@ -197,14 +197,14 @@ When you update the baseline after an intentional upstream behavior change, rege
   conventions (the ported files name methods after their C++ originals).
 - kuna ElementIds use the 4000+ range (upstream max ~290); kuna PcodeOp addlflags
   bits start at 0x1000.
-- Issue-derived stage-model testcases go in `tests/stages/` (`make test-stages`,
+- Issue-derived phase-model testcases go in `tests/stages/` (`make test-stages`,
   baseline `docs/baseline-stages.json`); see `tests/stages/README.md`.
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`) — they're gitignored.
-- To understand a source file's role, start from `docs/stages.md` (the stage→folder layout)
+- To understand a source file's role, start from `docs/phases.md` (the stage→folder layout)
   and `docs/history/stage-mapping.md`, then the real pass order in
   `decompiler/crates/kuna-decomp/src/infra/universalaction.rs` + the `coreaction_*.rs` files
-  (now under their stage folders, e.g. `s5_types/coreaction_infertypes.rs`,
-  `s9_emit/coreaction_render.rs`). **Code comments cite their C++ origin as `decompiler/cpp/<file>.{cc,hh}`** —
+  (now under their phase folders, e.g. `p5_types/coreaction_infertypes.rs`,
+  `p9_emit/coreaction_render.rs`). **Code comments cite their C++ origin as `decompiler/cpp/<file>.{cc,hh}`** —
   these are **upstream Ghidra** anchors (the tree kuna was ported from, at the `GHIDRA_REV` in
   `docs/UPSTREAM.md`, recoverable from git history or an upstream checkout), *not* paths in
   this repo's `decompiler/` workspace.

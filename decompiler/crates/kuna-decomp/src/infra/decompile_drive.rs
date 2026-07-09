@@ -832,7 +832,7 @@ pub fn decompile_func_full_with_override_dyn(
         // `unimplemented_stub` (a deliberate `#[cold] panic!`).  Convert such a
         // stub-abort into a recoverable `Err` at this orchestration boundary so the
         // end-to-end harnesses degrade to the documented "honest partial parity"
-        // (the pipeline ran; a body declined at a seam) instead of taking down the
+        // (the pipeline ran; a body declined at a stub) instead of taking down the
         // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
         // assumes.  `fd`/`arch` are discarded on the unwind, so no half-mutated
         // state escapes (`AssertUnwindSafe` is sound here for that reason).

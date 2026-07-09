@@ -18,7 +18,7 @@
 //! `kuna decompile`/`prdemo`/`timeit` CLI on the `decomp_dbg` subprocess
 //! *before* it loads the file.  This mirrors the `relocobjects` loader-option
 //! pattern (PR #37).  The companion `Architecture::analysis_i386_pie_plt` bool
-//! exists only so the option is catalog-visible and `stage catalog`'s live
+//! exists only so the option is catalog-visible and `phase catalog`'s live
 //! `current` field reflects it; the loader reads the env var, not the bool.
 //!
 //! Default **on** (loader fidelity, like the sibling x86-64/aarch64 decoders) —

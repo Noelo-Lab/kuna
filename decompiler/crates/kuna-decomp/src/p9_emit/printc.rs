@@ -1942,7 +1942,7 @@ impl PrintC {
             // Structuring declined: keep the brace-matched shell.
             self.emit.tag_line();
             self.emit.print(
-                "/* WARNING: structured blocks unavailable (structuring declined at a seam) */",
+                "/* WARNING: structured blocks unavailable (structuring declined at a stub) */",
                 SyntaxHighlight::CommentColor,
             );
         }

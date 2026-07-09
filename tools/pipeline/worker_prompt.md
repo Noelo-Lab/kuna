@@ -71,7 +71,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 ## Protocol
 
 ### 1. analyze — reproduce and localize the gap
-- Read `AGENTS.md`, `docs/stages.md`, `docs/history/stage-mapping.md`, `docs/divergences.md`, `docs/assertions.md`,
+- Read `AGENTS.md`, `docs/phases.md`, `docs/history/stage-mapping.md`, `docs/divergences.md`, `docs/assertions.md`,
   `tests/stages/README.md`, and the **loweredswitch** feature as the canonical template:
   `git log --oneline | grep loweredswitch`, then read
   `decompiler/crates/kuna-decomp/src/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /

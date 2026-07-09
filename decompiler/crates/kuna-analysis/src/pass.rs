@@ -17,7 +17,7 @@ use kuna_decomp::architecture::Architecture;
 use crate::listing::Listing;
 use crate::loadimage_object::ObjectLoadImage;
 
-/// The phase a pass feeds, mirroring the kuna phase model (`docs/stages.md`).
+/// The phase a pass feeds, mirroring the kuna phase model (`docs/phases.md`).
 /// Program-prep analyses are P0/P1; a few (e.g. jump-table post-typing
 /// refinement) feed back into P2.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

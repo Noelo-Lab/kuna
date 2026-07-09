@@ -1,5 +1,9 @@
 # Intentional default-behavior divergences from upstream
 
+> **Terminology note (2026-07):** entries below predate the stage->phase rename;
+> read "stage"/"sub-stage" as phase/sub-phase and S-codes as P-codes (S3 = P3).
+> Entries are append-only history and are not retro-edited.
+
 Option-gated sub-stage exposures (the GH-558 pattern) keep default output
 byte-identical to upstream and are NOT listed here — they live in `UPSTREAM.md`
 *Divergence* (file-level) and `tests/stages/` (behavior). This file records the cases

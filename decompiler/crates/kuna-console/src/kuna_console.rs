@@ -227,7 +227,7 @@ pub struct IfcKunaPhaseList;
 impl IfaceCommandAction for IfcKunaPhaseList {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let mut os = String::new();
-        os.push_str("Phases (kuna phase model, docs/stages.md):\n");
+        os.push_str("Phases (kuna phase model, docs/phases.md):\n");
         for stage in STAGES_IN_ORDER {
             os.push_str("  ");
             os.push_str(stage.code());
@@ -503,7 +503,7 @@ impl IfaceCommandAction for IfcKunaPhaseCatalog {
         let conf = dcp.conf.as_ref();
 
         let out = if !option.is_empty() {
-            // Single-option form: `stage catalog <option>`.
+            // Single-option form: `phase catalog <option>`.
             if lookup_settable(&option).is_none() {
                 return Err(IfaceError::execution(format!(
                     "Unknown settable option: {option} (try `phase catalog`)"

@@ -62,7 +62,7 @@ Join us as we push decompilers into their next stage of evolution.
 kuna is organized around an explicit **stage model** (a P0 knowledge plane + S1–S9 with a
 Band-B fixed point and typed feedback edges), not a linear pipeline:
 
-- `docs/stages.md` — the stage model at a glance; `docs/history/stage-model.md` — the full normative
+- `docs/phases.md` — the stage model at a glance; `docs/history/stage-model.md` — the full normative
   model (sub-stage catalogs, feedback edges, code anchors).
 - `docs/history/stage-mapping.md` — every source file mapped to a stage, anchored to the real pass
   pipeline (`universalAction`) and the runtime registry (queryable via the `stage list/map/

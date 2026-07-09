@@ -31,6 +31,6 @@
   <com>quit</com>
 </script>
 <stringmatch name="KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)" min="1" max="1">if \(xvar &lt;= 8\)</stringmatch>
-<stringmatch name="KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope" min="1" max="1">\[gh558\] P3/comparison-canonicalization original  strength=HARD  rewind-&gt;P3</stringmatch>
-<stringmatch name="KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism" min="1" max="1">\[gh558\] P9/naming-policy x xvar  strength=HINT \(applied via HARD mechanism\)  rewind-&gt;P9</stringmatch>
+<stringmatch name="KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope" min="1" max="1">\[gh558\] P3/comparison-canonicalization original  strength=HARD  rewind-&gt;P3</stringmatch>
+<stringmatch name="KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism" min="1" max="1">\[gh558\] P9/naming-policy x xvar  strength=HINT \(applied via HARD mechanism\)  rewind-&gt;P9</stringmatch>
 </decompilertest>

@@ -564,7 +564,7 @@ pub struct Architecture {
     /// other language. NOTE: the loader reads this through the
     /// [`crate::kuna_i386_pie_plt`] **env var** (the PLT map is baked at `load
     /// file`, upstream of `option`); this bool exists only for catalog visibility
-    /// and the `stage catalog` live `current` field.
+    /// and the `phase catalog` live `current` field.
     pub analysis_i386_pie_plt: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
@@ -3621,7 +3621,7 @@ impl Architecture {
         // which leaves the "decompile" root as the current action *before* any
         // function is decompiled.  The merged tree previously deferred the
         // `setCurrent` to the decompile drive, leaving `getCurrentName()` empty
-        // at rest; that broke the `stage status`/`pipeline list (current)`
+        // at rest; that broke the `phase status`/`pipeline list (current)`
         // readers (kuna_console).  Set it here so the at-rest current name is
         // "decompile", matching upstream `resetDefaults`.
         let _ = self.allacts.set_current("decompile");

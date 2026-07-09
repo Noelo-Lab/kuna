@@ -3,7 +3,7 @@
 //! No C++ counterpart -- this crate never ships in the engine. It holds
 //! tooling that diffs the Rust crates against the C++ oracle
 //! (`decompiler/cpp/`, kept green throughout the port): golden-output
-//! comparison, stage-boundary dump diffing, and ad-hoc harnesses for running
+//! comparison, phase-boundary dump diffing, and ad-hoc harnesses for running
 //! both engines over the same inputs.
 //!
 //! Depends on every other workspace crate (kuna-base, kuna-num, kuna-sleigh,

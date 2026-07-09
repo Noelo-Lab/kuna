@@ -22,7 +22,7 @@
 //! # Source layout (stage-aligned)
 //!
 //! The module **files** are grouped on disk into stage-named folders that mirror
-//! the normative stage model (`docs/stages.md`, `docs/stage-mapping.md`); the
+//! the normative stage model (`docs/phases.md`, `docs/stage-mapping.md`); the
 //! module **names** stay flat (`kuna_decomp::flow`, `crate::dtype`) via the
 //! `pub use <folder>::*;` re-exports below, so the public and internal APIs are
 //! unchanged. An outsider can read the tree to see what each file does in the

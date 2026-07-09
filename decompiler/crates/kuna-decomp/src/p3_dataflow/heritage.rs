@@ -4046,7 +4046,7 @@ impl Heritage {
     /// `has_deadcode_delay` was always false — the bump fired on every heritage
     /// pass and the function restart-looped until `run_pipeline`'s `MAX_REFLOW`
     /// budget exhausted, leaving the IR cleared (no `sblocks` → "structuring
-    /// declined at a seam").  The companion half is
+    /// declined at a stub").  The companion half is
     /// [`Funcdata::op_heritage`](crate::funcdata::Funcdata::op_heritage), which now
     /// re-applies the persisted Override delay to the per-space `HeritageInfo` on
     /// each pass (C++ `Funcdata::startProcessing` → `applyDeadCodeDelay`).

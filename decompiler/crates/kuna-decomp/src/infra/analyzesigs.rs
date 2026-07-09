@@ -18,7 +18,7 @@
 //! So this module ports the **decision bodies** of the commands as standalone,
 //! testable functions that take the values the console would otherwise resolve
 //! (the parsed settings integer, the `&Funcdata`, a `&mut dyn Encoder` /
-//! output buffer), and SEAMs the console plumbing.  When W9 lands, the
+//! output buffer), and stubs the console plumbing.  When W9 lands, the
 //! `IfaceDecompCommand::execute` wrappers parse their `istream` and call these.
 
 use kuna_base::error::{KunaError, KunaResult};

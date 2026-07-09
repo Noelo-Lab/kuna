@@ -23,7 +23,7 @@
 
 use core::fmt;
 
-/// (kuna) The stages of the kuna stage model (`docs/stages.md`).
+/// (kuna) The stages of the kuna stage model (`docs/phases.md`).
 ///
 /// `Infra` is the registry-only pseudo-stage for orchestration units
 /// (ActionStart/Stop, the cleanup pool's termination policy) that own no model
@@ -441,7 +441,7 @@ pub fn emit_settable_json(out: &mut String, st: &KunaSettable, live: Option<&str
 }
 
 /// Emit the full settable catalog as JSON — byte-for-byte port of
-/// `IfcKunaStageCatalog::execute`'s no-argument form (`stage catalog`).
+/// `IfcKunaPhaseCatalog::execute`'s no-argument form (`phase catalog`).
 ///
 /// `live` maps an option name to its live current value (or `None`); pass a
 /// closure returning `None` for every option to get the static catalog (the
@@ -465,7 +465,7 @@ pub fn emit_catalog_json(live: impl Fn(&str) -> Option<&'static str>) -> String 
 }
 
 /// Emit a single settable's catalog JSON — byte-for-byte port of
-/// `IfcKunaStageCatalog::execute`'s one-argument form (`stage catalog <option>`).
+/// `IfcKunaPhaseCatalog::execute`'s one-argument form (`phase catalog <option>`).
 ///
 /// Returns `None` if the option is unknown (the C++ throws an
 /// `IfaceExecutionError`); the row is followed by a single newline.

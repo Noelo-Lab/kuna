@@ -1474,7 +1474,7 @@ impl Varnode {
     /// pre-read `(type, flags)` (C++ `Varnode::copySymbol`, varnode.cc:512 — the
     /// fields are pulled out by the caller so the source and destination can be
     /// borrowed from the same Varnode bank).  The `mapentry`/Symbol copy
-    /// and the `high->setSymbol`/`typeDirty` notifications are the W4/W7 SEAMs
+    /// and the `high->setSymbol`/`typeDirty` notifications are the W4/W7 STUBs
     /// (the merged tree carries no `mapentry` link); the data-type and lock-flag
     /// copy is the part needed when a transform synthesizes a replacement
     /// constant that must keep the original's typing (e.g. `ActionPresentCompareForm`

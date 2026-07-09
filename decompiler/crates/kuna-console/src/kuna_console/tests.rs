@@ -1,15 +1,15 @@
 //! Tests for the kuna stage-model console commands (W9, `kuna_console.rs`).
 //!
 //! The kuna registry (`kuna_decomp::kuna_phases`) is pure static data, so the
-//! registry-only commands (`stage list`/`map`/`catalog`, the `kassert`
+//! registry-only commands (`phase list`/`map`/`catalog`, the `kassert`
 //! validation core) produce their exact bytes with no program loaded — that is
-//! what these tests pin. The `stage catalog` test compares against the **W4
+//! what these tests pin. The `phase catalog` test compares against the **W4
 //! byte-compatible emitter** directly (`emit_catalog_json` /
 //! `emit_catalog_json_one`), which `tests/stages/kuna-catalog.xml`
 //! string-matches against the C++ binary, so reproducing the emitter output is
 //! the load-bearing contract.
 //!
-//! The engine-dependent kuna commands (`stage status`, `restarts`, `pipeline`
+//! The engine-dependent kuna commands (`phase status`, `restarts`, `pipeline`
 //! running a variant, `quality`, the `region *` commands, and a *routable*
 //! `kassert`) read accessors the merged `rust-port` tree does not yet expose;
 //! they are smoke-driven to confirm they *resolve and dispatch* — emitting their
@@ -96,14 +96,14 @@ fn kuna_command_prefixes_expand() {
 }
 
 // ---------------------------------------------------------------------------
-// `stage list` — pure static registry data.
+// `phase list` — pure static registry data.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn stage_list_prints_the_stage_model_header_and_all_stages() {
     let out = run_one("phase list");
     assert!(
-        out.starts_with("Phases (kuna phase model, docs/stages.md):\n"),
+        out.starts_with("Phases (kuna phase model, docs/phases.md):\n"),
         "out: {out:?}"
     );
     // P0 is the orthogonal plane; P3..P6 are Band B.
@@ -171,7 +171,7 @@ fn stage_map_unknown_token_is_execution_error() {
 }
 
 // ---------------------------------------------------------------------------
-// `stage catalog` — must reproduce the W4 byte-compatible emitter exactly.
+// `phase catalog` — must reproduce the W4 byte-compatible emitter exactly.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -289,7 +289,7 @@ fn region_commands_without_function_are_no_function_selected() {
 // NOTE: `kuna_live_value` (the `kunaLiveValue` port) reads a live
 // `&Architecture`'s option flags; constructing a real `Architecture` requires a
 // loaded `Sleigh` spec (impractical in a console unit test, and no console test
-// builds one). Its `current`-field contribution to `stage catalog` is exercised
+// builds one). Its `current`-field contribution to `phase catalog` is exercised
 // at the integration level by `tests/stages/kuna-catalog.xml` (which loads a
 // real program and string-matches the `current` values); the function itself is
 // a direct field-read transcription of the C++ `kunaLiveValue` switch.
@@ -298,9 +298,9 @@ fn region_commands_without_function_are_no_function_selected() {
 // VERIFIER adversarial tests (w9-con-kuna-console, round 1).
 //
 // Targeting the spots the hunt list flagged as most fragile for this item:
-// the multi-token `stage map` join loop (which carries the datatest
+// the multi-token `phase map` join loop (which carries the datatest
 // KUNA-CONSOLE #5 contract `stage map force goto`), the `kassert` guard
-// precedence (image check BEFORE tokenizing), and the `stage catalog`
+// precedence (image check BEFORE tokenizing), and the `phase catalog`
 // single-option live-value join vs the no-program path (exact bytes the
 // `kuna.catalog` parser + `tests/stages/kuna-catalog.xml` depend on).
 // ===========================================================================
@@ -385,13 +385,13 @@ fn w9_con_kuna_console_stage_catalog_single_option_skips_leading_ws() {
     assert!(!out.starts_with('['), "emitted the full array instead of one row: {out:?}");
 }
 
-/// A bare `stage catalog` (no option, no program) must equal the full W4 emitter
+/// A bare `phase catalog` (no option, no program) must equal the full W4 emitter
 /// array with the no-`current` closure — the load-bearing contract the
 /// `kuna.catalog` parser greps. Pinned here independently of the existing test
 /// to guard the empty-option branch selection (option.is_empty() -> full form).
 #[test]
 fn w9_con_kuna_console_stage_catalog_bare_is_full_array() {
-    // Drives the deprecated `stage catalog` alias on purpose: alias smoke test.
+    // Drives the deprecated `phase catalog` alias on purpose: alias smoke test.
     let out = run_one("stage catalog");
     assert_eq!(out, emit_catalog_json(|_| None));
     assert!(out.starts_with("[\n"), "full form must open with the JSON array: {out:?}");

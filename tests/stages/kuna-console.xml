@@ -30,12 +30,12 @@
   <com>phase status</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-CONSOLE #1: stage list shows Band B membership" min="4" max="4">\[Band B\]</stringmatch>
-<stringmatch name="KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage" min="1" max="1">\[P3\] dead-definition-gate</stringmatch>
+<stringmatch name="KUNA-CONSOLE #1: phase list shows Band B membership" min="4" max="4">\[Band B\]</stringmatch>
+<stringmatch name="KUNA-CONSOLE #2: phase list includes the P3 dead-definition gate sub-phase" min="1" max="1">\[P3\] dead-definition-gate</stringmatch>
 <stringmatch name="KUNA-CONSOLE #3: LATENT decisions are flagged in the catalog" min="5" max="40">\(LATENT\)</stringmatch>
-<stringmatch name="KUNA-CONSOLE #4: stage map resolves the analysis rule group to S3" min="1" max="1">group analysis -&gt; P3</stringmatch>
-<stringmatch name="KUNA-CONSOLE #5: stage map routes force goto to the S7 edge-virtualization sub-stage" min="1" max="1">surface "force goto" -&gt; P7 \(Region Hierarchy\) sub-phase edge-virtualization</stringmatch>
-<stringmatch name="KUNA-CONSOLE #6: stage map resolves the GH-558 sub-stage" min="1" max="1">sub-phase comparison-canonicalization -&gt; P3</stringmatch>
-<stringmatch name="KUNA-CONSOLE #7: stage status reports the active pipeline variant" min="1" max="1">pipeline variant: decompile</stringmatch>
-<stringmatch name="KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults (DIV-2: original)" min="1" max="1">compareform: original</stringmatch>
+<stringmatch name="KUNA-CONSOLE #4: phase map resolves the analysis rule group to P3" min="1" max="1">group analysis -&gt; P3</stringmatch>
+<stringmatch name="KUNA-CONSOLE #5: phase map routes force goto to the P7 edge-virtualization sub-phase" min="1" max="1">surface "force goto" -&gt; P7 \(Region Hierarchy\) sub-phase edge-virtualization</stringmatch>
+<stringmatch name="KUNA-CONSOLE #6: phase map resolves the GH-558 sub-phase" min="1" max="1">sub-phase comparison-canonicalization -&gt; P3</stringmatch>
+<stringmatch name="KUNA-CONSOLE #7: phase status reports the active pipeline variant" min="1" max="1">pipeline variant: decompile</stringmatch>
+<stringmatch name="KUNA-CONSOLE #8: phase status reports kuna sub-phase option defaults (DIV-2: original)" min="1" max="1">compareform: original</stringmatch>
 </decompilertest>

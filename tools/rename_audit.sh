@@ -36,7 +36,9 @@ CRATES=decompiler/crates
 
 echo "== rename completeness (expect 0 when the rename milestones are done) =="
 count "KunaStage/KunaSubStage identifiers"      zero -E '\bKunaStage\b|\bKunaSubStage\b' --include='*.rs' "$CRATES"
-count "kuna_stages module refs"                 zero -E '\bkuna_stages\b' --include='*.rs' "$CRATES"
+n_ks=$(grep -rnE '\bkuna_stages\b' --include='*.rs' "$CRATES" 2>/dev/null | grep -v '/target/' | grep -vE 'kuna_stages\.(cc|hh)' | wc -l)
+if [ "$n_ks" -eq 0 ]; then echo "OK    (0)        kuna_stages module refs (protected .cc anchors excluded)"; else
+    echo "RESID ($n_ks)       kuna_stages module refs (protected .cc anchors excluded)"; [ "$STRICT" = 1 ] && FAIL=1; fi
 count "SUBSTAGE_TABLE / substage API"           zero -E 'SUBSTAGE_TABLE|lookup_substage|kuna_num_substages|kuna_substage_by_index' --include='*.rs' "$CRATES"
 count "SEAM markers in source"                  zero -E 'SEAM' --include='*.rs' "$CRATES"
 count "ArchSeam / seams:: refs"                 zero -E 'ArchSeam|\bseams::' --include='*.rs' "$CRATES"
