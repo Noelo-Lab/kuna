@@ -183,7 +183,7 @@ impl ConsoleProgram {
     /// name→addr map, populated by the Function-symbol commit arm), this reaches the
     /// `Database` directly, so it sees the **Data** symbols the analysis commit
     /// installs via `add_symbol_mapped` (the RTTI `<Class>::vftable` /
-    /// `<Class>::RTTI_*` labels the `s1_rtti` pass emits). The verification seam for
+    /// `<Class>::RTTI_*` labels the `rtti` pass emits). The verification seam for
     /// the gated MSVC-RTTI recovery e2e.
     pub fn has_symbol_named(&self, full_name: &str) -> bool {
         let db = &self.arch().symboltab;
@@ -1024,7 +1024,7 @@ fn commit_analysis_output(
     }
 
     // 1b. Extra read-only address ranges a pass discovered (`out.readonly`) — e.g.
-    //     the MSVC RTTI vftable slot arrays (`s1_rtti` R3). OR `Varnode::readonly`
+    //     the MSVC RTTI vftable slot arrays (`rtti` R3). OR `Varnode::readonly`
     //     over each `[first, last_open)` range in the symbol-table property map, the
     //     same `symboltab->setPropertyRange(Varnode::readonly, *iter)` the loader's
     //     section-derived read-only ranges use (bootstrap_program). With `option
@@ -1295,10 +1295,10 @@ fn commit_analysis_output(
     if !out.call_fixups.is_empty() {
         // Rebuild the same target→fixup map the pass used (the fact carries only
         // the function name; the fixup is re-derived from the live pcodeinjectlib).
-        let map = kuna_analysis::s1_callfixup::target_fixup_map(prog.arch());
+        let map = kuna_analysis::callfixup::target_fixup_map(prog.arch());
         for fact in &out.call_fixups {
             let Some(fixup_name) =
-                kuna_analysis::s1_callfixup::call_fixup_name_for_function(&fact.func_name, &map)
+                kuna_analysis::callfixup::call_fixup_name_for_function(&fact.func_name, &map)
             else {
                 continue;
             };
@@ -1449,7 +1449,7 @@ const MACHO_SLICE_ENV: &str = "KUNA_MACHO_SLICE";
 /// untouched, so the downstream `object::File::parse` produces the existing
 /// "Unsupported file format" error rather than this silently mis-loading.
 fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
-    use kuna_analysis::s1_loader::macho_fat::{is_fat, select_fat_slice, SlicePref};
+    use kuna_analysis::loader::macho_fat::{is_fat, select_fat_slice, SlicePref};
     if !is_fat(&bytes) {
         return bytes; // thin / ELF / PE / COFF — verbatim, no copy of a slice.
     }

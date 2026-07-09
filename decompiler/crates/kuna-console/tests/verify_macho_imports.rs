@@ -2,7 +2,7 @@
 //! executable (`macho_imports`, x86-64 + `macho_imports_arm64`, arm64) loads and
 //! decompiles a function, and its libc import renders **named** (`printf(`) — not
 //! `sub_<addr>` — through the `__stubs` indirect-symbol walk
-//! (`s1_loader/macho_stubs.rs`, design §3.3 / §8 PR-7).
+//! (`loader/macho_stubs.rs`, design §3.3 / §8 PR-7).
 //!
 //! This is the Mach-O half of the headline goal ("a decompiler for most file
 //! formats"): PR-2 proved a Mach-O *object* parses; this proves a full linked

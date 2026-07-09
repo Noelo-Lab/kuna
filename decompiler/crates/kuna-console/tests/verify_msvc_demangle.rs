@@ -31,7 +31,7 @@
 //! `load function` resolves the bare leaf `freefunc` here (the non-namespaced
 //! free function) — the demangle of the *namespaced* names is proven at the
 //! loader level by `loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`
-//! and by the `s1_demangle` unit tests (the merge gate, no toolchain needed).
+//! and by the `demangle` unit tests (the merge gate, no toolchain needed).
 //!
 //! ## Default-on multi-format dispatch
 //!

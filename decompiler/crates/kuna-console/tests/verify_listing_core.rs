@@ -78,7 +78,7 @@ fn listing_build_recovers_instructions_flow_and_functions() {
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture ELF");
 
-    let mut seeds = kuna_analysis::s1_entry::collect_entries(&file, &bytes);
+    let mut seeds = kuna_analysis::entry::collect_entries(&file, &bytes);
     seeds.push(MAIN);
     seeds.sort_unstable();
     seeds.dedup();

@@ -1,4 +1,4 @@
-//! End-to-end gate for **scalar/operand reference markup** (`s1_operand_refs` —
+//! End-to-end gate for **scalar/operand reference markup** (`operand_refs` —
 //! the kuna analog of Ghidra's `ScalarOperandAnalyzer` / `ElfScalarOperandAnalyzer`,
 //! the operand/reference markup family — **gated off** by default).
 //!
@@ -19,7 +19,7 @@
 //! prototype** (it is a local `__attribute__((noinline))` function, absent from the
 //! libproto table), so neither the libproto nor the S5 usage path types its `char*`
 //! argument. So the literal renders **only** because `operand_refs` typed the
-//! scalar operand — isolating this pass's contribution from `s1_strings` + libproto.
+//! scalar operand — isolating this pass's contribution from `strings` + libproto.
 //!
 //! The `"hi"` address is materialized by a `movabs $0x402004,%rax` (the fixture is
 //! built `-no-pie -fno-pic -mcmodel=large`, so the address appears DIRECTLY in code

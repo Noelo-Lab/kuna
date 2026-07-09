@@ -149,7 +149,7 @@ pub struct DiscoveredFunction {
     pub from_symbol: bool,
     /// Seeded from the no-return Known-list (refined by a future consumer).
     pub has_no_return: bool,
-    /// From `s1_callfixup` facts (skip-modeled-callees); `None` for the keystone.
+    /// From `callfixup` facts (skip-modeled-callees); `None` for the keystone.
     pub call_fixup: Option<String>,
 }
 

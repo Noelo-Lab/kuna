@@ -17,9 +17,9 @@
 //! # How the per-address decode mode is obtained
 //!
 //! [`ContextPainter`] does **not** re-derive the decode mode: it *calls into the
-//! existing marker logic* — [`crate::s1_loader::arm_markers::scan_arm_markers`]
+//! existing marker logic* — [`crate::loader::arm_markers::scan_arm_markers`]
 //! (ARM `$t`/`$a` mapping symbols + STT_FUNC LSB → `TMode`) and
-//! [`crate::s1_loader::mips_markers::scan_mips_isa_markers`] (STT_FUNC LSB /
+//! [`crate::loader::mips_markers::scan_mips_isa_markers`] (STT_FUNC LSB /
 //! `STO_MIPS_MIPS16` `st_other` → `ISA_MODE`) — and reuses their
 //! [`crate::pass::ContextPaint`] facts verbatim. The same computation the
 //! decompiler's analysis tier trusts is the one the walker paints.
@@ -52,8 +52,8 @@ use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 
 use crate::pass::ContextPaint;
-use crate::s1_loader::arm_markers::scan_arm_markers;
-use crate::s1_loader::mips_markers::scan_mips_isa_markers;
+use crate::loader::arm_markers::scan_arm_markers;
+use crate::loader::mips_markers::scan_mips_isa_markers;
 
 /// Resolves and applies the per-address decode-mode context (ARM `TMode`, MIPS
 /// `ISA_MODE`) the recursive-descent walker needs before it decodes (design §4.2).

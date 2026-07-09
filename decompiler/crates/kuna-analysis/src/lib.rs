@@ -18,51 +18,40 @@
 //! kuna-base / kuna-num -> kuna-sleigh -> kuna-decomp -> kuna-analysis -> kuna-console / kuna-cli
 //! ```
 //!
-//! # Phase-aligned modules
+//! # Layout
 //!
-//! Analyses are grouped by the stage they feed (mostly P0/S1, before/around the
-//! deep decompiler):
+//! - [`loadimage_object`] -- the real-object `LoadImage` backend (ELF/Mach-O/
+//!   PE/COFF byte mapping + section/segment/symbol enumeration).
+//! - [`loader`] -- image-format markup: PLT/GOT import naming, relocations,
+//!   ARM/MIPS mapping markers, the known no-return name lists.
+//! - [`analyzers`] -- the metadata analyzers, one module per pass (strings,
+//!   dwarf, demangle, entry, protos, addrtable, operand_refs, formatstring,
+//!   callfixup, sourcelang, noreturn_disc, noreturn_propagate, aif, pclntab,
+//!   fid, objc, rtti, pdb); re-exported flat as `kuna_analysis::<analyzer>`.
+//! - [`listing`] -- the deferred whole-image Listing tier (decode/classify/
+//!   xref walk) and its consumer queries.
+//! - [`pass`] / [`passes`] -- the [`pass::AnalysisPass`] interface (a focused,
+//!   additive, never-failing producer of facts) and the default pass roster.
 //!
-//! - [`loadimage_object`] -- the real-ELF `LoadImage` backend (byte mapping +
-//!   section/segment/symbol enumeration; substitutes the C++ console's GNU BFD).
-//! - [`s1_loader`] -- S1 loader analyses: PLT/GOT import-name resolution
-//!   ([`s1_loader::elf_plt`]); future: `.symtab`/`.dynsym` symbol reader,
-//!   no-return detection.
-//! - [`s1_sourcelang`] -- source-language / compiler detection
-//!   (`detect_compiler`: Gcc/Clang/Rustc/Go), the kuna analog of Ghidra's
-//!   `SourceLanguageAnalyzer`; gates Rust-specific behavior (the Rust no-return
-//!   wildcard list in [`s1_loader::noreturn`]).
-//! - [`pass`] -- the [`pass::AnalysisPass`] interface a new analysis implements
-//!   (a focused, additive, never-failing producer of facts), plus the driver
-//!   that merges pass outputs before they are committed to the engine.
+//! # The hand-off contract
 //!
-//! Future stage folders (one per planned analysis; see the roadmap):
-//! `s1_strings/` (string-literal detection), `s1_dwarf/` (DWARF), `s1_demangle/`
-//! (C++/Rust demangling), `s1_entry/` (function-start discovery), `s1_protos/`
-//! (library prototype seeding).
+//! This crate NEVER calls the per-function decompiler pipeline. Each pass
+//! produces an [`pass::AnalysisOutput`] of facts; the console engine stashes
+//! them at load (`bootstrap_from_object`) and commits the enabled subset into
+//! the engine's `Database`/tables at the `read symbols` boundary
+//! (`commit_pending_analysis`). Every pass is a phase-P1 settable option in
+//! `phases.toml` (`kuna catalog` lists them; `--option <id> on|off` gates the
+//! commit, not the run).
 //!
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
 
 pub mod pass;
 pub mod passes;
 pub mod loadimage_object;
-pub mod s1_loader;
-pub mod s1_sourcelang;
-pub mod s1_demangle;
-pub mod s1_strings;
-pub mod s1_protos;
-pub mod s1_addrtable;
-pub mod s1_operand_refs;
-pub mod s1_entry;
-pub mod s1_dwarf;
-pub mod s1_formatstring;
-pub mod s1_callfixup;
-pub mod s1_noreturn_disc;
-pub mod s1_noreturn_propagate;
-pub mod s1_aif;
-pub mod s1_pclntab;
-pub mod s1_fid;
-pub mod s1_objc;
-pub mod s1_rtti;
-pub mod s1_pdb;
+pub mod loader;
+pub mod analyzers;
 pub mod listing;
+
+// Flat re-export: analyzer paths stay `kuna_analysis::<analyzer>` (the
+// `analyzers/` folder is a layout grouping, not an API namespace).
+pub use analyzers::*;

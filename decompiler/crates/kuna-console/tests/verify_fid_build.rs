@@ -38,8 +38,8 @@
 use std::path::PathBuf;
 
 use kuna_analysis::loadimage_object::ObjectLoadImage;
-use kuna_analysis::s1_fid::build::build_records;
-use kuna_analysis::s1_fid::db::{FidDatabase, FidDb};
+use kuna_analysis::fid::build::build_records;
+use kuna_analysis::fid::db::{FidDatabase, FidDb};
 use kuna_console::engine::bootstrap_from_object;
 
 fn repo_root() -> PathBuf {
@@ -59,7 +59,7 @@ const CSPEC: &str = "gcc";
 
 /// Build the FID records for the fixture `.o` in-process, or `None` on a
 /// specs-less skip.
-fn records_for_fixture() -> Option<Vec<kuna_analysis::s1_fid::db::FidRecord>> {
+fn records_for_fixture() -> Option<Vec<kuna_analysis::fid::db::FidRecord>> {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];

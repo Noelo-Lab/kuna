@@ -13,10 +13,10 @@
 //!   after:   puts("hello");            printf("%d\n", a0 & 0xffffffff);
 //! ```
 //!
-//! - `puts("hello")`: `s1_strings` now scans the PE `.rdata`
+//! - `puts("hello")`: `strings` now scans the PE `.rdata`
 //!   (`SectionKind::ReadOnlyData` / `SectionFlags::Coff`) and plants the `char[6]`
 //!   string symbol.
-//! - `printf("%d\n", …)`: `s1_protos` now types `printf`'s first arg `char *` on a
+//! - `printf("%d\n", …)`: `protos` now types `printf`'s first arg `char *` on a
 //!   PE (the import name reaches the libc table), so the printer reads the literal.
 //!
 //! ## Mach-O
@@ -31,9 +31,9 @@
 //! engine inserts an artificial halt and elides the dead fall-through after it;
 //! `--option noreturn_known off` restores the dead code (the per-pass before/after).
 //!
-//! ## Listing consumer (s1_noreturn_disc) runs on a PE
+//! ## Listing consumer (noreturn_disc) runs on a PE
 //!
-//! `s1_noreturn_disc` is format-neutral (it consumes the built Listing). We confirm
+//! `noreturn_disc` is format-neutral (it consumes the built Listing). We confirm
 //! it is genuinely *active* on a PE — the Listing builds with functions and the
 //! consumer runs to completion — under `--option listing on --option noreturn_disc on`.
 //!
@@ -99,8 +99,8 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
     }
 }
 
-/// THE HEADLINE: a PE renders the string literal (`s1_strings`) AND the typed
-/// libc arg (`s1_protos`) — `puts("hello")` + `printf("%d\n", …)`, not
+/// THE HEADLINE: a PE renders the string literal (`strings`) AND the typed
+/// libc arg (`protos`) — `puts("hello")` + `printf("%d\n", …)`, not
 /// `puts(0x…)` / `printf(0x…, …)`.
 #[test]
 fn pe_renders_string_literal_and_typed_args() {
@@ -108,13 +108,13 @@ fn pe_renders_string_literal_and_typed_args() {
 
     let out = decompile_func(prog, &["load function main", "decompile", "print C"]);
 
-    // s1_strings: the `.rdata` "hello" recovers as a literal (was `0x140009000`).
+    // strings: the `.rdata` "hello" recovers as a literal (was `0x140009000`).
     assert!(out.contains("puts(\"hello\")"), "PE: expected puts(\"hello\"), got:\n{out}");
     assert!(
         !out.contains("puts(0x140009000)"),
         "PE: puts arg must be the literal, not the raw pointer:\n{out}"
     );
-    // s1_protos: printf's first arg typed `char *`, so the short `%d\n` literal
+    // protos: printf's first arg typed `char *`, so the short `%d\n` literal
     // (below the string-scan min-5) renders via the printer's constant-string route.
     assert!(out.contains("printf(\"%d\\n\""), "PE: expected printf(\"%d\\n\", …), got:\n{out}");
     assert!(
@@ -183,7 +183,7 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
     );
 }
 
-/// s1_noreturn_disc (the Listing consumer) is format-neutral and runs on a PE:
+/// noreturn_disc (the Listing consumer) is format-neutral and runs on a PE:
 /// under `listing on` + `noreturn_disc on` the PE's Listing builds and the
 /// consumer runs to completion (decompile succeeds, no panic). The PE has no
 /// custom no-return wrapper to *discover*, so this confirms the pass is active

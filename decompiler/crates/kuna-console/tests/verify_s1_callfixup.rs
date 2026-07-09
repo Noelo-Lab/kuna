@@ -1,4 +1,4 @@
-//! End-to-end gate for auto-applied cspec call-fixups (`s1_callfixup` — the kuna
+//! End-to-end gate for auto-applied cspec call-fixups (`callfixup` — the kuna
 //! analog of Ghidra's `CallFixupAnalyzer`).
 //!
 //! Drives `load file <mcount_x86_64>` (a static `gcc -pg` binary whose `main`

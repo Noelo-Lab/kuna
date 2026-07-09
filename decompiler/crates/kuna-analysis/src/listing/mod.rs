@@ -91,7 +91,7 @@ impl Listing {
     ) -> Listing {
         // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate),
         // sorted by low VMA so the partition / gap queries can binary-search it.
-        let mut exec_ranges: Vec<(u64, u64)> = crate::s1_entry::executable_sections(file)
+        let mut exec_ranges: Vec<(u64, u64)> = crate::entry::executable_sections(file)
             .into_iter()
             .map(|(lo, hi, _data)| (lo, hi))
             .collect();
@@ -212,13 +212,13 @@ impl Listing {
     /// (the upper bound of an undefined gap that begins at `vma`). `None` if no
     /// decoded instruction starts after `vma` (the gap runs to the end of the
     /// executable image). Used by the AIF gap-walk to scope the "must-decode-here"
-    /// interior of a gap (`s1_aif`).
+    /// interior of a gap (`aif`).
     pub fn next_instruction_start_after(&self, vma: u64) -> Option<u64> {
         self.insns.range(vma.checked_add(1)?..).next().map(|(&a, _)| a)
     }
 
     /// The executable-range universe `[lo, hi)` the Listing covers (sorted,
-    /// disjoint). The AIF gap-walk (`s1_aif`) needs it to bound its speculative
+    /// disjoint). The AIF gap-walk (`aif`) needs it to bound its speculative
     /// gap decode (`memory.contains` / executable-block guard).
     pub fn exec_ranges(&self) -> &[(u64, u64)] {
         &self.exec_ranges

@@ -1,5 +1,5 @@
 //! Cross-arch end-to-end gate for **format-string varargs typing**
-//! (`s1_formatstring` half B — the kuna analog of Ghidra's
+//! (`formatstring` half B — the kuna analog of Ghidra's
 //! `FormatStringAnalyzer`, "Variadic Function Signature Override").
 //!
 //! The sibling [`verify_s1_formatstring`] proves the feature on x86-64; this gate

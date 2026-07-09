@@ -1643,7 +1643,7 @@ decomp_command!(
 // call's format argument, parse its specifiers, and build a per-call-site
 // prototype override (fixed types ++ format-derived varargs, varargs closed).
 // Ghidra origins are cited inline; the parser + override-pieces builder live in
-// `kuna_analysis::s1_formatstring` (halves A + B-logic).  Gated OFF by default
+// `kuna_analysis::formatstring` (halves A + B-logic).  Gated OFF by default
 // (`Architecture::analysis_formatstring`), so this is inert unless the user
 // passes `--option formatstring on`.
 
@@ -1742,7 +1742,7 @@ fn extract_format_string_overrides(
     arch: &kuna_decomp::architecture::Architecture,
     fd: &Funcdata,
 ) -> Vec<(kuna_base::address::Address, kuna_decomp::fspec::PrototypePieces)> {
-    use kuna_analysis::s1_formatstring::{self, apply};
+    use kuna_analysis::formatstring::{self, apply};
     use kuna_num::opcodes::OpCode;
 
     let mut overrides = Vec::new();
@@ -1798,9 +1798,9 @@ fn extract_format_string_overrides(
         }
         // (5) Parse + build the override pieces.
         let specs = if is_output {
-            s1_formatstring::parse_output_types(&fmt)
+            formatstring::parse_output_types(&fmt)
         } else {
-            s1_formatstring::parse_input_types(&fmt)
+            formatstring::parse_input_types(&fmt)
         };
         if specs.is_empty() {
             continue;

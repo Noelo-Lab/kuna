@@ -14,13 +14,13 @@ use kuna_sleigh::translate::Translate;
 
 use crate::loadimage_object::ObjectLoadImage;
 use crate::pass::{run_analyses, AnalysisCtx, AnalysisOutput, AnalysisPass};
-use crate::s1_sourcelang::Compiler;
+use crate::sourcelang::Compiler;
 
 /// The default program-prep passes, in stage order.
 ///
 /// These run at load time over the parsed ELF and produce an additive
 /// [`AnalysisOutput`] the console commits into the engine. Adding a new analysis
-/// is: implement [`AnalysisPass`] in an `s1_*` module, then add it here.
+/// is: implement [`AnalysisPass`] in a module under `analyzers/`, then add it here.
 ///
 /// This is the back-compat entry: it builds the pass list as if the source
 /// language were [`Compiler::Unknown`] (no Rust widening) on a non-PE image (no
@@ -55,7 +55,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // Go binary, also match the Golang list (runtime.gopanic/throw/goexit/…).
         // `for_compiler` selects the matching `<compiler>` arm
         // (noReturnFunctionConstraints.xml), base ELF list only otherwise.
-        Box::new(crate::s1_loader::noreturn::NoReturnKnownPass::for_compiler(compiler)),
+        Box::new(crate::loader::noreturn::NoReturnKnownPass::for_compiler(compiler)),
         // S1 strings (StringLiteralPass): NUL-terminated ASCII string-literal
         // detection. Mirrors Ghidra's `StringsAnalyzer` (min length 5,
         // require-NUL-end). Plants a typelocked `char[N]` data symbol (`s_<addr>`)
@@ -65,13 +65,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // array symbol now renders as the string LITERAL (Ghidra behavior), so the
         // data symbol and the literal coexist instead of the symbol name shadowing
         // it. See docs/analysis-port-log.md (the strings/printer increment).
-        Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 }),
+        Box::new(crate::strings::StringLiteralPass { min_len: 5 }),
         // S1 library prototypes: seed common libc signatures (puts(char*), …) so
         // call arguments get typed. Mirrors Ghidra's `ApplyDataArchiveAnalyzer`.
         // THIS is what renders string literals in kuna: typing a call argument
         // `char *` lets the printer's pointer-char-constant path read the readonly
         // bytes via the StringManager and emit `puts("Username: ")`.
-        Box::new(crate::s1_protos::LibProtoPass),
+        Box::new(crate::protos::LibProtoPass),
         // S1 entry discovery: find function entry points for stripped targets —
         // ELF e_entry, DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables,
         // `.eh_frame` FDE pcBegin starts, the x86-64 `_start`→`main` libc-start
@@ -81,7 +81,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (the commit seam's `out.entries` arm names + adds each discovered VMA,
         // idempotent against the funcsym stream). After LibProtoPass so prototypes
         // are seeded first. Always-on, like noreturn/libproto.
-        Box::new(crate::s1_entry::EntryDiscoveryPass),
+        Box::new(crate::entry::EntryDiscoveryPass),
         // S1 `.eh_frame` LSDA landing-pad discovery (`eh_frame_full`): the
         // GccExceptionAnalyzer full `.gcc_except_table` markup. For each FDE, follow
         // the CIE `L` augmentation to its LSDA pointer in `.gcc_except_table`,
@@ -97,10 +97,10 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (this is the deeper `.eh_frame` markup). The DW_CFA_* call-frame
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
-        Box::new(crate::s1_entry::EhFrameLsdaPass),
+        Box::new(crate::entry::EhFrameLsdaPass),
         // S1 full byte-pattern function starts (FuncStartPatternPass): the faithful
         // port of Ghidra's `FunctionStartAnalyzer` over the ENTIRE vendored pattern
-        // corpus (`s1_entry/patterns/*.xml`: the `<patternpairs>` pre/post sequences
+        // corpus (`entry/patterns/*.xml`: the `<patternpairs>` pre/post sequences
         // + bare `<funcstart/>` patterns, x86/x86-64 headline + AArch64/ARM/RISC-V/
         // MIPS/PPC). Unlike `EntryDiscoveryPass`'s always-on minimal oracle 5 (three
         // bare x86-64 prologues), this applies the full set with the upstream
@@ -111,8 +111,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (`engine.rs::analysis_pass_enabled` reads `arch.analysis_funcstart_patterns`,
         // default false), so a default run is byte-identical. After EntryDiscoveryPass
         // (its discoveries are a superset; the commit seam dedups against the entries
-        // EntryDiscoveryPass already emits). See `s1_entry::FuncStartPatternPass`.
-        Box::new(crate::s1_entry::FuncStartPatternPass),
+        // EntryDiscoveryPass already emits). See `entry::FuncStartPatternPass`.
+        Box::new(crate::entry::FuncStartPatternPass),
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna
@@ -122,7 +122,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // commit seam additionally swallows a "TMode not registered" error, so
         // this is a strict no-op for every non-ARM binary (the parity gates are
         // structurally untouched). Always-on, like noreturn/libproto/entry.
-        Box::new(crate::s1_loader::arm_markers::ArmMarkerPass),
+        Box::new(crate::loader::arm_markers::ArmMarkerPass),
         // S1 MIPS `$gp` recovery: seed `t9 = func_entry` as a tracked register
         // value at each MIPS function entry (the PIC `jalr t9` ABI convention), so
         // a PIC prologue's `addu gp,gp,t9` folds to the real `$gp` and
@@ -135,7 +135,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // strict no-op for every non-MIPS binary (the parity gates are structurally
         // untouched). Always-on, like noreturn/libproto/entry/arm_markers;
         // `--option mips_gp off` restores the un-tracked (raw `$gp`) rendering.
-        Box::new(crate::s1_loader::mips_markers::MipsMarkerPass),
+        Box::new(crate::loader::mips_markers::MipsMarkerPass),
         // S1 MIPS16 ISA_MODE decode-mode markers: paint the SLEIGH `ISA_MODE`
         // context variable at each MIPS16e/microMIPS function entry (marked by the
         // STT_FUNC LSB-set address OR `st_other & 0xf0` = STO_MIPS_MIPS16/MICROMIPS)
@@ -150,30 +150,30 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // strict no-op for every non-MIPS binary (the parity gates are structurally
         // untouched). Always-on, like arm_markers/mips_gp; `--option mips_isa off`
         // restores the un-painted (MIPS32-misdecoded) rendering.
-        Box::new(crate::s1_loader::mips_markers::MipsIsaModePass),
+        Box::new(crate::loader::mips_markers::MipsIsaModePass),
         // S1 DWARF: recover function/global names and TYPED function signatures
         // from `.debug_*` sections (the kuna analog of Ghidra's `DWARFAnalyzer`).
         // Registered AFTER LibProtoPass so for any name both emit, the DWARF
         // (real source) prototype wins (last-write in set_function_prototype_pieces).
         // Skips cleanly on a non-DWARF binary. Subtask-3 (DW_OP_fbreg stack-local
-        // ScopeLocal map) is a deferred engine change — see s1_dwarf docs.
-        Box::new(crate::s1_dwarf::DwarfPass),
+        // ScopeLocal map) is a deferred engine change — see dwarf docs.
+        Box::new(crate::dwarf::DwarfPass),
         // S1 DWARF source lines: parse `.debug_line` and surface each
         // instruction's `file:line` as a `Comment::user2` on the decompiled
         // output (the kuna analog of Ghidra's `DWARFLineInfoCommentScript`).
         // Default-OFF (`--option dwarf_lines on`): it CHANGES the output (adds
         // comment lines), so unlike the names/types `dwarf` pass it is opt-in.
         // Registered after `DwarfPass` (it reuses the same `.debug_*` sections).
-        Box::new(crate::s1_dwarf::DwarfLinesPass),
+        Box::new(crate::dwarf::DwarfLinesPass),
         // S1 call-fixups: tag each function whose name matches a cspec call-fixup
         // `<target>` (e.g. the `-pg` `mcount`/`__fentry__` profiling stubs) so the
         // engine replaces the CALL with the fixup body. The kuna analog of Ghidra's
         // default-on `CallFixupAnalyzer` (the install half; the flow-repair half is
-        // engine-internal at this tier — see s1_callfixup docs). After LibProtoPass
+        // engine-internal at this tier — see callfixup docs). After LibProtoPass
         // (the fixup tags the *callee* function, independent of prototype seeding).
         // Always-on, like noreturn/libproto/entry; `--option callfixup off` restores
         // the un-fixed rendering.
-        Box::new(crate::s1_callfixup::CallFixupPass),
+        Box::new(crate::callfixup::CallFixupPass),
 
         // S1 address tables (AddrTablePass) is implemented + tested but **disabled
         // by default**, matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`.
@@ -188,7 +188,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // and NOT the roadmap-#9 post-typing refinement (that is an engine S2 feedback
         // change behind the Override::queryMultistageJumptable seam) — it is only the
         // application-layer absolute-pointer-table discovery. See docs/analysis-port-log.md.
-        // Box::new(crate::s1_addrtable::AddrTablePass { min_run: 2 }),
+        // Box::new(crate::addrtable::AddrTablePass { min_run: 2 }),
 
         // S1 scalar/operand reference markup (OperandRefsPass) is implemented +
         // tested but **gated off by default** AND runs DEFERRED (not in this
@@ -205,18 +205,18 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `!isElf` (disabled for every ELF) and the ELF subclass only *removes* bad
         // `.got`/`.plt` refs kuna never creates; (b) its one useful product (a
         // `.rodata` string typed as `char*`) is already delivered by the always-on
-        // `s1_strings` + libproto/S5 typing for the common case; (c) a per-instruction
+        // `strings` + libproto/S5 typing for the common case; (c) a per-instruction
         // immediate scan over-accepts. See docs/analysis-port-buildplan.md §1.2.
 
         // `AggressiveInstructionFinderAnalyzer` (AIF) is NOT a pure-`ctx` pass here:
-        // it is the third *Listing/xref consumer* (`s1_aif`, the sound substitute the
+        // it is the third *Listing/xref consumer* (`aif`, the sound substitute the
         // buildplan §1.3 prescribed, gated off-by-default like upstream's
         // `setDefaultEnablement(false)`). It speculatively decodes the undefined gaps
         // the Listing left, which needs the live SLEIGH decoder, so it is driven by
-        // `s1_aif::run_aif` inside `run_listing_consumers` (below), not from this
+        // `aif::run_aif` inside `run_listing_consumers` (below), not from this
         // load-time pure-ctx list. The `AggressiveInstructionFinderPass` `AnalysisPass`
         // impl exists only for the `aif` gate identity (its `run` is a no-op). See
-        // `s1_aif/mod.rs` + docs/analysis-port-log.md.
+        // `aif/mod.rs` + docs/analysis-port-log.md.
     ];
 
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
@@ -231,7 +231,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // facts idempotently (a real `.symtab` name still wins, so only a *stripped*
     // Go binary's `sub_<addr>` functions take the recovered name).
     if compiler.is_golang() {
-        passes.push(Box::new(crate::s1_pclntab::GoPclntabPass));
+        passes.push(Box::new(crate::pclntab::GoPclntabPass));
     }
 
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
@@ -246,7 +246,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // reads `arch.analysis_rtti`, default false), so a default run is byte-identical
     // and bound to the real-PE path (the XML datatest oracle is untouched).
     if format == object::BinaryFormat::Pe {
-        passes.push(Box::new(crate::s1_rtti::RttiPass));
+        passes.push(Box::new(crate::rtti::RttiPass));
     }
 
     // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
@@ -262,12 +262,12 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // Selectors are plain ASCII — no demangler needed. x86-64, no-chained-fixups
     // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is the deferred PR-O0/O2).
     if format == object::BinaryFormat::MachO {
-        passes.push(Box::new(crate::s1_objc::ObjcMetadataPass));
+        passes.push(Box::new(crate::objc::ObjcMetadataPass));
     }
 
     // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
     // fingerprint (`{guid, age, path}`), locate the external `.pdb` (tier-1: the
-    // `kuna_pdb_path` env var, the s1_fid `kuna_fid_db` precedent), fingerprint-gate
+    // `kuna_pdb_path` env var, the fid `kuna_fid_db` precedent), fingerprint-gate
     // it (the supplied `.pdb`'s guid/age must match the PE's CodeView record — never
     // apply a wrong/stale PDB, the FID full-hash-match discipline), and on a match
     // walk the global symbols (S_PUB32/S_GPROC32) to RENAME each stripped FUN_*/sub_*
@@ -282,15 +282,15 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // default run is byte-identical and bound to the real-PE path (the XML datatest
     // oracle is untouched). Types/typed-locals/lines are the deferred PR-P2/P3.
     if format == object::BinaryFormat::Pe {
-        passes.push(Box::new(crate::s1_pdb::PdbPass));
+        passes.push(Box::new(crate::pdb::PdbPass));
     }
 
     passes
 }
 
 /// Build the Listing/xref tier's seed set from a parsed object: the union of
-/// the real funcsym entries (`s1_entry::existing_function_addrs`) and the
-/// discovered entry points (`s1_entry::collect_entries`), restricted to
+/// the real funcsym entries (`entry::existing_function_addrs`) and the
+/// discovered entry points (`entry::collect_entries`), restricted to
 /// executable sections, sorted and deduped (design §3.1).
 ///
 /// Both halves are already exec-section-filtered upstream (`collect_entries`
@@ -300,13 +300,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
 ///
 /// `pub` so the cross-crate `verify_listing_*` gates can build the *exact* seed
 /// set the live driver uses (the build-through-engine proof), instead of
-/// reconstructing it from the `pub(crate)` `s1_entry` helpers.
+/// reconstructing it from the `pub(crate)` `entry` helpers.
 pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
-    let execs = crate::s1_entry::executable_sections(file);
-    let mut seeds: Vec<u64> = crate::s1_entry::existing_function_addrs(file, bytes)
+    let execs = crate::entry::executable_sections(file);
+    let mut seeds: Vec<u64> = crate::entry::existing_function_addrs(file, bytes)
         .into_iter()
-        .chain(crate::s1_entry::collect_entries(file, bytes))
-        .filter(|&vma| crate::s1_entry::in_executable_section(&execs, vma))
+        .chain(crate::entry::collect_entries(file, bytes))
+        .filter(|&vma| crate::entry::in_executable_section(&execs, vma))
         .collect();
     seeds.sort_unstable();
     seeds.dedup();
@@ -329,9 +329,9 @@ pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
 /// (`engine.rs::analysis_pass_enabled`), so a default run skips it.
 fn listing_consumer_passes() -> Vec<Box<dyn AnalysisPass>> {
     vec![
-        Box::new(crate::s1_noreturn_disc::NoReturnDiscoveredPass),
-        Box::new(crate::s1_noreturn_propagate::NoReturnPropagatePass),
-        Box::new(crate::s1_fid::FidPass),
+        Box::new(crate::noreturn_disc::NoReturnDiscoveredPass),
+        Box::new(crate::noreturn_propagate::NoReturnPropagatePass),
+        Box::new(crate::fid::FidPass),
     ]
 }
 
@@ -379,17 +379,17 @@ pub fn run_listing_consumers(
     // betaflight STM32F405: the walk grows 1 -> 1470 discovered functions (Ghidra 1822).
     // Gated by the same flag, so x86-64 (funcstart_patterns off) is unchanged.
     if arch.analysis_funcstart_patterns {
-        let execs = crate::s1_entry::executable_sections(&file);
+        let execs = crate::entry::executable_sections(&file);
         seeds.extend(
-            crate::s1_entry::full_pattern_starts(&file)
+            crate::entry::full_pattern_starts(&file)
                 .into_iter()
-                .filter(|&vma| crate::s1_entry::in_executable_section(&execs, vma)),
+                .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
         );
         seeds.sort_unstable();
         seeds.dedup();
     }
     let seed_names = funcsym_names(&file);
-    let funcsym_seeds = crate::s1_entry::existing_function_addrs(&file, bytes);
+    let funcsym_seeds = crate::entry::existing_function_addrs(&file, bytes);
     let listing = crate::listing::Listing::build_with_meta(
         &file,
         image,
@@ -409,7 +409,7 @@ pub fn run_listing_consumers(
         .map(|pass| (pass.id(), pass.run(&ctx)))
         .collect();
 
-    // The Aggressive Instruction Finder gap-walk (`s1_aif`, the third Listing
+    // The Aggressive Instruction Finder gap-walk (`aif`, the third Listing
     // consumer) is NOT a pure-`ctx` pass: it speculatively decodes undecoded gap
     // bytes, so it needs the live SLEIGH decoder (the upstream builds its own
     // `PseudoDisassembler`). Drive it here with the same `translate`/code-space the
@@ -418,7 +418,7 @@ pub fn run_listing_consumers(
     // `entries`) when there is no code space.
     if let Some(code_space) = arch.manage().get_default_code_space() {
         let mut aif_out = AnalysisOutput::default();
-        aif_out.entries = crate::s1_aif::run_aif(
+        aif_out.entries = crate::aif::run_aif(
             &listing,
             translate,
             std::rc::Rc::clone(code_space),
@@ -443,7 +443,7 @@ pub fn run_listing_consumers(
 }
 
 /// Build an [`AnalysisCtx`] and run the **deferred** scalar/operand reference-markup
-/// pass ([`crate::s1_operand_refs::OperandRefsPass`]), returning its output keyed by
+/// pass ([`crate::operand_refs::OperandRefsPass`]), returning its output keyed by
 /// the pass id (`"operand_refs"`).
 ///
 /// Like the Listing tier (PR6), this pass must run at the deferred commit point
@@ -469,7 +469,7 @@ pub fn run_operand_refs(
         return AnalysisOutput::default();
     };
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: None };
-    crate::s1_operand_refs::OperandRefsPass.run(&ctx)
+    crate::operand_refs::OperandRefsPass.run(&ctx)
 }
 
 /// Extract `(addr, name)` for every text/function symbol in the object — the name
@@ -517,7 +517,7 @@ pub fn run_default_analyses(
     // Source-language detection runs once, before pass selection, and shapes the
     // pass list (the kuna analog of `SourceLanguageAnalyzer` running early and
     // gating the language-specific analyzers).
-    let compiler = crate::s1_sourcelang::detect_compiler(&file, bytes);
+    let compiler = crate::sourcelang::detect_compiler(&file, bytes);
     // Listing/xref tier (design §1.3): built once, before the pass loop, only
     // when `--option listing on` (default-off ⇒ `None` ⇒ no decode work, byte
     // -identical to today). Owned here so it outlives the pass loop, borrowed
@@ -549,7 +549,7 @@ pub fn run_default_analyses_per_pass(
     let Ok(file) = object::File::parse(bytes) else {
         return Vec::new();
     };
-    let compiler = crate::s1_sourcelang::detect_compiler(&file, bytes);
+    let compiler = crate::sourcelang::detect_compiler(&file, bytes);
     // Listing/xref tier (design §1.3): built once, before the pass loop, only
     // when `arch.analysis_listing` (i.e. `--option listing on`). Default-off ⇒
     // `.then(...)` is `None` ⇒ no decode work, `ctx.listing == None`, and the

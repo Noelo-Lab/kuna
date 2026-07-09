@@ -1,4 +1,4 @@
-//! End-to-end gate for string-literal detection (`s1_strings` —
+//! End-to-end gate for string-literal detection (`strings` —
 //! `StringLiteralPass`) coexisting with the printer's readonly-char-array
 //! literal route.
 //!
