@@ -315,19 +315,19 @@ impl LineSource for IfaceTerm {
     }
 
     fn push_input(&mut self, lines: Vec<String>) {
-        // C++ pushScript: inputstack.push_back(sptr); sptr = iptr;
+        // C++ pushScript.
         let joined = join_lines(&lines);
         let prev = std::mem::replace(&mut self.sptr, CharStream::new(joined));
         self.inputstack.push(prev);
     }
 
     fn pop_input(&mut self) {
-        // C++ popScript: delete sptr; sptr = inputstack.back();
+        // C++ popScript.
         self.sptr = self.inputstack.pop().expect("IfaceTerm::popScript: empty input stack");
     }
 
     fn current_stream_finished(&self) -> bool {
-        // C++ isStreamFinished: (done||inerror handled by IfaceStatus) sptr->eof()
+        // C++ isStreamFinished (done/inerror handled by IfaceStatus).
         self.sptr.eof()
     }
 }
@@ -449,7 +449,7 @@ impl LineSource for ConsoleCommands {
     }
 
     fn current_stream_finished(&self) -> bool {
-        // C++ isStreamFinished: pos == commands.size()
+        // C++ isStreamFinished.
         self.pos >= self.commands.len()
     }
 }

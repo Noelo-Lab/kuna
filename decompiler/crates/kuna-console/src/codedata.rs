@@ -21,7 +21,7 @@
 //!   plus [`register_commands`], the verbatim port of
 //!   `IfaceCodeDataCapability::registerCommands`.
 //!
-//! # Cross-module seams
+//! # Cross-module boundaries
 //!
 //! The C++ `CodeDataAnalysis` caches `Architecture *glb` and reaches the
 //! disassembler (`glb->translate`) and the load image (`glb->loader`) through
@@ -158,7 +158,7 @@ impl Default for DisassemblyResult {
 ///
 /// The C++ caches the `const Translate *trans` set by `init`; here the
 /// `Translate` is passed to [`disassemble`](DisassemblyEngine::disassemble) (see
-/// the module's cross-module seam note), so the engine holds only the
+/// the module's cross-module boundary note), so the engine holds only the
 /// per-decode scratch state and the tracked target-offset set.
 #[derive(Debug)]
 pub struct DisassemblyEngine {
@@ -193,7 +193,7 @@ impl DisassemblyEngine {
     /// C++ `DisassemblyEngine::init` (`codedata.cc:44`).
     ///
     /// The C++ also stores `trans = t`; in the port the `Translate` is supplied
-    /// per `disassemble` call (cross-module seam), so this only clears the
+    /// per `disassemble` call (cross-module boundary), so this only clears the
     /// scratch and tracked-target state.
     pub fn init(&mut self) {
         self.jumpaddr.clear();
@@ -219,22 +219,18 @@ impl DisassemblyEngine {
         self.hascall = false;
         self.hitsaddress = false;
         res.flags = 0;
-        // try { res.length = trans->oneInstruction(*this,addr); }
         match trans.one_instruction(self, addr) {
             Ok(length) => {
                 res.length = length;
             }
-            // catch(BadDataError &err) { res.success = false; return; }
             Err(KunaError::BadData { .. }) => {
                 res.success = false;
                 return;
             }
-            // catch(DataUnavailError &err) { res.success = false; return; }
             Err(KunaError::DataUnavail { .. }) => {
                 res.success = false;
                 return;
             }
-            // catch(UnimplError &err) { res.length = err.instruction_length; }
             Err(KunaError::Unimpl { instruction_length, .. }) => {
                 res.length = instruction_length;
             }
@@ -470,14 +466,12 @@ impl CodeDataAnalysis {
 
     /// C++ `CodeDataAnalysis::pushTaintAddress` (`codedata.cc:148`).
     pub fn push_taint_address(&mut self, addr: &Address) {
-        // iter = codeunit.upper_bound(addr); if (iter==begin()) return; --iter;
-        // i.e. the last entry with key <= addr.
+        // The last entry with key <= addr.
         let prev = self.codeunit.range(..=addr).next_back().map(|(k, v)| (k.clone(), *v));
         let (key, cu) = match prev {
             Some(x) => x,
             None => return, // upper_bound==begin (no element <= addr)
         };
-        // if ((*iter).first.getOffset()+cu.size-1 < addr.getOffset()) return;
         if key.get_offset().wrapping_add(cu.size as u64).wrapping_sub(1) < addr.get_offset() {
             return;
         }
@@ -489,9 +483,7 @@ impl CodeDataAnalysis {
 
     /// C++ `CodeDataAnalysis::processTaint` (`codedata.cc:162`).
     pub fn process_taint(&mut self) {
-        // iter = taintlist.back(); taintlist.pop_back();
         let key = self.taintlist.pop().expect("processTaint on empty taintlist");
-        // cu.flags |= notcode;
         let cu_size = {
             let cu = self.codeunit.get_mut(&key).expect("taint key absent");
             cu.flags |= code_unit_flags::NOTCODE;
@@ -499,7 +491,6 @@ impl CodeDataAnalysis {
         };
         let startaddr = key.clone();
         let endaddr = &startaddr + cu_size as i64;
-        // if (iter != codeunit.begin()) { --iter; ... }
         if let Some((prevkey, cu2)) = self.codeunit.range(..&startaddr).next_back() {
             let cu2 = *cu2;
             // ((cu2.flags & (fallthru&notcode))==fallthru): note (fallthru &
@@ -511,8 +502,8 @@ impl CodeDataAnalysis {
             if (cu2.flags & (code_unit_flags::FALLTHRU & code_unit_flags::NOTCODE))
                 == code_unit_flags::FALLTHRU
             {
-                // Address addr2 = (*iter).first + cu.size; (note: cu, the
-                // tainted unit's size, not cu2's — transcribed verbatim)
+                // The C++ adds the *tainted* unit's size here (cu, not cu2) —
+                // transcribed verbatim.
                 let addr2 = prevkey + cu_size as i64;
                 if addr2 == startaddr {
                     let pk = prevkey.clone();
@@ -633,7 +624,7 @@ impl CodeDataAnalysis {
         let mut hardend = false;
 
         let mut curaddr = addr.clone();
-        // iter = codeunit.lower_bound(addr); track the key as the iterator.
+        // Track the lower_bound(addr) key as the C++ iterator.
         let mut iter_key: Option<Address> =
             self.codeunit.range(addr.clone()..).next().map(|(k, _)| k.clone());
         let mut lastaddr: Address;
@@ -728,16 +719,13 @@ impl CodeDataAnalysis {
         if hardend && (lastaddr < curaddr) {
             curaddr = lastaddr.clone();
         }
-        // int4 wholesize = curaddr.getOffset() - addr.getOffset();
         let mut wholesize = curaddr.get_offset().wrapping_sub(addr.get_offset()) as int4;
         if (!flowin) && (wholesize < 10) {
             wholesize = 1;
         }
-        // CodeUnit &cu( codeunit[addr] ); cu.flags=notcode; cu.size=wholesize;
         let cu = self.codeunit.entry(addr.clone()).or_default();
         cu.flags = code_unit_flags::NOTCODE;
         cu.size = wholesize;
-        // curaddr = addr + cu.size; return curaddr;
         addr + cu.size as i64
     }
 
@@ -779,7 +767,7 @@ impl CodeDataAnalysis {
 
     /// C++ `CodeDataAnalysis::markFallthruHits` (`codedata.cc:395`).
     pub fn mark_fallthru_hits(&mut self) {
-        // Address fallthruaddr((AddrSpace *)0,0); — an invalid address.
+        // An invalid address.
         let mut fallthruaddr = Address::new_invalid();
         let keys: Vec<Address> = self.codeunit.keys().cloned().collect();
         for key in keys {
@@ -824,7 +812,6 @@ impl CodeDataAnalysis {
         let thunkaddr = Address::new(Rc::clone(code_space), targethit);
         let mask = match self.targets.get(&thunkaddr) {
             Some(t) => t.featuremask,
-            // throw LowlevelError("Found thunk without a feature mask");
             None => return Err(IfaceError::execution("Found thunk without a feature mask")),
         };
         self.targethits.push(TargetHit::new(funcstart, codeaddr.clone(), thunkaddr, mask));
@@ -902,7 +889,6 @@ impl CodeDataAnalysis {
                 self.codeunit.get_mut(&key).unwrap().flags |= code_unit_flags::ERRANTSTART;
                 return true;
             }
-            // if (iter == codeunit.begin()) return false; --iter;
             match self.codeunit.range(..key.clone()).next_back().map(|(k, _)| k.clone()) {
                 Some(prev) => key = prev,
                 None => return false,
@@ -923,7 +909,6 @@ impl CodeDataAnalysis {
         let mut curaddr = addr.clone();
         let mut count: int4 = 0;
 
-        // iter = codeunit.lower_bound(addr); if (iter==end()) return false;
         let mut iter_key: Option<Address> =
             self.codeunit.range(addr.clone()..).next().map(|(k, _)| k.clone());
         if iter_key.is_none() {
@@ -934,7 +919,6 @@ impl CodeDataAnalysis {
             if count >= max {
                 return false;
             }
-            // while ((*iter).first < curaddr) { ++iter; if (iter==end()) return false; }
             loop {
                 match &iter_key {
                     Some(k) if *k < curaddr => {
@@ -977,12 +961,11 @@ impl CodeDataAnalysis {
 
     /// C++ `CodeDataAnalysis::findOffCut` (`codedata.cc:542`).
     pub fn find_off_cut(&mut self, trans: &dyn Translate) {
-        // iter = tofrom_crossref.begin(); the C++ walks the live map; only the
-        // repairJump branch mutates it, and it re-seeks via upper_bound after.
+        // The C++ walks the live tofrom_crossref map; only the repairJump branch
+        // mutates it, and it re-seeks via upper_bound after.
         let mut iter_key: Option<AddrLink> = self.tofrom_crossref.keys().next().cloned();
         while let Some(curlink) = iter_key.clone() {
             let addr = curlink.a.clone(); // Destination of a jump
-            // citer = codeunit.lower_bound(addr);
             let citer = self.codeunit.range(addr.clone()..).next().map(|(k, _)| k.clone());
             if let Some(ckey) = &citer {
                 if *ckey == addr {
@@ -992,7 +975,7 @@ impl CodeDataAnalysis {
                         & (code_unit_flags::HIT_BY_FALLTHRU | code_unit_flags::HIT_BY_CALL))
                         == (code_unit_flags::HIT_BY_FALLTHRU | code_unit_flags::HIT_BY_CALL)
                     {
-                        // Somebody falls through into the call: --citer;
+                        // Somebody falls through into the call.
                         if let Some(prev) =
                             self.codeunit.range(..ckey.clone()).next_back().map(|(k, _)| k.clone())
                         {
@@ -1005,10 +988,9 @@ impl CodeDataAnalysis {
                     continue;
                 }
             }
-            // if (citer == codeunit.begin()) { ++iter; continue; }  then --citer
             let prevkey = self.codeunit.range(..addr.clone()).next_back().map(|(k, _)| k.clone());
             let prevkey = match prevkey {
-                Some(k) => k, // --citer (last <= addr)
+                Some(k) => k, // last <= addr
                 None => {
                     iter_key = self.next_tofrom(&curlink);
                     continue;
@@ -1018,7 +1000,6 @@ impl CodeDataAnalysis {
                 iter_key = self.next_tofrom(&curlink);
                 continue; // on cut
             }
-            // Address endaddr = (*citer).first + (*citer).second.size;
             let prev_size = self.codeunit.get(&prevkey).unwrap().size;
             let endaddr = &prevkey + prev_size as i64;
             if endaddr <= addr {
@@ -1031,7 +1012,6 @@ impl CodeDataAnalysis {
             }
             let addrlink = curlink.clone();
             self.repair_jump(trans, &addr, 10); // This may delete tofrom_crossref nodes
-            // iter = tofrom_crossref.upper_bound(addrlink);
             iter_key = self
                 .tofrom_crossref
                 .range((Bound::Excluded(addrlink), Bound::Unbounded))
@@ -1050,8 +1030,6 @@ impl CodeDataAnalysis {
 
     /// C++ `CodeDataAnalysis::findFunctionStart` (`codedata.cc:589`).
     pub fn find_function_start(&self, addr: &Address) -> Address {
-        // iter = tofrom_crossref.lower_bound(AddrLink(addr));
-        // while(iter != begin()) { --iter; if (call) return (*iter).first.a; }
         let mut range = self.tofrom_crossref.range(..AddrLink::single(addr.clone()));
         while let Some((k, &flags)) = range.next_back() {
             if (flags & code_unit_flags::CALL) != 0 {
@@ -1070,7 +1048,6 @@ impl CodeDataAnalysis {
             let endoff = range.get_last();
             s.push_str(&format!("0x{endoff:x}"));
             if let Some(nextrange) = iter.peek() {
-                // off = (*iter).getFirst(); s << ' ' << dec << (int4)(off-endoff);
                 let noff = nextrange.get_first();
                 let diff = noff.wrapping_sub(endoff) as int4;
                 s.push_str(&format!(" {diff}"));
@@ -1140,7 +1117,6 @@ impl CodeDataAnalysis {
         let mut moresections;
         loader.open_section_info();
         let mut lastaddr = Address::new_invalid();
-        // C++ do { ... } while(moresections);
         loop {
             moresections = loader.get_next_section(&mut secinfo);
             let endaddr = &secinfo.address + secinfo.size as i64;
@@ -1170,7 +1146,6 @@ impl CodeDataAnalysis {
             }
         }
         loader.close_section_info();
-        // CodeUnit &cu( codeunit[lastaddr] ); cu.size=100; cu.flags=notcode;
         {
             let cu = self.codeunit.entry(lastaddr).or_default();
             cu.size = 100;
@@ -1191,8 +1166,8 @@ impl CodeDataAnalysis {
         let code_space =
             Rc::clone(manage.get_default_code_space().expect("runModel: no default code space"));
         self.find_unlinked(trans, &code_space)?;
-        // targethits.sort(); — list<TargetHit>::sort uses operator< (funcstart).
-        // std::list::sort is stable; sort_by with the stable sort matches.
+        // C++ `list<TargetHit>::sort` orders by operator< (funcstart) and is
+        // stable; sort_by with the stable sort matches.
         self.targethits.sort_by(|a, b| a.funcstart.cmp(&b.funcstart));
         Ok(())
     }

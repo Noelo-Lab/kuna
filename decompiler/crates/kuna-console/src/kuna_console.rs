@@ -211,7 +211,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         // state (the live spec-selection gate is the load-time env var, but the
         // catalog `current` mirrors the `option macho-arm64e on|off` request).
         "macho-arm64e" => on_off(conf.macho_arm64e),
-        // C++: return ""; -> no current field.
+        // No current field (C++ returns "").
         _ => return None,
     })
 }
@@ -290,9 +290,7 @@ pub struct IfcKunaPhaseMap;
 
 impl IfaceCommandAction for IfcKunaPhaseMap {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++ builds a space-joined token from the rest of the line:
-        //   while(!s.eof()) { s >> word >> ws; if(word.empty()) break;
-        //     if(!token.empty()) token += ' '; token += word; }
+        // C++ builds a space-joined token from the rest of the line.
         let mut token = String::new();
         s.skip_ws();
         while !s.eof() {
@@ -454,10 +452,7 @@ impl IfaceCommandAction for IfcKunaPhaseStatus {
             Some(c) => c.arch(),
             None => return Err(IfaceError::execution("No load image present")),
         };
-        // C++ IfcKunaPhaseStatus::execute:
-        //   *optr << "pipeline variant: " << allacts.getCurrentName() << endl;
-        //   *optr << "compareform: " << (present_lessequal ? "original" : "canonical") << endl;
-        //   *optr << "arraynotation: " << (print->getArrayNotation() ? "on" : "off") << endl;
+        // C++ IfcKunaPhaseStatus::execute.
         let mut os = String::new();
         os.push_str("pipeline variant: ");
         os.push_str(conf.allacts.get_current_name());
@@ -569,7 +564,6 @@ impl Default for IfcKunaAssert {
 
 impl IfaceCommandAction for IfcKunaAssert {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++: if (dcp->conf == 0) throw IfaceExecutionError("No load image present");
         {
             let dcp = dcp_mut(status)?;
             if dcp.conf.is_none() {
@@ -577,7 +571,6 @@ impl IfaceCommandAction for IfcKunaAssert {
             }
         }
 
-        // C++: s >> ws >> stagecode;  if (stagecode == "list") { listAssertions(); return; }
         s.skip_ws();
         let stagecode = s.read_token();
         if stagecode == "list" {
@@ -587,11 +580,10 @@ impl IfaceCommandAction for IfcKunaAssert {
             return Ok(());
         }
 
-        // C++: s >> ws >> subname;
         s.skip_ws();
         let subname = s.read_token();
 
-        // C++ tokenizeRest(s,tokens): collect the rest of the line.
+        // Collect the rest of the line (C++ tokenizeRest).
         let mut tokens: Vec<String> = Vec::new();
         s.skip_ws();
         while !s.eof() {
@@ -642,9 +634,7 @@ impl IfaceCommandAction for IfcKunaAssert {
         };
 
         // C++ `kassert applied:` confirmation line (written to `*optr`), emitted
-        // after a routable store mutation succeeds:
-        //   "kassert applied: [" << code(stage) << "] " << substage [<< ' ' << args]
-        //     << "  rewind->" << code(rewind) << " (Ghidra-actual: whole-function)"
+        // after a routable store mutation succeeds.
         let applied_line = {
             let mut s = String::new();
             s.push_str("kassert applied: [");
@@ -704,9 +694,7 @@ impl IfaceCommandAction for IfcKunaAssert {
             )),
             Dispatch::Rename => {
                 // C++ kassert naming-policy -> Scope::renameSymbol + namelock,
-                // exactly like IfcRename (ifacedecomp.rs IfcRename::execute):
-                //   readSymbol(oldname) -> getScopeLocal()->renameSymbol(sym,newname)
-                //   -> setAttribute(sym, namelock|typelock).
+                // exactly like IfcRename (ifacedecomp.rs IfcRename::execute).
                 use kuna_decomp::varnode::varnode_flags;
                 if tokens.len() < 2 {
                     return Err(IfaceError::parse(
@@ -793,8 +781,7 @@ impl IfaceCommandAction for IfcKunaRestarts {
             Some(fd) => fd,
             None => return Err(IfaceError::execution("No function selected")),
         };
-        // C++: kunaDumpRestarts(*status->fileoptr, *dcp->fd) over the
-        // Architecture-owned RestartLog.
+        // C++ kunaDumpRestarts over the Architecture-owned RestartLog.
         let conf = match dcp.conf.as_ref() {
             Some(c) => c.arch(),
             None => return Err(IfaceError::execution("No load image present")),
@@ -849,7 +836,6 @@ impl IfcKunaPipeline {
 
 impl IfaceCommandAction for IfcKunaPipeline {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++: s >> ws >> name; if (name.empty() || name=="list") { listPipelines(); return; }
         s.skip_ws();
         let name = s.read_token();
         if name.is_empty() || name == "list" {
@@ -869,7 +855,6 @@ impl IfaceCommandAction for IfcKunaPipeline {
         if dcp.fd.is_none() {
             return Err(IfaceError::execution("No function selected"));
         }
-        // C++: if (fd->hasNoCode()) { *optr << "No code for " << name << endl; return; }
         // hasNoCode IS expressible; the message uses the command stream (optr).
         let fd = dcp.fd.as_ref().expect("fd checked Some above");
         if fd.has_no_code() {
@@ -954,8 +939,6 @@ impl IfaceCommandAction for IfcKunaQuality {
             return Err(IfaceError::execution("No function selected"));
         }
         let fd = dcp.fd.as_ref().expect("fd checked Some above");
-        // C++: if (fd->hasNoStructBlocks()) { os << "No structured blocks for "
-        //   << name << " (decompile first)" << endl; return; }
         if fd.has_no_struct_blocks() {
             let line = format!(
                 "No structured blocks for {} (decompile first)\n",
@@ -997,7 +980,7 @@ impl IfaceCommandAction for IfcKunaQuality {
 /// the kuna capability in `kuna_console.cc`).
 ///
 /// The region identifier is ported (`kuna_decomp::kuna_regionid`); its
-/// `buildFromBlockGraph` block-graph adapter (the W7 seam) is now closed
+/// `buildFromBlockGraph` block-graph adapter (the W7 boundary) is now closed
 /// ([`KunaRegionIdentifier::build_from_block_graph`]), so these three commands
 /// drive it over the real decompiled `bblocks` CFG (block start addresses, the
 /// CFG out-edges, and the per-block `endsWithBranchindOrCbranch` `lastOp` probe).

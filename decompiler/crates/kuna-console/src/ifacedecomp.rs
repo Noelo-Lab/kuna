@@ -127,7 +127,7 @@ pub struct IfaceDecompData {
     ///
     /// C++ `Architecture::setPrototype` finds the existing function symbol and
     /// locks the prototype onto its `Funcdata` immediately.  In the kuna console
-    /// seam the `Funcdata` (`dcp.fd`) is built later by `load function`/`load addr`
+    /// boundary the `Funcdata` (`dcp.fd`) is built later by `load function`/`load addr`
     /// (`build_and_follow_flow` makes a fresh one), so the pieces are stashed here
     /// when the named function symbol exists and applied at load time.
     /// // STUB(W4 queryFunction/FuncProto restore)
@@ -422,7 +422,7 @@ fn parse_varnode(
 /// `uq == ~0`) and defined (`pc` and `uq` both present) arms use the
 /// `findVarnodeInput`/`findVarnodeWritten` bank queries.  The mixed loc-scan arm
 /// (exactly one of `pc`/`uq` given) needs the `beginLoc`/`endLoc` storage walk,
-/// a bank-iterator surface not yet on this console seam — it errs as documented.
+/// a bank-iterator surface not yet on this console boundary — it errs as documented.
 /// `Ok(None)` means "the requested varnode does not exist" (the C++ throw).
 fn read_varnode(
     fd: &Funcdata,
@@ -440,10 +440,8 @@ fn read_varnode(
         if pc.is_invalid() || no_uq {
             return Err("Missing p-code sequence number".to_string());
         }
-        // SeqNum seq(pc,uq); op = fd->findOp(seq);
         let seq = SeqNum::new(pc.clone(), uq);
         if let Some(op) = fd.obank().find_op(&seq) {
-            // for(i..numInput) if (op->getIn(i)->getAddr()==loc) return getIn(i);
             let n = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
             for i in 0..n {
                 if let Some(tmpvn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
@@ -455,14 +453,12 @@ fn read_varnode(
         }
         Ok(None)
     } else if pc.is_invalid() && no_uq {
-        // vn = fd->findVarnodeInput(defsize,loc);
         Ok(fd.find_varnode_input(defsize, loc))
     } else if !pc.is_invalid() && !no_uq {
-        // vn = fd->findVarnodeWritten(defsize,loc,pc,uq);
         Ok(fd.find_varnode_written(defsize, loc, pc, Some(uq)))
     } else {
         // The residual `beginLoc(defsize,loc)`..`endLoc` storage walk
-        // (exactly one of pc/uq given) — not on this seam's bank surface.
+        // (exactly one of pc/uq given) — not on this boundary's bank surface.
         Err("kuna rust port: readVarnode loc-scan arm needs the beginLoc/endLoc bank iterator".to_string())
     }
 }
@@ -546,7 +542,7 @@ fn mark_property_range(
 }
 
 /// C++ `Architecture::setPrototype(pieces)` (architecture.cc:393) for the
-/// console seam: find the FunctionSymbol named `pieces.name` in the global scope
+/// console boundary: find the FunctionSymbol named `pieces.name` in the global scope
 /// and lock the parsed prototype onto it.  The kuna model stores the locked
 /// signature as the symbol's `TypeCode` prototype (built by
 /// `TypeFactory::getTypeCode(PrototypePieces)` — the same construction the C++
@@ -607,9 +603,9 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
         let res = crate::grammar::parse_c(content, arch.types(), org, |pieces| {
             // C++ Architecture::setPrototype resolves the function via queryFunction
             // (which lazily builds the Funcdata from the function symbol) and locks
-            // the prototype.  In the kuna console seam the named function may live
+            // the prototype.  In the kuna console boundary the named function may live
             // only in the binaryimage's symbol records (the readLoaderSymbols →
-            // Scope::addFunction markup is a W4 seam, so it is not yet in the
+            // Scope::addFunction markup is a W4 stub, so it is not yet in the
             // symboltab), and `dcp.fd` is built later by `load function`.  So the
             // pieces are captured here and stashed (applied at load time) rather
             // than rejected — letting `parse line extern` take effect and the test
@@ -645,8 +641,6 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
             Ok(())
         }
         Err(e) => {
-            // C++: *status->optr << "Error in C syntax: " << err.explain << endl;
-            //      throw IfaceExecutionError("Bad C syntax");
             status.out(&format!("Error in C syntax: {}\n", e.explain()));
             Err(IfaceError::execution("Bad C syntax"))
         }
@@ -760,8 +754,6 @@ decomp_command!(
             status.out(&format!("{res}\n"));
             return Ok(());
         }
-        // C++: string res = dcp->conf->options->set(ElementId::find(optname,0),p1,p2,p3);
-        //      *status->optr << res << endl;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         let id = prog.registry().find_element(&optname, 0);
         if id == 0 {
@@ -911,9 +903,9 @@ decomp_command!(
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No image loaded"));
         }
-        // C++: resolveScopeFromSymbolName + queryFunction; then if !hasNoCode,
-        //      dcp->followFlow(*status->optr,0).  The kuna seam resolves the entry
-        // from the binaryimage's own symbol records (the readLoaderSymbols seam).
+        // The kuna path resolves the entry from the binaryimage's own symbol
+        // records (the readLoaderSymbols hook), where C++ uses
+        // resolveScopeFromSymbolName + queryFunction + followFlow.
         let mut flow_overrides =
             dcp.pending_flow_overrides.get(&funcname).cloned().unwrap_or_default();
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
@@ -996,8 +988,8 @@ decomp_command!(
                 ));
             }
         }
-        // C++ addFunction(offset,name); followFlow(size).  The symbol-table
-        // addFunction is a later seam; build the Funcdata + follow flow directly.
+        // The symbol-table addFunction is a later boundary; build the Funcdata
+        // + follow flow directly (C++ addFunction + followFlow).
         let fd =
             build_and_follow_flow_with_override(prog.arch_mut(), &name, offset, UNBOUNDED_SIZE, &flow_overrides)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
@@ -1018,7 +1010,7 @@ decomp_command!(
         }
         // C++ `dcp->conf->readLoaderSymbols("::")`.  The kuna XML engine reads the
         // binaryimage's `<symbol>` records into the program's name→address table
-        // at `load file` (the readLoaderSymbols seam runs eagerly there), so the
+        // at `load file` (the readLoaderSymbols hook runs eagerly there), so the
         // symbols are already available.
         //
         // (kuna) This is also the gated-commit point for the kuna_analysis passes:
@@ -1058,12 +1050,9 @@ decomp_command!(
                 return Err(IfaceError::execution("No load image present"));
             }
         }
-        // C++ Address addr = parse_machaddr(...); ct = parse_type(s,name,glb).
         let fd_present = dcp_mut(status)?.fd.is_some();
         if fd_present {
-            // C++ fd-local form (ifacedecomp.cc:561-563):
-            //   sym = dcp->fd->getScopeLocal()->addSymbol(name,ct,addr,Address())->getSymbol();
-            //   sym->getScope()->setAttribute(sym, Varnode::namelock|Varnode::typelock);
+            // C++ fd-local form (ifacedecomp.cc:561-563).
             use kuna_decomp::varnode::varnode_flags;
             let dcp = dcp_mut(status)?;
             let prog = dcp.conf.as_mut().expect("conf checked non-None above");
@@ -1089,15 +1078,14 @@ decomp_command!(
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         s.skip_ws();
-        // C++ ct = parse_type(s,name,dcp->conf): parse the required type + name.
+        // Parse the required type + name (C++ parse_type).
         let (addr_size, word_size) = prog.arch().data_org();
         let org = crate::grammar::DataOrg { addr_size, word_size };
         let typetext = s.rest();
         let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
             .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
-        // Global branch: flags = namelock|typelock | getProperty(addr);
-        //   scope = findCreateScopeFromSymbolName(name); sym = scope->addSymbol(...);
-        //   setAttribute(flags); if scope has parent: addRange.
+        // Global branch: build the flags, resolve/create the scope, add the mapped
+        // symbol, set the locks, and (for a namespace scope) register its range.
         use kuna_decomp::varnode::varnode_flags;
         let inherit = prog.arch().symboltab.get_property(&addr);
         let flags = varnode_flags::namelock | varnode_flags::typelock | inherit;
@@ -1131,13 +1119,7 @@ decomp_command!(
     /// C++ `IfcMaphash`: `map hash <addr> <hash> <typedeclaration>`.
     IfcMaphash,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++ ifacedecomp.cc:588-605:
-        //   if (dcp->fd == 0) throw "No function loaded";
-        //   Address addr = parse_machaddr(s,size,*dcp->conf->types);
-        //   s >> hex >> hash;  s >> ws;
-        //   ct = parse_type(s,name,dcp->conf);
-        //   sym = dcp->fd->getScopeLocal()->addDynamicSymbol(name,ct,addr,hash);
-        //   sym->getScope()->setAttribute(sym, namelock|typelock);
+        // C++ ifacedecomp.cc:588-605.
         {
             let dcp = dcp_mut(status)?;
             if dcp.fd.is_none() {
@@ -1303,15 +1285,12 @@ decomp_command!(
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-        // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
         let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         s.skip_ws();
         let mut name = s.read_token(); // optional
         if name.is_empty() {
             name = prog.arch().name_function(&addr);
         }
-        // C++ scope = symboltab->findCreateScopeFromSymbolName(name,"::",basename,0);
-        //      dcp->fd = scope->addFunction(addr,name)->getFunction();
         let type_code = prog
             .arch()
             .types()
@@ -1331,13 +1310,13 @@ decomp_command!(
         // newly-mapped function the current function so the override commands
         // (`override flow|prototype`, which require `dcp->fd != 0`) can attach to
         // it.  The C++ `getFunction()` lazily builds the Funcdata WITHOUT following
-        // flow; the kuna seam builds the same un-followed Funcdata (the real flow
+        // flow; the kuna boundary builds the same un-followed Funcdata (the real flow
         // follow runs at `load function`/`decompile`).
         let fd = prog
             .arch()
             .new_funcdata(&name, addr.clone(), UNBOUNDED_SIZE)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        // Make the function loadable by `load function <name>` (the console seam).
+        // Make the function loadable by `load function <name>` (the console boundary).
         prog.register_symbol(&name, addr);
         // C++ reads an optional trailing "nocode" keyword (setNoCode on fd).
         s.skip_ws();
@@ -1381,16 +1360,13 @@ decomp_command!(
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
-        // LabSymbol::buildType -> getBase(1, TYPE_UNKNOWN).
         let lab_type = prog
             .arch()
             .types()
             .get_base(1, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         if fd_present {
-            // C++ fd-local form: scope = dcp->fd->getScopeLocal();
-            //   sym = scope->addCodeLabel(addr,name);
-            //   scope->setAttribute(sym, namelock|typelock).
+            // C++ fd-local form.
             let fd = dcp.fd.as_mut().expect("fd checked Some above");
             let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
                 IfaceError::execution("Function has no local scope (no stack space)")
@@ -1452,7 +1428,6 @@ decomp_command!(
             .types()
             .get_base(1, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        // C++: dcp->fd->getScopeLocal()->addEquateSymbol("",format,value,addr,hash).
         let fd = dcp.fd.as_mut().expect("fd checked Some above");
         let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
             IfaceError::execution("Function has no local scope (no stack space)")
@@ -1468,18 +1443,7 @@ decomp_command!(
     /// C++ `IfcMapunionfacet`: `map unionfacet <union> <field> <addr> <hash>`.
     IfcMapunionfacet,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++ ifacedecomp.cc:774-799:
-        //   if (dcp->fd == 0) throw "No function loaded";
-        //   s >> ws >> unionName;
-        //   ct = dcp->conf->types->findByName(unionName);
-        //   if (ct==0 || ct->getMetatype()!=TYPE_UNION) throw "Bad union data-type";
-        //   s >> ws >> dec >> fieldNum;
-        //   if (fieldNum < -1 || fieldNum >= ct->numDepend()) throw "Bad field index";
-        //   Address addr = parse_machaddr(s,size,*dcp->conf->types);
-        //   s >> hex >> hash;
-        //   s2 << "unionfacet" << dec << (fieldNum+1) << '_' << hex << addr.getOffset();
-        //   sym = dcp->fd->getScopeLocal()->addUnionFacetSymbol(s2.str(),ct,fieldNum,addr,hash);
-        //   dcp->fd->getScopeLocal()->setAttribute(sym, typelock|namelock);
+        // C++ ifacedecomp.cc:774-799.
         use kuna_decomp::dtype::type_metatype;
         use kuna_decomp::varnode::varnode_flags;
         {
@@ -2075,7 +2039,7 @@ decomp_command!(
             Err(e) => {
                 let msg = e.explain().to_string();
                 // (kuna GH-6904) A *recoverable* per-function abort — the pipeline
-                // hit a documented un-ported seam (LOSS-131) and unwound, discarding
+                // hit a documented un-ported stub (LOSS-131) and unwound, discarding
                 // this function's half-built IR — degrades gracefully instead of
                 // poisoning the whole console session.  This mirrors the C++
                 // `IfcProduceC::iterationCallback` catch (`ifacedecomp.cc:2402`):
@@ -2083,7 +2047,7 @@ decomp_command!(
                 // `print C` still renders (the prior, un-decompiled `dcp.fd`) and a
                 // datatest's `<stringmatch>` rules are evaluated rather than the
                 // whole file being marked an execution error.  Only the LOSS-131
-                // seam-abort is swallowed; a genuine fatal `IfaceExecutionError`
+                // stub-abort is swallowed; a genuine fatal `IfaceExecutionError`
                 // (e.g. "No function selected") still propagates.  The whole-corpus
                 // (675/675) is inert here: no datatest function aborts, so this arm
                 // is never reached for them.
@@ -2153,8 +2117,6 @@ decomp_command!(
     /// (231 `<com>print C</com>` uses).
     IfcPrintCStruct,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        // C++: dcp->conf->print->setOutputStream(status->fileoptr);
-        //      dcp->conf->print->docFunction(dcp->fd);
         // The kuna print drive (decompile_drive::print_c) renders the function
         // through the owned PrintC.  Output goes to the bulk stream (fileoptr),
         // which the Python tools capture via `openfile write`.  Render the C with
@@ -2339,7 +2301,6 @@ decomp_command!(
         s.skip_ws();
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-        // C++ track.back().loc = dcp->conf->translate->getRegister(name).
         let loc = prog
             .arch()
             .get_register_varnode(name.as_bytes())
@@ -2495,7 +2456,6 @@ decomp_command!(
             return Err(IfaceError::parse("Missing new name"));
         }
         let dcp = dcp_mut(status)?;
-        // C++: dcp->readSymbol(oldname,symList).
         let sym_list = dcp.read_symbol(&oldname)?;
         if sym_list.is_empty() {
             return Err(IfaceError::execution(format!("No symbol named: {oldname}")));
@@ -2567,7 +2527,6 @@ decomp_command!(
                 .map_err(|e| IfaceError::parse(e.explain().to_string()))?
         };
         let dcp = dcp_mut(status)?;
-        // C++: dcp->readSymbol(name,symList).
         let sym_list = dcp.read_symbol(&name)?;
         if sym_list.is_empty() {
             return Err(IfaceError::execution(format!("No symbol named: {name}")));
@@ -2589,13 +2548,8 @@ decomp_command!(
         let lm = fd
             .get_scope_local_mut()
             .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
-        // C++: sym->getScope()->retypeSymbol(sym,ct);
-        //      sym->getScope()->setAttribute(sym,Varnode::typelock);
         lm.retype_symbol(sym, ct).map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         lm.set_attribute(sym, varnode_flags::typelock);
-        // C++: if ((newname.size()!=0)&&(newname != name)) {
-        //        sym->getScope()->renameSymbol(sym,newname);
-        //        sym->getScope()->setAttribute(sym,Varnode::namelock); }
         if !newname.is_empty() && newname != name {
             lm.rename_symbol(sym, &newname)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
@@ -2715,23 +2669,18 @@ decomp_command!(
         let fd = dcp.fd.as_mut().expect("fd checked Some above");
         fd.clear();
 
-        // C++: scope = dcp->fd->getScopeLocal()->discoverScope(loc,size,pc);
-        //      if (scope == 0) scope = dcp->fd->getScopeLocal();
-        // The W4 scope hierarchy is not exposed across this seam, so a varnode
+        // The W4 scope hierarchy is not exposed across this boundary, so a varnode
         // with no natural sub-scope binds straight to the function-local scope
         // (the C++ fallback arm, which is taken for register storage like %EAX).
         let _ = (size, &pc);
         let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
             IfaceError::execution("Function has no local scope (no stack space)")
         })?;
-        // C++: sym = scope->addSymbol(name,ct,loc,pc)->getSymbol().
         let sym = scope_local
             .add_symbol(&name, ct, &loc, &pc)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        // scope->setAttribute(sym,Varnode::typelock); sym->setIsolated(true);
         scope_local.set_attribute(sym, varnode_flags::typelock);
         scope_local.set_symbol_isolated(sym, true);
-        // if (name.size() > 0) scope->setAttribute(sym,Varnode::namelock);
         if !name.is_empty() {
             scope_local.set_attribute(sym, varnode_flags::namelock);
         }
@@ -2768,7 +2717,7 @@ decomp_command!(
         // C++: Varnode *vn = dcp->readVarnode(s) — parse + resolve the varnode.
         let (loc, defsize, pc, uq) = parse_varnode(prog, s).map_err(IfaceError::parse)?;
         // The DynamicHash collision budget (glb->dynamic_hash_maxdup_high) and the
-        // EquateSymbol's getBase(1,TYPE_UNKNOWN) type are the two merged-tree seams
+        // EquateSymbol's getBase(1,TYPE_UNKNOWN) type are the two merged-tree boundaries
         // build_dynamic_symbol takes as parameters; resolve both from the arch.
         let maxduplicates: u32 = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
         let base1 = prog
@@ -2780,7 +2729,6 @@ decomp_command!(
         let vn = read_varnode(fd, &loc, defsize, &pc, uq)
             .map_err(IfaceError::execution)?
             .ok_or_else(|| IfaceError::execution("Requested varnode does not exist"))?;
-        // C++: if (!vn->isConstant()) throw "Can only force format on a constant".
         let v = fd
             .vbank()
             .get(vn)
@@ -2788,8 +2736,6 @@ decomp_command!(
         if !v.is_constant() {
             return Err(IfaceError::execution("Can only force format on a constant"));
         }
-        // C++: mt = vn->getType()->getMetatype();
-        //      if (mt!=TYPE_INT && mt!=TYPE_UINT && mt!=TYPE_UNKNOWN) throw "...".
         let mt = v.get_type().get_metatype();
         if mt != type_metatype::TYPE_INT
             && mt != type_metatype::TYPE_UINT
@@ -2799,15 +2745,12 @@ decomp_command!(
                 "Can only force format on integer type constant",
             ));
         }
-        // C++: dcp->fd->buildDynamicSymbol(vn).
         let fd = dcp.fd.as_mut().expect("fd checked Some above");
         fd.build_dynamic_symbol(vn, maxduplicates, base1)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        // C++: sym = vn->getHigh()->getSymbol(); if (sym==0) throw "Unable to create symbol".
         let sym = fd
             .vn_high_equate_symbol(vn)
             .ok_or_else(|| IfaceError::execution("Unable to create symbol"))?;
-        // C++: format = Datatype::encodeIntegerFormat(formatString).
         s.skip_ws();
         let format_string = s.read_token();
         let format: kuna_base::types::uint4 = match format_string.as_str() {
@@ -2822,8 +2765,6 @@ decomp_command!(
                 )))
             }
         };
-        // C++: sym->getScope()->setDisplayFormat(sym,format);
-        //      sym->getScope()->setAttribute(sym,Varnode::typelock);
         let scope_local = fd
             .get_scope_local_mut()
             .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
@@ -2895,7 +2836,7 @@ decomp_command!(
 ///
 /// C++ wraps the pieces in a full `FuncProto` (`setInternal`/`setPieces`) and
 /// stores it in the function's `Override`.  The W4 `applyPrototype` consume
-/// (`FlowInfo::queryCall`) is still seamed (LOSS-031 neighborhood), so this wrapper
+/// (`FlowInfo::queryCall`) is still stubbed (LOSS-031 neighborhood), so this wrapper
 /// only needs to round-trip the pieces; `encode`/`print_raw` (debug-only surfaces,
 /// not exercised by the datatest corpus) are faithful stubs.
 struct PiecesProtoOverride {
@@ -2904,7 +2845,7 @@ struct PiecesProtoOverride {
 
 impl kuna_decomp::overrides::FuncProtoOverride for PiecesProtoOverride {
     fn set_override(&mut self, _val: bool) {
-        // C++ FuncProto::setOverride sets a flag consumed by the (seamed)
+        // C++ FuncProto::setOverride sets a flag consumed by the (stubbed)
         // applyPrototype; the pieces carry no such flag, so this is a no-op until
         // the W4 FuncProto-backed override lands.
     }
@@ -2935,16 +2876,12 @@ decomp_command!(
     /// function's `Override` (C++ `dcp->fd->getOverride().insertProtoOverride`).
     IfcProtooverride,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++: if (dcp->fd==0) throw "No function selected".
         if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function selected"));
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_ref().expect("conf present when fd present");
-        // C++ Address callpoint( parse_machaddr(s,discard,*dcp->conf->types) ).
         let (callpoint, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
-        // C++ for(i..numCalls) if (getCallSpecs(i)->getOp()->getAddr()==callpoint) break;
-        //      if (i==numCalls) throw "No call is made at this address".
         let fd = dcp.fd.as_ref().expect("fd present");
         let mut found = false;
         for i in 0..fd.num_calls() {
@@ -2968,7 +2905,7 @@ decomp_command!(
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // C++ builds a FuncProto (setInternal + setPieces) and
         // insertProtoOverride(callpoint, newproto).  The W4 `applyPrototype` consume
-        // (FlowInfo::queryCall) is still seamed (LOSS-031 neighborhood), so the
+        // (FlowInfo::queryCall) is still stubbed (LOSS-031 neighborhood), so the
         // override is stored but not yet applied at flow time; the command succeeds
         // (the script proceeds) exactly as C++.
         // The kuna console rebuilds the IR on `decompile`, dropping this fd's
@@ -3270,17 +3207,14 @@ decomp_command!(
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_ref().expect("conf checked non-None above");
-        // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
         let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         // C++ skips ws then reads char-by-char to EOL as the comment body.
         s.skip_ws();
         let comment = s.rest();
-        // uint4 type = dcp->conf->print->getInstructionComment();
         let func_addr = dcp.fd.as_ref().expect("fd checked non-None above").get_address().clone();
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         let arch = prog.arch_mut();
         let ctype = arch.print().instruction_comment_flags();
-        // dcp->conf->commentdb->addComment(type, fd->getAddress(), addr, comment).
         arch.commentdb.add_comment(ctype, &func_addr, &addr, &comment);
         Ok(())
     }
@@ -3448,8 +3382,6 @@ decomp_command!(
         let func_name = s.read_token();
 
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-        // C++ injectid = pcodeinjectlib->getPayloadId(CALLFIXUP_TYPE, fixupName);
-        //      if (injectid < 0) throw "Unknown fixup: ".
         let injectid = prog
             .arch()
             .pcodeinjectlib
@@ -3543,7 +3475,6 @@ decomp_command!(
                 Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT => t,
                 _ => return Err(IfaceError::parse("Base-type must be a structure")),
             };
-            // ptrto = TypePointerRel::getPtrToFromParent(bt, off, *types).
             let ptrto = prog
                 .arch()
                 .types()
@@ -3934,7 +3865,7 @@ pub fn render_engine_error(
 /// C++ free function `mainloop(IfaceStatus *status)` (`ifacedecomp.cc`): execute
 /// commands as they become available.
 ///
-/// Faithful transcription of the nested loop: drain the current input stream
+/// Drives the nested loop: drain the current input stream
 /// (writing the prompt and running each command via [`execute`]), then break on
 /// `done`, break if there is no script to pop, else `popScript` and continue.
 /// The C++ `optr->flush()` is a no-op in the buffer-backed [`IfaceStatus`] (the
@@ -3943,7 +3874,7 @@ pub fn mainloop(status: &mut IfaceStatus) {
     loop {
         while !status.is_stream_finished() {
             status.write_prompt();
-            // C++ status->optr->flush(); — no-op against the in-memory buffer.
+            // C++ optr->flush() — no-op against the in-memory buffer.
             execute(status);
         }
         if status.done {

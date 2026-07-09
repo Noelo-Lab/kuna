@@ -1,18 +1,7 @@
 //! The Rust `decomp_dbg`: the interactive decompiler console (the same command
 //! surface as the C++ binary of the same name).
 //!
-//! Port of `decompiler/cpp/consolemain.cc` `main()`:
-//!
-//! ```text
-//!   parse -i <initscript> / -s <specpath> (and -sleighpath)        // arg loop
-//!   discover the ghidra root / SLEIGHHOME                          // spec roots
-//!   startDecompilerLibrary(root, extrapaths)                       // (recorded)
-//!   IfaceTerm("[decomp]> ", cin, cout)                             // the console
-//!   IfaceCapability::registerAllCommands(status)                   // decomp + kuna
-//!   status->registerCom(IfcLoadFile, "load","file") (+ save/...)   // console-only
-//!   mainloop(status)                                               // the command loop
-//!   retval = status->isInError() ? 1 : 0
-//! ```
+//! Port of `decompiler/cpp/consolemain.cc` `main()`.
 //!
 //! The kuna Rust [`IfaceStatus`] accumulates command output in an in-memory
 //! `optr` buffer and bulk output in a `fileoptr` redirect (see `interface.rs`);
@@ -40,7 +29,6 @@ use kuna_console::kuna_console::register_kuna_commands;
 
 fn main() -> ExitCode {
     // --- argument parsing (consolemain.cc:183) ----------------------------
-    // while ((i<argc) && argv[i][0]=='-'): -i <initscript>, -s <specpath>.
     // kuna also accepts the long `-sleighpath <dir>` the Python tooling may pass.
     let args: Vec<String> = std::env::args().collect();
     let mut spec_roots: Vec<String> = Vec::new();
@@ -88,7 +76,7 @@ fn main() -> ExitCode {
     }
     let mut status = IfaceTerm::into_status("[decomp]> ", &input);
 
-    // IfaceCapability::registerAllCommands(status): the decompiler + kuna modules.
+    // C++: registerAllCommands, split into the decomp + kuna modules.
     register_decomp_commands(&mut status);
     register_kuna_commands(&mut status);
     // Console-only commands (consolemain.cc main()): load file (save/restore/addpath
@@ -123,7 +111,7 @@ fn run_console(status: &mut IfaceStatus) -> u8 {
     loop {
         while !status.is_stream_finished() {
             status.write_prompt();
-            // C++ status->optr->flush(); the prompt + any prior output drain now.
+            // The prompt + any prior output drain now.
             execute(status);
             drain_stdout(status, &mut stdout);
             sync_redirect_file(status);

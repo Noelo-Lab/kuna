@@ -22,7 +22,7 @@
 //! Python tools (`kuna/decompile.py`) and the datatests feed, which is what the
 //! `KUNA_ENGINE=rust` path is wired to drive.
 //!
-//! ## Symbol resolution (the `readLoaderSymbols`/`queryFunction` seam)
+//! ## Symbol resolution (the `readLoaderSymbols`/`queryFunction` hook)
 //!
 //! The W4 symbol-table population from the loader (`Architecture::readLoaderSymbols`
 //! → `Scope::addFunction`) and `Scope::queryFunction` are later port items.  The
@@ -80,7 +80,7 @@ pub struct ConsoleProgram {
     /// resolution.
     registry: IdRegistry,
     /// The binaryimage's function symbols (name → entry address), read once at
-    /// load (the `readLoaderSymbols` seam).
+    /// load (the `readLoaderSymbols` hook).
     symbols: Vec<ProgramSymbol>,
     /// A human-readable description of the loaded program (C++
     /// `conf->getDescription()`).
@@ -141,8 +141,8 @@ impl ConsoleProgram {
         &self.registry
     }
 
-    /// The number of function symbols read from the binaryimage (the
-    /// `readLoaderSymbols` seam yield).
+    /// The number of function symbols read from the binaryimage (what the
+    /// `readLoaderSymbols` hook yields).
     pub fn num_symbols(&self) -> usize {
         self.symbols.len()
     }
@@ -153,7 +153,7 @@ impl ConsoleProgram {
     }
 
     /// Resolve a function entry address by symbol name (the `queryFunction`
-    /// seam): scan the binaryimage symbols read at load.  `None` if no symbol of
+    /// hook): scan the binaryimage symbols read at load.  `None` if no symbol of
     /// that name exists.
     pub fn lookup_symbol(&self, name: &str) -> Option<Address> {
         self.symbols.iter().find(|s| s.name == name).map(|s| s.addr.clone())
@@ -183,7 +183,7 @@ impl ConsoleProgram {
     /// name→addr map, populated by the Function-symbol commit arm), this reaches the
     /// `Database` directly, so it sees the **Data** symbols the analysis commit
     /// installs via `add_symbol_mapped` (the RTTI `<Class>::vftable` /
-    /// `<Class>::RTTI_*` labels the `rtti` pass emits). The verification seam for
+    /// `<Class>::RTTI_*` labels the `rtti` pass emits). The verification hook for
     /// the gated MSVC-RTTI recovery e2e.
     pub fn has_symbol_named(&self, full_name: &str) -> bool {
         let db = &self.arch().symboltab;
@@ -199,7 +199,7 @@ impl ConsoleProgram {
     /// (`find_function_across_scopes`, the no-return/FID arm's resolver), so it sees a
     /// namespaced virtual-method function (e.g. `Box::vftable_0` in scope `Box`).
     ///
-    /// The verification seam for the MSVC-RTTI **vftable** e2e (R3): a vtable slot's
+    /// The verification hook for the MSVC-RTTI **vftable** e2e (R3): a vtable slot's
     /// target VA should now resolve to a named virtual method — the virtual dispatch
     /// `(**(code **)*p)()` points at this function instead of a bare `DAT_*`.
     pub fn function_named_at(&self, vma: u64) -> Option<String> {
@@ -242,7 +242,7 @@ impl ConsoleProgram {
         Ok(())
     }
 
-    /// Register a console-created function symbol (the `map function` seam): make
+    /// Register a console-created function symbol (the `map function` hook): make
     /// `name`->`addr` resolvable by `load function <name>`.  C++ `Scope::addFunction`
     /// installs the symbol in the symbol table; the kuna console additionally needs
     /// the name->address entry so the (binaryimage-symbol-backed) `load function`
@@ -296,7 +296,7 @@ impl ConsoleProgram {
 
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
     /// `--option <id> on|off` enable flags — the deferred half of the analysis
-    /// seam (conflict #4). Called from `IfcReadSymbols` (`read symbols`), which
+    /// boundary (conflict #4). Called from `IfcReadSymbols` (`read symbols`), which
     /// runs AFTER the CLI's `option` lines, so a disabled pass's facts are
     /// dropped here rather than committed.
     ///
@@ -665,7 +665,7 @@ pub fn bootstrap_program(
     // gate / corpus_bootstrap.rs).
     arch.open_image(unsafe { &*manager_ptr }, &registry)?;
 
-    // Read the loader symbols (the readLoaderSymbols seam) from the opened image
+    // Read the loader symbols (the readLoaderSymbols hook) from the opened image
     // BEFORE handing it to the engine: the LoadImageXml exposes name+address.
     let symbols = read_loader_symbols(arch.loader());
 
@@ -740,7 +740,7 @@ pub fn bootstrap_program(
 ///
 /// Format-neutral by construction: it drives the `object`-crate
 /// [`ObjectLoadImage`] (which funnels every format-specific decision through the
-/// `ObjectFormat` seam) in place of the XML loader, so it serves ELF, PE,
+/// `ObjectFormat` boundary) in place of the XML loader, so it serves ELF, PE,
 /// Mach-O and COFF uniformly. Open the object (parse
 /// machine/segments/symbols), take the SLEIGH language id straight off the
 /// loader's `getArchType()` (the `resolveArchitecture` loader branch — C++
@@ -926,7 +926,7 @@ pub fn bootstrap_from_object(
 }
 
 /// Commit a merged [`kuna_analysis::pass::AnalysisOutput`] into the engine's
-/// symbol/type tables — the kuna-console side of the kuna-analysis pass seam.
+/// symbol/type tables — the kuna-console side of the kuna-analysis pass boundary.
 ///
 /// Each fact is **additive** (only adds knowledge) and **idempotent** against the
 /// funcsym stream `read_loader_symbols` already committed (the `find_function`
@@ -1250,7 +1250,7 @@ fn commit_analysis_output(
     //    constant over `[func_addr, func_addr+1)` via `create_set` — the exact
     //    `IfcSettrackedrange` recipe (ifacedecomp.rs IfcSettrackedrange). The
     //    per-function `build_arch_handle` then snapshots the track base into the
-    //    seam (`seam.tracked_sets = clone_trackbase()`), and `ActionConstbase` (S3)
+    //    per-function ArchContext (`tracked_sets = clone_trackbase()`), and `ActionConstbase` (S3)
     //    emits `COPY #val -> reg` at the entry block, which constant propagation
     //    consumes (so a MIPS PIC `$gp`-relative load resolves). Committed here, at
     //    `read symbols`, BEFORE any `load function` decode — the correct timing.
@@ -1501,7 +1501,7 @@ pub fn bootstrap_from_file(
 }
 
 /// Iterate the opened [`LoadImageXml`]'s symbol records (name → address) into a
-/// [`ProgramSymbol`] list (the `readLoaderSymbols` seam).
+/// [`ProgramSymbol`] list (the `readLoaderSymbols` hook).
 fn read_loader_symbols(loader: Option<&LoadImageXml>) -> Vec<ProgramSymbol> {
     match loader {
         Some(l) => read_loader_symbols_generic(l),

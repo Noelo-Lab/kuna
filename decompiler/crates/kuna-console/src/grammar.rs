@@ -32,7 +32,7 @@
 //!   `testparamstore` drive (`parse_protopieces` then
 //!   `ProtoModel::assignParameterStorage`).
 //!
-//! # What is a seam (NOT yet ported — see LOSS-006 / LOSS-090 restoration)
+//! # What is stubbed (NOT yet ported — see LOSS-006 / LOSS-090 restoration)
 //!
 //! The struct/union/enum *construction* actions ([`CParse::new_struct`],
 //! [`CParse::new_union`], [`CParse::new_enum`]) and the `parse_C` store-writes
@@ -40,12 +40,12 @@
 //! TypeFactory-*mutating* orchestrators (`assignRawFields`, `setEnumValues`,
 //! `getTypedef`, `setName`) and an `Architecture` prototype-model registry
 //! (`getModel` / `defaultfp` / `setPrototype`) that the W6/W4 ports left as
-//! seams (the kuna `Architecture` has **no** type-factory field or model
+//! stubs (the kuna `Architecture` has **no** type-factory field or model
 //! registry; `// STUB(w6-fspec-2)`).  The grammar *parses* these forms (the AST
 //! is built and `is_valid` runs), but completing them errs with the same
 //! C++-faithful explain text, deferred to the type-factory/model wave.  The
 //! nested-function-pointer `buildType` path (`FunctionModifier::modType` ->
-//! `getTypeCode(PrototypePieces)`) is likewise a seam for the same reason
+//! `getTypeCode(PrototypePieces)`) is likewise a stub for the same reason
 //! (top-level prototypes go through [`TypeDeclarator::get_prototype`], which does
 //! **not** need `getTypeCode`).
 //!
@@ -795,13 +795,10 @@ impl TypeModifier {
                 // FunctionModifier::modType (grammar.cc:2306-2325): build a
                 // PrototypePieces describing the pointed-to function and intern a
                 // TypeCode for it via glb->types->getTypeCode(proto).
-                //
-                //   if (base == 0) proto.outtype = getTypeVoid(); else outtype = base;
                 let outtype = match base {
                     Some(b) => b,
                     None => factory.get_type_void()?,
                 };
-                // getInTypes(proto.intypes, glb).
                 let intypes = function_get_in_types(paramlist, factory, org)?;
                 // Varargs is encoded as an extra null pointer in paramlist; the
                 // Rust `paramlist` never holds that null (CParse::newFunc popped it
@@ -954,7 +951,6 @@ impl TypeDeclarator {
     /// modifications to the basetype in **reverse** order of binding.
     pub fn build_type(&self, factory: &dyn TypeFactory, org: &DataOrg) -> KunaResult<Rc<Datatype>> {
         let mut restype = self.basetype.clone();
-        // iter = mods.end(); while(iter != mods.begin()) { --iter; ... }
         for m in self.mods.iter().rev() {
             restype = Some(m.mod_type(restype, factory, org)?);
         }
@@ -996,7 +992,6 @@ impl TypeDeclarator {
         // Construct the output type: apply every modification EXCEPT the leading
         // function modifier (grammar.cc:812-820).
         let mut outtype = self.basetype.clone();
-        // iter = mods.end(); --iter; while(iter != mods.begin()) { apply; --iter; }
         for m in self.mods.iter().skip(1).rev() {
             outtype = Some(m.mod_type(outtype, factory, org)?);
         }
@@ -1286,7 +1281,6 @@ impl<'a> CParse<'a> {
                 _ => {}
             }
         }
-        // glb->types->findByName(nm).
         if let Ok(Some(tp)) = self.factory.find_by_name(nm) {
             return IdentClass::TypeName(tp);
         }
@@ -2041,12 +2035,12 @@ impl<'a> CParse<'a> {
     ///
     /// Builds the field list and would call `glb->types->assignRawFields(...)`.
     /// The mutating factory orchestrator (`assignRawFields` re-keys the interned
-    /// stub) is a W6 type-factory seam, so this errs after validating the
+    /// stub) is a W6 type-factory boundary, so this errs after validating the
     /// declarators (preserving the C++ "Invalid structure declarator" message).
     /// // STUB(w6-fspec-2) — see LOSS-006 restoration.
     fn new_struct(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        // res = glb->types->getTypeStruct(ident): create the (incomplete) stub for
-        // recursion before any field references it.
+        // Create the (incomplete) stub for recursion before any field references
+        // it (C++ getTypeStruct).
         let res = self.factory.get_type_struct(ident)?;
         let is_big_endian = self.factory.is_big_endian();
         let mut sublist: Vec<TypeField> = Vec::new();
@@ -2059,7 +2053,6 @@ impl<'a> CParse<'a> {
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
             if decl.get_num_bits() != 0 {
-                // emplace_back(sublist.size(),numBits,isBigEndian,ident,type)
                 bitlist.push(TypeBitField::new(
                     sublist.len() as int4,
                     decl.get_num_bits(),
@@ -2068,12 +2061,11 @@ impl<'a> CParse<'a> {
                     field_type,
                 ));
             } else {
-                // emplace_back(0,-1,ident,type)
                 sublist.push(TypeField::new(0, -1, decl.get_identifier(), field_type));
             }
         }
-        // glb->types->assignRawFields(res,sublist,bitlist); on LowlevelError, the
-        // C++ records setError + destroyType + returns null (a parse failure).
+        // On a LowlevelError the C++ records setError + destroyType + returns
+        // null (a parse failure).
         match self.factory.assign_raw_fields_struct(&res, sublist, bitlist) {
             Ok(completed) => Ok(completed),
             Err(err) => {
@@ -2098,7 +2090,7 @@ impl<'a> CParse<'a> {
 
     /// C++ `CParse::newUnion` (`grammar.cc:1096-1121`).
     fn new_union(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        // res = glb->types->getTypeUnion(ident): the (incomplete) stub.
+        // The (incomplete) stub (C++ getTypeUnion).
         let res = self.factory.get_type_union(ident)?;
         let mut sublist: Vec<TypeField> = Vec::new();
         for (i, decl) in declist.iter().enumerate() {
@@ -2108,7 +2100,6 @@ impl<'a> CParse<'a> {
                 return Err(KunaError::parse(self.lasterror.clone()));
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
-            // emplace_back(i,0,ident,type)
             sublist.push(TypeField::new(i as int4, 0, decl.get_identifier(), field_type));
         }
         match self.factory.assign_raw_fields_union(&res, sublist) {
@@ -2140,9 +2131,9 @@ impl<'a> CParse<'a> {
     /// `TypeEnum::assignValues` (the duplicate-value check + free-value fill,
     /// `Datatype::assign_values`).  Installing the resulting value-map into the
     /// interned enum stub (`glb->types->setEnumValues`) is the W6 type-factory
-    /// seam, so this errs after the value computation.  // STUB(w6-fspec-2)
+    /// boundary, so this errs after the value computation.  // STUB(w6-fspec-2)
     fn new_enum(&mut self, ident: &str, vecenum: Vec<Enumerator>) -> KunaResult<Rc<Datatype>> {
-        // res = glb->types->getTypeEnum(ident): an interned (incomplete) enum stub.
+        // An interned (incomplete) enum stub (C++ getTypeEnum).
         let res = self.factory.get_type_enum(ident)?;
         let mut namelist: Vec<String> = Vec::new();
         let mut vallist: Vec<uintb> = Vec::new();
@@ -2152,12 +2143,11 @@ impl<'a> CParse<'a> {
             vallist.push(e.value);
             assignlist.push(e.constantassigned);
         }
-        // TypeEnum::assignValues(namemap,namelist,vallist,assignlist,res): reports
-        // duplicate-value errors with the same explain text as the C++.
+        // Reports duplicate-value errors with the same explain text as the C++
+        // (C++ TypeEnum::assignValues).
         match Datatype::assign_values(res.get_size(), res.get_name(), &namelist, &vallist, &assignlist)
         {
             Ok(namemap) => {
-                // glb->types->setEnumValues(namemap, res).
                 match self.factory.set_enum_values(&res, namemap) {
                     Ok(completed) => Ok(completed),
                     Err(err) => {
@@ -2197,7 +2187,7 @@ impl<'a> CParse<'a> {
     /// `lasterror` (the C++ `yyparse()!=0` -> `runParse` returns false; the caller
     /// then `throw ParseError(getError())`).  `Err(e)` = a *thrown exception*
     /// (a `LowlevelError` from an action — e.g. the struct/enum construction
-    /// seam — that the C++ does **not** catch in `runParse`; it propagates past
+    /// boundary — that the C++ does **not** catch in `runParse`; it propagates past
     /// `parse_protopieces`).  The discriminator is whether the action recorded a
     /// `lasterror`: parse failures set it, thrown exceptions do not.
     fn parse_stream(&mut self, content: Vec<u8>, doctype: DocType) -> KunaResult<bool> {
@@ -2207,7 +2197,7 @@ impl<'a> CParse<'a> {
             Ok(()) => Ok(true),
             Err(e) => {
                 if self.lasterror.is_empty() {
-                    // No recorded parse error: this is a thrown exception (seam /
+                    // No recorded parse error: this is a thrown exception (boundary /
                     // LowlevelError), which the C++ runParse never catches.
                     Err(e)
                 } else {
@@ -2334,10 +2324,8 @@ pub fn parse_c(
             return Err(KunaError::parse("Missing identifier for typedef"));
         }
         if ct.get_metatype() == type_metatype::TYPE_STRUCT {
-            // glb->types->setName(ct,decl->getIdentifier()).
             factory.set_name(&ct, decl.get_identifier())?;
         } else {
-            // glb->types->getTypedef(ct,decl->getIdentifier(),0,0).
             factory.get_typedef(&ct, decl.get_identifier(), 0, 0)?;
         }
     } else {
