@@ -115,8 +115,6 @@ impl TspecModel {
 
         let mut manager = AddrSpaceManager::new();
 
-        // openElement(ELEM_SLEIGH); readBool(ATTRIB_BIGENDIAN);
-        // readUnsignedInteger(ATTRIB_UNIQBASE)   (ghidra_translate.cc:164-166)
         let (big_endian, unique_base) = {
             let mut dec = XmlDecode::new_with_root(&manager, registry, &root, 0);
             dec.open_element_id(&ELEM_SLEIGH)?;
@@ -158,8 +156,6 @@ impl TspecModel {
         };
         manager.set_default_code_space(def_index)?;
 
-        // for(;;) { peek ELEM_TRUNCATE_SPACE; TruncationTag::decode;
-        // truncateSpace(tag); }  (ghidra_translate.cc:168-174)
         for child in root.get_children() {
             if child.get_name() != "truncate_space" {
                 continue;
@@ -248,7 +244,6 @@ impl<R: Read + 'static, W: Write + 'static> GhidraTranslate<R, W> {
             unique_base,
         } = TspecModel::decode(tspec, registry)?;
         let mut base = TranslateBase::new();
-        // C++ Translate::setBigEndian / setUniqueBase (via decode).
         base.set_big_endian(big_endian);
         base.set_unique_base(unique_base as u32); // uintb -> uintm (uint4), as C++ setUniqueBase
                                                   // Downstream stages (float-op typing) expect IEEE formats present.
@@ -303,7 +298,6 @@ impl<R: Read, W: Write> RegisterLookup for GhidraTranslate<R, W> {
             // C++ throws SleighError (a LowlevelError).
             return Err(KunaError::lowlevel(format!("No register named {nm}")));
         }
-        // C++ Address::decode(decoder, regsize) -> (addr, size).
         let (regaddr, regsize) = Address::decode_sized(&mut decoder)?;
         let vndata = VarnodeStorage {
             space: regaddr.get_space().cloned(),
@@ -362,7 +356,7 @@ impl<R: Read, W: Write> RegisterLookup for GhidraTranslate<R, W> {
             size: size as u32,
         };
         // C++ getExactRegisterName opens with `addr2nm.find(vndata)` and returns
-        // the cached name before any query (ghidra_translate.cc:96-98).  A hit is
+        // the cached name before any query.  A hit is
         // keyed by a cached FULL register's exact vndata, so it already satisfies
         // the exact-size requirement — no size re-check needed.  Mirrors the same
         // short-circuit in `get_register_name`.

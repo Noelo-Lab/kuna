@@ -13,7 +13,7 @@
 //! the demonstrator for the pattern the whole phase turns on: the engine,
 //! mid-decompile, re-entrantly calls a provider (here `load_fill`), which
 //! issues a callback query on the *same* streams the command response is
-//! being written to (`SharedClient`, below).  Proving that seam plugs into a
+//! being written to (`SharedClient`, below).  Proving that hook plugs into a
 //! real kuna trait (`kuna_sleigh::loadimage::LoadImage`) with no change to
 //! the standalone engine is what de-risks the rest.  The remaining providers
 //! (`ContextGhidra`, the `ScopeGhidra` lazy symbol cache, `TypeFactoryGhidra`,
@@ -182,7 +182,7 @@ mod tests {
         let want = [0xde, 0xad, 0xbe, 0xef];
 
         let client = shared(get_bytes_response(&want));
-        // Exercise it through the trait object, proving the seam plugs in.
+        // Exercise it through the trait object, proving the hook plugs in.
         let mut loader: Box<dyn LoadImage> = Box::new(GhidraLoadImage::new(Rc::clone(&client)));
 
         assert_eq!(loader.get_arch_type(), b"ghidra");

@@ -158,12 +158,12 @@ fn get_byte<R: Read>(s: &mut R) -> WireResult<u8> {
 /// one *or more* zero bytes are accepted before the 0x01.
 pub fn read_to_any_burst<R: Read>(s: &mut R) -> WireResult<u8> {
     loop {
-        // do { c = s.get(); } while (c > 0);   -- skip non-zero garbage
+        // skip non-zero garbage
         let mut c = get_byte(s)?;
         while c > 0 {
             c = get_byte(s)?;
         }
-        // while (c == 0) c = s.get();          -- skip the zero run
+        // skip the zero run
         while c == 0 {
             c = get_byte(s)?;
         }

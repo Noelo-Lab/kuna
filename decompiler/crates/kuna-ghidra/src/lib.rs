@@ -35,7 +35,7 @@
 //!   dependency.
 //! - **Phase 2: the engine bridge** — an `ArchitectureGhidra` analog
 //!   backing kuna's loader/translator/scope/type/comment/string/cpool/
-//!   inject/context seams with the query client, plus `Funcdata::encode`
+//!   inject/context hooks with the query client, plus `Funcdata::encode`
 //!   and the marked-up C output for the decompileAt response.
 //! - **Phase 3: lazy scope/types** (the ScopeGhidra cache/holes model).
 //! - **Phase 4: GUI parity** (structureGraph, signature commands, ...).

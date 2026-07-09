@@ -20,7 +20,7 @@
 //!     `Total tests applied = N` / `Total passing tests = N` (the datatest
 //!     grammar) — produced by the ported [`run_test_files_with_specs`].
 //!
-//! The unit-test registry is the documented seam: the engine `TEST(...)` bodies
+//! The unit-test registry is the documented boundary: the engine `TEST(...)` bodies
 //! live in the crates' own `#[test]` functions (run by `cargo test`), not a
 //! constructor-time global registry, so an empty [`UnitTestSuite`] is run here
 //! (it prints the faithful `0/0 tests passed.` footer).  The DATATEST runner is
@@ -105,7 +105,7 @@ fn main() -> ExitCode {
 
     if run_unit_tests {
         // The engine unit tests run under `cargo test`; the harness binary runs an
-        // empty suite (the documented registry seam) and prints the faithful
+        // empty suite (the documented registry boundary) and prints the faithful
         // `0/0 tests passed.` footer the Python harness greps off stderr.
         let suite = UnitTestSuite::new();
         let mut buf = String::new();
