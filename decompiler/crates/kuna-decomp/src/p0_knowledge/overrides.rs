@@ -39,7 +39,7 @@
 //! value differs from the space's static delay, so the predicate stays `true`
 //! and the bump is never repeated.
 //!
-//! ### Seams
+//! ### Boundaries
 //!
 //! - The prototype override (`protoover : map<Address,FuncProto*>`) holds the W4
 //!   `FuncProto` (`fspec.cc`, not yet ported).  Its insert/query/encode/printRaw
@@ -117,7 +117,7 @@ pub mod flow_type {
 }
 
 // ---------------------------------------------------------------------------
-// FuncProto seam (override.hh: map<Address,FuncProto *> protoover)
+// FuncProto boundary (override.hh: map<Address,FuncProto *> protoover)
 // ---------------------------------------------------------------------------
 
 /// \brief The slice of the W4 `FuncProto` that [`Override`] drives.

@@ -12,18 +12,18 @@
 //! file beginning with `"<bi"` (a `<binaryimage>` tag) and an XML document whose
 //! root element is named `xml_savefile`.
 //!
-//! ## Wired vs. seamed
+//! ## Wired vs. stubbed
 //!
 //! - **Wired**: the capability (`isFileMatch`/`isXmlMatch`/`buildArchitecture`),
 //!   the `<binaryimage>` extraction (`buildLoader`'s tag lookup + image
 //!   construction), `adjustvma` decode, and the `restoreXml` document-walk that
 //!   registers the `binaryimage`/`specextensions`/`coretypes` child tags into
 //!   the `DocumentStorage`.
-//! - **Seamed**: `init(store)` (the W6/W8 `Architecture::init` flow — type
+//! - **Stubbed**: `init(store)` (the W6/W8 `Architecture::init` flow — type
 //!   factory, print language, spec decode), `encode` (the full `Encoder` +
 //!   `types->encodeCoreTypes` marshaling), and the `postSpecFile` chain's
 //!   `Architecture::postSpecFile` (which reaches the segmented-pointer +
-//!   read-only seams).  The image OPEN itself (`LoadImageXml::open` against the
+//!   read-only stubs).  The image OPEN itself (`LoadImageXml::open` against the
 //!   translator's manager) is wired and is exactly what the corpus bootstrap
 //!   gate drives.
 
@@ -45,7 +45,7 @@ use crate::sleigh_arch::SleighArchitecture;
 pub const ELEM_XML_SAVEFILE: ElementId = ElementId::new("xml_savefile", 236);
 
 // ---------------------------------------------------------------------------
-// XmlArchitectureCapability (xml_arch.hh:29)
+// XmlArchitectureCapability
 // ---------------------------------------------------------------------------
 
 /// \brief Extension for building an XML format capable Architecture (C++ `class
@@ -82,20 +82,18 @@ impl ArchitectureCapability for XmlArchitectureCapability {
     /// The C++ skips leading whitespace and reads three characters, matching
     /// `'<' 'b' 'i'` (the start of a `<binaryimage>` tag).
     fn is_file_match(&self, filename: &str) -> bool {
-        // ifstream s(filename); if (!s) return false;
         let bytes = match std::fs::read(filename) {
             Ok(b) => b,
             Err(_) => return false,
         };
-        // s >> ws; val1=s.get(); val2=s.get(); val3=s.get();
-        // `>> ws` skips leading whitespace; then read the next three chars (EOF
-        // yields the C++ `istream::get()` sentinel -1, which never equals a tag
-        // char — modeled here by a None that fails the match).
+        // Skip leading whitespace, then read the next three chars (EOF yields the
+        // C++ `istream::get()` sentinel -1, which never equals a tag char —
+        // modeled here by a None that fails the match).
         let mut it = bytes.iter().copied().skip_while(|c| c.is_ascii_whitespace());
         let val1 = it.next();
         let val2 = it.next();
         let val3 = it.next();
-        // (val1=='<')&&(val2=='b')&&(val3=='i')  // Probably <binaryimage> tag
+        // Probably <binaryimage> tag
         val1 == Some(b'<') && val2 == Some(b'b') && val3 == Some(b'i')
     }
 
@@ -108,7 +106,7 @@ impl ArchitectureCapability for XmlArchitectureCapability {
 }
 
 // ---------------------------------------------------------------------------
-// XmlArchitecture (xml_arch.hh:42)
+// XmlArchitecture
 // ---------------------------------------------------------------------------
 
 /// \brief An [`Architecture`](crate::architecture::Architecture) that loads
@@ -194,13 +192,11 @@ impl XmlArchitecture {
     /// `<binaryimage>` (C++ `throw LowlevelError("Could not find binaryimage
     /// tag")`).
     pub fn build_loader(&mut self, binaryimage: Rc<Element>) -> KunaResult<()> {
-        // const Element *el = store.getTag("binaryimage"); if null -> openDocument
-        //   -- the document open/extract is the caller's (it owns the store); the
-        //   resolved <binaryimage> element is passed in.
+        // The document open/extract is the caller's (it owns the store); the
+        // resolved <binaryimage> element is passed in.
         if binaryimage.get_name() != "binaryimage" {
             return Err(KunaError::lowlevel("Could not find binaryimage tag"));
         }
-        // loader = new LoadImageXml(getFilename(),el);
         let filename = self.sleigh.get_filename().to_string();
         self.loader = Some(LoadImageXml::new(&filename, binaryimage)?);
         Ok(())
@@ -208,8 +204,6 @@ impl XmlArchitecture {
 
     /// \brief Open the loaded image against the built translator (the wired core
     /// of C++ `XmlArchitecture::postSpecFile`, `xml_arch.cc:82`).
-    ///
-    /// `((LoadImageXml *)loader)->open(translate); if (adjustvma) loader->adjustVma(adjustvma);`
     ///
     /// STUB(W4/W6/W8): the C++ `postSpecFile` first calls
     /// `Architecture::postSpecFile` (the segmented-pointer + read-only-from-loader
@@ -223,9 +217,7 @@ impl XmlArchitecture {
             .loader
             .as_mut()
             .ok_or_else(|| KunaError::lowlevel("XmlArchitecture::postSpecFile: loader not built"))?;
-        // ((LoadImageXml *)loader)->open(translate);
         loader.open(manager, registry)?;
-        // if (adjustvma != 0) loader->adjustVma(adjustvma);
         if self.adjustvma != 0 {
             loader.adjust_vma(self.adjustvma);
         }
@@ -254,11 +246,7 @@ impl XmlArchitecture {
         adjustvma_str: &str,
         children: &[Rc<Element>],
     ) -> KunaResult<XmlRestore> {
-        // restoreXmlHeader(el);
         self.sleigh.restore_xml_header(name, target);
-        // istringstream s(adjustvma); s.unsetf(dec|hex|oct); s >> adjustvma;
-        //   -- the unset base means "auto-detect" (0x prefix -> hex, leading 0 ->
-        //   octal, else decimal), matching strtoll(...,0).
         self.adjustvma = parse_auto_base(adjustvma_str);
 
         // The C++ walks children in order: binaryimage, then specextensions, then
@@ -267,21 +255,18 @@ impl XmlArchitecture {
         let mut iter = children.iter();
         let mut registered: Vec<Rc<Element>> = Vec::new();
         let mut next = iter.next();
-        // if ((*iter)->getName() == "binaryimage") { register; ++iter; }
         if let Some(el) = next {
             if el.get_name() == "binaryimage" {
                 registered.push(Rc::clone(el));
                 next = iter.next();
             }
         }
-        // if ((*iter)->getName() == "specextensions") { register; ++iter; }
         if let Some(el) = next {
             if el.get_name() == "specextensions" {
                 registered.push(Rc::clone(el));
                 next = iter.next();
             }
         }
-        // if ((*iter)->getName() == "coretypes") { register; ++iter; }
         if let Some(el) = next {
             if el.get_name() == "coretypes" {
                 registered.push(Rc::clone(el));
@@ -289,7 +274,6 @@ impl XmlArchitecture {
             }
         }
         // init(store);  -- STUB(W6/W8): the type-factory/print/spec-decode flow.
-        // if (iter != list.end()) { register *iter; SleighArchitecture::restoreXml(store); }
         let rest = next.map(Rc::clone);
         Ok(XmlRestore { to_register: registered, rest })
     }

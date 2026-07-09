@@ -40,7 +40,7 @@
 //!   - the support structs [`ParameterPieces`], [`EffectRecord`],
 //!     [`PrototypePieces`], and the marker [`AssignActionResponse`].
 //!
-//! ## Seams
+//! ## Boundaries
 //!
 //! - `// STUB(w6-modelrules)` — [`ModelRule`] and the `AssignAction` machinery
 //!   live in `modelrules.cc` (owned by a later item in this wave).  Until then
@@ -56,7 +56,7 @@
 //!   yet.  Instead [`ProtoModel`] threads the [`AddrSpaceManager`] (for the
 //!   stack space and float-extension construction) and the [`TypeFactory`]
 //!   through the methods that need them; the registry-dependent paths
-//!   (`decode`, `ProtoModelMerged::decode`, `setScope`) return a seam error.
+//!   (`decode`, `ProtoModelMerged::decode`, `setScope`) return a boundary error.
 //!   [`PrototypePieces`] carries no `model` back-pointer for the same reason.
 //!   The reserved [`FSPEC_SPACE_NAME`] is the only `FspecSpace` survivor (the
 //!   full `FspecSpace`/`FuncCallSpecs` is `fspec-3`).
@@ -65,10 +65,10 @@
 //!   `ProtoModel`/`Architecture` wiring that are not yet ported.  These methods
 //!   return `Err(KunaError::lowlevel("STUB(W4) ..."))`; the pure-algorithm
 //!   surfaces above do not depend on them and are exercised directly in tests
-//!   via the `seed`/`push_entry` builder seams.  The `FuncProto` input/output
+//!   via the `seed`/`push_entry` builder hooks.  The `FuncProto` input/output
 //!   trial-update paths (`updateInputTypes`, `updateOutputTypes`, ...) and
 //!   `ProtoStoreSymbol` reach `Funcdata`/`Varnode`/`Scope`/`Symbol` (W3/W4) and
-//!   carry their own seam errors.
+//!   carry their own boundary errors.
 //!
 //! Integer model per ADR 0003: `uintb->u64`, `intb->i64`, `int4->i32`,
 //! `uint4->u32`; arithmetic that the C++ relies on wrapping uses [`Wrap`].
@@ -825,7 +825,7 @@ impl ParamEntry {
         ))
     }
 
-    /// Test-and-tooling seam: build a fully-formed exclusion/resource entry
+    /// Test-and-tooling hook: build a fully-formed exclusion/resource entry
     /// without going through the (W4) decode path, running the post-decode
     /// resolution chain against the entries decoded before it (`prev_list`).
     /// Mirrors the tail of C++ `decode`.  Returns the resolved entry.
@@ -1165,8 +1165,6 @@ impl ParamTrial {
     /// which preserve the storage-list order of the `list<ParamEntry>`.
     pub fn cmp(&self, b: &ParamTrial, entries: &[ParamEntry]) -> std::cmp::Ordering {
         use std::cmp::Ordering::*;
-        // if (entry == null) return false;  if (b.entry == null) return true;
-        //
         // C++ `operator<`: when self.entry is null, `self < b` is false (line 1898);
         // when b.entry is null (self.entry non-null), `self < b` is true (line 1899).
         // Under the strict weak ordering these mean: two null-entry trials are
@@ -1595,11 +1593,9 @@ impl ParameterPieces {
         most_to_least: bool,
         manager: &AddrSpaceManager,
     ) -> KunaResult<()> {
-        // if (!mostToLeast && pieces.size() > 1) reverse the list
         if !most_to_least && pieces.len() > 1 {
             pieces.reverse();
         }
-        // JoinRecord::mergeSequence(pieces, glb->translate);
         // The kuna join machinery operates on `VarnodeStorage`; convert the
         // `VarnodeData` triples in place, merge contiguous ranges through the
         // manager's installed RegisterLookup (the C++ `glb->translate`), then
@@ -1612,7 +1608,6 @@ impl ParameterPieces {
             let lookup = Rc::clone(lookup);
             JoinRecord::merge_sequence(&mut seq, lookup.as_ref());
         }
-        // if (pieces.size() == 1) { addr = pieces[0].getAddr(); return; }
         if seq.len() == 1 {
             let p = &seq[0];
             self.addr = Address::new(
@@ -1627,8 +1622,6 @@ impl ParameterPieces {
             }).collect();
             return Ok(());
         }
-        // JoinRecord *joinRecord = glb->findAddJoin(pieces, 0);
-        // addr = joinRecord->getUnified().getAddr();
         let join_record = manager.find_add_join(&seq, 0)?;
         let unified = join_record.get_unified();
         self.addr = Address::new(
@@ -2275,7 +2268,6 @@ impl ParamListStandard {
             if !hiaddr.is_contiguous(hisize, loaddr, losize) {
                 return false;
             }
-            // C++: ((hiaddr.offset - base) % align) != 0  (unsigned)
             if !(hiaddr.get_offset().wsub(e_hi.get_base())).is_multiple_of(e_hi.get_align() as u64) {
                 return false;
             }
@@ -2439,7 +2431,7 @@ impl ParamListStandard {
     }
 
     /// Fill in the Address and details for the given parameter (C++
-    /// `assignAddress`).  With no model rules (the current seam state) this
+    /// `assignAddress`).  With no model rules (the current boundary state) this
     /// falls straight through to the fallback.  // STUB(w6-modelrules)
     #[allow(clippy::too_many_arguments)] // mirrors C++ ParamListStandard::assignAddress
     pub fn assign_address(
@@ -2568,7 +2560,7 @@ impl ParamListStandard {
     /// a hidden pointer parameter) is now wired through the `AddrSpaceManager`'s
     /// default data space (C++ `typefactory.getArch()->getDefaultDataSpace()`)
     /// and the type factory's `getTypePointer` — closing the w10-struct-return
-    /// seam so struct-returning prototypes apply instead of graceful-degrading.
+    /// boundary so struct-returning prototypes apply instead of graceful-degrading.
     fn assign_map_standard_out(
         &self,
         proto: &PrototypePieces,
@@ -3340,19 +3332,18 @@ impl ParamListStandard {
         ))
     }
 
-    // -- test/tooling builder seams -----------------------------------------
+    // -- test/tooling builder hooks -----------------------------------------
 
     /// Append a fully-formed [`ParamEntry`], replicating the non-marshaling
     /// tail of C++ `parsePentry` (with `splitFloat == true`, the default):
     /// update the resource-section boundaries, `spacebase`, and `numgroup`.
-    /// Builder seam for tests and the model builders until the W4 decode path
+    /// Builder hook for tests and the model builders until the W4 decode path
     /// lands.
     ///
     /// The `groupid` is the new entry's primary group; the C++ derives it from
     /// the parse position, which equals the entry's own group here.
     pub fn push_entry(&mut self, e: ParamEntry) {
-        // C++ parsePentry: lastClass = entry.back().isGrouped() ? GENERAL :
-        // entry.back().getType(); when the list is empty lastClass = CLASS4.
+        // C++ parsePentry derives lastClass here (CLASS4 when the entry list is empty).
         let last_class: type_class = match self.entry.last() {
             None => type_class::TYPECLASS_CLASS4,
             Some(back) => {
@@ -3391,7 +3382,7 @@ impl ParamListStandard {
 
     /// Record the end-of-decode bookkeeping that `decode` performs after the
     /// entries are present: push the final resource-section boundary, compute
-    /// the heritage delay, and build the resolver maps.  Test/builder seam.
+    /// the heritage delay, and build the resolver maps.  Test/builder hook.
     pub fn finish_decode(&mut self) {
         self.resource_start.push(self.numgroup);
         self.calc_delay();
@@ -3425,12 +3416,9 @@ impl ParamListStandard {
     /// of `modelRules` so any data-type larger than `pointermax` is passed as a
     /// pointer.  Called by the cspec loader when the model's `pointermax > 0`.
     pub fn push_pointermax_rule(&mut self, pointermax: int4) {
-        // C++ `SizeRestrictedFilter typeFilter(pointermax+1,0)` (min=pointermax+1,
-        // max=0 => no upper bound).
         let filter = crate::modelrules::DatatypeFilter::SizeRestricted(
             crate::modelrules::SizeRestriction::new(pointermax + 1, 0),
         );
-        // C++ `ConvertToPointer action(this)`: `space = res->getSpacebase()`.
         let action = crate::modelrules::AssignAction::ConvertToPointer {
             space: self.spacebase.clone(),
         };
@@ -3438,7 +3426,7 @@ impl ParamListStandard {
             .push(ModelRule::from_components(filter, action));
     }
 
-    /// Number of decoded model rules (test/inspection seam).
+    /// Number of decoded model rules (test/inspection hook).
     pub fn num_model_rules(&self) -> usize {
         self.model_rules.len()
     }
@@ -4126,7 +4114,7 @@ impl ProtoModel {
     /// the fspec ElementIds/AttributeIds, and `glb` (stack space,
     /// `defaultReturnAddr`, `pcodeinjectlib`) — the `Architecture` registry is
     /// not yet ported.  Tests build models via [`ProtoModel::build_param_list`]
-    /// + the `ParamListStandard` builder seams.
+    /// + the `ParamListStandard` builder hooks.
     pub fn decode(&mut self) -> KunaResult<()> {
         Err(KunaError::lowlevel(
             "STUB(w6-fspec-2) ProtoModel::decode: marshaling + Architecture registry not yet ported",
@@ -4310,9 +4298,9 @@ impl ProtoModel {
         Err(KunaError::lowlevel("No model matches : missing default"))
     }
 
-    // -- test/tooling builder seams -----------------------------------------
+    // -- test/tooling builder hooks -----------------------------------------
 
-    /// Set the model name (test/builder seam; the C++ sets `name` during
+    /// Set the model name (test/builder hook; the C++ sets `name` during
     /// `decode`).
     pub fn set_name(&mut self, name: &str) {
         self.name = name.to_string();
@@ -4320,40 +4308,40 @@ impl ProtoModel {
             self.has_this = true;
         }
     }
-    /// Set the `has_this` flag (test/builder seam; decoded from `hasthis`).
+    /// Set the `has_this` flag (test/builder hook; decoded from `hasthis`).
     pub fn set_has_this(&mut self, val: bool) {
         self.has_this = val;
     }
-    /// Set the `is_construct` flag (test/builder seam; decoded from
+    /// Set the `is_construct` flag (test/builder hook; decoded from
     /// `constructor`).
     pub fn set_constructor(&mut self, val: bool) {
         self.is_construct = val;
     }
-    /// Mutable access to the input resource model for builder seams.
+    /// Mutable access to the input resource model for builder hooks.
     pub fn input_mut(&mut self) -> &mut ParamListStandard {
         self.input.as_mut().expect("ProtoModel::input_mut: not built")
     }
-    /// Mutable access to the output resource model for builder seams.
+    /// Mutable access to the output resource model for builder hooks.
     pub fn output_mut(&mut self) -> &mut ParamListStandard {
         self.output.as_mut().expect("ProtoModel::output_mut: not built")
     }
-    /// Append a side-effect record and re-sort (test/builder seam; the C++
+    /// Append a side-effect record and re-sort (test/builder hook; the C++
     /// `decode` sorts `effectlist` by `compareByAddress`).
     pub fn push_effect(&mut self, eff: EffectRecord) {
         self.effectlist.push(eff);
         self.effectlist.sort_by(EffectRecord::compare_by_address);
     }
-    /// Append a likely-trash register and re-sort (test/builder seam).
+    /// Append a likely-trash register and re-sort (test/builder hook).
     pub fn push_likely_trash(&mut self, vd: VarnodeData) {
         self.likelytrash.push(vd);
         self.likelytrash.sort_unstable();
     }
-    /// Append an internal-storage register and re-sort (test/builder seam).
+    /// Append an internal-storage register and re-sort (test/builder hook).
     pub fn push_internal_storage(&mut self, vd: VarnodeData) {
         self.internalstorage.push(vd);
         self.internalstorage.sort_unstable();
     }
-    /// Set the inject ids (test/builder seam).
+    /// Set the inject ids (test/builder hook).
     pub fn set_inject_ids(&mut self, upon_entry: int4, upon_return: int4) {
         self.inject_upon_entry = upon_entry;
         self.inject_upon_return = upon_return;
@@ -4505,7 +4493,7 @@ impl ScoreProtoModel {
 /// abstract base `ProtoParameter`, `fspec.hh:1100-1156`).
 ///
 /// The C++ base is abstract with `ParameterBasic`/`ParameterSymbol` subclasses.
-/// `ParameterSymbol` is backed by a `Scope`/`Symbol` (W3/W4) and is a seam; the
+/// `ParameterSymbol` is backed by a `Scope`/`Symbol` (W3/W4) and is a boundary; the
 /// kuna trait carries the shared query surface, and [`ParameterBasic`] is the
 /// stand-alone (no backing symbol) implementation.
 pub trait ProtoParameter {
@@ -4568,7 +4556,7 @@ pub struct ParameterBasic {
     name: String,
     /// Storage address (C++ `addr`).
     addr: Address,
-    /// Data-type (C++ `type`); `None` only for the rare null-typed void seam.
+    /// Data-type (C++ `type`); `None` only for the rare null-typed void boundary.
     type_: Option<Rc<Datatype>>,
     /// Lock and other properties (C++ `flags`).
     flags: uint4,
@@ -4686,7 +4674,7 @@ impl ProtoParameter for ParameterBasic {
 /// abstract base `ProtoStore`, `fspec.hh:1198-1249`).
 ///
 /// The symbol-backed variant `ProtoStoreSymbol` reaches `Scope`/`Symbol` (W3)
-/// and is a seam; [`ProtoStoreInternal`] is the stand-alone implementation.
+/// and is a boundary; [`ProtoStoreInternal`] is the stand-alone implementation.
 pub trait ProtoStore {
     /// Establish name, data-type, storage of a specific input parameter (C++
     /// `setInput`).
@@ -4852,7 +4840,7 @@ pub mod func_proto_flags {
 /// registry; with no registry the kuna `FuncProto` owns the model by
 /// reference-counted clone ([`Rc<ProtoModel>`]).  The storage interface is a
 /// boxed [`ProtoStore`] (an internal store here; the symbol-backed store is a
-/// `Scope` seam).  // STUB(w6-fspec-2)
+/// `Scope` boundary).  // STUB(w6-fspec-2)
 pub struct FuncProto {
     /// Model for this prototype (C++ `model`); `None` is the C++ null.
     model: Option<Rc<ProtoModel>>,
@@ -5078,7 +5066,7 @@ impl FuncProto {
     ///
     /// The merged-tree `Funcdata::new` cannot run the C++
     /// `funcp.setScope(localmap,...)` (`ProtoStoreSymbol` needs the symbol scope,
-    /// a W4 seam), so the recovered proto carries a model but no store.  The
+    /// a W4 boundary), so the recovered proto carries a model but no store.  The
     /// store-dependent queries below fall back to the unrecovered default (void,
     /// unlocked) when this is false, rather than panic.
     pub fn has_store(&self) -> bool {
@@ -5111,7 +5099,7 @@ impl FuncProto {
         if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
             return true;
         }
-        // No store (merged-tree setScope seam): the unrecovered input is unlocked
+        // No store (merged-tree setScope boundary): the unrecovered input is unlocked
         // (no parameters), so the param-lock query reads false rather than panic
         // dereferencing a null store — same convention as `is_output_locked`.
         if !self.has_store() {
@@ -5124,7 +5112,7 @@ impl FuncProto {
     }
     /// Is the output data-type locked (C++ `isOutputLocked`).
     pub fn is_output_locked(&self) -> bool {
-        // No store (merged-tree setScope seam): the unrecovered output is void
+        // No store (merged-tree setScope boundary): the unrecovered output is void
         // and never locked.
         if !self.has_store() {
             return false;
@@ -5400,7 +5388,7 @@ impl FuncProto {
         if self.is_input_locked() {
             return;
         }
-        // No store (merged-tree setScope seam): no inputs to clear.
+        // No store (merged-tree setScope boundary): no inputs to clear.
         if self.store.is_some() {
             self.store_mut().clear_all_inputs();
         }
@@ -6071,9 +6059,9 @@ impl FuncProto {
         ))
     }
 
-    // -- test/tooling builder seams -----------------------------------------
+    // -- test/tooling builder hooks -----------------------------------------
 
-    /// Replace the parameter store (test/builder seam; the C++ swaps `store`
+    /// Replace the parameter store (test/builder hook; the C++ swaps `store`
     /// in `setScope`/`setInternal`/`paramShift`).
     pub fn set_store(&mut self, store: Box<dyn ProtoStore>) {
         self.store = Some(store);
@@ -6090,7 +6078,7 @@ impl FuncProto {
 // composition) and adds the call-site data-flow state used to recover a working
 // prototype for one CALL/CALLIND.
 //
-// ## Cross-wave seams
+// ## Cross-wave boundaries
 //
 // The C++ method bodies that *mutate* the calling `Funcdata`'s IR
 // (`commitNewInputs`/`commitNewOutputs`, the success path of `deindirect`/
@@ -6343,9 +6331,9 @@ impl FuncCallSpecs {
     ///
     /// Its only C++ callers — `createPlaceholder` and `commitNewInputs` — reach
     /// W4 `Funcdata` factories (`opStackLoad`/`opSetAllInput`) that are not yet
-    /// on the W3 `Funcdata`, so both are seamed (`// STUB(w6-fspec-3 W4)`); the
+    /// on the W3 `Funcdata`, so both are stubbed (`// STUB(w6-fspec-3 W4)`); the
     /// bookkeeping itself is transcribed and lands here.
-    #[allow(dead_code)] // exercised once createPlaceholder/commitNewInputs de-seam (W4)
+    #[allow(dead_code)] // exercised once createPlaceholder/commitNewInputs de-stub (W4)
     fn set_stack_placeholder_slot(&mut self, slot: int4) {
         self.stack_placeholder_slot = slot;
         if self.isinputactive {
@@ -6523,7 +6511,6 @@ impl FuncCallSpecs {
     /// Number of bytes within the given parameter consumed by the sub-function
     /// (C++ `FuncCallSpecs::getInputBytesConsumed`, `fspec.cc:5877`).
     pub fn get_input_bytes_consumed(&self, slot: int4) -> int4 {
-        // C++: if (slot >= inputConsume.size()) return 0;
         if slot >= self.input_consume.len() as i32 {
             return 0;
         }
@@ -6536,7 +6523,6 @@ impl FuncCallSpecs {
     /// change.  (The C++ marks the method `const` and mutates a `mutable`
     /// field; here the method is `&mut self`.)
     pub fn set_input_bytes_consumed(&mut self, slot: int4, val: int4) -> bool {
-        // C++: while (inputConsume.size() <= slot) inputConsume.push_back(0);
         while (self.input_consume.len() as i32) <= slot {
             self.input_consume.push(0);
         }
@@ -6720,8 +6706,7 @@ impl FuncCallSpecs {
         self.name = newfd_name.to_string();
         self.has_fd = true;
 
-        // Vn *vn = data.newVarnodeCallSpecs(this); data.opSetInput(op,vn,0);
-        // data.opSetOpcode(op,CPUI_CALL); — convert the CALLIND into a direct CALL
+        // Convert the CALLIND into a direct CALL
         // carrying this call spec's fspec annotation (the indirect target Varnode in
         // slot 0 is replaced).  The handle is the process-unique fspec offset; the
         // printed name + entry are registered in the fspec-space side table (the C++
@@ -6821,14 +6806,12 @@ impl FuncCallSpecs {
     /// (kuna-base, which holds the `FspecSpace` arms, cannot see it).
     pub fn fspec_printed_name(&self, angr_naming: bool) -> String {
         if !self.name.is_empty() {
-            // s << fc->getName();
             return self.name.clone();
         }
         if angr_naming {
             // (kuna) angr-style: sub_<addr>
             return crate::database::kuna_function_name(&self.entryaddress);
         }
-        // s << "func_"; fc->getEntryAddress().printRaw(s);
         let mut s = String::from("func_");
         // printRaw on a real (processor) entry address cannot fail; on the
         // (unreachable) error path leave the prefix only.
@@ -6867,19 +6850,14 @@ impl FuncCallSpecs {
         data: &mut Funcdata,
         spacebase: &Rc<AddrSpace>,
     ) -> KunaResult<()> {
-        // int4 slot = op->numInput();
         let slot = data
             .obank()
             .get(self.op)
             .expect("createPlaceholder: stale call op")
             .num_input();
-        // Varnode *loadval = data.opStackLoad(spacebase,0,1,op,(Varnode *)0,false);
         let loadval = data.op_stack_load(spacebase, 0, 1, self.op, None, false)?;
-        // data.opInsertInput(op,loadval,slot);
         data.op_insert_input(self.op, loadval, slot)?;
-        // setStackPlaceholderSlot(slot);
         self.set_stack_placeholder_slot(slot);
-        // loadval->setSpacebasePlaceholder();
         if let Some(v) = data.vbank_mut().get_mut(loadval) {
             v.set_spacebase_placeholder();
         }
@@ -6937,9 +6915,9 @@ impl FuncCallSpecs {
         };
         let refvn = data.vbank().get(refvn_id).expect("resolveSpacebaseRelative: stale refvn");
         let spacebase = Rc::clone(refvn.get_space());
-        // if (spacebase->getType() != IPTR_SPACEBASE)
-        //   data.warningHeader("This function may have set the stack pointer");
-        // STUB(w6-fspec-3 W4): warningHeader is a W4 Funcdata surface.
+        // STUB(w6-fspec-3 W4): when spacebase is not IPTR_SPACEBASE the C++ emits
+        // data.warningHeader("This function may have set the stack pointer");
+        // warningHeader is a W4 Funcdata surface, so the warning is not emitted here.
         self.stackoffset = refvn.get_offset();
 
         if self.stack_placeholder_slot >= 0 {
@@ -6973,8 +6951,7 @@ impl FuncCallSpecs {
                 .get_param(slot)
                 .expect("resolveSpacebaseRelative: locked param missing");
             let addr = param.get_address().clone();
-            // C++: if (addr.getSpace() != spacebase) { if (spacebase->getType()
-            // == IPTR_SPACEBASE) throw ...; }  (collapsed to one guard).
+            // C++'s two nested guards (space mismatch + IPTR_SPACEBASE check) collapsed to one.
             if addr.get_space().map(Rc::as_ptr) != Some(Rc::as_ptr(&spacebase))
                 && spacebase.get_type() == spacetype::IPTR_SPACEBASE
             {
@@ -6982,7 +6959,6 @@ impl FuncCallSpecs {
                     "Stack placeholder does not match locked space",
                 ));
             }
-            // stackoffset -= addr.getOffset(); stackoffset = wrapOffset(stackoffset);
             self.stackoffset = self.stackoffset.wsub(addr.get_offset());
             self.stackoffset = spacebase.wrap_offset(self.stackoffset);
             return Ok(());
@@ -7140,7 +7116,6 @@ impl FuncCallSpecs {
     ) {
         let paddr = param.get_address();
         let psize = param.get_size();
-        // Varnode *vn = op->getOut();
         if let Some(out) = data.obank().get(self.op).and_then(|o| o.get_out()) {
             if let Some(vn) = data.vbank().get(out) {
                 let vaddr = vn.get_addr();
@@ -7152,7 +7127,6 @@ impl FuncCallSpecs {
                 }
             }
         }
-        // for (indop = op->previousOp(); indop && code==INDIRECT; indop = indop->previousOp())
         let mut indop = data.op_previous_op(self.op);
         while let Some(io) = indop {
             let opref = match data.obank().get(io) {

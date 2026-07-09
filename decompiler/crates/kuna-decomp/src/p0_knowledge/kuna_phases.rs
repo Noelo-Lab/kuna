@@ -90,8 +90,7 @@ impl KunaPhase {
 
     /// true for S3..S6 — C++ `kunaStageInBandB`.
     pub fn in_band_b(self) -> bool {
-        // C++: (stage >= kstage_s3 && stage <= kstage_s6); the enum ordering of
-        // S3..S6 mirrors the numeric one (infra=-1 sorts below P0).
+        // The enum ordering of P3..P6 mirrors the numeric one (infra=-1 sorts below P0).
         let i = self.index();
         (KunaPhase::P3.index()..=KunaPhase::P6.index()).contains(&i)
     }
@@ -138,7 +137,7 @@ impl KunaPhase {
     }
 }
 
-/// (kuna) Assertion strength (`stage-model.md` section 2) — C++ `KunaStrength`.
+/// (kuna) Assertion strength (`docs/history/stage-model.md` section 2) — C++ `KunaStrength`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KunaStrength {
     /// No assertion exists (fully LATENT decision) — C++ `kstrength_none`.

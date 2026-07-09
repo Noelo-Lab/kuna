@@ -311,7 +311,6 @@ impl SymbolEntry {
     /// Transcribes `addr.getOffset()+size-1` with `uintb` wraparound (the C++
     /// `uintb` arithmetic).
     pub fn get_last(&self) -> uintb {
-        // C++: addr.getOffset() + size - 1 (uintb); size is int4 widened.
         self.addr
             .get_offset()
             .wrapping_add(self.size as uintb)
@@ -410,7 +409,6 @@ impl RangeRecord for EntryRecord {
 
     fn create(data: Self::InitType, a: uintb, b: uintb) -> EntryRecord {
         let (data, addrtied_hint) = data;
-        // C++ SymbolEntry(const EntryInitData &data,uintb a,uintb b)
         let addr = Address::new(data.space, a);
         let size = (b.wrapping_sub(a)).wrapping_add(1) as int4;
         let entry = SymbolEntry {
@@ -854,7 +852,6 @@ pub fn equate_is_value_close(value: uintb, op2_value: uintb, size: int4) -> bool
     let mask_value = value & mask;
     if mask_value != value {
         // If '1' bits are getting masked off, make sure only sign-extension is.
-        // C++ value != sign_extend(maskValue,size,sizeof(uintb))
         if value != sign_extend_sized(mask_value, size, 8) {
             return false;
         }
@@ -1033,7 +1030,7 @@ impl Scope {
         reg1 = crc_update(reg1, 0xa9);
         reg2 = crc_update(reg2, reg1);
         for b in nm.bytes() {
-            // C++ `uint4 val = nm[i];` — char promoted; bytes are 0..=255.
+            // char promoted to uint4 (bytes are 0..=255).
             let val = b as uint4;
             reg1 = crc_update(reg1, val);
             reg2 = crc_update(reg2, reg1);
@@ -1274,12 +1271,11 @@ impl Database {
                     return Err(KunaError::lowlevel("Non-global scope has empty name"));
                 }
                 if self.idmap.contains_key(&unique_id) {
-                    // C++ RecovError("Duplicate scope id: " + getFullName())
                     let full = self.get_full_name(newscope);
                     return Err(KunaError::recov(format!("Duplicate scope id: {full}")));
                 }
                 self.idmap.insert(unique_id, newscope);
-                // C++ parent->attachScope: child->parent = this; children[uniqueId] = child
+                // C++ parent->attachScope.
                 self.scopes[newscope].parent = Some(par);
                 self.scopes[par].children.insert(unique_id, newscope);
                 Ok(())
@@ -1318,7 +1314,6 @@ impl Database {
             Some(p) => p,
         };
         let mut fname = s.name.clone();
-        // while(scope->parent != null) prepend scope->name
         while let Some(pp) = self.scopes[parent].parent {
             fname = format!("{}::{}", self.scopes[parent].name, fname);
             parent = pp;
@@ -1405,8 +1400,8 @@ impl Database {
             }
             None
         } else if !nm.is_empty() && nm.as_bytes()[0].is_ascii_digit() {
-            // Allow the string to directly specify the id (C++ istringstream >>).
-            // C++ `s.unsetf(dec|hex|oct)` => auto-base: 0x.. hex, 0.. oct, else dec.
+            // Allow the string to directly specify the id (C++ istringstream >>,
+            // auto-base: 0x.. hex, 0.. oct, else dec).
             let key = parse_auto_base_u64(nm)?;
             s.children.get(&key).copied()
         } else {
@@ -1599,11 +1594,9 @@ impl Database {
     /// `$$undefXXXXXXXX` name not yet used in `scope`.
     fn build_undefined_name(&self, scope: ScopeId) -> KunaResult<String> {
         use std::ops::Bound::{Included, Unbounded};
-        // C++: lower_bound("$$undefz"); if not begin, --iter; inspect that name.
         let probe = NameKey { name: "$$undefz".to_string(), name_dedup: 0 };
         let nametree = &self.scopes[scope].nametree;
-        // iter = lower_bound(probe); if iter != begin --iter; (last name < probe
-        // in most cases, since 'z' > any hex digit)
+        // The last name < probe in most cases, since 'z' > any hex digit.
         let prev = nametree.range((Unbounded, Included(&probe))).next_back();
         if let Some((k, _)) = prev {
             let symname = &k.name;
@@ -2171,8 +2164,7 @@ impl Database {
         hash: uint8,
         base1_unknown: Rc<Datatype>,
     ) -> KunaResult<SymbolId> {
-        // C++ EquateSymbol ctor: category=equate, type=getBase(1,TYPE_UNKNOWN),
-        // dispflags |= format.
+        // C++ EquateSymbol ctor.
         let mut sym = Symbol::new(scope, nm, Some(base1_unknown));
         sym.category = symbol_category::EQUATE;
         sym.dispflags |= format;
@@ -2836,7 +2828,6 @@ impl Database {
         let space = addr.get_space()?;
         let space_index = space.get_index() as usize;
         let rangemap = self.scopes[scope].maptable.get(space_index)?.as_ref()?;
-        // C++ find(offset, subsort(false), subsort(addr))
         let sub2 = EntrySubsort::from_addr(addr);
         let mut it = rangemap.find_subsorts(addr.get_offset(), EntrySubsort::minimal(), sub2);
         while let Some(idx) = it.next_back() {
@@ -3797,11 +3788,9 @@ impl Database {
     /// swapped in place and the size/type lock recomputed; otherwise, for a
     /// single address-tied mapping, the mapping is rebuilt at the new size.
     pub fn retype_symbol(&mut self, sym: SymbolId, ct: Rc<Datatype>) -> KunaResult<()> {
-        // if (ct->hasStripped()) ct = ct->getStripped();
         let ct = if ct.has_stripped() { ct.get_stripped().unwrap_or(ct) } else { ct };
         let old_size = self.symbols[sym].dtype.as_ref().map(|t| t.get_size()).unwrap_or(0);
         let mapentry_len = self.symbols[sym].mapentry.len();
-        // if ((sym->type->getSize() == ct->getSize()) || (sym->mapentry.empty()))
         if old_size == ct.get_size() || mapentry_len == 0 {
             self.symbols[sym].dtype = Some(ct);
             self.symbols[sym].check_size_type_lock();
@@ -3936,7 +3925,7 @@ impl Database {
     /// is the sorted list of alias starting offsets from the `MapState`;
     /// `alias_block_level` is the architecture's structure/array alias-block level.
     ///
-    /// Faithful transcription of the C++ list-walk: the EntryMap entries are
+    /// Transcribes the C++ list-walk: the EntryMap entries are
     /// iterated in address order (the rangemap `records()` order matches the C++
     /// `begin_list()`/`end_list()`), and the function range tree is walked in
     /// lock-step to turn aliasing off past unmapped regions.
@@ -3990,7 +3979,6 @@ impl Database {
         let mut rcur = 0usize; // range cursor
 
         for (sym, curoff) in entries {
-            // while ((i<alias.size()) && (alias[i] <= curoff)) { aliason=true; curalias=alias[i++]; }
             while i < alias.len() && alias[i] <= curoff {
                 aliason = true;
                 curalias = alias[i];

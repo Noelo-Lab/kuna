@@ -118,7 +118,6 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             } else if callee_pop {
                 let off = trial_addr.get_offset();
                 let sz = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_size();
-                // (int4)(off + (size - 1)) < expop
                 if (off as i64 + (sz as i64 - 1)) < expop as i64 {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
                 } else {
@@ -336,7 +335,6 @@ pub fn build_input_from_trials(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
 /// that match the output trials (one per trial slot).
 fn collect_output_trial_varnodes(fc: &mut FuncCallSpecs, data: &mut Funcdata) -> Vec<Option<VarnodeId>> {
     let op = fc.get_op();
-    // C++: if (op->getOut() != 0) throw "Output of call was determined prematurely";
     let num_trials = fc.get_active_output().get_num_trials();
     let mut trialvn: Vec<Option<VarnodeId>> = vec![None; num_trials as usize];
 
@@ -413,7 +411,6 @@ pub fn build_output_from_trials(
             break;
         }
         let slot = fc.get_active_output().get_trial(i).get_slot();
-        // trialvn[ slot - 1 ]
         if let Some(Some(vn)) = trialvn.get((slot - 1) as usize) {
             finalvn.push(*vn);
         }

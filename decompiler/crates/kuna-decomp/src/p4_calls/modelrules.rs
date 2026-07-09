@@ -20,13 +20,13 @@
 //!   - [`ModelRule`] — a rule combining a [`DatatypeFilter`], an optional
 //!     [`QualifierFilter`], an [`AssignAction`], and pre-/side-effect actions.
 //!
-//! ## Seam (`STUB(w6-modelrules)` in `fspec.rs`)
+//! ## Boundary (`STUB(w6-modelrules)` in `fspec.rs`)
 //!
 //! The C++ `AssignAction` holds a `const ParamListStandard *resource`
 //! back-pointer, and `ParamListStandard::modelRules` owns a
 //! `vector<ModelRule>`.  In the kuna port `fspec.rs`'s `ParamListStandard`
 //! carries an **uninhabitable** placeholder `ModelRule` enum (the documented
-//! seam), and `fspec.rs` is **not** owned by this item — so the real
+//! boundary), and `fspec.rs` is **not** owned by this item — so the real
 //! [`ModelRule`] here cannot be planted into `ParamListStandard::model_rules`
 //! without editing `fspec.rs`.  Instead this module is **standalone**: the
 //! [`AssignAction`]/[`ModelRule`] methods take the owning
@@ -42,7 +42,7 @@
 //! The `Architecture *glb` reach in the C++ (`tlist.getArch()`,
 //! `tlist.getArch()->getDefaultDataSpace()`) is replaced by the
 //! [`AddrSpaceManager`] threaded through `assign_address`, matching the
-//! `fspec-2` seam (`ProtoModel` has no `glb` back-pointer in the kuna port).
+//! `fspec-2` boundary (`ProtoModel` has no `glb` back-pointer in the kuna port).
 //!
 //! Integer model per ADR 0003: `uintb->u64`, `intb->i64`, `int4->i32`,
 //! `uint4->u32`; the `uint4` AssignAction response is modeled by the fspec
@@ -232,7 +232,6 @@ pub struct Primitive {
 }
 
 impl Primitive {
-    /// Constructor (C++ `Primitive(Datatype *d,int4 off)`).
     pub fn new(dt: Rc<Datatype>, off: int4) -> Primitive {
         Primitive { dt, offset: off }
     }
@@ -542,8 +541,7 @@ impl SizeRestriction {
         SizeRestriction { min_size: 0, max_size: 0, sizes: std::collections::BTreeSet::new() }
     }
 
-    /// Constructor (C++ `SizeRestrictedFilter(int4 min,int4 max)`,
-    /// modelrules.cc:303-312).
+    /// C++ `SizeRestrictedFilter` (modelrules.cc:303-312).
     pub fn new(min: int4, max: int4) -> SizeRestriction {
         let mut res = SizeRestriction {
             min_size: min,
@@ -560,15 +558,12 @@ impl SizeRestriction {
     /// Initialize filter from enumerated list of sizes (C++ `initFromSizeList`,
     /// modelrules.cc:277-301).
     fn init_from_size_list(&mut self, str: &[u8]) -> KunaResult<()> {
-        // C++ `istringstream s(str); for(;;) { val=-1; s>>ws; if (eof) break;
-        // if (peek==',') s>>punc>>ws; s>>val; if (val<=0) throw; sizes.insert(val); }`
         let parsed = parse_size_list(str)?;
         for &val in parsed.iter() {
             self.sizes.insert(val);
         }
         if !self.sizes.is_empty() {
             self.min_size = *self.sizes.iter().next().unwrap();
-            // C++ `iter = sizes.end(); --iter; maxSize = *iter;`
             self.max_size = *self.sizes.iter().next_back().unwrap();
         }
         Ok(())
@@ -2238,21 +2233,19 @@ fn parse_size_list(str: &[u8]) -> KunaResult<Vec<int4>> {
     let mut i = 0usize;
     let n = str.len();
     loop {
-        // s >> ws
         while i < n && (str[i] as char).is_whitespace() {
             i += 1;
         }
         if i >= n {
-            break; // s.eof()
+            break;
         }
-        // if (s.peek() == ',') { s >> punc >> ws; }
         if str[i] == b',' {
             i += 1;
             while i < n && (str[i] as char).is_whitespace() {
                 i += 1;
             }
         }
-        // s >> val  (C++ extracts a decimal integer; val stays -1 on failure)
+        // C++ extracts a decimal integer; val stays -1 on failure.
         let start = i;
         if i < n && (str[i] == b'+' || str[i] == b'-') {
             i += 1;

@@ -53,7 +53,7 @@
 //! W8 assembles `universalAction`; this file's leaf constructors plug into it
 //! via [`ActionGroup::add_action`](crate::action::ActionGroup::add_action).
 //!
-//! # Seams (the `Funcdata` <-> call-spec/proto bridge is not in the merged tree)
+//! # Boundaries (the `Funcdata` <-> call-spec/proto bridge is not in the merged tree)
 //!
 //! Every body in this file is gated on the **sub-function call-spec list**
 //! (`Funcdata::qlst`, the C++ `vector<FuncCallSpecs *>`) and/or the function's
@@ -61,8 +61,8 @@
 //! (`Funcdata::activeoutput`).  In the merged tree:
 //!
 //! * `Funcdata` has **no** `numCalls`/`getCallSpecs` accessors — the `qlst`
-//!   field is seam-noted out (`funcdata.rs` struct docs: "`activeoutput`,
-//!   ... `qlst` are seam-noted and omitted until their waves").
+//!   field is boundary-noted out (`funcdata.rs` struct docs: "`activeoutput`,
+//!   ... `qlst` are boundary-noted and omitted until their waves").
 //! * `Funcdata::funcp` is the **placeholder** [`context::FuncProto`](crate::context)
 //!   (an empty `struct FuncProto;`), *not* the real W6
 //!   [`fspec::FuncProto`](crate::fspec) that the merged dependency added — the
@@ -84,7 +84,7 @@
 //! 2. routes the unrealized mutation through a `// STUB(W7/W8-funcdata)` note
 //!    and returns `0` changes.
 //!
-//! Each seam is reported in this item's `losses` so the owning wave can finish
+//! Each boundary is reported in this item's `losses` so the owning wave can finish
 //! the wiring by replaying the commented body against the real accessors.
 
 use std::rc::Rc;
@@ -134,12 +134,9 @@ impl Action for ActionPrototypeTypes {
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4843 — ActionPrototypeTypes::apply (the parts the
         // merged tree reaches: model selection, RETURN-in0 strip, output recovery
-        // init).  The locked-input/output and truncated-space branches stay seamed
+        // init).  The locked-input/output and truncated-space branches stay stubbed
         // (no locked proto / no truncated stack space on the recovery path).
 
-        // evalfp = getArch()->evalfp_current ?: getArch()->defaultfp;
-        // if (!funcp.isModelLocked() && !funcp.hasMatchingModel(evalfp))
-        //     funcp.setModel(evalfp);
         let evalfp = data.get_arch().eval_fp_current().cloned();
         if let Some(evalfp) = evalfp {
             if !data.get_func_proto().is_model_locked()
@@ -159,7 +156,7 @@ impl Action for ActionPrototypeTypes {
         // `ActionRestructureVarnode`.  Without it the scope range tree is empty and
         // every gathered stack RangeHint is dropped, so no stack local is recovered.
         //
-        // The sized-stack-Varnode typing seam this used to be gated on is now
+        // The sized-stack-Varnode typing boundary this used to be gated on is now
         // CLOSED: `ScopeLocal::restructureVarnode` clears the unlocked auto-recovered
         // stack Symbols at the head of every pass (`clearUnlockedCategory(-1)`,
         // funcdata_spacebase.rs / varmap.cc:1259), so the first-pass open-array hint
@@ -169,7 +166,7 @@ impl Action for ActionPrototypeTypes {
         // `int4` (NOT a spurious `xunknown1 [N]` array — verified on condconst_conn)
         // and is named `vN` (`resolve_default_name`, coreaction.cc:3087).
         //
-        // The downstream seam that USED to hold this env-gated — the addr-tied
+        // The downstream boundary that USED to hold this env-gated — the addr-tied
         // return-register COPY collapse — is now CLOSED too.  After typing,
         // condconst_conn is `v2(stack) = x; ...; v1(eax) = COPY(v2); return v1;`;
         // the C++ oracle emits the single `v1 = x; ... return v1;` because the eax
@@ -187,9 +184,7 @@ impl Action for ActionPrototypeTypes {
         // models in the recovery path have no `this` pointer.
 
         // Strip the indirect register from all RETURN ops (so the compiler's
-        // return-address mechanism does not appear in the high-level output):
-        //   for op in RETURN ops: if (!getIn(0)->isConstant())
-        //       opSetInput(op, newConstant(getIn(0)->getSize(), 0), 0);
+        // return-address mechanism does not appear in the high-level output).
         let return_ops: Vec<crate::context::OpId> = data.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in &return_ops {
             let in0 = match data.obank().get(*op).and_then(|o| o.get_in(0)) {
@@ -205,12 +200,7 @@ impl Action for ActionPrototypeTypes {
             }
         }
 
-        // if (funcp.isOutputLocked()) { force the output varnode onto every RETURN }
-        // else data.initActiveOutput();  // begin gathering return values
         if data.get_func_proto().is_output_locked() {
-            // ProtoParameter *outparam = funcp.getOutput();
-            // if (outparam->getType()->getMetatype() != TYPE_VOID): for each
-            //   non-halt RETURN op append a forced output Varnode + updateType.
             let (out_size, out_addr, out_type) = {
                 let outparam = data.get_func_proto().get_output();
                 (
@@ -286,7 +276,7 @@ impl Action for ActionPrototypeTypes {
                     // C++ binds the locked input Varnode's type via the W4 ScopeLocal
                     // parameter Symbol (read back by `ActionInferTypes::buildLocaltypes`'s
                     // type-locked SymbolEntry `getExactPiece` seed — a documented W4/W8
-                    // seam, LOSS-138).  That symbol-scope binding is not on the merged
+                    // boundary, LOSS-138).  That symbol-scope binding is not on the merged
                     // tree, so the param's declared type is set + locked on the forced
                     // input Varnode directly here: the same end state (a type-locked
                     // input Varnode carrying the parameter type), which `getLocalType`'s
@@ -408,13 +398,7 @@ impl Action for ActionDefaultParams {
         let size = data.num_calls();
         for i in 0..size {
             if !data.get_call_specs(i).proto().has_model() {
-                // C++ `coreaction.cc:2382-2390`:
-                //   Funcdata *otherfunc = fc->getFuncdata();
-                //   if (otherfunc != 0) {
-                //     fc->copy(otherfunc->getFuncProto());
-                //     if (!fc->isModelLocked() && !fc->hasMatchingModel(evalfp))
-                //       fc->setModel(evalfp);
-                //   } else fc->setInternal(evalfp, void);
+                // C++ `coreaction.cc:2382-2390`.
                 // The callee's locked `FuncProto` is re-built here from the source-
                 // declared prototype pieces parked on its global FunctionSymbol by
                 // `Architecture::set_function_prototype_pieces` (the kuna stand-in for
@@ -456,7 +440,7 @@ impl Action for ActionDefaultParams {
                                 arch.manage(),
                             ) {
                                 Ok(()) => Some(fp),
-                                // The callee storage assignment hit an un-ported seam: fall
+                                // The callee storage assignment hit an un-ported boundary: fall
                                 // back to the default-model recovery for this call site.
                                 Err(_) => None,
                             }
@@ -466,9 +450,7 @@ impl Action for ActionDefaultParams {
                 };
                 match callee_proto {
                     Some(calleeproto) => {
-                        // fc->copy(otherfunc->getFuncProto())
                         data.get_call_specs_mut(i).proto_mut().copy(&calleeproto);
-                        // if (!fc->isModelLocked() && !fc->hasMatchingModel(evalfp)) fc->setModel(evalfp)
                         let fc = data.get_call_specs(i);
                         if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&evalfp) {
                             data.get_call_specs_mut(i).proto_mut().set_model(Some(evalfp.clone()));
@@ -559,13 +541,10 @@ impl Action for ActionExtraPopSetup {
         // relationship (INT_ADD if the extrapop is known, INDIRECT otherwise) so
         // the stack-pointer flow across each sub-function call is modeled.
 
-        // if (stackspace == (AddrSpace *)0) return 0; // No stack to speak of
         let stackspace_index = match self.stackspace {
             Some(i) => i,
             None => return 0,
         };
-        // const VarnodeData &point(stackspace->getSpacebase(0));
-        // Address sb_addr(point.space,point.offset); int4 sb_size = point.size;
         let stackspace = match data.get_arch().manage().get_space(stackspace_index) {
             Some(s) => Rc::clone(s),
             None => return 0,
@@ -581,35 +560,26 @@ impl Action for ActionExtraPopSetup {
         let sb_addr = Address::new(point_space, point.offset);
         let sb_size = point.size as int4;
 
-        // for(int4 i=0;i<data.numCalls();++i) {
         for i in 0..data.num_calls() {
-            // fc = data.getCallSpecs(i);
-            // if (fc->getExtraPop() == 0) continue; // Stack pointer is undisturbed
             let extrapop = data.get_call_specs(i).get_extra_pop();
             if extrapop == 0 {
                 continue;
             }
-            // op = data.newOp(2,fc->getOp()->getAddr());
             let fc_op = data.get_call_specs(i).get_op();
             let fc_op_addr = match data.obank().get(fc_op) {
                 Some(o) => o.get_addr().clone(),
                 None => continue,
             };
             let op = data.new_op(2, fc_op_addr);
-            // data.newVarnodeOut(sb_size,sb_addr,op);
             if data.new_varnode_out(sb_size, &sb_addr, op).is_err() {
                 continue;
             }
-            // data.opSetInput(op,data.newVarnode(sb_size,sb_addr),0);
             let in0 = data.new_varnode(sb_size, &sb_addr, None);
             let _ = data.op_set_input(op, in0, 0);
             if extrapop != EXTRAPOP_UNKNOWN {
                 // We know exactly how stack pointer is changed.
-                //   fc->setEffectiveExtraPop(fc->getExtraPop());
                 data.get_call_specs_mut(i).set_effective_extra_pop(extrapop);
-                //   data.opSetOpcode(op,CPUI_INT_ADD);
                 data.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
-                //   data.opSetInput(op,data.newConstant(sb_size,fc->getExtraPop()),1);
                 // C++ widens `int4 fc->getExtraPop()` to the `uintb` parameter,
                 // i.e. signed widening (sign-extend through i64); `bare as` is the
                 // faithful reproduction of that conversion.
@@ -692,7 +662,7 @@ impl ActionFuncLink {
         }
         // Locked-prototype branch (coreaction.cc:1500-1554): register a trial and
         // insert a stub input Varnode per declared parameter.  The stack-relative
-        // (`opStackLoad`) and JOIN-reassembly arms are W4 seams (skipped below);
+        // (`opStackLoad`) and JOIN-reassembly arms are W4 boundaries (skipped below);
         // the plain register-parameter insertion is transcribed.
         if inputlocked {
             let op = data.get_call_specs(idx).get_op();
@@ -844,7 +814,6 @@ impl ActionFuncLink {
                 let _ = data.op_insert_input(op, pvn, nin);
             }
         }
-        // if (spacebase != 0) fc->createPlaceholder(data, spacebase);
         if let Some(sb) = spacebase {
             // create_placeholder needs `&mut FuncCallSpecs` + `&mut Funcdata`;
             // splice the spec out and put it back at the same index (no cross-call
@@ -865,7 +834,7 @@ impl ActionFuncLink {
     fn func_link_output(idx: int4, data: &mut Funcdata) {
         let callop = data.get_call_specs(idx).get_op();
         // CALL ops are expected to have no output; an override may have produced
-        // one — remove it (the IPTR_INTERNAL error case is the override-unique seam).
+        // one — remove it (the IPTR_INTERNAL error case is the override-unique boundary).
         if data.obank().get(callop).and_then(|o| o.get_out()).is_some() {
             data.op_unset_output(callop);
         }
@@ -876,8 +845,7 @@ impl ActionFuncLink {
             // to a full register) insert the post-call extension op.
             use kuna_num::pcoderaw::VarnodeData;
             let outparam = data.get_call_specs(idx).proto().get_output();
-            // Datatype *outtype = outparam->getType();  (None is the C++ null;
-            // a locked output always carries a type, but guard defensively.)
+            // A locked output always carries a type, but guard defensively (None is the C++ null).
             let outtype = match outparam.get_type() {
                 Some(t) => Rc::clone(t),
                 None => return,
@@ -886,7 +854,6 @@ impl ActionFuncLink {
             if metatype != crate::dtype::type_metatype::TYPE_VOID {
                 let sz = outparam.get_size();
                 let addr = outparam.get_address();
-                // if (outtype==BOOL && isTypeRecoveryOn()) opMarkCalculatedBool(callop)
                 if metatype == crate::dtype::type_metatype::TYPE_BOOL && data.is_type_recovery_on()
                 {
                     data.op_mark_calculated_bool(callop);
@@ -900,9 +867,7 @@ impl ActionFuncLink {
                     data.get_call_specs_mut(idx).set_stack_output_lock(true);
                     return;
                 }
-                // data.newVarnodeOut(sz, addr, callop);
                 let _ = data.new_varnode_out(sz, &addr, callop);
-                // OpCode res = fc->assumedOutputExtension(addr, sz, vdata);
                 let mut vdata = VarnodeData::default();
                 let mut res = data
                     .get_call_specs(idx)
@@ -1050,26 +1015,22 @@ impl Action for ActionParamDouble {
         Some(Box::new(ActionParamDouble { base: self.base.clone() }))
     }
     fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1641 — ActionParamDouble::apply
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i); op = fc->getOp();
-        //       if (fc->isInputActive()):
-        //           // walk active trials; for a checked, stack-relative,
-        //           // PIECE-written trial, splitTrial + reorder op inputs by
-        //           // endianness via fc->checkInputSplit; count += 1; j -= 1.
-        //       else if (!fc->isInputLocked() && data.isDoublePrecisOn()):
-        //           // scan adjacent op inputs for SplitVarnode hi/lo pairs;
-        //           // fc->checkInputJoin -> opSetInput/opRemoveInput/
-        //           // fc->doInputJoin; count += 1.
-        //   // function-level: if (funcp.isInputLocked() && isDoublePrecisOn()):
-        //   //   find locked primitive-whole params split into SUBPIECE hi/lo,
-        //   //   mark piece Varnodes setPrecisLo/setPrecisHi; count += 1 each.
+        // C++ coreaction.cc:1641 — ActionParamDouble::apply. Over each call spec:
+        //   - when fc->isInputActive(): walk active trials; for a checked,
+        //     stack-relative, PIECE-written trial, splitTrial + reorder op inputs
+        //     by endianness via fc->checkInputSplit; count += 1; j -= 1.
+        //   - else when !fc->isInputLocked() && data.isDoublePrecisOn(): scan
+        //     adjacent op inputs for SplitVarnode hi/lo pairs; fc->checkInputJoin
+        //     -> opSetInput/opRemoveInput/fc->doInputJoin; count += 1.
+        //   Function-level: when funcp.isInputLocked() && isDoublePrecisOn(), find
+        //   locked primitive-whole params split into SUBPIECE hi/lo, mark piece
+        //   Varnodes setPrecisLo/setPrecisHi; count += 1 each.
         //
         // STUB(W7/W8-funcdata): the per-call arms iterate
         // `Funcdata::getCallSpecs(i)` (absent); the function-level arm reads
         // `Funcdata::funcp` (the empty `context::FuncProto` placeholder, not the
         // real `fspec::FuncProto`).  Deferred (count stays 0).  `isDoublePrecisOn`
-        // IS realized on `Funcdata` but is only a guard for the seamed work.
+        // IS realized on `Funcdata` but is only a guard for the stubbed work.
         0
     }
 }
@@ -1574,26 +1535,7 @@ impl Action for ActionRestrictLocal {
         Some(Box::new(ActionRestrictLocal { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:2003 — ActionRestrictLocal::apply
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i); op = fc->getOp();
-        //       if (!fc->isInputLocked()) continue;
-        //       if (fc->getSpacebaseOffset() == offset_unknown) continue;
-        //       for each locked param:
-        //           if (IPTR_SPACEBASE): markNotMapped(space,
-        //               wrapOffset(spacebaseOffset+addr.offset), size, true);
-        //           else if (IPTR_JOIN): for each spacebase piece, markNotMapped.
-        //   for eiter in funcp.effectBegin()..effectEnd():
-        //       if (getType() == killedbycall) continue;       // not saved
-        //       vn = data.findVarnodeInput(size, addr);
-        //       if (vn && vn->isUnaffected()):
-        //           for op in vn->beginDescend()..endDescend():
-        //               if (op->code()!=CPUI_COPY) continue;
-        //               outvn = op->getOut();
-        //               if (!getScopeLocal()->isUnaffectedStorage(outvn)) continue;
-        //               getScopeLocal()->markNotMapped(outvn space/off/size, false);
-        //   return 0;
-        //
+        // C++ coreaction.cc:2003 — ActionRestrictLocal::apply.
         // The two loops are realized on the Funcdata side (it owns `qlst`/`funcp`/
         // the IR banks the walk needs); `Funcdata::restrict_local` is the faithful
         // transcription.  Now that the RSP keystone made the effect list correct
@@ -1846,17 +1788,7 @@ impl Action for ActionOutputPrototype {
         Some(Box::new(ActionOutputPrototype { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:4999 — ActionOutputPrototype::apply
-        //   outparam = data.getFuncProto().getOutput();
-        //   if (!outparam->isTypeLocked() || outparam->isSizeTypeLocked()):
-        //       op = data.getFirstReturnOp();
-        //       vector<Varnode *> vnlist;
-        //       if (op != 0): for (i=1; i<op->numInput(); ++i)
-        //                         vnlist.push_back(op->getIn(i));
-        //       if (data.isHighOn()) funcp.updateOutputTypes(vnlist);
-        //       else                 funcp.updateOutputNoTypes(vnlist, getArch()->types);
-        //   return 0;
-        //
+        // C++ coreaction.cc:4999 — ActionOutputPrototype::apply.
         // The real `fspec::FuncProto` is now on `Funcdata` (proto-recovery wave).
         // Where the W4 ScopeLocal would attach a `ProtoStoreSymbol`, the merged
         // tree attaches a stand-alone `ProtoStoreInternal` (the C++ no-scope
@@ -1870,7 +1802,7 @@ impl Action for ActionOutputPrototype {
         // (the addr + size the merge needs for addrtied), but the TYPE NAME renders
         // the W8 default — the single documented residual to full boolless parity.
         // The `TypeFactory` (`glb->types`, `getTypeVoid`) is the W6 surface and
-        // the seams `Architecture` does not expose it; the formal void type is the
+        // the boundary `Architecture` does not expose it; the formal void type is the
         // size-0 `TYPE_VOID` base (its name renders "void", `dtype.rs:277`), which
         // is the same interned datatype `getTypeVoid` returns.
         let void_type = Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID));
@@ -1950,26 +1882,22 @@ impl Action for ActionPrototypeWarnings {
         Some(Box::new(ActionPrototypeWarnings { base: self.base.clone() }))
     }
     fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:5140 — ActionPrototypeWarnings::apply
-        //   data.getOverride().generateOverrideMessages(msgs, getArch());
-        //   for (m in msgs) data.warningHeader(m);
-        //   ourproto = data.getFuncProto();
-        //   if (ourproto.hasInputErrors())
-        //       data.warningHeader("Cannot assign parameter locations ...");
-        //   if (ourproto.hasOutputErrors())
-        //       data.warningHeader("Cannot assign location of return value ...");
-        //   if (ourproto.isModelUnknown()):
-        //       s = "Unknown calling convention";
-        //       if (printModelInDecl()) s += ": " + getModelName();
-        //       if (!hasCustomStorage() && (isInputLocked()||isOutputLocked()))
-        //           s += " -- yet parameter storage is locked";
-        //       data.warningHeader(s);
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i); fd = fc->getFuncdata();
-        //       if (fc->hasInputErrors()) data.warning("Cannot assign parameter
-        //           location for function <name|<indirect>>: ...", entryAddr);
-        //       if (fc->hasOutputErrors()) data.warning("Cannot assign location
-        //           of return value for function <...>: ...", entryAddr);
+        // C++ coreaction.cc:5140 — ActionPrototypeWarnings::apply. Generate override
+        // messages via data.getOverride().generateOverrideMessages(msgs, getArch())
+        // and warningHeader each. Then, for ourproto = data.getFuncProto():
+        //   - when ourproto.hasInputErrors(): warningHeader("Cannot assign parameter
+        //     locations ...").
+        //   - when ourproto.hasOutputErrors(): warningHeader("Cannot assign location
+        //     of return value ...").
+        //   - when ourproto.isModelUnknown(): s = "Unknown calling convention"; append
+        //     ": " + getModelName() when printModelInDecl(); append " -- yet parameter
+        //     storage is locked" when !hasCustomStorage() && (isInputLocked() ||
+        //     isOutputLocked()); warningHeader(s).
+        // Then over each call spec (fc = data.getCallSpecs(i), fd = fc->getFuncdata()):
+        //   - when fc->hasInputErrors(): warning("Cannot assign parameter location
+        //     for function ...", entryAddr).
+        //   - when fc->hasOutputErrors(): warning("Cannot assign location of return
+        //     value for function ...", entryAddr).
         //
         // STUB(W7/W8-funcdata): the override-message generation reads
         // `Funcdata::getOverride()` (the local override store is not on

@@ -36,7 +36,7 @@
 //! `isTranslateReused` reuse flag therefore reports `false` (a fresh build),
 //! which is faithful for output and recorded as LOSS (translator reuse cache).
 //!
-//! ## What is wired vs. seamed
+//! ## What is wired vs. stubbed
 //!
 //! - **Wired now**: the `.ldefs` record types ([`CompilerTag`],
 //!   [`LanguageDescription`]) and their `decode`; `getCompiler` (default
@@ -49,7 +49,7 @@
 //!   `buildTranslator` (decode the resolved `.sla` into a [`Sleigh`]);
 //!   `modifySpaces` (apply `.ldefs` truncations).
 //!
-//! - **Seamed (W6/W8)**: the full `Architecture::init` / `restoreFromSpec`
+//! - **Stubbed (W6/W8)**: the full `Architecture::init` / `restoreFromSpec`
 //!   flow (it reaches `buildTypegrp` → W6 `TypeFactory`, `print` → W8
 //!   `PrintLanguage`, `parseProcessorConfig`/`parseCompilerConfig` →
 //!   prototype models + data-organization).  `buildContext`'s
@@ -60,7 +60,7 @@
 //!   context defaults are applied directly to the `Sleigh` (the corpus
 //!   bootstrap gate does exactly this).  `buildSymbols` (the `<default_symbols>`
 //!   → `Database::addSymbol` markup) reaches the W4 symbol-scope `addSymbol`
-//!   surface that is itself a later seam.  Each is documented inline with
+//!   surface that is itself a later stub.  Each is documented inline with
 //!   `// STUB(...)`.
 
 use kuna_base::error::{KunaError, KunaResult};
@@ -139,7 +139,7 @@ pub fn register_sleigh_arch_ids(registry: &mut IdRegistry) {
 }
 
 // ---------------------------------------------------------------------------
-// CompilerTag (sleigh_arch.hh:46)
+// CompilerTag
 // ---------------------------------------------------------------------------
 
 /// \brief Contents of a \<compiler> tag in a .ldefs file (C++ `class
@@ -191,7 +191,7 @@ impl CompilerTag {
 }
 
 // ---------------------------------------------------------------------------
-// LanguageDescription (sleigh_arch.hh:66)
+// LanguageDescription
 // ---------------------------------------------------------------------------
 
 /// \brief Contents of the \<language> tag in a .ldefs file (C++ `class
@@ -248,7 +248,7 @@ impl LanguageDescription {
         self.processorspec = read_string(decoder, &ATTRIB_PROCESSORSPEC)?;
         self.id = read_string(decoder, &ATTRIB_ID)?;
         self.deprecated = false;
-        // Optional attributes: for(;;) { attribId = getNextAttributeId(); ... }
+        // Optional attributes.
         loop {
             let attrib_id = decoder.get_next_attribute_id()?;
             if attrib_id == 0 {
@@ -345,7 +345,6 @@ impl LanguageDescription {
     /// `compilers[0]` — UB if empty, mirrored here as a panic).
     pub fn get_compiler(&self, nm: &str) -> &CompilerTag {
         let mut defaultind: i64 = -1;
-        // for(int4 i=0;i<compilers.size();++i)
         for (i, c) in self.compilers.iter().enumerate() {
             if c.get_id() == nm {
                 return c;
@@ -440,17 +439,15 @@ impl LanguageDatabase {
         errs: &mut String,
         registry: &IdRegistry,
     ) {
-        // ifstream s(specfile.c_str()); if (!s) return;
         let bytes = match std::fs::read(specfile) {
             Ok(b) => b,
             Err(_) => return,
         };
 
-        // XmlDecode decoder((const AddrSpaceManager *)0);  -- ldefs never decodes
-        // a space, so an empty manager stands in for the C++ null pointer.
+        // ldefs never decodes a space, so an empty manager stands in for the
+        // C++ null pointer.
         let empty_manager = AddrSpaceManager::new();
         let mut decoder = XmlDecode::new(&empty_manager, registry);
-        // try { decoder.ingestStream(s); } catch(DecoderError&) { warn; return; }
         if decoder.ingest_stream(&bytes).is_err() {
             errs.push_str("WARNING: Unable to parse sleigh specfile: ");
             errs.push_str(specfile);
@@ -552,7 +549,6 @@ impl LanguageDatabase {
         let mut languagesubdirs: Vec<String> = Vec::new();
 
         FileManage::scan_directory_recursive(&mut ghidradir, "Ghidra", rootpath, 2);
-        // for(uint4 i=0;i<ghidradir.size();++i)
         for g in &ghidradir {
             FileManage::scan_directory_recursive(&mut procdir, "Processors", g, 1); // Processors structure
             FileManage::scan_directory_recursive(&mut procdir, "contrib", g, 1);
@@ -603,7 +599,6 @@ impl LanguageDatabase {
         manager: &AddrSpaceManager,
     ) -> KunaResult<()> {
         let language = &self.description[languageindex as usize];
-        // for(int4 i=0;i<language.numTruncations();++i) trans->truncateSpace(...)
         for i in 0..language.num_truncations() {
             let tag = language.get_truncation(i);
             manager.truncate_space(tag.get_name(), tag.get_size())?;
@@ -613,7 +608,7 @@ impl LanguageDatabase {
 }
 
 // ---------------------------------------------------------------------------
-// SleighArchitecture (sleigh_arch.hh:108)
+// SleighArchitecture
 // ---------------------------------------------------------------------------
 
 /// \brief An [`Architecture`] that uses the decompiler's native SLEIGH
@@ -736,7 +731,6 @@ impl SleighArchitecture {
         db: &LanguageDatabase,
         arch_type: &str,
     ) -> KunaResult<()> {
-        // if (archid.size() == 0) { ... }
         if self.archid.is_empty() {
             if self.target.is_empty() || self.target == "default" {
                 self.archid = arch_type.to_string();
@@ -744,8 +738,6 @@ impl SleighArchitecture {
                 self.archid = self.target.clone();
             }
         }
-        // if (archid.find("binary-")==0) archid.erase(0,7);
-        // else if (archid.find("default-")==0) archid.erase(0,8);
         if let Some(rest) = self.archid.strip_prefix("binary-") {
             self.archid = rest.to_string();
         } else if let Some(rest) = self.archid.strip_prefix("default-") {
@@ -753,14 +745,12 @@ impl SleighArchitecture {
         }
 
         self.archid = normalize_architecture(&self.archid)?;
-        // string baseid = archid.substr(0,archid.rfind(':'));
         let baseid = match self.archid.rfind(':') {
             Some(pos) => self.archid[..pos].to_string(),
             None => self.archid.clone(),
         };
         self.languageindex = -1;
         let descs = db.descriptions();
-        // for(i=0;i<description.size();++i)
         let mut i: int4 = 0;
         while (i as usize) < descs.len() {
             if descs[i as usize].get_id() == baseid {
@@ -799,7 +789,6 @@ impl SleighArchitecture {
     pub fn build_spec_file(&self, db: &LanguageDatabase) -> KunaResult<BuildSpecFiles> {
         let language_reuse = self.is_translate_reused();
         let language = &db.descriptions()[self.languageindex as usize];
-        // string compiler = archid.substr(archid.rfind(':')+1);
         let compiler = match self.archid.rfind(':') {
             Some(pos) => &self.archid[pos + 1..],
             None => self.archid.as_str(),
@@ -836,7 +825,7 @@ impl SleighArchitecture {
     /// `loader`, then constructs the owning [`Architecture`] base.  In C++ this
     /// `reset(loader,context)`s a cached or fresh `Sleigh`; here the cache is not
     /// ported, so it always decodes a fresh engine.  Per-fixture context defaults
-    /// (the `.pspec`'s `<context_data>` paints, which W4 `buildContext` seams)
+    /// (the `.pspec`'s `<context_data>` paints, a W4 `buildContext` boundary)
     /// can be applied to the returned base's `translate` after the `.sla`
     /// registers the variables.
     ///
@@ -863,8 +852,6 @@ impl SleighArchitecture {
     /// header is the slice the leaf-frontend `encode` paths prepend.  Returns the
     /// two attribute pairs the C++ would write, in C++ order.
     pub fn encode_header(&self) -> Vec<(AttributeId, String)> {
-        // encoder.writeString(ATTRIB_NAME, filename);
-        // encoder.writeString(ATTRIB_TARGET, target);
         vec![(ATTRIB_NAME, self.filename.clone()), (ATTRIB_TARGET, self.target.clone())]
     }
 
@@ -926,11 +913,9 @@ pub fn normalize_endian(nm: &str) -> String {
 /// order).
 pub fn normalize_size(nm: &str) -> String {
     let mut res = nm.to_string();
-    // pos = res.find("bit"); if (pos != npos) res.erase(pos,3);
     if let Some(pos) = res.find("bit") {
         res.replace_range(pos..pos + 3, "");
     }
-    // pos = res.find('-'); if (pos != npos) res.erase(pos,1);
     if let Some(pos) = res.find('-') {
         res.replace_range(pos..pos + 1, "");
     }
@@ -945,8 +930,6 @@ pub fn normalize_size(nm: &str) -> String {
 /// Errors if it does not have 4 or 5 fields, exactly as the C++ throws
 /// `LowlevelError`.
 pub fn normalize_architecture(nm: &str) -> KunaResult<String> {
-    // string::size_type pos[4]; int4 i; curpos=0;
-    // for(i=0;i<4;++i){ curpos=nm.find(':',curpos+1); if(npos) break; pos[i]=curpos; }
     let bytes = nm.as_bytes();
     let mut pos = [0usize; 4];
     let mut i: usize = 0;
@@ -970,24 +953,18 @@ pub fn normalize_architecture(nm: &str) -> KunaResult<String> {
         }
         i += 1;
     }
-    // if ((i!=3)&&(i!=4)) throw LowlevelError(...);
     if i != 3 && i != 4 {
         return Err(KunaError::lowlevel(format!(
             "Architecture string does not look like sleigh id: {nm}"
         )));
     }
-    // processor = nm.substr(0,pos[0]);
     let processor = &nm[..pos[0]];
-    // endian = nm.substr(pos[0]+1,pos[1]-pos[0]-1);
     let endian = &nm[pos[0] + 1..pos[1]];
-    // size = nm.substr(pos[1]+1,pos[2]-pos[1]-1);
     let size = &nm[pos[1] + 1..pos[2]];
 
     let (variant, compile): (String, String) = if i == 4 {
-        // variant = nm.substr(pos[2]+1,pos[3]-pos[2]-1); compile = nm.substr(pos[3]+1);
         (nm[pos[2] + 1..pos[3]].to_string(), nm[pos[3] + 1..].to_string())
     } else {
-        // variant = nm.substr(pos[2]+1); compile = "default";
         (nm[pos[2] + 1..].to_string(), "default".to_string())
     };
 

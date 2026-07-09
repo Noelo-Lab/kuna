@@ -217,16 +217,15 @@ fn block_has_call(bb: BlockId, data: &Funcdata) -> bool {
 pub struct ActionStripStackGuard {
     base: ActionBase,
     /// Resolved `glb->strip_stack_guard` gate (STUB(W4); see module docs).  The
-    /// C++ reads `data.getArch()->strip_stack_guard` inline, but the seam
+    /// C++ reads `data.getArch()->strip_stack_guard` inline, but the boundary
     /// [`Funcdata::get_arch`] does not carry kuna analysis flags, so — as in the
     /// sibling kuna Actions/Rules — the gate is resolved at construction.
     enabled: bool,
 }
 
 impl ActionStripStackGuard {
-    /// Constructor (C++ `ActionStripStackGuard(const string &g)` — flags 0,
-    /// name "stripstackguard").  `enabled` is the resolved `strip_stack_guard`
-    /// gate (default on per DIV-14; `option stackguard off` restores the upstream rendering).
+    /// `enabled` is the resolved `strip_stack_guard` gate (default on per DIV-14;
+    /// `option stackguard off` restores the upstream rendering).
     pub fn new(enabled: bool, g: impl Into<String>) -> ActionStripStackGuard {
         ActionStripStackGuard { base: ActionBase::new(0, "stripstackguard", g), enabled }
     }
@@ -253,12 +252,12 @@ impl Action for ActionStripStackGuard {
     /// The detection — option gate, per-block CBRANCH-on-canary-compare scan,
     /// fail-successor selection, handler-call safety, and victim-edge index —
     /// is realized faithfully.  The terminal `removeBranch`/
-    /// `removeUnreachableBlocks` pair is the W4/W8 funcdata_block seam (see the
-    /// module docs); the scan still runs and `idx` is computed so the seam is
+    /// `removeUnreachableBlocks` pair is the W4/W8 funcdata_block boundary (see the
+    /// module docs); the scan still runs and `idx` is computed so the boundary is
     /// a single drop-in point.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ `if (!data.getArch()->strip_stack_guard) return 0;` — the live gate
-        // is carried on the seam Architecture (`build_arch_handle`); `enabled`
+        // is carried on the boundary Architecture (`build_arch_handle`); `enabled`
         // stays as the unit-test OR-override (action registered false).
         if !self.enabled && !data.get_arch().strip_stack_guard {
             return 0; // P0 assertion not set
@@ -316,10 +315,7 @@ impl Action for ActionStripStackGuard {
                 continue;
             }
             // The in-place CFG surgery (the W4/W8 funcdata_block primitives are
-            // now in the merged tree).  The C++ here is:
-            //   data.removeBranch(h,idx);                  // CBRANCH -> fall-through, MULTIEQUALs patched
-            //   data.removeUnreachableBlocks(false,true);  // collect the orphaned handler block
-            //   return 1; // one canary per apply; the fullloop re-invokes and self-gates
+            // now in the merged tree).
             // `removeBranch` severs the corrupted-canary edge (dropping the
             // CBRANCH and patching the saved-canary MULTIEQUAL phis), leaving the
             // `__stack_chk_fail` handler block unreachable; `removeUnreachableBlocks`
@@ -362,13 +358,7 @@ impl Default for StackGuardOption {
 }
 
 impl StackGuardOption {
-    /// Apply the option (C++ `OptionStackGuard::apply`):
-    /// ```text
-    ///   bool val = onOrOff(p1);
-    ///   glb->strip_stack_guard = val;
-    ///   string prop = val ? "on" : "off";
-    ///   return "Stack-protector canary epilogue stripping turned "+prop;
-    /// ```
+    /// Apply the option (C++ `OptionStackGuard::apply`).
     pub fn apply(&mut self, val: bool) -> String {
         self.enabled = val;
         let prop = if val { "on" } else { "off" };

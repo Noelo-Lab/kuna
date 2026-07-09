@@ -31,7 +31,7 @@
 //! `BlockGraph` read-only) and three console commands (`IfcKunaRegionTree`,
 //! `IfcKunaRegionBlocks`, `IfcKunaRegionWalk`).  Both depend on
 //! `FlowBlock::getStart()`/`lastOp()` and the `IfaceDecompCommand` console
-//! machinery, which are a later wave (the same surface `kuna_assert.rs` seams
+//! machinery, which are a later wave (the same surface `kuna_assert.rs` stubs
 //! off).  This port realizes the full identifier algorithm over the synthetic
 //! input API (`add_synthetic_block`/`add_synthetic_edge`), exactly what the
 //! `testkunaregion.cc` unit tests drive; the block-graph adapter and the

@@ -1,12 +1,12 @@
 //! Port of `decompiler/cpp/kuna_assert.{cc,hh}` — the typed assertion API
-//! (`stage-model.md` section 12).
+//! (`docs/history/stage-model.md` section 12).
 //!
 //! `kassert` is a thin facade over the existing battle-tested stores (Override,
 //! Symbol-DB locks, FuncProto locks, the option database): it validates a
 //! `<stage> <substage>` pair against the stage registry ([`kuna_phases`]) and
 //! dispatches to the store for that sub-stage. What it ADDS is the model —
 //! every applied assertion is recorded with its stage, sub-stage, strength, and
-//! the **computed minimal rewind scope** (`stage-model.md` section 12), which
+//! the **computed minimal rewind scope** (`docs/history/stage-model.md` section 12), which
 //! `kassert list` REPORTS (Ghidra-actual re-run remains whole-function).
 //!
 //! ## What this module owns vs. STUB(W5)
@@ -25,7 +25,7 @@
 //!     before it dispatches (the half that is independent of the live stores);
 //!   - [`Dispatch`]: the sub-stage -> store routing *decision* (which store a
 //!     sub-stage routes to, and whether it is latent/unroutable), transcribed
-//!     from the C++ `if/else` chain — the actual store mutation is the W5 seam.
+//!     from the C++ `if/else` chain — the actual store mutation is the W5 stub.
 //!
 //! STUB(W5): the live dispatch (`Override::insertForceGoto`, `FuncProto`
 //! locks, `OptionDatabase::set`, symbol retype/rename) and the console parsing
@@ -159,28 +159,24 @@ pub struct ValidatedAssertion {
 ///   4. sub-stage belongs to a different stage.
 ///
 /// The **minimal-rewind computation** is the sub-stage's catalog `rewind`
-/// field (`stage-model.md` section 12: format->P9, force-goto->P7, typelock->P5,
+/// field (`docs/history/stage-model.md` section 12: format->P9, force-goto->P7, typelock->P5,
 /// proto->P4, jumptable/flow/context->P2, deadcode-delay->P3), looked up here.
 pub fn validate_assertion(
     stagecode: &str,
     subname: &str,
     strength_override: Option<KunaStrength>,
 ) -> KunaResult<ValidatedAssertion> {
-    // C++: if (!kunaStageFromCode(stagecode,stage)) throw IfaceParseError(...)
     let phase = KunaPhase::from_code(stagecode).ok_or_else(|| KunaError::Parse {
         explain: format!("Bad phase code (expecting P0..P9): {stagecode}"),
     })?;
-    // C++: if (subname.empty()) throw IfaceParseError("Missing sub-stage name ...")
     if subname.is_empty() {
         return Err(KunaError::Parse {
             explain: "Missing sub-phase name (see `phase list`)".to_string(),
         });
     }
-    // C++: sub = kunaLookupSubStage(subname); if (sub==0) throw ...
     let sub = lookup_subphase(subname).ok_or_else(|| KunaError::Parse {
         explain: format!("Unknown sub-phase: {subname} (see `phase list`)"),
     })?;
-    // C++: if (sub->stage != stage) throw IfaceParseError(...)
     if sub.phase != phase {
         return Err(KunaError::Parse {
             explain: format!(
@@ -190,15 +186,14 @@ pub fn validate_assertion(
         });
     }
 
-    // C++: requested = sub->strength; then the trailing hard|hint overrides it.
     let requested = strength_override.unwrap_or(sub.strength);
 
     Ok(ValidatedAssertion {
         phase,
         subphase: subname.to_string(),
         requested,
-        applied: sub.strength, // C++: rec.applied = sub->strength
-        rewind: sub.rewind,    // C++: rec.rewind = sub->rewind (minimal rewind)
+        applied: sub.strength,
+        rewind: sub.rewind,
         dispatch: Dispatch::for_substage(subname, sub.latent),
     })
 }
@@ -246,7 +241,6 @@ impl AssertLog {
              Ghidra-actual re-run remains whole-function):\n",
         );
         for (i, rec) in self.entries.iter().enumerate() {
-            // C++: "  " << dec << i << ": [" << funcName << "] " << code << '/' << substage
             os.push_str("  ");
             os.push_str(&i.to_string());
             os.push_str(": [");
@@ -259,18 +253,15 @@ impl AssertLog {
                 os.push(' ');
                 os.push_str(&rec.args);
             }
-            // C++: "  strength=" << (HARD|HINT|-)
             os.push_str("  strength=");
             os.push_str(match rec.strength {
                 KunaStrength::Hard => "HARD",
                 KunaStrength::Hint => "HINT",
                 KunaStrength::None => "-",
             });
-            // C++: if (strength==HINT && applied==HARD) " (applied via HARD mechanism)"
             if rec.strength == KunaStrength::Hint && rec.applied == KunaStrength::Hard {
                 os.push_str(" (applied via HARD mechanism)");
             }
-            // C++: "  rewind->" << code(rewind) << endl
             os.push_str("  rewind->");
             os.push_str(rec.rewind.code());
             os.push('\n');

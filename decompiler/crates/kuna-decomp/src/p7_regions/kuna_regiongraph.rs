@@ -425,7 +425,6 @@ impl KunaRegionGraph {
     /// Out-neighbors in `KunaNodeOrder` (C++ `getSortedSuccs`).
     pub fn get_sorted_succs(&self, pool: &KunaNodePool, n: KunaNodeId) -> KunaResult<Vec<KunaNodeId>> {
         let mut res: Vec<KunaNodeId> = self.get_succs(n)?.to_vec();
-        // C++ `sort(res, KunaNodeOrder())`.
         res.sort_by(|&a, &b| pool.key(a).cmp(&pool.key(b)));
         Ok(res)
     }
@@ -676,11 +675,10 @@ fn kuna_edge_sum_cmp(
     let carrya = suma < a0;
     let sumb = b0.wadd(b1);
     let carryb = sumb < b0;
-    // C++: `if (carrya != carryb) return carryb;` (true => a < b)
+    // If the carries differ, carryb decides the order (true => a < b).
     if carrya != carryb {
         return if carryb { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
     }
-    // C++: `return (suma < sumb);`
     suma.cmp(&sumb)
 }
 
@@ -854,7 +852,6 @@ pub fn kuna_quasi_topo_sort(
 
     let mut edges: Vec<(KunaNodeId, KunaNodeId)> = Vec::new();
     g.all_edges(&mut edges);
-    // C++ `stable_sort(edges, KunaEdgeSum())`.
     edges.sort_by(|&a, &b| kuna_edge_sum_cmp(pool, a, b));
     for (efirst, esecond) in edges {
         let src_idx = node_index[&efirst];

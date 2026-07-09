@@ -14,17 +14,12 @@
 //! `buildReturnOutput` refuses to join a multi-register return, keeping only the
 //! first (least-significant) register.
 //!
-//! # What this port covers (and the two seams it cannot)
+//! # What this port covers (and the two boundaries it cannot)
 //!
 //! The whole upstream `kuna_returnpair.cc` IS the option class
 //! `OptionReturnPair::apply`: it parses `pair`/`single` and writes the arch flag
 //! `return_single`.  The actual rewrite is a one-line gate inside
-//! `ActionReturnRecovery::buildReturnOutput` (**`coreaction.cc`, not this file**):
-//!
-//! ```text
-//!   if (data.getArch()->return_single && newparam.size() > 2)   // (kuna) GH-6990
-//!     newparam.resize(2);                                        //   keep only the first register
-//! ```
+//! `ActionReturnRecovery::buildReturnOutput` (**`coreaction.cc`, not this file**).
 //!
 //! This module therefore ports:
 //!
@@ -86,23 +81,11 @@ impl ReturnPairForm {
 /// Parse the `option returnpair pair|single` argument and produce the resolved
 /// form plus the confirmation message (C++ `OptionReturnPair::apply`).
 ///
-/// ```text
-///   bool single;
-///   if (p1 == "single") single = true;
-///   else if (p1 == "pair") single = false;
-///   else return "Must specify pair or single";
-///   glb->return_single = single;
-///   return "Return-register pairing set to "+p1+" form";
-/// ```
-///
 /// The C++ returns the error text as a normal (non-throwing) `string`; the Rust
 /// port surfaces it as a `KunaError::parse` (the established option-parse error
 /// idiom in `options.rs`).  The caller writes the resolved
 /// [`ReturnPairForm::return_single`] into [`Architecture::return_single`].
 pub fn parse_return_pair_form(p1: &str) -> KunaResult<(ReturnPairForm, String)> {
-    // if (p1 == "single") single = true;
-    // else if (p1 == "pair") single = false;
-    // else return "Must specify pair or single";
     let form = if p1 == "single" {
         ReturnPairForm::Single
     } else if p1 == "pair" {
@@ -110,17 +93,11 @@ pub fn parse_return_pair_form(p1: &str) -> KunaResult<(ReturnPairForm, String)> 
     } else {
         return Err(KunaError::parse("Must specify pair or single"));
     };
-    // glb->return_single = single;  -- left to the caller (Architecture::return_single).
-    // return "Return-register pairing set to "+p1+" form";
+    // C++ writes glb->return_single here; Rust leaves it to the caller (Architecture::return_single).
     Ok((form, format!("Return-register pairing set to {p1} form")))
 }
 
-/// The `ActionReturnRecovery::buildReturnOutput` gate (C++ `coreaction.cc:1892`):
-///
-/// ```text
-///   if (data.getArch()->return_single && newparam.size() > 2)   // (kuna) GH-6990
-///     newparam.resize(2);
-/// ```
+/// The `ActionReturnRecovery::buildReturnOutput` gate (C++ `coreaction.cc:1892`).
 ///
 /// Returns `true` when the gathered return varnodes should be truncated to the
 /// first register pair slot (`newparam[0]` is the return-indirect reference and

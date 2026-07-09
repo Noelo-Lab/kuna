@@ -12,13 +12,13 @@
 //! `sortCapabilities` pushes "raw" last) and an XML document whose root element
 //! is named `raw_savefile`.
 //!
-//! ## Wired vs. seamed
+//! ## Wired vs. stubbed
 //!
 //! - **Wired**: the capability (`isFileMatch`/`isXmlMatch`/`buildArchitecture`),
 //!   the raw-image `buildLoader` (open + `adjustvma`), the `resolveArchitecture`
 //!   override (`archid = target` then the base resolve), and the `restoreXml`
 //!   document-walk (`adjustvma` + the `coretypes` child registration).
-//! - **Seamed**: `init(store)` and `encode` (the W6/W8 type-factory/print/
+//! - **Stubbed**: `init(store)` and `encode` (the W6/W8 type-factory/print/
 //!   spec-decode + `Encoder` flow), and the `postSpecFile`
 //!   `Architecture::postSpecFile` chain.  The `attachToSpace(getDefaultCodeSpace())`
 //!   tail of `postSpecFile` is wired (it needs only the built translator's
@@ -42,7 +42,7 @@ use crate::xml_arch::parse_auto_base;
 pub const ELEM_RAW_SAVEFILE: ElementId = ElementId::new("raw_savefile", 237);
 
 // ---------------------------------------------------------------------------
-// RawBinaryArchitectureCapability (raw_arch.hh:29)
+// RawBinaryArchitectureCapability
 // ---------------------------------------------------------------------------
 
 /// \brief Extension point for building an Architecture that reads in raw images
@@ -92,7 +92,7 @@ impl ArchitectureCapability for RawBinaryArchitectureCapability {
 }
 
 // ---------------------------------------------------------------------------
-// RawBinaryArchitecture (raw_arch.hh:42)
+// RawBinaryArchitecture
 // ---------------------------------------------------------------------------
 
 /// \brief Architecture that reads its binary as a raw file (C++ `class
@@ -166,10 +166,9 @@ impl RawBinaryArchitecture {
     /// the C++ semantics (including the UB on the `adjustvma != 0` save-file
     /// path) are preserved exactly.  See `docs/rust-port/losses.md`.
     pub fn build_loader(&mut self) -> KunaResult<()> {
-        // unique_ptr<RawLoadImage> ldr(new RawLoadImage(getFilename())); ldr->open();
         let mut ldr = RawLoadImage::new(self.sleigh.get_filename());
         ldr.open()?;
-        // if (adjustvma != 0) ldr->adjustVma(adjustvma);  (C++ UB if no space yet)
+        // (C++ UB if no space yet — adjustVma runs before the space attach)
         if self.adjustvma != 0 {
             ldr.adjust_vma(self.adjustvma);
         }
@@ -197,14 +196,11 @@ impl RawBinaryArchitecture {
         // archid through a dedicated setter on the base.
         let target = self.sleigh.get_target().to_string();
         self.sleigh.set_archid(&target);
-        // SleighArchitecture::resolveArchitecture();
         self.sleigh.resolve_architecture(db, "")
     }
 
     /// \brief Attach the default code space to the loader (the wired tail of C++
     /// `RawBinaryArchitecture::postSpecFile`, `raw_arch.cc:73`).
-    ///
-    /// `((RawLoadImage *)loader)->attachToSpace(getDefaultCodeSpace());`
     ///
     /// STUB(W4): the C++ `postSpecFile` first calls `Architecture::postSpecFile`
     /// (the segmented-pointer + read-only chain); only the attach tail is wired
@@ -214,7 +210,6 @@ impl RawBinaryArchitecture {
         let loader = self.loader.as_mut().ok_or_else(|| {
             KunaError::lowlevel("RawBinaryArchitecture::postSpecFile: loader not built")
         })?;
-        // ((RawLoadImage *)loader)->attachToSpace(getDefaultCodeSpace());
         loader.attach_to_space(default_code_space);
         Ok(())
     }
@@ -233,15 +228,12 @@ impl RawBinaryArchitecture {
         adjustvma_str: &str,
         children: &[Rc<Element>],
     ) -> KunaResult<RawRestore> {
-        // restoreXmlHeader(el);
         self.sleigh.restore_xml_header(name, target);
-        // istringstream s(adjustvma); s.unsetf(dec|hex|oct); s >> adjustvma;
         self.adjustvma = parse_auto_base(adjustvma_str);
 
         let mut iter = children.iter();
         let mut registered: Vec<Rc<Element>> = Vec::new();
         let mut next = iter.next();
-        // if ((*iter)->getName() == "coretypes") { register; ++iter; }
         if let Some(el) = next {
             if el.get_name() == "coretypes" {
                 registered.push(Rc::clone(el));
@@ -249,7 +241,6 @@ impl RawBinaryArchitecture {
             }
         }
         // init(store);  -- STUB(W6/W8)
-        // if (iter != list.end()) { register *iter; SleighArchitecture::restoreXml(store); }
         let rest = next.map(Rc::clone);
         Ok(RawRestore { to_register: registered, rest })
     }

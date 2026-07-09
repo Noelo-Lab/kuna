@@ -34,7 +34,7 @@
 //! nor invent its fields.
 //!
 //! The faithful transcription therefore routes every `glb->` access through the
-//! **local seam trait [`ArchOptionContext`]**, defined here.  Each trait method
+//! **local boundary trait [`ArchOptionContext`]**, defined here.  Each trait method
 //! corresponds one-to-one to a `glb->` access in the C++, documented with the
 //! exact C++ line it stands in for.  The methods whose subsystem is alive
 //! (`flowoptions`, the plain config bools/ints, `split_datatype_config`,
@@ -439,7 +439,7 @@ pub const RELOC_OBJECTS_ENV: &str = "KUNA_RELOC_OBJECTS";
 // Typed enums for the option-parsing knobs whose target subsystem is W5+.
 //
 // These let an apply() finish its *parse + validate* faithfully (the part
-// options.cc owns) and hand a typed value to the seam method; the subsystem
+// options.cc owns) and hand a typed value to the boundary method; the subsystem
 // mutation is the only deferred piece.
 // ---------------------------------------------------------------------------
 
@@ -699,7 +699,7 @@ impl IntParse for uint4 {
 }
 
 // ---------------------------------------------------------------------------
-// ArchOptionContext — the local seam for the `glb->` surface options mutate.
+// ArchOptionContext — the local boundary for the `glb->` surface options mutate.
 // ---------------------------------------------------------------------------
 
 /// The slice of the [`Architecture`](crate::architecture) that `ArchOption`
@@ -944,7 +944,6 @@ impl ArchOption for OptionExtraPop {
             return Err(KunaError::parse("Bad extrapop adjustment parameter"));
         }
         if !p2.is_empty() {
-            // queryFunction(p2) -> unknown name => RecovError.
             glb.set_function_extra_pop(p2, expop)?;
             Ok(format!("ExtraPop set for function {p2}"))
         } else {
@@ -1989,7 +1988,6 @@ impl ArchOption for OptionNanIgnore {
             }
             _ => return Err(KunaError::lowlevel(format!("Unknown nanignore option: {p1}"))),
         }
-        // root = getCurrent(); enable/disable "ignorenan".
         if !glb.nan_ignore_all() && !glb.nan_ignore_compare() {
             glb.disable_rule("ignorenan");
         } else {
@@ -2024,7 +2022,7 @@ pub const PROTOMODEL_EXTRAPOP_UNKNOWN: int4 = 0x8000;
 ///
 /// The C++ owns its `Architecture *glb`; the Rust port keeps the database
 /// decoupled and passes the [`ArchOptionContext`] to `set`/`decode`, so the
-/// W4-owned `Architecture` can implement the seam without this module reaching
+/// W4-owned `Architecture` can implement the boundary without this module reaching
 /// into it.
 #[derive(Default)]
 pub struct OptionDatabase {
