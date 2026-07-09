@@ -56,8 +56,7 @@ impl Default for SwitchModBoundOption {
 }
 
 impl SwitchModBoundOption {
-    /// (kuna) Set the gate (C++ `OptionSwitchModBound::apply`: `bool val =
-    /// onOrOff(p1); glb->switch_modulo_bound = val;`).
+    /// (kuna) Set the gate (C++ `OptionSwitchModBound::apply`).
     pub fn apply(&mut self, val: bool) -> &'static str {
         self.enabled = val;
         if val {

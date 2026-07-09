@@ -63,8 +63,7 @@ impl Default for SparcStructRetOption {
 }
 
 impl SparcStructRetOption {
-    /// (kuna) Set the gate (C++ `OptionSparcStructRet::apply`: `bool val =
-    /// onOrOff(p1); glb->sparc_struct_return = val;`).
+    /// (kuna) Set the gate (C++ `OptionSparcStructRet::apply`).
     pub fn apply(&mut self, val: bool) -> &'static str {
         self.enabled = val;
         if val {
@@ -84,32 +83,7 @@ impl SparcStructRetOption {
 const ILLEGAL_INSTRUCTION_TRAP: &str = "IllegalInstructionTrap";
 
 /// (kuna) Is `op` a SPARC struct-return `unimp` BRANCHIND that should fall
-/// through? (C++ `kunaIsSparcStructRetTrap`, GH-6882).
-///
-/// Faithful transcription of `decompiler/cpp/kuna_sparcstructret.cc:14-48`:
-///
-/// ```text
-///   if (!glb->sparc_struct_return) return false;       // gate
-///   if (op->code() != CPUI_BRANCHIND) return false;
-///   // At this raw (pre-SSA) flow stage the input Varnode is not def-linked,
-///   // so identify the trap positionally: walk back over the ops of the same
-///   // instruction looking for the trap CALLOTHER.
-///   iter = op->getInsertIter(); beg = data.beginOpDead(); cur = op;
-///   for (;;) {
-///     if (cur->code() == CPUI_CALLOTHER) {
-///       const Varnode *idvn = cur->getIn(0);                 // user-op id
-///       if (idvn != 0 && idvn->isConstant()) {
-///         UserPcodeOp *userop = glb->userops.getOp((uint4)idvn->getOffset());
-///         if (userop != 0 && userop->getName() == "IllegalInstructionTrap")
-///           return true;
-///       }
-///     }
-///     if (cur->isInstructionStart()) break;
-///     if (iter == beg) break;
-///     --iter; cur = *iter;
-///   }
-///   return false;
-/// ```
+/// through? (C++ `kunaIsSparcStructRetTrap`, kuna_sparcstructret.cc:14-48, GH-6882).
 ///
 /// `gate` is the resolved `glb->sparc_struct_return` (see
 /// [`SparcStructRetOption`]).  `userop_name` resolves a user-op id (the C++
@@ -125,7 +99,7 @@ pub fn kuna_is_sparc_struct_ret_trap<F>(data: &Funcdata, op: OpId, gate: bool, u
 where
     F: Fn(u32) -> Option<String>,
 {
-    // if (!glb->sparc_struct_return) return false;  // default-off gate
+    // default-off gate
     if !gate {
         return false;
     }
@@ -133,13 +107,10 @@ where
         Some(o) => o,
         None => return false,
     };
-    // if (op->code() != CPUI_BRANCHIND) return false;
     if opref.code() != OpCode::CPUI_BRANCHIND {
         return false;
     }
 
-    // iter = op->getInsertIter(); beg = data.beginOpDead(); cur = op;
-    //
     // The dead list in `iter_dead()` order is the C++ `beginOpDead()..` range;
     // `op` sits at some index `pos` in it (the C++ `getInsertIter()`).  We walk
     // `cur` back from `pos` toward `beg` (index 0), exactly as `--iter`.
@@ -157,18 +128,14 @@ where
             Some(o) => o,
             None => return false,
         };
-        // if (cur->code() == CPUI_CALLOTHER) { ... }
         if curref.code() == OpCode::CPUI_CALLOTHER {
-            // const Varnode *idvn = cur->getIn(0);  // first input = user-op id
+            // first input = user-op id
             if let Some(idvn) = curref.get_in(0) {
                 if let Some(vnref) = data.vbank().get(idvn) {
-                    // if (idvn != 0 && idvn->isConstant()) { ... }
                     if vnref.is_constant() {
-                        // UserPcodeOp *userop = glb->userops.getOp((uint4)idvn->getOffset());
                         // (uint4) truncation: the user-op id is a 32-bit index;
                         // the C++ casts the 64-bit constant offset to uint4.
                         let userop_id = vnref.get_offset() as u32;
-                        // if (userop != 0 && userop->getName() == "IllegalInstructionTrap")
                         if let Some(name) = userop_name(userop_id) {
                             if name == ILLEGAL_INSTRUCTION_TRAP {
                                 return true;
@@ -178,15 +145,14 @@ where
                 }
             }
         }
-        // if (cur->isInstructionStart()) break;  // reached the first op of this insn
+        // reached the first op of this insn
         if curref.is_instruction_start() {
             break;
         }
-        // if (iter == beg) break;  // reached the dead-list head
+        // reached the dead-list head
         if pos == 0 {
             break;
         }
-        // --iter; cur = *iter;
         pos -= 1;
     }
     false

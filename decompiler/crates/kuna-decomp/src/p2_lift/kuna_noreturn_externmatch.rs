@@ -27,10 +27,10 @@
 //! ## What this option does
 //!
 //! When `option noreturn_externmatch on`, the `FlowEnvironment::query_call_no_return`
-//! seam (`infra/decompile_drive.rs`) additionally consults the callee **name** at
+//! hook (`infra/decompile_drive.rs`) additionally consults the callee **name** at
 //! the direct-call entry: if the name (after stripping leading `_`, honoring the
 //! upstream global/`std` namespace guard) matches the same vendored ELF
-//! known-no-return list `noreturn_known` uses, the seam reports no-return. flow.rs
+//! known-no-return list `noreturn_known` uses, the hook reports no-return. flow.rs
 //! ORs this query with the proto flag at the artificial-halt site
 //! (`let no_return = is_no_return || query_call_no_return(entry)`), so a name match
 //! plants the halt and the trailing padding is never decoded — closing the gap by
@@ -49,7 +49,7 @@
 //! *win* on the target (less dead padding to decompile). It carries no risk class
 //! beyond the already-default-on `noreturn_known`: it applies the *same* vendored
 //! name list and the *same* global/`std` namespace guard, just at the flow query
-//! seam to reach the ET_REL extern that the address-keyed scan structurally
+//! boundary to reach the ET_REL extern that the address-keyed scan structurally
 //! misses. Set `option noreturn_externmatch off` to restore the prior
 //! byte-identical rendering (the dead `add`-padding after the call reappears).
 
@@ -91,7 +91,7 @@ fn base_and_namespace(name: &str) -> (&str, Option<&str>) {
 /// leading-`_` strip, then exact or trailing-`*` wildcard-prefix match.
 ///
 /// The parse is recomputed per call (the list is ~20 short lines; this is invoked
-/// only from the gated `query_call_no_return` seam on direct CALLs). It mirrors
+/// only from the gated `query_call_no_return` hook on direct CALLs). It mirrors
 /// `parse_list`: skip `#`/blank lines, strip leading `_`, a trailing `*` makes a
 /// wildcard prefix entry (the shipped ELF list has no wildcards, but the parse is
 /// faithful).

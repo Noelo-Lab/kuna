@@ -69,8 +69,7 @@ impl Default for SwitchGuardBoundOption {
 }
 
 impl SwitchGuardBoundOption {
-    /// (kuna) Set the gate (C++ `OptionSwitchGuardBound::apply`: `bool val =
-    /// onOrOff(p1); glb->switch_guard_bound = val;`).
+    /// (kuna) Set the gate (C++ `OptionSwitchGuardBound::apply`).
     pub fn apply(&mut self, val: bool) -> &'static str {
         self.enabled = val;
         if val {

@@ -30,7 +30,7 @@
 //!   - the block-building trio `collect_edges`/`split_basic`/`connect_basic` and
 //!     the `generate_blocks` shell.
 //!
-//! ## Cross-wave seam: the [`FlowEnvironment`] trait (W2 wired, W4/W6 deferred)
+//! ## Cross-wave boundary: the [`FlowEnvironment`] trait (W2 wired, W4/W6 deferred)
 //!
 //! `FlowInfo` in C++ reaches its owning `Architecture` (`glb`) for several
 //! subsystems that are **not** part of the W3 IR: the SLEIGH `Translate`
@@ -43,7 +43,7 @@
 //! hooks (`data.getOverride()`).  None of those live on the W3 `Architecture`
 //! skeleton ([`crate::context::ArchContext`]).
 //!
-//! Rather than half-wire them, this module declares a **local seam trait**
+//! Rather than half-wire them, this module declares a **local boundary trait**
 //! [`FlowEnvironment`] carrying exactly the slice `FlowInfo` needs: the
 //! `Translate` for `oneInstruction`, an op-code→`TypeOp` resolver (the W6 table),
 //! the flow-override lookup (W4 `Override`), the CALLOTHER-injected predicate
@@ -58,7 +58,7 @@
 //! The op-building emitter (C++ `PcodeEmitFd::dump`) needs `newVarnodeOut`
 //! (→ `opSetOutput` → the `(vbank,obank)` split-borrow accessor that only the
 //! `funcdata` owner can add) and `newCodeRef` (a `funcdata_varnode` factory not
-//! yet ported); both are seam-noted.  The call-site machinery (`FuncCallSpecs`,
+//! yet ported); both are boundary-noted.  The call-site machinery (`FuncCallSpecs`,
 //! `setupCallSpecs`/`setupCallindSpecs`/`checkForFlowModification`/`queryCall`),
 //! jump-table recovery (`JumpTable`, `recoverJumpTables`/`truncateIndirectJump`/
 //! `checkMultistageJumptables`), p-code injection (`injectPcode`/`doInjection`/
@@ -177,7 +177,7 @@ pub type JtPipelineFn<'a> = dyn FnMut(&mut Funcdata, &VisitedMap) -> KunaResult<
 /// The W4/W6 subsystem slice [`FlowInfo`] reaches through its owning
 /// `Architecture` (C++ `glb`) and per-function `Override`.
 ///
-/// This is a **local seam** (the serial-chain porter's right): it abstracts
+/// This is a **local boundary** (the serial-chain porter's right): it abstracts
 /// exactly the non-W3-IR surface the flow algorithms touch, so they compile and
 /// are testable against a real [`Translate`] now.  W4 supplies the concrete
 /// `Architecture`/`Override`-backed implementor; the algorithm bodies in this
@@ -428,7 +428,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// The function being flow-followed (C++ `Funcdata &data`; owns `obank`,
     /// `bblocks`, `qlst`).
     pub data: Funcdata,
-    /// The architecture/override seam slice (C++ `glb` + `data.getOverride()`).
+    /// The architecture/override boundary slice (C++ `glb` + `data.getOverride()`).
     env: &'a E,
     /// Addresses which are permanently unprocessed (C++ `unprocessed`).
     unprocessed: Vec<Address>,
@@ -505,9 +505,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let space = entry.get_space().expect("FlowInfo: entry has no space").clone();
         let baddr = Address::new(space.clone(), 0);
         let eaddr = Address::new(space, !0u64);
-        // C++ flow.cc:43: `flowoverride_present = data.getOverride().hasFlowOverride()`.
         // The per-function Override lives on the Funcdata (`localoverride`); the
-        // env-routed `has_flow_override` is the W2-era seam default (always false)
+        // env-routed `has_flow_override` is the W2-era boundary default (always false)
         // and is OR'd in only for back-compat with envs that still carry it.
         let flowoverride_present = data.get_override().has_flow_override() || env.has_flow_override();
         FlowInfo {
@@ -540,7 +539,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// in-lined function, the nested generation needs to know which functions are
     /// already on the in-lining stack so it does not re-inline a cycle.
     fn forward_recursion(&mut self, op2: &FlowInfo<'a, E>) {
-        // inline_recursion = op2.inline_recursion; inline_head = op2.inline_head;
         self.inline_recursion = op2.inline_recursion.clone();
         self.inline_head = op2.inline_head.clone();
     }
@@ -660,23 +658,19 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// For efficiency this assumes `op` can actually fall-thru.  Returns `None`
     /// if there is no possible p-code op.
     fn fallthru_op(&self, op: OpId) -> Option<OpId> {
-        // list iter = op->getInsertIter(); ++iter; if (iter != endDead()) {...}
         if let Some(retop) = self.dead_next(op) {
-            // if (!retop->isInstructionStart()) return retop;  // same instruction
+            // same instruction
             if !self.data.obank().get(retop).expect("fallthru_op: stale op").is_instruction_start() {
                 return Some(retop);
             }
         }
         // Find address of instruction containing this op.
-        // miter = visited.upper_bound(op->getAddr()); if (begin) return 0; --miter;
         let opaddr = self.data.obank().get(op).expect("fallthru_op: stale op").get_addr().clone();
         let (first, size) = self.visited_last_le_owned(&opaddr)?;
         let endaddr = &first + size as i64;
-        // if ((*miter).first + size <= op->getAddr()) return 0;
         if endaddr <= opaddr {
             return None;
         }
-        // return target((*miter).first + size);
         self.target(&endaddr).ok()
     }
 
@@ -686,10 +680,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// If the instruction generated no p-code, fall-thru to the next instruction.
     /// If no op is ultimately found, returns an error (the C++ `LowlevelError`).
     pub fn target(&self, addr: &Address) -> KunaResult<OpId> {
-        // iter = visited.find(addr);
         let mut cur = addr.clone();
         while let Some(stat) = self.visited.get(&cur) {
-            // const SeqNum &seq( seqnum ); if (!seq.getAddr().isInvalid()) {...}
             if !stat.seqnum.get_addr().is_invalid() {
                 if let Some(retop) = self.data.obank().find_op(&stat.seqnum) {
                     return Ok(retop);
@@ -697,7 +689,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 break;
             }
             // Visit fall thru address in case of no-op:
-            // iter = visited.find((*iter).first + (*iter).second.size);
             cur = &cur + stat.size as i64;
         }
         Err(KunaError::lowlevel(Self::target_error_message(addr)))
@@ -731,20 +722,16 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// the next instruction, and `Err` otherwise (C++ `LowlevelError`).
     fn find_rel_target(&self, op: OpId, res: &mut Address) -> KunaResult<Option<OpId>> {
         let o = self.data.obank().get(op).expect("find_rel_target: stale op");
-        // const Address &addr(op->getIn(0)->getAddr());
         let in0 = o.get_in(0).expect("findRelTarget: BRANCH null in0 (C++ UB)");
         let addr =
             self.data.vbank().get(in0).expect("find_rel_target: stale vn").get_addr().clone();
-        // uintm id = op->getTime() + addr.getOffset();
         let id: uintm = o.get_time().wrapping_add(addr.get_offset() as uintm);
-        // SeqNum seqnum(op->getAddr(), id);
         let opaddr = o.get_addr().clone();
         let seqnum = SeqNum::new(opaddr.clone(), id);
-        // retop = obank.findOp(seqnum); if (retop) return retop;  // internal branch
+        // internal branch
         if let Some(retop) = self.data.obank().find_op(&seqnum) {
             return Ok(Some(retop));
         }
-        // SeqNum seqnum1(op->getAddr(), id-1); retop = obank.findOp(seqnum1);
         let seqnum1 = SeqNum::new(opaddr.clone(), id.wrapping_sub(1));
         if let Some(retop) = self.data.obank().find_op(&seqnum1) {
             // branch was indeed to next instruction
@@ -755,10 +742,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 .expect("find_rel_target: stale retop")
                 .get_addr()
                 .clone();
-            // miter = visited.upper_bound(retop->getAddr()); if (!=begin) {--miter; ...}
             if let Some((first, size)) = self.visited_last_le_owned(&retaddr) {
                 *res = &first + size as i64;
-                // if (op->getAddr() < res) return 0;  // res has the fallthru addr
+                // res has the fallthru addr
                 if &opaddr < res {
                     return Ok(None);
                 }
@@ -814,7 +800,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let newseq =
             self.data.obank().get(new_op).expect("update_target: stale new").get_seq_num().clone();
         if let Some(stat) = self.visited.get_mut(&oldaddr) {
-            // if (seqnum == oldOp->getSeqNum()) seqnum = newOp->getSeqNum();
             if stat.seqnum == oldseq {
                 stat.seqnum = newseq;
             }
@@ -823,7 +808,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
 
     /// Register a new (non fall-thru) flow target (C++ `newAddress`, `flow.cc:221`).
     fn new_address(&mut self, from: OpId, to: &Address) -> KunaResult<()> {
-        // if ((to < baddr) || (eaddr < to)) {...}
         if to < &self.baddr || &self.eaddr < to {
             let fromaddr =
                 self.data.obank().get(from).expect("new_address: stale from").get_addr().clone();
@@ -832,7 +816,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             return Ok(());
         }
         if self.seen_instruction(to) {
-            // op = target(to); data.opMarkStartBasic(op);
             let op = self.target(to)?;
             self.op_mark_start_basic(op);
             return Ok(());
@@ -935,7 +918,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     ///
     /// STUB(W4): warning store; the `error_reinterpreted` exception is faithful.
     fn reinterpreted(&mut self, addr: &Address) -> KunaResult<()> {
-        // iter = visited.upper_bound(addr); if (begin) return; --iter;
         let addr2 = match self.visited_last_le_owned(addr) {
             Some((k, _)) => k,
             None => return Ok(()), // Should never happen
@@ -974,9 +956,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
 
     /// Create an artificial halt p-code op (C++ `artificialHalt`, `flow.cc:610`).
     ///
-    /// A special form of RETURN op annotated with the desired \e type.  Faithful
-    /// transcription: `newOp(1, addr); opSetOpcode(RETURN); opSetInput(newConstant(4,1),0);
-    /// if (flag) opMarkHalt(flag)`.
+    /// A special form of RETURN op annotated with the desired \e type.
     fn artificial_halt(&mut self, addr: &Address, flag: uint4) -> KunaResult<OpId> {
         let haltop = self.data.new_op(1, addr.clone());
         let retop = self.env.resolve_typeop(OpCode::CPUI_RETURN);
@@ -1001,7 +981,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// dead-list slice from `start` to the end is the C++ `[oiter, endDead())`.
     ///
     /// STUB(W3-funcdata): `opDestroyRaw` needs `destroyVarnode` (funcdata_varnode);
-    /// the `funcdata_op` wave's `op_destroy_raw` returns the seam error.  The set
+    /// the `funcdata_op` wave's `op_destroy_raw` returns the boundary error.  The set
     /// of ops to delete is computed faithfully; the destruction is deferred and
     /// recorded as a loss.  Returns the list of ops the C++ would have destroyed.
     fn delete_remaining_ops(&mut self, start: Option<OpId>) -> KunaResult<()> {
@@ -1022,9 +1002,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
         for op in victims {
-            // data.opDestroyRaw(op);
             //   -- STUB(W3-funcdata): op_destroy_raw needs destroyVarnode; the
-            //      funcdata_op wave defers it.  Propagate the seam error so the
+            //      funcdata_op wave defers it.  Propagate the boundary error so the
             //      missing surface is explicit (faithful: the C++ destroys here).
             self.data.op_destroy_raw(op)?;
         }
@@ -1045,7 +1024,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     ///
     /// STUB(W4): `setupCallSpecs`/`setupCallindSpecs` (the CALL/CALLIND cases) need
     /// `FuncCallSpecs` (W4); those branches call the W4 skeletons, which return the
-    /// seam note.  The CALLOTHER-injected check uses the [`FlowEnvironment`]
+    /// boundary note.  The CALLOTHER-injected check uses the [`FlowEnvironment`]
     /// predicate.  The `fc` injection-context parameter is the W4 `FuncCallSpecs *`.
     fn xref_control_flow(
         &mut self,
@@ -1061,7 +1040,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // we re-derive the live cursor by tracking which ops are still dead.
         let mut cursor = start;
         while let Some(curop) = cursor {
-            // op = *oiter++;
             op = Some(curop);
             // Advance the cursor before the body may delete the tail.
             cursor = self.dead_next(curop);
@@ -1078,7 +1056,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 OpCode::CPUI_CBRANCH => {
                     let destaddr = self.branch_in0_addr(curop);
                     if destaddr.is_constant() {
-                        let mut fall_thru = Address::default(); // C++ Address fallThruAddr; (unused in CBRANCH/BRANCH)
+                        let mut fall_thru = Address::default(); // unused in CBRANCH/BRANCH
                         if let Some(destop) = self.find_rel_target(curop, &mut fall_thru)? {
                             self.op_mark_start_basic(destop); // target starts a block
                             let newtime =
@@ -1097,7 +1075,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 OpCode::CPUI_BRANCH => {
                     let destaddr = self.branch_in0_addr(curop);
                     if destaddr.is_constant() {
-                        let mut fall_thru = Address::default(); // C++ Address fallThruAddr; (unused in CBRANCH/BRANCH)
+                        let mut fall_thru = Address::default(); // unused in CBRANCH/BRANCH
                         if let Some(destop) = self.find_rel_target(curop, &mut fall_thru)? {
                             self.op_mark_start_basic(destop);
                             let newtime =
@@ -1108,7 +1086,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         } else {
                             *isfallthru = true;
                         }
-                        // if (op->getTime() >= maxtime) { deleteRemainingOps; ... }
                         if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
                             self.delete_remaining_ops(cursor)?;
                             cursor = None;
@@ -1168,7 +1145,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         *startbasic = true;
                     } else {
                         self.new_address(curop, &destaddr)?;
-                        // if (op->getTime() >= maxtime) { deleteRemainingOps; ... }
                         if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
                             self.delete_remaining_ops(cursor)?;
                             cursor = None;
@@ -1179,7 +1155,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 OpCode::CPUI_BRANCHIND => {
                     // (kuna) GH-6882: SPARC struct-return `unimp` after a call.
                     if self.env.is_sparc_struct_ret_trap(&self.data, curop) {
-                        // data.opDestroyRaw(op); op = 0; isfallthru = true; break;
                         //   -- STUB(W3-funcdata): op_destroy_raw deferred (loss).
                         self.data.op_destroy_raw(curop)?;
                         op = None;
@@ -1201,7 +1176,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     *startbasic = true;
                 }
                 OpCode::CPUI_CALL => {
-                    // if (setupCallSpecs(op,fc)) --oiter;  // Backup one op, pickup halt
                     if self.setup_call_specs(curop)? {
                         // The C++ `--oiter` backs up to the op *after* the call —
                         // the noreturn halt `checkForFlowModification` just inserted
@@ -1217,7 +1191,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     }
                 }
                 OpCode::CPUI_CALLOTHER => {
-                    // if (glb->userops.getOp(in0)->getType()==injected) injectlist.push(op);
                     let in0 = self
                         .data
                         .obank()
@@ -1308,7 +1281,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let emptyflag = self.data.obank().empty();
         let marker: Option<OpId> = if emptyflag { None } else { self.dead_tail() };
 
-        // C++ flow.cc:433: `flowoverride = data.getOverride().getFlowOverride(curaddr)`
         // (the per-function Override lives on the Funcdata; `localoverride`).
         let flowoverride: uint4 = if self.flowoverride_present {
             self.data.get_override().get_flow_override(curaddr)
@@ -1316,7 +1288,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             crate::overrides::flow_type::NONE
         };
 
-        // step = glb->translate->oneInstruction(emitter, curaddr);
         let mut emit = FlowEmit::new(&mut self.data, self.env);
         match self.env.translate().one_instruction(&mut emit, curaddr) {
             Ok(s) => {
@@ -1335,7 +1306,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
 
-        // VisitStat &stat(visited[curaddr]); stat.size = step;
         // (Insert with an INVALID seqnum; the first-op seqnum is filled in below.)
         self.visited.insert(
             curaddr.clone(),
@@ -1359,15 +1329,12 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         };
 
         if let Some(firstop) = first_new {
-            // stat.seqnum = (*oiter)->getSeqNum();
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
                 stat.seqnum = seq;
             }
-            // data.opMarkStartInstruction(*oiter);
             self.op_mark_start_instruction(firstop);
             if flowoverride != crate::overrides::flow_type::NONE {
-                // C++ flow.cc:493: data.overrideFlow(curaddr, flowoverride).
                 self.data.override_flow(curaddr, flowoverride)?;
             }
             self.xref_control_flow(Some(firstop), startbasic, &mut isfallthru)?;
@@ -1382,8 +1349,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// Apply the decode-error policy for an `oneInstruction` failure (C++
     /// `processInstruction`'s `catch` ladder, `flow.cc:441-475`).
     ///
-    /// Returns the instruction `step` to record.  Faithful transcription of the
-    /// unimplemented/baddata branches and the ignore/error/truncate policy bits.
+    /// Returns the instruction `step` to record.  The unimplemented/baddata
+    /// branches and the ignore/error/truncate policy bits are transcribed.
     fn handle_decode_error(&mut self, curaddr: &Address, err: KunaError) -> KunaResult<int4> {
         match &err {
             KunaError::Unimpl { instruction_length, .. } => {
@@ -1446,7 +1413,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// the top address has already been visited (it is popped).
     fn set_fallthru_bound(&mut self, bound: &mut Address) -> KunaResult<bool> {
         let addr = self.addrlist.last().expect("set_fallthru_bound: empty addrlist").clone();
-        // iter = visited.upper_bound(addr);  -> first range greater than addr.
         // We compute the predecessor (last <= addr) and its successor.
         let le = self.visited_last_le_owned(&addr);
         if let Some((first, size)) = le {
@@ -1576,7 +1542,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
         let order: Vec<OpId> = self.data.obank().iter_dead().collect();
         for (idx, &op) in order.iter().enumerate() {
-            // nextstart = (iter==end) ? true : (*iter)->isBlockStart();
             let nextstart = match order.get(idx + 1) {
                 None => true,
                 Some(&next) => {
@@ -1590,7 +1555,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     self.block_edge2.push(targ);
                 }
                 OpCode::CPUI_BRANCHIND => {
-                    // jt = data.findJumpTable(op); if (jt==0) break;
                     //   no JumpTable -> assume no out-branches (partial flow).
                     if let Some(jt_idx) = self.data.find_jump_table_index(op) {
                         let num = self.data.get_jump_table(jt_idx as int4).num_entries();
@@ -1841,7 +1805,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         self.connect_basic(); // Generate edges between basic blocks
         if self.data.bblocks_get_size() != 0 {
             let startblock = self.data.bblocks_get_block(0);
-            // if (startblock->sizeIn() != 0) { new entry block flows into old }
             if self.data.bblocks_ref().block(startblock).size_in() != 0 {
                 let root = self.bblocks_root();
                 let newfront = self.data.bblocks_mut().new_block_basic(root);
@@ -1861,7 +1824,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     // W4 subsystem skeletons (FuncCallSpecs / JumpTable / injection)
     //
     // Each is a faithful skeleton: it carries the W3-portable bookkeeping and
-    // returns a precise seam error / no-op at the W4 boundary.  Recorded as
+    // returns a precise stub error / no-op at the W4 boundary.  Recorded as
     // losses.  The exact C++ bodies live in flow.cc and are reproduced in the
     // method docs so the W4 wave can fill them in against this surface.
     // -----------------------------------------------------------------------
@@ -1891,7 +1854,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             .and_then(|vn| self.data.vbank().get(vn))
             .map(|v| v.get_addr().clone())
             .unwrap_or_default();
-        // if (entryaddress.getSpace()->getType() == IPTR_FSPEC) { ... }
         // op->getIn(0) was already converted to an fspec pointer.  This happens
         // when we are cloning an op for inlining (inlineClone -> xrefInlinedBranch
         // -> setupCallSpecs): the cloned CALL still carries the *callee's* fspec
@@ -1910,16 +1872,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
         self.build_call_specs(op, entry.clone(), false)?;
         self.qlst_count += 1;
-        // C++ flow.cc:708-711: `if (fc != 0 && fc->getEntryAddress() ==
-        // res->getEntryAddress()) res->cancelInjectId();` — while weaving a
-        // call-fixup body, a nested direct CALL to the SAME fixup entry must NOT
-        // re-inject (cycle break).
+        // While weaving a call-fixup body, a nested direct CALL to the SAME
+        // fixup entry must NOT re-inject (cycle break; C++ cancelInjectId).
         if self.injecting_entry.as_ref() == Some(&entry) {
             if let Some(idx) = self.data.get_call_specs_index(op) {
                 self.data.get_call_specs_mut(idx).proto_mut().cancel_inject_id();
             }
         }
-        // C++ `return checkForFlowModification(*res)` (flow.cc:712).
         self.check_for_flow_modification(op, &entry)
     }
 
@@ -1946,13 +1905,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
             None => (false, false),
         };
-        // if (fspecs.isInline()) injectlist.push_back(fspecs.getOp());
         if is_inline {
             self.injectlist.push(op);
         }
-        // if (fspecs.isNoReturn()) { ... return true; }.  The noreturn flag is
-        // also reported straight from the symbol table for envs that carry it
-        // only there (the W4-era `query_call_no_return` seam).
+        // The noreturn flag is also reported straight from the symbol table for
+        // envs that carry it only there (the W4-era `query_call_no_return` hook).
         let no_return = is_no_return || (!entry.is_invalid() && self.env.query_call_no_return(entry));
         if no_return {
             let addr = self
@@ -1962,11 +1919,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 .expect("checkForFlowModification: stale call op")
                 .get_addr()
                 .clone();
-            // PcodeOp *haltop = artificialHalt(op->getAddr(),PcodeOp::noreturn);
             let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
-            // data.opDeadInsertAfter(haltop,op);
             self.data.op_dead_insert_after(haltop, op);
-            // if (!fspecs.isInline()) data.warning("Subroutine does not return",op->getAddr());
             if !is_inline {
                 self.data.warning("Subroutine does not return", &addr);
             }
@@ -2074,16 +2028,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 fc.proto_mut().set_inline(true);
                 is_inline_call = true;
             }
-            // C++ `ActionDefaultParams::apply` (coreaction.cc:2379-2391) full
-            // callee-proto copy:
-            //   if (!fc->hasModel()) {
-            //     Funcdata *otherfunc = fc->getFuncdata();
-            //     if (otherfunc != 0) {
-            //       fc->copy(otherfunc->getFuncProto());
-            //       if ((!fc->isModelLocked()) && !fc->hasMatchingModel(evalfp))
-            //         fc->setModel(evalfp);
-            //     } else fc->setInternal(evalfp, voidtype);
-            //   }
+            // C++ `ActionDefaultParams::apply` (coreaction.cc:2379-2391) performs
+            // the full callee-proto copy (only when `fc` has no model).
             // RELOCATION STUB(W4 callee-Funcdata copy): the C++ does this copy at
             // ActionDefaultParams time; flow.cc:683-686 deliberately POSTPONES the
             // full copy from queryCall to ActionDefaultParams "so last-second
@@ -2117,10 +2063,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     self.data.get_arch().query_callee_proto(&entry)
                 };
                 if let Some(callee_proto) = callee_proto {
-                    // fc->copy(otherfunc->getFuncProto())
                     fc.proto_mut().copy(&callee_proto);
-                    // if ((!fc->isModelLocked()) && !fc->hasMatchingModel(evalfp))
-                    //   fc->setModel(evalfp);
                     let evalfp = self
                         .data
                         .get_arch()
@@ -2136,12 +2079,12 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 }
             }
         }
-        // qlst.push_back(res); the index is the call spec's identity (looked up by
+        // The index is the call spec's identity (looked up by
         // op at use sites — see Funcdata::get_call_specs_index).
         let _idx = self.data.push_call_specs(fc);
 
         if !indirect {
-            // data.opSetInput(op, data.newVarnodeCallSpecs(res), 0): replace the
+            // Replace the
             // call-target Varnode with the fspec annotation.  The handle is a
             // process-unique counter; the printed name + entry are registered in
             // the fspec-space side table (the C++ pointer-cast equivalent).
@@ -2166,7 +2109,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// then woven into \b this flow at the call site.  The `inline_recursion`
     /// cycle tracking prevents a function from being inlined into itself.
     fn inline_sub_function(&mut self, op: OpId, entry: &Address) -> KunaResult<bool> {
-        // Funcdata *fd = fc->getFuncdata(); if (fd == 0) return false;
         // The callee Funcdata is built fresh from the entry address (queryCall
         // associated the symbol; here we build it on demand).
         let mut inlinefd = match self.env.build_inline_funcdata(entry)? {
@@ -2174,13 +2116,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             None => return Ok(false),
         };
 
-        // if (inline_head == 0) { inline_head = &data; inline_recursion = &inline_base; }
         if self.inline_head.is_none() {
             self.inline_head = Some(self.data.get_address().clone());
         }
-        // inline_recursion->insert(data.getAddress()); // Insert current function
+        // Insert current function
         self.inline_recursion.insert(self.data.get_address().clone());
-        // if (inline_recursion->find(fd->getAddress()) != end()) { warn; return false; }
         if self.inline_recursion.contains(inlinefd.get_address()) {
             // This function has already been included with current inlining.
             let opaddr =
@@ -2189,7 +2129,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             return Ok(false);
         }
 
-        // int4 res = data.inlineFlow(fd, *this, fc->getOp());
         let res = self.inline_flow(&mut inlinefd, op)?;
         if res < 0 {
             return Ok(false);
@@ -2224,7 +2163,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     fn inline_flow(&mut self, inlinefd: &mut Funcdata, callop: OpId) -> KunaResult<int4> {
         // inlinefd->getArch()->clearAnalysis(inlinefd): the callee Funcdata is
         // built fresh (no prior analysis to clear).
-        // FlowInfo inlineflow(*inlinefd, ...); inlinefd->obank.setUniqId(obank.getUniqId());
         inlinefd.obank_mut().set_uniq_id(self.data.obank().get_uniq_id());
 
         // Build a nested FlowInfo over the callee Funcdata using a placeholder
@@ -2233,7 +2171,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let inline_data = std::mem::replace(inlinefd, placeholder);
         let mut inlineflow = FlowInfo::new(inline_data, self.env);
 
-        // Address baddr(baseaddr.getSpace(),0); Address eaddr(baseaddr.getSpace(),~0);
         let space = self
             .data
             .get_address()
@@ -2249,9 +2186,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 | flow_flags::error_reinterpreted
                 | flow_flags::flow_forinline,
         );
-        // inlineflow.forwardRecursion(flow);
         inlineflow.forward_recursion(self);
-        // inlineflow.generateOps();
         inlineflow.generate_ops()?;
         // Carry any warnings the nested flow buffered back to the top-level
         // function's comment store (the C++ `inline_head`/`data` reach the same
@@ -2265,9 +2200,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         if inlineflow.check_ez_model() {
             res = 0;
             // With an EZ clone there are no jumptables to clone.
-            // list<PcodeOp *>::const_iterator oiter = obank.endDead(); --oiter;
             let marker = self.dead_tail(); // last op before the clone (there is at least one)
-            // flow.inlineEZClone(inlineflow, callop->getAddr());
             let calladdr = self
                 .data
                 .obank()
@@ -2276,7 +2209,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 .get_addr()
                 .clone();
             self.inline_ez_clone(&inlineflow, &calladdr)?;
-            // ++oiter; if (oiter != endDead()) { ... moveSequenceDead(firstop,lastop,callop) ... }
             let firstop = match marker {
                 Some(m) => self.dead_next(m),
                 None => self.dead_head(),
@@ -2284,7 +2216,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             if let Some(firstop) = firstop {
                 let lastop = self.dead_tail().expect("inlineFlow EZ: dead list non-empty");
                 self.data.obank_mut().move_sequence_dead(firstop, lastop, callop);
-                // if (callop->isBlockStart()) { firstop->setFlag(startbasic); updateTarget }
                 let callop_block_start = self
                     .data
                     .obank()
@@ -2306,7 +2237,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         .clear_flag(pcodeop_flags::startbasic);
                 }
             }
-            // opDestroyRaw(callop);
             self.data.op_destroy_raw(callop)?;
         } else {
             // Hard model.
@@ -2321,10 +2251,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             //   -- STUB(W4): inlinefd->jumpvec is the recovered-table list; an
             //      inline callee with a jumptable (none in the corpus) would clone
             //      them here.  No jumptable in the inline corpus, so this is empty.
-            // flow.inlineClone(inlineflow, retaddr);
             self.inline_clone(&inlineflow, &retaddr)?;
 
-            // Convert CALL op to a jump: while(callop->numInput()>1) opRemoveInput(last)
+            // Convert the CALL op to a jump.
             loop {
                 let n = self.data.obank().get(callop).expect("inlineFlow: stale callop").num_input();
                 if n <= 1 {
@@ -2332,15 +2261,12 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 }
                 self.data.op_remove_input(callop, n - 1);
             }
-            // opSetOpcode(callop,CPUI_BRANCH);
             self.data.op_set_opcode_code(callop, OpCode::CPUI_BRANCH);
-            // Varnode *inlineaddr = newCodeRef(inlinefd->getAddress());
             let inline_entry = inlineflow.data.get_address().clone();
             let inlineaddr = self.data.new_code_ref(&inline_entry);
             self.data.op_set_input(callop, inlineaddr, 0)?;
         }
 
-        // obank.setUniqId(inlinefd->obank.getUniqId());
         let inline_uniq = inlineflow.data.obank().get_uniq_id();
         self.data.obank_mut().set_uniq_id(inline_uniq);
         // Move the (now spent) callee data back out.
@@ -2377,10 +2303,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         op: OpId,
         retaddr: &mut Address,
     ) -> KunaResult<bool> {
-        // if (!inlinefd->getFuncProto().isNoReturn()) { ... }
         if !inlineflow.data.get_func_proto().is_no_return() {
-            // list<PcodeOp *>::iterator iter = op->getInsertIter(); ++iter;
-            // if (iter == obank.endDead()) { warn "No fallthrough ..."; return false; }
             let nextop = match self.dead_next(op) {
                 Some(n) => n,
                 None => {
@@ -2390,9 +2313,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     return Ok(false);
                 }
             };
-            // retaddr = nextop->getAddr();
             *retaddr = self.data.obank().get(nextop).expect("testHardInline: stale nextop").get_addr().clone();
-            // if (op->getAddr() == retaddr) { warn "Return address prevents ..."; return false; }
             let opaddr = self.data.obank().get(op).expect("testHardInline: stale op").get_addr().clone();
             if &opaddr == retaddr {
                 self.data.warning("Return address prevents inlining here", &opaddr);
@@ -2415,8 +2336,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 self.setup_callind_specs(op)?;
             }
             OpCode::CPUI_BRANCHIND => {
-                // JumpTable *jt = data.linkJumpTable(op);
-                // if (jt == 0 || jt->numEntries() == 0) tablelist.push_back(op);
                 let recovered = match self.data.link_jump_table(op) {
                     Some(jt_idx) => self.data.get_jump_table(jt_idx as int4).num_entries() != 0,
                     None => false,
@@ -2442,7 +2361,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         for op in src_ops {
             let opc = src.obank().get(op).expect("inlineClone: stale src op").code();
             let seq = src.obank().get(op).expect("inlineClone: stale src op").get_seq_num().clone();
-            // if ((op->code()==CPUI_RETURN) && (!retaddr.isInvalid())) { ... BRANCH }
             let cloneop = if opc == OpCode::CPUI_RETURN && !retaddr.is_invalid() {
                 let cloneop = self.data.new_op_seq(1, seq);
                 self.data.op_set_opcode_code(cloneop, OpCode::CPUI_BRANCH);
@@ -2450,10 +2368,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 self.data.op_set_input(cloneop, vn, 0)?;
                 cloneop
             } else {
-                // cloneop = data.cloneOp(op, op->getSeqNum());
                 self.data.clone_op_from(src, op, seq)?
             };
-            // if (cloneop->isCallOrBranch()) xrefInlinedBranch(cloneop);
             if self.data.obank().get(cloneop).expect("inlineClone: stale clone").is_call_or_branch() {
                 self.xref_inlined_branch(cloneop)?;
             }
@@ -2479,14 +2395,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let src = &inlineflow.data;
         let src_ops: Vec<OpId> = src.obank().iter_dead().collect();
         for op in src_ops {
-            // if (op->code() == CPUI_RETURN) break;
             if src.obank().get(op).expect("inlineEZClone: stale src op").code() == OpCode::CPUI_RETURN {
                 break;
             }
-            // SeqNum myseq(calladdr, op->getSeqNum().getTime());
             let time = src.obank().get(op).expect("inlineEZClone: stale src op").get_seq_num().get_time();
             let myseq = SeqNum::new(calladdr.clone(), time);
-            // data.cloneOp(op, myseq);
             self.data.clone_op_from(src, op, myseq)?;
         }
         // We don't touch unprocessed, addrlist, or visited (straight-line, one addr).
@@ -2506,14 +2419,14 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// the injection wave; the in-lining arm (`inlineSubFunction`) — the load-
     /// bearing path for `inline.xml` — is fully wired.
     fn inject_pcode(&mut self) -> KunaResult<()> {
-        // for (i=0; i<injectlist.size(); ++i) — index walk: inlineSubFunction
+        // Index walk: inlineSubFunction
         // (via inline_clone -> xref_inlined_branch -> setup_call_specs) can push
         // MORE ops onto injectlist (nested inlines), so re-read the length.
         let mut i = 0usize;
         while i < self.injectlist.len() {
             let op = self.injectlist[i];
             i += 1;
-            // if (op == 0) continue; injectlist[i] = 0; — Nullify so we don't
+            // Nullify so we don't
             // inject more than once.  A destroyed op id is filtered by liveness.
             let code = match self.data.obank().get(op) {
                 Some(o) => o.code(),
@@ -2543,19 +2456,16 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 // injectSubFunction(fc): weave a registered call-fixup payload in
                 // at the call site, replacing the original CALL/CALLIND.
                 if self.inject_sub_function(idx, op)? {
-                    // data.warningHeader("Function: "+fc->getName()+
-                    //   " replaced with injection: "+getCallFixupName(injectid));
                     let fixup = self.env.call_fixup_name(inject_id);
                     self.data.warning_header(&format!(
                         "Function: {name} replaced with injection: {fixup}"
                     ));
-                    // deleteCallSpec(fc): remove the now-injected call from qlst.
+                    // Remove the now-injected call from qlst.
                     self.data.delete_call_spec(idx);
                 }
             } else if self.inline_sub_function(op, &entry)? {
-                // data.warningHeader("Inlined function: " + fc->getName());
                 self.data.warning_header(&format!("Inlined function: {name}"));
-                // deleteCallSpec(fc): remove the now-inlined call from qlst.
+                // Remove the now-inlined call from qlst.
                 self.data.delete_call_spec(idx);
             }
         }
@@ -2571,7 +2481,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// then drives [`do_injection`](Self::do_injection) to weave the fixup body in
     /// and destroy the original op.
     fn inject_user_op(&mut self, op: OpId) -> KunaResult<()> {
-        // userop = (InjectedUserOp *)glb->userops.getOp(op->getIn(0)->getOffset());
         let in0 = self
             .data
             .obank()
@@ -2588,7 +2497,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         icontext.nextaddr = Some(baseaddr.clone());
         icontext.baseaddr = Some(baseaddr);
 
-        // for (i=1; i<numInput; ++i)  — skip the inject-id annotation in slot 0.
+        // Skip the inject-id annotation in slot 0.
         let n = self.data.obank().get(op).expect("injectUserOp: stale op").num_input();
         for i in 1..n {
             let vn = match self.data.obank().get(op).expect("injectUserOp: stale op").get_in(i) {
@@ -2635,8 +2544,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let entry = fc.get_entry_address().clone();
         let baseaddr = self.data.obank().get(op).expect("injectSubFunction: stale op").get_addr().clone();
 
-        // InjectContext: clear(); baseaddr = nextaddr = op->getAddr();
-        // calladdr = fc->getEntryAddress().  No inputlist/output (flow.cc:1292-1296).
+        // No inputlist/output (unlike the user-op path).
         let mut icontext = crate::pcodeinject::InjectContext::default();
         icontext.baseaddr = Some(baseaddr.clone());
         icontext.nextaddr = Some(baseaddr);
@@ -2651,7 +2559,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         self.injecting_entry = saved_injecting;
         result?;
 
-        // if (payload->getParamShift() != 0) qlst.back()->setParamshift(...).
         // The injected call's spec is the last one appended to qlst during the
         // woven body's xref (flow.cc:1299-1302).
         let param_shift = self.env.call_fixup_param_shift(inject_id);
@@ -2671,18 +2578,17 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// its control flow, marks it \e incidental (per the payload), moves it to sit
     /// right after `op`, repoints the target map, and `opDestroyRaw`s `op`.  Only
     /// the user-op path is wired here (the `fc` call-fixup variant is a separate
-    /// seam); the no-fallthru / incidental-copy handling is transcribed.
+    /// hook); the no-fallthru / incidental-copy handling is transcribed.
     fn do_injection(
         &mut self,
         source: InjectSource,
         icontext: &mut crate::pcodeinject::InjectContext,
         op: OpId,
     ) -> KunaResult<()> {
-        // list<PcodeOp *>::const_iterator iter = obank.endDead(); --iter;
         // (the marker op just before the injection lands).
         let marker = self.dead_tail(); // there must be at least one op (`op` itself)
 
-        // payload->inject(icontext, emitter): emit the fixup p-code.  The C++
+        // Emit the fixup p-code.  The C++
         // resolves the payload differently for a user-op (CALLOTHER) vs a
         // call-fixup (CALL/CALLIND), but the weave-in tail is identical.
         {
@@ -2700,10 +2606,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
 
-        // bool startbasic = op->isBlockStart();
         let mut startbasic =
             self.data.obank().get(op).expect("doInjection: stale op").is_block_start();
-        // ++iter; — first op in the injection.
+        // First op in the injection.
         let firstop = match marker {
             Some(m) => self.dead_next(m),
             None => self.dead_head(),
@@ -2717,20 +2622,17 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 return Err(KunaError::lowlevel("Empty injection"));
             }
         };
-        // PcodeOp *lastop = xrefControlFlow(iter, startbasic, isfallthru, fc);
         let mut isfallthru = true;
         let lastop = self.xref_control_flow(Some(firstop), &mut startbasic, &mut isfallthru)?;
         let lastop = lastop.unwrap_or(firstop);
         let _ = isfallthru; // (the injection's fallthru is implied by the next op)
 
-        // if (startbasic) { iter = op->getInsertIter(); ++iter; mark next as block start }
         if startbasic {
             if let Some(nextop) = self.dead_next(op) {
                 self.op_mark_start_basic(nextop);
             }
         }
 
-        // if (payload->isIncidentalCopy()) obank.markIncidentalCopy(firstop,lastop);
         let incidental = match source {
             InjectSource::UserOp(userop_index) => self.env.is_incidental_copy_userop(userop_index),
             InjectSource::CallFixup(inject_id) => self.env.is_incidental_copy_payload(inject_id),
@@ -2738,11 +2640,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         if incidental {
             self.data.obank_mut().mark_incidental_copy(firstop, lastop);
         }
-        // obank.moveSequenceDead(firstop,lastop,op): move the injection after op.
+        // Move the injection after op.
         self.data.obank_mut().move_sequence_dead(firstop, lastop, op);
-        // updateTarget(op, firstop): repoint the target map.
+        // Repoint the target map.
         self.update_target(op, firstop);
-        // data.opDestroyRaw(op): drop the original CALLOTHER.
+        // Drop the original CALLOTHER.
         self.data.op_destroy_raw(op)?;
         Ok(())
     }
@@ -2808,8 +2710,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     fn truncate_indirect_jump(&mut self, op: OpId, mode: RecoveryMode) -> KunaResult<()> {
         if mode == RecoveryMode::FailReturn {
             self.data.op_set_opcode_code(op, OpCode::CPUI_RETURN);
-            // C++ flow.cc:750 -- data.warning("Treating indirect jump as return", op->getAddr())
-            let addr = self.data.obank().get(op).unwrap().get_addr().clone();
+                let addr = self.data.obank().get(op).unwrap().get_addr().clone();
             self.data.warning("Treating indirect jump as return", &addr);
             return Ok(());
         }
@@ -2850,7 +2751,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     // and inline waves drive; the inline-clone family copies `visited`/`addrlist`
     // wholesale.  Exposed here as a thin `pub` surface (named after the C++) so
     // the independent verifier can exercise the W3-portable algorithms over
-    // hand-built op graphs and the W4 driver can call them without a seam edit.
+    // hand-built op graphs and the W4 driver can call them without a boundary edit.
     // -----------------------------------------------------------------------
 
     /// Seed a `visited` entry (C++ `visited[addr] = {seqnum,size}`; the inline
@@ -2988,8 +2889,6 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
         // Convert template data into a real PcodeOp (C++ PcodeEmitFd::dump).
         let isize = vars.len() as int4;
         let op = if let Some(out) = outvar {
-            // Address oaddr(outvar->space,outvar->offset);
-            // op = fd->newOp(isize,addr); fd->newVarnodeOut(outvar->size,oaddr,op);
             let op = self.fd.new_op(isize, addr.clone());
             let ospace =
                 out.space.as_ref().expect("FlowEmit::dump: output varnode has no space").clone();
@@ -3001,18 +2900,13 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
             }
             op
         } else {
-            // op = fd->newOp(isize,addr);
             self.fd.new_op(isize, addr.clone())
         };
-        // fd->opSetOpcode(op,opc);
         let t_op = self.env.resolve_typeop(opc);
         self.fd.op_set_opcode(op, t_op);
-        // int4 i=0; if (op->isCodeRef()) { ... newCodeRef ... i+=1; }
         let mut i = 0usize;
         let is_code_ref = self.fd.obank().get(op).expect("FlowEmit::dump: stale op").is_code_ref();
         if is_code_ref {
-            // Address addrcode(vars[0].space,vars[0].offset);
-            // fd->opSetInput(op, fd->newCodeRef(addrcode), 0);
             let cspace =
                 vars[0].space.as_ref().expect("FlowEmit::dump: code-ref varnode has no space").clone();
             let addrcode = Address::new(cspace, vars[0].offset);
@@ -3026,9 +2920,6 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
             }
             i += 1;
         }
-        // for(;i<isize;++i){ vn=fd->newVarnode(vars[i].size,vars[i].space,vars[i].offset);
-        //                    fd->opSetInput(op,vn,i); }
-        //
         // The C++ uses the (size, AddrSpace*, offset) `newVarnode` overload, which
         // builds a free Varnode at that storage.  For a LOAD/STORE the slot-0
         // operand is a spaceid constant in the \e constant space whose offset is

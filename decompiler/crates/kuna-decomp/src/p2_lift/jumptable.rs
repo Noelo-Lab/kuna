@@ -21,11 +21,11 @@
 //!     two-phase `recoverAddresses`/`matchModel`/`recoverLabels` driver,
 //!     `encode`/`decode`).
 //!
-//! ## Genuinely-absent dependencies (seam-noted; see structured losses)
+//! ## Genuinely-absent dependencies (boundary-noted; see structured losses)
 //!
 //! Several pieces depend on subsystems that are not yet ported.  Per the W3
 //! task rule (*"Where SSA/heritage context (W5) is genuinely required: faithful
-//! algorithm port against the existing IR surface, explicit Err seam notes +
+//! algorithm port against the existing IR surface, explicit Err boundary notes +
 //! losses for the unreachable-now paths"*) these surfaces are present as method
 //! shells that return a precise `Err`, and are recorded as losses:
 //!
@@ -37,7 +37,7 @@
 //!     code constructs; the value-set operators are `// STUB(W5)` shells.
 //!   - **`EmulateFunction`/`EmulatePcodeOp`** — emulation over the syntax tree
 //!     (LOSS-023: `EmulatePcodeOp` deferred to this wave but needs `glb->userops`
-//!     and `glb->loader`, which are W4 [`Architecture`] slices not in the seam);
+//!     and `glb->loader`, which are W4 [`Architecture`] slices not in the ArchContext);
 //!     `buildAddresses`/`emulatePath`/`trialNorm` are `// STUB(W4)` shells.
 //!   - **`MemoryImage`/loader reads** — `backup2Switch`/`findNormalized`/
 //!     `sanityCheck` read the LoadImage (`glb->loader`), W4.
@@ -50,7 +50,7 @@
 //!   - **`JumpAssisted`** — the `jumpassist` model is entirely W4
 //!     (`pcodeinjectlib`/`userops`/`ExecutablePcode`); ported as a shell.
 //!   - **arch config** — `switch_modulo_bound`, `funcptr_align`,
-//!     `max_jumptable_size` are W4 [`Architecture`] fields not in the seam.
+//!     `max_jumptable_size` are W4 [`Architecture`] fields not in the ArchContext.
 //!
 //! Integer semantics follow ADR 0003 (`uintb -> u64`, `intb -> i64`, explicit
 //! wrapping); containers follow ADR 0002 (`BTreeSet` for the override address
@@ -1360,7 +1360,7 @@ impl JumpModel for JumpModelTrivial {
         matchsize: uint4,
         _maxtablesize: uint4,
     ) -> KunaResult<bool> {
-        // size = indop->getParent()->sizeOut()  (jumptable.cc:390)
+        // jumptable.cc:390
         let parent = fd
             .obank()
             .get(indop)
@@ -1961,7 +1961,7 @@ impl JumpBasicModel {
         let base_vn = GuardRecord::quasi_copy(fd, vn, &mut bits_preserved);
         for guard in self.selectguards.iter() {
             let matchval = guard.value_match(fd, vn, base_vn, bits_preserved);
-            // if (matchval == 2) TODO: check aliases (upstream comment)
+            // TODO: check aliases when matchval == 2 (upstream comment)
             if matchval == 0 {
                 continue;
             }
@@ -3950,14 +3950,6 @@ impl JumpModel for JumpBasicModel {
 
     fn fold_in_guards(&mut self, fd: &mut Funcdata, jump: &mut JumpTable) -> KunaResult<bool> {
         // C++ JumpBasic::foldInGuards (jumptable.cc:1709).
-        //   bool change = false;
-        //   for(i=0;i<selectguards.size();++i) {
-        //     cbranch = selectguards[i].getBranch();
-        //     if (cbranch == 0) continue;        // already normalized
-        //     if (cbranch->isDead()) { selectguards[i].clear(); continue; }
-        //     if (foldInOneGuard(fd,selectguards[i],jump)) change = true;
-        //   }
-        //   return change;
         //
         // The `pos == nout` arm of foldInOneGuard converts the guard CBRANCH into
         // an unconditional BRANCH via pushBranch (no residue).  The `pos != nout`
@@ -3968,7 +3960,7 @@ impl JumpModel for JumpBasicModel {
         // so `ActionDeterminedBranch` (coreaction.cc:3688, in actmainloop) then
         // severs the now-constant CBRANCH's dead edge.  The Rust port re-runs the
         // loop identically; the only missing piece was that `removeBranch` was a
-        // seam in `ActionDeterminedBranch::apply` — now wired (coreaction_early.rs),
+        // hook in `ActionDeterminedBranch::apply` — now wired (coreaction_early.rs),
         // so the `if (1)` collapses on the re-run exactly as upstream.
         let mut change = false;
         let nguards = self.selectguards.len();
@@ -4769,7 +4761,7 @@ impl JumpTable {
     /// STUB(W5): `minimalmask`/nzmask exist, but this calls
     /// `jmodel->foldInNormalization`, whose `JumpBasic` body needs the model
     /// state (`switchvn`) recovered by the W5-dependent `recoverModel`.  The
-    /// driver is faithful; the model body returns the seam `Err`.
+    /// driver is faithful; the model body returns the stub `Err`.
     pub fn fold_in_normalization(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         let indirect = self.indirect.unwrap();
         let model = self
@@ -4802,7 +4794,6 @@ impl JumpTable {
 
     /// Hide any guard code for \b this switch (C++ `foldInGuards`).
     pub fn fold_in_guards(&mut self, fd: &mut Funcdata) -> KunaResult<bool> {
-        // jmodel->foldInGuards(fd,this)
         let mut model = self
             .jmodel
             .take()
@@ -5091,7 +5082,7 @@ impl JumpTable {
     /// Set manual override information on \b this jump-table
     /// (C++ `JumpTable::setOverride`, `jumptable.cc:2616`).
     ///
-    /// STUB(W4): builds a `JumpBasicOverride`, which is a seam shell. Records the
+    /// STUB(W4): builds a `JumpBasicOverride`, which is a stub shell. Records the
     /// override intent on the table but cannot wire the model body yet.
     pub fn set_override(
         &mut self,
@@ -5322,7 +5313,7 @@ impl JumpTable {
     /// (C++ `JumpTable::decode`, `jumptable.cc:2950`).
     ///
     /// STUB(W4): a `<basicoverride>` child instantiates `JumpBasicOverride`,
-    /// which is a seam shell; that branch returns the precise `Err`. The address/
+    /// which is a stub shell; that branch returns the precise `Err`. The address/
     /// label/loadtable parsing is fully ported.
     pub fn decode(&mut self, decoder: &mut dyn Decoder) -> KunaResult<()> {
         let elem_id = decoder.open_element_id(&ELEM_JUMPTABLE)?;

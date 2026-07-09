@@ -148,14 +148,11 @@ pub struct KunaLsKey {
 
 /// The side-table key for `fd` — C++ `keyForFunc` (`kuna_loweredswitch.cc:73`).
 pub fn key_for_func(fd: &Funcdata) -> KunaLsKey {
-    // const Address &entry( fd.getAddress() );
     let entry = fd.get_address();
-    // key.spaceindex = (entry.getSpace() != 0) ? entry.getSpace()->getIndex() : -1;
     let space_index = match entry.get_space() {
         Some(s) => s.get_index(),
         None => -1,
     };
-    // key.offset = entry.getOffset();
     KunaLsKey { space_index, offset: entry.get_offset() }
 }
 
@@ -181,8 +178,6 @@ impl KunaLoweredSwitchStore {
     /// (C++ `kunaLoweredSwitchHasRecord`).  True on the post-restart pass (the
     /// detection self-gate / install trigger).
     pub fn has_record(&self, fd: &Funcdata) -> bool {
-        // iter = loweredStore.find(keyForFunc(fd));
-        // return (iter != loweredStore.end() && !(*iter).second.empty());
         match self.table.get(&key_for_func(fd)) {
             Some(v) => !v.is_empty(),
             None => false,
@@ -233,20 +228,15 @@ pub fn new_shared_store() -> SharedLoweredSwitchStore {
 /// runs pre-merge, so the canonicalized [`VarnodeId`] is the identity key
 /// (the C++ pre-merge pointer-identity argument, exact here too).
 fn canon_switch_var(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
-    // for(int4 guard=0;guard<8;++guard) {
     for _guard in 0..8 {
-        // if (vn->isConstant()) return vn;
         if vn_is_constant(data, vn) {
             return vn;
         }
-        // if (!vn->isWritten()) return vn;
         if !vn_is_written(data, vn) {
             return vn;
         }
-        // PcodeOp *def = vn->getDef();  OpCode oc = def->code();
         let def = vn_def(data, vn).expect("canonSwitchVar: written vn has a def");
         let oc = op_code(data, def);
-        // if (oc==COPY||oc==CAST||oc==INT_ZEXT||oc==INT_SEXT) { vn = def->getIn(0); continue; }
         if oc == OpCode::CPUI_COPY
             || oc == OpCode::CPUI_CAST
             || oc == OpCode::CPUI_INT_ZEXT
@@ -260,8 +250,6 @@ fn canon_switch_var(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
                 None => return vn,
             }
         }
-        // if (oc==SUBPIECE && def->getIn(1)->isConstant() && def->getIn(1)->getOffset()==0) {
-        //   vn = def->getIn(0); continue; }
         if oc == OpCode::CPUI_SUBPIECE {
             if let Some(in1) = op_in(data, def, 1) {
                 if vn_is_constant(data, in1) && vn_offset(data, in1) == 0 {
@@ -275,7 +263,6 @@ fn canon_switch_var(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
                 }
             }
         }
-        // return vn;
         return vn;
     }
     vn
@@ -337,9 +324,7 @@ impl CmpNode {
 /// (which set flags / call) and the default block fail this and so naturally
 /// bound the cascade as leaves.
 fn is_pure_compare_block(data: &Funcdata, bl: BlockId) -> bool {
-    // for(iter=bb->beginOp();iter!=bb->endOp();++iter) {
     for op in data.bb_ops(bl) {
-        // OpCode oc = (*iter)->code();
         match op_code(data, op) {
             OpCode::CPUI_CBRANCH
             | OpCode::CPUI_INT_EQUAL
@@ -356,7 +341,6 @@ fn is_pure_compare_block(data: &Funcdata, bl: BlockId) -> bool {
             | OpCode::CPUI_MULTIEQUAL
             | OpCode::CPUI_INT_AND
             | OpCode::CPUI_BOOL_NEGATE => {}
-            // default: return false;
             _ => return false,
         }
     }
@@ -367,29 +351,23 @@ fn is_pure_compare_block(data: &Funcdata, bl: BlockId) -> bool {
 /// `analyzeCmp`).
 fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
     let mut res = CmpNode::new();
-    // PcodeOp *cb = bb->lastOp();
     let cb = match data.bb_op_tail(bl) {
         Some(o) => o,
         None => return res,
     };
-    // if (cb == 0 || cb->code() != CPUI_CBRANCH) return res;
     if op_code(data, cb) != OpCode::CPUI_CBRANCH {
         return res;
     }
-    // if (bb->sizeOut() != 2) return res;
     if block_size_out(data, bl) != 2 {
         return res;
     }
-    // Varnode *boolvn = cb->getIn(1);
     let boolvn = match op_in(data, cb, 1) {
         Some(v) => v,
         None => return res,
     };
-    // if (!boolvn->isWritten()) return res;
     if !vn_is_written(data, boolvn) {
         return res;
     }
-    // PcodeOp *cmp = boolvn->getDef();  OpCode oc = cmp->code();
     let cmp = vn_def(data, boolvn).expect("analyzeCmp: written boolvn has a def");
     let oc = op_code(data, cmp);
     // Only binary integer comparisons (all have two inputs) can be cascade nodes.
@@ -402,7 +380,6 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
     {
         return res;
     }
-    // Varnode *v0 = cmp->getIn(0);  Varnode *v1 = cmp->getIn(1);
     let v0 = match op_in(data, cmp, 0) {
         Some(v) => v,
         None => return res,
@@ -411,9 +388,6 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         Some(v) => v,
         None => return res,
     };
-    // if (v1->isConstant() && !v0->isConstant()) { var = v0; cval = v1->getOffset(); }
-    // else if (v0->isConstant() && !v1->isConstant()) { var = v1; cval = v0->getOffset(); }
-    // else return res;
     // `var_on_left` records the operand order (`var OP const` vs `const OP var`);
     // needed to normalize a range comparison to angr's "gt-form" below.
     let (var, cval, var_on_left): (VarnodeId, uintb, bool) =
@@ -425,26 +399,20 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
             return res;
         };
 
-    // bool flip = cb->isBooleanFlip();
     let flip = op_is_boolean_flip(data, cb);
-    // FlowBlock *condTrue = flip ? bb->getFalseOut() : bb->getTrueOut();
-    // FlowBlock *condFalse = flip ? bb->getTrueOut() : bb->getFalseOut();
     let cond_true = if flip { block_false_out(data, bl) } else { block_true_out(data, bl) };
     let cond_false = if flip { block_true_out(data, bl) } else { block_false_out(data, bl) };
 
-    // res.var = canonSwitchVar(var);
     res.var = Some(canon_switch_var(data, var));
 
     if oc == OpCode::CPUI_INT_EQUAL {
-        // res.valid = true; res.isEquality = true; res.cval = cval;
-        // res.matchOut = condTrue; res.contA = condFalse;
         res.valid = true;
         res.is_equality = true;
         res.cval = cval;
         res.match_out = Some(cond_true);
         res.cont_a = Some(cond_false);
     } else if oc == OpCode::CPUI_INT_NOTEQUAL {
-        // res.matchOut = condFalse; res.contA = condTrue;  // match (V==cval) is the not-taken edge
+        // match (V==cval) is the not-taken edge
         res.valid = true;
         res.is_equality = true;
         res.cval = cval;
@@ -452,8 +420,6 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         res.cont_a = Some(cond_true);
     } else {
         // SLESS / SLESSEQUAL / LESS / LESSEQUAL: range node, both directions continue.
-        // res.valid = true; res.isEquality = false; res.cval = cval;
-        // res.contA = condTrue; res.contB = condFalse;
         res.valid = true;
         res.is_equality = false;
         res.cval = cval;
@@ -574,7 +540,6 @@ fn recover_cascade(
     swvar: VarnodeId,
 ) -> Option<KunaLoweredSwitchRecord> {
     // DFS over cascade nodes reading swvar; collect cases + default votes.
-    // std::map<uintb,Address> cases;  std::map<Address,int4> defaultVotes;
     let mut cases: BTreeMap<uintb, Address> = BTreeMap::new();
     let mut default_votes: BTreeMap<Address, int4> = BTreeMap::new();
     // Parallel to `default_votes`: a representative block for each candidate
@@ -590,7 +555,6 @@ fn recover_cascade(
     stack.push((startbb, 0, 0xFFFF_FFFF_FFFF_FFFF));
     let mut saw_range = false; // true once a range (binary-search) node is seen
 
-    // auto isCascade = [&](FlowBlock *fb)->BlockBasic * { ... };
     let is_cascade = |fb: Option<BlockId>| -> Option<BlockId> {
         let b = fb?;
         // BlockBasic check + cmpmap lookup + var == swvar
@@ -614,35 +578,28 @@ fn recover_cascade(
             cb.entry(a).or_insert(bl);
         };
 
-    // while(!stack.empty()) {
     while let Some((bb, min_, max_)) = stack.pop() {
-        // if (visited.count(bb)) continue;  visited.insert(bb);
         if visited.contains(&bb) {
             continue;
         }
         visited.insert(bb);
-        // const CmpNode &cn( (*cmpmap.find(bb)).second );
         let cn = *cmpmap.get(&bb).expect("recoverCascade: stack block is in cmpmap");
 
         if cn.is_equality {
             // eq node: match edge is a case; the no-match edge continues with the
             // interval unchanged (angr keeps `(min_, max_)` across an eq node,
             // `lowered_switch_simplifier.py:539`).
-            // BlockBasic *matchb = isCascade(cn.matchOut);
             match is_cascade(cn.match_out) {
                 // match edge leads to another comparison: rare; treat as continuation
                 Some(matchb) => stack.push((matchb, min_, max_)),
                 None => {
-                    // Address tgt = targetStart(cn.matchOut);
                     let tgt = target_start(data, cn.match_out.expect("equality node has matchOut"));
-                    // if (cases.find(cn.cval) == cases.end()) cases[cn.cval] = tgt; else return false;
                     if cases.contains_key(&cn.cval) {
                         return None; // duplicate case value: bail (v1)
                     }
                     cases.insert(cn.cval, tgt);
                 }
             }
-            // BlockBasic *contb = isCascade(cn.contA);
             match is_cascade(cn.cont_a) {
                 Some(contb) => stack.push((contb, min_, max_)),
                 None => {
@@ -684,7 +641,7 @@ fn recover_cascade(
             // default set so the convergence guard below counts only true default
             // sinks.  Synthesizing it as a case would change the recovered
             // JumpTable (extra case target) for switches that already recover
-            // today, exercising an un-ported install/re-flow seam (LOSS-131) with
+            // today, exercising an un-ported install/re-flow boundary (LOSS-131) with
             // no output benefit — the value already folds into the default region
             // exactly as before.  So a single-value edge is simply dropped here.
             if le_cascade.is_none() && min_.wrapping_add(1) != value {
@@ -698,7 +655,7 @@ fn recover_cascade(
         }
     }
 
-    // if (cases.size() < 3) return false;  // RULE3: need >= 3 cases
+    // RULE3: need >= 3 cases
     if cases.len() < 3 {
         return None;
     }
@@ -707,7 +664,6 @@ fn recover_cascade(
     if cases.len() > 16 {
         return None;
     }
-    // if (defaultVotes.empty()) return false;
     if default_votes.is_empty() {
         return None;
     }
@@ -753,8 +709,6 @@ fn recover_cascade(
     }
 
     // Default = most-voted common sink.
-    // int4 best = -1;
-    // for(dit...) if ((*dit).second > best) { best = ...; defAddr = (*dit).first; }
     let mut def_addr = Address::new_invalid();
     let mut best: int4 = -1;
     for (addr, votes) in default_votes.iter() {
@@ -765,38 +719,30 @@ fn recover_cascade(
     }
 
     // Distinct targets, and no case target collides with the default.
-    // std::set<Address> tgtset;
     let mut tgtset: BTreeSet<Address> = BTreeSet::new();
     for tgt in cases.values() {
-        // if ((*cit).second == defAddr) return false;  // a case can't be the default block
+        // a case can't be the default block
         if *tgt == def_addr {
             return None;
         }
         tgtset.insert(tgt.clone());
     }
-    // if (tgtset.size() < 2) return false;  // RULE3: >= 2 distinct targets
+    // RULE3: >= 2 distinct targets
     if tgtset.len() < 2 {
         return None;
     }
 
     // The switch variable must live in stable storage (register/stack).
-    // AddrSpace *vspc = swvar->getAddr().getSpace();  if (vspc == 0) return false;
     let vspc = vn_space(data, swvar)?;
-    // spacetype st = vspc->getType();
     let st = vspc.get_type();
-    // if (st != IPTR_PROCESSOR && st != IPTR_SPACEBASE) return false;
     if st != spacetype::IPTR_PROCESSOR && st != spacetype::IPTR_SPACEBASE {
         return None;
     }
 
-    // rec.branchAddr = startbb->lastOp()->getAddr();
     let last = data.bb_op_tail(startbb).expect("recoverCascade: head has a last op");
     let branch_addr = op_addr(data, last);
-    // rec.varAddr = swvar->getAddr();  rec.varSize = swvar->getSize();
     let var_addr = vn_addr(data, swvar);
     let var_size = vn_size(data, swvar);
-    // rec.defaultTarget = defAddr;
-    // for(cit...) { rec.caseVals.push_back(first); rec.caseTargets.push_back(second); }
     let mut case_vals: Vec<uintb> = Vec::with_capacity(cases.len());
     let mut case_targets: Vec<Address> = Vec::with_capacity(cases.len());
     for (val, tgt) in cases.iter() {
@@ -826,38 +772,32 @@ fn advance_past_guards(
     cmpmap: &BTreeMap<BlockId, CmpNode>,
     swvar: VarnodeId,
 ) -> BlockId {
-    // for(int4 guard=0;guard<8;++guard) {
     for _guard in 0..8 {
-        // it = cmpmap.find(head);  if (it == cmpmap.end()) break;
         let cn = match cmpmap.get(&head) {
             Some(cn) => *cn,
             None => break,
         };
-        // if (!cn.isEquality) break;
         if !cn.is_equality {
             break;
         }
-        // uintb allones = calc_mask(cn.var->getSize());
         let var = match cn.var {
             Some(v) => v,
             None => break,
         };
         let allones = calc_mask(vn_size(data, var));
-        // if (cn.cval != allones) break;  // not a -1 sentinel guard
+        // not a -1 sentinel guard
         if cn.cval != allones {
             break;
         }
-        // BlockBasic *cont = dynamic_cast<BlockBasic *>(cn.contA);  if (cont == 0) break;
         let cont = match cn.cont_a {
             Some(c) if block_type(data, c) == BlockType::Basic => c,
             _ => break,
         };
-        // cit = cmpmap.find(cont);  if (cit == cmpmap.end() || (*cit).second.var != swvar) break;
         match cmpmap.get(&cont) {
             Some(c) if c.var == Some(swvar) => {}
             _ => break,
         }
-        // head = cont;  // the -1 guard is not part of the switch
+        // the -1 guard is not part of the switch
         head = cont;
     }
     head
@@ -874,7 +814,7 @@ fn advance_past_guards(
 pub struct ActionLowerSwitchDetect {
     /// Engine-owned bookkeeping (C++ inherited `Action` base fields).
     base: ActionBase,
-    /// Resolved `glb->recover_lowered_switch` gate (STUB(W4); the seams
+    /// Resolved `glb->recover_lowered_switch` gate (STUB(W4); the ArchContext
     /// `Architecture` skeleton on `Funcdata` does not carry the flag yet, so it
     /// is resolved at construction by the W9 assembler — the
     /// `kuna_compareform`/`kuna_arraystride` convention).
@@ -921,55 +861,45 @@ impl ActionLowerSwitchDetect {
     /// The detection body, exposed for testing without the Action state machine.
     /// Returns the number of records added (0 unless a cascade was recorded).
     pub fn detect(&mut self, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->recover_lowered_switch) return 0;  // P0 assertion not set
+        // P0 assertion not set
         if !self.enabled && !data.get_arch().recover_lowered_switch {
             return 0;
         }
-        // if (data.isJumptableRecoveryOn()) return 0;  // not inside partial-fn recovery
+        // not inside partial-fn recovery
         if data.is_jumptable_recovery_on() {
             return 0;
         }
-        // if (kunaLoweredSwitchHasRecord(data)) return 0;  // already discovered (sticky)
+        // already discovered (sticky)
         if self.store.borrow().has_record(data) {
             return 0;
         }
 
         // Collect comparison-on-constant cascade nodes, grouped by switch variable.
-        // std::map<BlockBasic *,CmpNode> cmpmap;  std::map<Varnode *,int4> varCount;
         let mut cmpmap: BTreeMap<BlockId, CmpNode> = BTreeMap::new();
         let mut var_count: BTreeMap<VarnodeId, int4> = BTreeMap::new();
-        // const BlockGraph &bb( data.getBasicBlocks() );
         let nblocks = data.bblocks_get_size();
-        // for(int4 i=0;i<bb.getSize();++i) {
         for i in 0..nblocks {
             let b = data.bblocks_get_block(i);
-            // BlockBasic *b = dynamic_cast<BlockBasic *>(bb.getBlock(i));  if (b == 0) continue;
             if block_type(data, b) != BlockType::Basic {
                 continue;
             }
-            // if (b->isSwitchOut()) continue;  // already a real switch
+            // already a real switch
             if block_is_switch_out(data, b) {
                 continue;
             }
-            // if (!isPureCompareBlock(b)) continue;
             if !is_pure_compare_block(data, b) {
                 continue;
             }
-            // CmpNode cn = analyzeCmp(b);
             let cn = analyze_cmp(data, b);
-            // if (!cn.valid || cn.var == 0) continue;
             if !cn.valid || cn.var.is_none() {
                 continue;
             }
-            // cmpmap[b] = cn;  varCount[cn.var] += 1;
             let var = cn.var.expect("valid CmpNode has var");
             cmpmap.insert(b, cn);
             *var_count.entry(var).or_insert(0) += 1;
         }
 
         // Pick the switch variable: the Varnode with the most cascade nodes.
-        // Varnode *swvar = 0;  int4 bestCount = 1;
-        // for(hit...) if ((*hit).second > bestCount) { bestCount = ...; swvar = (*hit).first; }
         let mut swvar: Option<VarnodeId> = None;
         let mut best_count: int4 = 1;
         for (var, count) in var_count.iter() {
@@ -978,30 +908,24 @@ impl ActionLowerSwitchDetect {
                 swvar = Some(*var);
             }
         }
-        // if (swvar == 0) return 0;
         let swvar = match swvar {
             Some(v) => v,
             None => return 0,
         };
 
         // Find the head: a cascade node for swvar that no other cascade node
-        // continues into.  std::set<BlockBasic *> isChild;
+        // continues into.
         let mut is_child: BTreeSet<BlockId> = BTreeSet::new();
-        // for(mit=cmpmap.begin();mit!=cmpmap.end();++mit) {
         for (_, cn) in cmpmap.iter() {
-            // if ((*mit).second.var != swvar) continue;
             if cn.var != Some(swvar) {
                 continue;
             }
-            // FlowBlock *succ[3] = { cn.matchOut, cn.contA, cn.contB };
             let succ = [cn.match_out, cn.cont_a, cn.cont_b];
             for s in succ {
-                // BlockBasic *s = dynamic_cast<BlockBasic *>(succ[i]);  if (s == 0) continue;
                 let s = match s {
                     Some(b) if block_type(data, b) == BlockType::Basic => b,
                     _ => continue,
                 };
-                // sit = cmpmap.find(s);  if (sit != end && (*sit).second.var == swvar) isChild.insert(s);
                 if let Some(sc) = cmpmap.get(&s) {
                     if sc.var == Some(swvar) {
                         is_child.insert(s);
@@ -1009,8 +933,6 @@ impl ActionLowerSwitchDetect {
                 }
             }
         }
-        // BlockBasic *head = 0;
-        // for(mit...) { if (var != swvar) continue; if (isChild.count(first)) continue; head = first; break; }
         let mut head: Option<BlockId> = None;
         for (bl, cn) in cmpmap.iter() {
             if cn.var != Some(swvar) {
@@ -1022,27 +944,21 @@ impl ActionLowerSwitchDetect {
             head = Some(*bl);
             break;
         }
-        // if (head == 0) return 0;
         let head = match head {
             Some(h) => h,
             None => return 0,
         };
-        // head = advancePastGuards(head,cmpmap,swvar);
         let head = advance_past_guards(data, head, &cmpmap, swvar);
 
-        // if (!recoverCascade(data,head,cmpmap,swvar,rec)) return 0;
         let rec = match recover_cascade(data, head, &cmpmap, swvar) {
             Some(r) => r,
             None => return 0,
         };
 
-        // loweredStore[keyForFunc(data)].push_back(rec);
         self.store.borrow_mut().push(data, rec.clone());
-        // data.setRestartPending(true);
         data.set_restart_pending(true);
-        // kunaRecordRestart(data,krestart_lowered_switch,rec.branchAddr);  // STUB(W7): no
-        //   &mut RestartLog in the Action::apply signature yet (the heritage port
-        //   threads it explicitly); the restart-pending flag is realized.
+        // STUB(W7): no &mut RestartLog in the Action::apply signature yet (the
+        //   heritage port threads it explicitly); the restart-pending flag is realized.
         1 // a record was added (the C++ returns 0 to quiesce; see apply note)
     }
 }
@@ -1055,8 +971,7 @@ impl Action for ActionLowerSwitchDetect {
         &mut self.base
     }
 
-    /// C++ `ActionLowerSwitchDetect::clone`:
-    /// `if (!grouplist.contains(getGroup())) return 0;`
+    /// C++ `ActionLowerSwitchDetect::clone`.
     fn clone_filtered(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Action>> {
         if !grouplist.contains(self.get_group()) {
             return None;
@@ -1173,13 +1088,12 @@ impl ActionLowerSwitchInstall {
     /// Returns the number of records installed (always 0 until the W7/W4 surgery
     /// surfaces land — see the struct docs).
     pub fn install(&mut self, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->recover_lowered_switch) return 0;
-        // The live gate is carried on the seam Architecture (`build_arch_handle`);
+        // The live gate is carried on the ArchContext Architecture (`build_arch_handle`);
         // `enabled` stays as the unit-test OR-override (action registered false).
         if !self.enabled && !data.get_arch().recover_lowered_switch {
             return 0;
         }
-        // if (data.getHeritagePass() != 0) return 0;  // only in the pre-SSA window.
+        // only in the pre-SSA window.
         // The install rewires the CFG (severs/adds out-edges, swaps the CBRANCH for
         // a BRANCHIND); doing that after heritage would strand SSA phi state.  The
         // restart re-flows raw pcode and re-clears heritage, so the first mainloop
@@ -1188,14 +1102,11 @@ impl ActionLowerSwitchInstall {
         if data.get_heritage_pass() != 0 {
             return 0;
         }
-        // iter = loweredStore.find(keyForFunc(data));
-        // if (iter == loweredStore.end() || (*iter).second.empty()) return 0;
         let store = self.store.borrow();
         if !store.has_record(data) {
             return 0;
         }
 
-        // int4 changed = 0;
         // for each recorded record: jt = data.kunaInstallLoweredSwitch(...).  A
         // non-null table means the surgery committed; count it so the mainloop
         // re-iterates and ActionHeritage rebuilds SSA over the corrected CFG.
@@ -1228,8 +1139,7 @@ impl Action for ActionLowerSwitchInstall {
         &mut self.base
     }
 
-    /// C++ `ActionLowerSwitchInstall::clone`:
-    /// `if (!grouplist.contains(getGroup())) return 0;`
+    /// C++ `ActionLowerSwitchInstall::clone`.
     fn clone_filtered(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Action>> {
         if !grouplist.contains(self.get_group()) {
             return None;
@@ -1244,7 +1154,7 @@ impl Action for ActionLowerSwitchInstall {
     /// C++ `ActionLowerSwitchInstall::apply` — install the recorded switch as a
     /// `BRANCHIND` + `JumpTable`.  The change count flows into `count` (the C++
     /// `return changed` makes the mainloop re-iterate); here the install declines
-    /// at the W7/W4 surgery seam, so `count` is untouched.
+    /// at the W7/W4 surgery boundary, so `count` is untouched.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         let changed = self.install(data);
         self.base.count += changed;
@@ -1267,25 +1177,15 @@ impl OptionLowerSwitch {
     /// The option name (C++ `name = "loweredswitch"`).
     pub const NAME: &'static str = "loweredswitch";
 
-    /// C++ `OptionLowerSwitch::apply`:
-    ///
-    /// ```text
-    ///   bool val = onOrOff(p1);
-    ///   glb->recover_lowered_switch = val;
-    ///   string prop = val ? "on" : "off";
-    ///   return "Lowered comparison-cascade switch recovery turned "+prop;
-    /// ```
+    /// C++ `OptionLowerSwitch::apply`.
     ///
     /// Returns the resolved flag plus the confirmation message.  The caller
     /// writes the flag into `Architecture::recover_lowered_switch` (threaded by
     /// the W9 option dispatch; STUB noted in the module docs).
     pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        // bool val = onOrOff(p1);
         let val = on_or_off(p1)?;
         // glb->recover_lowered_switch = val;  -- left to the caller (STUB(W4/W9)).
-        // string prop = val ? "on" : "off";
         let prop = if val { "on" } else { "off" };
-        // return "Lowered comparison-cascade switch recovery turned "+prop;
         Ok((val, format!("Lowered comparison-cascade switch recovery turned {prop}")))
     }
 }

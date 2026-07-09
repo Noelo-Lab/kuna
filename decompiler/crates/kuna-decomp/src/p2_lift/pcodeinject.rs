@@ -7,10 +7,10 @@
 //! the SLEIGH-backed concrete payloads/library that drive the W2 kuna-sleigh
 //! `PcodeSnippet`/`EmulateSnippet` machinery.
 //!
-//! ## Seams
+//! ## Boundaries
 //!
 //! Several C++ collaborators of `pcodeinject.cc` belong to later waves; this
-//! file carries minimal local seam surfaces for exactly the members the C++
+//! file carries minimal local boundary surfaces for exactly the members the C++
 //! reaches, each annotated `// STUB`:
 //!   - [`InjectArchitecture`] — the `Architecture *glb` slice
 //!     `ExecutablePcode::build`/`evaluate` and `PcodeInjectLibrary` touch
@@ -138,7 +138,7 @@ pub struct InjectParameter {
 }
 
 impl InjectParameter {
-    /// Constructor (C++ `InjectParameter(const string &nm,uint4 sz)`): index
+    /// C++ `InjectParameter(const string &nm,uint4 sz)`: index
     /// starts at 0 and is assigned by `orderParameters`.
     pub fn new(nm: &[u8], sz: uint4) -> InjectParameter {
         InjectParameter { name: nm.to_vec(), index: 0, size: sz }
@@ -411,7 +411,7 @@ impl InjectPayloadCore {
 /// Concrete payloads (`inject_sleigh.rs`'s `InjectPayloadSleigh`,
 /// `ExecutablePcodeSleigh`, `InjectPayloadDynamic`) implement these on top of an
 /// embedded [`InjectPayloadCore`]. The `inject` emit and template printing route
-/// through the engine seam, so they take an [`InjectEngine`].
+/// through the engine boundary, so they take an [`InjectEngine`].
 pub trait InjectPayload {
     /// Access the engine-neutral payload data.
     fn core(&self) -> &InjectPayloadCore;
@@ -427,7 +427,7 @@ pub trait InjectPayload {
 }
 
 // ---------------------------------------------------------------------------
-// InjectArchitecture seam (the `Architecture *glb` slice this file uses)
+// InjectArchitecture boundary (the `Architecture *glb` slice this file uses)
 // ---------------------------------------------------------------------------
 
 /// STUB(W4/W6): the slice of the C++ `Architecture *glb` that
@@ -444,7 +444,7 @@ pub trait InjectArchitecture {
 }
 
 // ---------------------------------------------------------------------------
-// InjectEngine seam (the kuna-sleigh emit path, currently non-public)
+// InjectEngine boundary (the kuna-sleigh emit path, currently non-public)
 // ---------------------------------------------------------------------------
 
 /// STUB: the SLEIGH p-code **emit** path used by `InjectPayload::inject` and
@@ -534,7 +534,7 @@ pub struct PcodeInjectLibraryBase {
 }
 
 impl PcodeInjectLibraryBase {
-    /// Constructor (C++ `PcodeInjectLibrary(Architecture*,uint4 tmpbase)`):
+    /// C++ `PcodeInjectLibrary(Architecture*,uint4 tmpbase)`:
     /// only the `tempbase` is engine-neutral.
     pub fn new(tmpbase: uint4) -> PcodeInjectLibraryBase {
         PcodeInjectLibraryBase { tempbase: tmpbase, ..Default::default() }
@@ -699,7 +699,7 @@ impl SnippetLayout {
         arch: &dyn InjectArchitecture,
     ) -> SnippetLayout {
         let mut layout = SnippetLayout::default();
-        // C++ uintb uniqReserve = 0x10;  // reserved for inputs and output
+        // reserved for inputs and output
         let mut uniq_reserve: uintb = 0x10;
         let uniq_space = arch.get_unique_space();
         for i in 0..core.size_input() {

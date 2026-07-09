@@ -6,7 +6,7 @@
 //! `ExecutablePcodeSleigh`, `InjectPayloadDynamic`, `InjectContextSleigh`, and
 //! `PcodeInjectLibrarySleigh`.
 //!
-//! ## What is fully ported vs seam-deferred
+//! ## What is fully ported vs boundary-deferred
 //!
 //! The **decode** half of every payload — the `<callfixup>`/`<callotherfixup>`/
 //! `<pcode>`/`<body>` element parsing, the parameter ordering, and the
@@ -15,7 +15,7 @@
 //!
 //! The **emit/compile** half routes through the W2 kuna-sleigh runtime:
 //!   - `parseInject` builds a [`kuna_sleigh::pcodeparse::PcodeSnippet`] over the
-//!     SLEIGH language seam ([`kuna_sleigh::pcodeparse::SnippetLanguage`]) and
+//!     SLEIGH language boundary ([`kuna_sleigh::pcodeparse::SnippetLanguage`]) and
 //!     calls `addOperand`/`setUniqueBase`/`parseStream`/`releaseResult` — all
 //!     **public** kuna-sleigh API. It is ported as [`parse_inject`], generic
 //!     over the `SnippetLanguage` so a caller with a wired language can drive it.
@@ -25,7 +25,7 @@
 //!     `ParserContext` mutators (`setAddr`/`allocateOperand`/`deallocateState`),
 //!     which are **private to `kuna-sleigh`'s `sleigh.rs`** and cannot be
 //!     reached or made public from this crate. They sit behind the
-//!     [`crate::pcodeinject::InjectEngine`] seam. (LOSS reported.)
+//!     [`crate::pcodeinject::InjectEngine`] boundary. (LOSS reported.)
 //!
 //! Per ADR 0004, fallible decode returns `Result<_, KunaError>`; the
 //! `DecoderError` C++ throw in `ExecutablePcodeSleigh::decode` maps to
@@ -65,7 +65,7 @@ use crate::pcodeinject::{
 /// Holds the SLEIGH syntax as a string until `parseInject` compiles it into
 /// p-code templates (`ConstructTpl`). The compiled template lives in the SLEIGH
 /// runtime; this port keeps `parsestring` and lets the [`parse_inject`] driver
-/// hand the result to a caller (the template store is seam-deferred — see module
+/// hand the result to a caller (the template store is boundary-deferred — see module
 /// docs), so the struct carries the parse string and a `tpl_compiled` flag.
 #[derive(Debug, Clone)]
 pub struct InjectPayloadSleigh {
@@ -77,7 +77,7 @@ pub struct InjectPayloadSleigh {
     /// (C++ `source`).
     pub source: Vec<u8>,
     /// Whether the SLEIGH `tpl` has been compiled (C++ `tpl != null`). The
-    /// `ConstructTpl` itself is held by the SLEIGH library seam.
+    /// `ConstructTpl` itself is held by the SLEIGH library boundary.
     pub tpl_compiled: bool,
 }
 
@@ -276,7 +276,7 @@ impl InjectPayload for InjectPayloadCallother {
 ///
 /// The C++ derives from `ExecutablePcode` (an `InjectPayload` with an embedded
 /// `EmulateSnippet`). The emulator wiring (build/evaluate) is the
-/// emit/emulate seam (module docs); this port carries the parse string, the
+/// emit/emulate boundary (module docs); this port carries the parse string, the
 /// source, and the snippet layout reservation, decoding faithfully.
 #[derive(Debug, Clone)]
 pub struct ExecutablePcodeSleigh {
@@ -414,7 +414,7 @@ impl SleighPayload {
 /// Owns the engine-neutral registration bookkeeping ([`PcodeInjectLibraryBase`])
 /// and the `Vec` of [`SleighPayload`]s (C++ `injection`). The SLEIGH language
 /// (`slgh`), behavior table (`inst`), and reusable context (`contextCache`) live
-/// behind the emit/parse seams (module docs).
+/// behind the emit/parse boundaries (module docs).
 #[derive(Debug, Clone, Default)]
 pub struct PcodeInjectLibrarySleigh {
     /// Engine-neutral name->id namespaces + tempbase (C++ base members).
@@ -429,7 +429,7 @@ pub struct PcodeInjectLibrarySleigh {
 }
 
 impl PcodeInjectLibrarySleigh {
-    /// Constructor (C++ `PcodeInjectLibrarySleigh(Architecture*)`): the C++
+    /// C++ `PcodeInjectLibrarySleigh(Architecture*)`: the C++
     /// chains `PcodeInjectLibrary(g, g->translate->getUniqueStart(INJECT))` —
     /// the caller supplies the unique-start tempbase.
     pub fn new(tempbase: kuna_base::types::uint4) -> PcodeInjectLibrarySleigh {
@@ -469,7 +469,7 @@ impl PcodeInjectLibrarySleigh {
 
     /// Retrieve the compiled p-code template for an inject id, if compiled
     /// (C++ reads `InjectPayloadSleigh::tpl`).  `None` when `parse_inject_all`
-    /// has not run for this id (the SLEIGH-language compile seam was not driven).
+    /// has not run for this id (the SLEIGH-language compile boundary was not driven).
     pub fn get_tpl(&self, id: int4) -> Option<&kuna_sleigh::semantics::ConstructTpl> {
         self.tpls.get(id as usize).and_then(|t| t.as_ref())
     }
@@ -507,7 +507,7 @@ impl PcodeInjectLibrarySleigh {
     /// \brief Finalize a payload within the library (C++ `registerInject`).
     ///
     /// Registers the payload's name into the type-appropriate namespace, then
-    /// compiles it (the `parseInject` step, seam-deferred to a caller with a
+    /// compiles it (the `parseInject` step, boundary-deferred to a caller with a
     /// wired SLEIGH language — see [`parse_inject`]).
     ///
     /// (The C++ `isDynamic()` -> `InjectPayloadDynamic` swap is a debug path
@@ -556,7 +556,7 @@ impl PcodeInjectLibrarySleigh {
     /// (C++ `manualCallFixup`).
     ///
     /// Allocates the payload, sets its parse string, and registers it. (The
-    /// compile is the `parse_inject` seam.)
+    /// compile is the `parse_inject` boundary.)
     pub fn manual_call_fixup(&mut self, name: &[u8], snippetstring: &[u8]) -> KunaResult<int4> {
         let mut source_name = b"(manual callfixup name=\"".to_vec();
         source_name.extend_from_slice(name);
@@ -690,7 +690,7 @@ pub fn parse_inject<L: SnippetLanguage>(
 /// Read the `name`/`type` of an `<inject>` element inside `<injectdebug>`
 /// (C++ `PcodeInjectLibrarySleigh::decodeDebug` inner loop), returning
 /// `(name, type)`. The dynamic-payload swap + `decodeEntry` is the debug-only
-/// `InjectPayloadDynamic` path (seam-deferred; not in the spec corpus).
+/// `InjectPayloadDynamic` path (boundary-deferred; not in the spec corpus).
 pub fn decode_inject_debug_entry(decoder: &mut dyn Decoder) -> KunaResult<(Vec<u8>, int4)> {
     let name = decoder.read_string_id(&ATTRIB_NAME)?;
     // C++ readSignedInteger(ATTRIB_TYPE) -> int4 (narrow the i64).
@@ -710,7 +710,7 @@ pub fn decode_inject_debug_entry(decoder: &mut dyn Decoder) -> KunaResult<(Vec<u
 // `kuna-sleigh`'s `sleigh.rs`, but the *template* resolution machinery
 // (`VarnodeTpl`/`ConstTpl`/`OpTpl::fix`/`is_dynamic`/`is_relative`) and the
 // `PcodeBuilder` trait are **public** and parametrized over the
-// [`SymbolWalker`] seam.  So the inject emit is reconstructed here faithfully:
+// [`SymbolWalker`] boundary.  So the inject emit is reconstructed here faithfully:
 //
 //   - [`InjectWalker`] is the degenerate `ParserWalker` of `setupParameters`: it
 //     answers `getFixedHandle(i)` with the operand handle built from the
@@ -725,7 +725,7 @@ pub fn decode_inject_debug_entry(decoder: &mut dyn Decoder) -> KunaResult<(Vec<u
 // The result is byte-for-byte the ops the C++ emit path would hand to
 // `PcodeEmit::dump`.  This closes the emit half of LOSS-031 for the
 // `InjectPayloadSleigh`/`InjectPayloadCallfixup`/`InjectPayloadCallother` family
-// (the `ExecutablePcode` emulate path and `InjectPayloadDynamic` remain seamed —
+// (the `ExecutablePcode` emulate path and `InjectPayloadDynamic` remain boundary-deferred —
 // they need the emulator, not just the builder).
 
 /// LOSS-015: a LOAD/STORE space-pointer constant stores the space's manager
@@ -798,7 +798,7 @@ impl PcodeCacher {
     fn resolve_relatives(&mut self) -> KunaResult<()> {
         for rec in &self.label_refs {
             let ptr = rec.dataptr;
-            let id = self.pool[ptr].offset; // uint4 id = ptr->offset
+            let id = self.pool[ptr].offset;
             if id >= self.labels.len() as u64 || self.labels[id as usize] == 0x0badbeef {
                 return Err(KunaError::lowlevel("Reference to non-existant sleigh label"));
             }
@@ -1091,7 +1091,7 @@ impl PcodeBuilder for InjectBuilder<'_> {
     }
     /// C++ `SleighBuilder::setLabel`.
     fn set_label(&mut self, op: &OpTpl) -> KunaResult<()> {
-        // labels[getLabelBase()+id] = issued.size()  (C++ addLabel)
+        // C++ addLabel
         let id = op.get_in(0).get_offset().get_real() as u32; // C++ uintb -> uint4
         let full = self.get_label_base().wrapping_add(id);
         while self.cache.labels.len() as u64 <= u64::from(full) {
@@ -1187,7 +1187,7 @@ impl SleighInjectEngine {
     /// `getDefaultCodeSpace()`).
     ///
     /// The constant space is passed explicitly because the [`InjectArchitecture`]
-    /// seam only carries the unique + default-code spaces; the const space is the
+    /// boundary only carries the unique + default-code spaces; the const space is the
     /// architecture's constant space (`AddrSpaceManager::getConstantSpace`).
     pub fn new(
         const_space: Rc<AddrSpace>,
@@ -1249,7 +1249,7 @@ impl SleighInjectEngine {
             uniq_space: Rc::clone(&self.uniq_space),
             cache: PcodeCacher::default(),
         };
-        // builder.build(tpl,-1)  (the main section)
+        // the main section
         builder.build(Some(tpl), -1)?;
         builder.cache.resolve_relatives()?;
         builder.cache.emit(&baseaddr, emit);
@@ -1269,7 +1269,7 @@ impl InjectEngine for SleighInjectEngine {
         // stored on the engine-neutral InjectPayload).  Callers drive
         // [`SleighInjectEngine::emit_payload`] directly with the template.  This
         // trait impl exists so `SleighInjectEngine` is a drop-in `InjectEngine`
-        // for the seam; it errs to make the missing-template misuse observable.
+        // for the boundary; it errs to make the missing-template misuse observable.
         Err(KunaError::lowlevel(
             "SleighInjectEngine requires a compiled ConstructTpl; call emit_payload",
         ))

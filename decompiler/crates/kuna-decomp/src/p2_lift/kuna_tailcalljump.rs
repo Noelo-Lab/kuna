@@ -77,7 +77,7 @@ impl Default for TailCallJumpOption {
 }
 
 impl TailCallJumpOption {
-    /// (kuna) Set the gate (`bool val = onOrOff(p1); glb->tail_call_jumps = val;`).
+    /// (kuna) Set the gate.
     pub fn apply(&mut self, val: bool) -> &'static str {
         self.enabled = val;
         if val {
@@ -118,7 +118,7 @@ pub fn kuna_is_tail_call_branch(
     dest_is_known_function: bool,
     dest_is_self: bool,
 ) -> bool {
-    // if (!glb->tail_call_jumps) return false;  // gate (default-off opt-in)
+    // gate (default-off opt-in)
     if !gate {
         return false;
     }
@@ -131,7 +131,7 @@ pub fn kuna_is_tail_call_branch(
         Some(o) => o,
         None => return false,
     };
-    // if (op->code() != CPUI_BRANCH) return false;  // a direct jump only
+    // a direct jump only
     if opref.code() != OpCode::CPUI_BRANCH {
         return false;
     }

@@ -21,7 +21,7 @@
 //! At decompile flow time `FlowInfo` asks
 //! [`FlowEnvironment::query_call_no_return`](crate::flow) → the call to
 //! `__stack_chk_fail` resolves to a *display name* (the relocation supplies it),
-//! but the resolved symbol's no-return flag is false.  The seam returns false, no
+//! but the resolved symbol's no-return flag is false.  The hook returns false, no
 //! `artificialHalt(noreturn)` is planted, and flow runs straight off the end of
 //! the function into the next one — `tail.o::tail_bytes` (615 bytes,
 //! `0x401e80..0x4020e7`) renders as 326 lines swallowing several neighbour
@@ -35,7 +35,7 @@
 //! (`artificialHalt(noreturn)` + flow truncation) is driven by `flow.rs`, exactly
 //! as for an address-marked no-return callee.  This mirrors the analysis-tier
 //! matcher in `kuna-analysis::loader::noreturn` (`name_matches`), but applied
-//! at the decompiler flow seam so it catches the undefined-extern case the
+//! at the decompiler flow boundary so it catches the undefined-extern case the
 //! address-keyed pass cannot reach.
 //!
 //! ## STUB(W4): the gate

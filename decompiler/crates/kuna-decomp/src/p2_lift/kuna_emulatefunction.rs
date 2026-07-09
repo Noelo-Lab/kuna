@@ -174,7 +174,6 @@ impl<'a> EmulateFunction<'a> {
         startvn: VarnodeId,
     ) -> KunaResult<uintb> {
         let num_ops = path_meld.num_ops();
-        // for(i=0;i<pathMeld.numOps();++i) if (pathMeld.getOp(i) == startop) break;
         let mut i: int4 = 0;
         while i < num_ops {
             if path_meld.get_op(i) == Some(startop) {

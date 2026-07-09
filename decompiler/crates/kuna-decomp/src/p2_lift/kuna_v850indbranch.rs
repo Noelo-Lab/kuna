@@ -62,8 +62,7 @@ impl Default for V850IndirectBranchOption {
 }
 
 impl V850IndirectBranchOption {
-    /// (kuna) Set the gate (C++ `OptionV850IndirectBranch::apply`: `bool val =
-    /// onOrOff(p1); glb->v850_indirect_branch = val;`).
+    /// (kuna) Set the gate (C++ `OptionV850IndirectBranch::apply`).
     pub fn apply(&mut self, val: bool) -> &'static str {
         self.enabled = val;
         if val {
@@ -80,22 +79,7 @@ impl V850IndirectBranchOption {
 }
 
 /// (kuna) Is `op` a V850 "jmp [reg]" CALLIND that should become a BRANCHIND?
-/// (C++ `kunaIsV850IndirectJmp`, GH-8817).
-///
-/// Faithful transcription of `decompiler/cpp/kuna_v850indbranch.cc:13-36`:
-///
-/// ```text
-///   if (!glb->v850_indirect_branch) return false;       // gate
-///   if (op->code() != CPUI_CALLIND) return false;
-///   const Varnode *vn = op->getIn(0);
-///   if (vn == 0) return false;
-///   AddrSpace *spc = vn->getSpace();
-///   if (spc->getType() != IPTR_PROCESSOR) return false;  // hardware register
-///   string regname = glb->translate->getRegisterName(spc, off, size);
-///   if (regname.empty()) return false;                   // a named register only
-///   if (regname == "PC" || regname == "pc") return false;// exclude the PC
-///   return true;
-/// ```
+/// (C++ `kunaIsV850IndirectJmp`, kuna_v850indbranch.cc:13-36, GH-8817).
 ///
 /// `gate` is the resolved `glb->v850_indirect_branch` (see
 /// [`V850IndirectBranchOption`]).  `register_name` is the already-resolved
@@ -107,7 +91,7 @@ pub fn kuna_is_v850_indirect_jmp(
     gate: bool,
     register_name: Option<&str>,
 ) -> bool {
-    // if (!glb->v850_indirect_branch) return false;  // default-off gate
+    // default-off gate
     if !gate {
         return false;
     }
@@ -115,11 +99,9 @@ pub fn kuna_is_v850_indirect_jmp(
         Some(o) => o,
         None => return false,
     };
-    // if (op->code() != CPUI_CALLIND) return false;
     if opref.code() != OpCode::CPUI_CALLIND {
         return false;
     }
-    // const Varnode *vn = op->getIn(0); if (vn == 0) return false;
     let vn = match opref.get_in(0) {
         Some(v) => v,
         None => return false,
@@ -128,18 +110,16 @@ pub fn kuna_is_v850_indirect_jmp(
         Some(v) => v,
         None => return false,
     };
-    // AddrSpace *spc = vn->getSpace();
-    // if (spc->getType() != IPTR_PROCESSOR) return false;  // a hardware register
+    // a hardware register
     if vnref.get_space().get_type() != spacetype::IPTR_PROCESSOR {
         return false;
     }
-    // string regname = glb->translate->getRegisterName(spc, off, size);
-    // if (regname.empty()) return false;  // only a named register (not raw memory)
+    // only a named register (not raw memory)
     let regname = match register_name {
         Some(name) if !name.is_empty() => name,
         _ => return false,
     };
-    // if (regname == "PC" || regname == "pc") return false;  // exclude the PC
+    // exclude the PC
     if regname == "PC" || regname == "pc" {
         return false;
     }

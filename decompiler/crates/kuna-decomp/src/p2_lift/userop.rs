@@ -18,7 +18,7 @@
 //! userop names, the inject library, the type factory, the symbol table, the
 //! default data space). The type-factory/symbol-table paths feed the
 //! `getOutputLocal`/`getInputLocal` data-type virtuals, which belong to W6/W4;
-//! they are seam-deferred (`// STUB`). The decode + registration + lookup paths
+//! they are boundary-deferred (`// STUB`). The decode + registration + lookup paths
 //! — the test target — use only the [`UseropArchitecture`] slice defined here
 //! (translator userop names + the inject library) and are fully ported.
 
@@ -201,7 +201,7 @@ pub struct JumpAssistOp {
 /// STUB(W6): the C++ holds `Datatype *outType` / `vector<Datatype*> inTypes`,
 /// consumed by `getOutputLocal`/`getInputLocal`. The W6 `TypeFactory` builds
 /// those; until then this variant carries the type handles as
-/// [`Rc<Datatype>`](crate::dtype::Datatype) seam skeletons.
+/// [`Rc<Datatype>`](crate::dtype::Datatype) stub skeletons.
 #[derive(Debug, Clone)]
 pub struct DatatypeUserOp {
     /// Data-type of the output (C++ `outType`). STUB(W6).
@@ -446,7 +446,6 @@ impl UserPcodeOp {
             2 => "_2".to_string(),
             4 => "_4".to_string(),
             8 => "_8".to_string(),
-            // C++ `s << base << '_' << dec << size;`
             other => format!("_{other}"),
         };
         out.extend_from_slice(suffix.as_bytes());
@@ -562,7 +561,7 @@ impl UserPcodeOp {
                     let (addr, sz) = Address::decode_sized(decoder)?;
                     constresolve.space = addr.get_space().cloned();
                     constresolve.offset = addr.get_offset();
-                    // C++ `constresolve.size = sz;` (int4 -> uint4 member).
+                    // C++: constresolve.size is a uint4 member (sz is int4).
                     constresolve.size = sz as uint4;
                 }
                 decoder.close_element(sub_id)?;
@@ -710,7 +709,7 @@ fn suffixed(name: &[u8], suffix: &[u8]) -> Vec<u8> {
 use crate::pcodeinject::ELEM_ADDR_PCODE;
 
 // ---------------------------------------------------------------------------
-// UseropArchitecture seam (the `Architecture *glb` slice userop.cc uses)
+// UseropArchitecture boundary (the `Architecture *glb` slice userop.cc uses)
 // ---------------------------------------------------------------------------
 
 /// STUB(W4/W6): the `Architecture *glb` surface `userop.cc` reaches for decode
@@ -727,7 +726,7 @@ use crate::pcodeinject::ELEM_ADDR_PCODE;
 ///     in C++ allocates+decodes+registers a payload and returns its id; in the
 ///     port the actual SLEIGH allocate/decode lives in `inject_sleigh.rs`
 ///     (`PcodeInjectLibrarySleigh::decode_inject`), so this trait method is the
-///     seam that wave fills.
+///     hook that wave fills.
 ///
 /// (Data-type construction for the BUILTIN_MEM* DatatypeUserOps and the
 /// VolatileRead/Write `getOutputLocal`/`getInputLocal` paths are W6; see
@@ -877,8 +876,7 @@ impl UserOpManage {
             if nm.is_empty() {
                 continue;
             }
-            // C++ `new UnspecializedPcodeOp(basicops[i],glb,i)` — i is the
-            // CALLOTHER index (uint4 -> int4 in the ctor).
+            // i is the CALLOTHER index (uint4 -> int4 in the ctor).
             let userop = UserPcodeOp::new_unspecialized(nm, i as int4);
             self.register_op(userop)?;
         }
@@ -1050,7 +1048,6 @@ impl UserOpManage {
         decoder: &mut dyn Decoder,
         arch: &mut A,
     ) -> KunaResult<()> {
-        // C++ `new SegmentOp("",glb,useroplist.size())`.
         let mut s_op = UserPcodeOp::new_segment(b"", self.useroplist.len() as int4);
         let names = self.name_lookup();
         s_op.decode(decoder, arch, &names)?;
@@ -1108,7 +1105,6 @@ impl UserOpManage {
         decoder: &mut dyn Decoder,
         arch: &mut A,
     ) -> KunaResult<()> {
-        // C++ `new InjectedUserOp("",glb,0,0)`.
         let mut op = UserPcodeOp::new_injected(b"", 0, 0);
         let names = self.name_lookup();
         op.decode(decoder, arch, &names)?;

@@ -86,8 +86,7 @@ impl Default for SwitchSharedCaseOption {
 }
 
 impl SwitchSharedCaseOption {
-    /// (kuna) Set the gate (C++ `OptionSwitchSharedCase::apply`: `bool val =
-    /// onOrOff(p1); glb->switch_shared_case = val;`).
+    /// (kuna) Set the gate (C++ `OptionSwitchSharedCase::apply`).
     pub fn apply(&mut self, val: bool) -> &'static str {
         self.enabled = val;
         if val {

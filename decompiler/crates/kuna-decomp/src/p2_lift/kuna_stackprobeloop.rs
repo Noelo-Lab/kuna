@@ -52,7 +52,7 @@
 //! ## Gate wiring — STUB(W4)
 //!
 //! The C++ `applyOp` reads `data.getArch()->model_stack_probe_loop` live.  The
-//! seam [`Architecture`](crate::context::ArchContext) on `Funcdata` does **not**
+//! boundary [`Architecture`](crate::context::ArchContext) on `Funcdata` does **not**
 //! carry the flag yet (it holds only the `AddrSpaceManager`), so — exactly as
 //! `kuna_memsetsequence`'s `RuleMemsetCopy` and `kuna_loweredswitch`'s Detect
 //! Action do — the resolved gate is carried in [`RuleStackProbeLoop::enabled`],
@@ -98,20 +98,19 @@ pub struct RuleStackProbeLoop {
 
 impl RuleStackProbeLoop {
     /// Construct in group `g` with the resolved gate (C++
-    /// `RuleStackProbeLoop(const string &g)`: `Rule(g, 0, "stackprobeloop")`).
+    /// `RuleStackProbeLoop(const string &g)`).
     pub fn new(enabled: bool, g: impl Into<String>) -> RuleStackProbeLoop {
         RuleStackProbeLoop { enabled, group: g.into() }
     }
 }
 
 impl Rule for RuleStackProbeLoop {
-    /// C++ `RuleStackProbeLoop::getOpList`: `oplist.push_back(CPUI_MULTIEQUAL);`
+    /// C++ `RuleStackProbeLoop::getOpList`.
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_MULTIEQUAL]
     }
 
-    /// C++ `RuleStackProbeLoop::clone`:
-    /// `if (!grouplist.contains(getGroup())) return 0;`
+    /// C++ `RuleStackProbeLoop::clone`.
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
         if !grouplist.contains(&self.group) {
             return None;
@@ -121,39 +120,33 @@ impl Rule for RuleStackProbeLoop {
 
     /// C++ `RuleStackProbeLoop::applyOp` (`kuna_stackprobeloop.cc:63`).
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->model_stack_probe_loop) return 0;
-        // The live gate is carried on the seam Architecture (`build_arch_handle`);
+        // The live gate is carried on the ArchContext Architecture (`build_arch_handle`);
         // `enabled` stays as the unit-test OR-override (rule registered false).
         if !self.enabled && !data.get_arch().model_stack_probe_loop {
             return 0;
         }
 
-        // if (op->numInput() != 2) return 0;  // one entry edge, one back edge
+        // one entry edge, one back edge
         if op_num_input(data, op) != 2 {
             return 0;
         }
 
         // The MULTIEQUAL must produce the stack-pointer register.
-        // AddrSpace *stackspc = data.getArch()->getStackSpace();
         let stackspc = match data.get_arch().manage().get_stack_space() {
             Some(s) => s.clone(),
             None => return 0,
         };
-        // Varnode *spIn = data.findSpacebaseInput(stackspc);
         let sp_in = match find_spacebase_input(data, &stackspc) {
             Some(v) => v,
             None => return 0,
         };
-        // Varnode *phiout = op->getOut();
         let phiout = match op_out(data, op) {
             Some(v) => v,
             None => return 0,
         };
-        // if (phiout->getAddr() != spIn->getAddr()) return 0;
         if vn_addr(data, phiout) != vn_addr(data, sp_in) {
             return 0;
         }
-        // if (phiout->getSize() != spIn->getSize()) return 0;
         if vn_size(data, phiout) != vn_size(data, sp_in) {
             return 0;
         }
@@ -164,19 +157,13 @@ impl Rule for RuleStackProbeLoop {
         let mut page: uintb = 0;
         let mut foundback = false;
         let mut foundentry = false;
-        // for(int4 i=0;i<2;++i) {
         for i in 0..2 {
-            // Varnode *invn = skipCopies(op->getIn(i));
             let invn = skip_copies(data, op_in(data, op, i).expect("MULTIEQUAL input present"));
-            // if (invn->isWritten()) {
             if vn_is_written(data, invn) {
                 let def = vn_def(data, invn).expect("written vn has a def");
-                // if (def->code() == CPUI_INT_ADD) {
                 if op_code(data, def) == OpCode::CPUI_INT_ADD {
-                    // Varnode *b = skipCopies(def->getIn(0));  Varnode *c = def->getIn(1);
                     let b = skip_copies(data, op_in(data, def, 0).expect("INT_ADD in0"));
                     let c = op_in(data, def, 1).expect("INT_ADD in1");
-                    // if (b == phiout && c->isConstant()) { page = c->getOffset(); foundback = true; continue; }
                     if b == phiout && vn_is_constant(data, c) {
                         page = vn_offset(data, c);
                         foundback = true;
@@ -184,18 +171,14 @@ impl Rule for RuleStackProbeLoop {
                     }
                 }
             }
-            // uintb entryoff;
-            // if (stackRelative(spIn,op->getIn(i),entryoff)) foundentry = true;
             let in_i = op_in(data, op, i).expect("MULTIEQUAL input present");
             if stack_relative(data, sp_in, in_i).is_some() {
                 foundentry = true;
             }
         }
-        // if (!foundback || !foundentry) return 0;
         if !foundback || !foundentry {
             return 0;
         }
-        // if (page == 0) return 0;
         if page == 0 {
             return 0;
         }
@@ -206,13 +189,10 @@ impl Rule for RuleStackProbeLoop {
         // their compares.
         let mut limitoff: uintb = 0;
         let mut foundlimit = false;
-        // for(iter=phiout->beginDescend();iter!=phiout->endDescend();++iter) {
         for addop in vn_descend(data, phiout) {
-            // if (addop->code() != CPUI_INT_ADD) continue;
             if op_code(data, addop) != OpCode::CPUI_INT_ADD {
                 continue;
             }
-            // if (!addop->getIn(1)->isConstant()) continue;
             let add_in1 = match op_in(data, addop, 1) {
                 Some(v) => v,
                 None => continue,
@@ -220,42 +200,35 @@ impl Rule for RuleStackProbeLoop {
             if !vn_is_constant(data, add_in1) {
                 continue;
             }
-            // if (addop->getIn(1)->getOffset() != page) continue;  // Same page step
+            // Same page step
             if vn_offset(data, add_in1) != page {
                 continue;
             }
-            // Varnode *stepvn = addop->getOut();
             let stepvn = match op_out(data, addop) {
                 Some(v) => v,
                 None => continue,
             };
-            // for(citer=stepvn->beginDescend();citer!=stepvn->endDescend();++citer) {
             for cmpop in vn_descend(data, stepvn) {
-                // if (cmpop->code() != CPUI_INT_NOTEQUAL && cmpop->code() != CPUI_INT_EQUAL) continue;
                 let cc = op_code(data, cmpop);
                 if cc != OpCode::CPUI_INT_NOTEQUAL && cc != OpCode::CPUI_INT_EQUAL {
                     continue;
                 }
-                // Varnode *other = (cmpop->getIn(0) == stepvn) ? cmpop->getIn(1) : cmpop->getIn(0);
                 let cmp_in0 = op_in(data, cmpop, 0).expect("compare in0");
                 let other = if cmp_in0 == stepvn {
                     op_in(data, cmpop, 1).expect("compare in1")
                 } else {
                     cmp_in0
                 };
-                // uintb loff;  if (stackRelative(spIn,other,loff)) { limitoff = loff; foundlimit = true; break; }
                 if let Some(loff) = stack_relative(data, sp_in, other) {
                     limitoff = loff;
                     foundlimit = true;
                     break;
                 }
             }
-            // if (foundlimit) break;
             if foundlimit {
                 break;
             }
         }
-        // if (!foundlimit) return 0;
         if !foundlimit {
             return 0;
         }
@@ -263,19 +236,13 @@ impl Rule for RuleStackProbeLoop {
         // At loop exit `PHI + page == limit`, so the post-loop PHI value is
         // `limit - page` relative to the spacebase input.  Rewrite the MULTIEQUAL
         // into a concrete add.
-        // int4 sz = spIn->getSize();
         let sz = vn_size(data, sp_in);
-        // uintb finaloff = (limitoff - page) & calc_mask(sz);
         let finaloff = limitoff.wrapping_sub(page) & calc_mask(sz);
-        // vector<Varnode *> inlist;  inlist.push_back(spIn);  inlist.push_back(data.newConstant(sz,finaloff));
         let cvn = data.new_constant(sz, finaloff);
         let inlist = [sp_in, cvn];
-        // data.opSetOpcode(op,CPUI_INT_ADD);
         // STUB(W6): glb->inst[CPUI_INT_ADD] property flags; opcode value is exact.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_ADD, 0, "INT_ADD"));
-        // data.opSetAllInput(op,inlist);
         data.op_set_all_input(op, &inlist).expect("opSetAllInput on rewritten MULTIEQUAL");
-        // return 1;
         1
     }
 }
@@ -302,21 +269,12 @@ impl StackProbeLoopForm {
 /// Parse the `option stackprobeloop on|off` argument and produce the resolved
 /// form plus the confirmation message (C++ `OptionStackProbeLoop::apply`).
 ///
-/// ```text
-///   bool val = onOrOff(p1);
-///   glb->model_stack_probe_loop = val;
-///   string prop = val ? "on" : "off";
-///   return "Stack-probe-loop stack-pointer resolution turned "+prop;
-/// ```
-///
 /// The caller writes [`StackProbeLoopForm::model_stack_probe_loop`] into
 /// `Architecture::model_stack_probe_loop` (the W4 assembler's job).
 pub fn parse_stack_probe_loop_form(p1: &str) -> KunaResult<(StackProbeLoopForm, String)> {
-    // bool val = onOrOff(p1);
     let val = crate::options::on_or_off(p1)?;
-    // glb->model_stack_probe_loop = val;  -- left to the caller.
+    // left to the caller.
     let form = if val { StackProbeLoopForm::On } else { StackProbeLoopForm::Off };
-    // string prop = val ? "on" : "off"; return "Stack-probe-loop ... turned "+prop;
     let prop = if val { "on" } else { "off" };
     Ok((form, format!("Stack-probe-loop stack-pointer resolution turned {prop}")))
 }
@@ -347,10 +305,8 @@ fn find_spacebase_input(
     data: &Funcdata,
     id: &std::rc::Rc<kuna_base::space::AddrSpace>,
 ) -> Option<VarnodeId> {
-    // const VarnodeData &point(id->getSpacebase(0));
     let point = id.get_spacebase(0).ok()?;
     let space = point.space?;
-    // vn = vbank.findInput(point.size, Address(point.space,point.offset));
     let addr = Address::new(space, point.offset);
     data.vbank().find_input(point.size as int4, &addr)
 }
@@ -362,18 +318,14 @@ fn find_spacebase_input(
 /// C++ static `skipCopies` — trace a Varnode back through `CPUI_COPY` ops to its
 /// underlying source.  Bounded at 8 to defeat a pathological COPY chain.
 fn skip_copies(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
-    // for(int4 i=0;i<8;++i) {
     for _i in 0..8 {
-        // if (!vn->isWritten()) break;
         if !vn_is_written(data, vn) {
             break;
         }
-        // PcodeOp *op = vn->getDef();  if (op->code() != CPUI_COPY) break;
         let op = vn_def(data, vn).expect("written vn has a def");
         if op_code(data, op) != OpCode::CPUI_COPY {
             break;
         }
-        // vn = op->getIn(0);
         match op_in(data, op, 0) {
             Some(v) => vn = v,
             None => break,
@@ -386,38 +338,29 @@ fn skip_copies(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
 /// `spIn + constant`?  Traces through COPYs; on success returns the constant
 /// offset (`Some(0)` when `vn` is the input directly).
 fn stack_relative(data: &Funcdata, sp_in: VarnodeId, vn: VarnodeId) -> Option<uintb> {
-    // vn = skipCopies(vn);
     let vn = skip_copies(data, vn);
-    // if (vn == spIn) { off = 0; return true; }
     if vn == sp_in {
         return Some(0);
     }
-    // if (!vn->isWritten()) return false;
     if !vn_is_written(data, vn) {
         return None;
     }
-    // PcodeOp *op = vn->getDef();  if (op->code() != CPUI_INT_ADD) return false;
     let op = vn_def(data, vn).expect("written vn has a def");
     if op_code(data, op) != OpCode::CPUI_INT_ADD {
         return None;
     }
-    // Varnode *base = skipCopies(op->getIn(0));  Varnode *cvn = op->getIn(1);
     let mut base = skip_copies(data, op_in(data, op, 0)?);
     let mut cvn = op_in(data, op, 1)?;
-    // if (!cvn->isConstant()) { cvn = op->getIn(0); base = skipCopies(op->getIn(1)); }
     if !vn_is_constant(data, cvn) {
         cvn = op_in(data, op, 0)?;
         base = skip_copies(data, op_in(data, op, 1)?);
     }
-    // if (!cvn->isConstant()) return false;
     if !vn_is_constant(data, cvn) {
         return None;
     }
-    // if (base != spIn) return false;
     if base != sp_in {
         return None;
     }
-    // off = cvn->getOffset();  return true;
     Some(vn_offset(data, cvn))
 }
 

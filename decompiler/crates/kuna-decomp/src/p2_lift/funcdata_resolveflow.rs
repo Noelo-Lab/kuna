@@ -15,7 +15,7 @@
 //! with an `op` in hand whose parent's `Funcdata` is exactly the `self` here.
 //!
 //! Each arm is transcribed statement-for-statement from the cited C++ override.
-//! The seam-free leaf scorer is [`crate::unionresolve_run::ScoreUnionFields`].
+//! The boundary-free leaf scorer is [`crate::unionresolve_run::ScoreUnionFields`].
 
 use std::rc::Rc;
 
@@ -56,7 +56,6 @@ impl Funcdata {
                 if ptrto.get_metatype() == type_metatype::TYPE_UNION {
                     self.resolve_in_flow_union_like(ct, op, slot)
                 } else {
-                    // return this;
                     Ok(Rc::clone(ct))
                 }
             }
@@ -84,12 +83,9 @@ impl Funcdata {
         op: OpId,
         slot: int4,
     ) -> KunaResult<Rc<Datatype>> {
-        // const ResolvedUnion *res = fd->getUnionField(this,op,slot);
-        // if (res != 0) return res->getDatatype();
         if let Some(res) = self.get_union_field(ct, op, slot) {
             return Ok(Rc::clone(res.get_datatype()));
         }
-        // res = fd->getAddressBasedUnionField(this, op->getAddr(), slot);
         let op_addr = self.obank().get(op).map(|o| o.get_addr().clone());
         if let Some(addr) = &op_addr {
             // The address-based hit stores a *new* ResolvedUnion(this, fieldNum)
@@ -104,14 +100,10 @@ impl Funcdata {
                 })?;
                 let resolve = ResolvedUnion::new_field(Rc::clone(ct), field_num, typegrp.as_ref())?;
                 let dt = Rc::clone(resolve.get_datatype());
-                // fd->setUnionField(this, op, slot, *res / resolve);
                 self.set_union_field(ct, op, slot, resolve);
                 return Ok(dt);
             }
         }
-        // ScoreUnionFields scoreFields(*fd,this,op,slot);
-        // fd->setUnionField(this,op,slot,scoreFields.getResult());
-        // return scoreFields.getResult().getDatatype();
         let typegrp = self.get_arch().types_rc().ok_or_else(|| {
             KunaError::lowlevel("resolveInFlow: TypeFactory unavailable")
         })?;
@@ -136,15 +128,12 @@ impl Funcdata {
         if let Some(res) = self.get_union_field(ct, op, slot) {
             return Ok(Rc::clone(res.get_datatype()));
         }
-        // int4 fieldNum = (TypeStruct::)scoreSingleComponent(this,op,slot);
         let field_num = self.score_single_component(ct, op, slot)?;
-        // ResolvedUnion compFill(this,fieldNum,*fd->getArch()->types);
         let typegrp = self.get_arch().types_rc().ok_or_else(|| {
             KunaError::lowlevel("resolveInFlow: TypeFactory unavailable")
         })?;
         let comp_fill = ResolvedUnion::new_field(Rc::clone(ct), field_num, typegrp.as_ref())?;
         let dt = Rc::clone(comp_fill.get_datatype());
-        // fd->setUnionField(this, op, slot, compFill);
         self.set_union_field(ct, op, slot, comp_fill);
         Ok(dt)
     }
@@ -163,12 +152,10 @@ impl Funcdata {
         };
         let opc = o.code();
         if opc == OpCode::CPUI_COPY || opc == OpCode::CPUI_INDIRECT {
-            // Varnode *vn = (slot == 0) ? op->getOut() : op->getIn(0);
             let vn = if slot == 0 { o.get_out() } else { o.get_in(0) };
             if let Some(vn) = vn {
                 let v = self.vbank().get(vn);
                 let is_lock = v.map(|v| v.is_type_lock()).unwrap_or(false);
-                // if (vn->isTypeLock() && vn->getType() == parent) return -1;
                 if is_lock && v.map(|v| Rc::ptr_eq(v.get_type(), parent)).unwrap_or(false) {
                     return Ok(-1); // COPY of the structure directly, use whole structure
                 }
@@ -176,13 +163,10 @@ impl Funcdata {
         } else if (opc == OpCode::CPUI_LOAD && slot == -1)
             || (opc == OpCode::CPUI_STORE && slot == 2)
         {
-            // Varnode *vn = op->getIn(1);
             if let Some(vn) = o.get_in(1) {
                 let is_lock = self.vbank().get(vn).map(|v| v.is_type_lock()).unwrap_or(false);
                 if is_lock {
-                    // Datatype *ct = vn->getTypeReadFacing(op);
                     let read = self.vn_type_read_facing(vn, op);
-                    // if (ct->getMetatype()==TYPE_PTR && ((TypePointer*)ct)->getPtrTo()==parent) return -1;
                     if read.get_metatype() == type_metatype::TYPE_PTR
                         && read.get_ptr_to().map(|p| Rc::ptr_eq(&p, parent)).unwrap_or(false)
                     {
@@ -191,12 +175,9 @@ impl Funcdata {
                 }
             }
         } else if o.is_call() {
-            // FuncCallSpecs *fc = fd->getCallSpecs(op);
             if let Some(idx) = self.get_call_specs_index(op) {
                 let fc = self.get_call_specs(idx);
                 let proto = fc.proto();
-                // ProtoParameter *param = (slot>=1 && isInputLocked) getParam(slot-1)
-                //                        : (slot<0 && isOutputLocked) getOutput();
                 let param_type: Option<Rc<Datatype>> = if slot >= 1 && proto.is_input_locked() {
                     proto.get_param(slot - 1).and_then(|p| p.get_type().cloned())
                 } else if slot < 0 && proto.is_output_locked() {
@@ -204,7 +185,6 @@ impl Funcdata {
                 } else {
                     None
                 };
-                // if (param != 0 && param->getType() == parent) return -1;
                 if let Some(pt) = param_type {
                     if Rc::ptr_eq(&pt, parent) {
                         return Ok(-1); // Function signature refers to parent directly
@@ -232,30 +212,23 @@ impl Funcdata {
         op: OpId,
         slot: int4,
     ) -> KunaResult<Rc<Datatype>> {
-        // const ResolvedUnion *res = fd->getUnionField(this, op, slot);
-        // if (res != 0) return res->getDatatype();
         if let Some(res) = self.get_union_field(ct, op, slot) {
             return Ok(Rc::clone(res.get_datatype()));
         }
-        // Datatype *curType = container; int8 curOff = offset;
         let size = ct.get_size();
         let mut cur_type: Option<Rc<Datatype>> = ct.get_partial_base(); // container
         let mut cur_off: int8 = ct.get_partial_offset().unwrap_or(0) as int8;
-        // while(curType != 0 && curType->getSize() > size)
         while let Some(cur) = cur_type.clone() {
             if cur.get_size() as int4 <= size {
                 break;
             }
             let meta = cur.get_metatype();
             if meta == type_metatype::TYPE_PARTIALUNION {
-                // curOff += curPartial->getOffset();
                 cur_off += cur.get_partial_offset().unwrap_or(0) as int8;
-                // field = curPartial->getParentUnion()->resolveTruncation(curOff,op,slot,newOff);
                 let parent_union = cur.get_partial_base().ok_or_else(|| {
                     KunaError::lowlevel("resolveInFlow: partial union missing container")
                 })?;
                 let resolved = self.resolve_truncation(&parent_union, cur_off, op, slot)?;
-                // curType = 0; if (field != 0) curType = getExactPiece(field->type, curOff, size);
                 cur_type = None;
                 if let Some((field_idx, _newoff)) = resolved {
                     if let Some(ftype) = parent_union.get_field(field_idx).map(|f| Rc::clone(&f.field_type)) {
@@ -267,7 +240,6 @@ impl Funcdata {
                 }
                 cur_off = 0;
             } else if meta == type_metatype::TYPE_UNION {
-                // field = curType->resolveTruncation(curOff,op,slot,curOff);
                 let resolved = self.resolve_truncation(&cur, cur_off, op, slot)?;
                 cur_type = None;
                 if let Some((field_idx, newoff)) = resolved {
@@ -286,14 +258,12 @@ impl Funcdata {
                 break;
             }
         }
-        // if (curType == 0 || curType->getSize() != size) curType = stripped;
         let cur_type = match cur_type {
             Some(c) if c.get_size() as int4 == size => c,
             _ => ct.get_stripped().ok_or_else(|| {
                 KunaError::lowlevel("resolveInFlow: partial union missing stripped")
             })?,
         };
-        // fd->updateUnionField(this, op, slot, curType);
         self.update_union_field(ct, op, slot, Rc::clone(&cur_type));
         Ok(cur_type)
     }
@@ -321,8 +291,7 @@ impl Funcdata {
         slot: int4,
     ) -> KunaResult<Option<(int4, int8)>> {
         match &ct.kind {
-            // TypePartialUnion::resolveTruncation (type.cc:2994-2998):
-            //   return container->resolveTruncation(off + offset, op, slot, newoff);
+            // TypePartialUnion::resolveTruncation (type.cc:2994-2998).
             DatatypeKind::PartialUnion { .. } => {
                 let container = ct.get_partial_base().ok_or_else(|| {
                     KunaError::lowlevel("resolveTruncation: partial union missing container")
@@ -349,8 +318,6 @@ impl Funcdata {
         op: OpId,
         slot: int4,
     ) -> KunaResult<Option<(int4, int8)>> {
-        // const ResolvedUnion *res = fd->getUnionResolution(this, op, slot);
-        // if (res == 0) { res = fd->getAddressBasedUnionField(...); if (res != 0) setUnionField(...); }
         let mut have_cached: Option<int4> = self.get_union_resolution(ct, op, slot).map(|r| r.get_field_num());
         if have_cached.is_none() {
             let op_addr = self.obank().get(op).map(|o| o.get_addr().clone());
@@ -358,12 +325,10 @@ impl Funcdata {
                 if let Some(res) = self.get_address_based_union_field(ct, addr, slot) {
                     let res = res.clone();
                     have_cached = Some(res.get_field_num());
-                    // fd->setUnionField(this, op, slot, *res);
                     self.set_union_field(ct, op, slot, res);
                 }
             }
         }
-        // if (res != 0) { if (res->getFieldNum() >= 0) { ...; return field; } }
         if let Some(field_num) = have_cached {
             if field_num >= 0 {
                 let foff = ct.get_field(field_num).map(|f| f.offset).unwrap_or(0);
@@ -374,13 +339,13 @@ impl Funcdata {
             // else-if/else only run when res == 0).
             return Ok(None);
         }
-        // else if (op->code() == CPUI_SUBPIECE && slot == 1)  // artificial slot
+        // artificial slot
         let opc = self.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY);
         let typegrp = self.get_arch().types_rc().ok_or_else(|| {
             KunaError::lowlevel("resolveTruncation: TypeFactory unavailable")
         })?;
         if opc == OpCode::CPUI_SUBPIECE && slot == 1 {
-            // ScoreUnionFields scoreFields(*fd, this, offset, op);  // constructor 2
+            // constructor 2
             let result = {
                 let scorer = ScoreUnionFields::new_subpiece(
                     self,
@@ -392,14 +357,12 @@ impl Funcdata {
                 scorer.into_result()
             };
             let field_num = result.get_field_num();
-            // fd->setUnionField(this, op, slot, scoreFields.getResult());
             self.set_union_field(ct, op, slot, result);
             if field_num >= 0 {
-                // newoff = 0; return getField(fieldNum);
                 return Ok(Some((field_num, 0)));
             }
         } else {
-            // ScoreUnionFields scoreFields(*fd, this, offset, op, slot);  // constructor 3
+            // constructor 3
             let result = {
                 let scorer = ScoreUnionFields::new_truncation(
                     self,
@@ -440,8 +403,7 @@ impl Funcdata {
         slot: int4,
     ) -> KunaResult<Option<(int4, int8)>> {
         match &ct.kind {
-            // TypePartialUnion::findTruncation (type.cc:2882-2884):
-            //   return container->findTruncation(off + offset, sz, op, slot, newoff);
+            // TypePartialUnion::findTruncation (type.cc:2882-2884).
             DatatypeKind::PartialUnion { .. } => {
                 let container = ct.get_partial_base().ok_or_else(|| {
                     KunaError::lowlevel("findTruncation: partial union missing container")
@@ -451,8 +413,6 @@ impl Funcdata {
             }
             // TypeUnion::findTruncation (type.cc:2613-2627): cached resolution only.
             DatatypeKind::Union { .. } => {
-                // const ResolvedUnion *res = fd->getUnionResolution(this, op, slot);
-                // if (res != 0 && res->getFieldNum() >= 0) { ... }
                 let field_num = match self.get_union_resolution(ct, op, slot) {
                     Some(r) if r.get_field_num() >= 0 => r.get_field_num(),
                     _ => return Ok(None),
@@ -461,9 +421,8 @@ impl Funcdata {
                     Some(f) => f,
                     None => return Ok(None),
                 };
-                // newoff = offset - field->offset;
                 let newoff = off - field.offset as int8;
-                // if (newoff + sz > field->type->getSize()) return 0;  // spans > one field
+                // spans > one field
                 if newoff + sz as int8 > field.field_type.get_size() as int8 {
                     return Ok(None);
                 }
