@@ -14,7 +14,7 @@
 //!
 //! # Increment 1 scope (this file)
 //!
-//! A correctness-over-completeness PoC that proves the whole seam end-to-end:
+//! A correctness-over-completeness PoC that proves the whole boundary end-to-end:
 //!
 //! 1. **Region post-order walk + replace** (angr `recursive_structurer._analyze`):
 //!    the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid) (the ported
@@ -108,7 +108,7 @@ const POSTDOM_MAX_GRAPH_SIZE: int4 = 50;
 ///
 /// Mirrors [`OptionGotoReduce`](crate::p8_structure::kuna_gotoreduce::OptionGotoReduce):
 /// parse `on`/`off`, returning the bool + a confirmation message.  The flag is
-/// stored as `Architecture::region_structure` (and copied to the seam in
+/// stored as `Architecture::region_structure` (and copied to the boundary in
 /// `build_arch_handle`).
 pub struct OptionRegionStructure;
 
@@ -824,18 +824,17 @@ impl<'a> RegionStructurer<'a> {
         let mut bl = bl;
         loop {
             match self.graph.block(bl).get_type() {
-                // BlockCopy::isComplex -> copy->isComplex() (block.hh:549).
+                // BlockCopy: the copied BlockBasic's precomputed `complex_blocks` verdict.
                 BlockType::Copy => {
                     return match self.graph.block(bl).get_copy() {
                         Some(basic) => self.complex_blocks.contains(&basic),
                         None => true,
                     };
                 }
-                // BlockCondition::isComplex -> getBlock(0)->isComplex()
-                // (block.hh:649).
+                // BlockCondition: delegate to the first sub-block.
                 BlockType::Condition => bl = self.graph.block(bl).get_block(0),
                 // Everything else inherits the base FlowBlock::isComplex
-                // default `true` (block.hh:254).
+                // default `true`.
                 _ => return true,
             }
         }
@@ -1622,9 +1621,10 @@ impl<'a> RegionStructurer<'a> {
             // rendered inline as a comma-separated `while (<expr>)` — the emitter
             // would print the region's nested `if`/statements *inside* the loop's
             // condition parentheses (malformed C).  Ghidra flags such a loop with
-            // overflow syntax so it renders as `while (true) { <cond-body>;
-            // if (<cond>) break; <clause-body> }`, and flips the loop-continue edge
-            // accordingly: the clause must be the FALSE out under overflow syntax
+            // overflow syntax so it renders as
+            // `while (true) { <cond-body>; if (<cond>) break; <clause-body> }`, and
+            // flips the loop-continue edge accordingly: the clause must be the FALSE
+            // out under overflow syntax
             // (the break fires on the TRUE cond), the TRUE out without it.  Mirrors
             // `ruleBlockWhileDo` exactly, so a non-complex head (`overflow == false`)
             // keeps the existing `negate-when-i==0` behavior byte-for-byte.

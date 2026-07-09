@@ -139,7 +139,7 @@ impl Action for ActionTailDup {
         Some(Box::new(ActionTailDup { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option taildup on|off`, carried on the seam Architecture.
+        // P0 assertion `option taildup on|off`, carried on the Architecture boundary.
         if !data.get_arch().dup_return_call_tails {
             return 0;
         }

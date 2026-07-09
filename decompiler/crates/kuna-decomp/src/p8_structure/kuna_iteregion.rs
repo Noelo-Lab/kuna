@@ -130,7 +130,7 @@ impl Action for ActionIteRegion {
         Some(Box::new(ActionIteRegion { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option iteregion on|off`, carried on the seam Architecture.
+        // P0 assertion `option iteregion on|off`, carried on the Architecture boundary.
         // Default-OFF (a runtime choice) ⇒ nothing marked ⇒ byte-identical output.
         if !data.get_arch().iteregion {
             return 0;

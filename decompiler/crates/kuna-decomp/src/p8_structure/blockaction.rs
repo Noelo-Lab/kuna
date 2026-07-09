@@ -912,7 +912,6 @@ impl<'a> TraceDAG<'a> {
                 continue;
             }
             let po = self.branchlist[bp].paths.len() as int4;
-            // BlockTrace(this,paths.size(),i): bottom = top->top; destnode = bottom->getOut(eo)
             let bottom = top;
             let destnode = graph.block(bottom).get_out(i);
             let trace = BlockTrace {
@@ -1119,7 +1118,6 @@ impl<'a> TraceDAG<'a> {
                 terminal,
             });
         }
-        // badedgelist.sort();
         badedgelist.sort_by(|a, b| self.bad_edge_less(a, b, graph));
 
         // Find traces to the same exitblock and process conflicts
@@ -1584,16 +1582,16 @@ impl<'a> CollapseStructure<'a> {
     fn negate_condition_rec(&mut self, bl: BlockId, toporbottom: bool) -> bool {
         let bt = self.graph.block(bl).get_type();
         let res = match bt {
-            // BlockCopy::negateCondition: copy->negateCondition(true); then swap.
-            // `copy` is the bblocks BlockBasic — record its op-flag flip.
+            // BlockCopy::negateCondition: `copy` is the bblocks BlockBasic — record
+            // its op-flag flip, then swap.
             BlockType::Copy => {
                 if let Some(copy) = self.graph.block(bl).get_copy() {
                     self.pending_flips.push(copy);
                 }
                 true
             }
-            // BlockList::negateCondition: getBlock(size-1)->negateCondition(false)
-            // then swap this node's edges.
+            // BlockList::negateCondition: negate the last block, then swap this
+            // node's edges.
             BlockType::Ls => {
                 let sz = self.graph.block(bl).get_size();
                 if sz > 0 {
@@ -1616,7 +1614,6 @@ impl<'a> CollapseStructure<'a> {
             // base FlowBlock::negateCondition: edge swap only, no data-flow change.
             _ => false,
         };
-        // FlowBlock::negateCondition(toporbottom): if (!toporbottom) return; swapEdges();
         if toporbottom {
             self.graph.swap_edges(bl);
         }
@@ -1724,7 +1721,6 @@ impl<'a> CollapseStructure<'a> {
                 }
             }
         }
-        // sort(looporder, LoopBody::compare_ends);
         // Split-borrow `graph` (read-only here) and `loopbody` immutably so the
         // sort comparator can read both without re-borrowing `self`.
         let graph: &BlockGraph = self.graph;
@@ -2016,8 +2012,7 @@ impl<'a> CollapseStructure<'a> {
         let mut bl = bl;
         loop {
             match self.graph.block(bl).get_type() {
-                // BlockCopy::isComplex -> copy->isComplex() (block.hh:549): the
-                // copied BlockBasic's statement-count verdict (block.cc:2403),
+                // BlockCopy: the copied BlockBasic's statement-count verdict,
                 // precomputed in `complex_blocks`.
                 BlockType::Copy => {
                     return match self.graph.block(bl).get_copy() {
@@ -2025,11 +2020,10 @@ impl<'a> CollapseStructure<'a> {
                         None => true,
                     };
                 }
-                // BlockCondition::isComplex -> getBlock(0)->isComplex()
-                // (block.hh:649).
+                // BlockCondition: delegate to the first sub-block.
                 BlockType::Condition => bl = self.graph.block(bl).get_block(0),
                 // Everything else inherits the base FlowBlock::isComplex
-                // default `true` (block.hh:254).
+                // default `true`.
                 _ => return true,
             }
         }
@@ -2567,8 +2561,7 @@ impl<'a> CollapseStructure<'a> {
             }
             cases.push(curbl);
         }
-        // graph.newBlockSwitch(cases, hasExit): resolve the jump-table slot for
-        // this switch root (C++ `BlockSwitch(ind)` does `ind->getJumptable()`).
+        // Resolve the jump-table slot for this switch root.
         // The switch root `bl` is a BlockCopy whose `copy` points to the bblocks
         // BlockBasic carrying the BRANCHIND; `switch_blocks` was precomputed (in
         // ActionBlockStructure, which holds &mut Funcdata) keyed by that bblocks
@@ -2863,7 +2856,6 @@ impl Default for ConditionalJoin {
 }
 
 impl ConditionalJoin {
-    /// Constructor (C++ `ConditionalJoin::ConditionalJoin`).
     pub fn new() -> ConditionalJoin {
         ConditionalJoin {
             block1: None,
@@ -3064,29 +3056,20 @@ impl ConditionalJoin {
         let cbranch1 = self.cbranch1.expect("setupMultiequals: cbranch1");
         // C++ uses cbranch1->getAddr() for every new MULTIEQUAL.
         let addr = data.obank().get(cbranch1).expect("setupMultiequals: stale cbranch1").get_addr().clone();
-        // for(iter=mergeneed.begin();iter!=mergeneed.end();++iter)
         for idx in 0..self.mergeneed.len() {
-            // if ((*iter).second != (Varnode *)0) continue;
             if self.mergeneed[idx].1.is_some() {
                 continue;
             }
             let mp = self.mergeneed[idx].0;
-            let vn1 = mp.side1; // Varnode *vn1 = (*iter).first.side1;
-            let vn2 = mp.side2; // Varnode *vn2 = (*iter).first.side2;
-            // PcodeOp *multi = data.newOp(2,cbranch1->getAddr());
+            let vn1 = mp.side1;
+            let vn2 = mp.side2;
             let multi = data.new_op(2, addr.clone());
-            // data.opSetOpcode(multi,CPUI_MULTIEQUAL);
             data.op_set_opcode(multi, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
-            // Varnode *outvn = data.newUniqueOut(vn1->getSize(),multi);
             let size = data.vbank().get(vn1).expect("setupMultiequals: stale vn1").get_size();
             let outvn = data.new_unique_out(size, multi).expect("setupMultiequals: newUniqueOut");
-            // data.opSetInput(multi,vn1,0);
             data.op_set_input(multi, vn1, 0).expect("setupMultiequals: opSetInput 0");
-            // data.opSetInput(multi,vn2,1);
             data.op_set_input(multi, vn2, 1).expect("setupMultiequals: opSetInput 1");
-            // (*iter).second = outvn;
             self.mergeneed[idx].1 = Some(outvn);
-            // data.opInsertEnd(multi,joinblock);
             data.op_insert_end(multi, joinblock);
         }
     }
@@ -3097,54 +3080,42 @@ impl ConditionalJoin {
         let joinblock = self.joinblock.expect("moveCbranch: joinblock");
         let cbranch1 = self.cbranch1.expect("moveCbranch: cbranch1");
         let cbranch2 = self.cbranch2.expect("moveCbranch: cbranch2");
-        // Varnode *vn1 = cbranch1->getIn(1);
         let vn1 = data.obank().get(cbranch1).expect("moveCbranch: cbranch1").get_in(1).expect("moveCbranch: cbranch1 in1");
-        // Varnode *vn2 = cbranch2->getIn(1);
         let vn2 = data.obank().get(cbranch2).expect("moveCbranch: cbranch2").get_in(1).expect("moveCbranch: cbranch2 in1");
-        // data.opUninsert(cbranch1);
         data.op_uninsert(cbranch1);
-        // data.opInsertEnd(cbranch1,joinblock);
         data.op_insert_end(cbranch1, joinblock);
-        // Varnode *vn;  if (vn1 != vn2) vn = mergeneed[MergePair(vn1,vn2)]; else vn = vn1;
         let vn = if vn1 != vn2 {
             self.merge_need_lookup(MergePair { side1: vn1, side2: vn2 })
                 .expect("moveCbranch: mergeneed entry missing")
         } else {
             vn1
         };
-        // data.opSetInput(cbranch1,vn,1);
         data.op_set_input(cbranch1, vn, 1).expect("moveCbranch: opSetInput");
-        // data.opDestroy(cbranch2);
         data.op_destroy(cbranch2);
     }
 
     /// Substitute the new joined Varnode in the given exit block
     /// (C++ `ConditionalJoin::cutDownMultiequals`, `blockaction.cc:1981`).
     fn cut_down_multiequals(&mut self, exit: BlockId, in1: int4, in2: int4, data: &mut Funcdata) {
-        // int4 lo,hi;  if (in1 > in2) { hi=in1; lo=in2; } else { hi=in2; lo=in1; }
         let (lo, hi) = if in1 > in2 { (in2, in1) } else { (in1, in2) };
         let mut iter = first_op_of(data, exit);
         while let Some(op) = iter {
-            // ++iter;  // Advance iterator before inserts happen
+            // Advance iterator before inserts happen
             let next = next_op_in_block(data, op);
             let code = data.obank().get(op).expect("cutDownMultiequals: stale op").code();
             if code == OpCode::CPUI_MULTIEQUAL {
                 let vn1 = data.obank().get(op).unwrap().get_in(in1).expect("cutDownMultiequals: in1");
                 let vn2 = data.obank().get(op).unwrap().get_in(in2).expect("cutDownMultiequals: in2");
                 if vn1 == vn2 {
-                    // data.opRemoveInput(op,hi);
                     data.op_remove_input(op, hi);
                 } else {
-                    // Varnode *subvn = mergeneed[MergePair(vn1,vn2)];
                     let subvn = self
                         .merge_need_lookup(MergePair { side1: vn1, side2: vn2 })
                         .expect("cutDownMultiequals: mergeneed entry missing");
-                    // data.opRemoveInput(op,hi);
                     data.op_remove_input(op, hi);
-                    // data.opSetInput(op,subvn,lo);
                     data.op_set_input(op, subvn, lo).expect("cutDownMultiequals: opSetInput");
                 }
-                // if (op->numInput() == 1) { uninsert; opcode COPY; insertBegin(op,exit); }
+                // Collapsed to a single input: turn the MULTIEQUAL into a COPY.
                 if data.obank().get(op).expect("cutDownMultiequals: stale op").num_input() == 1 {
                     data.op_uninsert(op);
                     data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
@@ -3169,8 +3140,6 @@ impl ConditionalJoin {
         let exita = self.exita.expect("execute: exita");
         let exitb = self.exitb.expect("execute: exitb");
         let cbranch1 = self.cbranch1.expect("execute: cbranch1");
-        // joinblock = data.nodeJoinCreateBlock(block1,block2,exita,exitb,
-        //                 (a_in1 > a_in2),(b_in1 > b_in2),cbranch1->getAddr());
         let addr = data.obank().get(cbranch1).expect("execute: stale cbranch1").get_addr().clone();
         let joinblock = data.node_join_create_block(
             block1,
@@ -3182,13 +3151,9 @@ impl ConditionalJoin {
             &addr,
         );
         self.joinblock = Some(joinblock);
-        // setupMultiequals();
         self.setup_multiequals(data);
-        // moveCbranch();
         self.move_cbranch(data);
-        // cutDownMultiequals(exita,a_in1,a_in2);
         self.cut_down_multiequals(exita, self.a_in1, self.a_in2, data);
-        // cutDownMultiequals(exitb,b_in1,b_in2);
         self.cut_down_multiequals(exitb, self.b_in1, self.b_in2, data);
         Ok(())
     }
@@ -3243,7 +3208,6 @@ impl Action for ActionStructureTransform {
         }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ (coreaction.cc): data.getStructure().finalTransform(data,allowOpMoves);
         // Drives BlockWhileDo::finalTransform — the whiledo->for reroll setup
         // (find loop variable / iterator / initializer over BlockWhileDo nodes).
         data.finalize_forloop_transform(self.allow_op_moves);
@@ -3459,21 +3423,14 @@ impl Action for ActionBlockStructure {
         Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ (blockaction.cc:2170):
-        //   BlockGraph &graph(data.getStructure());
-        //   if (graph.getSize() != 0) return 0;           // already structured
-        //   data.installSwitchDefaults();
-        //   graph.buildCopy(data.getBasicBlocks());
-        //   CollapseStructure collapse(graph); collapse.collapseAll();
-        //   count += collapse.getChangeCount();
+        // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
             return 0; // Already structured
         }
         data.install_switch_defaults();
-        // graph.buildCopy(data.getBasicBlocks());  -- cross-arena copy: mirror
-        // every bblocks BlockBasic into sblocks as a BlockCopy leaf (the copy's
-        // `copy` field points back at the bblocks block so the printer can walk
-        // its op list).
+        // Cross-arena copy: mirror every bblocks BlockBasic into sblocks as a
+        // BlockCopy leaf (the copy's `copy` field points back at the bblocks block
+        // so the printer can walk its op list).
         data.seed_sblocks_copy();
         // (kuna) Region-based (Phoenix/SAILR) structurer — `option regionstructure
         // on` (default-off, parity-safe).  When ON, replace Ghidra's
@@ -3551,7 +3508,6 @@ impl Action for ActionBlockStructure {
                 switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
             }
         }
-        // CollapseStructure collapse(graph); collapse.collapseAll();
         let sroot = data.sblocks_root();
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_complex_blocks(complex_blocks)
@@ -3609,13 +3565,6 @@ impl Action for ActionFinalStructure {
         Some(Box::new(ActionFinalStructure { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++:
-        //   graph.orderBlocks();
-        //   graph.finalizePrinting(data);
-        //   graph.scopeBreak(-1,-1);     // break statements
-        //   graph.markUnstructured();    // gotos
-        //   graph.markLabelBumpUp(false);// label fixup
-        //
         // `finalizePrinting` is ported for the switch case: assign + sort the case
         // labels from the recovered JumpTable so the printer can emit `case N:`,
         // and for the whiledo case: finalize the for-loop iterator/initializer
@@ -3719,7 +3668,6 @@ impl Action for ActionNodeJoin {
                 }
                 let bb2 = data.bblocks_ref().block(leastout).get_in(j);
                 if condjoin.match_blocks(bb, bb2, data) {
-                    // count += 1; condjoin.execute(); condjoin.clear(); break;
                     self.base_mut().count += 1; // Indicate change has been made
                     condjoin.execute(data).expect("ConditionalJoin::execute");
                     condjoin.clear();

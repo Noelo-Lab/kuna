@@ -115,7 +115,7 @@ impl Action for ActionCrossJumpReverter {
         Some(Box::new(ActionCrossJumpReverter { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option crossjumprevert on|off`, carried on the seam Architecture.
+        // P0 assertion `option crossjumprevert on|off`, carried on the Architecture boundary.
         if !data.get_arch().revert_cross_jumps {
             return 0;
         }

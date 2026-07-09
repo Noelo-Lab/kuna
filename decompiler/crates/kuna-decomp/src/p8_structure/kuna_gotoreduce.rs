@@ -90,7 +90,7 @@ impl Action for ActionGotoReduce {
         Some(Box::new(ActionGotoReduce { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option gotoreduce on|off`, carried on the seam Architecture.
+        // P0 assertion `option gotoreduce on|off`, carried on the Architecture boundary.
         if !data.get_arch().reduce_return_gotos {
             return 0;
         }

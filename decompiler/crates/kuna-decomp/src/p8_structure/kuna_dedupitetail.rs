@@ -107,7 +107,7 @@ impl Action for ActionDedupIteTail {
         Some(Box::new(ActionDedupIteTail { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option dedupitetail on|off`, carried on the seam Architecture.
+        // P0 assertion `option dedupitetail on|off`, carried on the Architecture boundary.
         if !data.get_arch().dedup_ite_tail {
             return 0;
         }

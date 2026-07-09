@@ -106,7 +106,7 @@ impl Action for ActionSwitchReturn {
         Some(Box::new(ActionSwitchReturn { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option switchreturn on|off`, carried on the seam Architecture.
+        // P0 assertion `option switchreturn on|off`, carried on the Architecture boundary.
         if !data.get_arch().switch_return {
             return 0;
         }

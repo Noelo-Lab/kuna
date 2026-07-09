@@ -99,7 +99,7 @@ impl Action for ActionIfElseFlatten {
         Some(Box::new(ActionIfElseFlatten { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option ifelseflatten on|off`, carried on the seam Architecture.
+        // P0 assertion `option ifelseflatten on|off`, carried on the Architecture boundary.
         if !data.get_arch().flatten_ifelse {
             return 0;
         }

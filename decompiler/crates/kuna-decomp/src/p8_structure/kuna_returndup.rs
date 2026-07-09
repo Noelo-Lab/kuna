@@ -120,7 +120,7 @@ impl Action for ActionReturnDup {
         Some(Box::new(ActionReturnDup { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option returndup on|off`, carried on the seam Architecture.
+        // P0 assertion `option returndup on|off`, carried on the Architecture boundary.
         if !data.get_arch().duplicate_shared_returns {
             return 0;
         }

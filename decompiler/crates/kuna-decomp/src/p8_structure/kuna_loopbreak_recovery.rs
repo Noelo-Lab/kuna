@@ -115,9 +115,7 @@ fn scope_break(
                 scope_break(bg, curbl, ind, curloopexit);
             }
         }
-        // BlockGoto::scopeBreak (block.cc:2914):
-        //   getBlock(0)->scopeBreak(gototarget->getIndex(),curloopexit);
-        //   if (curloopexit == gototarget->getIndex()) gototype = f_break_goto;
+        // BlockGoto::scopeBreak (block.cc:2914).
         BlockType::Goto => {
             let b0 = bg.block(this_id).get_block(0);
             let target = bg.block(this_id).get_goto_target();
@@ -126,7 +124,7 @@ fn scope_break(
                 set_goto_type(bg, this_id, block_flags::f_break_goto);
             }
         }
-        // BlockMultiGoto::scopeBreak (block.cc:2966): getBlock(0)->scopeBreak(-1,curloopexit).
+        // BlockMultiGoto::scopeBreak (block.cc:2966).
         BlockType::MultiGoto => {
             let b0 = bg.block(this_id).get_block(0);
             scope_break(bg, b0, None, curloopexit);
@@ -138,10 +136,7 @@ fn scope_break(
             scope_break(bg, b0, None, curloopexit);
             scope_break(bg, b1, None, curloopexit);
         }
-        // BlockIf::scopeBreak (block.cc:3123):
-        //   getBlock(0)->scopeBreak(-1,curloopexit);            // condition
-        //   for(i=1;i<size;++i) getBlock(i)->scopeBreak(curexit,curloopexit);
-        //   if (gototarget && gototarget->getIndex()==curloopexit) gototype=f_break_goto;
+        // BlockIf::scopeBreak (block.cc:3123).
         BlockType::If => {
             let b0 = bg.block(this_id).get_block(0);
             scope_break(bg, b0, None, curloopexit);
@@ -157,29 +152,23 @@ fn scope_break(
         }
         // BlockWhileDo::scopeBreak (block.cc:3372): a new loop scope -- the loop's
         // own curexit becomes the body's curloopexit.
-        //   getBlock(0)->scopeBreak(-1,curexit);                 // top (condition)
-        //   getBlock(1)->scopeBreak(getBlock(0)->getIndex(),curexit); // body
         BlockType::WhileDo => {
             let b0 = bg.block(this_id).get_block(0);
             let b1 = bg.block(this_id).get_block(1);
             scope_break(bg, b0, None, curexit);
             scope_break(bg, b1, Some(b0), curexit);
         }
-        // BlockDoWhile::scopeBreak (block.cc:3485): getBlock(0)->scopeBreak(-1,curexit).
+        // BlockDoWhile::scopeBreak (block.cc:3485).
         BlockType::DoWhile => {
             let b0 = bg.block(this_id).get_block(0);
             scope_break(bg, b0, None, curexit);
         }
-        // BlockInfLoop::scopeBreak (block.cc:3513):
-        //   getBlock(0)->scopeBreak(getBlock(0)->getIndex(),curexit); // exits into itself
+        // BlockInfLoop::scopeBreak (block.cc:3513): exits into itself.
         BlockType::InfLoop => {
             let b0 = bg.block(this_id).get_block(0);
             scope_break(bg, b0, Some(b0), curexit);
         }
         // BlockSwitch::scopeBreak (block.cc:3664): a new scope, curloopexit=curexit.
-        //   getBlock(0)->scopeBreak(-1,curexit);                 // top has multiple exits
-        //   for each case: if gototype!=0 { if bl->getIndex()==curexit gototype=f_break_goto }
-        //                  else bl->scopeBreak(curexit,curexit);
         BlockType::Switch => {
             let b0 = bg.block(this_id).get_block(0);
             scope_break(bg, b0, None, curexit);
