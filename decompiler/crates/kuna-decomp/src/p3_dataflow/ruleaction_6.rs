@@ -94,8 +94,7 @@ fn new_unique_out_typed(data: &mut Funcdata, size: int4, op: OpId) -> KunaResult
 
 /// `Varnode::isConstantExtended(uint8 *val)` — if `vn` is a constant, or is
 /// extended (INT_ZEXT, INT_SEXT, PIECE) from a constant, pass back the (up to
-/// 128-bit) value.  Faithful transcription of `Varnode::isConstantExtended`
-/// (varnode.cc:818).  Returns `Some([lo,hi])` or `None`.
+/// 128-bit) value (varnode.cc:818).  Returns `Some([lo,hi])` or `None`.
 fn is_constant_extended(data: &Funcdata, vn: VarnodeId) -> Option<[u64; 2]> {
     if is_const(data, vn) {
         return Some([offset(data, vn), 0]);
@@ -208,8 +207,6 @@ fn typeop_for(opc: OpCode) -> TypeOp {
     };
     TypeOp::new(opc, flags, name.to_string())
 }
-
-
 
 /// `Varnode::getTypeReadFacing(op)` — the read-facing data-type resolution
 /// (union/flow aware) is W6.  // STUB(W6)
@@ -340,7 +337,6 @@ pub struct RulePtraddUndo {
 }
 
 impl RulePtraddUndo {
-    /// Constructor (C++ `RulePtraddUndo(const string &g)`).
     pub fn new(g: impl Into<String>) -> RulePtraddUndo {
         RulePtraddUndo { group: g.into() }
     }
@@ -363,10 +359,10 @@ impl Rule for RulePtraddUndo {
         if !data.has_type_recovery_started() {
             return 0;
         }
-        // int4 size = (int4)op->getIn(2)->getOffset();  // PTRADD element size
+        // PTRADD element size
         let size = offset(data, in_vn(data, op, 2)) as int4;
         let basevn = in_vn(data, op, 0);
-        // Datatype *dt = basevn->getTypeReadFacing(op);  (resolve union/relptr in-flow)
+        // Resolve union/relptr in-flow.
         let dt = Some(data.vn_type_read_facing(basevn, op));
         if let Some(dt) = dt {
             if dt.get_metatype() == type_metatype::TYPE_PTR {
@@ -409,7 +405,6 @@ impl RulePtrsubUndo {
     /// `RulePtrsubUndo::DEPTH_LIMIT`).
     pub const DEPTH_LIMIT: int4 = 8;
 
-    /// Constructor (C++ `RulePtrsubUndo(const string &g)`).
     pub fn new(g: impl Into<String>) -> RulePtrsubUndo {
         RulePtrsubUndo { group: g.into() }
     }
@@ -422,7 +417,6 @@ impl RulePtrsubUndo {
     pub fn get_const_offset_back(data: &Funcdata, vn: VarnodeId, max_level: int4) -> (int8, int8) {
         let mut multiplier: int8 = 0;
         if is_const(data, vn) {
-            // return vn->getOffset();
             return (offset(data, vn) as int8, multiplier);
         }
         if !is_written(data, vn) {
@@ -506,7 +500,6 @@ impl RulePtrsubUndo {
             outvn = out_vn(data, curop);
             cur = data.lone_descend(outvn);
         }
-        // extra = sign_extend(extra, 8*outvn->getSize()-1);
         extra = sign_extend(extra, 8 * size(data, outvn) - 1);
         (extra, multiplier)
     }
@@ -520,12 +513,11 @@ impl RulePtrsubUndo {
         slot: int4,
         max_level: int4,
     ) -> int8 {
-        // Varnode *vn = op->getIn(slot);
         let vn = in_vn(data, op, slot);
         if !is_written(data, vn) {
             return 0;
         }
-        // if (vn->loneDescend() != op) return 0;  // not used anywhere else
+        // not used anywhere else
         if lone_descend(data, vn) != Some(op) {
             return 0;
         }
@@ -533,7 +525,6 @@ impl RulePtrsubUndo {
         if max_level < 0 {
             return 0;
         }
-        // op = vn->getDef();
         let op = def_of(data, vn).expect("removeLocalAddRecurse: written vn has no def");
         let mut retval: int8 = 0;
         if code(data, op) == OpCode::CPUI_INT_ADD {
@@ -557,14 +548,11 @@ impl RulePtrsubUndo {
     /// removed constants.
     fn remove_local_adds(data: &mut Funcdata, vn: VarnodeId) -> int8 {
         let mut extra: int8 = 0;
-        // PcodeOp *op = vn->loneDescend();
         let mut op = lone_descend(data, vn);
-        // Varnode *nextVn = vn;
         let mut next_vn = vn;
         while let Some(curop) = op {
             let opc = code(data, curop);
             if opc == OpCode::CPUI_INT_ADD {
-                // int4 slot = op->getSlot(nextVn);
                 let slot = slot_of(data, curop, next_vn);
                 if slot == 0 && is_const(data, in_vn(data, curop, 1)) {
                     extra = extra.wadd(offset(data, in_vn(data, curop, 1)) as int8);
@@ -587,11 +575,9 @@ impl RulePtrsubUndo {
                 data.op_remove_input(curop, 1);
                 data.op_set_opcode(curop, typeop_for(OpCode::CPUI_COPY));
             } else if opc == OpCode::CPUI_PTRADD {
-                // if (op->getIn(0) != nextVn) break;
                 if in_vn(data, curop, 0) != next_vn {
                     break;
                 }
-                // int8 ptraddmult = op->getIn(2)->getOffset();
                 let ptraddmult = offset(data, in_vn(data, curop, 2)) as int8;
                 let invn = in_vn(data, curop, 1);
                 if is_const(data, invn) {
@@ -611,12 +597,9 @@ impl RulePtrsubUndo {
             } else {
                 break;
             }
-            // nextVn = op->getOut();
             next_vn = out_vn(data, curop);
-            // op = nextVn->loneDescend();
             op = lone_descend(data, next_vn);
         }
-        // if (nextVn != vn) vn->updateType(nextVn->getType());
         if next_vn != vn {
             let nt = vn_type(data, next_vn);
             data.vbank_mut()
@@ -653,7 +636,7 @@ impl RulePtrsubUndo {
         if !arch.preserve_thumb_funcptr || funcptr_align == 0 {
             return false;
         }
-        // bt = basevn->getTypeReadFacing(op); require TYPE_PTR -> TYPE_SPACEBASE.
+        // Require TYPE_PTR -> TYPE_SPACEBASE.
         let base_metatype = read_facing.get_metatype();
         if base_metatype != type_metatype::TYPE_PTR {
             return false;
@@ -664,7 +647,6 @@ impl RulePtrsubUndo {
         };
         let ptr_to_metatype = ptr_to.get_metatype();
         let word_size = read_facing.get_word_size().unwrap_or(1);
-        // newoff = AddrSpace::addressToByteInt(val, ptype->getWordSize()).
         // The `getSubType` resolution only applies to the spacebase pointee; the
         // predicate re-checks `ptr_to_metatype == TYPE_SPACEBASE` itself, so only
         // resolve the sub-type when that holds.
@@ -711,18 +693,13 @@ impl Rule for RulePtrsubUndo {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.hasTypeRecoveryStarted()) return 0;
         if !data.has_type_recovery_started() {
             return 0;
         }
         let basevn = in_vn(data, op, 0);
         let cvn = in_vn(data, op, 1);
-        // int8 val = cvn->getOffset();
         let mut val: int8 = offset(data, cvn) as int8;
-        // int8 extra = getExtraOffset(op,multiplier);
         let (extra0, multiplier) = Self::get_extra_offset(data, op);
-        // if (basevn->getTypeReadFacing(op)->isPtrsubMatching(val,extra,multiplier))
-        //   return 0;
         // `getTypeReadFacing(op)->isPtrsubMatching` dispatches through
         // TypeSpacebase, which the kuna `is_ptrsub_matching_scope` resolves via the
         // local-variable Scope (the same call ActionSetCasts::castFixupPtrsub uses).
@@ -730,7 +707,6 @@ impl Rule for RulePtrsubUndo {
         if data.is_ptrsub_matching_scope(&read_facing, val, extra0, multiplier) {
             return 0;
         }
-        // if (kunaPreserveThumbFuncPtr(basevn,op,val,extra,multiplier,data.getArch()))
         //   return 0;  -- (kuna) GH-8471
         // A pointer to a Thumb function carries the mode bit in its LSB
         // (`value = fn|1`).  When `option thumbfuncptr on` and the architecture
@@ -745,20 +721,15 @@ impl Rule for RulePtrsubUndo {
             return 0;
         }
 
-        // data.opSetOpcode(op,CPUI_INT_ADD);
         data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_ADD));
-        // op->clearStopTypePropagation();
         data.obank_mut()
             .get_mut(op)
             .expect("ptrsubundo: stale op")
             .clear_stop_type_propagation();
-        // extra = removeLocalAdds(op->getOut(),data);
         let outvn = out_vn(data, op);
         let extra = Self::remove_local_adds(data, outvn);
         if extra != 0 {
-            // val = val + extra;
             val = val.wadd(extra);
-            // data.opSetInput(op,data.newConstant(cvn->getSize(), val & calc_mask(...)),1);
             let csize = size(data, cvn);
             let nc = data.new_constant(csize, (val as uintb) & calc_mask(csize));
             data.op_set_input(op, nc, 1).expect("ptrsubundo: opSetInput");
@@ -777,7 +748,6 @@ pub struct RuleMultNegOne {
 }
 
 impl RuleMultNegOne {
-    /// Constructor (C++ `RuleMultNegOne(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleMultNegOne {
         RuleMultNegOne { group: g.into() }
     }
@@ -804,7 +774,6 @@ impl Rule for RuleMultNegOne {
         if offset(data, constvn) != calc_mask(size(data, constvn)) {
             return 0;
         }
-        // data.opSetOpcode(op,CPUI_INT_2COMP); data.opRemoveInput(op,1); return 1;
         if set_opcode_typed(data, op, OpCode::CPUI_INT_2COMP).is_err() {
             return 0; // STUB(W6)
         }
@@ -824,7 +793,6 @@ pub struct RuleAddUnsigned {
 }
 
 impl RuleAddUnsigned {
-    /// Constructor (C++ `RuleAddUnsigned(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleAddUnsigned {
         RuleAddUnsigned { group: g.into() }
     }
@@ -846,13 +814,10 @@ impl Rule for RuleAddUnsigned {
         use crate::dtype::type_metatype;
         let constvn = in_vn(data, op, 1);
 
-        // if (!constvn->isConstant()) return 0;
         if !is_const(data, constvn) {
             return 0;
         }
-        // Datatype *dt = constvn->getTypeReadFacing(op);
-        // if (dt->getMetatype() != TYPE_UINT) return 0;
-        // if (dt->isCharPrint()) return 0;     // Only change integer forms
+        // Only change integer forms
         let dt = data.vn_type_read_facing(constvn, op);
         if dt.get_metatype() != type_metatype::TYPE_UINT {
             return 0;
@@ -860,11 +825,8 @@ impl Rule for RuleAddUnsigned {
         if dt.is_char_print() {
             return 0;
         }
-        // uintb val = constvn->getOffset();
-        // uintb mask = calc_mask(constvn->getSize());
-        // int4 sa = constvn->getSize() * 6;    // 1/4 less than full bitsize
-        // uintb quarter = (mask>>sa) << sa;
-        // if ((val & quarter) != quarter) return 0;  // first quarter bits all 1's
+        // 1/4 less than full bitsize
+        // first quarter bits all 1's
         let val = offset(data, constvn);
         let cv_size = size(data, constvn);
         let mask = calc_mask(cv_size);
@@ -873,10 +835,7 @@ impl Rule for RuleAddUnsigned {
         if (val & quarter) != quarter {
             return 0;
         }
-        // if (constvn->getSymbolEntry() != 0) {
-        //   EquateSymbol *sym = dynamic_cast<EquateSymbol*>(...->getSymbol());
-        //   if (sym != 0) { if (sym->isNameLocked()) return 0; }   // named equate
-        // }
+        // named equate
         if let Some(sym) = data.vbank().get(constvn).and_then(|v| v.kuna_symbol_entry()) {
             if let Some(local) = data.get_scope_local() {
                 let s = local.database().symbol(sym);
@@ -887,26 +846,16 @@ impl Rule for RuleAddUnsigned {
                 }
             }
         }
-        // uintb negatedVal = (-val) & mask;
         let negated_val = val.wrapping_neg() & mask;
-        // if (dt->isEnumType()) {
-        //   TypeEnum *enumType = (TypeEnum *)dt;
-        //   if (!enumType->hasNamedValue(negatedVal) && enumType->hasNamedValue((~val)&mask))
-        //     return 0;
-        // }
         if dt.is_enum_type()
             && !dt.has_named_value(negated_val)
             && dt.has_named_value((!val) & mask)
         {
             return 0;
         }
-        // data.opSetOpcode(op,CPUI_INT_SUB);
         data.op_set_opcode_code(op, OpCode::CPUI_INT_SUB);
-        // Varnode *cvn = data.newConstant(constvn->getSize(), negatedVal);
         let cvn = data.new_constant(cv_size, negated_val);
-        // cvn->copySymbol(constvn);
         data.copy_symbol(cvn, constvn);
-        // data.opSetInput(op,cvn,1);
         let _ = data.op_set_input(op, cvn, 1);
         1
     }
@@ -922,7 +871,6 @@ pub struct Rule2Comp2Sub {
 }
 
 impl Rule2Comp2Sub {
-    /// Constructor (C++ `Rule2Comp2Sub(const string &g)`).
     pub fn new(g: impl Into<String>) -> Rule2Comp2Sub {
         Rule2Comp2Sub { group: g.into() }
     }
@@ -941,7 +889,6 @@ impl Rule for Rule2Comp2Sub {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // PcodeOp *addop = op->getOut()->loneDescend();
         let opout = out_vn(data, op);
         let addop = match data.lone_descend(opout) {
             Some(a) => a,
@@ -959,15 +906,13 @@ impl Rule for Rule2Comp2Sub {
         if set_opcode_typed(data, addop, OpCode::CPUI_INT_SUB).is_err() {
             return 0; // STUB(W6): no input rewiring performed -> truly no change
         }
-        // if (addop->getIn(0) == op->getOut()) opSetInput(addop,addop->getIn(1),0);
         if in_vn(data, addop, 0) == opout {
             let addin1 = in_vn(data, addop, 1);
             data.op_set_input(addop, addin1, 0).expect("2comp2sub: opSetInput");
         }
-        // data.opSetInput(addop,op->getIn(0),1);
         let opin0 = in_vn(data, op, 0);
         data.op_set_input(addop, opin0, 1).expect("2comp2sub: opSetInput");
-        // data.opDestroy(op);  // Completely remove 2COMP
+        // Completely remove 2COMP
         data.op_destroy(op);
         1
     }
@@ -983,7 +928,6 @@ pub struct RuleSubRight {
 }
 
 impl RuleSubRight {
-    /// Constructor (C++ `RuleSubRight(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleSubRight {
         RuleSubRight { group: g.into() }
     }
@@ -1002,12 +946,9 @@ impl Rule for RuleSubRight {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (op->doesSpecialPrinting()) return 0;
         if data.obank().get(op).expect("subright: stale op").does_special_printing() {
             return 0;
         }
-        // if (op->getIn(0)->getTypeReadFacing(op)->isPieceStructured()) {
-        //   data.opMarkSpecialPrint(op); return 0; }
         //
         // `Varnode::getTypeReadFacing(op)` (varnode.cc:658) returns the varnode's
         // own `type` unless it needs resolution, in which case `findResolve`.  At
@@ -1024,18 +965,8 @@ impl Rule for RuleSubRight {
             return 0;
         }
         // Remainder transcribed for the next wave; unreachable at this merge base:
-        //   int4 c = op->getIn(1)->getOffset(); if (c==0) return 0;
-        //   Varnode *outvn = op->getOut();
-        //   if (outvn->isAddrTied() && a->isAddrTied()) {
-        //     if (outvn->overlap(*a) == c) return 0; }
-        //   OpCode opc = CPUI_INT_RIGHT; int4 d = c*8;
         //   PcodeOp *lone = outvn->loneDescend();  ... lump a lone right-shift ...
-        //   Datatype *ct = getBase(a->getSize(), opc==INT_RIGHT? TYPE_UINT : TYPE_INT); // W6
-        //   PcodeOp *shiftop = newOp(2,op->getAddr()); opSetOpcode(shiftop,opc);
-        //   Varnode *newout = newUnique(a->getSize(),ct); opSetOutput(shiftop,newout);
-        //   opSetInput(shiftop,a,0); opSetInput(shiftop,newConstant(4,d),1);
-        //   opInsertBefore(shiftop,op);
-        //   opSetInput(op,newout,0); opSetInput(op,newConstant(4,0),1); return 1;
+        // W6
         0
     }
 }
@@ -1052,7 +983,6 @@ pub struct RulePtrsubCharConstant {
 }
 
 impl RulePtrsubCharConstant {
-    /// Constructor (C++ `RulePtrsubCharConstant(const string &g)`).
     pub fn new(g: impl Into<String>) -> RulePtrsubCharConstant {
         RulePtrsubCharConstant { group: g.into() }
     }
@@ -1074,11 +1004,8 @@ impl RulePtrsubCharConstant {
         if !is_const(data, vn) {
             return false;
         }
-        // uintb addval = vn->getOffset(); addval *= op->getIn(2)->getOffset();
-        // val += addval; Varnode *newconst = newConstant(vn->getSize(),val);
         // newconst->updateType(outtype);          -- STUB(W6) pointer datatype
         // opRemoveInput(op,2); opRemoveInput(op,1); opSetOpcode(op,CPUI_COPY);  -- STUB(W6)
-        // opSetInput(op,newconst,0); return true;
         false // STUB(W6): cannot stamp pointer type / change opcode -> no push
     }
 }
@@ -1122,7 +1049,6 @@ pub struct RuleExtensionPush {
 }
 
 impl RuleExtensionPush {
-    /// Constructor (C++ `RuleExtensionPush(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleExtensionPush {
         RuleExtensionPush { group: g.into() }
     }
@@ -1185,14 +1111,12 @@ impl Rule for RuleExtensionPush {
             return 0;
         }
         if addcount > 0 {
-            // if (op->getIn(0)->loneDescend() != (PcodeOp *)0) return 0;
             if data.lone_descend(invn).is_some() {
                 return 0;
             }
         }
         // RulePushPtr::duplicateNeed(op, data);  -- STUB(W5-sibling/W6): the
         // extension-duplication helper lives in RulePushPtr (a different batch) and
-        // creates new ops/outputs (opSetOutput stub).  return 1;
         // We validated the full guard chain with real API; the commit is the stub.
         0
     }
@@ -1208,7 +1132,6 @@ pub struct RulePieceStructure {
 }
 
 impl RulePieceStructure {
-    /// Constructor (C++ `RulePieceStructure(const string &g)`).
     pub fn new(g: impl Into<String>) -> RulePieceStructure {
         RulePieceStructure { group: g.into() }
     }
@@ -1229,7 +1152,6 @@ impl RulePieceStructure {
         let mut new_off: int8 = offset as int8;
         let mut cur = ct.clone();
         loop {
-            // ct = ct->getSubType(newOff, &newOff);
             let (sub, off2) = cur.get_sub_type(new_off)?;
             new_off = off2;
             match sub {
@@ -1267,14 +1189,13 @@ impl RulePieceStructure {
         vn: VarnodeId,
     ) -> KunaResult<(Option<std::rc::Rc<crate::dtype::Datatype>>, int4)> {
         let vnsize = size(data, vn);
-        // getStructuredType(): mapentry ? symbol->getType() : vn->getType(); piece-structured else null.
+        // C++ getStructuredType(): mapentry ? symbol->getType() : vn->getType(); piece-structured else null.
         // Resolve the containing local SymbolEntry (the kuna `mapentry`).
         let usepoint = data.vn_use_point(vn);
         let addr = vn_addr(data, vn);
         let container = data
             .get_scope_local()
             .and_then(|lm| lm.query_container_for_link(&addr, &usepoint));
-        // ct = mapentry ? mapentry->getSymbol()->getType() : vn->getType()
         let (ct, base_offset_hint) = match container
             .as_ref()
             .and_then(|c| c.sym_type.as_ref().map(|t| (std::rc::Rc::clone(t), c.sym_off)))
@@ -1282,7 +1203,6 @@ impl RulePieceStructure {
             Some((symty, off)) => (symty, off),
             None => (vn_type(data, vn), 0),
         };
-        // if (ct->isPieceStructured()) ... else return null.
         if !ct.is_piece_structured() {
             return Ok((None, 0));
         }
@@ -1334,11 +1254,9 @@ impl RulePieceStructure {
             return Ok(false);
         }
         let sz = size(data, outvn) - size(data, invn);
-        // if (sz > sizeof(uintb)) return false;
         if sz as usize > std::mem::size_of::<uintb>() {
             return Ok(false);
         }
-        // offset += outvn->getSpace()->isBigEndian() ? 0 : invn->getSize();
         offset += if vn_is_big_endian(data, outvn) { 0 } else { size(data, invn) };
         let mut new_off: int8 = offset as int8;
         // Walk down to the concrete sub-type matching size `sz`.
@@ -1404,7 +1322,7 @@ impl RulePieceStructure {
     /// arms.  This matches the concat corpus, where the root and its in-place pieces
     /// are not separately mapped. // STUB(W4 symbol-entry)
     fn separate_symbol(data: &Funcdata, root: VarnodeId, leaf: VarnodeId) -> bool {
-        // if (root->getSymbolEntry() != leaf->getSymbolEntry()) return true;  // STUB(W4)
+        // STUB(W4)
         if is_addr_tied(data, root) {
             return false;
         }
@@ -1441,12 +1359,11 @@ impl Rule for RulePieceStructure {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (op->isPartialRoot()) return 0;  // Check if CONCAT tree already visited
+        // Check if CONCAT tree already visited
         if data.obank().get(op).expect("piecestructure: stale op").is_partial_root() {
             return 0;
         }
         let outvn = out_vn(data, op);
-        // Datatype *ct = determineDatatype(outvn, baseOffset);
         let (ct, base_offset) = match Self::determine_datatype(data, outvn) {
             Ok((Some(c), b)) => (c, b),
             Ok((None, _)) => return 0,
@@ -1454,7 +1371,6 @@ impl Rule for RulePieceStructure {
         };
 
         if code(data, op) == OpCode::CPUI_INT_ZEXT {
-            // convertZextToPiece(op, outvn->getType(), 0, data)
             let outty = vn_type(data, outvn);
             match Self::convert_zext_to_piece(data, op, Some(outty), 0) {
                 Ok(true) => return 1,
@@ -1508,15 +1424,12 @@ impl Rule for RulePieceStructure {
             }
         }
 
-        // op->setPartialRoot();
         data.obank_mut().get_mut(op).expect("piecestructure: stale op").set_partial_root();
         let mut any_addr_tied = is_addr_tied(data, outvn);
-        // Address baseAddr = outvn->getAddr() - baseOffset;
         let base_addr = &vn_addr(data, outvn) - base_offset as i64;
 
         for node in stack.clone() {
             let vn = node.get_varnode(data.obank());
-            // Address addr = baseAddr + node.getTypeOffset();  addr.renormalize(vn->getSize());
             let mut addr = &base_addr + node.get_type_offset() as i64;
             let vnsize = size(data, vn);
             if addr.renormalize(vnsize, data.get_arch().manage()).is_err() {
@@ -1544,7 +1457,6 @@ impl Rule for RulePieceStructure {
                     Err(_) => continue,
                 };
                 any_addr_tied = any_addr_tied || is_addr_tied(data, new_vn);
-                // Datatype *newType = types->getExactPiece(ct, node.getTypeOffset(), vn->getSize());
                 let new_type = match data
                     .get_arch()
                     .types()
@@ -1611,7 +1523,6 @@ pub struct RuleSubNormal {
 }
 
 impl RuleSubNormal {
-    /// Constructor (C++ `RuleSubNormal(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleSubNormal {
         RuleSubNormal { group: g.into() }
     }
@@ -1653,9 +1564,7 @@ impl Rule for RuleSubNormal {
                 return 0;
             }
         }
-        // int4 n = shiftop->getIn(1)->getOffset();
         let mut n = offset(data, in_vn(data, shiftop, 1)) as int4;
-        // int4 c = op->getIn(1)->getOffset();
         let mut c = offset(data, in_vn(data, op, 1)) as int4;
         let mut k = n / 8;
         let insize = size(data, a);
@@ -1750,7 +1659,6 @@ pub struct RulePositiveDiv {
 }
 
 impl RulePositiveDiv {
-    /// Constructor (C++ `RulePositiveDiv(const string &g)`).
     pub fn new(g: impl Into<String>) -> RulePositiveDiv {
         RulePositiveDiv { group: g.into() }
     }
@@ -1769,20 +1677,17 @@ impl Rule for RulePositiveDiv {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // int4 sa = op->getOut()->getSize(); if (sa > sizeof(uintb)) return 0;
         let mut sa = size(data, out_vn(data, op));
         if sa as usize > std::mem::size_of::<uintb>() {
             return 0;
         }
         sa = sa * 8 - 1;
-        // if (((op->getIn(0)->getNZMask() >> sa) & 1) != 0) return 0;
         if ((nz_mask(data, in_vn(data, op, 0)) >> sa) & 1) != 0 {
             return 0; // Input 0 may be negative
         }
         if ((nz_mask(data, in_vn(data, op, 1)) >> sa) & 1) != 0 {
             return 0; // Input 1 may be negative
         }
-        // OpCode opc = (op->code()==CPUI_INT_SDIV)? CPUI_INT_DIV : CPUI_INT_REM;
         let opc = if code(data, op) == OpCode::CPUI_INT_SDIV {
             OpCode::CPUI_INT_DIV
         } else {
@@ -1807,7 +1712,6 @@ pub struct RuleDivTermAdd {
 }
 
 impl RuleDivTermAdd {
-    /// Constructor (C++ `RuleDivTermAdd(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleDivTermAdd {
         RuleDivTermAdd { group: g.into() }
     }
@@ -1841,9 +1745,7 @@ impl RuleDivTermAdd {
             subop = op;
             n = 0;
         }
-        // int4 c = subop->getIn(1)->getOffset();
         let c = offset(data, in_vn(data, subop, 1)) as int4;
-        // if (subop->getOut()->getSize() + c != subop->getIn(0)->getSize()) return 0;
         if size(data, out_vn(data, subop)) + c != size(data, in_vn(data, subop, 0)) {
             return None; // SUB is not high
         }
@@ -1865,7 +1767,6 @@ impl Rule for RuleDivTermAdd {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // PcodeOp *subop = findSubshift(op,n,shiftopc);
         let (subop, n, shiftopc) = match Self::find_subshift(data, op) {
             Some(t) => t,
             None => return 0,
@@ -1881,7 +1782,6 @@ impl Rule for RuleDivTermAdd {
         if code(data, multop) != OpCode::CPUI_INT_MULT {
             return 0;
         }
-        // uint8 multConst[2]; if (!multop->getIn(1)->isConstantExtended(multConst)) return 0;
         let mut mult_const = match is_constant_extended(data, in_vn(data, multop, 1)) {
             Some(v) => v,
             None => return 0, // STUB(W3-varnode): isConstantExtended unavailable
@@ -1986,7 +1886,6 @@ pub struct RuleDivTermAdd2 {
 }
 
 impl RuleDivTermAdd2 {
-    /// Constructor (C++ `RuleDivTermAdd2(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleDivTermAdd2 {
         RuleDivTermAdd2 { group: g.into() }
     }
@@ -2040,7 +1939,6 @@ impl Rule for RuleDivTermAdd2 {
             return 0;
         }
         let x = x.expect("divtermadd2: x set when found");
-        // Varnode *z = compvn->getDef()->getIn(0);
         let compop = def_of(data, compvn).expect("divtermadd2: no def");
         let z = in_vn(data, compop, 0);
         if !is_written(data, z) {
@@ -2062,7 +1960,6 @@ impl Rule for RuleDivTermAdd2 {
         if code(data, multop) != OpCode::CPUI_INT_MULT {
             return 0;
         }
-        // uint8 multConst[2]; if (!multop->getIn(1)->isConstantExtended(multConst)) return 0;
         let mut mult_const = match is_constant_extended(data, in_vn(data, multop, 1)) {
             Some(v) => v,
             None => return 0, // STUB(W3-varnode)
@@ -2149,7 +2046,6 @@ pub struct RuleDivOpt {
 }
 
 impl RuleDivOpt {
-    /// Constructor (C++ `RuleDivOpt(const string &g)`).
     pub fn new(g: impl Into<String>) -> RuleDivOpt {
         RuleDivOpt { group: g.into() }
     }
@@ -2199,7 +2095,6 @@ impl RuleDivOpt {
             }
             diff = q[0]; // off-by-one y adds extra error, affecting allowable maxx
         }
-        // maxx = (xsize==64)? 0 : (1<<xsize); maxx -= 1;
         let mut maxx: u64 = if xsize == 64 { 0 } else { 1u64 << xsize };
         maxx = maxx.wsub(1); // Maximum possible x value
         let mut tmp: [u64; 2] = [0, 0];
@@ -2299,7 +2194,6 @@ impl RuleDivOpt {
             } else {
                 nz_mask(data, in_vn_cur)
             };
-            // xsize = 8*sizeof(uintb) - count_leading_zeros(nzMask);
             xsize = (8 * std::mem::size_of::<uintb>() as int4) - count_leading_zeros(nz_mask_v);
             if xsize == 0 {
                 return None;
@@ -2436,7 +2330,6 @@ impl Rule for RuleDivOpt {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *inVn = findForm(op,n,y,xsize,extOpc); if (inVn==0) return 0;
         let (mut in_vn0, n, y, mut xsize, ext_opc) = match Self::find_form(data, op) {
             Some(t) => t,
             None => return 0,
@@ -2451,7 +2344,6 @@ impl Rule for RuleDivOpt {
         if divisor == 0 {
             return 0;
         }
-        // int4 outSize = op->getOut()->getSize();
         let mut out_size = size(data, out_vn(data, op));
 
         // `op` may be reassigned to a freshly-built INT_ADD in the truncation

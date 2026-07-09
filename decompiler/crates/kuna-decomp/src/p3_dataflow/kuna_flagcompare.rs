@@ -16,7 +16,7 @@
 //!
 //! Identical to `kuna_booleanmask`/`kuna_ovlesssimplify`: the C++
 //! `if (!data.getArch()->fold_flag_compare) return 0;` gate is resolved at
-//! construction (the seam `Funcdata::glb` does not carry the kuna analysis flags).
+//! construction (the boundary `Funcdata::glb` does not carry the kuna analysis flags).
 //! W8 threads `Architecture::fold_flag_compare`; [`specs`] uses the shipped
 //! default (`on`).
 //!
@@ -73,7 +73,7 @@ impl Rule for RuleBoolSignLess {
 
     /// C++ `RuleBoolSignLess::applyOp` (`kuna_flagcompare.cc:23`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (STUB(W4))
+        // (kuna) gate (STUB(W4)).
         if !self.enabled && !data.get_arch().fold_flag_compare {
             return 0;
         }
@@ -83,7 +83,6 @@ impl Rule for RuleBoolSignLess {
             Some(v) => v,
             None => return 0,
         };
-        // if (!zero->isConstant() || zero->getOffset() != 0) return 0;
         if !vn_is_constant(data, zero) || vn_offset(data, zero) != 0 {
             return 0;
         }
@@ -106,7 +105,6 @@ impl Rule for RuleBoolSignLess {
         if !vn_is_constant(data, ls1) {
             return 0;
         }
-        // uintb sa = leftshift->getIn(1)->getOffset();  if (sa == 0) return 0;
         let sa: uintb = vn_offset(data, ls1);
         if sa == 0 {
             return 0;
@@ -117,33 +115,25 @@ impl Rule for RuleBoolSignLess {
             None => return 0,
         };
         let width: int4 = vn_size(data, boolvn);
-        // if ((uintb)width * 8 <= sa) return 0;
         if (width as uintb).wrapping_mul(8) <= sa {
             return 0;
         }
-        // int4 signbitpos = width * 8 - 1 - (int4)sa;
         let signbitpos: int4 = width * 8 - 1 - (sa as int4);
-        // uintb relevant = (uintb)1 << signbitpos;
         let relevant: uintb = 1u64 << signbitpos;
-        // uintb above = ~(relevant - 1);  // mask of bits >= signbitpos
+        // Mask of bits >= signbitpos.
         let above: uintb = !(relevant.wrapping_sub(1));
-        // if ((boolvn->getNZMask() & above) != relevant) return 0;
         if (vn_nzmask(data, boolvn) & above) != relevant {
             return 0;
         }
-        // if (boolvn->getNZMask() != relevant) return 0;
         if vn_nzmask(data, boolvn) != relevant {
             return 0;
         }
 
         // Rewrite `(b << sa) s< 0`  =>  `b != 0`.
-        // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);
         // STUB(W6): glb->inst[CPUI_INT_NOTEQUAL] property flags.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_NOTEQUAL, 0, "INT_NOTEQUAL"));
-        // data.opSetInput(op,boolvn,0);
         data.op_set_input(op, boolvn, 0)
             .expect("RuleBoolSignLess: opSetInput boolvn (internal invariant)");
-        // data.opSetInput(op,data.newConstant(boolvn->getSize(),0),1);
         let z = data.new_constant(vn_size(data, boolvn), 0);
         data.op_set_input(op, z, 1)
             .expect("RuleBoolSignLess: opSetInput const (internal invariant)");
@@ -190,12 +180,11 @@ impl Rule for RuleSborrowGe {
 
     /// C++ `RuleSborrowGe::applyOp` (`kuna_flagcompare.cc:242`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (STUB(W4))
+        // (kuna) gate (STUB(W4)).
         if !self.enabled && !data.get_arch().fold_flag_compare {
             return 0;
         }
 
-        // Varnode *nflag,*vflag;
         let (nflag, vflag) = if op_code(data, op) == OpCode::CPUI_BOOL_AND {
             match extract_and_of_ors(data, op) {
                 Some(p) => p,
@@ -209,21 +198,17 @@ impl Rule for RuleSborrowGe {
             }
         };
 
-        // if (!matchSborrowGe(nflag,vflag,&vbase,&kval,&sz)) return 0;
         let (vbase, kval, sz) = match match_sborrow_ge(data, nflag, vflag) {
             Some(t) => t,
             None => return 0,
         };
 
         // Rewrite the whole boolean tree to INT_SLESSEQUAL(K, V)  (K <= V).
-        // data.opSetOpcode(op,CPUI_INT_SLESSEQUAL);
         // STUB(W6): glb->inst[CPUI_INT_SLESSEQUAL] property flags.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_SLESSEQUAL, 0, "INT_SLESSEQUAL"));
-        // data.opSetInput(op,data.newConstant(sz,kval),0);
         let kvn = data.new_constant(sz, kval);
         data.op_set_input(op, kvn, 0)
             .expect("RuleSborrowGe: opSetInput const (internal invariant)");
-        // data.opSetInput(op,vbase,1);
         data.op_set_input(op, vbase, 1)
             .expect("RuleSborrowGe: opSetInput vbase (internal invariant)");
         1
@@ -331,7 +316,6 @@ fn match_sborrow_ge(data: &Funcdata, x: VarnodeId, y: VarnodeId) -> Option<(Varn
     }
     let mut sub_base = op_in(data, subop, 0)?;
     let mut sub_k = op_in(data, subop, 1)?;
-    // if (!subK->isConstant()) { swap; if still not constant -> fail }
     if !vn_is_constant(data, sub_k) {
         std::mem::swap(&mut sub_base, &mut sub_k);
         if !vn_is_constant(data, sub_k) {
@@ -344,7 +328,6 @@ fn match_sborrow_ge(data: &Funcdata, x: VarnodeId, y: VarnodeId) -> Option<(Varn
     if vn_size(data, sub_base) != width {
         return None;
     }
-    // (subK->getOffset()) & calc_mask(width); then (negk + kv) & mask == 0
     let negk: uintb = vn_offset(data, sub_k) & calc_mask(width);
     if (negk.wrapping_add(kv) & calc_mask(width)) != 0 {
         return None;
@@ -437,7 +420,6 @@ fn extract_or_of_ands(data: &Funcdata, orop: OpId) -> Option<(VarnodeId, Varnode
     }
     let p0 = op_in(data, pos_and, 0)?;
     let p1 = op_in(data, pos_and, 1)?;
-    // if (!((p0==n2 && p1==v2) || (p0==v2 && p1==n2))) return false;
     if !((p0 == n2 && p1 == v2) || (p0 == v2 && p1 == n2)) {
         return None;
     }

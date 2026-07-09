@@ -201,9 +201,7 @@ fn find_condition(
     mut edge2: int4,
 ) -> Option<(crate::context::BlockId, int4)> {
     let g = data.bblocks_ref();
-    // FlowBlock *cond = bl1->getIn(edge1);
     let mut cond = g.block(bl1).get_in(edge1);
-    // while (cond->sizeOut() != 2) { if (cond->sizeOut() != 1) return 0; bl1=cond; edge1=0; cond=bl1->getIn(0); }
     while g.block(cond).size_out() != 2 {
         if g.block(cond).size_out() != 1 {
             return None;
@@ -212,7 +210,6 @@ fn find_condition(
         edge1 = 0;
         cond = g.block(bl1).get_in(0);
     }
-    // while (cond != bl2->getIn(edge2)) { bl2=bl2->getIn(edge2); if (bl2->sizeOut()!=1) return 0; edge2=0; }
     while cond != g.block(bl2).get_in(edge2) {
         bl2 = g.block(bl2).get_in(edge2);
         if g.block(bl2).size_out() != 1 {
@@ -220,7 +217,6 @@ fn find_condition(
         }
         edge2 = 0;
     }
-    // slot1 = bl1->getInRevIndex(edge1); return cond;
     let slot1 = g.block(bl1).get_in_rev_index(edge1);
     Some((cond, slot1))
 }
@@ -272,7 +268,7 @@ fn float_sign_manipulation(data: &Funcdata, op: OpId) -> OpCode {
 /// `TypeOpFloatInt2Float::preferredZextSize(inSize)` (C++ `typeop.cc:1893`): the
 /// preferred size for the INT_ZEXT feeding an unsigned FLOAT_INT2FLOAT.
 ///
-/// Faithful transcription of the upstream body (the W6 stub note no longer
+/// Full upstream body (the W6 stub note no longer
 /// applies — `RuleUnsigned2Float`/`RuleInt2FloatCollapse` complete through
 /// `new_unique_out`, so the exact zext size is load-bearing).
 fn preferred_zext_size(in_size: int4) -> int4 {
@@ -328,51 +324,41 @@ impl Rule for RuleUnsigned2Float {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *invn = op->getIn(0); if (!invn->isWritten()) return 0;
         let invn = data.obank().get(op).expect("u2f: stale op").get_in(0).expect("u2f: null in0");
         if !data.vbank().get(invn).expect("u2f: stale invn").is_written() {
             return 0;
         }
-        // PcodeOp *orop = invn->getDef();
         let orop = data.vbank().get(invn).expect("u2f").get_def().expect("u2f: invn def");
-        // if (orop->code() != CPUI_INT_OR) return 0;
         if data.obank().get(orop).expect("u2f: stale orop").code() != OpCode::CPUI_INT_OR {
             return 0;
         }
         let or_in0 = data.obank().get(orop).expect("u2f").get_in(0).expect("u2f: orop in0");
         let or_in1 = data.obank().get(orop).expect("u2f").get_in(1).expect("u2f: orop in1");
-        // if (!orop->getIn(0)->isWritten() || !orop->getIn(1)->isWritten()) return 0;
         if !data.vbank().get(or_in0).expect("u2f").is_written()
             || !data.vbank().get(or_in1).expect("u2f").is_written()
         {
             return 0;
         }
-        // PcodeOp *shiftop = orop->getIn(0)->getDef(); PcodeOp *andop;
         let mut shiftop = data.vbank().get(or_in0).expect("u2f").get_def().expect("u2f: in0 def");
         let andop;
-        // if (shiftop->code() != CPUI_INT_RIGHT) { andop = shiftop; shiftop = orop->getIn(1)->getDef(); }
-        // else { andop = orop->getIn(1)->getDef(); }
         if data.obank().get(shiftop).expect("u2f").code() != OpCode::CPUI_INT_RIGHT {
             andop = shiftop;
             shiftop = data.vbank().get(or_in1).expect("u2f").get_def().expect("u2f: in1 def");
         } else {
             andop = data.vbank().get(or_in1).expect("u2f").get_def().expect("u2f: in1 def");
         }
-        // if (shiftop->code() != CPUI_INT_RIGHT) return 0;
         if data.obank().get(shiftop).expect("u2f").code() != OpCode::CPUI_INT_RIGHT {
             return 0;
         }
-        // if (!shiftop->getIn(1)->constantMatch(1)) return 0;  // Shift right by exactly 1
+        // Shift right by exactly 1
         let sh_in1 = data.obank().get(shiftop).expect("u2f").get_in(1).expect("u2f: shift in1");
         if !data.vbank().get(sh_in1).expect("u2f").constant_match(1) {
             return 0;
         }
-        // Varnode *basevn = shiftop->getIn(0); if (basevn->isFree()) return 0;
         let basevn = data.obank().get(shiftop).expect("u2f").get_in(0).expect("u2f: shift in0");
         if data.vbank().get(basevn).expect("u2f").is_free() {
             return 0;
         }
-        // if (andop->code() == CPUI_INT_ZEXT) { if (!andop->getIn(0)->isWritten()) return 0; andop = andop->getIn(0)->getDef(); }
         let mut andop = andop;
         if data.obank().get(andop).expect("u2f").code() == OpCode::CPUI_INT_ZEXT {
             let zin = data.obank().get(andop).expect("u2f").get_in(0).expect("u2f: zext in0");
@@ -381,20 +367,15 @@ impl Rule for RuleUnsigned2Float {
             }
             andop = data.vbank().get(zin).expect("u2f").get_def().expect("u2f: zext def");
         }
-        // if (andop->code() != CPUI_INT_AND) return 0;
         if data.obank().get(andop).expect("u2f").code() != OpCode::CPUI_INT_AND {
             return 0;
         }
-        // if (!andop->getIn(1)->constantMatch(1)) return 0;  // Mask off least significant bit
+        // Mask off least significant bit
         let and_in1 = data.obank().get(andop).expect("u2f").get_in(1).expect("u2f: and in1");
         if !data.vbank().get(and_in1).expect("u2f").constant_match(1) {
             return 0;
         }
-        // Varnode *vn = andop->getIn(0);
         let mut vn = data.obank().get(andop).expect("u2f").get_in(0).expect("u2f: and in0");
-        // if (basevn != vn) { if (!vn->isWritten()) return 0; PcodeOp *subop = vn->getDef();
-        //   if (subop->code()!=SUBPIECE) return 0; if (subop->getIn(1)->getOffset()!=0) return 0;
-        //   vn = subop->getIn(0); if (basevn != vn) return 0; }
         if basevn != vn {
             if !data.vbank().get(vn).expect("u2f").is_written() {
                 return 0;
@@ -412,15 +393,11 @@ impl Rule for RuleUnsigned2Float {
                 return 0;
             }
         }
-        // Varnode *outvn = op->getOut();
         let outvn = data.obank().get(op).expect("u2f").get_out().expect("u2f: op out");
-        // for(iter over outvn descendants) { addop ... }
         for addop in descend_ops(data, outvn) {
-            // if (addop->code() != CPUI_FLOAT_ADD) continue;
             if data.obank().get(addop).expect("u2f").code() != OpCode::CPUI_FLOAT_ADD {
                 continue;
             }
-            // if (addop->getIn(0) != outvn) continue; if (addop->getIn(1) != outvn) continue;
             if data.obank().get(addop).expect("u2f").get_in(0) != Some(outvn) {
                 continue;
             }
@@ -429,23 +406,15 @@ impl Rule for RuleUnsigned2Float {
             }
             let base_size = data.vbank().get(basevn).expect("u2f").get_size();
             let addr = data.obank().get(addop).expect("u2f").get_addr().clone();
-            // PcodeOp *zextop = data.newOp(1,addop->getAddr());
             let zextop = data.new_op(1, addr);
-            // data.opSetOpcode(zextop, CPUI_INT_ZEXT);
             rule_set_opcode(data, zextop, OpCode::CPUI_INT_ZEXT);
-            // Varnode *zextout = data.newUniqueOut(preferredZextSize(basevn->getSize()), zextop);
             //   -- STUB(W3): newUniqueOut; STUB(W6): preferredZextSize.
             match new_unique_out(data, preferred_zext_size(base_size), zextop) {
                 Ok(zextout) => {
-                    // data.opSetOpcode(addop, CPUI_FLOAT_INT2FLOAT);
                     rule_set_opcode(data, addop, OpCode::CPUI_FLOAT_INT2FLOAT);
-                    // data.opRemoveInput(addop, 1);
                     data.op_remove_input(addop, 1);
-                    // data.opSetInput(zextop, basevn, 0);
                     data.op_set_input(zextop, basevn, 0).expect("u2f: opSetInput");
-                    // data.opSetInput(addop, zextout, 0);
                     data.op_set_input(addop, zextout, 0).expect("u2f: opSetInput");
-                    // data.opInsertBefore(zextop, addop);
                     data.op_insert_before(zextop, addop);
                     return 1;
                 }
@@ -480,68 +449,55 @@ impl Rule for RuleInt2FloatCollapse {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(0)->isWritten()) return 0;
         let in0 = data.obank().get(op).expect("i2fc: stale op").get_in(0).expect("i2fc: null in0");
         if !data.vbank().get(in0).expect("i2fc").is_written() {
             return 0;
         }
-        // PcodeOp *zextop = op->getIn(0)->getDef();
         let zextop = data.vbank().get(in0).expect("i2fc").get_def().expect("i2fc: in0 def");
-        // if (zextop->code() != CPUI_INT_ZEXT) return 0;
         if data.obank().get(zextop).expect("i2fc").code() != OpCode::CPUI_INT_ZEXT {
             return 0;
         }
-        // Varnode *basevn = zextop->getIn(0); if (basevn->isFree()) return 0;
         let basevn = data.obank().get(zextop).expect("i2fc").get_in(0).expect("i2fc: zext in0");
         if data.vbank().get(basevn).expect("i2fc").is_free() {
             return 0;
         }
-        // PcodeOp *multiop = op->getOut()->loneDescend(); if (multiop == 0) return 0;
         let opout = data.obank().get(op).expect("i2fc").get_out().expect("i2fc: op out");
         let multiop = match lone_descend(data, opout) {
             Some(m) => m,
             None => return 0,
         };
-        // if (multiop->code() != CPUI_MULTIEQUAL) return 0;  // Output comes together with 1 other flow
+        // Output comes together with 1 other flow
         if data.obank().get(multiop).expect("i2fc").code() != OpCode::CPUI_MULTIEQUAL {
             return 0;
         }
-        // if (multiop->numInput() != 2) return 0;
         if data.obank().get(multiop).expect("i2fc").num_input() != 2 {
             return 0;
         }
-        // int4 slot = multiop->getSlot(op->getOut());
         let slot = data.obank().get(multiop).expect("i2fc").get_slot(opout);
-        // Varnode *otherout = multiop->getIn(1-slot);
         let otherout = data
             .obank()
             .get(multiop)
             .expect("i2fc")
             .get_in(1 - slot)
             .expect("i2fc: multiop other in");
-        // if (!otherout->isWritten()) return 0;
         if !data.vbank().get(otherout).expect("i2fc").is_written() {
             return 0;
         }
-        // PcodeOp *op2 = otherout->getDef();
         let op2 = data.vbank().get(otherout).expect("i2fc").get_def().expect("i2fc: otherout def");
-        // if (op2->code() != CPUI_FLOAT_INT2FLOAT) return 0;  // The other flow must be a signed FLOAT_INT2FLOAT
+        // The other flow must be a signed FLOAT_INT2FLOAT
         if data.obank().get(op2).expect("i2fc").code() != OpCode::CPUI_FLOAT_INT2FLOAT {
             return 0;
         }
-        // if (basevn != op2->getIn(0)) return 0;  // taking the same input
+        // taking the same input
         if Some(basevn) != data.obank().get(op2).expect("i2fc").get_in(0) {
             return 0;
         }
         // int4 dir2unsigned;  // Control path to unsigned conversion
-        // FlowBlock *cond = FlowBlock::findCondition(multiop->getParent(), slot, multiop->getParent(), 1-slot, dir2unsigned);
         let outbl = data.obank().get(multiop).expect("i2fc").get_parent().expect("i2fc: multiop parent");
         let (cond, dir2unsigned) = match find_condition(data, outbl, slot, outbl, 1 - slot) {
             Some(pair) => pair,
             None => return 0,
         };
-        // PcodeOp *cbranch = cond->lastOp();
-        // if (cbranch == 0 || cbranch->code() != CPUI_CBRANCH) return 0;
         let cbranch = match last_op_of(data, cond) {
             Some(c) => c,
             None => return 0,
@@ -549,7 +505,6 @@ impl Rule for RuleInt2FloatCollapse {
         if data.obank().get(cbranch).expect("i2fc").code() != OpCode::CPUI_CBRANCH {
             return 0;
         }
-        // if (!cbranch->getIn(1)->isWritten()) return 0;
         let cbr_in1 = match data.obank().get(cbranch).expect("i2fc").get_in(1) {
             Some(v) => v,
             None => return 0,
@@ -557,37 +512,32 @@ impl Rule for RuleInt2FloatCollapse {
         if !data.vbank().get(cbr_in1).expect("i2fc").is_written() {
             return 0;
         }
-        // if (cbranch->isBooleanFlip()) return 0;
         if data.obank().get(cbranch).expect("i2fc").is_boolean_flip() {
             return 0;
         }
-        // PcodeOp *compare = cbranch->getIn(1)->getDef();
         let compare = data.vbank().get(cbr_in1).expect("i2fc").get_def().expect("i2fc: cbranch cond def");
-        // if (compare->code() != CPUI_INT_SLESS) return 0;
         if data.obank().get(compare).expect("i2fc").code() != OpCode::CPUI_INT_SLESS {
             return 0;
         }
         let cmp_in0 = data.obank().get(compare).expect("i2fc").get_in(0).expect("i2fc: compare in0");
         let cmp_in1 = data.obank().get(compare).expect("i2fc").get_in(1).expect("i2fc: compare in1");
         let basevn_size = data.vbank().get(basevn).expect("i2fc").get_size();
-        // if (compare->getIn(1)->constantMatch(0)) {       // If condition is (basevn < 0)
+        // If condition is (basevn < 0)
         if data.vbank().get(cmp_in1).expect("i2fc").constant_match(0) {
-            // if (compare->getIn(0) != basevn) return 0;
             if cmp_in0 != basevn {
                 return 0;
             }
-            // if (dir2unsigned != 1) return 0;  // True branch must be the unsigned FLOAT_INT2FLOAT
+            // True branch must be the unsigned FLOAT_INT2FLOAT
             if dir2unsigned != 1 {
                 return 0;
             }
         }
-        // else if (compare->getIn(0)->constantMatch(calc_mask(basevn->getSize()))) {  // If condition is (-1 < basevn)
+        // If condition is (-1 < basevn)
         else if data.vbank().get(cmp_in0).expect("i2fc").constant_match(calc_mask(basevn_size)) {
-            // if (compare->getIn(1) != basevn) return 0;
             if cmp_in1 != basevn {
                 return 0;
             }
-            // if (dir2unsigned == 1) return 0;  // True branch must be to signed FLOAT_INT2FLOAT
+            // True branch must be to signed FLOAT_INT2FLOAT
             if dir2unsigned == 1 {
                 return 0;
             }
@@ -597,29 +547,21 @@ impl Rule for RuleInt2FloatCollapse {
             return 0;
         }
         // BlockBasic *outbl = multiop->getParent();   (already captured as `outbl`)
-        // data.opUninsert(multiop);
         data.op_uninsert(multiop);
-        // data.opSetOpcode(multiop, CPUI_FLOAT_INT2FLOAT);  // Redefine the MULTIEQUAL as unsigned FLOAT_INT2FLOAT
+        // Redefine the MULTIEQUAL as unsigned FLOAT_INT2FLOAT
         rule_set_opcode(data, multiop, OpCode::CPUI_FLOAT_INT2FLOAT);
-        // data.opRemoveInput(multiop, 0);
         data.op_remove_input(multiop, 0);
         let multiop_addr = data.obank().get(multiop).expect("i2fc").get_addr().clone();
-        // PcodeOp *newzext = data.newOp(1, multiop->getAddr());
         let newzext = data.new_op(1, multiop_addr);
-        // data.opSetOpcode(newzext, CPUI_INT_ZEXT);
         rule_set_opcode(data, newzext, OpCode::CPUI_INT_ZEXT);
-        // Varnode *newout = data.newUniqueOut(preferredZextSize(basevn->getSize()), newzext);
         let newout = match new_unique_out(data, preferred_zext_size(basevn_size), newzext) {
             Ok(v) => v,
             Err(_) => return 0,
         };
-        // data.opSetInput(newzext, basevn, 0);
         data.op_set_input(newzext, basevn, 0).expect("i2fc: opSetInput newzext");
-        // data.opSetInput(multiop, newout, 0);
         data.op_set_input(multiop, newout, 0).expect("i2fc: opSetInput multiop");
-        // data.opInsertBegin(multiop, outbl);  // Reinsert modified MULTIEQUAL after any other MULTIEQUAL
+        // Reinsert modified MULTIEQUAL after any other MULTIEQUAL
         data.op_insert_begin(multiop, outbl);
-        // data.opInsertBefore(newzext, multiop);
         data.op_insert_before(newzext, multiop);
         1
     }
@@ -646,38 +588,30 @@ impl Rule for RuleFuncPtrEncoding {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // int4 align = data.getArch()->funcptr_align; if (align == 0) return 0;
         //   -- STUB(W4): funcptr_align defaults to 0, so the rule no-ops.
         let align: int4 = funcptr_align(data);
         if align == 0 {
             return 0;
         }
-        // Varnode *vn = op->getIn(0); if (!vn->isWritten()) return 0;
         let vn = data.obank().get(op).expect("fpe: stale op").get_in(0).expect("fpe: null in0");
         if !data.vbank().get(vn).expect("fpe").is_written() {
             return 0;
         }
-        // PcodeOp *andop = vn->getDef(); if (andop->code() != CPUI_INT_AND) return 0;
         let andop = data.vbank().get(vn).expect("fpe").get_def().expect("fpe: vn def");
         if data.obank().get(andop).expect("fpe").code() != OpCode::CPUI_INT_AND {
             return 0;
         }
-        // Varnode *maskvn = andop->getIn(1); if (!maskvn->isConstant()) return 0;
         let maskvn = data.obank().get(andop).expect("fpe").get_in(1).expect("fpe: and in1");
         if !data.vbank().get(maskvn).expect("fpe").is_constant() {
             return 0;
         }
-        // uintb val = maskvn->getOffset(); uintb testmask = calc_mask(maskvn->getSize());
         let val = data.vbank().get(maskvn).expect("fpe").get_offset();
         let testmask = calc_mask(data.vbank().get(maskvn).expect("fpe").get_size());
-        // uintb slide = ~((uintb)0); slide <<= align;
         let mut slide: uintb = !0u64;
         slide = slide.wrapping_shl(align as u32);
-        // if ((testmask & slide) == val) { ... }
         if (testmask & slide) == val {
-            // data.opRemoveInput(andop,1);  -- Eliminate the mask
+            // Eliminate the mask
             data.op_remove_input(andop, 1);
-            // data.opSetOpcode(andop,CPUI_COPY);
             rule_set_opcode(data, andop, OpCode::CPUI_COPY);
             return 1;
         }
@@ -703,7 +637,6 @@ impl RuleThreeWayCompare {
         let less_code = data.obank().get(lessop).expect("3way: stale lessop").code();
         let lesseq_code = data.obank().get(lessequalop).expect("3way: stale lessequalop").code();
         let mut two_less_than: bool;
-        // if (lessop->code() == CPUI_INT_LESS) {...}
         if less_code == OpCode::CPUI_INT_LESS {
             if lesseq_code == OpCode::CPUI_INT_LESSEQUAL {
                 two_less_than = false;
@@ -729,14 +662,11 @@ impl RuleThreeWayCompare {
         } else {
             return -1;
         }
-        // Varnode *a1 = lessop->getIn(0); a2 = lessequalop->getIn(0);
-        //   b1 = lessop->getIn(1); b2 = lessequalop->getIn(1);
         let a1 = data.obank().get(lessop).expect("3way").get_in(0).expect("3way: less in0");
         let a2 = data.obank().get(lessequalop).expect("3way").get_in(0).expect("3way: lesseq in0");
         let b1 = data.obank().get(lessop).expect("3way").get_in(1).expect("3way: less in1");
         let b2 = data.obank().get(lessequalop).expect("3way").get_in(1).expect("3way: lesseq in1");
         let mut res: int4 = 0;
-        // if (a1 != a2) { make sure a1 and a2 are equivalent }
         if a1 != a2 {
             let a1v = data.vbank().get(a1).expect("3way");
             let a2v = data.vbank().get(a2).expect("3way");
@@ -756,7 +686,6 @@ impl RuleThreeWayCompare {
                 }
             }
         }
-        // if (b1 != b2) { make sure b1 and b2 are equivalent }
         if b1 != b2 {
             let b1v = data.vbank().get(b1).expect("3way");
             let b2v = data.vbank().get(b2).expect("3way");
@@ -765,7 +694,6 @@ impl RuleThreeWayCompare {
             }
             let b1off = b1v.get_offset();
             let b2off = b2v.get_offset();
-            // if ((b1->getOffset() != b2->getOffset())&&twoLessThan) { ... } else return -1;
             if (b1off != b2off) && two_less_than {
                 if b1off.wrapping_add(1) == b2off {
                     two_less_than = false;
@@ -777,7 +705,6 @@ impl RuleThreeWayCompare {
                 return -1;
             }
         }
-        // if (twoLessThan) return -1;
         if two_less_than {
             return -1;
         }
@@ -791,47 +718,38 @@ impl RuleThreeWayCompare {
         let zext1: OpId;
         let zext2: OpId;
         let addop: OpId;
-        // vn2 = op->getIn(1);
         let vn2 = data.obank().get(op).expect("3way: stale op").get_in(1).expect("3way: op in1");
         if data.vbank().get(vn2).expect("3way").is_constant() {
             // Form 1 : (z + z) - 1
-            // mask = calc_mask(vn2->getSize()); if (mask != vn2->getOffset()) return 0;
             let mask = calc_mask(data.vbank().get(vn2).expect("3way").get_size());
             if mask != data.vbank().get(vn2).expect("3way").get_offset() {
                 return None;
             }
-            // vn1 = op->getIn(0); if (!vn1->isWritten()) return 0;
             let vn1 = data.obank().get(op).expect("3way").get_in(0).expect("3way: op in0");
             if !data.vbank().get(vn1).expect("3way").is_written() {
                 return None;
             }
-            // addop = vn1->getDef(); if (addop->code() != CPUI_INT_ADD) return 0;
             addop = data.vbank().get(vn1).expect("3way").get_def().expect("3way: vn1 def");
             if data.obank().get(addop).expect("3way").code() != OpCode::CPUI_INT_ADD {
                 return None;
             }
-            // tmpvn = addop->getIn(0); if (!tmpvn->isWritten()) return 0;
             let t0 = data.obank().get(addop).expect("3way").get_in(0).expect("3way: add in0");
             if !data.vbank().get(t0).expect("3way").is_written() {
                 return None;
             }
-            // zext1 = tmpvn->getDef(); if (zext1->code() != CPUI_INT_ZEXT) return 0;
             zext1 = data.vbank().get(t0).expect("3way").get_def().expect("3way: t0 def");
             if data.obank().get(zext1).expect("3way").code() != OpCode::CPUI_INT_ZEXT {
                 return None;
             }
-            // tmpvn = addop->getIn(1); if (!tmpvn->isWritten()) return 0;
             let t1 = data.obank().get(addop).expect("3way").get_in(1).expect("3way: add in1");
             if !data.vbank().get(t1).expect("3way").is_written() {
                 return None;
             }
-            // zext2 = tmpvn->getDef(); if (zext2->code() != CPUI_INT_ZEXT) return 0;
             zext2 = data.vbank().get(t1).expect("3way").get_def().expect("3way: t1 def");
             if data.obank().get(zext2).expect("3way").code() != OpCode::CPUI_INT_ZEXT {
                 return None;
             }
         } else if data.vbank().get(vn2).expect("3way").is_written() {
-            // PcodeOp *tmpop = vn2->getDef();
             let tmpop = data.vbank().get(vn2).expect("3way").get_def().expect("3way: vn2 def");
             let tmp_code = data.obank().get(tmpop).expect("3way").code();
             if tmp_code == OpCode::CPUI_INT_ZEXT {
@@ -902,34 +820,27 @@ impl RuleThreeWayCompare {
         } else {
             return None;
         }
-        // vn1 = zext1->getIn(0); if (!vn1->isWritten()) return 0;
         let zv1 = data.obank().get(zext1).expect("3way").get_in(0).expect("3way: zext1 in0");
         if !data.vbank().get(zv1).expect("3way").is_written() {
             return None;
         }
-        // vn2 = zext2->getIn(0); if (!vn2->isWritten()) return 0;
         let zv2 = data.obank().get(zext2).expect("3way").get_in(0).expect("3way: zext2 in0");
         if !data.vbank().get(zv2).expect("3way").is_written() {
             return None;
         }
-        // lessop = vn1->getDef(); lessequalop = vn2->getDef();
         let mut lessop = data.vbank().get(zv1).expect("3way").get_def().expect("3way: zv1 def");
         let mut lessequalop = data.vbank().get(zv2).expect("3way").get_def().expect("3way: zv2 def");
-        // OpCode opc = lessop->code();
         let opc = data.obank().get(lessop).expect("3way").code();
-        // if ((opc != CPUI_INT_LESS)&&(opc != CPUI_INT_SLESS)&&(opc != CPUI_FLOAT_LESS)) { swap }
         if (opc != OpCode::CPUI_INT_LESS)
             && (opc != OpCode::CPUI_INT_SLESS)
             && (opc != OpCode::CPUI_FLOAT_LESS)
         {
             std::mem::swap(&mut lessop, &mut lessequalop);
         }
-        // int4 form = testCompareEquivalence(lessop,lessequalop); if (form < 0) return 0;
         let form = RuleThreeWayCompare::test_compare_equivalence(data, lessop, lessequalop);
         if form < 0 {
             return None;
         }
-        // if (form == 1) { swap }
         if form == 1 {
             std::mem::swap(&mut lessop, &mut lessequalop);
         }
@@ -955,10 +866,8 @@ impl Rule for RuleThreeWayCompare {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // int4 constSlot=0; Varnode *tmpvn = op->getIn(constSlot);
         let mut const_slot: int4 = 0;
         let mut tmpvn = data.obank().get(op).expect("3way: stale op").get_in(0).expect("3way: in0");
-        // if (!tmpvn->isConstant()) { constSlot=1; tmpvn=op->getIn(1); if (!tmpvn->isConstant()) return 0; }
         if !data.vbank().get(tmpvn).expect("3way").is_constant() {
             const_slot = 1;
             tmpvn = data.obank().get(op).expect("3way").get_in(1).expect("3way: in1");
@@ -966,7 +875,6 @@ impl Rule for RuleThreeWayCompare {
                 return 0;
             }
         }
-        // uintb val = tmpvn->getOffset();
         let val = data.vbank().get(tmpvn).expect("3way").get_offset();
         let tmp_size = data.vbank().get(tmpvn).expect("3way").get_size();
         // Encode const value (-1,0,1,2) as highest 3 bits of form (000,001,010,011)
@@ -978,35 +886,29 @@ impl Rule for RuleThreeWayCompare {
         } else {
             return 0;
         }
-        // tmpvn = op->getIn(1-constSlot); if (!tmpvn->isWritten()) return 0;
         let tmpvn = data.obank().get(op).expect("3way").get_in(1 - const_slot).expect("3way: in");
         if !data.vbank().get(tmpvn).expect("3way").is_written() {
             return 0;
         }
-        // if (tmpvn->getDef()->code() != CPUI_INT_ADD) return 0;
         let tmpdef = data.vbank().get(tmpvn).expect("3way").get_def().expect("3way: tmpvn def");
         if data.obank().get(tmpdef).expect("3way").code() != OpCode::CPUI_INT_ADD {
             return 0;
         }
-        // bool isPartial = false; PcodeOp *lessop = detectThreeWay(tmpvn->getDef(),isPartial);
         let mut is_partial = false;
         let lessop = match RuleThreeWayCompare::detect_three_way(data, tmpdef, &mut is_partial) {
             Some(l) => l,
             None => return 0,
         };
-        // if (isPartial) { if (form == 0) return 0; form -= 1; }
         if is_partial {
             if form == 0 {
                 return 0; // -1 const value is now out of range
             }
             form -= 1;
         }
-        // form <<= 1; if (constSlot == 1) form += 1;
         form <<= 1;
         if const_slot == 1 {
             form += 1;
         }
-        // OpCode lessform = lessop->code();
         let lessform = data.obank().get(lessop).expect("3way").code();
         // form <<= 2; encode base op as final 2 bits
         form <<= 2;
@@ -1018,17 +920,14 @@ impl Rule for RuleThreeWayCompare {
         } else if opcode == OpCode::CPUI_INT_NOTEQUAL {
             form += 3;
         }
-        // Varnode *bvn = lessop->getIn(0); Varnode *avn = lessop->getIn(1);
         let bvn = data.obank().get(lessop).expect("3way").get_in(0).expect("3way: less in0");
         let avn = data.obank().get(lessop).expect("3way").get_in(1).expect("3way: less in1");
-        // if ((!avn->isConstant())&&(avn->isFree())) return 0;
         {
             let av = data.vbank().get(avn).expect("3way");
             if (!av.is_constant()) && av.is_free() {
                 return 0;
             }
         }
-        // if ((!bvn->isConstant())&&(bvn->isFree())) return 0;
         {
             let bv = data.vbank().get(bvn).expect("3way");
             if (!bv.is_constant()) && bv.is_free() {
@@ -1037,7 +936,6 @@ impl Rule for RuleThreeWayCompare {
         }
         // The LESSEQUAL op-code is `(OpCode)(lessform+1)` in the CPUI enum.
         let lessequal_form = lessequal_after(lessform);
-        // switch(form) { ... }
         match form {
             1 | 21 => {
                 // always true
@@ -1130,29 +1028,23 @@ impl RulePopcountBoolXor {
         const_res: &mut int4,
     ) -> Option<VarnodeId> {
         *const_res = -1;
-        // uintb mask = 1; mask <<= bitPos;
         let mut mask: uintb = 1u64.wrapping_shl(bit_pos as u32);
         loop {
             let v = data.vbank().get(vn).expect("pcbx: stale vn");
-            // if (vn->isConstant()) { constRes = (offset >> bitPos) & 1; return 0; }
             if v.is_constant() {
                 *const_res = ((v.get_offset() >> bit_pos) & 1) as int4;
                 return None;
             }
-            // if (!vn->isWritten()) return 0;
             if !v.is_written() {
                 return None;
             }
-            // if (bitPos == 0 && vn->getSize() == 1 && vn->getNZMask() == mask) return vn;
             if bit_pos == 0 && v.get_size() == 1 && v.get_nz_mask() == mask {
                 return Some(vn);
             }
-            // PcodeOp *op = vn->getDef();
             let op = v.get_def().expect("pcbx: vn def");
             let code = data.obank().get(op).expect("pcbx").code();
             match code {
                 OpCode::CPUI_INT_AND => {
-                    // if (!op->getIn(1)->isConstant()) return 0; vn = op->getIn(0);
                     let in1 = data.obank().get(op).expect("pcbx").get_in(1).expect("pcbx: and in1");
                     if !data.vbank().get(in1).expect("pcbx").is_constant() {
                         return None;
@@ -1176,14 +1068,12 @@ impl RulePopcountBoolXor {
                     }
                 }
                 OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => {
-                    // vn = op->getIn(0); if (bitPos >= vn->getSize()*8) return 0;
                     vn = data.obank().get(op).expect("pcbx").get_in(0).expect("pcbx: ext in0");
                     if bit_pos >= data.vbank().get(vn).expect("pcbx").get_size() * 8 {
                         return None;
                     }
                 }
                 OpCode::CPUI_SUBPIECE => {
-                    // sa = op->getIn(1)->getOffset()*8; bitPos += sa; mask <<= sa; vn = op->getIn(0);
                     let in1 = data.obank().get(op).expect("pcbx").get_in(1).expect("pcbx: sub in1");
                     let sa = (data.vbank().get(in1).expect("pcbx").get_offset() as int4) * 8;
                     bit_pos += sa;
@@ -1191,7 +1081,6 @@ impl RulePopcountBoolXor {
                     vn = data.obank().get(op).expect("pcbx").get_in(0).expect("pcbx: sub in0");
                 }
                 OpCode::CPUI_PIECE => {
-                    // vn0 = op->getIn(0); vn1 = op->getIn(1); sa = vn1->getSize()*8;
                     let vn0 = data.obank().get(op).expect("pcbx").get_in(0).expect("pcbx: pc in0");
                     let vn1 = data.obank().get(op).expect("pcbx").get_in(1).expect("pcbx: pc in1");
                     let sa = data.vbank().get(vn1).expect("pcbx").get_size() * 8;
@@ -1204,8 +1093,6 @@ impl RulePopcountBoolXor {
                     }
                 }
                 OpCode::CPUI_INT_LEFT => {
-                    // vn1 = op->getIn(1); if (!const) return 0; sa = vn1->getOffset();
-                    // if (sa > bitPos) return 0; bitPos -= sa; mask >>= sa; vn = op->getIn(0);
                     let vn1 = data.obank().get(op).expect("pcbx").get_in(1).expect("pcbx: shl in1");
                     if !data.vbank().get(vn1).expect("pcbx").is_constant() {
                         return None;
@@ -1219,8 +1106,6 @@ impl RulePopcountBoolXor {
                     vn = data.obank().get(op).expect("pcbx").get_in(0).expect("pcbx: shl in0");
                 }
                 OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => {
-                    // vn1 = op->getIn(1); if (!const) return 0; sa = vn1->getOffset();
-                    // vn = op->getIn(0); bitPos += sa; if (bitPos >= vn->getSize()*8) return 0; mask <<= sa;
                     let vn1 = data.obank().get(op).expect("pcbx").get_in(1).expect("pcbx: shr in1");
                     if !data.vbank().get(vn1).expect("pcbx").is_constant() {
                         return None;
@@ -1254,80 +1139,62 @@ impl Rule for RulePopcountBoolXor {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *outVn = op->getOut();
         let out_vn = data.obank().get(op).expect("pcbx: stale op").get_out().expect("pcbx: out");
         for base_op in descend_ops(data, out_vn) {
-            // if (baseOp->code() != CPUI_INT_AND) continue;
             if data.obank().get(base_op).expect("pcbx").code() != OpCode::CPUI_INT_AND {
                 continue;
             }
-            // Varnode *tmpVn = baseOp->getIn(1);
             let tmp_vn = data.obank().get(base_op).expect("pcbx").get_in(1).expect("pcbx: and in1");
             let tv = data.vbank().get(tmp_vn).expect("pcbx");
-            // if (!tmpVn->isConstant()) continue;
             if !tv.is_constant() {
                 continue;
             }
-            // if (tmpVn->getOffset() != 1) continue;
             if tv.get_offset() != 1 {
                 continue;
             }
-            // if (tmpVn->getSize() != 1) continue;
             if tv.get_size() != 1 {
                 continue;
             }
-            // Varnode *inVn = op->getIn(0); if (!inVn->isWritten()) return 0;
             let in_vn = data.obank().get(op).expect("pcbx").get_in(0).expect("pcbx: op in0");
             if !data.vbank().get(in_vn).expect("pcbx").is_written() {
                 return 0;
             }
-            // int4 count = popcount(inVn->getNZMask());
             let nz = data.vbank().get(in_vn).expect("pcbx").get_nz_mask();
             let count = popcount(nz);
             if count == 1 {
-                // int4 leastPos = leastsigbit_set(inVn->getNZMask());
                 let least_pos = leastsigbit_set(nz);
                 let mut const_res: int4 = 0;
-                // Varnode *b1 = getBooleanResult(inVn, leastPos, constRes);
                 let b1 =
                     RulePopcountBoolXor::get_boolean_result(data, in_vn, least_pos, &mut const_res);
-                // if (b1 == 0) continue;
                 let b1 = match b1 {
                     Some(b) => b,
                     None => continue,
                 };
-                // data.opSetOpcode(baseOp, CPUI_COPY); data.opRemoveInput(baseOp,1); data.opSetInput(baseOp,b1,0);
                 rule_set_opcode(data, base_op, OpCode::CPUI_COPY);
                 data.op_remove_input(base_op, 1);
                 data.op_set_input(base_op, b1, 0).expect("pcbx: set");
                 return 1;
             }
             if count == 2 {
-                // int4 pos0 = leastsigbit_set(nz); int4 pos1 = mostsigbit_set(nz);
                 let pos0 = leastsigbit_set(nz);
                 let pos1 = mostsigbit_set(nz);
                 let mut const_res0: int4 = 0;
                 let mut const_res1: int4 = 0;
                 let b1 =
                     RulePopcountBoolXor::get_boolean_result(data, in_vn, pos0, &mut const_res0);
-                // if (b1 == 0 && constRes0 != 1) continue;
                 if b1.is_none() && const_res0 != 1 {
                     continue;
                 }
                 let b2 =
                     RulePopcountBoolXor::get_boolean_result(data, in_vn, pos1, &mut const_res1);
-                // if (b2 == 0 && constRes1 != 1) continue;
                 if b2.is_none() && const_res1 != 1 {
                     continue;
                 }
-                // if (b1 == 0 && b2 == 0) continue;
                 if b1.is_none() && b2.is_none() {
                     continue;
                 }
-                // if (b1 == 0) b1 = data.newConstant(1,1); if (b2 == 0) b2 = data.newConstant(1,1);
                 let b1 = b1.unwrap_or_else(|| data.new_constant(1, 1));
                 let b2 = b2.unwrap_or_else(|| data.new_constant(1, 1));
-                // data.opSetOpcode(baseOp, CPUI_INT_XOR); data.opSetInput(baseOp,b1,0); data.opSetInput(baseOp,b2,1);
                 rule_set_opcode(data, base_op, OpCode::CPUI_INT_XOR);
                 data.op_set_input(base_op, b1, 0).expect("pcbx: set");
                 data.op_set_input(base_op, b2, 1).expect("pcbx: set");
@@ -1361,12 +1228,10 @@ impl Rule for RulePiecePathology {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *vn = op->getIn(0); if (!vn->isWritten()) return 0;
         let vn = data.obank().get(op).expect("pp: stale op").get_in(0).expect("pp: in0");
         if !data.vbank().get(vn).expect("pp").is_written() {
             return 0;
         }
-        // PcodeOp *subOp = vn->getDef(); OpCode opc = subOp->code();
         let sub_op = data.vbank().get(vn).expect("pp").get_def().expect("pp: vn def");
         let opc = data.obank().get(sub_op).expect("pp").code();
         // The remaining checks (isPathology / contiguous-register INDIRECT) and
@@ -1377,15 +1242,14 @@ impl Rule for RulePiecePathology {
         // confirm a pathology and so no-ops, exactly as the C++ does when no
         // pathology is detected.  STUB(W4): FuncCallSpecs / FuncProto.
         if opc == OpCode::CPUI_SUBPIECE {
-            // if (subOp->getIn(1)->getOffset() == 0) return 0;
             let sub_in1 = data.obank().get(sub_op).expect("pp").get_in(1).expect("pp: sub in1");
             if data.vbank().get(sub_in1).expect("pp").get_offset() == 0 {
                 return 0;
             }
-            // if (!isPathology(subOp->getIn(0),data)) return 0;  -- STUB(W4)
+            // STUB(W4): the C++ isPathology(subOp->getIn(0),data) guard is unported; defer.
             0
         } else if opc == OpCode::CPUI_INDIRECT {
-            // if (!subOp->isIndirectCreation()) return 0;  -- STUB(W4) for the rest
+            // STUB(W4) for the rest of this arm.
             if !data.obank().get(sub_op).expect("pp").is_indirect_creation() {
                 return 0;
             }
@@ -1417,24 +1281,18 @@ impl Rule for RuleXorSwap {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // for(int4 i=0;i<2;++i) {
         for i in 0..2 {
-            // Varnode *vn = op->getIn(i); if (!vn->isWritten()) continue;
             let vn = data.obank().get(op).expect("xs: stale op").get_in(i).expect("xs: in");
             if !data.vbank().get(vn).expect("xs").is_written() {
                 continue;
             }
-            // PcodeOp *op2 = vn->getDef(); if (op2->code() != CPUI_INT_XOR) continue;
             let op2 = data.vbank().get(vn).expect("xs").get_def().expect("xs: vn def");
             if data.obank().get(op2).expect("xs").code() != OpCode::CPUI_INT_XOR {
                 continue;
             }
-            // Varnode *othervn = op->getIn(1-i);
             let othervn = data.obank().get(op).expect("xs").get_in(1 - i).expect("xs: other");
-            // Varnode *vn0 = op2->getIn(0); Varnode *vn1 = op2->getIn(1);
             let vn0 = data.obank().get(op2).expect("xs").get_in(0).expect("xs: op2 in0");
             let vn1 = data.obank().get(op2).expect("xs").get_in(1).expect("xs: op2 in1");
-            // if (othervn == vn0 && !vn1->isFree()) { ... }
             if othervn == vn0 && !data.vbank().get(vn1).expect("xs").is_free() {
                 data.op_remove_input(op, 1);
                 rule_set_opcode(data, op, OpCode::CPUI_COPY);
@@ -1473,39 +1331,28 @@ impl Rule for RuleLzcountShiftBool {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *outVn = op->getOut();
         let out_vn = data.obank().get(op).expect("lsb: stale op").get_out().expect("lsb: out");
-        // uintb max_return = 8 * op->getIn(0)->getSize();
         let in0 = data.obank().get(op).expect("lsb").get_in(0).expect("lsb: in0");
         let in0_size = data.vbank().get(in0).expect("lsb").get_size();
         let max_return: uintb = 8u64 * (in0_size as uintb);
-        // if (popcount(max_return) != 1) return 0;
         if popcount(max_return) != 1 {
             return 0;
         }
         for base_op in descend_ops(data, out_vn) {
-            // if (baseOp->code() != CPUI_INT_RIGHT && baseOp->code() != CPUI_INT_SRIGHT) continue;
             let code = data.obank().get(base_op).expect("lsb").code();
             if code != OpCode::CPUI_INT_RIGHT && code != OpCode::CPUI_INT_SRIGHT {
                 continue;
             }
-            // Varnode *vn1 = baseOp->getIn(1); if (!vn1->isConstant()) continue;
             let vn1 = data.obank().get(base_op).expect("lsb").get_in(1).expect("lsb: shift in1");
             if !data.vbank().get(vn1).expect("lsb").is_constant() {
                 continue;
             }
-            // uintb shift = vn1->getOffset();
             let shift = data.vbank().get(vn1).expect("lsb").get_offset();
-            // if ((max_return >> shift) == 1) { ... }
             if (max_return >> shift) == 1 {
                 let base_addr = data.obank().get(base_op).expect("lsb").get_addr().clone();
-                // PcodeOp* newOp = data.newOp(2, baseOp->getAddr());
                 let new_op = data.new_op(2, base_addr);
-                // data.opSetOpcode(newOp, CPUI_INT_EQUAL);
                 rule_set_opcode(data, new_op, OpCode::CPUI_INT_EQUAL);
-                // Varnode* b = data.newConstant(op->getIn(0)->getSize(), 0);
                 let b = data.new_constant(in0_size, 0);
-                // data.opSetInput(newOp, op->getIn(0), 0); data.opSetInput(newOp, b, 1);
                 let op_in0 = data.obank().get(op).expect("lsb").get_in(0).expect("lsb: op in0");
                 data.op_set_input(new_op, op_in0, 0).expect("lsb: set");
                 data.op_set_input(new_op, b, 1).expect("lsb: set");
@@ -1514,11 +1361,8 @@ impl Rule for RuleLzcountShiftBool {
                     Ok(v) => v,
                     Err(_) => return 0, // STUB(W3): newUniqueOut unavailable
                 };
-                // data.opInsertBefore(newOp, baseOp);
                 data.op_insert_before(new_op, base_op);
-                // data.opRemoveInput(baseOp, 1);
                 data.op_remove_input(base_op, 1);
-                // if (baseOp->getOut()->getSize() == 1) opSetOpcode(COPY); else opSetOpcode(INT_ZEXT);
                 let base_out =
                     data.obank().get(base_op).expect("lsb").get_out().expect("lsb: base out");
                 if data.vbank().get(base_out).expect("lsb").get_size() == 1 {
@@ -1526,7 +1370,6 @@ impl Rule for RuleLzcountShiftBool {
                 } else {
                     rule_set_opcode(data, base_op, OpCode::CPUI_INT_ZEXT);
                 }
-                // data.opSetInput(baseOp, eqResVn, 0);
                 data.op_set_input(base_op, eq_res_vn, 0).expect("lsb: set");
                 return 1;
             }
@@ -1578,14 +1421,10 @@ impl Rule for RuleFloatSign {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         let mut res: int4 = 0;
-        // OpCode opc = op->code();
         let opc = data.obank().get(op).expect("fs: stale op").code();
-        // if (opc != CPUI_FLOAT_INT2FLOAT) { ... }
         if opc != OpCode::CPUI_FLOAT_INT2FLOAT {
-            // Varnode *vn = op->getIn(0); if (vn->isWritten()) { ... }
             let vn = data.obank().get(op).expect("fs").get_in(0).expect("fs: in0");
             if data.vbank().get(vn).expect("fs").is_written() {
-                // PcodeOp *signOp = vn->getDef();
                 let sign_op = data.vbank().get(vn).expect("fs").get_def().expect("fs: vn def");
                 // OpCode resCode = TypeOp::floatSignManipulation(signOp);  -- STUB(W6)
                 let res_code = float_sign_manipulation(data, sign_op);
@@ -1595,7 +1434,6 @@ impl Rule for RuleFloatSign {
                     res = 1;
                 }
             }
-            // if (op->numInput() == 2) { vn = op->getIn(1); if (vn->isWritten()) {...} }
             if data.obank().get(op).expect("fs").num_input() == 2 {
                 let vn = data.obank().get(op).expect("fs").get_in(1).expect("fs: in1");
                 if data.vbank().get(vn).expect("fs").is_written() {
@@ -1609,13 +1447,10 @@ impl Rule for RuleFloatSign {
                 }
             }
         }
-        // if (op->isBoolOutput() || opc == CPUI_FLOAT_TRUNC) return res;
         if data.obank().get(op).expect("fs").is_bool_output() || opc == OpCode::CPUI_FLOAT_TRUNC {
             return res;
         }
-        // Varnode *outvn = op->getOut();
         let outvn = data.obank().get(op).expect("fs").get_out().expect("fs: out");
-        // for(iter over outvn descendants) { readOp ... }
         for read_op in descend_ops(data, outvn) {
             // OpCode resCode = TypeOp::floatSignManipulation(readOp);  -- STUB(W6)
             let res_code = float_sign_manipulation(data, read_op);
@@ -1653,19 +1488,16 @@ impl Rule for RuleFloatSignCleanup {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         use crate::dtype::type_metatype;
-        // if (op->getOut()->getType()->getMetatype() != TYPE_FLOAT) return 0;
         let outvn = data.obank().get(op).expect("fsc: stale op").get_out().expect("fsc: out");
         if data.vbank().get(outvn).expect("fsc").get_type().get_metatype()
             != type_metatype::TYPE_FLOAT
         {
             return 0;
         }
-        // OpCode opc = TypeOp::floatSignManipulation(op); if (opc == CPUI_MAX) return 0;
         let opc = float_sign_manipulation(data, op);
         if opc == OpCode::CPUI_MAX {
             return 0;
         }
-        // data.opRemoveInput(op, 1); data.opSetOpcode(op, opc);
         data.op_remove_input(op, 1);
         rule_set_opcode(data, op, opc);
         1
@@ -1696,32 +1528,24 @@ impl Rule for RuleOrCompare {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *outvn = op->getOut();
         let outvn = data.obank().get(op).expect("oc: stale op").get_out().expect("oc: out");
-        // for(iter over outvn descendants): every reader must be (==0)/(!=0)
         let mut has_compares = false;
         for comp_op in descend_ops(data, outvn) {
-            // OpCode opc = compOp->code();
             let opc = data.obank().get(comp_op).expect("oc").code();
-            // if (opc != CPUI_INT_EQUAL && opc != CPUI_INT_NOTEQUAL) return 0;
             if opc != OpCode::CPUI_INT_EQUAL && opc != OpCode::CPUI_INT_NOTEQUAL {
                 return 0;
             }
-            // if (!compOp->getIn(1)->constantMatch(0)) return 0;
             let cin1 = data.obank().get(comp_op).expect("oc").get_in(1).expect("oc: comp in1");
             if !data.vbank().get(cin1).expect("oc").constant_match(0) {
                 return 0;
             }
             has_compares = true;
         }
-        // if (!hasCompares) return 0;
         if !has_compares {
             return 0;
         }
-        // Varnode* V = op->getIn(0); Varnode* W = op->getIn(1);
         let v = data.obank().get(op).expect("oc").get_in(0).expect("oc: in0");
         let w = data.obank().get(op).expect("oc").get_in(1).expect("oc: in1");
-        // if (V->isFree()) return 0; if (W->isFree()) return 0;
         if data.vbank().get(v).expect("oc").is_free() {
             return 0;
         }
@@ -1732,18 +1556,14 @@ impl Rule for RuleOrCompare {
         let w_size = data.vbank().get(w).expect("oc").get_size();
         // iterate the (snapshotted) descendants, advancing before modifying each.
         for equal_op in descend_ops(data, outvn) {
-            // OpCode opc = equalOp->code();
             let opc = data.obank().get(equal_op).expect("oc").code();
-            // Varnode* zero_V = data.newConstant(V->getSize(), 0);  zero_W likewise
             let zero_v = data.new_constant(v_size, 0);
             let zero_w = data.new_constant(w_size, 0);
             let addr = data.obank().get(equal_op).expect("oc").get_addr().clone();
-            // PcodeOp* eq_V = data.newOp(2, equalOp->getAddr()); opSetOpcode(eq_V, opc);
             let eq_v = data.new_op(2, addr.clone());
             rule_set_opcode(data, eq_v, opc);
             data.op_set_input(eq_v, v, 0).expect("oc: set");
             data.op_set_input(eq_v, zero_v, 1).expect("oc: set");
-            // PcodeOp* eq_W = data.newOp(2, equalOp->getAddr()); opSetOpcode(eq_W, opc);
             let eq_w = data.new_op(2, addr);
             rule_set_opcode(data, eq_w, opc);
             data.op_set_input(eq_w, w, 0).expect("oc: set");
@@ -1757,7 +1577,6 @@ impl Rule for RuleOrCompare {
                 Ok(o) => o,
                 Err(_) => return 0,
             };
-            // data.opInsertBefore(eq_V, equalOp); data.opInsertBefore(eq_W, equalOp);
             data.op_insert_before(eq_v, equal_op);
             data.op_insert_before(eq_w, equal_op);
             // change INT_EQUAL -> BOOL_AND, INT_NOTEQUAL -> BOOL_OR
@@ -1787,27 +1606,22 @@ impl RuleExpandLoad {
     /// (C++ `RuleExpandLoad::checkAndComparison`).
     pub fn check_and_comparison(data: &Funcdata, vn: VarnodeId) -> bool {
         for op in descend_ops(data, vn) {
-            // if (op->code() != CPUI_INT_AND) return false;
             if data.obank().get(op).expect("el").code() != OpCode::CPUI_INT_AND {
                 return false;
             }
-            // if (!op->getIn(1)->isConstant()) return false;
             let in1 = data.obank().get(op).expect("el").get_in(1).expect("el: and in1");
             if !data.vbank().get(in1).expect("el").is_constant() {
                 return false;
             }
-            // PcodeOp *compOp = op->getOut()->loneDescend(); if (compOp == 0) return false;
             let out = data.obank().get(op).expect("el").get_out().expect("el: and out");
             let comp_op = match lone_descend(data, out) {
                 Some(c) => c,
                 None => return false,
             };
-            // OpCode opc = compOp->code();
             let opc = data.obank().get(comp_op).expect("el").code();
             if opc != OpCode::CPUI_INT_EQUAL && opc != OpCode::CPUI_INT_NOTEQUAL {
                 return false;
             }
-            // if (!compOp->getIn(1)->isConstant()) return false;
             let cin1 = data.obank().get(comp_op).expect("el").get_in(1).expect("el: comp in1");
             if !data.vbank().get(cin1).expect("el").is_constant() {
                 return false;
@@ -1834,26 +1648,20 @@ impl RuleExpandLoad {
         // Snapshot descendants before mutating (the C++ advances the iterator
         // before modifying each op).
         for and_op in descend_ops(data, old_vn) {
-            // PcodeOp *compOp = andOp->getOut()->loneDescend();
             let and_out = data.obank().get(and_op).expect("mac: stale and").get_out().expect("mac: and out");
             let comp_op = lone_descend(data, and_out).expect("mac: checkAndComparison guaranteed lone descend");
-            // newOff = andOp->getIn(1)->getOffset(); newOff <<= offset;
             let and_c = data.obank().get(and_op).expect("mac: stale and").get_in(1).expect("mac: and in1");
             let and_off = data.vbank().get(and_c).expect("mac: stale and const").get_offset();
             let new_and_off = and_off << shift;
-            // Varnode *vn = data.newConstant(dt->getSize(), newOff); vn->updateType(dt);
             let new_and_const = data.new_constant(dt_size, new_and_off);
             data.vbank_mut().get_mut(new_and_const).expect("mac: stale new and const").update_type(Rc::clone(dt));
-            // opSetInput(andOp, newVn, 0); opSetInput(andOp, vn, 1);
             data.op_set_input(and_op, new_vn, 0).expect("mac: opSetInput and 0");
             data.op_set_input(and_op, new_and_const, 1).expect("mac: opSetInput and 1");
-            // newOff = compOp->getIn(1)->getOffset(); newOff <<= offset;
             let comp_c = data.obank().get(comp_op).expect("mac: stale comp").get_in(1).expect("mac: comp in1");
             let comp_off = data.vbank().get(comp_c).expect("mac: stale comp const").get_offset();
             let new_comp_off = comp_off << shift;
             let new_comp_const = data.new_constant(dt_size, new_comp_off);
             data.vbank_mut().get_mut(new_comp_const).expect("mac: stale new comp const").update_type(Rc::clone(dt));
-            // opSetInput(compOp, vn, 1);
             data.op_set_input(comp_op, new_comp_const, 1).expect("mac: opSetInput comp 1");
         }
     }
@@ -1875,14 +1683,11 @@ impl Rule for RuleExpandLoad {
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         use crate::dtype::type_metatype;
 
-        // Varnode *outVn = op->getOut(); int4 outSize = outVn->getSize();
         let out_vn = data.obank().get(op).expect("el: stale op").get_out().expect("el: out");
         let out_size = data.vbank().get(out_vn).expect("el: stale outVn").get_size();
-        // Varnode *rootPtr = op->getIn(1);
         let mut root_ptr = data.obank().get(op).expect("el: stale op").get_in(1).expect("el: load ptr");
         let mut add_op: Option<OpId> = None;
         let mut offset: int4 = 0;
-        // Datatype *elType;
         let el_type: Rc<Datatype>;
         let root_v = data.vbank().get(root_ptr).expect("el: stale rootPtr");
         if root_v.is_written() {
@@ -1895,24 +1700,21 @@ impl Rule for RuleExpandLoad {
             if def_code == OpCode::CPUI_INT_ADD && def_in1_const {
                 add_op = Some(def_op);
                 let new_root = data.obank().get(def_op).expect("el: stale defOp").get_in(0).expect("el: defOp in0");
-                // uintb off = defOp->getIn(1)->getOffset();
                 let off = data.vbank().get(def_in1.unwrap()).expect("el: stale defOp in1").get_offset();
                 if off > 16 {
                     return 0; // INT_ADD offset must be small
                 }
                 offset = off as int4;
-                // if (defOp->getOut()->loneDescend() == 0) return 0;  // used only once
+                // used only once
                 let def_out = data.obank().get(def_op).expect("el: stale defOp").get_out().expect("el: defOp out");
                 if lone_descend(data, def_out).is_none() {
                     return 0;
                 }
                 root_ptr = new_root;
-                // elType = rootPtr->getTypeReadFacing(defOp);
                 el_type = Rc::clone(
                     data.vbank().get(root_ptr).expect("el: stale rootPtr").get_type_read_facing(def_op),
                 );
             } else {
-                // elType = rootPtr->getTypeReadFacing(op);
                 el_type = Rc::clone(
                     data.vbank().get(root_ptr).expect("el: stale rootPtr").get_type_read_facing(op),
                 );
@@ -1922,20 +1724,17 @@ impl Rule for RuleExpandLoad {
                 data.vbank().get(root_ptr).expect("el: stale rootPtr").get_type_read_facing(op),
             );
         }
-        // if (elType->getMetatype() != TYPE_PTR) return 0;
         if el_type.get_metatype() != type_metatype::TYPE_PTR {
             return 0;
         }
-        // elType = ((TypePointer *)elType)->getPtrTo();
         let el_type = match el_type.get_ptr_to() {
             Some(p) => p,
             None => return 0,
         };
-        // if (elType->getSize() <= outSize) return 0;  // pointer data-type must be bigger
+        // pointer data-type must be bigger
         if el_type.get_size() <= out_size {
             return 0;
         }
-        // if (elType->getSize() < outSize + offset) return 0;
         if el_type.get_size() < out_size + offset {
             return 0;
         }
@@ -1950,9 +1749,7 @@ impl Rule for RuleExpandLoad {
         {
             return 0;
         }
-        // bool addForm = checkAndComparison(outVn);
         let add_form = RuleExpandLoad::check_and_comparison(data, out_vn);
-        // AddrSpace *spc = op->getIn(0)->getSpaceFromConst();
         let space_const = data.obank().get(op).expect("el: stale op").get_in(0).expect("el: load space");
         let spc = match space_from_const(data, space_const) {
             Some(s) => s,
@@ -1970,7 +1767,6 @@ impl Rule for RuleExpandLoad {
             if meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT {
                 return 0;
             }
-            // type_metatype outMeta = outVn->getTypeDefFacing()->getMetatype();
             let out_meta = data
                 .vbank()
                 .get(out_vn)
@@ -1996,17 +1792,13 @@ impl Rule for RuleExpandLoad {
         }
 
         // Modify the LOAD.
-        // Varnode *newOut = data.newUnique(elType->getSize(), elType);
         let new_out = data.new_unique(el_type.get_size(), Some(Rc::clone(&el_type)));
         data.op_set_output(op, new_out).expect("el: opSetOutput newOut");
         if let Some(add) = add_op {
-            // data.opSetInput(op, rootPtr, 1); data.opDestroy(addOp);
             data.op_set_input(op, root_ptr, 1).expect("el: opSetInput rootPtr");
             data.op_destroy(add);
         }
         if add_form {
-            // if (meta != TYPE_INT && meta != TYPE_UINT)
-            //   elType = data.getArch()->types->getBase(elType->getSize(), TYPE_UINT);
             let dt = if meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT {
                 data.get_arch()
                     .types()
@@ -2018,18 +1810,13 @@ impl Rule for RuleExpandLoad {
             };
             RuleExpandLoad::modify_and_comparison(data, out_vn, new_out, &dt, lsb_cut);
         } else {
-            // PcodeOp *subOp = data.newOp(2, op->getAddr());
             let opaddr = data.obank().get(op).expect("el: stale op").get_addr().clone();
             let sub_op = data.new_op(2, opaddr);
             rule_set_opcode(data, sub_op, OpCode::CPUI_SUBPIECE);
-            // opSetInput(subOp, newOut, 0);
             data.op_set_input(sub_op, new_out, 0).expect("el: opSetInput sub 0");
-            // opSetInput(subOp, newConstant(4, 0), 1);
             let zero = data.new_constant(4, 0);
             data.op_set_input(sub_op, zero, 1).expect("el: opSetInput sub 1");
-            // opSetOutput(subOp, outVn);
             data.op_set_output(sub_op, out_vn).expect("el: opSetOutput sub");
-            // opInsertAfter(subOp, op);
             data.op_insert_after(sub_op, op);
         }
         1

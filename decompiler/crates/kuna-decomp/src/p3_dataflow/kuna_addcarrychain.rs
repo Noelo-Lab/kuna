@@ -19,14 +19,14 @@
 //!
 //! As in the sibling kuna simplification rules, the C++
 //! `if (!data.getArch()->add_carry_chain) return 0;` gate is resolved at
-//! construction (the seam `Funcdata::glb` does not carry kuna analysis flags).
+//! construction (the boundary `Funcdata::glb` does not carry kuna analysis flags).
 //! W8 threads `Architecture::add_carry_chain`; [`specs`] uses the shipped default
 //! (`on`).
 //!
 //! ## Output-Varnode creation — `newUniqueOut`
 //!
 //! The C++ builds two helper ops with fresh unique outputs via
-//! `data.newUniqueOut(size, op)`.  The W3 [`Funcdata::op_set_output`] is a seam
+//! `data.newUniqueOut(size, op)`.  The W3 [`Funcdata::op_set_output`] is a stub
 //! (it needs a `banks_mut()` split-borrow the funcdata owner has not yet exposed),
 //! so this rule reproduces `newUniqueOut` directly through the public
 //! [`VarnodeBank::create_def_unique`](crate::varnode::VarnodeBank::create_def_unique)
@@ -35,7 +35,7 @@
 //! `replace_reads` callback panics if invoked: a freshly-created unique has no
 //! aliasing equivalent, so `xref` never unifies it (an invocation would be an
 //! internal-invariant violation).  Noted in the structured losses as the
-//! `op_set_output` seam workaround.
+//! `op_set_output` stub workaround.
 //!
 //! ## STUB(W6) — opcode-flag resolution
 //!
@@ -91,12 +91,11 @@ impl Rule for RuleAddCarryChain {
 
     /// C++ `RuleAddCarryChain::applyOp` (`kuna_addcarrychain.cc:77`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->add_carry_chain) return 0;  // (kuna) gate (seam-carried)
+        // (kuna) gate (ArchContext-carried).
         if !self.enabled && !data.get_arch().add_carry_chain {
             return 0;
         }
 
-        // Varnode *hivn = op->getIn(0);  Varnode *lovn = op->getIn(1);
         let hivn = match op_in(data, op, 0) {
             Some(v) => v,
             None => return 0,
@@ -105,16 +104,13 @@ impl Rule for RuleAddCarryChain {
             Some(v) => v,
             None => return 0,
         };
-        // if (!hivn->isWritten() || !lovn->isWritten()) return 0;
         if !vn_is_written(data, hivn) || !vn_is_written(data, lovn) {
             return 0;
         }
-        // if (hivn->getSize() != 1 || lovn->getSize() != 1) return 0;
         if vn_size(data, hivn) != 1 || vn_size(data, lovn) != 1 {
             return 0;
         }
 
-        // PcodeOp *loadd = lovn->getDef();  if (loadd->code() != CPUI_INT_ADD) return 0;
         let loadd = vn_def(data, lovn).expect("lovn written");
         if op_code(data, loadd) != OpCode::CPUI_INT_ADD {
             return 0;
@@ -128,7 +124,6 @@ impl Rule for RuleAddCarryChain {
             None => return 0,
         };
 
-        // PcodeOp *hiadd = hivn->getDef();  if (hiadd->code() != CPUI_INT_ADD) return 0;
         let hiadd = vn_def(data, hivn).expect("hivn written");
         if op_code(data, hiadd) != OpCode::CPUI_INT_ADD {
             return 0;
@@ -143,9 +138,6 @@ impl Rule for RuleAddCarryChain {
             Some(v) => v,
             None => return 0,
         };
-        // if (kunaIsCarryOf(hi1,a,b)) { carryvn = hi1; hipart = hi0; }
-        // else if (kunaIsCarryOf(hi0,a,b)) { carryvn = hi0; hipart = hi1; }
-        // else return 0;
         let hipart = if kuna_is_carry_of(data, hi1, a, b) {
             hi0
         } else if kuna_is_carry_of(data, hi0, a, b) {
@@ -154,17 +146,14 @@ impl Rule for RuleAddCarryChain {
             return 0;
         };
 
-        // if (hipart->getSize() != 1) return 0;
         if vn_size(data, hipart) != 1 {
             return 0;
         }
 
         // Pick the index operand (a, zext'd) and the base-low operand (b).
-        // Varnode *indexvn = a;  Varnode *baselo = b;
         let indexvn = a;
         let baselo = b;
 
-        // int4 outsize = op->getOut()->getSize();
         let out = match data.obank().get(op).and_then(|o| o.get_out()) {
             Some(o) => o,
             None => return 0,
@@ -175,49 +164,39 @@ impl Rule for RuleAddCarryChain {
         let pc: Address = data.obank().get(op).expect("op live").get_addr().clone();
 
         // Build  PIECE(hipart, baselo)  -- the 16-bit base.
-        // PcodeOp *baseop = data.newOp(2,op->getAddr());
         let baseop = data.new_op(2, pc.clone());
-        // data.newUniqueOut(hipart->getSize() + baselo->getSize(),baseop);
         let base_outsize = vn_size(data, hipart) + vn_size(data, baselo);
         let _base_out = new_unique_out(data, base_outsize, baseop)
             .expect("RuleAddCarryChain: newUniqueOut(base) (internal invariant)");
-        // data.opSetOpcode(baseop,CPUI_PIECE);  -- resolve glb->inst[CPUI_PIECE]
+        // Resolve glb->inst[CPUI_PIECE]
         // through the W6 inst[] table so the op carries the real `binary` eval-type
         // flag.  A zero-flag skeleton leaves PIECE(const,const) uncollapsible
         // (`dc_collapse` reads the eval-type bit), so the reassembled 16-bit base
         // would render as a literal `CONCAT11(0xNN,0xNN)` instead of folding to the
         // base constant (GH-8913 #2).
         data.op_set_opcode_code(baseop, OpCode::CPUI_PIECE);
-        // data.opSetInput(baseop,hipart,0);  data.opSetInput(baseop,baselo,1);
         data.op_set_input(baseop, hipart, 0)
             .expect("RuleAddCarryChain: opSetInput baseop.0");
         data.op_set_input(baseop, baselo, 1)
             .expect("RuleAddCarryChain: opSetInput baseop.1");
-        // data.opInsertBefore(baseop,op);
         data.op_insert_before(baseop, op);
 
         // Build  zext(index)  to the output width.
-        // PcodeOp *zextop = data.newOp(1,op->getAddr());
         let zextop = data.new_op(1, pc);
-        // data.newUniqueOut(outsize,zextop);
         let _zext_out = new_unique_out(data, outsize, zextop)
             .expect("RuleAddCarryChain: newUniqueOut(zext) (internal invariant)");
-        // data.opSetOpcode(zextop,CPUI_INT_ZEXT);  -- resolve glb->inst[] (W6)
+        // Resolve glb->inst[] (W6).
         data.op_set_opcode_code(zextop, OpCode::CPUI_INT_ZEXT);
-        // data.opSetInput(zextop,indexvn,0);
         data.op_set_input(zextop, indexvn, 0)
             .expect("RuleAddCarryChain: opSetInput zextop.0");
-        // data.opInsertBefore(zextop,op);
         data.op_insert_before(zextop, op);
 
         // Rewrite the PIECE op itself into the wide add:  out = base + zext(index).
-        // data.opSetOpcode(op,CPUI_INT_ADD);  -- resolve glb->inst[] (W6)
+        // Resolve glb->inst[] (W6).
         data.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
-        // data.opSetInput(op,baseop->getOut(),0);
         let base_out = data.obank().get(baseop).expect("baseop live").get_out().expect("baseop out");
         data.op_set_input(op, base_out, 0)
             .expect("RuleAddCarryChain: opSetInput op.0");
-        // data.opSetInput(op,zextop->getOut(),1);
         let zext_out = data.obank().get(zextop).expect("zextop live").get_out().expect("zextop out");
         data.op_set_input(op, zext_out, 1)
             .expect("RuleAddCarryChain: opSetInput op.1");
@@ -242,8 +221,6 @@ pub fn specs() -> Vec<RuleSpec> {
 /// Strip any CAST/COPY wrappers, returning the underlying value
 /// (C++ static `kunaStripCast`).
 fn kuna_strip_cast(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
-    // while (vn->isWritten()) { def = vn->getDef(); oc = def->code();
-    //   if (oc != CPUI_CAST && oc != CPUI_COPY) break; vn = def->getIn(0); }
     while vn_is_written(data, vn) {
         let def = vn_def(data, vn).expect("vn written");
         let oc = op_code(data, def);
@@ -266,8 +243,6 @@ fn kuna_same_value(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
     if a == b {
         return true;
     }
-    // if (a->isConstant() && b->isConstant())
-    //   return (a->getOffset() == b->getOffset() && a->getSize() == b->getSize());
     if vn_is_constant(data, a) && vn_is_constant(data, b) {
         return vn_offset(data, a) == vn_offset(data, b) && vn_size(data, a) == vn_size(data, b);
     }
@@ -278,7 +253,6 @@ fn kuna_same_value(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
 /// page-cross carry of a+b, in either INT_CARRY or RuleCarryElim form
 /// (C++ static `kunaIsCarryOf`).
 fn kuna_is_carry_of(data: &Funcdata, carryvn: VarnodeId, a: VarnodeId, b: VarnodeId) -> bool {
-    // if (!carryvn->isWritten()) return false;
     if !vn_is_written(data, carryvn) {
         return false;
     }
@@ -326,9 +300,7 @@ fn kuna_is_carry_of(data: &Funcdata, carryvn: VarnodeId, a: VarnodeId, b: Varnod
         if !kuna_same_value(data, val, v_add) {
             return false;
         }
-        // uintb negc = (-cAdd->getOffset()) & calc_mask(val->getSize());
         let negc: uintb = vn_offset(data, c_add).wrapping_neg() & calc_mask(vn_size(data, val));
-        // return (cst->getOffset() == negc);
         return vn_offset(data, cst) == negc;
     }
     false
@@ -336,7 +308,7 @@ fn kuna_is_carry_of(data: &Funcdata, carryvn: VarnodeId, a: VarnodeId, b: Varnod
 
 /// Reproduce `Funcdata::newUniqueOut(size, op)` for a fresh unique output:
 /// create a unique varnode already defined by `op` and link it as the op's
-/// output.  See module docs (the `op_set_output` seam workaround).
+/// output.  See module docs (the `op_set_output` stub workaround).
 fn new_unique_out(data: &mut Funcdata, size: int4, op: OpId) -> KunaResult<VarnodeId> {
     let ct: Rc<Datatype> = Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN));
     let seqnum = data.obank().get(op).expect("new_unique_out: stale op").get_seq_num().clone();

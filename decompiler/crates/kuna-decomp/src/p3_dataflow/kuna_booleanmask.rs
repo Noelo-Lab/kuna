@@ -10,7 +10,7 @@
 //! ## Gate wiring — STUB(W4)
 //!
 //! The C++ first line is `if (!data.getArch()->fold_boolean_mask) return 0;`.
-//! The W3 `Funcdata::glb` is the *seam* [`Architecture`](crate::context::ArchContext),
+//! The W3 `Funcdata::glb` is the *boundary* [`Architecture`](crate::context::ArchContext),
 //! which carries only the address-space manager and not the kuna analysis flags
 //! (those live on the full `architecture.rs` [`Architecture`](crate::architecture::Architecture),
 //! unreachable through the `&mut Funcdata` of the fixed [`Rule::apply_op`]
@@ -29,7 +29,7 @@
 //! property-flag word).  That `inst` table is the W6 type/typeop subsystem; until
 //! it lands the rewrite builds the [`TypeOp`] skeleton directly
 //! ([`TypeOp::new`]) with a zero flag word.  `code()` reads the op-code itself
-//! (correct), but the cached property flags are the W6 seam — noted in the
+//! (correct), but the cached property flags are the W6 stub — noted in the
 //! structured losses.
 
 use kuna_base::types::{int4, uintb};
@@ -84,14 +84,12 @@ impl Rule for RuleBoolSignShift {
 
     /// C++ `RuleBoolSignShift::applyOp` (`kuna_booleanmask.cc:19`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->fold_boolean_mask) return 0;  // (kuna) default gate
-        // The live gate is carried on the seam Architecture (`build_arch_handle`);
+        // The live gate is carried on the boundary Architecture (`build_arch_handle`);
         // `enabled` stays as the unit-test OR-override (rule registered false).
         if !self.enabled && !data.get_arch().fold_boolean_mask {
             return 0;
         }
 
-        // if (!op->getIn(1)->isConstant()) return 0;
         let in1 = match op_in(data, op, 1) {
             Some(v) => v,
             None => return 0,
@@ -99,32 +97,25 @@ impl Rule for RuleBoolSignShift {
         if !vn_is_constant(data, in1) {
             return 0;
         }
-        // uintb sa = op->getIn(1)->getOffset();
         let sa: uintb = vn_offset(data, in1);
-        // if (sa == 0) return 0;
         if sa == 0 {
             return 0;
         }
 
-        // Varnode *shiftin = op->getIn(0);
         let shiftin = match op_in(data, op, 0) {
             Some(v) => v,
             None => return 0,
         };
-        // if (!shiftin->isWritten()) return 0;
         if !vn_is_written(data, shiftin) {
             return 0;
         }
-        // PcodeOp *leftshift = shiftin->getDef();
         let leftshift = match vn_def(data, shiftin) {
             Some(d) => d,
             None => return 0,
         };
-        // if (leftshift->code() != CPUI_INT_LEFT) return 0;
         if op_code(data, leftshift) != OpCode::CPUI_INT_LEFT {
             return 0;
         }
-        // if (!leftshift->getIn(1)->isConstant()) return 0;
         let ls1 = match op_in(data, leftshift, 1) {
             Some(v) => v,
             None => return 0,
@@ -132,49 +123,40 @@ impl Rule for RuleBoolSignShift {
         if !vn_is_constant(data, ls1) {
             return 0;
         }
-        // if (leftshift->getIn(1)->getOffset() != sa) return 0;  // same shift amount
+        // Same shift amount.
         if vn_offset(data, ls1) != sa {
             return 0;
         }
 
         // RuleLeftRight already handles the byte-aligned case; defer to it there.
-        // if ((sa & 7) == 0) return 0;
         if (sa & 7) == 0 {
             return 0;
         }
 
-        // Varnode *boolvn = leftshift->getIn(0);
         let boolvn = match op_in(data, leftshift, 0) {
             Some(v) => v,
             None => return 0,
         };
-        // int4 width = boolvn->getSize();
         let width: int4 = vn_size(data, boolvn);
         // The value shifted up must occupy only the low (width*8 - sa) bits.
-        // if ((uintb)width * 8 <= sa) return 0;
         if (width as uintb).wrapping_mul(8) <= sa {
             return 0;
         }
-        // uintb tophalf = ((uintb)1 << ((uintb)width * 8 - sa)) - 1;
         let tophalf: uintb = (1u64 << ((width as uintb).wrapping_mul(8) - sa)).wrapping_sub(1);
-        // if ((boolvn->getNZMask() & ~tophalf) != 0) return 0;
         if (vn_nzmask(data, boolvn) & !tophalf) != 0 {
             return 0;
         }
 
-        // if (shiftin->loneDescend() != op) return 0;
         if data.lone_descend(shiftin) != Some(op) {
             return 0;
         }
 
         // Rewrite `(b << sa) s>> sa`  =>  `0 - b`  (INT_2COMP gives 0 or all-ones).
-        // data.opSetOpcode(op,CPUI_INT_2COMP);
         // STUB(W6): glb->inst[CPUI_INT_2COMP] property flags (see module docs).
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_2COMP, 0, "INT_2COMP"));
-        // data.opSetInput(op,boolvn,0);
         data.op_set_input(op, boolvn, 0)
             .expect("RuleBoolSignShift: opSetInput on a live op (internal invariant)");
-        // data.opRemoveInput(op,1);  // drop the shift-amount constant
+        // Drop the shift-amount constant.
         data.op_remove_input(op, 1);
         1
     }

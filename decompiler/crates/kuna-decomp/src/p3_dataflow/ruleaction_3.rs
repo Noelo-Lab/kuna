@@ -16,12 +16,12 @@
 //! identityel, shift2mult, shiftpiece, collapseconstants, transformcpool,
 //! propagatecopy, 2comp2mult, carryelim, sub2add, xorcollapse, addmultcollapse`.
 //!
-//! # Cross-wave seams (recorded as losses)
+//! # Cross-wave stubs (recorded as losses)
 //!
 //! Several rules reach subsystems that are not yet ported.  Where a rule hits
-//! such a seam it transcribes every surrounding guard faithfully and returns `0`
+//! such a stub it transcribes every surrounding guard faithfully and returns `0`
 //! ("rule did not apply", the conservative value the C++ also returns on every
-//! early-out) at the precise seam point, with a `// STUB(...)` note:
+//! early-out) at the precise stub point, with a `// STUB(...)` note:
 //!
 //! * `STUB(expression)` — `expression.cc` is a *separate* W5 file (still a stub):
 //!   `BooleanMatch::evaluate` (RuleBooleanDedup), `AddExpression`
@@ -39,7 +39,7 @@
 //! Two infrastructure shims live in this file (not "type behavior" — the fixed
 //! pcode-op property bits and the unique-output factory):
 //!
-//! * [`set_opcode`] resolves an [`OpCode`] to the seam [`TypeOp`] with the
+//! * [`set_opcode`] resolves an [`OpCode`] to the stub [`TypeOp`] with the
 //!   correct cached `opflags` (transcribed from `typeop.cc`'s `TypeOpXXX`
 //!   constructors) and calls `opSetOpcode`.  This is the `glb->inst[opc]`
 //!   resolution the W6 inst-table will own; the flag word is load-bearing
@@ -116,7 +116,7 @@ fn opflags_for(opc: OpCode) -> u32 {
         // TypeOpEqual / TypeOpNotEqual: binary | booloutput | commutative
         // (typeop.cc:929/993).  Reachable since the `markLabelBumpUp` port (#150)
         // hoists loop-head labels out of loop *conditions* (driving a rule to re-set an
-        // `==`/`!=` guard opcode through this seam), and likewise when `RuleMultiCollapse`
+        // `==`/`!=` guard opcode through this shim), and likewise when `RuleMultiCollapse`
         // rebuilds an equality guard re-flowing a recovered jump table
         // (`generate_ops_with_jumptables` -> `stage_jump_table`) — without these the shim
         // panicked (LOSS-131) on some fully-native switch functions (e.g. mv -O2 sub_12280,
@@ -229,13 +229,12 @@ fn constant_match(data: &Funcdata, vn: VarnodeId, val: uintb) -> bool {
 
 /// `vn->isBooleanValue(useAnnotation)` (C++ `Varnode::isBooleanValue`,
 /// `varnode.cc`).  The written case is `def->isCalculatedBool()`; the
-/// [`Varnode::is_boolean_value`](crate::varnode::Varnode::is_boolean_value) seam
+/// [`Varnode::is_boolean_value`](crate::varnode::Varnode::is_boolean_value) hook
 /// defers that op-graph branch to "the op-aware caller" — these rules ARE that
 /// caller, so the written-varnode branch is resolved here through the def op's
 /// `isCalculatedBool()`.  The free/annotation cases stay in the varnode method.
 fn vn_is_boolean_value(data: &Funcdata, vn: VarnodeId, use_annotation: bool) -> bool {
     if vn_is_written(data, vn) {
-        // if (isWritten()) return def->isCalculatedBool();
         let def = vn_def(data, vn).expect("vn_is_boolean_value: written vn has no def");
         return data
             .obank()
@@ -550,7 +549,6 @@ impl Rule for RuleBoolZext {
                     return 0;
                 }
                 if vn_offset(data, aoin1) == 1 {
-                    // newop = newOp(1,op->getAddr()); BOOL_NEGATE
                     let opaddr = data.obank().get(op).expect("RuleBoolZext: stale op").get_addr().clone();
                     let newop = data.new_op(1, opaddr);
                     set_opcode(data, newop, OpCode::CPUI_BOOL_NEGATE); // Negate the boolean
@@ -731,13 +729,11 @@ impl Rule for RuleIndirectCollapse {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         let in1 = op_in(data, op, 1).expect("RuleIndirectCollapse: null in1");
-        // if (op->getIn(1)->getSpace()->getType()!=IPTR_IOP) return 0;
         if data.vbank().get(in1).expect("RuleIndirectCollapse: stale in1").get_space().get_type()
             != spacetype::IPTR_IOP
         {
             return 0;
         }
-        // indop = PcodeOp::getOpFromConst(op->getIn(1)->getAddr());
         let indop = match op_from_iop_const(data, in1) {
             Some(o) => o,
             None => return 0,
@@ -750,7 +746,6 @@ impl Rule for RuleIndirectCollapse {
                 // STORE resolved to a COPY
                 let vn1 = op_out(data, indop).expect("RuleIndirectCollapse: indop COPY out");
                 let vn2 = op_out(data, op).expect("RuleIndirectCollapse: op out");
-                // int4 res = vn1->characterizeOverlap(*vn2);
                 let res = {
                     let v1 = data.vbank().get(vn1).expect("RuleIndirectCollapse: stale vn1");
                     let v2 = data.vbank().get(vn2).expect("RuleIndirectCollapse: stale vn2");
@@ -767,7 +762,6 @@ impl Rule for RuleIndirectCollapse {
                         data.op_insert_after(op, indop);
                         return 1;
                     }
-                    // if (vn1->contains(*vn2) == 0) -- INDIRECT out properly contained in COPY out
                     let contains0 = {
                         let v1 = data.vbank().get(vn1).expect("RuleIndirectCollapse: stale vn1");
                         let v2 = data.vbank().get(vn2).expect("RuleIndirectCollapse: stale vn2");
@@ -779,11 +773,9 @@ impl Rule for RuleIndirectCollapse {
                             let v1 = data.vbank().get(vn1).expect("RuleIndirectCollapse: stale vn1");
                             let v2 = data.vbank().get(vn2).expect("RuleIndirectCollapse: stale vn2");
                             if v1.get_space().is_big_endian() {
-                                // vn1->getOffset() + vn1->getSize() - (vn2->getOffset()+vn2->getSize())
                                 (v1.get_offset().wrapping_add(v1.get_size() as uintb))
                                     .wrapping_sub(v2.get_offset().wrapping_add(v2.get_size() as uintb))
                             } else {
-                                // vn2->getOffset() - vn1->getOffset()
                                 v2.get_offset().wrapping_sub(v1.get_offset())
                             }
                         };
@@ -796,7 +788,7 @@ impl Rule for RuleIndirectCollapse {
                         return 1;
                     }
                     // STUB(W4): data.warning("Ignoring partial resolution of indirect", indop->getAddr())
-                    // The comment database is the W4 console seam; the message is
+                    // The comment database is the W4 console boundary; the message is
                     // dropped here.  The C++ then returns 0 (partial overlap).
                     return 0; // Partial overlap, not sure what to do
                 }
@@ -817,7 +809,7 @@ impl Rule for RuleIndirectCollapse {
                     // getStoreGuard / LoadGuard are the heritage/W4 store-guard
                     // subsystem (not ported).  The C++ keeps the INDIRECT (returns
                     // 0) when the STORE is guarded for op's address OR when there
-                    // is no guard yet; with the seam unported the conservative
+                    // is no guard yet; with the hook unported the conservative
                     // outcome is identical (keep the INDIRECT).  Recorded as a loss.
                     return 0;
                 }
@@ -826,7 +818,6 @@ impl Rule for RuleIndirectCollapse {
             }
         }
 
-        // data.totalReplace(op->getOut(),op->getIn(0));
         let out = op_out(data, op).expect("RuleIndirectCollapse: op out");
         let in0 = op_in(data, op, 0).expect("RuleIndirectCollapse: op in0");
         data.total_replace(out, in0).expect("RuleIndirectCollapse: totalReplace");
@@ -886,7 +877,6 @@ impl Rule for RuleMultiCollapse {
         // functionally equal and get CSE'd into one copy, emptying the COPY
         // blocks so the CFG can structure into `&&`/`||`.
 
-        // for(i=0;i<numInput;++i) if (!getIn(i)->isHeritageKnown()) return 0;
         let numinput = op_num_input(data, op);
         for i in 0..numinput {
             let vi = op_in(data, op, i).expect("RuleMultiCollapse: null input");
@@ -900,7 +890,6 @@ impl Rule for RuleMultiCollapse {
         let mut defcopyr: Option<VarnodeId> = None;
         let mut j = 0usize;
 
-        // for(i...) matchlist.push_back(op->getIn(i));
         let mut matchlist: Vec<VarnodeId> = Vec::with_capacity(numinput as usize);
         for i in 0..numinput {
             matchlist.push(op_in(data, op, i).expect("RuleMultiCollapse: null input"));
@@ -917,7 +906,6 @@ impl Rule for RuleMultiCollapse {
         }
 
         let mut success = true;
-        // op->getOut()->setMark(); skiplist.push_back(op->getOut());
         let outvn = op_out(data, op).expect("RuleMultiCollapse: MULTIEQUAL has no output");
         vn_set_mark(data, outvn);
         let mut skiplist: Vec<VarnodeId> = vec![outvn];
@@ -1072,7 +1060,6 @@ impl Rule for RuleSborrow {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *svn = op->getOut(); avn = op->getIn(0); bvn = op->getIn(1);
         // (svn/avn are dereferenced only in the descend loop below, so read them
         // after the trivial-case early-out — the C++ never touches getOut() on
         // the trivial path either.)
@@ -1087,7 +1074,6 @@ impl Rule for RuleSborrow {
         }
         let svn = op_out(data, op).expect("RuleSborrow: null out");
         let avn = op_in(data, op, 0).expect("RuleSborrow: null in0");
-        // for(iter=svn->beginDescend();iter!=svn->endDescend();++iter)
         let descend: Vec<OpId> = data
             .vbank()
             .get(svn)
@@ -1098,7 +1084,6 @@ impl Rule for RuleSborrow {
             if compc != OpCode::CPUI_INT_EQUAL && compc != OpCode::CPUI_INT_NOTEQUAL {
                 continue;
             }
-            // cvn = (compop->getIn(0)==svn) ? compop->getIn(1) : compop->getIn(0);
             let comp_in0 = op_in(data, compop, 0).expect("RuleSborrow: null compop in0");
             let cvn = if comp_in0 == svn {
                 op_in(data, compop, 1).expect("RuleSborrow: null compop in1")
@@ -1112,7 +1097,6 @@ impl Rule for RuleSborrow {
             if op_code(data, signop) != OpCode::CPUI_INT_SLESS {
                 continue;
             }
-            // if (!signop->getIn(0)->constantMatch(0)) { if (!signop->getIn(1)->constantMatch(0)) continue; zside=1; } else zside=0;
             let sign_in0 = op_in(data, signop, 0).expect("RuleSborrow: null signop in0");
             let sign_in1 = op_in(data, signop, 1).expect("RuleSborrow: null signop in1");
             let zside: int4 = if !constant_match(data, sign_in0, 0) {
@@ -1123,18 +1107,14 @@ impl Rule for RuleSborrow {
             } else {
                 0
             };
-            // Varnode *xvn = signop->getIn(1-zside);
             let xvn = op_in(data, signop, 1 - zside).expect("RuleSborrow: null signop xvn");
             if !vn_is_written(data, xvn) {
                 continue;
             }
-            // AddExpression expr1; expr1.gatherTwoTermsSubtract(avn, bvn);
             let mut expr1 = AddExpression::new();
             expr1.gather_two_terms_subtract(avn, bvn, data.vbank(), data.obank());
-            // AddExpression expr2; expr2.gatherTwoTermsRoot(xvn);
             let mut expr2 = AddExpression::new();
             expr2.gather_two_terms_root(xvn, data.vbank(), data.obank());
-            // if (!expr1.isEquivalent(expr2)) continue;
             if !expr1.is_equivalent(&expr2, data.vbank(), data.obank()) {
                 continue;
             }
@@ -1177,7 +1157,6 @@ impl Rule for RuleScarry {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *svn = op->getOut(); avn = op->getIn(0); bvn = op->getIn(1);
         // (svn is dereferenced only in the descend loop below, so read it after
         // the trivial-case early-out — the C++ never touches getOut() there.)
         let mut avn = op_in(data, op, 0).expect("RuleScarry: null in0");
@@ -1199,17 +1178,15 @@ impl Rule for RuleScarry {
             if !vn_is_constant(data, avn) {
                 return 0;
             }
-            // avn = bvn; bvn = op->getIn(0);  (swap so bvn is the constant)
+            // Swap so bvn is the constant.
             avn = bvn;
             bvn = op_in(data, op, 0).expect("RuleScarry: null in0");
-            // val = calc_mask(bvn->getSize()); val ^= (val >> 1);  -- integer minimum
             let mask = calc_mask(vn_size(data, bvn));
             let val = mask ^ (mask >> 1);
             if val == vn_offset(data, bvn) {
                 return 0; // Rule does not work if bvn is the integer minimum
             }
         }
-        // for(iter=svn->beginDescend();iter!=svn->endDescend();++iter)
         let descend: Vec<OpId> = data
             .vbank()
             .get(svn)
@@ -1247,7 +1224,6 @@ impl Rule for RuleScarry {
             if !vn_is_written(data, xvn) {
                 continue;
             }
-            // AddExpression expr1; expr1.gatherTwoTermsAdd(avn, bvn);
             let mut expr1 = AddExpression::new();
             expr1.gather_two_terms_add(avn, bvn, data.vbank(), data.obank());
             let mut expr2 = AddExpression::new();
@@ -1255,7 +1231,6 @@ impl Rule for RuleScarry {
             if !expr1.is_equivalent(&expr2, data.vbank(), data.obank()) {
                 continue;
             }
-            // newval = -bvn->getOffset() & calc_mask(bvn->getSize());
             let bsize = vn_size(data, bvn);
             let newval = (0u64.wrapping_sub(vn_offset(data, bvn))) & calc_mask(bsize);
             let new_const = data.new_constant(bsize, newval);
@@ -1305,7 +1280,6 @@ impl Rule for RuleTrivialShift {
         let val = vn_offset(data, constvn);
         if val != 0 {
             let in0 = op_in(data, op, 0).expect("RuleTrivialShift: null in0");
-            // if (val < 8*op->getIn(0)->getSize()) return 0;  -- Non-trivial
             if val < (8 * vn_size(data, in0)) as uintb {
                 return 0;
             }
@@ -1572,16 +1546,14 @@ impl Rule for RuleShift2Mult {
         if !vn_is_constant(data, constvn) {
             return 0; // Shift amount must be a constant
         }
-        // int4 val = constvn->getOffset();
         let val = vn_offset(data, constvn) as int4;
         if val >= 32 {
             // FIXME: arbitrary -- this big is probably not an arithmetic multiply
             return 0;
         }
-        // arithop = op->getIn(0)->getDef();  -- may be null
         let in0 = op_in(data, op, 0).expect("RuleShift2Mult: null in0");
         let mut arithop = vn_def(data, in0);
-        // desc = vn->beginDescend(); the C++ loop probes arithop then steps desc.
+        // C++: the loop probes arithop then steps desc.
         let descend = data.descend_snapshot(vn);
         let mut desc_idx = 0;
         loop {
@@ -1595,11 +1567,9 @@ impl Rule for RuleShift2Mult {
                     break;
                 }
             }
-            // if (desc == vn->endDescend()) break;
             if desc_idx == descend.len() {
                 break;
             }
-            // arithop = *desc++;
             arithop = Some(descend[desc_idx]);
             desc_idx += 1;
         }
@@ -1607,7 +1577,6 @@ impl Rule for RuleShift2Mult {
         if flag == 0 {
             return 0;
         }
-        // constvn = data.newConstant(vn->getSize(), ((uintb)1)<<val);
         let newconst = data.new_constant(vn_size(data, vn), 1u64 << val);
         data.op_set_input(op, newconst, 1).expect("RuleShift2Mult: opSetInput");
         set_opcode(data, op, OpCode::CPUI_INT_MULT);
@@ -1671,7 +1640,6 @@ impl Rule for RuleShiftPiece {
         }
         vn1 = op_in(data, zexthiop, 0).expect("RuleShiftPiece: zexthiop in0");
         if vn_is_constant(data, vn1) {
-            // if (vn1->getSize() < sizeof(uintb)) return 0;  -- sizeof(uintb)==8
             if (vn_size(data, vn1) as usize) < std::mem::size_of::<uintb>() {
                 return 0; // Normally we let ZEXT of a constant collapse naturally
             }
@@ -1679,7 +1647,6 @@ impl Rule for RuleShiftPiece {
         } else if vn_is_free(data, vn1) {
             return 0;
         }
-        // int4 sa = shiftop->getIn(1)->getOffset();
         let sa = vn_offset(data, shin1) as int4;
         let concatsize = sa + 8 * vn_size(data, vn1);
         let op_out_size = vn_size(data, op_out(data, op).expect("RuleShiftPiece: op out"));
@@ -1779,7 +1746,6 @@ impl Rule for RuleCollapseConstants {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->isCollapsible()) return 0;  -- Expression must be collapsible
         let collapsible = {
             let o = data.obank().get(op).expect("RuleCollapseConstants: stale op");
             crate::op::is_collapsible(o, data.vbank())
@@ -1787,7 +1753,6 @@ impl Rule for RuleCollapseConstants {
         if !collapsible {
             return 0;
         }
-        // newval = data.getArch()->getConstant(op->collapse(markedInput));
         //   op->collapse() drives the OpBehavior emulation (executeSimple) on the
         //   op's constant inputs; getArch()->getConstant wraps the result in a
         //   constant-space Address.  On any evaluation error the C++ catches the
@@ -1802,7 +1767,6 @@ impl Rule for RuleCollapseConstants {
         };
         let out_size =
             data.vbank().get(data.obank().get(op).unwrap().get_out().unwrap()).unwrap().get_size();
-        // vn = data.newVarnode(out->getSize(), getArch()->getConstant(collapsed));
         let newval = data.get_arch().get_constant(collapsed);
         let vn = data.new_varnode(out_size, &newval, None);
         // collapseConstantSymbol(vn): when a constant input carried a bound
@@ -1816,14 +1780,12 @@ impl Rule for RuleCollapseConstants {
         if marked_input {
             collapse_constant_symbol(op, vn, data);
         }
-        // for(i=numInput()-1;i>0;--i) opRemoveInput(op,i);  -- unlink old constants
         let n = data.obank().get(op).expect("RuleCollapseConstants: stale op").num_input();
         let mut i = n - 1;
         while i > 0 {
             data.op_remove_input(op, i);
             i -= 1;
         }
-        // opSetInput(op, vn, 0);  opSetOpcode(op, CPUI_COPY);
         data.op_set_input(op, vn, 0).expect("RuleCollapseConstants: opSetInput");
         data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
         1
@@ -1858,8 +1820,6 @@ fn dc_collapse(op: OpId, data: &Funcdata) -> Option<(u64, bool)> {
         let v = data.vbank().get(in0).expect("collapse: stale in0");
         (v.get_size(), v.get_offset())
     };
-    // vn0 = getIn(0); if (vn0->getSymbolEntry() != 0) markedInput = true;
-    // (C++ `PcodeOp::collapse`, op.cc:477-479).
     let mut marked_input =
         data.vbank().get(in0).and_then(|v| v.kuna_symbol_entry()).is_some();
     if (eval_type & pcodeop_flags::unary) != 0 {
@@ -1869,8 +1829,7 @@ fn dc_collapse(op: OpId, data: &Funcdata) -> Option<(u64, bool)> {
         }
     } else if (eval_type & pcodeop_flags::binary) != 0 {
         let in1 = in1?;
-        // vn1 = getIn(1); if (vn1->getSymbolEntry() != 0) markedInput = true;
-        // (C++ op.cc:485-487 — checked only on the binary path).
+        // C++: checked only on the binary path.
         if data.vbank().get(in1).and_then(|v| v.kuna_symbol_entry()).is_some() {
             marked_input = true;
         }
@@ -1924,7 +1883,6 @@ fn collapse_constant_symbol(op: OpId, new_const: VarnodeId, data: &mut Funcdata)
         | OpCode::CPUI_INT_AND
         | OpCode::CPUI_INT_OR
         | OpCode::CPUI_INT_XOR => {
-            // copyVn = getIn(0); if (copyVn->getSymbolEntry() == 0) copyVn = getIn(1);
             if has_sym(in0) {
                 in0
             } else {
@@ -1933,12 +1891,10 @@ fn collapse_constant_symbol(op: OpId, new_const: VarnodeId, data: &mut Funcdata)
         }
         _ => return, // default: not a symbol-propagating collapse
     };
-    // if (copyVn->getSymbolEntry() == 0) return;  -- first input must be marked
     let copy_vn = match copy_vn {
         Some(v) if has_sym(Some(v)) => v,
         _ => return,
     };
-    // newConst->copySymbolIfValid(copyVn);
     data.copy_symbol_if_valid(new_const, copy_vn);
 }
 
@@ -1965,7 +1921,6 @@ impl Rule for RuleTransformCpool {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (op->isCpoolTransformed()) return 0;  -- Already visited
         if data.obank().get(op).expect("RuleTransformCpool: stale op").is_cpool_transformed() {
             return 0;
         }
@@ -1975,7 +1930,6 @@ impl Rule for RuleTransformCpool {
         // constant-pool record store (`glb->cpool`, W4) and the
         // updateType/markCalculatedBool surfaces are unported.  The
         // already-visited guard is ported; the lookup/rewrite is deferred.
-        // Recorded as a loss.  (The C++ unconditionally returns 1 after marking;
         // returning 0 here avoids claiming a change we did not make.)
         0
     }
@@ -2002,7 +1956,6 @@ impl Rule for RulePropagateCopy {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (op->isReturnCopy()) return 0;
         if data.obank().get(op).expect("RulePropagateCopy: stale op").is_return_copy() {
             return 0;
         }
@@ -2024,7 +1977,6 @@ impl Rule for RulePropagateCopy {
                 // throw LowlevelError("Self-defined varnode") -- internal invariant.
                 panic!("RulePropagateCopy: Self-defined varnode");
             }
-            // if (op->isMarker()) { ... markers special-cased ... }
             let is_marker = data.obank().get(op).expect("RulePropagateCopy: stale op").is_marker();
             if is_marker {
                 if vn_is_constant(data, invn) {
@@ -2051,15 +2003,12 @@ impl Rule for RulePropagateCopy {
                         continue; // We must not allow merging of different addrtieds
                     }
                 }
-                // if (op->code()==MULTIEQUAL && copyop->getParent()==op->getParent()->getIn(i))
-                //   op->setCopyImmed(i);
                 if op_code(data, op) == OpCode::CPUI_MULTIEQUAL {
                     let op_parent =
                         data.obank().get(op).expect("RulePropagateCopy: stale op").get_parent();
                     let copy_parent =
                         data.obank().get(copyop).expect("RulePropagateCopy: stale copyop").get_parent();
                     if let (Some(op_parent), Some(copy_parent)) = (op_parent, copy_parent) {
-                        // op->getParent()->getIn(i)
                         let in_blk = data.bblocks_ref().block(op_parent).get_in(i);
                         if copy_parent == in_blk {
                             data.op_set_copy_immed(op, i);
@@ -2145,7 +2094,7 @@ impl Rule for RuleCarryElim {
             set_opcode(data, op, OpCode::CPUI_COPY);
             return 1;
         }
-        // off = (-off) & calc_mask(vn2->getSize());  -- twos-complement
+        // twos-complement
         off = off.wrapping_neg() & calc_mask(vn_size(data, vn2));
 
         set_opcode(data, op, OpCode::CPUI_INT_LESSEQUAL);
@@ -2338,7 +2287,6 @@ impl Rule for RuleAddMultCollapse {
                     continue; // because this adds a new add operation
                 }
 
-                // val = op->getOpcode()->evaluateBinary(c0sz,c0sz,c0off,c1off)
                 let c0sz = vn_size(data, c0);
                 let val = eval_binary(opc, c0sz, vn_offset(data, c0), vn_offset(data, c1));
                 let newvn = data.new_constant(c0sz, val);
@@ -2436,7 +2384,7 @@ mod tests {
 
     /// Regression: `opflags_for` must cover the equality comparisons (a
     /// `markLabelBumpUp`-hoisted loop-head `==`/`!=` guard re-set its opcode
-    /// through this seam and panicked — #150 regression).  The flags match
+    /// through this shim and panicked — #150 regression).  The flags match
     /// Ghidra `TypeOpEqual`/`TypeOpNotEqual` (binary | booloutput | commutative).
     #[test]
     fn opflags_for_covers_int_equality() {

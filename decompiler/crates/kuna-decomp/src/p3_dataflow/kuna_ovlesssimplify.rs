@@ -14,7 +14,7 @@
 //! ## Gate wiring — STUB(W4)
 //!
 //! As in `kuna_booleanmask`, the C++ `if (!data.getArch()->ov_less_simplify)
-//! return 0;` gate is resolved at construction (the seam `Funcdata::glb` does not
+//! return 0;` gate is resolved at construction (the boundary `Funcdata::glb` does not
 //! carry kuna analysis flags; the fixed [`Rule::apply_op`] signature cannot reach
 //! the full `architecture.rs` [`Architecture`](crate::architecture::Architecture)).
 //! W8 threads the live `Architecture::ov_less_simplify`; [`specs`] uses the
@@ -73,13 +73,12 @@ impl Rule for RuleOvLessSimplify {
     /// C++ `RuleOvLessSimplify::applyOp` (`kuna_ovlesssimplify.cc:48`) —
     /// transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->ov_less_simplify) return 0;  // (kuna) gate (seam-carried)
+        // (kuna) gate (ArchContext-carried).
         if !self.enabled && !data.get_arch().ov_less_simplify {
             return 0;
         }
 
         // Match  NE( SLESS(V+K,0) , BOOL_AND( signTest , SLESS(-1, V+K) ) )
-        // Varnode *in0 = op->getIn(0); Varnode *in1 = op->getIn(1);
         let in0 = match op_in(data, op, 0) {
             Some(v) => v,
             None => return 0,
@@ -105,7 +104,6 @@ impl Rule for RuleOvLessSimplify {
             Some(v) => v,
             None => return 0,
         };
-        // if (!zero->isConstant() || zero->getOffset() != 0) return 0;
         if !vn_is_constant(data, zero) || vn_offset(data, zero) != 0 {
             return 0;
         }
@@ -123,7 +121,6 @@ impl Rule for RuleOvLessSimplify {
         // test of V.
         let mut sless_hi: Option<OpId> = None;
         for i in 0..2 {
-            // Varnode *limb = andop->getIn(i);
             let limb = match op_in(data, andop, i) {
                 Some(v) => v,
                 None => continue,
@@ -142,7 +139,7 @@ impl Rule for RuleOvLessSimplify {
             if !vn_is_constant(data, mone) {
                 continue;
             }
-            // if (mone->getOffset() != calc_mask(mone->getSize())) continue;  // -1
+            // mone must be -1.
             if vn_offset(data, mone) != calc_mask(vn_size(data, mone)) {
                 continue;
             }
@@ -153,7 +150,6 @@ impl Rule for RuleOvLessSimplify {
             Some(c) => c,
             None => return 0,
         };
-        // Varnode *r2 = slessHi->getIn(1);
         let r2 = match op_in(data, sless_hi, 1) {
             Some(v) => v,
             None => return 0,
@@ -168,38 +164,29 @@ impl Rule for RuleOvLessSimplify {
             Some(t) => t,
             None => return 0,
         };
-        // if (base1 != base2) return 0;
         if base1 != base2 {
             return 0;
         }
-        // if (k1 != k2) return 0;
         if k1 != k2 {
             return 0;
         }
-        // if (r1->getSize() != r2->getSize()) return 0;
         if vn_size(data, r1) != vn_size(data, r2) {
             return 0;
         }
 
         // Collapse:  V s< -K   (negate K within V's size)
-        // int4 sz = base1->getSize();
         let sz: int4 = vn_size(data, base1);
-        // if (r1->getSize() != sz) return 0;  // ADD width must match V's width
+        // The ADD width must match V's width.
         if vn_size(data, r1) != sz {
             return 0;
         }
-        // intb ksigned = sign_extend((intb)k1, sz*8 - 1);
         let ksigned: intb = sign_extend(k1 as intb, sz * 8 - 1);
-        // uintb negk = ((uintb)(-ksigned)) & calc_mask(sz);
         let negk: uintb = (ksigned.wrapping_neg() as uintb) & calc_mask(sz);
 
-        // data.opSetOpcode(op,CPUI_INT_SLESS);
         // STUB(W6): glb->inst[CPUI_INT_SLESS] property flags.
         data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_SLESS, 0, "INT_SLESS"));
-        // data.opSetInput(op,base1,0);
         data.op_set_input(op, base1, 0)
             .expect("RuleOvLessSimplify: opSetInput base1 (internal invariant)");
-        // data.opSetInput(op,data.newConstant(sz,negk),1);
         let negk_vn = data.new_constant(sz, negk);
         data.op_set_input(op, negk_vn, 1)
             .expect("RuleOvLessSimplify: opSetInput const (internal invariant)");
@@ -220,22 +207,18 @@ pub fn specs() -> Vec<RuleSpec> {
 /// Return `(base, koff)` if `vn` is `V + K` (K constant)
 /// (C++ static `matchAddConst`, `kuna_ovlesssimplify.cc:18`).
 fn match_add_const(data: &Funcdata, vn: VarnodeId) -> Option<(VarnodeId, uintb)> {
-    // if (!vn->isWritten()) return 0;
     if !vn_is_written(data, vn) {
         return None;
     }
-    // PcodeOp *addop = vn->getDef();  if (addop->code() != CPUI_INT_ADD) return 0;
     let addop = vn_def(data, vn)?;
     if op_code(data, addop) != OpCode::CPUI_INT_ADD {
         return None;
     }
     let a = op_in(data, addop, 0)?;
     let b = op_in(data, addop, 1)?;
-    // if (b->isConstant()) { base=a; koff=b->getOffset(); }
     if vn_is_constant(data, b) {
         Some((a, vn_offset(data, b)))
     }
-    // else if (a->isConstant()) { base=b; koff=a->getOffset(); }
     else if vn_is_constant(data, a) {
         Some((b, vn_offset(data, a)))
     } else {

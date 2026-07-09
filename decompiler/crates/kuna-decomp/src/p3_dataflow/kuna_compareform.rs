@@ -24,7 +24,7 @@
 //!
 //! As in the sibling kuna sub-stages, the C++
 //! `if (!data.getArch()->present_lessequal) return 0;` gate is resolved at
-//! construction (the seam `Funcdata::glb` does carry `present_lessequal`, but the
+//! construction (the boundary `Funcdata::glb` does carry `present_lessequal`, but the
 //! kuna leaf actions take the resolved gate as a constructor argument to stay
 //! uniform with the rule pool).  W8/W9 thread the live
 //! `Architecture::present_lessequal`; [`action`] uses the shipped default
@@ -49,7 +49,7 @@
 //!
 //! The C++ `restoreLessequal` calls `newvn->copySymbol(vn)` to carry the original
 //! constant's data-type/Symbol (e.g. enum typing) onto the re-adjusted constant.
-//! `Varnode::copySymbol` is the W4 symbol-table seam (not yet ported; the sibling
+//! `Varnode::copySymbol` is the W4 symbol-table stub (not yet ported; the sibling
 //! `Funcdata::replace_lessequal` skips it the same way).  The fresh constant keeps
 //! its `newConstant` default type.  Noted in the structured losses.
 
@@ -76,7 +76,6 @@ impl ActionPresentCompareForm {
     /// Construct in group `g` with the resolved gate
     /// (C++ `ActionPresentCompareForm::ActionPresentCompareForm(const string &g)`).
     pub fn new(enabled: bool, g: impl Into<String>) -> ActionPresentCompareForm {
-        // C++: Action(0,"presentcompareform",g)
         ActionPresentCompareForm { base: ActionBase::new(0, "presentcompareform", g), enabled }
     }
 
@@ -107,8 +106,6 @@ impl Action for ActionPresentCompareForm {
     /// C++ `ActionPresentCompareForm::apply` (`kuna_compareform.cc:67`) —
     /// transcribed.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // if (!data.getArch()->present_lessequal) return 0;  // P0 assertion not set
-        //
         // `Funcdata::glb` is the real `Architecture` (`ArchHandle = Rc<Architecture>`),
         // which carries the `present_lessequal` P0 flag (DIV-2 default-on, GH-558).
         // The static `enabled` constructor arg is retained as an OR override for
@@ -116,13 +113,6 @@ impl Action for ActionPresentCompareForm {
         if !self.enabled && !data.get_arch().present_lessequal {
             return 0;
         }
-        // for(iter=data.beginOpAlive();iter!=data.endOpAlive();++iter) {
-        //   PcodeOp *op = *iter;  OpCode opc = op->code();
-        //   if ((opc != CPUI_INT_LESS)&&(opc != CPUI_INT_SLESS)) continue;
-        //   if (!op->isCanonicalLessequal()) continue;
-        //   if (restoreLessequal(op,data)) count += 1;
-        // }
-        //
         // The C++ iterates the live `alivelist` while `restoreLessequal` mutates
         // ops in place (opcode + one input; never inserts/removes ops), so the
         // iteration order is stable.  Snapshot the op ids up front (the same
@@ -157,9 +147,6 @@ impl Action for ActionPresentCompareForm {
 /// reshaped by later transforms dies gracefully (no rewrite).  Returns `true` if
 /// the original LESSEQUAL form was restored.
 fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
-    // if ((vn=op->getIn(0))->isConstant()) { diff = 1;  i = 0; }   // c-1 < V from c <= V
-    // else if ((vn=op->getIn(1))->isConstant()) { diff = -1; i = 1; } // V < c+1 from V <= c
-    // else return false;
     let in0 = match op_in(data, op, 0) {
         Some(v) => v,
         None => return false,
@@ -176,43 +163,34 @@ fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
         return false; // shape changed since canonicalization; leave as-is
     };
 
-    // val = vn->getOffset();
     let val: uintb = vn_offset(data, vn);
     let size: int4 = vn_size(data, vn);
     let code = op_code(data, op);
     let newcode = if code == OpCode::CPUI_INT_SLESS {
         // Mirror replaceLessequal's signed overflow guards in the inverse direction
-        // if ((diff == -1) && (val == calc_int_min(vn->getSize()))) return false;
         if diff == -1 && val == calc_int_min(size) {
             return false;
         }
-        // if ((diff ==  1) && (val == calc_int_max(vn->getSize()))) return false;
         if diff == 1 && val == calc_int_max(size) {
             return false;
         }
-        // data.opSetOpcode(op,CPUI_INT_SLESSEQUAL);
         OpCode::CPUI_INT_SLESSEQUAL
     } else {
         // Unsigned overflow guards
-        // if ((diff == -1) && (val == 0)) return false;
         if diff == -1 && val == 0 {
             return false;
         }
-        // if ((diff ==  1) && (val == calc_uint_max(vn->getSize()))) return false;
         if diff == 1 && val == calc_uint_max(size) {
             return false;
         }
-        // data.opSetOpcode(op,CPUI_INT_LESSEQUAL);
         OpCode::CPUI_INT_LESSEQUAL
     };
-    // data.opSetOpcode(op,...);  // STUB(W6): glb->inst[opc] (binary | booloutput)
+    // STUB(W6): glb->inst[opc] (binary | booloutput).
     data.op_set_opcode(op, lessequal_type_op(newcode));
 
-    // uintb res = (val + diff) & calc_mask(vn->getSize());
     let res: uintb = val.wrapping_add(diff as u64) & calc_mask(size);
-    // Varnode *newvn = data.newConstant(vn->getSize(),res);
     let newvn = data.new_constant(size, res);
-    // newvn->copySymbol(vn);  -- preserve the original constant's data-type (and
+    // C++ `newvn->copySymbol(vn)`: preserve the original constant's data-type (and
     // type/name lock flags) so the restored compare constant keeps its inferred
     // type (e.g. `int1` for a signed-byte compare, an enum for enum typing)
     // rather than reverting to TYPE_UNKNOWN; the fresh-UNKNOWN constant would
@@ -226,9 +204,7 @@ fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
             dst.copy_symbol_fields(src_type, src_flags);
         }
     }
-    // data.opSetInput(op,newvn,i);
     data.op_set_input(op, newvn, i).expect("restore_lessequal: opSetInput");
-    // op->clearCanonicalLessequal();
     data.obank_mut().get_mut(op).expect("restore_lessequal: stale op").clear_canonical_lessequal();
     true
 }
@@ -281,12 +257,6 @@ impl CompareForm {
 /// resolved form plus the confirmation message (C++ `OptionCompareForm::apply`,
 /// `kuna_compareform.cc:85`).
 ///
-/// ```text
-///   if (p1 == "original")       glb->present_lessequal = true;
-///   else if (p1 == "canonical") glb->present_lessequal = false;
-///   else throw ParseError("Must specify compareform as 'canonical' or 'original'");
-///   return "Comparison presentation set to " + p1 + " form";
-/// ```
 ///
 /// The C++ `throw ParseError(...)` surfaces as a [`KunaError::parse`] (the
 /// established option-parse error idiom shared with the sibling
@@ -295,9 +265,6 @@ impl CompareForm {
 /// The caller writes the resolved [`CompareForm::present_lessequal`] into
 /// [`Architecture::present_lessequal`].
 pub fn parse_compare_form(p1: &str) -> KunaResult<(CompareForm, String)> {
-    // if (p1 == "original")       glb->present_lessequal = true;
-    // else if (p1 == "canonical") glb->present_lessequal = false;
-    // else throw ParseError("Must specify compareform as 'canonical' or 'original'");
     let form = if p1 == "original" {
         CompareForm::Original
     } else if p1 == "canonical" {
@@ -307,8 +274,7 @@ pub fn parse_compare_form(p1: &str) -> KunaResult<(CompareForm, String)> {
             "Must specify compareform as 'canonical' or 'original'",
         ));
     };
-    // glb->present_lessequal = ...;  -- left to the caller (Architecture::present_lessequal).
-    // return "Comparison presentation set to " + p1 + " form";
+    // The glb->present_lessequal write is left to the caller (Architecture::present_lessequal).
     Ok((form, format!("Comparison presentation set to {p1} form")))
 }
 

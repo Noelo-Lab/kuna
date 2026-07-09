@@ -147,7 +147,7 @@ pub struct RuleBoolNegate {
 }
 
 impl RuleBoolNegate {
-    /// Constructor (C++ `RuleBoolNegate(g) : Rule(g,0,"boolnegate")`).
+    /// Rule `RuleBoolNegate` (name "boolnegate").
     pub fn new(g: &'static str) -> RuleBoolNegate {
         RuleBoolNegate { group: g }
     }
@@ -155,12 +155,10 @@ impl RuleBoolNegate {
 
 impl Rule for RuleBoolNegate {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // oplist.push_back(CPUI_BOOL_NEGATE);
         vec![OpCode::CPUI_BOOL_NEGATE]
     }
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        // if (!grouplist.contains(getGroup())) return 0; return new RuleBoolNegate(getGroup());
         if !grouplist.contains(self.group) {
             return None;
         }
@@ -168,18 +166,14 @@ impl Rule for RuleBoolNegate {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // vn = op->getIn(0);
         let vn = data.obank().get(op).expect("RuleBoolNegate: stale op").get_in(0).unwrap();
-        // if (!vn->isWritten()) return 0;
         let v = data.vbank().get(vn).expect("RuleBoolNegate: stale vn");
         if !v.is_written() {
             return 0;
         }
-        // flip_op = vn->getDef();
         let flip_op = v.get_def().expect("RuleBoolNegate: written vn has no def");
 
         // ALL descendants must be negates
-        // for(iter=vn->beginDescend();...) if ((*iter)->code() != CPUI_BOOL_NEGATE) return 0;
         let descend = data.descend_snapshot(vn);
         for &decop in &descend {
             if data.obank().get(decop).expect("RuleBoolNegate: stale descend op").code()
@@ -189,21 +183,18 @@ impl Rule for RuleBoolNegate {
             }
         }
 
-        // opc = get_booleanflip(flip_op->code(),flipyes);
         let mut flipyes = false;
         let flip_code = data.obank().get(flip_op).expect("RuleBoolNegate: stale flip_op").code();
         let opc = get_booleanflip(flip_code, &mut flipyes);
-        // if (opc == CPUI_MAX) return 0;
         if opc == OpCode::CPUI_MAX {
             return 0;
         }
-        // data.opSetOpcode(flip_op,opc); // Set the negated opcode
+        // Set the negated opcode
         data.op_set_opcode(flip_op, type_op_lookup(opc));
-        // if (flipyes) data.opSwapInput(flip_op,0,1);
         if flipyes {
             data.op_swap_input(flip_op, 0, 1);
         }
-        // for(...) data.opSetOpcode(*iter,CPUI_COPY); // Remove all the negates
+        // Remove all the negates
         for &decop in &descend {
             data.op_set_opcode(decop, type_op_lookup(OpCode::CPUI_COPY));
         }
@@ -227,7 +218,7 @@ pub struct RuleLess2Zero {
 }
 
 impl RuleLess2Zero {
-    /// Constructor (C++ `RuleLess2Zero(g) : Rule(g,0,"less2zero")`).
+    /// Rule `RuleLess2Zero` (name "less2zero").
     pub fn new(g: &'static str) -> RuleLess2Zero {
         RuleLess2Zero { group: g }
     }
@@ -235,7 +226,6 @@ impl RuleLess2Zero {
 
 impl Rule for RuleLess2Zero {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // oplist.push_back(CPUI_INT_LESS);
         vec![OpCode::CPUI_INT_LESS]
     }
 
@@ -247,7 +237,6 @@ impl Rule for RuleLess2Zero {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // lvn = op->getIn(0); rvn = op->getIn(1);
         let o = data.obank().get(op).expect("RuleLess2Zero: stale op");
         let lvn = o.get_in(0).unwrap();
         let rvn = o.get_in(1).unwrap();
@@ -255,36 +244,30 @@ impl Rule for RuleLess2Zero {
         let r = data.vbank().get(rvn).expect("RuleLess2Zero: stale rvn");
 
         if l.is_constant() {
-            // if (lvn->getOffset() == 0)
             if l.get_offset() == 0 {
-                // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);  // ->  NOT_EQUAL
+                // ->  NOT_EQUAL
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_NOTEQUAL));
                 return 1;
             }
-            // else if (lvn->getOffset() == calc_mask(lvn->getSize()))
             else if l.get_offset() == calc_mask(l.get_size()) {
-                // data.opSetOpcode(op,CPUI_COPY); // Always false
+                // Always false
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
-                // data.opRemoveInput(op,1);
                 data.op_remove_input(op, 1);
-                // data.opSetInput(op,data.newConstant(1,0),0);
                 let c = data.new_constant(1, 0);
                 data.op_set_input(op, c, 0).expect("RuleLess2Zero: opSetInput");
                 return 1;
             }
         } else if r.is_constant() {
-            // if (rvn->getOffset() == 0)
             if r.get_offset() == 0 {
-                // data.opSetOpcode(op,CPUI_COPY); // Always false
+                // Always false
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
                 data.op_remove_input(op, 1);
                 let c = data.new_constant(1, 0);
                 data.op_set_input(op, c, 0).expect("RuleLess2Zero: opSetInput");
                 return 1;
             }
-            // else if (rvn->getOffset() == calc_mask(rvn->getSize()))  // -> NOT_EQUAL
+            // -> NOT_EQUAL
             else if r.get_offset() == calc_mask(r.get_size()) {
-                // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_NOTEQUAL));
                 return 1;
             }
@@ -310,7 +293,7 @@ pub struct RuleLessEqual2Zero {
 }
 
 impl RuleLessEqual2Zero {
-    /// Constructor (C++ `RuleLessEqual2Zero(g) : Rule(g,0,"lessequal2zero")`).
+    /// Rule `RuleLessEqual2Zero` (name "lessequal2zero").
     pub fn new(g: &'static str) -> RuleLessEqual2Zero {
         RuleLessEqual2Zero { group: g }
     }
@@ -318,7 +301,6 @@ impl RuleLessEqual2Zero {
 
 impl Rule for RuleLessEqual2Zero {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // oplist.push_back(CPUI_INT_LESSEQUAL);
         vec![OpCode::CPUI_INT_LESSEQUAL]
     }
 
@@ -338,25 +320,24 @@ impl Rule for RuleLessEqual2Zero {
 
         if l.is_constant() {
             if l.get_offset() == 0 {
-                // data.opSetOpcode(op,CPUI_COPY); // All values => true
+                // All values => true
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
                 data.op_remove_input(op, 1);
-                // data.opSetInput(op,data.newConstant(1,1),0);
                 let c = data.new_constant(1, 1);
                 data.op_set_input(op, c, 0).expect("RuleLessEqual2Zero: opSetInput");
                 return 1;
             } else if l.get_offset() == calc_mask(l.get_size()) {
-                // data.opSetOpcode(op,CPUI_INT_EQUAL); // No value is true except -1
+                // No value is true except -1
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_EQUAL));
                 return 1;
             }
         } else if r.is_constant() {
             if r.get_offset() == 0 {
-                // data.opSetOpcode(op,CPUI_INT_EQUAL); // No value is true except 0
+                // No value is true except 0
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_EQUAL));
                 return 1;
             } else if r.get_offset() == calc_mask(r.get_size()) {
-                // data.opSetOpcode(op,CPUI_COPY); // All values => true
+                // All values => true
                 data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_COPY));
                 data.op_remove_input(op, 1);
                 let c = data.new_constant(1, 1);
@@ -380,7 +361,7 @@ pub struct RuleSLess2Zero {
 }
 
 impl RuleSLess2Zero {
-    /// Constructor (C++ `RuleSLess2Zero(g) : Rule(g,0,"sless2zero")`).
+    /// Rule `RuleSLess2Zero` (name "sless2zero").
     pub fn new(g: &'static str) -> RuleSLess2Zero {
         RuleSLess2Zero { group: g }
     }
@@ -391,40 +372,33 @@ impl RuleSLess2Zero {
     /// If `op` pieces together 2 Varnodes only one of which determines the high
     /// bit, return that Varnode (else `None`).
     fn get_hi_bit(op: OpId, data: &Funcdata) -> Option<crate::context::VarnodeId> {
-        // OpCode opc = op->code();
         let o = data.obank().get(op).expect("getHiBit: stale op");
         let opc = o.code();
-        // if ((opc != CPUI_INT_ADD)&&(opc != CPUI_INT_OR)&&(opc != CPUI_INT_XOR)) return 0;
         if opc != OpCode::CPUI_INT_ADD
             && opc != OpCode::CPUI_INT_OR
             && opc != OpCode::CPUI_INT_XOR
         {
             return None;
         }
-        // Varnode *vn1 = op->getIn(0); Varnode *vn2 = op->getIn(1);
         let vn1 = o.get_in(0).unwrap();
         let vn2 = o.get_in(1).unwrap();
         let v1 = data.vbank().get(vn1).expect("getHiBit: stale vn1");
         let v2 = data.vbank().get(vn2).expect("getHiBit: stale vn2");
-        // uintb mask = calc_mask(vn1->getSize()); mask = (mask ^ (mask>>1)); // high-bit only
+        // high-bit only
         let mask = calc_mask(v1.get_size());
         let mask = mask ^ (mask >> 1);
-        // uintb nzmask1 = vn1->getNZMask();
         let nzmask1 = v1.get_nz_mask();
-        // if ((nzmask1!=mask)&&((nzmask1 & mask)!=0)) return 0;  // high-bit set AND some other bit
+        // high-bit set AND some other bit
         if nzmask1 != mask && (nzmask1 & mask) != 0 {
             return None;
         }
-        // uintb nzmask2 = vn2->getNZMask();
         let nzmask2 = v2.get_nz_mask();
         if nzmask2 != mask && (nzmask2 & mask) != 0 {
             return None;
         }
-        // if (nzmask1 == mask) return vn1;
         if nzmask1 == mask {
             return Some(vn1);
         }
-        // if (nzmask2 == mask) return vn2;
         if nzmask2 == mask {
             return Some(vn2);
         }
@@ -434,7 +408,6 @@ impl RuleSLess2Zero {
 
 impl Rule for RuleSLess2Zero {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // oplist.push_back(CPUI_INT_SLESS);
         vec![OpCode::CPUI_INT_SLESS]
     }
 
@@ -446,7 +419,6 @@ impl Rule for RuleSLess2Zero {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // lvn = op->getIn(0); rvn = op->getIn(1);
         let o = data.obank().get(op).expect("RuleSLess2Zero: stale op");
         let lvn = o.get_in(0).unwrap();
         let rvn = o.get_in(1).unwrap();
@@ -460,54 +432,42 @@ impl Rule for RuleSLess2Zero {
         let rvn_size = r.get_size();
 
         if lvn_is_constant {
-            // if (!rvn->isWritten()) return 0;
             if !data.vbank().get(rvn).unwrap().is_written() {
                 return 0;
             }
-            // if (lvn->getOffset() == calc_mask(lvn->getSize()))  // -1 s< rvn
+            // -1 s< rvn
             if lvn_off == calc_mask(lvn_size) {
-                // feedOp = rvn->getDef(); feedOpCode = feedOp->code();
                 let feed_op = data.vbank().get(rvn).unwrap().get_def().unwrap();
                 let feed_opcode = data.obank().get(feed_op).unwrap().code();
-                // Varnode *hibit = getHiBit(feedOp);
                 let hibit = RuleSLess2Zero::get_hi_bit(feed_op, data);
                 if let Some(hibit) = hibit {
                     // Test for -1 s< (hi ^ lo)
                     let hv = data.vbank().get(hibit).unwrap();
                     if hv.is_constant() {
-                        // data.opSetInput(op, data.newConstant(hibit->getSize(), hibit->getOffset()), 1);
                         let sz = hv.get_size();
                         let off = hv.get_offset();
                         let c = data.new_constant(sz, off);
                         data.op_set_input(op, c, 1).expect("sless2zero: setInput");
                     } else {
-                        // data.opSetInput(op, hibit, 1);
                         data.op_set_input(op, hibit, 1).expect("sless2zero: setInput");
                     }
-                    // data.opSetOpcode(op, CPUI_INT_EQUAL);
                     data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_EQUAL));
-                    // data.opSetInput(op, data.newConstant(hibit->getSize(), 0), 0);
                     let sz = data.vbank().get(hibit).unwrap().get_size();
                     let c = data.new_constant(sz, 0);
                     data.op_set_input(op, c, 0).expect("sless2zero: setInput");
                     return 1;
                 } else if feed_opcode == OpCode::CPUI_SUBPIECE {
-                    // avn = feedOp->getIn(0);
                     let avn = data.obank().get(feed_op).unwrap().get_in(0).unwrap();
                     let av = data.vbank().get(avn).unwrap();
-                    // if (avn->isFree() || avn->getSize() > 8) return 0;
                     if av.is_free() || av.get_size() > 8 {
                         return 0;
                     }
                     let avn_size = av.get_size();
-                    // if (rvn->getSize() + (int4)feedOp->getIn(1)->getOffset() == avn->getSize())
                     let in1 = data.obank().get(feed_op).unwrap().get_in(1).unwrap();
                     let in1_off = data.vbank().get(in1).unwrap().get_offset();
                     if rvn_size + (in1_off as int4) == avn_size {
                         // We have -1 s< SUB( avn, #hi )
-                        // data.opSetInput(op, avn, 1);
                         data.op_set_input(op, avn, 1).expect("sless2zero: setInput");
-                        // data.opSetInput(op, data.newConstant(avn->getSize(), calc_mask(avn->getSize())), 0);
                         let c = data.new_constant(avn_size, calc_mask(avn_size));
                         data.op_set_input(op, c, 0).expect("sless2zero: setInput");
                         return 1;
@@ -516,35 +476,28 @@ impl Rule for RuleSLess2Zero {
                     // We have -1 s< ~avn
                     let avn = data.obank().get(feed_op).unwrap().get_in(0).unwrap();
                     let av = data.vbank().get(avn).unwrap();
-                    // if (avn->isFree()) return 0;
                     if av.is_free() {
                         return 0;
                     }
                     let avn_size = av.get_size();
-                    // data.opSetInput(op, avn, 0);
                     data.op_set_input(op, avn, 0).expect("sless2zero: setInput");
-                    // data.opSetInput(op, data.newConstant(avn->getSize(), 0), 1);
                     let c = data.new_constant(avn_size, 0);
                     data.op_set_input(op, c, 1).expect("sless2zero: setInput");
                     return 1;
                 } else if feed_opcode == OpCode::CPUI_INT_AND {
                     let avn = data.obank().get(feed_op).unwrap().get_in(0).unwrap();
-                    // if (avn->isFree() || rvn->loneDescend() == 0) return 0;
                     if data.vbank().get(avn).unwrap().is_free()
                         || data.lone_descend(rvn).is_none()
                     {
                         return 0;
                     }
                     let avn_size = data.vbank().get(avn).unwrap().get_size();
-                    // Varnode *maskVn = feedOp->getIn(1);
                     let mask_vn = data.obank().get(feed_op).unwrap().get_in(1).unwrap();
                     let mv = data.vbank().get(mask_vn).unwrap();
                     if mv.is_constant() {
-                        // uintb mask = maskVn->getOffset(); mask >>= (8 * avn->getSize() - 1);
                         let mask = mv.get_offset() >> (8 * avn_size - 1);
-                        // if ((mask & 1) != 0)  // -1 s< avn & 0x8...
+                        // -1 s< avn & 0x8...
                         if (mask & 1) != 0 {
-                            // data.opSetInput(op, avn, 1);
                             data.op_set_input(op, avn, 1).expect("sless2zero: setInput");
                             return 1;
                         }
@@ -557,24 +510,18 @@ impl Rule for RuleSLess2Zero {
                         return 0;
                     }
                     let avn_size = av.get_size();
-                    // data.opSetInput(op, avn, 1);
                     data.op_set_input(op, avn, 1).expect("sless2zero: setInput");
-                    // data.opSetInput(op, data.newConstant(avn->getSize(),calc_mask(avn->getSize())), 0);
                     let c = data.new_constant(avn_size, calc_mask(avn_size));
                     data.op_set_input(op, c, 0).expect("sless2zero: setInput");
                     return 1;
                 } else if feed_opcode == OpCode::CPUI_INT_LEFT {
-                    // coeff = feedOp->getIn(1);
                     let coeff = data.obank().get(feed_op).unwrap().get_in(1).unwrap();
                     let cf = data.vbank().get(coeff).unwrap();
-                    // if (!coeff->isConstant() || coeff->getOffset() != lvn->getSize() * 8 - 1) return 0;
                     if !cf.is_constant() || cf.get_offset() != (lvn_size as u64) * 8 - 1 {
                         return 0;
                     }
-                    // avn = feedOp->getIn(0);
                     let avn = data.obank().get(feed_op).unwrap().get_in(0).unwrap();
                     let av = data.vbank().get(avn).unwrap();
-                    // if (!avn->isWritten() || !avn->getDef()->isBoolOutput()) return 0;
                     if !av.is_written() {
                         return 0;
                     }
@@ -583,26 +530,20 @@ impl Rule for RuleSLess2Zero {
                         return 0;
                     }
                     // We have -1 s< (bool << #8*sz-1)
-                    // data.opSetOpcode(op, CPUI_BOOL_NEGATE);
                     data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_BOOL_NEGATE));
-                    // data.opRemoveInput(op, 1);
                     data.op_remove_input(op, 1);
-                    // data.opSetInput(op, avn, 0);
                     data.op_set_input(op, avn, 0).expect("sless2zero: setInput");
                     return 1;
                 }
             }
         } else if rvn_is_constant {
-            // if (!lvn->isWritten()) return 0;
             if !data.vbank().get(lvn).unwrap().is_written() {
                 return 0;
             }
-            // if (rvn->getOffset() == 0)  // ... s< 0
+            // ... s< 0
             if rvn_off == 0 {
-                // feedOp = lvn->getDef(); feedOpCode = feedOp->code();
                 let feed_op = data.vbank().get(lvn).unwrap().get_def().unwrap();
                 let feed_opcode = data.obank().get(feed_op).unwrap().code();
-                // Varnode *hibit = getHiBit(feedOp);
                 let hibit = RuleSLess2Zero::get_hi_bit(feed_op, data);
                 if let Some(hibit) = hibit {
                     // Test for (hi ^ lo) s< 0
@@ -615,25 +556,20 @@ impl Rule for RuleSLess2Zero {
                     } else {
                         data.op_set_input(op, hibit, 0).expect("sless2zero: setInput");
                     }
-                    // data.opSetOpcode(op,CPUI_INT_NOTEQUAL);
                     data.op_set_opcode(op, type_op_lookup(OpCode::CPUI_INT_NOTEQUAL));
                     return 1;
                 } else if feed_opcode == OpCode::CPUI_SUBPIECE {
                     let avn = data.obank().get(feed_op).unwrap().get_in(0).unwrap();
                     let av = data.vbank().get(avn).unwrap();
-                    // if (avn->isFree() || avn->getSize() > 8) return 0;
                     if av.is_free() || av.get_size() > 8 {
                         return 0;
                     }
                     let avn_size = av.get_size();
                     let in1 = data.obank().get(feed_op).unwrap().get_in(1).unwrap();
                     let in1_off = data.vbank().get(in1).unwrap().get_offset();
-                    // if (lvn->getSize() + (int4)feedOp->getIn(1)->getOffset() == avn->getSize())
                     if lvn_size + (in1_off as int4) == avn_size {
                         // We have SUB( avn, #hi ) s< 0
-                        // data.opSetInput(op,avn,0);
                         data.op_set_input(op, avn, 0).expect("sless2zero: setInput");
-                        // data.opSetInput(op,data.newConstant(avn->getSize(),0),1);
                         let c = data.new_constant(avn_size, 0);
                         data.op_set_input(op, c, 1).expect("sless2zero: setInput");
                         return 1;
@@ -646,15 +582,12 @@ impl Rule for RuleSLess2Zero {
                         return 0;
                     }
                     let avn_size = av.get_size();
-                    // data.opSetInput(op,avn,1);
                     data.op_set_input(op, avn, 1).expect("sless2zero: setInput");
-                    // data.opSetInput(op,data.newConstant(avn->getSize(),calc_mask(avn->getSize())),0);
                     let c = data.new_constant(avn_size, calc_mask(avn_size));
                     data.op_set_input(op, c, 0).expect("sless2zero: setInput");
                     return 1;
                 } else if feed_opcode == OpCode::CPUI_INT_AND {
                     let avn = data.obank().get(feed_op).unwrap().get_in(0).unwrap();
-                    // if (avn->isFree() || lvn->loneDescend() == 0) return 0;
                     if data.vbank().get(avn).unwrap().is_free()
                         || data.lone_descend(lvn).is_none()
                     {
@@ -665,9 +598,8 @@ impl Rule for RuleSLess2Zero {
                     let mv = data.vbank().get(mask_vn).unwrap();
                     if mv.is_constant() {
                         let mask = mv.get_offset() >> (8 * avn_size - 1);
-                        // if ((mask & 1) != 0)  // avn & 0x8... s< 0
+                        // avn & 0x8... s< 0
                         if (mask & 1) != 0 {
-                            // data.opSetInput(op, avn, 0);
                             data.op_set_input(op, avn, 0).expect("sless2zero: setInput");
                             return 1;
                         }
@@ -680,9 +612,7 @@ impl Rule for RuleSLess2Zero {
                         return 0;
                     }
                     let avn_size = av.get_size();
-                    // data.opSetInput(op, avn, 0);
                     data.op_set_input(op, avn, 0).expect("sless2zero: setInput");
-                    // data.opSetInput(op, data.newConstant(avn->getSize(), 0), 1);
                     let c = data.new_constant(avn_size, 0);
                     data.op_set_input(op, c, 1).expect("sless2zero: setInput");
                     return 1;
@@ -706,7 +636,7 @@ pub struct RuleEqual2Zero {
 }
 
 impl RuleEqual2Zero {
-    /// Constructor (C++ `RuleEqual2Zero(g) : Rule(g,0,"equal2zero")`).
+    /// Rule `RuleEqual2Zero` (name "equal2zero").
     pub fn new(g: &'static str) -> RuleEqual2Zero {
         RuleEqual2Zero { group: g }
     }
@@ -714,7 +644,6 @@ impl RuleEqual2Zero {
 
 impl Rule for RuleEqual2Zero {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // uint4 list[] = { CPUI_INT_EQUAL, CPUI_INT_NOTEQUAL };
         vec![OpCode::CPUI_INT_EQUAL, OpCode::CPUI_INT_NOTEQUAL]
     }
 
@@ -726,17 +655,13 @@ impl Rule for RuleEqual2Zero {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // vn = op->getIn(0);
         let o = data.obank().get(op).expect("RuleEqual2Zero: stale op");
         let in0 = o.get_in(0).unwrap();
         let in1 = o.get_in(1).unwrap();
         let v0 = data.vbank().get(in0).unwrap();
-        // if ((vn->isConstant())&&(vn->getOffset() == 0)) addvn = op->getIn(1);
         let addvn = if v0.is_constant() && v0.get_offset() == 0 {
             in1
         } else {
-            // else { addvn = vn; vn = op->getIn(1);
-            //        if ((!vn->isConstant())||(vn->getOffset() != 0)) return 0; }
             let v1 = data.vbank().get(in1).unwrap();
             if !v1.is_constant() || v1.get_offset() != 0 {
                 return 0;
@@ -745,7 +670,6 @@ impl Rule for RuleEqual2Zero {
         };
 
         // make sure the sum is only used in comparisons
-        // for(...addvn->beginDescend()...) if (!boolop->isBoolOutput()) return 0;
         let descend = data.descend_snapshot(addvn);
         for &boolop in &descend {
             if !data
@@ -757,18 +681,14 @@ impl Rule for RuleEqual2Zero {
                 return 0;
             }
         }
-        // addop = addvn->getDef();
         let av = data.vbank().get(addvn).unwrap();
         let addop = match av.get_def() {
             Some(o) => o,
-            // if (addop==0) return 0;
             None => return 0,
         };
-        // if (addop->code() != CPUI_INT_ADD) return 0;
         if data.obank().get(addop).unwrap().code() != OpCode::CPUI_INT_ADD {
             return 0;
         }
-        // vn = addop->getIn(0); vn2 = addop->getIn(1);
         let addop_o = data.obank().get(addop).unwrap();
         let vn = addop_o.get_in(0).unwrap();
         let vn2 = addop_o.get_in(1).unwrap();
@@ -777,21 +697,17 @@ impl Rule for RuleEqual2Zero {
         let posvn;
         let unnegvn;
         if v2.is_constant() {
-            // Address val(vn2->getSpace(),uintb_negate(vn2->getOffset()-1,vn2->getSize()));
             let vn2_size = v2.get_size();
             let vn2_off = v2.get_offset();
             let space = Rc::clone(v2.get_space());
             let val = Address::new(space, uintb_negate(vn2_off.wrapping_sub(1), vn2_size));
-            // unnegvn = data.newVarnode(vn2->getSize(),val);
             let uvn = data.new_varnode(vn2_size, &val, None);
-            // unnegvn->copySymbolIfValid(vn2);  // STUB(W4): equate-symbol markup
+            // STUB(W4): equate-symbol markup
             //   propagation (Varnode::copySymbolIfValid). The W3 IR carries no
             //   symbol entries (mapentry always null), so this is a no-op now.
             unnegvn = uvn;
-            // posvn = vn;
             posvn = vn;
         } else {
-            // if ((vn->isWritten())&&(vn->getDef()->code()==CPUI_INT_MULT)) { negvn=vn; posvn=vn2; }
             let vv = data.vbank().get(vn).unwrap();
             let vv_written = vv.is_written();
             let vv_def_is_mult = vv_written
@@ -801,7 +717,6 @@ impl Rule for RuleEqual2Zero {
                 negvn = vn;
                 posvn = vn2;
             } else {
-                // else if ((vn2->isWritten())&&(vn2->getDef()->code()==CPUI_INT_MULT)) { negvn=vn2; posvn=vn; }
                 let v2v = data.vbank().get(vn2).unwrap();
                 let v2_written = v2v.is_written();
                 let v2_def_is_mult = v2_written
@@ -815,35 +730,27 @@ impl Rule for RuleEqual2Zero {
                     return 0;
                 }
             }
-            // if (!negvn->getDef()->getIn(1)->isConstant()) return 0;
             let negdef = data.vbank().get(negvn).unwrap().get_def().unwrap();
             let neg_in1 = data.obank().get(negdef).unwrap().get_in(1).unwrap();
             let neg_in1_v = data.vbank().get(neg_in1).unwrap();
             if !neg_in1_v.is_constant() {
                 return 0;
             }
-            // unnegvn = negvn->getDef()->getIn(0);
             let neg_in0 = data.obank().get(negdef).unwrap().get_in(0).unwrap();
-            // multiplier = negvn->getDef()->getIn(1)->getOffset();
             let multiplier = data.vbank().get(neg_in1).unwrap().get_offset();
-            // if (multiplier != calc_mask(unnegvn->getSize())) return 0;
             let unneg_size = data.vbank().get(neg_in0).unwrap().get_size();
             if multiplier != calc_mask(unneg_size) {
                 return 0;
             }
             unnegvn = neg_in0;
         }
-        // if (!posvn->isHeritageKnown()) return 0;
         if !data.vbank().get(posvn).unwrap().is_heritage_known() {
             return 0;
         }
-        // if (!unnegvn->isHeritageKnown()) return 0;
         if !data.vbank().get(unnegvn).unwrap().is_heritage_known() {
             return 0;
         }
-        // data.opSetInput(op,posvn,0);
         data.op_set_input(op, posvn, 0).expect("RuleEqual2Zero: opSetInput");
-        // data.opSetInput(op,unnegvn,1);
         data.op_set_input(op, unnegvn, 1).expect("RuleEqual2Zero: opSetInput");
         1
     }
@@ -865,7 +772,7 @@ pub struct RuleEqual2Constant {
 }
 
 impl RuleEqual2Constant {
-    /// Constructor (C++ `RuleEqual2Constant(g) : Rule(g,0,"equal2constant")`).
+    /// Rule `RuleEqual2Constant` (name "equal2constant").
     pub fn new(g: &'static str) -> RuleEqual2Constant {
         RuleEqual2Constant { group: g }
     }
@@ -873,7 +780,6 @@ impl RuleEqual2Constant {
 
 impl Rule for RuleEqual2Constant {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // uint4 list[] = { CPUI_INT_EQUAL, CPUI_INT_NOTEQUAL };
         vec![OpCode::CPUI_INT_EQUAL, OpCode::CPUI_INT_NOTEQUAL]
     }
 
@@ -885,38 +791,30 @@ impl Rule for RuleEqual2Constant {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *cvn = op->getIn(1);
         let o = data.obank().get(op).expect("RuleEqual2Constant: stale op");
         let cvn = o.get_in(1).unwrap();
         let lhs = o.get_in(0).unwrap();
         let cv = data.vbank().get(cvn).unwrap();
-        // if (!cvn->isConstant()) return 0;
         if !cv.is_constant() {
             return 0;
         }
         let cvn_off = cv.get_offset();
         let cvn_size = cv.get_size();
-        // Varnode *lhs = op->getIn(0); if (!lhs->isWritten()) return 0;
         let lv = data.vbank().get(lhs).unwrap();
         if !lv.is_written() {
             return 0;
         }
         let lhs_size = lv.get_size();
-        // PcodeOp *leftop = lhs->getDef();
         let leftop = lv.get_def().unwrap();
-        // OpCode opc = leftop->code();
         let opc = data.obank().get(leftop).unwrap().code();
 
         let newconst: u64;
         if opc == OpCode::CPUI_INT_ADD {
-            // Varnode *otherconst = leftop->getIn(1);
             let otherconst = data.obank().get(leftop).unwrap().get_in(1).unwrap();
             let oc = data.vbank().get(otherconst).unwrap();
-            // if (!otherconst->isConstant()) return 0;
             if !oc.is_constant() {
                 return 0;
             }
-            // newconst = cvn->getOffset() - otherconst->getOffset(); newconst &= calc_mask(cvn->getSize());
             newconst = cvn_off.wrapping_sub(oc.get_offset()) & calc_mask(cvn_size);
         } else if opc == OpCode::CPUI_INT_MULT {
             let otherconst = data.obank().get(leftop).unwrap().get_in(1).unwrap();
@@ -926,21 +824,17 @@ impl Rule for RuleEqual2Constant {
             }
             let oc_size = oc.get_size();
             // The only multiply we transform is multiply by -1
-            // if (otherconst->getOffset() != calc_mask(otherconst->getSize())) return 0;
             if oc.get_offset() != calc_mask(oc_size) {
                 return 0;
             }
-            // newconst = cvn->getOffset(); newconst = (-newconst) & calc_mask(otherconst->getSize());
             newconst = cvn_off.wrapping_neg() & calc_mask(oc_size);
         } else if opc == OpCode::CPUI_INT_NEGATE {
-            // newconst = cvn->getOffset(); newconst = (~newconst) & calc_mask(lhs->getSize());
             newconst = (!cvn_off) & calc_mask(lhs_size);
         } else {
             // else return 0;
             return 0;
         }
 
-        // a = leftop->getIn(0); if (a->isFree()) return 0;
         let a = data.obank().get(leftop).unwrap().get_in(0).unwrap();
         let a_size = data.vbank().get(a).unwrap().get_size();
         if data.vbank().get(a).unwrap().is_free() {
@@ -948,28 +842,22 @@ impl Rule for RuleEqual2Constant {
         }
 
         // Make sure the transformed form of a is only used in comparisons of similar form
-        // for(iter=lhs->beginDescend();...)
         let descend = data.descend_snapshot(lhs);
         for &dop in &descend {
-            // if (dop == op) continue;
             if dop == op {
                 continue;
             }
             let dcode = data.obank().get(dop).unwrap().code();
-            // if ((dop->code()!=CPUI_INT_EQUAL)&&(dop->code()!=CPUI_INT_NOTEQUAL)) return 0;
             if dcode != OpCode::CPUI_INT_EQUAL && dcode != OpCode::CPUI_INT_NOTEQUAL {
                 return 0;
             }
-            // if (!dop->getIn(1)->isConstant()) return 0;
             let dop_in1 = data.obank().get(dop).unwrap().get_in(1).unwrap();
             if !data.vbank().get(dop_in1).unwrap().is_constant() {
                 return 0;
             }
         }
 
-        // data.opSetInput(op,a,0);
         data.op_set_input(op, a, 0).expect("RuleEqual2Constant: opSetInput");
-        // data.opSetInput(op,data.newConstant(a->getSize(),newconst),1);
         let c = data.new_constant(a_size, newconst);
         data.op_set_input(op, c, 1).expect("RuleEqual2Constant: opSetInput");
         1
@@ -996,7 +884,7 @@ pub struct RulePtrArith {
 }
 
 impl RulePtrArith {
-    /// Constructor (C++ `RulePtrArith(g) : Rule(g,0,"ptrarith")`).
+    /// Rule `RulePtrArith` (name "ptrarith").
     pub fn new(g: &'static str) -> RulePtrArith {
         RulePtrArith { group: g }
     }
@@ -1004,7 +892,6 @@ impl RulePtrArith {
 
 impl Rule for RulePtrArith {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // oplist.push_back(CPUI_INT_ADD);
         vec![OpCode::CPUI_INT_ADD]
     }
 
@@ -1016,11 +903,9 @@ impl Rule for RulePtrArith {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.hasTypeRecoveryStarted()) return 0;
         if !data.has_type_recovery_started() {
             return 0;
         }
-        // for(slot=0;slot<op->numInput();++slot) { ct = getTypeReadFacing(op); if PTR break; }
         let num_input = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let mut slot = num_input;
         for s in 0..num_input {
@@ -1028,7 +913,7 @@ impl Rule for RulePtrArith {
                 Some(v) => v,
                 None => continue,
             };
-            // ct = op->getIn(slot)->getTypeReadFacing(op); (resolve union/relptr in-flow)
+            // Resolve union/relptr in-flow.
             let meta = data.vn_type_read_facing(invn, op).get_metatype();
             if meta == crate::dtype::type_metatype::TYPE_PTR {
                 slot = s;
@@ -1038,15 +923,12 @@ impl Rule for RulePtrArith {
         if slot == num_input {
             return 0;
         }
-        // if (evaluatePointerExpression(op, slot) != 2) return 0;
         if evaluate_pointer_expression(data, op, slot) != 2 {
             return 0;
         }
-        // if (!verifyPreferredPointer(op, slot)) return 0;
         if !verify_preferred_pointer(data, op, slot) {
             return 0;
         }
-        // AddTreeState state(data,op,slot);
         let mut state = match crate::addtreestate::AddTreeState::new(data, op, slot) {
             Some(s) => s,
             None => return 0,
@@ -1079,7 +961,6 @@ pub(crate) fn evaluate_pointer_expression(data: &Funcdata, op: OpId, slot: int4)
             return 0;
         }
     }
-    // if (op->getIn(1-slot)->getTypeReadFacing(op)->getMetatype() == TYPE_PTR) res = 2;
     let other = data.obank().get(op).and_then(|o| o.get_in(1 - slot));
     if let Some(other) = other {
         if data.vn_type_read_facing(other, op).get_metatype()
@@ -1210,7 +1091,7 @@ pub struct RuleStructOffset0 {
 }
 
 impl RuleStructOffset0 {
-    /// Constructor (C++ `RuleStructOffset0(g) : Rule(g,0,"structoffset0")`).
+    /// Rule `RuleStructOffset0` (name "structoffset0").
     pub fn new(g: &'static str) -> RuleStructOffset0 {
         RuleStructOffset0 { group: g }
     }
@@ -1218,7 +1099,6 @@ impl RuleStructOffset0 {
 
 impl Rule for RuleStructOffset0 {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // uint4 list[]={ CPUI_LOAD, CPUI_STORE };
         vec![OpCode::CPUI_LOAD, OpCode::CPUI_STORE]
     }
 
@@ -1234,12 +1114,10 @@ impl Rule for RuleStructOffset0 {
     #[allow(clippy::collapsible_if)]
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         use crate::dtype::type_metatype;
-        // if (!data.hasTypeRecoveryStarted()) return 0;
         if !data.has_type_recovery_started() {
             return 0;
         }
         let code = data.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_MAX);
-        // movesize = (LOAD) out->getSize() / (STORE) getIn(2)->getSize();
         let movesize = match code {
             OpCode::CPUI_LOAD => data
                 .obank()
@@ -1263,7 +1141,7 @@ impl Rule for RuleStructOffset0 {
             Some(v) => v,
             None => return 0,
         };
-        // Datatype *ct = ptrVn->getTypeReadFacing(op); (resolve union/relptr in-flow)
+        // Resolve union/relptr in-flow.
         let ct = data.vn_type_read_facing(ptr_vn, op);
         if ct.get_metatype() != type_metatype::TYPE_PTR {
             return 0;
@@ -1273,7 +1151,7 @@ impl Rule for RuleStructOffset0 {
             Some(b) => b,
             None => return 0,
         };
-        // Relative-pointer arm: ct->isFormalPointerRel() && evaluateThruParent(0)
+        // Relative-pointer arm.
         if ct.is_formal_pointer_rel() && ct.evaluate_thru_parent(0) == Some(true) {
             base_type = match ct.get_rel_parent() {
                 Some(b) => b,
@@ -1298,12 +1176,9 @@ impl Rule for RuleStructOffset0 {
             }
             let word_size = ct.get_word_size().unwrap_or(1);
             let newoff_addr = AddrSpace::byte_to_address(newoff as u64, word_size);
-            // offset = -newoff & calc_mask(ptrVn->getSize());
             let sub_offset = newoff_addr.wrapping_neg() & calc_mask(ptr_size);
             let off_const = data.new_constant(ptr_size, sub_offset);
             let newop = data.new_op_before(op, OpCode::CPUI_PTRSUB, ptr_vn, off_const, None);
-            // if (ptrVn->getType()->needsResolution())
-            //   data.inheritUnionField(ptrVn->getType(),newop, 0, op, 1);
             let ptr_ty = Rc::clone(data.vbank().get(ptr_vn).expect("RuleStructOffset0: stale ptrVn").get_type());
             if ptr_ty.needs_resolution() {
                 data.inherit_union_field(&ptr_ty, newop, 0, op, 1);
@@ -1355,8 +1230,6 @@ impl Rule for RuleStructOffset0 {
         }
         let zero = data.new_constant(ptr_size, 0);
         let newop = data.new_op_before(op, OpCode::CPUI_PTRSUB, ptr_vn, zero, None);
-        // if (ptrVn->getType()->needsResolution())
-        //   data.inheritUnionField(ptrVn->getType(),newop, 0, op, 1);
         let ptr_ty = Rc::clone(data.vbank().get(ptr_vn).expect("RuleStructOffset0: stale ptrVn").get_type());
         if ptr_ty.needs_resolution() {
             data.inherit_union_field(&ptr_ty, newop, 0, op, 1);
@@ -1391,7 +1264,7 @@ pub struct RulePushPtr {
 }
 
 impl RulePushPtr {
-    /// Constructor (C++ `RulePushPtr(g) : Rule(g,0,"pushptr")`).
+    /// Rule `RulePushPtr` (name "pushptr").
     pub fn new(g: &'static str) -> RulePushPtr {
         RulePushPtr { group: g }
     }
@@ -1399,7 +1272,6 @@ impl RulePushPtr {
 
 impl Rule for RulePushPtr {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // oplist.push_back(CPUI_INT_ADD);
         vec![OpCode::CPUI_INT_ADD]
     }
 
@@ -1416,12 +1288,10 @@ impl Rule for RulePushPtr {
     #[allow(clippy::while_let_loop)]
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         use crate::dtype::type_metatype;
-        // if (!data.hasTypeRecoveryStarted()) return 0;
         if !data.has_type_recovery_started() {
             return 0;
         }
         let num_input = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
-        // for(slot=0;...) vni = op->getIn(slot); if (vni->getTypeReadFacing(op)->PTR) break;
         let mut slot = num_input;
         let mut vni = None;
         for s in 0..num_input {
@@ -1439,7 +1309,6 @@ impl Rule for RulePushPtr {
             return 0;
         }
         let vni = vni.expect("RulePushPtr: pointer slot found");
-        // if (evaluatePointerExpression(op, slot) != 1) return 0;
         if evaluate_pointer_expression(data, op, slot) != 1 {
             return 0;
         }
@@ -1467,7 +1336,6 @@ impl Rule for RulePushPtr {
                 Some(v) => v,
                 None => break,
             };
-            // newop = newOp(2, decop->getAddr()); INT_ADD; newout = newUniqueOut(size).
             let dec_addr = data.obank().get(decop).map(|o| o.get_addr().clone())
                 .expect("RulePushPtr: decop addr");
             let newop = data.new_op(2, dec_addr);

@@ -14,7 +14,7 @@
 //! has no editing rights over:
 //!
 //! * **Output creation** (`newUniqueOut`/`newVarnodeOut`, which route through
-//!   `Funcdata::opSetOutput`).  `opSetOutput` currently returns a seam `Err`
+//!   `Funcdata::opSetOutput`).  `opSetOutput` currently returns a stub `Err`
 //!   (`funcdata_op.rs`: it needs a `banks_mut()` split-borrow for
 //!   `vbank.setDef`).  Rules that fabricate a *new* output Varnode
 //!   (`RuleSignNearMult`, `RulePtrFlow::truncatePointer`) match fully but bail at
@@ -46,7 +46,7 @@
 //!   globals (HighVariable naming / `Scope::queryByAddr` for the read varnode),
 //!   NOT a ruleaction float rule.
 //!
-//! Every seam is also recorded in this item's `losses` output.
+//! Every stub is also recorded in this item's `losses` output.
 
 use kuna_base::address::{calc_mask, mostsigbit_set, popcount, signbit_negative};
 use kuna_base::types::{int4, uintb, Wrap};
@@ -86,7 +86,7 @@ fn typeop_for(opc: OpCode) -> TypeOp {
         OpCode::CPUI_BOOL_OR => (f::binary | f::commutative | f::booloutput, "||"),
         OpCode::CPUI_FLOAT_INT2FLOAT => (f::unary, "INT2FLOAT"),
         // Any op-code not enumerated above is not produced by this batch; fall
-        // back to a flagless skeleton (the seam will be widened in W6).
+        // back to a flagless skeleton (the stub will be widened in W6).
         _ => (0, "op"),
     };
     TypeOp::new(opc, flags, name)
@@ -179,7 +179,7 @@ fn op_get_parent(data: &Funcdata, op: OpId) -> Option<BlockId> {
     data.obank().get(op).expect("op_get_parent: stale op").get_parent()
 }
 /// `op->getOpcode()->isFloatingPointOp()` — resolved through the canonical
-/// `inst[]` table (`type_op_info`); the op's cached `TypeOp` seam on the op
+/// `inst[]` table (`type_op_info`); the op's cached `TypeOp` stub on the op
 /// itself carries no `addlflags`, so the `floatingpoint_op` bit is read here.
 #[inline]
 fn op_is_floating_point(data: &Funcdata, op: OpId) -> bool {
@@ -195,7 +195,7 @@ fn op_is_floating_point(data: &Funcdata, op: OpId) -> bool {
 pub struct RuleSignDiv2;
 
 impl RuleSignDiv2 {
-    /// Constructor (C++ `RuleSignDiv2(g)`), name "signdiv2".
+    /// Rule `RuleSignDiv2` (name "signdiv2").
     pub fn new() -> RuleSignDiv2 {
         RuleSignDiv2
     }
@@ -221,16 +221,13 @@ impl Rule for RuleSignDiv2 {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(1)->isConstant()) return 0;
         let in1 = op_in(data, op, 1).expect("signdiv2: missing in1");
         if !vn_is_constant(data, in1) {
             return 0;
         }
-        // if (op->getIn(1)->getOffset() != 1) return 0;
         if vn_offset(data, in1) != 1 {
             return 0;
         }
-        // addout = op->getIn(0);
         let addout = op_in(data, op, 0).expect("signdiv2: missing in0");
         if !vn_is_written(data, addout) {
             return 0;
@@ -257,7 +254,6 @@ impl Rule for RuleSignDiv2 {
                 i += 1;
                 continue;
             }
-            // if (multop->getIn(1)->getOffset() != calc_mask(multop->getIn(1)->getSize()))
             if vn_offset(data, m1) != calc_mask(vn_size(data, m1)) {
                 i += 1;
                 continue;
@@ -277,15 +273,12 @@ impl Rule for RuleSignDiv2 {
                 i += 1;
                 continue;
             }
-            // int4 n = shiftop->getIn(1)->getOffset();
             let n = vn_offset(data, s1) as int4;
             let cand = op_in(data, shiftop, 0).expect("signdiv2: shiftop in0");
-            // if (a != addop->getIn(1-i)) continue;
             if cand != op_in(data, addop, 1 - i).expect("signdiv2: addop 1-i") {
                 i += 1;
                 continue;
             }
-            // if (n != 8*a->getSize() - 1) continue;
             if n != 8 * vn_size(data, cand) - 1 {
                 i += 1;
                 continue;
@@ -302,13 +295,10 @@ impl Rule for RuleSignDiv2 {
         }
         let a = a.expect("signdiv2: a set when i<2");
 
-        // data.opSetInput(op,a,0);
         data.op_set_input(op, a, 0).expect("signdiv2: opSetInput a");
-        // data.opSetInput(op,data.newConstant(a->getSize(),2),1);
         let asize = vn_size(data, a);
         let two = data.new_constant(asize, 2);
         data.op_set_input(op, two, 1).expect("signdiv2: opSetInput 2");
-        // data.opSetOpcode(op,CPUI_INT_SDIV);
         data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_SDIV));
         1
     }
@@ -323,7 +313,7 @@ impl Rule for RuleSignDiv2 {
 pub struct RuleDivChain;
 
 impl RuleDivChain {
-    /// Constructor (C++ `RuleDivChain(g)`), name "divchain".
+    /// Rule `RuleDivChain` (name "divchain").
     pub fn new() -> RuleDivChain {
         RuleDivChain
     }
@@ -349,40 +339,30 @@ impl Rule for RuleDivChain {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // OpCode opc2 = op->code();
         let opc2 = op_code(data, op);
-        // Varnode *constVn2 = op->getIn(1);
         let const_vn2 = op_in(data, op, 1).expect("divchain: in1");
         if !vn_is_constant(data, const_vn2) {
             return 0;
         }
-        // Varnode *vn = op->getIn(0);
         let vn = op_in(data, op, 0).expect("divchain: in0");
         if !vn_is_written(data, vn) {
             return 0;
         }
-        // PcodeOp *divOp = vn->getDef();
         let div_op = vn_def(data, vn).expect("divchain: vn written");
-        // OpCode opc1 = divOp->code();
         let opc1 = op_code(data, div_op);
-        // if (opc1 != opc2 && (opc2 != CPUI_INT_DIV || opc1 != CPUI_INT_RIGHT)) return 0;
         if opc1 != opc2 && (opc2 != OpCode::CPUI_INT_DIV || opc1 != OpCode::CPUI_INT_RIGHT) {
             return 0;
         }
-        // Varnode *constVn1 = divOp->getIn(1);
         let const_vn1 = op_in(data, div_op, 1).expect("divchain: divOp in1");
         if !vn_is_constant(data, const_vn1) {
             return 0;
         }
-        // if (vn->loneDescend() == 0) return 0;
         if data.lone_descend(vn).is_none() {
             return 0;
         }
-        // uintb val1;
         let val1: uintb = if opc1 == opc2 {
             vn_offset(data, const_vn1)
         } else {
-            // Unsigned case with INT_RIGHT: int4 sa = constVn1->getOffset(); val1 = 1 << sa;
             let sa = vn_offset(data, const_vn1) as int4;
             // C++ `val1 <<= sa` on a uintb (u64) with x86 shift-count masking
             // (count & 63). ADR-0003 mandates `wshl` here: `wrapping_shl` masks
@@ -390,43 +370,32 @@ impl Rule for RuleDivChain {
             // degenerate `>> 64` yields `1 << (64 & 63) = 1` rather than panicking.
             (1u64).wshl(sa as u32)
         };
-        // Varnode *baseVn = divOp->getIn(0);
         let base_vn = op_in(data, div_op, 0).expect("divchain: divOp in0");
         if vn_is_free(data, base_vn) {
             return 0;
         }
-        // int4 sz = vn->getSize();
         let sz = vn_size(data, vn);
-        // uintb val2 = constVn2->getOffset();
         let val2 = vn_offset(data, const_vn2);
-        // uintb resval = (val1 * val2) & calc_mask(sz);
         let resval = val1.wrapping_mul(val2) & calc_mask(sz);
         if resval == 0 {
             return 0;
         }
-        // if (signbit_negative(val1, sz)) val1 = (~val1 + 1) & calc_mask(sz);
         let mut val1 = val1;
         if signbit_negative(val1, sz) {
             val1 = (!val1).wrapping_add(1) & calc_mask(sz);
         }
-        // if (signbit_negative(val2, sz)) val2 = (~val2 + 1) & calc_mask(sz);
         let mut val2 = val2;
         if signbit_negative(val2, sz) {
             val2 = (!val2).wrapping_add(1) & calc_mask(sz);
         }
-        // int4 bitcount = mostsigbit_set(val1) + mostsigbit_set(val2) + 2;
         let bitcount = mostsigbit_set(val1) + mostsigbit_set(val2) + 2;
-        // if (opc2 == CPUI_INT_DIV && bitcount > sz * 8 ) return 0;
         if opc2 == OpCode::CPUI_INT_DIV && bitcount > sz * 8 {
             return 0;
         }
-        // if (opc2 == CPUI_INT_SDIV && bitcount > sz * 8 - 2) return 0;
         if opc2 == OpCode::CPUI_INT_SDIV && bitcount > sz * 8 - 2 {
             return 0;
         }
-        // data.opSetInput(op, baseVn, 0);
         data.op_set_input(op, base_vn, 0).expect("divchain: opSetInput base");
-        // data.opSetInput(op,data.newConstant(sz, resval), 1);
         let c = data.new_constant(sz, resval);
         data.op_set_input(op, c, 1).expect("divchain: opSetInput resval");
         1
@@ -442,7 +411,7 @@ impl Rule for RuleDivChain {
 pub struct RuleSignForm;
 
 impl RuleSignForm {
-    /// Constructor (C++ `RuleSignForm(g)`), name "signform".
+    /// Rule `RuleSignForm` (name "signform").
     pub fn new() -> RuleSignForm {
         RuleSignForm
     }
@@ -468,7 +437,6 @@ impl Rule for RuleSignForm {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // sextout = op->getIn(0);
         let sextout = op_in(data, op, 0).expect("signform: in0");
         if !vn_is_written(data, sextout) {
             return 0;
@@ -478,7 +446,6 @@ impl Rule for RuleSignForm {
             return 0;
         }
         let a = op_in(data, sextop, 0).expect("signform: sextop in0");
-        // int4 c = op->getIn(1)->getOffset();
         let c = vn_offset(data, op_in(data, op, 1).expect("signform: in1")) as int4;
         if c < vn_size(data, a) {
             return 0;
@@ -487,14 +454,10 @@ impl Rule for RuleSignForm {
             return 0;
         }
 
-        // data.opSetInput(op,a,0);
         data.op_set_input(op, a, 0).expect("signform: opSetInput a");
-        // int4 n = 8*a->getSize()-1;
         let n = 8 * vn_size(data, a) - 1;
-        // data.opSetInput(op,data.newConstant(4,n),1);
         let cn = data.new_constant(4, n as uintb);
         data.op_set_input(op, cn, 1).expect("signform: opSetInput n");
-        // data.opSetOpcode(op,CPUI_INT_SRIGHT);
         data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_SRIGHT));
         1
     }
@@ -513,7 +476,7 @@ impl Rule for RuleSignForm {
 pub struct RuleSignForm2;
 
 impl RuleSignForm2 {
-    /// Constructor (C++ `RuleSignForm2(g)`), name "signform2".
+    /// Rule `RuleSignForm2` (name "signform2").
     pub fn new() -> RuleSignForm2 {
         RuleSignForm2
     }
@@ -539,41 +502,32 @@ impl Rule for RuleSignForm2 {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *constVn = op->getIn(1);
         let const_vn = op_in(data, op, 1).expect("signform2: in1");
         if !vn_is_constant(data, const_vn) {
             return 0;
         }
-        // Varnode *inVn = op->getIn(0);
         let in_vn = op_in(data, op, 0).expect("signform2: in0");
-        // int4 sizeout = inVn->getSize();
         let sizeout = vn_size(data, in_vn);
-        // if ((int4)constVn->getOffset() != sizeout*8 -1) return 0;
         if (vn_offset(data, const_vn) as int4) != sizeout * 8 - 1 {
             return 0;
         }
         if !vn_is_written(data, in_vn) {
             return 0;
         }
-        // PcodeOp *subOp = inVn->getDef();
         let sub_op = vn_def(data, in_vn).expect("signform2: inVn written");
         if op_code(data, sub_op) != OpCode::CPUI_SUBPIECE {
             return 0;
         }
-        // int4 c = subOp->getIn(1)->getOffset();
         let c = vn_offset(data, op_in(data, sub_op, 1).expect("signform2: subOp in1")) as int4;
-        // Varnode *multOut = subOp->getIn(0);
         let mult_out = op_in(data, sub_op, 0).expect("signform2: subOp in0");
-        // int4 multSize = multOut->getSize();
         let mult_size = vn_size(data, mult_out);
-        // if (c + sizeout != multSize) return 0;  // Must be extracting high part
+        // Must be extracting high part
         if c + sizeout != mult_size {
             return 0;
         }
         if !vn_is_written(data, mult_out) {
             return 0;
         }
-        // PcodeOp *multOp = multOut->getDef();
         let mult_op = vn_def(data, mult_out).expect("signform2: multOut written");
         if op_code(data, mult_op) != OpCode::CPUI_INT_MULT {
             return 0;
@@ -598,12 +552,10 @@ impl Rule for RuleSignForm2 {
             return 0;
         }
         let sext_op = sext_op.expect("signform2: sextOp set when slot<=1");
-        // Varnode *a = sextOp->getIn(0);
         let a = op_in(data, sext_op, 0).expect("signform2: sextOp in0");
         if vn_is_free(data, a) || vn_size(data, a) != sizeout {
             return 0;
         }
-        // Varnode *otherVn = multOp->getIn(1-slot);
         let other_vn = op_in(data, mult_op, 1 - slot).expect("signform2: multOp 1-slot");
         // otherVn must be a positive integer and small enough...
         if vn_is_constant(data, other_vn) {
@@ -625,7 +577,6 @@ impl Rule for RuleSignForm2 {
         } else {
             return 0;
         }
-        // data.opSetInput(op, a, 0);
         data.op_set_input(op, a, 0).expect("signform2: opSetInput a");
         // return 0;   (faithful: the input set is NOT reported as a change)
         0
@@ -641,12 +592,12 @@ impl Rule for RuleSignForm2 {
 ///
 /// // STUB(W3-output): the transformation fabricates a new INT_SDIV op with a
 /// fresh unique output (`newOp` + `newUniqueOut`).  `newUniqueOut` routes through
-/// `Funcdata::opSetOutput`, which is the deferred split-borrow seam; the full
-/// pattern match is ported, the construction bails when the seam errors.
+/// `Funcdata::opSetOutput`, which is the deferred split-borrow stub; the full
+/// pattern match is ported, the construction bails when the stub errors.
 pub struct RuleSignNearMult;
 
 impl RuleSignNearMult {
-    /// Constructor (C++ `RuleSignNearMult(g)`), name "signnearmult".
+    /// Rule `RuleSignNearMult` (name "signnearmult").
     pub fn new() -> RuleSignNearMult {
         RuleSignNearMult
     }
@@ -672,17 +623,14 @@ impl Rule for RuleSignNearMult {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(1)->isConstant()) return 0;
         let in1 = op_in(data, op, 1).expect("signnearmult: in1");
         if !vn_is_constant(data, in1) {
             return 0;
         }
-        // if (!op->getIn(0)->isWritten()) return 0;
         let in0 = op_in(data, op, 0).expect("signnearmult: in0");
         if !vn_is_written(data, in0) {
             return 0;
         }
-        // PcodeOp *addop = op->getIn(0)->getDef();
         let addop = vn_def(data, in0).expect("signnearmult: in0 written");
         if op_code(data, addop) != OpCode::CPUI_INT_ADD {
             return 0;
@@ -713,35 +661,28 @@ impl Rule for RuleSignNearMult {
         }
         let shiftvn = shiftvn.expect("signnearmult: shiftvn");
         let unshiftop = unshiftop.expect("signnearmult: unshiftop");
-        // Varnode *x = addop->getIn(1-i);
         let x = op_in(data, addop, 1 - i).expect("signnearmult: addop 1-i");
         if vn_is_free(data, x) {
             return 0;
         }
-        // int4 n = unshiftop->getIn(1)->getOffset();
         let mut n = vn_offset(data, op_in(data, unshiftop, 1).expect("signnearmult: unshiftop in1"))
             as int4;
         if n <= 0 {
             return 0;
         }
-        // n = shiftvn->getSize()*8 - n;
         n = vn_size(data, shiftvn) * 8 - n;
         if n <= 0 {
             return 0;
         }
-        // uintb mask = calc_mask(shiftvn->getSize());
         let mut mask = calc_mask(vn_size(data, shiftvn));
-        // mask = (mask<<n)&mask;
         // C++ `mask << n` on a uintb with x86 shift-count masking (count & 63);
         // for a >8-byte shiftvn `n` can exceed 63, so per ADR-0003 use `wshl`
         // (`wrapping_shl` masks the count modulo 64) to wrap rather than panic.
         // `n > 0` is guaranteed by the two `if n <= 0 { return 0 }` guards above.
         mask = mask.wshl(n as u32) & mask;
-        // if (mask != op->getIn(1)->getOffset()) return 0;
         if mask != vn_offset(data, in1) {
             return 0;
         }
-        // Varnode *sgnvn = unshiftop->getIn(0);
         let sgnvn = op_in(data, unshiftop, 0).expect("signnearmult: unshiftop in0");
         if !vn_is_written(data, sgnvn) {
             return 0;
@@ -753,46 +694,34 @@ impl Rule for RuleSignNearMult {
         if !vn_is_constant(data, op_in(data, sshiftop, 1).expect("signnearmult: sshiftop in1")) {
             return 0;
         }
-        // if (sshiftop->getIn(0) != x) return 0;
         if op_in(data, sshiftop, 0).expect("signnearmult: sshiftop in0") != x {
             return 0;
         }
-        // int4 val = sshiftop->getIn(1)->getOffset();
         let val = vn_offset(data, op_in(data, sshiftop, 1).expect("signnearmult: sshiftop in1"))
             as int4;
         if val != 8 * vn_size(data, x) - 1 {
             return 0;
         }
 
-        // uintb pow = 1 << n;
         // Same x86 shift-count masking as `mask` above; ADR-0003 `wshl` so a
         // >8-byte shiftvn (`n` > 63) wraps instead of panicking. `n > 0` holds.
         let pow: uintb = (1u64).wshl(n as u32);
-        // PcodeOp *newdiv = data.newOp(2,op->getAddr());
         let addr = data.obank().get(op).expect("signnearmult: op").get_addr().clone();
         let newdiv = data.new_op(2, addr);
-        // data.opSetOpcode(newdiv,CPUI_INT_SDIV);
         data.op_set_opcode(newdiv, typeop_for(OpCode::CPUI_INT_SDIV));
-        // Varnode *divvn = data.newUniqueOut(x->getSize(),newdiv);
         // -- STUB(W3-output): newUniqueOut -> opSetOutput (deferred split-borrow).
         let xsize = vn_size(data, x);
         let divvn = data.new_unique(xsize, None);
         if data.op_set_output(newdiv, divvn).is_err() {
             return 0; // STUB(W3-output): construction deferred; see module doc.
         }
-        // data.opSetInput(newdiv,x,0);
         data.op_set_input(newdiv, x, 0).expect("signnearmult: newdiv in0");
-        // data.opSetInput(newdiv,data.newConstant(x->getSize(),pow),1);
         let c1 = data.new_constant(xsize, pow);
         data.op_set_input(newdiv, c1, 1).expect("signnearmult: newdiv in1");
-        // data.opInsertBefore(newdiv,op);
         data.op_insert_before(newdiv, op);
 
-        // data.opSetOpcode(op,CPUI_INT_MULT);
         data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_MULT));
-        // data.opSetInput(op,divvn,0);
         data.op_set_input(op, divvn, 0).expect("signnearmult: op in0");
-        // data.opSetInput(op,data.newConstant(x->getSize(),pow),1);
         let c2 = data.new_constant(xsize, pow);
         data.op_set_input(op, c2, 1).expect("signnearmult: op in1");
         1
@@ -807,7 +736,7 @@ impl Rule for RuleSignNearMult {
 pub struct RuleModOpt;
 
 impl RuleModOpt {
-    /// Constructor (C++ `RuleModOpt(g)`), name "modopt".
+    /// Rule `RuleModOpt` (name "modopt").
     pub fn new() -> RuleModOpt {
         RuleModOpt
     }
@@ -833,16 +762,13 @@ impl Rule for RuleModOpt {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // x = op->getIn(0); div = op->getIn(1); outvn = op->getOut();
         let x = op_in(data, op, 0).expect("modopt: in0");
         let div = op_in(data, op, 1).expect("modopt: in1");
         let outvn = op_out(data, op).expect("modopt: out");
-        // for(iter1=outvn->beginDescend();iter1!=outvn->endDescend();++iter1)
         for multop in vn_descend(data, outvn) {
             if op_code(data, multop) != OpCode::CPUI_INT_MULT {
                 continue;
             }
-            // div2 = multop->getIn(1); if (div2 == outvn) div2 = multop->getIn(0);
             let mut div2 = op_in(data, multop, 1).expect("modopt: multop in1");
             if div2 == outvn {
                 div2 = op_in(data, multop, 0).expect("modopt: multop in0");
@@ -853,7 +779,6 @@ impl Rule for RuleModOpt {
                     continue;
                 }
                 let mask = calc_mask(vn_size(data, div2));
-                // (((div2->getOffset() ^ mask)+1)&mask) != div->getOffset()
                 if (((vn_offset(data, div2) ^ mask).wrapping_add(1)) & mask) != vn_offset(data, div)
                 {
                     continue;
@@ -870,13 +795,11 @@ impl Rule for RuleModOpt {
                     continue;
                 }
             }
-            // outvn2 = multop->getOut();
             let outvn2 = op_out(data, multop).expect("modopt: multop out");
             for addop in vn_descend(data, outvn2) {
                 if op_code(data, addop) != OpCode::CPUI_INT_ADD {
                     continue;
                 }
-                // lvn = addop->getIn(0); if (lvn == outvn2) lvn = addop->getIn(1);
                 let mut lvn = op_in(data, addop, 0).expect("modopt: addop in0");
                 if lvn == outvn2 {
                     lvn = op_in(data, addop, 1).expect("modopt: addop in1");
@@ -884,7 +807,6 @@ impl Rule for RuleModOpt {
                 if lvn != x {
                     continue;
                 }
-                // data.opSetInput(addop,x,0);
                 data.op_set_input(addop, x, 0).expect("modopt: opSetInput x");
                 if vn_is_constant(data, div) {
                     let dsize = vn_size(data, div);
@@ -915,7 +837,7 @@ impl Rule for RuleModOpt {
 pub struct RuleSignMod2nOpt;
 
 impl RuleSignMod2nOpt {
-    /// Constructor (C++ `RuleSignMod2nOpt(g)`), name "signmod2nopt".
+    /// Rule `RuleSignMod2nOpt` (name "signmod2nopt").
     pub fn new() -> RuleSignMod2nOpt {
         RuleSignMod2nOpt
     }
@@ -965,14 +887,11 @@ impl Rule for RuleSignMod2nOpt {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(1)->isConstant()) return 0;
         let in1 = op_in(data, op, 1).expect("signmod2nopt: in1");
         if !vn_is_constant(data, in1) {
             return 0;
         }
-        // int4 shiftAmt = op->getIn(1)->getOffset();
         let shift_amt = vn_offset(data, in1) as int4;
-        // Varnode *a = checkSignExtraction(op->getIn(0));
         let in0 = op_in(data, op, 0).expect("signmod2nopt: in0");
         let a = match RuleSignMod2nOpt::check_sign_extraction(data, in0) {
             Some(a) => a,
@@ -981,11 +900,8 @@ impl Rule for RuleSignMod2nOpt {
         if vn_is_free(data, a) {
             return 0;
         }
-        // Varnode *correctVn = op->getOut();
         let correct_vn = op_out(data, op).expect("signmod2nopt: out");
-        // int4 n = a->getSize() * 8 - shiftAmt;
         let n = vn_size(data, a) * 8 - shift_amt;
-        // uintb mask = (1 << n) - 1;
         // C++ `mask << n` on a uintb with x86 shift-count masking (count & 63).
         // With an 8-byte sign-extracted `a` and root shiftAmt == 0, n == 64, so
         // C++ computes `1 << (64 & 63) = 1`, then `1 - 1 = 0`. ADR-0003 mandates
@@ -1003,7 +919,6 @@ impl Rule for RuleSignMod2nOpt {
             if vn_offset(data, negone) != calc_mask(vn_size(data, correct_vn)) {
                 continue;
             }
-            // PcodeOp *baseOp = multop->getOut()->loneDescend();
             let mult_out = op_out(data, multop).expect("signmod2nopt: multop out");
             let base_op = match data.lone_descend(mult_out) {
                 Some(b) => b,
@@ -1012,9 +927,7 @@ impl Rule for RuleSignMod2nOpt {
             if op_code(data, base_op) != OpCode::CPUI_INT_ADD {
                 continue;
             }
-            // int4 slot = 1 - baseOp->getSlot(multop->getOut());
             let slot = 1 - op_slot(data, base_op, mult_out);
-            // Varnode *andOut = baseOp->getIn(slot);
             let mut and_out = op_in(data, base_op, slot).expect("signmod2nopt: baseOp slot");
             if !vn_is_written(data, and_out) {
                 continue;
@@ -1127,11 +1040,8 @@ impl Rule for RuleSignMod2nOpt {
                 continue;
             }
 
-            // data.opSetOpcode(baseOp, CPUI_INT_SREM);
             data.op_set_opcode(base_op, typeop_for(OpCode::CPUI_INT_SREM));
-            // data.opSetInput(baseOp, a, 0);
             data.op_set_input(base_op, a, 0).expect("signmod2nopt: baseOp in0");
-            // data.opSetInput(baseOp, data.newConstant(a->getSize(), mask+1), 1);
             let asize = vn_size(data, a);
             let c = data.new_constant(asize, mask + 1);
             data.op_set_input(base_op, c, 1).expect("signmod2nopt: baseOp in1");
@@ -1150,7 +1060,7 @@ impl Rule for RuleSignMod2nOpt {
 pub struct RuleSignMod2Opt;
 
 impl RuleSignMod2Opt {
-    /// Constructor (C++ `RuleSignMod2Opt(g)`), name "signmod2opt".
+    /// Rule `RuleSignMod2Opt` (name "signmod2opt").
     pub fn new() -> RuleSignMod2Opt {
         RuleSignMod2Opt
     }
@@ -1176,7 +1086,6 @@ impl Rule for RuleSignMod2Opt {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *constVn = op->getIn(1);
         let const_vn = op_in(data, op, 1).expect("signmod2opt: in1");
         if !vn_is_constant(data, const_vn) {
             return 0;
@@ -1184,7 +1093,6 @@ impl Rule for RuleSignMod2Opt {
         if vn_offset(data, const_vn) != 1 {
             return 0;
         }
-        // Varnode *addOut = op->getIn(0);
         let add_out = op_in(data, op, 0).expect("signmod2opt: in0");
         if !vn_is_written(data, add_out) {
             return 0;
@@ -1223,13 +1131,11 @@ impl Rule for RuleSignMod2Opt {
             return 0;
         }
         let mult_op = mult_op.expect("signmod2opt: multOp set");
-        // Varnode *base = RuleSignMod2nOpt::checkSignExtraction(multOp->getIn(0));
         let mult_in0 = op_in(data, mult_op, 0).expect("signmod2opt: multOp in0");
         let mut base = match RuleSignMod2nOpt::check_sign_extraction(data, mult_in0) {
             Some(b) => b,
             None => return 0,
         };
-        // Varnode *otherBase = addOp->getIn(1-multSlot);
         let mut other_base = op_in(data, add_op, 1 - mult_slot).expect("signmod2opt: addOp other");
         if base != other_base {
             if !vn_is_written(data, base) || !vn_is_written(data, other_base) {
@@ -1263,7 +1169,6 @@ impl Rule for RuleSignMod2Opt {
         if vn_is_free(data, base) {
             return 0;
         }
-        // Varnode *andOut = op->getOut();
         let mut and_out = op_out(data, op).expect("signmod2opt: out");
         if trunc {
             let ext_op = match data.lone_descend(and_out) {
@@ -1285,11 +1190,8 @@ impl Rule for RuleSignMod2Opt {
             if other != Some(base) {
                 continue;
             }
-            // data.opSetOpcode(rootOp, CPUI_INT_SREM);
             data.op_set_opcode(root_op, typeop_for(OpCode::CPUI_INT_SREM));
-            // data.opSetInput(rootOp,base,0);
             data.op_set_input(root_op, base, 0).expect("signmod2opt: rootOp in0");
-            // data.opSetInput(rootOp,data.newConstant(base->getSize(), 2),1);
             let bsize = vn_size(data, base);
             let c = data.new_constant(bsize, 2);
             data.op_set_input(root_op, c, 1).expect("signmod2opt: rootOp in1");
@@ -1307,7 +1209,7 @@ impl Rule for RuleSignMod2Opt {
 pub struct RuleSignMod2nOpt2;
 
 impl RuleSignMod2nOpt2 {
-    /// Constructor (C++ `RuleSignMod2nOpt2(g)`), name "signmod2nopt2".
+    /// Rule `RuleSignMod2nOpt2` (name "signmod2nopt2").
     pub fn new() -> RuleSignMod2nOpt2 {
         RuleSignMod2nOpt2
     }
@@ -1372,7 +1274,6 @@ impl RuleSignMod2nOpt2 {
     /// `lastOp`, `getTrueOut`/`getFalseOut`).  The basic-block graph IS available
     /// (W3-block), so this is fully ported.
     fn check_multiequal_form(data: &Funcdata, op: OpId, npow: uintb) -> Option<VarnodeId> {
-        // if (op->numInput() != 2) return 0;
         if op_num_input(data, op) != 2 {
             return None;
         }
@@ -1411,9 +1312,7 @@ impl RuleSignMod2nOpt2 {
             return None;
         }
         let base = base.expect("checkMultiequalForm: base set when slot<=1");
-        // BlockBasic *bl = op->getParent();
         let bl = data.obank().get(op).expect("checkMultiequalForm: op").get_parent()?;
-        // int4 innerSlot = 0; inner = (BlockBasic*)bl->getIn(innerSlot);
         let mut inner_slot: int4 = 0;
         let mut inner = block_get_in(data, bl, inner_slot);
         if block_size_out(data, inner) != 1 || block_size_in(data, inner) != 1 {
@@ -1423,18 +1322,14 @@ impl RuleSignMod2nOpt2 {
                 return None;
             }
         }
-        // BlockBasic *decision = (BlockBasic*)inner->getIn(0);
         let decision = block_get_in(data, inner, 0);
-        // if (bl->getIn(1 - innerSlot) != decision) return 0;
         if block_get_in(data, bl, 1 - inner_slot) != decision {
             return None;
         }
-        // PcodeOp *cbranch = decision->lastOp();
         let cbranch = data.bb_op_tail(decision)?;
         if op_code(data, cbranch) != OpCode::CPUI_CBRANCH {
             return None;
         }
-        // Varnode *boolVn = cbranch->getIn(1);
         let bool_vn = op_in(data, cbranch, 1).expect("checkMultiequalForm: cbranch in1");
         if !vn_is_written(data, bool_vn) {
             return None;
@@ -1450,7 +1345,6 @@ impl RuleSignMod2nOpt2 {
         if vn_offset(data, less_in1) != 0 {
             return None;
         }
-        // FlowBlock *negBlock = cbranch->isBooleanFlip() ? decision->getFalseOut() : decision->getTrueOut();
         let cbranch_flip =
             data.obank().get(cbranch).expect("checkMultiequalForm: cbranch").is_boolean_flip();
         let neg_block = if cbranch_flip {
@@ -1458,7 +1352,6 @@ impl RuleSignMod2nOpt2 {
         } else {
             block_get_true_out(data, decision)
         };
-        // int4 negSlot = (negBlock == inner) ? innerSlot : (1-innerSlot);
         let neg_slot = if neg_block == inner { inner_slot } else { 1 - inner_slot };
         if neg_slot != slot {
             return None;
@@ -1487,7 +1380,6 @@ impl Rule for RuleSignMod2nOpt2 {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *constVn = op->getIn(1);
         let const_vn = op_in(data, op, 1).expect("signmod2nopt2: in1");
         if !vn_is_constant(data, const_vn) {
             return 0;
@@ -1496,7 +1388,6 @@ impl Rule for RuleSignMod2nOpt2 {
         if vn_offset(data, const_vn) != mask {
             return 0; // Must be INT_MULT by -1
         }
-        // Varnode *andOut = op->getIn(0);
         let and_out = op_in(data, op, 0).expect("signmod2nopt2: in0");
         if !vn_is_written(data, and_out) {
             return 0;
@@ -1509,7 +1400,6 @@ impl Rule for RuleSignMod2nOpt2 {
         if !vn_is_constant(data, const_vn) {
             return 0;
         }
-        // uintb npow = (~constVn->getOffset() + 1) & mask;
         let npow = ((!vn_offset(data, const_vn)).wrapping_add(1)) & mask;
         if popcount(npow) != 1 {
             return 0; // constVn must be of form 11111..000..
@@ -1517,7 +1407,6 @@ impl Rule for RuleSignMod2nOpt2 {
         if npow == 1 {
             return 0;
         }
-        // Varnode *adjVn = andOp->getIn(0);
         let adj_vn = op_in(data, and_op, 0).expect("signmod2nopt2: andOp in0");
         if !vn_is_written(data, adj_vn) {
             return 0;
@@ -1541,7 +1430,6 @@ impl Rule for RuleSignMod2nOpt2 {
         if vn_is_free(data, base) {
             return 0;
         }
-        // Varnode *multOut = op->getOut();
         let mult_out = op_out(data, op).expect("signmod2nopt2: out");
         for root_op in vn_descend(data, mult_out) {
             if op_code(data, root_op) != OpCode::CPUI_INT_ADD {
@@ -1554,11 +1442,9 @@ impl Rule for RuleSignMod2nOpt2 {
             if slot == 0 {
                 data.op_set_input(root_op, base, 0).expect("signmod2nopt2: rootOp in0");
             }
-            // data.opSetInput(rootOp, data.newConstant(base->getSize(),npow), 1);
             let bsize = vn_size(data, base);
             let c = data.new_constant(bsize, npow);
             data.op_set_input(root_op, c, 1).expect("signmod2nopt2: rootOp in1");
-            // data.opSetOpcode(rootOp, CPUI_INT_SREM);
             data.op_set_opcode(root_op, typeop_for(OpCode::CPUI_INT_SREM));
             return 1;
         }
@@ -1579,7 +1465,7 @@ impl Rule for RuleSignMod2nOpt2 {
 pub struct RuleSegment;
 
 impl RuleSegment {
-    /// Constructor (C++ `RuleSegment(g)`), name "segment".
+    /// Rule `RuleSegment` (name "segment").
     pub fn new() -> RuleSegment {
         RuleSegment
     }
@@ -1606,7 +1492,6 @@ impl Rule for RuleSegment {
 
     fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
         // STUB(W4): SegmentOp *segdef =
-        //   data.getArch()->userops.getSegmentOp(op->getIn(0)->getSpaceFromConst()->getIndex());
         // ... segdef->execute(bindlist) / hasFarPointerSupport / contiguous_test /
         // findContiguousWhole are all unported W4 surfaces.  No change here.
         0
@@ -1623,10 +1508,10 @@ impl Rule for RuleSegment {
 /// // STUB(W4): the constructor reads `glb->getDefaultDataSpace()->isTruncated()`
 /// to decide `hasTruncations`; `applyOp` reaches `getSpaceFromConst`,
 /// `getDefaultCodeSpace`, and `truncatePointer` (which fabricates a SUBPIECE with
-/// a fresh output via `newUniqueOut`/`newVarnodeOut` — the W3-output seam).  The
+/// a fresh output via `newUniqueOut`/`newVarnodeOut` — the W3-output stub).  The
 /// pointer-flow propagation helpers (`trialSetPtrFlow`, `propagateFlowToDef`,
 /// `propagateFlowToReads`) are fully ported below; `truncatePointer` and the
-/// `getSpaceFromConst`/default-space reads bail at the seam.
+/// `getSpaceFromConst`/default-space reads bail at the stub.
 pub struct RulePtrFlow {
     /// `hasTruncations` (C++ field).  Without W4's `getDefaultDataSpace()`, this
     /// item cannot compute it; defaulted to `false` so the rule installs nothing
@@ -1636,7 +1521,7 @@ pub struct RulePtrFlow {
 }
 
 impl RulePtrFlow {
-    /// Constructor (C++ `RulePtrFlow(g,conf)`), name "ptrflow".
+    /// Rule `RulePtrFlow` (name "ptrflow").
     ///
     /// C++: `glb = conf; hasTruncations = glb->getDefaultDataSpace()->isTruncated();`
     /// // STUB(W4): `getDefaultDataSpace` unavailable; `has_truncations=false`.
@@ -1707,7 +1592,6 @@ impl Default for RulePtrFlow {
 
 impl Rule for RulePtrFlow {
     fn get_op_list(&self) -> Vec<OpCode> {
-        // if (!hasTruncations) return;  -- only join the pool when aggressive
         if !self.has_truncations {
             return Vec::new();
         }
@@ -1736,18 +1620,16 @@ impl Rule for RulePtrFlow {
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // Push pointer-ness.  Only the branches that do NOT need getSpaceFromConst
         // / getDefaultCodeSpace / truncatePointer are reachable here; the LOAD/
-        // STORE/CALLIND/BRANCHIND arms reach W4/W3-output seams.
+        // STORE/CALLIND/BRANCHIND arms reach W4/W3-output stubs.
         let mut made_change = 0;
         match op_code(data, op) {
             OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                 // STUB(W4): spc = op->getIn(0)->getSpaceFromConst();
-                //   if (vn->getSize() > spc->getAddrSize()) truncatePointer(...);  (W3-output)
                 //   then propagateFlowToDef(vn).  Deferred entirely.
                 return 0;
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_BRANCHIND => {
                 // STUB(W4): spc = data.getArch()->getDefaultCodeSpace();
-                //   if (vn->getSize() > spc->getAddrSize()) truncatePointer(...);  (W3-output)
                 return 0;
             }
             OpCode::CPUI_NEW => {
@@ -1812,7 +1694,7 @@ impl Rule for RulePtrFlow {
 pub struct RuleNegateNegate;
 
 impl RuleNegateNegate {
-    /// Constructor (C++ `RuleNegateNegate(g)`), name "negatenegate".
+    /// Rule `RuleNegateNegate` (name "negatenegate").
     pub fn new() -> RuleNegateNegate {
         RuleNegateNegate
     }
@@ -1838,7 +1720,6 @@ impl Rule for RuleNegateNegate {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *vn1 = op->getIn(0);
         let vn1 = op_in(data, op, 0).expect("negatenegate: in0");
         if !vn_is_written(data, vn1) {
             return 0;
@@ -1851,9 +1732,7 @@ impl Rule for RuleNegateNegate {
         if vn_is_free(data, vn2) {
             return 0;
         }
-        // data.opSetInput(op,vn2,0);
         data.op_set_input(op, vn2, 0).expect("negatenegate: opSetInput vn2");
-        // data.opSetOpcode(op,CPUI_COPY);
         data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
         1
     }
@@ -1873,7 +1752,7 @@ impl Rule for RuleNegateNegate {
 pub struct RuleConditionalMove;
 
 impl RuleConditionalMove {
-    /// Constructor (C++ `RuleConditionalMove(g)`), name "conditionalmove".
+    /// Rule `RuleConditionalMove` (name "conditionalmove").
     pub fn new() -> RuleConditionalMove {
         RuleConditionalMove
     }
@@ -1983,7 +1862,7 @@ impl RuleConditionalMove {
         ops: &mut Vec<OpId>,
     ) -> VarnodeId {
         if !ops.is_empty() {
-            // sort(ops.begin(),ops.end(),compareOp);  // by seqnum order
+            // by seqnum order
             ops.sort_by_key(|&o| {
                 data.obank().get(o).expect("constructBool: stale op").get_seq_num().get_order()
             });
@@ -2014,22 +1893,18 @@ impl Rule for RuleConditionalMove {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (op->numInput() != 2) return 0;
         if op_num_input(data, op) != 2 {
             return 0;
         }
-        // Varnode *bool0 = checkBoolean(op->getIn(0));
         let in0 = op_in(data, op, 0).expect("condmove: in0");
         if RuleConditionalMove::check_boolean(data, in0).is_none() {
             return 0;
         }
-        // Varnode *bool1 = checkBoolean(op->getIn(1));
         let in1 = op_in(data, op, 1).expect("condmove: in1");
         if RuleConditionalMove::check_boolean(data, in1).is_none() {
             return 0;
         }
 
-        // bb = op->getParent(); inblock0 = bb->getIn(0); ...
         let bb = match data.obank().get(op).expect("condmove: op").get_parent() {
             Some(b) => b,
             None => return 0,
@@ -2080,7 +1955,6 @@ impl Rule for RuleConditionalMove {
             return 0;
         }
 
-        // bool path0istrue
         let mut path0istrue = if rootblock0 != inblock0 {
             block_get_true_out(data, rootblock0) == inblock0
         } else {
@@ -2232,7 +2106,7 @@ impl Rule for RuleConditionalMove {
 pub struct RuleFloatCast;
 
 impl RuleFloatCast {
-    /// Constructor (C++ `RuleFloatCast(g)`), name "floatcast".
+    /// Rule `RuleFloatCast` (name "floatcast").
     pub fn new() -> RuleFloatCast {
         RuleFloatCast
     }
@@ -2258,7 +2132,6 @@ impl Rule for RuleFloatCast {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *vn1 = op->getIn(0);
         let vn1 = op_in(data, op, 0).expect("floatcast: in0");
         if !vn_is_written(data, vn1) {
             return 0;
@@ -2307,7 +2180,7 @@ impl Rule for RuleFloatCast {
 }
 
 // =============================================================================
-// RuleIgnoreNan (ruleaction.cc:9624)
+// RuleIgnoreNan
 // =============================================================================
 
 /// `RuleIgnoreNan` — remove certain NaN operations by assuming their result is
@@ -2322,7 +2195,7 @@ impl Rule for RuleFloatCast {
 pub struct RuleIgnoreNan;
 
 impl RuleIgnoreNan {
-    /// Constructor (C++ `RuleIgnoreNan(g)`), name "ignorenan".
+    /// Rule `RuleIgnoreNan` (name "ignorenan").
     pub fn new() -> RuleIgnoreNan {
         RuleIgnoreNan
     }

@@ -103,7 +103,6 @@ fn collect_reachable(
     phi_node_edges: &mut [PcodeOpNode],
     reachable: &mut Vec<OpId>,
 ) {
-    // sort(phiNodeEdges.begin(),phiNodeEdges.end());
     let obank = data.obank();
     phi_node_edges.sort_by(|a, b| {
         if a.less(b, obank) {
@@ -116,7 +115,6 @@ fn collect_reachable(
     });
     let mut count: usize = 0;
     let mut vn = vn;
-    // if (vn->isWritten()) { op = vn->getDef(); if (op->code()==MULTIEQUAL) {...} }
     if data.vbank().get(vn).expect("collectReachable: stale vn").is_written() {
         let op = data.vbank().get(vn).expect("collectReachable: stale vn").get_def().unwrap();
         if data.obank().get(op).expect("collectReachable: stale def").code() == OpCode::CPUI_MULTIEQUAL {
@@ -125,7 +123,6 @@ fn collect_reachable(
         }
     }
     loop {
-        // for(iter=vn->beginDescend();iter!=vn->endDescend();++iter)
         let descend: Vec<OpId> =
             data.vbank().get(vn).expect("collectReachable: stale vn").descend_iter().collect();
         for op in descend {
@@ -190,7 +187,6 @@ fn binary_search_edge(data: &Funcdata, edges: &[PcodeOpNode], target: &PcodeOpNo
 /// Does the output of the given op reunite with the alternate flow (C++
 /// `ActionConditionalConst::flowToAlternatePath`, `coreaction.cc:4355`).
 fn flow_to_alternate_path(data: &mut Funcdata, op: OpId) -> bool {
-    // if (op->isMark()) return true;
     if data.obank().get(op).expect("flowToAlternatePath: stale op").is_mark() {
         return true;
     }
@@ -269,25 +265,20 @@ fn place_copy(data: &mut Funcdata, op: OpId, bl: BlockId, const_vn: VarnodeId) -
     // Decide insertion point + the address to stamp on the new COPY.
     let (before, addr) = match last_op {
         None => {
-            // iter = bl->endOp();  addr = op->getAddr();
             (None, data.obank().get(op).expect("placeCopy: stale op").get_addr().clone())
         }
         Some(lop) if data.obank().get(lop).expect("placeCopy: stale lastOp").is_branch() => {
-            // iter = lastOp->getBasicIter();  addr = lastOp->getAddr();  (insert before branch)
+            // Insert before the branch.
             (Some(lop), data.obank().get(lop).expect("placeCopy: stale lastOp").get_addr().clone())
         }
         Some(lop) => {
-            // iter = bl->endOp();  addr = lastOp->getAddr();
             (None, data.obank().get(lop).expect("placeCopy: stale lastOp").get_addr().clone())
         }
     };
-    // copyOp = data.newOp(1,addr); opSetOpcode(copyOp, CPUI_COPY);
     let copy_op = data.new_op(1, addr);
     data.op_set_opcode(copy_op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
-    // outVn = data.newUniqueOut(constVn->getSize(), copyOp);
     let const_size = data.vbank().get(const_vn).expect("placeCopy: stale const vn").get_size();
     let out_vn = data.new_unique_out(const_size, copy_op).expect("placeCopy: newUniqueOut");
-    // data.opSetInput(copyOp,constVn,0);  data.opInsert(copyOp, bl, iter);
     data.op_set_input(copy_op, const_vn, 0).expect("placeCopy: opSetInput");
     data.op_insert(copy_op, bl, before);
     out_vn
@@ -312,7 +303,6 @@ fn place_multiple_constants(
         let bl = data.bblocks_ref().block(parent).get_in(phi_node_edges[i].slot);
         blocks.push(bl);
     }
-    // rootBlock = FlowBlock::findCommonBlock(blocks);
     let root_block = data.bblocks_mut().find_common_block_set(&blocks);
     let out_vn = place_copy(data, op.expect("placeMultiple: no flow-together op"), root_block, const_vn);
     for i in 0..phi_node_edges.len() {
@@ -351,11 +341,9 @@ fn execute_simple(data: &Funcdata, op: OpId, in_vals: &[uintb]) -> Option<uintb>
 /// given PcodeOp (C++ `ActionConditionalConst::pushConstant`,
 /// `coreaction.cc:4487`).
 fn push_constant(data: &mut Funcdata, points: &mut Vec<ConstPoint>, op: OpId) {
-    // if ((op->getEvalType() & special) != 0) return;
     if (data.obank().get(op).expect("pushConstant: stale op").get_eval_type() & pcodeop_flags::special) != 0 {
         return;
     }
-    // if (op->getOpcode()->isFloatingPointOp()) return;
     let opc = data.obank().get(op).expect("pushConstant: stale op").code();
     if crate::typeop::type_op_info(opc).is_floating_point_op() {
         return;
@@ -371,7 +359,6 @@ fn push_constant(data: &mut Funcdata, points: &mut Vec<ConstPoint>, op: OpId) {
         Some(v) => v,
         None => return,
     };
-    // if (outvn->getSize() > sizeof(uintb)) return;
     if data.vbank().get(out_vn).expect("pushConstant: stale out").get_size() as usize > std::mem::size_of::<uintb>() {
         return;
     }
@@ -399,7 +386,6 @@ fn push_constant(data: &mut Funcdata, points: &mut Vec<ConstPoint>, op: OpId) {
         Some(v) => v,
         None => return, // evalError
     };
-    // points.emplace_back(outvn,outval,front.constBlock,front.inSlot,front.blockIsDom);
     points.push(ConstPoint::from_value(out_vn, outval, front.const_block, front.in_slot, front.block_is_dom));
 }
 
@@ -531,7 +517,6 @@ fn propagate_constant(data: &mut Funcdata, points: &mut Vec<ConstPoint>, use_mul
                 if !use_multiequal {
                     continue;
                 }
-                // if (varVn->isAddrTied() && varVn->getAddr() == op->getOut()->getAddr()) continue;
                 let var_addr_tied = data.vbank().get(var_vn).expect("propagateConstant: stale vn").is_addr_tied();
                 if var_addr_tied {
                     let out = data.obank().get(op).expect("propagateConstant: stale op").get_out().unwrap();
@@ -628,7 +613,7 @@ fn propagate_constant(data: &mut Funcdata, points: &mut Vec<ConstPoint>, use_mul
             count += handle_phi_nodes(data, var_vn, const_vn.unwrap(), &mut phi_node_edges);
             phi_node_edges.clear();
         }
-        points.remove(0); // points.pop_front();
+        points.remove(0);
     }
     count
 }
@@ -677,7 +662,6 @@ fn find_const_compare(
         }
         std::mem::swap(&mut const_vn, &mut var_vn);
     }
-    // if (varVn->loneDescend() != 0) return;
     if lone_descend(data, var_vn).is_some() {
         return;
     }
@@ -743,7 +727,7 @@ pub(crate) fn condconst_apply(data: &mut Funcdata) -> int4 {
             data.bblocks_ref().restricted_by_conditional(out1, bl),
         ];
         let flip_edge = data.obank().get(c_branch).expect("condconst: stale cbranch").is_boolean_flip();
-        // if (boolVn->loneDescend() == 0)  -- the boolean is read more than once
+        // The boolean is read more than once.
         if lone_descend(data, bool_vn).is_none() {
             // Implied constants: bool=0 down false branch, bool=1 down true branch.
             let false_out = data.bblocks_ref().block(bl).get_false_out();

@@ -13,19 +13,19 @@
 //! [`specs`] lists every rule in **C++ definition order** (the order the classes
 //! appear in `ruleaction.cc`), so the W8 `universalAction` builder can splice
 //! these into the right [`ActionPool`]s.  Each [`RuleSpec`]'s `group` is the
-//! stage group the rule belongs to; see `docs/stage-mapping.md`.  17 of these
+//! stage group the rule belongs to; see `docs/history/stage-mapping.md`.  17 of these
 //! rules live in the `"analysis"` group; `RuleLoadVarnode`/`RuleStoreVarnode`
 //! are the exceptions — the C++ registers them in `actprop2` under the
 //! `"stackvars"` group (`coreaction.cc:5939-5940`).
 //!
-//! ## Cross-wave seams
+//! ## Cross-wave stubs
 //!
 //! The W3 IR data-model that these rules drive is itself mid-port; several
 //! `Funcdata` methods the upstream bodies call are not yet available to this
 //! parallel item (it owns only `ruleaction_4.rs`).  Where a method is missing the
 //! body is still transcribed and the missing call is routed through a local
 //! `// STUB`-noted shim; the affected rules are listed in this item's losses.
-//! The notable seams:
+//! The notable stubs:
 //!
 //!   - **`opSetOpcode(op, OpCode)`** resolves `glb->inst[opc]` (the W6 `TypeOp`
 //!     table) to cache the op's property flags.  That table is W6's; [`set_opcode`]
@@ -57,7 +57,7 @@ use crate::context::{OpId, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
-// Shared local shims (W3/W6 seams — see module docs)
+// Shared local shims (W3/W6 stubs — see module docs)
 // =============================================================================
 
 /// `data.opSetOpcode(op, opc)` — resolves the [`OpCode`] to a [`TypeOp`] and
@@ -92,12 +92,10 @@ fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
     let seqnum = data.obank().get(op).expect("new_unique_out: stale op").get_seq_num().clone();
     let def = DefOpInfo { id: op, seqnum };
     let ct = type_base_unknown(s);
-    // Varnode *vn = vbank.createDefUnique(s,ct,op);
     let vn = data
         .vbank_mut()
         .create_def_unique(s, ct, def, &mut |_, _, _| Ok(()))
         .expect("new_unique_out: createDefUnique");
-    // op->setOutput(vn);
     data.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
     vn
 }
@@ -112,7 +110,7 @@ fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
 /// callback here is a no-op (correct whenever no equivalent pre-exists, the case
 /// the calling rules construct).
 ///
-/// The C++ `Funcdata::newVarnodeOut` (`funcdata_varnode.cc:106`) tail then runs
+/// The C++ `Funcdata::newVarnodeOut` tail then runs
 /// `setVarnodeProperties(vn)` (the `localmap->queryProperties` symbol/flag seed).
 /// `RuleStoreVarnode` builds the output at the *global* storage address of a
 /// `STORE ram,#const,val`, so in C++ that seed paints `persist`/`addrtied` on the
@@ -122,7 +120,7 @@ fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
 /// heritage path (`Heritage::guard` + `guard_returns` RETURN-COPY), which is
 /// sufficient for every global-store datatest and does not regress the
 /// HighVariable-naming-dependent cases.  The call is retained so the marking
-/// re-lands here unchanged when the naming seam arrives.
+/// re-lands here unchanged when the naming hook arrives.
 fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> VarnodeId {
     let seqnum = data.obank().get(op).expect("new_varnode_out: stale op").get_seq_num().clone();
     let def = DefOpInfo { id: op, seqnum };
@@ -148,26 +146,22 @@ fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> Varnod
 /// The C++ prologue (unset `op`'s old output, steal `vn` from any prior def) is
 /// transcribed.  STUB(W3).
 fn op_set_output(data: &mut Funcdata, op: OpId, vn: VarnodeId) {
-    // if (vn == op->getOut()) return;
     if data.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
         return;
     }
-    // if (op->getOut() != 0) opUnsetOutput(op);
     if data.obank().get(op).expect("op_set_output: stale op").get_out().is_some() {
         data.op_unset_output(op);
     }
-    // if (vn->getDef() != 0) opUnsetOutput(vn->getDef());
     if let Some(defop) = data.vbank().get(vn).expect("op_set_output: stale vn").get_def() {
         data.op_unset_output(defop);
     }
-    // vn = vbank.setDef(vn, op);  (no unify for a fresh unique — no-op replace)
+    // No unify for a fresh unique — no-op replace closure.
     let seqnum = data.obank().get(op).expect("op_set_output: stale op").get_seq_num().clone();
     let def = DefOpInfo { id: op, seqnum };
     let vn = data
         .vbank_mut()
         .set_def(vn, def, &mut |_, _, _| Ok(()))
         .expect("op_set_output: setDef");
-    // op->setOutput(vn);
     data.obank_mut().get_mut(op).expect("op_set_output: stale op").set_output(Some(vn));
 }
 
@@ -249,7 +243,6 @@ fn seqnum_of(data: &Funcdata, op: OpId) -> SeqNum {
 pub struct RuleLoadVarnode;
 
 impl RuleLoadVarnode {
-    /// Constructor (C++ `RuleLoadVarnode(const string &g)`).
     pub fn new() -> RuleLoadVarnode {
         RuleLoadVarnode
     }
@@ -328,7 +321,6 @@ impl RuleLoadVarnode {
     /// Returns `Some((space, offoff))` if the LOAD/STORE `op` reads off a
     /// spacebase+constant (or a literal constant offset), else `None`.
     pub fn check_spacebase(data: &Funcdata, op: OpId) -> Option<(Rc<kuna_base::space::AddrSpace>, uintb)> {
-        // offvn = op->getIn(1); loadspace = op->getIn(0)->getSpaceFromConst();
         let offvn = in_vn(data, op, 1);
         let space_const = in_vn(data, op, 0);
         let loadspace = space_from_const(data, space_const)?;
@@ -390,17 +382,12 @@ impl Rule for RuleLoadVarnode {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // baseoff = checkSpacebase(data.getArch(),op,offoff);
-        // if (baseoff == 0) return 0;
         let (baseoff, offoff) = match RuleLoadVarnode::check_spacebase(data, op) {
             Some(v) => v,
             None => return 0,
         };
-        // size = op->getOut()->getSize();
         let size = size_of(data, out_vn(data, op));
-        // offoff = AddressToByte(offoff, baseoff->getWordSize());
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
-        // newvn = data.newVarnode(size, baseoff, offoff);
         let newvn = data.new_varnode_space_off(size, Rc::clone(&baseoff), offoff);
         data.op_set_input(op, newvn, 0).expect("RuleLoadVarnode: opSetInput");
         data.op_remove_input(op, 1);
@@ -410,24 +397,19 @@ impl Rule for RuleLoadVarnode {
         // clear the trigger and resolve the call's relative stack offset (the RSP
         // keystone's resolveSpacebaseRelative wire: required so `tryreg=true` yields
         // the proper stack offset and `&val` arg).
-        // Varnode *refvn = op->getOut();
         let refvn = out_vn(data, op);
-        // if (refvn->isSpacebasePlaceholder()) {
         let is_ph = data
             .vbank()
             .get(refvn)
             .map(|v| v.is_spacebase_placeholder())
             .unwrap_or(false);
         if is_ph {
-            // refvn->clearSpacebasePlaceholder(); // Clear the trigger
+            // Clear the trigger
             if let Some(v) = data.vbank_mut().get_mut(refvn) {
                 v.clear_spacebase_placeholder();
             }
-            // PcodeOp *placeOp = refvn->loneDescend();
             if let Some(place_op) = data.lone_descend(refvn) {
-                // FuncCallSpecs *fc = data.getCallSpecs(placeOp);
                 if let Some(fc_idx) = data.get_call_specs_index(place_op) {
-                    // if (fc != 0) fc->resolveSpacebaseRelative(data, refvn);
                     // The C++ mutates `fc` (a `FuncCallSpecs *`) while passing
                     // `&data`; lift the call-spec out with take/restore so the
                     // `&mut FuncCallSpecs` and `&mut Funcdata` borrows don't alias.
@@ -447,11 +429,10 @@ impl Rule for RuleLoadVarnode {
 
 /// \brief Convert STORE operations using a constant offset to COPY (C++
 /// `RuleStoreVarnode`).  STUB(W4): shares `RuleLoadVarnode::checkSpacebase` and
-/// `getScopeLocal()->markNotMapped`; see [`RuleLoadVarnode`]'s seam note.
+/// `getScopeLocal()->markNotMapped`; see [`RuleLoadVarnode`]'s stub note.
 pub struct RuleStoreVarnode;
 
 impl RuleStoreVarnode {
-    /// Constructor (C++ `RuleStoreVarnode(const string &g)`).
     pub fn new() -> RuleStoreVarnode {
         RuleStoreVarnode
     }
@@ -479,25 +460,18 @@ impl Rule for RuleStoreVarnode {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // baseoff = RuleLoadVarnode::checkSpacebase(data.getArch(),op,offoff);
-        // if (baseoff == 0) return 0;
         let (baseoff, offoff) = match RuleLoadVarnode::check_spacebase(data, op) {
             Some(v) => v,
             None => return 0,
         };
-        // size = op->getIn(2)->getSize();
         let size = size_of(data, in_vn(data, op, 2));
-        // offoff = AddressToByte(offoff, baseoff->getWordSize());
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
-        // Address addr(baseoff, offoff);  data.newVarnodeOut(size, addr, op);
         let addr = Address::new(Rc::clone(&baseoff), offoff);
         let outvn = new_varnode_out(data, size, addr, op);
-        // op->getOut()->setStackStore();
         data.vbank_mut().get_mut(outvn).expect("RuleStoreVarnode: stale out").set_stack_store();
         data.op_remove_input(op, 1);
         data.op_remove_input(op, 0);
         set_opcode(data, op, OpCode::CPUI_COPY);
-        // if (op->isStoreUnmapped()) data.getScopeLocal()->markNotMapped(baseoff,offoff,size,false);
         // ActionInternalStorage flags an eventual-constant STORE of an
         // <internal_storage> register (e.g. MIPS gp) as unmapped; converting it to a
         // COPY here unmaps the destination stack slot so it does not propagate as a
@@ -521,7 +495,6 @@ impl Rule for RuleStoreVarnode {
 pub struct RuleSubExtComm;
 
 impl RuleSubExtComm {
-    /// Constructor (C++ `RuleSubExtComm(const string &g)`).
     pub fn new() -> RuleSubExtComm {
         RuleSubExtComm
     }
@@ -546,32 +519,25 @@ impl Rule for RuleSubExtComm {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *base = op->getIn(0); if (!base->isWritten()) return 0;
         let base = in_vn(data, op, 0);
         if !is_written(data, base) {
             return 0;
         }
-        // PcodeOp *extop = base->getDef();
         let extop = def_of(data, base);
-        // if (code != INT_ZEXT && code != INT_SEXT) return 0;
         let extcode = code(data, extop);
         if extcode != OpCode::CPUI_INT_ZEXT && extcode != OpCode::CPUI_INT_SEXT {
             return 0;
         }
-        // Varnode *invn = extop->getIn(0); if (invn->isFree()) return 0;
         let invn = in_vn(data, extop, 0);
         if is_free(data, invn) {
             return 0;
         }
-        // int4 subcut = (int4)op->getIn(1)->getOffset();
         let subcut = offset_of(data, in_vn(data, op, 1)) as int4;
         let outvn = out_vn(data, op);
         let outsize = size_of(data, outvn);
         let invn_size = size_of(data, invn);
-        // if (out->getSize() + subcut <= invn->getSize())  -- SUBPIECE misses ext bits
         if outsize + subcut <= invn_size {
             data.op_set_input(op, invn, 0).expect("RuleSubExtComm: opSetInput");
-            // if (invn->getSize() == out->getSize()) { opRemoveInput(op,1); opSetOpcode(op,COPY); }
             if invn_size == outsize {
                 data.op_remove_input(op, 1);
                 set_opcode(data, op, OpCode::CPUI_COPY);
@@ -579,20 +545,16 @@ impl Rule for RuleSubExtComm {
             return 1;
         }
 
-        // if (subcut >= invn->getSize()) return 0;
         if subcut >= invn_size {
             return 0;
         }
 
         let newvn;
         if subcut != 0 {
-            // PcodeOp *newop = data.newOp(2,op->getAddr());
             let opaddr = addr_of(data, op);
             let newop = data.new_op(2, opaddr);
             set_opcode(data, newop, OpCode::CPUI_SUBPIECE);
-            // newvn = data.newUniqueOut(invn->getSize()-subcut,newop);
             newvn = new_unique_out(data, invn_size - subcut, newop);
-            // opSetInput(newop, newConstant(op->getIn(1)->getSize(), (uintb)subcut), 1);
             let csize = size_of(data, in_vn(data, op, 1));
             let cvn = data.new_constant(csize, subcut as uintb);
             data.op_set_input(newop, cvn, 1).expect("RuleSubExtComm: opSetInput");
@@ -619,7 +581,6 @@ impl Rule for RuleSubExtComm {
 pub struct RuleSubCommute;
 
 impl RuleSubCommute {
-    /// Constructor (C++ `RuleSubCommute(const string &g)`).
     pub fn new() -> RuleSubCommute {
         RuleSubCommute
     }
@@ -630,17 +591,13 @@ impl RuleSubCommute {
     /// The output of an INT_ZEXT/INT_SEXT is replaced with a smaller/truncated
     /// Varnode; returns the new smaller Varnode.
     pub fn shorten_extension(data: &mut Funcdata, ext_op: OpId, max_size: int4) -> VarnodeId {
-        // Varnode *origOut = extOp->getOut(); Address addr = origOut->getAddr();
         let orig_out = out_vn(data, ext_op);
         let orig_size = size_of(data, orig_out);
         let mut addr = data.vbank().get(orig_out).expect("shorten_extension: stale out").get_addr().clone();
-        // if (addr.isBigEndian()) addr = addr + (origOut->getSize() - maxSize);
         if addr.is_big_endian() {
             addr = &addr + ((orig_size - max_size) as i64);
         }
-        // data.opUnsetOutput(extOp);
         data.op_unset_output(ext_op);
-        // return data.newVarnodeOut(maxSize, addr, extOp);
         new_varnode_out(data, max_size, addr, ext_op)
     }
 
@@ -656,9 +613,7 @@ impl RuleSubCommute {
         mut ext1_in: VarnodeId,
     ) -> bool {
         let max_size;
-        // Varnode *outvn = longform->getOut();
         let outvn = out_vn(data, longform);
-        // if (outvn->loneDescend() != subOp) return false;
         if data.lone_descend(outvn) != Some(sub_op) {
             return false;
         }
@@ -677,12 +632,10 @@ impl RuleSubCommute {
             if is_free(data, ext1_in) {
                 return false;
             }
-            // if (longform->getIn(0)->loneDescend() != longform) return false;
             let lin0 = in_vn(data, longform, 0);
             if data.lone_descend(lin0) != Some(longform) {
                 return false;
             }
-            // ext0In = shortenExtension(longform->getIn(0)->getDef(), maxSize, data);
             let ext0_def = def_of(data, lin0);
             ext0_in = RuleSubCommute::shorten_extension(data, ext0_def, max_size);
         } else {
@@ -697,9 +650,8 @@ impl RuleSubCommute {
             let ext1_def = def_of(data, lin1);
             ext1_in = RuleSubCommute::shorten_extension(data, ext1_def, max_size);
         }
-        // data.opUnsetOutput(longform);
         data.op_unset_output(longform);
-        // outvn = data.newUniqueOut(maxSize,longform);  (truncated longform output)
+        // Truncated longform output.
         let outvn = new_unique_out(data, max_size, longform);
         data.op_set_input(longform, ext0_in, 0).expect("cancel_extensions: opSetInput");
         data.op_set_input(longform, ext1_in, 1).expect("cancel_extensions: opSetInput");
@@ -727,15 +679,12 @@ impl Rule for RuleSubCommute {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *base = op->getIn(0); if (!base->isWritten()) return 0;
         let base = in_vn(data, op, 0);
         if !is_written(data, base) {
             return 0;
         }
-        // int4 offset = op->getIn(1)->getOffset();
         let offset = offset_of(data, in_vn(data, op, 1)) as int4;
         let outvn = out_vn(data, op);
-        // if (outvn->isPrecisLo()||outvn->isPrecisHi()) return 0;
         {
             let ov = data.vbank().get(outvn).expect("RuleSubCommute: stale out");
             if ov.is_precis_lo() || ov.is_precis_hi() {
@@ -744,7 +693,6 @@ impl Rule for RuleSubCommute {
         }
         let insize = size_of(data, base);
         let outsize = size_of(data, outvn);
-        // PcodeOp *longform = base->getDef();
         let longform = def_of(data, base);
         let mut j: int4 = -1;
         match code(data, longform) {
@@ -753,7 +701,6 @@ impl Rule for RuleSubCommute {
                 if offset != 0 {
                     return 0;
                 }
-                // if (longform->getIn(0)->isWritten()) { ... } else return 0;
                 let lin0 = in_vn(data, longform, 0);
                 if is_written(data, lin0) {
                     let opc = code(data, def_of(data, lin0));
@@ -835,7 +782,6 @@ impl Rule for RuleSubCommute {
                 } else if is_constant(data, lin1) && (size_of(data, sext0_in) <= outsize) {
                     let val = offset_of(data, lin1);
                     let mut smallval = val & calc_mask(outsize);
-                    // smallval = sign_extend(smallval,outvn->getSize(),insize);
                     smallval = sign_extend_sized(smallval, outsize, insize);
                     if val != smallval {
                         return 0;
@@ -848,7 +794,7 @@ impl Rule for RuleSubCommute {
                 if offset != 0 {
                     return 0; // Only commutes with least significant SUBPIECE
                 }
-                // if (longform->getIn(0)->isSpacebase()) return 0; // Deconflict RulePtrArith
+                // Deconflict RulePtrArith
                 let lin0 = in_vn(data, longform, 0);
                 if data.vbank().get(lin0).expect("RuleSubCommute: stale lin0").is_spacebase() {
                     return 0;
@@ -893,7 +839,6 @@ impl Rule for RuleSubCommute {
         for i in 0..numinput {
             let vn = in_vn(data, longform, i);
             if i != j {
-                // if (lastIn != vn || newVn == 0)  -- don't duplicate the SUBPIECE
                 //   if inputs are the same.  The else-branch only runs when
                 //   `last_in == Some(vn)` *and* `new_vn` is already Some.
                 match new_vn.filter(|_| last_in == Some(vn)) {
@@ -905,7 +850,6 @@ impl Rule for RuleSubCommute {
                         let opaddr = addr_of(data, op);
                         let newsub = data.new_op(2, opaddr); // Commuted SUBPIECE op
                         set_opcode(data, newsub, OpCode::CPUI_SUBPIECE);
-                        // newVn = data.newUniqueOut(outvn->getSize(),newsub);
                         let nv = new_unique_out(data, outsize, newsub);
                         new_vn = Some(nv);
                         data.op_set_input(longform, nv, i).expect("RuleSubCommute: opSetInput");
@@ -919,9 +863,8 @@ impl Rule for RuleSubCommute {
             }
             last_in = Some(vn);
         }
-        // data.opSetOutput(longform,outvn);
         op_set_output(data, longform, outvn);
-        // data.opDestroy(op);  -- Get rid of old SUBPIECE
+        // Get rid of old SUBPIECE
         data.op_destroy(op);
         1
     }
@@ -938,7 +881,6 @@ impl Rule for RuleSubCommute {
 pub struct RuleConcatCommute;
 
 impl RuleConcatCommute {
-    /// Constructor (C++ `RuleConcatCommute(const string &g)`).
     pub fn new() -> RuleConcatCommute {
         RuleConcatCommute
     }
@@ -963,14 +905,12 @@ impl Rule for RuleConcatCommute {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // int4 outsz = op->getOut()->getSize();
         let outsz = size_of(data, out_vn(data, op));
-        // if (outsz > sizeof(uintb)) return 0;  // FIXME precision for constants
+        // FIXME precision for constants
         if outsz as usize > std::mem::size_of::<uintb>() {
             return 0;
         }
         for i in 0..2i32 {
-            // vn = op->getIn(i); if (!vn->isWritten()) continue;
             let vn = in_vn(data, op, i);
             if !is_written(data, vn) {
                 continue;
@@ -1046,7 +986,6 @@ impl Rule for RuleConcatCommute {
 pub struct RuleConcatZext;
 
 impl RuleConcatZext {
-    /// Constructor (C++ `RuleConcatZext(const string &g)`).
     pub fn new() -> RuleConcatZext {
         RuleConcatZext
     }
@@ -1071,7 +1010,6 @@ impl Rule for RuleConcatZext {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // hi = op->getIn(0); if (!hi->isWritten()) return 0;
         let mut hi = in_vn(data, op, 0);
         if !is_written(data, hi) {
             return 0;
@@ -1115,7 +1053,6 @@ impl Rule for RuleConcatZext {
 pub struct RuleZextCommute;
 
 impl RuleZextCommute {
-    /// Constructor (C++ `RuleZextCommute(const string &g)`).
     pub fn new() -> RuleZextCommute {
         RuleZextCommute
     }
@@ -1140,7 +1077,6 @@ impl Rule for RuleZextCommute {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *zextvn = op->getIn(0); if (!zextvn->isWritten()) return 0;
         let zextvn = in_vn(data, op, 0);
         if !is_written(data, zextvn) {
             return 0;
@@ -1153,9 +1089,7 @@ impl Rule for RuleZextCommute {
         if is_free(data, zextin) {
             return 0;
         }
-        // Varnode *savn = op->getIn(1);
         let savn = in_vn(data, op, 1);
-        // if ((!savn->isConstant())&&(savn->isFree())) return 0;
         if !is_constant(data, savn) && is_free(data, savn) {
             return 0;
         }
@@ -1183,7 +1117,6 @@ impl Rule for RuleZextCommute {
 pub struct RuleZextShiftZext;
 
 impl RuleZextShiftZext {
-    /// Constructor (C++ `RuleZextShiftZext(const string &g)`).
     pub fn new() -> RuleZextShiftZext {
         RuleZextShiftZext
     }
@@ -1208,7 +1141,6 @@ impl Rule for RuleZextShiftZext {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *invn = op->getIn(0); if (!invn->isWritten()) return 0;
         let invn = in_vn(data, op, 0);
         if !is_written(data, invn) {
             return 0;
@@ -1246,9 +1178,7 @@ impl Rule for RuleZextShiftZext {
             return 0;
         }
 
-        // uintb sa = shiftop->getIn(1)->getOffset();
         let sa = offset_of(data, in_vn(data, shiftop, 1));
-        // if (sa > 8*(uintb)(zext2op->getOut()->getSize() - rootvn->getSize())) return 0;
         let zext2_out_size = size_of(data, out_vn(data, zext2op));
         if sa > 8 * ((zext2_out_size - size_of(data, rootvn)) as uintb) {
             return 0; // Shift might lose bits off the top
@@ -1276,7 +1206,6 @@ impl Rule for RuleZextShiftZext {
 pub struct RuleShiftAnd;
 
 impl RuleShiftAnd {
-    /// Constructor (C++ `RuleShiftAnd(const string &g)`).
     pub fn new() -> RuleShiftAnd {
         RuleShiftAnd
     }
@@ -1302,7 +1231,6 @@ impl Rule for RuleShiftAnd {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *cvn = op->getIn(1); if (!cvn->isConstant()) return 0;
         let cvn = in_vn(data, op, 1);
         if !is_constant(data, cvn) {
             return 0;
@@ -1361,7 +1289,7 @@ impl Rule for RuleShiftAnd {
         if (mask & nzm) != nzm {
             return 0;
         }
-        // data.opSetInput(op, invn, 0);  // Bypass the INT_AND
+        // Bypass the INT_AND
         data.op_set_input(op, invn, 0).expect("RuleShiftAnd: opSetInput");
         1
     }
@@ -1376,7 +1304,6 @@ impl Rule for RuleShiftAnd {
 pub struct RuleConcatZero;
 
 impl RuleConcatZero {
-    /// Constructor (C++ `RuleConcatZero(const string &g)`).
     pub fn new() -> RuleConcatZero {
         RuleConcatZero
     }
@@ -1401,17 +1328,14 @@ impl Rule for RuleConcatZero {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(1)->isConstant()) return 0;
         let in1 = in_vn(data, op, 1);
         if !is_constant(data, in1) {
             return 0;
         }
-        // if (op->getIn(1)->getOffset() != 0) return 0;
         if offset_of(data, in1) != 0 {
             return 0;
         }
 
-        // int4 sa = 8*op->getIn(1)->getSize();
         let sa = 8 * size_of(data, in1);
         let highvn = in_vn(data, op, 0);
         let opaddr = addr_of(data, op);
@@ -1438,7 +1362,6 @@ impl Rule for RuleConcatZero {
 pub struct RuleConcatLeftShift;
 
 impl RuleConcatLeftShift {
-    /// Constructor (C++ `RuleConcatLeftShift(const string &g)`).
     pub fn new() -> RuleConcatLeftShift {
         RuleConcatLeftShift
     }
@@ -1463,7 +1386,6 @@ impl Rule for RuleConcatLeftShift {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Varnode *vn2 = op->getIn(1); if (!vn2->isWritten()) return 0;
         let vn2 = in_vn(data, op, 1);
         if !is_written(data, vn2) {
             return 0;
@@ -1497,7 +1419,7 @@ impl Rule for RuleConcatLeftShift {
             return 0;
         }
         sa /= 8; // bits to bytes
-        // if (sa + b->getSize() != tmpvn->getSize()) return 0;  // Must shift to most sig boundary
+        // Must shift to most sig boundary
         if sa + size_of(data, b) != size_of(data, tmpvn) {
             return 0;
         }
@@ -1510,7 +1432,6 @@ impl Rule for RuleConcatLeftShift {
         data.op_set_input(newop, b, 1).expect("RuleConcatLeftShift: opSetInput");
         data.op_insert_before(newop, op);
         data.op_set_input(op, newout, 0).expect("RuleConcatLeftShift: opSetInput");
-        // opSetInput(op, newConstant(op->getOut()->getSize()-newout->getSize(), 0), 1);
         let csize = size_of(data, out_vn(data, op)) - size_of(data, newout);
         let cvn = data.new_constant(csize, 0);
         data.op_set_input(op, cvn, 1).expect("RuleConcatLeftShift: opSetInput");
@@ -1529,7 +1450,6 @@ impl Rule for RuleConcatLeftShift {
 pub struct RuleSubZext;
 
 impl RuleSubZext {
-    /// Constructor (C++ `RuleSubZext(const string &g)`).
     pub fn new() -> RuleSubZext {
         RuleSubZext
     }
@@ -1554,7 +1474,6 @@ impl Rule for RuleSubZext {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // subvn = op->getIn(0); if (!subvn->isWritten()) return 0;
         let subvn = in_vn(data, op, 0);
         if !is_written(data, subvn) {
             return 0;
@@ -1633,7 +1552,7 @@ impl Rule for RuleSubZext {
             // be >= 64 (legal p-code); the x86 target masks the count to `& 63`,
             // so use wshr (ADR 0003). cast: low 6 bits of `sa` are the x86 mask.
             let val = val.wshr(sa as u32);
-            // sa += subop->getIn(1)->getOffset() * 8;  // total shift = truncation + small shift
+            // total shift = truncation + small shift
             let sa = sa + offset_of(data, in_vn(data, subop, 1)) * 8;
             let basesize = size_of(data, basevn);
             let newvn = data.new_unique(basesize, None);
@@ -1664,7 +1583,6 @@ impl Rule for RuleSubZext {
 pub struct RuleSubCancel;
 
 impl RuleSubCancel {
-    /// Constructor (C++ `RuleSubCancel(const string &g)`).
     pub fn new() -> RuleSubCancel {
         RuleSubCancel
     }
@@ -1689,7 +1607,6 @@ impl Rule for RuleSubCancel {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // base = op->getIn(0); if (!base->isWritten()) return 0;
         let base = in_vn(data, op, 0);
         if !is_written(data, base) {
             return 0;
@@ -1707,7 +1624,6 @@ impl Rule for RuleSubCancel {
 
         if opc == OpCode::CPUI_INT_AND {
             let cvn = in_vn(data, extop, 1);
-            // if (offset==0 && cvn->isConstant() && cvn->getOffset()==calc_mask(outsize))
             if offset == 0 && is_constant(data, cvn) && offset_of(data, cvn) == calc_mask(outsize) {
                 let thruvn = in_vn(data, extop, 0);
                 if !is_free(data, thruvn) {
@@ -1770,7 +1686,6 @@ impl Rule for RuleSubCancel {
 pub struct RuleShiftSub;
 
 impl RuleShiftSub {
-    /// Constructor (C++ `RuleShiftSub(const string &g)`).
     pub fn new() -> RuleShiftSub {
         RuleShiftSub
     }
@@ -1795,7 +1710,6 @@ impl Rule for RuleShiftSub {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->getIn(0)->isWritten()) return 0;
         let in0 = in_vn(data, op, 0);
         if !is_written(data, in0) {
             return 0;
@@ -1820,7 +1734,7 @@ impl Rule for RuleShiftSub {
         let insize = size_of(data, vn);
         let outsize = size_of(data, out_vn(data, op));
         c -= n / 8;
-        // if (c < 0 || c + outsize > insize) return 0;  // natural truncation?
+        // natural truncation?
         if c < 0 || c + outsize > insize {
             return 0;
         }
@@ -1841,7 +1755,6 @@ impl Rule for RuleShiftSub {
 pub struct RuleHumptyDumpty;
 
 impl RuleHumptyDumpty {
-    /// Constructor (C++ `RuleHumptyDumpty(const string &g)`).
     pub fn new() -> RuleHumptyDumpty {
         RuleHumptyDumpty
     }
@@ -1866,7 +1779,6 @@ impl Rule for RuleHumptyDumpty {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // vn1 = op->getIn(0); if (!vn1->isWritten()) return 0;
         let vn1 = in_vn(data, op, 0);
         if !is_written(data, vn1) {
             return 0;
@@ -1884,7 +1796,6 @@ impl Rule for RuleHumptyDumpty {
             return 0; // from piece2
         }
 
-        // root = sub1->getIn(0); if (root != sub2->getIn(0)) return 0;
         let root = in_vn(data, sub1, 0);
         if root != in_vn(data, sub2, 0) {
             return 0; // pieces of the same whole
@@ -1895,12 +1806,12 @@ impl Rule for RuleHumptyDumpty {
         let size1 = size_of(data, vn1);
         let size2 = size_of(data, vn2);
 
-        // if (pos1 != pos2 + size2) return 0;  // Pieces do not match up
+        // Pieces do not match up
         if pos1 != pos2 + (size2 as uintb) {
             return 0;
         }
 
-        // if ((pos2==0)&&(size1+size2==root->getSize()))  // Pieced together whole thing
+        // Pieced together whole thing
         if pos2 == 0 && (size1 + size2 == size_of(data, root)) {
             data.op_remove_input(op, 1);
             data.op_set_input(op, root, 0).expect("RuleHumptyDumpty: opSetInput");
@@ -1929,7 +1840,6 @@ impl Rule for RuleHumptyDumpty {
 pub struct RuleDumptyHump;
 
 impl RuleDumptyHump {
-    /// Constructor (C++ `RuleDumptyHump(const string &g)`).
     pub fn new() -> RuleDumptyHump {
         RuleDumptyHump
     }
@@ -1954,7 +1864,6 @@ impl Rule for RuleDumptyHump {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // base = op->getIn(0); if (!base->isWritten()) return 0;
         let base = in_vn(data, op, 0);
         if !is_written(data, base) {
             return 0;
@@ -1982,7 +1891,6 @@ impl Rule for RuleDumptyHump {
             offset -= size_of(data, vn2); // offset relative to vn1
         }
 
-        // if (vn->isFree() && (!vn->isConstant())) return 0;
         if is_free(data, vn) && !is_constant(data, vn) {
             return 0;
         }
@@ -2011,7 +1919,6 @@ impl Rule for RuleDumptyHump {
 pub struct RuleHumptyOr;
 
 impl RuleHumptyOr {
-    /// Constructor (C++ `RuleHumptyOr(const string &g)`).
     pub fn new() -> RuleHumptyOr {
         RuleHumptyOr
     }
@@ -2036,7 +1943,6 @@ impl Rule for RuleHumptyOr {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // vn1 = op->getIn(0); if (!vn1->isWritten()) return 0;
         let vn1 = in_vn(data, op, 0);
         if !is_written(data, vn1) {
             return 0;
@@ -2091,7 +1997,6 @@ impl Rule for RuleHumptyOr {
                 data.op_set_input(op, newconst, 1).expect("RuleHumptyOr: opSetInput");
             }
         } else {
-            // if (!b->isHeritageKnown()) return 0;
             if !data.vbank().get(b).expect("RuleHumptyOr: stale b").is_heritage_known() {
                 return 0;
             }
@@ -2099,7 +2004,7 @@ impl Rule for RuleHumptyOr {
                 return 0;
             }
             let a_mask = nzmask_of(data, a);
-            // if ((b->getNZMask() & aMask)==0) return 0;  // RuleAndDistribute would reverse us
+            // RuleAndDistribute would reverse us
             if (nzmask_of(data, b) & a_mask) == 0 {
                 return 0;
             }
@@ -2137,7 +2042,6 @@ impl Rule for RuleHumptyOr {
 pub struct RuleSwitchSingle;
 
 impl RuleSwitchSingle {
-    /// Constructor (C++ `RuleSwitchSingle(const string &g)`).
     pub fn new() -> RuleSwitchSingle {
         RuleSwitchSingle
     }
@@ -2162,7 +2066,6 @@ impl Rule for RuleSwitchSingle {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // BlockBasic *bb = op->getParent(); if (bb->sizeOut() != 1) return 0;
         let bb = match data.obank().get(op).expect("RuleSwitchSingle: stale op").get_parent() {
             Some(b) => b,
             None => return 0,
@@ -2170,7 +2073,6 @@ impl Rule for RuleSwitchSingle {
         if data.bblocks_ref().block(bb).size_out() != 1 {
             return 0;
         }
-        // JumpTable *jt = data.findJumpTable(op); if (jt == 0) return 0;
         //   -- STUB(W?-jumptable): findJumpTable + JumpTable accessors + newCodeRef
         //   + removeJumpTable + getStructure().clear() + warningHeader unported.
         //   The remaining body (label scan, BRANCHIND->BRANCH conversion) is
@@ -2191,13 +2093,12 @@ impl Rule for RuleSwitchSingle {
 /// STUB(W3-block): the body needs `Funcdata::opNormalizeFlip` and
 /// `opFlipCondition` (the CBRANCH condition-flip block primitives) — not ported
 /// to this wave's `Funcdata`.  The `isBooleanFlip` guard and the new-op shell are
-/// transcribed; the two flip calls are routed to seam shims, so the BOOL_NEGATE
+/// transcribed; the two flip calls are routed to stub shims, so the BOOL_NEGATE
 /// insertion path is reached but `opNormalizeFlip` always reports "no normalize"
 /// and `opFlipCondition` is a no-op.  Recorded as a loss.
 pub struct RuleCondNegate;
 
 impl RuleCondNegate {
-    /// Constructor (C++ `RuleCondNegate(const string &g)`).
     pub fn new() -> RuleCondNegate {
         RuleCondNegate
     }
@@ -2222,16 +2123,13 @@ impl Rule for RuleCondNegate {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->isBooleanFlip()) return 0;
         if !data.obank().get(op).expect("RuleCondNegate: stale op").is_boolean_flip() {
             return 0;
         }
-        // if (data.opNormalizeFlip(op)) return 1;
         if data.op_normalize_flip(op).expect("RuleCondNegate: opNormalizeFlip") {
             return 1;
         }
 
-        // vn = op->getIn(1);
         let vn = in_vn(data, op, 1);
         let opaddr = addr_of(data, op);
         let newop = data.new_op(1, opaddr);
@@ -2240,7 +2138,7 @@ impl Rule for RuleCondNegate {
         data.op_set_input(newop, vn, 0).expect("RuleCondNegate: opSetInput");
         data.op_set_input(op, outvn, 1).expect("RuleCondNegate: opSetInput");
         data.op_insert_before(newop, op);
-        // data.opFlipCondition(op);  // Flip meaning of condition
+        // Flip meaning of condition
         //   NOTE: fallthru block is still same status (the flag toggle clears the
         //   boolean_flip so the rule does not re-fire — the oscillation fix).
         data.op_flip_condition(op);

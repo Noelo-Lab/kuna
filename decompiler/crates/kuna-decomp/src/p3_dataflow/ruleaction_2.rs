@@ -7,7 +7,7 @@
 //! creation/insertion sequence (the rule body IS the decompiler's output, so a
 //! reordered statement changes datatest text — see the porting brief).
 //!
-//! # Cross-wave seams used by this batch
+//! # Cross-wave stubs used by this batch
 //!
 //! * **W6 opcode resolution** (`glb->inst[opc]`): the C++ `Funcdata::opSetOpcode`
 //!   takes an [`OpCode`] and looks up the singleton `TypeOp` in the
@@ -32,7 +32,7 @@
 //!   `Funcdata::opBoolNegate`.  The rule structure is transcribed in full;
 //!   `op_bool_negate` is implemented locally (it only needs the op factories),
 //!   but `is_match` routes the non-trivial comparison through the
-//!   [`boolean_match`] seam, which handles only the `vn1 == vn2` trivial case and
+//!   [`boolean_match`] stub, which handles only the `vn1 == vn2` trivial case and
 //!   otherwise reports "uncorrelated".  // STUB(W5-expression) — recorded as a
 //!   loss.
 
@@ -47,7 +47,7 @@ use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
-// W6 opcode resolution seam + W3 output-creation helpers
+// W6 opcode resolution stub + W3 output-creation helpers
 // =============================================================================
 
 /// Build the [`TypeOp`] singleton for an [`OpCode`] this batch emits
@@ -57,7 +57,7 @@ use crate::varnode::DefOpInfo;
 /// `decompiler/cpp/typeop.cc` (the bits `PcodeOp::setOpcode` caches into the
 /// op's `flags`).  Only the opcodes the rules in this file set are listed; an
 /// unlisted opcode panics (an internal invariant — a rule emitted an opcode the
-/// seam does not cover).
+/// shim does not cover).
 fn op_typeop(opc: OpCode) -> TypeOp {
     use pcodeop_flags as f;
     let (flags, name): (u32, &str) = match opc {
@@ -265,7 +265,7 @@ fn varnodes_equiv(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
 }
 
 // =============================================================================
-// RuleFloatRange  (ruleaction.cc:1444)
+// RuleFloatRange
 // =============================================================================
 
 /// `(V f< W)||(V f== W)   =>   V f<= W` (and similar variants).  C++
@@ -373,7 +373,7 @@ impl Rule for RuleFloatRange {
 }
 
 // =============================================================================
-// RuleAndCommute  (ruleaction.cc:1527)
+// RuleAndCommute
 // =============================================================================
 
 /// `(V << W) & d  =>  (V & (W >> c)) << c`.  C++ `RuleAndCommute`
@@ -558,7 +558,7 @@ impl Rule for RuleAndCommute {
 }
 
 // =============================================================================
-// RuleAndPiece  (ruleaction.cc:1635)
+// RuleAndPiece
 // =============================================================================
 
 /// `V & concat(W,X)  =>  zext(X)` (when the upper part is known zero), or
@@ -663,7 +663,7 @@ impl Rule for RuleAndPiece {
 }
 
 // =============================================================================
-// RuleAndZext  (ruleaction.cc:1701)
+// RuleAndZext
 // =============================================================================
 
 /// `sext(X) & 0xffff  =>  zext(X)` (and the `concat(Y,X)` variant).  C++
@@ -717,7 +717,7 @@ impl Rule for RuleAndZext {
 }
 
 // =============================================================================
-// RuleAndCompare  (ruleaction.cc:1746)
+// RuleAndCompare
 // =============================================================================
 
 /// `zext(V) & c == 0  =>  V & (c & mask) == 0` (and the `sub(V,c)` variant).
@@ -809,7 +809,7 @@ impl Rule for RuleAndCompare {
 }
 
 // =============================================================================
-// RuleDoubleSub  (ruleaction.cc:1801)
+// RuleDoubleSub
 // =============================================================================
 
 /// `sub( sub(V,c), d)  =>  sub(V, c+d)`.  C++ `RuleDoubleSub`
@@ -850,7 +850,7 @@ impl Rule for RuleDoubleSub {
 }
 
 // =============================================================================
-// RuleDoubleShift  (ruleaction.cc:1833)
+// RuleDoubleShift
 // =============================================================================
 
 /// Combine/cancel chained INT_LEFT/INT_RIGHT shifts (INT_MULT by a power of 2
@@ -995,7 +995,7 @@ impl Rule for RuleDoubleShift {
 }
 
 // =============================================================================
-// RuleDoubleArithShift  (ruleaction.cc:1936)
+// RuleDoubleArithShift
 // =============================================================================
 
 /// `(x s>> c) s>> d   =>  x s>> saturate(c + d)`.  C++ `RuleDoubleArithShift`
@@ -1056,7 +1056,7 @@ impl Rule for RuleDoubleArithShift {
 }
 
 // =============================================================================
-// RuleConcatShift  (ruleaction.cc:1971)
+// RuleConcatShift
 // =============================================================================
 
 /// `concat(V,W) >> c  =>  zext(V)` (signed shift gives sext).  C++
@@ -1126,7 +1126,7 @@ impl Rule for RuleConcatShift {
 }
 
 // =============================================================================
-// RuleLeftRight  (ruleaction.cc:2022)
+// RuleLeftRight
 // =============================================================================
 
 /// `(V << c) s>> c  =>  sext( sub(V, #0) )` (and the unsigned variant).  C++
@@ -1208,7 +1208,7 @@ impl Rule for RuleLeftRight {
 }
 
 // =============================================================================
-// RuleShiftCompare  (ruleaction.cc:2076)
+// RuleShiftCompare
 // =============================================================================
 
 /// `V >> c == d  =>  V == (d << c)` (and the left-shift / mult / div variants).
@@ -1351,7 +1351,7 @@ impl Rule for RuleShiftCompare {
 }
 
 // =============================================================================
-// RuleLessEqual  (ruleaction.cc:2261)
+// RuleLessEqual
 // =============================================================================
 
 /// `V < W || V == W  =>  V <= W` (and the `!=` / signed variants).  C++
@@ -1435,7 +1435,7 @@ impl Rule for RuleLessEqual {
 }
 
 // =============================================================================
-// RuleLessNotEqual  (ruleaction.cc:2319)
+// RuleLessNotEqual
 // =============================================================================
 
 /// `V <= W && V != W  =>  V < W` (and the signed variant).  C++
@@ -1511,7 +1511,7 @@ impl Rule for RuleLessNotEqual {
 }
 
 // =============================================================================
-// RuleTrivialArith  (ruleaction.cc:2371)
+// RuleTrivialArith
 // =============================================================================
 
 /// Simplify binary ops whose two inputs hold the same value (`V == V => true`,
@@ -1632,7 +1632,7 @@ impl Rule for RuleTrivialArith {
 }
 
 // =============================================================================
-// RuleTrivialBool  (ruleaction.cc:2443)
+// RuleTrivialBool
 // =============================================================================
 
 /// Simplify a boolean op with one constant operand (`V && false => false`,
@@ -1682,7 +1682,7 @@ impl Rule for RuleTrivialBool {
 }
 
 // =============================================================================
-// RuleZextEliminate  (ruleaction.cc:2506)
+// RuleZextEliminate
 // =============================================================================
 
 /// `zext(V) == c  =>  V == c` (and `!=`, `<`, `<=` variants).  C++
@@ -1756,7 +1756,7 @@ impl Rule for RuleZextEliminate {
 }
 
 // =============================================================================
-// RuleSlessToLess  (ruleaction.cc:2559)
+// RuleSlessToLess
 // =============================================================================
 
 /// Convert INT_SLESS(EQUAL) to INT_LESS(EQUAL) when both operands are known
@@ -1793,7 +1793,7 @@ impl Rule for RuleSlessToLess {
 }
 
 // =============================================================================
-// RuleZextSless  (ruleaction.cc:2583)
+// RuleZextSless
 // =============================================================================
 
 /// `zext(V) s< c  =>  V < c`.  C++ `RuleZextSless` (`ruleaction.cc:2574`).
@@ -1863,7 +1863,7 @@ impl Rule for RuleZextSless {
 }
 
 // =============================================================================
-// RuleBitUndistribute  (ruleaction.cc:2633)
+// RuleBitUndistribute
 // =============================================================================
 
 /// `zext(V) & zext(W)  =>  zext( V & W )` and `(V >> X) | (W >> X)  =>  (V | W)
@@ -1960,7 +1960,7 @@ impl Rule for RuleBitUndistribute {
 }
 
 // =============================================================================
-// RuleBooleanUndistribute  (ruleaction.cc:2730)
+// RuleBooleanUndistribute
 // =============================================================================
 
 /// Boolean-match result, mirroring `BooleanMatch`'s enum (`expression.hh`).
@@ -1976,7 +1976,7 @@ mod boolean_match {
 /// `BooleanMatch::evaluate(vn1, vn2, depth)` — // STUB(W5-expression).
 ///
 /// The real algorithm lives in `expression.cc` (a different wave's module, still
-/// a stub).  This seam handles only the trivial `vn1 == vn2 => same` head of the
+/// a stub).  This stub handles only the trivial `vn1 == vn2 => same` head of the
 /// C++ routine; every other pair is reported `uncorrelated`, which makes
 /// [`RuleBooleanUndistribute`] conservatively decline (a faithful no-op, never a
 /// wrong transform).  Recorded as a loss.

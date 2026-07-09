@@ -308,7 +308,7 @@ impl SubvariableFlow {
         vn: VarnodeId,
         mask: uintb,
     ) -> (Option<RvId>, bool) {
-        // res; if (vn->isMark()) { ... }   -- Already seen before
+        // Already seen before
         if data.vbank().get(vn).expect("set_replacement: stale vn").is_mark() {
             let res = *self.varmap.get(&vn).expect("marked vn must be in varmap");
             let inworklist = false;
@@ -411,7 +411,6 @@ impl SubvariableFlow {
                 inworklist = false;
                 self.rv_mut(res).replacement = Some(vn);
             } else if mask == 1 {
-                // if ((vn->isWritten())&&(vn->getDef()->isBoolOutput()))
                 let bool_out = if is_written {
                     let defop =
                         data.vbank().get(vn).expect("vn").get_def().expect("written vn has def");
@@ -438,7 +437,7 @@ impl SubvariableFlow {
         if let Some(def) = self.rv(outrvn).def {
             return def;
         }
-        // rop->op = outrvn->vn->getDef();  -- the defining op of the *original*
+        // The defining op of the *original*
         // Varnode the placeholder shadows (callers only reach here on real vns).
         let vn = self.rv(outrvn).vn.expect("createOp: outrvn has no vn");
         let op = data.vbank().get(vn).expect("createOp: stale outrvn vn").get_def();
@@ -508,7 +507,6 @@ impl SubvariableFlow {
                 return Ok(false); // Don't truncate
             }
         }
-        // FuncCallSpecs *fc = fd->getCallSpecs(op);
         let idx = match data.get_call_specs_index(op) {
             Some(i) => i,
             None => return Ok(false), // fc == 0
@@ -714,7 +712,6 @@ impl SubvariableFlow {
         let mut callcount = 0i32;
 
         let rvn_vn = self.rv(rvn).vn.expect("trace_forward: rvn vn");
-        // enditer = rvn->vn->endDescend(); for(iter=beginDescend ...)
         let descend: Vec<OpId> = data.descend_snapshot(rvn_vn);
         for (idx, &op) in descend.iter().enumerate() {
             let outvn = data.obank().get(op).expect("stale op").get_out();
@@ -1960,15 +1957,10 @@ impl SubvariableFlow {
     fn replace_input(&mut self, data: &mut Funcdata, rvn: RvId) -> KunaResult<()> {
         let vn = self.rv(rvn).vn.expect("replace_input: rvn vn");
         let size = data.vbank().get(vn).expect("replace_input: stale vn").get_size();
-        // Varnode *newvn = fd->newUnique(rvn->vn->getSize());
         let newvn = data.new_unique(size, None);
-        // newvn = fd->setInputVarnode(newvn);
         let newvn = data.set_input_varnode(newvn)?;
-        // fd->totalReplace(rvn->vn, newvn);
         data.total_replace(vn, newvn)?;
-        // fd->deleteVarnode(rvn->vn);
         data.delete_varnode(vn)?;
-        // rvn->vn = newvn;
         self.rv_mut(rvn).vn = Some(newvn);
         Ok(())
     }
@@ -1978,18 +1970,15 @@ impl SubvariableFlow {
     /// `SubvariableFlow::getReplaceVarnode`, subflow.cc:1316).  This is the main
     /// routine for turning a logical variable into an actual Varnode object.
     fn get_replace_varnode(&mut self, data: &mut Funcdata, rvn: RvId) -> KunaResult<VarnodeId> {
-        // if (rvn->replacement != 0) return rvn->replacement;
         if let Some(repl) = self.rv(rvn).replacement {
             return Ok(repl);
         }
-        // if (rvn->vn == 0) { ... }
         if self.rv(rvn).vn.is_none() {
             if self.rv(rvn).def.is_none() {
                 // A constant that did not come from an original Varnode
                 let val = self.rv(rvn).val;
                 return Ok(data.new_constant(self.flowsize, val));
             }
-            // rvn->replacement = fd->newUnique(flowsize);
             let repl = data.new_unique(self.flowsize, None);
             self.rv_mut(rvn).replacement = Some(repl);
             return Ok(repl);
@@ -1998,7 +1987,6 @@ impl SubvariableFlow {
         if data.vbank().get(vn).expect("get_replace_varnode: stale vn").is_constant() {
             let val = self.rv(rvn).val;
             let new_vn = data.new_constant(self.flowsize, val);
-            // newVn->copySymbolIfValid(rvn->vn);
             // STUB(W4): EquateSymbol propagation — getSymbolEntry is null in the W4
             // symbol-scope skeleton (no equate symbols are constructed on this path),
             // so copySymbolIfValid is a no-op here; faithful (recorded as a loss).
@@ -2011,16 +1999,13 @@ impl SubvariableFlow {
             if isinput {
                 self.replace_input(data, rvn)?; // Replace input to avoid overlap errors
             }
-            // rvn->replacement = fd->newVarnode(flowsize, addr);
             let repl = data.new_varnode(self.flowsize, &addr, None);
             self.rv_mut(rvn).replacement = Some(repl);
         } else {
-            // rvn->replacement = fd->newUnique(flowsize);
             let repl = data.new_unique(self.flowsize, None);
             self.rv_mut(rvn).replacement = Some(repl);
         }
         if isinput {
-            // rvn->replacement = fd->setInputVarnode(rvn->replacement);
             let repl = self.rv(rvn).replacement.expect("get_replace_varnode: replacement set above");
             let new_repl = data.set_input_varnode(repl)?;
             self.rv_mut(rvn).replacement = Some(new_repl);
@@ -2189,7 +2174,6 @@ impl SubvariableFlow {
                 data.obank().get(push_op).expect("do_replacement: stale push op").get_out().expect(
                     "do_replacement: push op has no output",
                 );
-            // fd->opSetOutput(pushOp, newVn);
             data.op_set_output(push_op, new_vn)?;
 
             // Create placeholder defining op for old Varnode, until dead code cleans it up
@@ -2237,7 +2221,6 @@ impl SubvariableFlow {
             let typ = self.patchlist[piter].typ;
             match typ {
                 PatchType::CopyPatch => {
-                    // while(pullop->numInput() > 1) fd->opRemoveInput(pullop, pullop->numInput()-1);
                     loop {
                         let n = data.obank().get(pullop).expect("do_replacement: stale pullop").num_input();
                         if n <= 1 {
@@ -2282,7 +2265,6 @@ impl SubvariableFlow {
                         .expect("do_replacement: stale out vn")
                         .get_size();
                     if sa == 0 {
-                        // C++: vector<Varnode*> invec; invec.push_back(inVn);
                         let invec: Vec<VarnodeId> = vec![in_vn];
                         let in_size =
                             data.vbank().get(in_vn).expect("do_replacement: stale in vn").get_size();
@@ -2336,7 +2318,6 @@ impl SubvariableFlow {
                     data.op_set_input(zext_op, invn, 0)?;
                     let invn_size =
                         data.vbank().get(invn).expect("do_replacement: stale invn").get_size();
-                    // int4 sizeout = TypeOpFloatInt2Float::preferredZextSize(invn->getSize());
                     let sizeout = preferred_zext_size(invn_size);
                     let outvn = data.new_unique_out(sizeout, zext_op)?;
                     data.op_insert_before(zext_op, pullop);
@@ -2698,7 +2679,6 @@ impl Rule for RuleSubvarSext {
     }
 
     fn reset(&mut self, _data: &mut Funcdata) {
-        // isaggressive = data.getArch()->aggressive_ext_trim;
         // STUB(W4): Architecture::aggressive_ext_trim is not on the W3 ArchContext
         // (Funcdata::getArch returns the context::ArchContext skeleton).  The C++
         // default is `false`; we keep that until the W4 arch surface lands.
@@ -2739,7 +2719,6 @@ fn run_subflow(
         Ok(true) => {}
         _ => return 0,
     }
-    // subflow.doReplacement(); return 1;
     match subflow.do_replacement(data) {
         Ok(()) => 1,
         // C++ doReplacement() returns void; a structured error (e.g. a residual
@@ -2807,8 +2786,7 @@ pub struct SplitFlow {
 }
 
 impl SplitFlow {
-    /// Constructor (C++ `SplitFlow::SplitFlow(Funcdata*,Varnode*,int4)`,
-    /// subflow.cc:2011).
+    /// C++ `SplitFlow::SplitFlow` (subflow.cc:2011).
     pub fn new(data: &mut Funcdata, root: VarnodeId, low_size: int4) -> SplitFlow {
         let root_size = data.vbank().get(root).expect("SplitFlow: stale root").get_size();
         let mut sf = SplitFlow {
@@ -4451,8 +4429,6 @@ impl Rule for RuleSplitCopy {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Datatype *inType = op->getIn(0)->getTypeReadFacing(op);
-        // Datatype *outType = op->getOut()->getTypeDefFacing();
         let in0 = data.obank().get(op).expect("stale op").get_in(0).expect("copy in0");
         let in_type = data.vbank().get(in0).expect("stale in0").get_type_read_facing(op).clone();
         let out = data.obank().get(op).expect("stale op").get_out().expect("copy out");
@@ -4501,7 +4477,6 @@ impl Rule for RuleSplitLoad {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Datatype *inType = SplitDatatype::getValueDatatype(op, op->getOut()->getSize(), types);
         let out = data.obank().get(op).expect("stale op").get_out().expect("out");
         let out_size = data.vbank().get(out).expect("stale out").get_size();
         let in_type = match SplitDatatype::get_value_datatype(data, op, out_size) {
@@ -4548,7 +4523,6 @@ impl Rule for RuleSplitStore {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Datatype *outType = SplitDatatype::getValueDatatype(op, op->getIn(2)->getSize(), types);
         let in2 = data.obank().get(op).expect("stale op").get_in(2).expect("store in2");
         let in2_size = data.vbank().get(in2).expect("stale in2").get_size();
         let out_type = match SplitDatatype::get_value_datatype(data, op, in2_size) {
@@ -4908,9 +4882,6 @@ impl SubfloatFlow {
         }
 
         if v.is_constant() {
-            // const FloatFormat *form2 = translate->getFloatFormat(vn->getSize());
-            // if (form2 == 0) return 0;  // Unsupported constant format
-            // return newConstant(precision, 0, format->convertEncoding(vn->getOffset(), form2));
             let vn_size = v.get_size();
             let off = v.get_offset();
             let form2 = match self.arch.get_float_format(vn_size) {
@@ -5242,7 +5213,7 @@ pub struct LaneDivide {
 }
 
 impl LaneDivide {
-    /// Constructor (C++ `LaneDivide::LaneDivide`, subflow.cc:4117).
+    /// C++ `LaneDivide::LaneDivide` (subflow.cc:4117).
     ///
     /// `f is the function being transformed`, `root` is the root Varnode to start
     /// tracing lanes from, `desc` describes the root's lanes, and `allowDowncast`
@@ -5260,7 +5231,6 @@ impl LaneDivide {
             work_list: Vec::new(),
             allow_subpiece_terminator: allow_downcast,
         };
-        // setReplacement(root, desc.getNumLanes(), 0);
         ld.set_replacement(data, root, num, 0);
         ld
     }

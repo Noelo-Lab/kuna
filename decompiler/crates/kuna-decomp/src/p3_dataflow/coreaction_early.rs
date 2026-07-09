@@ -47,10 +47,10 @@
 //! `ActionPrototypeTypes` onward are **left for the later coreaction items**
 //! (W6/W7/W8), as the item brief directs.
 //!
-//! # Seams (do NOT invent these behaviors)
+//! # Stubs (do NOT invent these behaviors)
 //!
 //! Several early-action `apply` bodies are a single call into a `Funcdata`
-//! primitive that is itself seamed to another wave and **not present in the
+//! primitive that is itself stubbed to another wave and **not present in the
 //! merged tree**:
 //!
 //! * SSA / processing primitives `startProcessing`, `stopProcessing`,
@@ -64,13 +64,13 @@
 //!   `totalReplaceConstant` (W3-vn / W4).
 //! * Prototype / injection surface `getFuncProto().*`, `getArch()->context`,
 //!   `pcodeinjectlib`, `doLiveInject` (W4 — `FuncProto` is an empty `Default`
-//!   placeholder in `seams.rs`).
+//!   placeholder in `substrate/context.rs`).
 //!
 //! Where a primitive is **realized** the body calls it and is exercised by a
-//! test.  Where it is **seamed** the body transcribes the C++ structure and
+//! test.  Where it is **stubbed** the body transcribes the C++ structure and
 //! routes the unrealized mutation through a `// STUB(...)`-noted private helper
 //! that performs the realized read/predicate work and returns `0` changes (the
-//! C++ contract: changes are signalled by incrementing `count`).  Every seam is
+//! C++ contract: changes are signalled by incrementing `count`).  Every stub is
 //! reported in this item's `losses` so the owning wave can finish the wiring.
 //!
 //! # Registration
@@ -99,7 +99,6 @@ pub struct ActionStart {
 }
 
 impl ActionStart {
-    /// Construct in group `g` (C++ `ActionStart::ActionStart`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionStart { base: ActionBase::new(0, "start", g) })
     }
@@ -135,7 +134,6 @@ pub struct ActionStop {
 }
 
 impl ActionStop {
-    /// Construct in group `g` (C++ `ActionStop::ActionStop`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionStop { base: ActionBase::new(0, "stop", g) })
     }
@@ -170,7 +168,6 @@ pub struct ActionStartCleanUp {
 }
 
 impl ActionStartCleanUp {
-    /// Construct in group `g` (C++ `ActionStartCleanUp::ActionStartCleanUp`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionStartCleanUp { base: ActionBase::new(0, "startcleanup", g) })
     }
@@ -190,7 +187,6 @@ impl Action for ActionStartCleanUp {
         Some(Box::new(ActionStartCleanUp { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++: data.startCleanUp(); return 0;
         data.start_clean_up();
         0
     }
@@ -207,7 +203,6 @@ pub struct ActionStartTypes {
 }
 
 impl ActionStartTypes {
-    /// Construct in group `g` (C++ `ActionStartTypes::ActionStartTypes`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionStartTypes { base: ActionBase::new(0, "starttypes", g) })
     }
@@ -235,7 +230,6 @@ impl Action for ActionStartTypes {
         data.set_type_recovery(true);
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++: if (data.startTypeRecovery()) count+=1; return 0;
         if data.start_type_recovery() {
             self.base.count += 1;
         }
@@ -257,7 +251,6 @@ pub struct ActionConstbase {
 }
 
 impl ActionConstbase {
-    /// Construct in group `g` (C++ `ActionConstbase::ActionConstbase`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionConstbase { base: ActionBase::new(0, "constbase", g) })
     }
@@ -277,13 +270,7 @@ impl Action for ActionConstbase {
         Some(Box::new(ActionConstbase { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:693
-        //   if (data.getBasicBlocks().getSize()==0) return 0;   // No blocks
-        //   BlockBasic *bb = ...getBlock(0);                     // entry block
-        //   int4 injectid = data.getFuncProto().getInjectUponEntry();
-        //   if (injectid >= 0) { ...doLiveInject(payload,...); }
-        //   const TrackedSet trackset(...context->getTrackedSet(...));
-        //   for each tracked ctx:  newOp/newVarnodeOut/newConstant/opSet*; opInsertBegin
+        // C++ coreaction.cc:693.
         if data.bblocks_get_size() == 0 {
             return 0; // No blocks
         }
@@ -293,12 +280,11 @@ impl Action for ActionConstbase {
 
         // STUB(W4): getFuncProto().getInjectUponEntry + doLiveInject are the
         // upon-entry pcode-inject surface (FuncProto is an empty Default
-        // placeholder in seams.rs).  None of the tracked-register datatests drive
+        // placeholder in substrate/context.rs).  None of the tracked-register datatests drive
         // it, so it stays deferred; the tracked-set COPY injection below is the
         // half `set track <reg> <val> [start end]` (ifacedecomp.cc `IfcSettrackedrange`)
         // depends on.
 
-        //   const TrackedSet trackset(...context->getTrackedSet(data.getAddress()));
         // C++ takes a copy; the per-function `glb` skeleton holds a snapshot of the
         // engine track base (taken at `build_arch_handle`), so clone the queried set
         // out before mutating the funcdata.
@@ -311,10 +297,8 @@ impl Action for ActionConstbase {
         }
 
         // For each tracked register: emit a `COPY #val` whose output is the
-        // register storage, inserted at the start of the entry block (C++
-        // coreaction.cc:709-719).
+        // register storage, inserted at the start of the entry block.
         for ctx in &trackset {
-            // Address addr(ctx.loc.space, ctx.loc.offset);
             let space = ctx
                 .loc
                 .space
@@ -323,13 +307,9 @@ impl Action for ActionConstbase {
                 .clone();
             let addr = kuna_base::address::Address::new(space, ctx.loc.offset);
             let size = ctx.loc.size as int4;
-            // op = newOp(1, bb->getStart());
             let op = data.new_op(1, bb_start.clone());
-            // newVarnodeOut(ctx.loc.size, addr, op);
             data.new_varnode_out(size, &addr, op).expect("ActionConstbase: newVarnodeOut");
-            // vnin = newConstant(ctx.loc.size, ctx.val);
             let vnin = data.new_constant(size, ctx.val);
-            // opSetOpcode(op, CPUI_COPY); opSetInput(op, vnin, 0); opInsertBegin(op, bb);
             data.op_set_opcode_code(op, OpCode::CPUI_COPY);
             data.op_set_input(op, vnin, 0).expect("ActionConstbase: opSetInput");
             data.op_insert_begin(op, bb);
@@ -347,7 +327,6 @@ pub struct ActionSpacebase {
 }
 
 impl ActionSpacebase {
-    /// Construct in group `g` (C++ `ActionSpacebase::ActionSpacebase`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionSpacebase { base: ActionBase::new(0, "spacebase", g) })
     }
@@ -367,7 +346,7 @@ impl Action for ActionSpacebase {
         Some(Box::new(ActionSpacebase { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1648 — ActionSpacebase::apply: data.spacebase();
+        // C++ coreaction.cc:1648.
         data.spacebase();
         0
     }
@@ -382,7 +361,6 @@ pub struct ActionHeritage {
 }
 
 impl ActionHeritage {
-    /// Construct in group `g` (C++ `ActionHeritage::ActionHeritage`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionHeritage { base: ActionBase::new(0, "heritage", g) })
     }
@@ -402,7 +380,7 @@ impl Action for ActionHeritage {
         Some(Box::new(ActionHeritage { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.hh:289 — ActionHeritage::apply: data.opHeritage(); return 0;
+        // C++ coreaction.hh:289.
         // `opHeritage` drives the owned Heritage engine (heritage.rs), mutating
         // the live Funcdata into SSA form (reads linked to writes, MULTIEQUAL
         // phi-nodes placed at dominance frontiers).  The action always reports 0
@@ -429,7 +407,6 @@ pub struct ActionNonzeroMask {
 }
 
 impl ActionNonzeroMask {
-    /// Construct in group `g` (C++ `ActionNonzeroMask::ActionNonzeroMask`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionNonzeroMask { base: ActionBase::new(0, "nonzeromask", g) })
     }
@@ -449,7 +426,6 @@ impl Action for ActionNonzeroMask {
         Some(Box::new(ActionNonzeroMask { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++: data.calcNZMask(); return 0;
         data.calc_nz_mask();
         0
     }
@@ -466,7 +442,6 @@ pub struct ActionVarnodeProps {
 }
 
 impl ActionVarnodeProps {
-    /// Construct in group `g` (C++ `ActionVarnodeProps::ActionVarnodeProps`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionVarnodeProps { base: ActionBase::new(0, "varnodeprops", g) })
     }
@@ -487,13 +462,9 @@ impl Action for ActionVarnodeProps {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:1298.
-        //   Architecture *glb = data.getArch();
-        //   bool cachereadonly = glb->readonlypropagate;
-        //   int4 pass = data.getHeritagePass();
         let cachereadonly = data.get_arch().readonly_propagate();
         let pass = data.get_heritage_pass();
 
-        // iter = data.beginLoc(); while(iter != data.endLoc()) { vn = *iter++; ... }
         // The C++ advances the iterator before vn may be deleted/rewritten; the
         // faithful Rust mirror snapshots the loc-set order once (a vn only ever
         // loses descendants here, never gains them, so a snapshot is sound).
@@ -534,13 +505,11 @@ impl Action for ActionVarnodeProps {
                 def,
             ) = info;
 
-            // if (vn->isAnnotation()) continue;
             if is_annotation {
                 continue;
             }
 
             if is_auto_live_hold {
-                // if (pass > 0) { ... clearAutoLiveHold(); count+=1; }
                 if pass > 0 {
                     // The C++ skips clearing when the value is a LOAD through a
                     // constant/readonly pointer (possibly behind one COPY), so the
@@ -549,7 +518,6 @@ impl Action for ActionVarnodeProps {
                     if is_written {
                         let loadop = def.expect("varnodeprops: written vn has no def");
                         if data.obank().get(loadop).map(|o| o.code()) == Some(OpCode::CPUI_LOAD) {
-                            // Varnode *ptr = loadOp->getIn(1);
                             let mut ptr = data.obank().get(loadop).and_then(|o| o.get_in(1));
                             if let Some(p) = ptr {
                                 let (pc, pro, pw, pdef) = {
@@ -559,7 +527,6 @@ impl Action for ActionVarnodeProps {
                                 if pc || pro {
                                     skip = true;
                                 } else if pw {
-                                    // if (ptr->isWritten()) { copyOp = ptr->getDef(); ... }
                                     let copyop = pdef.expect("varnodeprops: written ptr has no def");
                                     if data.obank().get(copyop).map(|o| o.code())
                                         == Some(OpCode::CPUI_COPY)
@@ -592,12 +559,10 @@ impl Action for ActionVarnodeProps {
                 }
             } else if has_action_property {
                 if cachereadonly && is_read_only {
-                    // if (data.fillinReadOnly(vn)) count += 1;
                     if data.fillin_read_only(vn).unwrap_or(false) {
                         self.base.count += 1;
                     }
                 } else if is_volatile {
-                    // if (data.replaceVolatile(vn)) count += 1;
                     if data.replace_volatile(vn).unwrap_or(false) {
                         self.base.count += 1;
                     }
@@ -646,7 +611,6 @@ pub struct ActionUnreachable {
 }
 
 impl ActionUnreachable {
-    /// Construct in group `g` (C++ `ActionUnreachable::ActionUnreachable`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionUnreachable { base: ActionBase::new(0, "unreachable", g) })
     }
@@ -667,8 +631,6 @@ impl Action for ActionUnreachable {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:3560
-        //   if (data.removeUnreachableBlocks(true,false)) count += 1;
-        //   return 0;
         // The reachability sweep + block deletion is now realized: unreachable
         // blocks are collected from the entry's reachable set, severed, and
         // removed (stranded reads rewritten to 0xBADDEF via descend2Undef).  A
@@ -692,7 +654,6 @@ pub struct ActionDoNothing {
 }
 
 impl ActionDoNothing {
-    /// Construct in group `g` (C++ `ActionDoNothing::ActionDoNothing`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionDoNothing {
             base: ActionBase::new(ruleflags::rule_repeatapply, "donothing", g),
@@ -714,18 +675,7 @@ impl Action for ActionDoNothing {
         Some(Box::new(ActionDoNothing { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:3569 — walk graph blocks:
-        //   bb->clearDelayedDonothing();
-        //   if (bb->isDoNothing()) {
-        //     if (sizeOut==1 && getOut(0)==bb) {          // infinite loop
-        //       if (!isDonothingLoop()) { setDonothingLoop(); data.warning(...); }
-        //     } else if (bb->unblockedMulti(0)) {
-        //       if (data.isNormalizationOn() || bb->hasNoImmediateCopy(0)) {
-        //         data.removeDoNothingBlock(bb); count += 1; return 0;
-        //       } else bb->setDelayedDonothing();
-        //     }
-        //   }
-        //
+        // C++ coreaction.cc:3569.
         // The `clearDelayedDonothing()` sweep runs on every block on every call,
         // independent of removal.  Then we walk for do-nothing blocks: the first
         // removable one is removed and we return (C++ removes one per call and
@@ -774,7 +724,6 @@ pub struct ActionLateDoNothing {
 }
 
 impl ActionLateDoNothing {
-    /// Construct in group `g` (C++ `ActionLateDoNothing::ActionLateDoNothing`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionLateDoNothing { base: ActionBase::new(0, "latedonothing", g) })
     }
@@ -828,14 +777,7 @@ impl Action for ActionLateDoNothing {
         Some(Box::new(ActionLateDoNothing { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:3623 — collect then remove:
-        //   for each block with isDelayedDonothing():
-        //     if (!isDoNothing()) continue;
-        //     if (removingCreatesRedundancy(bb)) continue;
-        //     if (sizeOut==1 && getOut(0)==bb) { ...donothing loop warning... }
-        //     else if (unblockedMulti(0)) removeList.push_back(bb);
-        //   for each in removeList: removeDoNothingBlock(bb); count += 1;
-        //
+        // C++ coreaction.cc:3623.
         // Collect the removable delayed-do-nothing blocks, then remove them.
         let size = data.bblocks_get_size();
         let mut remove_list: Vec<crate::context::BlockId> = Vec::new();
@@ -878,7 +820,6 @@ pub struct ActionRedundBranch {
 }
 
 impl ActionRedundBranch {
-    /// Construct in group `g` (C++ `ActionRedundBranch::ActionRedundBranch`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionRedundBranch { base: ActionBase::new(0, "redundbranch", g) })
     }
@@ -898,23 +839,10 @@ impl Action for ActionRedundBranch {
         Some(Box::new(ActionRedundBranch { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:3650 — for i over graph blocks:
-        //   bb = getBlock(i);
-        //   if (sizeOut==0) continue;
-        //   bl = bb->getOut(0);
-        //   if (sizeOut==1) {
-        //     if (bl->sizeIn==1 && !bl->isEntryPoint() && !bb->isSwitchOut()) {
-        //       data.spliceBlockBasic(bb); count += 1; i = -1;  // reset scan
-        //     }
-        //     continue;
-        //   }
-        //   for (j=1;j<sizeOut;++j) if (getOut(j) != bl) break;
-        //   if (j != sizeOut) continue;             // not all exits to bl
-        //   data.removeBranch(bb,1); count += 1;    // duplicate n-way -> remove edge
-        //
+        // C++ coreaction.cc:3650.
         // The single-out **splice** path is realized (Funcdata::splice_block_basic
         // exists, though it itself `Err`s on a trailing branch op — STUB(W3-op));
-        // the n-way `removeBranch` is a funcdata_block seam.
+        // the n-way `removeBranch` is a funcdata_block stub.
         let mut i: i32 = 0;
         while i < data.bblocks_get_size() {
             let bb = data.bblocks_get_block(i);
@@ -954,7 +882,7 @@ impl Action for ActionRedundBranch {
                 i += 1;
                 continue;
             }
-            // data.removeBranch(bb,1); count += 1;  — all exits go to `bl`, so the
+            // All exits go to `bl`, so the
             // branch decision is redundant: sever the duplicate edge (and drop the
             // now-decisionless CBRANCH).  C++ does NOT reset the scan here (unlike
             // the splice path), it just continues with `++i`.
@@ -972,7 +900,6 @@ pub struct ActionDeterminedBranch {
 }
 
 impl ActionDeterminedBranch {
-    /// Construct in group `g` (C++ `ActionDeterminedBranch::ActionDeterminedBranch`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionDeterminedBranch { base: ActionBase::new(0, "determinedbranch", g) })
     }
@@ -992,14 +919,7 @@ impl Action for ActionDeterminedBranch {
         Some(Box::new(ActionDeterminedBranch { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:3688 — for i over graph blocks:
-        //   cbranch = bb->lastOp();
-        //   if (cbranch==0 || cbranch->code() != CPUI_CBRANCH) continue;
-        //   if (!cbranch->getIn(1)->isConstant()) continue;
-        //   uintb val = cbranch->getIn(1)->getOffset();
-        //   int4 num = ((val!=0)!=cbranch->isBooleanFlip()) ? 0 : 1;
-        //   data.removeBranch(bb,num); count += 1;
-        //
+        // C++ coreaction.cc:3688.
         // The last op of each block is a CBRANCH on a constant condition; the dead
         // edge `num` is severed by `removeBranch`, collapsing the conditional into
         // an unconditional branch.  `removeBranch` (funcdata_block) is now ported
@@ -1012,7 +932,7 @@ impl Action for ActionDeterminedBranch {
             let bb = data.bblocks_get_block(i);
             let cbranch = match data.bb_op_tail(bb) {
                 Some(op) => op,
-                None => continue, // lastOp() == (PcodeOp *)0
+                None => continue,
             };
             let (code, nin, is_flip) = {
                 let cbranch_op = data.obank().get(cbranch).expect("determinedbranch: cbranch");
@@ -1039,9 +959,7 @@ impl Action for ActionDeterminedBranch {
                 }
                 cond_vn.get_offset()
             };
-            // int4 num = ((val!=0)!=cbranch->isBooleanFlip()) ? 0 : 1;
             let num: kuna_base::types::int4 = if (val != 0) != is_flip { 0 } else { 1 };
-            // data.removeBranch(bb,num); count += 1;
             self.base.count += data.remove_branch(bb, num).map(|_| 1).unwrap_or(0);
         }
         0
@@ -1063,7 +981,6 @@ pub struct ActionNormalizeSetup {
 }
 
 impl ActionNormalizeSetup {
-    /// Construct in group `g` (C++ `ActionNormalizeSetup::ActionNormalizeSetup`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionNormalizeSetup {
             base: ActionBase::new(ruleflags::rule_onceperfunc, "normalizesetup", g),
@@ -1099,7 +1016,7 @@ impl Action for ActionNormalizeSetup {
         //   fp.setModelLock(false);   // forces model re-evaluation
         //   fp.setOutputLock(false);
         //   return 0;
-        // STUB(W4): FuncProto is an empty Default placeholder in seams.rs;
+        // STUB(W4): FuncProto is an empty Default placeholder in substrate/context.rs;
         // clearInput / setModelLock / setOutputLock are W4 prototype surfaces.
         // The realized `reset` already flips the function into normalization mode;
         // the lock-stripping is deferred to the prototype wave (no change count).

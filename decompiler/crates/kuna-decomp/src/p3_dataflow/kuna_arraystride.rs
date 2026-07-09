@@ -13,7 +13,7 @@
 //!
 //! As in the sibling kuna simplification rules, the C++
 //! `if (!data.getArch()->recover_array_stride) return 0;` gate is resolved at
-//! construction (the seam `Funcdata::glb` does not carry kuna analysis flags).
+//! construction (the boundary `Funcdata::glb` does not carry kuna analysis flags).
 //! W8 threads `Architecture::recover_array_stride`; [`specs`] uses the shipped
 //! default (`on`).
 //!
@@ -21,7 +21,7 @@
 //!
 //! `data.newUniqueOut(size, op)` is reproduced through the public
 //! [`VarnodeBank::create_def_unique`](crate::varnode::VarnodeBank::create_def_unique)
-//! together with [`PcodeOp::set_output`] (the [`Funcdata::op_set_output`] seam
+//! together with [`PcodeOp::set_output`] (the [`Funcdata::op_set_output`] stub
 //! needs a `banks_mut()` split-borrow the funcdata owner has not exposed) — see
 //! the `kuna_addcarrychain` module docs.  Noted in the structured losses.
 //!
@@ -85,28 +85,25 @@ impl Rule for RuleArrayStride {
 
     /// C++ `RuleArrayStride::applyOp` (`kuna_arraystride.cc:88`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->recover_array_stride) return 0;  // (kuna) gate (seam-carried)
+        // (kuna) gate (ArchContext-carried).
         if !self.enabled && !data.get_arch().recover_array_stride {
             return 0;
         }
 
         // `op` must be the strided OFFSET accumulator phi: MULTIEQUAL(#0, acc + STRIDE).
-        // if (!kunaIsInductionPhi(op,initIdx,backIdx,stride,accadd,true)) return 0;
         let (init_idx, back_idx, stride, accadd) = match kuna_is_induction_phi(data, op, true) {
             Some(t) => t,
             None => return 0,
         };
-        // if (stride == 1) return 0;  // a unit step is the counter itself
+        // A unit step is the counter itself.
         if stride == 1 {
             return 0;
         }
 
-        // Varnode *accout = op->getOut();
         let accout = match data.obank().get(op).and_then(|o| o.get_out()) {
             Some(o) => o,
             None => return 0,
         };
-        // BlockBasic *bl = op->getParent();  if (bl == 0) return 0;
         let bl: BlockId = match data.obank().get(op).and_then(|o| o.get_parent()) {
             Some(b) => b,
             None => return 0,
@@ -117,28 +114,24 @@ impl Rule for RuleArrayStride {
         // `beginOp()..endOp()` and `break` at the first non-MULTIEQUAL.
         let mut cntout: Option<VarnodeId> = None;
         for cand in data.bb_ops(bl) {
-            // if (cand->code() != CPUI_MULTIEQUAL) break;
             if op_code(data, cand) != OpCode::CPUI_MULTIEQUAL {
                 break;
             }
-            // if (cand == op) continue;
             if cand == op {
                 continue;
             }
-            // if (!kunaIsInductionPhi(cand,ci,cb,cstep,cadd,false)) continue;
             let (ci, cb, cstep, _cadd) = match kuna_is_induction_phi(data, cand, false) {
                 Some(t) => t,
                 None => continue,
             };
-            // if (cstep != 1) continue;  // counter must step by exactly 1
+            // The counter must step by exactly 1.
             if cstep != 1 {
                 continue;
             }
-            // if (ci != initIdx || cb != backIdx) continue;  // match edge-for-edge
+            // Match edge-for-edge.
             if ci != init_idx || cb != back_idx {
                 continue;
             }
-            // cntout = cand->getOut();  break;
             cntout = data.obank().get(cand).and_then(|o| o.get_out());
             break;
         }
@@ -146,36 +139,30 @@ impl Rule for RuleArrayStride {
             Some(c) => c,
             None => return 0,
         };
-        // if (cntout->getSize() != accout->getSize()) return 0;
         if vn_size(data, cntout) != vn_size(data, accout) {
             return 0;
         }
 
         // Build the multiply  cnt * stride  and redirect all descendants of acc.
-        // PcodeOp *multop = data.newOp(2,op->getAddr());
         let pc = data.obank().get(op).expect("op live").get_addr().clone();
         let multop = data.new_op(2, pc);
-        // data.opSetOpcode(multop,CPUI_INT_MULT);  // STUB(W6): glb->inst[CPUI_INT_MULT]
+        // STUB(W6): glb->inst[CPUI_INT_MULT].
         data.op_set_opcode(multop, TypeOp::new(OpCode::CPUI_INT_MULT, 0, "INT_MULT"));
-        // Varnode *multout = data.newUniqueOut(accout->getSize(),multop);
         let multout = new_unique_out(data, vn_size(data, accout), multop)
             .expect("RuleArrayStride: newUniqueOut(mult) (internal invariant)");
-        // data.opSetInput(multop,cntout,0);
         data.op_set_input(multop, cntout, 0)
             .expect("RuleArrayStride: opSetInput multop.0");
-        // data.opSetInput(multop,data.newConstant(accout->getSize(),stride),1);
         let stride_c = data.new_constant(vn_size(data, accout), stride);
         data.op_set_input(multop, stride_c, 1)
             .expect("RuleArrayStride: opSetInput multop.1");
-        // data.opInsertBegin(multop,bl);
         data.op_insert_begin(multop, bl);
 
-        // data.totalReplace(accout,multout);  // every use of acc now reads cnt*stride
+        // Every use of acc now reads cnt*stride.
         data.total_replace(accout, multout)
             .expect("RuleArrayStride: totalReplace (internal invariant)");
-        // data.opDestroy(op);     // the dead accumulator phi ...
+        // The dead accumulator phi ...
         data.op_destroy(op);
-        // data.opDestroy(accadd); // ... and its now-dead back-edge add
+        // ... and its now-dead back-edge add.
         data.op_destroy(accadd);
         1
     }
@@ -198,12 +185,9 @@ pub fn specs() -> Vec<RuleSpec> {
 /// Does `vn` carry the constant value 0 (directly, or via a single COPY)?
 /// (C++ static `kunaIsZeroInit`).
 fn kuna_is_zero_init(data: &Funcdata, vn: VarnodeId) -> bool {
-    // if (vn->isConstant()) return vn->getOffset() == 0;
     if vn_is_constant(data, vn) {
         return vn_offset(data, vn) == 0;
     }
-    // if (vn->isWritten()) { def = vn->getDef(); if (def->code() == CPUI_COPY) {
-    //   src = def->getIn(0); if (src->isConstant()) return src->getOffset() == 0; } }
     if vn_is_written(data, vn) {
         let def = vn_def(data, vn).expect("vn written");
         if op_code(data, def) == OpCode::CPUI_COPY {
@@ -227,18 +211,15 @@ fn kuna_is_induction_phi(
     phi: OpId,
     require_lone_add: bool,
 ) -> Option<(int4, int4, uintb, OpId)> {
-    // if (phi->numInput() != 2) return false;
     if data.obank().get(phi).map(|o| o.num_input()).unwrap_or(0) != 2 {
         return None;
     }
-    // Varnode *out = phi->getOut();
     let out = data.obank().get(phi).and_then(|o| o.get_out())?;
     let mut zero_idx: int4 = -1;
     let mut add_idx: int4 = -1;
     let mut foundadd: Option<OpId> = None;
     let mut foundstep: uintb = 0;
     for i in 0..2i32 {
-        // Varnode *vn = phi->getIn(i);
         let vn = match op_in(data, phi, i) {
             Some(v) => v,
             None => continue,
@@ -248,7 +229,6 @@ fn kuna_is_induction_phi(
             zero_idx = i;
         } else if vn_is_written(data, vn) {
             let def = vn_def(data, vn).expect("vn written");
-            // if (def->code() == CPUI_INT_ADD && (!requireLoneAdd || vn->loneDescend() == phi))
             if op_code(data, def) == OpCode::CPUI_INT_ADD
                 && (!require_lone_add || data.lone_descend(vn) == Some(phi))
             {
@@ -275,7 +255,6 @@ fn kuna_is_induction_phi(
             }
         }
     }
-    // if (zeroIdx < 0 || addIdx < 0 || zeroIdx == addIdx) return false;
     if zero_idx < 0 || add_idx < 0 || zero_idx == add_idx {
         return None;
     }
@@ -283,7 +262,7 @@ fn kuna_is_induction_phi(
 }
 
 /// Reproduce `Funcdata::newUniqueOut(size, op)` for a fresh unique output (see
-/// `kuna_addcarrychain` module docs for the `op_set_output` seam rationale).
+/// `kuna_addcarrychain` module docs for the `op_set_output` stub rationale).
 fn new_unique_out(data: &mut Funcdata, size: int4, op: OpId) -> KunaResult<VarnodeId> {
     let ct: Rc<Datatype> = Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN));
     let seqnum = data.obank().get(op).expect("new_unique_out: stale op").get_seq_num().clone();
