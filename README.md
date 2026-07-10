@@ -4,6 +4,10 @@ An agent-first decompiler, based on [Ghidra](https://github.com/NationalSecurity
 Kuna aims to improve fundamental decompiler techniques, while making them more accessible to agents and thier human users.
 Interested in why? Read our [motivating statement](#motivation-why-another-decompiler) and our [design principles](#design). 
 
+<p align="center">
+   <img src="./assets/kuna.png" alt="Kuna Logo"/>
+</p>
+
 ## Install & Usage
 ### Install
 Use the release. 
