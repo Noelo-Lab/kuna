@@ -255,6 +255,19 @@ and an agent writes:
   (SETTABLE_TABLE, emit_catalog_json)` from `decompiler/crates/kuna-decomp/phases.toml`
   by `decompiler/crates/kuna-decomp/build.rs`; the rendered catalog is
   [docs/options.md](../options.md) and this spec never duplicates its metadata.
+- **Modes (option presets)** (kuna)
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (MODE_TABLE, mode_overrides)`,
+  applied by `decompiler/crates/kuna-decomp/src/infra/architecture.rs (apply_mode)`):
+  a *mode* is a named, ordered list of `(option, value)` overrides layered over the
+  shipped defaults — a P0 pipeline-variant preset over the option surface, **not** a
+  `[[settable]]` row (it references existing option names, so it never touches the
+  catalog or its count/tier gates). Two ship: **`reliable`** (the shipped defaults, an
+  empty-override alias) and **`aggressive`** (every off-by-default recovery/analysis
+  pass on, except `v850indirectbranch` which would mis-decode register-indirect calls
+  off-V850). Selected with `--mode` on `kuna decompile`/`decompile-all`/`functions` or
+  the console `mode <name>` command; overrides are applied *before* the user's
+  `--option` (last-write, so an explicit `--option` still wins). Discover with
+  `kuna modes`; full membership in [docs/modes.md](../modes.md).
 - **The restart log** (kuna)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs (RestartLog)`):
   owned by the engine `Architecture` so it survives function clears; every
@@ -273,8 +286,10 @@ loader adjustments made at bootstrap (e.g. `readonlypropagate` forced on for
 MIPS so GOT-slot loads fold to import names,
 `decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_object)`);
 (3) driver surface injections (`listing`, non-x86-64 `funcstart_patterns`, §0.2);
-(4) the user's `--option`/`kassert` lines; and finally (5) the per-function
-snapshot copy (§0.5), after which the value is frozen for that function's drive.
+(4) a selected `--mode`/`mode` preset (`modes.rs`), prepended to the option list;
+(5) the user's `--option`/`kassert` lines (which override the mode); and finally
+(6) the per-function snapshot copy (§0.5), after which the value is frozen for that
+function's drive.
 Which defaults deliberately diverge from upstream, and the measurements behind
 each flip, live in `docs/divergences.md`, not here.
 

@@ -1,5 +1,28 @@
 # kuna Progress Log
 
+## Session (2026-07-10) — Decompiler modes: `--mode aggressive | reliable`
+
+A new **mode** axis over the option surface: a *mode* is a named, ordered list of `(option,
+value)` overrides layered on the shipped defaults, applied *before* the user's `--option`
+(last-write, so `--option` still wins). Two ship — **`reliable`** (the shipped defaults, an
+empty-override alias; byte-identical to no `--mode`) and **`aggressive`** (every off-by-default
+recovery/analysis pass on, **except** `v850indirectbranch`, whose predicate matches any
+register-indirect `CALLIND` and would corrupt x86-64/ARM). Modes are **not** `[[settable]]` rows
+(they reference existing option names), so the catalog and its count/tier gates are untouched.
+
+- Single source of truth: `kuna-decomp/src/p0_knowledge/modes.rs` (`MODE_TABLE`, `mode_overrides`);
+  batch helper `Architecture::apply_mode`. Reachable from `kuna decompile` / `decompile-all` /
+  `functions` (`--mode`) and the interactive/datatest console (`mode <name>`); discovery via
+  `kuna modes [--json]`.
+- No default changes ⇒ **no DIV entry**; corpus byte-identical. `make test` 675/675, `make
+  test-stages` 259→**260** (one additive case `tests/stages/modes-aggressive.xml`, a two-pass
+  `mode reliable` vs `mode aggressive` on the returndup witness), `make rust-test` (+8 unit tests
+  in `modes.rs` / `architecture/tests.rs`), `make check-spec` green.
+- Speed (b2sum, whole-binary O0): default 6.05 s vs `--mode aggressive` 6.43 s (+6%); `reliable`
+  is byte-identical to default. Docs: `docs/modes.md`, spec §0.4.
+- Purpose: the aggressive preset is the recovery-ceiling / decbench measurement lever (A/B which
+  off-by-default options net-help GED → candidate default-on flips).
+
 ## Session (2026-07-08) — Grand consolidation: compiler vocabulary, tiered catalog, the live spec, and a comment strip
 
 A large, cross-cutting cleanup landed on one branch (`refactor/consolidation`, ~31 commits, each

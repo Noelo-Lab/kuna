@@ -137,6 +137,46 @@ fn reset_defaults_is_idempotent_after_mutation() {
 }
 
 #[test]
+fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850() {
+    let mut arch = Architecture::new("test:LE:32", bare_sleigh());
+    // Off-by-default under the shipped defaults.
+    assert!(!arch.analysis_listing);
+    assert!(!arch.analysis_aif);
+    assert!(!arch.switch_guard_bound);
+    assert!(!arch.duplicate_shared_returns);
+    assert!(!arch.sparc_struct_return);
+    assert!(!arch.v850_indirect_branch);
+
+    arch.apply_mode("aggressive").expect("aggressive mode applies");
+
+    // Representative aggressive members turned on.
+    assert!(arch.analysis_listing);
+    assert!(arch.analysis_aif);
+    assert!(arch.switch_guard_bound);
+    assert!(arch.duplicate_shared_returns);
+    assert!(arch.sparc_struct_return); // SPARC-idiom-gated, safe to enable
+    // The one intentional exclusion: aggressive must NOT enable this (it
+    // reclassifies register-indirect calls on non-V850 targets).
+    assert!(!arch.v850_indirect_branch);
+}
+
+#[test]
+fn apply_mode_reliable_is_a_no_op() {
+    let mut arch = Architecture::new("test:LE:32", bare_sleigh());
+    arch.apply_mode("reliable").expect("reliable mode applies");
+    // reliable == shipped defaults: nothing off-default gets flipped.
+    assert!(!arch.analysis_listing);
+    assert!(!arch.analysis_aif);
+    assert!(!arch.duplicate_shared_returns);
+}
+
+#[test]
+fn apply_mode_unknown_errors() {
+    let mut arch = Architecture::new("test:LE:32", bare_sleigh());
+    assert!(arch.apply_mode("turbo").is_err());
+}
+
+#[test]
 fn name_function_angr_vs_upstream() {
     let mut arch = Architecture::new("t", bare_sleigh());
     // Need a space to make an address; use a constant-space address (any space

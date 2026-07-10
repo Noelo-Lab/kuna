@@ -4,6 +4,7 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod options;
+pub mod modes;
 pub mod database;
 pub mod overrides;
 pub mod kuna_phases;

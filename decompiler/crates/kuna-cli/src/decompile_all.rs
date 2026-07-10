@@ -587,6 +587,20 @@ fn render_c(funcs: &[FuncResult]) -> String {
 
 // --- argument parsing --------------------------------------------------------
 
+/// Expand a decompiler *mode* name (`reliable` | `aggressive`) into its owned
+/// `(option, value)` overrides. Callers PREPEND these before the user's
+/// `--option` pairs so an explicit `--option` still wins (last-write, matching
+/// the console's `mode` then `option` ordering). Errors on an unknown mode.
+pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> {
+    match kuna_decomp::modes::mode_overrides(mode) {
+        Some(ovr) => Ok(ovr.iter().map(|(o, v)| ((*o).to_string(), (*v).to_string())).collect()),
+        None => {
+            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
+            Err(format!("unknown mode {mode:?} (known: {})", known.join(", ")))
+        }
+    }
+}
+
 fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let mut binary: Option<String> = None;
     let mut json = false;
@@ -595,6 +609,7 @@ fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let mut no_vars = false;
     let mut max_fn_seconds: u64 = 120;
     let mut options: Vec<(String, String)> = Vec::new();
+    let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
@@ -627,6 +642,7 @@ fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 i += 2;
             }
+            "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
@@ -651,6 +667,18 @@ fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+
+    // Expand a selected `--mode` into its option overrides, PREPENDED so an
+    // explicit `--option` still wins (last-write). Every downstream consumer
+    // (`apply_loadtime_env`, the listing/funcstart auto-inject skips,
+    // `apply_runtime_options`) reads `args.options`, so this is the single wire
+    // point for both `decompile-all` and `functions`.
+    if let Some(m) = mode {
+        let mut merged = mode_override_pairs(&m)?;
+        merged.extend(options);
+        options = merged;
+    }
+
     Ok(Args { binary, json, names, addrs, no_vars, max_fn_seconds, options, slice, target, sleighpath })
 }
 
@@ -672,8 +700,8 @@ fn parse_hex(s: &str) -> Result<u64, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--max-fn-seconds N] [--option N V].. \\\n\
-         \x20                   [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                   [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive] \\\n\
+         \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile every function of a binary in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
@@ -689,7 +717,7 @@ fn usage_decompile_all() {
 
 fn usage_functions() {
     eprintln!(
-        "usage: kuna functions <binary> [--json] [--slice ARCH] [--target T] [--sleighpath D]\n\
+        "usage: kuna functions <binary> [--json] [--mode reliable|aggressive] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,functions:[{{name,address}}]}})."
