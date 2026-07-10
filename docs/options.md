@@ -1,0 +1,830 @@
+# kuna option catalog
+
+**Generated** by `kuna catalog --markdown` from `settableTable` in `decompiler/crates/kuna-decomp/phases.toml` -- do not edit by hand; edit the registry row and regenerate.
+
+Set any option per run: `kuna decompile <bin> <fn> --option <name> <value>` (repeatable), `kuna decompile-all <bin> --option <name> <value>`, or the console `option <name> <value>`. Defaults are the shipped values; every intentional default change is logged in `docs/divergences.md`. The algorithms behind these options are described in `docs/spec/`.
+
+Three tiers:
+
+- **Toggleable transforms** -- restructure, duplicate, remove, or insert code; near-always better on the right source shape and wrong on the wrong one. **This is the on/off control surface.**
+- **Analysis & loader passes** -- what gets discovered/decoded/named before decompilation.
+- **Core rendering defaults** -- near-always-better rendering/naming/peepholes; part of the decompiler, not the control surface. Flip only for upstream byte-parity or unusual consumers.
+
+## Symptom index
+
+| If the output shows... | Try |
+|---|---|
+| long run of per-element constant stores instead of a single memset | [`memsetrecover`](#memsetrecover) |
+| unrolled or SIMD zeroing rendered as dozens of assignments | [`memsetrecover`](#memsetrecover) |
+| builtin_memset call where the individual element stores are wanted (flip off) | [`memsetrecover`](#memsetrecover) |
+| spurious CONCAT44 return value in a void or single-register function | [`returnpair`](#returnpair) |
+| two return registers joined into one double-width return (e.g. sparc o0/o1) | [`returnpair`](#returnpair) |
+| return type twice the natural width built from a register concat | [`returnpair`](#returnpair) |
+| v850 jmp [reg] rendered as an indirect call instead of a recovered switch | [`v850indirectbranch`](#v850indirectbranch) |
+| jump table on v850 never recovered because the dispatch decodes as a computed call | [`v850indirectbranch`](#v850indirectbranch) |
+| leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump) |
+| jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump) |
+| plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump) |
+| garbage code after a call to __stack_chk_fail or abort in a relocatable .o | [`noreturn_extern`](#noreturn_extern) |
+| function balloons by swallowing the next function after an extern no-return call | [`noreturn_extern`](#noreturn_extern) |
+| dead fall-through after exit or assert-fail in an object file | [`noreturn_extern`](#noreturn_extern) |
+| switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call | [`switchmodbound`](#switchmodbound) |
+| indirect jump bounded only by a modulo or and-mask on its index never becomes a switch | [`switchmodbound`](#switchmodbound) |
+| 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound) |
+| computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound) |
+| getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase) |
+| pic relative-offset jump table with a loop-carried base register never recovered | [`switchsharedcase`](#switchsharedcase) |
+| 'Too many branches' on a dispatch whose table base is set before the loop | [`switchsharedcase`](#switchsharedcase) |
+| image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call | [`switchmultipred`](#switchmultipred) |
+| 'Too many branches' where the dispatch block has several guarded incoming paths | [`switchmultipred`](#switchmultipred) |
+| msvc memmove small-count tail dispatch truncated to an indirect call | [`switchmultipred`](#switchmultipred) |
+| one switch recovered but sibling interleaved jump tables degrade to computed calls | [`unrolledguard`](#unrolledguard) |
+| 'Could not find op at target address' during recovery of an msvc optimized memcpy dispatch | [`unrolledguard`](#unrolledguard) |
+| duff's-device tail dispatch rendered as 'Treating indirect jump as call' | [`unrolledguard`](#unrolledguard) |
+| dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
+| inter-function alignment padding decoded as add [rax],al style instructions | [`noreturn_externmatch`](#noreturn_externmatch) |
+| flow runs past an undefined-extern abort or exit call in a relocatable object | [`noreturn_externmatch`](#noreturn_externmatch) |
+| spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
+| store through a take-address-of-local pointer dropped as dead so the later read is garbage | [`stackalias`](#stackalias) |
+| bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc | [`sparcstructret`](#sparcstructret) |
+| function tail dropped after a sparc call followed by unimp | [`sparcstructret`](#sparcstructret) |
+| switch rendered as nested if/else-if compare tree over one variable | [`loweredswitch`](#loweredswitch) |
+| binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch) |
+| flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch) |
+| goto placement follows the sailr region walk instead of ghidra's collapse order (flip off to force CollapseStructure) | [`regionstructure`](#regionstructure) |
+| uncompilable c where a loop body folded into a while condition | [`regionstructure`](#regionstructure) |
+| structuring differs from upstream ghidra on the same function | [`regionstructure`](#regionstructure) |
+| goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine) |
+| irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine) |
+| secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine) |
+| more gotos than angr on a function forced to virtualize several edges | [`regionedgeorder`](#regionedgeorder) |
+| goto cut at an awkward edge where a dominance/post-dominator ordering exposes more structure | [`regionedgeorder`](#regionedgeorder) |
+| goto to a label that only returns | [`gotoreduce`](#gotoreduce) |
+| label_N: return; shared tail after an if | [`gotoreduce`](#gotoreduce) |
+| more gotos than angr for the same function | [`gotoreduce`](#gotoreduce) |
+| else block kept although the matching if branch always returns or aborts | [`ifelseflatten`](#ifelseflatten) |
+| guard-clause body indented one level deeper than the source | [`ifelseflatten`](#ifelseflatten) |
+| redundant else after an early-return arm | [`ifelseflatten`](#ifelseflatten) |
+| goto into the middle of a sibling branch's arm (compiler cross-jumping) | [`crossjumprevert`](#crossjumprevert) |
+| shared non-return tail reached by goto from an else-if chain | [`crossjumprevert`](#crossjumprevert) |
+| label planted inside an else block targeted from another branch | [`crossjumprevert`](#crossjumprevert) |
+| goto to a shared free(p); return; style epilogue | [`taildup`](#taildup) |
+| cleanup-call return tail reached via label instead of duplicated inline | [`taildup`](#taildup) |
+| flip off when many error checks share one cleanup block (the goto out; idiom) | [`taildup`](#taildup) |
+| both arms of an if/else begin or end with the same duplicated statements | [`dedupitetail`](#dedupitetail) |
+| shared cleanup or help call repeated verbatim in the two branches | [`dedupitetail`](#dedupitetail) |
+| compiler-duplicated tail emitted twice instead of hoisted out of the if | [`dedupitetail`](#dedupitetail) |
+| if (c) v = A; else v = B; assignment diamond where a ternary v = c ? A : B is expected | [`iteregion`](#iteregion) |
+| format/flag builder full of two-arm constant assignments to the same variable | [`iteregion`](#iteregion) |
+| flip off when the source likely wrote an explicit if/else | [`iteregion`](#iteregion) |
+| giant short-circuit if with comma-expression side effects merging several source early-return guards | [`returndup`](#returndup) |
+| one trailing return shared by many guard paths where the source used per-guard early returns | [`returndup`](#returndup) |
+| merged guard condition containing v = f(...) assignments inline | [`returndup`](#returndup) |
+| inverted diamond: if (guard) { entire body } else { v = 0; } return v; | [`earlyreturn`](#earlyreturn) |
+| leading argument-validity check wraps the whole body instead of an early return | [`earlyreturn`](#earlyreturn) |
+| function opens with if (p != 0) { everything } where source wrote if (!p) return 0; | [`earlyreturn`](#earlyreturn) |
+| wide switch where every case assigns a constant and breaks to one shared return | [`switchreturn`](#switchreturn) |
+| switch (x) { case A: v = K; break; ... } return v; instead of per-case return K | [`switchreturn`](#switchreturn) |
+| 17-plus-case const dispatch keeps a merged return variable | [`switchreturn`](#switchreturn) |
+| call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0) | [`foldcallret`](#foldcallret) |
+| single-use call return not inlined into its use site | [`foldcallret`](#foldcallret) |
+| flip off to force every call output into a named temporary (ghidra style) | [`foldcallret`](#foldcallret) |
+| stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue | [`stackguard`](#stackguard) |
+| shared-return goto forced by the canary check block | [`stackguard`](#stackguard) |
+| flip off to keep the real canary instructions for auditing the protector | [`stackguard`](#stackguard) |
+| if (x == 0) guard with the common path in the else arm | [`branchflip`](#branchflip) |
+| negated condition where angr renders the positive complement first | [`branchflip`](#branchflip) |
+| if/else polarity inverted versus the source's reading order | [`branchflip`](#branchflip) |
+| loop exit rendered as goto label_N; plus a synthesized label instead of break; | [`loopbreak_recovery`](#loopbreak_recovery) |
+| switch-case exit gotos where break; is expected | [`loopbreak_recovery`](#loopbreak_recovery) |
+| error paths leave a loop by goto to its successor label | [`loopbreak_recovery`](#loopbreak_recovery) |
+| dead code kept after calls to exit/abort/panic when off | [`noreturn_known`](#noreturn_known) |
+| call to a known no-return libc function still shows a fall-through path | [`noreturn_known`](#noreturn_known) |
+| unreachable epilogue after std::terminate or a rust panic call | [`noreturn_known`](#noreturn_known) |
+| heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
+| dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
+| caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
+| unreachable code after a call to an exit/fatal wrapper | [`noreturn_propagate`](#noreturn_propagate) |
+| function truncated after calling a cold wrapper | [`noreturn_propagate`](#noreturn_propagate) |
+| spurious while(true) around a call that never returns | [`noreturn_propagate`](#noreturn_propagate) |
+| stripped binary's unnamed exit wrapper swallows the functions after it | [`noreturn_propagate`](#noreturn_propagate) |
+| caller keeps decoding the cold path after error(2, ...) into the next function | [`noreturn_error`](#noreturn_error) |
+| function balloons past a wrapper that tail-calls error with nonzero status | [`noreturn_error`](#noreturn_error) |
+| dead fall-through after a gnu error(nonzero, ...) call | [`noreturn_error`](#noreturn_error) |
+| wrapper with a mid-body fatal call still treated as returning | [`noreturn_reach`](#noreturn_reach) |
+| unreachable write()/return tail keeps a fatal wrapper looking like it returns | [`noreturn_reach`](#noreturn_reach) |
+| switch whose every arm ends in a no-return call not concluded no-return | [`noreturn_reach`](#noreturn_reach) |
+| caller decodes garbage past an sshpkt_fatal-style wrapper | [`noreturn_reach`](#noreturn_reach) |
+| puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
+| imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
+| string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings) |
+| no data symbols at ascii runs in rodata | [`strings`](#strings) |
+| a stripped binary yields almost no functions (symbol stream only) | [`entry_disc`](#entry_disc) |
+| functions discovered via e_entry/init_array/.eh_frame/prologues missing from the list | [`entry_disc`](#entry_disc) |
+| c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
+| exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full) |
+| gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full) |
+| functions after nop padding missing in a stripped binary | [`funcstart_patterns`](#funcstart_patterns) |
+| a push rbx; mov rbx,rdi prologue never discovered as a function start | [`funcstart_patterns`](#funcstart_patterns) |
+| code-bearing gaps between discovered functions left undefined | [`funcstart_patterns`](#funcstart_patterns) |
+| thumb code misdecoded as arm garbage instructions | [`arm_markers`](#arm_markers) |
+| $t/$a mapping symbols ignored so the wrong decode mode applies | [`arm_markers`](#arm_markers) |
+| unresolved *(gp + offset) loads on mips | [`mips_gp`](#mips_gp) |
+| got/.sdata references never fold to real addresses in a pic mips binary | [`mips_gp`](#mips_gp) |
+| i386 pie libc calls render as sub_<addr> instead of exit/dcgettext | [`i386_pie_plt`](#i386_pie_plt) |
+| spurious do{}while(true) or goto loop after an unnamed exit stub in a 32-bit pie binary | [`i386_pie_plt`](#i386_pie_plt) |
+| mips16/micromips function body misdecoded as mips32 garbage | [`mips_isa`](#mips_isa) |
+| odd-address mips functions decode in the wrong isa mode | [`mips_isa`](#mips_isa) |
+| a -g binary still shows default names and inferred types | [`dwarf`](#dwarf) |
+| dwarf function/global names and typed signatures ignored | [`dwarf`](#dwarf) |
+| no /* file:line */ source-location comments in the output | [`dwarf_lines`](#dwarf_lines) |
+| want each instruction annotated with its dwarf source line | [`dwarf_lines`](#dwarf_lines) |
+| mcount/__fentry__ profiling calls clutter every -pg function prologue | [`callfixup`](#callfixup) |
+| cspec call-fixup targets rendered as plain calls instead of dissolved | [`callfixup`](#callfixup) |
+| absolute function-pointer table in rodata never recognized | [`addrtable`](#addrtable) |
+| indirect calls through an unrecovered address table in a stripped target | [`addrtable`](#addrtable) |
+| an immediate operand pointing at a rodata string renders as a bare number | [`operand_refs`](#operand_refs) |
+| string argument of a no-prototype call not typed as char[N] | [`operand_refs`](#operand_refs) |
+| printf/scanf variadic arguments render untyped at the call site | [`formatstring`](#formatstring) |
+| %d and %s arguments carry generic types instead of int/char * | [`formatstring`](#formatstring) |
+| noreturn discovery inert on a stripped binary | [`listing`](#listing) |
+| analysis passes that need whole-image xrefs do nothing | [`listing`](#listing) |
+| no program-wide instruction/xref/function model for consumer passes | [`listing`](#listing) |
+| stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid) |
+| no .fid database renames applied in a stripped binary | [`fid`](#fid) |
+| msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti) |
+| no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes | [`rtti`](#rtti) |
+| function reachable only through a rodata function-pointer table never discovered | [`aif`](#aif) |
+| undefined gap between functions that clearly holds code | [`aif`](#aif) |
+| call *reg targets missing from the function list | [`aif`](#aif) |
+| stripped go binary renders sub_<addr> instead of main.main and runtime.* names | [`gopclntab`](#gopclntab) |
+| go package function names missing | [`gopclntab`](#gopclntab) |
+| objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
+| __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc) |
+| stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
+| pdb symbol names not applied to a pe | [`pdb`](#pdb) |
+| a .o relocatable object fails with 'Unable to load N bytes at ...' | [`relocobjects`](#relocobjects) |
+| ET_REL object maps zero bytes so nothing decompiles | [`relocobjects`](#relocobjects) |
+| arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled | [`macho-arm64e`](#macho-arm64e) |
+| pac instructions in an apple-silicon binary not modeled by the loaded spec | [`macho-arm64e`](#macho-arm64e) |
+| comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
+| need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
+| &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
+| indexed array form where base + offset arithmetic is desired for diffing | [`arraynotation`](#arraynotation) |
+| thumb function pointer renders as symbolic &fn[1] where the raw odd-address constant is wanted | [`thumbfuncptr`](#thumbfuncptr) |
+| callback constant on arm resolves to a function symbol plus one instead of a bare hex literal | [`thumbfuncptr`](#thumbfuncptr) |
+| a bare constant equal to a function entry renders as the named function pointer | [`inferfuncentry`](#inferfuncentry) |
+| hex literal at a single-bit image base unexpectedly named as a function (flip off for the raw constant) | [`inferfuncentry`](#inferfuncentry) |
+| want the raw (b<<k) s>> k sign-extension shift idiom visible instead of the folded comparison | [`booleanmask`](#booleanmask) |
+| flag-as-high-bit lowering (8051 style) hidden by the cleaned boolean compare | [`booleanmask`](#booleanmask) |
+| want the raw S/OV overflow-flag arithmetic visible instead of the folded signed compare | [`ovlesssimplify`](#ovlesssimplify) |
+| v850-style explicit flag compare collapsed to a clean signed less-than | [`ovlesssimplify`](#ovlesssimplify) |
+| want the raw CONCAT11(CARRY1(...)) intrinsics visible instead of one wide add | [`addcarrychain`](#addcarrychain) |
+| 8-bit adc carry-chain pair (6502 style) folded into a single 16-bit addition | [`addcarrychain`](#addcarrychain) |
+| boolean shifted into the sign bit tested with a less-than-zero compare | [`flagcompare`](#flagcompare) |
+| N==V signed-overflow branch idiom rendered as raw flag arithmetic | [`flagcompare`](#flagcompare) |
+| want the explicit condition-flag math visible (flip off) | [`flagcompare`](#flagcompare) |
+| &pxVar[-0x1000] page-probe noise in a large-frame function | [`stackprobeloop`](#stackprobeloop) |
+| calls rendered argument-less because the stack pointer never resolved to a constant offset | [`stackprobeloop`](#stackprobeloop) |
+| gcc stack-clash probe loop leaves the frame layout unrecovered | [`stackprobeloop`](#stackprobeloop) |
+| decompilation aborts with 'Unable to find unique hash for varnode' | [`dynamichashmax`](#dynamichashmax) |
+| dense unrolled simd/neon loop (aarch64, go) fails to decompile at symbol mapping | [`dynamichashmax`](#dynamichashmax) |
+| loop walks an array with a raw offset accumulator (iVar += 0x414) instead of an index | [`arraystride`](#arraystride) |
+| strided induction offset never re-expressed as counter*stride array indexing | [`arraystride`](#arraystride) |
+| malformed do/while whose body holds an out-of-place constant assignment | [`condexeplace`](#condexeplace) |
+| spurious = 0 copy materialized inside a loop block | [`condexeplace`](#condexeplace) |
+| function aborts with 'Cannot properly adjust input varnodes' | [`inputvarnodeadjust`](#inputvarnodeadjust) |
+| overlapping stack parameters (mc68k link/unlk) kill the whole decompilation | [`inputvarnodeadjust`](#inputvarnodeadjust) |
+| iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra) | [`namestyle`](#namestyle) |
+| v-numbered locals and sub_/dat_/label_ names in the default output | [`namestyle`](#namestyle) |
+| byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
+| undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
+| size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
+| the same local declared once although many HighVariables share the stack slot | [`dedupvardecls`](#dedupvardecls) |
+| flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times) | [`dedupvardecls`](#dedupvardecls) |
+
+## Toggleable transforms
+
+The control surface: each of these can make output worse on the wrong source shape, so each stays flippable.
+
+### `memsetrecover` -- on | off, default `on`
+
+- **Symptoms:** long run of per-element constant stores instead of a single memset; unrolled or SIMD zeroing rendered as dozens of assignments; builtin_memset call where the individual element stores are wanted (flip off).
+- **What it does:** Collapse a run of constant-fill stores (incl. inlined/SIMD bzero) into a single builtin_memset.
+- **When to flip:** Flip off only to see the individual element stores; on (default) reconstructs the memset.
+- **Where / provenance:** P5/constsequence · ghidra-upstream · correctness-fix · GH-9230/1537
+- **Example:** `option memsetrecover off`
+
+### `returnpair` -- pair | single, default `pair` (destructive opt-in)
+
+- **Symptoms:** spurious CONCAT44 return value in a void or single-register function; two return registers joined into one double-width return (e.g. sparc o0/o1); return type twice the natural width built from a register concat.
+- **What it does:** Whether a passively-active second return register may be joined into a wide return (pair) or dropped (single).
+- **When to flip:** Set single PER FUNCTION when a void/single-register function shows a spurious CONCAT44 return (e.g. SPARC); DESTRUCTIVE as a global default (truncates real multi-register returns).
+- **Where / provenance:** P4/trial-budget · ghidra-upstream · opt-in-tool · GH-6990
+- **Example:** `option returnpair single`
+
+### `v850indirectbranch` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** v850 jmp [reg] rendered as an indirect call instead of a recovered switch; jump table on v850 never recovered because the dispatch decodes as a computed call.
+- **What it does:** Reclassify a V850 jmp [reg] CALLIND to BRANCHIND so switch-table recovery runs.
+- **When to flip:** Set on PER V850 PROGRAM to recover jump-table switches; DESTRUCTIVE as a global default (matches register-indirect calls on other architectures).
+- **Where / provenance:** P2/flow-classification · ghidra-upstream · opt-in-tool · GH-8817
+- **Example:** `option v850indirectbranch on`
+
+### `tailcalljump` -- on | off, default `on`
+
+- **Symptoms:** leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning; jmp to a plt stub inlined into the caller instead of a named tail call; plt thunk body absorbed where func(...) is expected.
+- **What it does:** Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable.
+- **When to flip:** A leaf function ends in `jmp <func>@plt` and kuna would emit `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`. On by default (DIV-14) = the named call plus a `tailcalljump: recovered tail call` WARNING; flip OFF to restore the upstream flow-into-callee rendering (the two affected datatests, Long double #1/#2, opt out per-test).
+- **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-tee-O2-tail-jumps
+- **Example:** `option tailcalljump on`
+
+### `noreturn_extern` -- on | off, default `on`
+
+- **Symptoms:** garbage code after a call to __stack_chk_fail or abort in a relocatable .o; function balloons by swallowing the next function after an extern no-return call; dead fall-through after exit or assert-fail in an object file.
+- **What it does:** REMOVES CODE: marks a matched extern call no-return, so code after the call (the fall-through) is dropped as unreachable. Treat a direct CALL whose resolved callee display name matches a known ELF no-return name (`__stack_chk_fail`, `abort`, `exit`, `__assert_fail`, `pthread_exit`, `longjmp`, `_Unwind_Resume`, the C++ terminate/throw family, ...) as no-return at decompile flow time - planting the artificial halt so flow stops at the call - even when the address-keyed no-return flag is unset. This is the undefined-extern case the analysis-tier `noreturn_known` pass cannot reach: in an ELF relocatable object (ET_REL `.o`) a libc no-return is an `UND` symbol with no definition/address, so the address-keyed pass never marks it, and flow runs off the function's end into the next function.
+- **When to flip:** On by default (DIV-14). Flip OFF only to restore the upstream fall-through past a matched extern no-return call (e.g. to study the raw flow). On = a direct call to a known ELF no-return name is treated as no-return, so the function is bounded at it and the post-call dead code is dropped (e.g. an ET_REL `.o` tail.o::tail_bytes renders 87 lines instead of ballooning to 326 lines / 9 gotos by swallowing adjacent `tail_lines`/`die_pipe` after `__stack_chk_fail()`). The name match overlaps `noreturn_known`'s for defined/imported symbols; default-on is byte-identical over the 675 datatests (no datatest call resolves to a no-return name).
+- **Where / provenance:** P2/flow-classification · angr · correctness-fix · angr-tail-tail-bytes-ret-dup
+- **Example:** `option noreturn_extern on`
+
+### `switchmodbound` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call; indirect jump bounded only by a modulo or and-mask on its index never becomes a switch.
+- **What it does:** Bound a LOAD-table jumptable by a modulo (index % N) or and-mask on its index when no guard bounds it.
+- **When to flip:** Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call; DESTRUCTIVE as a global default (may over-bound an unrelated indirect jump).
+- **Where / provenance:** P2/switch-model · ghidra-upstream · opt-in-tool · GH-9191
+- **Example:** `option switchmodbound on`
+
+### `switchguardbound` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** 'Too many branches' jumptable failure where a cbranch range guard bounds the index; computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack.
+- **What it does:** Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard (idx LEu N) when the basic model's guard analysis could not (e.g. a GCC `sub LOW; ja DEFAULT` dispatch with the index spilled to the stack and the flag idiom not yet simplified).
+- **When to flip:** Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch is range-guarded (vs the modulo form switchmodbound handles); DESTRUCTIVE as a global default (the guard-to-index correspondence is asserted across a stack spill it cannot prove in dataflow, so it may over-bound an unrelated indirect jump).
+- **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-missing-function-call
+- **Example:** `option switchguardbound on`
+
+### `switchsharedcase` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** getopt-style switch inside a loop degrades to a computed call with goto spaghetti; pic relative-offset jump table with a loop-carried base register never recovered; 'Too many branches' on a dispatch whose table base is set before the loop.
+- **What it does:** Recover a GCC PIC relative-offset jump table (target = base + sext(load4(base + idx*4))) whose table-base register is a loop-carried MULTIEQUAL: the `lea .rodata` base is set before a getopt-style loop while the BRANCHIND is inside it, so the path-meld collapses to the final base+offset add and the CBRANCH range guard on the load index never bounds the table. Rebuilds the meld as a clean single path down to the guarded index so the table resolves and the switch structures. On by default (DIV-14): SLOWER on the functions whose loop-carried switch it recovers (the extra meld-rebuild + table resolution walk runs there), but kept on for the better recovery quality; byte-identical (0/675) on every datatest, which has no such loop-carried PIC switch.
+- **When to flip:** On by default (DIV-14): recovers a getopt/dispatch switch inside a loop that would otherwise report 'Could not recover jumptable ... Too many branches' and render as a computed (code *)() call with goto spaghetti. Flip OFF only if the heuristic mis-sizes or accepts an unrelated indirect jump on a specific program (it reads a read-only table at a base it recovers across a loop phi) — it is marked destructive for that reason, but it is byte-identical over the 675 datatests and kept on for quality despite being slower on the functions it recovers.
+- **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-switch-case-shared-case-node
+- **Example:** `option switchsharedcase on`
+
+### `switchmultipred` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call; 'Too many branches' where the dispatch block has several guarded incoming paths; msvc memmove small-count tail dispatch truncated to an indirect call.
+- **What it does:** Recover an image-base-relative jump table (target = imagebase + load4(table + idx*4)) whose bound guard is 'unrolled' / duplicated across MULTIPLE predecessors of the dispatch block: the BRANCHIND's parent has sizeIn() > 1, each incoming path ending in its OWN (often semantically different) bound CBRANCH, the per-path switch indices meeting in a MULTIEQUAL. The single-predecessor guard walk short-circuits to checkUnrolledGuard, so no dominating guard bounds the table and the dispatch is truncated to a computed (code *)() call. When on, finds the dispatch MULTIEQUAL, evaluates each predecessor guard as a function of its MULTIEQUAL input, and re-bounds the table to [0, max-over-paths) so the readonly-LOAD table model recovers the switch (angr's 'abnormal switch case').
+- **When to flip:** Set on PER PROGRAM when an image-base-relative switch (e.g. an MSVC memmove/memcpy small-count tail dispatch) reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch block has multiple predecessors each with its own bound guard (vs the single-guard form switchguardbound handles); DESTRUCTIVE as a global default (it unions per-path guard prefixes across a MULTIEQUAL and re-binds the table from a heuristic max bound, so it may over-bind an unrelated multi-entry indirect jump).
+- **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-abnormal-switch-case-case3
+- **Example:** `option switchmultipred on`
+
+### `unrolledguard` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** one switch recovered but sibling interleaved jump tables degrade to computed calls; 'Could not find op at target address' during recovery of an msvc optimized memcpy dispatch; duff's-device tail dispatch rendered as 'Treating indirect jump as call'.
+- **What it does:** Recover the interleaved jump tables of an MSVC optimized memcpy/memmove (Duff's device) at the partial-flow stage. The function holds several image-base-relative jump tables whose case bodies are reachable only as one another's case targets; kuna recovers them one at a time, each in its OWN fresh partial-flow clone. A later table's clone re-clones an already-recovered sibling table into its jumpvec, and that partial's collectEdges then calls target() on a sibling case body that was never decoded into THIS partial's visited snapshot (it is only decoded into the parent flow after the recovery pass returns), throwing 'Could not find op at target address' so the dispatch is truncated to a computed (code *)() call. Upstream avoids this by building one shared partial and running collectEdges once while the sibling tables are still empty. When on, the partial-clone collectEdges SKIPS an unresolvable recovered-table case-target edge (the same 'assume no branches out' shape the findJumpTable==0 partial path already uses) instead of throwing, so the interleaved tables all recover and the dispatches render as switches (angr's optimized memcpy).
+- **When to flip:** Set on PER PROGRAM when a function holding several interleaved jump tables (e.g. an MSVC optimized memcpy/memmove Duff's-device tail dispatch) recovers ONE switch but degrades the OTHERS to 'Treating indirect jump as call' computed (code *)() calls, and the failures are flow-stage 'Could not find op at target address' on a sibling table's case body (NOT a guard-bound failure switchguardbound/switchmultipred would handle); DESTRUCTIVE as a global default (it suppresses an unresolved-case-target edge during partial-flow recovery, so on an unrelated truly-malformed table it could mask a real missing target instead of declining the table).
+- **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-optimized-memcpy-6301a9
+- **Example:** `option unrolledguard on`
+
+### `noreturn_externmatch` -- on | off, default `on`
+
+- **Symptoms:** dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o; inter-function alignment padding decoded as add [rax],al style instructions; flow runs past an undefined-extern abort or exit call in a relocatable object.
+- **What it does:** Treat a direct CALL whose callee NAME matches the vendored ELF known-no-return list (exit/abort/__stack_chk_fail/...) as no-return at the flow `query_call_no_return` seam, even when the address-keyed noreturn_known scan emitted no fact. Closes the ET_REL `.o` gap: an undefined extern has symtab address()==0 and no PLT, so noreturn_known never marks it, and flow runs past a `__stack_chk_fail()` call into the inter-function alignment padding (00 00 -> `add [rax],al`), emitting dozens of garbage `*v = *v + c;` lines.
+- **When to flip:** On by default (DIV-13): applies the SAME vendored name list and global/std namespace guard as the already-default-on noreturn_known, just at the flow query seam to reach the ET_REL `.o` undefined extern the address-keyed scan structurally misses; a no-op on a normal dynamically-linked ELF (the proto flag is already set). Set OFF to restore the prior byte-identical rendering (dead `add`-padding after a `__stack_chk_fail`/`abort`/`exit` call reappears).
+- **Where / provenance:** P2/flow-follow · angr · correctness-fix · angr-incorrect-duplication-chcon
+- **Example:** `option noreturn_externmatch off`
+
+### `stackalias` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** spurious uninitialized local (xStack_N) returned after storing through a pointer to a local; store through a take-address-of-local pointer dropped as dead so the later read is garbage.
+- **What it does:** Hold a store-through-a-stack-pointer-alias (int *p=&x; *p=x; return *p) alive across the deadcode race so it is not dropped to an uninitialized stack read.
+- **When to flip:** Set on PER FUNCTION when a take-address-of-local + store-through-pointer returns a spurious uninitialized local (xStack_*); DESTRUCTIVE as a global default (conservatively pins stack stores live, suppressing legitimate dead-store removal).
+- **Where / provenance:** P6/alias-facets · ghidra-upstream · opt-in-tool · GH-8500
+- **Example:** `option stackalias on`
+
+### `sparcstructret` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc; function tail dropped after a sparc call followed by unimp.
+- **What it does:** Let the SPARC struct-return `unimp` after a call fall through instead of becoming a non-returning indirect call.
+- **When to flip:** Set on PER SPARC PROGRAM when a struct-returning callee makes a function render a bogus (*pcVar1)() and drop its tail; DESTRUCTIVE as a global default (an IllegalInstructionTrap-fed BRANCHIND elsewhere is suppressed).
+- **Where / provenance:** P2/flow-classification · ghidra-upstream · opt-in-tool · GH-6882
+- **Example:** `option sparcstructret on`
+
+### `loweredswitch` -- on | off, default `on`
+
+- **Symptoms:** switch rendered as nested if/else-if compare tree over one variable; binary-search cascade of constant compares where source had a switch; flip off to keep the compiler's lowered compare-tree rendering.
+- **What it does:** Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from).
+- **When to flip:** On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch.
+- **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-LoweredSwitchSimplifier
+- **Example:** `option loweredswitch off`
+
+### `regionstructure` -- on | off, default `on`
+
+- **Symptoms:** goto placement follows the sailr region walk instead of ghidra's collapse order (flip off to force CollapseStructure); uncompilable c where a loop body folded into a while condition; structuring differs from upstream ghidra on the same function.
+- **What it does:** Structure the CFG by walking the KunaRegionIdentifier region tree and matching angr Phoenix/SAILR schemas (acyclic sequence + ITE + cyclic loops [Inc 3] + acyclic switch-case [Inc 4], with the SAILR H1/H3-ordered virtualize-to-goto fallback) instead of running Ghidra's CollapseStructure. DIV-12 default-on: the primary structuring path. Byte-identical to Ghidra's CollapseStructure on reducible code; falls back to CollapseStructure on irreducible (multi-entry) loops.
+- **When to flip:** On by default (DIV-12): the region-driven structurer is the primary S8 path. It is byte-identical to Ghidra on reducible code and falls back to CollapseStructure when a function cannot be collapsed to a single structured root (irreducible/multi-entry loops). Set OFF to force the upstream Ghidra CollapseStructure path unconditionally.
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-region-structurer
+- **Example:** `option regionstructure on`
+
+### `regionlooprefine` -- on | off, default `on`
+
+- **Symptoms:** goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue; irreducible or multi-latch loop falls back to raw gotos instead of folding; secondary loop exits rendered as gotos rather than break statements.
+- **What it does:** Extend the region structurer (regionstructure) with cyclic loop-successor refinement: a multi-exit / multi-latch / mid-entry (irreducible) loop that the base cyclic schemas cannot fold is refined by virtualizing its SECONDARY exits and latches to gotos (lowered to break;/continue; by the existing scopeBreak / loop-construction passes) so it folds into a structured while/do-while/for/inf-loop instead of falling back to CollapseStructure. A strict superset of regionstructure's cyclic schemas: a loop the base schemas already fold is untouched, so reducible code stays byte-identical (675/675). Port of angr RegionIdentifier._refine_loop_successors_to_guarded_successors / _ensure_jump_at_loop_exit_ends (the force_loop_single_exit path).
+- **When to flip:** A function with a multi-exit or irreducible loop renders goto-heavy where angr recovers a clean while/for with break/continue (e.g. tr_O2.o::parse_str: 37 -> fewer gotos). On by default (DIV-14; requires regionstructure on, its prerequisite); flip OFF to restore regionstructure-without-refinement. Only loops that would otherwise fall back to CollapseStructure are refined; if refinement cannot make a loop foldable it still falls back (never worse than OFF).
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-tr-o2-parse-str
+- **Example:** `option regionlooprefine on`
+
+### `regionedgeorder` -- on | off, default `off`
+
+- **Symptoms:** more gotos than angr on a function forced to virtualize several edges; goto cut at an awkward edge where a dominance/post-dominator ordering exposes more structure.
+- **What it does:** Improve the region structurer's (regionstructure) last-resort edge-virtualization ORDERING: when no schema applies and the structurer MUST virtualize an edge to a goto, pick the order that minimizes the resulting goto count. Replaces the flat H1 (sibling-count) / H3 (return-edge) + address tiebreak with angr's _last_resort_refinement dominance-tiered bucketing (classify candidate edges into crossing / secondary / other via forward immediate-dominators over the acyclic graph, and virtualize the highest-priority bucket first) and the SAILR _order_virtualizable_edges H2 post-dominator heuristic (prefer the edge whose removal yields the most post-dominators, i.e. the most-linear structure), with the postdom_max_edges (10) / postdom_max_graph_size (50) caps so post-dominator computation stays bounded. Only changes WHICH goto is chosen when the structurer is already forced to virtualize, so on reducible code (where the structurer never virtualizes) output is byte-identical (675/675). Port of angr SAILR phoenix._last_resort_refinement + sailr._order_virtualizable_edges.
+- **When to flip:** Set ON (with regionstructure on, its prerequisite) when a goto-heavy function would render with fewer gotos under a smarter virtualization order — i.e. the structurer is forced to virtualize multiple edges and the bucketing/post-dominator order exposes more structure than the address tiebreak. Default OFF: byte-identical to regionstructure's existing H1/H3 + address ordering. The caps bound the post-dominator cost; above them only the H1/H3 + node-order tiebreak applies (no regression).
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-sailr-edge-ordering
+- **Example:** `option regionedgeorder on`
+
+### `gotoreduce` -- on | off, default `on`
+
+- **Symptoms:** goto to a label that only returns; label_N: return; shared tail after an if; more gotos than angr for the same function.
+- **What it does:** After structuring, rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor basic-block chain ending in `return`, by duplicating that return tail inline (a print-tree copy of the same ops — no p-code cloned). Eliminates the residual goto/label that Ghidra's CollapseStructure must emit for a shared multi-predecessor return tail.
+- **When to flip:** kuna emits 1+ gotos to a shared `... return v;` tail that angr renders goto-free (e.g. `if (x) goto label; ... label: return 0;`). On by default (DIV-14); flip OFF to restore the upstream goto/label rendering. On, the bounded (<=3 blocks / <=8 ops, no call/store) return-constant tail is duplicated so the cross-edge becomes a structured early return.
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ReturnDuplicator
+- **Example:** `option gotoreduce on`
+
+### `ifelseflatten` -- on | off, default `on`
+
+- **Symptoms:** else block kept although the matching if branch always returns or aborts; guard-clause body indented one level deeper than the source; redundant else after an early-return arm.
+- **What it does:** After structuring, flatten a 3-component `if/else` whose true-clause is statement-terminating (every endpoint returns / aborts / gotos away) by dropping the `else` and re-parenting the former else body as the `if`'s immediate follower (a print-tree edit of the structured `list`/`parent` — no p-code cloned). Mirrors angr's `IfElseFlattener`: `if (c) { ...return } else { body }` becomes `if (c) { ...return } body`, removing the syntactic `else` (and any residual goto/label it carried).
+- **When to flip:** kuna keeps an `else { ... }` whose matching `if`-branch always returns/aborts (or ends in a goto), so the `else` is redundant guard-clause noise — the early-return form angr emits. On by default (DIV-14); flip OFF to restore the upstream explicit-`else` rendering. The region structurer already flattens most clean diamonds, so this catches the residual terminating-if/non-terminating-else shapes the structurer (or the CollapseStructure fallback) left with an explicit `else`.
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-IfElseFlattener
+- **Example:** `option ifelseflatten on`
+
+### `crossjumprevert` -- on | off, default `on`
+
+- **Symptoms:** goto into the middle of a sibling branch's arm (compiler cross-jumping); shared non-return tail reached by goto from an else-if chain; label planted inside an else block targeted from another branch.
+- **What it does:** After structuring, revert compiler cross-jumping (Irreducible Statement Condensing): rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor *non-return* basic block that falls through to a successor S, by duplicating that cross-jump tail inline (a print-tree copy of the same ops — no p-code cloned). Only fires when the if's own structured fall-through also converges on S (a next_flow_after convergence precondition), so duplication is semantics-preserving. Sibling of gotoreduce (return tails) for the non-return fall-through case.
+- **When to flip:** Set on when kuna emits 1+ gotos to a shared, condensed *non-return* tail that angr's CrossJumpReverter renders goto-free (e.g. `else if (c) { f(); goto label; } ... else { label: v = *p; } if (v == 2) ...`). On by default (DIV-14); flip OFF to restore the upstream goto rendering. On, the bounded (one tail block, <=8 printed ops, no STORE, <=1 call) cross-jump tail is duplicated back into the goto source so both paths fall straight through and the goto/label vanish. Each duplication is logged (`crossjumprevert:`). Runs after gotoreduce (last deoptimization).
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-CrossJumpReverter
+- **Example:** `option crossjumprevert on`
+
+### `taildup` -- on | off, default `on`
+
+- **Symptoms:** goto to a shared free(p); return; style epilogue; cleanup-call return tail reached via label instead of duplicated inline; flip off when many error checks share one cleanup block (the goto out; idiom).
+- **What it does:** After structuring, rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor basic-block chain ending in `return` that *contains a call* (e.g. a `free(p); return;` epilogue), by duplicating that return tail inline (a print-tree copy of the same ops — no p-code cloned). The third SAILR goto-reduction pass: it fills the gap between gotoreduce (return tail, rejects ALL calls) and crossjumprevert (non-return fall-through tail) — neither handles a return tail with a call. Mirrors angr ReturnDuplicatorBase whose budget is calls (max_calls_in_regions=2), not call-rejection.
+- **When to flip:** kuna emits 1+ gotos to a shared `... free(p); return;` style epilogue (a return tail WITH a call) that angr renders goto-free by duplicating it into each arm (e.g. morton my_message_callback: 1 goto -> 0). On by default (DIV-14); flip OFF to restore the upstream merged rendering — right when many early-exit error checks share ONE cleanup epilogue (the C `goto out;` idiom, e.g. openssh kex_choose_conf), where duplication forks the cleanup into source-absent copies. On, the bounded (<=3 blocks / <=12 printed ops / <=2 calls, no STORE) return-call tail is duplicated so the cross-edge becomes a structured early return. Safe because the tail ends in `return`: the duplicated call is reached on exactly one structured path (the early-return arm), never both. Each duplication is logged (`taildup:`). Runs right after gotoreduce.
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ReturnDuplicatorLow-call-tail
+- **Example:** `option taildup on`
+
+### `dedupitetail` -- on | off, default `on`
+
+- **Symptoms:** both arms of an if/else begin or end with the same duplicated statements; shared cleanup or help call repeated verbatim in the two branches; compiler-duplicated tail emitted twice instead of hoisted out of the if.
+- **What it does:** After structuring, deduplicate a cloned `if/else` tail: when both arms of a 3-component `if` begin (prefix) or end (suffix) with one or more *leaf* blocks that emit identical C — same printed-op sequence, matching constants by value, named storage by location, and call targets by resolved callee — hoist that shared run out of the `if` (prefix before it, suffix after) so it is emitted ONCE instead of twice (a print-tree edit — no p-code cloned). The inverse of the SAILR duplication passes (gotoreduce/crossjumprevert/taildup, which DUPLICATE a shared tail to drop a goto); here kuna's collapse-based structurer over-duplicated a shared continuation and the readability win is to merge the copies. Mirrors angr's structurer ITE region deduplication (converging two predecessors onto one copy instead of cloning). Bounded (<=8 leaves, <=64 ops/leaf), exact-or-decline, and suffix-sound only when each arm's divergent middle falls through to the suffix.
+- **When to flip:** kuna emits the SAME leaf statement(s) at the head or tail of BOTH arms of an if/else (a compiler-duplicated shared prefix/suffix the structurer cloned into each arm), e.g. a shared cleanup epilogue or a `--help`-style shared call repeated in both branches. On by default (DIV-14); flip OFF to restore the upstream duplicated-arm rendering. On, the shared leaf run is hoisted out of the `if` (one copy), each merge logged (`dedupitetail:`). Conservative: only flat C-equivalent leaf blocks are merged (never a nested if/loop or a labelled/goto block), and a suffix is hoisted only when both arms provably reach it. Deeply entangled duplication where the shared code shares a basic block with divergent code (e.g. true_1804 usage's online-help printf folded into the setlocale condition block) is out of scope — that needs the full label-convergence transform.
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ITE-region-dedup
+- **Example:** `option dedupitetail on`
+
+### `iteregion` -- on | off, default `on`
+
+- **Symptoms:** if (c) v = A; else v = B; assignment diamond where a ternary v = c ? A : B is expected; format/flag builder full of two-arm constant assignments to the same variable; flip off when the source likely wrote an explicit if/else.
+- **What it does:** After structuring, rewrite a narrow two-arm assignment *diamond* — a 3-component `if` whose condition block is a single `CBRANCH`, whose true- and else-clauses are each a single `COPY` to the SAME variable (`if (c) v = A; else v = B;`), converging on one tail — into a single `?:` ternary statement `v = ( c ) ? A : B;`. A **print-only** mark on the condition `CBRANCH` (no p-code cloned/mutated); the two arm COPYs and the condition stay live so the merged variable's later uses render unchanged, only the `if`'s layout differs. The S9 emit hook is the one genuinely new piece (Ghidra's printc has no ternary operator). Mirrors angr's `ITERegionConverter` / `_find_ite_assignment_regions` (a conditional-jump region with two single-assignment children on one tail). Halves the branch count of format/print/flag code full of `flags ? "%s," : "%s"` diamonds (iproute2 print_link_flags: 41 ifs/0 ternaries -> 21 ifs/20 ternaries, GED 140 -> small).
+- **When to flip:** Default ON (DIV-17). The diamond->ternary form matches the common format/print/flag source where the ternary dominates (compilers turn `cond ? "%s," : "%s"` into exactly this diamond; iproute2 print_link_flags, coreutils output helpers), so kuna emits `v = c ? A : B;` matching source/angr. Still a RUNTIME CHOICE an agent can flip OFF (`option iteregion off`, byte-identical to upstream) per function when explicit `if/else` is the likely source, to avoid inventing a ternary the author never wrote — the SAME object code is emitted for both, so the binary cannot distinguish them. A print-only mark; on, each rewrite is logged (`iteregion:`).
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ITE-region-converter
+- **Example:** `option iteregion on`
+
+### `returndup` -- on | off, default `off`
+
+- **Symptoms:** giant short-circuit if with comma-expression side effects merging several source early-return guards; one trailing return shared by many guard paths where the source used per-guard early returns; merged guard condition containing v = f(...) assignments inline.
+- **What it does:** Before the final block structuring, duplicate a SHARED bare-epilogue RETURN block into each of its predecessors but one, so the classic guard shape `if (cond) { body; return X; } return Y;` -- which gcc -O0 compiles to a single multi-predecessor RETURN block -- structures as per-predecessor early returns instead of ONE merged, comma-folded exit. kuna (like upstream Ghidra) otherwise keeps the merged form: CollapseStructure::rule_block_or fuses the guards (which share the epilogue out-target) into one short-circuit condition with comma-expression side effects (e.g. `if ((A||B) && (v=f(..), C||D)) { rest }`), and the existing ActionReturnSplit (the goto-driven ReturnDuplicatorLow analog) only splits when structuring left a goto into the return -- which the clean guard collapse never does. This is the gotoless complement: it reuses the SAME `return_split_is_splittable` filter (only MULTIEQUAL/COPY/RETURN over constant/annotation/non-free inputs -- a side-effect-free epilogue, angr's `_is_simple_return_graph`) and the SAME `node_split` machinery ActionReturnSplit drives, splitting every in-edge but one. Mirrors angr SAILR `ReturnDuplicatorHigh` (the gotoless return duplicator). SELECTIVE like angr: it duplicates ONLY when the shared return returns a CONSTANT (or a phi/COPY chain resolving to constants) -- angr's `_should_duplicate_dst = dst_is_const_ret`. A `return <variable>` shared block is left merged (it diverges from the source's short-circuit form on the aggregate: decbench measured the unselective version regressing the GED-perfect count ~976 across 21768 firings; the const-return gate drops ~40-60% of firings -- the over-eager variable-return splits -- while keeping the guard-clause wins like coreutils factor).
+- **When to flip:** RUNTIME CHOICE — default OFF (byte-identical to upstream). Set ON per function to recover the source early-return shape: where kuna/upstream Ghidra collapse two-or-more source early-return guards that share a compiled epilogue into ONE giant short-circuit `if` with comma side effects and a single trailing return, returndup duplicates the shared bare-epilogue RETURN block (<= 16 predecessors, <= 64 splits/function) into each predecessor so the structurer emits separate `if (c) return X;` clauses matching the source/angr/ida (coreutils factor: kuna 3 ifs / 0 early returns -> 4 ifs / early returns, GED 12 -> 0; also closes the ghidra-beats-kuna bash compspec_dispose shape). Bounded and side-effect-safe (the splittable filter admits only a return-only block, so no call/store is ever cloned), each duplication logged (`returndup:`). DEFAULT OFF because it is a runtime choice — the merged short-circuit form is what the source used in the MAJORITY (the decbench re-run measured returndup default-on REGRESSING the aggregate GED perfect count ~976 across 21768 firings, since it diverges from source where the source did NOT use early returns). Flip ON only for functions/binaries where the early-return form matches the source.
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ReturnDuplicatorHigh
+- **Example:** `option returndup on`
+
+### `earlyreturn` -- on | off, default `on`
+
+- **Symptoms:** inverted diamond: if (guard) { entire body } else { v = 0; } return v;; leading argument-validity check wraps the whole body instead of an early return; function opens with if (p != 0) { everything } where source wrote if (!p) return 0;.
+- **What it does:** Hoist a leading const-guard into an early return (`if (c) return K;`) by peeling only the CONSTANT arm of a MIXED return phi, so a function that opens with an argument-validity check recovers the source's early-return + de-indented body instead of kuna's inverted diamond (`if (guard) { entire body } else { v = default; } return v;`). This is the PER-EDGE narrowing of angr SAILR `ReturnDuplicatorHigh` that the whole-block `returndup` gate structurally cannot reach: the shared RETURN block is `v = MULTIEQUAL(#K /*guard-false arm, constant*/, <var> /*body arm, variable*/); return v`, and `returndup`'s `returndup_is_const_ret` requires the WHOLE return value const, so it rejects this mixed diamond outright. earlyreturn instead computes the per-in-edge const set (the phi input slots that resolve to constants) and splits ONLY those edges via the SAME `node_split` machinery, leaving the variable body return merged. Each peeled const arm becomes its own `return K` predecessor; `branchflip` then orients it as the `if`-true and `ifelseflatten` drops the else and de-indents the body -- yielding angr's exact `if (c) return K; ...body...; return <var>;` (coreutils realpath::relpath: kuna 73 loc diamond -> angr's 52 loc early-return). Because it only ever peels a CONSTANT arm (never a `return <variable>` share), it CANNOT re-introduce the variable-return over-firing that made broad returndup regress the aggregate GED-perfect count ~976; it targets the mixed const/variable diamond that whole-block returndup skips. Bounded: return-only epilogue (the splittable filter rejects calls/stores), never splits the last edge (body keeps its return), <= 16 predecessors, <= 32 splits/function; each hoist logged (`earlyreturn:`).
+- **When to flip:** A function whose first action is an argument-validity check (`if (!p) return 0;`) renders as the inverted diamond `if (p != 0) { whole body } else { v = 0 } return v;`. On by default (DIV-23: the decbench ablation measured it NET-POSITIVE, +47 perfect / -576 summed GED / 158:54 improved:regressed); flip OFF to restore the upstream merged-diamond rendering. It is MORE permissive than the whole-block `returndup` gate (it fires on mixed const/variable diamonds returndup skips), but by construction it cannot cause the variable-return over-firing that reverted returndup (it splits only constant arms).
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ReturnDuplicatorHigh-peredge
+- **Example:** `option earlyreturn on`
+
+### `switchreturn` -- on | off, default `on`
+
+- **Symptoms:** wide switch where every case assigns a constant and breaks to one shared return; switch (x) { case A: v = K; break; ... } return v; instead of per-case return K; 17-plus-case const dispatch keeps a merged return variable.
+- **What it does:** The direct continuation of `earlyreturn` (the per-edge const narrowing of angr SAILR `ReturnDuplicatorHigh`), extended from the narrow if/else-if diamond to the WIDE multi-way SWITCH const-phi return. An enum/switch dispatch whose every case assigns a constant to a shared temp and breaks to one exit compiles to `v = MULTIEQUAL(#K0, #K1, …); return v` with one `break` per case; kuna keeps the merged `switch (x) { case A: v = K0; break; … } return v;` (~2 CFG nodes/case more than the source's per-case `case A: return K0;`). `earlyreturn` ALREADY recovers per-case returns for a switch whose merge block has <= 16 predecessors (findutils get_fts_info_name, a 14-case switch, hoists to `case 1: return "FTS_D"; …`), but its MAX_EARLYRETURN_INEDGES=16 cap leaves the WIDE dispatch table merged: a 17-case switch merges 17 in-edges (> 16) so earlyreturn skips it (libedit tty__getcharindex). switchreturn is the SAME peel with the in-edge cap lifted (256): it splits each constant case in-edge (all but the last, which keeps the block alive) via the SAME `earlyreturn_const_edges` + `node_split` machinery, so every case ends in its own `return K`. Because it still only ever splits a CONSTANT case arm (never a `return <variable>` share), it inherits earlyreturn's safety and CANNOT re-introduce the variable-return over-firing that made broad returndup regress the aggregate GED-perfect count ~976; any non-const body/default/fall-through arm is left merged. Orthogonal to earlyreturn (a separate option): when both are on, the narrower earlyreturn consumes the <= 16-edge cases first, so switchreturn's incremental effect is precisely the wide dispatch tables earlyreturn's cap skips. Bounded: return-only epilogue (the splittable filter rejects calls/stores), never splits the last edge, <= 256 predecessors, <= 256 splits/function; each hoist logged (`switchreturn:`).
+- **When to flip:** A WIDE multi-way const dispatch renders merged — `switch (x) { case A: v = K0; break; … } return v;` — instead of the source's per-case `switch (x) { case A: return K0; … }` (more cases than earlyreturn's 16-in-edge cap; e.g. libedit tty__getcharindex, iproute2 accept_msg, coreutils stat fmt_to_mask). On by default (DIV-25: the incremental wide-switch ablation on top of earlyreturn-on measured NET-POSITIVE, +2 perfect / -107 summed GED / zero regressions); flip OFF to restore the merged rendering. By construction it cannot cause the variable-return over-firing that reverted returndup (it splits only constant case arms).
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ReturnDuplicatorHigh-switchphi
+- **Example:** `option switchreturn on`
+
+### `foldcallret` -- on | off, default `on`
+
+- **Symptoms:** call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0); single-use call return not inlined into its use site; flip off to force every call output into a named temporary (ghidra style).
+- **What it does:** Fold an order-safe single-use call return value into its use site, inlining the call expression instead of spilling it to a named temporary (e.g. `if (timespec_cmp(...) <= -1)` instead of `v5 = timespec_cmp(); if (v5 <= -1)`).
+- **When to flip:** kuna spills a call result to a `vN = call(); use(vN)` pair that is used exactly once where angr folds the call expression into its use site. On by default (DIV-14); flip OFF to restore the upstream explicit-temporary form (Ghidra forces every call output explicit). Only folds when the single use is in the same block with no intervening call/load/store, so the call's evaluation order is preserved.
+- **Where / provenance:** P6/explicit-marking · angr · presentation-default · angr-call-return-variable-folding
+- **Example:** `option foldcallret on`
+
+### `stackguard` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue; shared-return goto forced by the canary check block; flip off to keep the real canary instructions for auditing the protector.
+- **What it does:** REMOVES CODE: strips the -fstack-protector canary epilogue (the `if (canary != *(fs:0x28)) __stack_chk_fail()` check) from the output. Strips the glibc -fstack-protector canary epilogue (the check + its no-return call block), collapsing the shared single-return point so each path returns directly (no goto/label).
+- **When to flip:** On by default (DIV-14): removes compiler-inserted stack-protector boilerplate and the shared-return goto it forces. Flip OFF to keep the real canary-check instructions in the output (e.g. to audit the protector itself, or if an unusual non-glibc `ptr+0x28` compare guarding a call is being matched). It is marked destructive because it deletes those real instructions, but it is byte-identical over the 675 datatests (the `Partial splitting` cases opt out via `option stackguard off`).
+- **Where / provenance:** P7/edge-virtualization · angr · opt-in-tool · angr-StackCanarySimplifier
+- **Example:** `option stackguard on`
+
+### `branchflip` -- on | off, default `on`
+
+- **Symptoms:** if (x == 0) guard with the common path in the else arm; negated condition where angr renders the positive complement first; if/else polarity inverted versus the source's reading order.
+- **What it does:** Flip a negated-guard if/else for linearity: when an `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped in place, rewrite it to the positive complement `if (x != 0) {B} else {A}` so the common path reads top-to-bottom (angr-style positive guard vs `if (x == 0)`).
+- **When to flip:** An `if (x == 0)` negated guard reads inverted versus the angr-style positive form. On by default (DIV-14): the non-negated comparison becomes the `if` condition and the if/else arms swap to match; flip OFF to keep Ghidra's polarity. A flip is logged as a `branchflip:` warning comment at the if. Only fires on `if/else` (3-component) blocks whose condition flips cleanly in place.
+- **Where / provenance:** P8/readability-rewrites · angr · opt-in-tool · angr-SAILR-condition-polarity
+- **Example:** `option branchflip on`
+
+### `loopbreak_recovery` -- on | off, default `on`
+
+- **Symptoms:** loop exit rendered as goto label_N; plus a synthesized label instead of break;; switch-case exit gotos where break; is expected; error paths leave a loop by goto to its successor label.
+- **What it does:** Lower loop-exit `goto <successor>` edges to structured `break;` (and switch-case exits to empty `break;`), a port of Ghidra BlockGraph::scopeBreak run in ActionFinalStructure between finalizePrinting and markUnstructured; the now-dead successor label is suppressed.
+- **When to flip:** A loop's error/exit paths render as `goto <successor-label>;` plus a synthesized `label_NNNN:` (angr emits `break;`). On by default (DIV-10, clean ablation + converges to upstream Ghidra, which always runs scopeBreak); set OFF to restore kuna's prior byte-identical raw-goto rendering.
+- **Where / provenance:** P8/goto-quality-acceptance · angr · structure-recovery · angr-1after909-doit
+- **Example:** `option loopbreak_recovery off`
+
+### `noreturn_known` -- on | off, default `on`
+
+- **Symptoms:** dead code kept after calls to exit/abort/panic when off; call to a known no-return libc function still shows a fall-through path; unreachable epilogue after std::terminate or a rust panic call.
+- **What it does:** Run the known-no-return analysis pass: mark exit/abort/_Unwind_Resume/std::terminate-style functions no-return (the kuna analog of Ghidra's NoReturnFunctionAnalyzer, plus the Rust panic/handle_alloc_error list).
+- **When to flip:** On (default) suppresses dead fall-through after a no-return call; off leaves the call rendering as if it returns (dead code reappears).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-noreturn
+- **Example:** `option noreturn_known off`
+
+### `noreturn_disc` -- on | off, default `on`
+
+- **Symptoms:** heavily-called custom die()/fatal() wrapper still treated as returning; dead code after a stripped sub_ wrapper that never falls through at 3+ call sites; caller swallows the next function after a wrapper call.
+- **What it does:** Run the discovered-no-return consumer (the first Listing/xref consumer): the evidence-tally fixpoint over the Listing — a call target is no-return when at least 3 of its call sites show no valid fall-through (the instruction after the call is not a valid instruction start / fell into data / is another function's entry), iterated to a fixpoint (a function whose last act is a call to an already-discovered-no-return function is itself no-return). The kuna analog of Ghidra's FindNoReturnFunctionsAnalyzer. Requires the Listing (option listing on) — a no-op when the Listing is absent. On by default (DIV-22, matching Ghidra's default-on analyzer), but gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only).
+- **When to flip:** On by default (DIV-22), but a no-op unless the Listing is built (option listing on) — with the Listing off there is zero behavior change. With listing on it marks heavily-called custom/tail-calling no-return wrappers — that the static name lists do not know — no-return by the >=3-call-site evidence tally, eliminating the post-call dead code on a real-ELF target. Flip OFF (with listing on) to keep the post-call fall-through code.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-noreturn-disc
+- **Example:** `option listing on --option noreturn_disc on`
+
+### `noreturn_propagate` -- on | off, default `on`
+
+- **Symptoms:** unreachable code after a call to an exit/fatal wrapper; function truncated after calling a cold wrapper; spurious while(true) around a call that never returns; stripped binary's unnamed exit wrapper swallows the functions after it.
+- **What it does:** REMOVES CODE: propagates no-return through the call graph, dropping unreachable code after no-return calls. Runs the structural no-return propagation consumer (the second Listing/xref consumer): the kuna analog of angr's CFGFast call-graph no-return propagation. Seed the terminal set from the Known no-return list and conclude a function no-return when its last real instruction (skipping trailing NOP alignment padding) is a CALL (or tail JMP) to an already-no-return callee, with no RETURN path, no computed jump, and no branch escaping the reachable body — iterated to a fixpoint, with NO evidence threshold (unlike noreturn_disc's >=3 call sites). Catches a custom no-return wrapper (e.g. coreutils xalloc_die, which ends in `call abort` followed by padding) that the static name list does not know and the >=3-evidence rule does not reach, so a caller (e.g. tee_O2 x2nrealloc) no longer grows a spurious while(true)/goto from the dead fall-through. Emits the existing NoReturnFact -> the existing set_function_no_return commit seam (no new commit arm, no S7 work). Requires the Listing (option listing on) — a no-op when the Listing is absent. On by default (DIV-14), but gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only).
+- **When to flip:** On by default (DIV-14), but a no-op unless the Listing is built (option listing on) — with the Listing off there is zero behavior change. With listing on it concludes a custom no-return wrapper (a die()/fatal()/xalloc_die() that unconditionally ends in abort/exit) is no-return where it would otherwise be treated as returning — angr renders the caller cleanly but kuna would emit a spurious while(true) loop + goto + dead stack spills from the post-call fall-through (e.g. tee_O2 x2nrealloc). Broader than noreturn_disc: no >=3 call-site threshold and it seeds from the Known list. Flip OFF (with listing on) to keep the post-call fall-through code in the output.
+- **Where / provenance:** P1/external-refinement · angr · structure-recovery · kuna-analysis-noreturn-propagate
+- **Example:** `option listing on --option noreturn_propagate on`
+
+### `noreturn_error` -- on | off, default `on`
+
+- **Symptoms:** caller keeps decoding the cold path after error(2, ...) into the next function; function balloons past a wrapper that tail-calls error with nonzero status; dead fall-through after a gnu error(nonzero, ...) call.
+- **What it does:** REMOVES CODE: concludes an error(nonzero,...) wrapper is no-return, dropping the dead fall-through at every caller. The value-conditional slice of Ghidra's discovered-no-return analyzer, folded into the noreturn_propagate consumer: glibc error(int status, int errnum, const char *fmt, ...) and error_at_line(int status, ...) call exit(status) and NEVER return when status != 0 — but DO return for status == 0 — so `error` cannot be a Known no-return. Yet an internal wrapper whose tail is `call error(2,...)` (GNU pfatal_with_name, and every die()-via-error helper) is unconditionally no-return. When on, the propagation treats such a tail call as terminal by checking the call site's first int-arg register (x86-64 SysV EDI/RDI = the `int status`) is a nonzero literal (MOV EDI,0x2), concludes the wrapper no-return, and the existing fixpoint propagates that to every caller — which then truncates at the wrapper call instead of decoding the cold fall-through / next-function bytes as live code (e.g. diffutils diff `sip` collapses from 99 lines to ghidra's ~43, GED 347 -> 0). A zero status (XOR EDI,EDI / MOV EDI,0x0 — error() returns) or any non-constant/unprovable status is rejected (conservative: a false positive would drop live caller code). Emits the existing NoReturnFact -> the existing set_function_no_return commit seam (no new commit arm, no S7 work). Requires the Listing (option listing on) AND noreturn_propagate on — a no-op otherwise. On by default (DIV-16), but gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only).
+- **When to flip:** On by default (DIV-16), but a no-op unless the Listing is built (option listing on) and noreturn_propagate is on — with the Listing off there is zero behavior change. With listing on it concludes an internal wrapper that tail-calls error(nonzero,...) (e.g. GNU pfatal_with_name) is no-return where kuna would otherwise treat `error` as returning (since error(0,...) returns) and keep decoding the cold error path / adjacent function's bytes as live code past every wrapper call, ballooning the caller (diffutils diff `sip`: 99 lines / GED 347 vs ghidra 43). Ghidra's discovered-no-return analyzer catches exactly this; angr's callgraph returning-fixpoint (CFGBase._determine_function_returning) is the analog. Flip OFF (with listing on) to keep the post-call fall-through code (the wrapper is treated as returning again).
+- **Where / provenance:** P1/external-refinement · ghidra · correctness-fix · kuna-analysis-noreturn-error
+- **Example:** `option listing on --option noreturn_error on`
+
+### `noreturn_reach` -- on | off, default `on`
+
+- **Symptoms:** wrapper with a mid-body fatal call still treated as returning; unreachable write()/return tail keeps a fatal wrapper looking like it returns; switch whose every arm ends in a no-return call not concluded no-return; caller decodes garbage past an sshpkt_fatal-style wrapper.
+- **What it does:** REMOVES CODE: the CFG-reachability no-return rule — the port of Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn ('Non-Returning Functions - Discovered' analyzer). kuna's noreturn_propagate concludes a wrapper no-return only when its LAST real instruction is a terminal call to an already-no-return callee (a tail-call subset). That misses three shapes Ghidra catches by walking the CFG: (1) a no-return call MID-body with a dead tail after it (e.g. openssh sshpkt_fatal, whose FIRST statement is `call sshpkt_vfatal` and whose write()/return tail is unreachable); (2) a RETURN that is present but UNREACHABLE (the path to it dies at a no-return call); (3) a SWITCH (indirect jump) whose every arm ends in a no-return call (openssh sshpkt_vfatal). When on, for each candidate the rule walks the instruction-level reachable CFG from entry, treats a call/jump to an already-no-return callee as terminal (its fall-through is dead), and concludes no-return iff NO RETURN is reachable and at least one path ends at a no-return transfer — iterated to a call-graph fixpoint by the same propagate loop, emitting the same NoReturnFact -> set_function_no_return seam. Conservative: a reachable RETURN, an unresolved indirect jump, a branch escaping the body to a possibly-returning neighbour, or a call with no modelled fall-through that is not itself terminal all reject (a false positive would drop live caller code). Requires the Listing (option listing on) AND noreturn_propagate on — a no-op otherwise. On by default (DIV-19), gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only).
+- **When to flip:** On by default (DIV-19), a no-op unless the Listing is built (option listing on) and noreturn_propagate is on. With listing on it concludes internal fatal wrappers that kuna's tail-call rule (noreturn_propagate/noreturn_error) misses because the no-return call is mid-body, the return is dead, or the function routes through a switch — where kuna would otherwise decode the cold error path / adjacent function's bytes as live code past the wrapper call, ballooning the caller and inflating GED vs ghidra (openssh sshpkt_fatal/ssh_tun_confirm, shadow oom). This is the general 'Non-Returning Functions - Discovered' reachability that ghidra runs by default. Flip OFF (with listing on) to fall back to the strict tail-call rule (keeps the post-call fall-through code).
+- **Where / provenance:** P1/external-refinement · ghidra · correctness-fix · kuna-analysis-noreturn-reach
+- **Example:** `option listing on --option noreturn_reach on`
+
+## Analysis & loader passes
+
+Program-prep enablement: what is discovered, decoded, and named before any function is decompiled.
+
+### `libproto` -- on | off, default `on`
+
+- **Symptoms:** puts/printf arguments untyped so string literals render as bare constants or dat_ addresses; imports carry no signatures and call arguments stay untyped.
+- **What it does:** Run the library-prototype analysis pass: seed common libc signatures (puts(char*), printf(char*,...), ...) onto matching imports so call arguments get typed (the kuna analog of Ghidra's ApplyDataArchiveAnalyzer).
+- **When to flip:** On (default) types call arguments so string literals render (puts("...")); off leaves the bare constant/untyped argument.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-libproto
+- **Example:** `option libproto off`
+
+### `strings` -- on | off, default `on`
+
+- **Symptoms:** string constants render as raw addresses or unnamed data instead of quoted char[N] literals; no data symbols at ascii runs in rodata.
+- **What it does:** Run the string-literal analysis pass: detect NUL-terminated ASCII strings (min length 5) and plant a typelocked char[N] data symbol at each (the kuna analog of Ghidra's StringsAnalyzer).
+- **When to flip:** On (default) lays char[N] data at detected strings; off leaves those addresses undefined.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-strings
+- **Example:** `option strings off`
+
+### `entry_disc` -- on | off, default `on`
+
+- **Symptoms:** a stripped binary yields almost no functions (symbol stream only); functions discovered via e_entry/init_array/.eh_frame/prologues missing from the list.
+- **What it does:** Run the entry-discovery analysis pass: find function entry points for stripped targets (e_entry, DT_INIT/FINI + INIT_ARRAY tables, .eh_frame FDE starts, the _start->main libc idiom, prologue patterns).
+- **When to flip:** On (default) discovers + names extra entry points; off limits functions to the symbol stream.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-entry
+- **Example:** `option entry_disc off`
+
+### `eh_frame_full` -- on | off, default `off`
+
+- **Symptoms:** c++ catch/cleanup landing pads missing from a stripped binary's function list; exception-handler code never discovered as entries; gcc_except_table call-site targets left unexplored.
+- **What it does:** Extend the always-on entry-discovery pass with full .eh_frame + .gcc_except_table (LSDA) markup (GccExceptionAnalyzer): for each FDE, follow the CIE 'L' augmentation to its LSDA pointer in .gcc_except_table, decode the call-site table, and emit each exception landing-pad PC (lpStart + non-zero cs_landing_pad) as a discovered function entry. A landing pad is a real code target reached only by the unwinder, so a stripped C++ binary's entry-disc otherwise misses it. The DW_CFA_* call-frame instructions are NOT recovered at the decompiler tier (kuna's own S5/S7 frame analysis already recovers the stack frame from the code) — CFI is inherited, not rebuilt. Output-changing (adds entries), so default-OFF: a default run is byte-identical to before.
+- **When to flip:** Off (default) limits .eh_frame use to FDE pcBegin function starts. Flip on to also discover exception-handler landing pads (catch/cleanup blocks) from the .gcc_except_table LSDA in a C++ try/catch binary.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-ehframe-lsda
+- **Example:** `--option eh_frame_full on`
+
+### `funcstart_patterns` -- on | off, default `off`
+
+- **Symptoms:** functions after nop padding missing in a stripped binary; a push rbx; mov rbx,rdi prologue never discovered as a function start; code-bearing gaps between discovered functions left undefined.
+- **What it does:** Run the FULL byte-pattern function-start pass: a faithful port of Ghidra's FunctionStartAnalyzer over the entire vendored pattern corpus (Ghidra/Processors/<P>/data/patterns/*.xml), parsing every <patternpairs> (the DittedBitSequence prepattern/postpattern pairs) and bare <funcstart/> pattern for x86/x86-64 (headline) plus AArch64/ARM/RISC-V/MIPS/PPC. A candidate is a function start iff a postpattern (the prologue shape) matches at it AND a prepattern (the preceding context: a RET/JMP/NOP/...) matches the bytes immediately before it, at the instruction alignment. This is the full superset of entry_disc's always-on oracle 5, which ports only a minimal three-prologue x86-64 subset. Default-OFF because it is output-changing (it discovers MORE functions): when off, the pass's facts are dropped at commit and every decompilation is byte-identical to the entry_disc-only baseline. The after=defined / validcode=N pattern post-rules and the <possiblefuncstart/> / thunk / label actions are dropped (they need a PseudoDisassembler the analyzer tier does not have) — a documented LOSS, the same wall entry_disc's oracle-5 docs record.
+- **When to flip:** On discovers additional function starts in a stripped binary via the full Ghidra prologue pattern set (e.g. a `push rbx; mov rbx,rdi` function after NOP padding that the minimal oracle misses); off (default) keeps only the entry_disc + symbol-stream functions so the output is byte-identical to the baseline.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-funcstart-patterns
+- **Example:** `--option funcstart_patterns on`
+
+### `arm_markers` -- on | off, default `on`
+
+- **Symptoms:** thumb code misdecoded as arm garbage instructions; $t/$a mapping symbols ignored so the wrong decode mode applies.
+- **What it does:** Run the ARM/Thumb decode-mode marker pass: paint the SLEIGH TMode context from ARM mapping symbols ($t/$a) + the STT_FUNC odd-address (LSB=1 => Thumb) convention so Thumb code decodes as Thumb. ARM-only; a no-op on every other language.
+- **When to flip:** On (default) decodes Thumb regions as Thumb on ARM; off leaves the default (ARM) decode mode.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-armmarkers
+- **Example:** `option arm_markers off`
+
+### `mips_gp` -- on | off, default `on`
+
+- **Symptoms:** unresolved *(gp + offset) loads on mips; got/.sdata references never fold to real addresses in a pic mips binary.
+- **What it does:** Run the MIPS $gp-recovery pass: seed t9 = func_entry as a tracked register value at each MIPS function entry (the PIC jalr t9 ABI convention) so a PIC prologue's addu gp,gp,t9 folds to the real $gp and $gp-relative GOT/.sdata loads resolve. MIPS-only; a no-op on every other language.
+- **When to flip:** On (default) resolves $gp-relative loads on MIPS; off leaves the raw $gp (unresolved *(gp + offset)).
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-mipsgp
+- **Example:** `option mips_gp off`
+
+### `i386_pie_plt` -- on | off, default `on`
+
+- **Symptoms:** i386 pie libc calls render as sub_<addr> instead of exit/dcgettext; spurious do{}while(true) or goto loop after an unnamed exit stub in a 32-bit pie binary.
+- **What it does:** Decode i386 PIE GOT-relative (jmp *disp(%ebx), FF A3 <disp32>) PLT stubs so dynamic imports (exit/dcgettext/__printf_chk/...) are named and known-no-return functions (exit) are flagged. The i386-PIE analog of the x86-64/aarch64 PLT decoders; i386-only, a no-op on every other language. Loader-tier: read via the kuna_i386_pie_plt env var (the PLT->name map is baked at load file).
+- **When to flip:** On (default) names i386-PIE libc calls and lets exit be marked no-return (collapsing the spurious do{}while(true)/goto and restoring stack recovery); off leaves the GOT-relative stubs as sub_<addr> and the bogus fall-through loop (the pre-fix rendering).
+- **Where / provenance:** P1/external-refinement · angr · correctness-fix · kuna-analysis-i386pieplt
+- **Example:** `option i386_pie_plt off`
+
+### `mips_isa` -- on | off, default `on`
+
+- **Symptoms:** mips16/micromips function body misdecoded as mips32 garbage; odd-address mips functions decode in the wrong isa mode.
+- **What it does:** Run the MIPS16 ISA_MODE decode-mode marker pass: paint the SLEIGH ISA_MODE context at each MIPS16e/microMIPS function entry (marked by the STT_FUNC LSB-set address OR st_other & 0xf0 = STO_MIPS_MIPS16/MICROMIPS) so the body decodes in the alternate ISA instead of being misdecoded as MIPS32 (the MIPS analog of arm_markers' TMode painting; the kuna analog of Ghidra's MIPS_ElfExtension.applyIsaMode). MIPS-only; a no-op on every other language.
+- **When to flip:** On (default) decodes MIPS16 regions as MIPS16 on MIPS; off leaves the default (MIPS32) decode mode (a MIPS16 function misdecodes).
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-mipsisa
+- **Example:** `option mips_isa off`
+
+### `dwarf` -- on | off, default `on`
+
+- **Symptoms:** a -g binary still shows default names and inferred types; dwarf function/global names and typed signatures ignored.
+- **What it does:** Run the DWARF recovery analysis pass: recover function/global names and typed signatures from .debug_* sections (the kuna analog of Ghidra's DWARFAnalyzer). Skips cleanly on a non-DWARF binary.
+- **When to flip:** On (default) applies DWARF names/types; off ignores debug info (names/types come from symbols + inference only).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarf
+- **Example:** `option dwarf off`
+
+### `dwarf_lines` -- on | off, default `off`
+
+- **Symptoms:** no /* file:line */ source-location comments in the output; want each instruction annotated with its dwarf source line.
+- **What it does:** Run the DWARF .debug_line source-line comment pass: parse the .debug_line program, map each instruction PC to its source file:line, and attach it as an instruction comment so the decompiled output carries the source location (the kuna analog of Ghidra's DWARFLineInfoCommentScript). DISABLED by default (it changes the output by adding /* file:line */ comment lines). Skips cleanly on a binary without .debug_line.
+- **When to flip:** Off (default; byte-identical output). Flip on to annotate each decompiled instruction with its DWARF source file:line.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarf-lines
+- **Example:** `option dwarf_lines on`
+
+### `callfixup` -- on | off, default `on`
+
+- **Symptoms:** mcount/__fentry__ profiling calls clutter every -pg function prologue; cspec call-fixup targets rendered as plain calls instead of dissolved.
+- **What it does:** Run the call-fixup analysis pass: tag each function whose name matches a cspec call-fixup <target> (e.g. the -pg mcount/__fentry__ profiling stubs) so the engine replaces the CALL with the fixup body (the kuna analog of Ghidra's CallFixupAnalyzer).
+- **When to flip:** On (default) dissolves matched fixup calls; off leaves the raw CALL (e.g. the mcount call stays).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-callfixup
+- **Example:** `option callfixup off`
+
+### `addrtable` -- on | off, default `off`
+
+- **Symptoms:** absolute function-pointer table in rodata never recognized; indirect calls through an unrecovered address table in a stripped target.
+- **What it does:** Run the address-table analysis pass: scan .rodata/.data for a run of pointer-width values landing inside an executable section (an absolute address/jump table) and emit Data symbols + a readonly range. DISABLED by default (matches Ghidra AddressTableAnalyzer.setDefaultEnablement(false); the pointer-run scanner over-accepts).
+- **When to flip:** Off (default, parity + over-acceptance risk); flip on to recover absolute pointer tables in a stripped target.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-addrtable
+- **Example:** `option addrtable on`
+
+### `operand_refs` -- on | off, default `off`
+
+- **Symptoms:** an immediate operand pointing at a rodata string renders as a bare number; string argument of a no-prototype call not typed as char[N].
+- **What it does:** Run the scalar/operand reference-markup pass (ScalarOperandAnalyzer/ElfScalarOperandAnalyzer): linear-decode the executable sections and, for each scalar immediate operand that points into allocated read-only data (passing the <4096/byte-mask value filter and the .got/.plt exclusion), plant a typed char[N]+readonly fact so the printer renders the reference as a string literal. DISABLED by default (Ghidra ScalarOperandAnalyzer.getDefaultEnablement = !isElf, i.e. off for every ELF; the ELF subclass only removes bad .got/.plt refs kuna never creates; the useful product is already delivered by s1_strings + libproto typing; a per-instruction immediate scan over-accepts).
+- **When to flip:** Off (default; net-negative for an ELF decompiler per docs/history/analysis-port-buildplan.md §1.2 — ELF-default-off upstream, covered-elsewhere, over-acceptance-prone). Flip on to type residual short / s1_strings-missed read-only string operands pointed at by a no-prototype call.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-operand-refs
+- **Example:** `option operand_refs on`
+
+### `formatstring` -- on | off, default `off`
+
+- **Symptoms:** printf/scanf variadic arguments render untyped at the call site; %d and %s arguments carry generic types instead of int/char *.
+- **What it does:** Type printf/scanf-family variadic arguments per call site (FormatStringAnalyzer half B, DecompilerDependent): after the first decompile, read the format-string constant at each printf/scanf call, parse its specifiers, and install a per-call-site prototype override (fixed types = format-derived, varargs closed), then re-decompile so the variadic args render typed. DISABLED by default (matches Ghidra FormatStringAnalyzer.setDefaultEnablement(false)).
+- **When to flip:** Off (default; the decompile→override→re-decompile loop is inert and every parity gate is byte-identical). Flip on to recover typed printf/scanf varargs (e.g. %d→int, %s→char*) in a real-ELF target.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-formatstring
+- **Example:** `option formatstring on`
+
+### `listing` -- on | off, default `off`
+
+- **Symptoms:** noreturn discovery inert on a stripped binary; analysis passes that need whole-image xrefs do nothing; no program-wide instruction/xref/function model for consumer passes.
+- **What it does:** Build the Listing/xref disassembly tier: a program-wide recursive-descent disassembly over the loadimage bytes (reusing the SLEIGH decoder + the lifted S2 flow classifier) producing three read-only sub-models (instruction / cross-reference / discovered-function) shared with the consumer analysis passes. DISABLED by default (the Listing is never built; real-ELF path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; the Listing is not built and there is zero decode cost). Flip on to make the program-wide instruction/xref/function model available to consumer passes (e.g. discovered-no-return) on a real-ELF target.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-listing
+- **Example:** `option listing on`
+
+### `fid` -- on | off, default `off`
+
+- **Symptoms:** stripped static-linked library function stays sub_<addr> although its fingerprint is known; no .fid database renames applied in a stripped binary.
+- **What it does:** Run the FID fingerprint matcher (a Listing/xref consumer): the kuna analog of Ghidra's FID (Function-ID) identification analyzer. Over the built Listing, fingerprint each function with the byte-exact operand-masked FNV-1a64 hash (the MessageDigestFidHasher port, driving Sleigh::instruction_mask) and look the full hash up in a kuna `.fid` fingerprint database (named by the `kuna_fid_db` environment variable). When the full-hash bucket collapses to exactly one name (conservative — never guess on a tie), RENAME the matched function — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate; a real .symtab/DWARF name is never overwritten). This re-identifies a function in a STRIPPED binary purely by its instruction-stream fingerprint (e.g. sub_4017c0 -> kuna_crc32). Requires the Listing (option listing on) and a configured `.fid` DB — a no-op when either is absent. DISABLED by default (real-ELF path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change). Flip on (with option listing on, and `kuna_fid_db` pointing at a `.fid` database built by `kuna fid build`) to re-identify library functions in a STRIPPED real-ELF target by full-hash fingerprint — renaming a FUN_*/sub_* placeholder back to its known library name.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-fid
+- **Example:** `option listing on --option fid on`
+
+### `rtti` -- on | off, default `off`
+
+- **Symptoms:** msvc c++ class names missing and vftables left as unnamed data; no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes.
+- **What it does:** Run the MSVC RTTI / vftable class-name recovery pass: the kuna analog of Ghidra's RttiAnalyzer (a Microsoft-PE analyzer). On a Windows PE, parse the run-time-type-information graph entirely in the loaded image (.rdata/.data): find the common type_info vftable (the pointer every RTTI0 TypeDescriptor shares), locate the TypeDescriptors carrying the `.?A...@@`-mangled class names, byte-search back to each CompleteObjectLocator (COL = ref - 12), validate the COL -> RTTI3 ClassHierarchyDescriptor -> RTTI2 BaseClassArray -> RTTI1 BaseClassDescriptor -> RTTI0 TypeDescriptor reachability chain, and demangle each class name via the existing MSVC demangler (the Ghidra RttiUtil `??_R0...@8` wrap; zero new demangler code). Handles BOTH x86 (raw-VA inter-structure refs, RTTI0 name at offset 8) AND x64 (image-base-relative IBO32 disp32 refs, RTTI0 name at offset 16) via a refkind dispatch on is64Bit. Emits Data symbols labelling each class's vftable (`<Class>::vftable`), CompleteObjectLocator (`<Class>::RTTI_Complete_Object_Locator`), and TypeDescriptor (`<Class>::RTTI_Type_Descriptor`), so the C++ class names (Box/Shape) surface as recovered symbols and the virtual-dispatch metadata graph is named. PE-only (registered in passes_for only for a PE image, and the pass self-gates on PE in run). DISABLED by default (real-PE path only, output-changing: it adds named data symbols, so every ELF/XML parity gate is byte-identical).
+- **When to flip:** Off (default; no RTTI pass runs and there is zero behavior change). Flip on for a Windows PE built by MSVC (or clang -target ...-windows-msvc) carrying polymorphic C++ classes, to recover the C++ class names and label the RTTI/vftable metadata graph (the raw .rdata bytes / unnamed DAT_* vtable become `Box`/`Shape` class names + `<Class>::vftable` / `<Class>::RTTI_*` labels).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-rtti
+- **Example:** `option rtti on`
+
+### `aif` -- on | off, default `off`
+
+- **Symptoms:** function reachable only through a rodata function-pointer table never discovered; undefined gap between functions that clearly holds code; call *reg targets missing from the function list.
+- **What it does:** Run the Aggressive Instruction Finder gap-walk (the third Listing/xref consumer): the kuna analog of Ghidra's AggressiveInstructionFinderAnalyzer, a speculative gap-filler. Over the undefined gaps between discovered functions, speculatively decode each gap start and accept it as a NEW function entry when it BOTH (a) disassembles into a valid subroutine (followSubFlows reaches a clean RET without hitting a bad/undecodable byte or an out-of-range flow, > 2 instructions) AND (b) matches a function-start byte fingerprint (mask-histogram) shared by >= 4 already-discovered functions. Finds functions reachable ONLY through an indirect/data path (a .rodata function-pointer table) that entry discovery + funcsyms + .eh_frame miss. Emits the discovered starts as the existing entries fact -> the existing name_function/add_function commit seam (no new commit arm). Requires the Listing (option listing on) — a no-op when the Listing is absent. DISABLED by default (Ghidra ships setDefaultEnablement(false) with the warning 'IT MAY CREATE A LOT OF BAD CODE!'; a speculative gap-filler can create false-positive functions; real-ELF path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change, and a speculative gap-filler can create false-positive functions). Flip on (with option listing on) when a function is reachable ONLY through an indirect/data path (its address taken into a .rodata function-pointer table and called via call *reg with an opaque index) — so it is in no symbol table, has no .eh_frame FDE, and no static CALL edge points at it, leaving it an undefined gap that entry discovery cannot reach. AIF's fingerprint+validity gap-walk recovers it as a named sub_<addr>.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-aif
+- **Example:** `option listing on --option aif on`
+
+### `gopclntab` -- on | off, default `on`
+
+- **Symptoms:** stripped go binary renders sub_<addr> instead of main.main and runtime.* names; go package function names missing.
+- **What it does:** Run the Go pclntab function-name recovery pass: when the binary is Go (detect_compiler == Go), locate and parse the embedded pclntab (PC->line/name table) and emit a function symbol per Go function, so main.main / runtime.* / package functions render NAMED instead of sub_<addr> (the kuna analog of Ghidra's GolangSymbolAnalyzer, name-recovery half). Handles the go1.2/go1.16/go1.18/go1.20 header magics. Registered ONLY for a Go binary, so it is a structural no-op on every non-Go target. The existing symbol commit arm installs the names idempotently (a real .symtab name still wins; only a stripped Go binary's sub_<addr> functions take the recovered name).
+- **When to flip:** On (default) names Go functions from the pclntab (main.main, runtime.gopanic, ...); off leaves a stripped Go binary's functions as sub_<addr>.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-gopclntab
+- **Example:** `option gopclntab off`
+
+### `objc` -- on | off, default `off`
+
+- **Symptoms:** objective-c methods render as sub_<addr> instead of -[Class sel]; __objc_ metadata present but classes and selectors unnamed in a mach-o.
+- **What it does:** Run the Mach-O Objective-C metadata recovery pass: when the binary is a Mach-O, walk the __objc_* ObjC 2.0 metadata web (the kuna analog of Ghidra's ObjcTypeMetadataAnalyzer, name-recovery half). From __objc_classlist (array of class_t*), per class follow data & FAST_DATA_MASK (~0x7) to the class_ro_t, read .name (class name) and .baseMethods (the - instance method_list_t), and follow class_t.isa to the metaclass baseMethods (the + class methods). Walk method_list_t handling BOTH the large absolute-pointer form and the small/relative form (entsizeAndFlags & 0x80000000), per method_t resolving the selector (ASCII), type encoding, and IMP (function VA). RENAME each IMP function -[Class sel] / +[Class sel] — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate, the FID precedent; a real symbol is never overwritten) — plus emit _OBJC_CLASS_$_<name> + selector symbols. Selectors are plain ASCII, so no demangler is needed. Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. x86-64, no-chained-fixups path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on). DISABLED by default (output-changing: renames IMP functions + adds symbols; real-binary-path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; no IMP is renamed and there is zero behavior change). Flip on for a Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, and the class/selector strings are named.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
+- **Example:** `option objc on`
+
+### `pdb` -- on | off, default `off`
+
+- **Symptoms:** stripped windows pe functions stay FUN_<addr> although a matching .pdb exists; pdb symbol names not applied to a pe.
+- **What it does:** Run the PE PDB (Program Database) metadata recovery pass: on a Windows PE, recover function names from the external .pdb debug file (the kuna analog of Ghidra's PdbUniversalAnalyzer, name-recovery half). PDB is Windows' DWARF, but the debug info lives in a SEPARATE .pdb file the PE only fingerprints. Read the PE CodeView debug record ({guid|sig, age, .pdb path}), locate the .pdb (tier-1: the kuna_pdb_path environment variable, the exact s1_fid kuna_fid_db external-artifact precedent), and apply the FINGERPRINT GATE: open the supplied .pdb via the `pdb` crate and verify its pdb_information().guid/age matches the PE's CodeView record. A MISMATCH or ABSENT/unreadable .pdb emits nothing — never apply a wrong/stale PDB (the FID full-hash-match discipline of never applying wrong external knowledge). On a match, walk the global symbol stream (S_PUB32 publics + S_GPROC32 procedures), resolve each to its VMA (segment:offset -> RVA + the PE ImageBase), and RENAME each stripped function to its real name — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate, the FID precedent; a real symbol is never overwritten). Registered ONLY for a PE binary, so it is a structural no-op on every non-PE target. This PR is NAME-level (stripped FUN_<addr> -> the real name); typed prototypes, typed stack locals, and source lines are the deferred PR-P2/P3. DISABLED by default (output-changing: renames stripped functions; real-binary-path only and inert without a fingerprint-matching .pdb, so every parity gate is byte-identical).
+- **When to flip:** Off (default; no function is renamed and there is zero behavior change). Flip on for a stripped Windows PE that has a matching .pdb supplied via the kuna_pdb_path env var — a stripped FUN_<addr> renders its real source name (e.g. WinMain) recovered from the PDB. A .pdb whose GUID/age does not match the PE is rejected (no rename).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-pdb
+- **Example:** `option pdb on`
+
+### `relocobjects` -- on | off, default `on`
+
+- **Symptoms:** a .o relocatable object fails with 'Unable to load N bytes at ...'; ET_REL object maps zero bytes so nothing decompiles.
+- **What it does:** Load ELF relocatable objects (ET_REL `.o` files, which have no PT_LOAD program headers and so map zero bytes under the upstream loader): synthesize a section layout above 0x400000, apply the `.rela.*` relocations (R_X86_64_PC32/PLT32/32/32S/64), rebase defined symbols, and bind undefined externs to synthetic call targets — so a `.o` decompiles instead of failing with 'Unable to load N bytes at ...'. The kuna analog of angr CLE's ELF relocatable backend.
+- **When to flip:** On by default (a pure capability: linked ET_EXEC/ET_DYN images are byte-identical — they keep the PT_LOAD path — and only a `.o`, which today produces ZERO output, takes the new path). Set off to restore the upstream PT_LOAD-only loader (a `.o` then errors). NB: this gates the loader, which runs at `load file` BEFORE per-function options, so flip it (or set env KUNA_RELOC_OBJECTS=0) before loading the `.o`.
+- **Where / provenance:** P1/code-data-partition · angr · structure-recovery · angr-CLE-ET_REL
+- **Example:** `option relocobjects off`
+
+### `macho-arm64e` -- on | off, default `off`
+
+- **Symptoms:** arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled; pac instructions in an apple-silicon binary not modeled by the loaded spec.
+- **What it does:** Select the Apple-Silicon pointer-authentication SLEIGH spec for an arm64e Mach-O. When on, a Mach-O whose header reports cpusubtype CPU_SUBTYPE_ARM64E loads with the AARCH64:LE:64:AppleSilicon language (the vendored Apple-Silicon v8.5-A spec, which models the pointer-auth/AMX extensions) instead of the generic AARCH64:LE:64:v8A. Pointer authentication does NOT change import naming or symbols (the __stubs indirect-symbol walk is unaffected) — only the spec selection differs (design 3.7). Spec selection is a LOAD-time decision (language_id_for), which runs before any console `option` command, so the live gate is the KUNA_MACHO_ARM64E env var the kuna CLI exports when it sees `--option macho-arm64e on`; this option name also records the requested state on the Architecture for catalog consistency. Default-OFF (opt-in, multi-format loader PR-8): a non-arm64e Mach-O, a non-Mach-O target, and every ELF/PE/COFF path are byte-identical, so all parity gates are structurally untouched.
+- **When to flip:** Off (default; an arm64e Mach-O loads with the generic v8A spec, exactly as any arm64). Flip on to decompile an arm64e (Apple-Silicon, pointer-auth) Mach-O with the AppleSilicon spec that models its extensions.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multiformat-macho-arm64e
+- **Example:** `--option macho-arm64e on`
+
+## Core rendering defaults
+
+Part of the decompiler; not the control surface. Flip only to reproduce upstream Ghidra output byte-for-byte or for unusual downstream consumers.
+
+### `compareform` -- canonical | original, default `original`
+
+- **Symptoms:** comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10); need the analysis-canonical compare form to diff against upstream ghidra output.
+- **What it does:** Whether comparisons keep their source form (V <= c) or the analysis-canonical rewrite (V < c+1).
+- **When to flip:** Flip to canonical only to reproduce upstream Ghidra output; original (default) is more faithful to source.
+- **Where / provenance:** P3/comparison-canonicalization · ghidra-upstream · presentation-default · GH-558
+- **Example:** `option compareform canonical`
+
+### `arraynotation` -- on | off, default `on`
+
+- **Symptoms:** &base[index] rendering unwanted; consumer expects raw pointer arithmetic; indexed array form where base + offset arithmetic is desired for diffing.
+- **What it does:** Render standalone pointer arithmetic as &base[index] (on) vs base + index (off).
+- **When to flip:** Flip off if the consumer expects raw pointer-arithmetic rendering; on (default) is more readable.
+- **Where / provenance:** P9/pointer-notation · ghidra-upstream · presentation-default · GH-558
+- **Example:** `option arraynotation off`
+
+### `thumbfuncptr` -- on | off, default `on`
+
+- **Symptoms:** thumb function pointer renders as symbolic &fn[1] where the raw odd-address constant is wanted; callback constant on arm resolves to a function symbol plus one instead of a bare hex literal.
+- **What it does:** Preserve a Thumb function pointer (fn|1) as a symbolic &fn[1] rather than a raw hex literal.
+- **When to flip:** Flip off only to see the raw constant; on (default) recovers the function symbol on ARM/Thumb.
+- **Where / provenance:** P5/const-pointer · ghidra-upstream · correctness-fix · GH-8471
+- **Example:** `option thumbfuncptr off`
+
+### `inferfuncentry` -- on | off, default `on`
+
+- **Symptoms:** a bare constant equal to a function entry renders as the named function pointer; hex literal at a single-bit image base unexpectedly named as a function (flip off for the raw constant).
+- **What it does:** Infer a function pointer when a constant equals an exact function entry at a single-bit image base (e.g. 0x100000).
+- **When to flip:** Flip off only to reproduce the bare-literal form; on (default) names the function.
+- **Where / provenance:** P5/const-pointer · ghidra-upstream · correctness-fix · GH-6930
+- **Example:** `option inferfuncentry off`
+
+### `booleanmask` -- on | off, default `on`
+
+- **Symptoms:** want the raw (b<<k) s>> k sign-extension shift idiom visible instead of the folded comparison; flag-as-high-bit lowering (8051 style) hidden by the cleaned boolean compare.
+- **What it does:** Fold the (b<<k) s>>k boolean sign-extension-mask idiom (flag-as-high-bit lowering) into a clean comparison.
+- **When to flip:** Flip off only to see the raw shift idiom; on (default) cleans flag-modelled comparisons (8051 etc.).
+- **Where / provenance:** P3/simplification-quiescence · ghidra-upstream · correctness-fix · GH-1282
+- **Example:** `option booleanmask off`
+
+### `ovlesssimplify` -- on | off, default `on`
+
+- **Symptoms:** want the raw S/OV overflow-flag arithmetic visible instead of the folded signed compare; v850-style explicit flag compare collapsed to a clean signed less-than.
+- **What it does:** Simplify the explicit S/OV-flag compare idiom into a direct signed comparison.
+- **When to flip:** Flip off only to see the raw overflow-flag arithmetic; on (default) cleans V850-style compares.
+- **Where / provenance:** P3/simplification-quiescence · ghidra-upstream · correctness-fix · GH-7190
+- **Example:** `option ovlesssimplify off`
+
+### `addcarrychain` -- on | off, default `on`
+
+- **Symptoms:** want the raw CONCAT11(CARRY1(...)) intrinsics visible instead of one wide add; 8-bit adc carry-chain pair (6502 style) folded into a single 16-bit addition.
+- **What it does:** Recover an 8-bit carry-chain (ADC) pair into a single wide add instead of CONCAT11(CARRY1(...)).
+- **When to flip:** Flip off only to see the raw carry intrinsics; on (default) recovers wide arithmetic (6502 etc.).
+- **Where / provenance:** P5/simplification-quiescence · ghidra-upstream · correctness-fix · GH-8913
+- **Example:** `option addcarrychain off`
+
+### `flagcompare` -- on | off, default `on`
+
+- **Symptoms:** boolean shifted into the sign bit tested with a less-than-zero compare; N==V signed-overflow branch idiom rendered as raw flag arithmetic; want the explicit condition-flag math visible (flip off).
+- **What it does:** Fold flag-modelled comparison idioms into clean compares: a boolean shifted into the sign bit ((b<<k) s< 0) and the N==V signed-overflow idiom (bra ge).
+- **When to flip:** On by default (DIV-3): cleans flag-as-bit comparisons on architectures that model condition flags explicitly (8051, PIC24, etc.); flip off to restore the upstream raw flag-arithmetic rendering.
+- **Where / provenance:** P3/simplification-quiescence · ghidra-upstream · correctness-fix · GH-1276/8777
+- **Example:** `option flagcompare on`
+
+### `stackprobeloop` -- on | off, default `on`
+
+- **Symptoms:** &pxVar[-0x1000] page-probe noise in a large-frame function; calls rendered argument-less because the stack pointer never resolved to a constant offset; gcc stack-clash probe loop leaves the frame layout unrecovered.
+- **What it does:** Resolve a gcc -fstack-check / stack-clash probe loop's stack-pointer MULTIEQUAL to a fixed offset from the input SP, so the frame and call arguments recover cleanly.
+- **When to flip:** Set on when a large-frame function shows &pxVar[-0x1000] page-probe noise or argument-less calls; shape-gated, so it is inert on functions without a probe loop.
+- **Where / provenance:** P2/stack-pointer-normalization · ghidra-upstream · correctness-fix · GH-8017/6858
+- **Example:** `option stackprobeloop on`
+
+### `dynamichashmax` -- on | off, default `on`
+
+- **Symptoms:** decompilation aborts with 'Unable to find unique hash for varnode'; dense unrolled simd/neon loop (aarch64, go) fails to decompile at symbol mapping.
+- **What it does:** Raise the DynamicHash same-address collision budget 8->16 so dense unrolled code can still resolve a unique dynamic symbol hash.
+- **When to flip:** Fixes a decompilation abort 'Unable to find unique hash for varnode' (e.g. AArch64/Go NEON byte-search loops). On by default (DIV-3); flip off to restore the upstream collision budget (the abort reappears).
+- **Where / provenance:** P6/alias-facets · ghidra-upstream · correctness-fix · GH-8467
+- **Example:** `option dynamichashmax on`
+
+### `arraystride` -- on | off, default `on`
+
+- **Symptoms:** loop walks an array with a raw offset accumulator (iVar += 0x414) instead of an index; strided induction offset never re-expressed as counter*stride array indexing.
+- **What it does:** Re-express a strength-reduced array walk: rewrite a loop offset accumulator (acc += sizeof) as counter*stride so the array index is recovered.
+- **When to flip:** A strided loop renders a raw offset accumulator (e.g. iVar += 0x414) instead of an index. On by default (DIV-3); flip off to restore the upstream accumulator rendering.
+- **Where / provenance:** P3/simplification-quiescence · ghidra-upstream · structure-recovery · GH-8724
+- **Example:** `option arraystride on`
+
+### `condexeplace` -- on | off, default `on`
+
+- **Symptoms:** malformed do/while whose body holds an out-of-place constant assignment; spurious = 0 copy materialized inside a loop block.
+- **What it does:** Stop ActionConditionalConst from materializing a propagated constant as a COPY inside a loop predecessor block (a spurious `= 0` in the do/while body).
+- **When to flip:** A malformed do/while holds an out-of-place constant assignment in its body. On by default (DIV-3); flip off to restore the upstream COPY placement.
+- **Where / provenance:** P3/simplification-quiescence · ghidra-upstream · correctness-fix · GH-9203
+- **Example:** `option condexeplace on`
+
+### `inputvarnodeadjust` -- on | off, default `on`
+
+- **Symptoms:** function aborts with 'Cannot properly adjust input varnodes'; overlapping stack parameters (mc68k link/unlk) kill the whole decompilation.
+- **What it does:** Absorb an input Varnode overlapping the high end of a justified parameter container instead of aborting the function.
+- **When to flip:** A frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk). On by default (DIV-3); flip off to preserve the upstream abort.
+- **Where / provenance:** P6/stack-frame-layout · ghidra-upstream · correctness-fix · GH-9218
+- **Example:** `option inputvarnodeadjust on`
+
+### `namestyle` -- angr | ghidra, default `angr`
+
+- **Symptoms:** iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra); v-numbered locals and sub_/dat_/label_ names in the default output; byte-for-byte comparison against upstream ghidra naming.
+- **What it does:** Master default-name scheme: angr-style (locals vN, args aN, global data dat_<addr>, unnamed functions sub_<addr>, labels label_<addr>, plus a // rax / // stack - 0x10 source-location comment per local) vs upstream Ghidra (iVar/uVar/pcVar, param_N, <type>Ram<addr>, func_, code_).
+- **When to flip:** Set to ghidra to reproduce upstream Ghidra naming byte-for-byte; angr (default) makes default output read like the angr decompiler.
+- **Where / provenance:** P9/naming-policy · angr · presentation-default · angr-naming
+- **Example:** `option namestyle ghidra`
+
+### `realtypes` -- on | off, default `on`
+
+- **Symptoms:** undefined8/xunknownN placeholder types wanted for upstream comparison (flip off); size-guessed unsigned long/int/char types shown for values the inference never typed.
+- **What it does:** Render residual TYPE_UNKNOWN (xunknownN) values as real C types by size — 1->char, 2/4/8->unsigned short/int/long (conservative on sign), pointer-to-unknown->void * — instead of the xunknownN/undefined<N> placeholder.
+- **When to flip:** On (default) emits real C types for un-inferred values; off restores the upstream xunknownN/undefined<N> rendering for byte-for-byte comparison.
+- **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-realtypes
+- **Example:** `option realtypes off`
+
+### `dedupvardecls` -- on | off, default `on`
+
+- **Symptoms:** the same local declared once although many HighVariables share the stack slot; flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times).
+- **What it does:** Collapse local-variable declarations whose fully-rendered line (type + name + array adornment + storage comment) is identical, so a stack slot mapped onto many same-named scalar HighVariables is declared once instead of one line per high (the scalar analogue of the existing composite-symbol declaration collapse).
+- **When to flip:** On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x). Set OFF to restore the one-declaration-per-high rendering.
+- **Where / provenance:** P9/naming-policy · angr · presentation-default · angr-duplicate-decls
+- **Example:** `option dedupvardecls off`
+
+## Programmatic use
+
+```bash
+# discover (machine-readable; includes tier + symptoms):
+kuna catalog --json
+
+# transforms only:
+kuna catalog --tier transform
+
+# decompile with an option flipped (repeatable):
+kuna decompile ./a.out main --option gotoreduce off
+kuna decompile ./sparc.elf main --option returnpair single
+```

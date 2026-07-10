@@ -5,7 +5,7 @@
 //! The consumer of this document is the Java `HighFunction.decode`
 //! (`PcodeSyntaxTree.decode`), which rebuilds the SSA AST and keys every node by
 //! integer ref (`Varnode::getCreateIndex`) / time (`PcodeOp::getTime`).  The
-//! markup C emitted alongside it (`s9_emit/prettyprint.rs`, `EmitMarkup`) then
+//! markup C emitted alongside it (`p9_emit/prettyprint.rs`, `EmitMarkup`) then
 //! resolves each token back to those same ids, so the click-to-address contract
 //! holds **by construction**: this encoder emits exactly what
 //! `get_create_index()` / `get_time()` return, unmodified (see the id-consistency
@@ -47,7 +47,7 @@ use kuna_sleigh::translate::ELEM_OP;
 
 use crate::block::{ELEM_BLOCK, ELEM_BLOCKEDGE};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 // ---------------------------------------------------------------------------
 // New marshaling ids (DECOMPILER scope).
@@ -67,7 +67,7 @@ pub const ELEM_IOP: ElementId = ElementId::new("iop", 113);
 pub const ELEM_AST: ElementId = ElementId::new("ast", 115);
 /// Marshaling element `<function>` (C++ `ELEM_FUNCTION`, `funcdata.cc`, id 116).
 ///
-/// Re-exported by `s9_emit/prettyprint.rs`'s `ids` module (the markup
+/// Re-exported by `p9_emit/prettyprint.rs`'s `ids` module (the markup
 /// `<function>` document uses the same numeric id), replacing the placeholder
 /// that anticipated this port.
 pub const ELEM_FUNCTION: ElementId = ElementId::new("function", 116);
@@ -315,7 +315,7 @@ mod tests {
     use kuna_base::types::int4;
     use kuna_num::opcodes::OpCode;
 
-    use crate::seams::{Architecture, BlockId, OpId, TypeOp};
+    use crate::context::{ArchContext, BlockId, OpId, TypeOp};
 
     use super::*;
 
@@ -344,7 +344,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

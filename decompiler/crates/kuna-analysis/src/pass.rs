@@ -1,33 +1,33 @@
 //! The program-prep analysis-pass interface.
 //!
-//! Generalizes the de-facto contract already used by [`crate::s1_loader::elf_plt`]
+//! Generalizes the de-facto contract already used by [`crate::loader::elf_plt`]
 //! (`resolve_plt_imports(&object::File) -> Vec<PltSym>`): a focused module that
 //! reads the parsed object and produces a flat, deduplicated set of *facts*,
 //! never panicking and never failing -- it only ever contributes *more*
 //! knowledge (names, types, entries). A driver merges the facts from all enabled
 //! passes and commits them once into the engine's symbol/type tables.
 //!
-//! This is the seam every new analysis (string detection, demangling, DWARF,
+//! This is the boundary every new analysis (string detection, demangling, DWARF,
 //! function-start discovery, library prototypes, ...) plugs into; see
 //! `docs/missing-analyses.md` for the roadmap. The concrete passes will land as
-//! `s1_*` modules implementing [`AnalysisPass`].
+//! `loader`/`analyzers/*` modules implementing [`AnalysisPass`].
 
 use kuna_decomp::architecture::Architecture;
 
 use crate::listing::Listing;
 use crate::loadimage_object::ObjectLoadImage;
 
-/// The stage a pass feeds, mirroring the kuna stage model (`docs/stages.md`).
-/// Program-prep analyses are P0/S1; a few (e.g. jump-table post-typing
-/// refinement) feed back into S2.
+/// The phase a pass feeds, mirroring the kuna phase model (`docs/phases.md`).
+/// Program-prep analyses are P0/P1; a few (e.g. jump-table post-typing
+/// refinement) feed back into P2.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Stage {
+pub enum Phase {
     /// P0 -- knowledge & configuration plane (symbol DB facts).
     P0,
-    /// S1 -- image & code partition (the loader/analyzer tier).
-    S1,
-    /// S2 -- flow & op-graph recovery (post-typing feedback).
-    S2,
+    /// P1 -- image & code partition (the loader/analyzer tier).
+    P1,
+    /// P2 -- flow & op-graph recovery (post-typing feedback).
+    P2,
 }
 
 /// What kind of symbol a [`SymFact`] names.
@@ -78,8 +78,8 @@ pub struct DataObjectFact {
 ///
 /// `len` is the byte length **including** the terminating NUL (visible chars + 1),
 /// matching what `DataUtilities.createData` / a `char[N]` array should span — the
-/// length the commit seam passes to `get_type_array` so the printer renders the
-/// literal.  Produced by [`crate::s1_strings`] (the kuna analog of Ghidra's
+/// length the commit boundary passes to `get_type_array` so the printer renders the
+/// literal.  Produced by [`crate::strings`] (the kuna analog of Ghidra's
 /// `StringsAnalyzer`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StringFact {
@@ -91,14 +91,14 @@ pub struct StringFact {
 
 /// A processor-context decode-mode paint: set context variable `var` to `value`
 /// starting at `addr` (up to the next change point, or — if `end` is set — over
-/// the explicit `[addr, end)` range). Produced by [`crate::s1_loader::arm_markers`]
+/// the explicit `[addr, end)` range). Produced by [`crate::loader::arm_markers`]
 /// (the kuna analog of ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer` `TMode`
 /// painting) and applied by the console's `commit_analysis_output` via the
 /// engine's `ContextDatabase` (`set_variable` / `set_variable_region`, the exact
 /// analog of Ghidra's `programContext.setValue(TMode, …)`).
 ///
 /// `var` is a `&'static str` because the only producer paints SLEIGH-defined
-/// context registers known at compile time (`"TMode"`); the commit seam swallows
+/// context registers known at compile time (`"TMode"`); the commit boundary swallows
 /// a "variable not registered" error so painting a var the active language does
 /// not define (e.g. `TMode` on x86-64) is a faithful no-op.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,7 +117,7 @@ pub struct ContextPaint {
 }
 
 /// A function the known-no-return list matched: the engine should mark its
-/// FunctionSymbol no-return. Produced by [`crate::s1_loader::noreturn`] (the kuna
+/// FunctionSymbol no-return. Produced by [`crate::loader::noreturn`] (the kuna
 /// analog of Ghidra's `NoReturnFunctionAnalyzer`, "Known").
 ///
 /// Carries the symbol **address** as well as the matched name. The address is the
@@ -143,7 +143,7 @@ pub struct NoReturnFact {
 /// A named, typed function-LOCAL recovered from DWARF (`DW_TAG_variable` /
 /// `DW_TAG_formal_parameter` with a `DW_OP_fbreg` stack location), to be installed
 /// in the owning function's stack scope so the decompiler renders `int count`
-/// instead of `local_1c`. Produced by [`crate::s1_dwarf`] (subtask 3 — the kuna
+/// instead of `local_1c`. Produced by [`crate::dwarf`] (subtask 3 — the kuna
 /// analog of `DWARFFunctionImporter.processSubprogram`'s `commitLocal` loop +
 /// `DWARFVariable.readLocalVariableStorage`).
 ///
@@ -154,7 +154,7 @@ pub struct NoReturnFact {
 /// `DWARFExpressionEvaluator` — `DW_OP_call_frame_cfa` pushes a stack varnode at
 /// `getCallFrameCFA()`, then `DW_OP_fbreg` adds the LEB128 offset; see
 /// `x86-64.dwarf` `<call_frame_cfa value="8"/>`). It is the raw (signed) stack
-/// offset; the commit seam wraps it to the stack space's unsigned address.
+/// offset; the commit boundary wraps it to the stack space's unsigned address.
 ///
 /// The commit parks each fact on its owning function (keyed by `func_addr`) and
 /// re-seeds it into the freshly-rebuilt `Funcdata`'s `ScopeLocal` at decompile
@@ -178,7 +178,7 @@ pub struct LocalFact {
 
 /// A source-line annotation to attach to a decompiled instruction: at `addr`,
 /// the instruction came from source location `text` (e.g. `debug_symbol.c:122`).
-/// The commit seam (`engine.rs::commit_analysis_output`) installs each into the
+/// The commit boundary (`engine.rs::commit_analysis_output`) installs each into the
 /// architecture's `commentdb` as a `Comment::user2` (the instruction-comment
 /// type the C printer emits as a `/* ... */` line at the op's address).
 ///
@@ -186,7 +186,7 @@ pub struct LocalFact {
 /// which walks each compilation unit's `.debug_line` rows
 /// (`DWARFLine.getAllSourceFileAddrInfo`) and `appendComment(addr, EOL,
 /// "%s:%d".formatted(fileName, lineNum))`. Produced only by
-/// [`crate::s1_dwarf::DwarfLinesPass`] (the `.debug_line` parse, gated on the
+/// [`crate::dwarf::DwarfLinesPass`] (the `.debug_line` parse, gated on the
 /// `dwarf_lines` flag, default-off); empty otherwise.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommentFact {
@@ -207,19 +207,19 @@ pub struct CommentFact {
 /// this seeds a register-VALUE the decompiler's constant analysis propagates (the
 /// kuna analog of Ghidra's `ProgramContext.setRegisterValue` / the console
 /// `set track <reg> <val> <start> <end>`). Produced by
-/// [`crate::s1_loader::mips_markers`] (the kuna analog of Ghidra's
+/// [`crate::loader::mips_markers`] (the kuna analog of Ghidra's
 /// `MipsAddressAnalyzer`), which seeds `t9 = func_addr` per function — the MIPS PIC
 /// ABI convention (a function is reached via `jalr t9`, so on entry `t9` holds the
 /// callee entry). That lets a PIC prologue's `addu gp,gp,t9` fold to the real `$gp`,
 /// so `$gp`-relative GOT/`.sdata` loads resolve to concrete addresses.
 ///
-/// The commit seam (`engine.rs::commit_analysis_output`) resolves `reg` to its
+/// The commit boundary (`engine.rs::commit_analysis_output`) resolves `reg` to its
 /// register varnode and calls `create_set(func_addr, func_addr+1)` + pushes a
 /// `TrackedContext{loc, val}` — the exact `IfcSettrackedrange` recipe. The
-/// per-function `build_arch_handle` then snapshots the track base into the seam,
+/// per-function `build_arch_handle` then snapshots the track base into the handle,
 /// and `ActionConstbase` (S3) emits `COPY #val -> reg` at the entry block, feeding
 /// constant propagation. `reg` is a `&'static str` because the only producer names
-/// SLEIGH registers known at compile time (`"t9"`); the commit seam swallows a
+/// SLEIGH registers known at compile time (`"t9"`); the commit boundary swallows a
 /// "register not found" error so seeding a register the active language does not
 /// define is a faithful no-op (belt-and-suspenders on top of the MIPS-only gate).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -234,11 +234,11 @@ pub struct TrackedRegFact {
 
 /// A function whose name matched a cspec call-fixup `<target>`: the engine should
 /// tag it with that fixup's inject id so the CALL is replaced by the fixup body.
-/// Produced by [`crate::s1_callfixup`] (the kuna analog of Ghidra's
+/// Produced by [`crate::callfixup`] (the kuna analog of Ghidra's
 /// `CallFixupAnalyzer`).
 ///
 /// Carries the **original installed name** (not the matched fixup name), like
-/// [`AnalysisOutput::noreturn`] does: the commit seam resolves the real
+/// [`AnalysisOutput::noreturn`] does: the commit boundary resolves the real
 /// FunctionSymbol via `query_global_function(func_name)` and re-derives the fixup
 /// the same way the pass did. A name that no longer resolves (or already carries a
 /// fixup) is the faithful no-op (Ghidra only sets when `getCallFixup()==null`).
@@ -250,7 +250,7 @@ pub struct CallFixupFact {
 
 /// A function the FID matcher re-identified by full-hash fingerprint: at `addr`,
 /// the function's instruction-stream fingerprint matched a known-library record
-/// whose name is `name` (e.g. `kuna_crc32`). Produced by [`crate::s1_fid::FidPass`]
+/// whose name is `name` (e.g. `kuna_crc32`). Produced by [`crate::fid::FidPass`]
 /// (the kuna analog of Ghidra's FID identification analyzer) — the capability that
 /// renames a `FUN_<addr>`/`sub_<addr>` in a **stripped** binary back to its library
 /// name purely by fingerprint.
@@ -260,7 +260,7 @@ pub struct CallFixupFact {
 /// **renames** the existing function — resolved by ADDRESS — and only when it still
 /// carries an engine `FUN_*`/`sub_*` placeholder (the label gate); a real
 /// `.symtab`/DWARF name is never overwritten. See `engine.rs::commit_analysis_output`
-/// (the FID rename arm) and `docs/fid-design.md` §6.2.
+/// (the FID rename arm) and `docs/history/fid-design.md` §6.2.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FidMatch {
     /// Virtual address of the re-identified function's entry (the rename target).
@@ -283,7 +283,7 @@ pub struct AnalysisOutput {
     /// Discovered function entry points (for stripped targets).
     pub entries: Vec<u64>,
     /// Optional Ghidra-faithful names for a *subset* of [`Self::entries`], keyed by
-    /// VMA. An overlay the commit seam consults: when a discovered entry VMA appears
+    /// VMA. An overlay the commit boundary consults: when a discovered entry VMA appears
     /// here, the commit names the function with the supplied name (e.g. `_INIT_0`,
     /// `_FINI_0`, `_DT_INIT`) instead of the generic `name_function` `sub_<addr>`;
     /// an entry absent from the overlay is named generically, exactly as before.
@@ -292,7 +292,7 @@ pub struct AnalysisOutput {
     /// names each `DT_INIT`/`DT_FINI` array element `_INIT_<i>` / `_FINI_<i>` /
     /// `_PREINIT_<i>` (i = the element's index in the array) and the single
     /// `DT_INIT`/`DT_FINI` entries `_DT_INIT` / `_DT_FINI`. Produced ONLY by
-    /// [`crate::s1_entry`]'s dynamic oracle (oracle 2); the other oracles leave the
+    /// [`crate::entry`]'s dynamic oracle (oracle 2); the other oracles leave the
     /// overlay empty so their entries keep the generic `sub_<addr>` name. Kept as a
     /// parallel overlay (NOT folded into [`Self::entries`]) so the *discovery* set —
     /// WHICH VMAs are found — is byte-identical to before this overlay existed.
@@ -309,7 +309,7 @@ pub struct AnalysisOutput {
     /// sites whose fall-through must be PRUNED — glibc `error()` with a nonzero
     /// constant status calls `exit()` and never returns, so the CALL must not fall
     /// through (Ghidra flags it "Subroutine does not return"). Committed as
-    /// `CALL_RETURN` flow overrides at the decompile seam; without this the
+    /// `CALL_RETURN` flow overrides at the decompile boundary; without this the
     /// flow-follower walks past the call into the NEXT function and absorbs it
     /// (the boundary-overrun class, ~50% of kuna's Ghidra GED gap).
     pub no_fallthru_calls: Vec<u64>,
@@ -325,22 +325,22 @@ pub struct AnalysisOutput {
     pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
     /// Processor-context decode-mode paints (the kuna analog of ARM's
     /// `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
-    /// Each sets a SLEIGH context variable over an address range; the commit seam
+    /// Each sets a SLEIGH context variable over an address range; the commit boundary
     /// applies them to the engine's `ContextDatabase` BEFORE any instruction is
     /// decoded, steering ARM/Thumb instruction decode. Produced only on the ARM
-    /// path (see [`crate::s1_loader::arm_markers`]); empty otherwise.
+    /// path (see [`crate::loader::arm_markers`]); empty otherwise.
     pub context_paints: Vec<ContextPaint>,
     /// Tracked register-values to seed at function entries (the kuna analog of
     /// Ghidra's `MipsAddressAnalyzer` `ProgramContext.setRegisterValue` / the
-    /// console `set track <reg> <val> <start> <end>`). The commit seam resolves
+    /// console `set track <reg> <val> <start> <end>`). The commit boundary resolves
     /// each register and seeds the value over `[func_addr, func_addr+1)`; the
     /// per-function `build_arch_handle` snapshots it and `ActionConstbase` emits
     /// `COPY #val -> reg` at the entry, which constant propagation consumes (so a
     /// MIPS PIC `$gp`-relative load resolves). Produced only on the MIPS path (see
-    /// [`crate::s1_loader::mips_markers`]); empty otherwise.
+    /// [`crate::loader::mips_markers`]); empty otherwise.
     pub tracked_regs: Vec<TrackedRegFact>,
     /// Functions whose names matched a cspec call-fixup `<target>` (e.g. the `-pg`
-    /// `mcount`/`__fentry__` profiling stubs). The commit seam tags each with the
+    /// `mcount`/`__fentry__` profiling stubs). The commit boundary tags each with the
     /// matched fixup's inject id so the engine replaces the CALL with the fixup
     /// body. The kuna analog of Ghidra's `CallFixupAnalyzer` install loop.
     pub call_fixups: Vec<CallFixupFact>,
@@ -354,15 +354,15 @@ pub struct AnalysisOutput {
     pub locals: Vec<LocalFact>,
     /// Source-line annotations recovered from DWARF `.debug_line`, each to be
     /// installed as a `Comment::user2` so the decompiled output carries the
-    /// `file:line` of the instruction. The commit seam writes each into the
+    /// `file:line` of the instruction. The commit boundary writes each into the
     /// architecture's `commentdb`. Produced only by the DWARF lines pass
     /// (`dwarf_lines`, default-off); empty otherwise. See [`CommentFact`].
     pub comments: Vec<CommentFact>,
     /// Functions the FID matcher re-identified by full-hash fingerprint, by
-    /// `(addr, name)`. The commit seam **renames** each (resolved by ADDRESS) only
+    /// `(addr, name)`. The commit boundary **renames** each (resolved by ADDRESS) only
     /// when it still carries an engine `FUN_*`/`sub_*` placeholder (the label gate)
     /// — the stripped-binary re-identification the FID pass exists for. Produced
-    /// only by [`crate::s1_fid::FidPass`] (`--option fid on`, default-off, real-ELF
+    /// only by [`crate::fid::FidPass`] (`--option fid on`, default-off, real-ELF
     /// path only, and only when a `.fid` database is configured); empty otherwise.
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
@@ -394,7 +394,7 @@ impl AnalysisOutput {
 pub struct AnalysisCtx<'a> {
     /// The parsed object file (read-only `object` crate view).
     pub file: &'a object::File<'a>,
-    /// The raw image bytes `file` was parsed from. Threaded to the import seam
+    /// The raw image bytes `file` was parsed from. Threaded to the import boundary
     /// (`format::resolve_imports`), which some formats (PE/Mach-O) re-parse with a
     /// typed parser; the ELF impl ignores it.
     pub bytes: &'a [u8],
@@ -411,10 +411,10 @@ pub struct AnalysisCtx<'a> {
 /// One program-prep analysis. Implementors mirror the `elf_plt` contract: pure
 /// over the context, additive, never failing.
 pub trait AnalysisPass {
-    /// The stage this pass feeds (for ordering + `stage map` registry parity).
-    fn stage(&self) -> Stage;
+    /// The phase this pass feeds (for ordering + `phase map` registry parity).
+    fn phase(&self) -> Phase;
     /// Stable id used to gate the pass on/off as a settable assertion
-    /// (registered in `stages.toml`, flippable via `--option <id> on|off`).
+    /// (registered in `phases.toml`, flippable via `--option <id> on|off`).
     fn id(&self) -> &'static str;
     /// Gather facts. Pure over `ctx`; produces output, performs no engine mutation.
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput;

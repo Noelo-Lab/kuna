@@ -2204,7 +2204,7 @@ impl SpacebaseSpace {
 pub struct OverlaySpace;
 
 impl OverlaySpace {
-    /// Constructor (C++ only has the decode form)
+    /// C++ has only the decode form (no explicit constructor).
     #[allow(clippy::new_ret_no_self)] // C++ subclass constructor
     pub fn new() -> AddrSpace {
         let mut space = AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR);

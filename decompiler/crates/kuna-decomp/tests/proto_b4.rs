@@ -176,7 +176,7 @@ fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
 // Op-listing render (coarse "print raw"-ish op line; mirrors deadcode_b4.rs).
 // ===========================================================================
 
-fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::VarnodeId) -> String {
+fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::context::VarnodeId) -> String {
     let v = match fd.vbank().get(vn) {
         Some(v) => v,
         None => return "<stale>".to_string(),
@@ -205,7 +205,7 @@ fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::Varnode
     tok
 }
 
-fn render_op(arch: &Architecture, fd: &Funcdata, op: kuna_decomp::seams::OpId) -> String {
+fn render_op(arch: &Architecture, fd: &Funcdata, op: kuna_decomp::context::OpId) -> String {
     let o = fd.obank().get(op).expect("render_op: stale op");
     let sq: &SeqNum = o.get_seq_num();
     let mut s = String::new();
@@ -262,7 +262,7 @@ fn boolless_return_recovers_accumulator() {
     };
     let arch = xarch.sleigh().base().unwrap();
 
-    let mut alive: Vec<kuna_decomp::seams::OpId> = fd.obank().iter_alive().collect();
+    let mut alive: Vec<kuna_decomp::context::OpId> = fd.obank().iter_alive().collect();
     alive.sort_by_key(|&op| {
         let o = fd.obank().get(op).unwrap();
         let blk = o.get_parent().map(|b| fd.bblocks_ref().block(b).get_index()).unwrap_or(-1);

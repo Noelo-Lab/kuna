@@ -134,7 +134,7 @@ impl FunctionTestProperty {
     /// C++ `processLine(const string &line)`: search `line`, advancing the
     /// multi-line match state.
     ///
-    /// Faithful transcription of the state machine: on a match of the current
+    /// The state machine: on a match of the current
     /// line-regex advance `patnum`, and when the whole pattern is consumed bump
     /// `count` and rewind; on a non-match *mid-pattern* abort the partial match
     /// and (C++ quirk, reproduced) immediately re-test this same line against the
@@ -182,7 +182,7 @@ impl FunctionTestProperty {
         let line: &[u8] = content.as_bytes();
 
         let mut pattern: Vec<Regex> = Vec::new();
-        // Faithful transcription of the C++ pos/nextpos walk over `line`.
+        // The C++ pos/nextpos walk over `line`.
         let mut pos: usize = 0;
         loop {
             // Remove whitespace at front of pattern.
@@ -370,7 +370,6 @@ impl FunctionTestCollection {
     /// C++ `clear()`: drop any previous architecture/function and reset the
     /// console for a new program.
     pub fn clear(&mut self) {
-        // dcp->clearArchitecture()
         if let Some(dcp) = self.dcp_mut() {
             dcp.clear_architecture();
         }
@@ -439,7 +438,6 @@ impl FunctionTestCollection {
             self.saw_program = true;
             return Ok(());
         }
-        // capa->buildArchitecture + conf->init(store) + readLoaderSymbols.
         let prog = bootstrap_program(Rc::clone(bi), &arch_id, &self.spec_roots).map_err(|e| {
             TestError::Execution(format!("Error during architecture initialization: {e}"))
         })?;

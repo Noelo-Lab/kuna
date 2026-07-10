@@ -34,7 +34,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::op::{gather_pieces, piece_is_leaf, PcodeOpBank, PieceNode};
 use kuna_decomp::ruleaction_6::RulePieceStructure;
-use kuna_decomp::seams::{OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::{DefOpInfo, VarnodeBank};
 
 fn dt(size: int4) -> Rc<Datatype> {

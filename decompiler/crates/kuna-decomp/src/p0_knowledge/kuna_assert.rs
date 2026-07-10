@@ -1,15 +1,15 @@
 //! Port of `decompiler/cpp/kuna_assert.{cc,hh}` — the typed assertion API
-//! (`stage-model.md` section 12).
+//! (`docs/history/stage-model.md` section 12).
 //!
 //! `kassert` is a thin facade over the existing battle-tested stores (Override,
 //! Symbol-DB locks, FuncProto locks, the option database): it validates a
-//! `<stage> <substage>` pair against the stage registry ([`kuna_stages`]) and
+//! `<stage> <substage>` pair against the stage registry ([`kuna_phases`]) and
 //! dispatches to the store for that sub-stage. What it ADDS is the model —
 //! every applied assertion is recorded with its stage, sub-stage, strength, and
-//! the **computed minimal rewind scope** (`stage-model.md` section 12), which
+//! the **computed minimal rewind scope** (`docs/history/stage-model.md` section 12), which
 //! `kassert list` REPORTS (Ghidra-actual re-run remains whole-function).
 //!
-//! ## What this module owns vs. SEAM(W5)
+//! ## What this module owns vs. STUB(W5)
 //!
 //! The C++ `IfcKunaAssert::execute` is a console command bound to
 //! `IfaceDecompData` (the `dcp->conf`/`dcp->fd`, the `Override`/`FuncProto`/
@@ -25,13 +25,13 @@
 //!     before it dispatches (the half that is independent of the live stores);
 //!   - [`Dispatch`]: the sub-stage -> store routing *decision* (which store a
 //!     sub-stage routes to, and whether it is latent/unroutable), transcribed
-//!     from the C++ `if/else` chain — the actual store mutation is the W5 seam.
+//!     from the C++ `if/else` chain — the actual store mutation is the W5 stub.
 //!
-//! SEAM(W5): the live dispatch (`Override::insertForceGoto`, `FuncProto`
+//! STUB(W5): the live dispatch (`Override::insertForceGoto`, `FuncProto`
 //! locks, `OptionDatabase::set`, symbol retype/rename) and the console parsing
 //! of `<args>` land with the console wave on top of [`Dispatch`].
 
-use crate::kuna_stages::{lookup_substage, KunaStage, KunaStrength};
+use crate::kuna_phases::{lookup_subphase, KunaPhase, KunaStrength};
 use kuna_base::error::{KunaError, KunaResult};
 
 /// (kuna) One recorded typed assertion (session log entry) — C++ `KunaAssertion`.
@@ -40,9 +40,9 @@ pub struct KunaAssertion {
     /// Function it applies to, or "(global)".
     pub func_name: String,
     /// Stage asserted.
-    pub stage: KunaStage,
+    pub phase: KunaPhase,
     /// Sub-stage name (validated against the catalog).
-    pub substage: String,
+    pub subphase: String,
     /// The assertion arguments as given.
     pub args: String,
     /// Requested strength (hard/hint).
@@ -50,7 +50,7 @@ pub struct KunaAssertion {
     /// Strength of the underlying mechanism actually used.
     pub applied: KunaStrength,
     /// Computed minimal rewind stage (REPORTED, not enacted).
-    pub rewind: KunaStage,
+    pub rewind: KunaPhase,
 }
 
 /// Which existing store a sub-stage's assertion routes to — the *decision*
@@ -123,15 +123,15 @@ impl Dispatch {
     }
 }
 
-/// The result of validating a `kassert <stage> <substage> [hard|hint]` request,
+/// The result of validating a `kassert <phase> <subphase> [hard|hint]` request,
 /// before any store mutation — the console-independent half of
 /// `IfcKunaAssert::execute`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedAssertion {
     /// The validated stage.
-    pub stage: KunaStage,
+    pub phase: KunaPhase,
     /// The validated sub-stage name.
-    pub substage: String,
+    pub subphase: String,
     /// The requested strength (the catalog default, or the trailing hard|hint
     /// override).
     pub requested: KunaStrength,
@@ -139,7 +139,7 @@ pub struct ValidatedAssertion {
     /// catalog strength — Ghidra stores are uniformly HARD mechanisms).
     pub applied: KunaStrength,
     /// The computed minimal rewind stage (REPORTED; section 12).
-    pub rewind: KunaStage,
+    pub rewind: KunaPhase,
     /// Which store the sub-stage routes to.
     pub dispatch: Dispatch,
 }
@@ -148,7 +148,7 @@ pub struct ValidatedAssertion {
 /// the console-independent core of `IfcKunaAssert::execute`
 /// (`kuna_assert.cc:51`), up to (but not including) the live store mutation.
 ///
-/// `stagecode` is the `<stage>` token ("P0"/"S1".."S9"); `subname` is the
+/// `stagecode` is the `<phase>` token ("P0".."P9", legacy "S1".."S9" accepted); `subname` is the
 /// `<substage>` token; `strength_override` is the optional trailing `hard|hint`
 /// (the C++ pops it off the token list). Errors mirror the C++ `IfaceParseError`
 /// throws (as [`KunaError::Parse`]), in the same precedence order:
@@ -159,46 +159,41 @@ pub struct ValidatedAssertion {
 ///   4. sub-stage belongs to a different stage.
 ///
 /// The **minimal-rewind computation** is the sub-stage's catalog `rewind`
-/// field (`stage-model.md` section 12: format->S9, force-goto->S7, typelock->S5,
-/// proto->S4, jumptable/flow/context->S2, deadcode-delay->S3), looked up here.
+/// field (`docs/history/stage-model.md` section 12: format->P9, force-goto->P7, typelock->P5,
+/// proto->P4, jumptable/flow/context->P2, deadcode-delay->P3), looked up here.
 pub fn validate_assertion(
     stagecode: &str,
     subname: &str,
     strength_override: Option<KunaStrength>,
 ) -> KunaResult<ValidatedAssertion> {
-    // C++: if (!kunaStageFromCode(stagecode,stage)) throw IfaceParseError(...)
-    let stage = KunaStage::from_code(stagecode).ok_or_else(|| KunaError::Parse {
-        explain: format!("Bad stage code (expecting P0 or S1..S9): {stagecode}"),
+    let phase = KunaPhase::from_code(stagecode).ok_or_else(|| KunaError::Parse {
+        explain: format!("Bad phase code (expecting P0..P9): {stagecode}"),
     })?;
-    // C++: if (subname.empty()) throw IfaceParseError("Missing sub-stage name ...")
     if subname.is_empty() {
         return Err(KunaError::Parse {
-            explain: "Missing sub-stage name (see `stage list`)".to_string(),
+            explain: "Missing sub-phase name (see `phase list`)".to_string(),
         });
     }
-    // C++: sub = kunaLookupSubStage(subname); if (sub==0) throw ...
-    let sub = lookup_substage(subname).ok_or_else(|| KunaError::Parse {
-        explain: format!("Unknown sub-stage: {subname} (see `stage list`)"),
+    let sub = lookup_subphase(subname).ok_or_else(|| KunaError::Parse {
+        explain: format!("Unknown sub-phase: {subname} (see `phase list`)"),
     })?;
-    // C++: if (sub->stage != stage) throw IfaceParseError(...)
-    if sub.stage != stage {
+    if sub.phase != phase {
         return Err(KunaError::Parse {
             explain: format!(
-                "Sub-stage {subname} belongs to stage {}, not {stagecode}",
-                sub.stage.code()
+                "Sub-phase {subname} belongs to phase {}, not {stagecode}",
+                sub.phase.code()
             ),
         });
     }
 
-    // C++: requested = sub->strength; then the trailing hard|hint overrides it.
     let requested = strength_override.unwrap_or(sub.strength);
 
     Ok(ValidatedAssertion {
-        stage,
-        substage: subname.to_string(),
+        phase,
+        subphase: subname.to_string(),
         requested,
-        applied: sub.strength, // C++: rec.applied = sub->strength
-        rewind: sub.rewind,    // C++: rec.rewind = sub->rewind (minimal rewind)
+        applied: sub.strength,
+        rewind: sub.rewind,
         dispatch: Dispatch::for_substage(subname, sub.latent),
     })
 }
@@ -246,31 +241,27 @@ impl AssertLog {
              Ghidra-actual re-run remains whole-function):\n",
         );
         for (i, rec) in self.entries.iter().enumerate() {
-            // C++: "  " << dec << i << ": [" << funcName << "] " << code << '/' << substage
             os.push_str("  ");
             os.push_str(&i.to_string());
             os.push_str(": [");
             os.push_str(&rec.func_name);
             os.push_str("] ");
-            os.push_str(rec.stage.code());
+            os.push_str(rec.phase.code());
             os.push('/');
-            os.push_str(&rec.substage);
+            os.push_str(&rec.subphase);
             if !rec.args.is_empty() {
                 os.push(' ');
                 os.push_str(&rec.args);
             }
-            // C++: "  strength=" << (HARD|HINT|-)
             os.push_str("  strength=");
             os.push_str(match rec.strength {
                 KunaStrength::Hard => "HARD",
                 KunaStrength::Hint => "HINT",
                 KunaStrength::None => "-",
             });
-            // C++: if (strength==HINT && applied==HARD) " (applied via HARD mechanism)"
             if rec.strength == KunaStrength::Hint && rec.applied == KunaStrength::Hard {
                 os.push_str(" (applied via HARD mechanism)");
             }
-            // C++: "  rewind->" << code(rewind) << endl
             os.push_str("  rewind->");
             os.push_str(rec.rewind.code());
             os.push('\n');

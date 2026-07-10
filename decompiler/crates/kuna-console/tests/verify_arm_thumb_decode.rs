@@ -4,7 +4,7 @@
 //! Increments 8 and 17 ported the ARM `$t`/`$a` mapping-symbol decode-mode
 //! painting (`TMode` context bit) and the Thumb-FUNC re-home (a LSB-set
 //! STT_FUNC also surfaced at the even address) into
-//! `kuna-analysis/src/s1_loader/arm_markers.rs`. Those were proven only by a
+//! `kuna-analysis/src/loader/arm_markers.rs`. Those were proven only by a
 //! bare ARM `.o` UNIT test — the linked-executable Thumb-decode e2e was blocked
 //! because the build host had no ARM linker. The kuna-dev container now provides
 //! `arm-linux-gnueabihf-gcc`, so the fixture is a genuine ET_EXEC and this gate

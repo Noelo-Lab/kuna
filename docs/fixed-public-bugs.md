@@ -3,7 +3,7 @@
 Every public **Ghidra** decompiler issue that kuna has fixed, across all sessions. kuna is
 a standalone extraction of Ghidra's C++ decompiler (+ its SLEIGH specs); each issue below
 is an open/known bug in **Ghidra** (`https://github.com/NationalSecurityAgency/ghidra/issues/<N>`),
-reproduced and fixed here. The companion `docs/issue-coverage.md` is the full triage ledger
+reproduced and fixed here. The companion `docs/history/issue-coverage.md` is the full triage ledger
 (including not-viable / deferred); this file lists only the **fixes**.
 
 Each fix is one of two kinds:
@@ -86,7 +86,7 @@ Default column: `DIV-2`/`DIV-3` = flipped on by default (corpus-clean, see `docs
 
 Five decision points are deliberately left default-off because their trigger shape also
 matches legitimate non-bug code on other targets — they are correct **per program**, not
-globally (the ablation in `docs/divergences.md` / `docs/stage-critique.md` confirms each):
+globally (the ablation in `docs/divergences.md` / `docs/history/stage-critique.md` confirms each):
 
 - `returnpair single` — would truncate genuine multi-register wide returns.
 - `v850indirectbranch on` — its `jmp [reg]` predicate matches every register-indirect call
@@ -95,5 +95,5 @@ globally (the ablation in `docs/divergences.md` / `docs/stage-critique.md` confi
 - `stackalias on` — relaxes a dead-store race that is genuinely dead elsewhere.
 - `sparcstructret on` — reclassifies a real trap on non-SPARC targets.
 
-See `docs/issue-coverage.md` for the per-commit testcase/commit references and the
+See `docs/history/issue-coverage.md` for the per-commit testcase/commit references and the
 not-viable / deferred issues this file omits.

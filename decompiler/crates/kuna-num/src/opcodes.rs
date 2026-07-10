@@ -496,7 +496,6 @@ fn opcode_from_name_bytes(nm: &[u8]) -> KunaResult<OpCode> {
 
 impl OpcodeDecoder for XmlDecode<'_> {
     fn read_opcode(&mut self) -> KunaResult<OpCode> {
-        // C++: string nm = el->getAttributeValue(attributeIndex)
         let nm = self.read_string()?;
         opcode_from_name_bytes(&nm)
     }

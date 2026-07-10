@@ -30,7 +30,6 @@ fn main() {
     let stdin = io::stdin().lock();
     let stdout = io::stdout().lock();
     let mut process = GhidraProcess::new(stdin, stdout);
-    // while(status == 0) status = GhidraCapability::readCommand(cin,cout)
     match process.run() {
         Ok(_status) => std::process::exit(0),
         Err(e) => {

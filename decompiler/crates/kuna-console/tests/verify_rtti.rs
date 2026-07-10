@@ -29,7 +29,7 @@
 //!
 //! ## vftable discovery + virtual-method naming (R3)
 //!
-//! On top of the class names, `s1_rtti` R3 walks each vftable from its
+//! On top of the class names, `rtti` R3 walks each vftable from its
 //! `<Class>::vftable` base (`VfTableModel.getVfTableCount`), bounding the slot array
 //! at the first NULL / non-`.text` slot, and names each slot's target a virtual-method
 //! function `<Class>::vftable_<i>` + marks the slot array read-only. The Box vftable

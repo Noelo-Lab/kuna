@@ -22,7 +22,7 @@ use kuna_decomp::bitfield::{BitFieldTransform, FieldRef};
 use kuna_decomp::dtype::{
     flags, type_metatype, BitFieldTriple, Datatype, DatatypeKind, TypeBitField, TypeField,
 };
-use kuna_decomp::seams::VarnodeId;
+use kuna_decomp::context::VarnodeId;
 
 /// Build one bitfield with an explicit container layout.
 fn bf(id: i32, byte_off: i32, byte_sz: i32, lsb: i32, nb: i32, big: bool, meta: type_metatype) -> TypeBitField {

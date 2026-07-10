@@ -14,7 +14,7 @@
 //!
 //! Before the fix the Rust `getOutputToken` for the spacebase PTRSUB returned the
 //! `xunknown1 *` FALLBACK (the `Datatype::down_chain` → `get_sub_type` spacebase arm
-//! was a `SEAM(W6)` `Err`, never resolving the symbol), so the token did NOT equal
+//! was a `STUB(W6)` `Err`, never resolving the symbol), so the token did NOT equal
 //! the `int4(*)[5]` output high type, `force` was set, and a SPURIOUS
 //! `CPUI_CAST` wrapped the PTRSUB output → the C printer rendered
 //! `((int4 *[5])myarray)[globindex][valin]`.  C++ resolves the symbol (the spacebase

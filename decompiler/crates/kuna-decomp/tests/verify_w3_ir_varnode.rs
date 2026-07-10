@@ -27,7 +27,7 @@ use kuna_base::space::{
 use kuna_base::types::int4;
 
 use kuna_decomp::dtype::{type_metatype, Datatype};
-use kuna_decomp::seams::{OpId, VarnodeId};
+use kuna_decomp::context::{OpId, VarnodeId};
 use kuna_decomp::varnode::{varnode_flags, DefOpInfo, VarnodeBank};
 
 fn dt(size: int4) -> Rc<Datatype> {

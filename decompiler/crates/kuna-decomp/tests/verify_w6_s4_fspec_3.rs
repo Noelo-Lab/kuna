@@ -39,7 +39,7 @@ use kuna_decomp::fspec::{
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::op::pcodeop_flags;
-use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
 use kuna_num::opcodes::OpCode;
 
@@ -93,7 +93,7 @@ fn fcs_manager() -> AddrSpaceManager {
 }
 
 fn fcs_fd() -> Funcdata {
-    let glb = Rc::new(Architecture::new(fcs_manager()));
+    let glb = Rc::new(ArchContext::new(fcs_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let entry = Address::new(ram, 0x1000);
     Funcdata::new("caller", "caller", glb, entry, 0x10000000, 0x40).unwrap()

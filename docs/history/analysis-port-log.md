@@ -1,0 +1,5169 @@
+> **ARCHIVED (2026-07).** Working log of the analyzer-tier port campaign (complete); the live description is `docs/spec/01-program-prep.md`. Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+
+# Analysis-tier port log
+
+A running record of porting Ghidra's Java **analyzer / loader tier** (the "Run
+Analysis" layer) into the Rust [`kuna-analysis`](../decompiler/crates/kuna-analysis)
+crate, feature by feature, each with a testcase. This is the *process* log (what's
+done); the gap inventory is [`missing-analyses.md`](missing-analyses.md); the
+**execution plan for the remaining gaps** (dependency-ordered waves + per-task
+sub-agent briefs + fixtures + fan-out protocol) is
+[`analysis-port-plan.md`](analysis-port-plan.md). Crate design: its `lib.rs` / `pass.rs`.
+
+> **Why this exists.** kuna ports Ghidra's *decompiler* (the SLEIGH "deep
+> decompiler"). The Ghidra application additionally runs ~140 Java analyzers that
+> *prepare* a program before the decompiler sees it. A standalone port inherits
+> the decompiler but not those analyzers — so library calls render as
+> `sub_400510(...)` instead of `puts(...)`, string constants as raw addresses,
+> dead code after `exit()`, etc. This effort closes that gap, one analyzer at a
+> time, in `kuna-analysis`.
+
+## How a pass is structured (the seam)
+
+Each analysis is an [`AnalysisPass`](../decompiler/crates/kuna-analysis/src/pass.rs):
+a focused, read-only, never-failing producer of *facts*
+(`AnalysisOutput { symbols, entries, noreturn, readonly, strings, prototypes, call_fixups }`) over an
+`AnalysisCtx { file: &object::File, image: &ObjectLoadImage, arch: &Architecture }`.
+`kuna_analysis::passes::default_passes()` lists the enabled passes;
+`run_default_analyses(bytes, image, arch)` runs them and returns the merged
+output. The console commits the merged output **once**, in
+[`engine.rs::commit_analysis_output`](../decompiler/crates/kuna-console/src/engine.rs),
+called from `bootstrap_from_elf` after the funcsym stream is installed.
+
+**Binding:** analyses run **only on the real-ELF bootstrap path**
+(`bootstrap_from_elf`, reached when `load file` sees `\x7fELF`). The XML
+`<binaryimage>` datatest path (`bootstrap_program`) never constructs an
+`ObjectLoadImage` and never calls `run_default_analyses`, so the 675/675 datatest
+parity oracle is structurally untouched no matter what passes are enabled. This
+binding is also what keeps kuna a faithful drop-in for a Ghidra front-end (see
+[Downstream compatibility](#downstream-compatibility)).
+
+## Per-fact-kind commit API (verified)
+
+| Fact | Engine API | Notes |
+|---|---|---|
+| function symbol | `find_create_scope_from_symbol_name` → `find_function` (dedup) → `add_function` + `ConsoleProgram::register_symbol` | the existing funcsym path; idempotent overlap no-op |
+| data symbol / string | `types().get_type_char(get_size_of_char())?` → `get_type_array(len, ch)?` → `add_symbol_mapped` → `set_attribute(typelock)` | all `TypeFactory` methods are **fallible** (`?`) |
+| no-return | `find_function_across_scopes(addr)` (by **address**) → `Database::set_function_no_return(sid, true)`, name path `query_global_function(name)` as fallback | address is stable across demangle (Increment 11); NOT the private `Architecture::set_function_no_return(name,..)` |
+| readonly range | `Database::set_property_range(varnode_flags::readonly, a1, a2_open)` | now applied on the ELF path too (was XML-only); load-bearing for string rendering |
+| entry point | `name_function(addr)` → `add_function` + `register_symbol` (the `map function` recipe) | commit side is solved; *discovery* is the hard part |
+| call-fixup | rebuild target→fixup map from `arch.pcodeinjectlib.injection` → `pcodeinjectlib.base.get_payload_id(CALLFIXUP_TYPE, fixup)` → `query_global_function(name)?` → guard `Database::function_inject_id_for_symbol(sid) < 0` → `Database::set_function_inject_id(sid, injectid)` | the `IfcFixupApply` body driven by the analyzer; the `<0` guard is Ghidra's `getCallFixup()==null`; the inherited inject/weave path then applies the fixup at flow time |
+
+## Is this every Ghidra analyzer? (complete inventory)
+
+**No — and most should not be ported.** Ghidra ships **142** non-test `*Analyzer.java`
+classes. Only a minority are program-analysis steps relevant to a *standalone ELF
+decompiler*; the rest are per-CPU listing helpers, non-ELF format loaders, or infra. Full
+accounting (every one of the 142 falls in exactly one bucket):
+
+### Core program-analysis tier — `Features/{Base,Decompiler,GnuDemangler,FunctionID,DecompilerDependent}` (~57)
+
+**Ported (5) + PLT:** `NoReturnFunctionAnalyzer` (base ELF list + **all** ELF
+per-compiler arms of `noReturnFunctionConstraints.xml`: Rust — Increment 7, Go —
+Increment 14), `GnuDemanglerAnalyzer`, `ApplyDataArchiveAnalyzer`, `StringsAnalyzer`
+(re-enabled by default since the printer change — see Increment 12),
+`SourceLanguageAnalyzer` (detection half — see Increment 4); plus
+`ElfDefaultGotPltMarkup` (loader code, done pre-this-effort).
+
+**🟡 Inherited — the ported engine already does this, no analyzer needed (~11):**
+`DecompilerSwitchAnalyzer`, `DecompilerFunctionAnalyzer`, `DecompilerCallConventionAnalyzer`
+(these literally *run the decompiler* — kuna **is** that engine), `ConstantPropagationAnalyzer`
+(S3 SSA value-set), `StackVariableAnalyzer` (S5), `FunctionAnalyzer` ×2 (proto/param recovery, S4),
+`SharedReturnAnalyzer`, `SharedReturnJumpAnalyzer`, `SegmentedCallingConventionAnalyzer`.
+
+**⬜ Real gaps worth porting (deferred, in the work-list):** `DWARFAnalyzer`,
+`EntryPointAnalyzer` (+ `ExternalEntryFunctionAnalyzer`, + the 5 `BytePatterns/FunctionStart*`
+below), `GccExceptionAnalyzer` (.eh_frame), `FormatStringAnalyzer` (printf varargs typing),
+`ArmSymbolAnalyzer` ($t/$a), `CallFixupAnalyzer`, `FormatStringAnalyzer`.
+
+**🟡 Ported-but-disabled-by-default:** `StringsAnalyzer` (Increment 3) and
+`AddressTableAnalyzer` (Increment 4) are both faithfully ported + unit-tested but
+**registered commented-out** in `default_passes()` — off by default for Ghidra parity
+(`AddressTableAnalyzer.setDefaultEnablement(false)`) and false-positive risk. They are
+inert until a future per-run `--option <id> on` increment.
+
+**⛔ Out of scope / infeasible-at-this-tier (documented):** `FindNoReturnFunctionsAnalyzer`
+(flow heuristic — no pre-decompile listing), `AggressiveInstructionFinderAnalyzer` (+ ARM —
+needs a post-disassembly Listing/FunctionManager/PseudoDisassembler + ≥20 found functions;
+off-by-default upstream; subsumed by `s1-entry-disc` + `s1-eh-frame` — Increment 4), the
+operand/reference markup family (`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`,
+`ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer` — all operate on the disassembled
+Listing/ReferenceManager, which does not exist at this tier; their products are subsumed by
+`s1-strings`/`s2`-jumptables/`s1-entry-disc`, and the one relevant idea is blocked by the same
+printer/MapGlobals shadowing as `s1-strings` — Increment 4), `CreateThunkAnalyzer` (thunk object model),
+`ExternalSymbolResolverAnalyzer` (multi-program project), `CondenseFillerBytesAnalyzer`,
+`EmbeddedMediaAnalyzer`, `FidAnalyzer` (Function-ID fingerprinting subsystem),
+`X86FunctionPurgeAnalyzer` (Win32 stdcall), `Golang{String,Symbol}Analyzer`,
+`MingwRelocationAnalyzer`; non-ELF format loaders `Coff*`, `Macho*`, `Pef*`,
+`PortableExecutableAnalyzer`, `AppleSingleDoubleAnalyzer`, `CliMetadataTokenAnalyzer`, `ElfAnalyzer`
+(the loader wrapper); plus abstract bases (`AbstractAnalyzer`, `Analyzer`, `Abstract*`,
+`HeadlessAnalyzer`, `MySwitchAnalyzer`).
+
+### Processor-specific — `Processors/*` (31) — ⛔ out of scope (per-CPU listing helpers)
+
+`X86`, `Arm`, `Mips{Address,Pre,Symbol}`, `Sparc{,EarlyAddress}`, `PowerPCAddress`, `RISCVAddress`,
+`SH4{Address,EarlyAddress}`, `Pic{12,16,17c7xx,18,24DInit}`, `PicSwitch`,
+`Hexagon{,PrologEpilog,Thunk,UnsupportSemantic}`, `Java`/`Jvm`/`AbstractJava`, `eBPFSyscall`,
+`Motorola68K`, `NDS32`, `Loongson`, `HCS12Convention`, `AARCH64PltThunk`, `Toy`. These are per-arch
+address/switch/reference heuristics at the **listing** level; kuna's SLEIGH engine handles
+decoding, and PLT/thunk naming is done generically.
+
+### Other `Features/*` — format/OS/lang specific (~52) — mostly ⛔
+
+`FileFormats/*` (Android/iOS/Mach-O/DEX/ext4/DTB/… ~38), `MicrosoftCodeAnalyzer/*` (PE/RTTI/TEB/SEH),
+`MicrosoftDemangler`, `Objective-C/*`, `PDB/*`, `Swift/*` — all non-ELF. **Partially relevant:**
+`BytePatterns/FunctionStart*` (5 — byte-pattern function-start discovery, folds into the deferred
+`s1-entry-disc`); `Rust/RustDemanglerAnalyzer` (**already covered** — kuna's demangle pass handles
+Rust via `rustc-demangle`); `Rust/RustStringAnalyzer` (🟡 detection ported in Increment 4; the
+str-slice split is infeasible-at-tier — see the work-list `ruststring` row).
+
+### Framework/Build (2) — ⛔ `JitDataFlowBlockAnalyzer` (JIT infra), `SkeletonAnalyzer` (template).
+
+**Summary:** of 142 analyzers, **~8 ported** (PLT, no-return, demangle, libproto, DWARF,
+entry-disc/eh-frame, source-language + Rust no-return; plus `StringsAnalyzer`/`AddressTableAnalyzer`
+ported-but-disabled-by-default) + ~11 inherited by the engine + the few remaining real
+ELF-relevant gaps deferred to Wave 2/3 (format-string, ARM/MIPS markers, callfixup, the DWARF
+stack-locals subtask, the printer change to re-enable strings) + ~112 out of scope for a
+standalone ELF decompiler (per-CPU helpers, non-ELF formats, Windows/Go/Swift/ObjC, infra —
+including AIF and the operand/reference markup family, both ⛔ infeasible-at-tier, Increment 4).
+The work-list below tracks the relevant set; this section is the evidence it's exhaustive.
+
+## Work-list
+
+Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it) ·
+⛔ out-of-scope / infeasible-at-this-tier.
+
+| St | Pass id | Analysis (Ghidra) | Diff | Testcase |
+|----|---------|-------------------|------|----------|
+| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode); RISC-V (Increment 20); ARM (Increment 18); **SPARC e2e (Increment 24)**: linked `plt_sparc64`, `main` calls `0x2021c0`/`0x2021a0` render `puts("hello")`/`printf("%d\n",…)` (the `sethi %g1` veneer; SPARC's JMP_SLOT `r_offset` IS the stub addr); **PPC64 ELFv2 e2e (Increment 26)**: linked `plt_ppc64le`, `main` `bl 0x680`/`0x660` render `puts(...)`/`printf(...)` (the `.text`-synthesized `addis r12,r2,@ha; ld r12,@l` TOC-relative stub decode); **MIPS o32 e2e (Increment 27)**: linked `plt_mips32`, `main`'s `$gp`-relative GOT calls render `puts(...)`/`printf(...)` (no `.plt`/`R_MIPS_JUMP_SLOT`; the dynamic-symbol GOT layout `DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`/`DT_PLTGOT` names the `.MIPS.stubs` stub) |
+| ✅ | `symtab-dynsym` | `.symtab`/`.dynsym` function reader | — | `fixture_funcsyms` |
+| ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
+| ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
+| ✅ | `s1-demangle` | Demangling (`GnuDemanglerAnalyzer` + Rust) | easy | `cpp_mangled` `main`: call renders `foo::Bar::baz(...)` |
+| ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
+| ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | ENABLED by default since the printer change — its planted `char[N]` symbol coexists with the literal: the printer renders a pointer to a readonly char-printable array symbol as the literal (Ghidra behavior). fauxware `main`: `puts("Username: ")`/`puts("Password: ")` with `s_400915` registered. See Increment 12 |
+| ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
+| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5); dynamic INIT/FINI elements named `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT` per `ElfProgramBuilder` (Increment 22); cross-arch `_start`→`main` idiom for AArch64/ARM/RISC-V — stripped `main` recovered + decompiled, ARM via the discovery-derived Thumb `TMode=1` paint (Increment 23) |
+| ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
+| ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
+| ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
+| 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
+| ✅ | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM done** (Increments 8/17/18): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical); Thumb-FUNC re-home (Increment 17). **Decode e2e now done in-container** (Increment 18): the LINKED `arm_thumb_linked_le32` ET_EXEC (`arm-linux-gnueabihf-gcc` in `kuna-dev`) Thumb-decodes `compute` → `a0 * 3 + 7` and `_start`'s CALL to the even entry resolves to `compute(` — no wiring fix needed. **MIPS `$gp`** done (Increment 17); **MIPS16 `ISA_MODE` out of scope** (needs a MIPS16 fixture) |
+| ✅ | `s1-formatstring` (A+B) | printf/scanf varargs typing (`FormatStringParser` + `FormatStringAnalyzer`) | xhard | **A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic. **B done** (Increment 14) — the decompile→inspect→override→re-decompile loop in `IfcDecompile`: walks `CALL` ops, classifies printf/scanf callees (`apply::classify_variadic_call`), reads the format constant at the format slot, builds a per-call-site `PrototypePieces` override (`apply::build_override_pieces`), re-decompiles. **Gated OFF** (`--option formatstring on`, Ghidra `setDefaultEnablement(false)`). `fmt_x86_64`: `printf("%d %s\n",a0,(char *)*a1)` typed vs default `(uint8)a0,*a1`. **Cross-arch done** (Increment 25) — `fmt_aarch64`/`fmt_arm`/`fmt_riscv64` all type identically with one `--option formatstring on`; AArch64/RISC-V worked unchanged, ARM needed a scoped `readonlypropagate` flip (its format pointer is a read-only literal-pool LOAD), still under the `formatstring` gate (`verify_formatstring_crossarch.rs`) |
+| 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
+| ✅ | `callfixup` | Auto-apply cspec call-fixups (`CallFixupAnalyzer`, install half) | med | `mcount_x86_64`: `main`'s `-pg` `call mcount` is **dissolved** — body becomes `return 0;` + `Function: mcount replaced with injection: mcount`. Pass matches FUNC names to cspec `<callfixup><target>`; commit tags inject id (the inherited inject/weave path applies it). Flow-repair half infeasible-at-tier (LOSS). See Increment 8 |
+| 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
+| 🟡 | `const-prop` | `ConstantPropagationAnalyzer` | — | engine does its own SSA const-prop (S3) |
+| ✅ | `s1-aif` | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer`) | xhard | **done** (Increment 47, the sound substitute the buildplan §1.3 prescribed) — `s1_aif` gap-walk, the third Listing consumer: over the undefined gaps between discovered functions, speculatively decode each gap start and accept it as a new entry when it (a) disassembles into a valid subroutine (`check_valid_subroutine` ~ `PseudoDisassembler.checkValidSubroutine`/`followSubFlows`) AND (b) matches a function-start fingerprint shared by ≥4 of the ≥20 discovered functions. Finds functions reachable ONLY through an indirect/data path that entry-disc + `.eh_frame` miss (`aif_gap_x86_64` → `sub_13ae`). **Gated OFF** (`--option listing on --option aif on`, Ghidra `setDefaultEnablement(false)`). LOSS: fingerprint is the decoded mnemonic sequence (operand-insensitive), not Ghidra's masked `getInstructionMask` bytes; ARM variant out of scope. `verify_aif.rs` |
+| ⛔ | `operand-refs` | Operand/scalar reference markup (`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`, `ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`) | easy | no Listing/ReferenceManager at this tier; products subsumed by `s1-strings`/`s2`-jumptables/`s1-entry-disc`; the one relevant idea (scalar→`char*`) is blocked by the same printer/MapGlobals shadowing as `s1-strings`. Increment 4 |
+| ⛔ | `s1-noreturn-discovered` | `FindNoReturnFunctionsAnalyzer` (flow heuristic) | hard | needs pre-decompile listing/flow — not at this tier |
+| ⛔ | `thunk-model` | thunk/external object model | hard | needs `ExternalLocation`/S2-S4 internals |
+| ⛔ | `x86-purge` | `X86FunctionPurgeAnalyzer` | — | Linux ELF x86 is cdecl; engine infers `extrapop=0` |
+| ✅ | `golang-symbols` | Go pclntab function-name recovery (`GolangSymbolAnalyzer`, name half) | hard | Increment 34: `s1_pclntab::GoPclntabPass` parses the embedded pclntab (go1.2/1.16/1.18/1.20 magics) and emits a `SymFact{Function}` per Go function, so `main.main`/`runtime.*`/package fns render named instead of `sub_<addr>`. Go-gated (registered only for `Compiler::Go`, like the Go no-return list); reuses the existing symbol commit arm (no new arm). Name-recovery half only — the RTTI/type/signature subsystems stay out of scope |
+| ⛔ | `extern-resolver` | `ExternalSymbolResolverAnalyzer` | — | needs multi-program Ghidra project context |
+| ⛔ | `filler-bytes` | `CondenseFillerBytesAnalyzer` | — | listing cosmetics; never reaches decompiler output |
+| ⛔ | format-specific | Swift/ObjC/PDB/RTTI/Mach-O/PE | — | out of scope for an ELF decompiler |
+
+**Do-first order:** `noreturn_known` (done) → `s1-demangle` → `s1-strings` →
+`s1-libproto`.
+
+## Downstream compatibility
+
+> *The question: if we add analyzer logic into the kuna engine, does it still
+> work as a drop-in replacement for Ghidra's C++ decompiler under a Ghidra
+> front-end (the UI / headless driving it over the XML callback protocol)?*
+
+**Verdict: no, it does not break the drop-in — provided passes stay bound to the
+standalone real-ELF path (which they are).** Rationale, verified against the
+Ghidra source:
+
+1. **The C++ decompiler protocol is pull-based.** A Ghidra front-end drives the
+   decompiler as `ArchitectureGhidra`, which overrides every info subsystem to
+   *query the client*: `ScopeGhidra` forwards `findFunction`/`findExternalRef`/
+   `findCodeLabel` and its `addSymbolInternal` literally throws
+   `"unimplemented"` — the decompiler is structurally forbidden from inventing
+   global symbols in that mode. `LoadImageGhidra` marshals byte/readonly
+   requests; `GhidraStringManager` asks the client for string data. So in
+   front-end mode the decompiler **receives** symbols/types/strings/noreturn and
+   **produces** only the recovered function. It never discovers program-wide facts.
+
+2. **kuna's analyzer facts enter at exactly one seam the protocol never uses.**
+   `bootstrap_from_elf` is reached only on `\x7fELF` magic; the XML path
+   (`bootstrap_program`, the structural analog of a front-end handing in
+   everything) never calls `run_default_analyses`.
+
+3. **Every commit API is additive to the same tables the funcsym path already
+   writes** (`add_function`/`add_symbol_mapped`/`set_function_no_return`/
+   `set_property_range`/`register_symbol`). No new wire element, no format change,
+   no pass-order change. A downstream consumer would see a richer-but-well-formed
+   symbol/type table and identical decompiler output *shape*.
+
+**Recommendation (the segregation contract):** keep analyses (a) bound to the
+`ObjectLoadImage` backend, not the engine; (b) additive, never authoritative
+(front-end facts must win; analyzer facts only fill holes — the `find_function`
+overlap no-op already enforces this); (c) a future `ArchitectureGhidra`-equivalent
+leaf would use the wire symbol stream and skip analyzers entirely. A regression
+guard asserting `run_default_analyses` is never invoked on the XML path is a
+recommended follow-up (today the structural separation + `make test` PARITY is
+the de-facto guard).
+
+## Open architectural decision: per-run option gating (✅ RESOLVED — Increment "option-gating")
+
+`docs/missing-analyses.md` promises each pass be flippable via `--option <id> on|off`
+and discoverable in `kuna catalog`. There was a real ordering wrinkle (**conflict #4**):
+the analysis commit happened in the `load file` body (`bootstrap_from_elf`), but `kuna
+decompile` emits `option <id> <val>` *after* `load file`, so a per-run gate would be a
+no-op as wired. **This is now resolved** (see the "option-gating" Increment below): the
+per-pass `AnalysisOutput` is stashed on the program at load, the commit is deferred to
+`IfcReadSymbols` (`read symbols`), the CLI `build_script` emits the `option` lines
+**before** `read symbols`, and the commit consults each pass's per-id enable flag and
+drops a disabled pass's facts. All eight pass ids are registered settable options
+(`stages.toml` + `KUNA_OPTION_NAMES`), default-on (except `addrtable`, off — Ghidra
+parity), so behavior is unchanged when no `--option` is passed. The pre-existing
+per-name surface `--option noreturn <name>` still works as a manual override.
+
+## Increments
+
+### Increment 1 — foundation + no-return ✅
+
+- **Foundation:** `bootstrap_from_elf` now reads the image bytes once, runs
+  `run_default_analyses`, applies read-only markup (new on the ELF path), and
+  commits the merged `AnalysisOutput` via the new `commit_analysis_output`
+  (function/data/entry/no-return fact kinds all wired; only no-return has a
+  producer in this increment).
+- **`noreturn_known`** ported from `NoReturnFunctionAnalyzer` ("Known") + the
+  verbatim `ElfFunctionsThatDoNotReturn` list (vendored at
+  `kuna-analysis/data/`). Faithful matcher: strip **all** leading `_`, exact-then-
+  wildcard match, namespace guard (global/`std` only). The flow-based "Discovered"
+  analyzer (`FindNoReturnFunctionsAnalyzer`) is documented infeasible at this tier
+  (needs a pre-decompile listing/flow model).
+- **Result:** fauxware `rejected` went from a wall of dead fall-through to:
+  ```c
+  void rejected(void)
+  {
+    printf(0x40090c);
+                      /* WARNING: Subroutine does not return */
+    exit(1);
+  }
+  ```
+- **Tests:** 5 unit tests (`kuna-analysis` `noreturn::tests`); `make test`
+  **PARITY OK** (675/675); `make rust-test` green.
+
+### Increment 2 — demangling + strings (fanned out, parallel) ✅
+
+Two passes implemented concurrently in isolated worktree agents (both Opus), then
+integrated sequentially with gates after each.
+
+**`s1-demangle`** — port of `GnuDemanglerAnalyzer`. The decisive finding: Ghidra's
+GNU/Itanium demangler is **not Java** — it shells out to a native `demangle`
+(libiberty `cplus_demangle`). So "line-faithful port" has nothing to transcribe for
+Itanium; mirroring Ghidra means *calling a 3rd-party demangler* — exactly a crate dep.
+Added `cpp_demangle` 0.5.1 (Itanium) + `rustc-demangle` 0.1.27 (Rust legacy + v0) as a
+documented dependency-substitution LOSS (same move as BFD→`object`). New `s1_demangle`
+module: `demangle_raw` (full `foo(int)`) + `demangle_name` (name-only `foo::bar`).
+The **name-only reduction is mandatory** — kuna's `::` splitter
+(`find_create_scope_from_symbol_name`) splits the *entire* string, so a leftover
+signature/template `::` would create junk scopes. Applied at funcsym build in
+`loadimage_object.rs` (all 3 sources, after `strip_version`). 11 unit tests + a real
+`g++`-built `cpp_mangled_x86_64` fixture. Scoped LOSS: name+namespace only, not
+signature/param-type application (kuna recovers those from usage, S4/S5).
+
+**`s1-strings`** — port of `StringsAnalyzer`. New `s1_strings` module: a faithful
+transcription of `MinLengthCharSequenceMatcher` + `AsciiCharSetRecognizer` (printable
+`0x20..=0x7e`+CR/LF/TAB, min length **5**, require-NUL-end, ASCII/1-byte only). Scans
+allocated+initialized sections; emits `StringFact{addr,len}` (new `AnalysisOutput`
+field). The commit arm types each as a typelocked `char[N]` data symbol. **LOSS:** the
+n-gram trigram false-positive filter (`StringModel.sng`) is unportable (model not in
+tree) — substituted "printable+NUL+min-5", which over-accepts; harmless for real
+literals, documented. 5 unit + fixture tests.
+
+**Honest rendering verdict (strings):** `puts("Username: ")` does **not** render yet —
+the call shows `puts(s_400915)` (the constant now references the typed `char[]` global
+instead of a bare `0x400915`, a real improvement). The inline literal needs the call
+argument typed `char *`, which comes from a library prototype (`puts(char*)`) — i.e.
+the **`s1-libproto`** pass. This exactly matches the research's conflict #8: a
+typelocked `char[N]` data symbol alone does not retype the call-site constant; readonly
+markup (foundation) is necessary but insufficient without the proto. So strings is a
+faithful, complete `StringsAnalyzer` port; the headline literal is gated on libproto
+(next increment).
+
+**Engine fix uncovered by demangle — cross-scope call resolution.** Demangle placing
+`foo::Bar::baz` into the nested `foo::Bar` scope exposed a latent limitation: the call
+resolver (`decompile_drive.rs::query_call` + the no-return/inline/inject variants) only
+searched the **global** scope's address map (`find_function(global, addr)`), so a
+namespaced callee resolved to `sub_<addr>` (worse than the mangled name). C++
+`Scope::queryFunction(Address)` spans the scope tree. Added
+`Database::find_function_across_scopes` + `function_display_name_across_scopes`
+(qualified name) + no-return/inline/inject cross-scope variants, and switched the four
+`query_call*` resolvers to them. Now `main` renders `foo::Bar::baz(&v1,0x2a)`
+(fully-qualified) and `__stack_chk_fail()` is correctly no-return. Identical for flat
+global names, so the 675 datatests are unaffected.
+
+- **Known cross-pass seam (RESOLVED in Increment 11):** the no-return pass matched on
+  *raw object-symbol* names while demangle renamed the *funcsym*; a no-return C++ symbol
+  (e.g. `_ZSt9terminatev`) is installed as `std::terminate`, so the no-return commit's
+  `query_global_function("_ZSt9terminatev")` missed it. Harmless for the common case
+  (C libc no-return imports are unmangled), but real for C++. **Fixed by approach (A):**
+  the fact now carries the symbol **address** (`NoReturnFact { addr, name }`) and the
+  commit resolves by address via `find_function_across_scopes` (stable across demangling),
+  with the name path as a fallback. See Increment 11.
+
+- **Tests:** `kuna-analysis` 32 tests pass (noreturn 5 + strings + demangle 11 +
+  fixtures); `make test` **PARITY OK** (675/675, including after the engine
+  call-resolution change); `make rust-test` green.
+
+### Increment 3 — library prototypes + the strings/printer finding ✅
+
+**`s1-libproto`** — port of `ApplyDataArchiveAnalyzer`. Ghidra applies parsed C
+header archives (`.gdt`, binary, not vendored) to give imports their signatures.
+Substituted a **built-in table of ~25 common libc signatures** (`puts(char*)`,
+`printf(char*,...)`, `strcmp(char*,char*)`, `malloc`, `memcpy`, …) — a faithful
+minimal stand-in (documented LOSS: covers the table, not a full archive). New
+`s1_protos` module: for each table entry whose name is present as a function, build
+`PrototypePieces` from the arch type factory and emit it; the commit seam parks each
+on its callee via `Architecture::set_function_prototype_pieces`. `ActionDefaultParams`
+then copies the callee signature into the caller, typing the argument constants.
+
+**The headline result.** With `puts` typed `int puts(char *)`, the constant `0x400915`
+becomes a `char *` to readonly memory, the printer's `push_ptr_char_constant_ir` fires,
+and the StringManager reads the bytes:
+```c
+puts("Username: ");
+puts("Password: ");          // fauxware main
+printf("Go away!");          // fauxware rejected
+```
+
+**Key architectural finding — how kuna renders string literals (vs Ghidra).** Ghidra's
+`StringsAnalyzer` *creates a string data object* at the address, and Ghidra's decompiler
+renders a pointer to it as the literal. **kuna's printer renders a constant that maps to
+a named global symbol as that symbol's NAME** (`puts(s_400915)`), which *shadows* the
+literal path. So planting a `char[N]` data symbol (Ghidra's mechanism, which the
+`s1-strings` pass faithfully implements) actually **blocks** `puts("Username: ")` in kuna.
+An A/B test confirmed it: with the strings pass on, `puts(s_400915)`; with it off (libproto
+only), `puts("Username: ")`. Therefore:
+
+- kuna renders string literals via **type-driven rendering** — a `char *`-typed constant
+  (from `s1-libproto`, or from S5 usage inference) pointing at readonly memory, read by the
+  already-ported `StringManager` — **not** via Ghidra's plant-a-data-symbol path.
+- `s1-strings` is kept (a faithful, tested `StringsAnalyzer` port) but **disabled by
+  default**, because enabling it is net-negative (it trades literals for `s_<addr>` named
+  refs). Re-enabling it cleanly requires a **deferred printer change**: render a pointer to
+  a readonly char-array symbol as the literal (the Ghidra behavior), so the data symbol and
+  the literal coexist. Until then, `s1-libproto` + S5 usage inference cover literal rendering.
+
+This is exactly the kind of "Ghidra mechanism that doesn't map 1:1 onto the ported engine"
+the port is meant to surface: the *end result* (`puts("Username: ")`) is achieved, by a
+different, more kuna-native route.
+
+- **Tests:** `kuna-analysis` 34 tests pass; `make test` **PARITY OK** (675/675);
+  `make rust-test` green.
+
+### Increment 4 — address-table discovery (disabled) + two scope decisions ✅
+
+Three Ghidra disassembler/analysis-tier items resolved together: one disabled-by-default
+code pass and two documented ⛔ out-of-scope decisions. None can move the parity oracles
+(the pass is inert by default; the other two are doc-only).
+
+**`addrtable`** — port of `AddressTableAnalyzer` ("Create Address Tables"). New
+`s1_addrtable` module: a faithful transcription of the `AddressTable.getEntry` pointer-run
+scanner. `scan_address_tables(file, min_run, ptr_size)` walks the searchable
+(allocated + initialized, non-executable: `.rodata`/`.data`/`.data.rel.ro`/`.got`) sections
+and accepts a run of `>= min_run` consecutive pointer-width values that each (a) are `!= 0`,
+(b) `>= minAddressOffset`/`MINIMUM_SAFE_ADDRESS`, (c) land inside an executable section, and
+(d) pass the `isValidRelocationAddress` guard. The pass emits a **Data** symbol at each table
+head + a read-only range over the body — **never** an `entries`/Function fact (faithful to the
+analyzer, whose function-making code is commented out; real code targets are found by the
+separate `s1-entry-disc` pass and the engine's switch recovery).
+
+*Faithful relocation-guard activation (the one design judgement).* The guard
+(`isValidRelocationAddress`) is sound only on a **relocatable / PIE** image (`ET_REL`/`ET_DYN`),
+where *every* real absolute pointer is relocated. On a non-PIE `ET_EXEC` (the
+`switchtab_x86_64` fixture) the binary still has a couple of dynamic relocations (GOT slots
+for `__libc_start_main`/`__gmon_start__`), but those do NOT cover the program's absolute
+`.rodata` switch-table pointers — so the guard is gated on `file.kind()` being
+Relocatable/Dynamic. On `ET_EXEC` the guard is OFF and only the heuristic checks apply
+(in-exec + min-addr + string-guard + min-run) — the over-acceptance-prone path that is exactly
+why Ghidra (and kuna) ship this pass disabled.
+
+*Result.* The unit test drives `scan_address_tables` over the vendored `switchtab_x86_64`
+fixture directly (NOT via `default_passes`, which leaves the pass commented out) and confirms
+it **FINDS the 8-entry absolute jump table at vma `0x402008`** (the `jmp *0x402008(,%rdi,8)`
+target), with all 8 elements landing inside `.text` (pinned consts read off
+`readelf -x .rodata`/`objdump -d`). A negative test confirms no spurious table over fauxware's
+string data, and a threshold test confirms the 8-entry table is rejected at `min_run=64`.
+
+*Disabled-by-default.* Registered commented-out in `passes.rs::default_passes()`, exactly like
+`s1-strings`: (a) Ghidra parity (`setDefaultEnablement(false)`); (b) false-positive risk (a
+pointer-run scanner over-accepts; the reloc guard is weak on non-PIE). NOTE the careful
+classification this task is as much about: this is **NOT** switch recovery (that is the
+INHERITED S2 engine machinery, `s2_lift/jumptable.rs`, the analog of `DecompilerSwitchAnalyzer`)
+and **NOT** roadmap-#9 post-typing refinement (that is the decompiler-internal multistage
+re-recovery, `recover_count > 1`, ENGINE-RESIDENT S2 behind the `Override::queryMultistageJumptable`
+seam) — it is only the application-layer absolute-pointer-table discovery. #9 stays a separate,
+deferred *engine* task; this increment classifies it, it does not touch it.
+
+**`aggressive-disasm` — ⛔ doc-only decision (NOT ported).** Ghidra's
+`AggressiveInstructionFinderAnalyzer` (AIF, + the ARM variant) is **infeasible at the
+kuna-analysis tier and out of scope.** It is a *post-disassembly, whole-program, iterative*
+speculative gap-filler that (1) requires a fully-populated Listing + FunctionManager with
+**≥20 functions already found** (`AggressiveInstructionFinderAnalyzer.java:97-102`,
+`MINIMUM_FUNCTION_COUNT=20`) — kuna's analysis tier runs *before* any decompilation, with no
+Listing and no global function discovery; (2) builds a function-start byte-fingerprint histogram
+via `SleighDebugLogger`/`getInstructionMask` and accepts a gap candidate only if its masked
+prefix matches a fingerprint seen ≥4 times with matching disassembly context — kuna has no
+instruction-mask/SleighDebugLogger machinery; (3) speculatively disassembles undefined gaps with
+`PseudoDisassembler.followSubFlows` + `checkValidSubroutine` — kuna has no recursive-descent
+PseudoDisassembler at this tier. It is also **off-by-default upstream**
+(`setDefaultEnablement(false)`) and its own DESCRIPTION warns "IT MAY CREATE A LOT OF BAD CODE!"
+For a decompiler that is *given* function entries, AIF's only useful output (new entries) is
+delivered more soundly by `s1-entry-disc` (`EntryPointAnalyzer` + `FunctionStart*` byte patterns)
+and `s1-eh-frame` (FDE starts); AIF's distinctive contribution — guessing code in gaps with no
+symbol/FDE/xref — is precisely the high-false-positive case Ghidra disables by default. A naive
+"port" (linear gap disassembly) would silently drop AIF's entire correctness model and is exactly
+the unfaithful move to avoid. **No `AnalysisPass` impl, no `default_passes()` entry**; a Ghidra-origin
+"deliberately absent" note sits beside the disabled-pass block in `passes.rs`. Mirrors how
+`FindNoReturnFunctionsAnalyzer` was handled (`s1_loader/noreturn.rs`).
+
+**`operand-refs` — ⛔ doc-only decision (NOT ported as a producing pass).** The
+operand/scalar reference markup family (`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`,
+`ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`) is **out of scope at this tier.** All four
+operate on the disassembled *Listing* + `ReferenceManager`, neither of which exists in
+`kuna-analysis` (its `AnalysisCtx` is object-file + loadimage bytes only). And references are a
+UI/listing artifact: kuna's decompiler consumes loadimage bytes + the symbol/type tables, **not**
+the ReferenceManager (verified: no `AnalysisOutput` fact kind or commit-seam API carries a
+"reference"; the kinds are symbols/entries/noreturn/readonly/strings/prototypes only). Per-analyzer:
+(1) `OperandReferenceAnalyzer`'s four products are all already covered or unsurfaceable — ASCII/Unicode
+strings == `s1-strings` (disabled), address/switch tables == the inherited S2 jump-table engine,
+subroutine disassembly + function creation == the deferred `s1-entry-disc`, pointer creation needs a
+disassembled-listing target that does not exist here AND would not surface (ActionMapGlobals is a stub,
+`s9_emit/coreaction_render.rs`); (2) `DataOperandReferenceAnalyzer` == (1) minus function creation;
+(3) `ScalarOperandAnalyzer` produces only listing *references* from scalar operands and is **default-OFF
+for ELF** in Ghidra (`getDefaultEnablement` returns false for ELF), so porting it on the ELF path would
+not even be faithful; (4) `ElfScalarOperandAnalyzer` is a *corrective* subclass that *removes* bad
+`.got`/`.plt` scalar references — it only matters as a fixup of (3), and kuna already gets correct
+`.plt`/`.got` naming from `elf_plt.rs`, so there is nothing to correct. The one idea with any decompiler
+relevance — typing a scalar that actually points at a `.rodata` string as `char*` — is already delivered
+by `s1-libproto` + S5 usage inference, and a standalone "plant a typed pointer at the constant" mechanism
+is **blocked by the same printer/MapGlobals shadowing** that disabled `s1-strings` (Increment 3): kuna's
+printer renders a constant mapping to a named global as that symbol's NAME, shadowing the literal. **No
+producing pass added** (an optional default-OFF micro-pass was considered and declined — it is provably
+net-zero/net-negative for the same reason `s1-strings` is disabled).
+
+- **Tests:** `kuna-analysis` 41 tests pass (7 new in `s1_addrtable::tests`, incl. the
+  switchtab `0x402008` headline + the fauxware negative + the `min_run` threshold guard);
+  `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+  green. The addrtable pass is inert by default, so it cannot perturb any gate; the other two
+  are doc-only.
+
+### Increment 5 — function entry discovery + `.eh_frame` FDE oracle ✅
+
+**`s1-entry-disc` + `s1-eh-frame`** — ported as ONE fused, additive
+`EntryDiscoveryPass` (new `s1_entry` module, registered after `LibProtoPass`,
+always-on like noreturn/libproto). It fills only `AnalysisOutput.entries`; the
+existing commit seam (`engine.rs::commit_analysis_output` step 2: `name_function`
++ `add_function` + `register_symbol`, idempotent via `find_function`) turns each
+discovered VMA into a `sub_<addr>` function — **no engine change**. The pure core
+`collect_entries(&object::File) -> Vec<u64>` unions five oracles, validates each
+VMA is inside an executable section, drops any already covered by a funcsym
+(`.symtab`/`.dynsym` defined FUNC + PLT stubs), and dedups.
+
+**The five oracles** (faithful subsets of Ghidra's Listing-coupled analyzers):
+1. ELF `e_entry` — `EntryPointAnalyzer` external entry.
+2. `DT_INIT`/`DT_FINI` + `DT_INIT_ARRAY`/`DT_FINI_ARRAY` pointer tables (read
+   from the `.dynamic` section as `Elf64_Dyn` pairs; array bytes sliced from the
+   containing section) — the loader-seeded external entry points.
+3. **`.eh_frame` FDE `pcBegin`** (`scan_eh_frame_starts`) — a hand-port of the
+   CIE/FDE walk + DW_EH_PE decoder (`GccExceptionAnalyzer` +
+   `ehFrame/{Cie,FrameDescriptionEntry}` + `DwarfDecoderFactory`), scoped to
+   FDE-start extraction (NOT CFI/LSDA). The CIE augmentation `z`/`R`/`L`/`P`/`S`
+   walk extracts the FDE pointer-encoding byte; the FDE→CIE back-pointer is
+   `(o+4) - cieId`. No `gimli`; ~150 lines, faithful per the brief.
+4. x86-64 `_start`→`main` libc-start idiom: the `lea rdi,[rip+disp]` before
+   `call *__libc_start_main@GOT` carries `main` (the disassembly-free stand-in
+   for the general call-target sweep, infeasible at this tier).
+5. x86-64 gcc prologue byte patterns (`FunctionStartAnalyzer` port:
+   `DittedBitSequence` matcher + a minimal bare-`<funcstart/>` set).
+
+**Headline result.** On `stripped_dynamic_x86_64` (PIE, `.symtab` stripped) the
+pass discovers `main` at 0x1405 (via BOTH the libc-start idiom AND an FDE start)
+even though no symbol names it. The e2e gate (`verify_s1_entry.rs`) decompiles it
+by name with NO `--addr`:
+```c
+unsigned long sub_1405(int4 a0,void *a1) {
+  if (a0 <= 1) { fprintf(dat_4020,"Usage: %s <binary>\n",*a1); ... }
+  else { v1 = sub_1357(a1[1]); }  // sub_1357 is another discovered entry
+  return v1;
+}
+```
+On `fauxware` (`.eh_frame` present) the FDE oracle yields all seven known starts
+(0x400500 `_start`, 0x400664 `authenticate`, 0x4006ed `accepted`, 0x4006fd
+`rejected`, 0x40071d `main`, 0x4007e0 `register_tm_clones`, 0x400870) — the four
+funcsyms are a proper subset (the oracle property), and `collect_entries` then
+skips those funcsyms, emitting only the genuinely-new starts.
+
+**LOSS / scope** (documented in the module): general undirected call-target sweep
+is infeasible at the analyzer tier (no Listing) — substituted by oracle 4 + 5;
+the `after="defined"`/`validcode` pattern post-rules are dropped (no
+PseudoDisassembler); oracles 4–5 are x86-64-only in v1 (other arches no-op;
+1–3 are arch-independent); 64-bit-length and `indirect`/forward-referencing-CIE
+eh_frame records are skipped (never in the fixtures); static-image base-0 PIE
+assumption for array-pointer / absptr decode (kuna never rebases).
+
+**Function-count note:** the pass DOES add functions on a symboled binary (the
+new FDE/idiom starts with no symbol, e.g. `register_tm_clones`). No rust-test
+asserts a post-bootstrap total function COUNT, so nothing needed updating —
+`verify_w11_elf_loader` (synthetic single-`add` ELF: no entry/eh_frame/dynamic →
+discovery no-op) and `verify_w11_elf_plt_names` (asserts named imports, not a
+count) are unaffected.
+
+- **Tests:** `kuna-analysis` 43 tests pass (8 new `s1_entry` unit tests over the
+  fixtures); new `verify_s1_entry.rs` e2e gate green; `make test` **PARITY OK**
+  (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
+### Increment 6 — DWARF names + typed signatures (`DWARFAnalyzer`) via gimli ✅
+
+**`s1-dwarf`** — port of `DWARFAnalyzer` (driver `DWARFAnalyzer.added()` →
+`DWARFFunctionImporter.importFunctions` + `DWARFFunction.read` + `DWARFDataTypeImporter.getDataType`).
+When a binary carries `.debug_*` sections the compiler has already recorded the
+source function names, parameter names, and *types*; this pass reads them and
+installs them onto kuna's symbol + type tables. New `s1_dwarf` module
+(`crates/kuna-analysis/src/s1_dwarf/mod.rs`), registered AFTER `LibProtoPass` in
+`passes.rs::default_passes()` (so a DWARF prototype wins over a libproto guess for
+the same name). Pure additive S1 pass — read-only over `ctx.file` + `ctx.arch`,
+skips cleanly (empty output, never fails) on a non-DWARF binary.
+
+**Dependency-substitution LOSS.** Ghidra hand-rolls a complete DWARF reader in
+`ghidra.app.util.bin.format.dwarf.*` (DWARFProgram, DebugInfoEntry, DIEAggregate,
+DWARFAbbreviation, StringTable). kuna substitutes **`gimli`** (the de-facto Rust
+DWARF reader, MIT/Apache) for that parser *wholesale* — the same move as BFD →
+`object`. Added `gimli = { version = "0.33", default-features=false,
+features=["read","std"] }` to `[workspace.dependencies]` (+ `gimli.workspace=true`
+in kuna-analysis), Cargo.lock committed for offline-gate safety. We use gimli's
+high-level `attr_string`/`attr_address` accessors so the DWARF-5 `strx`/`addrx`
+indirections (cet_pie is DWARF 5) resolve correctly.
+
+**Subtask 1 (names + globals).** Each *defined* `DW_TAG_subprogram` (one with
+`DW_AT_low_pc`; declaration-only DIEs — no low_pc / `DW_AT_declaration` — are
+skipped so the pass never fights libproto for the same imports) emits a
+`SymFact{Function}` at its entry VMA; each CU-top-level `DW_TAG_variable` with a
+`DW_OP_addr` location emits a `SymFact{Data}`. Reuses the existing commit arm 1
+(no engine change). Headline win on the new vendored `dwarf_stripped_x86_64`
+fixture (FUNC names ONLY in DWARF — `.symtab` stripped): `add_values`@0x401136,
+`compute`@0x401153, `main`@0x401198 are recovered and decompile by name instead of
+`FUN_`/`sub_`.
+
+**Subtask 2 (typed signatures — the headline).** A DIE→`Datatype` mapper (faithful
+reduction of `DWARFDataTypeImporter.getDataType`'s tag switch) maps base_type
+(by `DW_AT_encoding`: signed→TYPE_INT, unsigned→TYPE_UINT, signed/unsigned_char→
+char, float→TYPE_FLOAT, boolean→TYPE_BOOL), pointer_type, typedef/const/volatile/
+restrict (transparent pass-through), array_type, struct/union (named opaque),
+enum (→underlying int) against the arch's `TypeFactory`. A **recursion cap of
+depth 3** (port of `trackRecursion`) survives struct→ptr→struct type cycles. For
+each defined subprogram a `PrototypePieces{name, outtype, intypes, innames,
+first_var_arg_slot, output_storage:None}` is built from the return-type DIE +
+`DW_TAG_formal_parameter` children (`DW_TAG_unspecified_parameters` sets the
+vararg slot) and emitted into `AnalysisOutput.prototypes` — parked on the callee
+via the existing commit arm 5, exactly the path `s1-libproto` proved (no engine
+change). `ActionDefaultParams` then copies the DWARF callee signature into each
+caller. Verified end-to-end on cet_pie: `main` calls
+`elaborate_debug_symbol((char *)a1[1])` — the `char *binary` parameter type
+(DWARF `pointer → const → char`) typing the call argument, and the `int` return
+giving `int4 v1`, where the engine alone would emit `undefined8`/`long`. (cet_pie
+is non-stripped, so the *names* come from `.symtab`; DWARF's value here is the
+types.) Note: a `char *` (8-byte, register-width) applies and renders cleanly; a
+declared 4-byte `int` parameter passed in an 8-byte register stays `int8` after
+propagation (standard engine width behavior, not a DWARF-application failure — the
+return-type lock and pointer typing both verifiably apply).
+
+**Subtask 3 (DONE — named, typed stack locals; see Increment 14).** Originally
+deferred; now resolved without a shared-engine-path change. Each defined
+subprogram's direct `DW_OP_fbreg` `DW_TAG_variable`/`DW_TAG_formal_parameter`
+children emit a `LocalFact{func_addr, name, type_, stack_offset}`
+(`stack_offset = call_frame_cfa + fbreg`); the commit parks them by function entry
+VMA and `IfcDecompile` re-seeds each into the rebuilt `Funcdata`'s `ScopeLocal` as
+a `typelock|namelock` stack symbol via the existing `map addr`/`seed_mapped_symbols`
+carry-across path. Full write-up in **Increment 14** below.
+
+**Faithful losses (DOC).** Skip `DW_TAG_label`, `DW_TAG_call_site`,
+inlined-subroutine, lexical-block comments, source-info/plate comments (listing
+cosmetics, zero decompiler-output payoff — same scope as the strings/demangle
+losses). Type recovery is name/signature-level: a struct maps to a *named opaque*
+struct (enough to render `struct foo *`), not a per-field layout. **PIE/load-bias
+limitation:** kuna's loader treats `DW_AT_low_pc` as the runtime VMA verbatim (true
+for cet_pie: DWARF low_pc 0x1357 == `.symtab` address); a nonzero load bias would
+need a base adjustment (Ghidra's `DWARFProgram.getCodeAddress`), DOC'd in the
+module.
+
+- **Tests:** new `s1_dwarf` unit tests (snapshot-parse both fixtures, assert the
+  defined-subprogram SymFacts + the `char *` param chain) + the e2e
+  `verify_s1_dwarf.rs` (name recovery on dwarf_stripped, typed `char *` on cet_pie);
+  `kuna-analysis` 36 tests pass; `make test` **PARITY OK** (675/675);
+  `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
+### Increment 7 — source-language detection + Rust no-return list ✅
+
+Combined `sourcelang` + `ruststring` (they share the Rust/compiler detector).
+
+**`s1_sourcelang`** — port of `SourceLanguageAnalyzer` + the per-language
+`*SourceLanguage.existsIn` predicates. New module
+[`s1_sourcelang/mod.rs`](../decompiler/crates/kuna-analysis/src/s1_sourcelang/mod.rs)
+with a pure `detect_compiler(&object::File) -> Compiler` (`Gcc`/`Clang`/`Rustc`/`Go`/
+`Unknown`). Detection paths, faithful to Ghidra:
+- **Rust** — `.comment` `rustc version …` record (`ElfRustSourceLanguage.java:34`'s
+  `^rustc version .*$` regex, reduced to an anchored NUL-record prefix test), OR a
+  Rust-mangled symbol (`_R…` v0 / `_ZN…17h<hex16>E` legacy — the same gate the loader's
+  demangle uses), OR a `.rodata` `RUST_SIGNATURES` byte signature
+  (`RustConstants.java:29-33` = `RUST_BACKTRACE`/`RUST_MIN_STACK`/`/rustc/`,
+  `RustSourceLanguage.isRust`).
+- **Go** — `.go.buildinfo` / `.note.go.buildid` section present (`GoBuildInfo.java:45`,
+  `NoteGoBuildId.java:30`).
+- **Gcc/Clang** — `.comment` `GCC: (…)` / `clang version …` record (a documented **kuna
+  convenience**, not a faithful Ghidra SourceLanguage ID — Ghidra ships no generic C one).
+
+The detector runs once in `passes::run_default_analyses` before pass selection (the kuna
+analog of `SourceLanguageAnalyzer` running early and gating language-specific analyzers).
+`default_passes()` is now `passes_for(Compiler)`; a guard unit test asserts
+`passes_for(Unknown)` == `default_passes()` so the no-Rust default never silently drops a
+pass. **PARTIAL scope**: only the detection half is ported — Ghidra's spec-extension /
+`.gdt` data-archive application (`addSpecExtensions`, `getDataArchives`) is out of scope
+(no SpecExtension subsystem in kuna), same depth as the demangle pass's name-only scope.
+
+**`s1-rust-golang-noreturn`** (the deferred partial from Increment 1) — now **done**. The
+Rust no-return wildcard list (`Ghidra/Features/Base/data/RustFunctionsThatDoNotReturn`,
+vendored verbatim at `data/RustFunctionsThatDoNotReturn`) is parsed **in addition** to the
+base ELF list when `detect_compiler == Rustc`, mirroring
+`noReturnFunctionConstraints.xml`'s `compiler name="rustc"` arm. Wired into the existing
+`NoReturnKnownPass` via a `rust: bool` field (`::elf()` / `::rust()` constructors); the
+existing `*`-wildcard parser already handles the Rust forms
+(`ZN4core9panicking5panic17h*`, `ZN5alloc5alloc18handle_alloc_error17h*`,
+`rust_begin_unwind`, …). Gating contract is unit-tested: a `ZN4core9panicking5panic17h…E`
+symbol is flagged no-return when `rust=true` but NOT for a C ELF (`rust=false`). The
+fauxware exit test (`run_over_fauxware_flags_exit_only`) still passes unchanged.
+
+**`ruststring`** — `RustStringAnalyzer`. **Detection ported** (it is exactly the
+`s1_sourcelang` Rust detector, shared, not duplicated). The analyzer's actual job — the
+str-slice split — is **infeasible at the kuna-analysis tier** and is *not* built (no
+str-splitter code). Why: Rust `&str` literals sit byte-adjacent in `.rodata` with no NUL
+separators; the only thing marking each slice boundary is an interior **code reference**
+(a PC-relative `lea` of `ptr+len`). `RustStringAnalyzer` splits each over-long string at
+the next `ReferenceManager.getReferenceDestinationIterator` destination — a post-disassembly
+artifact the analyzer tier (object view only) does not have. This is the same wall
+`FindNoReturnFunctionsAnalyzer`/`EntryPointAnalyzer` hit (see `noreturn.rs:9-15`). It is a
+strict superset of the deferred `s1-strings` blocker (even with boundaries, a named
+`char[N]` symbol would shadow the literal in kuna's printer, per Increment 3). LOSS
+recorded; a full port would be a post-decompile feedback pass (engine feedback edge), out
+of scope here.
+
+**Fixture.** Vendored `tests/fixtures/rust_hello_x86_64` — a tiny (2576-byte)
+**un**stripped `#![no_std]` rustc 1.90 PIE that carries BOTH a `rustc version` `.comment`
+record and a `_ZN5nostd1m12rusty_helper17h…E` mangled symbol, so one fixture exercises both
+detection paths e2e at the unit level. (No `kuna-console` `.sla` e2e was added — there is
+no decompiler-output headline for *detection*; the win is the no-return list, asserted at
+the pass level. An e2e showing dead-code elision after a tail Rust panic is a documented
+follow-up: it needs a Rust fixture whose `main` tail-calls `core::panicking::panic`, larger
+than this minimal no_std fixture.)
+
+- **Tests:** `kuna-analysis` 44 tests pass (34 + 10 new: 7 `s1_sourcelang`, 1 `noreturn`
+  Rust-gating, 2 `passes` selection guards). `make test` **PARITY OK** (675/675);
+  `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
+### Increment 8 — ARM/Thumb mapping-symbol decode-mode painting (`arch-markers`) ✅
+
+Port of the **ARM/Thumb decode-mode (`TMode`) painting** — the first analysis-tier fact
+that touches the engine's *processor context* (not its symbol/type tables). Two distinct
+upstream mechanisms, both ported as additive `ContextPaint` facts:
+
+- **ARM mapping symbols** (`$t`/`$a`/`$d`, the ARM ELF ABI). `$t`/`$t.` marks the start of a
+  Thumb run, `$a`/`$a.` an ARM (A32) run. Faithful to
+  `Ghidra/Processors/ARM/.../elf/extend/ARM_ElfExtension.java:166-196`
+  `evaluateElfSymbol` (`$t` → `programContext.setValue(TMode, addr, addr, 1)`; `$a` →
+  `TMode=0`). Matched by **name**, regardless of `st_type` (the ABI records them as
+  `STT_NOTYPE` local symbols).
+- **The STT_FUNC odd-address (LSB) convention**: a Thumb function symbol is recorded at
+  `entry|1`. Faithful to `ARM_ElfExtension.java:197-204` (the STT_FUNC fallback) +
+  `creatingFunction:117-141` + the later `ArmSymbolAnalyzer.java:48-100` — mask the LSB and
+  set `TMode=1` at the (even) entry. Emits `ContextPaint{addr: value & !1, "TMode", 1}`.
+
+**New module** [`s1_loader/arm_markers.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/arm_markers.rs)
+(sibling of `noreturn.rs`), `AnalysisPass` id `arm_markers`, stage S1, registered always-on
+in `passes_for` after `EntryDiscoveryPass`. **Gated on ARM** (`object::Architecture::Arm`),
+the faithful analog of `ArmSymbolAnalyzer.canAnalyze:172-177` (processor==ARM &&
+getRegister("TMode")!=null): on every other language the pass returns an empty output.
+
+**New fact kind + commit arm.** `pass.rs` gains `struct ContextPaint { addr, end, var, value }`
++ `pub context_paints: Vec<ContextPaint>` on `AnalysisOutput` (+ `merge`). `engine.rs`
+`commit_analysis_output` gains **step 6**: for each paint, resolve the code-space `Address`
+and call `prog.arch().with_context_db_mut(|db| db.set_variable(var, &addr, value))` (or
+`set_variable_region` when `end` is `Some`) — the exact analog of Ghidra's
+`programContext.setValue(TMode, …)` (the same API the console `set context` command drives,
+`ifacedecomp.rs:1933-1948`). `TMode` is registered by the ARM `.pspec` (`ARMt.pspec`
+`<context_data><set name="TMode" val="0">`, applied by `parse_processor_config`) so painting
+1 = Thumb. **Timing is correct**: the commit runs inside `bootstrap_from_elf` before any
+`load function` decode (kuna decodes on demand).
+
+**CRITICAL gate-safety** (the regression risk the plan flags). `set_variable` returns `Err`
+when `TMode` is not registered (every non-ARM language). The commit arm **swallows the Err**
+(`let _ = …`) — a faithful no-op mirroring `canAnalyze == false`. This is belt-and-suspenders
+on top of the pass-level ARM gate (so `out.context_paints` is already empty for a non-ARM
+binary). Verified non-regressing: `make test` **675/675 PARITY OK**, `make test-stages`
+**158/158 PARITY OK**, `make rust-test` green — all untouched (the paint only fires on the
+real-ELF ARM path; the XML datatest gates never run passes), and a non-ARM (x86-64)
+`fauxware main` `decomp_dbg` decompile is **byte-identical** pre/post change (verified by
+diffing against a merge-base build).
+
+**Fixture: `.o`-unit-only (the e2e is a documented follow-up).** Built
+`arm_thumb_le32.o` (904 bytes) with `clang --target=arm-linux-gnueabihf -mthumb -nostdlib
+-c` (one `__attribute__((target("thumb")))` `thumb_add` + a `_start` caller; source vendored
+at `tests/fixtures/arm_thumb_le32.c`). Its `.symtab` carries the `$t.0` mapping symbol at
+`0x0` and STT_FUNC syms `thumb_add@0x1`, `_start@0x15` (LSB set). **No linked ARM exe** — this
+host has NO ARM linker (no lld; gold/mold are x86-only builds; system `ld` rejects
+`armelf_linux_eabi`), so the decode **e2e** (`kuna decompile arm_thumb… main` producing valid
+Thumb-decoded C) is a documented follow-up requiring an off-host LINKED ET_EXEC/ET_DYN with
+PT_LOAD (`ObjectLoadImage` reads only segments). The **symbol-scan unit test** is the
+merge-blocking gate and passes: the bare `.o` (ET_REL) parses fine and the pass emits
+`TMode=1` for `$t.0` (at `0x0`) and for each LSB-set FUNC normalized to even (`0x0`, `0x14`).
+A non-ARM object (fauxware) emits zero paints (`non_arm_object_emits_nothing`).
+
+**LOSS / divergences:**
+- **`$d` data runs are a no-op.** Ghidra's `$d` branch lays *undefined data* (listing markup
+  protecting bytes from disassembly); kuna has no `createUndefinedData` at this tier and the
+  decompiler payoff is negligible. No fact emitted for `$d`/`$b`. Documented LOSS.
+- **Thumb-FUNC address shift is paint-only (v1).** Ghidra *moves* a Thumb `FUNC` from
+  `entry|1` to `entry` (`moveFunction`); kuna's `read_loader_symbols` installs it at the odd
+  address. v1 emits only the `TMode=1` paint at the normalized even address (re-homing the
+  function symbol risks double-symbols) — the function-address normalization is a follow-up.
+- **MIPS `$gp` / MIPS16 `ISA_MODE` out of scope.** MIPS `$gp` is not a decode-mode paint at
+  all — it is a *tracked register value* set per function entry
+  (`MipsAddressAnalyzer.flowConstants`, sourced from `_mips_gp_value`), needing
+  `create_set`/`get_tracked_default` at per-function granularity + a MIPS fixture (separate
+  task). MIPS16 `ISA_MODE` is the exact `$t`/STT_FUNC-LSB analog
+  (`MIPS_ElfExtension.applyIsaMode`) and could be added here with the identical mechanism
+  (var `"ISA_MODE"`) given a MIPS16 fixture. Documented seam in `arm_markers.rs`.
+
+- **Tests:** `kuna-analysis` 65 tests pass (3 new `arm_markers`: name classification, the
+  Thumb-fact scan over the `.o`, the non-ARM-emits-nothing gate); `kuna-console` green.
+  `make test` **PARITY OK** (675/675); `make test-stages` **PARITY OK** (158/158);
+  `make rust-test` green.
+### Increment 9 — format-string specifier parser (`FormatStringAnalyzer`, parser half A) ✅
+
+`s1-formatstring` is split into **A (this increment — the pure parser)** and **B (the
+deferred decompile-loop wiring)**, because `FormatStringAnalyzer` is genuinely
+**DecompilerDependent**: typing a `printf`/`scanf` call's varargs needs the per-call-site
+format-string *constant* + which arg is the format, neither of which exists at the load-time
+`AnalysisCtx`/`AnalysisOutput` seam — they only materialize after the caller is lifted to
+p-code. See [`analysis-port-plan.md`](analysis-port-plan.md) §`s1-formatstring`.
+
+**A (done) — `s1_formatstring`** — a line-faithful port of the *pure logic* of
+`Ghidra/Features/DecompilerDependent/.../variadic/FormatStringParser.java` (and the
+`(lengthModifier, conversionSpecifier)` pair `FormatArgument.java`). New module
+[`s1_formatstring/mod.rs`](../decompiler/crates/kuna-analysis/src/s1_formatstring/mod.rs),
+registered only as `pub mod s1_formatstring;` in `lib.rs` (it emits **no**
+`AnalysisOutput` facts and is intentionally **not** in `passes.rs` — it is a library the
+future B calls). Faithful transcription of `parseFormatString` → `convertToFormatArguments`
+(the length-modifier + conversion-specifier state machine, incl. `preprocessChar`,
+`handleOutput/InputConversionArgument`, `skipFlags`/`skipIntegers`) →
+`convertToOutputDataTypes`/`convertToInputDataTypes` →
+`convertPairToDataType`/`conversionSpecifierToDataType` + the length-modification handlers
+(`short/char/long/longLong/intmax_t/size_t/ptrdiff_t/longDouble`), plus the positional
+`%n$` path `analyzeFormatStringWithParameters` (Ghidra's `Map<Integer,FormatArgument>`
+replaced by a sparse `Vec<Option<FmtArg>>` — no `HashMap` — reproducing `convertMapToList`'s
+1..=size / null-on-gap contract exactly).
+
+Public API:
+- `parse_output_types(&str) -> Vec<Spec>` (`printf`-family; `*` width/precision → an `Int`),
+- `parse_input_types(&str) -> Vec<Spec>` (`scanf`-family; non-pointer values wrapped in an
+  extra pointer, `*` suppresses the following arg — `convertToInputDataTypes`, `:597`),
+- `parse_format_specifiers(&str)` (the brief's named alias = `parse_output_types`),
+- `convert_to_format_argument_list(&str, is_output_type)` (the `FmtArg` intermediate),
+- `spec_to_datatype(Spec, &dyn TypeFactory, word_size)` (the kuna `Datatype` builder, the
+  analog of `s1_protos::build_ty`).
+
+`Spec` enum = the result space of `convertPairToDataType` (Int/UInt/Short/UShort/Char/UChar/
+Long/ULong/LongLong/ULongLong/Double/LongDouble/CharPtr/WideCharPtr/VoidPtr/IntPtr + the
+widened `*Ptr` cousins for `%n` + the typedef-backed IntMaxT/UIntMaxT/SizeT/PtrDiffT(+Ptr)).
+On any of Ghidra's "undefined behavior" branches (truncated/malformed specs, positional
+gaps, double `*`) the parser returns an **empty** `Vec` (Ghidra returns `null` → no
+override) — it never panics. Indexing is over a `Vec<char>` so multi-byte literal text never
+corrupts the ASCII index arithmetic.
+
+Faithfulness note found while porting: `convertPairToDataType`'s guard (`:622`) returns via
+`conversionSpecifierToDataType` *before* the length-modifier switch for `s`/`c`/`S`/`C`, so
+`%ls`/`%lc` map to `char *` / `unsigned char` (the wide-char branch in
+`longLengthModification` is dead for the printf path) — the unit test pins this faithful
+behavior, not the intuitive one. **LOSS:** kuna has no `.gdt` typedef archive, so the
+extended-precision typedefs are lowered to their integer fallback per
+`getIntegralPointerType`/the fabricated-typedef base type (documented stand-in matching the
+`s1_protos` libc table); the scanf `double*`/`void**` second-level pointers are modeled as
+`void*`.
+
+**B (deferred — wave-3 engine change, NOT in this increment).** The
+decompile→inspect→override→re-decompile loop (the analog of Ghidra's `ParallelDecompiler` +
+`PcodeFunctionParser` + `HighFunctionDBUtil.writeOverride`): after the first decompile of a
+caller, walk the `CALL` ops, read the format-string constant from the call arg at the
+callee's fixed-param slot (`PcodeFunctionParser.java:99`), parse it with **this** module,
+build a per-call-site `PrototypePieces` (callee fixed params ++ parsed varargs,
+`first_var_arg_slot = -1`) and install it via the existing `pending_proto_overrides` →
+`Override::insert_proto_override` plumbing, then re-decompile. That is an engine-driver
+change, gate it OFF by default (matching `FormatStringAnalyzer.setDefaultEnablement(false)`),
+and it needs A (this) merged first. **This increment touched ZERO engine/console/passes
+surface** — `s1_formatstring/mod.rs` + one `pub mod` line + this log only.
+
+- **Tests:** `kuna-analysis` 80 tests pass (44 + 36 new `s1_formatstring`: the brief's spec
+  examples `%d %s`→[Int,CharPtr], `%5.2f`→[Double], `%ld%%%p`→[Long,VoidPtr],
+  `%*d`→[Int,Int], `%2$s %1$d` positional; the full conversion + length-modifier tables; `*`
+  width/precision; `%%` literal; scanf wrapping/`*`-suppression; and a malformed/truncated/
+  Unicode no-panic sweep). `make test` **PARITY OK** (675/675); `make test-stages` **PARITY
+  OK** (158/158); `make rust-test` green. (A is pure-additive, so the three parity gates are
+  structurally untouched — formalities, all green.)
+### Increment 10 — auto-apply cspec call-fixups (`CallFixupAnalyzer`) ✅
+
+Port of Ghidra's default-on `CallFixupAnalyzer` (the **install half** only): tag every
+program function whose name matches a cspec call-fixup `<target>` so the engine replaces the
+CALL with the fixup body. The headline case is the gcc `-pg` profiling stub — `<callfixup
+name="mcount"><target name="mcount"/>` (body `temp:1 = 0;`), the `mcount`/`__fentry__`
+prologue call that should dissolve out of the decompiled output.
+
+**Inherited vs the gap (the whole point).** kuna already had the entire *apply* path: the
+cspec `<callfixup><target>` decode at bootstrap (`architecture.rs::decode_call_fixups`),
+per-payload `target_symbol_names` retention on `SleighPayload::Callfixup`
+(`inject_sleigh.rs`), the inject/weave flow (`func_inject_id → FuncProto::set_inject_id →
+inject_sub_function`, `seams.rs`/`flow.rs`), and the per-function applier primitive
+`Database::set_function_inject_id` (`database.rs`) — already driven by hand in the console
+`fixup apply <fixup> <function>` command (`IfcFixupApply`, `ifacedecomp.rs`). **The gap**:
+nothing auto-iterated the registered fixups' `<target>` names and tagged matching
+FunctionSymbols at load. That auto-installer is exactly `CallFixupAnalyzer`; this increment
+ports it and wires it to the inherited applier.
+
+**`s1_callfixup`** — new module
+[`s1_callfixup/mod.rs`](../decompiler/crates/kuna-analysis/src/s1_callfixup/mod.rs). A pure
+`CallFixupPass` (`stage()=S1`, `id()="callfixup"`):
+- `target_fixup_map(arch)` — the port of `getTargetFixupMap` (`CallFixupAnalyzer.java:436-459`):
+  iterate `arch.pcodeinjectlib.injection`, for each `SleighPayload::Callfixup` read its
+  `payload.core.name` (the fixup name) and `target_symbol_names`, build a `Vec<(target,
+  fixup)>` (no `HashMap`, per convention).
+- `call_fixup_name_for_function(name, map)` — the port of `getCallFixupNameForFunction`
+  (`CallFixupAnalyzer.java:200-222`): strip a leading `libID_conflict_`, then probe the map
+  with `name`, `"_"+name`, `"__"+name` (the underscore retries), first hit wins.
+- The scan walks the same `.symtab`+`.dynsym` FUNC streams as `noreturn` (version suffixes
+  stripped) and emits a `CallFixupFact { func_name }` per match (the *installed* name, so the
+  commit's `query_global_function` resolves the real symbol — same contract as `noreturn`).
+
+**Fact + commit.** New `AnalysisOutput::call_fixups: Vec<CallFixupFact>` (+ `merge`),
+`CallFixupFact { func_name: String }` in `pass.rs`. Commit step 6 in
+`engine.rs::commit_analysis_output` mirrors `IfcFixupApply` driven by the analyzer: rebuild
+the target map, re-derive the fixup name, `get_payload_id(CALLFIXUP_TYPE, fixup)` → inject
+id, `query_global_function(name)` → sid, **guard** `function_inject_id_for_symbol(sid) < 0`
+(Ghidra's `getCallFixup()==null`, `CallFixupAnalyzer.java:89` — never clobber a hand-applied
+fixup), then `set_function_inject_id(sid, injectid)`. A name with no registered fixup or no
+matching FunctionSymbol or an already-set fixup is a silent no-op. One tiny additive engine
+accessor added: `Database::function_inject_id_for_symbol(sid)` (the by-id companion of the
+existing setter, for the guard).
+
+**Registration.** `Box::new(crate::s1_callfixup::CallFixupPass)` in `passes_for`, always-on
+(Ghidra `setDefaultEnablement(true)`, `CallFixupAnalyzer.java:51`).
+
+**Fixture.** Vendored `tests/fixtures/mcount_x86_64` — a static, non-PIE `gcc -pg -O0`
+binary (`.debug_*` stripped, `.symtab` kept) whose `main` (0x401795) prologue emits a direct
+`call mcount` to the weak `mcount` FUNC (0x44a710); also carries `__fentry__` (0x44a770).
+**Static on purpose**: a *dynamic* `-pg` build resolves `mcount` to an *indirect* GOT call
+(`call *…(%rip)`) with no named-`mcount` symbol at the target, so the name-matched fixup
+can't bind — only the static build emits a direct `call mcount` to a real symbol. Static
+glibc makes it ~896 KB (larger than the other fixtures; unavoidable for a self-contained
+direct-`call mcount` target).
+
+**e2e proof.** `verify_s1_callfixup.rs`: bootstrap the fixture (runs the pass + commit), then
+`load function main` → `decompile` → `print C`. Before the fixup `main` shows `mcount();`;
+after (the default) the body is `return 0;` with the engine marker `Function: mcount replaced
+with injection: mcount`. The test asserts the marker is present AND no `mcount();` call line
+survives. This is the one place the "inject machinery is inherited" claim is proven all the
+way to a dissolved call.
+
+- **LOSS / scope.** Only the *install* half is ported. The flow-repair half
+  (`setNoFallThru`/`clearAndRepairFlows`/non-returning fallthrough clearing,
+  `CallFixupAnalyzer.java:93-175,234-434`) and thunk-following (`addInThunkedFunctionsToList`,
+  177-198) are **post-disassembly listing/FlowOverride** work with no pre-decompile Listing at
+  this tier — kuna handles fixup fallthrough inside the engine's flow path. Same constraint as
+  `FindNoReturnFunctionsAnalyzer` (`noreturn.rs:9-15`). Documented in the module doc comment.
+- **Divergence (no LOSS to parity).** The analysis-tier passes are always-on and **not**
+  individually flippable via `--option` — they have an `id()` for the pass interface, but no
+  pass id (`noreturn_known`/`libproto`/`callfixup`/…) is in
+  `kuna_decomp::options::KUNA_OPTION_NAMES` (those are all S2+ decompiler sub-stage
+  assertions). So `--option callfixup off` is silently ignored, like `--option
+  noreturn_known off` would be — consistent with every Wave-1 pass. Per-run pass gating is the
+  separately-tracked deferred decision (open architectural decision §, conflict #4).
+
+- **Tests:** `kuna-analysis` 49 tests pass (44 + 5 new `s1_callfixup`); `kuna-console`
+  +1 e2e gate (`verify_s1_callfixup`). `make test` **PARITY OK** (675/675);
+  `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
+### Increment 11 — resolve no-return by address (the no-return × demangle seam) ✅
+
+Closes the **Known cross-pass seam** flagged in Increment 2: the no-return pass matched on
+*raw object-symbol* names while demangle renamed the *funcsym* before install, so a mangled
+C++ no-return import (e.g. `_ZSt9terminatev`, installed as `std::terminate` in scope `std`)
+never attached — the commit's `query_global_function("_ZSt9terminatev")` missed the renamed
+symbol.
+
+**Approach (A) — resolve by ADDRESS (chosen).** The address is the stable key: demangling
+only changes the *name*, never the install address. Approach (B) (re-demangle the name in the
+commit + match across scopes) was rejected as fragile — it duplicates the demangle logic in a
+second place and still relies on string equality through two spellings. Address resolution
+reuses the exact cross-scope, address-keyed resolver the call resolver already uses
+(`Database::find_function_across_scopes`, added in Increment 2), so it is the minimal,
+faithful fix.
+
+- **`pass.rs`** — `AnalysisOutput::noreturn` changed from `Vec<String>` to
+  `Vec<NoReturnFact>` where `NoReturnFact { addr: u64, name: String }`. `merge()` is unchanged
+  (still `extend`). The fact carries the original (pre-demangle) name as the fallback key.
+- **`s1_loader/noreturn.rs`** — `scan_noreturn` now emits the **install address** alongside
+  the name. The matcher (strip leading `_`, exact + wildcard, `std`-only namespace guard) is
+  unchanged. The decisive detail: a no-return *import* like `exit` / `_ZSt9terminatev` is
+  **UND** in `.symtab`/`.dynsym` (`address()==0`); its real FunctionSymbol is installed at the
+  **PLT stub** by `elf_plt`. So the scan now mirrors the loader's three install streams: the
+  defined `.symtab`/`.dynsym` funcs (skipping `addr==0`, as the loader does) **plus**
+  `elf_plt::resolve_plt_imports` (emitting the **stub** address under the raw `.dynstr` name).
+  That stub address is exactly where the demangled `std::terminate` funcsym lives.
+- **`engine.rs::commit_analysis_output`** (no-return arm) — resolve by address first
+  (`find_function_across_scopes(addr)` → sid), falling back to the name path
+  (`query_global_function(name)`) only when nothing is installed at `addr` (or `addr==0`).
+  Address resolution finds the demangled/namespaced funcsym; the name fallback preserves the
+  old behavior for any future emitter that has only a name. The `s1_sourcelang` Rust-no-return
+  wiring is untouched (it flows through the same fact shape) and the fauxware `exit` regression
+  still works (now resolved by its PLT-stub address, with the name path as belt-and-braces).
+
+**Fixture.** Vendored `tests/fixtures/cpp_noreturn_x86_64` (+ source
+`cpp_noreturn_x86_64.cpp`), built `g++ -O0 -no-pie -fno-pic`. `fail()` (`_Z4failv` →
+demangled `fail`, `0x401196`) tail-calls `std::terminate()`; `main` also has a `throw` (→
+`__cxa_throw`). `nm`/`objdump` confirm `_ZSt9terminatev`/`__cxa_throw` are UND `.dynsym`
+imports whose PLT stubs are `_ZSt9terminatev@plt`=`0x401070`, `__cxa_throw@plt`=`0x4010a0`.
+
+**Proof (the fix is load-bearing).** With the address path the unit test
+`noreturn::tests::cpp_mangled_noreturn_emits_plt_stub_address` asserts the facts carry the
+stub addresses (`0x401070`/`0x4010a0`) under the raw names; the e2e
+`verify_noreturn_demangle.rs` decompiles `fail` and gets `void fail(void)` with the
+`Subroutine does not return` warning on `std::terminate()` and **no** dead fall-through.
+Manually disabling the address path (forcing the old name-only resolution) regresses to `int4
+fail(int4)` with `std::terminate()` returning and spurious dead code after it — the contrast
+that confirms the seam.
+
+- **Divergence / scope.** Same always-on, not-`--option`-flippable status as every Wave-1/2
+  pass (the deferred per-run gating, conflict #4) — no change here.
+- **Tests:** `kuna-analysis` +1 unit (`cpp_mangled_noreturn_emits_plt_stub_address`) and a
+  hardened fauxware assertion (the `exit` fact now carries a non-zero PLT-stub address);
+  `kuna-console` +1 e2e gate (`verify_noreturn_demangle`). `make test` **PARITY OK**
+  (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+### Increment 12 — printer renders a pointer-to-readonly-char-array symbol as a string literal; re-enable `s1-strings` ✅
+
+The Wave-3 printer change that resolves the Increment 3 finding: re-enable `StringLiteralPass`
+by teaching the C printer to render a pointer to a readonly char-printable **array symbol** as
+the string LITERAL (Ghidra behavior), so the planted `char[N]` data symbol and the literal
+**coexist** instead of the symbol name shadowing it.
+
+**A/B root-cause pin (done before any edit).** Built the merge-base `kuna`, instrumented the
+three candidate render arms in `s9_emit/printc.rs` (the constant-pointer arm in
+`push_vn_explicit_ir`, the HighVariable-bound-name arm, the SPACEBASE `op_ptrsub_ir` arm) plus
+`push_ptr_char_constant_ir`, and ran fauxware `main` with `StringLiteralPass` **OFF vs ON**:
+- **OFF:** the `puts` argument is a plain constant pointer; it reaches the **constant-pointer
+  arm** (`TYPE_PTR`, `sub.is_char_print()==true`) → `push_ptr_char_constant_ir`
+  (`readonly==true`) → `puts("Username: ")`.
+- **ON:** the planted typelocked `char[N]` symbol (`s_400915`) promotes the same constant into
+  a global SPACEBASE `PTRSUB(spacebase, 0x400915)` reference (confirmed in `print raw`:
+  `->(#0x0,#0x400915)`), so the value now arrives at the **SPACEBASE arm**
+  (`name=s_400915, sym_off=0, sym_type=TYPE_ARRAY`), whose `sym_off<=0` branch emits the bare
+  `pushSymbol` name → `puts(s_400915)`. **The SPACEBASE arm was the exact shadowing point** —
+  not the HighVariable arm (the plan's other candidate). The constant-pointer arm and
+  `push_ptr_char_constant_ir` were genuinely never reached when strings is ON.
+
+**The faithful fix (mirrors C++ `PrintC::pushConstant`'s TYPE_PTR → `pushPtrCharConstant`
+arm, `decompiler/cpp/printc.cc:1842-1880`).** In `op_ptrsub_ir`'s SPACEBASE arm
+(`s9_emit/printc.rs`), before the bare-name `pushSymbol`, add a TIGHTLY-guarded literal route:
+when the reference is a whole-symbol (`sym_off==0`), pointer-value (`!arrayvalue`) reference
+whose Symbol is a **readonly** (`is_read_only`) char-printable (`is_char_print()` on the array
+**element**) **TYPE_ARRAY**, route through the same `push_ptr_char_constant_ir` literal path
+the constant arm uses; on success, return (no `&`, no subscript, no name). Every other symbol
+render is byte-unchanged — the guard fires only for a readonly char-printable array spacebase
+symbol, which the XML datatest corpus never produces (it runs no analyses, plants no such
+symbol). `push_ptr_char_constant_ir` was refactored to take the pointer width as `ptr_size:
+int4` (was `ct: &Datatype` used only for `ct.get_size()`) so the SPACEBASE arm can pass the
+spacebase varnode's width; the one existing caller passes `ct.get_size()` — render-identical.
+
+**Re-enable.** Uncommented `Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 })` in
+`passes.rs::passes_for` (now ENABLED, always-on like the other Wave-1/2 passes) and updated the
+disabled-rationale comment.
+
+**Result (the win).** With `StringLiteralPass` ON: fauxware `main` → `puts("Username: ")` /
+`puts("Password: ")`, `accepted` → `puts("Welcome to the admin console, trusted user!")`,
+`rejected` → `printf("Go away!")` — all literals, with the `s_400915`/`s_400920` data symbols
+registered in the symbol table (coexistence). And — proving the literal comes from the planted
+symbol via the SPACEBASE route, NOT from libproto's `char*` typing — a string passed to a
+**non-libproto'd** function (a hand-built `myhandler("a non-prototyped readonly string", …)`
+fixture, `myhandler` absent from the libproto table) ALSO renders as the literal. Before this
+change that same call would have rendered the bare `s_<addr>` name.
+
+- **Divergence/LOSS:** none to the parity oracles — all three gates byte-identical. The change
+  is a render-coexistence fix only; `StringLiteralPass` logic is unchanged. The render is now
+  closer to Ghidra (literal AND data symbol coexist) than the prior libproto-only route, but
+  the *output* for the covered cases is identical to the strings-OFF render, so no datatest /
+  stage assertion moves.
+- **Tests:** new `kuna-console` e2e gate `verify_s1_strings.rs` (asserts `s_400915` is in the
+  symbol table AND `puts("Username: ")`/`puts("Password: ")` render, NOT `puts(s_4009…)`);
+  `kuna-analysis` 88 tests pass. `make test` **PARITY OK** (675/675 — byte-identical);
+  `make test-stages` **PARITY OK** (158/158 — byte-identical); `make rust-test` green.
+
+### Increment 13 — per-run `--option <id> on|off` gating of the analysis passes (conflict #4) ✅
+
+Makes each `kuna_analysis` pass flippable per decompilation and discoverable in `kuna
+catalog`, resolving the deferred **conflict #4** (the commit-timing ordering bug above).
+
+**The commit-timing change (the core fix).** The analysis-pass commit moved OUT of the eager
+`bootstrap_from_elf` body and INTO the (previously stub) `IfcReadSymbols` handler (`read
+symbols`). At load, `bootstrap_from_elf` now calls the new
+`kuna_analysis::passes::run_default_analyses_per_pass` (returns `Vec<(&'static str,
+AnalysisOutput)>` — per-pass split keyed by `AnalysisPass::id`) and **stashes** that on the
+`ConsoleProgram` (`pending_analysis` + the captured `analysis_code_space`) instead of
+committing. `read_loader_symbols()` + the readonly loader markup stay eager where they were
+(they are NOT gated passes; the invariant "commit AFTER `read_loader_symbols`" is preserved —
+the deferred commit runs strictly later). `ConsoleProgram::commit_pending_analysis` drains the
+stash, keeps only the **enabled** passes' outputs (per-id flag via `analysis_pass_enabled`),
+merges them in pass order, and runs the existing `commit_analysis_output`. `IfcReadSymbols`
+calls it; `IfcFuncload`/`IfcAddrrangeLoad` call it as a fail-open safety commit (a hand
+session that skips `read symbols` still gets the default-on facts before any decode).
+
+**The build_script reorder.** `kuna-cli`'s `build_script` now emits the `option <id> <val>`
+lines **before** `read symbols` (was after), so a per-run gate is set before the commit reads
+it. Upstream/printer options are order-independent w.r.t. `read symbols`, so this is safe.
+
+**The option registration (option (a) — names in `KUNA_OPTION_NAMES`).** Eight settable rows
+added to `stages.toml` (`noreturn_known`, `libproto`, `strings`, `entry_disc`, `arm_markers`,
+`dwarf`, `callfixup`, `addrtable`) — the option id IS the pass's `id()`. Each has **no
+`live_field`** (they flip a plain `analysis_*` bool, not a printer/engine "live value"
+reader), so the codegen `live_from_arch`/`live_value` returns `None` for them; their live
+`current` state is surfaced console-side via the hand-written `kuna_live_value`. The same
+eight names were added to `kuna_decomp::options::KUNA_OPTION_NAMES` and eight `on_off!` arms to
+`Architecture::set_kuna_option`, backed by eight new `analysis_*: bool` fields on
+`Architecture` (defaulted in `reset_defaults_internal`: all **on** except `addrtable` **off**,
+matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`). Choosing option (a)
+keeps `kuna catalog --check` (which cross-checks `KUNA_OPTION_NAMES` ↔ the catalog) green.
+
+**Defaults / parity.** All-on (except addrtable) = the prior always-on behavior, so the
+default render is unchanged. Bound to the real-ELF path only: the XML datatest path stashes
+nothing, so the gated commit is a structural no-op there.
+
+**Result (the proof).** `kuna decompile fauxware main` — UNCHANGED (`puts("Username: ")`
+etc.). `kuna decompile fauxware rejected --option noreturn_known off` → the no-return is NOT
+applied: `exit()` renders as returning and the dead fall-through reappears (vs the default
+clean `exit(1)` terminator). `kuna catalog --json` lists all 8 pass options; `kuna catalog
+--check` → `catalog OK`.
+
+- **Divergence/LOSS:** none to the parity oracles — default behavior unchanged. The per-pass
+  gating granularity is the pass-output split (a disabled pass's *whole* output is dropped);
+  this is faithful to Ghidra's per-analyzer enablement. No new analysis logic.
+- **Tests:** count tests bumped (settable 23→31: `stages.toml` header, `kuna_stages` tests,
+  `catalog_bytecompat`), the `stage_catalog.json` byte-compat fixture regenerated (31 rows),
+  the live-reader allowlist test extended for the 8 no-`live_field` gates. Two e2e gates that
+  inspected committed facts directly after `bootstrap_from_elf` (`verify_s1_entry`,
+  `verify_s1_strings`) now call `commit_pending_analysis()` first (the new contract). `make
+  test` **PARITY OK** (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test`
+  green; `kuna catalog --check` **catalog OK**.
+
+### Increment 14 — DWARF named, typed stack locals (`s1-dwarf` subtask 3) ✅
+
+The deferred third DWARF subtask, now resolved. Each defined `DW_TAG_subprogram`'s
+direct `DW_TAG_variable`/`DW_TAG_formal_parameter` children that carry a single
+`DW_OP_fbreg` (frame-base-relative) stack location are recovered as named, typed
+stack locals and installed into the owning function's `ScopeLocal`, so a `-g`
+binary's `int accumulator` renders instead of `local_10`. Port of
+`DWARFFunctionImporter.processSubprogram`'s commit of `dfunc`'s locals +
+`DWARFVariable.readLocalVariableStorage` (the `DW_OP_fbreg`→stack-varnode
+resolution).
+
+**Spike finding — the install seam IS cleanly reachable (no shared-engine-path
+change).** A function's `ScopeLocal` (`varmap.rs`) is per-`Funcdata` and rebuilt
+fresh each decompile — there is *no* persistent function-local scope in the global
+symboltab. BUT the kuna console already carries hand-typed `map addr` stack symbols
+across that rebuild: it snapshots them off the old `Funcdata` (`mapped_symbol_specs`)
+and re-installs each into the freshly-built scope via
+`Funcdata::seed_mapped_symbols` → `ScopeLocal::add_symbol(name, type, stackAddr,
+usepoint)` + `set_attribute(typelock|namelock)`, threaded through
+`decompile_func_full_with_override_dyn`'s `mapped_symbols` argument
+(`infra/decompile_drive.rs`). The DWARF locals plug straight into that proven path —
+they are just more `(name, type, stackAddr, flags)` entries in `mapped_symbols`. So
+subtask 3 needed **zero** change to `decompile_drive`/`Funcdata`/`ScopeLocal`; only
+a new fact + a console park/lookup.
+
+**The `DW_OP_fbreg`→stack-offset conversion (faithful).** `cet_pie`'s
+`DW_AT_frame_base` is `DW_OP_call_frame_cfa`, so a `DW_OP_fbreg N` location is
+`CFA + N`. Ghidra's `DWARFExpressionEvaluator` resolves `DW_OP_call_frame_cfa` to a
+stack varnode at the per-language **static `call_frame_cfa`** constant
+(`DWARFRegisterMappings.getCallFrameCFA`, read from the processor's `<arch>.dwarf`
+`<call_frame_cfa value="N"/>`), then `DW_OP_fbreg` adds `N`:
+`stack_offset = call_frame_cfa + fbreg`. kuna transcribes the constant table for the
+ELF arches it can produce (x86-64=8 — verified against `x86-64.dwarf`; x86=4;
+AArch64/ARM/SPARC/PowerPC=0; RISC-V64=8); an arch with no entry SKIPS fbreg locals
+(additive — names+types still apply). Grounded on `cet_pie`: `binary` fbreg -40 →
+stack -32, `file` -32 → -24, `elf_header` -24 → -16, matching the disassembly's
+`-0x18`/`-0x10`/`-0x8(%rbp)` slots (CFA = rbp+16).
+
+**Wiring.** New `LocalFact{func_addr, name, type_, stack_offset}` +
+`AnalysisOutput.locals` (`pass.rs`). `DwarfPass` (`s1_dwarf/mod.rs`) decodes the
+single-`DW_OP_fbreg` location (a new `simple_fbreg_location` + a self-contained
+SLEB128 reader — gimli exposes SLEB128 only on its streaming cursor), applies the
+arch CFA, types each via the existing DIE→`Datatype` mapper, and emits a `LocalFact`
+per direct fbreg child (`collect_fbreg_locals`). The commit (`engine.rs`
+`commit_analysis_output` arm 8) parks them on `ConsoleProgram.dwarf_locals` keyed by
+entry VMA; `ConsoleProgram::dwarf_locals_for(addr)` builds the stack-space `Address`
+(wrapping the signed offset, the `map addr s0xffff…e4` convention) into the
+`map addr` spec shape; `IfcDecompile` appends `dwarf_locals_for(entry)` to
+`mapped_symbols` before the decompile drive runs. A hand-set `map addr` still wins
+(`add_symbol`'s overlap arm skips an already-mapped slot). Gated on the `dwarf` pass
+flag → real-ELF DWARF path only; the XML datatest path parks none (parity
+structurally untouched). No `HashMap` (a `Vec` keyed by linear filter).
+
+**Faithful losses (DOC).** Only **direct** children (a lexical-block-/
+inlined-subroutine-nested local is skipped — the same listing-cosmetic scope as the
+already-skipped labels/call-sites) and only the **single-`DW_OP_fbreg`** location
+form (a composite/register/multi-op location is left to the engine). A local whose
+stack slot the engine eliminates never renders — which is exactly what happens to
+`cet_pie`'s own locals: they are write-once spill slots the stack/copy analysis
+removes (their DWARF symbols install correctly but bind no Varnode). Hence a
+dedicated fixture proves the render.
+
+- **Tests:** new `stacklocal_x86_64` fixture (`+.c`) — `compute_sum` with an
+  address-taken local that survives; new `s1_dwarf` unit tests (`read_sleb128`
+  signed-LEB128 decode; `cet_pie_fbreg_locals_and_cfa_offsets` asserts the three
+  fbreg→stack offsets + the x86-64 CFA constant); new e2e
+  `verify_s1_dwarf::stacklocal_renders_dwarf_named_typed_locals` (`compute_sum`
+  renders `int accumulator`/`int counter`, no `local_10`/`local_c`).
+  `kuna-analysis` 91 tests pass; `verify_s1_dwarf` 3/3; `make test` **PARITY OK**
+  (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+### Increment 15 — Golang no-return list + completeness sweep ✅
+
+Mirrors the Rust no-return work (Increment 7) for **Go**, then sweeps the full analyzer
+inventory one more time for any remaining feasible-at-tier ELF analysis.
+
+**`s1-rust-golang-noreturn` (the Go half) — now done.** The Golang no-return list
+(`Ghidra/Features/Base/data/GolangFunctionsThatDoNotReturn`, vendored verbatim at
+[`data/GolangFunctionsThatDoNotReturn`](../decompiler/crates/kuna-analysis/data/GolangFunctionsThatDoNotReturn))
+is parsed **in addition** to the base ELF list when `detect_compiler == Go`, faithful to
+`noReturnFunctionConstraints.xml`'s `compiler id="golang"` arm for the ELF executable format
+(the exact structural sibling of the `compiler name="rustc"` arm). The list is all **exact**
+dotted `runtime.*` names (`runtime.gopanic`, `runtime.throw`, `runtime.goexit.abi0`,
+`runtime.fatalthrow`, `runtime.goPanicIndex`, `runtime.abort`, `runtime.sigpanic`, … — **no**
+`*` wildcards, unlike the Rust list); the existing `noreturn.rs` list parser handles them
+unchanged (they land in the `exact` set). Go's dotted names carry no `::`, so the namespace
+guard never fires — `runtime.gopanic` matches as a whole-string exact name.
+
+**Wiring (generalized, not bolted-on).** The previous `NoReturnKnownPass { rust: bool }` was
+generalized to `NoReturnKnownPass { compiler: Compiler }` so the per-compiler list selection
+mirrors Ghidra's per-`<compiler>` arm selection exactly: `Rustc` → Rust list, `Go` → Go list,
+`Gcc`/`Clang`/`Unknown` → base ELF list only. New constructors `::golang()` / `::for_compiler(c)`
+join `::elf()` / `::rust()` (kept). `passes.rs::passes_for` now builds the pass with
+`NoReturnKnownPass::for_compiler(compiler)` (one line, replacing the `if is_rust()` ternary —
+the same pass id `noreturn_known`, so the Increment-13 `--option noreturn_known on|off` gate
+and `kuna catalog` are untouched; Go vs Rust is an internal data-file selection keyed on
+detection, faithful to Ghidra running one analyzer with per-compiler data files).
+`s1_sourcelang` exposes `golang_noreturn_list()` next to `rust_noreturn_list()`; `Compiler`
+now derives `Default` (= `Unknown`) so the pass struct can `#[derive(Default)]`.
+
+**Fixture decision: runtime-built real-Go e2e (no vendored fixture), + hermetic synthetic
+matching tests.** Go ELF binaries are unavoidably large — a `go build` output is **~1.1 MB**
+un-stripped (the whole runtime is statically embedded) and still **~750 KB** stripped. Worse,
+the size/coverage tradeoff is forced: a *stripped* Go binary keeps `.go.buildinfo` (so
+detection fires) but drops `.symtab` entirely (so there is **no** `runtime.gopanic` FUNC symbol
+for the matcher to flag), while only the *un-stripped* 1.1 MB build carries both. Rather than
+vendor a 1.1 MB blob (3× the largest existing fixture, `mcount_x86_64` at 896 KB), the e2e
+**builds a tiny real Go program at test runtime** (`go build` into an isolated temp dir with a
+private GOCACHE/GOPATH; `go 1.18.1` is on the host) — guarded on `go` being on PATH and on the
+build succeeding, **skipping cleanly** otherwise (the same "needs an off-host toolchain" posture
+as the ARM-link e2e follow-up in Increment 8). On a genuine Go binary it asserts **both** halves:
+`detect_compiler == Go` AND `runtime.gopanic` (+ `runtime.throw`, `runtime.goexit.abi0`) flagged
+no-return **under the Go arm** carrying real code addresses, but **NOT** under the C arm (the
+gating contract) and `main.main` never flagged (no over-acceptance). The list-parse/matching
+logic itself is pinned **hermetically** (no fixture, always runs) by
+`golang_list_gated_on_go_detection` (a `runtime.*` name spread flagged under the Go arm, never
+under the C/Rust arms) + `golang_noreturn_list_carries_runtime_names` +
+`compiler_field_selects_extra_list`. So the merge-blocking gates need no `go` and no fixture;
+the real-binary proof runs wherever `go` is present (it is here, and the e2e passed).
+
+**Completeness sweep (the user's "any other analyses to do?").** Cross-checked the full
+inventory (this doc's "Is this every Ghidra analyzer?" §) against the ported set
+(Increments 1–14) by re-reading the candidate Ghidra Java sources at `GHIDRA_REV`. Findings:
+
+- **Implemented here:** the Golang no-return list (above) — the last per-compiler ELF
+  no-return arm. ELF now matches **all three** `noReturnFunctionConstraints.xml` ELF lists
+  (base + rustc + golang).
+- **One near-miss, REPORTED as a follow-up (not implemented — cosmetic, not small):** Ghidra's
+  ELF loader names each `.init_array`/`.fini_array`/`.preinit_array` **element** `_INIT_<i>` /
+  `_FINI_<i>` / `_PREINIT_<i>` (`ElfProgramBuilder.createDynamicEntryPoints`). kuna's `s1_entry`
+  oracle 2 **already discovers** those element addresses as entry points (Increment 5) — it just
+  names them `sub_<addr>` (the generic commit-seam name) instead of `_INIT_<i>`. Delivering the
+  Ghidra names would require changing the `AnalysisOutput.entries` fact from `Vec<u64>` to a
+  named-entry shape (`Vec<(addr, Option<name>)>` or a new fact kind) **and** the commit seam,
+  touching all five oracles + their tests — a cross-cutting fact-type change, **not** purely
+  additive/small. Its payoff is listing-cosmetic: it only renames a handful of *stripped*-binary
+  init/fini thunks (on a non-stripped binary those already have real `.symtab` names, which
+  `collect_entries` correctly skips); the decompiled C **body** is identical either way. This is
+  the same "listing-naming nicety, deferrable" class as the `$d` data-run markup (Increment 8)
+  and the source-info comments (Increment 6). Left as a documented follow-up.
+- **Confirmed already-covered / nothing-to-do:** `ExternalEntryFunctionAnalyzer` (its
+  external-entry *set* is what the ELF loader seeds + `s1_entry` discovers; its disassembly-
+  validation half is post-disasm — infeasible at tier); symbol-versioning `.gnu.version`/`_d`/
+  `_r` (Ghidra lays it as listing **comments** only and keeps the *base* name — kuna's
+  `elf_plt::strip_version` already captures the sole decompiler-relevant behavior; VERDEF/VERNEED
+  are never parsed for naming); `STT_GNU_IFUNC` (Ghidra has **no** special handling — type 10 is
+  unrecognized, no `_ifunc` marking — so there is nothing to port); IRELATIVE/COPY relocations
+  (Ghidra creates no symbol from them; reloc-driven naming does not exist — the equivalent value
+  is captured by plain symbol-table emission, already done); `__libc_csu_init` (an ordinary
+  `.symtab` symbol, no special case); TLS / `STT_TLS` (Ghidra itself skips it —
+  "Unsupported Thread-Local Symbol not loaded").
+- **Confirmed out-of-scope / infeasible (unchanged):** `MachOFunctionsThatDoNotReturn` /
+  `PEFunctionsThatDoNotReturn` (non-ELF — the XML scopes them to Mach-O/DYLD/PE; ELF never uses
+  them); `ExternalSymbolResolverAnalyzer` (multi-program Ghidra-project operation — links to
+  *sibling* library programs; a single-object load tier has no such context); the GOT/PLT
+  disassembly engine in `ElfDefaultGotPltMarkup.process` (post-disasm Listing/PseudoDisassembler
+  — kuna already does the feasible PLT/GOT **naming** at load); `EmbeddedMediaAnalyzer` (feasible
+  at tier but decompiler-irrelevant — image-byte markup); and the large/listing-coupled
+  subsystems already classified ⛔ (Go pclntab name recovery `Golang{String,Symbol}Analyzer`,
+  FID, `FindNoReturnFunctionsAnalyzer`, AIF, the operand/reference markup family).
+
+**Bottom line of the sweep:** with the Go no-return list in, **every feasible-at-tier,
+decompiler-relevant ELF analyzer is ported.** The only remaining items are (a) the one
+cosmetic init/fini-array **naming** follow-up above, (b) the previously-documented engine-side
+deferrals (DWARF subtask-3 stack-locals, format-string-B varargs override loop, the ARM e2e /
+Thumb-FUNC re-home / MIPS `$gp` — all needing an engine change or an off-host fixture), and
+(c) the genuinely out-of-scope/huge subsystems (Go pclntab recovery, FID, non-ELF formats,
+multi-program resolution). Nothing else is both feasible at this tier and worth implementing.
+
+- **LOSS / scope.** Same as the Rust arm: only the **Known** name-based no-return matching is
+  ported. The Golang list's leading comment notes some entries (`runtime.abort`,
+  `runtime.systemstack_switch`) "have bytes that can cause undefined instruction errors in
+  Ghidra" — a *disassembly*-side concern with no analog at the (pre-disasm) load tier; kuna marks
+  them no-return by name regardless, which is the intended effect. The upstream file's six
+  trailing-whitespace duplicate lines (e.g. `runtime.panicIndex ` next to `runtime.panicIndex`)
+  are vendored **verbatim** and harmlessly collapse to the same entry under the parser's
+  per-line `.trim()` (idempotent — the `exact` set is membership-tested, not counted).
+- **Divergence:** none to the parity oracles — the Go list only widens matching on a real Go
+  ELF (the XML datatest path runs no analyses), and the pass id / option / catalog are unchanged.
+- **Tests:** `kuna-analysis` **93 tests pass** (88 + 5 new: `golang_noreturn_list_carries_runtime_names`,
+  `golang_list_gated_on_go_detection`, `compiler_field_selects_extra_list`,
+  `real_go_binary_detected_and_flags_runtime_gopanic`, and the generalized
+  `all_compilers_have_same_pass_ids`). `make test` **PARITY OK** (675/675); `make test-stages`
+  **PARITY OK** (158/158); `make rust-test` green; `kuna catalog --check` **catalog OK**.
+
+### Increment 16 — format-string varargs typing (`FormatStringAnalyzer`, half B, gated off) ✅
+
+The deferred half of Increment 9: the decompile→inspect→override→re-decompile loop that
+*applies* the parser's output to a printf/scanf call's variadic arguments. `FormatStringAnalyzer`
+is genuinely **DecompilerDependent** — the per-call-site format-string constant + which arg is
+the format only exist after the caller is lifted to p-code — so this is the console-driver loop
+(the kuna analog of Ghidra's `ParallelDecompiler` + `PcodeFunctionParser` +
+`HighFunctionDBUtil.writeOverride`), **not** a load-time `AnalysisOutput` pass.
+
+**SPIKE finding: the override + re-decompile seam is cleanly reachable.** Every primitive
+already existed (the `override prototype <addr> <decl>` console command is the hand-driven
+analog): `pending_proto_overrides` (ifacedecomp.rs, `fn-name → [(callpoint Address,
+PrototypePieces)]`) → `Override::insert_proto_override` (overrides.rs) → `applyPrototype` at
+flow time (flow.rs `build_call_specs`). The only new code is the pcode-walk + the parse + the
+loop. **No new fspec/override surface, no engine-internal action — the parity gates' XML
+datatest path never touches this loop.**
+
+**What landed:**
+- **Application logic** (pure, unit-tested) in
+  [`s1_formatstring/apply.rs`](../decompiler/crates/kuna-analysis/src/s1_formatstring/apply.rs):
+  `classify_variadic_call(name)` — Ghidra `VARIADIC_SUBSTRINGS = {"printf","scanf"}` substring
+  test + the `INPUT_FUNCTION_SUBSTRING = "scanf"` output/input choice (`FormatStringAnalyzer.java`
+  `:42`/`:59`/`:127`/`:273`); `build_override_pieces(name, outtype, fixed_param_types,
+  format_specs, types, word_size)` — the analog of `createParameters`/`initSignature` (`:292`/`:313`):
+  callee fixed params ++ format-derived types, `first_var_arg_slot = -1` (the override is the now
+  *fixed* signature, no longer varargs — matching the plain `FunctionDefinitionDataType` Ghidra
+  installs via `writeOverride`).
+- **The decompile loop** in `kuna-console`'s `IfcDecompile`
+  (`extract_format_string_overrides` + the gated re-decompile): after the first decompile, walk
+  the Funcdata's `CALL` ops (`obank().iter_alive` / `FuncCallSpecs`), classify each callee,
+  require `is_dotdotdot()` + a fixed format param, read the format constant at the format slot
+  (`getInput(getParameterCount())`, `PcodeFunctionParser.java:99`) — resolving the kuna IR's
+  derived format-pointer varnode through its defining `PTRSUB`/`PTRADD`/`COPY`/`CAST`/`INT_ADD`
+  op (`resolve_const_pointer`) — read the NUL-terminated bytes via `read_loadimage_value`
+  (`read_cstring`), parse with Increment 9, build the per-call-site override, push it onto
+  `pending_proto_overrides`, and re-decompile once.
+- **Gate** `formatstring` (default **off**, Ghidra `FormatStringAnalyzer.setDefaultEnablement(false)`):
+  a new `Architecture::analysis_formatstring` bool (architecture.rs), registered in `stages.toml`
+  (`change_kind = "analysis-enablement"`) + `KUNA_OPTION_NAMES` + `set_kuna_option`. **Unlike the
+  other `analysis_*` flags it does not gate a load-time pass** — `IfcDecompile` reads it after the
+  first decompile to decide whether to run the loop. Default-off ⇒ the loop is skipped entirely
+  and the decompile is byte-identical.
+
+**LOSS:** per-call-site override only (no listing-data markup / bookmarks); `size_t`/`intmax_t`
+width-approximated (inherited from Increment 9's `spec_to_datatype`, kuna has no `.gdt` typedefs);
+the format constant must survive as a constant pointer into readable memory at the call site
+(Ghidra's `searchForHiddenFormatStrings` non-constant path is not ported — those calls get no
+override, the faithful "no override" outcome). x86-64 ELF first cut; the call-arg-slot read is
+arch-generic via the recovered proto.
+
+- **Fixture:** `fmt_x86_64` (vendored, source + README) — `int main(int argc,char**argv){
+  printf("%d %s\n", argc, argv[0]); return 0;}`, `gcc -no-pie -fno-stack-protector -O0`, not
+  stripped (`main`=0x401136, `printf@plt`=0x401040, `"%d %s\n"` @ `.rodata` 0x402004).
+- **Tests:** `kuna-analysis` 92 (the 3 new `classify_variadic_call` cases + Increment 9's parser);
+  a new `kuna-console` e2e gate
+  [`verify_s1_formatstring.rs`](../decompiler/crates/kuna-console/tests/verify_s1_formatstring.rs):
+  `--option formatstring on` ⇒ `printf("%d %s\n",a0,(char *)*a1)` (the `%d` arg an `int` with no
+  `(uint8)` widening, the `%s` arg cast to `char *`); default-off ⇒ the untyped
+  `printf("%d %s\n",(uint8)a0,*a1)`. `make test` **PARITY OK** (675/675); `make test-stages`
+  **PARITY OK** (158/158); `make rust-test` green; `kuna catalog --check` **catalog OK** (the new
+  `formatstring` option discoverable, default `off`).
+
+### Increment 17 — MIPS `$gp` recovery (`t9` tracking) + the ARM Thumb-FUNC re-home ✅
+
+Closes the two deferred siblings of the Increment 8 `arch-markers` frontier: MIPS `$gp`
+recovery (the register-VALUE tracking case) and the ARM Thumb-FUNC address re-home.
+
+**SPIKE finding — the tracked-register-VALUE API is fully present and reachable.** kuna ports
+Ghidra's `TrackedSet`/`TrackedContext`/`ContextDatabase` register-value machinery 1:1
+(`kuna-sleigh/src/globalcontext.rs`): `get_tracked_default()`, `create_set(addr1,addr2)`,
+`get_tracked_set(addr)`, `clone_trackbase()`. The console `set track <reg> <val> [start end]`
+(`ifacedecomp.rs` `IfcSettrackedrange`) drives it; the per-function `build_arch_handle`
+snapshots the track base into the seam (`seam.tracked_sets = clone_trackbase()`,
+`architecture.rs`), and **`ActionConstbase`** (S3, `s3_dataflow/coreaction_early.rs`) consumes
+it — emitting `COPY #val -> reg` at the entry block for each tracked register, which constant
+propagation then folds. This is **distinct** from the context-BIT machinery Increment 8 used
+(`set_variable`/`TMode` decode-mode painting); it seeds a register *value*, not a decode mode.
+There is even an existing datatest (`tests/datatests/gp.xml`) that drives it by hand
+(`set track t9 0x0 …` → recovers `printf("Hello",a0)`). **Reachable from the commit/bootstrap
+path**: `commit_analysis_output` runs at `read symbols`, before any `load function` decode, so
+seeding the track base there is correctly timed for the per-function snapshot.
+
+**Why `t9 = func_entry`, not `gp = _gp` (the key design call).** Ghidra's `MipsAddressAnalyzer`
+recovers `$gp` with two register-value mechanisms: (1) seed `gp = _gp` per function
+(`checkForGlobalGP` + `flowConstants:243`, default-on), and (2) the `assumeT9EntryAddress`
+default-true convention (`unknownValue:481-494`) — an *unknown* `t9` read is assumed to be the
+function entry (`t9 == entry` because a MIPS function is reached via `jalr t9`). kuna ports
+**(2)**: seed `t9 = func_entry` per function, so a PIC prologue's `lui gp; addiu gp; addu
+gp,gp,t9` folds to the real `$gp`. **(1) is deliberately NOT ported** here, because kuna's
+`ActionConstbase` is the *unconditional* `COPY #val -> reg` form (it lacks Ghidra's *lazy*
+`unknownValue` propagator that only assumes a value when the register is genuinely unknown and
+`clearRegister`s it after a PIC call). Empirically, an unconditional `COPY #_gp -> gp` at entry
+is **counterproductive on a PIC function**: such a function recomputes `gp` from `t9`, and a
+pre-seeded `gp` poisons the value (the `$gp`-relative load then fails to resolve). Seeding `t9`
+is always correct (the ABI guarantees `t9 == entry` on entry) and never poisons a non-PIC
+function (which ignores `t9`). The `gp`-direct seam (for a non-PIC function that loads `$gp` off
+the stack and never recomputes it) is a documented LOSS — it needs the lazy-`unknownValue`
+propagator.
+
+**New module** [`s1_loader/mips_markers.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/mips_markers.rs)
+(sibling of `arm_markers.rs`), `AnalysisPass` id `mips_gp`, stage S1, registered always-on in
+`passes_for` after `ArmMarkerPass`. **Gated on MIPS** (`object::Architecture::Mips|Mips64`),
+the faithful analog of `MipsAddressAnalyzer.canAnalyze == processor==MIPS`: empty output on
+every other language. Emits one `TrackedRegFact { func_addr, reg:"t9", value:func_addr }` per
+defined STT_FUNC (UND/zero-address imports skipped). `recover_gp_value` additionally reads the
+`_mips_gp_value`/`_gp`/`_GP` symbol (`checkForGlobalGP`) and the MIPS GP-bias invariant
+`_gp == .got + 0x7ff0` is cross-checked — exposed for the documented `gp`-direct follow-up.
+
+**New fact kind + commit arm.** `pass.rs` gains `struct TrackedRegFact { func_addr, reg, value }`
++ `pub tracked_regs: Vec<TrackedRegFact>` on `AnalysisOutput` (+ `merge`). `engine.rs`
+`commit_analysis_output` gains **step 7**: for each fact, resolve the register varnode
+(`get_register_varnode`) and seed the value over `[func_addr, func_addr+1)` via `create_set` +
+`TrackedContext` push — the exact `IfcSettrackedrange` body. **CRITICAL gate-safety** (same
+shape as the Increment-8 context-paint swallow): `get_register_varnode` returns Err when the
+register is undefined by the active language (`t9` on x86-64); the arm `continue`s on that Err —
+a faithful no-op, belt-and-suspenders on top of the pass-level MIPS gate.
+
+**Fixture (LINKED, e2e works in-env).** Built
+[`mips_gp_le32`](../decompiler/crates/kuna-analysis/tests/fixtures/mips_gp_le32) (7684-byte
+dynamic ET_DYN, `mipsel-linux-gnu-gcc -O1 -no-pie`, source vendored). Unlike the ARM `.o`, this
+host **has** a MIPS toolchain, so the decode e2e runs in-env. **The proof**: `kuna decompile
+mips_gp_le32 _init` — the PIC `_init`@`0x4004cc` computes `gp = _gp_disp + t9`; with `mips_gp`
+**on** (default) the `$gp`-relative GOT load resolves (`*(int4 *)(v1 /* t9 */ + 0x10b94)` →
+`dat_411060`, a concrete GOT slot); with **`--option mips_gp off`** it regresses to the
+unresolved `*(int4 *)(v1 + 0x10b94)`. (`main`/`bump` have a local `lui gp; addiu gp` so their
+output is unchanged either way — gp is already constant-folded.)
+
+**ARM Thumb-FUNC re-home (the second deferred sibling).** `arm_markers.rs` now *also* emits a
+`SymFact { addr: entry & !1, name, kind: Function }` for each LSB-set STT_FUNC, so a Thumb
+function recorded at `entry|1` is **also** known at the even `entry` — the address the `TMode=1`
+paint and the engine's decode use — so `load function <name>` / a CALL resolves there. Ghidra
+*moves* the symbol (`moveFunction`/`setElfSymbolAddress`); kuna's additive `SymFact` makes the
+even entry known without removing the odd-address install (the commit seam's symbol arm is
+idempotent — it skips an already-installed function — so the two coexist with no double-symbol
+collision). Verified on `arm_thumb_le32.o`: `thumb_add`@`0x1` re-homed to `0x0`, `_start`@`0x15`
+to `0x14`. The Increment-8 "paint-only (v1)" LOSS is now resolved.
+
+**ARM decode e2e remains BLOCKED off-host.** This host has NO ARM linker (no lld/aarch64-ld/
+arm-ld), so a LINKED ARM ET_EXEC/ET_DYN with PT_LOAD cannot be built in-env (`ObjectLoadImage`
+reads only segments). The ARM `.o` unit test stands; the linked-exe Thumb-decode e2e is an
+off-host follow-up. (The MIPS e2e, by contrast, runs in-env because the MIPS toolchain — incl.
+a linker — is present.)
+
+**Option / catalog.** `mips_gp` (default-on) added like the other analysis-pass gates:
+`stages.toml` row + `KUNA_OPTION_NAMES` + the `analysis_mips_gp` flag (`architecture.rs`,
+default-on in `reset_defaults_internal`) + the `engine.rs` `analysis_pass_enabled` arm.
+`kuna catalog --check` **catalog OK** (settable count 31→32; `stage_catalog.json` fixture +
+the two count tests regenerated). `docs/assertions.md` regenerated (single-line addition).
+
+**LOSS / divergences:**
+- **The `gp`-direct seam is not ported.** Only `t9 = func_entry` is seeded (see the design
+  note). A non-PIC MIPS function that loads `$gp` off the stack and never recomputes it would
+  need the `gp = _gp` seed, which needs Ghidra's lazy-`unknownValue` propagator (kuna's
+  `ActionConstbase` is unconditional and would poison PIC functions). `recover_gp_value` is in
+  place for when that propagator lands. Documented LOSS in `mips_markers.rs`.
+- **MIPS16 `ISA_MODE` still out of scope** (the exact ARM `$t`/STT_FUNC-LSB analog — a *context
+  bit*, `MIPS_ElfExtension.applyIsaMode`); deferred, needs a MIPS16 fixture (documented in
+  `arm_markers.rs`).
+
+**Result (the proof).** `kuna decompile mips_gp_le32 _init` resolves the `$gp`-relative load
+(`dat_411060`); `--option mips_gp off` regresses it (unresolved). `kuna decompile fauxware main`
+(x86-64) — byte-identical (the MIPS pass is a no-op on a non-MIPS object). `make test`
+**675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test` green; `kuna
+catalog --check` **catalog OK**.
+
+- **Tests:** `kuna-analysis` +5 (3 `mips_markers`: the `t9` scan, `_gp`/bias recovery, the
+  non-MIPS-emits-nothing gate; 1 `arm_markers` re-home assertion; 1 `passes` arch-marker
+  registration). `kuna-decomp` count tests bumped (settable 31→32) + `stage_catalog.json`
+  fixture regenerated.
+
+### Increment 22 — `_INIT_<i>`/`_FINI_<i>` array-element naming ✅
+
+**`s1-entry-disc`** — the cosmetic follow-up flagged by the Increment 15 completeness sweep:
+give the dynamic INIT/FINI entries their Ghidra loader names instead of the generic `sub_<addr>`,
+faithful to `ElfProgramBuilder.createDynamicEntryPoints`:
+
+- `DT_INIT_ARRAY` element `i` → `_INIT_<i>`, `DT_FINI_ARRAY` element `i` → `_FINI_<i>`
+  (Ghidra's `baseName + i`, where `i` is the element index in the array);
+- the single `DT_INIT`/`DT_FINI` → `_DT_INIT`/`_DT_FINI` (Ghidra's `"_" + dynamicEntryType.name`).
+
+`DT_PREINIT_ARRAY` (`_PREINIT_<i>`) is wired as the faithful seam (constant + `base_name`
+threading) but emits nothing — kuna does not currently *discover* preinit-array elements as
+code entries, and adding that would change the discovery set (out of scope here).
+
+**Shape choice — additive overlay, NOT a reshape.** `AnalysisOutput.entries` stays `Vec<u64>`;
+a new parallel `entry_names: Vec<(u64, String)>` overlay carries the names (`pass.rs`, `merge`
+extended). `s1_entry::collect_entries` is **byte-identical** — the discovery seam is untouched —
+and `dynamic_entry_points` is now exactly `dynamic_entry_points_named(file).map(|(a,_)| a)`, a
+guaranteed-equal projection (unit-tested: `dynamic_entry_points_is_named_projection`). The
+overlay is filtered to the VMAs that actually survive collection, so a name for a dropped
+(funcsym-covered) entry is never emitted. This is the lowest-risk shape: WHICH entries are found
+provably does not change, so the 675/158 XML oracles (which never construct an `ObjectLoadImage`)
+are structurally untouched, and the five other oracles + the address-table pass leave the overlay
+empty (→ existing `sub_<addr>` behavior).
+
+**Commit seam** (`engine.rs::commit_analysis_output` step 2): each discovered VMA consults the
+overlay; a hit names the function with the Ghidra name, a miss falls back to `name_function`
+(`sub_<addr>`) exactly as before. The idempotent `find_function` no-op is kept, so a non-stripped
+binary's real `.symtab`/`.dynsym` name still wins — only genuinely new, never-symboled
+array-element starts take the `_INIT_<i>` names.
+
+**Flag.** Purely additive on the always-on `entry_disc` pass (no new option, no settable-count
+bump): `--option entry_disc off` disables the whole discovery pass (names and all) as before.
+
+**Result (the proof).** On the vendored stripped PIE `stripped_dynamic_x86_64` (`.symtab`
+stripped): `.init_array`[0]→0x1240 and `.fini_array`[0]→0x1200 now register as `_INIT_0` /
+`_FINI_0`, and `DT_INIT`@0x1000 / `DT_FINI`@0x1464 as `_DT_INIT` / `_DT_FINI`. BEFORE,
+`kuna decompile stripped_dynamic_x86_64 sub_1240` resolved; AFTER it errors (`no function
+"sub_1240"`) and `kuna decompile … _INIT_0` decompiles a real body. `make test` **675/675 PARITY
+OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test` green.
+
+- **Tests:** `kuna-analysis` +3 (`dynamic_entry_names_stripped`,
+  `collect_entry_names_matches_collected_entries`, `dynamic_entry_points_is_named_projection`);
+  the existing `dynamic_entry_points_stripped` / `collect_entries_*` discovery tests pass
+  **unchanged** (byte-identical discovery). `kuna-console` +1 e2e
+  (`verify_s1_entry::dynamic_init_fini_elements_get_ghidra_names`: `_INIT_0`/`_FINI_0`/`_DT_INIT`/
+  `_DT_FINI` resolve and `_INIT_0` decompiles; `sub_1240` no longer resolves).
+### Increment 20 — RISC-V64 PLT import-name end-to-end (linked fixture) ✅
+
+Proves the `elf_plt.rs` RISC-V PLT-veneer decoder end-to-end on a **real, linked,
+dynamically-linked RISC-V64 executable**. Increment 1 (`plt-got`) already carried the RISC-V
+(RV32/RV64) arm of the per-arch PLT decoder (`decode_riscv`: the 16-byte
+`auipc t3,hi; l[wd] t3,lo(t3); jalr t1,t3; nop` GNU `ld` import veneer) plus a synthetic
+unit test pinning its arithmetic (`riscv_plt_decode`, positive + sign-extended-negative lo12),
+but the proof had run only on x86 fixtures — no linked RISC-V binary existed in-tree to
+exercise the full ELF parse → GOT-name-map → stub-decode → funcsym install → decode → print
+path. A dev container now carries a RISC-V64 toolchain + linker, so this increment vendors a
+linked fixture and adds the e2e gate.
+
+**No `elf_plt.rs` change was needed.** The RISC-V decoder, the `build_got_name_map`
+(`R_RISCV_JUMP_SLOT` → `.dynsym` name), and the `bootstrap_from_elf` arch auto-detect
+(`RISCV:LE:64:default` → `riscv.lp64d.sla`) all resolve the imports as-is. The increment is
+purely **additive coverage** (one linked fixture + one console e2e), so the XML datatest oracle
+is structurally untouched (the `<binaryimage>` path never constructs an `ObjectLoadImage`).
+
+**Fixture (`plt_riscv64`, 8520 bytes, source `plt_riscv64.c` vendored alongside).** A dynamic
+RISC-V64 PIE built with `riscv64-linux-gnu-gcc 11.4.0` (`-O0`, not stripped). `main` (`0x6b8`)
+calls `puts("hello")` (`puts@plt`=`0x5e0` → GOT slot `0x2020`) and `printf("%d\n", argc)`
+(`printf@plt`=`0x5f0` → GOT slot `0x2028`); both are `R_RISCV_JUMP_SLOT` relocations in
+`.rela.plt` naming `puts`/`printf`, and the stubs are the textbook
+`auipc t3,0x2; ld t3,-N(t3); jalr t1,t3; nop` veneer the decoder recognizes (the compressed
+`main` body also decodes — RVC). The build host's `kuna-dev` image ships `libc6-riscv64-cross`
+(shared libs) but not the dev package; the fixture build installs `libc6-dev-riscv64-cross`
+(headers + crt1) in the same root container invocation (see fixtures/README.md provenance).
+
+**Result (the proof).** `kuna decompile plt_riscv64 main`:
+
+```c
+unsigned long main(int4 a0)
+
+{
+  puts("hello");
+  printf("%d\n",(int8)a0);
+  return 0;
+}
+```
+
+The PLT imports render as `puts`/`printf` (not `sub_5e0`/`sub_5f0`), and the `.rodata` string
+constants are recovered too. `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green.
+
+- **Tests:** `kuna-console` +1 e2e (`verify_riscv64_plt.rs`,
+  `riscv64_plt_calls_are_named_in_decompiled_c`) — modeled on `verify_w11_elf_plt_names.rs`
+  (x86), same specs-absent skip guard; it asserts `main` decoded (real, not skipped) and that
+  `puts(`/`printf(` are named while `sub_5e0`/`sub_5f0` are gone. This retires the
+  RISC-V half of the "decode e2e proven only on x86" caveat; the ARM-link e2e remains the lone
+  off-host blocker (no in-env ARM linker).
+### Increment 19 — AArch64 PLT import-name end-to-end (linked fixture) ✅
+
+**What.** Proved the `elf_plt` AArch64 path (`src/s1_loader/elf_plt.rs::decode_aarch64`) resolves
+imports **end-to-end on a real, linked, dynamic AArch64 executable** — until now that decoder was
+only unit-tested against synthetic veneer bytes (the x86 paths had a real-binary console gate,
+`verify_w11_elf_plt_names`, but AArch64 had no linked fixture). A dev container with the AArch64
+toolchain + linker (`aarch64-linux-gnu-gcc 11.4.0`) finally makes the linked build possible in-env
+(unlike the still-blocked **ARM** decode e2e — no ARM/Thumb linker on host).
+
+**Fixture.** `decompiler/crates/kuna-analysis/tests/fixtures/plt_aarch64` (9056 bytes, ET_EXEC,
+Machine AArch64, dynamic — has `.plt` + `.rela.plt` + DT_PLTGOT), built from the vendored
+`plt_aarch64.c` (`main` calls `puts("hello")` then `printf("%d\n", argc)`):
+`aarch64-linux-gnu-gcc -O0 -no-pie plt_aarch64.c -o plt_aarch64`. Standard GNU `ld` 16-byte
+veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12]; add x16,x16,#lo12; br x17`). Pinned VMAs:
+`main`=`0x400604`, `puts@plt`=`0x4004d0` (GOT `0x411018`), `printf@plt`=`0x4004e0` (GOT
+`0x411020`); both `R_AARCH64_JUMP_SLOT` in `.rela.plt`.
+
+**e2e.** `decompiler/crates/kuna-console/tests/verify_aarch64_plt.rs`, modeled on the x86 gate:
+`bootstrap_from_elf(plt_aarch64, "", [specs])` (the ELF machine → `AARCH64:LE:64:v8A` resolves
+automatically) → `load function main` → `decompile` → `print C`; asserts the body names `puts(`
+and `printf(` and the old `sub_4004d0`/`sub_4004e0` PLT-stub placeholders are gone. Same
+specs-absent skip guard (needs the built `AARCH64.sla`). The test **actually decodes** (does not
+skip) on a tree with the spec compiled — it exercises the A64 decoder over `main`.
+
+**No `elf_plt.rs` fix needed.** The existing `decode_aarch64` already handled this binary's
+veneer layout correctly; the increment is purely additive (new fixture + new e2e + doc/log). The
+BEFORE/AFTER was confirmed by temporarily stubbing the AArch64 arm: with it disabled `main`
+renders `sub_4004d0("hello"); sub_4004e0(0x400670,a0);`; with it enabled (the shipped behavior)
+`puts("hello"); printf("%d\n",(uint8)a0);`.
+
+**Result (the proof).**
+```c
+unsigned long main(uint4 a0)
+{
+  puts("hello");
+  printf("%d\n",(uint8)a0);
+  return 0;
+}
+```
+`make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+green. Additive real-ELF-path change → the XML datatest/stage gates are structurally untouched
+(the `<binaryimage>` bootstrap never runs the ELF loader). `kuna-console` +1 test
+(`verify_aarch64_plt`).
+
+### Remaining work (essentially complete)
+
+> The build-plan for the analyzers that stay out of reach at this tier
+> (infeasible-at-tier, non-ELF, or huge-subsystem — AIF, the operand/reference
+> markup family, Go pclntab, FID, PE/Mach-O loaders) — i.e. what kuna would have
+> to BUILD first (notably a shared post-disassembly Listing tier), with effort
+> sizing, engine seams, and verdicts — is in
+> [`analysis-port-buildplan.md`](analysis-port-buildplan.md).
+
+Waves 1–3 (Increments 4–13) **and the entire deferred frontier are done**: DWARF subtask-3
+stack locals (14), Golang no-return + completeness sweep (15), format-string-B varargs typing
+(16, gated off), and MIPS `$gp` recovery + ARM Thumb-FUNC re-home (17). The completeness sweep
+confirms **every feasible-at-tier, decompiler-relevant ELF analyzer is ported** (ELF matches all
+three `noReturnFunctionConstraints.xml` lists; the per-compiler/per-arch passes cover the rest).
+
+The deferred frontier is now closed:
+- **ARM decode e2e** — ✅ **done in-container** (Increment 18, reinforced by Increment 23). The
+  earlier off-host block (no ARM linker on the build host) is lifted by the `kuna-dev`
+  container's `arm-linux-gnueabihf-gcc`: the LINKED `arm_thumb_linked_le32` ET_EXEC fixture
+  Thumb-decodes `compute` (`a0 * 3 + 7`) through the full pipeline (`verify_arm_thumb_decode.rs`),
+  proving the `arm_markers` `TMode` paint + Thumb-FUNC re-home drive a correct decode — no wiring
+  fix was needed. Increment 23 additionally exercises the linked ARM/Thumb decode through the
+  cross-arch `_start`→`main` path (`entrymain_arm`, `verify_crossarch_entry_main.rs`).
+- **`_INIT_<i>`/`_FINI_<i>` array-element naming** — ✅ **done (Increment 22)**: the array-element
+  naming follow-up flagged by the Increment 15 sweep, delivered as an additive `entry_names`
+  overlay (no reshape of the `entries` fact).
+
+Everything else is inherited by the engine or genuinely out-of-scope for an ELF decompiler
+(non-ELF formats, Go pclntab, FID — see the table + inventory).
+
+### Increment 23 — cross-arch `_start`→`main` idiom (AArch64/ARM/RISC-V) ✅
+
+**`s1-entry-disc` oracle 4** — extend the `_start`→`main` libc-start idiom (previously x86-64-only,
+a documented LOSS) to **AArch64, ARM/Thumb, and RISC-V**, so a STRIPPED non-x86 PIE (where
+`.eh_frame` may be absent or not cover `main`) still recovers `main` without a symbol. Same
+disassembly-free, targeted-byte-decode style; gated per arch on `file.architecture()`; the
+resolved VMA is validated inside an executable section before emitting; additive to
+`AnalysisOutput.entries` (real-ELF path only — rides the always-on `entry_disc` pass, no new flag).
+
+- **The shared modern-PIE shape.** Unlike x86-64 (which carries `main` as a PC-relative
+  *immediate* in `lea rdi,[rip+disp]`), the PIE crt1 of all three other arches loads `main`
+  *indirectly* from a GOT slot bearing an `R_*_RELATIVE` relocation whose **target is `main`'s
+  VMA**. So the cross-arch decode is two steps: (1) byte-decode the arg0-setup in `_start` to the
+  GOT-slot VMA, (2) resolve it through a `got_slot → relative_target` map (`relative_targets`):
+  the RELA `addend` (AArch64/RISC-V) or the in-place GOT word for ARM REL (`has_implicit_addend`).
+  - **AArch64** (`main` in x0): `adrp x0,page ; ldr x0,[x0,#lo12]` → slot
+    `(adrp&!0xfff)+page_off+lo12` (the A64 `adrp`/`ldr` decode mirrors `elf_plt::decode_aarch64`,
+    keyed to x0). Fixture: slot `0x10ff0` → `main`@`0x714`.
+  - **RISC-V** (`main` in a0): `auipc a0,hi20 ; ld a0,lo12(a0)` → slot `auipc+((hi20<<12)+sext(lo12))`
+    (mirrors `elf_plt::decode_riscv`, keyed to a0=x10; scanned at 2-byte steps for the RVC mix).
+    Fixture: slot `0x2030` → `main`@`0x608`.
+  - **ARM/Thumb** (`main` in r0): GOT-relative `ldr r0,[GOT_base,r0]`. Rather than simulate the
+    fragile two-load+add GOT-base computation, use the invariant that the GOT base **is** the
+    `.got` section address: for each small PC-relative literal-pool word in the `_start` window,
+    candidate slot `= .got + off`; if that slot's RELATIVE target lands in an exec section it is
+    `main` (the RELATIVE-map + exec-section cross-check is self-validating — a unique winner only).
+    The ARM `main` pointer carries the **Thumb mode bit** in bit 0 (`main|1`); masked to `0x4d8`
+    for the entry, AND the discovery pass emits a `TMode=1` `ContextPaint` at `0x4d8` (the analog
+    of `arm_markers`' STT_FUNC-LSB → `TMode=1`, derived from the GOT pointer LSB — a stripped
+    binary has no `$t` mapping symbol). Without that paint the engine decodes the Thumb body as
+    A32 and emits a degenerate `void {return;}` stub.
+
+- **Fixtures (vendored, <7 KB each, shared source `entrymain.c`).** `entrymain_{aarch64,arm,riscv64}`,
+  built in `kuna-dev` (`<triple>-gcc -O0 -fno-asynchronous-unwind-tables -fno-unwind-tables
+  -fvisibility=hidden … && strip`). Two non-obvious flags are load-bearing: `-fvisibility=hidden`
+  (without it `main` is a `.dynsym` GLOBAL FUNC — strip removes it on AArch64/ARM but NOT on
+  RISC-V, where `.dynsym` survives strip, so oracle 4 couldn't be shown to contribute it);
+  `-fno-*-unwind-tables` isolates oracle 4 from the FDE oracle (AArch64/RISC-V keep crt1 FDEs but
+  none cover `main`; ARM's `.eh_frame` is empty). RISC-V needs `libc6-dev-riscv64-cross` installed
+  in-container first (documented in the fixtures README provenance).
+
+- **Tests.** `kuna-analysis` +4 unit tests (`libc_start_main_idiom_{aarch64,arm,riscv}` — each
+  pins the GOT slot + RELATIVE target + recovered `main`; `collect_entries_crossarch_includes_main`
+  — proves oracle 4 specifically contributes `main` for each arch, `main` is non-funcsym + in an
+  exec section). e2e `kuna-console/tests/verify_crossarch_entry_main.rs` (+3, actually run — not
+  skipped): bootstrap each stripped fixture, commit analysis, `load function sub_<main>` →
+  `decompile` → `print C` with NO `--addr` → a real `return a0` body. The x86-64 oracle-4 path
+  (`libc_start_main_idiom_stripped`, `verify_s1_entry`) is unchanged (now dispatched through the
+  per-arch `libc_start_main_target`).
+
+- **Coverage / LOSS.** All three target arches succeed end-to-end (stripped `main` recovered AND
+  decompiled). MIPS/PPC `_start` idioms remain a follow-up (those arches no-op). Oracle 5
+  (prologue patterns) stays x86-64-only. Oracles 1–3 are arch-independent.
+
+  | arch | `_start` | idiom | GOT slot | `main` | e2e body |
+  |---|---|---|---|---|---|
+  | AArch64 | `0x600` | `adrp x0;ldr x0,[x0,#4080]` | `0x10ff0` (RELA addend) | `0x714` | `unsigned int sub_714(unsigned int a0){return a0;}` |
+  | ARM/Thumb | `0x3dd` | `.got`+`0x28` GOT-rel `ldr r0` + `TMode=1` | `0x10ff8` (REL in-place) | `0x4d8` | `unsigned int sub_4d8(unsigned int a0){return a0;}` |
+  | RISC-V | `0x550` | `auipc a0;ld a0,-1318(a0)` | `0x2030` (RELA addend) | `0x608` | `int8 sub_608(int4 a0){return (int8)a0;}` |
+
+### Increment 21 — MIPS16 ISA_MODE decode-mode painting ✅
+
+Closes the last sibling of the Increment 8 `arch-markers` frontier: MIPS16 `ISA_MODE` painting
+— the exact MIPS analog of ARM Thumb `TMode` (a decode-mode context BIT, unlike Increment 17's
+`$gp`/`t9` tracked-register VALUE). Increment 17 deferred it for lack of a MIPS16 fixture; the
+dev container now ships `mips-linux-gnu-gcc 10.3.0` (with `-mips16`).
+
+**Spec finding — `ISA_MODE` exists and is reachable on the default MIPS language.** The MIPS
+SLEIGH `contextreg` (`mips.sinc:411`) defines `ISA_MODE=(1,1)` ("=1 Decode using alternate
+ISA, variable") behind `@ifdef ISA_VARIANT`. The `mips32{le,be}.slaspec` BOTH `@define
+ISA_VARIANT` and `@include "mips16.sinc"`, so the `.sla` carries MIPS16 decode. The MIPS16
+constructors gate on `ISA_MODE=1 & RELP=1` (`mips16.sinc:227+`); MIPS32 on `ISA_MODE=0`
+(`mips32Instructions.sinc:11`, `@define AMODE "ISA_MODE=0"`). **Crucially `RELP=1` is already
+fixed globally** by the default `mips32.pspec` (`<set name="RELP" val="1">`), so painting only
+`ISA_MODE=1` at a function entry is sufficient to flip THAT function to MIPS16 — exactly the
+Thumb `TMode` situation. A bare MIPS ELF resolves to `MIPS:{BE,LE}:32:default:default`
+(`loadimage_object.rs:598`) → `mips32{be,le}.sla`, which has all this. **The context var name
+is `ISA_MODE`** (no gap; the spec fully supports MIPS16 decode).
+
+**Toolchain finding — modern binutils marks MIPS16 via `st_other`, not the LSB.** Unlike the
+ARM-Thumb `entry|1` assumption in the task brief, `mips-linux-gnu-gcc 10.3.0`'s linker records a
+`__attribute__((mips16))` function's STT_FUNC at the **even** entry with `st_other & 0xf0 ==
+STO_MIPS_MIPS16 (0xf0)` (the `[MIPS16]` readelf flag), NOT an LSB-set odd value. This is exactly
+the upstream `MIPS_ElfExtension.applyIsaMode` (`:412-432`), which enables `ISA_MODE=1` for
+EITHER an LSB-set symbol value (re-homed to even) OR `st_other & 0xf0` ∈ {STO_MIPS_MIPS16,
+STO_MIPS_MICROMIPS}. **Both branches ported** — faithful to `applyIsaMode`.
+
+**New pass** [`MipsIsaModePass`](../decompiler/crates/kuna-analysis/src/s1_loader/mips_markers.rs)
+(sibling of `MipsMarkerPass` in the same module), `AnalysisPass` id `mips_isa`, stage S1,
+registered always-on in `passes_for` after `MipsMarkerPass`. **Gated on MIPS**
+(`object::Architecture::Mips|Mips64`), the analog of `MIPS_ElfExtension.canHandle ==
+processor==MIPS`: empty output on every other language. For each defined STT_FUNC carrying the
+alternate-ISA marker it emits `ContextPaint { addr: entry & !1, var: "ISA_MODE", value: 1, end:
+None }` — **REUSING the existing context-paint commit arm** (`engine.rs::commit_analysis_output`
+step 6, the same arm the ARM `TMode` paints use; the Err-swallow makes it a no-op off-MIPS where
+`ISA_MODE` is unregistered) — and, for the LSB-set form only, a re-home `SymFact { addr: entry &
+!1, name, kind: Function }` (the MIPS analog of Increment 17's Thumb-FUNC re-home; the
+`st_other` form already records the symbol at the even value, so no re-home is needed there).
+`st_other` is read through the generic `ObjectSymbol::flags()` → `SymbolFlags::Elf { st_other }`.
+
+**Registration (per the `mips_gp` precedent exactly).** `stages.toml` row (`mips_isa`,
+default-on, S1/code-data-partition) + `KUNA_OPTION_NAMES` + `analysis_mips_isa` flag on
+`Architecture` (default-on in `reset_defaults_internal`) + the `set_kuna_option` arm + the
+`engine.rs` `analysis_pass_enabled` arm + the console `kuna_live_value` arm. Count tests bumped
+(settable 33→34; `},\n` 32→33; PASS_GATES +`mips_isa`) + `stage_catalog.json` fixture
+regenerated (34 rows) + `docs/assertions.md` regenerated. `kuna catalog --check` **catalog OK**.
+
+**Fixture (LINKED, e2e works in-env).** Built
+[`mips16_le32`](../decompiler/crates/kuna-analysis/tests/fixtures/mips16_le32) (1584-byte
+freestanding ET_EXEC, big-endian, `mips-linux-gnu-gcc -mips16 -O1 -no-pie -nostdlib
+-ffreestanding`, source vendored). Freestanding because the container has the MIPS runtime libc
+but no `libc6-dev` (no `crt1.o`/headers); a decode fixture needs no runtime. `m16_square` is a
+genuine MIPS16 leaf (`mult a0,a0; mflo v0; jr ra; addiu v0,3`, 8 bytes) at even entry `0x400130`
+with `st_other = STO_MIPS_MIPS16`.
+
+**The proof.** `kuna-console/tests/verify_mips16_isa.rs` bootstraps the fixture against the MIPS
+spec, commits the analysis (the `ISA_MODE` paint), loads + decompiles `m16_square`:
+
+```c
+// AFTER (mips_isa on, MIPS16-decoded):        // BEFORE (mips_isa off, MIPS32 misdecode):
+int4 m16_square(int4 a0)                       void m16_square(void)
+{                                              {
+  return a0 * a0 + 3;                            return;
+}                                              }
+```
+
+The painted form cleanly recovers `a0 * a0 + 3`; the un-painted form reads the 8 MIPS16 bytes as
+2 garbage MIPS32 words and produces an empty `void` body. The two renderings DIFFER — the option
+genuinely flips the decode. **The e2e actually decoded MIPS16 (not skipped).**
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+`make rust-test` green; `kuna catalog --check` **catalog OK**. Additive real-ELF-path change —
+the XML datatest gates are structurally untouched (the `<binaryimage>` path never runs analysis
+passes).
+
+- **Tests:** `kuna-analysis` +2 (`mips_markers`: the MIPS16 paint at the even entry, the
+  st_other-no-rehome check; the non-MIPS-emits-no-ISA-paints gate; `passes` arch-marker
+  registration updated). `kuna-console` +2 (`verify_mips16_isa`: the MIPS16-decode assertion +
+  the on/off-differs toggle). `kuna-decomp` count tests bumped (settable 33→34) +
+  `stage_catalog.json` fixture regenerated.
+
+With this, **all three `arm-mips-markers` siblings are done** (ARM `TMode`, MIPS `$gp`, MIPS16
+`ISA_MODE`); the work-list row is 🟢. The only remaining arch-marker item is the ARM decode e2e
+(blocked off-host — no ARM linker).
+### Increment 18 — ARM Thumb decode end-to-end (linked fixture) ✅
+
+The deferred Increment-8/17 e2e: prove the analysis-tier `arm_markers` `TMode` paint +
+Thumb-FUNC re-home actually drive a **correct Thumb decode through the full pipeline** on a
+**LINKED** ARM executable (not the bare `.o` the unit test used). Increments 8 and 17 proved
+the *paint* (`$t`/`$a`+STT_FUNC-LSB → `TMode=1` `set_variable`) and the *re-home* (even-address
+`SymFact`) only on `arm_thumb_le32.o` (ET_REL); the decode e2e was blocked because the build
+host had no ARM linker. The **`kuna-dev` container** now provides `arm-linux-gnueabihf-gcc`, so
+the e2e is no longer off-host.
+
+**Fixture (LINKED ET_EXEC).** `arm_thumb_linked_le32` (1080 bytes), built in-container:
+`arm-linux-gnueabihf-gcc -mthumb -static -nostdlib -e _start arm_thumb_linked_le32.c -o
+arm_thumb_linked_le32` (arm-linux-gnueabihf-gcc 11.4.0). `readelf -h`: Type **EXEC**, Machine
+**ARM**; `readelf -l`: one **LOAD R E** segment at `0x10000` (so kuna's `ObjectLoadImage`, which
+reads only segments, loads it — unlike the bare `.o`). `readelf --syms`: the `$t` mapping symbol
+@`0x100b8` (NOTYPE LOCAL), `compute` FUNC @`0x100b9` (LSB-set Thumb `entry|1` → even decode
+`0x100b8`), `_start` FUNC @`0x100d7` (→ even `0x100d6`). `compute` is non-trivial (`x*3 + 7`: the
+Thumb `lsls #1; add; adds #7`) so a correct Thumb decode is visibly distinct from an ARM-mode
+(A32) misdecode of the same bytes (garbage). Source vendored alongside; provenance line added to
+`tests/fixtures/README.md`.
+
+**The e2e (`kuna-console/tests/verify_arm_thumb_decode.rs`).** Modeled on
+`verify_w11_elf_plt_names.rs` (same `bootstrap_from_elf` → `load function` → `decompile` → `print
+C` drive + the specs-absent skip guard). Two proofs in one gate:
+1. **TMode paint** — `load function compute` (which fires `commit_pending_analysis`, painting the
+   stashed `TMode=1` over the ContextDatabase **before** the decode) Thumb-decodes to
+   `return a0 * 3 + 7;`. The arithmetic IS the Thumb-mode proof (an A32 misdecode can't produce it).
+2. **Thumb-FUNC re-home** — `load function _start` renders the `bl` to `compute`'s **even** entry
+   (`0x100b8`, where execution lands) by name as `compute(5)`. Without the re-home's even-address
+   `SymFact` the engine symbol table would only know `compute` at the odd `0x100b9`, so the CALL
+   would render an anonymous `sub_<addr>`. The test asserts `compute(` is present and `sub_100b8`
+   is not. (The loader-symbol list `lookup_symbol` still returns the raw odd `entry|1` — the test
+   pins that real behavior too; the decode at the odd address still lands on the even bytes with
+   `TMode=1` painted.)
+
+**No wiring fix needed.** The `arm_markers` pass + the commit seam (`commit_analysis_output`
+step 6, `set_variable` over the ContextDatabase) + the SLEIGH translator already decode Thumb
+correctly end-to-end. The test ran a **real decode** (the ARM `ARM8_le.sla` is built; the skip
+guard was not hit). Equivalently via the CLI: `kuna decompile arm_thumb_linked_le32 compute` →
+`return a0 * 3 + 7;` and `… _start` → `compute(5)`.
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY
+OK**; `make rust-test` green (incl. the new `verify_arm_thumb_decode`). The change is purely
+additive on the real-ELF path (a new fixture + a new console test + the `arm_markers`/commit code
+unchanged), so the XML datatest oracle is structurally untouched.
+
+- **Tests:** `kuna-console` +1 (`verify_arm_thumb_decode::arm_thumb_compute_decodes_in_thumb_mode`).
+  New fixture `arm_thumb_linked_le32` (+ source). No engine/option/catalog change.
+
+### Increment 24 — SPARC PLT import-name recovery ✅
+
+Adds SPARC (SPARC v9, 64-bit, big-endian) to the per-arch PLT decoder in
+`elf_plt.rs` (`decode_sparc`) and proves it end-to-end on a **real, linked,
+dynamically-linked SPARC64 executable**. SPARC was the last common Linux/SysV
+machine with a regular `.plt` whose imports kuna still rendered as `sub_<addr>`;
+its arch auto-detect (`sparc:BE:64:default` → the SPARC `.sla`) was already wired
+in `loadimage_object::language_id_for`, but `decode_plt_section` had no SPARC arm
+(it hit the `_ => {}` PPC/MIPS seam fallthrough), so the GOT-name map never reached
+the call targets.
+
+**Why SPARC is the odd one out (and why the decoder is the simplest of the set).**
+Every other supported arch decodes the stub's indirect jump to find a *separate*
+`.got` slot, then matches that slot against `build_got_name_map`. SPARC doesn't
+work that way: its `.rela.plt` `R_SPARC_JMP_SLOT` relocation `r_offset` **is the
+PLT entry address itself** — the dynamic linker rewrites the in-place 32-byte stub
+at resolution time rather than redirecting through a GOT word (confirmed against
+Ghidra's `SPARC64_ElfRelocationHandler`, which materializes the resolved
+`sethi/or/sllx/jmpl` sequence directly into the relocation address). So
+`build_got_name_map`'s keys are *already* the call targets the decompiler sees.
+`decode_sparc` walks the `.plt` in 32-byte strides, gates each entry on the
+canonical `sethi %hi(...),%g1` veneer head (BE `0x03xxxxxx`: op=00, rd=%g1,
+op2=0b100), and records any entry that is a known relocation — the stub address
+and the map key are one and the same (`record(entry, entry, …)`). The 4-slot
+(`0x80`-byte) reserved PLT0 header and the non-symbol `__gmon_start__` slot are not
+relocation keys, so they fall out by the same self-correcting cross-check the other
+arches use.
+
+**Fixture (`plt_sparc64`, source `plt_sparc64.c` vendored alongside).** A dynamic
+SPARC v9 / ELF64 / big-endian **EXEC** built with `sparc64-linux-gnu-gcc -O0` (not
+stripped). `main` (`0x100750`) calls `puts("hello")` (`puts@plt`=`0x2021c0`) and
+`printf("%d\n", argc)` (`printf@plt`=`0x2021a0`); both are `R_SPARC_JMP_SLOT`
+relocations in `.rela.plt` whose `r_offset` equals the entry address, and each
+`.plt` entry is the textbook 32-byte `sethi %hi(...),%g1; b,a %xcc,<resolver>;
+nop*6` veneer the decoder recognizes (the 4-slot `0x80`-byte PLT0 header precedes
+the imports). The `kuna-dev` image ships `sparc64-linux-gnu-gcc` but not the SPARC
+libc dev package; the fixture build installs `libc6-dev-sparc64-cross` (headers +
+crt1) in a single `--user root` container invocation (see fixtures/README.md
+provenance), exactly as the RISC-V port did.
+
+**Result (the proof).** `kuna decompile plt_sparc64 main`:
+
+```c
+unsigned long long main(int4 a0)
+
+{
+  puts("hello");
+  printf("%d\n",(int8)a0);
+  return 0;
+}
+```
+
+The PLT imports render as `puts`/`printf` (not `sub_2021c0`/`sub_2021a0`), and the
+`.rodata` string constants are recovered too. This is a **clean win**, not a
+documented seam — SPARC's `.plt` is regular and statically decodable. `make test`
+**675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+green (incl. the new `verify_sparc_plt` + the `sparc_plt_decode` unit test). The
+change is purely additive on the real-ELF path (a new `decode_sparc` arm + a new
+fixture + a new console e2e), so the XML datatest oracle is structurally untouched
+(the `<binaryimage>` path never constructs an `ObjectLoadImage`).
+
+- **Tests:** `kuna-analysis` +1 unit (`elf_plt::tests::sparc_plt_decode`, the
+  32-byte strider over a header + three synthetic veneers); `kuna-console` +1 e2e
+  (`verify_sparc_plt.rs::sparc_plt_calls_are_named_in_decompiled_c`) modeled on
+  `verify_riscv64_plt.rs`/`verify_w11_elf_plt_names.rs`, same specs-absent skip
+  guard, asserting `main` decoded (real, not skipped) and `puts(`/`printf(` named
+  while `sub_2021c0`/`sub_2021a0` are gone. New fixture `plt_sparc64` (+ source).
+  No engine/option/catalog change. This retires the SPARC `sub_<addr>` row in the
+  `plt-got` work-list and the SPARC line of missing-analyses §1.
+
+
+### Increment 25 — format-string varargs typing: cross-arch coverage (AArch64/ARM/RISC-V) ✅
+
+Closes the Increment 16 follow-up — its half-B override loop was an "x86-64 ELF first cut"
+("the call-arg-slot read is arch-generic via the recovered proto"). This increment proves
+(and, for ARM, fixes) `--option formatstring on` on the other three first-class arches.
+
+**Three new fixtures, same C as `fmt_x86_64`** (`int main(int argc,char**argv){
+printf("%d %s\n", argc, argv[0]); return 0;}`), built in the `kuna-dev` container,
+**un**stripped: `fmt_aarch64` (`aarch64-linux-gnu-gcc`), `fmt_arm` (32-bit Thumb,
+`arm-linux-gnueabihf-gcc`), `fmt_riscv64` (RVC/lp64d, `riscv64-linux-gnu-gcc`), all
+`-O0 -fno-stack-protector` (gcc 11.4.0). The RISC-V dev package (`crt1.o` + headers) is not
+in the base image — the build recipe `apt-get update && apt-get install
+libc6-dev-riscv64-cross` (README provenance). Pinned consts per arch: AArch64 `main`=0x754,
+`printf@plt`=0x630, format `.rodata` vma 0x7a8 (`adrp x0,0; add x0,x0,#0x7a8`); ARM
+`main`=0x504, `printf@plt`=0x3e4, format vma 0x5cc (`ldr r3,[pc,#20]`→`.word 0xb0`@0x52c;
+`add r3,pc`: pc 0x51c + 0xb0); RISC-V `main`=0x668, `printf@plt`=0x5a0, format vma 0x6a8
+(`auipc a0,0x0; addi a0,a0,32`: pc 0x688 + 32).
+
+**Finding — AArch64 and RISC-V worked unchanged.** Both materialize the format address
+directly into a register (`adrp+add` / `auipc+addi`), so the call's format-arg varnode is
+already a constant pointer and the Increment-16 `resolve_const_pointer` (through
+PTRSUB/PTRADD/COPY/CAST/INT_ADD) reads it as-is. `--option formatstring on` ⇒
+`printf("%d %s\n",a0,(char *)*a1)` on the first try (default-off: AArch64
+`printf("%d %s\n",(uint8)a0,*a1)`, RISC-V `printf("%d %s\n",(int8)a0,*a1)`).
+
+**ARM needed a fix — the read-only literal-pool addressing form.** On ARM the format address
+is loaded *PC-relatively from a read-only literal pool* (`ldr r3,[pc,#k]; add r3,pc`), so the
+format-arg varnode is a memory LOAD, not a constant; default-off it renders the unresolved
+`printf((char *)(dat_52c + 0x51c),a0,*a1)`. The literal-pool LOAD only constant-folds under
+`readonlypropagate` (`Funcdata::fillin_read_only`) — with `--option readonly on` the first
+decompile already produces `u0x… = ->(#0x0,#0x5cc)` (a clean PTRSUB the existing resolver
+handles). This is **not** a `resolve_const_pointer` gap — the value is genuinely a read-only
+memory load the engine declined to fold.
+
+**The fix (small, additive, gated under `formatstring`).** `IfcDecompile` now enables
+`readonlypropagate` *for the duration of a `formatstring`-on decompile* and restores the prior
+value afterward (and on the `has_no_code` early-return). This is faithful to Ghidra's
+`FormatStringAnalyzer`, whose decompile reads constant strings out of read-only memory; it
+keeps the feature self-contained on ARM with a single `--option formatstring on` (no separate
+`--option readonly on`). **Gate-safe:** the toggle is inert (value unchanged) unless
+`formatstring` is on (default off), so every parity gate — which never sets `formatstring` —
+is byte-identical. With the fix, ARM `--option formatstring on` ⇒
+`printf("%d %s\n",a0,(char *)*a1)`.
+
+**Result — all four arches type correctly with a single `--option formatstring on`:**
+`printf("%d %s\n",(uint8)a0,*a1)` (or the arch's untyped default) → `printf("%d
+%s\n",a0,(char *)*a1)` (the `%d` arg a plain `int`, no widening cast; the `%s` arg cast to
+`char *`).
+
+- **Tests:** a new console e2e gate
+  [`verify_formatstring_crossarch.rs`](../decompiler/crates/kuna-console/tests/verify_formatstring_crossarch.rs)
+  — 6 tests (off+on × AArch64/ARM/RISC-V), **all ran** (the per-arch `.sla` are built; the
+  specs-less skip guard was not hit). The existing `verify_s1_formatstring` (x86-64) still
+  passes. No new option/catalog surface (reuses the existing `formatstring` + `readonly`
+  flags). `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+  `make rust-test` green; `kuna catalog --check` **catalog OK**.
+- **Fixtures:** `fmt_aarch64`, `fmt_arm`, `fmt_riscv64` (+ sources, README provenance).
+- **Engine change:** one scoped `readonlypropagate` flip in `kuna-console`'s `IfcDecompile`,
+  entirely under the `formatstring` gate.
+
+
+### Increment 26 — PowerPC64 PLT import-name recovery (clean port, not a seam) ✅
+
+Recover **PPC64 ELFv2 (little-endian)** libc import names so a call renders `puts`/`printf`,
+not `sub_<addr>`. PowerPC was listed in `docs/missing-analyses.md` §1 as a *documented seam*
+("ELFv2 `.plt` is a data table; call stubs are synthesized in `.text`") — but, like SPARC
+(PR #20), investigating the real layout showed it is **fully tractable at the static load
+tier**. This is a clean port, not a documented seam.
+
+**The layout (why it looked like a seam, and why it isn't).** On PPC64 ELFv2 there is no `.plt`
+*code* section: `readelf -S` shows `.plt` as **NOBITS** (the runtime GOT for imports), and the
+`.rela.plt` `R_PPC64_JMP_SLOT` relocations name `.plt` *data* slots (`0x1fef0`=puts,
+`0x1fef8`=printf in the fixture). The call stubs are synthesized inline in `.text` by the linker.
+`main` (`0x8bc`) `bl`s to a stub at `0x680` (puts) / `0x660` (printf), each of the canonical
+ELFv2 shape:
+
+```
+    std   r2,24(r1)         ; 0xf8410018  save caller TOC
+    addis r12,r2,off@ha     ; r12 = TOC_base + (off@ha << 16)
+    ld    r12,off@l(r12)    ; r12 = *(.plt slot) = *(TOC + (off@ha<<16) + off@l)
+    mtctr r12
+    bctr
+```
+
+The decoded `.plt` slot ties straight back to the `R_PPC64_JMP_SLOT` name. The one piece the
+other arches don't need is the **TOC base**: ELFv2 fixes `r2` at `.got + 0x8000` (the `.TOC.`
+symbol). For the fixture `.got`=`0x1ff00`, so TOC=`0x27f00`, and the puts stub's
+`addis r12,r2,-1; ld r12,32752(r12)` reconstructs `0x27f00 + (-1<<16) + 32752 = 0x1fef0` —
+exactly the JMP_SLOT offset. No `.TOC.` symbol lookup is needed; `.got + 0x8000` is the ELFv2
+invariant.
+
+**The decoder (`s1_loader/elf_plt.rs`).** `resolve_plt_imports` already builds `got_slot → name`
+from *all* symbol-bearing dynamic relocations (the JMP_SLOTs are in it — `object` 0.39 parses the
+PPC64 relocs as `kind=Unknown target=sym#N` at the slot offset, which the existing
+`build_got_name_map` handles unchanged). Added a PowerPC arm: after the `.plt*`-section scan,
+`decode_ppc_text` computes the TOC base (`.got` vma + `0x8000`), reads `.text`, and
+`decode_ppc64_stubs` scans for the 5-instruction stub (`std r2,24(r1)` + `addis r12,r2` +
+`ld r12,(r12)` DS-form + `mtctr r12` + `bctr`), reconstructs the slot, and `record`s the stub
+entry (the `std r2,24(r1)` address — what `bl` targets) against the matched name. It reads words
+honoring file endianness (`is_little_endian`), so a PPC32/BE arm can slot in later; the gating is
+`arch == PowerPc64` only (PPC32 secure-PLT has a different stub shape — left a seam).
+
+**Why it integrates cleanly.** The `.symtab` carries synthetic `0000001b.plt_call.puts@@…`
+symbols *at the stub addresses*, but `object` classifies them `SymbolKind::Unknown` (not `Text`),
+so `loadimage_object` step 1 skips them — leaving the stub addresses free for the PLT decoder
+(step 2) to register the clean `puts`/`printf`. No name collision, no ordering hazard.
+
+**Fixture (LINKED dynamic PPC64le ELFv2 PIE).** `plt_ppc64le` (~21 KB), built in-container:
+`powerpc64le-linux-gnu-gcc -O0 plt_ppc64le.c -o plt_ppc64le` (libc6-dev-ppc64el-cross installed
+`--user root` for crt1/headers). `main` calls `puts("hello")` + `printf("%d\n", argc)`. Source +
+provenance vendored in `tests/fixtures/`.
+
+**e2e (`kuna-console/tests/verify_ppc64_plt.rs`).** Modeled on `verify_riscv64_plt.rs`: auto-detect
+`PowerPC:LE:64:default` → `bootstrap_from_elf` → `load function main` → `decompile` → `print C`,
+with the same specs-absent skip guard. The test **ran a real decode** (the `ppc_64_le.sla` is built;
+the skip was not hit) and asserts `main` resolves, `puts(`/`printf(` are named, and `sub_680`/`sub_660`
+are gone.
+
+**BEFORE → AFTER** (`kuna decompile plt_ppc64le main`):
+```
+  before:  sub_680(v1 + 0x17c);            sub_660(v2 + -0x274c0,(int8)a0);
+  after:   puts((char *)(v1 + 0x17c));     printf((char *)(v2 + -0x274c0),(int8)a0);
+```
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+`make rust-test` green (incl. the new `verify_ppc64_plt` + the `ppc64_plt_decode` unit test). Purely
+additive on the real-ELF path (new PowerPC arm + new fixture + new console test); the XML datatest
+oracle is structurally untouched.
+
+- **Tests:** `kuna-analysis` +1 unit (`elf_plt::tests::ppc64_plt_decode`, LE real-fixture bytes +
+  a BE word-layout case). `kuna-console` +1 e2e (`verify_ppc64_plt`). New fixture `plt_ppc64le`
+  (+ source). No engine/option/catalog change.
+
+
+### Increment 27 — MIPS PLT/stub import-name recovery (linked fixture) ✅
+
+**Goal.** Recover MIPS libc import names so a call renders `puts`/`printf`, not
+`sub_<addr>`. The other arches (x86-64/32, AArch64, ARM32, RISC-V; SPARC in PR
+#20) decode a regular `.plt` code section whose stub references a
+`got_slot → name` map built from the dynamic relocations. **MIPS o32 has neither:**
+the GNU toolchain emits **no `.plt` and no `R_MIPS_JUMP_SLOT` relocations** — it
+uses the classic `.MIPS.stubs` + `$gp`-relative GOT lazy-binding layout.
+
+**What the toolchain produced (investigated, not assumed).** `mips-linux-gnu-gcc
+-O0` on a `main` calling `puts`/`printf` → big-endian MIPS32 ET_EXEC with:
+`readelf -r` = *"There are no relocations in this file."*; a `.MIPS.stubs` PROGBITS
+section of `lw $t9,-32752($gp); move $t7,$ra; jalr $t9; li $t8,<dynidx>` lazy
+resolver stubs; and the `DT_MIPS_*` dynamic tags `DT_MIPS_LOCAL_GOTNO=6`,
+`DT_MIPS_GOTSYM=5`, `DT_PLTGOT=0x411020`. So this is layout **(b)** from the task
+brief (classic `.MIPS.stubs`), NOT a modern regular-`.plt` + `R_MIPS_JUMP_SLOT`
+build. **This is a clean port, not a documented seam** — the names ARE recoverable
+statically.
+
+**The MIPS GOT correspondence (the cr0.org "MIPS Multi-GOT" layout Ghidra cites).**
+The dynamic linker resolves a positional slice of the GOT in symbol-table order:
+dynamic symbols `[GOTSYM, dynsym_count)` map 1:1, in order, to GOT entries starting
+at index `LOCAL_GOTNO`: `got_index(i) = LOCAL_GOTNO + (i - GOTSYM)`. For an
+undefined FUNC import the GOT slot's **static contents** are the address of that
+import's `.MIPS.stubs` stub (and that same stub address is the symbol's
+`st_value`). A call site is `lw $t9, off($gp); jalr $t9` — an indirect call through
+the GOT slot. Cross-checked on the fixture: `puts` (dynidx 7 → got_index 8 → slot
+`0x411040`) holds `0x400800`; `printf` (dynidx 8 → got_index 9 → slot `0x411044`)
+holds `0x4007f0` — exactly the `dat_411040`/`dat_411044` the decompiler reads.
+
+**The port — two halves, both faithful to `MIPS_ElfExtension`
+(`Ghidra/Processors/MIPS/.../elf/extend/MIPS_ElfExtension.java`).**
+1. **Naming** (`elf_plt::resolve_mips_imports`, the `fixupGot` analog): walk the
+   external-symbol GOT window, read each FUNC import's GOT slot, and name the
+   **stub address** (the slot's static contents = `refAddr` in Ghidra's
+   `createExternalFunctionLinkage(symName, refAddr, gotEntryAddr)`). Gated on
+   `Mips | Mips64`, runs *before* the relocation-driven path (which would early-
+   return on MIPS's empty `build_got_name_map`). Off-MIPS: empty, no-op.
+   (In practice the `.symtab`/`.dynsym` UND-import path already registers the stub
+   address too — `object` reports the MIPS UND import with a nonzero `st_value`
+   pointing at the stub — so the two agree on the same `addr → name`.)
+2. **Constant-folding the indirect call** (`elf_plt::mips_got_const_ranges` +
+   `ObjectLoadImage::const_ranges` → `get_readonly`, the `setConstant` analog): the
+   GOT external slots are reported as constant ranges so the engine can fold the
+   `lw $t9, off($gp)` load (whose address is already `$gp`-constant from Increment
+   17's `$gp` recovery) to the stub address; `bootstrap_from_elf` turns on
+   `readonlypropagate` **for MIPS only** so `ActionVarnodeProps::fillinReadOnly`
+   performs the fold and `ActionDeindirect` resolves the now-constant call target
+   to the named stub function. Scoped to MIPS (`arch_type.starts_with("MIPS:")`),
+   so non-MIPS ELF output is unchanged, and `option readonly off` restores the raw
+   `(*(code *)(dat_411040 & ...))(...)` GOT-load rendering.
+
+**BEFORE / AFTER (`kuna decompile plt_mips32 main`).**
+```text
+before:  (*(code *)(dat_411040 & 0xfffffffe))("hello");
+         (*(code *)(dat_411044 & 0xfffffffe))(0x400888,v1);
+after:   puts("hello");
+         printf(0x400888,v1);
+```
+(The `printf` format-string pointer `0x400888` not rendering as a string literal
+is a separate string-rendering concern, independent of import naming; `puts`'s
+`"hello"` already renders.)
+
+**Fixture (LINKED ET_EXEC, big-endian).** `plt_mips32` (7580 bytes), built in the
+`kuna-dev` container: `mips-linux-gnu-gcc -O0 plt_mips32.c -o plt_mips32` (the
+`-O0` keeps the calls **plain** `puts`/`printf`; `-O1`+ pulls in glibc's fortified
+`__printf_chk`). `libc6-dev-mips-cross` is installed in the build container (the
+image ships only the runtime libc). `main`@`0x400700`, `puts` stub `0x400800`,
+`printf` stub `0x4007f0`. Source + the exact single-invocation build command
+vendored in `tests/fixtures/README.md`.
+
+**The e2e (`kuna-console/tests/verify_mips_plt.rs`).** Modeled on
+`verify_riscv64_plt.rs` (same `bootstrap_from_elf` → `load function main` →
+`decompile` → `print C` drive + the specs-absent skip guard). Asserts the loader
+resolves `puts`/`printf`/`main`, the body decodes (`out.contains("main")` — a real
+big-endian MIPS decode, not a skip), the call sites render `puts(`/`printf(`, and
+the raw `dat_411040`/`dat_411044` GOT-slot loads are gone. **The test RAN (not
+skipped)** — `mips32be.sla` is built.
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green (incl. the new `verify_mips_plt` +
+two `loadimage_object` MIPS unit tests). Purely additive on the real-ELF path (a
+new fixture + a new console test + the MIPS arm in `elf_plt`/`loadimage_object` +
+the MIPS-only `readonlypropagate` toggle in `bootstrap_from_elf`), so the XML
+datatest oracle is structurally untouched (no XML path constructs an
+`ObjectLoadImage` or reaches `bootstrap_from_elf`).
+
+- **Engine:** `elf_plt.rs` (+`resolve_mips_imports`/`mips_got_const_ranges`/
+  `mips_external_got_entries`/`read_mips_dynamic_tags`/`read_word_at_vma`),
+  `loadimage_object.rs` (+`const_ranges` field, threaded through `get_readonly`
+  /`adjust_vma`), `engine.rs` (MIPS-only `readonlypropagate = true`). No
+  option/catalog change (`readonly` is a pre-existing `option`; the MIPS default is
+  set in the loader path, user-overridable via `option readonly off`).
+- **Tests:** `kuna-console` +1 (`verify_mips_plt`); `kuna-analysis` +2
+  (`mips_stub_imports_resolve_to_named_functions`,
+  `mips_got_const_ranges_cover_external_slots`). New fixture `plt_mips32` (+ source).
+
+### Increment 28 — Listing/xref tier PR0: recursive-descent core + instruction/flow/xref/function model ✅
+
+**Goal.** Land the **keystone** of "scope-B": a post-disassembly,
+program-wide **recursive-descent disassembler** + an instruction / cross-reference
+/ discovered-function model, built by *reusing* the ported SLEIGH decoder and a
+*lifted copy* of the S2 flow classifier. This is the first PR of a multi-PR tier
+whose canonical spec is the new **`docs/listing-tier-design.md`** (transcribed
+from the design fan-out). The keystone unlocks Ghidra analyzers kuna cannot port
+today (foremost the "Discovered" `FindNoReturnFunctionsAnalyzer`), which need a
+disassembled `Listing`/`ReferenceManager`/`FunctionManager` the analysis tier has
+never had.
+
+**Scope (PR0 ONLY).** The core lands as a self-contained module
+`kuna-analysis/src/listing/` and is **not wired into the engine**: no
+`--option listing` flag (PR1), no `AnalysisCtx::listing` field / driver build
+(PR1-PR2), no `context.rs` ARM/MIPS decode-paint (PR5). The CodeUnit partition
+*queries* are PR3, but the `CodeUnit` type and the `covered`/`exec_ranges` fields
+are defined now. So this PR touches **no engine path the XML datatests use** — the
+module is dormant until a later PR invokes it.
+
+**The subsystem.**
+- `model.rs` — the §2 data model: `Insn` (addr/len/fall_through/flow/flows/
+  mnemonic/lazy-pcode), `FlowType` (the faithful `FlowType` predicate set:
+  is_call/is_jump/is_terminal/is_computed/is_indirect/is_conditional/
+  has_fallthrough) + `FlowKind`, `RawOp`, `Reference`/`RefKind` (Call/Code
+  populated; Data/Read/Write reserved), `DiscoveredFunction` (ordered
+  `BTreeMap` model), `CodeUnit` (Instruction/Data/Undefined partition class).
+- `decode.rs::decode_one` — drives `Translate::one_instruction` (`translate.rs:472`)
+  with a capturing `PcodeEmit` (`translate.rs:166`) for `(len, ops)` and
+  `print_assembly` (`translate.rs:481`) with a capturing `AssemblyEmit` for the
+  mnemonic; builds the `Address` in the default code space.
+- `classify.rs::classify` — a faithful transliteration of
+  `s2_lift/flow.rs::xref_control_flow` (`flow.rs:1039-1185`), honoring the three
+  gotchas: (1) a constant-space `in0` is p-code-relative (tested via
+  `is_constant()` first — never a VMA target); (2) fall-through is decided by the
+  **last** op (BRANCH/BRANCHIND/RETURN ⇒ no fall-through); (3) delay slots are
+  already folded into `len` (no re-decode). BRANCHIND/CALLIND are recorded as
+  computed/indirect with NO static target (deferred jump-table resolution).
+- `walk.rs` — the two-level recursive-descent: an outer function worklist
+  (CALL/CALLIND direct targets become new function entries + `RefKind::Call`
+  edges) and an inner per-function instruction worklist (branch/fall-through →
+  same-function successors + `RefKind::Code` edges), with `BTreeMap`-membership
+  dedup, an exec-range bounds gate, and decode-error = stop-this-path.
+- `mod.rs` — the `Listing` facade + `Listing::build(file, image, arch, translate,
+  seeds)` and the read-only query API (instruction/xref/ordered-function).
+
+The `s1_entry` seed helpers `executable_sections`/`existing_function_addrs`/
+`in_executable_section` were promoted to `pub(crate)` so PR2 can build the seed set.
+
+**Tests (both layers REAL, not skipped).**
+- **Classifier unit tests** (`classify.rs`, 9 cases): hand-built `RawOp` lists
+  (no Translate) pin `classify` against the `flow.rs` rules — CBRANCH (two
+  successors, ConditionalBranch, is_conditional), unconditional BRANCH (target,
+  no fall-through), CALL (target, is_call, falls through), RETURN (terminal),
+  BRANCHIND (computed/indirect, no static target), CALLIND (computed, falls
+  through), a **constant-space BRANCH in0** (intra-insn, NOT a target), and the
+  last-op fall-through rule.
+- **Real-decode integration test** (`kuna-console/tests/verify_listing_core.rs`,
+  modeled on the `verify_*.rs` bootstrap pattern): `bootstrap_from_elf` over the
+  vendored x86-64 `fauxware` fixture gives a built `Translate`
+  (`prog.arch().translate()`) + code space (`prog.arch().manage()`); seeds =
+  `collect_entries ∪ {main}`; `Listing::build` is driven end-to-end and the §7
+  PR0 criteria asserted: `instruction_at(main)` has a plausible len + non-empty
+  mnemonic; the `je`@0x4007bb yields two successors and `ConditionalBranch`; the
+  `ret`@0x4007d4 is terminal (`fall_through == None`); the `call`@0x4007ae records
+  a `RefKind::Call` edge to `authenticate`@0x400664 and seeds it as a function;
+  `function_count() >= seeds`. **The test RAN (not skipped)** — `x86-64.sla` is
+  built; it recovered **108 instructions, 11 functions, 16 call edges** from 2
+  seeds, with `0x40071d: PUSH` (Fallthrough), `0x4007ae: CALL → 0x400664`,
+  `0x4007bb: JZ` (ConditionalBranch, target 0x4007c9, fall 0x4007bd),
+  `0x4007d4: RET` (Return).
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green (incl. the 9 classifier unit tests
++ the new `verify_listing_core` console test). Structurally additive on a dormant
+module (no engine invocation, no flag, no `AnalysisCtx` change), so the XML
+datatest oracle is untouched — the keystone is not yet on any decompilation path.
+
+- **New:** `docs/listing-tier-design.md` (the tier spec); `kuna-analysis/src/listing/`
+  (`mod.rs`/`model.rs`/`decode.rs`/`classify.rs`/`walk.rs`) + `pub mod listing;`
+  in `lib.rs`; `kuna-console/tests/verify_listing_core.rs` (+ `object` dev-dep).
+- **Changed:** `s1_entry/mod.rs` — three seed helpers promoted to `pub(crate)`.
+- **Behind the (forthcoming) `--option listing` flag** (PR1) and **not yet wired
+  into the engine** (PR2).
+
+### Increment 29 — Listing/xref tier PR1: the `--option listing` flag (default-off) ✅
+
+PR1 of the Listing/xref tier (`docs/listing-tier-design.md` §5.1, §7 PR1): wire
+the `--option listing` flag end-to-end, default-OFF, as pure plumbing. No Listing
+is built yet (PR2 invokes the keystone from the engine); the flag is inert.
+
+**What's wired (the `addrtable`/`formatstring` template, followed exactly).**
+- `infra/architecture.rs`: the `analysis_listing: bool` field (in the `analysis_*`
+  block after `analysis_formatstring`), `false` in the constructor, `self.analysis_listing
+  = false;` in `reset_defaults_internal`, and the
+  `"listing" => on_off!(analysis_listing, "Listing/xref disassembly tier")` arm in
+  `set_kuna_option`.
+- `p0_knowledge/options.rs`: `"listing"` added to `KUNA_OPTION_NAMES`.
+- `kuna-console/src/engine.rs`: `"listing" => arch.analysis_listing,` in
+  `analysis_pass_enabled` (explicit — the match fails OPEN with `_ => true`).
+- `kuna-console/src/kuna_console.rs`: `"listing" => on_off(conf.analysis_listing),`
+  in `kuna_live_value` (the console-side live `current` reader for the catalog),
+  matching the analysis-pass-gate block.
+- `kuna-decomp/stages.toml`: a `[[settable]]` analysis-enablement row
+  (`option="listing"`, `values="on|off"`, `default="off"`,
+  `change_kind="analysis-enablement"`, no `live_field`); the stale header count
+  comment fixed (`settable=31` → `35`).
+- `kuna-analysis/src/pass.rs`: `pub listing: Option<&'a Listing>` added to
+  `AnalysisCtx` (imported from `crate::listing::Listing`); always `None` for now —
+  both `AnalysisCtx { ... }` construction sites in `passes.rs` set `listing: None`.
+- `kuna_stages/tests.rs`: `settable_count_is_34` → `settable_count_is_35` (35 =
+  23 stage-model knobs + 12 analysis-tier gates); the `live_value` suppressed-set
+  test (PASS_GATES + 11→12 comment) and the `emit_catalog_json` trailing-comma
+  count (33 → 34) updated.
+- `docs/assertions.md` regenerated via `kuna catalog --markdown` (the new
+  `listing` row appended).
+
+**Proof.**
+- `kuna catalog --check` → **catalog OK** (the catalog documents exactly the 35
+  registered kuna options; cross-checks against `KUNA_OPTION_NAMES` in-process).
+  Settable count: **34 → 35**.
+- The bumped `settable_count_is_35` unit test passes; all 22 `kuna_stages` tests
+  green.
+- New stages testcase `tests/stages/kuna-listing-flag.xml` (an infra test):
+  decompiles the GH-558 fixture twice — once under the default pipeline, once with
+  `option listing on` — and asserts the source-form C (`if (x <= 8)`) renders
+  **identically** in both passes (default-off parity; the flag parses, round-trips,
+  and is inert on the XML path). `docs/baseline-stages.json` regenerated
+  (158 → 159 passing keys; only the new `KUNA-LISTING #1` key added).
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159
+PARITY OK**; `make rust-test` green; `kuna catalog --check` **OK**. Pure plumbing
++ default-off ⇒ the engine paths are byte-identical (the Listing is never built;
+`ctx.listing` is always `None`), so the 675/675 datatest oracle and the real-ELF
+bootstrap are untouched. The flag is inert until PR2 builds the Listing.
+
+- **Changed:** `infra/architecture.rs`, `p0_knowledge/options.rs`,
+  `p0_knowledge/kuna_stages/tests.rs`, `kuna-decomp/stages.toml`,
+  `kuna-console/src/engine.rs`, `kuna-console/src/kuna_console.rs`,
+  `kuna-analysis/src/pass.rs`, `kuna-analysis/src/passes.rs`, `docs/assertions.md`,
+  `docs/baseline-stages.json`, `tests/stages/README.md`.
+- **New:** `tests/stages/kuna-listing-flag.xml`.
+
+### Increment 30 — Listing/xref tier read API (code-unit partition + function model + xref queries)
+
+**What.** The read/query surface over the PR0-built `Listing` — design
+`docs/listing-tier-design.md` §6 (consumer API) + §7 **PR3** (code-unit partition
++ ordered function model) **and PR4** (xref read API), combined into one increment
+since both finalize read queries over the already-built model and would otherwise
+self-conflict on `listing/mod.rs`. Purely additive read API: no engine path
+touched, still no `--option` flag (PR1) and no engine invocation (PR2) — the
+module stays dormant. The walk (PR0) already fills the `insns`/`refs_to`/
+`refs_from`/`funcs` maps + `covered`/`exec_ranges`; this increment locks the
+public read API on top.
+
+**Code-unit partition (PR3).** `code_unit_at(vma)` is the partition the walk
+leaves behind (the design's `partition_code_units`): the start-or-interior of a
+decoded instruction is `CodeUnit::Instruction(start)` (ordered interior lookup,
+`insns.range(..=vma).next_back()` + an `[addr, addr+len)` span test); any other
+VMA inside an `executable_sections` range is `CodeUnit::Undefined`; everything
+outside the exec ranges is conservatively `CodeUnit::Data` (the keystone has no
+per-byte symbol-typed-data model, so "Data" = "not in an exec range" — the
+conservative split A's "fell into data" / AIF's gap walk need). Plus
+`is_data`/`is_undefined`/`num_instructions` and `first_undefined_after(vma)` (a
+forward scan skipping each instruction's byte span — the AIF gap walk). `exec_ranges`
+is now sorted at build for the forward scan.
+
+**Ordered function model (PR3).** `function_containing(vma)` is the ordered
+interval lookup `funcs.range(..=vma).next_back()` (nearest preceding function
+*entry*, the faithful analog of Ghidra's ordered FunctionManager); `function_at`
+(exact entry), `next_function_after(vma)` (`range(vma+1..).next()`), `function_count`.
+
+**Xref read API (PR4).** `refs_to`/`refs_from` (slices over the bidirectional
+multimap), `ref_source_iter()` (every distinct reference *source* VMA, ascending —
+the call-site worklist), `has_refs_to`, `ref_count_to`. Ordering/dedup is **locked
+at build**: each bucket is sorted (`refs_to` by source VMA then kind, `refs_from`
+by target VMA then kind) and de-duplicated on the full `(from, to, kind)` triple,
+so a target referenced twice from one site contributes one edge and `ref_count_to`
+equals the number of distinct referencing sites. Signatures match §6 verbatim so
+the future discovered-no-return consumer transliterates cleanly.
+
+**Testcase.** New `kuna-console/tests/verify_listing_queries.rs` reuses the PR0
+`fauxware` bootstrap/fixture, seeds `collect_entries ∪ {main, __libc_csu_init}`,
+builds the `Listing`, and asserts §7 PR3 + PR4: **partition** — `code_unit_at(main
+0x40071d)=Instruction`, an interior byte of the 3-byte `mov %rsp,%rbp`@0x40071e
+maps to that insn, the non-exec image base 0x400000 is `Data`, and
+`first_undefined_after(main)` (if Some) is genuinely Undefined / not an insn start;
+**function model** — `function_containing(0x40073e)=main 0x40071d`,
+`next_function_after(main)=__libc_csu_init 0x4007e0` (self-consistent with the
+ordered function set), `function_count==functions().count()`; **xref** —
+`refs_to(authenticate 0x400664)=[0x4007ae Call]`, `ref_source_iter()` includes the
+call site and is strictly ascending, `ref_count_to(authenticate)` Call count == 1
+(the sole call site), `refs_from(0x4007ae)` carries the outgoing Call, and the
+terminal `ret`@0x4007d4 files no outgoing edge. **The test RAN (not skipped)** —
+built `x86-64.sla`; it recovered **185 instructions, 16 functions, 169 ref
+sources**, with `function_containing(0x40073e)=0x40071d`,
+`next_function_after(0x40071d)=0x4007e0`, `refs_to(0x400664)=[(0x4007ae, Call)]`,
+`ref_count_to(authenticate)=1`.
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green (incl. the new `verify_listing_queries`
+console test). Structurally additive read API on a dormant module (no engine
+invocation, no flag, no `AnalysisCtx` change) — the XML datatest oracle is
+untouched; the keystone is not yet on any decompilation path.
+
+- **New:** `kuna-console/tests/verify_listing_queries.rs`.
+- **Changed:** `kuna-analysis/src/listing/mod.rs` — the partition / function-model
+  / xref read API + the build-time `finalize_refs` ordering/dedup; `exec_ranges`
+  sorted at build.
+
+### Increment 31 — Listing/xref tier PR2: engine-invoke (build the Listing at bootstrap, flag-gated)
+
+PR2 of the Listing/xref tier (`docs/listing-tier-design.md` §1.3, §7 PR2): invoke
+the keystone from the engine at bootstrap, flag-gated. PR0 built `Listing::build`
+(unit-tested in isolation); PR1 wired the `--option listing` flag end-to-end with
+`AnalysisCtx.listing: Option<&Listing>` always `None`. PR2 makes the build fire —
+behind the default-OFF flag — and populates `ctx.listing`.
+
+**What's wired.**
+- `kuna-analysis/src/passes.rs`: threaded `translate: &dyn Translate` into both
+  drivers — the live `run_default_analyses_per_pass` and (for signature symmetry)
+  `run_default_analyses`. In each, before the pass loop:
+  `let listing = arch.analysis_listing.then(|| Listing::build(&file, image, arch, translate, &seeds));`
+  then `ctx.listing = listing.as_ref()` (replacing PR1's literal `listing: None`).
+  The `Listing` is owned by the driver and outlives the pass loop (same lifetime
+  shape as `file`), borrowed read-only via `ctx.listing`.
+- The seed set is a new `pub fn listing_seeds(file)` =
+  `existing_function_addrs(file) ∪ collect_entries(file)`, `in_executable_section`
+  -filtered, sorted/deduped (design §3.1), built from the `pub(crate)` `s1_entry`
+  helpers. Exposed `pub` so the cross-crate `verify_listing_*` gates can build the
+  *exact* seed set the live driver uses.
+- `kuna-console/src/engine.rs`: the driver call (`bootstrap_from_elf`) passes the
+  engine's real decoder as the 4th arg — `sleigh.base().unwrap().translate()`
+  (a `&Sleigh`, coerced to `&dyn Translate`; `Sleigh: Translate`). The `.sla` is
+  loaded and the loadimage attached at this point, so a flag-gated build can decode
+  through it. The decode reads bytes through the engine's attached loader (driven by
+  `translate`), not through the `image` parameter (which stays unused, `_image`).
+
+**Parity safety (the key proof).** `arch.analysis_listing` defaults `false`, so
+`.then(...)` is `None` ⇒ no decode work, `ctx.listing == None`, byte-identical to
+today. With the flag on the Listing is built but **no pass consumes it yet** (the
+first consumer is PR6), so the decompiler output is unchanged. The build runs only
+on the real-ELF bootstrap path (`run_default_analyses_per_pass`'s sole caller is
+`bootstrap_from_elf`); the XML datatest path never reaches the analysis driver, so
+the 675/675 and 159/159 oracles are structurally untouched.
+
+**Build-at-load timing (honest note).** The analysis driver runs once inside
+`bootstrap_from_elf` (`load file`), and the live CLI emits `option listing on`
+*after* `load file` (the `--option` lines precede `read symbols`, not `load file`),
+so the build-at-load does not fire through the live CLI today. Wiring the flag to
+fire the build is PR6's concern (the first consumer). PR2's job is the wiring +
+the parity proof + a direct exercise of the build-at-load body through the engine's
+real `Translate`.
+
+**Proof (specs built; tests ran, not skipped).**
+- `verify_listing_core.rs` — new test `listing_build_through_engine_driver_seeds`:
+  bootstraps `fauxware`, builds the driver's exact seed set via `listing_seeds`, and
+  runs `Listing::build` through the engine's real `&dyn Translate`. Result:
+  **21 seeds → 21 functions, 228 instructions**; `function_count() > 0` and
+  `instruction_at(entry).is_some()` (and `instruction_at(main).is_some()`) all hold.
+  This proves the engine-driven build path (vs PR0's throwaway-loadimage test).
+- `verify_listing_parity.rs` — new test `listing_on_is_byte_identical_to_off`:
+  decompiles `fauxware main → print C` with the flag off (default) and with
+  `--option listing on`, and asserts the C is **byte-identical** (437 bytes,
+  identical). The Listing is built behind the flag but consumed by no pass yet.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green; `kuna catalog --check` **OK**. The flag is default-off
+so the parity oracles are structurally untouched; with the flag on the build runs
+but changes no output (payoff comes with the first consumer, PR6).
+
+- **Changed:** `kuna-analysis/src/passes.rs`, `kuna-console/src/engine.rs`,
+  `kuna-console/tests/verify_listing_core.rs`.
+- **New:** `kuna-console/tests/verify_listing_parity.rs`.
+
+### Increment 32 — Listing/xref tier PR5: ARM/MIPS context-paint in the walker
+
+The Listing's recursive-descent walker decodes through `Translate::one_instruction`
+**outside** the decompiler's normal `commit_analysis_output` paint path, so an
+alternate-ISA function (ARM Thumb / MIPS16) was misdecoded: a Thumb `compute` read
+as A32, a MIPS16 `m16_square` read as MIPS32 — garbage. PR5 paints the correct
+decode-mode context (`TMode` / `ISA_MODE`) into the engine's `ContextDatabase`
+**before** the walk decodes, so alt-ISA functions decode correctly. Internal to
+`Listing::build` (default-OFF behind `--option listing`), so it is parity-safe and
+only active when the Listing is built. x86-64 (no decode-mode context) is untouched.
+
+**How the per-address decode mode is obtained (reused, not re-derived).**
+`listing/context.rs::ContextPainter::new(file)` **calls into the existing marker
+logic** — `s1_loader::arm_markers::scan_arm_markers` (ARM `$t`/`$a` mapping symbols
++ STT_FUNC-LSB → `TMode`) and `s1_loader::mips_markers::scan_mips_isa_markers`
+(STT_FUNC-LSB / `STO_MIPS_MIPS16` `st_other` → `ISA_MODE`) — and reuses their
+`ContextPaint` facts verbatim. Both scans were promoted `fn` → `pub(crate)`; they
+self-gate on the object architecture (ARM-only / MIPS-only), so on x86-64 the
+painter collects **zero** paints and is a no-op.
+
+**Mechanism (mirrors the commit seam exactly).** `ContextPainter::paint_all` applies
+every collected paint via `Architecture::with_context_db_mut` →
+`db.set_variable(var, addr, value)` / `set_variable_region(...)` — the *same* calls
+`engine.rs::commit_analysis_output` step 6 makes. `set_variable` fills each mode
+from its marker up to the next change point, so painting only the markers covers
+every address the walk visits. The walk paints once at its start (before any
+`decode_one`), then decodes against the already-painted context DB. Gate-safe: an
+unregistered context variable (a faithful no-op for a language that does not define
+it) is swallowed via the dropped `Result`, the same swallow the commit seam relies on.
+
+**Wiring.** `walk::walk` takes `arch: &Architecture` + `painter: &ContextPainter`
+and paints before the worklist loop; `Listing::build_with_meta` constructs the
+painter from the `object::File` and threads both into the walk.
+
+**Proof (specs built with `make specs`; the gate RAN, not skipped).**
+`kuna-console/tests/verify_listing_context.rs` bootstraps each fixture for a real
+`Translate`, builds the Listing seeded at the alt-ISA function's entry, and asserts
+the seed decodes in the alternate ISA — with a **control**: the same seed decoded
+through a fresh bootstrap's raw `Translate` (no Listing, no paint = the default
+mode), asserting the painted decode DIFFERS.
+- **ARM Thumb** (`arm_thumb_linked_le32`, `compute` @ 0x100b8): the Listing decodes
+  `push` (len **2**, Thumb); the un-painted A32 control reads `addlt` (len **4**) —
+  a different, garbage instruction. The body carries the `*3` shift (`lsl`).
+- **MIPS16** (`mips16_le32`, `m16_square` @ 0x400130): the Listing decodes `mult`
+  (len **2**, MIPS16) → `mflo` (2) → `jr`+delay-slot (4, the §4.3-gotcha-3 fold) =
+  the 8-byte body; the un-painted MIPS32 control **fails to decode the bytes at all**
+  ("Unable to resolve constructor") — the strongest control: they simply are not
+  MIPS32.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the 2 new `verify_listing_context` cases). The
+paint is internal to the default-OFF Listing build, so the parity oracles are
+structurally untouched (no new `--option`, catalog unchanged).
+
+- **Changed:** `kuna-analysis/src/listing/mod.rs`, `kuna-analysis/src/listing/walk.rs`,
+  `kuna-analysis/src/s1_loader/arm_markers.rs` (`scan_arm_markers` → `pub(crate)`),
+  `kuna-analysis/src/s1_loader/mips_markers.rs` (`scan_mips_isa_markers` → `pub(crate)`).
+- **New:** `kuna-analysis/src/listing/context.rs`,
+  `kuna-console/tests/verify_listing_context.rs`.
+
+### Increment 33 — Listing/xref tier PR6: discovered-no-return consumer (the first Listing consumer) ✅
+
+The payoff. The first analyzer built on the Listing/xref model — the kuna analog of
+Ghidra's `FindNoReturnFunctionsAnalyzer` ("Non-Returning Functions — Discovered").
+It finds **custom** no-return wrappers the static name-lists cannot catch (a local
+`die()` that tail-calls `exit`), by **flow evidence** over the program-wide Listing,
+and marks them no-return through the EXISTING `NoReturnFact` commit seam. Two parts:
+a build-timing fix (PART A) + the consumer (PART B).
+
+**PART A — the build-timing fix (the mechanism).** PR2 flagged it: the live CLI emits
+`option listing on` *after* `load file`, but the analysis driver
+(`run_default_analyses_per_pass`) runs *at load*, so a Listing gated on
+`arch.analysis_listing` never builds through the CLI (the flag is still default-off
+at load). The fix mirrors the **Increment 13** deferred-commit precedent. At load,
+`bootstrap_from_elf` now also **stashes the image bytes + path** on `ConsoleProgram`
+(`analysis_image`); the *build* of the Listing — and the run of any Listing-consumer
+pass — is **deferred to `commit_pending_analysis`** (reached at `read symbols`, AFTER
+the CLI's `option` lines). There, gated on `arch.analysis_listing` (now in effect),
+the stashed bytes are re-parsed, the Listing is built with funcsym names +
+Known-no-return seed metadata (`Listing::with_noreturn_seeds`), the new
+`passes::run_listing_consumers` runs the consumer over it, and its (per-pass gated)
+facts merge into the same `AnalysisOutput` the deferred commit already commits. The
+consumer's facts thus flow through the **unchanged** `commit_analysis_output`
+no-return arm (`find_function_across_scopes`/`query_global_function` →
+`set_function_no_return`); flow-repair / dead-code elimination is INHERITED from the
+engine. Default (listing off) ⇒ the whole deferred block is skipped ⇒ byte-identical
+to today; the XML path stashes no image ⇒ structural no-op.
+
+**PART B — the consumer (`s1_noreturn_disc`, id `noreturn_disc`, default-OFF).** A
+new gated `AnalysisPass` whose `run` short-circuits to empty when
+`ctx.listing.is_none()`. The evidence-tally fixpoint over the Listing (design §6 +
+Ghidra):
+- **Rule 1 (call-site evidence):** a callee is no-return when **≥3** of its call
+  sites (`refs_to(callee)` Call edges) show *no valid fall-through* — the byte after
+  `call` is not a decoded instruction start (`!is_instruction_start`), or is data
+  (`is_data`), or is *another* function's entry (`function_at(fall)`), or the call
+  itself has no fall-through (a lowered tail jump). (Ghidra's evidence threshold = 3.)
+- **Rule 2 (fixpoint promotion):** a function whose every terminal path is a call to
+  an already-discovered-no-return function, *with no returning path* (no `RETURN`
+  instruction in its span), is itself no-return — so a wrapper-of-a-wrapper converges.
+- Skips callees already modeled no-return (`function_at(t).has_no_return`, seeded from
+  the Known pass) or call-fixup'd. Emits `NoReturnFact { addr, name }` (NO new commit
+  arm).
+
+**The END-TO-END (the whole point — real, not faked).** Fixture
+`noreturn_disc_x86_64` (`+.c`), `gcc -O1 -no-pie -fno-pic`: a `static void
+die(const char*)` that `fprintf`s then `exit(1)`, NOT marked
+`__attribute__((noreturn))`, called from **four** functions (`compute_a/b/c/d`). At
+`-O1` gcc emits nothing after each `call die` — the byte after the call is the next
+function's entry — so all four call sites show no-valid-fall-through (≥3). `compute_a`,
+decompiled:
+
+*BEFORE (default, flags off)* — `die` is treated as returning, so the decompiler
+follows the fall-through past `call die` through `compute_b`/`compute_c`/`compute_d`
+into `main` (massive dead code merged into one body):
+```c
+undefined16 compute_a(int4 a0,void *a1,unsigned long a2)
+{ ... if (0 <= a0) { ...; return v3; }
+  v13 = 0x40200f;
+  die();                       /* treated as returning */
+  if (v13 != 0) { ... return v9; }
+  v14 = "b: zero"; die("b: zero");
+  ...                          /* compute_c, compute_d, main bodies all inlined */
+  v5 = compute_a(); ... __printf_chk(1,"%d %d %d %d\n",...); return v2 << 0x40; }
+```
+
+*AFTER (`--option listing on --option noreturn_disc on`)* — `die` is concluded
+no-return; the engine's inherited repair eliminates the dead code:
+```c
+int4 compute_a(int4 a0)
+{ if (0 <= a0) { return a0 * 2; }
+                    /* WARNING: Subroutine does not return */
+  die("a: negative"); }
+```
+
+**Gating invariants (the parity proof).** Verified directly: `noreturn_disc on` +
+`listing off` ⇒ identical to default (no Listing to read); `listing on` +
+`noreturn_disc off` ⇒ identical to default (Listing built, consumer gated off). Only
+BOTH flags on changes output. So the default path is byte-identical to today.
+
+**Result (specs built; tests ran, not skipped).** New e2e
+`verify_noreturn_disc.rs` (3/3): the before/after assertion (output differs,
+flags-on carries the no-return terminator, default does not), the flags-off baseline,
+and the `die`-tail-calls-`exit` sanity. `make test` **675/675 PARITY OK**;
+`make test-stages` **159/159 PARITY OK**; `make rust-test` green; `kuna catalog
+--check` **catalog OK**. settable_count **35 → 36** (the `noreturn_disc` gate);
+`stage_catalog.json` fixture + `docs/assertions.md` regenerated; the count-fixture
+ripple (kuna_stages `settable_count_is_36`, `…suppressed_for_14`,
+`…brackets_and_commas` 35 commas, `catalog_bytecompat` 36) updated.
+
+- **Divergence/LOSS:** none to the parity oracles — default behavior unchanged
+  (default-OFF, real-ELF-path-only, gated by BOTH `listing` and `noreturn_disc`). The
+  consumer is a flow heuristic, hence default-off behind its own flag (faithful to
+  Ghidra's `FindNoReturnFunctionsAnalyzer.setDefaultEnablement(false)`). Computed/
+  indirect calls contribute no evidence (no static callee); jump-table resolution
+  stays deferred (design §8).
+- **New:** `kuna-analysis/src/s1_noreturn_disc/mod.rs`,
+  `kuna-console/tests/verify_noreturn_disc.rs`, the `noreturn_disc_x86_64` fixture
+  (`+.c`).
+- **Changed:** `kuna-analysis/src/{lib.rs, passes.rs, listing/mod.rs}`,
+  `kuna-console/src/engine.rs`, `kuna-decomp/src/infra/architecture.rs`,
+  `kuna-decomp/src/p0_knowledge/options.rs`, `kuna-decomp/stages.toml`,
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
+  `kuna-decomp/tests/{catalog_bytecompat.rs, fixtures/stage_catalog.json}`,
+  `docs/assertions.md`.
+
+### Increment 35 — Multi-format loader PR-1: the `ObjectFormat` seam (ELF lifted verbatim)
+
+**Premise.** kuna is ELF-only; the goal is "a decompiler for most file formats"
+(PE/Mach-O/COFF). The canonical spec for the whole expansion is now
+`docs/multiformat-loader-design.md` (the per-format PR plan, §0–§9, every file:line
+re-verified against the live tree). This is **PR-1**: a PURE REFACTOR that lifts
+today's ELF-only load logic behind a trait with ZERO behavioral change — the
+foundation every later format-PR plugs into.
+
+**The seam.** New `kuna-analysis/src/s1_loader/format/` — `mod.rs` (the
+`ObjectFormat` trait, `FormatKind`, `ImportSym`, `detect()`, and a free
+`resolve_imports(file, bytes)` dispatch fn) and `elf.rs` (`ElfFormat`). `ElfFormat`
+is **today's logic moved verbatim**: `section_bits` = the old `section_kind_flags`
+body; `resolve_imports` calls the unchanged `elf_plt::resolve_plt_imports`;
+`compiler_model` returns the same `gcc`/`default` tokens; `const_ranges` =
+`mips_got_const_ranges`. Format knowledge lives in the impl, not sprinkled through
+shared passes.
+
+**The three substituted points in `ObjectLoadImage::from_bytes`** (everything else
+verbatim): (B) the non-ELF reject → `let fmt = format::detect(&file)?;`; (C) the
+section snapshot → `fmt.section_bits(...)`; (F) the PLT call → `fmt.resolve_imports(
+&file, bytes)` (plus the MIPS const-ranges → `fmt.const_ranges(...)`). (D) `language_id_for`
+now threads the `compiler_model` from the seam — but the ELF id strings are
+**byte-identical** (ELF→`gcc`/`default`), so it's a structural change with no output
+change. The arch→stem match and `strip_version`/MIPS arms are unchanged. The id-string
+shape is now composed by a shared `compose_language_id`, reused by `language_id_for`
+and the new `elf_language_ids()` enumerator so the resolve-in-DB gate cannot drift.
+
+**The two other call sites** — `s1_entry::existing_function_addrs` and
+`s1_loader::noreturn::scan_noreturn` — now call the free `format::resolve_imports(
+file, bytes)` (no format branch; just the dispatch fn). `bytes` is threaded via a new
+`AnalysisCtx.bytes` field (all three ctx-construction sites already owned `bytes`) and
+a `bytes` param on `existing_function_addrs`/`collect_entries`/`listing_seeds`; the ELF
+resolver ignores it (it reads sections off `file`), but the seam carries it for the
+PE/Mach-O typed-reparse PR-2 needs.
+
+**ELF-only-reachable.** `detect()` rejects everything but ELF (PE/Mach-O/COFF impls
+and the `object` pe/macho/coff features are PR-2), and the engine dispatch still routes
+only `\x7fELF` to the object loader — so the rejected arm is unreachable on the live
+path and nothing PE/Mach-O is constructible from a real binary yet.
+
+**Faithfulness proof (the whole point).** `make test` **675/675 PARITY OK**;
+`make test-stages` **159/159 PARITY OK**; `make rust-test` green — all UNCHANGED. Every
+existing ELF fixture (`fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64`,
+`plt_mips32`, `cpp_mangled_x86_64`, the cross-arch entry/plt fixtures, …) now runs
+through the trait path and is byte-identical. New tests: a kuna-analysis unit
+(`ElfFormat::compiler_model`/`section_bits` reproduce the old tokens/bits exactly) and
+a console gate `verify_elf_language_ids.rs` (every id `language_id_for` can produce —
+x86-64/x86-32/ARM/AArch64/MIPS/RISCV/SPARC/PPC, both endiannesses where the vendored
+`.ldefs` declare a stem — resolves in `scan_language_database`).
+
+- **Divergence/LOSS:** none to the parity oracles — the XML datatest path never reaches
+  the object loader, and the ELF arm is the old code lifted verbatim. The only textual
+  change is the non-ELF reject message (`detect()`'s "unsupported object format" vs the
+  old "not an ELF object"), and that arm is unreachable on the live path (the engine
+  never hands a non-ELF to the object loader), so no output changes.
+- **One chokepoint that didn't lift as cleanly as the plan expected:** §1.3 framed the
+  free `resolve_imports(file, bytes)` as a drop-in at the two non-`from_bytes` call
+  sites, but `bytes` was not in scope at `existing_function_addrs`/`scan_noreturn`
+  (their callers carry `file`-only). Threading it required an `AnalysisCtx.bytes` field
+  + a `bytes` param down `existing_function_addrs`/`collect_entries`/`listing_seeds`
+  (and the cross-crate `verify_listing_*` callers). Mechanical, faithful (ELF ignores
+  `bytes`), and exactly the "thread bytes as needed" the plan called for — just a wider
+  ripple than the "three substituted lines" framing suggested.
+- **New:** `kuna-analysis/src/s1_loader/format/{mod,elf}.rs`,
+  `kuna-console/tests/verify_elf_language_ids.rs`, `docs/multiformat-loader-design.md`.
+- **Changed:** `kuna-analysis/src/{loadimage_object.rs, pass.rs, passes.rs,
+  s1_loader/mod.rs, s1_loader/noreturn.rs, s1_entry/mod.rs}`,
+  `kuna-console/tests/{verify_listing_core.rs, verify_listing_queries.rs}`.
+
+### Increment 36 — Multi-format loader PR-2: object PE/Mach-O/COFF features + format dispatch (behind --experimental-formats)
+
+**Premise.** PR-1 (Increment 35) lifted the ELF-only load logic behind the
+`ObjectFormat` seam with ELF the only constructible impl. This is **PR-2**: turn
+on `object`'s PE/Mach-O/COFF readers, add the three sibling format skeletons, and
+wire the engine dispatch to route their magics to the object loader — all
+**behind `--experimental-formats`** so the default path stays ELF-only and
+byte-identical. The `object` parse features were the hard blocker (chokepoint A,
+design §1.1); flipping them on + the dispatch is the scaffolding every later
+format-PR plugs into.
+
+**`object` features (chokepoint A).** `decompiler/Cargo.toml`: the `object` crate
+features `["read_core","elf","std"]` → `+["pe","macho","coff"]`, so
+`object::File::parse` physically recognizes PE/Mach-O/COFF. **`Cargo.lock`
+unchanged** — the new features pull no new crate versions or transitive deps (the
+PE/Mach-O/COFF readers share `object`'s existing deps), the offline-gate-safe
+outcome. `cargo build --offline` confirms zero downloads.
+
+**The three skeletons** (`s1_loader/format/{pe,macho,coff}.rs`). Each implements
+the four `ObjectFormat` methods: `kind()`; `compiler_model()` per §2 — `PeFormat`
+→ `windows`, `MachOFormat` → `gcc` (x86-64 is System V AMD64, the *same* cspec
+Ghidra labels `gcc` — NOT an invented token) / `default` (arm64), `CoffFormat`
+→ `windows` (COFF objects are overwhelmingly MSVC); `section_bits()` — PE/COFF
+share a `coff_section_bits` helper keyed on the COFF `Characteristics`
+(`IMAGE_SCN_MEM_EXECUTE`/`_WRITE`/`CNT_UNINITIALIZED_DATA`/`CNT_CODE`), Mach-O
+keys on the neutral `SectionKind` + the section-type/`S_ATTR_PURE_INSTRUCTIONS`
+bits (Mach-O carries no per-section RWX — that lives in the segment initprot);
+`resolve_imports()` returns **empty** (real IAT/`__stubs` naming is PR-4/PR-7).
+`detect()` now constructs all four (the PR-1 todo/error arms removed).
+
+**Dispatch (chokepoint E).** `engine.rs`: `bootstrap_from_elf` → renamed
+`bootstrap_from_object` (it was already 95% format-neutral; all callers + doc
+references updated, incl. the cross-crate `verify_*` test imports). The bare
+`ELF_MAGIC` test → `is_object_binary(&bytes)` per §1.4 (ELF + the four Mach-O
+byte-orders + fat `0xcafebabe` + `MZ` for PE + a known-`IMAGE_FILE_MACHINE_*`
+prefix for bare COFF). **By default `is_object_binary` admits ONLY ELF** — the
+non-ELF magics are gated on `experimental_formats_enabled()` (the
+`KUNA_EXPERIMENTAL_FORMATS` env var). So the default `load file` dispatch is
+byte-identical: every non-ELF input still routes to the XML branch exactly as
+before, and the XML/`bootstrap_program` branch (Invariant 1) is untouched.
+
+**The flag.** `--experimental-formats` is exposed two ways for one mechanism: the
+`KUNA_EXPERIMENTAL_FORMATS` env var (read live in `bootstrap_from_file`, so the
+in-process e2e and the `decomp_dbg`/`decomp_test_dbg` binaries all honor it), and
+a `kuna decompile --experimental-formats` CLI flag that exports it onto the spawned
+`decomp_dbg` subprocess. The env var is the clean seam across the subprocess
+boundary the CLI driver uses.
+
+**Compiler-model fallback (§2.2).** If a format's chosen model id isn't vendored
+for an arch (e.g. a hypothetical `ARM:...:windows` with no `ARM_win.cspec`), the
+loader composes a *fallback* id (the same stem with the model dropped to the
+per-arch default), exposed via `ObjectLoadImage::fallback_arch_id()`;
+`bootstrap_from_object` retries with it when the primary doesn't resolve and no
+explicit `--target` was given — wrong calling-convention details beat no
+decompile. ELF carries no fallback (its primary already uses the default model),
+so the established path is unaffected. (For the four headline arches every
+PE/Mach-O id resolves *directly* — the fallback is the safety net, not the path.)
+
+**Fixtures (built in-container today, no new packages).** `pe_min.obj` (`clang
+-target x86_64-pc-windows-gnu -c` → an Intel amd64 COFF object, `format=Coff`) and
+`macho_min.o` (`clang -target x86_64-apple-macos11 -c` → a relocatable Mach-O,
+`format=MachO`), both in `kuna-analysis/tests/fixtures/`. Section flags + function
+offsets pinned from the `object`-crate view (`the_answer`@0x0, `helper`@0x60 PE /
+`_helper`@0x50 Mach-O).
+
+**Tests (both ran, not skipped — the `x86` `.sla` is built).**
+- **Format unit tests** (in `pe.rs`/`macho.rs`/`coff.rs`): each `compiler_model`
+  returns the right token per arch; each `section_bits` maps an exec section to
+  CODE|READONLY and a writable section to not-READONLY (8 tests).
+- **Language-id resolves gate** (`verify_elf_language_ids.rs`, extended): every id
+  the PE/Mach-O/COFF loaders produce resolves in `scan_language_database` (or its
+  §2.2 fallback does), and the headline ids resolve *directly* — PE/COFF →
+  `x86:LE:64:default:windows`, Mach-O → `x86:LE:64:default:gcc` /
+  `AARCH64:LE:64:v8A:default`. New producers `pe_language_ids`/`macho_language_ids`
+  /`coff_language_ids` derived from the same `compose_language_id` the loader uses.
+- **e2e** (`kuna-console/tests/verify_object_formats.rs`, 2 tests): with the flag
+  on, each fixture (1) parses (no "not an ELF object"), (2) maps sections —
+  `section_snapshot()` shows a CODE|READONLY `.text`/`__text`, (3) selects the
+  right spec (PE→windows, Mach-O→`gcc`, asserted on the exact id), (4) disassembles
+  real x86-64 mnemonics out of `.text`/`__text`. Imports empty (PR-4/PR-7). Each
+  test also proves the **default-off** path: with the env var unset the same
+  fixture is rejected (routed to the XML branch), confirming the gating.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the 8 unit + 2 language-id + 2 e2e tests). The
+default `kuna decompile` on an ELF (`fauxware main`) is **byte-identical** with and
+without `--experimental-formats` — the flag is a pure no-op on ELF (ELF is always
+admitted).
+
+- **Divergence/LOSS:** none to the parity oracles — the XML datatest path never
+  reaches the object loader (Invariant 1, untouched), and the non-ELF magics are
+  flag-gated off by default, so default dispatch is byte-identical. The PR-1 reject
+  message and the new PE/Mach-O/COFF arms are reachable only under
+  `--experimental-formats`.
+- **New:** `kuna-analysis/src/s1_loader/format/{pe,macho,coff}.rs`,
+  `kuna-console/tests/verify_object_formats.rs`,
+  `kuna-analysis/tests/fixtures/{pe_min.obj, macho_min.o}`.
+- **Changed:** `decompiler/Cargo.toml`,
+  `kuna-analysis/src/{loadimage_object.rs, s1_loader/format/mod.rs}`,
+  `kuna-console/src/engine.rs`, `kuna-cli/src/{main.rs, decompile.rs}`,
+  `kuna-console/tests/verify_elf_language_ids.rs`, the `bootstrap_from_elf`→
+  `bootstrap_from_object` rename across `kuna-console/{src/ifacedecomp.rs,
+  tests/verify_*.rs}` + `kuna-analysis/src/{pass.rs, listing/decode.rs}` +
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 37 — Multi-format loader PR-3+4: PE linked-exe loading + IAT import naming (the PE headline)
+
+**Premise.** PR-2 (Increment 36) proved PE/Mach-O *objects* parse + map + select
+the right spec behind `--experimental-formats`, with imports empty. This is the
+**PE headline** (PR-3 ∪ PR-4): a **linked Windows PE32+** exe loads and decompiles
+a function, and its libc imports render **named** (`puts`/`printf`) — the first
+non-ELF binary kuna names imports on. PR-3 (loader proof) needed no new loadimage
+fix — `object` surfaces the PE ImageBase+RVA transparently, so the linked exe
+loads through the same `bootstrap_from_object` path the PE object did; PR-4 (IAT
+naming) is the real new logic, in a new `s1_loader/pe_iat.rs`.
+
+**The IAT walk (`s1_loader/pe_iat.rs`, design §3.2).** `PeFormat::resolve_imports`
+(was empty) now calls `resolve_pe_imports(file, bytes)`. It branches on
+`FileKind::Pe32`/`Pe64` to re-parse with the typed `PeFile32`/`PeFile64` (the
+neutral `object::File::imports()` gives name+library but **no slot address** — the
+typed parser is required, design §3.2 risk row), then walks the Import Directory
+pairing the INT (`original_first_thunk`, the names) and IAT (`first_thunk`, the
+slot table) **in lockstep**: the `i`-th name belongs to the slot at
+`image_base + first_thunk_rva + i*ptr` (`ptr`=8 for PE32+, 4 for PE32). Each slot
+→ `ImportSym { addr: slot_va, name }` — exactly the ELF GOT-slot analog, so the
+engine constant-folds a `call [slot]` to the name (arch-independent, no per-arch
+stub decode). `Import::Ordinal(n)` synthesizes `<DLL-stem>_Ordinal_<n>` (§3.5).
+`file.exports()` are registered additively as funcsyms. Pure/total/never-error:
+non-PE / no-import-dir / unparsable → empty `Vec`.
+
+**The MinGW thunk wrinkle (the load-bearing PR-4 piece).** MinGW routes a *direct*
+`call thunk` to a one-instruction veneer `jmp [rip+disp]` (`FF 25 <disp32>`) that
+jumps through the IAT slot — so naming only the slot leaves `call thunk` rendering
+`sub_<thunk>`. `pe_iat` therefore *also* decodes the `FF 25` veneers over the
+executable sections and names the **thunk entry** with its target slot's import
+name. The decode is the same `FF 25` recovery as the ELF x86-64 PLT
+(`elf_plt::decode_x86_64`): x64 RIP-relative (`slot = next_insn + disp32`) / x86
+absolute (`slot = disp32`), self-correcting (a veneer whose target isn't a known
+import is left alone). x86-only (the opcode is x86); other arches no-op the thunk
+pass (the IAT-slot naming still covers their indirect calls).
+
+**Fixtures (MinGW, in-container — `x86_64-w64-mingw32-gcc` shipped by `kuna-dev`).**
+`pe_imports.c` = a `main` that calls `puts("hello")` + `printf("%d\n", argc)`.
+- `pe_imports.exe` (non-stripped, `-O1`) — the headline. ImageBase `0x140000000`,
+  `main`@`0x140001592`, the `puts` thunk@`0x140007240` (`FF 25` → `__imp_puts`
+  IAT slot@`0x14000d33c`), the local MinGW `printf` wrapper@`0x140001550`.
+- `pe_imports_stripped.exe` (`-s`) — the PR-4 proof: symbols gone, so the call to
+  the `puts` thunk is named **only** by the IAT walk + thunk decode.
+
+**Before → after** (the headline; `kuna decompile … --experimental-formats`):
+On the **stripped** PE (the clean PR-4 delta — `main` at `0x140001592 --addr`):
+```c
+// BEFORE (resolve_imports empty)        // AFTER (PR-4 IAT/thunk naming)
+sub_140007240(0x140009000);              puts(0x140009000);
+sub_140001550(0x140009006,a0);           sub_140001550(0x140009006,a0);  // local printf wrapper, not an import — correctly unnamed
+```
+On the **non-stripped** `pe_imports.exe` (`main` by name) the call renders
+`puts(0x140009000)` / `printf(0x140009006,a0)` — here the COFF symtab already
+names the thunk/wrapper, and PR-4 is additive (it covers the IAT-slot path a
+`call [slot]` form would take). `main` calls `puts` **via the `0x140007240` thunk**
+(a direct `call thunk`), named by the `FF 25` veneer decode → `__imp_puts` slot
+→ `puts`; `printf` is a *local* MinGW wrapper (named from the symtab, not an
+import).
+
+**Decompile speed.** `pe_imports.exe main`: **~0.12–0.25 s** wall (`time kuna
+decompile`, end-to-end incl. the `decomp_dbg` subprocess spawn); the stripped
+`main` by addr is the same range. On par with the ELF baseline (`fauxware main`,
+~0.15 s on the same box) — both are dominated by process startup + the tiny
+function's decompile, and the timings overlap inside the measurement noise. PE
+loading is **not** materially slower than ELF: the IAT walk is a single
+Import-Directory scan + one `FF 25` sweep over `.text` (O(imports + text bytes),
+once at load).
+
+**Tests (the e2e RAN, not skipped — the `x86` `.sla` is built).**
+- **`pe_iat` unit tests** (synthetic, mirroring `elf_plt.rs`'s decoder tests, 4):
+  the `FF 25` thunk decode both widths (x64 RIP-relative + x86 absolute), an
+  unknown-slot veneer left alone, and the ordinal-name synthesis
+  (`ws2_32.dll`+115 → `ws2_32_Ordinal_115`).
+- **e2e** (`kuna-console/tests/verify_pe_imports.rs`, 2): (1) the non-stripped
+  linked exe loads (Windows x86-64 spec), resolves `main`/`puts`, and decompiles
+  `main` to `puts(`/`printf(`; (2) the stripped exe names the `puts` thunk via the
+  IAT walk (renders `puts(`, not `sub_140007240`) while leaving the local `printf`
+  wrapper `sub_<addr>`. Test 1 also proves the **default-off** path (PE rejected
+  without the flag). A `Mutex` serializes the two tests' env-var-sensitive bodies
+  (`KUNA_EXPERIMENTAL_FORMATS` is process-global).
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the 4 unit + 2 e2e). Default-off ⇒ ELF
+byte-identical (the PE path is unreachable without `--experimental-formats`; the
+ELF/XML oracles never reach the object loader — Invariant 1). **After this, PR-5
+(COFF) and the on-by-default flip for PE are the remaining PE-arm work.**
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader).
+- **New:** `kuna-analysis/src/s1_loader/pe_iat.rs`,
+  `kuna-console/tests/verify_pe_imports.rs`,
+  `kuna-analysis/tests/fixtures/{pe_imports.exe, pe_imports_stripped.exe}` (+ the
+  `pe_imports.c` source recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_loader/{mod.rs, format/pe.rs}`,
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 38 — Multi-format loader PR-5: COFF object support
+
+**Premise.** PR-3+4 (Increment 37) delivered the PE *image* headline (a linked PE32+
+loads + names IAT imports). PR-5 closes the PE arm with the **object** case: a
+pre-link **COFF object** (`.obj`) loads under `--experimental-formats` and
+decompiles a function **resolved by its COFF-symbol-table name**. A COFF object has
+**no IAT and no resolved imports** — externals are unresolved *symbols*, not
+addresses — so the value here is the COFF symtab (defined function names) + the
+format-agnostic passes (strings / demangle / no-return-name / protos) riding a COFF
+object, **not** import naming.
+
+**Object vs image (design §3.6, documented in the `CoffFormat` module doc).**
+`object` reports two things as `BinaryFormat::Coff`: a pre-link **object**
+(`.obj`/`.o`, the common case and what `CoffFormat` is for) and, rarely, a
+COFF-flavored **image**. A *normal* linked PE reports as `BinaryFormat::Pe` and
+routes through the PE arm (`PeFormat`, the IAT-naming path) — never reaching
+`CoffFormat`. `CoffFormat::resolve_imports` returns **empty** by design (the PR-2
+skeleton, now finalized): a pre-link object has nothing to resolve imports *to*, so
+the undefined external (a `puts` symbol) is simply absent from the funcsym set.
+Section flags reuse the PE arm (`pe::coff_section_bits` — PE and COFF share the
+COFF `Characteristics` model); `compiler_model` → `windows` (COFF objects are
+MSVC-flavored), with the `compose_language_id` fallback to `gcc`/`default` if an
+arch lacks a `windows` id.
+
+**The one real code change — the defined-function-at-VMA-0 fix.** A relocatable
+`.obj` places its first defined function at section-relative VMA 0
+(`compute @ .text+0`). The defined-funcsym source in `loadimage_object.rs` (source
+#1) used to skip import placeholders on `addr == 0` (the ELF UND convention,
+`st_value == 0`) — which would **silently drop** `compute`. The skip now keys off
+`Symbol::is_undefined()` instead: the format-faithful predicate that still drops the
+undefined `puts` external while keeping a legitimately-defined COFF function at VMA
+0. **Byte-identical on every ELF** — verified against the `object`-crate view of
+`fauxware` (all UND import syms `puts@@GLIBC`/`printf@@GLIBC`/… are exactly the
+`is_undefined()` ones, every defined function is `is_undefined()==false`) and the
+relocatable-ELF object `arm_thumb_le32.o` (first function at `0x1`, not 0). Applied
+to the `.dynsym` source (#3) too for consistency (no behavioral effect — COFF has no
+dynamic symbols, and ELF dynsym UND entries are `is_undefined()`). The 13
+`loadimage_object` ELF funcsym units pass unchanged.
+
+**Fixture (`coff_obj.obj`, Intel amd64 COFF, <1 KB — `clang` in `kuna-dev`, no new
+packages).** `clang -target x86_64-pc-windows-gnu -O1 -c coff_obj.c`. `coff_obj.c`
+= `int compute(int x){ return x*3+1; }` / `int run(int n){ const char *s="hi";
+puts(s); return compute(n)+(int)s[0]; }`. Confirmed via container
+`x86_64-w64-mingw32-objdump -t`/`-d`: COFF symtab carries `compute`@`.text`+0x0
+(`lea (rcx,rcx,2),eax; add 1` = `x*3+1`, Windows x64 first arg in rcx), `run`@+0x10,
+`puts` an **undefined** external (section 0, an `IMAGE_REL_AMD64_REL32` `puts`
+reloc on the `call`), and the `"hi"` literal in `.rdata` (size 3, the string pass's
+input).
+
+**Before → after** (`kuna decompile coff_obj.obj compute --experimental-formats`):
+```c
+// BEFORE (PR-2/PR-5 absent)              // AFTER (this PR)
+.obj → "not an ELF object" (rejected)     int4 compute(int4 a0) { return a0 * 3 + 1; }
+```
+The `.obj` was rejected (without the flag it still routes to the XML branch, which
+cannot parse it — the default-off proof). After PR-5 it loads with the Windows
+x86-64 spec, and `compute`/`run` resolve **by COFF-symtab name** and decompile
+(`run` → `a0 * 3 + 0x69`; the `puts(s)` external call has no resolved address/proto
+so the unresolved-side const-folds, faithful for a pre-link object).
+
+**Decompile speed.** `coff_obj.obj compute` (by name): **~0.15–0.16 s** wall
+(`/usr/bin/time kuna decompile`, end-to-end incl. the `decomp_dbg` subprocess spawn,
+3-run median 0.16 s, 51 MB RSS). On par with the ELF baseline (`fauxware main`,
+~0.15 s) and the PE headline (Increment 37, ~0.12–0.25 s) — dominated by process
+startup + spec load + the tiny function's decompile; COFF-object load is a single
+section/symbol snapshot (no IAT walk), so it adds nothing over ELF.
+
+**Tests (the e2e RAN, not skipped — the `x86` `.sla` is built).**
+- **e2e** (`kuna-console/tests/verify_coff_object.rs`, 2 tests): (1) the COFF object
+  loads (Windows x86-64 spec), `compute`/`run` resolve as funcsyms, the **undefined
+  `puts` does NOT** (no IAT, §3.6), and `load function compute` → `print C`
+  decompiles `compute` named to `* 3 + 1`; (1) also proves the **default-off** path
+  (the `.obj` rejected without `--experimental-formats`). (2) the second defined
+  function `run` also resolves by name + decompiles (the §4 symbol-source table
+  carries *every* defined function, not just the first). A `Mutex` serializes the
+  two tests' `KUNA_EXPERIMENTAL_FORMATS`-sensitive bodies (process-global env).
+- The existing `verify_object_formats.rs` (PR-2) already covers `pe_min.obj`
+  parse/map/disassemble; this gate adds the **named-function-by-symtab** half PR-5
+  is about.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the new 2-test e2e). Default-off ⇒ ELF
+byte-identical (the COFF path is unreachable without `--experimental-formats`; the
+XML datatest path never reaches the object loader — Invariant 1; the
+`is_undefined()` funcsym change is byte-identical on every ELF). **This completes
+the PE arm of the multi-format loader (PE image + PE/COFF object); Mach-O is the
+remaining format.**
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is flag-gated;
+  the XML datatest path never reaches the object loader; the funcsym predicate
+  change is ELF-byte-identical).
+- **New:** `kuna-console/tests/verify_coff_object.rs`,
+  `kuna-analysis/tests/fixtures/coff_obj.obj` (+ the `coff_obj.c` source recorded in
+  the fixtures README).
+- **Changed:** `kuna-analysis/src/loadimage_object.rs` (the `is_undefined()`
+  funcsym skip), `kuna-analysis/src/s1_loader/format/coff.rs` (module doc finalized),
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 34 — Go pclntab function-name recovery (GolangSymbolAnalyzer)
+
+The kuna analog of Ghidra's `GolangSymbolAnalyzer` (the **name-recovery** half).
+Previously `golang-symbols` was classified ⛔ ("large subsystem, Go-only");
+greenlit and now done. A Go binary embeds a `pclntab` (the "PC → line/name"
+table) so the runtime can produce stack traces; because the runtime needs it, it
+**survives stripping**. Without parsing it, every Go function decompiles as
+`sub_<addr>`.
+
+**BEFORE.** A (stripped) Go binary's functions render `sub_<addr>` — kuna never
+parsed the pclntab, and a `-ldflags=-s -w` build has no `.symtab` at all, so
+there is no name source for `main.main`, `main.compute`, `runtime.*`, ….
+
+**AFTER.** `main.main`, `main.compute`, and the `runtime.*` set render NAMED,
+recovered from the pclntab — even on a stripped binary where the pclntab is the
+*only* possible name source.
+
+**The pass (`s1_pclntab::GoPclntabPass`, id `gopclntab`, default-ON).** A new
+`AnalysisPass`:
+- **Locate the header:** the `.gopclntab`/`gopclntab` section start; else the
+  `runtime.pclntab` symbol; else a validated byte scan of `.rodata`/
+  `.data.rel.ro`/`.noptrdata`/`.data` (the kuna analog of
+  `GoPcHeader.getPcHeaderAddress` + `findPcHeaderAddress`). Each candidate is
+  confirmed by `probe_header` (the `isPcHeader` predicate: pad bytes 0,
+  `minLC ∈ {1,2,4}`, `ptrSize ∈ {4,8}`, magic matches a known version read
+  LE-then-BE — that LE/BE probe is also how endianness is recovered).
+- **Parse across versions:** the four header magics — go1.2 `0xfffffffb`, go1.16
+  `0xfffffffa`, go1.18 `0xfffffff0`, go1.20 `0xfffffff1` (1.19/1.21+ share the
+  1.20 magic and layout). The layout differs by family:
+  - **go1.18+:** the header carries `textStart`; the functab is `(entryoff: u32,
+    funcoff: u32)` pairs (stride 8); entry PC = `textStart + entryoff`; the
+    `_func` at `funcdata_base + funcoff` has `nameoff: i32` at offset 4 (after the
+    `entryoff: u32`).
+  - **go1.16/1.17:** no `textStart`; the functab is `(entry: uintptr, funcoff:
+    uintptr)` (stride `2*ptrSize`); entry PC is the **absolute** `entry`; `nameoff`
+    is at offset `ptrSize` in the `_func`.
+  - **go1.2…1.15:** the legacy direct-functab layout — 8-byte header, `nfunc`
+    (uintptr) at +8, then the `(entry, funcoff)` pairs; the name table IS the
+    pclntab blob (no separate `funcnametab`), `nameoff` indexing the whole blob.
+  Names are NUL-terminated UTF-8 read from `funcnametab + nameoff`. Inline
+  sentinels (`entryoff == 0xffffffff`) and the `go:buildid`/`go.buildid` names are
+  dropped (`GoFuncData.isInline` / `FUNCNAMES_TO_IGNORE`). The byte layouts were
+  taken from Ghidra's `GoPcHeader`/`GoModuledata`/`GoFunctabEntry`/`GoFuncData` and
+  cross-checked against the Go runtime source (`runtime/symtab.go`,
+  `runtime/runtime2.go`) at go1.18.
+- **Defensive (the never-fail contract):** an unknown magic, a malformed header,
+  an out-of-range offset, a truncated table, or a missing section all yield an
+  **empty** output — never a panic, never an error. An `nfunc` cap (2M) and
+  checked-add arithmetic guard a corrupt header.
+- **Emits** a `SymFact { addr: func_entry, name, kind: Function }` per function via
+  the **EXISTING** symbol commit arm (engine.rs `commit_analysis_output`, no new
+  arm). That arm is idempotent (`find_function(..).is_none()`), so a non-stripped
+  Go binary's real `.symtab` name still wins — only a *stripped* binary's
+  `sub_<addr>` functions take the recovered name.
+
+**Gating (the parity proof).** Registered in `passes_for` **only when**
+`detect_compiler == Go` (the same `.go.buildinfo`/`.note.go.buildid` gate the Go
+no-return list uses, Increment 15) — so on every non-Go binary the pass is
+*structurally absent* from the pass set, not merely a runtime no-op. The pass is
+additionally a settable (`--option gopclntab on|off`, default-on); off suppresses
+the recovery. Real-ELF Go path only ⇒ the XML datatest oracle is **structurally
+untouched** (no XML binary is Go; the analysis tier never runs on the
+`<binaryimage>` path).
+
+**Tests (both ran, not skipped).**
+- **Hermetic parser units** (`s1_pclntab/tests.rs`, 12 tests, no `go` needed —
+  the merge-blocking gate): header probe (all four magics, LE+BE, the four
+  malformation rejections), full functab→`_func`→`funcnametab` decode for
+  **go1.18** (relative `entryoff`), **go1.16** (absolute `entry`), and **go1.2**
+  (legacy blob-indexed names), inline-sentinel + `go:buildid` skipping, big-endian
+  decode, and the truncated-table / unknown-magic defensiveness.
+- **Real-Go e2e** (`kuna-console/tests/verify_go_pclntab.rs`, 2 tests): builds a
+  tiny Go program (`func compute(x int) int` called from `main`) at runtime via
+  `go build -ldflags=-s -w` (STRIPPED) in an isolated temp dir with a private
+  `GOCACHE`/`GOPATH` (hermetic; guarded on `go` on PATH + the build succeeding,
+  **skips cleanly** otherwise — Increment 15's pattern). Asserts `main.main`,
+  `main.compute`, and `runtime.main` are recovered as NAMED functions from the
+  pclntab on the stripped binary (where the pclntab is the only name source), and
+  that `--option gopclntab off` suppresses the recovery (`main.compute` absent).
+  **The e2e RAN (not skipped)** with go1.18 + the built x86 `.sla`.
+
+**Result.** `make test` 675/675 PARITY OK; `make test-stages` 159/159 PARITY OK;
+`make rust-test` green (incl. the 12 parser units + the 2-test e2e); `kuna catalog
+--check` catalog OK. settable_count **36 → 37** (the `gopclntab` gate);
+`stage_catalog.json` fixture + `docs/assertions.md` regenerated; the count-fixture
+ripple (`settable_count_is_37`, `…suppressed_for_15` PASS_GATES +1,
+`emit_catalog_json_static_form_brackets_and_commas` 36 commas,
+`fixture_has_all_37_settables`) updated.
+
+- **Divergence/LOSS:** none to the parity oracles — the pass is Go-gated and
+  real-ELF-path-only, so the default (non-Go) path is byte-identical to before. The
+  scope is the **name-recovery** half only; Ghidra's `GolangSymbolAnalyzer` also
+  recovers RTTI types, method definitions, stack-trace signatures, and source-file
+  maps — those subsystems stay out of scope (an ELF decompiler needs the
+  entry-PC→name mapping; the rest is Go-runtime-specific markup).
+- **New:** `kuna-analysis/src/s1_pclntab/{mod.rs, tests.rs}`,
+  `kuna-console/tests/verify_go_pclntab.rs`.
+- **Changed:** `kuna-analysis/src/{lib.rs, passes.rs}`,
+  `kuna-console/src/{engine.rs, kuna_console.rs}`,
+  `kuna-decomp/src/infra/architecture.rs`,
+  `kuna-decomp/src/p0_knowledge/options.rs`, `kuna-decomp/stages.toml`,
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
+  `kuna-decomp/tests/{catalog_bytecompat.rs, fixtures/stage_catalog.json}`,
+  `docs/{assertions.md, analysis-port-log.md}`.
+
+### Increment 39 — Multi-format loader PR-6+7: Mach-O linked loading + __stubs import naming (the Mach-O headline)
+
+**Premise.** PR-2 (Increment 36) proved Mach-O *objects* parse + map + select the
+right spec behind `--experimental-formats`, with imports empty. This is the
+**Mach-O headline** (PR-6 ∪ PR-7): a **linked Mach-O** exe loads and decompiles a
+function, and its libc import renders **named** (`printf`) — the second non-ELF
+binary kuna names imports on (after PE), and the simplest analog. PR-6 (loader
+proof) needed **no new loadimage fix** — `object` surfaces the Mach-O
+`vmaddr`/`LC_MAIN` transparently, so the linked exe loads through the same
+`bootstrap_from_object` path the Mach-O object did, and PR-2's
+`MachOFormat::{section_bits, compiler_model}` (x86-64→`gcc`, the System V AMD64
+cspec; arm64→`default`) were already finalized. PR-7 (the `__stubs` walk) is the
+real new logic, in a new `s1_loader/macho_stubs.rs`.
+
+**The `__stubs` walk (`s1_loader/macho_stubs.rs`, design §3.3).**
+`MachOFormat::resolve_imports` (was empty) now calls `resolve_macho_imports(file,
+bytes)`. It branches on `FileKind` (`MachO64`/`MachO32`; a fat `0xcafebabe`/`bf`
+selects one slice — prefer x86-64, then arm64, then first — and re-dispatches,
+design §3.4) and re-parses with the typed `MachHeader64`/`32` (the neutral
+`object::File` view drops the section `reserved1`/`reserved2` and the flat
+indirect-symbol slice the walk needs). One pass over the load commands harvests
+`LC_SYMTAB` (names), `LC_DYSYMTAB` (the indirect-symbol index array), and every
+`LC_SEGMENT`'s sections (canonical `Segment::from_command` / `command.symtab()` /
+`command.dysymtab()` dispatch). For each `S_SYMBOL_STUBS` section it names the
+stub *entry* at `sec.addr + i*reserved2`; for each `S_LAZY/NON_LAZY_SYMBOL_POINTERS`
+section (the GOT analog) it names the pointer slot at `sec.addr + i*ptr`. The
+name is the `LC_SYMTAB` symbol at the indirect index (via the built-in
+`Section::indirect_symbols` window). Filtering matches Ghidra
+`processIndirectSymbols`: skip `INDIRECT_SYMBOL_LOCAL|ABS` and `n_strx == 0`,
+strip the leading `_` (`_printf`→`printf`, the `strip_version` analog).
+Pure/total/never-error: non-Mach-O / no `LC_DYSYMTAB` / unparsable → empty `Vec`.
+`file.exports()` are appended additively (underscore-stripped). **Arch-independent
+— no instruction decode**: the named address is pure section metadata.
+
+**How `main` reaches `printf` (and why naming the stub entry suffices).** Unlike
+the PE IAT slot / ELF GOT slot (a pointer the engine constant-folds), a Mach-O
+`bl`/`callq` targets the `__stubs` entry **directly** — verified on both
+fixtures: x86-64 `callq 0x1000005cc`, arm64 `bl 0x1000005a0`. So there is no
+pointer to fold and no per-arch stub decode; naming the stub *entry* turns
+`sub_<stub>(` into `printf(`. (The `__la_symbol_ptr`/`__got` slot naming is the
+defensive ELF-GOT-slot mirror, for a `-fno-plt`-style folded indirect call.)
+
+**Fixtures (linked in-container with `ld64.lld`, not vendored-prebuilt).** Bare
+`clang` (no macOS SDK) compiles the Mach-O object today; for the *link* the
+rustup-bundled `ld64.lld` (an LLD darwin flavor) produces a classic
+`S_SYMBOL_STUBS` indirect-symbol layout — so no vendored-prebuilt stub was needed
+(the design's fallback). `macho_imports.c` = `int compute(int n){return n*3+7;}
+int main(int argc,char**argv){ printf("%d\n", compute(argc)); return 0; }`,
+linked for two arches (`-undefined dynamic_lookup -e _main`):
+- `macho_imports` (x86-64, 16 KB): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`,
+  `printf` stub@`0x1000005cc`.
+- `macho_imports_arm64` (arm64, 49 KB): same source, proving arch-independence.
+
+**Before → after** (the headline; `kuna decompile … --experimental-formats`),
+x86-64 `_main`:
+```c
+// BEFORE (resolve_imports empty)        // AFTER (PR-7 __stubs naming)
+sub_1000005cc(0x1000005ee,a0 * 3 + 7);   printf(0x1000005ee,a0 * 3 + 7);
+return 0;                                return 0;
+```
+arm64 `_main` renders `printf(0x1000005d0)` identically (named the same way; the
+arm64 codegen folds the arg differently). The defined `_main` keeps its leading
+`_` (it comes from the `file.symbols()` funcsym source, not the stub resolver).
+
+**Decompile speed.** `macho_imports _main`: **~0.3–0.8 s** wall (`time kuna
+decompile`, end-to-end incl. the `decomp_dbg` subprocess spawn + the `.sla`
+load), **~0.10 s user** CPU for the decompile itself; `macho_imports_arm64`
+~0.35 s wall. On par with the ELF/PE baselines — both dominated by process
+startup + the tiny function. The `__stubs` walk is a single load-command pass +
+per-section indirect-table slice (O(load cmds + indirect entries), once at load),
+materially cheaper than the PE IAT walk (no `FF 25` `.text` sweep — Mach-O calls
+the stub directly).
+
+**Tests (the e2e RAN, not skipped — the `x86`/`AARCH64` `.sla` are built).**
+- **`macho_stubs` unit tests** (synthetic, mirroring `elf_plt.rs`/`pe_iat.rs`, 3):
+  the leading-underscore strip (`_printf`→`printf`, `__Znwm`→`_Znwm`, no-op on a
+  clean name); the stub-entry naming + `INDIRECT_SYMBOL_LOCAL` filtering against a
+  synthetic `S_SYMBOL_STUBS` window (modeling the x86-64 fixture: base
+  `0x1000005cc`, `reserved2`=6); the symbol-pointer-slot naming (`base + i*ptr`).
+- **e2e** (`kuna-console/tests/verify_macho_imports.rs`, 3): (1) the x86-64 linked
+  exe loads (SysV/gcc spec), resolves `_main`/`printf`, decompiles `_main` to
+  `printf(`; (2) decompiling `_main` **by VMA** (no symtab reliance) still names
+  the `0x1000005cc` stub — the clean PR-7 proof; (3) the arm64 exe names `printf`
+  identically (arch-independence). Test 1 also proves the **default-off** path
+  (Mach-O rejected without the flag). A `Mutex` serializes the env-var-sensitive
+  bodies (`KUNA_EXPERIMENTAL_FORMATS` is process-global).
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159
+PARITY OK**; `make rust-test` green (incl. the 3 unit + 3 e2e). Default-off ⇒ ELF
+byte-identical (the Mach-O path is unreachable without `--experimental-formats`;
+the ELF/XML oracles never reach the object loader — Invariant 1). **After this,
+PR-8 (fat/universal + arm64e) and the on-by-default flip for Mach-O are the
+remaining Mach-O-arm work.** No loadimage fix was needed.
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader).
+- **New:** `kuna-analysis/src/s1_loader/macho_stubs.rs`,
+  `kuna-console/tests/verify_macho_imports.rs`,
+  `kuna-analysis/tests/fixtures/{macho_imports, macho_imports_arm64}` (+ the
+  `macho_imports.c` source recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_loader/{mod.rs, format/macho.rs}`,
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 40 — Multi-format loader PR-10: un-gate the format-agnostic passes for PE/Mach-O
+
+**Premise.** PRs 3+4 (PE) and 6+7 (Mach-O) named imports on non-ELF binaries, but
+the binary still rendered like a wire dump: `puts(0x140009000)`, `printf(0x…, a0)`,
+dead code after a tail `exit`. The *logic* of several S1 analysis passes is
+format-agnostic — they were merely **gated** `BinaryFormat::Elf` (or keyed on a raw
+`SHF_*` flag the `object` crate only fills for ELF). PR-10 drops those gates and
+generalizes the flag checks so a PE/Mach-O gets **string literals**, **typed libc
+args**, and **no dead code** — not just named imports. **One pass per commit**, each
+with a fixture assertion; ELF byte-identical (the default, non-experimental path).
+
+**The headline before/after (PE — `pe_imports.exe`, `int main(){ puts("hello");
+printf("%d\n", argc); }`).**
+
+```text
+                                  before (PR-7)          after (PR-10)
+  string literal (s1_strings):    puts(0x140009000)      puts("hello")
+  typed arg     (s1_protos):      printf(0x140009006,a0) printf("%d\n", a0 & 0xffffffff)
+```
+
+`s1_strings` recovers the `.rodata`/`.rdata` "hello" (≥5 chars) as a typelocked
+`char[6]` symbol; `s1_protos` types `printf`'s first arg `char *`, so even the
+short `"%d\n"` (3 chars, below the string-scan min-5) renders via the printer's
+constant-string route. **Mach-O** (`macho_imports`, `printf("%d\n", compute(argc))`)
+renders `printf("%d\n", …)` (was `printf(0x1000005ee, …)`) — the typed `char *` arg
+plus marking `__cstring` READONLY. **No-return on a PE**: `__tmainCRTStartup`'s tail
+`exit(…)` is on the new PeMac no-return list, so it is marked `/* WARNING:
+Subroutine does not return */` and the dead fall-through after it is elided
+(`--option noreturn_known off` restores the dead `*dat… = 1; v14 =
+__tmainCRTStartup(); return v14;`).
+
+**Per-pass status (each verified against the live code).**
+
+| Pass | §5.2 gate today | PR-10 change | Status |
+|---|---|---|---|
+| `s1_strings` | `SectionFlags::Elf { sh_flags } & SHF_ALLOC` | per-format `is_loaded_initialized` (ELF `SHF_ALLOC` unchanged; PE/COFF mapped+readable; Mach-O non-zero-fill) | **un-gated cleanly** |
+| `s1_protos` | `BinaryFormat::Elf` early-return | drop gate; union `present_function_names` with the §3 `resolve_imports` names (stripped-PE / Mach-O `__stubs` imports) | **un-gated cleanly** |
+| `noreturn.rs` (Known) | `BinaryFormat::Elf` early-return | per-format base list: ELF list (+Rust/Go) vs a new vendored `PeMacFunctionsThatDoNotReturn` (exit/abort/quick_exit + `__fastfail`/`_invoke_watson`/…) | **un-gated + new list** |
+| `s1_callfixup` | `BinaryFormat::Elf` early-return | drop gate (a `<callfixup>` `<target>` is a function NAME; the map comes from the loaded arch's cspec) | **un-gated cleanly** |
+| `s1_addrtable` | `BinaryFormat::Elf` early-return + `SectionFlags::Elf` exec/searchable | drop gate; per-format `is_executable_section`/`is_searchable_section` (ELF `SHF_*` unchanged; PE `IMAGE_SCN_MEM_EXECUTE`/readable; Mach-O `S_ATTR_PURE_INSTRUCTIONS`/`SectionKind::Text`). Still off-by-default (Ghidra parity). | **un-gated cleanly** |
+| `s1_noreturn_disc` | (format-neutral; consumes the Listing) | confirmed it runs on a PE — the Listing builds on a PE/Mach-O because `s1_entry::executable_sections` already falls through to `SectionKind::Text` for non-ELF | **already neutral, confirmed** |
+
+**One small loader touch-up (not a gate-drop).** The Mach-O `__cstring`
+(`SectionKind::ReadOnlyString`) was not marked READONLY by
+`MachOFormat::section_bits` (PR-6 only handled `ReadOnlyData`/`Text`), so the
+printer's constant-string route could not read a typed `char *` arg's bytes.
+Adding the `ReadOnlyString` arm (a read-only string section *is* read-only) is the
+prerequisite that completes the Mach-O `printf("%d\n", …)` literal — folded into
+the `s1_protos` commit.
+
+**Residual gaps (documented, not forced).** None block the headline.
+- The Mach-O `%d\n` is below the string-scan min-5, so `s1_strings` never plants a
+  symbol for it; it renders only via the typed-`char *` route. The Mach-O *string-
+  literal* half of `s1_strings` is therefore not directly proven by a fixture
+  (no Mach-O fixture carries a ≥5-char literal); the **logic** is exercised by the
+  PE literal + the shared `is_loaded_initialized` Mach-O arm unit-covered.
+- `s1_addrtable` stays **off by default** (Ghidra `setDefaultEnablement(false)`),
+  so its generalization is logic-only (no default output change on any format).
+- The deeper `s1_entry` entry-oracles (`.pdata`/TLS for PE, `LC_MAIN`/`__eh_frame`
+  for Mach-O) remain §5.3 / PR-12+PR-13 work — out of scope here; the Listing tier
+  only needs `executable_sections`, which already falls through to `SectionKind::Text`.
+
+**Decompile speed.** `pe_imports.exe main`: **~0.25–0.44 s** wall (`time kuna
+decompile`, incl. the `decomp_dbg` subprocess spawn + `.sla` load); ELF
+`fauxware main` ~0.22–0.46 s — on par. The PR-10 passes add only an extra
+`resolve_imports` call in `s1_protos`'s name union (already computed for naming)
+and the per-format flag branches (O(sections)); no measurable overhead.
+
+**Tests (the e2e RAN, not skipped — the `x86`/`AARCH64` `.sla` are built).**
+- **Unit tests** (per pass, in-crate): `s1_strings` finds "hello" in the PE `.rdata`
+  + an ELF-section-selection-unchanged parity guard over fauxware; `s1_protos` PE/
+  stripped-PE/Mach-O present-name coverage; `noreturn` PeMac-list matching
+  (`__fastfail`/`_invoke_watson`/`_exit`→`exit`); `s1_callfixup` scan-runs-over-PE;
+  `s1_addrtable` scan-runs-over-PE+Mach-O (exec ranges resolve).
+- **e2e** (`kuna-console/tests/verify_multiformat_passes.rs`, 4, all RAN): the PE
+  headline (`puts("hello")` + `printf("%d\n", …)`); the Mach-O `printf("%d\n", …)`;
+  the PE `exit` dead-code elision + `noreturn_known off` restore; `s1_noreturn_disc`
+  runs on a PE (Listing builds, consumer completes). A `Mutex` serializes the
+  `KUNA_EXPERIMENTAL_FORMATS` (process-global) bodies.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the new unit + 4 e2e). Default-off ⇒ ELF
+byte-identical (the non-ELF path is unreachable without `--experimental-formats`;
+the XML datatest path never reaches the object loader — Invariant 1; every ELF
+flag arm is unchanged). **After this, the agnostic-pass bucket (§5.2) is done; PR-11
+(`s1_dwarf` for Mach-O/MinGW-PE), PR-12/13 (`s1_entry` per-format), and PR-14
+(`s1_sourcelang` per-format) are the remaining quality follow-ups.**
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is flag-gated).
+- **New:** `kuna-analysis/data/PeMacFunctionsThatDoNotReturn`,
+  `kuna-console/tests/verify_multiformat_passes.rs`.
+- **Changed:** `kuna-analysis/src/s1_strings/mod.rs`,
+  `kuna-analysis/src/s1_protos/mod.rs`,
+  `kuna-analysis/src/s1_loader/noreturn.rs`,
+  `kuna-analysis/src/s1_loader/format/macho.rs`,
+  `kuna-analysis/src/s1_callfixup/mod.rs`,
+  `kuna-analysis/src/s1_addrtable/mod.rs`, `docs/analysis-port-log.md`.
+
+### Increment 41 — Multi-format loader PR-12+13: PE/Mach-O entry discovery (stripped binaries find functions)
+
+**Premise.** PR-3/4 (Increment 37) + PR-6/7 (Increment 39) made a linked PE/Mach-O
+**load + decompile a function + name its imports**, but only the *entry* oracle of
+`s1_entry` was format-neutral (`file.entry()`) — oracles 2/3 (`.dynamic` DT_INIT,
+`.eh_frame` FDEs) are ELF-section-specific, so a **stripped** PE/Mach-O (no
+`.symtab`) still found nothing by name: the only function the loader knew was
+whatever `--addr` named. This increment ports the **PE and Mach-O analogs of the
+ELF entry oracles** so a stripped PE/Mach-O recovers its function starts
+automatically, exactly as a stripped ELF does (`verify_s1_entry`). Design §4.1 /
+§5.3 / §8 PR-12+13.
+
+**The format dispatch (`s1_entry/mod.rs`).** `EntryDiscoveryPass::run` was
+ELF-only (early-return on any non-ELF). It now dispatches via the `ObjectFormat`
+seam (`format::detect(file).kind()`): ELF runs the original eh_frame/dynamic
+oracles unchanged; PE runs the new `pe_entry` oracles; Mach-O the `macho_entry`
+oracles; COFF/unknown no-op. The pure-core `collect_entries` keeps the same
+union → exec-section filter → funcsym-dedup → sort/dedup pipeline (the discovery
+contract is **purely additive** — it only ever adds genuinely-new starts); only
+the *oracle selection* branches on the format. `executable_sections` learned the
+PE COFF (`IMAGE_SCN_MEM_EXECUTE`) and Mach-O (`S_ATTR_*_INSTRUCTIONS`) executable
+tests (it was ELF-`SHF_EXECINSTR`-or-`SectionKind::Text` only). Oracle 5 (the
+x86-64 prologue patterns) was already format-neutral and is reused for all three.
+
+**PE entry oracles (`s1_entry/pe_entry.rs`, design §4.1/§5.3).** Four sources,
+all surviving `-s`: (1) the **entry point** (`file.entry()` already returns the
+rebased VMA for PE — verified); (2) **`.pdata`** — the x64 SEH `RUNTIME_FUNCTION`
+table (the `.eh_frame` analog): each 12-byte `{BeginAddress,End,Unwind}` record's
+`BeginAddress` (RVA→VMA) is a function start. The richest PE source — **97
+records** in `pe_imports_stripped.exe`, one per non-leaf function. Ghidra's
+`PdataDirectory`. (3) **TLS callbacks** — the TLS directory's `AddressOfCallBacks`
+array (NULL-terminated absolute VAs the loader runs before entry; Ghidra
+`TLSDataDirectory`); (4) **exports** (`file.exports()`). The ELF `_start`→`main`
+libc-start idiom is **not** reused — it is glibc-crt1-specific; `.pdata` recovers
+`main` directly, so the idiom is redundant for PE.
+
+**Mach-O entry oracles (`s1_entry/macho_entry.rs`, design §4.1/§5.3).** Four
+sources: (1) the **entry** — `LC_MAIN`'s `entryoff` is a `__TEXT`-relative offset,
+NOT a VMA (`object`'s `file.entry()` returns the raw `entryoff` for Mach-O, unlike
+PE — verified), so the VMA is `__TEXT.vmaddr + entryoff`; `LC_UNIXTHREAD` handled
+too; (2) **`LC_FUNCTION_STARTS`** — the headline source: a ULEB128 **delta-encoded**
+table of *every* function start (first delta off `__TEXT` base, each subsequent
+off the prior start), emitted by `ld64` and surviving `strip`/`-x` (it lives in
+linkedit, not the symbol table). Ghidra's `markupFunctionStarts`. (3)
+**`__DATA,__mod_init_func`** — the C++ static-initializer pointer array (the
+`.init_array` analog); (4) **exports**. `__eh_frame`/`__unwind_info` starts are a
+*subset* of what `LC_FUNCTION_STARTS` already yields (both derive from the same
+function set), so they add nothing and are not re-derived. Fat/universal binaries
+select one slice (x86-64→arm64→first), mirroring `macho_stubs`.
+
+**Before → after (the payoff).**
+- *Stripped PE* (`pe_imports_stripped.exe`, 0 symbols / 0 exports): before, a
+  bare load knows no function by name (`no function "sub_140001592"` with
+  `entry_disc off`); after, the entry + `.pdata` recover **dozens** incl.
+  `main`@`0x140001592` → `kuna decompile … sub_140001592` (no `--addr`) yields
+  `sub_140001592(uint a0){ … puts(…); … }` — the discovered function decompiles
+  by name **and** its IAT-named `puts` import renders (PR-4 + PR-12 together).
+- *Stripped Mach-O* (`macho_func_starts_stripped`, `helper` is file-local so
+  `ld64.lld -x` removed its symbol): `LC_FUNCTION_STARTS` =
+  `[0x100000550 (_main, the entry), 0x100000590 (helper, stripped)]`; before,
+  `helper` is invisible; after, `collect_entries` skips the symboled `_main` and
+  **discovers `0x100000590`** → `kuna decompile … sub_100000590` (no `--addr`)
+  yields `int4 sub_100000590(int4 a0){ return a0 * 7 + 3; }` — proving
+  `LC_FUNCTION_STARTS`, not the symtab, is the source.
+
+**Speed.** Full `kuna decompile` of a discovered function, no `--addr`
+(`--experimental-formats`, release): stripped-PE `main` (`sub_140001592`,
+`.pdata`-discovered) **0.11s** (51 MB RSS); stripped-Mach-O `helper`
+(`sub_100000590`, FUNCTION_STARTS-discovered) **0.16s**. The new e2e gate
+(`verify_multiformat_entry`, 3 tests) runs in 1.64s (not skipped — `.sla` built).
+
+**Gating / parity.** The new oracles are **no-ops on ELF** (format-dispatched),
+and PE/Mach-O only load under `--experimental-formats`, so the ELF entry path is
+byte-identical: `verify_s1_entry` + `verify_crossarch_entry_main` pass unchanged.
+The discovery is gateable (`--option entry_disc off` restores the no-function
+behavior). Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**159/159 PARITY OK**, `make rust-test` **green** (incl. the new e2e + 4 new
+kuna-analysis unit tests).
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader). Note: the
+  design §4.1 claim that `file.entry()` is "already format-neutral" holds for PE
+  but **not** Mach-O `LC_MAIN` in `object` 0.39 (it returns the un-rebased
+  `entryoff`) — handled in `macho_entry::walk` (`__TEXT.vmaddr + entryoff`).
+- **New:** `kuna-analysis/src/s1_entry/{pe_entry.rs, macho_entry.rs}`,
+  `kuna-console/tests/verify_multiformat_entry.rs`,
+  `kuna-analysis/tests/fixtures/macho_func_starts_stripped` (+ its
+  `.c` source recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (format dispatch in `run` +
+  `collect_entries`; `executable_sections` PE/Mach-O exec tests; 2 new core
+  tests), `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 42 — Multi-format loader PR-9: MSVC C++ demangler arm
+
+**Premise.** `s1_demangle` (the `GnuDemanglerAnalyzer` analog) covered three
+schemes — Itanium C++ (`cpp_demangle`: ELF/Mach-O C++ + MinGW-PE), Rust legacy
+`_ZN`/v0 `_R` (`rustc_demangle`) — but **not MSVC** mangling, the `cl.exe` scheme
+that starts with `?` (`?foo@Bar@@QEAAHH@Z`), carried by MSVC-ABI PE/COFF binaries.
+On those, every C++ symbol surfaced as the raw mangled string. This increment adds
+the **MSVC arm** so they render readable (design §5.5, §8 PR-9). Itanium/Rust/C
+symbols never start with `?`, so the arm is **purely additive** — the ELF path is
+byte-identical.
+
+**The demangler dep (`msvc-demangler` 0.11, MIT).** Ghidra's MSVC demangler is the
+JNI/Java `MicrosoftDemangler` (the hand-rolled `MDMang` C++ grammar), a peer of
+`GnuDemangler` (the libiberty shell-out) — never part of the deep-decompiler C++
+tree, so there is nothing to transcribe. Identical to the Itanium/Rust deps (and
+LOSS-005 BFD→`object`), the faithful move is "call a permissive demangler crate and
+consume its string". Recorded as **LOSS-250** (`docs/rust-port/losses.md`).
+`msvc_demangler`'s `NAME_ONLY` flag returns the qualified-name-only form directly
+(`Bar::foo`, `ns::g`) — already free of the signature/template `::` the scope
+splitter must not see (the same name-only contract as the Itanium path);
+`COMPLETE` gives the full c++filt-like form for `demangle_raw`.
+
+**`s1_demangle/mod.rs`.** `skip()` gains a leading-`?` early-accept that runs
+**before** the existing `@`-version heuristic — MSVC embeds `@` *structurally*
+(namespace/type separators), so the version heuristic would otherwise reject every
+MSVC symbol. `demangle_raw`/`demangle_name` each gain a `?`-gated MSVC arm
+(`demangle_name` runs the `NAME_ONLY` output through `strip_bracket_groups` for
+template safety, identical to the Itanium reduction).
+
+**The `strip_version` truncation bug (the load-bearing loader fix).** The loader
+funcsym path applies `elf_plt::strip_version` (the glibc `@@VERSION` stripper)
+*before* demangling. It cut at the first `@`, so `?foo@Bar@@QEAAHH@Z` arrived at
+the demangler already truncated to `?foo` (proven by the first run of the
+loader-level test). `strip_version` now returns a leading-`?` name verbatim — no
+glibc-versioned symbol ever starts with `?`, so ELF behavior is unchanged.
+
+**Before → after (the payoff).** A real MSVC-mangled COFF object
+(`msvc_mangled.obj`, `clang -target x86_64-pc-windows-msvc` — the windows-msvc
+target emits the *same* `?`-scheme as `cl.exe`, which is unavailable on Linux):
+- *before:* funcsym stream carries the raw `?foo@Bar@@QEAAHH@Z` (worse:
+  `strip_version`-truncated to `?foo`); no readable name.
+- *after:* `?foo@Bar@@QEAAHH@Z` → `Bar::foo`, `?g@ns@@YAHHH@Z` → `ns::g`,
+  `?freefunc@@YAHH@Z` → `freefunc`. `kuna decompile msvc_mangled.obj freefunc`
+  (by demangled name, `--experimental-formats`) yields
+  `int4 freefunc(int4 a0){ return a0 + 0x2a; }` — resolved by its **demangled**
+  name, not the raw `?`-symbol.
+
+**The e2e is REAL (not unit-only).** `cl.exe` is unavailable, but
+`clang -target x86_64-pc-windows-msvc` produces a genuine MSVC-ABI COFF object
+with `?`-mangled symbols (verified `objdump -t`), so `verify_msvc_demangle.rs`
+loads + decompiles a real fixture, not a hand-faked symtab. The nested names
+(`Bar::foo`/`ns::g`) nest into scopes via the `::`-splitter, so the flat
+`load function` resolves the bare free function `freefunc` in the e2e; the
+namespaced demangle is pinned at the loader level
+(`loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`) and
+by the `s1_demangle::tests::msvc_*` unit tests (the merge gate, no toolchain
+needed).
+
+**Speed.** Full `kuna decompile msvc_mangled.obj freefunc` (release,
+`--experimental-formats`): **0.15s** (50 MB RSS). The e2e test
+(`verify_msvc_demangle`, release) runs in 0.15s (not skipped — `.sla` built).
+
+**Gating / parity.** The MSVC arm fires only on a leading `?` (no
+Itanium/Rust/C/ELF symbol has one), and PE/COFF only load under
+`--experimental-formats`, so the ELF demangle path is byte-identical. Gates:
+`make test` **675/675 PARITY OK**, `make test-stages` **159/159 PARITY OK**,
+`make rust-test` **green** (incl. the e2e + 8 new MSVC unit/loader tests).
+
+- **Divergence/LOSS:** LOSS-250 (`MicrosoftDemangler` → `msvc-demangler`,
+  dependency-substitution; same kind as the Itanium/Rust/BFD deps). No parity
+  divergence (the MSVC arm is additive; the XML datatest path never reaches the
+  object loader).
+- **New:** `kuna-console/tests/verify_msvc_demangle.rs`,
+  `kuna-analysis/tests/fixtures/msvc_mangled.obj` (+ its `.cpp` source, recorded in
+  the fixtures README), the LOSS-250 entry.
+- **Changed:** `decompiler/Cargo.toml` + `crates/kuna-analysis/Cargo.toml`
+  (`msvc-demangler` dep), `Cargo.lock`, `kuna-analysis/src/s1_demangle/mod.rs`
+  (skip `?` + the MSVC arms + 7 unit tests), `kuna-analysis/src/s1_loader/elf_plt.rs`
+  (`strip_version` leading-`?` guard), `kuna-analysis/src/loadimage_object.rs`
+  (1 new loader test), `kuna-analysis/tests/fixtures/README.md`,
+  `docs/rust-port/losses.md`, `docs/analysis-port-log.md`.
+
+### Increment 43 — Multi-format loader PR-11: DWARF on Mach-O + MinGW-PE
+
+**Premise.** `s1_dwarf` (the kuna analog of Ghidra's `DWARFAnalyzer`, gimli-based)
+recovers function names / params / types from the `.debug_*` sections, but its
+`run` opened with `if !matches!(ctx.file.format(), BinaryFormat::Elf) { return }`
+(`s1_dwarf/mod.rs:555`) — DWARF was ELF-only, so a `-g` PE or Mach-O recovered
+nothing. gimli is **format-neutral** (it parses the DWARF byte stream, not the
+container); the only container coupling is the *section-name lookup*. Design §5.2 /
+§8 PR-11.
+
+**The change (the whole PR is `s1_dwarf/mod.rs`).** Drop the ELF gate, and resolve
+the debug sections through a new `dwarf_section_data(file, SectionId)` helper that
+keys off `object`'s **format-aware** `section_by_name`. The key finding: `object`
+already does the per-format name translation, so a single `section_by_name(id.name())`
+covers all three formats — gimli's ELF-flavoured ids map cleanly:
+
+| Format | gimli `SectionId::DebugInfo.name()` | section `object` finds | how |
+|---|---|---|---|
+| ELF (today) | `.debug_info` | `.debug_info` | verbatim (unchanged) |
+| **MinGW-PE** | `.debug_info` | `.debug_info` | MinGW emits the standard `.debug_*` names verbatim |
+| **Mach-O** | `.debug_info` | `__debug_info` (in the `__DWARF` segment) | `object`'s documented Mach-O rule maps `.debug_info`→`__debug_info` (and `.debug_str_offsets`→`__debug_str_offs`) |
+
+The helper adds an explicit Mach-O `__`-prefixed fallback (`.debug_info`→
+`__debug_info`) as a belt-and-suspenders guard, a no-op when `object`'s auto-map
+already hit. Everything downstream — the DIE→Datatype mapper (`build_datatype`),
+`build_pieces`, `collect_fbreg_locals`, the SymFact/prototype/local commit — is
+**unchanged**. PE-MSVC PDB is out of scope (no `.debug_info` ⇒ falls out cleanly).
+
+**Before → after.** Both fixtures are the per-format analog of the ELF
+`dwarf_stripped_x86_64`: function names live ONLY in the debug sections (PE
+COFF-symtab FUNC entries `--strip-symbol`-removed; Mach-O FUNC entries
+`--redefine-sym`-renamed — `.debug_*` kept), so a recovery by name is unambiguously
+DWARF-sourced. Source body: `int first_byte(char *label){return label[0];}` +
+`int add(int,int)`.
+
+```text
+            before (no DWARF / by raw address)     after (DWARF name + type recovered)
+  PE        sub_140001550(...)                     int4 first_byte(char *a0)
+  Mach-O    sub_0(...)                             int4 first_byte(char *a0)
+```
+
+`first_byte`/`add` recover **by their DWARF names** on both formats (the symtab no
+longer carries them) with the DWARF-typed `char *` parameter; a `load addr`
+decompile of the same code (the in-test no-DWARF-name baseline) renders the
+engine's `sub_<addr>` placeholder. The existing ELF DWARF gates
+(`verify_s1_dwarf` — names, typed `char *`, stack locals) pass **unchanged**.
+
+**Speed.** Full `decompile` + `print C` of `first_byte` by its DWARF name
+(`--experimental-formats`, release): **Mach-O ~36 ms**, **PE ~136 ms** (the PE is
+a full MinGW exe whose `.debug_info` is ~280 KB — the larger DWARF CU is the cost;
+the Mach-O object's CU is ~130 bytes). Recorded in the e2e via `Instant`.
+
+**Gating / parity.** Default-off ⇒ ELF byte-identical: the pass only *drops a
+format gate* and the ELF section names are identical, so the ELF path is unchanged
+(the 4 `s1_dwarf` unit tests + 3 `verify_s1_dwarf` e2e tests pass verbatim), and
+the non-ELF arm is reachable only under `--experimental-formats`
+(`KUNA_EXPERIMENTAL_FORMATS`). The XML datatest path never reaches the object
+loader. Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**159/159 PARITY OK**, `make rust-test` **green** (incl. the new e2e, 3 tests, not
+skipped — `.sla` built).
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader). The
+  dependency-substitution LOSS (gimli wholesale for Ghidra's hand-rolled DWARF
+  reader) is unchanged — this PR only generalizes the *container* lookup.
+- **New:** `kuna-console/tests/verify_multiformat_dwarf.rs` (3 tests),
+  `kuna-analysis/tests/fixtures/{pe_dwarf.exe, pe_dwarf.c, macho_dwarf.o,
+  macho_dwarf.c}` (recipes recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_dwarf/mod.rs` (drop the `BinaryFormat::Elf`
+  gate; new `dwarf_section_data` per-format section lookup),
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 44 — Multi-format loader PR-14: per-format compiler/source-language detection (PE/Mach-O)
+
+**Premise.** `s1_sourcelang::detect_compiler` is kuna's analog of Ghidra's
+`SourceLanguageAnalyzer` — it fingerprints the producing toolchain
+(`Gcc`/`Clang`/`Rustc`/`Go`) and that value **gates language-specific behavior**:
+the Rust no-return list, the Golang no-return list (`s1_loader/noreturn.rs`), and
+the Go pclntab function-name pass (`s1_pclntab`). It was wired to short-circuit to
+`Unknown` for any non-ELF input (the detection signals were ELF-specific: the
+`.comment` section, `.go.buildinfo`/`.note.go.buildid`). This increment
+generalizes the *signal sources* per format while keeping the *contract* (and the
+ELF path) byte-identical. Design §5.3 / §8 PR-14.
+
+**The format dispatch (`s1_sourcelang/mod.rs`).** `detect_compiler(file)` →
+`detect_compiler(file, bytes)` (the raw image is needed for the PE `Rich` header
+and the Mach-O load commands — `object::File` surfaces neither) and now branches
+on `file.format()`:
+- **ELF** — `detect_compiler_elf`, the original logic lifted **verbatim** into a
+  standalone fn (so the ELF path is provably unchanged: Go-section → `rustc
+  version`/mangled-symbol/`.rodata`-signature → `clang version` → `GCC:`).
+- **PE** (`detect_compiler_pe`) — the MSVC `Rich` header / `@comp.id` records
+  (the obfuscated toolchain block MSVC's linker stamps between the DOS stub and
+  the PE header: XOR-decode from the `Rich` tag + key back to the `DanS` marker,
+  read the `@comp.id` product ids → clang-cl vs `cl.exe`), **plus** the MinGW
+  `GCC: (…)` path. MinGW emits **no `.comment` section** in a PE — the `GCC: (GNU)
+  …` records live NUL-delimited in `.rdata` — so the PE arm scans `.rdata`/
+  `.comment` with the same NUL-record reader. kuna has no distinct `Msvc`
+  `Compiler` variant (nothing gates on one); an MSVC `Rich` header reports the
+  closest convenience, `Clang`, only to lift the binary out of `Unknown`.
+- **Mach-O** (`detect_compiler_macho`) — `LC_BUILD_VERSION` / the legacy
+  `LC_VERSION_MIN_*` family (walked with the typed `MachHeader` parsers, the same
+  pattern as `s1_entry/macho_entry.rs`, peeling fat slices). An Apple platform ⇒
+  the clang/LLVM toolchain ⇒ `Clang`. Also scans a `__comment`/`__DWARF`-analog
+  section for embedded `clang version`/`GCC:` text when present.
+- **COFF object / other** — `detect_compiler_generic`: honour only the universal
+  Rust/Go signals, else `Unknown` (a pre-link `.obj` has no toolchain stamp).
+
+**The format-neutral Rust/Go paths (the payoff).** The Rust-mangled-symbol path
+(`symbols_indicate_rust` over `file.symbols()`/`dynamic_symbols()` — both neutral
+in `object`) and the Go build-info-section path (`golang_section_present`, widened
+to also match Mach-O's `__go_buildinfo` alongside ELF's `.go.buildinfo`/
+`.note.go.buildid`) are **shared by all three arms**. So a Rust or Go PE/Mach-O
+trips the same `Rustc`/`Go` detection an ELF would — which automatically enables
+the Rust/Go no-return lists and the Go pclntab pass on those formats (the gate is
+the format-neutral `Compiler` value, not the format; `passes.rs`/`noreturn.rs`
+already consume the enum format-agnostically).
+
+**Before → after.**
+- *MinGW PE* (`pe_imports.exe`): before, `detect_compiler` returned `Unknown`
+  (non-ELF short-circuit); after, it scans the `.rdata` `GCC: (GNU) 9.3-win32 …`
+  records → **`Gcc`**.
+- *Mach-O* (`macho_imports` x86-64 + `macho_imports_arm64`): before `Unknown`;
+  after, the `LC_BUILD_VERSION` (PLATFORM_MACOS) load command → **`Clang`**.
+- *Rust/Go non-ELF*: a Rust-mangled `_R…`/`_ZN…17h…E` symbol or a `__go_buildinfo`
+  section now reports `Rustc`/`Go` on a PE/Mach-O → the Rust/Go no-return list +
+  Go pclntab activate (previously dead on non-ELF).
+
+**Tests (all RAN, none skipped).** `s1_sourcelang` gained 6 hermetic/fixture unit
+tests (PE→`Gcc`, Mach-O x86-64+arm64+object→`Clang`, the synthetic-buffer `Rich`
+-header MSVC-vs-clang split, COFF-object→`Unknown`) — 13/13 pass. New e2e
+`kuna-console/tests/verify_multiformat_sourcelang.rs` (5 tests) loads the real PE/
+Mach-O fixtures and asserts the detection + the cross-format pass-activation
+consequence; it reaches the analysis tier directly (`object::File` over the
+fixture bytes) so it needs **no `.sla`** and never skips. **Speed:** detection is
+a section/load-command scan — PE `pe_imports.exe` and each Mach-O fixture
+`detect_compiler` complete in **< 100 µs** (the e2e's 5 tests run in < 0.01s
+total).
+
+**Gating / parity.** Detection is pure and **detection-only** — nothing in the
+output changes unless a language-specific pass acts, and those act only for
+`Rustc`/`Go`. A PE/Mach-O detecting as `Gcc`/`Clang`/`Unknown` is byte-identical,
+and the ELF arm is the original logic verbatim. Gates: `make test` **675/675
+PARITY OK**, `make test-stages` **159/159 PARITY OK**, `make rust-test` **green**
+(incl. the 6 new `s1_sourcelang` unit tests + the new 5-test e2e).
+
+- **Divergence/LOSS:** none to the parity oracles (the XML datatest path never
+  reaches the object loader; the ELF detection is unchanged). The PE `Rich`-header
+  product-id table keys off only the small stable clang/LLVM subset and defaults
+  any other populated `Rich` header to MSVC (reported as `Clang`) — an imperfect
+  MSVC-vs-clang split that is safe because nothing downstream gates on `Clang` vs
+  `Gcc` vs MSVC (detection-only).
+- **New:** `kuna-console/tests/verify_multiformat_sourcelang.rs`.
+- **Changed:** `kuna-analysis/src/s1_sourcelang/mod.rs` (per-format dispatch +
+  PE `Rich`/`GCC:` + Mach-O `LC_BUILD_VERSION` arms + 6 tests),
+  `kuna-analysis/src/passes.rs` + `kuna-analysis/src/s1_loader/noreturn.rs`
+  (`detect_compiler(&file, bytes)` call-site signature), `docs/analysis-port-log.md`.
+
+### Increment 45 — Multi-format loader PR-8: Mach-O fat/universal slice selection + arm64e spec
+
+**Premise.** PR-6/7 (Increment 39) made a **thin** linked Mach-O load + decompile +
+name its imports. But a real macOS distribution ships **fat / universal** binaries
+(`0xcafebabe`) wrapping several arch slices, and `object::File::parse` is a *thin,
+single-arch* view that cannot parse a fat header (its `File::parse` has no
+`MachOFat*` arm — it returns "Unsupported file format"). So a fat Mach-O failed to
+load entirely on the main path. PR-7 had already added per-slice selection inside
+the `__stubs` import walk (`macho_stubs`), but the loadimage itself never got a
+slice. This increment makes the **single, canonical slice-selection point at
+dispatch** so a fat binary loads (loadimage + imports + entry discovery all
+single-arch as for a thin Mach-O), plus the gated **arm64e** Apple-Silicon spec
+selection. Design §3.4 (fat) + §3.7 (arm64e) + §8 PR-8.
+
+**The slice peel (one point, at dispatch).** A new `s1_loader/macho_fat.rs` is the
+canonical selector: `select_fat_slice(bytes, SlicePref)` peels a universal binary
+to one arch slice's sub-bytes (32- and 64-bit fat readers share one
+`select_fat_arch` policy via the `object` `FatArch` trait), and `is_fat(bytes)` is
+the cheap magic pre-check. The engine's `bootstrap_from_object` calls
+`select_macho_slice(bytes, target)` right after reading the file and *before*
+`ObjectLoadImage::from_bytes`, replacing `bytes` with the chosen slice — so the
+loader, the analysis passes, and the deferred-Listing stash all see the **same**
+thin slice. A non-fat input passes through verbatim (zero-copy move), so ELF / thin
+Mach-O / PE / COFF are byte-identical. `macho_stubs`'s own fat arms now delegate to
+the same `select_fat_slice` (the duplicate `select_fat_slice_32/64/select_fat_arch`
+were removed), so the import walk and the loadimage can never drift onto different
+slices.
+
+**The override.** Selection preference is, in order: `--slice <arch>` (the new CLI
+flag, exported as `KUNA_MACHO_SLICE`, read live at the peel) → the `--target`
+token's leading arch stem (so the existing language override also steers the slice)
+→ the deterministic default **x86-64 → arm64 → first present** (host-relevant in
+this container). `SlicePref::parse` recognizes the `lipo`/`file` arch spellings and
+SLEIGH-id stems (using the `:64:` size field to disambiguate `x86`).
+
+**arm64e (§3.7, gated).** Pointer authentication does **not** change import naming
+or symbols — only the spec. `object` collapses arm64 and arm64e to the same
+`Architecture::Aarch64`, so the cpusubtype is read from a typed re-parse:
+`macho::is_arm64e(bytes)` checks `cpusubtype & !CPU_SUBTYPE_MASK == CPU_SUBTYPE_ARM64E`
+(the high capability byte stripped). `macho::apple_silicon_id(fmt, arch, bytes)`
+returns `AARCH64:LE:64:AppleSilicon:default` **only** when format=Mach-O +
+arch=AArch64 + the gate on + the image is arm64e; `language_id_for` consults it
+before composing the generic `v8A` id. Spec selection is a **load-time** decision
+(before any console `option` command), so the live gate is the `KUNA_MACHO_ARM64E`
+env var the CLI exports for `--option macho-arm64e on`; the option is also a
+registered settable (catalog consistency, recorded on the `Architecture`).
+Default-**off** ⇒ an arm64e Mach-O loads with the generic `v8A` spec exactly as any
+arm64.
+
+**Before → after.**
+- *Fat `macho_fat`* (2-slice x86-64 + arm64): before, "not in recognized object
+  file format" (fat header unparsable) **→** loads the **x86-64** slice (default),
+  decompiles `_main`, renders `printf(`; `--slice arm64` selects the arm64 slice.
+- *arm64e* (gate on): `AARCH64:LE:64:v8A` **→** `AARCH64:LE:64:AppleSilicon`; gate
+  off ⇒ unchanged (`v8A`).
+
+**Fixtures (hand-built; no `lipo` in-container).** `macho_fat` is a 2-slice
+universal binary emitted by hand from the existing thin slices `macho_imports`
+(x86-64) + `macho_imports_arm64` (arm64), behind a big-endian `fat_header` + two
+`fat_arch` records — `llvm-lipo`/`lipo` are absent in the container, so the simple
+fat wrapper was constructed directly from the two real slices. `macho_arm64e` is
+the `macho_imports_arm64` fixture with its header cpusubtype flipped to
+`CPU_SUBTYPE_ARM64E` (arm64e is binary-compatible arm64 — same encodings plus PAC —
+so the real arm64 code disassembles under the AppleSilicon v8.5-A superset spec);
+the *load + spec-selection path is real*, only the binary's provenance is
+synthesized. A genuine Apple-toolchain `-arch arm64e` fixture is a follow-up.
+
+**Tests (all RAN, none skipped).** Unit: `macho_fat` (slice-pref parse + non-fat
+reject), `format::macho` (`is_arm64e` subtype detection + the gated
+`apple_silicon_id` mapping) — hermetic, no `.sla`. E2e
+(`kuna-console/tests/verify_macho_fat.rs`, 5 tests, real load through the built
+`.sla`): the fat binary loads its default x86-64 slice and names `printf`;
+`--slice arm64` selects the other slice; arm64e gate-on selects the **AppleSilicon**
+spec (description asserted) and still names `printf`; gate-off uses generic `v8A`;
+default-off rejects the fat binary. The existing `verify_macho_imports` /
+`verify_object_formats` / `verify_multiformat_entry` gates still pass (the
+`macho_stubs` delegation is behavior-identical). **Speed:** the fat slice peel is a
+header read + a sub-slice (negligible); the CLI `kuna decompile macho_fat _main
+--experimental-formats` completes in **~0.34 s** end-to-end (the arm64e variant
+~0.29 s).
+
+**Gating / parity.** Default-off ⇒ a fat binary needs `--experimental-formats` to
+load at all, the arm64e spec needs `--option macho-arm64e on`, and a non-fat /
+non-arm64e target is byte-identical (the slice peel is a pass-through for thin
+inputs). The XML datatest path never reaches the object loader, so the parity
+oracles are structurally untouched. Gates: `make test` **675/675 PARITY OK**,
+`make test-stages` **159/159 PARITY OK**, `make rust-test` **green**;
+`kuna catalog --check` **OK** (this PR adds the `macho-arm64e` row; after merging
+`main`'s concurrent `foldcallret` + `dedupvardecls` settables the catalog carries
+**40** rows total).
+
+- **Divergence/LOSS:** none to the parity oracles. The fat/arm64e fixtures are
+  hand-built (no in-container Apple linker / `lipo`); the arm64e fixture's
+  cpusubtype is synthesized over real arm64 code (a genuine arm64e binary is a
+  follow-up).
+- **New:** `kuna-analysis/src/s1_loader/macho_fat.rs`,
+  `kuna-console/tests/verify_macho_fat.rs`,
+  `kuna-analysis/tests/fixtures/macho_fat`,
+  `kuna-analysis/tests/fixtures/macho_arm64e`.
+- **Changed:** `kuna-console/src/engine.rs` (`select_macho_slice` peel at
+  dispatch), `kuna-analysis/src/loadimage_object.rs` (`language_id_for` arm64e
+  hook), `kuna-analysis/src/s1_loader/format/macho.rs` (`is_arm64e` /
+  `apple_silicon_id` + tests), `kuna-analysis/src/s1_loader/macho_stubs.rs`
+  (delegate to the canonical selector), `kuna-analysis/src/s1_loader/mod.rs`,
+  `kuna-decomp/src/infra/architecture.rs` (`macho_arm64e` field + `set_kuna_option`
+  arm), `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`),
+  `kuna-decomp/stages.toml` (the `macho-arm64e` settable),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count bumps),
+  `kuna-console/src/kuna_console.rs` (`kuna_live_value` arm),
+  `kuna-cli/src/{main,decompile}.rs` (`--slice` + the arm64e env export),
+  `docs/assertions.md`, `docs/analysis-port-log.md`.
+
+### Increment 46 — Multi-format support is now unconditional (the --experimental-formats flag removed)
+
+The multi-format build-out (Increments 36–45: PE/Mach-O/COFF parsing, import
+naming, entry discovery, demangling, DWARF, compiler detection, fat-slice
+selection) shipped each format behind a `--experimental-formats` flag — proven
+green PR by PR while the default dispatch stayed ELF-only and byte-identical. With
+all four formats proven, this increment **promotes multi-format to the default and
+removes the flag entirely** (user directive: "Flip it on and remove the flag. We
+should always support it."). PE/Mach-O/COFF now load exactly like ELF — no flag, no
+env var, no opt-in.
+
+**The mechanism removed.** The gate was a single chokepoint: `is_object_binary`
+(`kuna-console/src/engine.rs`) admitted the non-ELF magics only when
+`experimental_formats_enabled()` returned true, which read the
+`KUNA_EXPERIMENTAL_FORMATS` env var. The `kuna decompile --experimental-formats`
+CLI flag exported that env var onto the spawned `decomp_dbg`. All three are gone:
+`is_object_binary` now admits ELF + Mach-O (`0xfeedfac*` / fat `0xcafebabe`) + PE
+(`MZ`) + a bare COFF (`IMAGE_FILE_MACHINE_*` prefix) **unconditionally**; the
+`experimental_formats_enabled()` helper and the env-var read are deleted; the CLI
+flag definition + its env export are deleted.
+
+**The headline (the whole point).** With **NO flag**, a real PE and a real Mach-O
+now decompile straight off `kuna decompile`:
+
+```text
+$ kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/pe_imports.exe main
+unsigned long long main(uint4 a0)
+{
+  __main();
+  puts("hello");
+  printf("%d\n",(uint8)a0);
+  return 0;
+}
+
+$ kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/macho_imports _main
+unsigned long _main(int4 a0)
+{
+  printf("%d\n",(uint8)(a0 * 3 + 7));
+  return 0;
+}
+```
+
+Before this increment those exact commands errored ("Unable to recognize
+imagefile") unless you added `--experimental-formats`; now they just work. And the
+flag is gone — `kuna decompile … --experimental-formats` now reports
+`error: unknown option --experimental-formats`.
+
+**Why this is parity-safe (the load-bearing invariant).** The XML datatest path
+(`bootstrap_program`, the 675/675 corpus) and the stage corpus dispatch on the XML
+`<bi…>` document / ELF magic and **never** carry a PE/Mach-O/COFF magic, so
+`is_object_binary` returns false for every datatest input regardless of the gate —
+removing the gate cannot perturb their dispatch. The ELF arm is unchanged. The only
+behavior change is that a real PE/Mach-O/COFF binary now decompiles by default
+instead of erroring — exactly the intended, user-directed default change (an
+output-changing change that is, per the directive, deliberately NOT behind a flag).
+
+**Tests.** Every multi-format e2e gate (`verify_pe_imports`, `verify_macho_imports`,
+`verify_coff_object`, `verify_object_formats`, `verify_multiformat_entry`,
+`verify_multiformat_passes`, `verify_multiformat_dwarf`, `verify_macho_fat`,
+`verify_msvc_demangle`) was de-flagged: the `KUNA_EXPERIMENTAL_FORMATS` set/remove
+toggling is gone, the per-file `ENV_LOCK` that only serialized that process-global
+toggle is removed where no env is touched anymore (kept in `verify_macho_fat`,
+which still toggles the separate `KUNA_MACHO_SLICE`/`KUNA_MACHO_ARM64E`), and each
+former "default-off: must NOT load without the flag" negative assertion is inverted
+to a "loads by default through `bootstrap_from_file`" positive — so the suite now
+exercises the now-default path. `kuna catalog --check` is unchanged
+(`--experimental-formats` was never a settable; the catalog/count is identical).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**PARITY OK** (count unchanged from the prior increment), `make rust-test`
+**green** (all multi-format e2e tests pass with no flag), `kuna catalog --check`
+**OK**.
+
+- **Divergence/LOSS:** none to the parity oracles. This is an intentional,
+  user-directed default change: a real PE/Mach-O/COFF binary now decompiles by
+  default. It is deliberately not behind a flag (per the directive). The XML/ELF
+  oracles are byte-identical.
+- **Changed:** `kuna-console/src/engine.rs` (drop `experimental_formats_enabled()`
+  + the `KUNA_EXPERIMENTAL_FORMATS` read; `is_object_binary` admits all magics
+  unconditionally), `kuna-cli/src/{main,decompile}.rs` (remove the
+  `--experimental-formats` flag + its env export + the `experimental_formats`
+  field), `decompiler/Cargo.toml` (comment), `kuna-analysis/src/s1_loader/format/{mod,pe,macho,coff}.rs`
+  + `kuna-analysis/src/s1_strings/mod.rs` (doc comments), `kuna-decomp/stages.toml`
+  + `docs/assertions.md` (the `macho-arm64e` `use_when`/`example` drop the flag
+  mention), `kuna-console/tests/verify_{pe_imports,macho_imports,coff_object,object_formats,multiformat_entry,multiformat_passes,multiformat_dwarf,macho_fat,msvc_demangle}.rs`
+  (de-flagged), `docs/multiformat-loader-design.md`, `docs/analysis-port-log.md`.
+
+### Increment 47 — `.eh_frame` LSDA landing-pad discovery + CFI assessment (GccExceptionAnalyzer) ✅
+
+Increment 5 mined the `.eh_frame` FDE `pcBegin` addresses (function STARTS) as an
+entry oracle. This increment ports the **rest** of Ghidra's `GccExceptionAnalyzer`:
+the **`.gcc_except_table` LSDA call-site table** → exception-handler **landing
+pads**. A landing pad (a `catch`/cleanup block) is a real code target reached
+*only* by the unwinder — it sits mid-function, so the FDE-pcBegin / prologue /
+libc-start oracles never see it, and a stripped C++ binary's entry-disc misses it.
+Output-changing (it ADDS entries), so it is **gated behind `--option eh_frame_full
+on`, default-OFF** — a default run is byte-identical to FDE-pcBegin-only.
+
+**Product 1 — LSDA landing pads → entries (the decompiler-relevant arm).** A new
+`EhFrameLsdaPass` (id `eh_frame_full`, `s1_entry/mod.rs`) walks `.eh_frame`: for
+each CIE it decodes the `zPLR` augmentation (the `L` char's LSDA pointer encoding
+alongside the `R` FDE encoding and `P` personality — `Cie.processAugmentationInfo`);
+for each FDE whose CIE has an `L`, it reads the FDE augmentation-data LSDA pointer
+(after `pcBegin`/`pcRange`/`augLen` — `FrameDescriptionEntry.createLsda`), follows
+it into `.gcc_except_table`, and decodes the LSDA header
+(`[lpStartEnc][lpStart?][ttypeEnc][ttypeOff?][callSiteEnc][callSiteLen]` —
+`LSDAHeader.create`) and the call-site table
+(`[cs_start][cs_len][cs_lp][cs_action]*` — `LSDACallSiteRecord.create`). Each
+non-zero landing pad is `lpStart + cs_lp` (with `lpStart` defaulting to the FDE's
+`pcBegin` when `lpStartEnc == omit`; `cs_lp == 0` ⇒ no landing pad). Faithful to
+`GccExceptionAnalyzer.processCallSiteRecord`, which disassembles each non-zero
+landing pad — our `AnalysisOutput.entries` fact, put through the same exec-section
++ funcsym-skip + dedup filter every oracle uses. The pass runs at load (the facts
+are stashed per-pass) but **commits** only when the gate is on
+(`engine.rs::analysis_pass_enabled` → `arch.analysis_eh_frame_full`), so a default
+run computes nothing visible.
+
+**Product 2 — CFI assessment (built vs inherited).** The CIE/FDE `DW_CFA_*`
+call-frame instructions give the CFA + saved-register rules. kuna's engine recovers
+the stack frame *from the code itself* — S5 type inference + S7 frame analysis
+(`coreaction_infertypes` / the stack-frame restructuring) reconstruct locals, the
+saved-register set, and the frame layout from the lifted p-code, exactly as Ghidra's
+decompiler does. The CFA/register-save rules therefore add **nothing** at the
+decompiler tier (they are an unwinder runtime concern, not a source-recovery one).
+**CFI is INHERITED, not rebuilt** — no DW_CFA decoder is ported (a no-op pass would
+be the wrong thing to add). The one cheap confirmation CFI *could* offer — the frame
+register (`DW_CFA_def_cfa: r7`) — is already recovered identically by the engine's
+frame analysis, so there is no win to bank. This is documented here per the brief.
+
+**Fixture + e2e.** `eh_lsda_x86_64` (vendored, `g++ -O1 -no-pie -fexceptions` +
+`strip`): a `guarded()` with two `catch` arms over an out-of-line throwing
+`may_throw()`. Landing pads (pinned, hand-decoded + `objdump`/`readelf`
+cross-checked, all `endbr64`, all mid-function): `may_throw` → `0x4012bf`;
+`guarded` → `0x4012e2` (catch dispatch), `0x401352`, `0x401366` (cleanup). The
+LSDA pointers (`0x40218c`/`0x402198`) come from the FDE augmentation data
+`8c 21 40 00`/`98 21 40 00` (`udata4`). Unit tests
+(`s1_entry::tests`): the call-site-table parse over both the real fixture and
+synthetic bytes, plus a proof that the landing pads are NOT FDE starts and that a
+no-`.gcc_except_table` binary (`fauxware`) yields none. e2e
+(`verify_eh_frame_full`): `--option eh_frame_full on` discovers `sub_4012e2`
+(decompilable by name, no `--addr`); default-off it is absent.
+
+**Speed.** The LSDA scan is one linear walk of two tiny sections, run once at load
+— sub-millisecond, below measurement resolution. End-to-end decompile (interleaved
+OFF/ON, 8 runs each on `eh_lsda_x86_64`): OFF mean 0.493 s, ON mean 0.526 s —
+within subprocess-spawn noise (the LSDA work itself is negligible; the small delta
+is the extra discovered functions the engine sees, not the scan).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**194/194 PARITY OK**, `make rust-test` **green**, `kuna catalog --check` **OK**
+(byte-identical default-off; the new settable raised the count 49 → 50). The
+`kuna-catalog.xml` stage test's `use_when`/`change_kind` count bounds were bumped
+`max 50 → 60` (the catalog now emits 50 settables + 1 from the single-`returnpair`
+catalog probe = 51 > the old 50 bound).
+
+- **Divergence/LOSS:** none to the parity oracles (the option is default-off, so
+  the discovery set is byte-identical to before). LOSS, inherited from the Increment-5
+  FDE scan: a forward-referencing CIE (CIE after its FDE) is missed (gcc never emits
+  this); the `indirect` DW_EH_PE bit (`0x80`) is unresolvable without a runtime
+  relocation; 64-bit `0xffffffff`-extended `.eh_frame` records are skipped. CFI is
+  inherited (see Product 2). SJLJ (setjmp/longjmp) exception tables are not handled
+  (the standard DWARF call-site table is the GNU C++ default and the only form in
+  the fixtures).
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (the `EhFrameLsdaPass` +
+  `scan_eh_frame_landing_pads` / `decode_lsda_landing_pads` / `parse_cie_aug` /
+  `collect_landing_pad_entries` + unit tests), `kuna-analysis/src/passes.rs`
+  (register the pass), `kuna-console/src/engine.rs` + `kuna_console.rs` (the commit
+  gate + live-value arm), `kuna-decomp/{stages.toml, src/p0_knowledge/options.rs,
+  src/infra/architecture.rs}` (the settable + the `analysis_eh_frame_full` flag),
+  the settable-count tests (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`,
+  `stage_catalog.json`, `docs/assertions.md`), `tests/stages/kuna-catalog.xml`
+  (count bounds), `kuna-console/tests/verify_eh_frame_full.rs` (e2e), the vendored
+  fixture `eh_lsda_x86_64` (+ source + README), `docs/analysis-port-log.md`.
+
+### Increment 48 — scalar/operand reference markup (`ScalarOperandAnalyzer` family, gated off) ✅
+
+Ports the salvageable subset of Ghidra's operand/reference markup family
+(`ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`, `OperandReferenceAnalyzer`,
+`DataOperandReferenceAnalyzer`) as ONE pass, **gated off by default** — clearing
+the buildplan §1.2 item (the "never-for-an-ELF-decompiler as producing passes"
+verdict) by building it so it *exists + is flippable*, rather than leaving it a doc
+note. New module `kuna-analysis/src/s1_operand_refs/` (`OperandRefsPass`, id
+`operand_refs`).
+
+**What it builds (the faithful, salvageable subset).** The one product of the
+family with decompiler relevance: a scalar immediate operand that points into
+allocated **read-only** data is an address, so type the target so it renders. The
+pass linear-decodes the executable sections through the engine `Translate`
+(`one_instruction` + a capturing `PcodeEmit` that keeps every constant-space input —
+the kuna projection of `Instruction.getOpObjects(i)` `Scalar`s), applies
+`ScalarOperandAnalyzer.checkOperands`'s value filter (reject `< 4096` and the
+byte-mask values `0xffff`/`0xff00`/…), accepts the scalar only when it lands in an
+allocated, non-writable, non-exec section (the `.rodata` partition; mirrors
+`program.getMemory().contains` + the readonly check), applies the
+`ElfScalarOperandAnalyzer` `.got`/`.plt` exclusion (those are `elf_plt`-named, never
+data refs), and for a target that begins a NUL-terminated printable run emits a
+`StringFact` (`char[N]`) + `readonly` range through the **existing** strings/readonly
+commit arms — so the printer's pointer-to-readonly-char-array literal route
+(Increment 12) renders the reference as the literal.
+
+**The empirical render result (the headline).** The scalar→string-literal render
+**works** — the printer-shadowing wall the buildplan §1.2 flagged is **gone** since
+Increment 12. On the `operand_refs_x86_64` fixture (`main` materializes the `.rodata`
+string `"hi"`@`0x402004` with `movabs $0x402004,%rax` and passes it to the
+**no-prototype** `mystery`):
+- **default-off:** `mystery(0x402004)` (the bare absolute scalar);
+- **`--option operand_refs on`:** `mystery("hi")` (the literal) — proving the pass's
+  planted `char[3]` promotes the constant into a global SPACEBASE reference that the
+  Increment-12 printer route renders as the literal, NOT the `s_<addr>` name.
+
+`"hi"` is **2 chars** (< 5, so the always-on `StringLiteralPass` skips it) and
+`mystery` has no prototype (no libproto/S5 typing), so the literal renders *only*
+because `operand_refs` typed the operand — isolating this pass's contribution. The
+pass fires only when the address **appears directly in code** as a bare immediate
+(the `movabs` / `-mcmodel=large` case); a RIP-relative `lea 0xNNN(%rip)` surfaces a
+`pc + displacement` computation, not a bare scalar, so no operand is captured —
+faithful to Ghidra's `ADDRESSES_DO_NOT_APPEAR_DIRECTLY_IN_CODE`
+(`getDefaultEnablement2`) gate. So the value-add is the narrow residual the verdict
+predicted: a short / `s1_strings`-missed read-only string operand of a no-prototype
+call where the address is materialized as a direct immediate.
+
+**Documented-as-covered-elsewhere (not built as a no-op).** The listing-cosmetic
+`OperandReferenceAnalyzer`/`DataOperandReferenceAnalyzer` halves (subroutine refs,
+address-table refs, generic xrefs) have no decompiler-relevant commit arm and are
+delivered by other passes — module docs carry the map: subroutine refs → `s1_entry`;
+jump/address tables → the engine `JumpTable::recoverAddresses` (S2) + `s1_addrtable`;
+strings → `s1_strings` + the printer route; `.plt`/`.got` → `elf_plt`.
+
+**Why default-off (the net-negative rationale, unchanged from §1.2).** (a) Ghidra
+ships the producing analyzer `getDefaultEnablement` = `!isElf` — **disabled for every
+ELF**; (b) `ElfScalarOperandAnalyzer` only *removes* bad `.got`/`.plt` refs kuna
+never creates; (c) the one useful product is already covered for the common (≥5-char,
+prototyped-call) case by `s1_strings` + libproto/S5 typing; (d) a per-instruction
+immediate scan over-accepts (the `s1_addrtable` false-positive shape). So it ships
+**ported + flippable** but off.
+
+**Deferred-run requirement (the build-timing finding).** Like the Listing tier
+(PR6), the pass runs **deferred** at the commit point (`read symbols`), NOT in the
+load-time pass list: it decodes through the engine `Translate` whose program
+loadimage is only attached (`set_loader`) *after* the load-time passes run — a
+load-time decode finds no bytes (empirically `decoded_ok=0, decoded_err=357` over the
+fixture). It is driven from `passes::run_operand_refs`, called from
+`engine.rs::commit_pending_analysis` gated on `arch.analysis_operand_refs`, sharing
+the deferred-Listing image stash.
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**194/194 PARITY OK** (the two `kuna-catalog.xml` `use_when`/`change_kind` range
+assertions had their `max` bumped `50`→`60` to admit the +1 settable; the new option
+itself adds no datatest), `make rust-test` **green** (5 `s1_operand_refs` unit tests
++ the new `verify_operand_refs` e2e gate's 2 tests), `kuna catalog --check` **OK**
+(50 settables; `stage_catalog.json` + `docs/assertions.md` regenerated). Decompile
+speed: default-off byte-identical and zero-cost (the deferred decode is skipped); on,
+adds a one-time whole-`.text` linear sweep (~0.3 s on fauxware, within noise).
+
+- **Divergence/LOSS:** none to the parity oracles (all default-off ⇒ byte-identical).
+  The pass is the residual-only producer the buildplan predicted; the listing-cosmetic
+  halves are documented as covered-elsewhere, not built. **`make test-stages`
+  delta:** the `kuna-catalog.xml` `max` bump (range loosening, intent unchanged).
+- **Changed:** new `kuna-analysis/src/s1_operand_refs/mod.rs` + `lib.rs` mod;
+  `kuna-analysis/src/passes.rs` (`run_operand_refs` deferred runner + the load-time
+  registration note); `kuna-console/src/engine.rs` (`analysis_pass_enabled` arm +
+  the deferred run in `commit_pending_analysis`); `kuna-decomp/src/infra/architecture.rs`
+  (`analysis_operand_refs` field + default + `set_kuna_option` arm);
+  `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`);
+  `kuna-decomp/stages.toml` (`[[settable]]` row); the `49`→`50` count tests
+  (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`); `tests/stages/kuna-catalog.xml`
+  (max bump); goldens `stage_catalog.json` + `docs/assertions.md`; new fixture
+  `tests/fixtures/operand_refs_x86_64`(`.c`) + README; new e2e gate
+  `kuna-console/tests/verify_operand_refs.rs`.
+
+### Increment 49 — The FULL byte-pattern function-start set (FunctionStartAnalyzer)
+
+`s1_entry` already ports Ghidra's `DittedBitSequence` matcher and a *minimal*,
+hand-written set of three bare x86-64 prologues (oracle 5,
+`prologue_pattern_starts`, always-on inside `EntryDiscoveryPass`). This increment
+vendors and parses the **entire upstream pattern corpus** and applies it with the
+upstream pre/post matching semantics, as a **separate, default-OFF** analysis pass
+(`funcstart_patterns`), so a stripped binary recovers many more function starts.
+
+**What was vendored.** The complete
+`Ghidra/Processors/{x86,AARCH64,ARM,RISCV,MIPS,PowerPC}/data/patterns/*.xml`
+(28 files) into `kuna-analysis/src/s1_entry/patterns/` — verbatim from upstream
+(`GHIDRA_REV=cef869af04c4740a71ad31a55704045b1b0d1644`, `docs/UPSTREAM.md`),
+embedded via `include_str!` (the analyzer tier has no spec-root handle). The new
+`s1_entry/patterns/mod.rs` is the faithful port of two upstream classes:
+`DittedBitSequence.initFromDittedStringData` (the full hex+binary ditted parser,
+incl. the `*` mark-offset) and `PatternPairSet.createFinalPatterns`/`restoreXml`
+(the pre/post pairing).
+
+**The matcher (the high-value half).** Faithful to `PatternPairSet`: a candidate
+is a function start iff a **postpattern** (the prologue shape) matches **at** it
+AND a **prepattern** (the preceding context — a RET/JMP/NOP/…) matches the bytes
+**immediately before** it (the concat's mark is `prepattern.getSize()`), at the
+instruction alignment (`FunctionStartAnalyzer.applyActionToSet`'s
+`addr % getInstructionAlignment() != 0` reject). Bare `<pattern>` blocks with an
+unconditional `<funcstart/>` (incl. the `*`-marked x86-64win MSVC shapes, where the
+bytes before the `*` are context) are also matched. This is pure byte matching —
+no disassembler — so it ports cleanly at the analyzer tier. Arches with an
+unconditional-`<funcstart/>` patternpair yield a set: **x86-64 / x86-32 / ARM /
+RISC-V / MIPS**. AArch64 and PPC carry only `<possiblefuncstart/>` patternpairs
+(`PossibleFunctionStartAction` writes a *separate* `potentialFuncResult` set that
+Ghidra confirms later via the Listing), so they yield **no** set — a documented
+LOSS at this disassembler-free tier, not a bug.
+
+**LOSS (unchanged wall).** The `after="defined"` / `validcode="N"` /
+`<possiblefuncstart/>` / `thunk` / `label` / `section` post-rules all need a
+`PseudoDisassembler`/`Listing` (is there defined code/data right before? do N valid
+instructions disassemble here?) the analyzer tier does not have — dropped, the same
+wall `s1_entry`'s oracle-5 docs and `noreturn.rs` record. Only the
+byte-decidable `<patternpairs>` `<funcstart/>` + bare unconditional `<funcstart/>`
+are ported.
+
+**The gate (default-OFF, output-changing).** Because the pass discovers MORE
+functions, it ships as a *separate* `AnalysisPass` (`FuncStartPatternPass`,
+`id() == "funcstart_patterns"`) gated default-off — NOT folded into the always-on
+`entry_disc`. The mechanism mirrors every other analysis-pass gate exactly: the
+pass `run`s unconditionally at bootstrap (it reads only `ctx.file`), is keyed by
+`id()`, and the console's deferred commit (`engine.rs::analysis_pass_enabled`,
+reached at `read symbols` after the `--option` lines are applied) keeps its facts
+only when `arch.analysis_funcstart_patterns` is true. The `_ => true` fail-open in
+`analysis_pass_enabled` made an explicit `"funcstart_patterns" =>` arm load-bearing
+for the default-off contract. End-to-end wiring: `stages.toml` (the
+`funcstart_patterns` settable, `default = "off"`) + `KUNA_OPTION_NAMES`
+(`options.rs`) + `architecture.rs` (the `analysis_funcstart_patterns` bool +
+`reset_defaults_internal` false + `set_kuna_option` arm) +
+`engine.rs::analysis_pass_enabled` (explicit id) + the settable-count tests
+(`kuna_stages/tests.rs` 49→50, `catalog_bytecompat.rs` 49→50) + the goldens
+(`stage_catalog.json` regenerated, `docs/assertions.md` via `kuna catalog
+--markdown` — a single additive row).
+
+**The headline (the extra-function proof).** The fixture
+`funcstart_patterns_x86_64` (stripped x86-64 ELF) has a `static` helper `widget`
+@`0x401130` whose `-O2` prologue is `push rbx; mov rbx,rdi` (`53 48 89 fb`),
+preceded by gcc's 8-byte NOP pad — the FULL `<patternpairs>` postpattern
+`0x534889fb` gated by the prepattern `0x0f1f840000000000`, a shape the minimal
+oracle misses. `widget` has no symbol (stripped, `static`), no `.eh_frame` FDE
+(`-fno-asynchronous-unwind-tables`), and is not `e_entry`/INIT/FINI/`main`, so it
+is discoverable ONLY via the full set:
+
+```text
+$ kuna decompile funcstart_patterns_x86_64 sub_401130 --option funcstart_patterns on
+int8 sub_401130(int8 a0)
+{
+  return a0 * 7 + 9;
+}
+
+$ kuna decompile funcstart_patterns_x86_64 sub_401130     # default off
+error: no function "sub_401130" in …; for a stripped binary pass an address with --addr
+```
+
+`kuna-console/tests/verify_funcstart_patterns.rs` asserts both halves
+(`lookup_symbol("sub_401130")` is `Some` only with the option on) plus the pure-core
+seam (`full_pattern_starts` includes `widget`, default `collect_entries` does not);
+the `patterns` module unit-tests the ditted parser (hex/binary/`*`-mark), the
+pre/post matching (a `push rbx` hit needs the NOP prepattern; no prepattern ⇒ no
+hit), and the per-arch set selection.
+
+**Speed.** The full-pattern sweep runs once at load (O(exec-section-bytes ×
+patterns), not per-function); end-to-end `kuna decompile … --option
+funcstart_patterns on` is ~0.31 s on the fixture vs ~0.2–0.6 s default-off — no
+measurable slowdown (the pattern set is parsed once, cached per arch via
+`OnceLock`).
+
+**Gating / parity.** Default-off ⇒ the pass's facts are dropped at commit and every
+decompilation is byte-identical to the `entry_disc`-only baseline; the XML datatest
+path never reaches the object analysis tier, so the parity oracles are structurally
+untouched. Gates: `make test` **675/675 PARITY OK**, `make test-stages` **PARITY
+OK**, `make rust-test` **green**; `kuna catalog --check` **OK** (the catalog adds
+the single `funcstart_patterns` row; the byte-for-byte fixture was regenerated, no
+`current` field).
+
+- **Divergence/LOSS:** the `after`/`validcode`/`<possiblefuncstart/>`/thunk/label
+  pattern rules are dropped (disassembler-gated), so AArch64/PPC (whose patternpairs
+  are all `<possiblefuncstart/>`) and the conditioned x86 bare patterns contribute
+  nothing — the same `s1_entry` analyzer-tier wall. No parity-oracle divergence
+  (default-off).
+- **New:** `kuna-analysis/src/s1_entry/patterns/` (the 28 vendored XMLs +
+  `mod.rs`), `kuna-console/tests/verify_funcstart_patterns.rs`,
+  `kuna-analysis/tests/fixtures/funcstart_patterns_x86_64{,.c}`.
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (`FuncStartPatternPass` +
+  `full_pattern_starts` + the `mod patterns`), `kuna-analysis/src/passes.rs`
+  (register the pass), `kuna-decomp/src/infra/architecture.rs`
+  (`analysis_funcstart_patterns` field + default + `set_kuna_option`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`),
+  `kuna-decomp/stages.toml` (the settable), `kuna-console/src/engine.rs`
+  (`analysis_pass_enabled` arm), `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`
+  + `kuna-decomp/tests/catalog_bytecompat.rs` (count 49→50),
+  `kuna-decomp/tests/fixtures/stage_catalog.json`,
+  `kuna-analysis/tests/fixtures/README.md`, `docs/assertions.md`,
+  `docs/analysis-port-log.md`.
+
+### Increment 50 — Aggressive Instruction Finder gap-walk (the third Listing/xref consumer, gated off)
+
+**Premise.** The Listing/xref tier (Increments 28–33: the recursive-descent
+disassembly + instruction/xref/function model) and its first two consumers
+(`noreturn_disc`, `noreturn_propagate`) recover functions reachable by a static CALL
+or named in a symbol table. But a function reachable ONLY through an **indirect /
+data path** — its address taken into a `.rodata` function-pointer table and called
+via `call *reg` with an opaque index — is invisible: it is in no symbol table, has
+no `.eh_frame` FDE, and no static CALL edge points at it. It sits in the executable
+image as an **undefined gap** between two discovered functions. This increment ports
+the **sound substitute for `AggressiveInstructionFinderAnalyzer`** the buildplan
+prescribed (`docs/analysis-port-buildplan.md` §1.3 verdict: *"build the sound
+substitute, not AIF"* — and the §1.0 keystone made it a small consumer), as the
+third Listing consumer `s1_aif`, **gated off by default** (faithful to Ghidra's
+`setDefaultEnablement(false)` + the warning *"IT MAY CREATE A LOT OF BAD CODE!"*).
+
+**The gap-walk (`s1_aif/mod.rs`, the kuna analog of `AggressiveInstructionFinderAnalyzer.added`).**
+Over the `CodeUnit` partition the Listing walk left behind, AIF finds each UNDEFINED
+gap (`Listing::first_undefined_after`), speculatively decodes the gap start (the
+Listing decoded only *reachable* code; AIF probes the gaps with the same SLEIGH
+decoder via a `GapDecoder` wrapping `decode_one` — the kuna analog of the upstream's
+own `PseudoDisassembler`), and accepts a gap start as a NEW function entry when it
+BOTH (a) **disassembles into a valid subroutine** (`check_valid_subroutine` — the
+analog of `PseudoDisassembler.checkValidSubroutine` / `followSubFlows`: follow
+fall-through + intra-gap branches to a clean RET without a bad byte / out-of-range
+flow, > 2 instructions) AND (b) **matches a function-start fingerprint** shared by
+≥ 4 discovered functions (Ghidra's `funcStartMap` mask-histogram). It bails unless
+there are ≥ 20 discovered functions (Ghidra's `MINIMUM_FUNCTION_COUNT`). Accepted
+starts are emitted as the existing `entries` fact → the existing
+`name_function`/`add_function` commit arm (no new commit arm); the flow-repair half
+is **inherited** (the engine decompiles any registered entry on demand).
+
+**Why AIF is not a pure `AnalysisPass` over `ctx.listing`** (unlike the two no-return
+consumers). AIF must speculatively decode *undecoded* gap bytes, which needs the live
+SLEIGH decoder, not just the built Listing. So it is driven by `s1_aif::run_aif`,
+invoked from `passes::run_listing_consumers` with the same `translate`/code-space the
+Listing build held, keyed `"aif"` so the deferred commit gates it via
+`engine.rs::analysis_pass_enabled` exactly like the pure consumers. The
+`AggressiveInstructionFinderPass` `AnalysisPass` impl exists only for the gate
+identity (its `run` is an inert no-op).
+
+**Option wiring (full end-to-end, the `noreturn_propagate` template).** `aif`
+registered default-off: `stages.toml` `[[settable]]` row (count 49→50), `architecture.rs`
+(`analysis_aif` field + ctor default + `reset_defaults_internal` + `set_kuna_option`
+arm), `options.rs` `KUNA_OPTION_NAMES`, `engine.rs::analysis_pass_enabled` (explicit
+`"aif" => arch.analysis_aif`; the default arm is fail-OPEN so a new gate MUST be
+listed), the settable-count tests (`kuna_stages/tests.rs` 49→50 + the `},\n` framing
+48→49 + `aif` in `PASS_GATES`, `catalog_bytecompat.rs` 49→50), and the regenerated
+goldens (`tests/fixtures/stage_catalog.json` recaptured, `docs/assertions.md` via
+`kuna catalog --markdown`). `kuna catalog --check` **OK**.
+
+**Fixture + e2e.** `tests/fixtures/aif_gap_x86_64` (vendored + `.c` + README
+provenance, VMAs pinned): a STRIPPED PIE x86-64 ELF where `hidden_handler`@`0x13ae`
+is referenced ONLY from a const `.rodata` function-pointer table (an
+`R_X86_64_RELATIVE` reloc) and called indirectly, so entry-disc + funcsyms + the
+static walk all miss it; 24 sibling handlers `h0..h23` (called directly from `main`,
+recovered via the PIE `_start`→`main` idiom) clear the ≥-20-function gate and stock
+the fingerprint histogram. `kuna-console/tests/verify_aif.rs`: with
+`--option listing on --option aif on` the gap-walk discovers `sub_13ae`
+(decompilable by name); default (off) leaves it undiscovered (byte-identical parity).
+Unit tests in `s1_aif` pin the thresholds + the operand-insensitive fingerprint.
+
+**Decompile-speed impact.** Default-off ⇒ **nil** (the gap-walk never runs unless
+both `--option listing on` and `--option aif on` are set; the structural guard is
+that `run_listing_consumers` is reached only on the real-ELF deferred-commit path,
+never the XML datatest path). On-path cost: bounded by the undefined-gap byte count
+× the speculative decode (each gap VMA probed at most once via the `GapDecoder`
+cache; the validity walk is capped at 4000 instructions per gap). It builds no
+decompilation IR — far cheaper than a real decompile, and it runs once, post-load.
+
+**LOSS / faithful scope.** (1) The fingerprint is the decoded **mnemonic** sequence
+of the first 2 instructions, not Ghidra's masked instruction *bytes*
+(`getInstructionMask` is a SLEIGH capability kuna's decoder does not surface —
+`docs/listing-tier-design.md` §8). The mnemonic sequence is the operand-insensitive
+opcode projection the decoder *does* expose (`print_assembly` splits mnemonic from
+operand body), forming the same masked-bytes equivalence class — a faithful
+*substitute*, not a bit-exact reproduction. (2) The ARM variant
+(`ArmAggressiveInstructionFinderAnalyzer`, per-gap `TMode` flip) is out of scope
+(x86-64 is the gated target; the gap walk probes in the Listing's resolved decode
+context). (3) Ghidra's analysis-bookmark side effect is not emitted (kuna has no
+bookmark surface).
+
+**Gates.** `make test` **675/675 PARITY OK**, `make test-stages` **PARITY OK**,
+`make rust-test` **green**, `kuna catalog --check` **OK**. Default-off ⇒ all
+byte-identical to main.
+
+- **Changed:** `kuna-analysis/src/s1_aif/mod.rs` (new), `kuna-analysis/src/lib.rs`
+  (`pub mod s1_aif`), `kuna-analysis/src/passes.rs` (`run_aif` wired into
+  `run_listing_consumers`), `kuna-analysis/src/listing/mod.rs`
+  (`next_instruction_start_after` + `exec_ranges` accessors),
+  `kuna-decomp/src/infra/architecture.rs`, `kuna-decomp/src/p0_knowledge/options.rs`,
+  `kuna-console/src/engine.rs`, `kuna-decomp/stages.toml`,
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
+  `kuna-decomp/tests/catalog_bytecompat.rs`,
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen), `docs/assertions.md`
+  (regen), `kuna-console/tests/verify_aif.rs` (new),
+  `kuna-analysis/tests/fixtures/aif_gap_x86_64{,.c}` (new) + `fixtures/README.md`,
+  `docs/analysis-port-log.md`.
+
+### Increment 51 — DWARF `.debug_line` source-line mapping (`dwarf_lines`, default-off)
+
+The `s1_dwarf` pass recovers names/types/stack-locals from `.debug_info`
+(Increments 6/14/43) but never read the **`.debug_line`** side — the PC→source
+`file:line` mapping the compiler emits under `-g`. This increment ports it as a
+sibling pass `DwarfLinesPass` (`kuna-analysis/src/s1_dwarf/lines.rs`), the kuna
+analog of Ghidra's `DWARFLineInfoCommentScript` (`addSourceLineInfo` walks each
+CU's line-table rows via `DWARFLine.getAllSourceFileAddrInfo` and
+`appendComment(addr, EOL, "%s:%d".formatted(fileName, lineNum))`).
+
+**The spike — there IS a source-line comment seam.** The engine already carries
+the full upstream comment subsystem: `Architecture::commentdb`
+(`CommentDatabase`, `comment.{cc,hh}` port) is read at `print C` time by
+`PrintC::setup_comments` → `CommentSorter` (block placement by instruction
+address) → `emit_comment_group` → `emit_line_comment`, which renders each
+`Comment::user2` as a `/* … */` line at the op's address (exactly what the
+`Funcdata::warning` path already uses for `Comment::warning`). So no printer
+change is needed — the analysis tier only has to deposit comments into
+`commentdb`. The print drive reads the **console** `Architecture`
+(`print_c(prog.arch_mut(), fd)`), which is where the analysis commit writes, so
+the seam is wired end-to-end with no `ArchSeam` plumbing.
+
+**The pass.** `DwarfLinesPass` parses `.debug_line` with gimli
+(`Unit::line_program` → `OneShotLineRows::next_row()`, the standard DWARF
+state machine: address advance / `is_stmt` / `end_sequence`). For each
+non-`end_sequence` row it emits a `CommentFact { func_addr, addr, "file:line" }`,
+bucketing the row onto the subprogram `[low_pc, high_pc)` range that contains its
+PC (the comment DB keys by `(funcaddr, addr)` and the printer only retrieves a
+function's comments via `comments_for(funcaddr)`, so each row must carry its
+owning function's entry VMA). A new `AnalysisOutput::comments` channel +
+`CommentFact` type carry the facts; the console commit
+(`commit_analysis_output`, step 9) installs each into `arch.commentdb` via
+`add_comment_no_duplicate(USER2, …)`.
+
+**The headline (the whole point).** `cet_pie_x86_64`'s `elaborate_debug_symbol`
+(`.debug_line` for `debug_symbol.c`, lines ~122-146) with the gate ON:
+
+```text
+$ kuna decompile cet_pie_x86_64 elaborate_debug_symbol --option dwarf_lines on
+…
+                    /* debug_symbol.c:124 */
+  iVar1 = open(binary,0);
+                    /* debug_symbol.c:125 */
+  …
+                    /* debug_symbol.c:146 */
+  return v1;
+```
+
+Default-OFF the same decompile carries no `debug_symbol.c:` comment — the output
+is byte-identical to pre-feature.
+
+**Gating — default-OFF (output-changing).** Unlike the names/types `dwarf`
+pass (default-on, additive), `dwarf_lines` ADDS comment lines, so it is a new
+default-off `--option dwarf_lines on|off`, registered end-to-end like the other
+analysis gates: `stages.toml` (settable, `default = "off"`), `KUNA_OPTION_NAMES`,
+`Architecture::{analysis_dwarf_lines field, ctor, reset_defaults=false,
+set_kuna_option arm}`, and `engine.rs::analysis_pass_enabled` (explicit arm — NOT
+the fail-open default, so it gates off by default). The settable count goes
+49→50; goldens regenerated (`stage_catalog.json` via the in-process emitter,
+`docs/assertions.md` via `kuna catalog --markdown`).
+
+**Speed.** The pass only runs at `--option dwarf_lines on`, so default decompile
+speed is unchanged (the pass is not in the default-enabled set's commit). When on,
+it is a single linear walk of `.debug_line` per CU at load time (no per-decompile
+cost); the e2e fixture decompile is unmeasurably different from the gate-off run.
+
+**Faithful divergence (DOC).** `end_sequence` rows are **skipped** (a
+past-the-end marker, line `-` in objdump; the Ghidra script keeps them). And a
+row's PC is bucketed to its owning subprogram range; a row outside every known
+function range is dropped (the kuna comment DB is per-function, vs Ghidra's flat
+program-wide CommentDB). The entry-line comment (line 122 @ 0x1357) does not
+render because the prologue op at the entry is eliminated, so `CommentSorter`
+excises the comment with no surviving op to hang on (same reason cet_pie's
+write-once locals never render) — a presentation gap, not a parse loss; the parse
+itself recovers 0x1357→`debug_symbol.c:122` (unit-tested).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**PARITY OK**, `make rust-test` **green** (new unit tests in
+`s1_dwarf/lines/tests.rs` + e2e `dwarf_lines_annotate_source_locations` in
+`verify_s1_dwarf.rs`), `kuna catalog --check` **OK** (byte-identical default-off).
+
+- **Divergence/LOSS:** the parity oracles are byte-identical (the pass is
+  default-off and the XML datatest path produces no analysis facts). `end_sequence`
+  rows skipped + per-function bucketing (above) are the only differences from the
+  Ghidra script's row set.
+- **Changed:** `kuna-analysis/src/s1_dwarf/lines.rs` (+`lines/tests.rs`, NEW),
+  `kuna-analysis/src/s1_dwarf/mod.rs` (`mod lines` + re-export),
+  `kuna-analysis/src/pass.rs` (`CommentFact` + `AnalysisOutput::comments` + merge),
+  `kuna-analysis/src/passes.rs` (register `DwarfLinesPass`),
+  `kuna-console/src/engine.rs` (commit step 9 + `analysis_pass_enabled` arm),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_dwarf_lines` field/ctor/reset/
+  set_kuna_option), `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`),
+  `kuna-decomp/stages.toml` (settable), the settable-count tests
+  (`kuna_stages/tests.rs` 49→50, `catalog_bytecompat.rs` 49→50),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` + `docs/assertions.md` (goldens),
+  `kuna-console/tests/verify_s1_dwarf.rs` (e2e), `docs/analysis-port-log.md`.
+
+### Increment 52 — FID PR1: SLEIGH instruction-mask accessor (the fingerprinting prerequisite)
+
+The first PR of the FID (Function-ID fingerprinting) port — the **SLEIGH
+instruction-mask accessor** that every FID hash consumes. FID's hashes are
+*operand-independent*: they fingerprint a function by the bits SLEIGH pins to a
+constant (opcode / addressing-mode bits) while masking out the bits that carry
+operand values (immediates, displacements, register selectors). kuna had no way
+to ask "which bits of this decoded instruction are fixed?" — the decoder discards
+the matched `DisjointPattern` after `DecisionNode::resolve`. This increment adds
+that accessor. The whole-feature design lives in `docs/fid-design.md` (landed
+this PR); PR1 is **the accessor only** — no FID hashing/DB/pass.
+
+**Purely additive, zero decode-behavior change.** PR1 touches the proven
+`kuna-sleigh` core but adds **only** a new `DecisionNode` method and a new
+`Sleigh` accessor — no existing decode path is modified. The new `instruction_mask`
+re-uses `obtain_context` verbatim and then *reads* the resolved constructor tree;
+it never alters resolution. Proof: `make test` **675/675 PARITY OK** and
+`make rust-test`'s `.sla` content-parity + datatest parity are **byte-identical**.
+
+**Two additions.**
+1. **`DecisionNode::resolve_matched`** (`slghsymbol.rs`, beside `resolve`) — a
+   variant of `resolve` that walks the decision tree byte-for-byte identically
+   (same context/instruction-bit dispatch, same `BadDataError`) but at the
+   terminal node returns the matched **`(DisjointPattern, ct)` pair** (re-running
+   `pat.is_match` to capture the specific leaf), not just the ct id. A convenience
+   `SubtableSymbol::resolve_matched` forwards to it. No decode path calls these.
+2. **`Sleigh::instruction_mask`** (`sleigh.rs`, beside `instruction_length`) →
+   `InsnMask { bytes, fixed_mask, length, operands }` (+ `OperandView`, `OpObject`
+   {Scalar/Register/Address}). It MUST live inside `sleigh.rs` because
+   `obtain_context`/`ParserContext`/`ConstructState`/`ParserWalker` are private.
+   It `obtain_context`s at `Pcode` state (so operand handles are resolved for
+   classification), then walks the matched `ConstructState` arena: per node it
+   re-runs `resolve_matched` to recover the leaf pattern and ORs the pattern's
+   **fixed instruction bits** into `fixed_mask`, shifted by the node's byte
+   `offset`, byte-by-byte via `get_mask(bit, 8, context=false)`. Per operand it
+   computes the value (operand-bit) mask and classifies the resolved
+   `FixedHandle` (constant-space → `Scalar`, register-space → `Register`, else
+   `Address`).
+
+**Gotchas honored.** Multi-word / variable-length masks are walked byte-by-byte
+respecting each node's `offset` (`get_mask` returns ≤32 bits per call); the
+context stream is **never** folded into the byte mask (`context=false` only — the
+context register has no instruction-byte position); `MAX_INSTRUCTION_LEN=16` caps
+the buffer/mask; the per-`addr` accessor naturally fingerprints one instruction
+(the FID extent walker steps by `len` for delay slots).
+
+**Sample (hand-checked vs `objdump`).** `add eax,0x12345678` = `05 78 56 34 12`
+→ `fixed_mask = [ff,00,00,00,00]` (opcode pinned, imm32 zeroed) + a
+`Scalar{0x12345678}`. `mov ecx,imm32` = `b9 …` → `[f8,00,00,00,00]` — the `b8+rd`
+opcode correctly leaves the low-3 register-selector bits free. `add eax,ecx` =
+`01 c8` → `[ff,c0]` (modrm reg/rm selectors are operand bits). `mov
+eax,[rbx+disp32]` = `8b 83 78 56 34 12` → `[ff,c0,00,00,00,00]` (disp32 zeroed) +
+a `Scalar{0x12345678}`.
+
+**Gates:** `make test` **675/675 PARITY OK**, `make test-stages` **PARITY OK**
+(203/203, raised by the concurrent worker), `make rust-test` **green** including
+the `.sla` content-parity tests. The new `instruction_mask` unit gate (4 x86-64
+cases) RAN (4 passed, 0 ignored).
+
+- **New:** `docs/fid-design.md` (the whole-FID design doc),
+  `kuna-sleigh/tests/instruction_mask.rs` (the 4-case unit gate).
+- **Changed:** `kuna-sleigh/src/slghsymbol.rs` (`DecisionNode::resolve_matched`
+  + `SubtableSymbol::resolve_matched`), `kuna-sleigh/src/sleigh.rs`
+  (`InsnMask`/`OperandView`/`OpObject` + `Sleigh::instruction_mask` +
+  `classify_handle` + `ParserWalker::set_point`), `docs/analysis-port-log.md`.
+- **Note:** RIP-relative `[rip+disp32]` forms (mod=00 rm=101) need address
+  arithmetic the minimal standalone test harness does not supply, so the disp32
+  test uses the register-base `mov reg,[base+disp32]` form — a harness limitation,
+  not an accessor limitation (the same harness would fail RIP-relative in
+  `print_assembly`). PR2+ (the hasher / DB / pass) build on this accessor.
+
+### Increment 53 — FID PR2: FNV-1a64 FidHashQuad hasher (extent + skipper)
+
+The second PR of the FID port — the **pure hashing core**: the FNV-1a64 digest,
+the operand-masked `FidHasher`/`FidHashQuad`, the function-extent generator, and
+the x86 NOP skipper. A **byte-exact** port of Ghidra's `MessageDigestFidHasher` /
+`FNV1a64MessageDigest` (a one-bit divergence makes every hash miss *silently*, so
+the constants and the per-instruction loop order are reproduced verbatim).
+Mechanism only — **no pass/DB/option/engine wiring** (that is PR3/PR4). Because
+nothing here is reachable from a decompilation, PR2 structurally cannot perturb
+the parity oracles.
+
+**Three new pure modules** under `kuna-analysis/src/s1_fid/` (`mod.rs` +):
+1. **`hash.rs`** — `Fnv1a64` (the §4.1 FNV-1a64: offset basis
+   `0xcbf29ce484222325`, prime `0x100000001b3`; `update_byte`/`update_bytes`;
+   `update_i32` = 4 bytes **big-endian** via `AbstractMessageDigest.update(int)`;
+   `digest_long` resets to basis). `FidHasher::hash(extent, relocs)` ports
+   `MessageDigestFidHasher.hash` line-for-line: per instruction — read `len`
+   bytes; run skippers (→ `code_unit_index -= 1; continue`, BEFORE the call count
+   and operand hashing, matching the Java order); count calls via `is_call`; the
+   per-operand sub-hash seeds `full_u = spec_u = (ii+1)*7777` then applies the
+   **4-way scalar rule in order** (relocation / whole-operand-address /
+   large-non-whole / small-usable) — the **full hash NEVER sees a scalar value,
+   only the `0xfeeddead` placeholder**; registers mix `(off+7654321)*98777` into
+   **both**; address objects are value-suppressed placeholders into both; then
+   `full.update_i32(full_u); spec.update_i32(spec_u)`; then the **critical
+   interleave**: `buf[i] &= fixed_mask[i]` and feed the masked bytes to BOTH
+   digests AFTER that instruction's operand `update_i32` writes. Magic copied
+   verbatim (`0xfeeddead, 7777, 1234567, 67999, 7654321, 98777, 0xa5, 4, 127`);
+   `wrapping_*` everywhere (Java two's-complement overflow is observable, incl.
+   the `(int) val` truncation of the 64-bit scalar). Extents `< 4` code units →
+   `None`. The empty/absent mask → Ghidra's NPE arm (fill `0xa5`).
+   `FidHashQuad { code_unit_size:i16, full_hash:u64, specific_addl_size:u8,
+   specific_hash:u64 }`. The relocation check is consumed as a `RelocationQuery`
+   trait (pure-core testable; PR4 supplies the `elf_reloc.rs`-backed adapter).
+2. **`extent.rs`** — the `FunctionBodyFunctionExtentGenerator` analog: the
+   address-contiguous `[entry, next_function_after(entry))` clip over the flat,
+   address-ordered `instructions()` map (the `s1_noreturn_disc` idiom). The clip
+   rule is split into a pure `clip_extent` so it is unit-testable without a full
+   `Listing`. **LOSS** (documented, §1): address-contiguous, not flow-reachable —
+   interleaved/outlined bodies mis-clip (same approximation `s1_noreturn_disc`
+   accepts).
+3. **`skipper.rs`** — the `InstructionSkipper` trait + `X86InstructionSkipper`
+   (the 17 NOP/alignment `PATTERNS` copied byte-for-byte; carries the same
+   "bump the DB version if you change this" warning). `getApplicableProcessor` is
+   dropped from the trait — the skipper *set* is selected per-architecture at
+   hasher-build time (PR4); non-x86 = empty set → never skips.
+
+**Fidelity gate (honest accounting).** The **FNV-1a64 layer is validated against
+an external authority**: the unit gate asserts the *canonical published FNV-1a64
+test vectors* (`""→offset basis`, `a/b/c`, `foobar`, `hello`), independently
+cross-checked against the reference algorithm — not mere self-consistency. The
+full **`FidHashQuad` is gated by a hand-computed quad on a 5-instruction synthetic
+extent** (register / small-usable-scalar / large-suppressed / whole-operand-
+address / no-operand + a call), asserted against an *independent in-test reference
+reimplementation* of the loop, plus self-consistency (same extent hashes
+identically across two builds of the hasher) and targeted invariants
+(`code_unit_size = count − calls`; relocation suppression drops `specific_count`
+and changes only the specific hash, never the full hash). **The Ghidra-validated
+golden-vector gate (§7.1) is a documented follow-up:** the Ghidra checkout at
+`~/github/ghidra` has the FID sources (ported from here) but **no built
+distribution** (`build/dist` empty, no `.class` files), so dumping
+`(function → FidHashQuad)` vectors needs a multi-GB gradle build out of scope for
+PR2 — the design doc explicitly anticipates this fallback. PR3 (which builds a
+real `lib.o` fixture) is the natural place to add the Ghidra dump once a built
+Ghidra is available.
+
+**Gates:** `make test` **675/675 PARITY OK**, `make test-stages` **PARITY OK**
+(205/205, raised by the concurrent worker), `make rust-test` **green**. The new
+`s1_fid` unit gate RAN — **19 passed, 0 ignored** (10 `hash`, 5 `skipper`, 4
+`extent`).
+
+- **New:** `kuna-analysis/src/s1_fid/{mod,hash,extent,skipper}.rs`.
+- **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_fid;`),
+  `docs/analysis-port-log.md`.
+- **Next (PR3/PR4):** the `.fid` DB format + `kuna fid build` generator (PR3),
+  then the `FidPass` + `instruction_mask`→`InsnFingerprint` assembly +
+  rename/commit + `--option fid` surface + the stripped-binary re-identification
+  e2e test (PR4).
+
+### Increment 54 — FID PR3: .fid database format + `kuna fid build` generator
+
+The third PR of the FID port — the **kuna-native `.fid` fingerprint database** and
+the **`kuna fid build` generator** (the §5.2 `FidServiceLibraryIngest` analog).
+Builds on PR2's byte-exact hasher: parse a `.a`/`.o`, disassemble each named
+function through the live SLEIGH decoder, run the PR2 `FidHasher` over its extent,
+and write the deduplicated records to a `.fid`. Still **no pass/option/engine
+wiring** (that is PR4) — the generator is a build-time tool, never reached from a
+decompilation, so the parity oracles are structurally untouched.
+
+**New code:**
+1. **`kuna-analysis/src/s1_fid/db.rs`** — the `.fid` format + `FidDb` (§5.1).
+   On-disk: magic `"KFID"`, `version:u32(=1)`, len-prefixed `lang_id`/`cspec_id`,
+   `n_records:u32`, then per-record `full_hash:u64 | specific_hash:u64 |
+   code_unit_size:i16 | specific_addl:u8 | flags:u8 | name_off:u32`, then an
+   **interned** NUL-separated `string_blob` (LE throughout). In-memory:
+   `FidDb { lang_id, cspec_id, by_full_hash: HashMap<u64, Vec<FidRecord>>, ... }`
+   behind a small `FidDatabase` trait (`lang_id`/`cspec_id`/`find_by_full_hash`/
+   `record_count`) — the seam a future `.fidbf` reader (deferred PR6) swaps in.
+   `find_by_full_hash(h) -> &[FidRecord]` is the only hot-path query (Ghidra's
+   `FULL_HASH_COL` index). `serialize`/`load` are a fixed flat layout; **`load`
+   never panics** on a malformed/truncated file (every read bounds-checked → `Err`,
+   never an OOB index). Modeled field-for-field on Ghidra's FID
+   `FunctionsTable`+`StringsTable`.
+2. **`kuna-analysis/src/s1_fid/build.rs`** — `build_records(bytes, image, arch,
+   translate) -> Vec<FidRecord>`. The body source is the loader's **rebased**
+   funcsyms (`ObjectLoadImage::func_symbols`, a new accessor — for an `ET_REL`
+   `.o` the raw `object::File` symbol address is section-relative; the loader laid
+   each `SHF_ALLOC` section out above `RELOC_BASE`). Per function: the
+   address-contiguous `[entry, next_entry)` extent reconstructed by a **linear
+   decode** through `listing::decode::decode_one` + `listing::classify::classify`
+   (independent of the Listing/xref exec-range universe, which is computed from the
+   *unrebased* section addresses and so is wrong for a `.o`); each instruction
+   fingerprinted via `Sleigh::instruction_mask` → `InsnFingerprint`; the x86 skipper
+   set selected on `archid.starts_with("x86:")`; the 4-way scalar rule fed a real
+   `RelocationQuery` (`ObjectRelocations`, rebasing reloc offsets the same way
+   `elf_reloc` does — correct for a `.o` with `.rela.text`). Only functions with a
+   **real** symbol name + ≥ 4 code units are kept; identical `(full, specific,
+   name)` rows are deduped — faithful to `hashAllTheFunctions`.
+3. **`kuna-cli` `fid` subcommand** — `kuna fid build <lib.a|*.o ...> -o <out.fid>
+   --lang <id> --cspec <id>`. Bootstraps the architecture in-process via
+   `kuna_console::bootstrap_from_object` (the live `Sleigh` the generator's
+   `instruction_mask` needs), then calls `build_records`. A `.a` archive is
+   unpacked member-by-member (the `object` `archive` feature, enabled only on
+   `kuna-cli`'s `object` dep); `--lang`/`--cspec` are authoritative (written into
+   the header). New `kuna-cli` deps: `kuna-console`, `kuna-analysis`, `object`.
+
+**Fixture** (`tests/fixtures/fid/`, mirrored to
+`kuna-analysis/tests/fixtures/fid_lib_x86_32.*`): `lib.c` — `kuna_crc32` (the star,
+`0xEDB88320` immediate), `kuna_strlen`, `kuna_memset` (each ≥ 4 code units, no libc
+call) + `main.c` (PR4 retention). Built `gcc -m32 -O2 -ffreestanding
+-fno-stack-protector -c lib.c -o lib.o` then `kuna fid build lib.o -o lib.fid
+--lang x86:LE:32:default --cspec gcc`; **`lib.o` + `lib.fid` vendored** (both tiny,
+regenerable via the committed `Makefile`/`README.md`). The records:
+`kuna_crc32 → full 0x0c802846cd3b75ef / spec 0x270017388f7ad28e / cus 33 / addl 24`,
+`kuna_strlen → full 0x6457464202e9c843 / spec 0x0dc29556fc68a8f2 / cus 15 / addl 13`,
+`kuna_memset → full 0x1461d890c55eb740 / spec 0x8706041ac5102d0b / cus 18 / addl 19`.
+
+**HONEST fidelity note — the fixture is 32-bit x86, not the x86-64 the design doc
+(§7.2) targets.** The byte-exact hasher, the `.fid` format, the generator, and the
+rebasing are all architecture-agnostic, but the FID **PR1** `Sleigh::instruction_mask`
+accessor does **not yet decode REX-prefixed (x86-64) instructions**: its post-decode
+decision-tree re-walk (`DecisionNode::resolve_matched`) reads the *final* multi-phase
+decode context (`instrPhase` advanced past the REX-prefix phase) and fails to
+re-resolve the constructor ("Unable to resolve constructor" for e.g. `48 01 fe`,
+`add rsi,rdi`). Diagnosis: the engine's `Sleigh::resolve` applies each node's context
+commits *after* matching (`apply_context` post-`resolve`), so a fresh end-of-decode
+re-walk sees post-commit context; the fix (retain the matched pattern on
+`ConstructState` during decode, or look the pattern up by the known `ct`) is a **PR1
+change to the proven `kuna-sleigh`**, out of PR3's scope. 32-bit x86 has no REX and
+masks cleanly, so it exercises the **entire PR3 mechanism** end-to-end with verifiable
+hashes; the x86-64 fixture is a tracked PR1 follow-up (the README records the x86-64
+recipe for when `instruction_mask` handles multi-phase decode). The Ghidra-validated
+golden gate (§7.1) remains the deferred cross-validation target (no built Ghidra
+in-env, as PR2 noted); here the hashes are validated by self-consistency (a fresh
+in-process generate reproduces the vendored `.fid`) + the PR2 FNV gate.
+
+**Tests** (all RAN, not skipped — `x86.sla` built): `s1_fid::db` — **9** new unit
+tests (round-trip preserves records + `find_by_full_hash`; interning; collisions;
+empty DB; and 5 malformed-input → `Err`-not-panic cases). `verify_fid_build.rs`
+(`kuna-console`) — **3** integration tests over the vendored `.o`: the generator
+recovers `kuna_crc32`/`kuna_strlen`/`kuna_memset` by name with distinct hashes; the
+records round-trip through the DB; and a fresh in-process generate **matches the
+vendored `.fid`** record-for-record (ties the engine to the artifact).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. the 9 `db` + 3 `verify_fid_build` new tests.
+
+- **New:** `kuna-analysis/src/s1_fid/{db,build}.rs`,
+  `kuna-cli/src/fid.rs`, `kuna-console/tests/verify_fid_build.rs`,
+  `tests/fixtures/fid/{lib.c,main.c,lib.o,lib.fid,README.md,Makefile}`,
+  `kuna-analysis/tests/fixtures/fid_lib_x86_32.{o,c,fid}`.
+- **Changed:** `kuna-analysis/src/s1_fid/mod.rs` (+`build`/`db`),
+  `kuna-analysis/src/loadimage_object.rs` (+`func_symbols` accessor),
+  `kuna-cli/src/main.rs` (+`fid` arm), `kuna-cli/Cargo.toml` (+deps),
+  `docs/analysis-port-log.md`.
+- **Next (PR4):** the `FidPass` + commit/rename + `--option fid` surface + the
+  stripped-binary re-identification e2e test (and, prerequisite for an x86-64
+  fixture, the PR1 `instruction_mask` multi-phase fix).
+
+### Increment 55 — FID PR1-fix: x86-64 REX instruction_mask (+ re-home the FID fixture to x86-64)
+
+The PR1 follow-up flagged by PR2/PR3: `Sleigh::instruction_mask` could not
+fingerprint REX-prefixed x86-64 instructions, which forced the FID fixture to
+32-bit x86. This increment fixes the accessor and re-homes the fixture to
+x86-64 (the architecture `docs/fid-design.md` §7.2 targets).
+
+**The bug.** PR1's `instruction_mask` computed each constructor node's fixed-bit
+mask by RE-WALKING the SLEIGH decision tree *post-decode* via
+`DecisionNode::resolve_matched`. But that re-walk reads the **final** multi-phase
+parser context — for an x86-64 instruction the `instrPhase` context register has
+already advanced PAST the REX-prefix phase that selected the constructor. So for
+e.g. `48 01 fe` (`add rsi,rdi`) the re-resolve picked the wrong leaf / failed
+outright with "Unable to resolve constructor". 32-bit x86 has no REX prefix and
+single-phase decode, so it always re-resolved cleanly — hence the 32-bit
+workaround. The bug is precisely "decode used multi-phase context."
+
+**The fix — capture the matched pattern DURING decode (correct per-phase
+context), don't re-walk.** The matched `DisjointPattern` for each node was already
+found inside `Sleigh::resolve`'s constructor resolution, *when that node's context
+was correct*. The fix retains it:
+1. `ConstructState` gains a kuna-only `matched_pattern: Option<DisjointPattern>`
+   field (`sleigh.rs`).
+2. `Symbol::resolve_matched` (`slghsymbol.rs`) mirrors `Symbol::resolve` but, for a
+   subtable triple, also returns the matched pattern leaf (cloned) — `(Some(ct),
+   Some(pattern))`; for non-subtable triples it runs the same validating `resolve`
+   and returns `(None, None)`. Same `is_match` walk, same `BadDataError`.
+3. `Sleigh::resolve`'s two resolution points — the root (`subtable.resolve_matched`)
+   and each subtable operand (`resolve_triple_matched`) — now capture the matched
+   pattern and stash it on the node via a new `ParserWalkerChange::set_matched_pattern`
+   right where the constructor is set. **Same constructor chosen, same length, same
+   handles, same p-code** — only an extra clone of a pattern decode already matched.
+4. `Sleigh::instruction_mask` now READS each node's stashed `matched_pattern`
+   (correct per-phase context baked in) and ORs its fixed bits, instead of the
+   post-decode re-walk. The dead re-walk path (`subtable.resolve_matched` inside the
+   accessor, `ParserWalker::set_point`, the standalone `resolve_triple`) is dropped.
+
+**Byte-identical decode — additive only.** The capture runs at the existing
+resolution sites under the existing context; it never changes which constructor is
+selected. Proof: `make test` **675/675 PARITY OK** and `make rust-test`'s `.sla`
+content-parity + datatest parity are **unchanged**.
+
+**The x86-64 mask proof (the regression gate).** Three REX cases added to
+`kuna-sleigh/tests/instruction_mask.rs`, each of which **fails on `main`/pre-fix**
+("Unable to resolve constructor") and passes with the fix:
+- `48 01 fe` (`add rsi,rdi`) → `fixed_mask=[f8,ff,c0]`: REX prefix marker +
+  **REX.W (0x08) pinned**, REX.R/X/B register-extension bits free; opcode `01`
+  fully pinned; modrm mod bits pinned, reg/rm selectors operand. Both operands
+  classify `Register`.
+- `48 b8 …` (`mov rax,imm64`) → the **imm64 (bytes 2..10) fully zeroed**, a
+  `Scalar{0x8877665544332211}`.
+- `48 89 fe` (`mov rsi,rdi`) → register-to-register, both operands `Register`,
+  opcode `89` pinned.
+The four pre-existing non-REX cases still pass. Unit gate RAN: 7 passed, 0 ignored.
+
+**Fixture re-homed to x86-64.** Rebuilt `tests/fixtures/fid/lib.o` as x86-64
+(`gcc -O2 -ffreestanding -fno-stack-protector -c lib.c -o lib.o`) and regenerated
+`lib.fid` via `kuna fid build lib.o -o lib.fid --lang x86:LE:64:default --cspec
+gcc`. The generator now recovers all three functions on x86-64:
+
+| function | full_hash | specific_hash | code_unit_size | specific_addl |
+|---|---|---|---|---|
+| `kuna_crc32`  | `0x2603a009d9e0776f` | `0xc05eead857c9304a` | 25 | 30 |
+| `kuna_strlen` | `0x03a308fb37c24cf0` | `0xea7136fa1ab9ce93` | 12 | 22 |
+| `kuna_memset` | `0x67c5bd4207a978b3` | `0xe74cd6a00ca603e6` | 11 | 31 |
+
+The cargo-test mirror `fid_lib_x86_32.{o,c,fid}` is renamed to `fid_lib_x86_64.*`;
+`verify_fid_build.rs` now bootstraps `x86:LE:64:default` and still passes its 3
+integration tests (the fresh in-process generate matches the re-homed vendored
+`.fid` record-for-record). The fixture README + Makefile drop the 32-bit workaround
+note.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. `.sla` content-parity + the re-homed
+`verify_fid_build` (3) and `instruction_mask` (7 — 3 new REX) tests.
+
+- **New:** (none — all changes are edits/regenerations).
+- **Changed:** `kuna-sleigh/src/sleigh.rs` (`ConstructState.matched_pattern`,
+  `set_matched_pattern`, capture in `resolve`, `resolve_triple_matched`,
+  `instruction_mask` reads the stash, dropped the re-walk + `set_point`),
+  `kuna-sleigh/src/slghsymbol.rs` (`Symbol::resolve_matched`),
+  `kuna-sleigh/tests/instruction_mask.rs` (+3 REX cases),
+  `kuna-console/tests/verify_fid_build.rs` (x86-64 fixture/lang),
+  `tests/fixtures/fid/{lib.o,lib.fid,README.md,Makefile}` (x86-64),
+  `kuna-analysis/tests/fixtures/fid_lib_x86_64.{o,c,fid}` (re-homed from
+  `fid_lib_x86_32.*`), `docs/analysis-port-log.md`.
+
+### Increment 56 — FID PR4: the gated `--option fid` matching pass + stripped-binary re-identification
+
+**THE PAYOFF.** PR1-PR3 built the FID *mechanism* (the `Sleigh::instruction_mask`
+accessor, the byte-exact FNV-1a64 `FidHasher`/`FidHashQuad`, the kuna-native `.fid`
+database + `kuna fid build` generator). PR4 wires it into a default-off Listing/xref
+**consumer pass** that re-identifies a function in a STRIPPED binary purely by its
+instruction-stream fingerprint — the one capability unique to FID.
+
+**The before/after (the only thing FID does), on a stripped, static, `-no-pie`
+x86-64 ELF (`tests/fixtures/fid/prog`):**
+
+```
+                                     symbol @ 0x4017c0   rendered body
+--option fid off (default)        →  sub_4017c0          uint4 sub_4017c0(uint1 *a0,uint4 a1) { ... 0xedb88320 ... }
+--option listing on --option fid on  →  kuna_crc32       uint4 kuna_crc32(uint1 *a0,uint4 a1) { ... 0xedb88320 ... }
+  (+ kuna_fid_db=tests/fixtures/fid/lib.fid)
+```
+
+The stripped binary has NO symbol table (`strip --strip-all`), so the function at
+`0x4017c0` is the engine placeholder `sub_4017c0` by default — proving the name is
+not a leftover symbol. With FID on it is renamed to `kuna_crc32`, recovered by a
+full-hash match against the vendored `lib.fid` (built by `kuna fid build` over the
+un-stripped `lib.o`). Same function, same body (the CRC-32 loop with the magic
+`0xedb88320`), only the NAME changes — `FUN_*`/`sub_*` → `kuna_crc32`, only FID
+could do this.
+
+**Wiring (every piece a verified clone of the `noreturn_disc` consumer):**
+
+- `s1_fid/mod.rs` — `FidPass impl AnalysisPass { stage→S1; id→"fid"; run }`: inert
+  without the Listing (`ctx.listing` `None`) AND without a configured DB
+  (`kuna_fid_db` env var, mirroring the loader's `kuna_i386_pie_plt`). Over each
+  `listing.functions()` entry it builds the `[entry,next)` extent (PR2's
+  `extent::calculate_extent`), fingerprints each instruction via the SAME
+  `build::fingerprint_from_mask` projection the generator uses (driving
+  `Sleigh::instruction_mask`), hashes with `FidHasher`, queries
+  `db.find_by_full_hash`, and `pick_unique_name` (emit a name ONLY when the bucket
+  collapses to one name — never guess on a tie). Registered in
+  `listing_consumer_passes()`.
+- `pass.rs` — `FidMatch { addr, name }` + `AnalysisOutput.fid_names` + the `merge`
+  line.
+- `engine.rs` — the new FID **rename** commit arm (after the no-return arm): resolve
+  the function by ADDRESS (`find_function_across_scopes`), then — ONLY behind the
+  label gate `is_generic_placeholder_name` (`sub_`/`func_`/`FUN_`/`LAB_`, never a
+  real `.symtab`/DWARF name) — `Database::rename_symbol` + `register_symbol`. The
+  SymFact arm is an idempotent-add and would no-op on an existing function, so the
+  rename is the one net-new piece of plumbing. + `"fid" => arch.analysis_fid` gate.
+- Option surface (cloned from `noreturn_disc`): `architecture.rs`
+  field/default/reset/`set_kuna_option` arm, `options.rs` `KUNA_OPTION_NAMES`,
+  `stages.toml` `[[settable]] fid` block (`default="off"`,
+  `change_kind="analysis-enablement"`), settable count `60 → 61` (`stages.toml`,
+  `kuna_stages/tests.rs` count + comma + `PASS_GATES` suppressed set,
+  `catalog_bytecompat.rs` `fixture_has_all_61` + count), regenerated
+  `tests/fixtures/stage_catalog.json` + `docs/assertions.md`. `kuna catalog --check`
+  → catalog OK.
+
+**DB path:** read from the `kuna_fid_db` env var (a real `--fidb <path>` flag is
+deferred). **The fixture:** the stripped `tests/fixtures/fid/prog` is vendored
+(recipe + the pinned `kuna_crc32` VMA `0x4017c0` recorded in the fixture README);
+`lib.o`/`lib.fid` were already vendored by PR3.
+
+**Speed:** the FID-on decompile of `kuna_crc32` (load function + decompile + print C)
+is ~6.5 ms wall; the default (FID-off) path builds no Listing and runs no consumer
+(~9 ms here is the first cold load + the un-renamed `load addr` flow). The FID hash
+is a single per-function decode-pass + FNV stream, on an opt-in, real-ELF-only path —
+no impact on the default pipeline (FID never runs by default).
+
+**Parity:** real-ELF-path-only + default-off ⇒ the XML datatest path never builds a
+Listing and never runs the FID consumer, so the 675/158 oracles are structurally
+untouched.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **222/222 PARITY OK**
+(the KUNA-CATALOG #5/#9 `use_when`/`change_kind` `max` bound bumped 61 → 62 — the
+catalog `<script>` emits the full catalog + one `returnpair` single-row, so the count
+is settables+1); `make rust-test` **green** incl. the new `verify_fid` e2e (2 tests,
+ran — not skipped) and the regenerated catalog tests; `kuna catalog --check`
+**catalog OK**.
+
+- **New:** `kuna-console/tests/verify_fid.rs` (the §7.2 two-state e2e),
+  `tests/fixtures/fid/prog` (vendored stripped x86-64 ELF).
+- **Changed:** `kuna-analysis/src/s1_fid/mod.rs` (`FidPass`),
+  `kuna-analysis/src/s1_fid/build.rs` (`fingerprint_from_mask` → `pub(crate)`),
+  `kuna-analysis/src/pass.rs` (`FidMatch` + `fid_names` + merge),
+  `kuna-analysis/src/passes.rs` (register the pass),
+  `kuna-console/src/engine.rs` (rename arm + gate + `is_generic_placeholder_name`),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_fid`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`"fid"`),
+  `kuna-decomp/stages.toml` (`[[settable]] fid`),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comma/PASS_GATES),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 61 → 62),
+  `docs/assertions.md` (regen), `docs/rust-port/losses.md`,
+  `tests/fixtures/fid/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 57 — MSVC RTTI class-name recovery (s1_rtti, gated --option rtti, x86+x64)
+
+**The PE/Mach-O deep-metadata frontier opens.** This is PR 1 of 3 (per the canonical
+`docs/metadata-analyzers-design.md`, landed alongside): the kuna analog of Ghidra's
+`RttiAnalyzer` (a Microsoft-PE analyzer). On a Windows PE built by MSVC (or
+`clang -target …-windows-msvc`), it recovers the C++ class names from the run-time
+type information graph — the one self-contained, highest-ROI metadata analyzer
+(richest seam reuse: the MSVC demangler is already wired).
+
+**The before/after, on a polymorphic-C++ PE (`tests/fixtures/msvc_rtti_x{64,86}.exe`,
+one base `Shape` + one derived `Box` with a virtual method):**
+
+```
+                                  symbol table / .rdata
+--option rtti off (default)    →  .rdata is raw bytes; the vtable is an unnamed
+                                  DAT_<addr>; no `Box`/`Shape` class names exist.
+--option rtti on               →  Box::RTTI_Type_Descriptor, Shape::RTTI_Type_Descriptor,
+                                  Box::RTTI_Complete_Object_Locator, Box::vftable —
+                                  so `Box` and `Shape` surface as recovered C++ classes.
+```
+
+**The walk (port of `RttiAnalyzer.added()`, entirely in the loaded image):** find the
+common `type_info` vftable (the pointer every RTTI0 `TypeDescriptor`'s leading field
+shares; ≥2 agreeing) → locate the `TypeDescriptor`s by scanning for the `.?A…@@`
+type-info name strings → byte-search the image for a reference to each
+`TypeDescriptor`, `−12` = the `CompleteObjectLocator` (COL) base → validate the
+COL→RTTI3 `ClassHierarchyDescriptor`→RTTI2 `BaseClassArray`→RTTI1
+`BaseClassDescriptor`→RTTI0 reachability chain → demangle each `.?A…@@` class name →
+emit the `<Class>::RTTI_Type_Descriptor` / `<Class>::RTTI_Complete_Object_Locator` /
+`<Class>::vftable` Data labels (the vftable is recovered from the COL's meta-pointer
+slot: `vftable = (slot holding the COL VA) + ptr_size`).
+
+**x86 vs x64 — the one place a port goes wrong (design §3.1f), isolated in
+`refkind.rs`:** the inter-structure references are **raw VAs on x86** but **32-bit
+image-base-relative displacements (`IBO32` = `image_base + disp32`) on x64**; the
+RTTI0 class-name string sits at TypeDescriptor offset **8 on x86 / 16 on x64**; the
+RTTI2 entries are 4 bytes on both (same width, different meaning); the COL
+meta-pointer before a vftable is a full pointer-width VA on both. `RefKind::new(is64,
+image_base, end)` owns all of it; the walk never branches on `is64` directly. Both
+arches verified against the real fixtures (`objdump -s -j .rdata`).
+
+**Demangling — ZERO new demangler code:** RTTI0 names are *type-info* mangled strings
+(`.?AVShape@@` / `.?AUBox@@` — clang renders a `struct` class as `.?AU`), which the
+`?`-symbol arm of `demangle_name` does not handle. The new
+`s1_demangle::demangle_rtti_class_name` reuses the **same** `msvc_demangler` crate
+already driving the MSVC arm: it wraps the type-info name as the RTTI0 descriptor
+symbol form `??_R0<name>@8` (the Ghidra `RttiUtil` recipe) and demangles *that* with
+`NO_MS_KEYWORDS | NO_CLASS_TYPE` → `<qualified-class>::`RTTI Type Descriptor'`; the
+class prefix is the name. Recovers `Box`, `Shape`, namespaced `ns::Inner`, and even
+templated `Vec<int>` → `Vec` (reduced via the existing `strip_bracket_groups`).
+
+**Module layout (the `s1_fid`/`s1_dwarf` gated-default-off precedent):**
+`kuna-analysis/src/s1_rtti/{mod.rs (RttiPass + the added()-style walk), models.rs
+(the RTTI0..4 + ImageBytes readers — ports of Rtti{0..4}Model/TypeDescriptorModel),
+refkind.rs (the x86/x64 dispatch)}`.
+
+**Gating + the format gate:** `RttiPass impl AnalysisPass { stage→S1; id→"rtti" }`.
+Registered in `passes_for` ONLY for `BinaryFormat::Pe` (the Microsoft C++ ABI is a PE
+concern — `passes_for` grew a `format` parameter, the loader-format analog of the
+existing `Compiler` gate; the pass ALSO self-gates on PE in `run`). Default-**OFF**
+(`--option rtti on`): the facts are computed at load but committed only when the
+`"rtti" => arch.analysis_rtti` gate is on (`engine.rs::analysis_pass_enabled`),
+output-changing (it adds named Data symbols). Option surface cloned from `fid`:
+`architecture.rs` field/default/reset/`set_kuna_option` arm, `options.rs`
+`KUNA_OPTION_NAMES`, `stages.toml` `[[settable]] rtti` block
+(`change_kind="analysis-enablement"`), settable count `65 → 66` (`stages.toml`,
+`kuna_stages/tests.rs` count + comment + `PASS_GATES` suppressed set — `rtti` has no
+`live_field`, like the other analysis gates, so `with_live` stays 28 —
+`catalog_bytecompat.rs` `fixture_has_all_66` + count), regenerated
+`tests/fixtures/stage_catalog.json` + `docs/assertions.md`. `kuna catalog --check`
+→ catalog OK.
+
+**The fixtures (the new `.rdata`-carrying-PE need):** the `msvc_mangled.obj` recipe
+already proved `clang -target …-windows-msvc` emits the real MSVC C++ ABI; a *linked*
+PE with a populated `.rdata` is the new need — supplied by `-fuse-ld=lld` (`lld-link`)
++ `-nostdlib` + a one-cell inline-asm stub for the CRT `type_info` vftable
+(`??_7type_info@@6B@`, the only CRT symbol the RTTI Type Descriptors reference), so
+the image links freestanding while keeping the genuine RTTI bytes. Both arches built
+in `kuna-dev` (no new packages — `clang` + `lld-link` ship in the image), vendored
+with the `.cpp` source + a README entry pinning the COL/RTTI0/vftable VMAs (from
+`x86_64-w64-mingw32-objdump`).
+
+**Parity:** real-PE-path-only + default-off ⇒ the XML datatest path never loads a PE
+and never runs the pass, so the 675/235 oracles are structurally untouched by
+construction.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **235/235 PARITY OK**
+(the KUNA-CATALOG #5/#9 `use_when`/`change_kind` `max` bound bumped 66 → 67 — the
+catalog `<script>` emits the full catalog + one `returnpair` single-row, so the count
+is settables+1, exactly as Increment 56 noted); `make rust-test` **green** incl. the
+new `verify_rtti` e2e (4 tests — x64+x86 × on/off — **ran, not skipped**) and the
+regenerated catalog tests; `kuna catalog --check` **catalog OK**.
+
+- **New:** `kuna-analysis/src/s1_rtti/{mod,models,refkind}.rs` (the pass),
+  `kuna-console/tests/verify_rtti.rs` (the x64+x86 on/off e2e),
+  `tests/fixtures/msvc_rtti{.cpp,_x64.exe,_x86.exe}` (vendored source + two linked PEs),
+  `docs/metadata-analyzers-design.md` (the canonical 3-analyzer design).
+- **Changed:** `kuna-analysis/src/s1_demangle/mod.rs` (`demangle_rtti_class_name`),
+  `kuna-analysis/src/passes.rs` (`passes_for` gains a `format` arg; PE-gated `rtti`
+  registration), `kuna-analysis/src/lib.rs` (`pub mod s1_rtti`),
+  `kuna-console/src/engine.rs` (`"rtti"` gate + `has_symbol_named` verification seam),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_rtti`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`"rtti"`),
+  `kuna-decomp/stages.toml` (`[[settable]] rtti`),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comment/PASS_GATES),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
+  `kuna-console/tests/verify_multiformat_sourcelang.rs` (`pass_ids` format arg),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 66 → 67),
+  `tests/fixtures/README.md` (the `msvc_rtti` entry + VMAs),
+  `docs/assertions.md` (regen), `docs/analysis-port-log.md`.
+
+### Increment 58 — Mach-O Objective-C method-name recovery (s1_objc, gated --option objc, x86-64)
+
+**THE HEADLINE.** A new default-off, Mach-O-format-gated analysis pass that walks
+the `__objc_*` Objective-C 2.0 metadata web and recovers method names — so a
+stripped IMP renders `-[Greeter greet:]` instead of `sub_<addr>`. The kuna analog
+of Ghidra's `ObjcTypeMetadataAnalyzer` (name-recovery half). x86-64, no-chained-
+fixups path (the arm64 + `LC_DYLD_CHAINED_FIXUPS` resolver is a deferred follow-on).
+
+**The before/after, on a (locally-)stripped x86-64 Objective-C Mach-O
+(`tests/fixtures/macho_objc`):**
+
+```
+                          symbol @ 0x100000640    rendered body
+--option objc off (default) →  sub_100000640      int4 sub_100000640(...) { return a2 * 3 + 7; }
+--option objc on            →  -[Greeter greet:]   int4 -[Greeter greet:](...) { return a2 * 3 + 7; }
+```
+
+The fixture is built from a **root class** (`__attribute__((objc_root_class))`), so
+it needs no macOS SDK / Foundation — bare `clang` synthesizes the `__objc_*`
+metadata, and `ld64.lld -x` strips the local IMP symbol so the name has to come
+from the metadata (not a leftover symbol). The IMP body (the `n*3+7` math) is
+identical either way; only the NAME changes — `sub_*` → `-[Greeter greet:]`.
+
+**The walk (design §3.2):** `__objc_classlist` (array of `class_t*`, stride=ptr) →
+per class `data & FAST_DATA_MASK` (`~0x7`) → `class_ro_t` → `.name` (class name) +
+`.baseMethods` (the `-` instance `method_list_t`); follow `class_t.isa` to the
+metaclass `baseMethods` (the `+` class methods). The `method_list_t` walk handles
+BOTH forms — the **large absolute-pointer** form (the §3.2 MVP) AND the
+**small/relative** form (`entsizeAndFlags & 0x80000000`) a modern clang actually
+emits (`__TEXT,__objc_methlist`), whose `name` field points at a selref (deref to
+the selector string), `types`/`imp` are self-relative; the IMP gets the 32-bit ARM
+Thumb LSB stripped (a no-op on x86-64/arm64). Per `method_t` the pass resolves the
+selector (plain ASCII — **no demangler needed**), the type encoding, and the IMP
+function VA.
+
+**What it emits:** the IMP function **rename** `-[Class sel]` / `+[Class sel]` via
+`out.fid_names` (the label-gated placeholder rename — the commit seam only
+overwrites an engine `sub_*`/`FUN_*` placeholder, the FID precedent), plus a
+`_OBJC_CLASS_$_<name>` Data symbol per class, the IMP as a Function symbol (so it
+exists even when reachable only through the metadata), and a `sel_<selector>` Data
+symbol per selector.
+
+**Wiring (every piece a verified clone of the `gopclntab`/`fid` precedents):**
+
+- `s1_objc/{mod,sections,classt,methods}.rs` — `ObjcMetadataPass impl AnalysisPass
+  { stage→S1; id→"objc"; run }`: pure over `ctx.file` (a VMA→bytes section map +
+  little/big-endian scalar/cstr reads), additive, never failing; inert on every
+  non-Mach-O / no-`__objc_*` image.
+- `passes.rs` — registered ONLY for a Mach-O binary (the format gate, threaded into
+  `passes_for(compiler, format)` alongside the Go `gopclntab` compiler gate), so
+  every non-Mach-O target's pass set is byte-identical.
+- `engine.rs::analysis_pass_enabled` — `"objc" => arch.analysis_objc` (default-off,
+  output-changing, so the explicit arm — not the fail-open default — is load-bearing).
+- `architecture.rs` — `analysis_objc` field (default-false, reset-false,
+  `on_off!(analysis_objc, …)` arm).
+- `options.rs` — `KUNA_OPTION_NAMES += "objc"`.
+- `stages.toml` — `[[settable]] objc` (cloned from the `fid` row: `on|off`,
+  default `off`, `S1`/`external-refinement`/`HARD`). Settable count **66 → 67**
+  (landed after Increment 57's `rtti` row took the count to 66); bumped
+  `kuna_num_settables`/`SETTABLE_TABLE.len` (67), the `},\n`-comma count
+  (65 → 66), the catalog `"option":` count (66 → 67), `objc → PASS_GATES`
+  (suppressed-set; `with_live` stays 28); regenerated `stage_catalog.json` +
+  `docs/assertions.md`; `kuna catalog --check` → OK.
+
+**Parity:** default-off + Mach-O-real-binary-path only ⇒ the XML datatest path never
+constructs an `ObjectLoadImage`, so `make test` (675/675), `make test-stages`, and
+`make rust-test` are byte-identical by construction. `verify_objc.rs` RUNS (not
+skipped) on a specs-built tree.
+
+**Documented LOSS/scope:** ObjC v2 only; standalone Mach-O only (no dyld-shared-cache
+relative-selector base); chained-fixup (arm64 `LC_DYLD_CHAINED_FIXUPS`) deferred; ivar
+/ method-type prototypes + the `objc_msgSend` selref→selector annotation deferred
+(design §3.2 LOSS).
+
+- **New:** `kuna-analysis/src/s1_objc/{mod,sections,classt,methods}.rs`,
+  `kuna-console/tests/verify_objc.rs`, `tests/fixtures/macho_objc` + `macho_objc.m`
+  (vendored, with README pinning the IMP/class/method-list VMAs).
+- **Changed:** `kuna-analysis/src/lib.rs` (module), `kuna-analysis/src/passes.rs`
+  (`passes_for(compiler, format)` + Mach-O gate + tests),
+  `kuna-console/tests/verify_multiformat_sourcelang.rs` (pass-ids helper),
+  `kuna-console/src/engine.rs` (`"objc"` gate arm),
+  `kuna-decomp/src/infra/architecture.rs` (`analysis_objc`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`"objc"`),
+  `kuna-decomp/stages.toml` (`[[settable]] objc`),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count/comma/PASS_GATES),
+  `kuna-decomp/tests/catalog_bytecompat.rs` (count 66 → 67),
+  `kuna-decomp/tests/fixtures/stage_catalog.json` (regen),
+  `tests/stages/kuna-catalog.xml` (KUNA-CATALOG #5/#9 `max` 67 → 68),
+  `docs/assertions.md` (regen),
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 59 — PDB PR-P0: PE CodeView debug-record extractor (RSDS/NB10)
+
+**THE FOUNDATION.** This is the first PR of the PDB metadata tier (analyzer 3 of the
+PE/Mach-O deep-metadata frontier). PDB is **Windows' DWARF** — function names, full
+types, typed locals, source lines — but unlike DWARF the debug info lives in an
+*external* `.pdb` file; the PE itself carries only a tiny CodeView *fingerprint* (a
+GUID/signature + age + the `.pdb` path) in its `IMAGE_DIRECTORY_ENTRY_DEBUG`
+directory. PR-P0 ports the extraction of that fingerprint — Ghidra's
+`PdbInfoCodeView` (NB10) + `PdbInfoDotNet` (RSDS),
+`Ghidra/Features/Base/.../format/pdb/PdbInfo{CodeView,DotNet}.java`. The
+`.pdb`-consuming `AnalysisPass` + the `pdb` crate are the NEXT PR (PR-P1).
+
+**What it ships.** A pure extractor `kuna_analysis::s1_pdb::codeview::extract_codeview(bytes) -> Option<CodeViewInfo>`:
+
+- Branches on `FileKind` (PE32/PE32+), parses the typed `PeFile32`/`PeFile64` (the
+  same shape as `s1_loader::pe_iat`), walks the debug data directory, finds the
+  first `IMAGE_DEBUG_TYPE_CODEVIEW` entry, reads its payload at
+  `pointer_to_raw_data` (file offset), and decodes the record.
+- **RSDS** (`PdbInfoDotNet`): `RSDS` magic, `guid:[u8;16]`, `age:u32`, `pdb_path`.
+- **NB10** (`PdbInfoCodeView`): `NB10` magic, `offset:u32` (skipped), `signature:u32`,
+  `age:u32`, `pdb_path`. Field order matches Ghidra's `read()` byte-for-byte.
+- `CodeViewInfo::guid_string()` renders the canonical Microsoft mixed-endian text
+  GUID (`{u32 LE, u16 LE, u16 LE, [u8;8]}`) for the PR-P1 gate to log.
+- Totally infallible: a non-PE, no debug directory, no CodeView entry, an unknown
+  magic, or a truncated record all yield `None` — never a panic, never an error.
+
+**The fixture + the extracted record.** `tests/fixtures/pdb_min.exe` (~2.5 KB) is a
+freestanding x86-64 PE built `clang -target x86_64-pc-windows-msvc -g -gcodeview
+-fuse-ld=lld` so `lld-link` emits a real RSDS record. The in-source test
+`extract_pdb_min_exe_rsds_record` pulls the exact `{guid, age, pdb_path}` that
+`llvm-readobj --coff-debug-directory pdb_min.exe` reports:
+GUID (raw) = `63 39 AC 61 48 FF 24 90 4C 4C 44 20 50 44 42 2E`
+(text `61AC3963-FF48-9024-4C4C-44205044422E`), Age = `1`, PDB = `pdb_min.pdb`.
+
+**Parity:** a *pure extractor* — no analysis pass, no `--option`/settable, no `pdb`
+crate. It is never called on any pipeline path, so the 675/158 oracles are
+structurally untouched (the same posture as the rest of the metadata tier, here
+even stronger: there is not even a default-off pass to run).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. the new `s1_pdb::codeview` tests (5 tests — 4 unit
++ the `pdb_min.exe` fixture e2e, ran, not skipped). No `kuna catalog --check`
+needed (no settable added — a clean, option-free merge).
+
+- **New:** `kuna-analysis/src/s1_pdb/mod.rs` + `s1_pdb/codeview.rs` (the extractor +
+  tests), `tests/fixtures/pdb_min.exe` + `pdb_min.c` (the RSDS fixture).
+- **Changed:** `kuna-analysis/src/lib.rs` (`pub mod s1_pdb`),
+  `tests/fixtures/README.md` (the `pdb_min.exe` recipe + pinned record),
+  `docs/analysis-port-log.md`.
+
+### Increment 60 — MSVC RTTI vftable discovery + virtual-method naming (s1_rtti R3)
+
+**The RTTI line's third increment (PR R3, per `docs/metadata-analyzers-design.md` §3.1
++ §5).** Increment 57 (R1+R2) recovered the C++ class names and labelled the metadata
+graph (`<Class>::RTTI_*`) + the vftable base (`<Class>::vftable`). R3 walks the vftable
+itself — the kuna analog of Ghidra's `VfTableModel.getVfTableCount` — so each virtual
+method is named and the virtual *dispatch* resolves to a named function. **NO new
+`--option`** (reuses the existing `rtti` flag): no catalog/count change.
+
+**The before/after, on the same polymorphic-C++ PEs (`tests/fixtures/msvc_rtti_x{64,86}.exe`,
+`Box : Shape` with a virtual `area()`):**
+
+```
+                                  the virtual dispatch / vtable slot
+--option rtti off (default)    →  the vtable is an unnamed DAT_<addr>; the virtual
+                                  call `(**(code **)*p)()` jumps to an unnamed slot.
+--option rtti on               →  Box::vftable labelled; its one slot named the
+                                  virtual-method function Box::vftable_0 (at the slot
+                                  target VA 0x140001040 x64 / 0x401030 x86 = Box::area),
+                                  the slot array marked read-only — so the virtual
+                                  dispatch now resolves to a NAMED method.
+```
+
+**The walk (port of `VfTableModel.getVfTableCount`, `s1_rtti/vftable.rs`):** from the
+`<Class>::vftable` base (already recovered in R1 from the COL's meta-pointer slot),
+read each pointer-width slot and bound the array at the first **NULL / non-`.text`**
+slot (a slot is a virtual-method entry only while it points into an executable
+section). For each surviving slot emit a `SymKind::Function` `SymFact` named
+`<Class>::vftable_<i>` (the MSVC metadata carries the class name but NOT per-method
+names — the slot index is the faithful disambiguator vs Ghidra's script-tier method
+demangling), and mark the slot array read-only (`out.readonly`).
+
+**The x64 vftable-slot subtlety (faithful to the design):** a vftable slot is an
+**absolute pointer-width VA on BOTH arches** — NOT the `IBO32` image-base displacement
+the COL/RTTI *inter-structure* refs use on x64. The walk reads each with
+`RefKind::read_ptr` (8 bytes x64 / 4 bytes x86), never `resolve_ref`. Verified against
+the real fixtures: the x64 cell at `0x140002010` holds the full 8-byte `0x140001040`,
+the x86 cell at `0x40200c` the 4-byte `0x401030` (`objdump -s -j .rdata -d -j .text`).
+
+**The `out.readonly` commit arm (newly load-bearing).** `out.readonly` was merged but
+never applied; `commit_analysis_output` grew a step-1b arm that ORs `Varnode::readonly`
+over each `[first, last_open)` range via `symboltab.set_property_range` (the same call
+the loader's section-derived ranges use). Belt-and-suspenders on PE `.rdata` (already
+read-only from its section flags), load-bearing for any pass that marks a range the
+loader did not. Empty on every default run (only the gated real-binary passes emit).
+
+**Module layout:** `kuna-analysis/src/s1_rtti/vftable.rs` (the `VfTableModel` port:
+`TextRanges` executable-section view + `walk_vftable` slot bounder + `VfTable`), wired
+into `s1_rtti/mod.rs` (`emit_vftable_methods` + the `TextRanges` build in `run`). A new
+`ConsoleProgram::function_named_at(vma)` accessor (resolves the FunctionSymbol at a code
+VA across scopes) is the verification seam for "the slot now points at a named method".
+
+**e2e (RAN, not skipped):** `kuna-console/tests/verify_rtti.rs` extended — with
+`--option rtti on` it asserts `Box::vftable_0` exists AND `function_named_at(slot-0
+target VA)` resolves to the named virtual method (the virtual dispatch is now named);
+with `rtti off` both are absent (default-off parity). The pinned slot-0 target VMAs
+(`0x140001040` x64 / `0x401030` x86 = `Box::area`) are read from
+`objdump -s -j .rdata -d -j .text` (`tests/fixtures/README.md`). Built the `.sla`
+(`make specs`) so the 4 tests run; all 4 pass. 3 new `vftable.rs` unit tests
+(null-boundary walk / reject-no-code-slot / one-slot table).
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **235/235 PARITY OK**;
+`make rust-test` **green** incl. `verify_rtti` (4/4 ran) + the new vftable units.
+`kuna catalog --check` **OK** (no settable added — reuses the `rtti` flag).
+Default-off + real-binary-path-only ⇒ the parity oracles are structurally untouched.
+
+- **New:** `kuna-analysis/src/s1_rtti/vftable.rs` (the `VfTableModel` port + tests).
+- **Changed:** `kuna-analysis/src/s1_rtti/mod.rs` (`pub mod vftable`,
+  `emit_vftable_methods`, `TextRanges` in `run`), `kuna-console/src/engine.rs`
+  (`function_named_at` + the `out.readonly` commit arm), `kuna-console/tests/verify_rtti.rs`
+  (the R3 vftable assertions), `tests/fixtures/README.md` (the pinned slot-0 VMAs + R3
+  note), `docs/analysis-port-log.md`.
+
+### Increment 61 — Mach-O chained-fixup resolver + arm64 Objective-C (s1_objc O0+O2)
+
+**THE arm64 HEADLINE.** Extends the x86-64 ObjC pass (Increment 58) to arm64 by
+landing the **`LC_DYLD_CHAINED_FIXUPS` resolver** (design §5 PR-O0) it was waiting
+on, plus the ObjC **type-encoding decoder** + **ivar labels** (PR-O2). A modern
+arm64 Mach-O does not store real pointers in its `__DATA_CONST`/`__DATA` slots —
+each is a packed *chained-fixup entry* — so without the resolver `__objc_classlist`
+dereferences to garbage. With it, the SAME ObjC walk names the IMP `-[Greeter
+greet:]` on arm64. **No new `--option`** — this reuses `objc`; the resolver is
+additive loader infra (no option).
+
+**The before/after, on a (locally-)stripped arm64 Objective-C Mach-O with REAL
+chained fixups (`tests/fixtures/macho_objc_arm64`):**
+
+```
+                          symbol @ 0x1000005f0    rendered body
+--option objc off (default) →  sub_1000005f0      int4 sub_1000005f0(...) { return a2 * 3 + 7; }
+--option objc on            →  -[Greeter greet:]  int4 -[Greeter greet:](...) { return a2 * 3 + 7; }
+```
+
+Naming this IMP proves the whole chain: the resolver rebased the
+`__objc_classlist[0]` slot (raw word `0x0000000100008000` → `class_t`@`0x100008000`)
+and the `class_t.isa` slot (raw word `0x0020000100008028`, whose `next=4` field
+leaks into the high bits → **resolves to `0x100008028`**, garbage without the
+resolver), and the arm64 walk then reached `Greeter`/`greet:`/IMP@`0x1000005f0`.
+
+**The resolver (`s1_loader/format/macho/chained.rs`, PR-O0).** Parses
+`LC_DYLD_CHAINED_FIXUPS` (header → `starts_in_image` → `starts_in_segment` → per-page
+chains) and produces a flat **VMA → resolved-pointer** overlay that
+`MachoImage::read_ptr` consults first (`with_fixups`). Handles:
+- **Plain rebase** — `DYLD_CHAINED_PTR_64` (2, target = unslid vmaddr),
+  `DYLD_CHAINED_PTR_64_OFFSET` (6, target = imagebase + offset), and
+  `DYLD_CHAINED_PTR_ARM64E` (1) non-auth (43-bit vmaddr) +
+  `_USERLAND`/`_USERLAND24` (12/15, imagebase + offset). Strides: 4-byte for the
+  `_64` formats, 8-byte for the arm64e formats.
+- **arm64e auth-rebase** — the PAC/diversity/addrDiv/key bits are stripped and the
+  32-bit image-base-relative target rebased (`imagebase + target`).
+- **Bind / import-ordinal chains: OUT OF SCOPE** (design §3.2) — an external
+  symbol's runtime address is unknown statically, so a bind slot is left
+  unresolved (the consumer reads the raw word and falls back, never a wrong
+  address). The chain head VMA is computed from the **mach_header** (`imagebase +
+  segment_offset + page*page_size + page_start`), matching dyld's
+  `forEachFixupChainSegment` (segment_offset is image-base-relative, not
+  per-segment).
+
+**The type-encoding decoder (`s1_objc/encoding.rs`, PR-O2).** Maps an ObjC method
+type encoding to a `PrototypePieces`: `i20@0:8i16` → `int -[Greeter greet:](id
+self, SEL _cmd, int n)` — `@`→`id` (objc_object*), `:`→`SEL`, `#`→`Class`, the
+primitive codes (`c i s l q f d B v * ^T`), with `{...}`/`[...]` name-level-opaque
+(the `s1_dwarf` MVP posture) and protocol qualifiers + trailing frame-offsets
+skipped. Not a demangler (selectors are ASCII). Also emits `<Class>::ivar` Data
+labels from `class_ro_t.ivars` (`ivar_list_t` walk) — inert on the root-class
+fixture (no ivars), exercised by unit tests.
+
+**The fixture.** `macho_objc_arm64` is the **same `macho_objc.m` source** built
+`-arch arm64 ... -fixup_chains` (the one flag that makes the container's in-tree
+`ld64.lld` emit `LC_DYLD_CHAINED_FIXUPS` + `LC_DYLD_EXPORTS_TRIE` instead of the
+classic `LC_DYLD_INFO_ONLY` rebase opcodes — confirmed: `LC_DYLD_CHAINED_FIXUPS
+dataoff=0xc000 datasize=0x80`, `DYLD_CHAINED_PTR_64` format 2). So the resolver IS
+exercised by a real chained-fixup binary (no hand-assembly / vendored-slice
+fallback needed). The in-container linker does not emit an arm64e *auth*-fixup
+slice, so the auth-rebase path is covered by the resolver's synthetic-bit-pattern
+unit tests.
+
+**Parity / no-op safety (the CAUTION).** The resolver runs in the Mach-O LOAD path
+but is a **strict no-op on a non-chained-fixup Mach-O**: a classic
+`LC_DYLD_INFO`/`LC_DYLD_INFO_ONLY` image (every existing x86-64 `macho_objc` /
+`macho_imports` fixture) yields an EMPTY overlay, so `read_ptr` reads raw section
+words exactly as before — a dedicated unit test
+(`resolver_is_noop_on_non_chained_fixup_macho`) asserts the overlay is empty AND
+that `read_ptr` is byte-identical with/without the (empty) overlay on both
+fixtures. The ObjC pass stays default-off + real-binary-path only, so the XML
+oracles are structurally untouched.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK
+(235/235)**; `make rust-test` **green** incl. `verify_objc` (3 tests: x86-64 +
+the new arm64 chained-fixup e2e + the off-baseline, all ran), the resolver unit
+tests (8 in `macho::chained`), the arm64 walk + no-op tests (in `s1_objc`), and the
+type-encoding decoder tests. No `kuna catalog --check` needed (no settable added —
+reuses `objc`).
+
+- **New:** `kuna-analysis/src/s1_loader/format/macho/chained.rs` (the resolver +
+  tests), `kuna-analysis/src/s1_objc/encoding.rs` (the type-encoding decoder +
+  tests), `tests/fixtures/macho_objc_arm64` (the real chained-fixup arm64 fixture).
+- **Changed:** `kuna-analysis/src/s1_loader/format/macho.rs` (moved to a `macho/`
+  module dir; `pub mod chained` + re-export), `s1_objc/sections.rs`
+  (`with_fixups` + overlay-aware `read_ptr`), `s1_objc/mod.rs` (resolve fixups,
+  emit prototypes + ivar labels, arm64 e2e tests), `s1_objc/classt.rs` (the
+  `ivar_list_t` walk), `kuna-console/tests/verify_objc.rs` (parameterized over the
+  x86-64 + arm64 fixtures), `tests/fixtures/README.md` (the arm64 fixture recipe +
+  pinned VMAs), `docs/analysis-port-log.md`.
+
+### Increment 62 — PDB PR-P1: .pdb-consuming pass, stripped FUN_* -> real names (s1_pdb, gated --option pdb)
+
+**THE HEADLINE.** PR-P0 (Increment 59) extracted the PE's CodeView *fingerprint*;
+this PR consumes the external `.pdb` it points at and delivers the DWARF-for-Windows
+payoff at the **name level**: a stripped `FUN_<addr>` → its real source name
+(`pdb_demo_compute`, and on a real Windows EXE `WinMain`/`main`/…). The kuna analog
+of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer; the MS-DIA
+`PdbAnalyzer` is Windows-native FFI and is never ported). PDB is the lone
+**external-file** case in the metadata tier — the PE carries only the fingerprint —
+so it follows the **`s1_fid` external-artifact precedent** (default-off, externally
+gated, *rename*-emitting), not the in-image `s1_rtti`/`s1_objc` shape.
+
+**The `pdb` crate (the one new dep).** Ghidra hand-rolls `pdb2/pdbreader` (~196 type
++ ~280 symbol classes — the MSF/TPI/IPI/DBI parsers); kuna substitutes the mature
+`pdb` crate (MIT/Apache, Firefox symbolication / `pdb-addr2line`) **exactly as it
+substituted `gimli` for DWARF, `object` for BFD, `msvc-demangler` for the MSVC
+demangler** — `pdb = "0.8"` in the workspace `[workspace.dependencies]` (next to
+`object`/`gimli`), `pdb.workspace = true` in `kuna-analysis`. Documented as
+**LOSS-252** in `docs/rust-port/losses.md`.
+
+**The pass (`s1_pdb::PdbPass`, gate id `pdb`).** On a PE: (1) `extract_codeview` for
+the PE's `{guid, age, path}`; (2) **tier-1 locate** — the `.pdb` path from the
+`kuna_pdb_path` env var (the exact `s1_fid` `kuna_fid_db` precedent — keeps the
+catalog to ONE new on|off settable, the `.pdb` source off the `--option` surface);
+(3) open via the `pdb` crate + **the fingerprint gate** (`locate::fingerprint_ok`:
+the `.pdb`'s `pdb_information().guid/age` must match the CodeView record — a
+MISMATCH/ABSENT `.pdb` → empty output, the FID full-hash-match discipline of never
+applying wrong external knowledge); (4) on a match, walk the global symbol stream
+(`S_PUB32` publics + `S_GPROC32` procedures, `walk::walk_functions`), resolve each
+`segment:offset → RVA + ImageBase → VMA`, and emit a function **rename** via
+`out.fid_names` (the label-gated `FUN_*`/`sub_*` placeholder rename, the FID
+precedent) + `out.symbols` (so the function exists for the rename to bind even when
+reached only through the PDB). NAME-level only: types/typed-locals/lines are the
+deferred PR-P2/P3 (the same name-level-first posture `s1_dwarf` took).
+
+**Gating (the `fid`/`rtti`/`objc` clone, full wiring).** Default-OFF: `passes.rs`
+registers `PdbPass` behind a `BinaryFormat::Pe` gate (and the pass self-gates on PE
+in `run`); `engine.rs::analysis_pass_enabled` `"pdb" => arch.analysis_pdb`;
+`architecture.rs` `analysis_pdb` field/default-false/reset/`on_off!` arm;
+`options.rs` `KUNA_OPTION_NAMES += "pdb"`; a `[[settable]] pdb` row in `stages.toml`
+cloned from the fid/objc row (`values="on|off"`, `default="off"`, `stage="S1"`,
+`substage="external-refinement"`, `strength="HARD"`, `change_kind="analysis-enablement"`).
+
+**Settable count 67 → 68.** Updated everywhere: `kuna_stages` `settable_count_is_68`
++ `kuna_num_settables`/`SETTABLE_TABLE.len`, the comma-count (`},\n` × 67), the
+`fixture_has_all_68_settables` + `"option": ` × 68 in `catalog_bytecompat`, the
+`pdb → PASS_GATES` suppressed-set arm (no codegen `live_value`; `with_live` stays
+28), `kuna-catalog.xml` #5/#9 `max`=69, the regenerated `stage_catalog.json` fixture
++ `docs/assertions.md`. `kuna catalog --check` → **OK**.
+
+**The fixture + e2e (the headline, the two-state proof).** `tests/fixtures/pdb_prog.exe`
+(x86-64 PE, `-g -gcodeview`) **with its matching `pdb_prog.pdb`**, built in `kuna-dev`
+(lld-link emits both + the RSDS record). `pdb_demo_compute`@`0x140001000` carries no
+leftover symbol kuna names from, so without the `.pdb` it is a stripped `FUN_*`.
+`pdb_prog_mismatch.pdb` (a different program → a different content-hash GUID
+`3395B1A2-…`) drives the negative gate. `kuna-console/tests/verify_pdb.rs`:
+- `--option pdb off` → `0x140001000` is a `FUN_*`/`sub_*` placeholder (proves the
+  name is NOT a leftover symbol);
+- `--option pdb on` + `kuna_pdb_path=…/pdb_prog.pdb` → it is **`pdb_demo_compute`**
+  (the PDB rename, GUID/age `A192EC48-…`/1 matched);
+- `--option pdb on` + the guid-MISMATCH `.pdb` → **still `FUN_*`** (the fingerprint
+  gate rejected the stale PDB). The test runs on the real-PE path (not skipped when
+  `.sla` is built).
+
+**Parity:** default-off + PE-format-gated + inert without a fingerprint-matching
+`.pdb` ⇒ the XML datatest path never reaches it; the oracles are byte-identical by
+construction.
+
+**Gates:** `make test` **675/675 PARITY OK**; `make test-stages` **PARITY OK**;
+`make rust-test` **green** incl. `verify_pdb` + the new `s1_pdb::{locate,walk}` units;
+`kuna catalog --check` **OK**.
+
+- **New:** `kuna-analysis/src/s1_pdb/{locate,walk}.rs` (tier-1 locate + fingerprint
+  gate + the S_PUB32/S_GPROC32 walk), `tests/fixtures/pdb_prog.{c,exe,pdb}` +
+  `pdb_prog_mismatch.pdb` + `pdb_mismatch.c`, `kuna-console/tests/verify_pdb.rs`.
+- **Changed:** `decompiler/Cargo.toml` + `kuna-analysis/Cargo.toml` (the `pdb` dep),
+  `kuna-analysis/src/s1_pdb/mod.rs` (the `PdbPass`), `passes.rs` (the PE-gated
+  registration + the `pdb_pass_is_pe_gated` test), `architecture.rs` (`analysis_pdb`
+  field/reset/`on_off!`), `engine.rs` (`analysis_pass_enabled` arm), `options.rs`
+  (`KUNA_OPTION_NAMES`), `stages.toml` (the `[[settable]] pdb` row), the count tests
+  (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`), `kuna-catalog.xml`,
+  `tests/fixtures/stage_catalog.json`, `docs/assertions.md`,
+  `docs/rust-port/losses.md` (LOSS-252), `tests/fixtures/README.md`,
+  `docs/analysis-port-log.md`.
+

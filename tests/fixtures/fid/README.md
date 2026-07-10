@@ -2,7 +2,7 @@
 
 The fingerprint fixtures for kuna's FID (Function-ID) port — a tiny, hermetic,
 **regenerable** set used by the `.fid` database + `kuna fid build` generator tests
-(FID PR3). See `docs/fid-design.md` §7 for the design.
+(FID PR3). See `docs/history/fid-design.md` §7 for the design.
 
 ## Files
 
@@ -76,7 +76,7 @@ that they round-trip through the `.fid` format.)
 ## Architecture note
 
 The vendored fixture is **x86-64** (`x86:LE:64:default`), the architecture the FID
-design doc (`docs/fid-design.md` §7.2) targets. The byte-exact PR2 hasher, the
+design doc (`docs/history/fid-design.md` §7.2) targets. The byte-exact PR2 hasher, the
 `.fid` format, the generator, and the loader rebasing are architecture-agnostic
 and the x86-64 `lib.o` exercises the whole PR3 mechanism end-to-end with verifiable
 hashes.

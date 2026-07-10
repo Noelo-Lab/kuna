@@ -36,7 +36,7 @@ use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::ruleaction_7::{
     RuleDivChain, RuleSignForm2, RuleSignMod2Opt, RuleSignMod2nOpt,
 };
-use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::{DefOpInfo, VarnodeBank};
 use kuna_num::opcodes::OpCode;
 
@@ -65,7 +65,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

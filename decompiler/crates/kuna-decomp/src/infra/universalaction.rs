@@ -41,7 +41,7 @@
 //! # The B0 allowlist (now empty)
 //!
 //! Earlier waves left a handful of Rules/Actions referenced by `universalAction`
-//! un-ported (SEAM markers in their home modules), omitted from the materialized
+//! un-ported (STUB markers in their home modules), omitted from the materialized
 //! tree and enumerated in [`UNPORTED_ALLOWLIST`].  As of
 //! `w8x-universalaction-wire` all of them (`splitflow`, `subfloat_convert`,
 //! `stackprobeloop`, `lowerswitchinstall`, `dumptyhumplate`, `splitcopy`,
@@ -64,7 +64,7 @@ use crate::action::{
 // Allowlist of genuinely-unported passes (documented B0 dump diff)
 // =============================================================================
 
-/// A pass named by `universalAction` but not yet ported, with the wave/seam
+/// A pass named by `universalAction` but not yet ported, with the wave/boundary
 /// blocking it.  Materialization skips these; the B0 listing test treats them as
 /// an explicit, named diff against the C++ oracle dump.
 #[derive(Debug, Clone, Copy)]
@@ -73,7 +73,7 @@ pub struct UnportedEntry {
     pub name: &'static str,
     /// The `universalAction` group argument it was registered under.
     pub group: &'static str,
-    /// The wave/seam that must land it.
+    /// The wave/boundary that must land it.
     pub blocked_by: &'static str,
 }
 
@@ -527,11 +527,10 @@ pub fn universal_sched(
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
         // (kuna) GH-8017/6858: gated by the live arch flag model_stack_probe_loop,
-        // carried on the seam and read in apply_op; registered `false` so the flag
+        // carried on the ArchContext and read in apply_op; registered `false` so the flag
         // (default-on, DIV-3) drives both the default and the `stackprobeloop off` toggle.
         rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(false, "analysis")),
     ];
-    // C++: `for(iter=conf->extra_pool_rules...) actprop->addRule(*iter);`
     oppool1_rules.extend(extra_pool_rules);
 
     // --- oppool2 (post-blockstructure, type-pointer rules) ----------------
@@ -673,21 +672,21 @@ pub fn universal_sched(
             // in the `returnsplit` group so its duplicated returns flow through the
             // same merge/naming passes and are re-structured by the next fullloop
             // iteration (and the final ActionBlockStructure).
-            act!(crate::s8_structure::kuna_returndup::ActionReturnDup::boxed("returnsplit")),
+            act!(crate::p8_structure::kuna_returndup::ActionReturnDup::boxed("returnsplit")),
             // (kuna) angr SAILR `ReturnDuplicatorHigh`, per-edge const narrowing (option
             // `earlyreturn`, default-OFF).  Sibling of ActionReturnDup: peels only the
             // CONSTANT arm of a mixed return phi (the guard's `return K`), leaving the
             // variable body return merged — the early-return-guard shape the whole-block
             // returndup gate structurally cannot reach.  branchflip + ifelseflatten do the
             // hoist downstream.
-            act!(crate::s8_structure::kuna_earlyreturn::ActionEarlyReturn::boxed("returnsplit")),
+            act!(crate::p8_structure::kuna_earlyreturn::ActionEarlyReturn::boxed("returnsplit")),
             // (kuna) The direct continuation of ActionEarlyReturn: the SAME per-edge const
             // peel (option `switchreturn`, default-OFF), but with the in-edge cap lifted so
             // the WIDE multi-way switch-phi that overflows earlyreturn's 16-edge limit
             // (`switch (x) { case A: v = K0; break; … } return v;` with > 16 cases) is
             // reached too, hoisting each case to its own `return K`.  Registered right after
             // earlyreturn so the narrower pass consumes the ≤16-edge diamonds first.
-            act!(crate::s8_structure::kuna_switchreturn::ActionSwitchReturn::boxed("returnsplit")),
+            act!(crate::p8_structure::kuna_switchreturn::ActionSwitchReturn::boxed("returnsplit")),
             act!(ActionUnjustifiedParams::boxed("protorecovery")),
             act!(ActionStartTypes::boxed("typerecovery")),
             act!(ActionActiveReturn::boxed("protorecovery")),
@@ -749,36 +748,36 @@ pub fn universal_sched(
             act!(ActionFinalStructure::boxed("blockrecovery")),
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
             // default-OFF).  Runs after the tree is final + goto targets labelled.
-            act!(crate::s8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
             // (kuna) angr SAILR `ReturnDuplicatorLow` return-tail-with-calls
             // duplication (option `taildup`, default-OFF).  Sibling of gotoreduce
             // for the return tail that *contains a call* (e.g. `free(p); return;`),
             // which gotoreduce rejects and crossjumprevert (non-return) declines.
             // Runs right after gotoreduce — same return-tail family.
-            act!(crate::s8_structure::kuna_taildup::ActionTailDup::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_taildup::ActionTailDup::boxed("blockrecovery")),
             // (kuna) angr `IfElseFlattener`: after the tree is final + goto
             // targets labelled (and after gotoreduce), drop the `else` arm of a
             // 3-component `if` whose true-clause terminates, re-parenting the
             // else body as a follower (option `ifelseflatten`, default-OFF).
-            act!(crate::s8_structure::kuna_ifelseflatten::ActionIfElseFlatten::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_ifelseflatten::ActionIfElseFlatten::boxed("blockrecovery")),
             // (kuna) angr SAILR cross-jump reversion (option `crossjumprevert`,
             // default-OFF).  Runs *after* gotoreduce — per the CrossJumpReverter
             // docstring it is the last deoptimization, so return tails are already
             // structured early returns and only true cross-jump tails remain.
-            act!(crate::s8_structure::kuna_crossjumpreverter::ActionCrossJumpReverter::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_crossjumpreverter::ActionCrossJumpReverter::boxed("blockrecovery")),
             // (kuna) angr structurer ITE region-dedup (option `dedupitetail`,
             // default-OFF).  The inverse of the duplication passes above: after the
             // tree is final + goto targets labelled, merge a duplicated `if/else`
             // tail (shared prefix/suffix of statement-equivalent leaves across both
             // arms) by hoisting the shared blocks out of the `if`, emitting one copy.
-            act!(crate::s8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
             // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
             // runtime choice).  After the tree is final + goto targets labelled,
             // mark a narrow two-arm assignment diamond (`if (c) v=A; else v=B;`,
             // both arms a single COPY to the same variable) so the S9 printer emits
             // it as a `?:` ternary (`v = c ? A : B;`).  Print-only mark; no p-code
             // is touched, so OFF is byte-identical.
-            act!(crate::s8_structure::kuna_iteregion::ActionIteRegion::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_iteregion::ActionIteRegion::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

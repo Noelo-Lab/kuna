@@ -23,7 +23,7 @@
 //! cap, the global (per-log) sequence counter, and the dump format are
 //! transcribed verbatim.
 //!
-//! SEAM(W5): the trigger sites (`Heritage::bumpDeadcodeDelay`,
+//! STUB(W5): the trigger sites (`Heritage::bumpDeadcodeDelay`,
 //! `JumpTable::recoverLabels`, `FuncCallSpecs::deindirect`/`forceSet`) gain
 //! their `record(...)` calls when those passes port; this module owns the log
 //! and its API, not the call sites.
@@ -146,12 +146,11 @@ impl RestartLog {
     pub fn record(&mut self, fd: &Funcdata, reason: KunaRestartReason, detail: &str) {
         let key = Self::key_for_func(fd);
         let events = self.table.entry(key).or_default();
-        // C++: if ((int4)events.size() >= MAX_EVENTS_PER_FUNC) return;
         if events.len() >= MAX_EVENTS_PER_FUNC {
             return;
         }
         let seq = self.seq;
-        self.seq += 1; // C++: ev.seq = restartSeq++;
+        self.seq += 1;
         events.push(KunaRestartEvent {
             seq,
             reason,
@@ -164,7 +163,6 @@ impl RestartLog {
     /// (`kuna_restartlog.cc:79`), which does `site.printRaw(oss)`.
     pub fn record_at(&mut self, fd: &Funcdata, reason: KunaRestartReason, site: &kuna_base::address::Address) {
         let mut detail = String::new();
-        // C++: site.printRaw(oss); kunaRecordRestart(fd,reason,oss.str());
         // printRaw cannot fail for a real address; an invalid space prints
         // "invalid_addr". Fall back to empty on the (unreachable) error path.
         let _ = site.print_raw(&mut detail);
@@ -179,7 +177,6 @@ impl RestartLog {
         let key = Self::key_for_func(fd);
         match self.table.get(&key) {
             None => {
-                // C++: "No restart events recorded for " << name << endl
                 os.push_str("No restart events recorded for ");
                 os.push_str(fd.get_name());
                 os.push('\n');
@@ -190,17 +187,14 @@ impl RestartLog {
                 os.push('\n');
             }
             Some(events) => {
-                // C++: "Restart events for " << name << " (mechanism c; ...):" << endl
                 os.push_str("Restart events for ");
                 os.push_str(fd.get_name());
                 os.push_str(" (mechanism c; hints persist in the Override store):\n");
                 for (i, ev) in events.iter().enumerate() {
-                    // C++: "  " << dec << i << ": " << reasonName
                     os.push_str("  ");
                     os.push_str(&i.to_string());
                     os.push_str(": ");
                     os.push_str(ev.reason.name());
-                    // C++: if (!detail.empty()) "  [" << detail << "]"
                     if !ev.detail.is_empty() {
                         os.push_str("  [");
                         os.push_str(&ev.detail);

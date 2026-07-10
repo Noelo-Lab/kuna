@@ -290,7 +290,6 @@ impl RawLoadImage {
                 return Err(KunaError::lowlevel(errmsg));
             }
         };
-        // thefile->seekg(0,ios::end); filesize = thefile->tellg();
         // (C++ does not check the stream state; a seek failure here is an
         // OS-level error with no oracle behavior, reported as the same
         // open failure.)
@@ -331,8 +330,8 @@ impl LoadImage for RawLoadImage {
                     // Initial address not within file
                     break;
                 }
-                // memset(ptr+offset,0,size): fill out the rest of the
-                // buffer with 0 (offset+size always equals the slice length)
+                // fill out the rest of the buffer with 0 (offset+size
+                // always equals the slice length)
                 for b in &mut ptr[offset as usize..] {
                     // cast: offset < slice length here
                     *b = 0;
@@ -344,9 +343,8 @@ impl LoadImage for RawLoadImage {
                 // Adjust to biggest possible read
                 readsize = self.filesize.wsub(curaddr);
             }
-            // thefile->seekg(curaddr); thefile->read(...): C++ ignores the
-            // stream state; an OS-level I/O failure (no oracle behavior)
-            // surfaces as a LowlevelError here.
+            // C++ ignores the stream state; an OS-level I/O failure (no
+            // oracle behavior) surfaces as a LowlevelError here.
             file.seek(SeekFrom::Start(curaddr)).map_err(|e| {
                 KunaError::lowlevel(format!("I/O error reading raw image file: {e}"))
             })?;
@@ -378,9 +376,9 @@ impl LoadImage for RawLoadImage {
             .spaceid
             .as_ref()
             .expect("RawLoadImage::adjustVma before attachToSpace (C++ null space deref)");
-        // adjust = AddrSpace::addressToByte(adjust,wordsize): the `long`
-        // argument converts to uintb (sign-extension), the uintb result
-        // converts back to long; vma += adjust then wraps in uintb.
+        // addressToByte: the `long` argument converts to uintb
+        // (sign-extension), the uintb result converts back to long; vma +=
+        // adjust then wraps in uintb.
         let adjust = AddrSpace::address_to_byte(adjust as u64, spaceid.get_word_size());
         self.vma = self.vma.wadd(adjust);
     }

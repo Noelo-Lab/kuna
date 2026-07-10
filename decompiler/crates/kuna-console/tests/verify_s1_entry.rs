@@ -1,4 +1,4 @@
-//! End-to-end gate for function-entry discovery (`s1_entry` — the
+//! End-to-end gate for function-entry discovery (`entry` — the
 //! `s1-entry-disc` + `s1-eh-frame` combined pass).
 //!
 //! Drives `load file <stripped_dynamic_x86_64>` (a PIE with `.symtab` stripped,

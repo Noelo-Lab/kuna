@@ -673,14 +673,12 @@ impl<R: RangeRecord> RangeMap<R> {
     /// `start` is the first sub-range that ends with the boundary point
     /// (the C++ callers pass `tree.lower_bound(AddrRange(i))`).
     fn zip(&mut self, i: LineOf<R>, start: SubRangeKey<LineOf<R>, SubsortOf<R>>) {
-        // f = (*iter).first
         let f = self
             .tree
             .get(&start)
             .expect("rangemap: zip start position vanished")
             .first;
         let mut cur = Some(start);
-        // while ((*iter).last == i) tree.erase(iter++);
         // (the C++ loop has no end-of-tree guard; a None cursor just stops)
         while let Some(k) = cur.take() {
             if k.last != i {
@@ -692,7 +690,6 @@ impl<R: RangeRecord> RangeMap<R> {
             cur = nxt;
         }
         let i1 = i.plus1();
-        // while (iter != end && (*iter).first == i+1) { (*iter).first = f; ++iter; }
         while let Some(k) = cur.take() {
             let d = self
                 .tree
@@ -720,7 +717,6 @@ impl<R: RangeRecord> RangeMap<R> {
         let hint = start.clone();
         let plus1 = i.plus1();
         let mut cur = Some(start);
-        // while (iter != end && (*iter).first <= i)
         while let Some(k) = cur.take() {
             let d = self
                 .tree
@@ -750,7 +746,6 @@ impl<R: RangeRecord> RangeMap<R> {
     /// Returns the handle to the new record.
     pub fn insert(&mut self, data: R::InitType, a: LineOf<R>, b: LineOf<R>) -> RecordIdx {
         let mut f = a;
-        // low = tree.lower_bound(AddrRange(f));
         let low0 = self.lower_bound_key(Self::min_key(f));
         if let Some(lk) = &low0 {
             // Check if left boundary refines existing partition
@@ -759,8 +754,8 @@ impl<R: RangeRecord> RangeMap<R> {
             }
         }
 
-        // record.emplace_front(data, a, b); then splice before the record of
-        // the sub-range at tree.lower_bound(AddrRange(b, subsort)).
+        // Splice the new record before the sub-range at
+        // tree.lower_bound(AddrRange(b, subsort)).
         let rec = R::create(data, a, b);
         let subsort = rec.get_subsort();
         let idx = self.alloc_record(rec);
@@ -775,7 +770,6 @@ impl<R: RangeRecord> RangeMap<R> {
         self.list_insert_before(spot_value, idx);
 
         let mut low = low0;
-        // while (low != end && (*low).first <= b)
         while let Some(lk) = low.take() {
             let (lfirst, llast) = {
                 let d = &self.tree[&lk];
@@ -843,8 +837,7 @@ impl<R: RangeRecord> RangeMap<R> {
         let mut low = self.lower_bound_key(Self::min_key(a));
 
         let aminus1 = a.minus1();
-        // while (uplow != tree.begin()) { --uplow; ... } — scan backward over
-        // sub-ranges ending exactly at a-1
+        // scan backward over sub-ranges ending exactly at a-1
         let mut uplow = low.clone();
         loop {
             let prev = match &uplow {
@@ -867,7 +860,6 @@ impl<R: RangeRecord> RangeMap<R> {
             uplow = Some(pk.clone());
         }
 
-        // do { ... } while (low != end && (*low).first <= b)
         loop {
             // The record's own sub-ranges guarantee low != end on entry
             // (dereferencing end here is C++ UB; we panic per ADR 0004).
@@ -880,15 +872,11 @@ impl<R: RangeRecord> RangeMap<R> {
             if d.value == v {
                 self.tree.remove(&k);
             } else {
-                // C++: if ((*low).a < a) leftoverlap = true;
-                //      else if ((*low).a == a) leftsew = false;
                 match d.a.cmp(&a) {
                     std::cmp::Ordering::Less => leftoverlap = true, // a splits somebody else
                     std::cmp::Ordering::Equal => leftsew = false, // Somebody else splits at a (in addition to v)
                     std::cmp::Ordering::Greater => {}
                 }
-                // C++: if (b < (*low).b) rightoverlap = true;
-                //      else if ((*low).b == b) rightsew = false;
                 match b.cmp(&d.b) {
                     std::cmp::Ordering::Less => rightoverlap = true, // b splits somebody else
                     std::cmp::Ordering::Equal => rightsew = false, // Somebody else splits at b (in addition to v)
@@ -927,7 +915,6 @@ impl<R: RangeRecord> RangeMap<R> {
     /// `find(linetype)`), i.e. every duplicate of the refinement cell
     /// containing `point`, in subsort order.
     pub fn find(&self, point: LineOf<R>) -> SubRangeIter<'_, R> {
-        // iter1 = tree.lower_bound(AddrRange(point))
         let first = self
             .tree
             .range((Included(Self::min_key(point)), Unbounded))
@@ -937,7 +924,6 @@ impl<R: RangeRecord> RangeMap<R> {
             None => SubRangeIter { inner: None },
             Some((_, d)) if point < d.first => SubRangeIter { inner: None },
             Some((k, _)) => {
-                // iter2 = tree.upper_bound(AddrRange((*iter1).last, subsorttype(true)))
                 let lo = Included(k.clone());
                 let hi = Included(Self::max_key(k.last, SubsortOf::<R>::maximal()));
                 SubRangeIter { inner: Some(self.tree.range((lo, hi))) }
@@ -953,7 +939,6 @@ impl<R: RangeRecord> RangeMap<R> {
         sub1: SubsortOf<R>,
         sub2: SubsortOf<R>,
     ) -> SubRangeIter<'_, R> {
-        // iter1 = tree.lower_bound(AddrRange(point, sub1))
         let first = self
             .tree
             .range((
@@ -965,7 +950,6 @@ impl<R: RangeRecord> RangeMap<R> {
             None => SubRangeIter { inner: None },
             Some((_, d)) if point < d.first => SubRangeIter { inner: None },
             Some((k, _)) => {
-                // iter2 = tree.upper_bound(AddrRange((*iter1).last, sub2))
                 let lo = Included(k.clone());
                 let hi = Included(Self::max_key(k.last, sub2));
                 if Self::bound_inverted(&lo, &hi) {
@@ -985,7 +969,6 @@ impl<R: RangeRecord> RangeMap<R> {
     /// Find the ending of sub-ranges that contain the given boundary point
     /// (C++ `find_end`): the first sub-range after those containing `point`.
     pub fn find_end(&self, point: LineOf<R>) -> Position<LineOf<R>, SubsortOf<R>> {
-        // iter = tree.upper_bound(AddrRange(point, subsorttype(true)))
         let upper = self
             .tree
             .range((

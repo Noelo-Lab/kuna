@@ -20,8 +20,8 @@
 use std::path::Path;
 
 use kuna_analysis::loadimage_object::ObjectLoadImage;
-use kuna_analysis::s1_fid::build::build_records;
-use kuna_analysis::s1_fid::db::{FidDb, FidRecord};
+use kuna_analysis::fid::build::build_records;
+use kuna_analysis::fid::db::{FidDb, FidRecord};
 use kuna_console::engine::bootstrap_from_object;
 
 use crate::paths;

@@ -32,16 +32,16 @@
 //! (ADR 0003); the CRC mixing is `kuna_base::crc32::crc_update` (the W1 port of
 //! `crc32.hh`).
 //!
-//! # Seams
+//! # Boundaries
 //!
 //! Three pieces of the marshalling/print surface are not yet ported and are
-//! routed through `SEAM` errors so the *algorithm* (the testable substance)
+//! routed through `STUB` errors so the *algorithm* (the testable substance)
 //! transcribes cleanly:
 //!
 //!   * `Varnode::encode` / `PcodeOp::encode` / `Datatype` encode — the W8 marshal
 //!     surface; `VarnodeSignature::encode` / `BlockSignature::encode` defer.
 //!   * `FlowBlock::printHeader` / `getStart` — the W8 print surface
-//!     (`block.rs` `// SEAM(W8)`); the feature `print_origin` / `BlockSignature`
+//!     (`block.rs` `// STUB(W8)`); the feature `print_origin` / `BlockSignature`
 //!     paths defer.
 //!
 //! The [`Encoder`]-driven `Signature::encode` (a bare `<gensig hash=..>`) **is**
@@ -56,7 +56,7 @@ use kuna_base::marshal::{AttributeId, ElementId, Encoder, ATTRIB_INDEX, ATTRIB_V
 use kuna_num::opcodes::OpCode;
 
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 // ===========================================================================
 // Marshaling identifiers (signature.cc:26-41)
@@ -273,7 +273,7 @@ impl Signature {
     ///
     /// The bare `<gensig>` / `<copysig>` forms port; the `<varsig>` / `<blocksig>`
     /// forms need `Varnode::encode` / `PcodeOp::encode` / `Address::encode` of the
-    /// block start — the W8 marshal/print surface — and SEAM out.
+    /// block start — the W8 marshal/print surface — and STUB out.
     pub fn encode(&self, encoder: &mut dyn Encoder) -> KunaResult<()> {
         match self.kind {
             SignatureKind::Generic => {
@@ -287,8 +287,7 @@ impl Signature {
                 // CopySignature::encode (signature.cc:652-659)
                 encoder.open_element(&ELEM_COPYSIG);
                 encoder.write_unsigned_integer(&ATTRIB_HASH, self.get_hash() as u64);
-                // encoder.writeSignedInteger(ATTRIB_INDEX, bl->getIndex());
-                //   -- the caller passes the block index in via encode_with_index.
+                // The block index (ATTRIB_INDEX) is written by the caller via encode_with_index.
                 encoder.close_element(&ELEM_COPYSIG);
                 Ok(())
             }
@@ -725,7 +724,7 @@ impl GraphSigManager {
             )));
         }
 
-        // for(iter=f->beginLoc(); iter!=f->endLoc(); ++iter) — location order.
+        // Iterate varnodes in location order.
         for vn in fd.vbank().iter_loc() {
             let entry = SignatureEntry::from_varnode(fd, vn, self.sigmods);
             let ci = fd.vbank().get(vn).expect("setCurrentFunction: stale vn").get_create_index();
@@ -734,14 +733,12 @@ impl GraphSigManager {
         if (self.sigmods & sig_mods::SIG_COLLAPSE_INDNOISE) != 0 {
             self.remove_noise(fd);
         } else {
-            // for(sigiter ...) (*sigiter).second->calculateShadow(sigmap);
-            //   Collect keys (sigmap iteration is create_index order); calculate per key.
+            // Collect keys (sigmap iteration is create_index order); calculate per key.
             let keys: Vec<u32> = self.sigmap.keys().copied().collect();
             for k in keys {
                 self.calculate_shadow(fd, k);
             }
         }
-        // for(sigiter ...) entry->localHash(sigmods);
         let keys: Vec<u32> = self.sigmap.keys().copied().collect();
         for k in keys {
             self.local_hash(fd, k);
@@ -1007,12 +1004,10 @@ impl GraphSigManager {
         }
         // Set the final shadow field by collapsing the dominator tree to bases.
         for &k in &post_order {
-            // base = entry; while(base->shadow != 0) base = base->shadow;
             let mut base = k;
             while let Some(s) = self.entry_shadow(base, &virt_map) {
                 base = s;
             }
-            // while(entry->shadow != 0) { tmp=entry; entry=entry->shadow; tmp->shadow=base; }
             let mut entry = k;
             while let Some(s) = self.entry_shadow(entry, &virt_map) {
                 let tmp = entry;
@@ -1117,7 +1112,6 @@ impl GraphSigManager {
     ) {
         let n = post_order.len();
         let virtual_root = post_order[n - 1]; // The official start node
-        // b->shadow = b;
         self.set_entry_shadow(virtual_root, virt_map, Some(virtual_root));
         let mut changed = true;
         while changed {
@@ -1554,7 +1548,7 @@ pub fn simple_signature(fd: &Funcdata, encoder: &mut dyn Encoder) -> KunaResult<
     }
     // The per-call <call> elements iterate `fd->numCalls()` /
     // `fd->getCallSpecs(i)->getEntryAddress()` — the FuncCallSpecs list is the W4
-    // call-spec surface not yet threaded onto the W3 Funcdata.  SEAM(W4).
+    // call-spec surface not yet threaded onto the W3 Funcdata.  STUB(W4).
     let _ = (&ATTRIB_INDEX, &ELEM_CALL); // keep the call-element ids referenced
     encoder.close_element(&ELEM_SIGNATURES);
     Ok(())
@@ -1585,7 +1579,7 @@ mod tests {
     use kuna_base::marshal::XmlEncode;
 
     use crate::op::pcodeop_flags;
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
 
     // Settings-touching tests serialize on the shared crate-level lock (see
     // [`SETTINGS_TEST_LOCK`]).
@@ -1614,7 +1608,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

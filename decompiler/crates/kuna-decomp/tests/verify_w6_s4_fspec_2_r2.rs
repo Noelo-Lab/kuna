@@ -296,7 +296,7 @@ impl TypeFactory for VoidTypeFactory {
 /// `updateAllTypes` (fspec.cc:4199, `ignoreOutputError=false`).  Two int inputs
 /// but the model has only ONE input entry: the second input cannot be assigned,
 /// so `ParamListStandard::assignMap` throws `ParamUnassignedError` (fspec.cc:814)
-/// — a GENUINE ParamUnassigned, NOT the SEAM Lowlevel.  C++ `catch
+/// — a GENUINE ParamUnassigned, NOT the STUB Lowlevel.  C++ `catch
 /// (ParamUnassignedError&)` sets `error_inputparam`; the repaired port matches
 /// `Err(KunaError::ParamUnassigned { .. })` and must do the same (Ok + flag),
 /// proving the discriminator fires for the real ParamUnassigned case.
@@ -334,7 +334,7 @@ fn update_all_types_genuine_param_unassigned_sets_flag_w6s4f1_r2() {
 /// `assignParameterStorage(..., ignoreOutputError=true)` (fspec.cc:2437).  The
 /// output type is too big for the 4-byte output register; with no model rules
 /// the StandardOut output assign reaches the hidden-return fallback.  In the
-/// port that fallback is the SEAM(W4) Lowlevel error — which, after the F1
+/// port that fallback is the STUB(W4) Lowlevel error — which, after the F1
 /// repair, must PROPAGATE (it is NOT ParamUnassigned).  This is the
 /// complementary direction of the F1 fix: the catch fires ONLY for
 /// ParamUnassigned, and a non-ParamUnassigned error from the output assign
@@ -357,7 +357,7 @@ fn assign_parameter_storage_ignore_output_only_catches_param_unassigned_w6s4f1_r
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     let r = model.assign_parameter_storage(&proto, &mut res, true, &tf, &mgr);
-    // The SEAM error is a Lowlevel, NOT ParamUnassigned -> must escape the
+    // The STUB error is a Lowlevel, NOT ParamUnassigned -> must escape the
     // ParamUnassigned-only catch even with ignore_output_error = true.
     assert!(
         matches!(r, Err(KunaError::Lowlevel { .. })),
@@ -367,7 +367,7 @@ fn assign_parameter_storage_ignore_output_only_catches_param_unassigned_w6s4f1_r
     );
     assert!(
         !matches!(r, Err(KunaError::ParamUnassigned { .. })),
-        "the SEAM error must not be misclassified as ParamUnassigned"
+        "the STUB error must not be misclassified as ParamUnassigned"
     );
 }
 

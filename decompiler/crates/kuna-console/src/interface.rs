@@ -665,7 +665,6 @@ impl IfaceCommandAction for IfcClosefile {
         if !status.is_file_open() {
             return Err(IfaceError::execution("No file open"));
         }
-        // ((ofstream *)fileoptr)->close(); delete; fileoptr = optr;
         status.close_file_redirect();
         Ok(())
     }
@@ -1141,8 +1140,6 @@ impl IfaceStatus {
         let dummy_lower = IfaceCommandDummy::with_words(input);
         let newfirst = lower_bound(&self.comlist, *first, *last, &dummy_lower);
 
-        // dummy.removeWord(); temp = copy(input.back()); temp.last += 1;
-        // dummy.addWord(temp);
         let mut head: Vec<String> = input[..input.len() - 1].to_vec();
         let mut temp = input[input.len() - 1].clone().into_bytes();
         let li = temp.len() - 1;

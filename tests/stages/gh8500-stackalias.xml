@@ -32,7 +32,7 @@
     suppression guard never fired and the bump re-requested a restart on every
     heritage pass.  The function therefore restart-looped until the driver's
     `MAX_REFLOW` budget exhausted, leaving the IR cleared (no structured blocks at
-    all - `print C` rendered an empty `/* structuring declined at a seam */`
+    all - `print C` rendered an empty `/* structuring declined at a stub */`
     shell, returning NEITHER the parameter nor the local).
 
     Fix: route `bumpDeadcodeDelay` through the function's PERSISTENT `Override`

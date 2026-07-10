@@ -48,13 +48,13 @@
 //! use time; methods that C++ ran on a bare pointer take a `&SymbolTable`
 //! parameter.  Where a C++ unchecked downcast would be UB on a
 //! wrongly-typed id, the port returns a `KunaError` (documented at each
-//! site; same policy as the `OperandValueResolver` seam contract in
+//! site; same policy as the `OperandValueResolver` boundary contract in
 //! [`crate::slghpatexpress`]).  `DecisionNode::parent` is dropped: its only
 //! consumer is the compiler-side `split()`.
 //!
-//! ## Seams
+//! ## Boundaries
 //!
-//! - [`SymbolWalker`] extends the [`PatternExpressionContext`] seam from
+//! - [`SymbolWalker`] extends the [`PatternExpressionContext`] boundary from
 //!   [`crate::slghpatexpress`] with exactly the additional `ParserWalker`
 //!   surface slghsymbol.cc touches (operand push/pop, current constructor,
 //!   fixed handles, spaces, flow addresses, bit reads).  Implemented by the
@@ -175,7 +175,7 @@ pub mod sla {
 }
 
 // ---------------------------------------------------------------------------
-// Seams
+// Boundaries
 // ---------------------------------------------------------------------------
 
 /// Identifies a [`Constructor`] without a pointer: the owning
@@ -190,7 +190,7 @@ pub struct ConstructorRef {
 }
 
 /// The additional `ParserWalker` surface (context.hh/sleigh.hh) used by
-/// slghsymbol.cc beyond the [`PatternExpressionContext`] seam: operand
+/// slghsymbol.cc beyond the [`PatternExpressionContext`] boundary: operand
 /// traversal for printing, fixed-handle lookup, address spaces, flow
 /// addresses, and the raw bit reads `DecisionNode::resolve` dispatches on.
 /// Implemented by the sleigh decode-engine wave.
@@ -231,11 +231,11 @@ pub trait SymbolWalkerChange: SymbolWalker {
 }
 
 /// Opaque handle to a `ConstructTpl` decoded through the
-/// [`SleighBaseTrans`] seam (an index into the implementor's template
+/// [`SleighBaseTrans`] boundary (an index into the implementor's template
 /// storage).
 pub type ConstructTplHandle = usize;
 
-/// Seam standing in for the `SleighBase *trans` argument of the symbol
+/// Boundary standing in for the `SleighBase *trans` argument of the symbol
 /// decode/encode methods, reduced to what slghsymbol.cc pulls from it
 /// beyond symbol-id storage: `trans->getConstantSpace()` and the
 /// `ConstructTpl` (semantics.hh) decode/encode, which belongs to the
@@ -1291,7 +1291,7 @@ pub struct Constructor {
     printpiece: Vec<Vec<u8>>,
     /// Context commands.
     context: Vec<ContextChange>,
-    /// The main p-code section (held through the [`SleighBaseTrans`] seam).
+    /// The main p-code section (held through the [`SleighBaseTrans`] boundary).
     templ: Option<ConstructTplHandle>,
     /// Other named p-code sections.
     namedtempl: Vec<Option<ConstructTplHandle>>,
@@ -1315,7 +1315,7 @@ pub struct Constructor {
     pattern: Option<TokenPattern>,
     /// (kuna build side) C++ `mutable bool inerror`.
     inerror: bool,
-    /// (kuna build side, WS4b seam) the operand handle re-index map computed
+    /// (kuna build side, WS4b boundary) the operand handle re-index map computed
     /// by [`SymbolTable::order_operands`] (`handmap[original_index] =
     /// new_index`).  C++ applies `templ->changeHandleIndex(handmap)` inline,
     /// but the kuna `ConstructTpl` arena is owned by the WS4b driver, so the
@@ -1345,7 +1345,7 @@ impl Constructor {
         self.pateq
     }
 
-    /// (kuna build side, WS4b seam) the operand handle re-index map computed
+    /// (kuna build side, WS4b boundary) the operand handle re-index map computed
     /// during [`SymbolTable::order_operands`].  `handmap[original_index] =
     /// new_index`.  The WS4b driver applies it to the constructor's
     /// `ConstructTpl` sections via `change_handle_index` (the C++ inline
@@ -1533,7 +1533,6 @@ impl Constructor {
     /// C++ `Constructor::setNamedSection(ConstructTpl *tpl,int4 id)`
     /// (slghsymbol.cc): grow `namedtempl` to fit `id`, then store the handle.
     pub fn set_named_section(&mut self, handle: ConstructTplHandle, id: i32) {
-        // C++ `while(namedtempl.size() <= id) namedtempl.push_back((ConstructTpl *)0);`
         while self_namedtempl_len_i64(&self.namedtempl) <= i64::from(id) {
             self.namedtempl.push(None);
         }
@@ -1602,9 +1601,8 @@ impl Constructor {
         walker: &mut dyn SymbolWalker,
         table: &SymbolTable,
     ) -> KunaResult<()> {
-        // C++ nested flowthruindex test + dynamic_cast<SubtableSymbol*>(
-        // operands[flowthruindex]->getDefiningSymbol()) null test (&&
-        // short-circuits identically)
+        // C++: flowthruindex test + a dynamic_cast<SubtableSymbol*> null-check;
+        // the && short-circuits identically
         if self.flowthruindex != -1 && self.flowthru_subtable(table)?.is_some() {
             walker.push_operand(self.flowthruindex)?;
             let ctref = walker.get_constructor()?;
@@ -1614,8 +1612,6 @@ impl Constructor {
             walker.pop_operand()?;
             return Ok(());
         }
-        // C++ `(firstwhitespace==-1) ? printpiece.size() : firstwhitespace`
-        // (size_t -> int4 as in C++)
         let endind = if self.firstwhitespace == -1 {
             self.printpiece.len() as i32 // size_t -> int4 as in C++
         } else {
@@ -1751,8 +1747,8 @@ impl Constructor {
     }
 
     /// C++ `Constructor::decode`.  `trans` resolves OperandValue validation
-    /// (the [`OperandValueResolver`] seam) and decodes ConstructTpl
-    /// sections (the [`SleighBaseTrans`] seam); symbol cross-references are
+    /// (the [`OperandValueResolver`] boundary) and decodes ConstructTpl
+    /// sections (the [`SleighBaseTrans`] boundary); symbol cross-references are
     /// stored as ids.
     pub fn decode(
         decoder: &mut dyn Decoder,
@@ -1794,7 +1790,7 @@ impl Constructor {
                 let c_op = ContextCommit::decode(decoder)?;
                 ct.context.push(ContextChange::Commit(c_op));
             } else {
-                // C++: ConstructTpl().decode(decoder) — through the seam
+                // C++: ConstructTpl().decode(decoder) — through the boundary
                 let (sectionid, handle) = trans.decode_construct_tpl(decoder)?;
                 if sectionid < 0 {
                     if ct.templ.is_some() {
@@ -1990,7 +1986,6 @@ impl DecisionNode {
     /// C++ `DecisionNode::getNumFixed(int4 low,int4 size,bool context)`.
     fn get_num_fixed(&self, low: i32, size: i32, context: bool) -> i32 {
         let mut count = 0;
-        // m = (size==32) ? 0 : (1<<size); m = m-1
         let mut m: u32 = if size == 32 { 0 } else { 1u32 << size };
         m = m.wrapping_sub(1);
         for (pat, _) in &self.list {
@@ -3039,7 +3034,7 @@ impl SleighSymbol {
 
     /// C++ virtual `TripleSymbol::getPatternExpression`.  `Ok(None)`
     /// mirrors a C++ null return (the engine checks for it, see the
-    /// `operand_value` seam docs in [`crate::slghpatexpress`]); FlowDest/
+    /// `operand_value` boundary docs in [`crate::slghpatexpress`]); FlowDest/
     /// FlowRef/Subtable throw exactly the C++ `SleighError`s.  Returns an
     /// owned expression (C++ shares an interior pointer).
     pub fn get_pattern_expression(&self) -> KunaResult<Option<PatternExpression>> {
@@ -4152,7 +4147,6 @@ impl SymbolTable {
                 .pattern
                 .clone()
                 .unwrap_or_else(TokenPattern::new_true);
-            // C++: *pattern = construct[i]->getPattern()->commonSubPattern(*pattern)
             acc = ctpat.common_sub_pattern(&acc)?;
         }
         let sub = self.subtable_symbol_mut(table_id)?;
@@ -4226,7 +4220,6 @@ impl SymbolTable {
                             .unwrap_or_else(TokenPattern::new_true)
                     }
                 } else {
-                    // triple->getPatternExpression()->genMinPattern(oppattern)
                     let patexp = self.symbol(tripid)?.get_pattern_expression()?;
                     match patexp {
                         Some(pe) => pe.gen_min_pattern(&oppattern),
@@ -4349,7 +4342,7 @@ impl SymbolTable {
             .get_pattern_equation()
             .ok_or_else(|| KunaError::sleigh("Missing equation"))?;
 
-        // pateq->operandOrder(this, patternorder) — returns operand indices.
+        // operandOrder fills patternorder with the operand indices
         let mut patternorder: Vec<i32> = Vec::new();
         {
             let mut seen = vec![false; n];
@@ -4412,13 +4405,13 @@ impl SymbolTable {
             ));
         }
 
-        // Fix up operand indices: newops[i]->hand = i; localexp->changeIndex(i)
+        // Fix up operand indices.
         for (i, &idx) in neworder.iter().enumerate() {
             let op = self.operand_symbol_mut(operand_ids[idx as usize])?;
             op.set_hand(i as i32);
             op.change_local_index(i as i32);
         }
-        // handmap[i] = operands[i]->hand  (original index -> new index)
+        // handmap: original operand index -> new hand index
         let mut handmap: Vec<i32> = Vec::with_capacity(n);
         for &opid in &operand_ids {
             handmap.push(self.operand_symbol(opid)?.get_index());
@@ -4483,8 +4476,7 @@ impl SymbolTable {
         let numct = self.subtable_symbol(table_id)?.construct.len();
         let mut tree = DecisionNode::new_root();
         for i in 0..numct {
-            // C++ uses construct[i]->getPattern()->getPattern() (the inner
-            // Pattern of the constructor's TokenPattern).
+            // the inner Pattern of the constructor's TokenPattern
             let pat: Pattern = match self.subtable_symbol(table_id)?.construct[i].get_pattern() {
                 Some(tp) => tp.get_pattern().clone(),
                 None => continue,
@@ -5223,7 +5215,7 @@ impl OperandValueResolver for SymbolTable {
     /// C++ `OperandValue::decode` resolution:
     /// `dynamic_cast<SubtableSymbol*>(trans->findSymbol(tabid))
     /// ->getNumConstructors()` — a failed lookup/downcast is UB in C++ and
-    /// an error here (per the seam contract).
+    /// an error here (per the boundary contract).
     fn num_constructors(&self, table_id: u32) -> KunaResult<i32> {
         Ok(self.subtable_symbol(table_id)?.get_num_constructors())
     }

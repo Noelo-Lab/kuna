@@ -1,0 +1,504 @@
+# 04 — Calls & prototypes
+
+```yaml
+Anchors:
+  - decompiler/crates/kuna-decomp/src/p4_calls
+```
+
+This phase computes the **interface contract of every call**: which storage
+locations carry parameters into each sub-function call, which location carries
+each call's return value, and what the analyzed function's *own* prototype is.
+Its artifacts are one `FuncCallSpecs` per CALL/CALLIND site and one `FuncProto`
+for the function itself (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(FuncCallSpecs, FuncProto)`). Everything runs in two directions over the same
+storage model: the **assignment** direction (a declared prototype's data-types
+are mapped to registers/stack per the calling convention, §4.1) and the
+**recovery** direction (data-flow *trials* observed at the call are scored
+against the convention until a parameter list emerges, §4.1–§4.2). Untagged
+prose describes the Ghidra-derived port; scheduling is chapter 00 §0.6 — the
+setup passes run once in the outer restart group, the trial passes co-evolve
+with SSA/dead-code/types inside mainloop (Band B), and the one-shot prototype
+fixation runs in the tail. Option metadata lives in the generated catalog,
+[`docs/options.md`](../options.md), and is not repeated here.
+
+## 4.1 Prototype models
+
+### The model
+
+A `ProtoModel` (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(ProtoModel)`) is one named calling convention: an input and an output resource
+list (`ParamListStandard`), the *extrapop* (how far the callee moves the stack
+pointer past the return-address pop; `EXTRAPOP_UNKNOWN = 0x8000` means
+"callee-cleanup, amount unknown"), the side-effect lists (§4.3), the
+likely-trash and internal-storage register lists, the local/parameter stack
+ranges, and optional entry/return p-code injections. Models are decoded from
+the compiler spec at engine build: `decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(decode_default_proto, decode_pentry_list, decode_effect_block)` parses the
+cspec's `<default_proto><prototype>` — its `<pentry>`/`<group>` storage
+entries, `<rule>` model rules, a synthetic pointer-conversion rule when the
+list carries a `pointermax` attribute, and the
+`<unaffected>`/`<killedbycall>`/`<returnaddress>`/`<internal_storage>` effect
+blocks — and registers the result as the default model
+(`Architecture::register_model`). The live decode builds **only** the default
+prototype: secondary named models (`__thiscall`, …) and merged models have no
+producer yet, so the per-program model registry
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs (Architecture)`,
+`proto_models`) holds the default (plus a degenerate `"unknown"` fallback when
+the cspec decode fails), and `option defaultprototype` / `option protoeval`
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (OptionDefaultPrototype,
+OptionProtoEval)`) select among what is registered — the ABI-trust knob of the
+`abi-trust` sub-phase row in `decompiler/crates/kuna-decomp/phases.toml`.
+
+Consequence of the single-model registry: the **merged-model machinery** — a
+`ProtoModelMerged` union whose `FuncProto::resolveModel` picks the constituent
+best fitting the observed trials via `ScoreProtoModel`
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (ProtoModel::select_model,
+ScoreProtoModel)`) — is ported and unit-tested but currently has no live
+producer. `resolve_model` short-circuits on a non-merged model, so the scoring
+never fires on the datatest or real-binary paths. The scorer itself is simple:
+each trial is mapped to a resource slot; holes in slot coverage are penalized
+16/10/7/5 for the first four missing slots and 3 thereafter, a duplicated slot
+or an unmappable trial costs 20, lowest total wins, starting threshold 500
+(`ScoreProtoModel::do_score`).
+
+### ParamEntry: the storage atoms
+
+A `ParamEntry` (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(ParamEntry)`) is one range of memory usable for parameter passing. Two shapes:
+an **exclusion** entry (`alignment == 0`) holds exactly one parameter (a
+register — using EAX consumes the whole RAX group), and an **aligned resource**
+is carved into slots (the stack parameter area). Each entry carries a storage
+class (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs (type_class)` —
+general/float/pointer/hiddenret/vector, plus the reserved class1–class4), the group(s) it occupies, minimum and
+maximum value sizes, endian-aware justification, and the extension the model
+assumes for undersized values (zero/sign/float/int-dependent). The
+output-determining queries are containment and justification: does a given
+range lie in an entry covering the least-significant bytes
+(`ContainsJustified`), cover more-significant bytes only
+(`ContainsUnjustified`), contain the entry outright (`ContainedBy`), or miss
+(`Containment::NoContainment`)? Entry lookup goes through a range-map resolver built once per
+list (`ParamListStandard::populate_resolver`).
+
+The `ParamListStandard` kinds (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(ParamListKind)`) collapse the upstream subclass tree into one struct: `Standard`
+(ordered input resources), `StandardOut` / `RegisterOut` (return-value storage),
+`Register` (unordered register sets — order-free conventions), and `Merged`.
+
+### Assignment: declared types → storage
+
+`ProtoModel::assign_parameter_storage` maps a declared prototype
+(`PrototypePieces`) to concrete storage: the output list first, then the input
+list, each walk threading a per-group `status` array so an exclusion group one
+parameter consumes blocks every later parameter in that list
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(ProtoModel::assign_parameter_storage, ParamListStandard::assign_map)`); the
+output hands its verdict to the input walk through the result list itself (a
+hidden-return marker there claims the first input slot). Per
+parameter, `ParamListStandard::assign_address` tries each decoded `ModelRule`
+in order — first non-fail response wins — and only when every rule fails falls
+back to the classic algorithm: map the type's metatype to a storage class and
+take the first unconsumed entry of that class (or a general one) that fits
+(`assign_address_fallback`). A too-big return value degrades to the
+**hidden-return** protocol: the output is rewritten as return-by-pointer
+(`INDIRECTSTORAGE`) and a synthetic pointer parameter is prepended to the input
+list, drawn from the dedicated hidden-return class or the normal pointer slots
+(`assign_map_standard_out`, response codes `hiddenret_*`). A `__thiscall`-style
+model then marks the right input as the `this` pointer, swapping markup when
+the hidden-return pointer bumped it. Failure mode: an unassignable *input*
+raises a hard error; an unassignable *output* is only survivable where the
+caller opted into `ignore_output_error`, which degrades the return to `void`.
+
+The rules themselves live in
+`decompiler/crates/kuna-decomp/src/p4_calls/modelrules.rs (ModelRule,
+AssignAction, DatatypeFilter, QualifierFilter)`. A `ModelRule` is a data-type
+filter (size bounds, a metatype, or a homogeneous float aggregate of up to 4
+primitives), an optional prototype qualifier (varargs position range, absolute
+position, a data-type at a fixed position, or an AND of these), one primary
+`AssignAction`, plus *precondition* actions applied to a scratch copy of the
+group-status array (discarded if the primary fails) and *side-effect* actions
+applied on success (`ModelRule::assign_address`). The ten `AssignAction`
+variants cover the modern cspec vocabulary: `GotoStack`, `ConvertToPointer`,
+`MultiSlotAssign` (join several registers, optionally spilling to stack),
+`MultiMemberAssign` (one register per primitive), `MultiSlotDualAssign` (two
+storage classes), `ConsumeAs`, `HiddenReturnAssign`, and the resource-burning
+side-effects `ConsumeExtra`, `ExtraStack`, `ConsumeRemaining`.
+
+### Recovery: trials → parameters
+
+The recovery direction runs on `ParamTrial`/`ParamActive`
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (ParamTrial,
+ParamActive)`): one trial per storage location that *might* be a parameter,
+carrying its life-cycle flags (checked, active, used, definitely-not-used,
+unreferenced) and its evidence bits (killed-by-call — set heuristically at
+registration for any non-stack location, since register contents rarely
+survive a call; formed-by-remainder; formed-by-indirect-creation;
+conditional-execution-affected; ancestor-realistic; ancestor-solid). Trials
+are gathered by heritage (§4.2), then `fillin_map`
+(`ParamListStandard::fillin_map`) converts the unordered set into a formal
+parameter list. For the standard input list the decision sequence is:
+
+1. **`build_trial_map`** — bind each trial to its justified containing entry
+   (no entry → definitely-not-used), then *plug the holes*: a group no trial
+   referenced gets a synthetic **unreferenced** trial (a formal parameter list
+   cannot skip a slot), choosing a float or general entry by whichever class
+   has more active trials; likewise unused slots inside a partially-used
+   aligned entry. Trials then sort into formal parameter order
+   (`ParamTrial::cmp` — group, then entry, then justified offset/address).
+2. **`force_exclusion_group`** — inside one exclusion group an *active* trial
+   evicts every overlapping trial. If a group has only inactive candidates,
+   `mark_best_inactive` keeps the most plausible one: +5 for a realistic
+   ancestor, +5 more for solid movement, +1 for the preferred storage class;
+   multi-group entries are never chosen.
+3. **`force_no_use`** (per resource section, after `separate_sections`) —
+   parameters are allocated in order, so once an entire exclusion group is
+   definitely-unused everything after it in the section is demoted to
+   inactive: a hole proves the list ended before it.
+4. **`force_inactive_chain`** (`maxchain = 2`) — the converse repairs: an
+   active trial that sits past a run of more than two inactive slots is
+   demoted (an isolated far register is more likely local state than a
+   parameter), and during sub-call recovery an *unreferenced stack* slot ends
+   the chain immediately (the callee never touched the stack area, so nothing
+   beyond it is a parameter); finally every inactive slot *before* the last
+   surviving active trial is promoted — interior holes are filled, because
+   the list must be contiguous.
+5. Whatever is still active is marked **used**.
+
+The `Register` (unordered) variant skips all ordering logic: every active
+trial that lands justified in an entry is a parameter
+(`fillin_map_register`). The output variant first lets the model rules claim
+the trials (`ModelRule::fillin_output_map` — how a cspec `<join>` output rule
+keeps a register *pair* alive as one return value), and otherwise runs the
+fallback: try each output entry as the candidate return location, keep the one
+where **all** active trials form a contiguous least-significant cover of at
+least the entry's minimum size — rejecting remainder-formed and
+indirect-creation-formed pieces at the positions the entry flags for extra
+checks — kept when it has an earlier storage class *or* a wider cover
+(`fillin_map_standard_out`, `fillin_map_fallback`). Failure mode: no candidate
+survives → every trial is marked no-use and the call recovers as returning
+nothing.
+
+**The trial budget.** A `ParamActive` freezes when `numpasses > maxpass`.
+`maxpass` is 0 (one look) unless the model's parameter registers have a
+non-zero heritage delay, in which case it is fixed at 3 (a delay of 1 or 2 is raised, not capped)
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(FuncCallSpecs::init_active_input)`,
+`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::init_active_output)`). This is the `trial-budget` sub-phase of
+`decompiler/crates/kuna-decomp/phases.toml` — recorded there as LATENT: no
+user surface sets it today.
+
+## 4.2 Recovery passes
+
+All drivers live in
+`decompiler/crates/kuna-decomp/src/p4_calls/coreaction_protos.rs`; the
+call-site trial mechanics they invoke are in
+`decompiler/crates/kuna-decomp/src/p4_calls/funcdata_callsite.rs`. Placement
+in the schedule is `decompiler/crates/kuna-decomp/src/infra/universalaction.rs
+(universal_sched)`: setup before fullloop, the trial passes inside mainloop,
+finalization in the one-shot tail (00 §0.6).
+
+### Setup (once, before fullloop)
+
+- **`ActionPrototypeTypes`** (`coreaction_protos.rs (ActionPrototypeTypes)`)
+  attaches the evaluation model to the function's own prototype (the
+  current-function evaluation model, falling back to the default), resets the
+  local-variable discovery window from the model's stack ranges, replaces the
+  non-constant first input of every RETURN with a constant 0 (the raw
+  return-address reference never reaches high-level output), and starts
+  return-value recovery (`Funcdata::init_active_output`) — or, for a locked
+  output, plants the declared output Varnode on every live RETURN. Locked
+  inputs are forced into existence as typed input Varnodes, with the model's
+  assumed extension op materialized at the entry block (`extend_input`), so a
+  partially-used wide parameter still exists to take a SUBPIECE.
+- **`ActionDefaultParams`** (`coreaction_protos.rs (ActionDefaultParams)`)
+  gives every call spec a model: a callee with a source-declared prototype
+  gets a locked copy re-built from the pieces parked on its global symbol
+  (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+  (Architecture::callee_proto_pieces)`); everything else gets the
+  called-function evaluation model with a void internal store. (kuna) A
+  callee whose parked pieces contain *only* custom return storage — what the
+  console `map return` plants — keeps model-driven input recovery and locks
+  just the output on top.
+- **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
+  models the stack pointer across each call: a known extrapop becomes an
+  explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
+  INDIRECT, deferring the answer to the stack-pointer flow solver
+  (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+  (ActionStackPtrFlow)`, its home by port history) and, per-function, to
+  `option extrapop`
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
+  (OptionExtraPop)`).
+- **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
+  call site. Unlocked or varargs prototype → input recovery on
+  (`init_active_input`). Locked prototype → one pre-marked trial per declared
+  parameter plus a stub input Varnode: plain register inserted directly, stack
+  parameter materialized as a stack LOAD, and a stack+register `join`
+  parameter reassembled with a PIECE. Output side: locked non-void output
+  builds the output Varnode (plus the model's assumed extension after the
+  call); a locked *stack* output is deferred to heritage
+  (`set_stack_output_lock`); unlocked → `init_active_output`. When stack
+  parameters may exist but the call-time stack offset is unknown, a
+  **spacebase placeholder** input is appended
+  (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+  (FuncCallSpecs::create_placeholder)`), resolved later in §4.3. The
+  `jumptable` root variant swaps this for **`ActionFuncLinkOutOnly`** (group
+  `noproto`): outputs are still guarded — otherwise callee return registers
+  mis-heritage as locals — but no input recovery runs inside the reduced
+  sub-decompilation.
+
+### Trials are populated by heritage
+
+The trial containers fill during SSA construction, not in P4 passes: when
+heritage processes an address range, `decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
+(Heritage::guard_calls)` asks each call spec how the range relates to the
+model. A justified input candidate registers an input trial *and appends the
+Varnode to the CALL op*; an output candidate registers an output trial and —
+where the effect says killed-by-call — seeds an INDIRECT *creation* whose
+output is the would-be return value; the function's own RETURN sites get
+output trials symmetrically (`Heritage::guard_returns`). Chapter 03 owns the
+guard machinery; what matters here is that a CALL op's input list grows
+speculatively during Band B and is *rewritten to the truth* by the passes
+below.
+
+### `ActionActiveParam` — does this argument exist?
+
+Per call with active input recovery
+(`coreaction_protos.rs (ActionActiveParam)`, mechanics in
+`funcdata_callsite.rs (check_input_trial_use)`), each unchecked trial is
+classified:
+
+- **Stack trial**: aliased by local pointer arithmetic → no-use (a callee
+  argument slot nobody else may touch); outside the caller's local stack range
+  (the model's `localrange`, `FuncProto::get_local_range`) → no-use. If the
+  callee demonstrably pops its own parameters (model extrapop unknown but the
+  prototype's working extrapop, `get_extra_pop`, exceeds the return-address
+  slot, > 4), the popped byte range is *hard evidence*:
+  trials below it are active, at-or-above it no-use. Otherwise fall through
+  to ancestor analysis.
+- **Ancestor analysis** (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+  (AncestorRealistic, Funcdata::ancestor_op_use)`): the trial is *active* only
+  if the value reaching the call has a realistic def chain (not an INDIRECT
+  fabrication, not uninitialized junk) **and** the Varnode's only role (within
+  a recursion budget, `trim_recurse_max`, default 5 —
+  `decompiler/crates/kuna-decomp/src/infra/architecture.rs
+  (reset_defaults_internal)`) is feeding this call. A read by *another* call
+  is admitted when that call provably takes the same value as the same
+  parameter (`funcdata_varnode.rs (Funcdata::check_call_double_use)` — same
+  direct target, or same function-pointer Varnode for CALLINDs; (kuna) two
+  *sibling* CALLINDs through distinct function pointers are also admitted
+  when the matched trial addresses agree, replacing an upstream
+  restart-driven recovery whose override path is not ported — a documented,
+  datatest-neutral divergence in that function's comments). Register trials
+  that fail realism but are function inputs stay *inactive* (maybe a
+  pass-through parameter); everything else is no-use.
+- A definitely-unused trial has its dataflow **freed immediately** — the CALL
+  input is replaced with constant 0 so dead-code elimination can reap the
+  producer. This is why P4 must iterate with DCE inside mainloop.
+
+Conditional-execution-affected actives set a *final-check* flag; when the
+container freezes, `funcdata_callsite.rs (final_input_check)` re-runs realism
+once more, since the condexe pass may have rewritten their ancestry. A
+CALLIND's trials are deliberately not finalized on the container's first
+frozen pass (`trimmable` requires a prior pass for CALLIND), giving
+de-indirection (§4.3) one mainloop iteration to land the real callee's
+prototype first. Finalization resolves the model, runs `fillin_map`
+(§4.1), and `funcdata_callsite.rs (build_input_from_trials)` rewrites the
+CALL's inputs to exactly the used trials in prototype order — truncating an
+oversized Varnode with a SUBPIECE, translating stack trials into the caller's
+frame and marking those ranges not-mapped, and materializing recovered but
+unreferenced parameters as fresh Varnodes. For a locked varargs prototype the
+fixed arguments sort to the front first (`ParamActive::sort_fixed_position`).
+
+### `ActionActiveReturn` / `ActionReturnRecovery` — return values
+
+For each call with active output (`coreaction_protos.rs (ActionActiveReturn)`,
+fullloop tail): the INDIRECT-creation outputs planted by `guard_calls` are
+collected (`funcdata_callsite.rs (collect_output_trial_varnodes)`), a trial is
+active iff its Varnode exists, the model's output `fillin_map` picks the
+winner, and `funcdata_callsite.rs (build_output_from_trials)` promotes the
+single surviving Varnode to the CALL op's formal output, destroying the
+scaffolding INDIRECTs. Documented seam: the multi-register call-return join
+(two used output trials at one call site) currently leaves the trials in place
+rather than building the concat — the shipped models recover single-register
+call outputs; only the *function's own* return supports the join below.
+
+The function's own return runs in mainloop
+(`coreaction_protos.rs (ActionReturnRecovery)`): every live RETURN op's trial
+Varnodes go through the same realism + sole-use tests, the container freezes
+on the §4.1 budget, the output map is derived, and
+`ActionReturnRecovery::build_return_output` rewrites each RETURN: zero or one
+used trial passes through; **two pieces** are concatenated with a PIECE whose
+output sits at the constructed join address (falling back to the first piece
+if no join can be built); more pieces chain PIECEs over contiguous trials.
+The (kuna) `returnpair` gate intercepts this join — §4.4.
+
+### Fixating the function's own prototype
+
+In the one-shot tail, after merge has built HighVariables:
+**`ActionInputPrototype`** (`coreaction_protos.rs (ActionInputPrototype)`)
+re-derives the function's own parameter list from its input Varnodes — each
+input that the model admits as a possible parameter becomes a trial, active
+iff it has readers; `fillin_map` orders them; recovered-but-unreferenced
+parameters get fresh input Varnodes unless something already overlaps the
+slot; and the store is rewritten with each parameter typed from its
+HighVariable (`update_input_types`). **`ActionOutputPrototype`**
+(`coreaction_protos.rs (ActionOutputPrototype)`) sets the return storage and
+type from the first RETURN's recovered value. Earlier, inside mainloop
+between return recovery and dead-code elimination, **`ActionRestrictLocal`**
+(`coreaction_protos.rs (ActionRestrictLocal)`, transcribed on the IR side as
+`Funcdata::restrict_local`) marks locked callee argument stack ranges and
+unaffected-register save slots as not-mapped so the local-variable phase
+(chapter 06) cannot claim them.
+
+Two registered passes are **documented no-ops** in the current port, kept in
+the schedule so the materialized tree stays byte-equal to the upstream oracle
+(00 §0.6): `ActionParamDouble` (double-precision split/join of call arguments;
+its `apply` carries the transcribed upstream body as pseudocode and performs
+no rewrites — the ported `FuncCallSpecs::check_input_join`/`do_input_join`
+surface in `decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs` waits on this
+driver) and `ActionPrototypeWarnings` (prototype-error headers; the warning
+channel exists but nothing is emitted). Failure modes: a genuinely split
+two-register argument is passed as two separate arguments, and a prototype
+whose storage assignment failed degrades silently instead of warning. Two
+S4-grouped passes live outside this folder by port history:
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionDirectWrite)` — the `protorecovery_a` paint of Varnodes reachable from
+legal parameter sources that ancestor realism consumes (the `decompile` root
+enables the INDIRECT-propagating variant, `decompiler/crates/kuna-decomp/src/infra/action.rs
+(build_default_groups)`) — and `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionUnjustifiedParams)`, the fullloop-tail repair that re-justifies an
+input recovered off-center in its containing entry.
+
+## 4.3 Call-site ops
+
+### How a CALL op carries its spec
+
+Call specs are born at lift time: `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
+(FlowInfo::setup_call_specs, FlowInfo::setup_callind_specs,
+FlowInfo::build_call_specs)` creates a `FuncCallSpecs` per CALL/CALLIND and
+pushes it onto the function's spec list (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::num_calls)`, the upstream `qlst`). A direct CALL's input 0 is
+replaced by an **fspec annotation**: a Varnode in the reserved fspec address
+space whose offset is a process-unique handle into a side table mapping back
+to the spec (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
+(next_fspec_handle)`, `decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(FuncCallSpecs::register_in_fspec_space)`) — the arena-safe replacement for
+the upstream pointer-cast-into-offset trick. A CALLIND keeps the computed
+target Varnode in slot 0, which is exactly what the printer renders as
+`(*fptr)(...)`. Spec construction consults P0 immediately: a call-site
+prototype override is copied on first (before the callee-name query, so
+inline/inject effects are not clobbered), then the callee symbol's
+inline/no-return flow effects — inline queues the site for body injection, and
+no-return plants an artificial halt after the call plus the "Subroutine does
+not return" warning (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
+(FlowInfo::check_for_flow_modification)`; the fact-producing analyses are
+chapter 01 §1.7, the lift-time behavior chapter 02 §2.4).
+
+### Effect lists
+
+Every call's data-flow shadow is the effect list: address-sorted
+`EffectRecord`s of type **unaffected**, **killedbycall**, or
+**return_address** (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(EffectRecord, effect_type)`), decoded from the cspec per model, overridable
+per call site (`FuncProto::effect_list` prefers the prototype's own list and
+falls back to the model's; lookup is `ProtoModel::lookup_effect` — a
+zero-size record blankets its whole space, and unique-space temporaries are
+always unaffected). Heritage consumes the verdicts
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
+(Heritage::guard_calls)`): *unaffected* ranges flow through the call
+untouched; *killedbycall* ranges become INDIRECT creations (fabricated-value
+markers — and return-value seeds when the range is an output candidate);
+*unknown* and *return_address* ranges get a plain INDIRECT guard tying the
+value across the call, so anything the callee might touch through a pointer
+keeps a call-crossing cover. The wrong-list failure mode is structural: a
+missing `<unaffected>` stack-pointer record makes every call guard the stack
+pointer, skewing the entire frame layout.
+
+### The spacebase placeholder
+
+A call that may take stack arguments cannot find them until the caller's
+stack-pointer value *at that site* is known. `ActionFuncLink` appends a
+placeholder input (§4.2); once simplification collapses the placeholder's
+pointer to `spacebase + constant`, the rule-pool hook
+`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs
+(RuleLoadVarnode)` fires `decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(FuncCallSpecs::resolve_spacebase_relative)`: the spec records the relative
+stack offset, and stack trials can from then on be translated between callee-
+and caller-relative addresses (`build_input_from_trials`,
+`Heritage::guard_calls` both read it). The placeholder strip
+(`FuncCallSpecs::abort_spacebase_relative`) happens on the *success* path of
+`resolve_spacebase_relative` — the offset is recorded first, then the redundant
+placeholder input is removed. When recovery ends *unresolved*, the placeholder
+is silently dropped by the final input rewrite (`funcdata_callsite.rs
+(build_input_from_trials)` via `op_set_all_input`), and stack arguments were
+never registered as trials at all: `Heritage::guard_calls` skips spacebase
+ranges while `get_spacebase_offset()` still reads `OFFSET_UNKNOWN`.
+
+### De-indirection and the proto-change restart
+
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionDeindirect)` (group `deindirect`, inside stackstall) watches every
+CALLIND whose target Varnode — chased through COPYs — resolves to a known
+function: an external-reference symbol, or a constant converted to a code
+address (masked by `funcptr_align` when the architecture encodes bits in
+function pointers). On a hit,
+`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (FuncCallSpecs::deindirect)`
+rewrites the op to a direct CALL with a fresh fspec annotation and immediately
+persists the lesson into P0:
+`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
+(Override::insert_indirect_override)` keyed by the site address, so a restart
+re-lifts the site as a direct call from the start
+(`FlowInfo::setup_callind_specs` consults the override before building specs).
+Then it tries to merge the discovered callee prototype **in place**:
+`FuncCallSpecs::late_restriction` accepts when the site has no model yet, or
+when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
+varargs only while input recovery is still active, and — for locked callee
+prototypes — when the existing argument Varnodes can be re-mapped onto the
+locked storage (`transfer_locked_input`/`transfer_locked_output`). Success
+commits the new input/output lists directly; failure sets the restart-pending
+flag — the P4 → Band B feedback edge of 00 §0.7, bounded and executed by the
+drive — (kuna) recording `ProtoDeindirect` in the restart log
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs
+(RestartLog)`). The reasoning: by the time the target resolves, heritage has
+already committed guards and trials under the wrong prototype; edits cannot be
+made backwards, but the Override survives `Funcdata::clear`, so the re-run
+lifts the truth.
+
+The sibling `FuncCallSpecs::force_set` — forcing a *recovered* function-pointer
+prototype onto a call site, upstream's other deindirect arm — carries the same
+restart contract ((kuna) reason `ProtoForced`) and input-lock tail, but its
+override-persist and success-commit halves are documented port seams, and the
+`ActionDeindirect` arm that would invoke it (a typed function-pointer reaching
+the CALLIND after type recovery starts) is not wired; such a site today keeps
+its model-recovered argument list. Restarts triggered here are refused during
+jump-table sub-decompilation like every other feedback edge (00 §0.7).
+
+## 4.4 kuna extensions
+
+### (kuna) `returnpair` — the register-pair return split
+
+Provenance: upstream issue GH-6990, implemented kuna-side
+(`decompiler/crates/kuna-decomp/phases.toml` records the row against P4 /
+`trial-budget`). On ABIs whose output list joins a register pair (SPARC
+`o0:o1` and relatives), a void or single-register function can *passively*
+keep its second output register alive — a prologue value rides the
+save/restore window to the RETURN untouched, its trial passes ancestor realism
+(the movement is real, just not a return value), and §4.2's
+`build_return_output` dutifully emits `return CONCAT44(...)` with a
+double-width return type. The extension is a one-line gate at the join point:
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnpair.rs
+(keep_single_return)`, read in `coreaction_protos.rs
+(ActionReturnRecovery::build_return_output)` — when `option returnpair single`
+is set, a gathered multi-register return is truncated to its first
+(least-significant) register instead of joined. The flag rides
+`decompiler/crates/kuna-decomp/src/infra/architecture.rs (Architecture)`
+(`return_single`, default `false` = upstream `pair` behavior) and is copied
+into the per-function snapshot per 00 §0.5.
+
+It is a **destructive opt-in**, deliberately not flipped in the default-on
+sweeps: the gate cannot distinguish a passively-live pair from a genuine
+128-bit two-register return, and the DIV-2 ablation (`docs/divergences.md`)
+found 3 of the 675 upstream assertions legitimately need the join — a global
+`single` default would truncate real wide returns. Flip it per function on the
+CONCAT-return symptom; the symptom table and flip guidance live in
+[`docs/options.md`](../options.md#returnpair).

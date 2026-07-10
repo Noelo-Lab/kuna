@@ -1,4 +1,4 @@
-//! Core data model for the Listing/xref tier (design doc `docs/listing-tier-design.md` §2).
+//! Core data model for the Listing/xref tier (design doc `docs/history/listing-tier-design.md` §2).
 //!
 //! Three sub-models behind one [`super::Listing`] facade: the instruction model
 //! ([`Insn`]/[`FlowType`]/[`FlowKind`]/[`RawOp`]), the cross-reference model
@@ -9,7 +9,7 @@
 //! ([`super::walk`]); they never borrow the engine. The `FlowType` predicate set
 //! is the faithful projection of Ghidra's `FlowType` (`typeop.rs`/`op.rs` flags),
 //! derived once from the emitted p-code by [`super::classify::classify`], the
-//! lifted copy of `s2_lift/flow.rs::xref_control_flow`.
+//! lifted copy of `p2_lift/flow.rs::xref_control_flow`.
 
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
@@ -149,7 +149,7 @@ pub struct DiscoveredFunction {
     pub from_symbol: bool,
     /// Seeded from the no-return Known-list (refined by a future consumer).
     pub has_no_return: bool,
-    /// From `s1_callfixup` facts (skip-modeled-callees); `None` for the keystone.
+    /// From `callfixup` facts (skip-modeled-callees); `None` for the keystone.
     pub call_fixup: Option<String>,
 }
 

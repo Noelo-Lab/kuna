@@ -104,9 +104,9 @@
 //!     tracked-context exclusion (i.e. those actions provably added nothing); a CALL
 //!     test where they fired is reported DIVERGENT with the count delta, not hidden.
 //!
-//! Tests that reach a W4 seam in `generate_ops` (a BRANCHIND/jump-table or an
-//! injected CALLOTHER — `recover_jump_tables_stub`/`inject_pcode` return a seam
-//! `Err`) are reported EXCLUDED with the seam reason; they are not counted as
+//! Tests that reach a W4 stub in `generate_ops` (a BRANCHIND/jump-table or an
+//! injected CALLOTHER — `recover_jump_tables_stub`/`inject_pcode` return a stub
+//! `Err`) are reported EXCLUDED with the stub reason; they are not counted as
 //! failures (the boundary is unreachable until the W4 wave lands).
 
 // ===========================================================================

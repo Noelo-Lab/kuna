@@ -33,7 +33,7 @@ use kuna_base::space::{
 use kuna_decomp::action::ActionContext;
 use kuna_decomp::coreaction_early::{ActionRedundBranch, ActionStartCleanUp};
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::Architecture;
+use kuna_decomp::context::ArchContext;
 
 // ---- fixtures (mirror the in-module / round-1 ones) -----------------------
 
@@ -58,7 +58,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

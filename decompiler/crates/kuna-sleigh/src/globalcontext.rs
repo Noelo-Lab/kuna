@@ -457,7 +457,7 @@ pub trait ContextDatabase {
     /// The per-function `ArchHandle` is a detached skeleton that does not hold
     /// the engine's `ContextDatabase`; `ActionConstbase` needs to query the
     /// tracked set for the function's entry address through that skeleton, so
-    /// `build_arch_handle` clones this map onto the seam.
+    /// `build_arch_handle` clones this map onto the `ArchHandle`.
     fn clone_trackbase(&self) -> PartMap<Address, TrackedSet>;
 
     /// \brief Create a tracked register set that is valid over the given
@@ -849,8 +849,7 @@ impl ContextDatabase for ContextInternal {
         each: &mut dyn FnMut(&mut [u32]),
     ) {
         self.database.split(addr1);
-        // C++: aiter = begin(addr1); biter = addr2 invalid ? end()
-        //      : (split(addr2), begin(addr2))
+        // C++: biter = end if addr2 invalid, else split(addr2) then begin(addr2)
         if !addr2.is_invalid() {
             self.database.split(addr2);
         }
@@ -875,7 +874,7 @@ impl ContextDatabase for ContextInternal {
         let word = num as usize; // cast: word index, non-negative
         let mut iter = self.database.iter_from_mut(addr);
         match iter.next() {
-            None => return, // C++ `if (aiter == biter) return`
+            None => return,
             Some((_, freearray)) => {
                 freearray.mask[word] |= mask;
                 each(&mut freearray.array);
@@ -929,8 +928,7 @@ impl ContextDatabase for ContextInternal {
     fn get_context_bounds(&self, addr: &Address) -> (&[u32], u64, u64) {
         let (value, before, after, valid) = self.database.bounds(addr);
         let res = value.array.as_slice();
-        // C++: if (((valid&1)!=0)||(before.getSpace() != addr.getSpace()))
-        //        first = 0; else first = before.getOffset();
+        // C++: first = before.getOffset(), else 0 when (valid&1) or before in another space
         let first = match before {
             Some(before) if (valid & 1) == 0 => {
                 if space_eq(before, addr) {
@@ -941,9 +939,7 @@ impl ContextDatabase for ContextInternal {
             }
             _ => 0,
         };
-        // C++: if (((valid&2)!=0)||(after.getSpace() != addr.getSpace()))
-        //        last = addr.getSpace()->getHighest();
-        //      else last = after.getOffset()-1;
+        // C++: last = after.getOffset()-1, else space->getHighest() when (valid&2) or after in another space
         let last = match after {
             Some(after) if (valid & 2) == 0 && space_eq(after, addr) => {
                 // C++ `after.getOffset()-1`: defined unsigned wraparound

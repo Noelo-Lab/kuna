@@ -12,7 +12,7 @@ use kuna_base::space::{
 };
 
 use crate::funcdata::Funcdata;
-use crate::seams::Architecture;
+use crate::context::ArchContext;
 
 /// Build an AddrSpaceManager with constant/unique/ram spaces (mirrors the
 /// funcdata.rs test harness).
@@ -38,7 +38,7 @@ fn build_manager() -> AddrSpaceManager {
 /// Build a Funcdata named `name` at ram offset `off`.
 fn build_fd(name: &str, off: u64) -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, off);
     Funcdata::new(name, name, glb, addr, 0x10000000, 0x40).unwrap()

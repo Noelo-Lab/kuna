@@ -13,7 +13,7 @@ pub mod funcdata_op;
 pub mod funcdata_printraw;
 pub mod funcdata_varnode;
 pub mod dtype;
-pub mod seams;
+pub mod context;
 pub mod expression;
 pub mod transform;
 pub mod addtreestate;

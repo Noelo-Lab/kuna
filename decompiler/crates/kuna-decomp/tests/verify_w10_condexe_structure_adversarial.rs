@@ -260,7 +260,7 @@ fn skippable(e: &str) -> bool {
 /// parents, they are not a flat top-level list).  The opcode is what
 /// `emit_block_condition` maps to `&&` (BOOL_AND) / `||` (BOOL_OR).
 fn condition_opcodes(fd: &Funcdata) -> Vec<kuna_num::opcodes::OpCode> {
-    fn walk(fd: &Funcdata, bl: kuna_decomp::seams::BlockId, acc: &mut Vec<kuna_num::opcodes::OpCode>) {
+    fn walk(fd: &Funcdata, bl: kuna_decomp::context::BlockId, acc: &mut Vec<kuna_num::opcodes::OpCode>) {
         let block = fd.sblocks_ref().block(bl);
         if block.get_type() == BlockType::Condition {
             if let Some(opc) = block.get_condition_opcode() {

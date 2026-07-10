@@ -1,7 +1,7 @@
 //! End-to-end gate for the no-return × demangle cross-pass seam (the kuna analog
 //! of Ghidra's `NoReturnFunctionAnalyzer` interacting with `GnuDemanglerAnalyzer`).
 //!
-//! The seam: the no-return pass (`s1_loader/noreturn.rs`) matches on the **raw**
+//! The seam: the no-return pass (`loader/noreturn.rs`) matches on the **raw**
 //! object-symbol name, but the demangle pass renames the funcsym *before* it is
 //! installed. A mangled C++ no-return import like `_ZSt9terminatev` is installed
 //! as `std::terminate` (in scope `std`) at its PLT-stub address — so a name-only

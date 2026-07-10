@@ -54,7 +54,7 @@
 //!   - `glb` ([`ArchHandle`]) for the constant/unique/iop spaces and
 //!     `minLanedSize`; `min_laned_size`, the create-index phase fields, and the
 //!     `flags` word with `is_high_on()`;
-//!   - [`Funcdata::set_varnode_properties`] (a `// SEAM(W4)` no-op standing in
+//!   - [`Funcdata::set_varnode_properties`] (a `// STUB(W4)` no-op standing in
 //!     for `localmap->queryProperties` + `Cover` calc) that `opSetOutput` and
 //!     the `newVarnode*` factories call.
 //!
@@ -62,12 +62,29 @@
 //!
 //! Most of `funcdata.cc` is W4+ subsystem glue (the `Architecture`/`TypeFactory`
 //! / `ScopeLocal` / `FuncProto` / `JumpTable` / `Override` / `Heritage` / `Merge`
-//! / union-resolution machinery).  Those are seam-noted ([`crate::seams`]'
+//! / union-resolution machinery).  Those are seam-noted ([`crate::context`]'
 //! `Architecture`/`Scope`/`FuncProto`, [`crate::dtype`]) and either return an
 //! explicit `Err`/`None` or are left out; printing (`printRaw`/`printBlockTree`)
 //! is W8.  This module carries the IR-ownership skeleton, the flag/phase state
 //! machine, and the block-manipulation methods that are self-contained at the
 //! W3 IR level (`structureReset`, `clearBlocks`, the edge-rewiring wrappers).
+//!
+//! # The Funcdata impl map
+//!
+//! `Funcdata` is one struct with its impl blocks split by owning phase — the
+//! split IS the documentation of which phase mutates what:
+//!
+//! - `substrate/funcdata.rs`          — construction, arenas, core accessors
+//! - `substrate/funcdata_op.rs`       — op creation/mutation primitives
+//! - `substrate/funcdata_varnode.rs`  — varnode creation/lookup primitives
+//! - `substrate/funcdata_block.rs`    — CFG surgery + the jump-table drivers
+//! - `substrate/funcdata_encode.rs`   — marshaling
+//! - `substrate/funcdata_printraw.rs` — raw printing
+//! - `p2_lift/funcdata_resolveflow.rs`— flow resolution (P2)
+//! - `p5_types/funcdata_union.rs`     — union facet resolution (P5)
+//! - `p6_variables/funcdata_facing.rs`, `funcdata_merge.rs`,
+//!   `funcdata_spacebase.rs`          — variable/merge/stack tiers (P6)
+//! - `p9_emit/coreaction_casts.rs`    — cast insertion hooks (P9)
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -76,7 +93,7 @@ use kuna_base::types::{int2, int4, uint4, uint8, uintm, Wrap};
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
 use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive};
 use crate::op::PcodeOpBank;
-use crate::seams::{ArchHandle, BlockId, OpId, VarnodeId};
+use crate::context::{ArchHandle, BlockId, OpId, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// Boolean properties associated with a [`Funcdata`] (C++ anonymous `enum` in
@@ -198,7 +215,7 @@ pub struct Funcdata {
     laned_map: std::collections::BTreeMap<LanedKey, (Address, int4, crate::transform::LanedRegister)>,
     /// Number of bytes of binary data in function body (C++ `size`)
     size: int4,
-    /// Global configuration data (C++ `glb`).  // SEAM(W4)
+    /// Global configuration data (C++ `glb`).  // STUB(W4)
     glb: ArchHandle,
     /// Name of function (C++ `name`)
     name: String,
@@ -237,12 +254,12 @@ pub struct Funcdata {
     bblocks: BlockGraph,
     /// Structured block hierarchy on top of basic blocks (C++ `sblocks`)
     sblocks: BlockGraph,
-    /// The HighVariable / VariableGroup / VariablePiece arena (W7, SEAM(W7)).
+    /// The HighVariable / VariableGroup / VariablePiece arena (W7, STUB(W7)).
     ///
     /// The C++ `HighVariable`s are allocated by `new HighVariable` from
     /// `Funcdata::assignHigh`/`Merge` and reverse-linked from each member
     /// `vn->high`; per ADR 0001 they live in this [`HighVariableBank`] keyed by
-    /// [`crate::seams::HighVariableId`], the back-link being the `Varnode::high`
+    /// [`crate::context::HighVariableId`], the back-link being the `Varnode::high`
     /// field already wired in `varnode.rs`.
     high_bank: crate::variable::HighVariableBank,
     /// SSA-construction manager (C++ `Heritage heritage`, `funcdata.hh:90`).
@@ -301,7 +318,7 @@ pub struct Funcdata {
     /// `glb->commentdb`; `funcdata.cc:119,135`).
     ///
     /// The merged Rust tree owns the `CommentDatabase` on the console
-    /// `Architecture`, not on the W3 `glb` ([`crate::seams::ArchHandle`]), so a
+    /// `Architecture`, not on the W3 `glb` ([`crate::context::ArchHandle`]), so a
     /// `Funcdata` produced during flow follow buffers its analysis comments here
     /// and the decompile drive ([`crate::decompile_drive`]) flushes them into
     /// `arch.commentdb` once it has the `&mut Architecture` back (the same
@@ -313,14 +330,14 @@ pub struct Funcdata {
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
 ///
-/// SEAM(W4): the `JumpTable` type and all recovery logic (`recoverJumpTable`,
+/// STUB(W4): the `JumpTable` type and all recovery logic (`recoverJumpTable`,
 /// `stageJumpTable`, …) are W4; `Funcdata` only needs to track table identity at
 /// W3 so `structureReset`'s dead-table sweep and `installSwitchDefaults` can run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JumpTableId(pub u32);
 
 impl Funcdata {
-    /// Constructor (C++ `Funcdata::Funcdata`, `funcdata.cc:34`).
+    /// C++ `Funcdata::Funcdata` (`funcdata.cc:34`).
     ///
     /// The C++ pulls `vbank(scope->getArch())`, `minLanedSize` from
     /// `glb->getMinimumLanedRegisterSize()`, and attaches a `ScopeLocal` to the
@@ -328,7 +345,7 @@ impl Funcdata {
     /// `AddrSpaceManager`); the `VarnodeBank` analysis unique-start is supplied
     /// by the caller (`uniq_start`, the program's `Translate` —
     /// `getUniqueStart(ANALYSIS)`), exactly as `varnode.rs` documents.  The
-    /// `ScopeLocal` attachment is `// SEAM(W4)`; here `localmap` is created empty
+    /// `ScopeLocal` attachment is `// STUB(W4)`; here `localmap` is created empty
     /// when a name is given (the C++ `nm.size()==0` "filled in by decode" branch
     /// leaves it `None`).
     pub fn new(
@@ -563,7 +580,7 @@ impl Funcdata {
         let void_type =
             Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID));
         // The type factory + manager live on the architecture, shared into `glb`.
-        // Clone the `Rc<ArchSeam>` (cheap refcount bump) so the factory/manager
+        // Clone the `Rc<ArchContext>` (cheap refcount bump) so the factory/manager
         // borrows come from the clone, leaving `self.funcp` freely mutable.
         let glb = self.glb.clone();
         let types = glb.types().ok_or_else(|| {
@@ -904,7 +921,7 @@ impl Funcdata {
 
     /// Get the LoadGuard associated with a STORE op, if any (C++
     /// `Funcdata::getStoreGuard`, `funcdata.hh:278` — `heritage.getStoreGuard(op)`).
-    pub fn get_store_guard(&self, op: crate::seams::OpId) -> Option<&crate::heritage::LoadGuard> {
+    pub fn get_store_guard(&self, op: crate::context::OpId) -> Option<&crate::heritage::LoadGuard> {
         self.heritage.get_store_guard(op)
     }
 
@@ -1368,13 +1385,7 @@ impl Funcdata {
     /// `vbank.setInput`/`setDef`/`createDef` callers (`opSetOutput`,
     /// `setInputVarnode`, `newVarnodeOut`/`newUniqueOut`) split-borrow here and
     /// build [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over the `obank`
-    /// half while mutating the `vbank` half:
-    ///
-    /// ```text
-    ///   let (vbank, obank) = self.banks_mut();
-    ///   let mut replace = Funcdata::replace_reads_thunk(obank);
-    ///   let vn = vbank.set_def(vn, def, &mut replace)?;
-    /// ```
+    /// half while mutating the `vbank` half.
     ///
     /// `pub(crate)` so only the funcdata_op/funcdata_varnode ports reach it.
     pub(crate) fn banks_mut(&mut self) -> (&mut VarnodeBank, &mut PcodeOpBank) {
@@ -1519,25 +1530,17 @@ impl Funcdata {
     /// only and is handed the bank as its first argument, exactly as
     /// [`crate::varnode::ReplaceReads`] is typed.
     ///
-    /// SEAM(W3-op): the op-side read iteration/repointing is the funcdata_op
+    /// STUB(W3-op): the op-side read iteration/repointing is the funcdata_op
     /// wave's; this method establishes the closure shape and where it captures.
     /// Until funcdata_op ports `opSetInput`, the bodies that *call* `xref`
     /// (`setInputVarnode`, `opSetOutput`) live in funcdata_op; this thunk is the
     /// surface they use, declared here so they need no seam edit.
     pub fn replace_reads_thunk(obank: &mut PcodeOpBank) -> impl FnMut(&mut VarnodeBank, VarnodeId, VarnodeId) -> KunaResult<()> + '_ {
         move |bank: &mut VarnodeBank, oldvn: VarnodeId, newvn: VarnodeId| -> KunaResult<()> {
-            // Faithful transcription of `VarnodeBank::replace` (varnode.cc:1351).
+            // C++ `VarnodeBank::replace` (varnode.cc:1351).
             // C++ walks oldvn's descend list (one entry per op-read of oldvn) and,
             // for each non-skipped entry, severs *that one* link, repoints the
-            // single slot getSlot finds, and adds the op to newvn's descend:
-            //
-            //   while(iter!=oldvn->descend.end()) {
-            //     op = *iter; tmpiter = iter++;
-            //     if (op->output == newvn) continue;   // self-def: not an input
-            //     i = op->getSlot(oldvn);
-            //     oldvn->descend.erase(tmpiter);
-            //     op->clearInput(i); newvn->addDescend(op); op->setInput(newvn,i);
-            //   }
+            // single slot getSlot finds, and adds the op to newvn's descend.
             //
             // Iterate a snapshot in descend (push_back) order since we mutate the
             // list; mirror the `iter++` cursor by erasing exactly the visited link
@@ -1548,23 +1551,21 @@ impl Funcdata {
                 .map(|vn| vn.descend_iter().collect())
                 .unwrap_or_default();
             for op in readers {
-                // `if (op->output == newvn) continue;` — an op cannot be an input
-                // to its own definition; leave its slot reading oldvn and leave
-                // oldvn's descend link to it untouched.
+                // An op cannot be an input to its own definition; leave its slot
+                // reading oldvn and leave oldvn's descend link to it untouched.
                 if obank.get(op).and_then(|o| o.get_out()) == Some(newvn) {
                     continue;
                 }
-                // `i = op->getSlot(oldvn);` — the first slot reading oldvn; this
-                // descend entry corresponds to exactly that read.  (-1 only if a
-                // prior entry for the same op already consumed the read, leaving
-                // none — then there is no slot to repoint and no link to sever.)
+                // The first slot reading oldvn; this descend entry corresponds to
+                // exactly that read.  (-1 only if a prior entry for the same op
+                // already consumed the read, leaving none — then there is no slot
+                // to repoint and no link to sever.)
                 let i = obank.get(op).map(|o| o.get_slot(oldvn)).unwrap_or(-1);
                 if i < 0 {
                     continue;
                 }
-                // `oldvn->descend.erase(tmpiter);` — sever just this one link.
+                // Sever just this one link.
                 bank.erase_descend(oldvn, op);
-                // `op->clearInput(i); newvn->addDescend(op); op->setInput(newvn,i);`
                 bank.add_descend(newvn, op)?;
                 if let Some(o) = obank.get_mut(op) {
                     o.set_input(Some(newvn), i);
@@ -1620,19 +1621,6 @@ impl Funcdata {
     /// Look-up boolean properties and data-type information for a Varnode
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
     ///
-    /// The faithful C++ body is:
-    ///
-    /// ```text
-    ///   if (!vn->isMapped()) {
-    ///     uint4 vflags=0;
-    ///     SymbolEntry *entry = localmap->queryProperties(vn->getAddr(),vn->getSize(),
-    ///                                                     vn->getUsePoint(*this),vflags);
-    ///     if (entry != 0) vn->setSymbolProperties(entry);
-    ///     else            vn->setFlags(vflags & ~Varnode::typelock);
-    ///   }
-    ///   if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }
-    /// ```
-    ///
     /// where `localmap->queryProperties` reaches the global scope, so a
     /// global-mapped Varnode would pick up `mapped | addrtied | persist` at every
     /// Varnode-creation site (`newVarnode`/`newVarnodeOut`/`setInput`).
@@ -1658,21 +1646,19 @@ impl Funcdata {
     /// `docs/rust-port/reviews/w10-global-persist.md`).  When that seam lands the
     /// body above folds back in unchanged.
     pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
-        // C++ `if (!vn->isMapped())` — an already-mapped Varnode keeps its flags.
+        // An already-mapped Varnode keeps its flags.
         let already_mapped = match self.vbank().get(vn) {
             Some(v) => v.is_mapped(),
             None => return,
         };
         if !already_mapped {
-            // `localmap->queryProperties(vn->getAddr(), vn->getSize(),
-            // vn->getUsePoint(*this), vflags)`.  Both halves of the C++ walk are now
-            // wired: the LOCAL symbol-map half (recovered stack locals, via
-            // `ScopeLocal::query_properties`) and the GLOBAL half — the parent-scope
-            // reach that paints a global-mapped RAM store `mapped | addrtied |
-            // persist` (+ `readonly`/`volatile`), the `GlobalQuery` snapshot wired
-            // onto `glb`.  For a register / unique address both queries return 0, so
-            // such Varnodes are untouched, exactly as the C++ local-then-global walk
-            // leaves them with `vflags == 0`.
+            // Both halves of the C++ walk are now wired: the LOCAL symbol-map half
+            // (recovered stack locals, via `ScopeLocal::query_properties`) and the
+            // GLOBAL half — the parent-scope reach that paints a global-mapped RAM
+            // store `mapped | addrtied | persist` (+ `readonly`/`volatile`), the
+            // `GlobalQuery` snapshot wired onto `glb`.  For a register / unique
+            // address both queries return 0, so such Varnodes are untouched, exactly
+            // as the C++ local-then-global walk leaves them with `vflags == 0`.
             //
             // Marking `addrtied`/`persist` here is the keystone the merge + naming
             // seams need: `Merge::mergeTestSpeculative` (merge.cc:226-233) refuses to
@@ -1687,8 +1673,7 @@ impl Funcdata {
                 None => return,
             };
             use crate::varnode::varnode_flags;
-            // C++ `localmap->queryProperties(addr, size, usepoint, vflags)` — the
-            // LOCAL-scope half of `setVarnodeProperties` (funcdata_varnode.cc:30).
+            // The LOCAL-scope half of `setVarnodeProperties` (funcdata_varnode.cc:30).
             // A `map addr`/restructure-mapped stack range returns `mapped|addrtied`
             // here, so a Varnode freshly created at a mapped stack address (e.g. a
             // per-byte COPY output split out of a wide stack COPY by `RuleSplitCopy`
@@ -1698,10 +1683,9 @@ impl Funcdata {
             let mut vflags = self.query_local_properties(&addr, size, &usepoint);
             vflags |= self.get_arch().query_global_properties(&addr, size, &usepoint);
             if vflags != 0 {
-                // C++ `vn->setFlags(vflags & ~Varnode::typelock)` (typelock is set by
-                // `updateType`, never here).  These flags (`mapped|addrtied|persist`,
-                // plus any `readonly`/`volatile`) are what survival + merge + naming
-                // read.
+                // typelock is set by `updateType`, never here.  These flags
+                // (`mapped|addrtied|persist`, plus any `readonly`/`volatile`) are
+                // what survival + merge + naming read.
                 if let Some(v) = self.vbank_mut().get_mut(vn) {
                     v.set_flags_pub(vflags & !varnode_flags::typelock);
                 }
@@ -1718,16 +1702,15 @@ impl Funcdata {
             if let Some((symtype, off)) =
                 self.get_arch().sized_type_for_global_varnode(&addr, size, &usepoint)
             {
-                // dt = getExactPiece(symbol->getType(), off, size) against the shared
-                // TypeFactory; null (no exact piece) leaves the Varnode untyped, as
-                // C++ `getSizedType` returning NULL skips the `updateType`.
+                // The exact type piece against the shared TypeFactory; null (no
+                // exact piece) leaves the Varnode untyped, as C++ `getSizedType`
+                // returning NULL skips the `updateType`.
                 let dt = self
                     .get_arch()
                     .types()
                     .and_then(|t| t.get_exact_piece(symtype, off, size).ok().flatten());
                 if let Some(dt) = dt {
                     if let Some(v) = self.vbank_mut().get_mut(vn) {
-                        // updateType(dt, lock=true, override=true)
                         v.update_type_locked(dt, true, true);
                     }
                 }
@@ -1810,14 +1793,13 @@ impl Funcdata {
     /// Insert `op` into basic block `bl` immediately before `before` (or at the
     /// end if `before` is `None`), assigning the SeqNum order index.
     ///
-    /// Faithful transcription of `BlockBasic::insert` (`block.cc:2262`): set the
+    /// C++ `BlockBasic::insert` (`block.cc:2262`): set the
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
     /// recompute the whole order ([`bb_set_order`](Funcdata::bb_set_order)) or
     /// set the midpoint (overflow-aware).  The BRANCHIND `f_switch_out` mark is
     /// applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
-        // inst->setParent(this);
         self.obank.get_mut(op).expect("bb_insert_op: stale op").set_parent(Some(bl));
 
         // Determine the predecessor `prev` of the insertion point.  Inserting
@@ -1863,12 +1845,11 @@ impl Funcdata {
         if ordafter.wsub(ordbefore) <= 1 {
             self.bb_set_order(bl);
         } else {
-            // inst->setOrder(ordafter/2 + ordbefore/2);  // beware overflow
+            // beware overflow
             let mid = (ordafter / 2).wadd(ordbefore / 2);
             self.obank.get_mut(op).expect("bb_insert_op").set_order(mid);
         }
 
-        // if (inst->isBranch()) { if (code()==BRANCHIND) setFlag(f_switch_out); }
         if self.obank.get(op).expect("bb_insert_op").is_branch()
             && self.obank.get(op).expect("bb_insert_op").code()
                 == kuna_num::opcodes::OpCode::CPUI_BRANCHIND
@@ -1881,7 +1862,6 @@ impl Funcdata {
     /// `block.cc:2296`).  `op` \e must be in `bl`.  Clears the op's parent and
     /// splices it out of the per-op intrusive list, fixing head/tail/len.
     pub fn bb_remove_op(&mut self, bl: BlockId, op: OpId) {
-        // inst->setParent(0);
         self.obank.get_mut(op).expect("bb_remove_op: stale op").set_parent(None);
         let (prev, next) = self.obank.get(op).expect("bb_remove_op").basic_neighbours();
         match prev {
@@ -2015,10 +1995,10 @@ impl Funcdata {
         self.cast_phase_index = 0;
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
 
-        // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- SEAM(W4)
+        // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- STUB(W4)
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.
         self.clear_active_output();
-        // funcp.clearUnlockedOutput();                               -- SEAM(W4)
+        // funcp.clearUnlockedOutput();                               -- STUB(W4)
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
         self.clear_blocks();
@@ -2062,7 +2042,7 @@ impl Funcdata {
 pub type DefOp = DefOpInfo;
 
 // =============================================================================
-// W7 HighVariable / Cover lifecycle wiring (SEAM(W7))
+// W7 HighVariable / Cover lifecycle wiring (STUB(W7))
 // =============================================================================
 //
 // The C++ `Varnode::cover` rebuild (`Cover::rebuild`) and the `HighVariable`
@@ -2099,7 +2079,7 @@ impl Funcdata {
         &mut self,
         op: OpId,
         slot: int4,
-        entry: &crate::seams::GlobalContainer,
+        entry: &crate::context::GlobalContainer,
         rampoint: &Address,
         origval: u64,
         origsize: int4,
@@ -2112,8 +2092,6 @@ impl Funcdata {
         let spaceid = rampoint.get_space().expect("spacebaseConstant: rampoint has no space").clone();
         let wordsize = spaceid.get_word_size();
 
-        // sb_type = getTypePointer(sz, getTypeSpacebase(spaceid, Address()), wordsize)
-        // ptrentrytype = getTypePointerStripArray(sz, sym->getType(), wordsize)
         let types =
             self.get_arch().types_rc().ok_or_else(|| {
                 kuna_base::error::KunaError::lowlevel("spacebaseConstant: no type factory")
@@ -2121,7 +2099,7 @@ impl Funcdata {
         let invalid = Address::new_invalid();
         let sb_spacebase = types.get_type_spacebase(Rc::clone(&spaceid), &invalid)?;
         let sb_type = types.get_type_pointer(sz, sb_spacebase, wordsize)?;
-        // sym->getType(): the covering Symbol's declared type.
+        // The covering Symbol's declared type.
         let entrytype = entry
             .symbol_type
             .clone()
@@ -2129,7 +2107,6 @@ impl Funcdata {
         let ptrentrytype =
             types.get_type_pointer_strip_array(sz, Rc::clone(&entrytype), wordsize)?;
 
-        // extra = rampoint - entry->getAddr(); byteToAddress(extra, wordsize)
         let extra_bytes = rampoint.get_offset().wrapping_sub(entry.entry_addr.get_offset());
         let extra = AddrSpace::byte_to_address(extra_bytes, wordsize);
 
@@ -2146,7 +2123,7 @@ impl Funcdata {
             if sz < origsize {
                 zext_op = Some(op);
             } else {
-                // op->insertInput(1): PTRSUB/ADD/SUBPIECE all take 2 parameters.
+                // PTRSUB/ADD/SUBPIECE all take 2 parameters.
                 self.obank_mut().get_mut(op).expect("spacebaseConstant: stale op").insert_input(1);
                 if origsize < sz {
                     sub_op = Some(op);
@@ -2158,8 +2135,6 @@ impl Funcdata {
             }
         }
 
-        // spacebase_vn = newConstant(sz, 0); updateType(sb_type, true, true);
-        //                setFlags(Varnode::spacebase)
         let spacebase_vn = self.new_constant(sz, 0);
         {
             let v = self.vbank_mut().get_mut(spacebase_vn).expect("spacebaseConstant: spacebase vn");
@@ -2185,7 +2160,7 @@ impl Funcdata {
         let mut outvn =
             self.obank().get(add_op).expect("spacebaseConstant: addOp").get_out().expect("addOp out");
 
-        // newconstoff = origval - extra (all already in address units)
+        // origval - extra, all already in address units.
         let newconstoff = origval.wrapping_sub(extra);
         let newconst = self.new_constant(sz, newconstoff);
         self.vbank_mut().get_mut(newconst).expect("spacebaseConstant: newconst").set_ptr_check();
@@ -2195,7 +2170,7 @@ impl Funcdata {
         self.op_set_input(add_op, spacebase_vn, 0)?;
         self.op_set_input(add_op, newconst, 1)?;
 
-        // outvn->updateType(ptrentrytype, typelock, false)  — THE load-bearing line.
+        // THE load-bearing line (updateType with the entry pointer type).
         let mut typelock = entry.is_type_locked();
         if typelock && entrytype.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
             typelock = false;
@@ -2314,11 +2289,10 @@ impl Funcdata {
         let code = o.code();
         if o.is_marker() {
             if code == OpCode::CPUI_MULTIEQUAL {
-                // MULTIEQUALs are considered very beginning -> 0
+                // MULTIEQUALs are considered at the very beginning (order 0).
                 return (0, code);
             } else if code == OpCode::CPUI_INDIRECT {
-                // INDIRECTs are at the location of the op they are indirect for:
-                // getOpFromConst(getIn(1)->getAddr())->getSeqNum().getOrder()
+                // INDIRECTs are at the location of the op they are indirect for.
                 if let Some(in1) = o.get_in(1) {
                     if let Some(vn) = self.vbank.get(in1) {
                         let addr = vn.get_addr();
@@ -2441,7 +2415,6 @@ impl Funcdata {
                 if !wv.get_addr().is_constant() {
                     return false;
                 }
-                // off = whole->getOffset() >> least_byte*8; off &= calc_mask(vn->getSize())
                 let off = (wv.get_offset() >> (least_byte * 8))
                     & kuna_base::address::calc_mask(v.get_size());
                 return off == v.get_offset();
@@ -2459,7 +2432,6 @@ impl Funcdata {
                 Some(t) => t,
                 None => return false,
             };
-            // off = (int4)getIn(1)->getOffset()
             let off = o
                 .get_in(1)
                 .and_then(|c| self.vbank.get(c))
@@ -2705,7 +2677,6 @@ impl Funcdata {
     pub(crate) fn do_trim_op_output(&mut self, op: OpId) -> KunaResult<()> {
         let code = self.obank.get(op).expect("do_trim_op_output: stale op").code();
         let afterop = if code == OpCode::CPUI_INDIRECT {
-            // getOpFromConst(op->getIn(1)->getAddr())
             let addr = self
                 .obank
                 .get(op)
@@ -2809,10 +2780,6 @@ impl Funcdata {
     /// `Merge::eliminateIntersect` to decide whether the read crosses an
     /// intervening write at the same storage address.
     pub(crate) fn build_single_read_cover(&self, vn: VarnodeId, op: OpId) -> Cover {
-        // C++ `Merge::eliminateIntersect` (merge.cc:502-505):
-        //   Cover single;
-        //   single.addDefPoint(vn);
-        //   single.addRefPoint(op,vn);   // Build range for a single read
         // The `addRefPoint` extends the cover from `vn`'s def to the reading op so
         // intervening writes at the same storage address fall inside it; omitting it
         // collapses the cover to the def point and no intersection is ever found
@@ -2844,7 +2811,7 @@ impl Funcdata {
     /// input (`true`).
     pub(crate) fn high_tied_or_input_varnode(
         &self,
-        high: crate::seams::HighVariableId,
+        high: crate::context::HighVariableId,
         input: bool,
     ) -> Option<VarnodeId> {
         let Funcdata { high_bank, vbank, obank, .. } = self;
@@ -2862,25 +2829,25 @@ impl Funcdata {
     /// the read-view borrow is released (the merge never reads `vn->high`).
     pub(crate) fn bank_merge_with_log(
         &mut self,
-        high1: crate::seams::HighVariableId,
-        high2: crate::seams::HighVariableId,
+        high1: crate::context::HighVariableId,
+        high2: crate::context::HighVariableId,
         isspeculative: bool,
         cache: &mut crate::variable::HighIntersectTest,
-        set_high_log: &mut Vec<(VarnodeId, crate::seams::HighVariableId, int2)>,
-        mark_set: &std::cell::RefCell<std::collections::BTreeSet<crate::seams::HighVariableId>>,
+        set_high_log: &mut Vec<(VarnodeId, crate::context::HighVariableId, int2)>,
+        mark_set: &std::cell::RefCell<std::collections::BTreeSet<crate::context::HighVariableId>>,
     ) -> KunaResult<()> {
         let Funcdata { high_bank, vbank, obank, .. } = self;
         let ctx = HighReadView::new(vbank, obank);
-        let mut set_high = |vn: VarnodeId, id: crate::seams::HighVariableId, mg: int2| {
+        let mut set_high = |vn: VarnodeId, id: crate::context::HighVariableId, mg: int2| {
             set_high_log.push((vn, id, mg));
         };
-        let mut set_mark = |id: crate::seams::HighVariableId| {
+        let mut set_mark = |id: crate::context::HighVariableId| {
             mark_set.borrow_mut().insert(id);
         };
-        let mut clear_mark = |id: crate::seams::HighVariableId| {
+        let mut clear_mark = |id: crate::context::HighVariableId| {
             mark_set.borrow_mut().remove(&id);
         };
-        let is_mark = |id: crate::seams::HighVariableId| mark_set.borrow().contains(&id);
+        let is_mark = |id: crate::context::HighVariableId| mark_set.borrow().contains(&id);
         high_bank.merge(
             high1,
             high2,
@@ -2924,12 +2891,11 @@ impl Funcdata {
     /// types in the merged tree).
     pub(crate) fn build_dominant_copy_impl(
         &mut self,
-        high: crate::seams::HighVariableId,
+        high: crate::context::HighVariableId,
         copy: &[OpId],
         pos: int4,
         size: int4,
     ) -> KunaResult<()> {
-        // blockSet = { copy[pos+i]->getParent() }; domBl = findCommonBlock(blockSet)
         let mut block_set: Vec<BlockId> = Vec::with_capacity(size as usize);
         for i in 0..size {
             let op = copy[(pos + i) as usize];
@@ -2944,7 +2910,6 @@ impl Funcdata {
         let dom_copy_parent = self.obank.get(dom_copy).and_then(|o| o.get_parent());
         let dom_copy_is_new = dom_copy_parent != Some(dom_bl);
         if dom_copy_is_new {
-            // domCopy = data.newOp(1, domBl->getStop()); SetOpcode(COPY)
             // (the needsResolution union-facing arm is the conservative default —
             //  no `needsResolution` types in the merged tree.)
             let stop_addr = self.block_stop_addr(dom_bl);
@@ -2985,7 +2950,7 @@ impl Funcdata {
                 if skip {
                     continue;
                 }
-                // bCover.merge(*vn->getCover()): the rebuilt member cover.
+                // The rebuilt member cover.
                 let vc = self.full_varnode_cover(vn);
                 b_cover.merge(&vc);
             }
@@ -3034,12 +2999,11 @@ impl Funcdata {
         for i in 0..size {
             let op = copy[(pos + i) as usize];
             if marked[i as usize] {
-                // op->clearMark() (the marked-set was local; nothing to clear)
+                // The marked-set was local; nothing to clear.
                 continue;
             }
             let out_vn = self.obank.get(op).and_then(|o| o.get_out()).expect("build_dominant_copy: copy out");
             if out_vn != dom_vn {
-                // outVn->getHigh()->remove(outVn)
                 if let Some(out_high) = self.vbank.get(out_vn).and_then(|v| v.get_high()) {
                     self.high_remove_member(out_high, out_vn);
                 }
@@ -3049,7 +3013,6 @@ impl Funcdata {
         }
 
         if count > 0 && dom_copy_is_new {
-            // high->merge(domVn->getHigh(), 0, true)
             if let Some(dom_high) = self.vbank.get(dom_vn).and_then(|v| v.get_high()) {
                 if dom_high != high {
                     self.merge_two_highs(high, dom_high, true)?;
@@ -3071,7 +3034,7 @@ impl Funcdata {
 
     /// `outVn->getHigh()->remove(outVn)` across the bank field split (the high
     /// loses one member; its cover is marked dirty).
-    pub(crate) fn high_remove_member(&mut self, high: crate::seams::HighVariableId, vn: VarnodeId) {
+    pub(crate) fn high_remove_member(&mut self, high: crate::context::HighVariableId, vn: VarnodeId) {
         let has_symbol_entry = false; // no symbol entries in the merged tree
         let Funcdata { high_bank, vbank, obank, .. } = self;
         let ctx = HighReadView::new(vbank, obank);
@@ -3084,14 +3047,14 @@ impl Funcdata {
     /// edges yet), matching the C++ pass of `data.getMerge()`'s `testCache`.
     fn merge_two_highs(
         &mut self,
-        high1: crate::seams::HighVariableId,
-        high2: crate::seams::HighVariableId,
+        high1: crate::context::HighVariableId,
+        high2: crate::context::HighVariableId,
         isspeculative: bool,
     ) -> KunaResult<()> {
         let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
         let mut cache = crate::variable::HighIntersectTest::new(opset);
-        let mut set_high_log: Vec<(VarnodeId, crate::seams::HighVariableId, int2)> = Vec::new();
-        let mark_set: std::cell::RefCell<std::collections::BTreeSet<crate::seams::HighVariableId>> =
+        let mut set_high_log: Vec<(VarnodeId, crate::context::HighVariableId, int2)> = Vec::new();
+        let mark_set: std::cell::RefCell<std::collections::BTreeSet<crate::context::HighVariableId>> =
             std::cell::RefCell::new(std::collections::BTreeSet::new());
         let res = self.bank_merge_with_log(high1, high2, isspeculative, &mut cache, &mut set_high_log, &mark_set);
         for (vn, id, mg) in set_high_log {
@@ -3104,7 +3067,7 @@ impl Funcdata {
 
     /// Rebuild a Varnode's Cover, driving `Varnode::updateCover` across the arena
     /// boundary (the C++ `vn->updateCover()` / `Cover::rebuild`).  Called by the
-    /// Merge driver after data-flow changes.  This is the `// SEAM(W7)` cover
+    /// Merge driver after data-flow changes.  This is the `// STUB(W7)` cover
     /// rebuild that `funcdata_block`/merge will invoke.
     pub fn update_varnode_cover(&mut self, vn: VarnodeId) {
         // C++ `Varnode::updateCover`: if coverdirty, and hasCover & cover!=0,
@@ -3184,7 +3147,6 @@ impl<'a> CoverContext for FuncdataCoverCtx<'a> {
         let is_multiequal = o.code() == OpCode::CPUI_MULTIEQUAL;
         let mut preds = Vec::new();
         if is_multiequal {
-            // for j in 0..numInput: if getIn(j)==vn -> addRefRecurse(bl->getIn(j))
             let n = o.num_input();
             for j in 0..n {
                 if o.get_in(j) == Some(vn) {
@@ -3228,10 +3190,10 @@ impl Funcdata {
     /// If HighVariables are enabled, ensure the given Varnode has one assigned
     /// (C++ `Funcdata::assignHigh`, `funcdata_varnode.cc:48-61`).
     ///
-    /// SEAM(W4): the `hasWarning`/`issueDatatypeWarning` datatype-warning step
+    /// STUB(W4): the `hasWarning`/`issueDatatypeWarning` datatype-warning step
     /// (`glb->types`) is a W4 surface and is omitted.  The `calcCover` + `new
     /// HighVariable(vn)` + `vn->setHigh(id,0)` lifecycle is wired here.
-    pub fn assign_high_var(&mut self, vn: VarnodeId) -> Option<crate::seams::HighVariableId> {
+    pub fn assign_high_var(&mut self, vn: VarnodeId) -> Option<crate::context::HighVariableId> {
         if !self.is_high_on() {
             return None;
         }
@@ -3239,12 +3201,10 @@ impl Funcdata {
         if v.has_cover() {
             self.vbank_mut().get_mut(vn).unwrap().calc_cover();
         }
-        // if (!vn->isAnnotation()) return new HighVariable(vn);
         if self.vbank.get(vn).unwrap().is_annotation() {
             return None;
         }
         let id = self.high_bank.new_high(vn);
-        // vn->setHigh(this, numMergeClasses-1) == setHigh(id, 0)
         self.vbank_mut().get_mut(vn).unwrap().set_high(id, 0);
         Some(id)
     }
@@ -3268,7 +3228,7 @@ impl Funcdata {
     /// if the Varnode has no HighVariable yet.
     ///
     /// `symbol_submeta` is the backing-symbol metatype for the `stripType`
-    /// partial-union case (SEAM(W4): `None` until the Varnode-Symbol link lands).
+    /// partial-union case (STUB(W4): `None` until the Varnode-Symbol link lands).
     pub fn high_get_type(&mut self, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
         let id = self.vbank.get(vn)?.get_high()?;
         Some(self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().get_type(ctx, None)))
@@ -3277,14 +3237,14 @@ impl Funcdata {
     /// Drive a HighVariable's external cover update (the C++
     /// `HighVariable::updateCover`, called by Merge).  Convenience over
     /// [`with_high_split`] for the bank's `update_cover`.
-    pub fn high_update_cover(&mut self, id: crate::seams::HighVariableId) {
+    pub fn high_update_cover(&mut self, id: crate::context::HighVariableId) {
         self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
     }
 
     /// The HighVariable's name representative Varnode (C++
     /// `HighVariable::getNameRepresentative`), across the bank field-split.
     /// `None` if the high is gone.
-    pub fn high_name_representative(&mut self, id: crate::seams::HighVariableId) -> Option<VarnodeId> {
+    pub fn high_name_representative(&mut self, id: crate::context::HighVariableId) -> Option<VarnodeId> {
         self.high_bank.get(id)?;
         Some(self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().get_name_representative(ctx)))
     }
@@ -3292,7 +3252,7 @@ impl Funcdata {
     /// Whether a HighVariable can carry a name (C++ `HighVariable::hasName`),
     /// across the bank field-split.  `false` if the high is gone or its
     /// coverability check errors (the C++ `LowlevelError` -> conservative `false`).
-    pub fn high_has_name(&mut self, id: crate::seams::HighVariableId) -> bool {
+    pub fn high_has_name(&mut self, id: crate::context::HighVariableId) -> bool {
         if self.high_bank.get(id).is_none() {
             return false;
         }
@@ -3326,7 +3286,6 @@ impl Funcdata {
         base1_unknown: std::rc::Rc<crate::dtype::Datatype>,
     ) -> KunaResult<()> {
         use kuna_base::error::KunaError;
-        // if (vn->isTypeLock()||vn->isNameLock()) throw RecovError(...)
         let v = self
             .vbank
             .get(vn)
@@ -3336,7 +3295,6 @@ impl Funcdata {
                 "Trying to build dynamic symbol on locked varnode",
             ));
         }
-        // if (!isHighOn()) throw RecovError(...)
         if !self.is_high_on() {
             return Err(KunaError::lowlevel(
                 "Cannot create dynamic symbols until decompile has completed",
@@ -3344,13 +3302,12 @@ impl Funcdata {
         }
         let is_constant = v.is_constant();
         let value = v.get_offset();
-        // HighVariable *high = vn->getHigh();
         let high = self
             .vbank
             .get(vn)
             .and_then(|v| v.get_high())
             .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: varnode has no high"))?;
-        // if (high->getSymbol() != 0) return;  // Symbol already exists
+        // Symbol already exists.
         if self
             .high_bank
             .get(high)
@@ -3359,10 +3316,8 @@ impl Funcdata {
         {
             return Ok(());
         }
-        // DynamicHash dhash; dhash.uniqueHash(vn,this);
         let (hash, addr) =
             crate::dynamic::dynamic_unique_hash(vn, maxduplicates, self)?;
-        // if (dhash.getHash() == 0) throw RecovError("Unable to find unique hash ...")
         if hash == 0 {
             return Err(KunaError::lowlevel("Unable to find unique hash for varnode"));
         }
@@ -3374,8 +3329,6 @@ impl Funcdata {
                 "kuna rust port: build_dynamic_symbol non-constant arm needs the W4 Varnode-SymbolEntry link",
             ));
         }
-        // sym = localmap->addEquateSymbol("",Symbol::force_hex,vn->getOffset(),
-        //                                 dhash.getAddress(),dhash.getHash());
         let localmap = self
             .localmap
             .as_mut()
@@ -3388,7 +3341,6 @@ impl Funcdata {
             hash,
             base1_unknown,
         )?;
-        // vn->setSymbolEntry(sym->getFirstWholeMap());  -> high->getSymbol() == sym
         if let Some(h) = self.high_bank.get_mut(high) {
             h.set_kuna_equate_symbol(sym);
         }
@@ -3474,7 +3426,6 @@ impl Funcdata {
             let sym = localmap.database().symbol(sym_id);
             (sym.get_category(), sym.get_name().to_string())
         };
-        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(entry,dhash);
         if category == symbol_category::UNION_FACET {
             return self.apply_union_facet(entry);
         }
@@ -3485,12 +3436,11 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // if (vn->getSymbolEntry() != 0) return false; — idempotent (the Varnode is
-        // already bound to a dynamic SymbolEntry; C++ checks `vn->getSymbolEntry()`,
-        // `funcdata_varnode.cc:1348`).  The binding is parked on the Varnode (not the
-        // HighVariable, which may not exist yet at this early mapping or be rebuilt
-        // each heritage pass), so the re-run of this `rule_repeatapply` action does
-        // not re-report a change and loop forever.
+        // Idempotent: the Varnode is already bound to a dynamic SymbolEntry (C++
+        // checks `vn->getSymbolEntry()`, `funcdata_varnode.cc:1348`).  The binding is
+        // parked on the Varnode (not the HighVariable, which may not exist yet at
+        // this early mapping or be rebuilt each heritage pass), so the re-run of this
+        // `rule_repeatapply` action does not re-report a change and loop forever.
         if self.vn_high_has_dynamic_binding(vn) {
             return Ok(false);
         }
@@ -3515,7 +3465,6 @@ impl Funcdata {
             }
             return Ok(true);
         }
-        // else if (entry->getSize() == vn->getSize()) { if (vn->setSymbolProperties(entry)) return true; }
         // C++ `Varnode::setSymbolProperties` (varnode.cc:429) updates the Varnode's
         // type and (only when the Symbol is type-locked) binds `mapentry`; in either
         // case the matched Varnode picks up the entry's flags (incl. `Varnode::mapped`
@@ -3551,7 +3500,7 @@ impl Funcdata {
     /// find the Varnode a dynamic SymbolEntry maps to (via [`DynamicHash`]) and
     /// attach the Symbol's NAME to it.  Returns `true` if a Varnode was adjusted.
     ///
-    /// SEAM(W4): the merged tree has no Varnode→SymbolEntry retype link, so the
+    /// STUB(W4): the merged tree has no Varnode→SymbolEntry retype link, so the
     /// `vn->setSymbolEntry(entry)` effect is expressed as the kuna stand-in: the
     /// matched HighVariable's `kuna_name` is set to the Symbol's name (read by the
     /// printer as `getSymbol()->getDisplayName()`), and the matched Varnode is
@@ -3566,9 +3515,9 @@ impl Funcdata {
         entry: &crate::database::SymbolEntry,
     ) -> KunaResult<bool> {
         use crate::database::symbol_category;
-        // Symbol *sym = entry->getSymbol(); — read the symbol's identity, category,
-        // name (for the warning), and size up front (snapshot so the `&mut self`
-        // DynamicHash search below does not alias the scope borrow).
+        // Read the symbol's identity, category, name (for the warning), and size up
+        // front (snapshot so the `&mut self` DynamicHash search below does not alias
+        // the scope borrow).
         let sym_id = entry.symbol;
         let (category, sym_name, sym_name_undefined, sym_type_locked, sym_type) = {
             let localmap = match self.localmap.as_ref() {
@@ -3584,11 +3533,9 @@ impl Funcdata {
                 sym.dtype.clone(),
             )
         };
-        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(entry,dhash);
         if category == symbol_category::UNION_FACET {
             return self.apply_union_facet(entry);
         }
-        // Varnode *vn = dhash.findVarnode(this, entry->getFirstUseAddress(), entry->getHash());
         let first_use = entry.get_first_use_address();
         let hash = entry.get_hash();
         let mut dhash = crate::dynamic::DynamicHash::new();
@@ -3596,13 +3543,11 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // if (vn->getSymbolEntry() != 0) return false; // Symbol already applied.
-        // Stand-in: the matched high already carries a name OR an equate binding
-        // (idempotent re-run; see vn_high_has_dynamic_binding).
+        // Symbol already applied.  Stand-in: the matched high already carries a name
+        // OR an equate binding (idempotent re-run; see vn_high_has_dynamic_binding).
         if self.vn_high_has_dynamic_binding(vn) {
             return Ok(false);
         }
-        // if (sym->getCategory() == Symbol::equate) { vn->setSymbolEntry(entry); return true; }
         if category == symbol_category::EQUATE {
             // C++ `setSymbolEntry` marks the Varnode `Varnode::mapped` (varnode.cc:448)
             // and binds the entry; mirror both here as in the early arm
@@ -3617,7 +3562,6 @@ impl Funcdata {
             }
             return Ok(true);
         }
-        // if (vn->getSize() != entry->getSize()) { warningHeader(...); return false; }
         let vn_size = self.vbank.get(vn).map(|v| v.get_size()).unwrap_or(0);
         if vn_size != entry.get_size() {
             let mut s = String::from("Unable to use symbol ");
@@ -3629,18 +3573,16 @@ impl Funcdata {
             self.warning_header(&s);
             return Ok(false);
         }
-        // if (vn->isImplied()) { ... use the explicit varnode on the other side of a CAST ... }
+        // When vn is implied, use the explicit varnode on the other side of a CAST.
         let mut vn = vn;
         if self.vbank.get(vn).map(|v| v.is_implied()).unwrap_or(false) {
             let mut newvn: Option<VarnodeId> = None;
-            // if (vn->isWritten() && def->code()==CPUI_CAST) newvn = def->getIn(0)
             let v = self.vbank.get(vn);
             let written = v.map(|v| v.is_written()).unwrap_or(false);
             let def = v.and_then(|v| v.get_def());
             if written && def.and_then(|d| self.obank.get(d)).map(|o| o.code()) == Some(OpCode::CPUI_CAST) {
                 newvn = def.and_then(|d| self.obank.get(d)).and_then(|o| o.get_in(0));
             } else {
-                // castop = vn->loneDescend(); if (castop->code()==CPUI_CAST) newvn = castop->getOut()
                 let mut it = self.vbank.get(vn).map(|v| v.descend_iter().collect::<Vec<_>>()).unwrap_or_default();
                 if it.len() == 1 {
                     let castop = it.pop().unwrap();
@@ -3649,7 +3591,6 @@ impl Funcdata {
                     }
                 }
             }
-            // if (newvn != 0 && newvn->isExplicit()) vn = newvn;
             if let Some(nv) = newvn {
                 if self.vbank.get(nv).map(|v| v.is_explicit()).unwrap_or(false) {
                     vn = nv;
@@ -3657,9 +3598,9 @@ impl Funcdata {
             }
         }
 
-        // vn->setSymbolEntry(entry);  -> bind the Symbol name to the matched high,
-        // and mark the Varnode `mapped` so ActionMarkExplicit forces it explicit.
-        // The binding goes on the Varnode too (C++ `setSymbolEntry`) for idempotency.
+        // Bind the Symbol name to the matched high, and mark the Varnode `mapped` so
+        // ActionMarkExplicit forces it explicit.  The binding goes on the Varnode too
+        // (C++ `setSymbolEntry`) for idempotency.
         if let Some(v) = self.vbank.get_mut(vn) {
             v.set_kuna_symbol_entry(sym_id);
         }
@@ -3789,7 +3730,7 @@ mod tests {
     use kuna_num::opcodes::OpCode;
 
     use crate::dtype::{type_metatype, Datatype};
-    use crate::seams::{Architecture, TypeOp};
+    use crate::context::{ArchContext, TypeOp};
 
     /// Build an AddrSpaceManager with constant/unique/ram spaces, mirroring the
     /// op.rs/block.rs test harness.
@@ -3818,7 +3759,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

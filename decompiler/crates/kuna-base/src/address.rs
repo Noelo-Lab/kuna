@@ -466,9 +466,7 @@ fn decode_varnode_attributes(
             space = Some(spc);
             break;
         } else if attrib_id == ATTRIB_NAME {
-            // C++: trans = decoder.getAddrSpaceManager()->getDefaultCodeSpace()
-            //              ->getTrans();
-            //      *this = trans->getRegister(decoder.readString());
+            // C++: getDefaultCodeSpace()->getTrans()->getRegister(readString())
             let lookup = decoder
                 .get_addr_space_manager()
                 .register_lookup()
@@ -727,8 +725,7 @@ impl Range {
         manage: &AddrSpaceManager,
     ) -> KunaResult<Range> {
         if properties.is_register {
-            // C++: trans = manage->getDefaultCodeSpace()->getTrans();
-            //      point = trans->getRegister(properties.spaceName);
+            // C++: getDefaultCodeSpace()->getTrans()->getRegister(spaceName)
             let lookup = manage
                 .register_lookup()
                 .cloned()
@@ -878,9 +875,7 @@ impl Range {
                 last = decoder.read_unsigned_integer()?;
                 seen_last = true;
             } else if attrib_id == ATTRIB_NAME {
-                // C++: trans = decoder.getAddrSpaceManager()
-                //              ->getDefaultCodeSpace()->getTrans();
-                //      point = trans->getRegister(decoder.readString());
+                // C++: getDefaultCodeSpace()->getTrans()->getRegister(readString())
                 let lookup = decoder
                     .get_addr_space_manager()
                     .register_lookup()
@@ -1189,7 +1184,6 @@ impl RangeList {
         if first_range.last < offset {
             return sizeres;
         }
-        // do { ... } while(iter != tree.end()) chain
         for r in self.tree.range((Bound::Included(first_range), Bound::Unbounded)) {
             if !Rc::ptr_eq(&r.spc, spc) {
                 break;

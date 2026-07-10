@@ -62,12 +62,13 @@ Join us as we push decompilers into their next stage of evolution.
 kuna is organized around an explicit **stage model** (a P0 knowledge plane + S1–S9 with a
 Band-B fixed point and typed feedback edges), not a linear pipeline:
 
-- `docs/stages.md` — the stage model at a glance; `docs/stage-model.md` — the full normative
+- `docs/phases.md` — the stage model at a glance; `docs/history/stage-model.md` — the full normative
   model (sub-stage catalogs, feedback edges, code anchors).
-- `docs/stage-mapping.md` — every source file mapped to a stage, anchored to the real pass
+- `docs/history/stage-mapping.md` — every source file mapped to a stage, anchored to the real pass
   pipeline (`universalAction`) and the runtime registry (queryable via the `stage list/map/
   catalog` console commands).
-- `docs/assertions.md` — the LLM-settable sub-stage assertions; `docs/divergences.md` records
+- `docs/options.md` — the tiered option catalog (transforms = the LLM control surface,
+  with a generated symptom index); `docs/divergences.md` records
   kuna's intentional default changes.
 
 ### The stage-model control surface
@@ -81,7 +82,7 @@ $KUNA decompile ./a.out main --option compareform canonical
 $KUNA decompile ./sparc.elf main --option returnpair single
 ```
 
-`catalog --markdown` regenerates `docs/assertions.md`; `catalog --check` fails on
+`catalog --markdown` regenerates `docs/options.md`; `catalog --check` fails on
 catalog/registration drift (CI).
 
 

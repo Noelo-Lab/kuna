@@ -1697,7 +1697,6 @@ pub fn register_instructions(
     inst: &mut Vec<Option<Rc<dyn OpBehavior>>>,
     trans: &Rc<dyn FloatFormatProvider>,
 ) {
-    // inst.insert(inst.end(), CPUI_MAX, (OpBehavior *)0)
     for _ in 0..OpCode::CPUI_MAX as usize {
         inst.push(None);
     }

@@ -3,7 +3,7 @@
 
 Two views:
   1. PORTED FEATURES  -- the angr passes/features implemented as kuna `--option`s.
-     AUTO-DETECTED from `stages.toml` provenance (every shipped feature records
+     AUTO-DETECTED from `phases.toml` provenance (every shipped feature records
      `source_decompiler = "angr"` + `inspiration` = the angr test/pass it came from,
      per the pipeline's standing rules). So the "which have we completed" list
      maintains ITSELF -- no hand-edited manifest to keep in sync. The only thing
@@ -25,7 +25,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STAGES = os.path.join(ROOT, "decompiler", "crates", "kuna-decomp", "stages.toml")
+STAGES = os.path.join(ROOT, "decompiler", "crates", "kuna-decomp", "phases.toml")
 OPPS = os.path.join(ROOT, "docs", "pipeline", "opportunities.json")
 MATRIX = os.path.join(ROOT, "docs", "pipeline", "matrix.md")
 
@@ -37,7 +37,7 @@ MATRIX = os.path.join(ROOT, "docs", "pipeline", "matrix.md")
 #   loader = input-format support (unblocks a class of binaries)
 #   polish = presentation / naming / cosmetic cleanup
 # pr = the PR that landed it (None for pre-this-effort ports).
-# Edit this when you land a new angr port (the rest is auto from stages.toml).
+# Edit this when you land a new angr port (the rest is auto from phases.toml).
 OUTCOMES = {
     "relocobjects":         ("loader", 37,   "ET_REL .o loader (CLE) — unblocked the .o corpus"),
     "i386_pie_plt":         ("win",    51,   "i386 PIE PLT import names"),
@@ -78,7 +78,7 @@ KIND_ORDER = ["win", "loader", "infra", "polish", "noop", "?"]
 
 
 def parse_angr_settables():
-    """Auto-detect ported angr features from stages.toml provenance."""
+    """Auto-detect ported angr features from phases.toml provenance."""
     if not os.path.exists(STAGES):
         return []
     txt = open(STAGES).read()
@@ -151,7 +151,7 @@ def main(argv=None):
     print("  angr  ->  kuna     PORT STATUS")
     print("=" * 74)
     print()
-    print("  PORTED ANGR FEATURES: %d   (auto-detected from stages.toml provenance)" % len(ported))
+    print("  PORTED ANGR FEATURES: %d   (auto-detected from phases.toml provenance)" % len(ported))
     print()
     for k in KIND_ORDER:
         items = sorted(by_kind.get(k, []), key=lambda x: x["option"])

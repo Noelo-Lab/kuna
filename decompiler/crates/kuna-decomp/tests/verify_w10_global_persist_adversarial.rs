@@ -1,7 +1,7 @@
 //! INDEPENDENT VERIFIER adversarial tests — item: w10-global-persist (Round 1).
 //!
 //! These tests exercise the faithfulness-fragile spots of the global-scope
-//! `queryProperties` snapshot ([`kuna_decomp::seams::GlobalQuery`], the wire for
+//! `queryProperties` snapshot ([`kuna_decomp::context::GlobalQuery`], the wire for
 //! `localmap->queryProperties`'s reach into the global scope), transcribed from
 //! `Scope::queryProperties`/`ScopeInternal::findContainer`/`SymbolEntry::inUse`
 //! (`database.cc:1268-1286`, `2278-2310`, `115-121`):
@@ -26,7 +26,7 @@ use std::rc::Rc;
 use kuna_base::address::{Address, RangeList};
 use kuna_base::partmap::PartMap;
 use kuna_base::space::{spacetype, AddrSpace, ConstantSpace};
-use kuna_decomp::seams::{GlobalEntry, GlobalQuery};
+use kuna_decomp::context::{GlobalEntry, GlobalQuery};
 use kuna_decomp::varnode::varnode_flags;
 
 /// A plain heritaged processor ("ram") space at a chosen index, the kind a

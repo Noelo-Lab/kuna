@@ -2,7 +2,7 @@
 
 kuna-owned datatests derived from **real, open decompiler issues** (sourced from the
 PHADE issue dataset), each demonstrating that the issue is fixable through the kuna
-stage model (`docs/stages.md`, `docs/stage-model.md`): a named sub-stage decision point,
+stage model (`docs/phases.md`, `docs/history/stage-model.md`): a named sub-stage decision point,
 controlled by a durable P0 assertion, instead of a hardcoded heuristic.
 
 These run with the same upstream harness as `tests/datatests/` but from a
@@ -107,7 +107,7 @@ observability on the switchmulti multistage restart), `kuna-pipeline-quality.xml
 RegionIdentifier port over the REAL `bblocks` CFG — `build_from_block_graph`, the
 W7 block-graph adapter closed in regionstructure Inc 0, including the per-block
 `endsWithBranchindOrCbranch` `lastOp` probe — on a loop+diamond CFG;
-`docs/regions.md`), `kuna-listing-flag.xml`
+`docs/history/regions.md`), `kuna-listing-flag.xml`
 (the Listing/xref disassembly tier flag `option listing on|off`, default-off: parses,
 round-trips, and is inert on the XML path — PR1 of the Listing/xref tier,
-`docs/listing-tier-design.md`).
+`docs/history/listing-tier-design.md`).

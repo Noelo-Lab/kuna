@@ -6,7 +6,7 @@
 //!   kuna decompile <binary> <func> [--addr] [--option NAME VALUE]... [--kassert ARGS]...
 //!   kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F]
 //!             [--save-baseline F] [--json] [--binary P] [--sleighpath D]
-//!   kuna catalog [--json|--markdown|--check] [--option NAME]
+//!   kuna catalog [--json|--markdown|--check] [--option NAME] [--tier T]
 //!   kuna specs [-a <dir>] [<slaspec>...] [--diff]
 //! ```
 //!
@@ -71,7 +71,7 @@ fn usage() {
          kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--option N V]...\n\
          kuna functions <binary> [--json]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
-         kuna catalog [--json|--markdown|--check] [--option NAME]\n\
+         kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
          kuna --version"
@@ -259,6 +259,7 @@ fn cmd_test(argv: &[String]) -> i32 {
 
 fn cmd_catalog(argv: &[String]) -> i32 {
     let mut option: Option<String> = None;
+    let mut tier: Option<String> = None;
     let mut json = false;
     let mut markdown = false;
     let mut check = false;
@@ -270,6 +271,7 @@ fn cmd_catalog(argv: &[String]) -> i32 {
         let a = argv[i].as_str();
         match a {
             "--option" => option = take_value(argv, &mut i, "--option"),
+            "--tier" => tier = take_value(argv, &mut i, "--tier"),
             "--json" => json = true,
             "--markdown" => markdown = true,
             "--check" => check = true,
@@ -309,7 +311,7 @@ fn cmd_catalog(argv: &[String]) -> i32 {
     } else if markdown {
         catalog::cmd_markdown(option.as_deref())
     } else {
-        catalog::cmd_text(option.as_deref())
+        catalog::cmd_text(option.as_deref(), tier.as_deref())
     }
 }
 

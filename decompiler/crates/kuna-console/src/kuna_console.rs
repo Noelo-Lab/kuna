@@ -12,16 +12,16 @@
 //!
 //! # The commands and what is expressible today
 //!
-//! The kuna stage model is pure static data ([`kuna_decomp::kuna_stages`], the
+//! The kuna stage model is pure static data ([`kuna_decomp::kuna_phases`], the
 //! W4 registry), so the **registry-only** commands port in full, byte-for-byte:
 //!
-//! - [`IfcKunaStageList`] — `stage list`: the stages, Band B membership, and the
+//! - [`IfcKunaPhaseList`] — `phase list`: the stages, Band B membership, and the
 //!   sub-stage decision catalog (with `LATENT` markers).
-//! - [`IfcKunaStageMap`] — `stage map [<name>]`: resolve an action/rule group,
+//! - [`IfcKunaPhaseMap`] — `phase map [<name>]`: resolve an action/rule group,
 //!   console surface, or sub-stage to its stage (or dump the full tables).
-//! - [`IfcKunaStageCatalog`] — `stage catalog [<option>]`: emit the
+//! - [`IfcKunaPhaseCatalog`] — `phase catalog [<option>]`: emit the
 //!   LLM-settable assertion catalog as JSON, calling the **W4 byte-compatible
-//!   emitter** ([`kuna_decomp::kuna_stages::emit_catalog_json`]). With a program
+//!   emitter** ([`kuna_decomp::kuna_phases::emit_catalog_json`]). With a program
 //!   loaded the live `current` field is joined per option from the
 //!   [`Architecture`] flags ([`kuna_live_value`], the port of
 //!   `kuna_console.cc kunaLiveValue`). `tests/stages/kuna-catalog.xml`
@@ -37,15 +37,15 @@
 //! The remaining kuna commands read live decompiler state through accessors the
 //! merged `rust-port` tree does not yet expose at the `Architecture` level (the
 //! same integration gap `ifacedecomp.rs` documents): the print language
-//! (`Architecture::print`, for `stage status`'s `arraynotation` line), the
-//! restart side-table (`Architecture`-owned `RestartLog`, `SEAM(W5)`), the
+//! (`Architecture::print`, for `phase status`'s `arraynotation` line), the
+//! restart side-table (`Architecture`-owned `RestartLog`, `STUB(W5)`), the
 //! reduced-pipeline decompile drive (`allacts.getCurrent()->reset/perform`,
 //! `clearAnalysis`), and `FlowBlock::nextFlowAfter` (for `BlockGoto::gotoPrints`
 //! in the `quality` metric). Each of these commands ports faithfully every part
 //! that *is* expressible — its `dcp->conf`/`dcp->fd` null guards with exact text
 //! — then routes the engine read through [`engine_unavailable`]:
 //!
-//! - [`IfcKunaStageStatus`] — `stage status`.
+//! - [`IfcKunaPhaseStatus`] — `phase status`.
 //! - [`IfcKunaRestarts`] — `restarts`.
 //! - [`IfcKunaPipeline`] — `pipeline [list|<variant>]` (the `list` sub-form is
 //!   fully expressible and ported; running a variant needs the drive).
@@ -53,7 +53,7 @@
 //!
 //! The S7 region commands (`region tree`/`blocks`/`walk`, C++ `IfcKunaRegion*`
 //! from `kuna_regionid.cc`) register through this capability in C++; their
-//! `buildFromBlockGraph` block-graph adapter is explicitly `SEAM(W7)` in the
+//! `buildFromBlockGraph` block-graph adapter is explicitly `STUB(W7)` in the
 //! ported `kuna_regionid` module, so they are registered with a placeholder that
 //! routes through [`engine_unavailable`] (see [`register_kuna_commands`]).
 //!
@@ -70,10 +70,10 @@ use crate::interface::{
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::kuna_assert::{validate_assertion, AssertLog, Dispatch, KunaAssertion};
 use kuna_decomp::kuna_regionid::KunaRegionIdentifier;
-use kuna_decomp::kuna_stages::{
+use kuna_decomp::kuna_phases::{
     emit_catalog_json, emit_catalog_json_one, kuna_group_by_index, kuna_num_groups,
-    kuna_num_substages, kuna_num_surfaces, kuna_substage_by_index, kuna_surface_by_index,
-    lookup_group, lookup_settable, lookup_substage, lookup_surface, KunaStage, KunaStrength,
+    kuna_num_subphases, kuna_num_surfaces, kuna_subphase_by_index, kuna_surface_by_index,
+    lookup_group, lookup_settable, lookup_subphase, lookup_surface, KunaPhase, KunaStrength,
 };
 use std::cell::RefCell;
 
@@ -82,19 +82,19 @@ use std::cell::RefCell;
 const PIPELINE_VARIANTS: [&str; 6] =
     ["decompile", "jumptable", "normalize", "paramid", "register", "firstpass"];
 
-/// The stages in registry order P0,S1..S9 — the `for(i=0;i<=9;++i)(KunaStage)i`
-/// loop of `IfcKunaStageList::execute`.
-const STAGES_IN_ORDER: [KunaStage; 10] = [
-    KunaStage::P0,
-    KunaStage::S1,
-    KunaStage::S2,
-    KunaStage::S3,
-    KunaStage::S4,
-    KunaStage::S5,
-    KunaStage::S6,
-    KunaStage::S7,
-    KunaStage::S8,
-    KunaStage::S9,
+/// The stages in registry order P0,S1..S9 — the `for(i=0;i<=9;++i)(KunaPhase)i`
+/// loop of `IfcKunaPhaseList::execute`.
+const STAGES_IN_ORDER: [KunaPhase; 10] = [
+    KunaPhase::P0,
+    KunaPhase::P1,
+    KunaPhase::P2,
+    KunaPhase::P3,
+    KunaPhase::P4,
+    KunaPhase::P5,
+    KunaPhase::P6,
+    KunaPhase::P7,
+    KunaPhase::P8,
+    KunaPhase::P9,
 ];
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ fn dcp_ref(status: &IfaceStatus) -> Option<&IfaceDecompData> {
 fn engine_unavailable(entry: &str) -> IfaceError {
     IfaceError::execution(format!(
         "engine integration not yet ported: {entry} (Architecture print/loader/context + the \
-         decompile drive and SEAM(W5/W7/W8) side-tables are a later W-item)"
+         decompile drive and STUB(W5/W7/W8) side-tables are a later W-item)"
     ))
 }
 
@@ -145,7 +145,7 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 /// `None` if it cannot be determined — port of `kuna_console.cc kunaLiveValue`.
 ///
 /// The C++ `arraynotation` reader dereferences `conf->print` (the owned
-/// `PrintC`); that accessor is `SEAM(W8)` in the merged tree (no `print` field
+/// `PrintC`); that accessor is `STUB(W8)` in the merged tree (no `print` field
 /// on [`Architecture`]), so `arraynotation` returns `None` here — exactly the
 /// `kunaLiveValue` `""` path that suppresses the `current` field. Every other
 /// option reads a flag/string that [`Architecture`] does expose, so the
@@ -211,29 +211,29 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         // state (the live spec-selection gate is the load-time env var, but the
         // catalog `current` mirrors the `option macho-arm64e on|off` request).
         "macho-arm64e" => on_off(conf.macho_arm64e),
-        // C++: return ""; -> no current field.
+        // No current field (C++ returns "").
         _ => return None,
     })
 }
 
 // ---------------------------------------------------------------------------
-// `stage list` — IfcKunaStageList
+// `phase list` — IfcKunaPhaseList
 // ---------------------------------------------------------------------------
 
-/// (kuna) `stage list`: print the stage model and sub-stage catalog
-/// (C++ `IfcKunaStageList`). Pure static data; requires no program.
-pub struct IfcKunaStageList;
+/// (kuna) `phase list`: print the stage model and sub-stage catalog
+/// (C++ `IfcKunaPhaseList`). Pure static data; requires no program.
+pub struct IfcKunaPhaseList;
 
-impl IfaceCommandAction for IfcKunaStageList {
+impl IfaceCommandAction for IfcKunaPhaseList {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let mut os = String::new();
-        os.push_str("Stages (kuna stage model, docs/stages.md / docs/stage-model.md):\n");
+        os.push_str("Phases (kuna phase model, docs/phases.md):\n");
         for stage in STAGES_IN_ORDER {
             os.push_str("  ");
             os.push_str(stage.code());
             os.push_str("  ");
             os.push_str(stage.name());
-            if stage == KunaStage::P0 {
+            if stage == KunaPhase::P0 {
                 os.push_str("  [orthogonal plane]");
             } else if stage.in_band_b() {
                 os.push_str("  [Band B]");
@@ -244,11 +244,11 @@ impl IfaceCommandAction for IfcKunaStageList {
             os.push('\n');
         }
         os.push('\n');
-        os.push_str("Sub-stages (named decision points; LATENT = no override surface today):\n");
-        for i in 0..kuna_num_substages() {
-            let sub = kuna_substage_by_index(i);
+        os.push_str("Sub-phases (named decision points; LATENT = no override surface today):\n");
+        for i in 0..kuna_num_subphases() {
+            let sub = kuna_subphase_by_index(i);
             os.push_str("  [");
-            os.push_str(sub.stage.code());
+            os.push_str(sub.phase.code());
             os.push_str("] ");
             os.push_str(sub.name);
             if sub.latent {
@@ -281,18 +281,16 @@ impl IfaceCommandAction for IfcKunaStageList {
 }
 
 // ---------------------------------------------------------------------------
-// `stage map [<name>]` — IfcKunaStageMap
+// `phase map [<name>]` — IfcKunaPhaseMap
 // ---------------------------------------------------------------------------
 
-/// (kuna) `stage map [<name>]`: resolve a group/surface/sub-stage to its stage
-/// (C++ `IfcKunaStageMap`). With no argument, dump the full tables.
-pub struct IfcKunaStageMap;
+/// (kuna) `phase map [<name>]`: resolve a group/surface/sub-stage to its stage
+/// (C++ `IfcKunaPhaseMap`). With no argument, dump the full tables.
+pub struct IfcKunaPhaseMap;
 
-impl IfaceCommandAction for IfcKunaStageMap {
+impl IfaceCommandAction for IfcKunaPhaseMap {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++ builds a space-joined token from the rest of the line:
-        //   while(!s.eof()) { s >> word >> ws; if(word.empty()) break;
-        //     if(!token.empty()) token += ' '; token += word; }
+        // C++ builds a space-joined token from the rest of the line.
         let mut token = String::new();
         s.skip_ws();
         while !s.eof() {
@@ -310,16 +308,16 @@ impl IfaceCommandAction for IfcKunaStageMap {
         let mut os = String::new();
         if token.is_empty() {
             // Dump everything.
-            os.push_str("Action/rule groups -> stage (dominant artifact; see stage-model.md s15 for straddlers):\n");
+            os.push_str("Action/rule groups -> phase (dominant artifact; see docs/history/stage-model.md s15 for straddlers):\n");
             for i in 0..kuna_num_groups() {
                 let entry = kuna_group_by_index(i);
                 os.push_str("  ");
-                os.push_str(entry.stage.code());
+                os.push_str(entry.phase.code());
                 os.push_str("  ");
                 os.push_str(entry.group);
-                if !entry.substage.is_empty() {
+                if !entry.subphase.is_empty() {
                     os.push_str("  (");
-                    os.push_str(entry.substage);
+                    os.push_str(entry.subphase);
                     os.push(')');
                 }
                 os.push('\n');
@@ -330,16 +328,16 @@ impl IfaceCommandAction for IfcKunaStageMap {
                 }
             }
             os.push('\n');
-            os.push_str("Console surfaces -> stage:\n");
+            os.push_str("Console surfaces -> phase:\n");
             for i in 0..kuna_num_surfaces() {
                 let entry = kuna_surface_by_index(i);
                 os.push_str("  ");
-                os.push_str(entry.stage.code());
+                os.push_str(entry.phase.code());
                 os.push_str("  ");
                 os.push_str(entry.surface);
-                if !entry.substage.is_empty() {
+                if !entry.subphase.is_empty() {
                     os.push_str("  (");
-                    os.push_str(entry.substage);
+                    os.push_str(entry.subphase);
                     os.push(')');
                 }
                 if !entry.note.is_empty() {
@@ -358,13 +356,13 @@ impl IfaceCommandAction for IfcKunaStageMap {
             os.push_str("group ");
             os.push_str(grp.group);
             os.push_str(" -> ");
-            os.push_str(grp.stage.code());
+            os.push_str(grp.phase.code());
             os.push_str(" (");
-            os.push_str(grp.stage.name());
+            os.push_str(grp.phase.name());
             os.push(')');
-            if !grp.substage.is_empty() {
-                os.push_str(" sub-stage ");
-                os.push_str(grp.substage);
+            if !grp.subphase.is_empty() {
+                os.push_str(" sub-phase ");
+                os.push_str(grp.subphase);
             }
             os.push('\n');
             if !grp.note.is_empty() {
@@ -378,13 +376,13 @@ impl IfaceCommandAction for IfcKunaStageMap {
             os.push_str("surface \"");
             os.push_str(surf.surface);
             os.push_str("\" -> ");
-            os.push_str(surf.stage.code());
+            os.push_str(surf.phase.code());
             os.push_str(" (");
-            os.push_str(surf.stage.name());
+            os.push_str(surf.phase.name());
             os.push(')');
-            if !surf.substage.is_empty() {
-                os.push_str(" sub-stage ");
-                os.push_str(surf.substage);
+            if !surf.subphase.is_empty() {
+                os.push_str(" sub-phase ");
+                os.push_str(surf.subphase);
             }
             os.push('\n');
             if !surf.note.is_empty() {
@@ -393,14 +391,14 @@ impl IfaceCommandAction for IfcKunaStageMap {
                 os.push('\n');
             }
         }
-        if let Some(sub) = lookup_substage(&token) {
+        if let Some(sub) = lookup_subphase(&token) {
             found = true;
-            os.push_str("sub-stage ");
+            os.push_str("sub-phase ");
             os.push_str(sub.name);
             os.push_str(" -> ");
-            os.push_str(sub.stage.code());
+            os.push_str(sub.phase.code());
             os.push_str(" (");
-            os.push_str(sub.stage.name());
+            os.push_str(sub.phase.name());
             os.push(')');
             if sub.latent {
                 os.push_str("  LATENT");
@@ -420,7 +418,7 @@ impl IfaceCommandAction for IfcKunaStageMap {
         }
         if !found {
             return Err(IfaceError::execution(format!(
-                "Unknown group/surface/sub-stage: {token}"
+                "Unknown group/surface/sub-phase: {token}"
             )));
         }
         status.file_out(&os);
@@ -432,32 +430,29 @@ impl IfaceCommandAction for IfcKunaStageMap {
 }
 
 // ---------------------------------------------------------------------------
-// `stage status` — IfcKunaStageStatus
+// `phase status` — IfcKunaPhaseStatus
 // ---------------------------------------------------------------------------
 
-/// (kuna) `stage status`: report the active pipeline variant and the state of
-/// kuna sub-stage options (C++ `IfcKunaStageStatus`).
+/// (kuna) `phase status`: report the active pipeline variant and the state of
+/// kuna sub-stage options (C++ `IfcKunaPhaseStatus`).
 ///
 /// The first two lines (pipeline variant, compareform) read accessors the
 /// merged tree exposes; the third (`arraynotation`) dereferences `conf->print`
-/// (`SEAM(W8)`), which the architecture does not expose. Because the exact
+/// (`STUB(W8)`), which the architecture does not expose. Because the exact
 /// three-line output cannot be reproduced byte-for-byte today, the engine read
 /// is routed through [`engine_unavailable`] after the `No load image present`
 /// guard, exactly as the merged `ifacedecomp` commands do for unported `print`
 /// accessors.
-pub struct IfcKunaStageStatus;
+pub struct IfcKunaPhaseStatus;
 
-impl IfaceCommandAction for IfcKunaStageStatus {
+impl IfaceCommandAction for IfcKunaPhaseStatus {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
         let conf = match dcp.conf.as_ref() {
             Some(c) => c.arch(),
             None => return Err(IfaceError::execution("No load image present")),
         };
-        // C++ IfcKunaStageStatus::execute:
-        //   *optr << "pipeline variant: " << allacts.getCurrentName() << endl;
-        //   *optr << "compareform: " << (present_lessequal ? "original" : "canonical") << endl;
-        //   *optr << "arraynotation: " << (print->getArrayNotation() ? "on" : "off") << endl;
+        // C++ IfcKunaPhaseStatus::execute.
         let mut os = String::new();
         os.push_str("pipeline variant: ");
         os.push_str(conf.allacts.get_current_name());
@@ -480,20 +475,20 @@ impl IfaceCommandAction for IfcKunaStageStatus {
 }
 
 // ---------------------------------------------------------------------------
-// `stage catalog [<option>]` — IfcKunaStageCatalog
+// `phase catalog [<option>]` — IfcKunaPhaseCatalog
 // ---------------------------------------------------------------------------
 
-/// (kuna) `stage catalog [<option>]`: emit the LLM-settable assertion catalog as
-/// JSON (C++ `IfcKunaStageCatalog`).
+/// (kuna) `phase catalog [<option>]`: emit the LLM-settable assertion catalog as
+/// JSON (C++ `IfcKunaPhaseCatalog`).
 ///
 /// Calls the W4 byte-compatible emitter
-/// ([`kuna_decomp::kuna_stages::emit_catalog_json`] /
+/// ([`kuna_decomp::kuna_phases::emit_catalog_json`] /
 /// [`emit_catalog_json_one`]); the live `current` field is joined per option
 /// from the loaded [`Architecture`] via [`kuna_live_value`] (C++
 /// `kunaLiveValue`). Works with no program loaded (the static doc form).
-pub struct IfcKunaStageCatalog;
+pub struct IfcKunaPhaseCatalog;
 
-impl IfaceCommandAction for IfcKunaStageCatalog {
+impl IfaceCommandAction for IfcKunaPhaseCatalog {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         // C++: s >> ws >> option;
         s.skip_ws();
@@ -503,17 +498,17 @@ impl IfaceCommandAction for IfcKunaStageCatalog {
         let conf = dcp.conf.as_ref();
 
         let out = if !option.is_empty() {
-            // Single-option form: `stage catalog <option>`.
+            // Single-option form: `phase catalog <option>`.
             if lookup_settable(&option).is_none() {
                 return Err(IfaceError::execution(format!(
-                    "Unknown settable option: {option} (try `stage catalog`)"
+                    "Unknown settable option: {option} (try `phase catalog`)"
                 )));
             }
             let live = conf.and_then(|c| kuna_live_value(c.arch(), &option));
             // lookup_settable just succeeded, so this is Some.
             emit_catalog_json_one(&option, live).unwrap_or_default()
         } else {
-            // Full form: `stage catalog`. The emitter calls the closure per
+            // Full form: `phase catalog`. The emitter calls the closure per
             // option (in registry order), matching the C++ per-row kunaLiveValue
             // join. The closure returns &'static str (the registry value table).
             match conf {
@@ -533,7 +528,7 @@ impl IfaceCommandAction for IfcKunaStageCatalog {
 // `kassert ...` — IfcKunaAssert (class lives in kuna_assert.cc; registered here)
 // ---------------------------------------------------------------------------
 
-/// (kuna) `kassert <stage> <substage> <args...> [hard|hint]` / `kassert list`:
+/// (kuna) `kassert <phase> <subphase> <args...> [hard|hint]` / `kassert list`:
 /// write a typed assertion through an existing store (C++ `IfcKunaAssert`,
 /// `kuna_assert.cc`; registered by the kuna capability in `kuna_console.cc`).
 ///
@@ -569,7 +564,6 @@ impl Default for IfcKunaAssert {
 
 impl IfaceCommandAction for IfcKunaAssert {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++: if (dcp->conf == 0) throw IfaceExecutionError("No load image present");
         {
             let dcp = dcp_mut(status)?;
             if dcp.conf.is_none() {
@@ -577,7 +571,6 @@ impl IfaceCommandAction for IfcKunaAssert {
             }
         }
 
-        // C++: s >> ws >> stagecode;  if (stagecode == "list") { listAssertions(); return; }
         s.skip_ws();
         let stagecode = s.read_token();
         if stagecode == "list" {
@@ -587,11 +580,10 @@ impl IfaceCommandAction for IfcKunaAssert {
             return Ok(());
         }
 
-        // C++: s >> ws >> subname;
         s.skip_ws();
         let subname = s.read_token();
 
-        // C++ tokenizeRest(s,tokens): collect the rest of the line.
+        // Collect the rest of the line (C++ tokenizeRest).
         let mut tokens: Vec<String> = Vec::new();
         s.skip_ws();
         while !s.eof() {
@@ -633,8 +625,8 @@ impl IfaceCommandAction for IfcKunaAssert {
         };
         let record = KunaAssertion {
             func_name,
-            stage: validated.stage,
-            substage: validated.substage.clone(),
+            phase: validated.phase,
+            subphase: validated.subphase.clone(),
             args: join_tokens(&tokens),
             strength: validated.requested,
             applied: validated.applied,
@@ -642,15 +634,13 @@ impl IfaceCommandAction for IfcKunaAssert {
         };
 
         // C++ `kassert applied:` confirmation line (written to `*optr`), emitted
-        // after a routable store mutation succeeds:
-        //   "kassert applied: [" << code(stage) << "] " << substage [<< ' ' << args]
-        //     << "  rewind->" << code(rewind) << " (Ghidra-actual: whole-function)"
+        // after a routable store mutation succeeds.
         let applied_line = {
             let mut s = String::new();
             s.push_str("kassert applied: [");
-            s.push_str(record.stage.code());
+            s.push_str(record.phase.code());
             s.push_str("] ");
-            s.push_str(&record.substage);
+            s.push_str(&record.subphase);
             if !record.args.is_empty() {
                 s.push(' ');
                 s.push_str(&record.args);
@@ -670,15 +660,15 @@ impl IfaceCommandAction for IfcKunaAssert {
             Dispatch::Latent => {
                 // C++: throw IfaceExecutionError("Sub-stage <name> is LATENT: ...")
                 Err(IfaceError::execution(format!(
-                    "Sub-stage {subname} is LATENT: no override surface exists yet (kuna roadmap)"
+                    "Sub-phase {subname} is LATENT: no override surface exists yet (kuna roadmap)"
                 )))
             }
             Dispatch::Unroutable => {
                 // C++: throw IfaceExecutionError("Sub-stage <name> is not yet
                 //   routable through kassert; use its native surface: <exposure>")
-                let exposure = lookup_substage(&subname).map(|sub| sub.exposure).unwrap_or("");
+                let exposure = lookup_subphase(&subname).map(|sub| sub.exposure).unwrap_or("");
                 Err(IfaceError::execution(format!(
-                    "Sub-stage {subname} is not yet routable through kassert; use its native surface: {exposure}"
+                    "Sub-phase {subname} is not yet routable through kassert; use its native surface: {exposure}"
                 )))
             }
             Dispatch::ForceGoto => Err(engine_unavailable(
@@ -704,9 +694,7 @@ impl IfaceCommandAction for IfcKunaAssert {
             )),
             Dispatch::Rename => {
                 // C++ kassert naming-policy -> Scope::renameSymbol + namelock,
-                // exactly like IfcRename (ifacedecomp.rs IfcRename::execute):
-                //   readSymbol(oldname) -> getScopeLocal()->renameSymbol(sym,newname)
-                //   -> setAttribute(sym, namelock|typelock).
+                // exactly like IfcRename (ifacedecomp.rs IfcRename::execute).
                 use kuna_decomp::varnode::varnode_flags;
                 if tokens.len() < 2 {
                     return Err(IfaceError::parse(
@@ -781,7 +769,7 @@ impl IfaceCommandAction for IfcKunaAssert {
 /// C++ calls `kunaDumpRestarts(*status->fileoptr, *dcp->fd)` over the global
 /// restart side table; the ported [`kuna_decomp::kuna_restartlog::RestartLog`]
 /// is `Architecture`-owned, but the architecture does not yet hold one
-/// (`SEAM(W5)`: the log and its trigger sites land together), so the dump is
+/// (`STUB(W5)`: the log and its trigger sites land together), so the dump is
 /// routed through [`engine_unavailable`] after the `No function selected`
 /// guard.
 pub struct IfcKunaRestarts;
@@ -793,8 +781,7 @@ impl IfaceCommandAction for IfcKunaRestarts {
             Some(fd) => fd,
             None => return Err(IfaceError::execution("No function selected")),
         };
-        // C++: kunaDumpRestarts(*status->fileoptr, *dcp->fd) over the
-        // Architecture-owned RestartLog.
+        // C++ kunaDumpRestarts over the Architecture-owned RestartLog.
         let conf = match dcp.conf.as_ref() {
             Some(c) => c.arch(),
             None => return Err(IfaceError::execution("No load image present")),
@@ -834,7 +821,7 @@ impl IfcKunaPipeline {
                 conf.arch().allacts.get_current_name().to_string()
             });
         let mut os = String::new();
-        os.push_str("Named pipeline variants (group filters over the universal action; P0 pipeline-variant sub-stage):\n");
+        os.push_str("Named pipeline variants (group filters over the universal action; P0 pipeline-variant sub-phase):\n");
         for v in PIPELINE_VARIANTS {
             os.push_str("  ");
             os.push_str(v);
@@ -849,7 +836,6 @@ impl IfcKunaPipeline {
 
 impl IfaceCommandAction for IfcKunaPipeline {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        // C++: s >> ws >> name; if (name.empty() || name=="list") { listPipelines(); return; }
         s.skip_ws();
         let name = s.read_token();
         if name.is_empty() || name == "list" {
@@ -869,7 +855,6 @@ impl IfaceCommandAction for IfcKunaPipeline {
         if dcp.fd.is_none() {
             return Err(IfaceError::execution("No function selected"));
         }
-        // C++: if (fd->hasNoCode()) { *optr << "No code for " << name << endl; return; }
         // hasNoCode IS expressible; the message uses the command stream (optr).
         let fd = dcp.fd.as_ref().expect("fd checked Some above");
         if fd.has_no_code() {
@@ -942,7 +927,7 @@ impl IfaceCommandAction for IfcKunaPipeline {
 /// The goto-count walk (`kunaCountGotos`) operates on the ported `BlockGraph` /
 /// `FlowBlock` arena, but the `goto nodes: N (printed: M)` line needs
 /// `BlockGoto::gotoPrints`, which depends on `FlowBlock::nextFlowAfter`
-/// (`SEAM(W7)`, unported). Because that exact line cannot be reproduced today,
+/// (`STUB(W7)`, unported). Because that exact line cannot be reproduced today,
 /// the metric is routed through [`engine_unavailable`] after the `No function
 /// selected` and `hasNoStructBlocks` guards (both fully expressible).
 pub struct IfcKunaQuality;
@@ -954,8 +939,6 @@ impl IfaceCommandAction for IfcKunaQuality {
             return Err(IfaceError::execution("No function selected"));
         }
         let fd = dcp.fd.as_ref().expect("fd checked Some above");
-        // C++: if (fd->hasNoStructBlocks()) { os << "No structured blocks for "
-        //   << name << " (decompile first)" << endl; return; }
         if fd.has_no_struct_blocks() {
             let line = format!(
                 "No structured blocks for {} (decompile first)\n",
@@ -997,7 +980,7 @@ impl IfaceCommandAction for IfcKunaQuality {
 /// the kuna capability in `kuna_console.cc`).
 ///
 /// The region identifier is ported (`kuna_decomp::kuna_regionid`); its
-/// `buildFromBlockGraph` block-graph adapter (the W7 seam) is now closed
+/// `buildFromBlockGraph` block-graph adapter (the W7 boundary) is now closed
 /// ([`KunaRegionIdentifier::build_from_block_graph`]), so these three commands
 /// drive it over the real decompiled `bblocks` CFG (block start addresses, the
 /// CFG out-edges, and the per-block `endsWithBranchindOrCbranch` `lastOp` probe).
@@ -1087,7 +1070,7 @@ struct RegionWalkVisitor {
 }
 
 impl kuna_decomp::kuna_regionid::KunaRegionVisitor for RegionWalkVisitor {
-    fn visit_block(&mut self, _block: Option<kuna_decomp::seams::BlockId>, addr: u64) {
+    fn visit_block(&mut self, _block: Option<kuna_decomp::context::BlockId>, addr: u64) {
         self.out.push_str(&format!("walk 0x{addr:x}\n"));
     }
 }
@@ -1133,12 +1116,17 @@ impl IfaceCommandAction for IfcKunaRegionWalk {
 /// from its command-registration step (alongside `register_decomp_commands`),
 /// the faithful equivalent. The token sequences are byte-identical to the C++
 /// `registerCom` calls, so the prefix-expansion the datatests drive
-/// (`stage cat` -> `stage catalog`, etc.) is preserved.
+/// (`stage cat` -> `phase catalog`, etc.) is preserved.
 pub fn register_kuna_commands(status: &mut IfaceStatus) {
-    status.register_com(Box::new(IfcKunaStageList), &["stage", "list"]);
-    status.register_com(Box::new(IfcKunaStageMap), &["stage", "map"]);
-    status.register_com(Box::new(IfcKunaStageStatus), &["stage", "status"]);
-    status.register_com(Box::new(IfcKunaStageCatalog), &["stage", "catalog"]);
+    status.register_com(Box::new(IfcKunaPhaseList), &["phase", "list"]);
+    status.register_com(Box::new(IfcKunaPhaseMap), &["phase", "map"]);
+    status.register_com(Box::new(IfcKunaPhaseStatus), &["phase", "status"]);
+    status.register_com(Box::new(IfcKunaPhaseCatalog), &["phase", "catalog"]);
+    // Deprecated aliases: the pre-rename `stage ...` spellings keep working.
+    status.register_com(Box::new(IfcKunaPhaseList), &["stage", "list"]);
+    status.register_com(Box::new(IfcKunaPhaseMap), &["stage", "map"]);
+    status.register_com(Box::new(IfcKunaPhaseStatus), &["stage", "status"]);
+    status.register_com(Box::new(IfcKunaPhaseCatalog), &["stage", "catalog"]);
     status.register_com(Box::new(IfcKunaAssert::new()), &["kassert"]);
     status.register_com(Box::new(IfcKunaRestarts), &["restarts"]);
     status.register_com(Box::new(IfcKunaPipeline), &["pipeline"]);

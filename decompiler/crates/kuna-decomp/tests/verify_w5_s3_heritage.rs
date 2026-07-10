@@ -33,7 +33,7 @@ use kuna_base::types::int4;
 use kuna_decomp::heritage::{Heritage, LocationMap, PriorityQueue, TaskList};
 use kuna_decomp::overrides::Override;
 use kuna_decomp::kuna_restartlog::RestartLog;
-use kuna_decomp::seams::{Architecture, BlockId};
+use kuna_decomp::context::{ArchContext, BlockId};
 use kuna_decomp::funcdata::Funcdata;
 
 // ---- fixtures (mirroring the in-module ones) ------------------------------
@@ -59,7 +59,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -359,7 +359,7 @@ fn bump_deadcode_delay_spacebase_installs_once_then_suppresses() {
         1,
     )))
     .unwrap();
-    let glb = Rc::new(Architecture::new(m));
+    let glb = Rc::new(ArchContext::new(m));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     let mut fd = Funcdata::new("f", "f", glb, addr, 0x10000000, 0x40).unwrap();

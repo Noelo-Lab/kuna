@@ -17,7 +17,7 @@
 
 use kuna_decomp::bitfield::{BitFieldNodeState, BitRange};
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeBitField};
-use kuna_decomp::seams::VarnodeId;
+use kuna_decomp::context::VarnodeId;
 use std::rc::Rc;
 
 /// Build a `TypeBitField` whose `bits()` matches `field_bits`, with the given

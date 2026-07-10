@@ -2,7 +2,7 @@
 //! (the remaining 21 `Action` shells in
 //! `decompiler/crates/kuna-decomp/src/coreaction_render.rs`).
 //!
-//! This item is a SEAM port: every `apply` returns 0 with the C++ body carried
+//! This item is a STUB port: every `apply` returns 0 with the C++ body carried
 //! as commented pseudocode (the `Funcdata` analysis/scope/jumptable/type
 //! surface is not in the merged tree).  The only *realized* surface is the
 //! engine-owned class shell — exact `name()`/group/`flags` from the C++
@@ -17,7 +17,7 @@
 //!       the *virtual* `reset`, so a stateful subclass whose override is
 //!       `{ localcount = 0; }` does NOT run `Action::reset` (status/flags are
 //!       left as-is), whereas a non-overriding leaf DOES reset its base;
-//!   (c) seam *totality* — every body is a pure no-op leaving `count == 0`
+//!   (c) stub *totality* — every body is a pure no-op leaving `count == 0`
 //!       regardless of `Funcdata` state, repetition, or how far the state
 //!       counters have advanced;
 //!   (d) `clone_filtered` independence + parameterization carry-through
@@ -41,7 +41,7 @@ use kuna_decomp::coreaction_render::{
     ActionRestructureVarnode, ActionSegmentize, ActionStackPtrFlow,
 };
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::Architecture;
+use kuna_decomp::context::ArchContext;
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -64,7 +64,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -192,31 +192,31 @@ fn w8_reset_overrides_do_not_chain_to_base() {
     );
 }
 
-/// (c) Seam totality: applying every action many times on a populated-as-much-
+/// (c) Stub totality: applying every action many times on a populated-as-much-
 /// as-possible `Funcdata` never bumps `count` and always returns 0 — even
 /// after the stateful actions' own gating would have advanced (StackPtrFlow's
-/// no-stack latch, InferTypes' 7-pass ceiling, etc.).  The seam reports no
+/// no-stack latch, InferTypes' 7-pass ceiling, etc.).  The stub reports no
 /// data-flow change, matching the C++ "changes signalled by count" contract.
 #[test]
-fn w8_seam_totality_under_repetition() {
+fn w8_stub_totality_under_repetition() {
     let mut fd = build_fd();
     let mut ctx = ActionContext::new();
     for mut a in render_actions("g") {
         for _ in 0..16 {
             let r = a.apply(&mut fd, &mut ctx);
-            assert_eq!(r, 0, "{}: seam apply must return 0", a.get_name());
-            assert_eq!(a.base().count, 0, "{}: seam must report no change", a.get_name());
+            assert_eq!(r, 0, "{}: stub apply must return 0", a.get_name());
+            assert_eq!(a.base().count, 0, "{}: stub must report no change", a.get_name());
         }
     }
 
     // StackPtrFlow WITH a stack: the realized no-stack branch is skipped, the
-    // seam body cannot latch, so analysis_finished stays false and count==0
+    // stub body cannot latch, so analysis_finished stays false and count==0
     // across repeats (the body that would set it is unrealized).
     let ram = ram_space(&fd);
     let mut sp = ActionStackPtrFlow::boxed("g", Some(Rc::clone(&ram)));
     for _ in 0..8 {
         assert_eq!(sp.apply(&mut fd, &mut ctx), 0);
-        assert_eq!(sp.base().count, 0, "stackptrflow-with-stack seam: no change");
+        assert_eq!(sp.base().count, 0, "stackptrflow-with-stack stub: no change");
     }
 
     // StackPtrFlow WITHOUT a stack: the realized branch latches finished on the
@@ -241,7 +241,7 @@ fn w8_clone_filtered_independent_and_parameterized() {
     let no = ActionGroupList::from_names(["other"]);
 
     // StackPtrFlow: group filter honored; clone carries a stack (so it runs the
-    // seam body, not the no-stack latch) and starts with analysis_finished unset
+    // stub body, not the no-stack latch) and starts with analysis_finished unset
     // (fresh-function value).  Built via the public ctor (fields are private to
     // the crate, as in C++).
     let src = ActionStackPtrFlow::boxed("g", Some(Rc::clone(&ram)));
@@ -250,12 +250,12 @@ fn w8_clone_filtered_independent_and_parameterized() {
     assert_eq!(cl.get_name(), "stackptrflow");
     assert_eq!(cl.get_group(), "g");
     // The clone's `analysis_finished` starts unset: observable through behavior —
-    // the clone (which has a stack) runs the seam body (no latch, no change)
+    // the clone (which has a stack) runs the stub body (no latch, no change)
     // rather than the already-finished short-circuit; empty `Funcdata`, count==0.
     let mut ctx = ActionContext::new();
     let mut fd2 = build_fd();
     assert_eq!(cl.apply(&mut fd2, &mut ctx), 0);
-    assert_eq!(cl.base().count, 0, "clone with stack runs the seam, reports no change");
+    assert_eq!(cl.base().count, 0, "clone with stack runs the stub, reports no change");
 
     // DirectWrite: propagateIndirect carried verbatim through the clone.
     for prop in [true, false] {

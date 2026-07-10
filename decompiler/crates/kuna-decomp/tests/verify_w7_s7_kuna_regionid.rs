@@ -20,7 +20,7 @@
 //! pinning a fragile exact tree shape.
 
 use kuna_decomp::kuna_regionid::{KunaGraphRegion, KunaRegionIdentifier, KunaRegionVisitor};
-use kuna_decomp::seams::BlockId;
+use kuna_decomp::context::BlockId;
 
 /// Visitor that records the leaf-block addresses (in walk order) and, for every
 /// cyclic region, its body block addresses (sorted).  Mirrors the in-module

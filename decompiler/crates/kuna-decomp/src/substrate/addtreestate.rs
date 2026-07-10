@@ -19,7 +19,7 @@
 //! `buildTree` (`forceFacingType`/`inheritUnionField`) are guarded by
 //! `needs_resolution()`, which is `false` for plain pointers — faithful no-ops
 //! there.  The `warningHeader`/`warning` emit a comment (a print-markup surface,
-//! not part of the transform); those are SEAM-noted no-ops, only reachable on a
+//! not part of the transform); those are STUB-noted no-ops, only reachable on a
 //! distribution failure that does not occur on the targeted corpus.
 
 use std::rc::Rc;
@@ -31,7 +31,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
 /// The mutable analysis state for one `RulePtrArith` application
 /// (C++ `class AddTreeState`).
@@ -41,7 +41,7 @@ pub struct AddTreeState<'a> {
     base_op: OpId,
     /// The slot of the pointer in the root op (C++ `baseSlot`).  Read by the C++
     /// `buildTree` union path (`inheritUnionField(..., baseOp, baseSlot)`), which
-    /// is a no-op for plain pointers here (SEAM(W8 union)); kept for faithful
+    /// is a no-op for plain pointers here (STUB(W8 union)); kept for faithful
     /// restoration when union mid-flow resolution lands.
     #[allow(dead_code)]
     base_slot: int4,
@@ -96,7 +96,6 @@ impl<'a> AddTreeState<'a> {
         let base_op = op;
         let base_slot = slot;
         let ptr = data.obank().get(op)?.get_in(slot)?;
-        // ct = (const TypePointer *)ptr->getTypeReadFacing(op);
         // (route through the Funcdata facing accessor so a union/relative-pointer
         // resolves against the in-flow union cache; C++ Varnode::getTypeReadFacing.)
         let ct = data.vn_type_read_facing(ptr, op);
@@ -105,20 +104,17 @@ impl<'a> AddTreeState<'a> {
         let mut base_type = ct.get_ptr_to()?;
         let mut nonmultsum: uintb = 0;
         let mut p_rel_type: Option<Rc<Datatype>> = None;
-        // if (ct->isFormalPointerRel()) { pRelType = ct; baseType = parent; nonmultsum = addrOff; }
         if ct.is_formal_pointer_rel() {
             p_rel_type = Some(Rc::clone(&ct));
             base_type = ct.get_rel_parent()?;
             nonmultsum = (ct.get_address_offset()? as uintb) & ptrmask;
         }
         let word_size = ct.get_word_size().unwrap_or(1);
-        // size = baseType->isVariableLength() ? 0 : byteToAddressInt(getAlignSize(),wordSize)
         let size: int8 = if base_type.is_variable_length() {
             0
         } else {
             AddrSpace::byte_to_address_int(base_type.get_align_size() as i64, word_size) as int8
         };
-        // unitsize = addressToByteInt(1, wordSize);
         let unitsize = AddrSpace::address_to_byte_int(1, word_size);
         let align = base_type.get_align_size();
         let is_degenerate = (align as i64) <= unitsize && align > 0;
@@ -156,7 +152,6 @@ impl<'a> AddTreeState<'a> {
         self.nonmultsum = 0;
         self.biggest_non_mult_coeff = 0;
         if let Some(rel) = &self.p_rel_type {
-            // nonmultsum = ((TypePointerRel*)ct)->getAddressOffset() & ptrmask;
             self.nonmultsum =
                 (rel.get_address_offset().unwrap_or(0) as uintb) & self.ptrmask;
         }
@@ -177,7 +172,6 @@ impl<'a> AddTreeState<'a> {
             return false;
         }
         self.p_rel_type = None;
-        // baseType = ct->getPtrTo();
         self.base_type = match self.ct.get_ptr_to() {
             Some(b) => b,
             None => return false,
@@ -285,7 +279,6 @@ impl<'a> AddTreeState<'a> {
                 _ => (false, 0),
             };
         }
-        // type_before = nearestArrayedComponentBackward(off,128,&offBefore,&elSizeBefore)
         let (type_before, off_before, el_size_before) = self.base_nearest_backward(off, 128);
         let (type_after, off_after, el_size_after) = self.base_nearest_forward(off, 128);
         if type_before < 0 && type_after < 0 {
@@ -332,7 +325,6 @@ impl<'a> AddTreeState<'a> {
             return false;
         }
         if self.vn_is_constant(vnconst) {
-            // val = (vnconst->getOffset() * treeCoeff) & ptrmask;
             let val = self.vn_offset(vnconst).wrapping_mul(tree_coeff) & self.ptrmask;
             let sval = sign_extend(val as i64, self.vn_size(vn) * 8 - 1);
             let rem = if self.size == 0 { sval } else { sval % self.size };
@@ -351,8 +343,7 @@ impl<'a> AddTreeState<'a> {
                     let def = self.vn_def(vnterm).expect("check_mult_term: vnterm def");
                     return self.span_add_tree(def, val);
                 }
-                // C++: vncoeff = (sval<0) ? (uint4)-sval : (uint4)sval; the
-                // (uint4) cast keeps the low 32 bits (ruleaction.cc:6169).
+                // The (uint4) cast keeps the low 32 bits (ruleaction.cc:6169).
                 // cast: int8 -> uint4 (truncate), faithful to the C++ (uint4) cast.
                 let vncoeff = if sval < 0 {
                     sval.wrapping_neg() as uint4
@@ -388,7 +379,7 @@ impl<'a> AddTreeState<'a> {
             return false;
         }
         if self.vn_is_constant(vn) {
-            // val = vn->getOffset() * treeCoeff;  (NOT masked here in C++)
+        // val is NOT masked here in C++ (unlike checkMultTerm, which masks).
             let val = self.vn_offset(vn).wrapping_mul(tree_coeff);
             let sval = sign_extend(val as i64, self.vn_size(vn) * 8 - 1);
             let rem = if self.size == 0 { sval } else { sval % self.size };
@@ -498,7 +489,6 @@ impl<'a> AddTreeState<'a> {
             }
             self.is_subtype = false;
         } else if self.base_type.get_metatype() == type_metatype::TYPE_SPACEBASE {
-            // offsetbytes = addressToByteInt(offset, wordSize)
             let offsetbytes = AddrSpace::address_to_byte_int(self.offset as i64, word_size);
             let (matched, extra) = self.has_matching_sub_type(offsetbytes, self.biggest_non_mult_coeff);
             if !matched {
@@ -543,7 +533,6 @@ impl<'a> AddTreeState<'a> {
             self.valid = false;
         }
         if let Some(_rel) = &self.p_rel_type {
-            // int4 ptrOff = ((TypePointerRel*)ct)->getAddressOffset();
             let ptr_off = self.ct.get_address_offset().unwrap_or(0) as uintb;
             self.offset = self.offset.wrapping_sub(ptr_off) & self.ptrmask;
             self.correct = self.correct.wrapping_sub(ptr_off) & self.ptrmask;
@@ -560,7 +549,6 @@ impl<'a> AddTreeState<'a> {
             None => return,
         };
         if let Some(in_type) = in_type {
-            // newType = op->getOpcode()->propagateType(inType, op, vn, out, 0, -1);
             let new_type = crate::coreaction_infertypes::propagate_type_pub(
                 self.data, in_type, op, vn, out, 0, -1,
             );
@@ -647,7 +635,6 @@ impl<'a> AddTreeState<'a> {
         if self.base_type.get_align_size() < word_size {
             return false; // Probably padding; don't transform
         }
-        // if (baseOp->getOut()->getTypeDefFacing()->getMetatype() != TYPE_PTR) return false;
         let out = match self.data.obank().get(self.base_op).and_then(|o| o.get_out()) {
             Some(o) => o,
             None => return false,
@@ -661,7 +648,6 @@ impl<'a> AddTreeState<'a> {
         if out_meta != type_metatype::TYPE_PTR {
             return false;
         }
-        // newparams = [ ptr, baseOp->getIn(1-slot), newConstant(ct->getSize(),1) ]
         let slot = self.data.obank().get(self.base_op).map(|o| o.get_slot(self.ptr)).unwrap_or(0);
         let other = self.op_in(self.base_op, 1 - slot);
         let one = self.data.new_constant(self.ct.get_size(), 1);
@@ -709,7 +695,7 @@ impl<'a> AddTreeState<'a> {
             self.calc_subtype();
         }
         if !self.valid {
-            // SEAM(print-markup): warningHeader emits a comment ("Problems
+            // STUB(print-markup): warningHeader emits a comment ("Problems
             // distributing in pointer arithmetic at <addr>"); the comment surface
             // is not part of the transform.  Only reachable on a distribution
             // failure (not exercised by the pointer/array/struct corpus).
@@ -736,12 +722,9 @@ impl<'a> AddTreeState<'a> {
                 mn,
                 Some(size_const),
             );
-            // if (ptr->getType()->needsResolution()) {
-            //   if (((TypePointer *)ptr->getType())->getPtrTo()->getSize() == baseType->getSize())
-            //     data.forceFacingType(ptr->getType(),-1,newop, 0);   // hold off resolving before indexing
-            //   else
-            //     data.inheritUnionField(ptr->getType(), newop, 0, baseOp, baseSlot);
-            // }
+            // When ptr's type needs union resolution: hold off resolving
+            // before indexing (forceFacingType) when ptrto size == base size,
+            // else inheritUnionField.
             let ptr_ty = Rc::clone(self.data.vbank().get(self.ptr).expect("build_tree: stale ptr").get_type());
             if ptr_ty.needs_resolution() {
                 let ptrto_size = ptr_ty.get_ptr_to().map(|p| p.get_size());
@@ -770,8 +753,6 @@ impl<'a> AddTreeState<'a> {
                 off_const,
                 None,
             );
-            // if (multNode->getType()->needsResolution())
-            //   data.inheritUnionField(multNode->getType(),newop, 0, baseOp, baseSlot);
             let mult_ty = Rc::clone(
                 self.data.vbank().get(mult_node).expect("build_tree: stale multNode").get_type(),
             );
@@ -797,7 +778,7 @@ impl<'a> AddTreeState<'a> {
         let newop = match newop {
             Some(o) => o,
             None => {
-                // SEAM(print-markup): data.warning("ptrarith problems", addr); comment
+                // STUB(print-markup): data.warning("ptrarith problems", addr); comment
                 // emission only — never reached when a multiple/subtype/extra exists.
                 return;
             }

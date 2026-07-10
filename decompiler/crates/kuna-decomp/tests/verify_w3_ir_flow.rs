@@ -16,12 +16,12 @@
 //!      mechanics (the x86-64 `floatprint` and Toy `skipnext2` lift corpora).
 //!      This pins that the W2 `Translate::one_instruction` is driven correctly by
 //!      `process_instruction` and that flow generation reaches exactly the
-//!      documented W3-funcdata emitter seam (`newVarnodeOut`/`newCodeRef`), proving
+//!      documented W3-funcdata emitter stub (`newVarnodeOut`/`newCodeRef`), proving
 //!      the boundary is precise rather than silently wrong.
 //!
 //! The op-building emitter (`PcodeEmitFd::dump`) defers `newVarnodeOut`
 //! (→ `opSetOutput` → the `(vbank,obank)` split accessor) and `newCodeRef`
-//! (`funcdata_varnode`); strand 2 therefore asserts the seam error surfaces with
+//! (`funcdata_varnode`); strand 2 therefore asserts the stub error surfaces with
 //! the precise missing-API note, while strand 1 covers everything reachable on
 //! the pure IR surface.
 
@@ -43,7 +43,7 @@ use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::flow::{FlowEnvironment, FlowInfo};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::op::pcodeop_flags;
-use kuna_decomp::seams::{Architecture, OpId, TypeOp};
+use kuna_decomp::context::{ArchContext, OpId, TypeOp};
 
 use kuna_sleigh::globalcontext::ContextInternal;
 use kuna_sleigh::loadimage::LoadImage;
@@ -52,7 +52,7 @@ use kuna_sleigh::sleigh::Sleigh;
 use kuna_sleigh::translate::Translate;
 
 // ---------------------------------------------------------------------------
-// The op-code → TypeOp table (the W6 `glb->inst` seam, for the test environment)
+// The op-code → TypeOp table (the W6 `glb->inst` boundary, for the test environment)
 // ---------------------------------------------------------------------------
 
 /// Build the `TypeOp` for an op-code carrying the property-flag word the flow
@@ -116,7 +116,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -536,7 +536,7 @@ fn build_sleigh_flow(meta: &FixtureMeta) -> (Funcdata, SleighEnv) {
     // their own (Sleigh) spaces directly through `new_varnode_space_off`
     // (`vbank.create` stores the Address; it never consults the Funcdata manager),
     // so the two managers coexist without conflict for this wiring test.
-    let glb = Rc::new(Architecture::new(build_manager()));
+    let glb = Rc::new(ArchContext::new(build_manager()));
     let fd = Funcdata::new("liftfn", "liftfn", glb, entry, uniq_start, 0x40).unwrap();
     (fd, SleighEnv { sleigh })
 }
@@ -545,10 +545,10 @@ fn build_sleigh_flow(meta: &FixtureMeta) -> (Funcdata, SleighEnv) {
 ///
 /// The op-building emitter defers `newVarnodeOut`/`newCodeRef`, so a real
 /// instruction (which has an output or a code-ref) makes `process_instruction`
-/// reach exactly that seam — surfaced as a `LowlevelError` whose message names
+/// reach exactly that stub — surfaced as a `LowlevelError` whose message names
 /// the missing W3-funcdata API.  This pins the W2 `Translate` is driven correctly
 /// and the boundary is precise.
-fn assert_lift_reaches_emitter_seam(fixture_file: &str) {
+fn assert_lift_reaches_emitter_stub(fixture_file: &str) {
     let root = repo_root();
     let path = root.join("tests/golden/vectors/lift").join(fixture_file);
     let text = std::fs::read_to_string(&path)
@@ -586,14 +586,14 @@ fn assert_lift_reaches_emitter_seam(fixture_file: &str) {
             );
         }
         Err(KunaError::Lowlevel { explain, .. }) => {
-            // The precise W3-funcdata emitter seam (newVarnodeOut / newCodeRef),
+            // The precise W3-funcdata emitter stub (newVarnodeOut / newCodeRef),
             // proving the lift was driven and reached exactly the documented
             // boundary.
             assert!(
                 explain.contains("newVarnodeOut")
                     || explain.contains("newCodeRef")
                     || explain.contains("opSetOutput"),
-                "expected the emitter seam note, got: {explain}"
+                "expected the emitter stub note, got: {explain}"
             );
         }
         Err(other) => panic!("unexpected error driving the lift: {other}"),
@@ -601,13 +601,13 @@ fn assert_lift_reaches_emitter_seam(fixture_file: &str) {
 }
 
 #[test]
-fn real_sleigh_floatprint_reaches_emitter_seam() {
-    assert_lift_reaches_emitter_seam("floatprint.txt");
+fn real_sleigh_floatprint_reaches_emitter_stub() {
+    assert_lift_reaches_emitter_stub("floatprint.txt");
 }
 
 #[test]
-fn real_sleigh_skipnext2_reaches_emitter_seam() {
-    assert_lift_reaches_emitter_seam("skipnext2.txt");
+fn real_sleigh_skipnext2_reaches_emitter_stub() {
+    assert_lift_reaches_emitter_stub("skipnext2.txt");
 }
 
 // ===========================================================================

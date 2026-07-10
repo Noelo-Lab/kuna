@@ -1050,7 +1050,7 @@ impl SleighScanner {
         cur_state: ScanState,
         blank_state: ScanState,
     ) -> ScanState {
-        // string str(sleightext); strip a trailing `#` comment.
+        // strip a trailing `#` comment.
         let mut line: &[u8] = directive;
         if let Some(p) = line.iter().position(|&c| c == b'#') {
             line = &line[..p];

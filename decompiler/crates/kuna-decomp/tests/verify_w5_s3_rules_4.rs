@@ -40,7 +40,7 @@ use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::ruleaction_4::{
     RuleHumptyOr, RuleLoadVarnode, RuleShiftAnd, RuleStoreVarnode, RuleSubExtComm, RuleSubZext,
 };
-use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
 use kuna_num::opcodes::OpCode;
 
@@ -64,7 +64,7 @@ fn build_fd() -> Funcdata {
         1,
     )))
     .unwrap();
-    let glb = Rc::new(Architecture::new(m));
+    let glb = Rc::new(ArchContext::new(m));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

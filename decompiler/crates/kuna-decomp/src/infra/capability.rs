@@ -147,7 +147,7 @@ impl CapabilityRegistry {
     /// comes last (C++ `ArchitectureCapability::sortCapabilities`,
     /// `architecture.cc:135`).  Right now that is the only ordering need.
     pub fn sort_capabilities(&mut self) {
-        // Find the "raw" capability (C++ for-loop until name == "raw").
+        // Find the "raw" capability.
         let mut i = 0usize;
         while i < self.thelist.len() {
             if self.thelist[i].get_name() == "raw" {

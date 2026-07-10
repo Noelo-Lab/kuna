@@ -35,7 +35,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_decomp::action::Rule;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::{Architecture, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, TypeOp, VarnodeId};
 use kuna_decomp::subflow::{RuleSubvarShift, SubvariableFlow};
 use kuna_decomp::varnode::DefOpInfo;
 
@@ -64,7 +64,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -85,7 +85,7 @@ fn no_replace(
     }
 }
 
-fn mk_op(fd: &mut Funcdata, off: u64, ninput: int4, opc: OpCode) -> kuna_decomp::seams::OpId {
+fn mk_op(fd: &mut Funcdata, off: u64, ninput: int4, opc: OpCode) -> kuna_decomp::context::OpId {
     let r = ram(fd);
     let pc = Address::new(r, off);
     let op = fd.obank_mut().create_at(ninput, pc);
@@ -103,12 +103,12 @@ fn mk_input(fd: &mut Funcdata, off: u64, size: int4) -> VarnodeId {
     fd.vbank_mut().set_input(vn, &mut no_replace()).unwrap()
 }
 
-fn wire_in(fd: &mut Funcdata, op: kuna_decomp::seams::OpId, vn: VarnodeId, slot: int4) {
+fn wire_in(fd: &mut Funcdata, op: kuna_decomp::context::OpId, vn: VarnodeId, slot: int4) {
     fd.vbank_mut().add_descend(vn, op).unwrap();
     fd.obank_mut().get_mut(op).unwrap().set_input(Some(vn), slot);
 }
 
-fn wire_out(fd: &mut Funcdata, defop: kuna_decomp::seams::OpId, vn: VarnodeId) -> VarnodeId {
+fn wire_out(fd: &mut Funcdata, defop: kuna_decomp::context::OpId, vn: VarnodeId) -> VarnodeId {
     let seq = fd.obank().get(defop).unwrap().get_seq_num().clone();
     let info = DefOpInfo { id: defop, seqnum: seq };
     let vn = fd.vbank_mut().set_def(vn, info, &mut no_replace()).unwrap();

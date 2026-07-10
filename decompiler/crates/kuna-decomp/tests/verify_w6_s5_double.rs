@@ -35,7 +35,7 @@ use kuna_decomp::action::Rule;
 use kuna_decomp::double::{RuleDoubleIn, SplitVarnode};
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -58,7 +58,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -177,16 +177,16 @@ fn verify_w6_s5_double_arith_whole_marking_restored() {
     );
 }
 
-/// HUNT LIST (cross-wave seam, the type-locked-INPUT branch, which does NOT need
+/// HUNT LIST (cross-wave stub, the type-locked-INPUT branch, which does NOT need
 /// the arith/float classification).  When the whole is an INPUT and type-locked,
 /// `attemptMarking` SKIPS the `isArithmeticOp` test entirely (double.cc:3229-
 /// 3231: `if (whole->isInput()) { if (!whole->isTypeLock()) return 0; }`).  But
 /// a function INPUT requires the W4 input-varnode machinery to construct; here we
 /// confirm the complementary fact that an UNwritten, non-input, non-typelocked
-/// whole is rejected BEFORE the seam (so the seam is not even reached) — pinning
+/// whole is rejected BEFORE the stub (so the stub is not even reached) — pinning
 /// that the `!isWritten` guard (double.cc:3232) fires first.
 #[test]
-fn verify_w6_s5_double_free_whole_rejected_before_seam() {
+fn verify_w6_s5_double_free_whole_rejected_before_stub() {
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let r = ram(&fd);
@@ -209,7 +209,7 @@ fn verify_w6_s5_double_free_whole_rejected_before_seam() {
         rule.apply_op(subhi, &mut fd),
         0,
         "free (non-written, non-input) whole rejected by the !isWritten guard \
-         (double.cc:3232) — independent of the W6 seam"
+         (double.cc:3232) — independent of the W6 stub"
     );
     assert!(
         !fd.vbank().get(hi).unwrap().is_precis_hi(),
@@ -220,7 +220,7 @@ fn verify_w6_s5_double_free_whole_rejected_before_seam() {
 /// HUNT LIST (off-by-one boundary on the SUBPIECE offset/size geometry).
 /// `attemptMarking` requires `offset == vn->getSize()` AND `offset*2 ==
 /// whole->getSize()` (double.cc:3227-3228 — truncate EXACTLY half).  A hi
-/// SUBPIECE at a non-half offset must be declined even before the W6 seam.  Here
+/// SUBPIECE at a non-half offset must be declined even before the W6 stub.  Here
 /// the hi piece is a SUBPIECE(whole,2) of a size-2 output off an 8-byte whole:
 /// offset(2)==size(2) holds, but offset*2(4) != whole.size(8), so it is the
 /// half-test that rejects.

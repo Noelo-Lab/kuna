@@ -1,7 +1,7 @@
 //! End-to-end gate for i386 **PIE** ELF PLT/GOT import-name resolution
 //! (angr `test_decompiling_nl_i386_pie::usage`).
 //!
-//! The `elf_plt` i386-PIE arm (`src/s1_loader/elf_plt.rs::decode_i386`) decodes
+//! The `elf_plt` i386-PIE arm (`src/loader/elf_plt.rs::decode_i386`) decodes
 //! the GOT-relative `jmp *disp(%ebx)` (`FF A3 <disp32>`) PLT stub form — the
 //! i386 analog of the x86-64 RIP-relative and aarch64 veneer decoders — by
 //! deriving the GOT base (`_GLOBAL_OFFSET_TABLE_`) and computing

@@ -260,7 +260,7 @@ fn comment_instr_records_a_comment() {
 
 /// HONEST-METRIC GUARD (revised post-w10-printc-body) — the PrintC body driver
 /// (RPN/Emit) has LANDED, so the W9-emit stub marker is gone.  The remaining
-/// parity gap is no longer the printer but the SEAMED analysis passes feeding it
+/// parity gap is no longer the printer but the still-stubbed analysis passes feeding it
 /// raw lifted p-code (LOSS-131): the function reaches `print C` and emits C
 /// through the real driver, but it does not byte-match the C++ oracle yet.  The
 /// authoritative parity measure is the `KUNA_ENGINE=rust run_tests --datatests`

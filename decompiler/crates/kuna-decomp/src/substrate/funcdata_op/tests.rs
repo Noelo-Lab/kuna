@@ -21,7 +21,7 @@ use kuna_base::space::{
 };
 
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{Architecture, BlockId};
+use crate::context::{ArchContext, BlockId};
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -44,7 +44,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()

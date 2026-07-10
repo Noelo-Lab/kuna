@@ -32,23 +32,23 @@ use kuna_base::error::KunaResult;
 use kuna_base::marshal::{Decoder, Encoder};
 
 // --------------------------------------------------------------------------
-// shared cpool seam (mirrors the in-crate VoidTypeSeam, public-API only)
+// shared cpool access impl (mirrors the in-crate VoidTypeAccess, public-API only)
 // --------------------------------------------------------------------------
 
-struct VoidSeam;
+struct VoidAccess;
 
 fn void_type() -> Rc<Datatype> {
     Rc::new(Datatype::new(0, type_metatype::TYPE_VOID))
 }
 
-impl CPoolTypeRef for VoidSeam {
+impl CPoolTypeRef for VoidAccess {
     fn encode_ref(&self, encoder: &mut dyn Encoder) -> KunaResult<()> {
         encoder.open_element(&kuna_base::marshal::ELEM_VOID);
         encoder.close_element(&kuna_base::marshal::ELEM_VOID);
         Ok(())
     }
 }
-impl CPoolTypeRefProvider for VoidSeam {
+impl CPoolTypeRefProvider for VoidAccess {
     fn encode_record_type_ref(
         &self,
         _record: &kuna_decomp::cpool::CPoolRecord,
@@ -57,7 +57,7 @@ impl CPoolTypeRefProvider for VoidSeam {
         self.encode_ref(encoder)
     }
 }
-impl CPoolTypeFactory for VoidSeam {
+impl CPoolTypeFactory for VoidAccess {
     fn decode_type(&mut self, decoder: &mut dyn Decoder) -> KunaResult<Rc<Datatype>> {
         let id = decoder.open_element()?;
         decoder.close_element(id)?;
@@ -92,12 +92,12 @@ fn cpool_roundtrip(pool: &ConstantPoolInternal) -> ConstantPoolInternal {
     let mut buf: Vec<u8> = Vec::new();
     {
         let mut enc = XmlEncode::new(&mut buf);
-        pool.encode(&mut enc, &VoidSeam).unwrap();
+        pool.encode(&mut enc, &VoidAccess).unwrap();
     }
     let mut dec = XmlDecode::new(&mgr, &reg);
     dec.ingest_stream(&buf).unwrap();
     let mut out = ConstantPoolInternal::new();
-    out.decode(&mut dec, &mut VoidSeam).unwrap();
+    out.decode(&mut dec, &mut VoidAccess).unwrap();
     out
 }
 
@@ -147,7 +147,7 @@ fn cpool_bytedata_roundtrip_crosses_newline_wrap() {
     let mut dec = XmlDecode::new(&mgr, &reg);
     dec.ingest_stream(&buf).unwrap();
     let mut rec = kuna_decomp::cpool::CPoolRecord::new();
-    rec.decode(&mut dec, &mut VoidSeam).unwrap();
+    rec.decode(&mut dec, &mut VoidAccess).unwrap();
     assert_eq!(rec.get_tag(), cpool_tag::STRING_LITERAL);
     assert_eq!(rec.get_byte_data(), Some(bytes.as_slice()));
     assert_eq!(rec.get_byte_data_length(), 33);

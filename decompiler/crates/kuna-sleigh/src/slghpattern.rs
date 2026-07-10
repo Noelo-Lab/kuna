@@ -35,11 +35,11 @@
 //! is a lie there, and delegation can make either operand the mutated
 //! receiver).
 //!
-//! ## Walker seam
+//! ## Walker boundary
 //!
 //! `isMatch`/`isInstructionMatch`/`isContextMatch` evaluate against a
 //! `ParserWalker`, which does not exist yet in the port DAG; they take the
-//! [`PatternExpressionContext`] seam trait defined in
+//! [`PatternExpressionContext`] boundary trait defined in
 //! [`crate::slghpatexpress`] (see its module docs).
 //!
 //! ## sla format ids ([`sla`])

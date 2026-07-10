@@ -23,7 +23,7 @@ use kuna_base::marshal::{Decoder, PackedDecode, PackedEncode};
 use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace};
 use kuna_base::types::int4;
 use kuna_decomp::block::{block_flags, BlockEdge, BlockGraph, BlockKind, BlockMap, FlowBlock};
-use kuna_decomp::seams::BlockId;
+use kuna_decomp::context::BlockId;
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();

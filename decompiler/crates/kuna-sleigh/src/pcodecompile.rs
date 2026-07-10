@@ -945,7 +945,7 @@ pub trait PcodeCompile {
                 &ConstTpl::new_real(ConstType::Real, u64::from(qual.size)),
             )?;
         }
-        // C++ `ptr->outvn = new VarnodeTpl(*outvn)` (after the force_size)
+        // re-copy the output varnode into outvn (after the force_size)
         ptr.outvn = ptr.ops.last().and_then(|op| op.get_out()).cloned();
         Ok(ptr)
     }

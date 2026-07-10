@@ -8,7 +8,7 @@
 //! longer inert: `ActionPrototypeTypes` now selects the model + strips RETURN-in0
 //! + calls `Funcdata::init_active_output` (the real proto-recovery init), and
 //! `ActionReturnRecovery` runs the active-output trial machinery.  On the
-//! hand-built fixture here (a `seams::Architecture` with *no* registered proto
+//! hand-built fixture here (a `context::ArchContext` with *no* registered proto
 //! model and *no* RETURN ops) `ActionPrototypeTypes` still has one real effect —
 //! it initializes the active-output container (the C++ `initActiveOutput`, which
 //! always runs when the output is unlocked) — so it bumps `count`.  The remaining
@@ -16,7 +16,7 @@
 //! concentrates on:
 //!
 //!   - **Change-signal totality.** Every `apply` MUST leave `count == 0` and
-//!     return `0`.  A SEAM that spuriously bumps `count` would falsely signal a
+//!     return `0`.  A STUB that spuriously bumps `count` would falsely signal a
 //!     change to the `rule_repeatapply` fixpoint driver (silent infinite-loop /
 //!     extra-pass corruption).  The most fragile case is `ActionExtraPopSetup`
 //!     with a **non-null** stack space (`Some(idx)`): it falls *through* the one
@@ -51,7 +51,7 @@ use kuna_decomp::coreaction_protos::{
     ActionRestrictLocal, ActionReturnRecovery,
 };
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::seams::Architecture;
+use kuna_decomp::context::ArchContext;
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
@@ -74,7 +74,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -151,8 +151,8 @@ fn proto_action_apply_change_signal_contract() {
     );
 }
 
-/// HUNT: idempotence of the SEAM across repeated application.  `rule_onceperfunc`
-/// actions can be re-applied by the driver; a SEAM must stay at count 0 no
+/// HUNT: idempotence of the STUB across repeated application.  `rule_onceperfunc`
+/// actions can be re-applied by the driver; a STUB must stay at count 0 no
 /// matter how many times it runs (no hidden accumulation/state).
 #[test]
 fn repeated_apply_stays_inert() {
@@ -283,6 +283,6 @@ fn extrapop_null_and_nonnull_both_inert_for_now() {
     assert_eq!(
         some_space.base().count,
         0,
-        "non-null stackspace currently still routes through the SEAM (no call list yet)"
+        "non-null stackspace currently still routes through the STUB (no call list yet)"
     );
 }

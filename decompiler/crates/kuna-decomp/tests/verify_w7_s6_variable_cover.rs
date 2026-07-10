@@ -22,7 +22,7 @@
 
 use kuna_base::types::{int4, uintm};
 use kuna_decomp::cover::{Cover, CoverBlock, CoverPoint, PcodeOpSet, PcodeOpSetEntry};
-use kuna_decomp::seams::{OpId, VarnodeId};
+use kuna_decomp::context::{OpId, VarnodeId};
 use kuna_decomp::variable::HighVariableBank;
 use kuna_num::opcodes::OpCode;
 use slotmap::KeyData;

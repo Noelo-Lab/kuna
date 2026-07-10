@@ -7,7 +7,7 @@
 //! same byte stream misdecodes — a Thumb function read as A32, a MIPS16 function
 //! read as MIPS32: garbage.
 //!
-//! The decompiler's normal pipeline gets this from the analysis-tier commit seam
+//! The decompiler's normal pipeline gets this from the analysis-tier commit boundary
 //! (`kuna-console::engine::commit_analysis_output` step 6 paints
 //! [`crate::pass::ContextPaint`] facts over the engine's `ContextDatabase` before
 //! `load function`). The Listing's recursive-descent walker decodes **outside**
@@ -17,14 +17,14 @@
 //! # How the per-address decode mode is obtained
 //!
 //! [`ContextPainter`] does **not** re-derive the decode mode: it *calls into the
-//! existing marker logic* — [`crate::s1_loader::arm_markers::scan_arm_markers`]
+//! existing marker logic* — [`crate::loader::arm_markers::scan_arm_markers`]
 //! (ARM `$t`/`$a` mapping symbols + STT_FUNC LSB → `TMode`) and
-//! [`crate::s1_loader::mips_markers::scan_mips_isa_markers`] (STT_FUNC LSB /
+//! [`crate::loader::mips_markers::scan_mips_isa_markers`] (STT_FUNC LSB /
 //! `STO_MIPS_MIPS16` `st_other` → `ISA_MODE`) — and reuses their
 //! [`crate::pass::ContextPaint`] facts verbatim. The same computation the
 //! decompiler's analysis tier trusts is the one the walker paints.
 //!
-//! # Mechanism (mirrors the commit seam exactly)
+//! # Mechanism (mirrors the commit boundary exactly)
 //!
 //! [`ContextPainter::paint_all`] applies every collected paint to the engine's
 //! `ContextDatabase` via [`Architecture::with_context_db_mut`] →
@@ -43,7 +43,7 @@
 //! byte-identical to no painter at all. Belt-and-suspenders: `set_variable`
 //! returns `Err` for a context variable the active language does not register
 //! (e.g. `TMode` on a MIPS object), and that error is swallowed — the exact
-//! `ContextDatabase`-not-registered no-op the commit seam relies on.
+//! `ContextDatabase`-not-registered no-op the commit boundary relies on.
 
 use std::rc::Rc;
 
@@ -52,8 +52,8 @@ use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 
 use crate::pass::ContextPaint;
-use crate::s1_loader::arm_markers::scan_arm_markers;
-use crate::s1_loader::mips_markers::scan_mips_isa_markers;
+use crate::loader::arm_markers::scan_arm_markers;
+use crate::loader::mips_markers::scan_mips_isa_markers;
 
 /// Resolves and applies the per-address decode-mode context (ARM `TMode`, MIPS
 /// `ISA_MODE`) the recursive-descent walker needs before it decodes (design §4.2).
@@ -102,7 +102,7 @@ impl ContextPainter {
         for paint in &self.paints {
             let begin = Address::new(Rc::clone(code_space), paint.addr);
             // Drop the Result: an unregistered context variable is a faithful
-            // no-op (the commit seam relies on the same swallow).
+            // no-op (the commit boundary relies on the same swallow).
             let _ = arch.with_context_db_mut(|db| match paint.end {
                 Some(end) => {
                     let endad = Address::new(Rc::clone(code_space), end);

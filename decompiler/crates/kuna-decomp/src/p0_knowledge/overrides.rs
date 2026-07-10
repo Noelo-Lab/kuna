@@ -39,19 +39,19 @@
 //! value differs from the space's static delay, so the predicate stays `true`
 //! and the bump is never repeated.
 //!
-//! ### Seams
+//! ### Boundaries
 //!
 //! - The prototype override (`protoover : map<Address,FuncProto*>`) holds the W4
 //!   `FuncProto` (`fspec.cc`, not yet ported).  Its insert/query/encode/printRaw
 //!   surface is captured by the [`FuncProtoOverride`] trait so the store, the
 //!   merge-on-insert rule, and the encode walk are faithful; the W4 wiring point
-//!   implements [`FuncProtoOverride`] for the real `FuncProto`.  // SEAM(W4)
+//!   implements [`FuncProtoOverride`] for the real `FuncProto`.  // STUB(W4)
 //! - `applyPrototype`/`applyIndirect` copy into a `FuncCallSpecs` (W4) and
 //!   `applyDeadCodeDelay`/`applyForceGoto` drive `Funcdata`/`Heritage`.  Those
 //!   are exposed as query/iterator accessors here ([`Override::find_proto_override`],
 //!   [`Override::find_indirect_override`], [`Override::deadcode_delays`],
 //!   [`Override::force_gotos`]) so the apply logic can live at the W4/W5 call
-//!   site without this module depending on the unported subsystems.  // SEAM(W4)
+//!   site without this module depending on the unported subsystems.  // STUB(W4)
 
 use std::collections::BTreeMap;
 
@@ -117,12 +117,12 @@ pub mod flow_type {
 }
 
 // ---------------------------------------------------------------------------
-// FuncProto seam (override.hh: map<Address,FuncProto *> protoover)
+// FuncProto boundary (override.hh: map<Address,FuncProto *> protoover)
 // ---------------------------------------------------------------------------
 
 /// \brief The slice of the W4 `FuncProto` that [`Override`] drives.
 ///
-/// SEAM(W4): the prototype override stores a `FuncProto*` (fspec.cc, not yet
+/// STUB(W4): the prototype override stores a `FuncProto*` (fspec.cc, not yet
 /// ported).  [`Override`] only ever (a) marks it as an override
 /// (`p->setOverride(true)`), (b) encodes it (`(*fiter).second->encode(encoder)`),
 /// and (c) prints it (`(*fiter).second->printRaw("func", s)`); the copy into a
@@ -185,7 +185,7 @@ impl FuncProtoOverride for PiecesProtoOverride {
 /// The W4 construct-and-decode callback used by [`Override::decode`] for the
 /// `<protooverride>` branch.
 ///
-/// SEAM(W4): the C++ builds a `FuncProto` from `glb->defaultfp` /
+/// STUB(W4): the C++ builds a `FuncProto` from `glb->defaultfp` /
 /// `glb->types->getTypeVoid()` and calls `fp->decode(decoder, glb)`.  Both the
 /// default prototype model and the type factory are W4, so the construction is
 /// supplied by the caller as this callback (which decodes the child element and
@@ -203,7 +203,7 @@ pub type ProtoDecoder<'a> =
 /// The C++ maps key on `Address` (`std::map`, ordered) — ported to `BTreeMap`
 /// with the same [`Address`] ordering.  `deadcodedelay` and `multistagejump` are
 /// the C++ `vector`s, ported to `Vec`.  The prototype-override values are boxed
-/// [`FuncProtoOverride`] trait objects (SEAM(W4)).
+/// [`FuncProtoOverride`] trait objects (STUB(W4)).
 ///
 /// `Default` constructs the empty store (the C++ default-constructed `Override`).
 #[derive(Default)]
@@ -215,7 +215,7 @@ pub struct Override {
     deadcodedelay: Vec<int4>,
     /// Override indirect at \b call-point into direct to \b addr.
     indirectover: BTreeMap<Address, Address>,
-    /// Override prototype at \b call-point (SEAM(W4): boxed `FuncProto`).
+    /// Override prototype at \b call-point (STUB(W4): boxed `FuncProto`).
     protoover: BTreeMap<Address, Box<dyn FuncProtoOverride>>,
     /// Addresses of indirect jumps that need multistage recovery.
     multistagejump: Vec<Address>,
@@ -326,7 +326,7 @@ impl Override {
     /// Look up a function-prototype override at a call point (C++
     /// `Override::applyPrototype`'s map find).
     ///
-    /// SEAM(W4): the C++ then does `fspecs.copy(*proto)`; the copy into the W4
+    /// STUB(W4): the C++ then does `fspecs.copy(*proto)`; the copy into the W4
     /// `FuncCallSpecs` happens at the call site, so the port returns the matched
     /// override (or `None`) for the caller to copy in.  Returns `None`
     /// immediately when the store is empty (the C++ `if (!protoover.empty())`).
@@ -340,7 +340,7 @@ impl Override {
     /// Look up a destination override for an indirect call (C++
     /// `Override::applyIndirect`'s map find).
     ///
-    /// SEAM(W4): the C++ then does `fspecs.setAddress(addr)`; the port returns
+    /// STUB(W4): the C++ then does `fspecs.setAddress(addr)`; the port returns
     /// the overriding direct-call target (or `None`).  Returns `None` when the
     /// store is empty (the C++ `if (!indirectover.empty())`).
     pub fn find_indirect_override(&self, callpoint: &Address) -> Option<&Address> {
@@ -367,7 +367,7 @@ impl Override {
     /// The force-goto overrides, in [`Address`] order (C++ `applyForceGoto`'s
     /// `forcegoto` walk feeding `data.forceGoto(target, dest)`).
     ///
-    /// SEAM(W5): the C++ `applyForceGoto` calls `Funcdata::forceGoto` for each
+    /// STUB(W5): the C++ `applyForceGoto` calls `Funcdata::forceGoto` for each
     /// entry; the port exposes the ordered `(target, dest)` pairs so the W5 call
     /// site drives the (already-ported) `Funcdata::force_goto`.
     pub fn force_gotos(&self) -> impl Iterator<Item = (&Address, &Address)> {
@@ -377,7 +377,7 @@ impl Override {
     /// The installed dead-code delays as `(space_index, delay)` pairs, skipping
     /// the `-1` placeholders (C++ `applyDeadCodeDelay`'s `deadcodedelay` walk).
     ///
-    /// SEAM(W5): the C++ `applyDeadCodeDelay` looks up `glb->getSpace(i)` and
+    /// STUB(W5): the C++ `applyDeadCodeDelay` looks up `glb->getSpace(i)` and
     /// calls `data.setDeadCodeDelay(spc, delay)`; the port yields the
     /// `(index, delay)` pairs for the W5 call site to resolve and apply.
     pub fn deadcode_delays(&self) -> impl Iterator<Item = (int4, int4)> + '_ {
@@ -530,7 +530,7 @@ impl Override {
     /// Parse an `<override>` element containing override commands
     /// (C++ `Override::decode`).
     ///
-    /// SEAM(W4): the `<protooverride>` branch constructs a `FuncProto` from
+    /// STUB(W4): the `<protooverride>` branch constructs a `FuncProto` from
     /// `glb->defaultfp` / `glb->types->getTypeVoid()` and decodes it — both W4.
     /// The port takes a `proto_decoder` callback that performs that W4
     /// construction+decode (and returns the boxed [`FuncProtoOverride`]); the

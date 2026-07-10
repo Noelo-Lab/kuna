@@ -189,7 +189,7 @@ fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
 // Op-listing render (coarse "print raw"-ish op line; mirrors deadcode_b4.rs).
 // ===========================================================================
 
-fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::VarnodeId) -> String {
+fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::context::VarnodeId) -> String {
     let v = match fd.vbank().get(vn) {
         Some(v) => v,
         None => return "<stale>".to_string(),
@@ -218,7 +218,7 @@ fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::Varnode
     tok
 }
 
-fn render_op(arch: &Architecture, fd: &Funcdata, op: kuna_decomp::seams::OpId) -> String {
+fn render_op(arch: &Architecture, fd: &Funcdata, op: kuna_decomp::context::OpId) -> String {
     let o = fd.obank().get(op).expect("render_op: stale op");
     let sq: &SeqNum = o.get_seq_num();
     let mut s = String::new();
@@ -322,7 +322,7 @@ fn boolless_print_c_emits_structured_body() {
 
     // Dump the analyzed IR the printer renders from (the B4 boundary).
     eprintln!("=== boolless analyzed IR (the printer input) ===");
-    let mut alive: Vec<kuna_decomp::seams::OpId> = fd.obank().iter_alive().collect();
+    let mut alive: Vec<kuna_decomp::context::OpId> = fd.obank().iter_alive().collect();
     alive.sort_by_key(|&op| fd.obank().get(op).unwrap().get_seq_num().get_time());
     for &op in &alive {
         eprintln!("  {}", render_op(arch, &fd, op));
@@ -581,8 +581,8 @@ fn w10_merge_trim_copy_is_real_ir_artifact() {
     // Find a COPY whose output feeds a MULTIEQUAL (the merge trim that breaks the
     // global<->ACC cover intersection).  Its output must be a fresh unique
     // (IPTR_INTERNAL space) — created by the merge, not present pre-merge.
-    let mut trim_copy_out: Option<kuna_decomp::seams::VarnodeId> = None;
-    let mut multiequal_inputs: Vec<kuna_decomp::seams::VarnodeId> = Vec::new();
+    let mut trim_copy_out: Option<kuna_decomp::context::VarnodeId> = None;
+    let mut multiequal_inputs: Vec<kuna_decomp::context::VarnodeId> = Vec::new();
     for op in fd.obank().iter_alive() {
         let o = fd.obank().get(op).unwrap();
         match o.code() {
@@ -642,7 +642,7 @@ fn w10_merged_high_has_multiple_instances_and_acc_storage() {
     let arch = xarch.sleigh_mut().base_mut().unwrap();
 
     // Locate the high named "v1".
-    let mut v1_high: Option<kuna_decomp::seams::HighVariableId> = None;
+    let mut v1_high: Option<kuna_decomp::context::HighVariableId> = None;
     for vn in fd.vbank().iter_loc() {
         if let Some(h) = fd.vbank().get(vn).and_then(|v| v.get_high()) {
             if fd.high_bank().get(h).and_then(|hh| hh.kuna_name()) == Some("v1") {

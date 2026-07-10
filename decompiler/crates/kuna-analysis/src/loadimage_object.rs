@@ -32,7 +32,7 @@
 //!   directly off the ELF header (machine + endianness + class), which is
 //!   exactly what `SleighArchitecture::resolveArchitecture` consumes.  The
 //!   compiler field (`:gcc`) is the System V/Linux default (the only ABI a bare
-//!   ELF identifies); other ABIs are a seam.
+//!   ELF identifies); other ABIs are a hook.
 //! - `adjustVma(adjust)` shifts every segment/section/symbol vma by
 //!   `addressToByte(adjust,wordsize)`, exactly as `LoadImageBfd::adjustVma`
 //!   walks `thebfd->sections` adding the byte-scaled adjustment.
@@ -49,7 +49,7 @@
 //! machines kuna ships a `.sla` for (x86 32/64, ARM/AArch64, MIPS, PPC, SPARC,
 //! RISC-V).  An unmapped machine surfaces a `LowlevelError` naming the machine
 //! (the caller falls back to an explicit `--target`).  Non-ELF object formats
-//! (PE/Mach-O) are a seam — this loader is ELF-only, matching the W11 task.
+//! (PE/Mach-O) are a hook — this loader is ELF-only, matching the W11 task.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -82,7 +82,7 @@ fn reloc_objects_enabled() -> bool {
 }
 
 /// Demangle a loader funcsym name (the kuna analog of Ghidra's
-/// `GnuDemanglerAnalyzer`; see [`crate::s1_demangle`]).  Applied to every
+/// `GnuDemanglerAnalyzer`; see [`crate::demangle`]).  Applied to every
 /// `.symtab` / PLT / `.dynsym` name *after* `@VERSION` stripping and *before* it
 /// is installed as a `FunctionSymbol`, so `_ZN3foo3barEv` -> `foo::bar` and
 /// kuna's `::`-namespace splitter nests the call.  Operates on the byte-string
@@ -91,7 +91,7 @@ fn reloc_objects_enabled() -> bool {
 /// template args), which is a hard requirement of the scope splitter.
 fn demangle_funcsym_name(name: Vec<u8>) -> Vec<u8> {
     match std::str::from_utf8(&name) {
-        Ok(s) => match crate::s1_demangle::demangle_name(s) {
+        Ok(s) => match crate::demangle::demangle_name(s) {
             Some(d) => d.into_bytes(),
             None => name,
         },
@@ -163,7 +163,7 @@ pub struct ObjectLoadImage {
     /// (read-only) beyond the section-flag scan — the MIPS GOT external slots,
     /// whose static contents (the `.MIPS.stubs` stub addresses) the engine folds
     /// so a `lw $t9, off($gp); jalr $t9` indirect call resolves to the import name.
-    /// Empty off-MIPS.  See [`crate::s1_loader::elf_plt::mips_got_const_ranges`].
+    /// Empty off-MIPS.  See [`crate::loader::elf_plt::mips_got_const_ranges`].
     const_ranges: Vec<(u64, u64)>,
     /// The address space the file bytes map to (C++ `spaceid`, null until
     /// `attachToSpace`).
@@ -189,7 +189,7 @@ impl ObjectLoadImage {
     /// unreadable file, an unrecognized object format, a non-ELF object, or a
     /// machine with no kuna `.sla`.
     pub fn open(filename: &str) -> KunaResult<ObjectLoadImage> {
-        // bfd_openr(filename): read the image file.
+        // Read the image file.
         let bytes = std::fs::read(filename).map_err(|e| {
             KunaError::lowlevel(format!("Unable to open image file: {filename}: {e}"))
         })?;
@@ -198,20 +198,20 @@ impl ObjectLoadImage {
 
     /// Open from an in-memory image (the testable core of [`Self::open`]).
     pub fn from_bytes(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
-        // bfd_check_format(thebfd, bfd_object): parse the object file.
+        // Parse the object file.
         let file = object::File::parse(bytes).map_err(|e| {
             KunaError::lowlevel(format!(
                 "File: {filename} : not in recognized object file format: {e}"
             ))
         })?;
-        // (B) Select the per-format `ObjectFormat` behind the seam. Today only ELF
+        // (B) Select the per-format `ObjectFormat` behind the boundary. Today only ELF
         // is constructible (`detect` rejects everything else, and the engine
         // dispatch only routes `\x7fELF` here), so this is the verbatim ELF path;
         // PE/Mach-O/COFF impls land behind this same call in later PRs. The error
         // text differs from the old "not an ELF object" string, but the rejected
         // arm is unreachable on the live path (the engine never hands a non-ELF
         // here), so no behavior changes.
-        let fmt = crate::s1_loader::format::detect(&file)?;
+        let fmt = crate::loader::format::detect(&file)?;
 
         let archtype = language_id_for(&file, fmt.as_ref(), bytes, filename)?;
         // (kuna §2.2) The default-model fallback id: the same arch/endian stem
@@ -227,7 +227,7 @@ impl ObjectLoadImage {
         // `.rela.*` relocations, and rebase symbols instead — the angr CLE `ELF`
         // relocatable backend's job.  Gated on the file type (linked
         // ET_EXEC/ET_DYN images are byte-identical) plus the `relocobjects`
-        // off-switch.  See [`crate::s1_loader::elf_reloc`].
+        // off-switch.  See [`crate::loader::elf_reloc`].
         if reloc_objects_enabled()
             && file.kind() == object::ObjectKind::Relocatable
             && file.segments().next().is_none()
@@ -257,7 +257,7 @@ impl ObjectLoadImage {
         segments.sort_by_key(|s| s.vma);
 
         // Snapshot the sections for the info walks (the BFD `asection` list).
-        // (C) The per-format section-flag translation goes through the seam; for
+        // (C) The per-format section-flag translation goes through the boundary; for
         // ELF this is the old `section_kind_flags` body, lifted verbatim into
         // `ElfFormat::section_bits`.
         let mut sections: Vec<SectionInfo> = Vec::new();
@@ -270,7 +270,7 @@ impl ObjectLoadImage {
         // import that appears in several tables is registered exactly once:
         //   1. `.symtab` defined functions (BFD BSF_FUNCTION with a name),
         //   2. PLT stubs → imported library names (the kuna analog of Ghidra's
-        //      `ElfDefaultGotPltMarkup`; see [`crate::s1_loader::elf_plt`]),
+        //      `ElfDefaultGotPltMarkup`; see [`crate::loader::elf_plt`]),
         //   3. `.dynsym` defined functions, for stripped-but-dynamic binaries
         //      whose `.symtab` is gone.
         let mut funcsyms: Vec<FuncSym> = Vec::new();
@@ -298,8 +298,8 @@ impl ObjectLoadImage {
             }
             let addr = sym.address();
             let name = match sym.name_bytes() {
-                Ok(n) if !n.is_empty() => crate::s1_loader::elf_plt::strip_version(n),
-                _ => continue, // a->name != (const char *)0
+                Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
+                _ => continue,
             };
             if name.is_empty() {
                 continue;
@@ -311,7 +311,7 @@ impl ObjectLoadImage {
         }
 
         // 2. PLT stubs → imported library names.
-        // (F) Per-format import resolution goes through the seam; for ELF
+        // (F) Per-format import resolution goes through the boundary; for ELF
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
         for p in fmt.resolve_imports(&file, bytes) {
@@ -332,7 +332,7 @@ impl ObjectLoadImage {
             }
             let addr = sym.address();
             let name = match sym.name_bytes() {
-                Ok(n) if !n.is_empty() => crate::s1_loader::elf_plt::strip_version(n),
+                Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
                 _ => continue,
             };
             if name.is_empty() {
@@ -348,7 +348,7 @@ impl ObjectLoadImage {
         // `lw $t9, off($gp)` indirect-call load to the stub address and resolves the
         // call to the import name (the analog of Ghidra's `setConstant` on the GOT
         // pointer entries in `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS.
-        // Through the seam: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
+        // Through the boundary: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
         let const_ranges = fmt.const_ranges(&file, bytes);
 
         Ok(ObjectLoadImage {
@@ -372,14 +372,14 @@ impl ObjectLoadImage {
     /// `.rela.*` relocations, and rebase / extern-bind the symbols — producing
     /// the same `(segments, sections, funcsyms)` triple the linked `PT_LOAD` path
     /// produces.  Funcsym names are demangled + deduped exactly as on the linked
-    /// path.  See [`crate::s1_loader::elf_reloc`].
+    /// path.  See [`crate::loader::elf_reloc`].
     fn from_relocatable(
         filename: &str,
         file: &object::File,
-        fmt: &dyn crate::s1_loader::format::ObjectFormat,
+        fmt: &dyn crate::loader::format::ObjectFormat,
         archtype: Vec<u8>,
     ) -> KunaResult<ObjectLoadImage> {
-        use crate::s1_loader::elf_reloc;
+        use crate::loader::elf_reloc;
 
         let layout = elf_reloc::layout_relocatable(file, fmt);
 
@@ -402,7 +402,7 @@ impl ObjectLoadImage {
             if addr == 0 {
                 continue;
             }
-            let name = crate::s1_loader::elf_plt::strip_version(&name);
+            let name = crate::loader::elf_plt::strip_version(&name);
             if name.is_empty() {
                 continue;
             }
@@ -471,9 +471,9 @@ impl ObjectLoadImage {
     /// `getNextSymbol` yields, but already **rebased** to the load VMA (for an
     /// `ET_REL` `.o` the raw `object` symbol address is section-relative; the
     /// loader's layout pass rebases each `SHF_ALLOC` section above
-    /// [`RELOC_BASE`](crate::s1_loader::elf_reloc::RELOC_BASE) and rebases the
+    /// [`RELOC_BASE`](crate::loader::elf_reloc::RELOC_BASE) and rebases the
     /// symbols with it). Exposed for the FID generator
-    /// ([`crate::s1_fid::build`]), which needs the rebased `(addr, name)` to seed
+    /// ([`crate::fid::build`]), which needs the rebased `(addr, name)` to seed
     /// the Listing and label the hashed functions — the raw `object::File`
     /// addresses would point into the unrebased `.o` and miss every instruction.
     /// Names are lossy-UTF-8 decoded (the marshal convention stores them as bytes).
@@ -494,7 +494,7 @@ impl ObjectLoadImage {
             let start = s.vma;
             let secsize = s.data.len() as u64; // cast: segment byte count
             let stop = start.wadd(secsize);
-            // (offset>=start)&&(offset<stop)  — C++ uses raw `<`/`>=`; a
+            // C++ uses raw `<`/`>=`; a
             // wrapped stop (segment at the top of the space) cannot occur for a
             // real ELF, matching the BFD assumption.
             if offset >= start && offset < stop {
@@ -532,7 +532,6 @@ impl LoadImage for ObjectLoadImage {
     fn load_fill(&mut self, ptr: &mut [u8], addr: &Address) -> KunaResult<()> {
         // cast: the C++ `int4 size` parameter (slice length; see trait docs).
         let size: i32 = ptr.len() as i32;
-        // if (addr.getSpace() != spaceid) throw DataUnavailError(...)
         let space = addr
             .get_space()
             .expect("ObjectLoadImage::loadFill: address with null space (C++ UB)");
@@ -550,7 +549,6 @@ impl LoadImage for ObjectLoadImage {
         let mut bufoffset = self.bufoffset.borrow_mut();
         let mut buffer = self.buffer.borrow_mut();
 
-        // if ((curaddr>=bufoffset)&&(curaddr+size<bufoffset+bufsize)) { ... }
         // The C++ comparison is exact uintb arithmetic (BUFSIZE is 512, so the
         // `+ size` cannot wrap for any real request).
         if curaddr0 >= *bufoffset
@@ -570,11 +568,10 @@ impl LoadImage for ObjectLoadImage {
         while cursize > 0 {
             let found = self.find_section(curaddr);
             let Some((idx, secsize)) = found else {
-                // p == 0
                 if offset == 0 {
                     break; // Initial address not mapped
                 }
-                // memset(buffer+offset,0,cursize): fill the rest with zero.
+                // Fill the rest with zero.
                 for b in &mut buffer[offset..offset + cursize as usize] {
                     *b = 0;
                 }
@@ -592,14 +589,13 @@ impl LoadImage for ObjectLoadImage {
                 if rs > cursize as u64 {
                     rs = cursize as u64;
                 }
-                // memset(buffer+offset,0,readsize): zeroes to the next section.
+                // Zeroes to the next section.
                 for b in &mut buffer[offset..offset + rs as usize] {
                     *b = 0;
                 }
                 readsize = rs;
             } else {
                 let mut rs = cursize as u64;
-                // if (curaddr+readsize>p->vma+secsize) readsize = p->vma+secsize-curaddr;
                 if curaddr.wadd(rs) > seg_vma.wadd(secsize) {
                     rs = seg_vma.wadd(secsize).wsub(curaddr);
                 }
@@ -618,7 +614,7 @@ impl LoadImage for ObjectLoadImage {
             addr.print_raw(&mut errmsg)?;
             return Err(KunaError::data_unavail(errmsg));
         }
-        // memcpy(ptr,buffer,size): copy the requested bytes out.
+        // Copy the requested bytes out.
         ptr.copy_from_slice(&buffer[..ptr.len()]);
         let _ = size; // size mirrors ptr.len(); kept for the C++ correspondence
         Ok(())
@@ -636,7 +632,6 @@ impl LoadImage for ObjectLoadImage {
         let sym = &self.funcsyms[*cur];
         *cur += 1;
         record.name = sym.name.clone();
-        // record.address = Address(spaceid,val)
         let space = self
             .spaceid
             .as_ref()
@@ -695,15 +690,14 @@ impl LoadImage for ObjectLoadImage {
     }
 
     fn adjust_vma(&mut self, adjust: i64) {
-        // adjust = AddrSpace::addressToByte(adjust,wordsize) (C++
-        // `LoadImageBfd::adjustVma`, `loadimage_bfd.cc:67`).
+        // C++ `LoadImageBfd::adjustVma` (`loadimage_bfd.cc:67`): scale the shift by wordsize.
         let spaceid = self
             .spaceid
             .as_ref()
             .expect("ObjectLoadImage::adjustVma before attachToSpace (C++ null space deref)");
         let badjust = AddrSpace::address_to_byte(adjust as u64, spaceid.get_word_size());
         for s in &mut self.segments {
-            s.vma = s.vma.wadd(badjust); // s->vma += adjust
+            s.vma = s.vma.wadd(badjust);
         }
         for s in &mut self.sections {
             s.vma = s.vma.wadd(badjust);
@@ -742,7 +736,7 @@ impl LoadImage for ObjectLoadImage {
 /// `--target` language id).
 fn language_id_for(
     file: &object::File,
-    fmt: &dyn crate::s1_loader::format::ObjectFormat,
+    fmt: &dyn crate::loader::format::ObjectFormat,
     bytes: &[u8],
     filename: &str,
 ) -> KunaResult<Vec<u8>> {
@@ -755,7 +749,7 @@ fn language_id_for(
     // ONLY thing arm64e changes (import naming / symbols are unaffected). Off by
     // default (the `macho-arm64e` gate); when on and the binary is an arm64e
     // Mach-O, the AppleSilicon id wins over the composed `v8A` id below.
-    if let Some(apple_id) = crate::s1_loader::format::macho::apple_silicon_id(fmt, arch, bytes) {
+    if let Some(apple_id) = crate::loader::format::macho::apple_silicon_id(fmt, arch, bytes) {
         return Ok(apple_id.into_bytes());
     }
     // The format's default-ABI compiler model for this arch.  For ELF this is
@@ -829,11 +823,11 @@ fn compose_language_id(arch: Architecture, endian: &str, model: Option<&str>) ->
 /// console gate (`verify_elf_language_ids`) can assert every one of them resolves
 /// in the SLEIGH language database (`scan_language_database`), proving the §2.2
 /// `compiler_model` refactor still yields only valid, vendored ids. Derived from
-/// the same [`compose_language_id`] + [`crate::s1_loader::format::elf::ElfFormat`]
+/// the same [`compose_language_id`] + [`crate::loader::format::elf::ElfFormat`]
 /// the loader uses, so it cannot drift from the producer.
 pub fn elf_language_ids() -> Vec<String> {
-    use crate::s1_loader::format::elf::ElfFormat;
-    use crate::s1_loader::format::ObjectFormat;
+    use crate::loader::format::elf::ElfFormat;
+    use crate::loader::format::ObjectFormat;
     let fmt = ElfFormat;
     // Per arch, the endiannesses a real ELF actually carries *and* the vendored
     // `.ldefs` declare a stem for (so each enumerated id is one a real binary
@@ -867,7 +861,7 @@ pub fn elf_language_ids() -> Vec<String> {
     out
 }
 
-/// Every SLEIGH language id a given [`crate::s1_loader::format::ObjectFormat`]
+/// Every SLEIGH language id a given [`crate::loader::format::ObjectFormat`]
 /// produces over `arches`, paired with the *fallback* id [`fallback_language_id`]
 /// would compute for the same arch/endian (design §2.2). The console gate
 /// (`verify_object_language_ids`) asserts that for every entry **either the
@@ -880,7 +874,7 @@ pub fn elf_language_ids() -> Vec<String> {
 /// what `is_little_endian()` would report (it drives the fallback's endian), so
 /// the enumerated pair is exactly what a real binary of that arch produces.
 pub fn format_language_ids(
-    fmt: &dyn crate::s1_loader::format::ObjectFormat,
+    fmt: &dyn crate::loader::format::ObjectFormat,
     arches: &[(Architecture, &[&str])],
 ) -> Vec<(String, Option<String>)> {
     let mut out = Vec::new();
@@ -903,7 +897,7 @@ pub fn format_language_ids(
 /// The arch/endian set a **PE** image realistically carries (the Windows arches
 /// kuna ships a `.sla` for): x86 (LE only), ARM/AArch64 (LE only on Windows).
 pub fn pe_language_ids() -> Vec<(String, Option<String>)> {
-    use crate::s1_loader::format::pe::PeFormat;
+    use crate::loader::format::pe::PeFormat;
     format_language_ids(
         &PeFormat,
         &[
@@ -918,7 +912,7 @@ pub fn pe_language_ids() -> Vec<(String, Option<String>)> {
 /// The arch/endian set a **Mach-O** image realistically carries: x86-64 (LE) and
 /// arm64 (LE) — the two macOS arches.
 pub fn macho_language_ids() -> Vec<(String, Option<String>)> {
-    use crate::s1_loader::format::macho::MachOFormat;
+    use crate::loader::format::macho::MachOFormat;
     format_language_ids(
         &MachOFormat,
         &[
@@ -932,7 +926,7 @@ pub fn macho_language_ids() -> Vec<(String, Option<String>)> {
 /// The arch/endian set a **COFF object** realistically carries (the MSVC/clang
 /// Windows-object arches): x86 (LE), ARM/AArch64 (LE).
 pub fn coff_language_ids() -> Vec<(String, Option<String>)> {
-    use crate::s1_loader::format::coff::CoffFormat;
+    use crate::loader::format::coff::CoffFormat;
     format_language_ids(
         &CoffFormat,
         &[
@@ -1319,7 +1313,7 @@ mod tests {
         let path = format!("{}/tests/fixtures/plt_mips32", env!("CARGO_MANIFEST_DIR"));
         let bytes = std::fs::read(&path).unwrap();
         let file = object::File::parse(&*bytes).unwrap();
-        let ranges = crate::s1_loader::elf_plt::mips_got_const_ranges(&file);
+        let ranges = crate::loader::elf_plt::mips_got_const_ranges(&file);
         // Each range is a single 4-byte pointer slot.
         assert!(ranges.iter().all(|&(a, b)| b == a + 3), "4-byte slot ranges: {ranges:?}");
         let starts: std::collections::HashSet<u64> = ranges.iter().map(|&(a, _)| a).collect();
@@ -1363,7 +1357,7 @@ mod tests {
 
     #[test]
     fn cpp_mangled_symbol_is_demangled_name_only() {
-        // The kuna `GnuDemanglerAnalyzer` analog (`s1_demangle`): a defined C++
+        // The kuna `GnuDemanglerAnalyzer` analog (`demangle`): a defined C++
         // method `_ZN3foo3Bar3bazEi` must surface in the funcsym stream as the
         // demangled NAME-ONLY form `foo::Bar::baz` — not the raw mangled symbol,
         // and not the full c++filt signature `foo::Bar::baz(int)` (the trailing

@@ -16,11 +16,11 @@
 //!   2. **Need the op-graph mutation API** (`opDestroy`/`opRemoveInput`/
 //!      `opSetInput`/`opInsertInput`/`newOp`/`opSetOpcode`/…) — that API is the
 //!      **funcdata_op** (`w3-ir-funcdata-op`) wave's, which runs AFTER this item
-//!      in parallel with no seam rights.  The methods that are *primarily*
+//!      in parallel with no boundary rights.  The methods that are *primarily*
 //!      data-flow patch-up (`pushMultiequals`, `opZeroMulti`,
 //!      `branchRemoveInternal`, `blockRemoveInternal`, `removeBranch`,
 //!      `removeDoNothingBlock`, `removeUnreachableBlocks`, `pushBranch`,
-//!      `nodeSplit`, `descend2Undef`) are seam-noted (`// SEAM(W3-op)`) with an
+//!      `nodeSplit`, `descend2Undef`) are boundary-noted (`// STUB(W3-op)`) with an
 //!      explicit `Err` and a precise note of the missing API; the funcdata_op
 //!      wave fills the bodies once it owns `opDestroy` & friends.
 //!
@@ -28,12 +28,12 @@
 //!      `findJumpTable`, `installJumpTable`, `recoverJumpTable`,
 //!      `stageJumpTable`, `earlyJumpTableFail`, `switchOverJumpTables`,
 //!      `removeJumpTable`) need the W4 `JumpTable`/`FlowInfo`/`ActionDatabase`.
-//!      They are seam-noted (`// SEAM(W4)`); `clearJumpTables` and the dead-table
+//!      They are boundary-noted (`// STUB(W4)`); `clearJumpTables` and the dead-table
 //!      sweep that `structureReset` performs operate on the opaque
 //!      [`JumpTableId`](crate::funcdata::JumpTableId) handles and are carried.
 //!
 //! `stageJumpTable`'s Action-machinery (running the "jumptable" action set on a
-//! truncated partial function) is explicitly `// SEAM(W4)`: it drives
+//! truncated partial function) is explicitly `// STUB(W4)`: it drives
 //! `glb->allacts` (the W4 `ActionDatabase`) and `truncatedFlow` (W4 flow), with
 //! no W3 surface.
 
@@ -45,7 +45,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::block::{block_flags, BlockKind};
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 
 /// The deepest component that performs a conditional split (C++
 /// `FlowBlock::getSplitPoint`), tagged by which arena it lives in.  A leaf
@@ -105,7 +105,7 @@ impl crate::comment::SorterFuncdata for Funcdata {
         let o = self.obank().get(op).ok_or_else(|| {
             KunaError::lowlevel("CommentSorter: stale op cursor")
         })?;
-        // op->getParent() — a dead op (no parent) is C++ LowlevelError.
+        // A dead op (no parent) is a C++ LowlevelError.
         let parent = o
             .get_parent()
             .ok_or_else(|| KunaError::lowlevel("Dead op reaching CommentSorter"))?;
@@ -292,7 +292,6 @@ impl Funcdata {
             Some(o) => o,
             None => return,
         };
-        // tail = lastOp->getParent(); tail->sizeOut()!=1 || tail->getOut(0)!=head -> bail.
         let tail = match self.obank().get(last_op).and_then(|o| o.get_parent()) {
             Some(t) => t,
             None => return,
@@ -466,7 +465,7 @@ impl Funcdata {
             return None;
         }
         let initial_block = self.obank().get(res).and_then(|o| o.get_parent())?;
-        // Statement must terminate in block flowing to head (head->getIn(slot)).
+        // Statement must terminate in block flowing to head.
         if initial_block != self.bblocks_ref().block(head).get_in(slot) {
             return None;
         }
@@ -504,7 +503,6 @@ impl Funcdata {
             Some(o) => o,
             None => return, // For-loop printing not enabled
         };
-        // slot = iterateOp->getParent()->getOutRevIndex(0).
         let iter_parent = match self.obank().get(iterate_op).and_then(|o| o.get_parent()) {
             Some(p) => p,
             None => {
@@ -560,7 +558,6 @@ impl Funcdata {
             return None;
         }
         let final_op = self.vbank().get(vn).unwrap().get_def().unwrap();
-        // parentBlock = loopDef->getParent()->getIn(slot).
         let loop_parent = self.obank().get(loop_def).and_then(|o| o.get_parent())?;
         let parent_block = self.bblocks_ref().block(loop_parent).get_in(slot);
         let mut res_op = final_op;
@@ -664,12 +661,12 @@ impl Funcdata {
     /// Clear any jump-table information, preserving overrides
     /// (C++ `Funcdata::clearJumpTables`, `funcdata_block.cc:42`).
     ///
-    /// SEAM(W4): the C++ keeps override tables (`jt->isOverride()`) and frees the
+    /// STUB(W4): the C++ keeps override tables (`jt->isOverride()`) and frees the
     /// rest.  At W3 the table contents are opaque ([`JumpTableId`]); we drop the
     /// whole vector (no W3 way to know which are overrides).  W4 reinstates the
     /// override-preserving filter.
     pub fn clear_jump_tables(&mut self) {
-        // for jt in jumpvec: if jt->isOverride() keep(clear) else delete  -- SEAM(W4)
+        // for jt in jumpvec: if jt->isOverride() keep(clear) else delete  -- STUB(W4)
         self.jumpvec_mut().clear();
     }
 
@@ -681,9 +678,9 @@ impl Funcdata {
     /// `blocks_unreachable` flag, `sblocks.clear()`) is faithful.  The dead
     /// jump-table sweep operates on opaque handles: the C++ drops tables whose
     /// indirect op `isDead()`.  Determining that needs the op the table points
-    /// at; at W3 the table contents are seamed out, so the sweep is `// SEAM(W4)`
+    /// at; at W3 the table contents are behind the boundary, so the sweep is `// STUB(W4)`
     /// and the vector is left intact (no table is dropped here).  `heritage.
-    /// forceRestructure()` is `// SEAM(W7)`.
+    /// forceRestructure()` is `// STUB(W7)`.
     pub fn structure_reset(&mut self) {
         // flags &= ~blocks_unreachable;
         self.clear_flag_raw(crate::funcdata::funcdata_flags::blocks_unreachable);
@@ -696,15 +693,15 @@ impl Funcdata {
             self.set_flag_raw(crate::funcdata::funcdata_flags::blocks_unreachable);
         }
 
-        // Check for dead jumptables.  -- SEAM(W4): indOp->isDead() unavailable.
+        // Check for dead jumptables.  -- STUB(W4): indOp->isDead() unavailable.
 
-        // sblocks.clear() -> force structuring to start over.
+        // Force structuring to start over.
         self.clear_sblocks();
         // heritage.forceRestructure(): the CFG may have changed (e.g. a block
         // removed by ActionConditionalExe), invalidating the heritage engine's
         // cached augmented dominator tree.  Forcing a rebuild on the next
         // `heritage()` pass prevents `rename_recurse` from walking a stale
-        // (removed) block handle.  (Previously a `// SEAM(W7)`; reached now that
+        // (removed) block handle.  (Previously a `// STUB(W7)`; reached now that
         // ActionDeadCode + condexe actually mutate the CFG.)
         self.heritage_force_restructure();
     }
@@ -751,7 +748,6 @@ impl Funcdata {
     pub fn op_zero_multi(&mut self, op: OpId) -> KunaResult<()> {
         let nin = self.obank().get(op).expect("opZeroMulti: stale op").num_input();
         if nin == 0 {
-            // opInsertInput(op,newVarnode(op->getOut()->getSize(),op->getOut()->getAddr()),0);
             let out = self
                 .obank()
                 .get(op)
@@ -762,10 +758,8 @@ impl Funcdata {
             let m = self.vbank().get(out).expect("opZeroMulti: stale out").get_addr().clone();
             let nv = self.new_varnode(sz, &m, None);
             self.op_insert_input(op, nv, 0)?;
-            // setInputVarnode(op->getIn(0));
             let in0 = self.obank().get(op).expect("opZeroMulti: stale op").get_in(0).expect("opZeroMulti: just-inserted in0");
             self.set_input_varnode(in0)?;
-            // opSetOpcode(op,CPUI_COPY);
             self.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
         } else if nin == 1 {
             self.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
@@ -787,8 +781,6 @@ impl Funcdata {
     /// Does block `bb` contain only MULTIEQUAL/INDIRECT marker ops and branches
     /// (C++ `BlockBasic::hasOnlyMarkers`, `block.cc:2626`)?
     pub fn bb_has_only_markers(&self, bb: BlockId) -> bool {
-        // for(iter=op.begin();...) { if (isMarker()) continue;
-        //   if (isBranch()) continue; return false; } return true;
         for op in self.bb_ops(bb) {
             let o = self.obank().get(op).expect("bb_has_only_markers: stale op");
             if o.is_marker() {
@@ -806,11 +798,11 @@ impl Funcdata {
     /// (C++ `BlockBasic::isDoNothing`, `block.cc:2644`)?
     pub fn bb_is_do_nothing(&self, bb: BlockId) -> bool {
         let g = self.bblocks_ref();
-        // if (sizeOut() != 1) return false;   // no return / cbranch
+        // No return / cbranch.
         if g.block(bb).size_out() != 1 {
             return false;
         }
-        // if (sizeIn() == 0) return false;    // starting block placeholder
+        // Starting block placeholder.
         if g.block(bb).size_in() == 0 {
             return false;
         }
@@ -870,10 +862,8 @@ impl Funcdata {
                 continue;
             }
             for &bl in &redundlist {
-                // vnredund = multiop->getIn(blout->getInIndex(bl));
                 let redund_slot = g.block(blout).get_in_index(bl);
                 let vnredund = mop.get_in(redund_slot);
-                // vnremove = multiop->getIn(inIndexToThis);
                 let mut vnremove = mop.get_in(in_index_to_this);
                 // If vnremove is written by a MULTIEQUAL in -bb-, dereference it.
                 if let Some(vr) = vnremove {
@@ -903,7 +893,6 @@ impl Funcdata {
     /// `block.cc:2605`)?  Returns \b true if there was \e no immediate copy.
     pub fn bb_has_no_immediate_copy(&self, bb: BlockId, outslot: int4) -> bool {
         let g = self.bblocks_ref();
-        // if (!hasImmedCopyEdge(outslot)) return true;
         if !g.block(bb).has_immed_copy_edge(outslot) {
             return true;
         }
@@ -933,7 +922,7 @@ impl Funcdata {
     /// structuring graph is the BlockCopy mirror, which does not own the op list).
     pub fn bb_is_complex(&self, bb: BlockId) -> bool {
         let mut statement: int4 = 0;
-        // if (sizeOut() >= 2) statement = 1;  // the branch counts as a statement
+        // The branch counts as a statement.
         if self.bblocks_ref().block(bb).size_out() >= 2 {
             statement = 1;
         }
@@ -1001,10 +990,8 @@ impl Funcdata {
             None => return false,
         };
         let g = self.bblocks_ref();
-        // inbl = parent->getIn(slot); outedge = parent->getInRevIndex(slot);
         let inbl = g.block(parent).get_in(slot);
         let outedge = g.block(parent).get_in_rev_index(slot);
-        // return inbl->hasImmedCopyEdge(outedge);
         g.block(inbl).has_immed_copy_edge(outedge)
     }
 
@@ -1022,15 +1009,14 @@ impl Funcdata {
     pub fn fd_sblock_last_op(&self, this_id: BlockId) -> Option<OpId> {
         let sb = self.sblocks_ref();
         match sb.block(this_id).get_type() {
-            // BlockCopy::lastOp() = copy->lastOp(): hop to the bblocks block.
+            // BlockCopy: hop to the wrapped bblocks block.
             crate::block::BlockType::Copy => {
                 let bb = sb.block(this_id).get_copy()?;
-                // copy->lastOp(); the wrapped block is a bblocks BlockBasic.
+                // The wrapped block is a bblocks BlockBasic.
                 self.bb_op_tail(bb)
             }
-            // BlockBasic::lastOp() = op.back(): same arena, direct tail.
+            // BlockBasic: same arena, direct tail.
             crate::block::BlockType::Basic => self.bb_op_tail(this_id),
-            // BlockList::lastOp() = getBlock(size-1)->lastOp().
             crate::block::BlockType::Ls => {
                 let n = sb.block(this_id).get_size();
                 if n == 0 {
@@ -1039,12 +1025,11 @@ impl Funcdata {
                 let last = sb.sub_block(this_id, n - 1)?;
                 self.fd_sblock_last_op(last)
             }
-            // BlockCondition::lastOp() = getBlock(1)->lastOp().
             crate::block::BlockType::Condition => {
                 let b1 = sb.sub_block(this_id, 1)?;
                 self.fd_sblock_last_op(b1)
             }
-            // BlockIf::lastOp(): only an ifgoto (size 1) has a last op.
+            // BlockIf: only an ifgoto (size 1) has a last op.
             crate::block::BlockType::If => {
                 if sb.block(this_id).get_size() == 1 {
                     let b0 = sb.sub_block(this_id, 0)?;
@@ -1065,15 +1050,11 @@ impl Funcdata {
             Some(p) => p,
             None => return,
         };
-        // FlowBlock *inbl = parent->getIn(slot);
-        // int4 outedge = parent->getInRevIndex(slot);
         let (inbl, outedge) = {
             let g = self.bblocks_ref();
             (g.block(parent).get_in(slot), g.block(parent).get_in_rev_index(slot))
         };
-        // inbl->setImmedCopyEdge(outedge);
         self.bblocks_mut().set_immed_copy_edge(inbl, outedge);
-        // addlflags |= immed_copy;
         if let Some(o) = self.obank_mut().get_mut(op) {
             o.set_additional_flag(crate::op::pcodeop_addlflags::immed_copy);
         }
@@ -1086,20 +1067,16 @@ impl Funcdata {
     /// \param bb is the given basic block
     /// \param num is the index of the outgoing edge to remove
     pub fn branch_remove_internal(&mut self, bb: BlockId, num: int4) -> KunaResult<()> {
-        // if (bb->sizeOut() == 2) opDestroy(bb->lastOp());  // no decision left
+        // No decision left.
         if self.bblocks_ref().block(bb).size_out() == 2 {
             if let Some(lastop) = self.bb_op_tail(bb) {
                 self.op_destroy(lastop);
             }
         }
-        // bbout = (BlockBasic *) bb->getOut(num);
         let bbout = self.bblocks_ref().block(bb).get_out(num);
-        // blocknum = bbout->getInIndex(bb);
         let blocknum = self.bblocks_ref().block(bbout).get_in_index(bb);
-        // bblocks.removeEdge(bb,bbout);  // Sever (one) connection
+        // Sever (one) connection.
         self.bblocks_mut().remove_edge(bb, bbout);
-        // for(iter=bbout->beginOp();...) { if (op->code()!=MULTIEQUAL) break;
-        //   opRemoveInput(op,blocknum); opZeroMulti(op); }
         for op in self.bb_ops(bbout) {
             if self.obank().get(op).expect("branchRemoveInternal: stale op").code() != OpCode::CPUI_MULTIEQUAL {
                 break;
@@ -1132,7 +1109,6 @@ impl Funcdata {
             let m = self.vbank().get(origvn).expect("createReplaceVarnode: stale origvn").get_addr().clone();
             self.new_varnode(sz, &m, Some(ty))
         };
-        // if (isHighOn()) { origvn->replaceInHigh(replacevn); replacevn->setExplicit(); }
         if self.is_high_on() {
             self.vn_replace_in_high(origvn, replacevn);
             self.vbank_mut().get_mut(replacevn).expect("createReplaceVarnode").set_explicit();
@@ -1158,7 +1134,7 @@ impl Funcdata {
         // vn->getSymbolEntry() is a W4 surface (no Varnode-Symbol link in the
         // merged tree), so the symbol-dirty trigger is conservatively false.
         let vn_has_symbol_entry = false;
-        let mut set_high_log: Vec<(VarnodeId, crate::seams::HighVariableId, kuna_base::types::int2)> =
+        let mut set_high_log: Vec<(VarnodeId, crate::context::HighVariableId, kuna_base::types::int2)> =
             Vec::new();
         self.with_high_split(|hb, ctx| {
             hb.replace_in_high(
@@ -1187,12 +1163,10 @@ impl Funcdata {
             return Ok(());
         }
         if self.bblocks_ref().block(bb).size_out() > 1 {
-            // warningHeader("push_multiequal on block with multiple outputs"); --
-            // a do-nothing block has exactly one out (isDoNothing guard), so this
+            // A do-nothing block has exactly one out (isDoNothing guard), so this
             // never fires on the removeDoNothingBlock path.  The warning facility
             // is a W4 surface; the C++ continues past it (non-fatal).
         }
-        // outblock = bb->getOut(0); outblock_ind = bb->getOutRevIndex(0);
         let outblock = self.bblocks_ref().block(bb).get_out(0);
         let outblock_ind = self.bblocks_ref().block(bb).get_out_rev_index(0);
 
@@ -1328,7 +1302,6 @@ impl Funcdata {
             }
             let i = self.obank().get(op).expect("descend2Undef: stale op").get_slot(vn);
             let opc = self.obank().get(op).expect("descend2Undef: stale op").code();
-            // badconst = newConstant(sz,0xBADDEF);
             let badconst = self.new_constant(sz, 0xBADDEF);
             match opc {
                 OpCode::CPUI_MULTIEQUAL => {
@@ -1393,7 +1366,7 @@ impl Funcdata {
             if self.obank().get(op).expect("blockRemoveInternal: stale op").code()
                 == OpCode::CPUI_BRANCHIND
             {
-                // JumpTable *jt = findJumpTable(op); if (jt) removeJumpTable(jt); -- SEAM(W4)
+                // JumpTable *jt = findJumpTable(op); if (jt) removeJumpTable(jt); -- STUB(W4)
             }
         }
         if !unreachable {
@@ -1419,7 +1392,6 @@ impl Funcdata {
                         .get_in(blocknum)
                         .expect("blockRemoveInternal: MULTIEQUAL slot");
                     self.op_remove_input(op, blocknum); // Remove the deleted block's branch
-                    // deadop = deadvn->getDef();
                     let deadop = self.vbank().get(deadvn).expect("blockRemoveInternal").get_def();
                     let written =
                         self.vbank().get(deadvn).expect("blockRemoveInternal").is_written();
@@ -1471,9 +1443,8 @@ impl Funcdata {
                     // Mark descendants in (possibly) reachable blocks as undefined.
                     let undef = self.descend2_undef(deadvn)?;
                     if undef && !desc_warning {
-                        // warningHeader("Creating undefined varnodes in (possibly)
-                        // reachable block") -- W4 warning facility; the descend2Undef
-                        // rewrite is the realized side effect.  Print once.
+                        // W4 warning facility; the descend2Undef rewrite is the
+                        // realized side effect.  Print once.
                         desc_warning = true;
                     }
                 }
@@ -1482,7 +1453,7 @@ impl Funcdata {
                 }
             }
             if self.obank().get(op).expect("blockRemoveInternal").is_call() {
-                // deleteCallSpecs(op) -- prune the call from the call-spec registry.
+                // Prune the call from the call-spec registry.
                 self.delete_call_specs(op);
             }
             self.op_destroy(op); // No longer has descendants
@@ -1575,7 +1546,7 @@ impl Funcdata {
         // dead/alive partition; descend2Undef skips reads inside dead blocks).
         for &bb in &list {
             self.bblocks_mut().block_mut(bb).set_dead();
-            // warningHeader("Removing unreachable block (...)") -- W4 warning.
+            // W4 warning facility.
         }
         // Sever every out-edge of every dead block.
         for &bb in &list {
@@ -1599,13 +1570,12 @@ impl Funcdata {
     /// to realize the negation requests the structured collapse recorded against
     /// the underlying `BlockBasic` (the dual-arena `BlockCopy::copy` target).
     pub fn block_basic_negate_lastop(&mut self, bb: BlockId) {
-        // lastop->flipFlag(boolean_flip); lastop->flipFlag(fallthru_true);
         if let Some(lastop) = self.bb_op_tail(bb) {
             let o = self.obank_mut().get_mut(lastop).expect("negate_lastop: stale op");
             o.flip_flag(crate::op::pcodeop_flags::boolean_flip);
             o.flip_flag(crate::op::pcodeop_flags::fallthru_true);
         }
-        // FlowBlock::negateCondition(true): swapEdges() — flip the out-edge order.
+        // Flip the out-edge order.
         self.bblocks_mut().swap_edges(bb);
     }
 
@@ -1693,7 +1663,6 @@ impl Funcdata {
             if default_block == -1 {
                 continue;
             }
-            // ind = indop->getParent(); ind->setDefaultSwitch(default_block)
             if let Some(ind) = self.obank().get(indop).and_then(|o| o.get_parent()) {
                 self.bblocks_mut().set_default_switch(ind, default_block);
             }
@@ -1710,7 +1679,7 @@ impl Funcdata {
     pub fn link_jump_table(&mut self, op: OpId) -> Option<usize> {
         let addr = self.obank().get(op)?.get_addr().clone();
         let idx = self.jumpvec_ref().iter().position(|jt| *jt.get_op_address() == addr)?;
-        // jt->setIndirectOp(op): the op's address is `addr` (same op-address).
+        // The op's address is `addr` (same op-address).
         self.jumpvec_mut()[idx].set_indirect_op_addr(op, addr);
         Some(idx)
     }
@@ -1764,7 +1733,7 @@ impl Funcdata {
     /// by the recovery pipeline (which owns the [`crate::flow::FlowInfo`] +
     /// architecture env).
     ///
-    /// SEAM(W4): the FuncCallSpecs cloning (`oldspec->clone(newop)` + the fspec
+    /// STUB(W4): the FuncCallSpecs cloning (`oldspec->clone(newop)` + the fspec
     /// annotation swap) is the W4 call-spec surface; the op + jump-table clone is
     /// the load-bearing part for switch recovery and is ported.
     pub fn truncated_flow_clone(&mut self, src: &Funcdata) -> KunaResult<()> {
@@ -2507,7 +2476,7 @@ impl Funcdata {
     /// destination calculation (C++ `Funcdata::earlyJumpTableFail`,
     /// `funcdata_block.cc:568`).
     ///
-    /// SEAM(W4): the CALLOTHER user-op-type classification
+    /// STUB(W4): the CALLOTHER user-op-type classification
     /// (`glb->userops.getOp(id)->getType()`) is the W4 user-op table; without it
     /// a CALLOTHER that writes the address is conservatively treated as a genuine
     /// switch input (returns `Success`, so recovery proceeds), matching the C++
@@ -2546,7 +2515,7 @@ impl Funcdata {
             if eval & pf::special != 0 {
                 if self.obank().get(cur).unwrap().is_call() {
                     if opc == OpCode::CPUI_CALLOTHER {
-                        // SEAM(W4): userop-type classification (injected/jumpassist/
+                        // STUB(W4): userop-type classification (injected/jumpassist/
                         // segment short-circuit Success; an uninjected CALLOTHER
                         // writing the address would be fail_callother).  Without the
                         // W4 user-op table, assume it does not interfere; continue.
@@ -2746,7 +2715,7 @@ impl Funcdata {
         let size_in = self.bblocks_ref().block(parent).size_in();
         for i in 0..size_in {
             let inbl = self.bblocks_ref().block(parent).get_in(i);
-            // bl = parent->getIn(i)->getCopyMap();  (bblock -> structured copy)
+            // bblock -> its structured copy.
             let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
             while let Some(cur) = bl {
                 if !self.sblocks_ref().block(cur).is_mark() {
@@ -2836,7 +2805,6 @@ impl Funcdata {
     /// change count).
     pub(crate) fn return_split_apply(&mut self) -> int4 {
         let mut count = 0;
-        // if (data.getStructure().getSize() == 0) return 0;
         if self.sblocks_get_size() == 0 {
             return 0; // Some other restructuring happened first
         }
@@ -2904,7 +2872,7 @@ impl Funcdata {
     /// (kuna) Duplicate a shared **bare-epilogue** RETURN block into each of its
     /// predecessors but one — kuna's analog of angr's SAILR gotoless
     /// `ReturnDuplicatorHigh` (driver for
-    /// [`ActionReturnDup`](crate::s8_structure::kuna_returndup::ActionReturnDup),
+    /// [`ActionReturnDup`](crate::p8_structure::kuna_returndup::ActionReturnDup),
     /// option `returndup`).  Returns the number of edges split.
     ///
     /// Unlike [`Self::return_split_apply`] (the goto-driven `ReturnDuplicatorLow`
@@ -3130,9 +3098,9 @@ impl Funcdata {
     /// last remaining edge (leaves the variable body merged).
     ///
     /// The shared core behind both [`Self::earlyreturn_apply`] (the narrow diamond, capped
-    /// at 16 in-edges by [`ActionEarlyReturn`](crate::s8_structure::kuna_earlyreturn)) and
+    /// at 16 in-edges by [`ActionEarlyReturn`](crate::p8_structure::kuna_earlyreturn)) and
     /// [`Self::switchreturn_apply`] (the wide multi-case switch-phi that exceeds that cap,
-    /// gated by [`ActionSwitchReturn`](crate::s8_structure::kuna_switchreturn)) — the ONLY
+    /// gated by [`ActionSwitchReturn`](crate::p8_structure::kuna_switchreturn)) — the ONLY
     /// difference between the two is the `max_inedges` / `max_splits` caps.
     fn const_return_peel(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
         let mut count = 0;
@@ -3285,7 +3253,7 @@ impl Funcdata {
     /// blocks) are faithful.  The two p-code edits — destroying a trailing branch
     /// op and rejecting a leading MULTIEQUAL — need `opDestroy` (funcdata_op) and
     /// op-list inspection; the MULTIEQUAL check and the branch-op removal are
-    /// `// SEAM(W3-op)`-noted below.  The MULTIEQUAL rejection is enforced (it is
+    /// `// STUB(W3-op)`-noted below.  The MULTIEQUAL rejection is enforced (it is
     /// a read-only `code()` check), but the branch-op destruction is deferred to
     /// the funcdata_op wave; until then a trailing branch is moved with the rest
     /// of the list (an over-approximation flagged here, not silently wrong: the
@@ -3306,9 +3274,9 @@ impl Funcdata {
             o.ok_or_else(|| KunaError::lowlevel("Cannot splice basic blocks"))?
         };
 
-        // Remove any jump op at the end of -bl- (C++ funcdata_block.cc:941:
-        // `if (jumpop->isBranch()) opDestroy(jumpop);`).  `op_destroy` is now
-        // available (used by condexe.execute), so the W3-op seam is closed.
+        // Remove any jump op at the end of -bl- (C++ funcdata_block.cc:941).
+        // `op_destroy` is now available (used by condexe.execute), so the
+        // W3-op boundary is closed.
         if let Some(jumpop) = self.bb_op_tail(bl) {
             if self.obank().get(jumpop).expect("spliceBlockBasic").is_branch() {
                 self.op_destroy(jumpop);
@@ -3323,7 +3291,6 @@ impl Funcdata {
             {
                 return Err(KunaError::lowlevel("Splicing block with MULTIEQUAL"));
             }
-            // firstop->clearFlag(startbasic);
             self.obank_mut()
                 .get_mut(firstop)
                 .expect("spliceBlockBasic")
@@ -3376,8 +3343,8 @@ impl Funcdata {
     fn get_split_point(&self, sbl: BlockId) -> Option<SplitPoint> {
         use crate::block::BlockType;
         match self.sblocks_ref().block(sbl).get_type() {
-            // BlockCopy::getSplitPoint() -> copy->getSplitPoint(); the copy is a
-            // bblocks BlockBasic whose getSplitPoint returns itself iff sizeOut==2.
+            // The copy is a bblocks BlockBasic whose getSplitPoint returns itself
+            // iff sizeOut==2.
             BlockType::Copy => {
                 let bb = self.sblocks_ref().block(sbl).get_copy()?;
                 if self.bblocks_ref().block(bb).size_out() != 2 {
@@ -3385,7 +3352,6 @@ impl Funcdata {
                 }
                 Some(SplitPoint::Basic(bb))
             }
-            // BlockBasic::getSplitPoint() -> this iff sizeOut()==2.
             BlockType::Basic => {
                 if self.sblocks_ref().block(sbl).size_out() != 2 {
                     return None;
@@ -3394,7 +3360,6 @@ impl Funcdata {
                 // BlockCopy), but mirror C++ in case a hand-built graph does.
                 Some(SplitPoint::Basic(sbl))
             }
-            // BlockList::getSplitPoint() -> getBlock(size-1)->getSplitPoint().
             BlockType::Ls => {
                 let n = self.sblocks_ref().block(sbl).get_size();
                 if n == 0 {
@@ -3403,9 +3368,7 @@ impl Funcdata {
                 let last = self.sblocks_ref().block(sbl).get_block(n - 1);
                 self.get_split_point(last)
             }
-            // BlockCondition::getSplitPoint() -> this (block.hh:645).
             BlockType::Condition => Some(SplitPoint::Condition(sbl)),
-            // base FlowBlock::getSplitPoint() -> null.
             _ => None,
         }
     }
@@ -3422,7 +3385,6 @@ impl Funcdata {
     ) -> int4 {
         match split {
             SplitPoint::Basic(bb) => {
-                // PcodeOp *lastop = op.back(); if not CBRANCH return 2.
                 let lastop = match self.bb_op_tail(bb) {
                     Some(op) => op,
                     None => return 2,
@@ -3439,7 +3401,6 @@ impl Funcdata {
                 }
             }
             SplitPoint::Condition(scond) => {
-                // split1 = getBlock(0)->getSplitPoint(); split2 = getBlock(1)->...
                 let b0 = self.sblocks_ref().block(scond).get_block(0);
                 let split1 = match self.get_split_point(b0) {
                     Some(s) => s,
@@ -3470,8 +3431,6 @@ impl Funcdata {
     fn split_flip_in_place_execute(&mut self, split: SplitPoint) {
         match split {
             SplitPoint::Basic(bb) => {
-                // lastop->flipFlag(fallthru_true);
-                // if (lastop->isBooleanFlip()) lastop->flipFlag(boolean_flip);
                 if let Some(lastop) = self.bb_op_tail(bb) {
                     let o = self.obank_mut().get_mut(lastop).expect("flip_exec: stale op");
                     o.flip_flag(crate::op::pcodeop_flags::fallthru_true);
@@ -3479,13 +3438,11 @@ impl Funcdata {
                         o.flip_flag(crate::op::pcodeop_flags::boolean_flip);
                     }
                 }
-                // FlowBlock::negateCondition(true) -> swapEdges() on the bblocks block.
+                // Swap the out-edge order on the bblocks block.
                 self.bblocks_mut().swap_edges(bb);
             }
             SplitPoint::Condition(scond) => {
-                // opc = (opc==BOOL_AND)?BOOL_OR:BOOL_AND;
                 self.sblocks_mut().block_mut(scond).flip_condition_opcode();
-                // getBlock(0)->getSplitPoint()->flipInPlaceExecute(); ditto block(1).
                 let b0 = self.sblocks_ref().block(scond).get_block(0);
                 if let Some(s0) = self.get_split_point(b0) {
                     self.split_flip_in_place_execute(s0);
@@ -3503,26 +3460,22 @@ impl Funcdata {
     /// condition's split point can be flipped to a normalized comparison.  `sif`
     /// is the sblocks `BlockIf`.  Returns `true` if a change was made.
     fn block_if_prefer_complement(&mut self, sif: BlockId, allow_op_removal: bool) -> KunaResult<bool> {
-        // if (getSize()!=3) return false;  -- only if/else collapses.
+        // Only if/else collapses.
         if self.sblocks_ref().block(sif).get_size() != 3 {
             return Ok(false);
         }
-        // FlowBlock *split = getBlock(0)->getSplitPoint(); if null return false.
         let cond = self.sblocks_ref().block(sif).get_block(0);
         let split = match self.get_split_point(cond) {
             Some(s) => s,
             None => return Ok(false),
         };
-        // if (0 != split->flipInPlaceTest(fliplist,allowOpRemoval)) return false.
         let mut fliplist: Vec<OpId> = Vec::new();
         if self.split_flip_in_place_test(split, &mut fliplist, allow_op_removal) != 0 {
             return Ok(false);
         }
-        // split->flipInPlaceExecute();
         self.split_flip_in_place_execute(split);
-        // data.opFlipInPlaceExecute(fliplist);
         self.op_flip_in_place_execute(&fliplist)?;
-        // swapBlocks(1,2);  -- swap the BlockIf's true/false children.
+        // Swap the BlockIf's true/false children.
         self.sblocks_mut().swap_blocks(sif, 1, 2);
         Ok(true)
     }
@@ -3533,11 +3486,9 @@ impl Funcdata {
     /// nodes rearranged.
     pub fn prefer_complement(&mut self, allow_op_mods: bool) -> KunaResult<int4> {
         use crate::block::BlockType;
-        // if (graph.getSize() == 0) return 0;
         if self.sblocks_get_size() == 0 {
             return Ok(0);
         }
-        // if (graph.hasFinalTransform()) return 0;
         let root = self.sblocks_root();
         if self.sblocks_ref().block(root).has_final_transform() {
             return Ok(0);
@@ -3657,10 +3608,9 @@ impl Funcdata {
                 &ad,
             );
         }
-        // split->flipInPlaceExecute(); data.opFlipInPlaceExecute(fliplist);
         self.split_flip_in_place_execute(split);
         self.op_flip_in_place_execute(&fliplist)?;
-        // swapBlocks(1,2);  -- swap the BlockIf's true/false children to match.
+        // Swap the BlockIf's true/false children to match.
         self.sblocks_mut().swap_blocks(sif, 1, 2);
         Ok(true)
     }
@@ -4058,7 +4008,6 @@ impl CloneBlockOps {
             return Err(KunaError::lowlevel("No expression to clone"));
         }
         self.patch_inputs(data, 0)?;
-        // cloneOp = cloneList.back().cloneOp; return cloneOp->getOut();
         let last_clone = self.clone_list.last().expect("cloneExpression: non-empty cloneList").1;
         Ok(data
             .obank()
@@ -4149,7 +4098,7 @@ mod tests {
 
     use crate::funcdata::Funcdata;
     use crate::op::pcodeop_flags;
-    use crate::seams::{Architecture, BlockId, OpId, TypeOp};
+    use crate::context::{ArchContext, BlockId, OpId, TypeOp};
 
     fn build_manager() -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
@@ -4172,7 +4121,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -4343,8 +4292,7 @@ mod tests {
     #[test]
     fn splice_block_basic_destroys_trailing_branch() {
         // bl (with trailing BRANCH) -> outbl : splice now DESTROYS the trailing
-        // branch op (C++ funcdata_block.cc:941 `if (jumpop->isBranch())
-        // opDestroy(jumpop)`) — the W3-op seam is closed.
+        // branch op (C++ funcdata_block.cc:941) — the W3-op boundary is closed.
         let mut fd = build_fd();
         let root = fd.bblocks_root_pub();
         let rs = ramspace(&fd);

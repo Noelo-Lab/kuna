@@ -14,7 +14,7 @@
 //! HighVariable — faithful to upstream Ghidra, whose `goal_width` phi likewise
 //! carries all-register-`EAX` inputs tagged `hv=goal_width`.
 //!
-//! The BUG was purely in kuna's printer (`s9_emit/printc.rs`, `push_vn_explicit_ir`
+//! The BUG was purely in kuna's printer (`p9_emit/printc.rs`, `push_vn_explicit_ir`
 //! unnamed-location tail): it rendered each member of that mixed high by the
 //! member's *own* storage, so the register members leaked a raw `EAX`/`RAX` (and
 //! `unique` members a `Unique<hex>`) — e.g. `EAX = (dat_215120 * 0xbb) / 200;`

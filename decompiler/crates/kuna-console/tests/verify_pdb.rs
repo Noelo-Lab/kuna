@@ -1,4 +1,4 @@
-//! s1_pdb end-to-end gate — THE HEADLINE: recover a stripped function's real name
+//! pdb end-to-end gate — THE HEADLINE: recover a stripped function's real name
 //! in an x86-64 Windows PE from its matching external `.pdb` (PDB PR-P1).
 //!
 //! Fixtures (vendored under `kuna-analysis/tests/fixtures`):
@@ -55,7 +55,7 @@ const COMPUTE_VMA: u64 = 0x140001000;
 /// The function name the PDB pass recovers (the un-mangled source name).
 const COMPUTE_NAME: &str = "pdb_demo_compute";
 
-/// The env var naming the `.pdb` to apply (the s1_fid `kuna_fid_db` precedent).
+/// The env var naming the `.pdb` to apply (the fid `kuna_fid_db` precedent).
 const PDB_PATH_ENV: &str = "kuna_pdb_path";
 
 fn repo_root() -> PathBuf {

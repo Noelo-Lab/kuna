@@ -824,7 +824,6 @@ impl FloatFormat {
     /// Round.
     pub fn op_round(&self, a: u64) -> u64 {
         let (val, _type) = self.get_host_float(a);
-        // return self.get_encoding((val + 0.5).floor()); // round half up
         self.get_encoding(val.round()) // round half away from zero
     }
 }

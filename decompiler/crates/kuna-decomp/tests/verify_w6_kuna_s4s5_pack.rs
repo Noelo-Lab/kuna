@@ -39,7 +39,7 @@ use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::kuna_compareform::{parse_compare_form, ActionPresentCompareForm, CompareForm};
 use kuna_decomp::kuna_memsetsequence::{parse_memset_recover_form, MemsetRecoverForm};
 use kuna_decomp::kuna_returnpair::{keep_single_return, parse_return_pair_form, ReturnPairForm};
-use kuna_decomp::seams::{Architecture, TypeOp};
+use kuna_decomp::context::{ArchContext, TypeOp};
 use kuna_decomp::varnode::{DefOpInfo, VarnodeBank};
 use kuna_num::opcodes::OpCode;
 
@@ -70,7 +70,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -85,12 +85,12 @@ fn unk(size: int4) -> Rc<Datatype> {
 }
 
 fn no_replace(
-) -> impl FnMut(&mut VarnodeBank, kuna_decomp::seams::VarnodeId, kuna_decomp::seams::VarnodeId) -> kuna_base::error::KunaResult<()>
+) -> impl FnMut(&mut VarnodeBank, kuna_decomp::context::VarnodeId, kuna_decomp::context::VarnodeId) -> kuna_base::error::KunaResult<()>
 {
     |_: &mut VarnodeBank, _, _| Ok(())
 }
 
-fn mk_op(fd: &mut Funcdata, off: u64, inputs: int4, opc: OpCode) -> kuna_decomp::seams::OpId {
+fn mk_op(fd: &mut Funcdata, off: u64, inputs: int4, opc: OpCode) -> kuna_decomp::context::OpId {
     let r = ram(fd);
     let pc = Address::new(r, off);
     let op = fd.obank_mut().create_at(inputs, pc);
@@ -101,9 +101,9 @@ fn mk_op(fd: &mut Funcdata, off: u64, inputs: int4, opc: OpCode) -> kuna_decomp:
 
 fn set_def(
     fd: &mut Funcdata,
-    vn: kuna_decomp::seams::VarnodeId,
-    defop: kuna_decomp::seams::OpId,
-) -> kuna_decomp::seams::VarnodeId {
+    vn: kuna_decomp::context::VarnodeId,
+    defop: kuna_decomp::context::OpId,
+) -> kuna_decomp::context::VarnodeId {
     let seq = fd.obank().get(defop).unwrap().get_seq_num().clone();
     let info = DefOpInfo { id: defop, seqnum: seq };
     let vn = fd.vbank_mut().set_def(vn, info, &mut no_replace()).unwrap();
@@ -111,12 +111,12 @@ fn set_def(
     vn
 }
 
-fn wire(fd: &mut Funcdata, vn: kuna_decomp::seams::VarnodeId, op: kuna_decomp::seams::OpId, slot: int4) {
+fn wire(fd: &mut Funcdata, vn: kuna_decomp::context::VarnodeId, op: kuna_decomp::context::OpId, slot: int4) {
     fd.vbank_mut().add_descend(vn, op).unwrap();
     fd.obank_mut().get_mut(op).unwrap().set_input(Some(vn), slot);
 }
 
-fn mk_var(fd: &mut Funcdata, off: u64, size: int4) -> kuna_decomp::seams::VarnodeId {
+fn mk_var(fd: &mut Funcdata, off: u64, size: int4) -> kuna_decomp::context::VarnodeId {
     let r = ram(fd);
     let defop = mk_op(fd, off, 1, OpCode::CPUI_COPY);
     let vn = fd.new_varnode(size, &Address::new(r, off), Some(unk(size)));
@@ -130,10 +130,10 @@ fn run_present(fd: &mut Funcdata) -> int4 {
     action.base().count
 }
 
-fn code_of(fd: &Funcdata, op: kuna_decomp::seams::OpId) -> OpCode {
+fn code_of(fd: &Funcdata, op: kuna_decomp::context::OpId) -> OpCode {
     fd.obank().get(op).unwrap().code()
 }
-fn const_in(fd: &Funcdata, op: kuna_decomp::seams::OpId, slot: int4) -> uintb {
+fn const_in(fd: &Funcdata, op: kuna_decomp::context::OpId, slot: int4) -> uintb {
     let v = fd.obank().get(op).unwrap().get_in(slot).unwrap();
     fd.vbank().get(v).unwrap().get_offset()
 }
@@ -146,7 +146,7 @@ fn mk_cmp_with_const(
     opc: OpCode,
     cval: uintb,
     const_left: bool,
-) -> kuna_decomp::seams::OpId {
+) -> kuna_decomp::context::OpId {
     let v = mk_var(fd, 0x100, width);
     let c = fd.new_constant(width, cval);
     let op = mk_op(fd, 0x108, 2, opc);

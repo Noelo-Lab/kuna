@@ -150,7 +150,6 @@ impl UnitTestSuite {
         let mut passed = 0i32;
 
         for t in &self.tests {
-            // C++: if (testNames.size() > 0 && testNames.find(t->name) == end) continue;
             if !names.is_empty() && !names.contains(&t.name) {
                 continue;
             }
@@ -176,7 +175,6 @@ impl UnitTestSuite {
             }
         }
         out.push_str("==============================\n");
-        // C++ `cerr << passed << "/" << total << " tests passed." << endl;`
         out.push_str(&format!("{passed}/{total} tests passed.\n"));
         total - passed
     }
@@ -185,14 +183,14 @@ impl UnitTestSuite {
 /// C++ free function `add_exit_code(int current, int add)` (`test.cc`):
 /// a saturating add for a CLI exit code, clamped to `[0,255]`.
 ///
-/// Faithful transcription including the C++ sanity checks: a negative
+/// Ports the C++ sanity checks: a negative
 /// `current`, either operand over the clamp, or an overflow (`ret < current`)
 /// all clamp to 255.  `wrapping_add` reproduces the C++ `int` overflow that the
 /// `ret < current` guard then catches.
 pub fn add_exit_code(current: i32, add: i32) -> i32 {
     const CLAMP: i32 = 255;
     let mut ret = current.wrapping_add(add);
-    // Faithful transcription of the C++ four-way `||` guard; the `ret < current`
+    // The C++ four-way `||` guard; the `ret < current`
     // overflow check is not a range-membership test, so the chain is kept whole
     // (clippy's range-contains rewrite would only fold the first two terms and
     // obscure the 1:1 mapping to the C++ source).
@@ -297,9 +295,9 @@ testing : gamma ...
         assert_eq!(add_exit_code(200, 54), 254); // ret == 254 -> kept
         // A negative `add` that drives ret below current must NOT clamp on the
         // `ret < current` overflow term alone unless it is a real wrap: 10 + (-3)
-        // = 7, ret(7) < current(10) is TRUE in C++, so this CLAMPS. Faithful
-        // transcription: the C++ guard does not distinguish "wrap" from "went
-        // down", so a real C++ run of add_exit_code(10,-3) returns 255 too.
+        // = 7, ret(7) < current(10) is TRUE in C++, so this CLAMPS. The C++ guard
+        // does not distinguish "wrap" from "went down", so a real C++ run of
+        // add_exit_code(10,-3) returns 255 too.
         assert_eq!(add_exit_code(10, -3), 255);
         // current itself negative always clamps regardless of add.
         assert_eq!(add_exit_code(i32::MIN, 0), 255);

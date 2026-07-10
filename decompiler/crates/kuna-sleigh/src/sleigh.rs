@@ -15,7 +15,7 @@
 //!   from `sleigh.{hh,cc}`.
 //!
 //! The walker implements the `SymbolWalker`/`SymbolWalkerChange`/
-//! `PatternExpressionContext` seams (slghsymbol.rs / slghpatexpress.rs):
+//! `PatternExpressionContext` hooks (slghsymbol.rs / slghpatexpress.rs):
 //! constructor resolution returns a `ConstructorRef`, and the walker borrows
 //! the [`SymbolTable`] so it can navigate constructors/operands during a walk.
 //!
@@ -440,7 +440,7 @@ impl WalkCursor {
 }
 
 /// C++ `ParserWalker`: a read-only walk over the constructor tree, plus the
-/// `SymbolWalker`/`PatternExpressionContext` seam implementations.  Borrows
+/// `SymbolWalker`/`PatternExpressionContext` boundary implementations.  Borrows
 /// the [`ParserContext`], the [`SymbolTable`], and the [`Sleigh`] engine (the
 /// last only for `inst_next2` length computation).
 struct ParserWalker<'a> {
@@ -511,7 +511,7 @@ impl<'a> ParserWalker<'a> {
     }
 
     /// C++ `setOutOfBandState`: simulate a single-node tree so a TokenField
-    /// behaves as if just parsed (used by the `operand_value` seam).  Returns
+    /// behaves as if just parsed (used by the `operand_value` hook).  Returns
     /// the temp node placed into a scratch slot of the context-local arena —
     /// here, since the walker borrows the context immutably, the temp node is
     /// returned by value and stored on `self` via [`OobWalker`].
@@ -571,7 +571,6 @@ struct OobState {
 
 impl PatternExpressionContext for ParserWalker<'_> {
     fn get_instruction_bytes(&self, byteoff: i32, numbytes: i32) -> KunaResult<u32> {
-        // C++ `const_context->getInstructionBytes(byteoff,numbytes,point->offset)`
         let off = self.ctx.state[self.point()].offset;
         self.ctx.get_instruction_bytes(byteoff, numbytes, off)
     }
@@ -697,7 +696,7 @@ impl<'a> ParserWalkerChange<'a> {
     }
 
     /// Build a read-only [`ParserWalker`] view sharing this cursor (for the
-    /// seam methods that only read — `applyContext`/`resolve` evaluation).
+    /// boundary methods that only read — `applyContext`/`resolve` evaluation).
     fn as_reader(&self) -> ParserWalker<'_> {
         ParserWalker {
             ctx: self.ctx,
@@ -1127,31 +1126,25 @@ impl<'a> SleighBuilder<'a> {
         if offset_plus == 0 {
             return Ok(());
         }
-        // nextop = allocateInstruction(); copy op's opc/invar/isize/outvar.
         let nextop_idx = self.cache.allocate_instruction();
         self.cache.issued[nextop_idx].opc = self.cache.issued[op_idx].opc;
         self.cache.issued[nextop_idx].invar = self.cache.issued[op_idx].invar;
         self.cache.issued[nextop_idx].isize = self.cache.issued[op_idx].isize;
         self.cache.issued[nextop_idx].outvar = self.cache.issued[op_idx].outvar;
-        // op->isize = 2; op->opc = INT_ADD
         self.cache.issued[op_idx].isize = 2;
         self.cache.issued[op_idx].opc = OpCode::CPUI_INT_ADD;
-        // newparams = op->invar = allocateVarnodes(2)
         let newparams = self.cache.allocate_varnodes(2);
         self.cache.issued[op_idx].invar = Some(newparams);
         let nextop_invar = self.cache.issued[nextop_idx]
             .invar
             .expect("nextop has inputs (copied from op)");
-        // newparams[0] = nextop->invar[1]
         self.cache.pool[newparams] = self.cache.pool[nextop_invar + 1].clone();
-        // newparams[1] = const_space, offset = offsetPlus, size = newparams[0].size
         let p0_size = self.cache.pool[newparams].size;
         self.cache.pool[newparams + 1].space = Some(Rc::clone(&self.const_space));
         self.cache.pool[newparams + 1].offset = offset_plus;
         self.cache.pool[newparams + 1].size = p0_size;
-        // op->outvar = nextop->invar + 1 (the original op's input slot 1)
+        // outvar becomes the original op's input slot 1
         self.cache.issued[op_idx].outvar = Some(nextop_invar + 1);
-        // op->outvar->space = uniq_space; offset = uniqueStart(RUNTIME_BITRANGE_EA)
         let ea = self.engine.get_unique_start(UniqueLayout::RUNTIME_BITRANGE_EA);
         self.cache.pool[nextop_invar + 1].space = Some(Rc::clone(&self.uniq_space));
         self.cache.pool[nextop_invar + 1].offset = u64::from(ea);
@@ -1264,7 +1257,6 @@ impl PcodeBuilder for SleighBuilder<'_> {
             }
         }
         if isize > 0 && op.get_in(0).is_relative() {
-            // invars->offset += getLabelBase(); addLabelRef(invars)
             self.cache.pool[invars].offset =
                 self.cache.pool[invars].offset.wrapping_add(u64::from(self.get_label_base()));
             self.cache.add_label_ref(invars);
@@ -1307,7 +1299,6 @@ impl PcodeBuilder for SleighBuilder<'_> {
 
     /// C++ `SleighBuilder::appendBuild`.
     fn append_build(&mut self, bld: &OpTpl, secnum: i32) -> KunaResult<()> {
-        // index = bld->getIn(0)->getOffset().getReal()
         let index = bld.get_in(0).get_offset().get_real() as i32; // C++ uintb -> int4
         let ct = self.walker().get_constructor_inner()?;
         let opid = self.table.get_constructor(ct)?.get_operand(index)?;
@@ -1393,7 +1384,6 @@ impl PcodeBuilder for SleighBuilder<'_> {
 
     /// C++ `SleighBuilder::setLabel`.
     fn set_label(&mut self, op: &OpTpl) -> KunaResult<()> {
-        // addLabel(op->getIn(0)->getOffset().getReal()+getLabelBase())
         let id = op.get_in(0).get_offset().get_real() as u32; // C++ uintb -> uint4
         self.cache.add_label(id.wrapping_add(self.get_label_base()));
         Ok(())
@@ -1479,7 +1469,7 @@ pub struct Sleigh {
     /// The mapped bytes of the program (C++ `LoadImage *loader`).
     ///
     /// Wrapped in an [`Rc`] so the IR-boundary `glb` skeleton (the
-    /// `crate::seams::Architecture` the Funcdata holds) can share read access for
+    /// `kuna_decomp::context::ArchContext` the Funcdata holds) can share read access for
     /// jump-table LOAD emulation (`EmulateFunction::executeLoad`); the C++
     /// `Architecture::loader` is a long-lived `LoadImage *` reached identically
     /// from both the engine and the emulator.
@@ -1854,7 +1844,6 @@ impl Sleigh {
                     if tsym.get_type() == SymbolType::Subtable {
                         break;
                     } else {
-                        // triple->getFixedHandle(walker.getParentHandle(),walker)
                         let mut hand = FixedHandle::default();
                         {
                             let reader = walker.as_reader();
@@ -2056,7 +2045,7 @@ fn pos_const_space(pos: &ParserContext) -> Rc<AddrSpace> {
 }
 
 
-// ParserWalkerChange implements the full walker seam (reads delegate to a
+// ParserWalkerChange implements the full walker boundary (reads delegate to a
 // transient ParserWalker view; mutations go straight to the context).
 impl PatternExpressionContext for ParserWalkerChange<'_> {
     fn get_instruction_bytes(&self, byteoff: i32, numbytes: i32) -> KunaResult<u32> {

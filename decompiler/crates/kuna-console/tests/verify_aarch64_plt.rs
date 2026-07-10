@@ -1,6 +1,6 @@
 //! End-to-end gate for AArch64 ELF PLT/GOT import-name resolution.
 //!
-//! The `elf_plt` follow-up (`src/s1_loader/elf_plt.rs`) decodes the AArch64
+//! The `elf_plt` follow-up (`src/loader/elf_plt.rs`) decodes the AArch64
 //! standard GNU `ld` import veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12];
 //! add x16,x16,#lo12; br x17`) and maps the stub entry to its imported name.
 //! Until now that path was only unit-tested against synthetic veneer bytes —

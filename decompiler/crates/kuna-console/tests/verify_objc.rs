@@ -1,4 +1,4 @@
-//! s1_objc end-to-end gate — THE HEADLINE: recover an Objective-C method name in
+//! objc end-to-end gate — THE HEADLINE: recover an Objective-C method name in
 //! a (locally-)stripped Mach-O from the `__objc_*` metadata, on **x86-64 and
 //! arm64**.
 //!

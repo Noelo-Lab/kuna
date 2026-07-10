@@ -11,7 +11,7 @@
 //! a `FlowBlock *`, and a `BlockGraph` *owns* its components through a
 //! `vector<FlowBlock *> list` (its destructor `delete`s them).  Per ADR 0001
 //! every block lives in a [`BlockArena`] (a `slotmap` generational arena) keyed
-//! by the newtype [`BlockId`](crate::seams::BlockId); the pointer members
+//! by the newtype [`BlockId`](crate::context::BlockId); the pointer members
 //! become `Option<BlockId>` and the component list becomes `Vec<BlockId>`.
 //! Edge endpoints (`BlockEdge.point`) are likewise `BlockId`s.
 //!
@@ -47,23 +47,23 @@
 //! The structuring *decision* logic and all printing depend on subsystems not
 //! yet ported:
 //!   - `emit`/`printRaw`/`printHeader`/`printTree` need `PrintLanguage` (W8);
-//!     they are seam-noted (`// SEAM(W8)`) and not transcribed here.
+//!     they are boundary-noted (`// STUB(W8)`) and not transcribed here.
 //!   - The SSA/data-flow-heavy `BlockBasic` methods (`isComplex`,
 //!     `unblockedMulti`, `noInterveningStatement`, `findMultiequal`,
 //!     `earliestUse`, …), `BlockWhileDo::findLoopVariable` and friends,
 //!     `flipInPlaceTest`/`flipInPlaceExecute`, and `preferComplement` need
-//!     `Funcdata`/`Varnode`/`HighVariable` (W7); they are seam-noted
-//!     (`// SEAM(W7)`) and left to the funcdata/blockaction wave.
+//!     `Funcdata`/`Varnode`/`HighVariable` (W7); they are boundary-noted
+//!     (`// STUB(W7)`) and left to the funcdata/blockaction wave.
 //!   - `getJumptable`/`getSwitchType`/`grabCaseBasic` need `JumpTable` and the
 //!     type system (W4/W7); the switch *structure* (`CaseOrder`, edge handling)
-//!     is carried, the jump-table-driven label assignment is seam-noted.
+//!     is carried, the jump-table-driven label assignment is boundary-noted.
 //!
 //! The deliverable is the **tree**: the FlowBlock data model, the edge
 //! primitives, the dominator/spanning-tree/loop algorithms, and encode/decode.
 //!
-//! ## op.rs seam surfaces fulfilled here
+//! ## op.rs boundary surfaces fulfilled here
 //!
-//! op.rs documented (`// SEAM(W3-block)`) that `PcodeOp::nextOp`/`previousOp`/
+//! op.rs documented (`// STUB(W3-block)`) that `PcodeOp::nextOp`/`previousOp`/
 //! `target`/`compareOrder` and `IopSpace::printRaw`'s branch arm need the block
 //! graph.  `compareOrder` needs only [`FlowBlock::find_common_block`] (provided
 //! here) plus the two ops' parents; the others need *both* the op intrusive
@@ -84,7 +84,7 @@ use kuna_num::opcodes::{get_opname, OpCode};
 use slotmap::SlotMap;
 
 use crate::op::PcodeOp;
-use crate::seams::BlockId;
+use crate::context::BlockId;
 
 // ---------------------------------------------------------------------------
 // Marshaling ids (block-local in C++ `block.cc:22-31`)
@@ -328,7 +328,7 @@ pub enum BlockKind {
     Plain,
     /// `t_basic` — a [`BlockBasic`].  The op list lives as basic-block intrusive
     /// links on the ops (op.rs); here we keep the `Funcdata` owner is implicit,
-    /// the original address `cover`, and the op-list head/tail (SEAM(W7): the
+    /// the original address `cover`, and the op-list head/tail (STUB(W7): the
     /// `Funcdata *data` back-pointer is supplied by funcdata).
     Basic(BasicData),
     /// `t_graph` — a generic BlockGraph (components only).
@@ -345,12 +345,12 @@ pub enum BlockKind {
     Condition { opc: OpCode },
     /// `t_if` — a formal "if" structure.
     If { gototype: uint4, gototarget: Option<BlockId> },
-    /// `t_whiledo` — top-tested loop.  SEAM(W7): the `initializeOp`/`iterateOp`/
+    /// `t_whiledo` — top-tested loop.  STUB(W7): the `initializeOp`/`iterateOp`/
     /// `loopDef` (for-loop detection) are filled by the structuring wave.
     WhileDo {
-        initialize_op: Option<crate::seams::OpId>,
-        iterate_op: Option<crate::seams::OpId>,
-        loop_def: Option<crate::seams::OpId>,
+        initialize_op: Option<crate::context::OpId>,
+        iterate_op: Option<crate::context::OpId>,
+        loop_def: Option<crate::context::OpId>,
     },
     /// `t_dowhile` — bottom-tested loop (components only).
     DoWhile,
@@ -367,7 +367,7 @@ pub enum BlockKind {
 
 /// The BlockBasic-specific data (C++ `BlockBasic` non-edge members).
 ///
-/// SEAM(W7): the op sequence (`list<PcodeOp*> op`) is realized as basic-block
+/// STUB(W7): the op sequence (`list<PcodeOp*> op`) is realized as basic-block
 /// intrusive links on the ops themselves (op.rs `ListKind::Basic`), driven
 /// through `Funcdata`; this struct keeps the head/tail [`OpId`]s and the
 /// original address `cover`.  The `Funcdata *data` back-pointer is the owning
@@ -375,9 +375,9 @@ pub enum BlockKind {
 #[derive(Debug, Clone, Default)]
 pub struct BasicData {
     /// First op in the block (C++ `op.front()`), `None` when empty
-    pub op_head: Option<crate::seams::OpId>,
+    pub op_head: Option<crate::context::OpId>,
     /// Last op in the block (C++ `op.back()`), `None` when empty
-    pub op_tail: Option<crate::seams::OpId>,
+    pub op_tail: Option<crate::context::OpId>,
     /// Number of ops in the block (C++ `op.size()`)
     pub op_len: usize,
     /// Original range of addresses covered by this basic block (C++ `RangeList cover`)
@@ -510,40 +510,40 @@ impl FlowBlock {
     }
     /// The iterate op of a `BlockWhileDo` (C++ `BlockWhileDo::getIterateOp`), or
     /// `None`.  When set, the while-do is emitted as a `for` loop.
-    pub fn get_iterate_op(&self) -> Option<crate::seams::OpId> {
+    pub fn get_iterate_op(&self) -> Option<crate::context::OpId> {
         match &self.kind {
             BlockKind::WhileDo { iterate_op, .. } => *iterate_op,
             _ => None,
         }
     }
     /// The initializer op of a `BlockWhileDo` (C++ `BlockWhileDo::getInitializeOp`).
-    pub fn get_initialize_op(&self) -> Option<crate::seams::OpId> {
+    pub fn get_initialize_op(&self) -> Option<crate::context::OpId> {
         match &self.kind {
             BlockKind::WhileDo { initialize_op, .. } => *initialize_op,
             _ => None,
         }
     }
     /// The loop-def MULTIEQUAL of a `BlockWhileDo` (C++ `loopDef`).
-    pub fn get_loop_def(&self) -> Option<crate::seams::OpId> {
+    pub fn get_loop_def(&self) -> Option<crate::context::OpId> {
         match &self.kind {
             BlockKind::WhileDo { loop_def, .. } => *loop_def,
             _ => None,
         }
     }
     /// Set the iterate op of a `BlockWhileDo` (C++ `iterateOp = ...`).
-    pub fn set_iterate_op(&mut self, op: Option<crate::seams::OpId>) {
+    pub fn set_iterate_op(&mut self, op: Option<crate::context::OpId>) {
         if let BlockKind::WhileDo { iterate_op, .. } = &mut self.kind {
             *iterate_op = op;
         }
     }
     /// Set the initializer op of a `BlockWhileDo` (C++ `initializeOp = ...`).
-    pub fn set_initialize_op(&mut self, op: Option<crate::seams::OpId>) {
+    pub fn set_initialize_op(&mut self, op: Option<crate::context::OpId>) {
         if let BlockKind::WhileDo { initialize_op, .. } = &mut self.kind {
             *initialize_op = op;
         }
     }
     /// Set the loop-def MULTIEQUAL of a `BlockWhileDo` (C++ `loopDef = ...`).
-    pub fn set_loop_def(&mut self, op: Option<crate::seams::OpId>) {
+    pub fn set_loop_def(&mut self, op: Option<crate::context::OpId>) {
         if let BlockKind::WhileDo { loop_def, .. } = &mut self.kind {
             *loop_def = op;
         }
@@ -1328,7 +1328,7 @@ impl BlockGraph {
     /// point, return the first leaf block (BlockBasic/BlockCopy) that executes
     /// after `bl` completes — or `None` if the next block is not unique.
     ///
-    /// Faithful transcription of the virtual `nextFlowAfter` hierarchy:
+    /// The virtual `nextFlowAfter` hierarchy (per `FlowBlock` subclass):
     ///   * base `FlowBlock` (`block.hh:902`): `None`.
     ///   * `BlockGraph` (`block.cc:1336`): block after `bl` in `list`, front-leaf;
     ///     recurse into `getParent()` past the end of the list.
@@ -1485,7 +1485,7 @@ impl BlockGraph {
     ///   * `t_if` (`block.cc:3167`): only an `ifgoto` (size 1) has a last op —
     ///     `getBlock(0)->lastOp()`.
     ///   * everything else (base default, `block.hh`): `None`.
-    pub fn struct_last_op(&self, this_id: BlockId) -> Option<crate::seams::OpId> {
+    pub fn struct_last_op(&self, this_id: BlockId) -> Option<crate::context::OpId> {
         match &self.arena[this_id].kind {
             BlockKind::Basic(bd) => bd.op_tail,
             BlockKind::Ls => {
@@ -1552,11 +1552,9 @@ impl BlockGraph {
     /// edge from `cond` or never passes through `cond` at all — i.e. a constant
     /// known down one out-edge of `cond` provably holds throughout `this_id`.
     pub fn restricted_by_conditional(&self, this_id: BlockId, cond: BlockId) -> bool {
-        // if (sizeIn() == 1) return true;
         if self.arena[this_id].size_in() == 1 {
             return true;
         }
-        // if (getImmedDom() != cond) return false;
         if self.arena[this_id].get_immed_dom() != Some(cond) {
             return false;
         }
@@ -1571,7 +1569,6 @@ impl BlockGraph {
                 seen_cond = true;
                 continue;
             }
-            // while(inBlock != this) { if (inBlock == cond) return false; inBlock = inBlock->getImmedDom(); }
             let mut walk = Some(in_block);
             while walk != Some(this_id) {
                 match walk {
@@ -2174,7 +2171,7 @@ impl BlockGraph {
     /// Build a new BlockBasic and add it to the graph
     /// (C++ `BlockGraph::newBlockBasic`, `block.cc:1673`).
     ///
-    /// SEAM(W7): the C++ takes `Funcdata *fd`; here the funcdata back-pointer is
+    /// STUB(W7): the C++ takes `Funcdata *fd`; here the funcdata back-pointer is
     /// implicit (the function owns the arena), so we only build the basic data.
     pub fn new_block_basic(&mut self, graph_id: BlockId) -> BlockId {
         let ret =
@@ -2218,7 +2215,7 @@ impl BlockGraph {
     /// `BlockCopy` leaf is minted for each so the printer re-emits its ops on
     /// this path, then they are wrapped in a `BlockList` and attached as the
     /// `if`'s true clause, and the `if`'s goto target is dropped.  The caller
-    /// ([`crate::s8_structure::kuna_gotoreduce`], option-gated) has verified the
+    /// ([`crate::p8_structure::kuna_gotoreduce`], option-gated) has verified the
     /// chain is bounded and side-effect-safe.  Edges are intentionally not
     /// rewired — this runs after `ActionFinalStructure`, and the C printer walks
     /// only components / copy pointers (never edges) below the `if`.
@@ -2302,7 +2299,7 @@ impl BlockGraph {
     /// untouched.  Sound because a shared prefix executes unconditionally first in
     /// **both** arms: moving the single retained copy ahead of the `if` and dropping
     /// the duplicate changes neither which code runs nor its order.  The caller
-    /// ([`crate::s8_structure::kuna_dedupitetail`], option-gated) has verified each
+    /// ([`crate::p8_structure::kuna_dedupitetail`], option-gated) has verified each
     /// `(retained, duplicate)` pair are C-equivalent clean leaves and that both arms
     /// keep at least one component after the prefix.
     pub fn kuna_hoist_ite_prefix(
@@ -2378,7 +2375,7 @@ impl BlockGraph {
     ///
     /// The dual of [`kuna_hoist_ite_prefix`](Self::kuna_hoist_ite_prefix), and likewise
     /// a pure print-tree edit (component `list`/`parent` only).  Sound only because the
-    /// caller ([`crate::s8_structure::kuna_dedupitetail`], option-gated) has verified
+    /// caller ([`crate::p8_structure::kuna_dedupitetail`], option-gated) has verified
     /// each arm's divergent middle *falls through* to the suffix (so both arms always
     /// reach it) and that each `(retained, duplicate)` pair are C-equivalent clean
     /// leaves with at least one component left before the suffix in each arm.
@@ -2481,7 +2478,7 @@ impl BlockGraph {
     /// bblock in `bbchain` (so the printer re-emits its ops on this path), the leaves
     /// are appended after the body, and the node's kind is switched from `Goto` to
     /// `Ls` so it prints as a braced/flat list with **no** trailing `goto`.  The
-    /// caller ([`crate::s8_structure::kuna_crossjumpreverter`], option-gated) has
+    /// caller ([`crate::p8_structure::kuna_crossjumpreverter`], option-gated) has
     /// verified the chain is bounded, side-effect-safe, and *convergent* (the goto's
     /// own structured fall-through already reaches the tail's successor), so dropping
     /// the goto and falling through is semantics-preserving.  Edges are intentionally
@@ -2748,7 +2745,6 @@ impl BlockGraph {
         switch_case_edges: &std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
     ) -> KunaResult<BlockId> {
         let rootbl = cs[0];
-        // const FlowBlock *leafbl = rootbl->getExitLeaf();
         let leafbl = self
             .get_exit_leaf(rootbl)
             .ok_or_else(|| KunaError::lowlevel("Could not get switch leaf"))?;
@@ -2759,7 +2755,7 @@ impl BlockGraph {
             caseblocks: Vec::new(),
             jt_index,
         }));
-        // uret->grabCaseBasic(leafbl->subBlock(0), cs);  -- the switch underlying
+        // The switch underlying
         // basic block is `leafbl->subBlock(0)` (the bblocks BlockBasic the copy
         // mirrors).  The case-topology (in/out indices) is computed against the
         // switch ROOT `rootbl` (its sblocks out-edges mirror the bblocks block's,
@@ -2768,9 +2764,7 @@ impl BlockGraph {
         if let BlockKind::Switch { caseblocks: cb, .. } = &mut self.arena[ret].kind {
             *cb = caseblocks;
         }
-        // identifyInternal(uret.get(), cs);
         self.identify_internal(graph_id, ret, cs);
-        // addBlock(ret);
         self.add_block(graph_id, ret);
         if has_exit {
             self.force_output_num(ret, 1); // exactly 1 out edge if there is an exit
@@ -2852,13 +2846,8 @@ impl BlockGraph {
         gt: uint4,
         switch_case_edges: &std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
     ) -> CaseOrder {
-        // const FlowBlock *basicbl = bl->getFrontLeaf()->subBlock(0);
         let front = self.get_front_leaf(bl);
         let basicblock = front.and_then(|f| self.sub_block(f, 0));
-        // int4 inindex = basicbl->getInIndex(switchbl);
-        // curcase.outindex = basicbl->getInRevIndex(inindex);
-        // curcase.isdefault = switchbl->isDefaultBranch(curcase.outindex);
-        //
         // C++ resolves this against the live `BlockBasic` (`bl->getFrontLeaf()->
         // subBlock(0)`), whose in/out edges to/from the underlying switch BlockBasic
         // are never severed by structuring.  In the dual-arena Rust port a case's
@@ -3426,7 +3415,6 @@ impl BlockGraph {
         let mut changed = true;
         while changed {
             changed = false;
-            // for(i=postorder.size()-2; i>=0; --i)
             let mut i = postorder.len() as int4 - 2;
             while i >= 0 {
                 let bb = postorder[i as usize];
@@ -3973,12 +3961,12 @@ impl BlockMap {
 }
 
 // ---------------------------------------------------------------------------
-// op.rs seam surfaces (SEAM(W3-block) fulfilled)
+// op.rs boundary surfaces (STUB(W3-block) fulfilled)
 // ---------------------------------------------------------------------------
 
 /// Yield the `(shortcut_char, target_start_addr)` of a branch op's non-fallthru
 /// target's start block, for [`crate::op::iop_space_print_raw`]'s `block_info`
-/// closure (op.rs `// SEAM(W3-block)`, `op.cc:41-59`).
+/// closure (op.rs `// STUB(W3-block)`, `op.cc:41-59`).
 ///
 /// The C++ `IopSpace::printRaw` branch arm reads `bs = op->getParent();` then
 /// `bl = bs->getOut(0); if (bl->getStart()==op->getAddr()) bl = bs->getOut(1);`
@@ -3986,7 +3974,7 @@ impl BlockMap {
 /// parent block id; `arena`/`shortcut_of` provide the block graph + the
 /// space-shortcut char.
 ///
-/// SEAM(W3-block): the full wiring (op→parent, addr-of-op) lives in
+/// STUB(W3-block): the full wiring (op→parent, addr-of-op) lives in
 /// `funcdata_op`, which owns both banks; this provides the block-side decode.
 pub fn iop_block_info(
     arena: &BlockArena,
@@ -3994,7 +3982,6 @@ pub fn iop_block_info(
     op_addr: &Address,
     shortcut_of: &dyn Fn(BlockId) -> char,
 ) -> (char, Address) {
-    // bl = bs->getOut(0); if (bl->getStart() == op->getAddr()) bl = bs->getOut(1);
     let mut bl = arena[parent].get_out(0);
     if block_get_start(arena, bl) == *op_addr {
         bl = arena[parent].get_out(1);
@@ -4029,7 +4016,7 @@ pub fn block_get_stop(arena: &BlockArena, this_id: BlockId) -> Address {
 /// `op.cc:808`).  Returns -1 if `op_a` executes earlier (dominates), 1 if `op_b`
 /// does, 0 if there is no absolute order.
 ///
-/// This is the block-graph-dependent half op.rs deferred (`// SEAM(W3-block)`).
+/// This is the block-graph-dependent half op.rs deferred (`// STUB(W3-block)`).
 /// `op_a`/`op_b` are the two ops (the caller resolves them from the op bank);
 /// their parent block ids and instruction orders are passed alongside so the
 /// op crate need not be borrowed mutably here.

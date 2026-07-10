@@ -22,7 +22,7 @@
 //! iterator-stability the cached-iterator code relies on.  `output` becomes
 //! `Option<VarnodeId>`, `inrefs` a `Vec<Option<VarnodeId>>` (slots can be
 //! `null`, exactly as the C++ `inrefs[slot] = (Varnode *)0`), and `opcode` an
-//! `Option<TypeOp>` (the W6 seam, [`crate::seams::TypeOp`]).
+//! `Option<TypeOp>` (the W6 stub, [`crate::context::TypeOp`]).
 //!
 //! ## ADR 0002 (ordered containers) realization
 //!
@@ -35,12 +35,12 @@
 //! semantics (it drives `optree` ordering, hence iteration, hence rule
 //! application), so the create paths are transcribed step for step.
 //!
-//! ## Cross-wave seams
+//! ## Cross-wave boundaries
 //!
-//! - `TypeOp` (W6): [`crate::seams::TypeOp`] carries the `opcode`/`flags`/`name`
+//! - `TypeOp` (W6): [`crate::context::TypeOp`] carries the `opcode`/`flags`/`name`
 //!   slice `op.cc` touches.  The emulation+type-local methods (`collapse`,
 //!   `executeSimple`, `outputTypeLocal`, `inputTypeLocal`) need the W6
-//!   `OpBehavior`/`TypeFactory`; they are seam-noted and take the behavior as an
+//!   `OpBehavior`/`TypeFactory`; they are boundary-noted and take the behavior as an
 //!   explicit argument or are deferred.
 //! - `Varnode` (W3, already ported): the methods that read input/output varnode
 //!   contents (`getSlot`, `getCseHash`, `getNZMaskLocal`, ...) take a
@@ -49,7 +49,7 @@
 //! - `BlockBasic`/`FlowBlock` (W3 `block`, sibling, not yet ported): the
 //!   control-flow methods (`nextOp`, `previousOp`, `target`, `compareOrder`,
 //!   `isMoveable`, `setCopyImmed`, `hasCopyImmed`) and `IopSpace::printRaw`
-//!   need the block graph; they are seam-noted (`// SEAM(W3-block)`) and live
+//!   need the block graph; they are boundary-noted (`// STUB(W3-block)`) and live
 //!   in `funcdata`/`funcdata_op` rather than here, or take a block accessor.
 
 use std::collections::BTreeMap;
@@ -62,7 +62,7 @@ use kuna_base::address::{
 use kuna_base::types::{int4, uint4, uintb, uintm, Wrap};
 use kuna_num::opcodes::OpCode;
 
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::VarnodeBank;
 
 /// Boolean attributes (flags) that can be placed on a [`PcodeOp`].
@@ -181,7 +181,7 @@ pub mod pcodeop_addlflags {
     /// (kuna) This `CBRANCH` heads an if/else assignment *diamond* that the
     /// `iteregion` S8 pass selected for `?:` ternary rendering (angr
     /// `ITERegionConverter`).  Set by
-    /// [`crate::s8_structure::kuna_iteregion`]'s `ActionIteRegion`; read by
+    /// [`crate::p8_structure::kuna_iteregion`]'s `ActionIteRegion`; read by
     /// `PrintC::emit_block_if`, which emits `dest = cond ? A : B;` for the marked
     /// `if`.  Print-only: never affects the p-code, so with the option off (the
     /// pass never runs) the bit is never set and output is byte-identical.
@@ -216,7 +216,7 @@ struct IntrusiveLinks {
 /// Which of the three intrusive lists a link operation addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ListKind {
-    /// Basic-block position list (`basiciter`).  SEAM(W3-block): the per-block
+    /// Basic-block position list (`basiciter`).  STUB(W3-block): the per-block
     /// list head/tail belongs to `block`/`funcdata_block`; the membership links
     /// live on the op here and are driven through
     /// [`PcodeOp::set_basic_prev`]/[`PcodeOp::set_basic_next`].  Unused in the
@@ -419,7 +419,7 @@ type OpArena = slotmap::SlotMap<OpId, PcodeOp>;
 #[derive(Debug, Clone)]
 pub struct PcodeOp {
     /// Behavioral class of the operation (C++ `TypeOp *opcode`; `None` == null).
-    /// SEAM(W6): [`TypeOp`] is the minimal W6 skeleton.
+    /// STUB(W6): [`TypeOp`] is the minimal W6 skeleton.
     opcode: Option<TypeOp>,
     /// Collection of boolean attributes (C++ `mutable uint4 flags`)
     flags: uint4,
@@ -428,8 +428,8 @@ pub struct PcodeOp {
     /// What instruction address this is attached to (C++ `SeqNum start`)
     start: SeqNum,
     /// Basic block in which this op is contained (C++ `BlockBasic *parent`).
-    /// SEAM(W3-block): [`crate::seams::BlockId`]; `None` == null.
-    parent: Option<crate::seams::BlockId>,
+    /// STUB(W3-block): [`crate::context::BlockId`]; `None` == null.
+    parent: Option<crate::context::BlockId>,
     /// The three intrusive-list memberships (C++ `basiciter`/`insertiter`/
     /// `codeiter`)
     links: IntrusiveLinks,
@@ -454,7 +454,6 @@ impl PcodeOp {
             parent: None,
             links: IntrusiveLinks::default(),
             output: None,
-            // inrefs(s): s null slots
             inrefs: vec![None; s.max(0) as usize],
         }
     }
@@ -530,7 +529,6 @@ impl PcodeOp {
     /// (C++ `PcodeOp::removeInput`, `op.cc:324`).
     pub fn remove_input(&mut self, slot: int4) {
         let slot = slot as usize;
-        // for(i=slot+1;i<size;++i) inrefs[i-1]=inrefs[i]; pop_back();
         for i in (slot + 1)..self.inrefs.len() {
             self.inrefs[i - 1] = self.inrefs[i];
         }
@@ -541,7 +539,6 @@ impl PcodeOp {
     /// (C++ `PcodeOp::insertInput`, `op.cc:334`).
     pub fn insert_input(&mut self, slot: int4) {
         let slot = slot as usize;
-        // push_back(null); for(i=size-1;i>slot;--i) inrefs[i]=inrefs[i-1]; inrefs[slot]=null;
         self.inrefs.push(None);
         let mut i = self.inrefs.len() - 1;
         while i > slot {
@@ -556,7 +553,7 @@ impl PcodeOp {
         self.start.set_order(ord);
     }
     /// Set the parent basic block of this op (C++ `setParent`).
-    pub fn set_parent(&mut self, p: Option<crate::seams::BlockId>) {
+    pub fn set_parent(&mut self, p: Option<crate::context::BlockId>) {
         self.parent = p;
     }
 
@@ -577,8 +574,8 @@ impl PcodeOp {
     pub fn get_in(&self, slot: int4) -> Option<VarnodeId> {
         self.inrefs.get(slot as usize).copied().flatten()
     }
-    /// Get the parent basic block (C++ `getParent`).  SEAM(W3-block).
-    pub fn get_parent(&self) -> Option<crate::seams::BlockId> {
+    /// Get the parent basic block (C++ `getParent`).  STUB(W3-block).
+    pub fn get_parent(&self) -> Option<crate::context::BlockId> {
         self.parent
     }
     /// Get the instruction address associated with this op (C++ `getAddr`).
@@ -844,7 +841,7 @@ impl PcodeOp {
     }
 
     /// Get the behavioral class for this op, or `None` (C++ `getOpcode`).
-    /// SEAM(W6): [`TypeOp`].
+    /// STUB(W6): [`TypeOp`].
     pub fn get_opcode(&self) -> Option<&TypeOp> {
         self.opcode.as_ref()
     }
@@ -873,7 +870,7 @@ impl PcodeOp {
     /// Get the (prev, next) neighbours in the parent basic-block list
     /// (the dereferenced C++ `basiciter`).
     ///
-    /// SEAM(W3-block): a [`BlockBasic`](crate::seams::BlockId) keeps its own
+    /// STUB(W3-block): a [`BlockBasic`](crate::context::BlockId) keeps its own
     /// `std::list<PcodeOp *>` (`op`/`deadlist` in `block.hh`) and caches each
     /// op's position as `basiciter`.  That per-block list head/tail belongs to
     /// the `block`/`funcdata_block` wave; the *membership links* live here on
@@ -882,18 +879,18 @@ impl PcodeOp {
     /// [`set_basic_prev`](PcodeOp::set_basic_prev)/[`set_basic_next`](PcodeOp::set_basic_next)
     /// exactly as the C++ stores/updates `basiciter`.
     ///
-    /// SEAM(W3-block): only the not-yet-ported block wave (and the in-module
+    /// STUB(W3-block): only the not-yet-ported block wave (and the in-module
     /// test) consume these, so they are unused in the op crate alone.
     #[allow(dead_code)]
     pub(crate) fn basic_neighbours(&self) -> (Option<OpId>, Option<OpId>) {
         self.links.get(ListKind::Basic)
     }
-    /// Set the predecessor link in the parent basic-block list (SEAM(W3-block)).
+    /// Set the predecessor link in the parent basic-block list (STUB(W3-block)).
     #[allow(dead_code)]
     pub(crate) fn set_basic_prev(&mut self, v: Option<OpId>) {
         self.links.set_prev(ListKind::Basic, v);
     }
-    /// Set the successor link in the parent basic-block list (SEAM(W3-block)).
+    /// Set the successor link in the parent basic-block list (STUB(W3-block)).
     #[allow(dead_code)]
     pub(crate) fn set_basic_next(&mut self, v: Option<OpId>) {
         self.links.set_next(ListKind::Basic, v);
@@ -907,7 +904,7 @@ impl PcodeOp {
     /// `vn->beginDescend()` up to `iter` counting hits of `this`.  Returns the
     /// slot, or `-1` if not found (the C++ sentinel).
     ///
-    /// SEAM(W3): the C++ takes a live `vn->beginDescend()..iter` range; the
+    /// STUB(W3): the C++ takes a live `vn->beginDescend()..iter` range; the
     /// Funcdata-mediated caller (`funcdata_op`) supplies that prefix as a slice
     /// of `OpId`s read from the varnode bank.
     pub fn get_repeat_slot(
@@ -944,8 +941,8 @@ impl PcodeOp {
     /// Print raw info about this op to a string (C++ `printRaw`,
     /// `opcode->printRaw(s,this)`).
     ///
-    /// SEAM(W6): TypeOp printing depends on the W6 `TypeOp` print dispatch and
-    /// per-op formatting; until W6 supplies it this returns the seam-deferred
+    /// STUB(W6): TypeOp printing depends on the W6 `TypeOp` print dispatch and
+    /// per-op formatting; until W6 supplies it this returns the boundary-deferred
     /// error rather than guessing a rendering.
     pub fn print_raw(&self, _s: &mut String) -> kuna_base::error::KunaResult<()> {
         Err(kuna_base::error::KunaError::lowlevel(
@@ -987,7 +984,7 @@ pub fn is_collapsible(op: &PcodeOp, vbank: &VarnodeBank) -> bool {
     let out = vbank
         .get(op.output.expect("isCollapsible: null output (C++ UB)"))
         .expect("isCollapsible: stale output id");
-    // if (getOut()->getSize() > sizeof(uintb)) return false;  (int4 size, sizeof==8)
+    // int4 size, sizeof(uintb) == 8
     if out.get_size() as i64 as u64 > 8 {
         return false;
     }
@@ -997,7 +994,6 @@ pub fn is_collapsible(op: &PcodeOp, vbank: &VarnodeBank) -> bool {
 /// Produce a CSE hash of the op (C++ `PcodeOp::getCseHash`, `op.cc:153`).
 /// Returns 0 if the op is not cse-hashable.
 pub fn get_cse_hash(op: &PcodeOp, vbank: &VarnodeBank) -> uintm {
-    // if ((getEvalType()&(unary|binary))==0) return 0;
     if (op.get_eval_type() & (pcodeop_flags::unary | pcodeop_flags::binary)) == 0 {
         return 0;
     }
@@ -1007,13 +1003,12 @@ pub fn get_cse_hash(op: &PcodeOp, vbank: &VarnodeBank) -> uintm {
     let out = vbank
         .get(op.output.expect("getCseHash: null output (C++ UB)"))
         .expect("getCseHash: stale output id");
-    // hash = (output->getSize()<<8) | (uintm)code();
     let mut hash: uintm = ((out.get_size() as uintm) << 8) | (op.code() as i32 as uintm);
     for i in 0..op.inrefs.len() {
         let vn = vbank
             .get(op.get_in(i as int4).expect("getCseHash: null input (C++ UB)"))
             .expect("getCseHash: stale input id");
-        // hash = (hash<<8) | (hash>>(sizeof(uintm)*8-8));  rotate-left by 8
+        // rotate-left by 8
         hash = (hash << 8) | (hash >> (std::mem::size_of::<uintm>() * 8 - 8));
         if vn.is_constant() {
             hash ^= vn.get_offset() as uintm;
@@ -1072,7 +1067,7 @@ pub fn is_cse_match(op: &PcodeOp, other: &PcodeOp, vbank: &VarnodeBank) -> bool 
 ///
 /// `cliploop` skips inputs on known looping edges (MULTIEQUAL); the loop-edge
 /// test (`parent->isLoopIn(i)`) needs the block graph, so the caller passes a
-/// closure `is_loop_in(slot) -> bool` for it (SEAM(W3-block); for non-MULTIEQUAL
+/// closure `is_loop_in(slot) -> bool` for it (STUB(W3-block); for non-MULTIEQUAL
 /// ops it is never consulted).
 pub fn get_nz_mask_local(
     op: &PcodeOp,
@@ -1137,7 +1132,7 @@ pub fn get_nz_mask_local(
             if !in_is_const(1) {
                 fullmask
             } else {
-                let sa = in_offset(1) as int4; // Get shift amount (uintb -> int4)
+                let sa = in_offset(1) as int4; // Get shift amount
                 let resmask = in_nz(0);
                 pcode_left(resmask, sa) & fullmask
             }
@@ -1336,7 +1331,7 @@ pub fn get_nz_mask_local(
 /// offset to an id and routes here once the op arena is reachable.  Beyond
 /// PcodeOp identity (`getSeqNum`/`isBranch`) the branch arm needs the block
 /// graph (`getParent`, `bs->sizeOut`, `bs->getOut`, `bl->getStart`), supplied
-/// by `block_info` (SEAM(W3-block)).
+/// by `block_info` (STUB(W3-block)).
 ///
 /// `op` is the op the address refers to; `block_info`, when the op is a branch,
 /// yields the `(shortcut_char, target_start_addr)` of the branch target's start
@@ -1350,7 +1345,7 @@ pub fn iop_space_print_raw(
         // op parameter for CPUI_INDIRECT
         return op.get_seq_num().print_raw(s);
     }
-    // bs = op->getParent(); choose non-fallthru target; print code_<shortcut><addr>
+    // choose non-fallthru target; print code_<shortcut><addr>
     let (shortcut, target_start) = block_info(op);
     s.push_str("code_");
     s.push(shortcut);
@@ -1382,7 +1377,6 @@ pub struct PieceNode {
 }
 
 impl PieceNode {
-    /// Constructor (C++ `PieceNode(PcodeOp *op,int4 sl,int4 off,bool l)`).
     pub fn new(op: OpId, sl: int4, off: int4, l: bool) -> PieceNode {
         PieceNode { piece_op: op, slot: sl, type_offset: off, leaf: l }
     }
@@ -1429,9 +1423,9 @@ fn bank_lone_descend(obank: &PcodeOpBank, vbank: &VarnodeBank, vn: VarnodeId) ->
 /// (C++ `PieceNode::isLeaf`, `op.cc:831`).
 ///
 /// `rootVn->getSymbolEntry() != vn->getSymbolEntry()` (the mapped-symbol arm) is
-/// a W4 seam: the merged Varnode carries no `mapentry` link, so a *mapped*
+/// a W4 boundary: the merged Varnode carries no `mapentry` link, so a *mapped*
 /// Varnode is treated as a leaf (the conservative C++ result when the two symbol
-/// entries differ).  An unmapped Varnode never hits this arm. // SEAM(W4)
+/// entries differ).  An unmapped Varnode never hits this arm. // STUB(W4)
 pub fn piece_is_leaf(
     obank: &PcodeOpBank,
     vbank: &VarnodeBank,
@@ -1453,7 +1447,7 @@ pub type SymbolEntryKey = (crate::database::SymbolId, uintb, int4);
 /// return true;` — a mapped Varnode is a leaf only when it resolves to a
 /// *different* containing SymbolEntry than the root.  When `entry_of` is `None`
 /// (the proto-partial-tree path that has no scope handle), the conservative W4
-/// seam is preserved: any mapped non-root Varnode is a leaf.
+/// stub is preserved: any mapped non-root Varnode is a leaf.
 pub fn piece_is_leaf_inner(
     obank: &PcodeOpBank,
     vbank: &VarnodeBank,
@@ -1463,7 +1457,6 @@ pub fn piece_is_leaf_inner(
     entry_of: Option<&dyn Fn(VarnodeId) -> Option<SymbolEntryKey>>,
 ) -> bool {
     let v = vbank.get(vn).expect("piece_is_leaf: stale vn");
-    // if (vn->isMapped() && rootVn->getSymbolEntry() != vn->getSymbolEntry()) return true;
     if v.is_mapped() {
         match entry_of {
             Some(resolve) => {
@@ -1475,13 +1468,12 @@ pub fn piece_is_leaf_inner(
                 // on this account); the structural tests below still apply.
             }
             None => {
-                // SEAM(W4): without a resolver we cannot compare entries; a mapped
+                // STUB(W4): without a resolver we cannot compare entries; a mapped
                 // non-root Varnode is conservatively a leaf.
                 return true;
             }
         }
     }
-    // if (!vn->isWritten()) return true;
     if !v.is_written() {
         return true;
     }
@@ -1489,15 +1481,12 @@ pub fn piece_is_leaf_inner(
         Some(d) => d,
         None => return true,
     };
-    // if (def->code() != CPUI_PIECE) return true;
     if obank.get(def).expect("piece_is_leaf: stale def").code() != OpCode::CPUI_PIECE {
         return true;
     }
-    // PcodeOp *op = vn->loneDescend(); if (op == 0) return true;
     if bank_lone_descend(obank, vbank, vn).is_none() {
         return true;
     }
-    // if (vn->isAddrTied()) { Address addr = rootVn->getAddr() + relOffset; if (vn->getAddr() != addr) return true; }
     if v.is_addr_tied() {
         let root_addr = vbank.get(root_vn).expect("piece_is_leaf: stale root").get_addr().clone();
         let addr = &root_addr + rel_offset as i64;
@@ -1547,7 +1536,6 @@ pub fn gather_pieces_inner(
     for i in 0..2 {
         let opref = obank.get(op).expect("gather_pieces: stale op");
         let vn = opref.get_in(i).expect("gather_pieces: null PIECE input");
-        // int4 offset = (rootVn->getSpace()->isBigEndian() == (i==1)) ? baseOffset + op->getIn(1-i)->getSize() : baseOffset;
         let offset = if root_big_endian == (i == 1) {
             let other = opref.get_in(1 - i).expect("gather_pieces: null PIECE input");
             base_offset + vbank.get(other).expect("gather_pieces: stale other").get_size()
@@ -1693,7 +1681,7 @@ impl PcodeOpBank {
     /// list (C++ `PcodeOpBank::create(int4,const Address&)`, `op.cc:971`).
     pub fn create_at(&mut self, inputs: int4, pc: Address) -> OpId {
         let sq = SeqNum::new(pc, self.uniqid);
-        self.uniqid = self.uniqid.wadd(1); // uniqid++
+        self.uniqid = self.uniqid.wadd(1);
         let op = PcodeOp::new(inputs, sq.clone());
         let id = self.arena.insert(op);
         self.optree.insert(sq, id);
@@ -1707,7 +1695,6 @@ impl PcodeOpBank {
     /// SeqNum&)`, `op.cc:987`).  The op is appended to the dead list.
     pub fn create_seq(&mut self, inputs: int4, sq: SeqNum) -> OpId {
         let op = PcodeOp::new(inputs, sq.clone());
-        // if (sq.getTime() >= uniqid) uniqid = sq.getTime() + 1;
         if sq.get_time() >= self.uniqid {
             self.uniqid = sq.get_time().wadd(1);
         }
@@ -1751,9 +1738,8 @@ impl PcodeOpBank {
     /// Change the op-code of `op`, moving it between op-code lists as needed
     /// (C++ `PcodeOpBank::changeOpcode`, `op.cc:1035`).
     ///
-    /// SEAM(W6): `newopc` is the W6 [`TypeOp`] skeleton.
+    /// STUB(W6): `newopc` is the W6 [`TypeOp`] skeleton.
     pub fn change_opcode(&mut self, op: OpId, newopc: TypeOp) {
-        // if (op->opcode != null) removeFromCodeList(op);
         if self.arena[op].opcode.is_some() {
             self.remove_from_code_list(op);
         }
@@ -1784,7 +1770,6 @@ impl PcodeOpBank {
             panic!("Dead move called on ops which aren't dead");
         }
         self.deadlist.erase(&mut self.arena, ListKind::Insert, op);
-        // iter = prev->insertiter; ++iter; deadlist.insert(iter, op)  ==
         // insert immediately after `prev`.
         self.deadlist.insert_after(&mut self.arena, ListKind::Insert, prev, op);
     }
@@ -1795,9 +1780,8 @@ impl PcodeOpBank {
     /// The C++ guards a degenerate move: it splices only when `prev`'s successor
     /// is not already `firstop`.
     pub fn move_sequence_dead(&mut self, firstop: OpId, lastop: OpId, prev: OpId) {
-        // previter = prev->insertiter; ++previter;
         let previter = self.arena[prev].links.get(ListKind::Insert).1;
-        // if (previter != firstop->insertiter)  -- degenerate-move guard
+        // degenerate-move guard
         if previter != Some(firstop) {
             // splice [first, last] to position `previter` (insert before it)
             self.deadlist
@@ -1809,12 +1793,11 @@ impl PcodeOpBank {
     /// (C++ `markIncidentalCopy`, `op.cc:1101`).  Walks the dead-list segment
     /// with the cursor advanced before any mutation.
     pub fn mark_incidental_copy(&mut self, firstop: OpId, lastop: OpId) {
-        // iter = firstop->insertiter; enditer = lastop->insertiter; ++enditer;
         let mut iter = Some(firstop);
         let enditer = self.arena[lastop].links.get(ListKind::Insert).1;
         while iter != enditer {
             let op = iter.expect("markIncidentalCopy: walked past list end (C++ UB)");
-            iter = self.arena[op].links.get(ListKind::Insert).1; // ++iter (before mutate)
+            iter = self.arena[op].links.get(ListKind::Insert).1; // advance cursor before mutate
             if self.arena[op].code() == OpCode::CPUI_COPY {
                 self.arena[op].set_additional_flag(pcodeop_addlflags::incidental_copy);
             }
@@ -1892,7 +1875,7 @@ impl PcodeOpBank {
     /// The C++ takes `lower_bound(SeqNum(addr,0))` then calls `op->target()`,
     /// which scans backward (over the dead-list / basic-block walk) to the
     /// instruction-start op.  That backward scan is block/dead-list-mediated
-    /// (SEAM(W3)); here we return the lower-bound op id and the caller
+    /// (STUB(W3)); here we return the lower-bound op id and the caller
     /// (`funcdata_op`) runs `target()` on it.  Returns `None` when no op is at
     /// or after `addr`.
     pub fn target_lower_bound(&self, addr: &Address) -> Option<OpId> {
@@ -1996,7 +1979,7 @@ mod tests {
         Address::new(spc, off)
     }
 
-    /// Minimal TypeOp seam values for the op-codes the bank tests touch.
+    /// Minimal TypeOp stub values for the op-codes the bank tests touch.
     fn typeop(opc: OpCode) -> TypeOp {
         // Flags don't matter for the list-bucketing tests; name is the symbol.
         TypeOp::new(opc, 0, format!("{opc:?}"))

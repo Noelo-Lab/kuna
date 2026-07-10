@@ -100,7 +100,7 @@ python3 -m scripts.decbench.status
 6. Root-cause in angr: the venv site-packages (9.2.213 — the version that ran) is
    ground truth; `~/github/angr-dev/angr` master for readability. Name the
    pass/class.
-7. Owning kuna stage from `docs/stages.md` + `docs/stage-mapping.md`.
+7. Owning kuna stage from `docs/phases.md` + `docs/history/stage-mapping.md`.
 8. Scope: small option-gated pass vs `[PROPOSAL]`.
 9. Check siblings reproduce the same symptom.
 10. Write `docs/decbench/triage/<case-id>.md`:

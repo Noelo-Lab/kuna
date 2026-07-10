@@ -7,7 +7,7 @@
 //!
 //! A bare load of a stripped non-ELF binary knows only what `--addr` names: its
 //! `.symtab` is empty, so `lookup_symbol` finds nothing and every function is
-//! `sub_<addr>`-by-address-only. The `s1_entry` PE/Mach-O oracles change that:
+//! `sub_<addr>`-by-address-only. The `entry` PE/Mach-O oracles change that:
 //!
 //! - **PE** (`pe_imports_stripped.exe`, fully stripped) — the entry point and
 //!   the **`.pdata`** RUNTIME_FUNCTION table (97 records — the `.eh_frame`

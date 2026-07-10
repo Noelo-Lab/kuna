@@ -1,4 +1,4 @@
-//! Multi-format-loader PR-11 e2e gate: the DWARF analyzer (`s1_dwarf`, the kuna
+//! Multi-format-loader PR-11 e2e gate: the DWARF analyzer (`dwarf`, the kuna
 //! analog of Ghidra's `DWARFAnalyzer`) now fires on **MinGW-PE** and **Mach-O**,
 //! not just ELF — gimli is format-neutral, so dropping the `BinaryFormat::Elf`
 //! gate and resolving the debug sections through `object`'s format-aware
@@ -19,12 +19,12 @@
 //!
 //! - **PE** (`pe_dwarf.exe`, MinGW `-g`): MinGW emits standard `.debug_*` sections
 //!   in the PE; `object::section_by_name(".debug_info")` finds them verbatim. The
-//!   `s1_dwarf` `SymFact{Function}` names `first_byte`/`add` (the symtab no longer
+//!   `dwarf` `SymFact{Function}` names `first_byte`/`add` (the symtab no longer
 //!   does) and the `PrototypePieces` carries `int first_byte(char *)`.
 //! - **Mach-O** (`macho_dwarf.o`, clang `-g`): the DWARF lands in the
 //!   `__DWARF,__debug_*` sections; `object` maps gimli's `.debug_info` → the Mach-O
 //!   short-name `__debug_info` (its documented rule), so the *same* section loader
-//!   reads it. `s1_dwarf` recovers the same DWARF-only names + `char *` type.
+//!   reads it. `dwarf` recovers the same DWARF-only names + `char *` type.
 //!
 //! That a name recovers BY its DWARF name (the symtab no longer carries it) is the
 //! DWARF-specific proof; the by-raw-address decompile (`load addr`) is the
@@ -102,7 +102,7 @@ fn decompile(prog: ConsoleProgram, setup: &[&str]) -> String {
 
 /// PE (MinGW `-g`): the DWARF-only function name `first_byte` recovers, with its
 /// DWARF-typed `char *` parameter — DIFFERENT from the by-raw-address baseline
-/// (`sub_<addr>`), proving `s1_dwarf` read the PE's `.debug_*` sections.
+/// (`sub_<addr>`), proving `dwarf` read the PE's `.debug_*` sections.
 #[test]
 fn pe_dwarf_recovers_name_and_typed_signature() {
     // AFTER: load by the DWARF name (the COFF symtab no longer carries it).

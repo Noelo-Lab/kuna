@@ -1,4 +1,4 @@
-//! End-to-end gate for the DWARF analyzer port (`s1_dwarf`, the kuna analog of
+//! End-to-end gate for the DWARF analyzer port (`dwarf`, the kuna analog of
 //! Ghidra's `DWARFAnalyzer`).
 //!
 //! Two real-ELF fixtures, two recoveries:

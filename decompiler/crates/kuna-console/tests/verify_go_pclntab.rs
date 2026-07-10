@@ -1,4 +1,4 @@
-//! End-to-end gate for Go `pclntab` function-name recovery (`s1_pclntab`, the
+//! End-to-end gate for Go `pclntab` function-name recovery (`pclntab`, the
 //! kuna analog of Ghidra's `GolangSymbolAnalyzer` name-recovery half).
 //!
 //! The proof: a Go binary's functions render NAMED (`main.main`, `main.compute`,
@@ -15,7 +15,7 @@
 //! `GOCACHE`/`GOPATH` (hermetic — never touches the user's environment), guarded
 //! on `go` being on PATH AND the build succeeding; it **skips cleanly** otherwise.
 //! The hermetic parser logic is pinned separately by the unit tests in
-//! `kuna-analysis/src/s1_pclntab/tests.rs` (no `go` needed), so the merge-blocking
+//! `kuna-analysis/src/pclntab/tests.rs` (no `go` needed), so the merge-blocking
 //! gate does not depend on a Go toolchain.
 //!
 //! ## `.sla` precondition

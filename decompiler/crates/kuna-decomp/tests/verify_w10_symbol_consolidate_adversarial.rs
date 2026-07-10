@@ -1,7 +1,7 @@
 //! INDEPENDENT VERIFIER adversarial tests — item: w10-symbol-consolidate.
 //!
 //! These exercise the faithfulness-fragile spots of the global-SYMBOL naming
-//! query [`kuna_decomp::seams::GlobalQuery::name_for_varnode`] — the wire for
+//! query [`kuna_decomp::context::GlobalQuery::name_for_varnode`] — the wire for
 //! `Funcdata::linkSymbol`'s reach into the global scope (`funcdata_varnode.cc:1190`
 //! `localmap->queryProperties` → the covering `SymbolEntry` → its Symbol's
 //! display name), transcribed from `Scope::findContainer` + the
@@ -29,7 +29,7 @@ use std::rc::Rc;
 use kuna_base::address::{Address, RangeList};
 use kuna_base::partmap::PartMap;
 use kuna_base::space::{spacetype, AddrSpace, ConstantSpace};
-use kuna_decomp::seams::{GlobalEntry, GlobalQuery};
+use kuna_decomp::context::{GlobalEntry, GlobalQuery};
 
 fn ram_space(index: i32) -> Rc<AddrSpace> {
     Rc::new(AddrSpace::new(

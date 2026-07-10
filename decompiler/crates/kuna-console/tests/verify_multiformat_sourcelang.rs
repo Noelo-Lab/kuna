@@ -2,12 +2,12 @@
 //! detection for PE and Mach-O (design `docs/multiformat-loader-design.md` §5.3 /
 //! §8 PR-14).
 //!
-//! `s1_sourcelang::detect_compiler` used to short-circuit to `Unknown` for any
+//! `sourcelang::detect_compiler` used to short-circuit to `Unknown` for any
 //! non-ELF input. It now dispatches per format, so a PE / Mach-O binary's
 //! toolchain is fingerprinted — and, crucially, the **format-neutral Rust/Go
 //! detection paths** fire on those formats too, which is what enables the Rust/Go
-//! no-return lists (`s1_loader/noreturn.rs`) and the Go pclntab pass
-//! (`s1_pclntab`) on a Rust/Go PE or Mach-O.
+//! no-return lists (`loader/noreturn.rs`) and the Go pclntab pass
+//! (`pclntab`) on a Rust/Go PE or Mach-O.
 //!
 //! ## What each format detects (the headline)
 //!
@@ -15,7 +15,7 @@
 //!   emits **no `.comment` section** in a PE; the `GCC: (GNU) …` toolchain records
 //!   live NUL-delimited in `.rdata`. The PE arm scans `.rdata`/`.comment` ⇒
 //!   `Compiler::Gcc`. (The MSVC `Rich`-header / `@comp.id` path is unit-tested
-//!   hermetically in `s1_sourcelang` — no `cl.exe` fixture is buildable on Linux.)
+//!   hermetically in `sourcelang` — no `cl.exe` fixture is buildable on Linux.)
 //!
 //! - **Mach-O** — `macho_imports` (x86-64) and `macho_imports_arm64` carry an
 //!   `LC_BUILD_VERSION` (PLATFORM_MACOS) load command. An Apple platform ⇒ the
@@ -30,14 +30,14 @@
 //! (Rust) / appends the Go pclntab pass (Go). So a Rust/Go PE or Mach-O that trips
 //! either neutral path automatically gets the language-specific behavior. (A real
 //! Rust/Go PE/Mach-O fixture is not buildable in-container; the symbol/section
-//! predicates themselves are unit-tested hermetically in `s1_sourcelang`.)
+//! predicates themselves are unit-tested hermetically in `sourcelang`.)
 //!
 //! ## Default-off / detection-only ⇒ ELF byte-identical
 //!
 //! Detection is pure and changes nothing unless a language-specific pass acts,
 //! and those act only for `Rustc`/`Go`. A PE/Mach-O detecting as `Gcc`/`Clang`/
 //! `Unknown` produces byte-identical output, and the ELF path is untouched (the
-//! `s1_sourcelang` ELF tests are unchanged). This test reaches the analysis tier
+//! `sourcelang` ELF tests are unchanged). This test reaches the analysis tier
 //! directly (`object::File` over the fixture bytes), so it needs **no `.sla`** and
 //! never skips.
 
@@ -45,7 +45,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use kuna_analysis::passes::passes_for;
-use kuna_analysis::s1_sourcelang::{detect_compiler, Compiler};
+use kuna_analysis::sourcelang::{detect_compiler, Compiler};
 
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -151,7 +151,7 @@ fn rust_go_compiler_value_drives_language_passes() {
 /// signal hermetically.
 #[test]
 fn rust_symbol_path_is_format_neutral() {
-    use kuna_analysis::s1_sourcelang::is_rust_mangled;
+    use kuna_analysis::sourcelang::is_rust_mangled;
     // legacy + v0 rustc manglings
     assert!(is_rust_mangled("_ZN4core9panicking5panic17h0123456789abcdefE"));
     assert!(is_rust_mangled("_RNvCs1234_4core5panic"));

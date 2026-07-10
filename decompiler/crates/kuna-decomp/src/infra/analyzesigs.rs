@@ -6,7 +6,7 @@
 //! the [`signature`](crate::signature) pipeline over the current (or every)
 //! decompiled function.
 //!
-//! # Seams (the W9 console surface)
+//! # Boundaries (the W9 console surface)
 //!
 //! The whole file hangs off the W9 interactive-console subsystem
 //! (`IfaceCapability` / `IfaceDecompCommand` / `IfaceStatus` / `IfaceDecompData`
@@ -18,7 +18,7 @@
 //! So this module ports the **decision bodies** of the commands as standalone,
 //! testable functions that take the values the console would otherwise resolve
 //! (the parsed settings integer, the `&Funcdata`, a `&mut dyn Encoder` /
-//! output buffer), and SEAMs the console plumbing.  When W9 lands, the
+//! output buffer), and stubs the console plumbing.  When W9 lands, the
 //! `IfaceDecompCommand::execute` wrappers parse their `istream` and call these.
 
 use kuna_base::error::{KunaError, KunaResult};
@@ -101,7 +101,7 @@ pub fn signature_settings(mysetting: u32) -> KunaResult<String> {
 /// needs the W8 print surface (`Varnode::printRaw`/`FlowBlock::printHeader`); a
 /// generic feature prints its bare hash, so the printed text is built from
 /// [`GraphSigManager::get_signature_vector`] (the sorted hash list) — the same
-/// hashes, without the per-feature origin string (SEAM(W8)).
+/// hashes, without the per-feature origin string (STUB(W8)).
 pub fn print_signatures(
     fd: &Funcdata,
     maxiter_override: Option<i32>,
@@ -136,7 +136,7 @@ pub fn print_signatures(
 /// `&Funcdata`, the parsed `maxiter_override`, and the destination encoder (the
 /// file-open / filename parse is the W9 console surface), running the same
 /// generate + `encode` path.  The `<varsig>`/`<blocksig>` encodes need the W8
-/// marshal surface and SEAM inside [`GraphSigManager::encode`].
+/// marshal surface and STUB inside [`GraphSigManager::encode`].
 pub fn save_signatures(
     fd: &Funcdata,
     maxiter_override: Option<i32>,
@@ -188,7 +188,7 @@ pub fn produce_signature_line(
 /// `fd->getAddress()` + `fd->getName()`; the binary framing and the
 /// per-architecture function iteration (`iterateFunctionsAddrOrder`, the action
 /// re-drive, the `status->fileoptr` binary stream) are the W9 console surface
-/// and SEAM.  This port runs the generate + `encode` core (the part that is not
+/// and STUB.  This port runs the generate + `encode` core (the part that is not
 /// console plumbing) into the given encoder, returning the number of features.
 pub fn saveall_signature_record(
     fd: &Funcdata,
@@ -225,7 +225,7 @@ mod tests {
         addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
     };
 
-    use crate::seams::{Architecture, BlockId, TypeOp};
+    use crate::context::{ArchContext, BlockId, TypeOp};
     use crate::signature::{set_settings, sig_mods, SETTINGS_TEST_LOCK};
     use kuna_num::opcodes::OpCode;
 
@@ -250,7 +250,7 @@ mod tests {
 
     fn build_fd() -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(Architecture::new(manage));
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -267,7 +267,7 @@ mod tests {
         op
     }
 
-    use crate::seams::OpId;
+    use crate::context::OpId;
 
     /// Build a small complete function (input + add + return) and mark it
     /// processing-complete so the print gate passes.

@@ -32,7 +32,7 @@ use std::rc::Rc;
 
 use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace};
 use kuna_decomp::block::{BlockGraph, BlockKind, FlowBlock};
-use kuna_decomp::seams::BlockId;
+use kuna_decomp::context::BlockId;
 
 // ===========================================================================
 // Family 1: restrictedByConditional unit tests

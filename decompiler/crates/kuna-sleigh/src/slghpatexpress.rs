@@ -38,7 +38,7 @@
 //! becomes [`TokenField::new`] taking the two Token properties the C++
 //! constructor reads (`getSize()`, `isBigEndian()`).
 //!
-//! ## The ParserWalker seam ([`PatternExpressionContext`])
+//! ## The ParserWalker hook ([`PatternExpressionContext`])
 //!
 //! Evaluation in C++ runs against a `ParserWalker` (context.hh/sleigh.hh),
 //! which does not exist yet at this point in the port DAG.
@@ -49,14 +49,14 @@
 //! `OperandValue::getValue` (see [`PatternExpressionContext::operand_value`]).
 //! The sleigh-core wave implements this trait for its `ParserWalker`.
 //!
-//! ## The decode seam ([`OperandValueResolver`])
+//! ## The decode hook ([`OperandValueResolver`])
 //!
 //! `OperandValue::decode` in C++ resolves its cached `Constructor*` through
 //! the `Translate*` (really `SleighBase*`) passed to `decodeExpression`:
 //! `findSymbol(tabid)` -> `SubtableSymbol` -> `getNumConstructors()` /
 //! `getConstructor(ctid)`.  The symbol table is not ported yet, so the Rust
 //! [`OperandValue`] stores the raw `(table_id, ct_id)` pair and the decode
-//! validation goes through the [`OperandValueResolver`] seam, implemented by
+//! validation goes through the [`OperandValueResolver`] hook, implemented by
 //! the slghsymbol/sleighbase wave.  Two C++ `OperandValue` methods that
 //! consult the symbol table at runtime — `isConstructorRelative()` and
 //! `getName()` (used by `ContextOp::validate` in slghsymbol.cc) — are left
@@ -77,7 +77,7 @@ use crate::slghpattern::{
 };
 
 // ---------------------------------------------------------------------------
-// PatternExpressionContext — the ParserWalker seam
+// PatternExpressionContext — the ParserWalker hook
 // ---------------------------------------------------------------------------
 
 /// The minimal `ParserWalker` surface needed to evaluate patterns and
@@ -112,32 +112,16 @@ pub trait PatternExpressionContext {
 
     /// Stand-in for the body of C++ `OperandValue::getValue`
     /// (slghpatexpress.cc), which needs the symbol table and an out-of-band
-    /// walker.  The implementor (sleigh-core wave) must transcribe exactly:
-    ///
-    /// ```text
-    /// OperandSymbol *sym = ct->getOperand(index);     // ct from (table_id, ct_id)
-    /// PatternExpression *patexp = sym->getDefiningExpression();
-    /// if (patexp == 0) {
-    ///   TripleSymbol *defsym = sym->getDefiningSymbol();
-    ///   if (defsym != 0) patexp = defsym->getPatternExpression();
-    ///   if (patexp == 0) return 0;
-    /// }
-    /// ConstructState tempstate;
-    /// ParserWalker newwalker(walker.getParserContext());
-    /// newwalker.setOutOfBandState(ct,index,&tempstate,walker);
-    /// return patexp->getValue(newwalker);
-    /// ```
+    /// walker; the sleigh-core implementor transcribes that body exactly.
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64>;
 }
 
-/// Decode-time seam standing in for the `Translate*` (really `SleighBase*`)
+/// Decode-time hook standing in for the `Translate*` (really `SleighBase*`)
 /// argument of `PatternExpression::decodeExpression`; see module docs.
 pub trait OperandValueResolver {
-    /// C++ `OperandValue::decode`:
-    /// `SubtableSymbol *tab =
-    /// dynamic_cast<SubtableSymbol*>(((SleighBase*)trans)->findSymbol(tabid))`
-    /// followed by `tab->getNumConstructors()`.  A failed lookup/downcast is
-    /// a null dereference (UB) in C++; implementors may error or panic.
+    /// C++ `OperandValue::decode`: look up the subtable by id and return its
+    /// `getNumConstructors()`.  A failed lookup/downcast is a null
+    /// dereference (UB) in C++; implementors may error or panic.
     fn num_constructors(&self, table_id: u32) -> KunaResult<i32>;
 }
 
@@ -639,7 +623,7 @@ impl Next2InstructionValue {
 /// C++ `OperandValue`: the value of another operand of the same
 /// constructor, used inside an expression.  C++ caches a `Constructor *ct`;
 /// the port stores the `(table_id, ct_id)` pair the C++ decode resolves the
-/// pointer from (see module docs for the seam).
+/// pointer from (see module docs for the hook).
 #[derive(Debug, Clone)]
 pub struct OperandValue {
     /// This is the defining field of expression (C++ `index`)
@@ -689,7 +673,7 @@ impl OperandValue {
     }
 
     /// C++ `OperandValue::getValue` — the body lives behind the
-    /// [`PatternExpressionContext::operand_value`] seam (see its docs for
+    /// [`PatternExpressionContext::operand_value`] hook (see its docs for
     /// the exact C++ code the implementor transcribes).
     pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
         walker.operand_value(self.index, self.table_id, self.ct_id)
@@ -725,7 +709,7 @@ impl OperandValue {
     }
 
     /// C++ `OperandValue::decode`, with the symbol-table lookup behind the
-    /// [`OperandValueResolver`] seam.
+    /// [`OperandValueResolver`] hook.
     pub fn decode(
         decoder: &mut dyn Decoder,
         trans: &dyn OperandValueResolver,
@@ -1845,7 +1829,7 @@ fn build_single(mut startbit: i32, mut endbit: i32, mut byteval: u32) -> Pattern
         startbit -= 8;
         endbit -= 8;
     }
-    // mask = (~0) << (32 - size); shift count in [0,32) for valid fields
+    // shift count in [0,32) for valid fields
     let mut mask: u32 = (!0u32).wshl((32 - size) as u32);
     byteval = byteval.wshl((32 - size) as u32) & mask;
     mask = mask.wshr(startbit as u32);
@@ -1949,7 +1933,7 @@ fn build_equation_pattern(
 
 /// C++ `OperandResolve`: the traversal state for `resolveOperandLeft`.  The
 /// C++ struct holds a `vector<OperandSymbol*> &operands`; here the operand
-/// updates flow through the [`OperandResolveSink`] seam so the equation code
+/// updates flow through the [`OperandResolveSink`] hook so the equation code
 /// stays independent of the symbol table.
 pub struct OperandResolve {
     /// Current base operand (as we traverse left to right).
@@ -1980,7 +1964,7 @@ impl OperandResolve {
     }
 }
 
-/// Seam for the operand mutations `OperandEquation::resolveOperandLeft`
+/// Hook for the operand mutations `OperandEquation::resolveOperandLeft`
 /// performs on a `OperandSymbol` (C++ reaches through `state.operands[index]`
 /// directly).  Implemented by the slghsymbol build side.
 pub trait OperandResolveSink {
@@ -2614,7 +2598,7 @@ mod tests {
     // -- OperandValue ------------------------------------------------------------
 
     #[test]
-    fn operand_value_via_seam() {
+    fn operand_value_via_hook() {
         let mut walker = TestWalker::from_bytes(&[]);
         walker.operands.push(((2, 7, 3), 0x42));
         let ov = OperandValue::new(2, 7, 3);

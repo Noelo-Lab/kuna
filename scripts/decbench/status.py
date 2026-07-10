@@ -3,7 +3,7 @@
     python3 -m scripts.decbench.status [--json]
 
 Self-maintaining like scripts/port_status.py: campaign features are detected
-from stages.toml provenance (``inspiration = "decbench:<case-id>; ..."``),
+from phases.toml provenance (``inspiration = "decbench:<case-id>; ..."``),
 triage state from docs/decbench/triage/*.md front-matter, and benchmark deltas
 from docs/features/*/record.json ``ged_*`` blocks. Nothing is hand-listed.
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import config
 
-STAGES_TOML = config.repo_root() / "decompiler" / "crates" / "kuna-decomp" / "stages.toml"
+STAGES_TOML = config.repo_root() / "decompiler" / "crates" / "kuna-decomp" / "phases.toml"
 FEATURES_DIR = config.repo_root() / "docs" / "features"
 
 
@@ -103,7 +103,7 @@ def main(argv=None) -> None:
     print(f"triaged: {len(triage)}")
     for s, n in statuses.most_common():
         print(f"  {s:<20} {n}")
-    print(f"campaign settables (stages.toml, decbench: provenance): {len(settables)}")
+    print(f"campaign settables (phases.toml, decbench: provenance): {len(settables)}")
     for s in settables:
         print(f"  {s['option']:<24} default={s['default']:<4} {s['change_kind']}")
     print(f"feature GED records: {len(features)}")

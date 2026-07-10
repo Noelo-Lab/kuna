@@ -151,7 +151,7 @@ fn full_pattern_starts_includes_widget_but_collect_entries_does_not() {
     let file = object::File::parse(bytes.as_slice()).expect("parse fixture");
 
     // The default entry-discovery (entry_disc, always-on) does NOT find widget.
-    let default = kuna_analysis::s1_entry::collect_entries(&file, bytes.as_slice());
+    let default = kuna_analysis::entry::collect_entries(&file, bytes.as_slice());
     assert!(
         !default.contains(&WIDGET),
         "default entry_disc must NOT discover widget {WIDGET:#x} (the minimal oracle misses it)"
@@ -159,7 +159,7 @@ fn full_pattern_starts_includes_widget_but_collect_entries_does_not() {
 
     // The full byte-pattern pass DOES find widget (and it survives the funcsym-skip
     // inside `full_pattern_starts`, so widget is genuinely un-symboled).
-    let full = kuna_analysis::s1_entry::full_pattern_starts(&file);
+    let full = kuna_analysis::entry::full_pattern_starts(&file);
     assert!(
         full.contains(&WIDGET),
         "full_pattern_starts must discover widget {WIDGET:#x}, got {full:#x?}"

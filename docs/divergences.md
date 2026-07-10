@@ -1,5 +1,9 @@
 # Intentional default-behavior divergences from upstream
 
+> **Terminology note (2026-07):** entries below predate the stage->phase rename;
+> read "stage"/"sub-stage" as phase/sub-phase and S-codes as P-codes (S3 = P3).
+> Entries are append-only history and are not retro-edited.
+
 Option-gated sub-stage exposures (the GH-558 pattern) keep default output
 byte-identical to upstream and are NOT listed here — they live in `UPSTREAM.md`
 *Divergence* (file-level) and `tests/stages/` (behavior). This file records the cases
@@ -566,7 +570,7 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   `stackguard` strips the canary epilogue in this `cvs` main, changing the `0x3c` declaration
   count the test pins).
 - **Catalog / docs**: the byte-exact catalog fixture
-  (`decompiler/crates/kuna-decomp/tests/fixtures/stage_catalog.json`) and `docs/assertions.md`
+  (`decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json`) and `docs/options.md`
   are regenerated — the fourteen `default` fields flip `off`→`on`, and the three code-removing
   flags' `summary`/`use_when` gain the `REMOVES CODE:` prefix (so `kuna catalog --json`, which an
   LLM reads, surfaces the warning) plus the `switchsharedcase` slowness note. The settable count

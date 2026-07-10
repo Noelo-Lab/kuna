@@ -21,7 +21,7 @@
 //!   - the upstream `ELEM_*` option element ids (options.cc:45-85), used as the
 //!     dispatch keys.
 //!
-//! ## SEAM(W4..W10): `ArchOptionContext` — the `glb->` surface options mutate
+//! ## STUB(W4..W10): `ArchOptionContext` — the `glb->` surface options mutate
 //!
 //! Every upstream `apply()` reaches into the `Architecture` (`glb`): some flip a
 //! plain bool/int field (`glb->readonlypropagate`, `glb->infer_pointers`,
@@ -34,12 +34,12 @@
 //! nor invent its fields.
 //!
 //! The faithful transcription therefore routes every `glb->` access through the
-//! **local seam trait [`ArchOptionContext`]**, defined here.  Each trait method
+//! **local boundary trait [`ArchOptionContext`]**, defined here.  Each trait method
 //! corresponds one-to-one to a `glb->` access in the C++, documented with the
 //! exact C++ line it stands in for.  The methods whose subsystem is alive
 //! (`flowoptions`, the plain config bools/ints, `split_datatype_config`,
 //! `nan_ignore_*`) are concrete; the methods whose subsystem is W5/W6/W8 carry a
-//! `// SEAM` note and a typed argument so the *parsing and validation* (the part
+//! `// STUB` note and a typed argument so the *parsing and validation* (the part
 //! options.cc owns) is fully ported and the only deferred piece is the final
 //! subsystem mutation.  `w4-fw-architecture` / `w4-kuna-p0-pack` implement
 //! [`ArchOptionContext`] for the real `Architecture` + `P0Store`.
@@ -215,7 +215,7 @@ pub const UPSTREAM_OPTION_ELEMENTS: &[ElementId] = &[
 /// for this id is the (W4-owned) `architecture` module; a copy with the matching
 /// id is declared here so this module's `OptionDatabase::new` and a decode-time
 /// [`IdRegistry`] agree without a cross-module dependency on the architecture
-/// stub.  // SEAM(W4): de-duplicate against `architecture::ELEM_READONLY` when alive.
+/// stub.  // STUB(W4): de-duplicate against `architecture::ELEM_READONLY` when alive.
 pub const ELEM_READONLY: ElementId = ElementId::new("readonly", 151);
 /// `hideextensions` option name.  Upstream registers no dedicated element id and
 /// `OptionDatabase` does NOT register `OptionHideExtensions` (it is reachable
@@ -239,7 +239,7 @@ pub const ELEM_HIDEEXTENSIONS: ElementId = ElementId::new("hideextensions", 4090
 /// [`crate::architecture::Architecture::set_kuna_option`].  Listed here so the
 /// registration set is documented in one place and a missing wiring is a visible
 /// gap, not silent — this list must equal the `SETTABLE_TABLE` rows
-/// (`stages.toml`), which `kuna catalog --check` cross-checks.
+/// (`phases.toml`), which `kuna catalog --check` cross-checks.
 pub const KUNA_OPTION_NAMES: &[&str] = &[
     "compareform",
     "arraynotation",
@@ -398,7 +398,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "objc",
     // (kuna) PE PDB metadata recovery: on a Windows PE, read the CodeView
     // fingerprint (`{guid, age, path}`), locate the external `.pdb` (tier-1: the
-    // `kuna_pdb_path` env var, the s1_fid `kuna_fid_db` precedent), fingerprint-gate
+    // `kuna_pdb_path` env var, the fid `kuna_fid_db` precedent), fingerprint-gate
     // it (the supplied `.pdb`'s guid/age must match the PE's CodeView record — never
     // apply a wrong/stale PDB, the FID full-hash-match discipline), and on a match
     // walk the global symbols (`S_PUB32`/`S_GPROC32`) to rename each stripped
@@ -439,7 +439,7 @@ pub const RELOC_OBJECTS_ENV: &str = "KUNA_RELOC_OBJECTS";
 // Typed enums for the option-parsing knobs whose target subsystem is W5+.
 //
 // These let an apply() finish its *parse + validate* faithfully (the part
-// options.cc owns) and hand a typed value to the seam method; the subsystem
+// options.cc owns) and hand a typed value to the boundary method; the subsystem
 // mutation is the only deferred piece.
 // ---------------------------------------------------------------------------
 
@@ -485,7 +485,7 @@ pub enum NamespaceStrategy {
 ///
 /// Transcription of `Comment::encodeCommentType` (comment.cc:77); lives here
 /// (instead of reaching the stub `comment` module) so `commentheader`/
-/// `commentinstruction` can finish their parse.  // SEAM(W8): the
+/// `commentinstruction` can finish their parse.  // STUB(W8): the
 /// printer-side `comment` module owns the canonical copy when alive.
 pub mod comment_type {
     use kuna_base::types::uint4;
@@ -505,7 +505,7 @@ pub mod comment_type {
 
 /// Transcription of `Comment::encodeCommentType` (comment.cc:77-91).
 ///
-/// SEAM(W8): the canonical encoder lives on the (stub) `comment` module; this
+/// STUB(W8): the canonical encoder lives on the (stub) `comment` module; this
 /// copy lets the comment-toggle options finish parsing.  Throws the exact C++
 /// `LowlevelError` text on an unknown name.
 fn encode_comment_type(name: &str) -> KunaResult<uint4> {
@@ -699,7 +699,7 @@ impl IntParse for uint4 {
 }
 
 // ---------------------------------------------------------------------------
-// ArchOptionContext — the local seam for the `glb->` surface options mutate.
+// ArchOptionContext — the local boundary for the `glb->` surface options mutate.
 // ---------------------------------------------------------------------------
 
 /// The slice of the [`Architecture`](crate::architecture) that `ArchOption`
@@ -709,7 +709,7 @@ impl IntParse for uint4 {
 /// Each method maps one-to-one to a `glb->` access in options.cc.  The methods
 /// whose subsystem is already alive (`flowoptions`, the plain config fields,
 /// `split_datatype_config`, `nan_ignore_*`) are expected to be concrete;
-/// methods whose subsystem is W5/W6/W8 carry a `// SEAM` note — the caller still
+/// methods whose subsystem is W5/W6/W8 carry a `// STUB` note — the caller still
 /// fully parses + validates and hands a typed value, so only the final mutation
 /// is deferred.  `w4-fw-architecture` / `w4-kuna-p0-pack` implement this for the
 /// real `Architecture`.
@@ -760,102 +760,102 @@ pub trait ArchOptionContext {
     /// Set `glb->nan_ignore_compare`.
     fn set_nan_ignore_compare(&mut self, val: bool);
 
-    // --- prototype models (SEAM W6: fspec) ---------------------------------
+    // --- prototype models (STUB W6: fspec) ---------------------------------
 
     /// `glb->defaultfp->setExtraPop(expop)` + the eval-model spreads
-    /// (options.cc:280-284).  // SEAM(W6)
+    /// (options.cc:280-284).  // STUB(W6)
     fn set_default_extra_pop(&mut self, expop: int4);
     /// Set the per-function extrapop: `fd->getFuncProto().setExtraPop(expop)`
     /// after `symboltab->getGlobalScope()->queryFunction(name)`
     /// (options.cc:273-277).  Returns the unknown-function error faithfully.
-    /// // SEAM(W4 symboltab + W6 fspec)
+    /// // STUB(W4 symboltab + W6 fspec)
     fn set_function_extra_pop(&mut self, name: &str, expop: int4) -> KunaResult<()>;
     /// `glb->setDefaultModel(getModel(p1))` (options.cc:313-316); returns the
-    /// unknown-model error.  // SEAM(W6)
+    /// unknown-model error.  // STUB(W6)
     fn set_default_model(&mut self, name: &str) -> KunaResult<()>;
     /// `glb->evalfp_current = getModel(p1)` / defaultfp (options.cc:844-852);
-    /// returns the unknown-model error.  // SEAM(W6)
+    /// returns the unknown-model error.  // STUB(W6)
     fn set_eval_current_model(&mut self, name: &str) -> KunaResult<()>;
 
-    // --- per-function properties (SEAM W4 symboltab + W6 fspec) ------------
+    // --- per-function properties (STUB W4 symboltab + W6 fspec) ------------
 
     /// `fd->getFuncProto().setInline(val)` after a name lookup
-    /// (options.cc:368-376).  // SEAM
+    /// (options.cc:368-376).  // STUB
     fn set_function_inline(&mut self, name: &str, val: bool) -> KunaResult<()>;
     /// `fd->getFuncProto().setNoReturn(val)` after a name lookup
-    /// (options.cc:394-402).  // SEAM
+    /// (options.cc:394-402).  // STUB
     fn set_function_no_return(&mut self, name: &str, val: bool) -> KunaResult<()>;
 
-    // --- printer (SEAM W8: printc / printlanguage) -------------------------
+    // --- printer (STUB W8: printc / printlanguage) -------------------------
 
     /// Whether the active printer is the C language (`glb->print->getName() ==
-    /// "c-language"`, options.cc:441/456/471).  // SEAM(W8)
+    /// "c-language"`, options.cc:441/456/471).  // STUB(W8)
     fn print_is_c_language(&self) -> bool;
-    /// `PrintC::setNULLPrinting(val)` (options.cc:444).  // SEAM(W8)
+    /// `PrintC::setNULLPrinting(val)` (options.cc:444).  // STUB(W8)
     fn set_null_printing(&mut self, val: bool);
-    /// `PrintC::setInplaceOps(val)` (options.cc:459).  // SEAM(W8)
+    /// `PrintC::setInplaceOps(val)` (options.cc:459).  // STUB(W8)
     fn set_inplace_ops(&mut self, val: bool);
-    /// `PrintC::setConvention(val)` (options.cc:474).  // SEAM(W8)
+    /// `PrintC::setConvention(val)` (options.cc:474).  // STUB(W8)
     fn set_convention_printing(&mut self, val: bool);
-    /// `PrintC::setNoCastPrinting(val)` (options.cc:489).  // SEAM(W8)
+    /// `PrintC::setNoCastPrinting(val)` (options.cc:489).  // STUB(W8)
     fn set_no_cast_printing(&mut self, val: bool);
-    /// `PrintC::setHideImpliedExts(val)` (options.cc:504).  // SEAM(W8)
+    /// `PrintC::setHideImpliedExts(val)` (options.cc:504).  // STUB(W8)
     fn set_hide_implied_exts(&mut self, val: bool);
-    /// `glb->print->setMaxLineSize(val)` (options.cc:524).  // SEAM(W8)
+    /// `glb->print->setMaxLineSize(val)` (options.cc:524).  // STUB(W8)
     fn set_max_line_size(&mut self, val: int4);
-    /// `glb->print->setIndentIncrement(val)` (options.cc:541).  // SEAM(W8)
+    /// `glb->print->setIndentIncrement(val)` (options.cc:541).  // STUB(W8)
     fn set_indent_increment(&mut self, val: int4);
-    /// `glb->print->setLineCommentIndent(val)` (options.cc:559).  // SEAM(W8)
+    /// `glb->print->setLineCommentIndent(val)` (options.cc:559).  // STUB(W8)
     fn set_line_comment_indent(&mut self, val: int4);
-    /// `glb->print->setCommentStyle(p1)` (options.cc:570).  // SEAM(W8)
+    /// `glb->print->setCommentStyle(p1)` (options.cc:570).  // STUB(W8)
     fn set_comment_style(&mut self, style: &str);
-    /// `glb->print->getHeaderComment()` (options.cc:583).  // SEAM(W8)
+    /// `glb->print->getHeaderComment()` (options.cc:583).  // STUB(W8)
     fn header_comment_flags(&self) -> uint4;
-    /// `glb->print->setHeaderComment(flags)` (options.cc:589).  // SEAM(W8)
+    /// `glb->print->setHeaderComment(flags)` (options.cc:589).  // STUB(W8)
     fn set_header_comment_flags(&mut self, flags: uint4);
-    /// `glb->print->getInstructionComment()` (options.cc:604).  // SEAM(W8)
+    /// `glb->print->getInstructionComment()` (options.cc:604).  // STUB(W8)
     fn instruction_comment_flags(&self) -> uint4;
-    /// `glb->print->setInstructionComment(flags)` (options.cc:610).  // SEAM(W8)
+    /// `glb->print->setInstructionComment(flags)` (options.cc:610).  // STUB(W8)
     fn set_instruction_comment_flags(&mut self, flags: uint4);
-    /// `glb->print->setIntegerFormat(p1)` (options.cc:623).  // SEAM(W8)
+    /// `glb->print->setIntegerFormat(p1)` (options.cc:623).  // STUB(W8)
     fn set_integer_format(&mut self, fmt: &str);
     /// `glb->print->setNamespaceStrategy(strategy)` (options.cc:1014).
-    /// // SEAM(W8)
+    /// // STUB(W8)
     fn set_namespace_strategy(&mut self, strategy: NamespaceStrategy);
     /// `PrintC::setBraceFormat{Function,IfElse,Loop,Switch}(style)`
-    /// (options.cc:655-664).  // SEAM(W8)
+    /// (options.cc:655-664).  // STUB(W8)
     fn set_brace_format(&mut self, category: BraceCategory, style: BraceStyle);
-    /// `glb->setPrintLanguage(p1)` (options.cc:865).  // SEAM(W8)
+    /// `glb->setPrintLanguage(p1)` (options.cc:865).  // STUB(W8)
     fn set_print_language(&mut self, language: &str);
 
-    // --- action database (SEAM W5: action / coreaction) --------------------
+    // --- action database (STUB W5: action / coreaction) --------------------
 
     /// `glb->allacts.getCurrent()->setWarning(val,p1)`; `false` => bad
-    /// action/rule specifier (options.cc:427).  // SEAM(W5)
+    /// action/rule specifier (options.cc:427).  // STUB(W5)
     fn set_action_warning(&mut self, val: bool, name: &str) -> bool;
     /// `glb->allacts.cloneGroup(p1,p2); setCurrent(p2)` (options.cc:682-683).
-    /// // SEAM(W5)
+    /// // STUB(W5)
     fn clone_action_group(&mut self, from: &str, to: &str);
-    /// `glb->allacts.setCurrent(p1)` (options.cc:686/707).  // SEAM(W5)
+    /// `glb->allacts.setCurrent(p1)` (options.cc:686/707).  // STUB(W5)
     fn set_current_action(&mut self, name: &str);
-    /// `glb->allacts.getCurrentName()` (options.cc:714/715).  // SEAM(W5)
+    /// `glb->allacts.getCurrentName()` (options.cc:714/715).  // STUB(W5)
     fn current_action_name(&self) -> String;
     /// `glb->allacts.toggleAction(grp,sub,val)` (options.cc:709/714).
-    /// // SEAM(W5)
+    /// // STUB(W5)
     fn toggle_action(&mut self, group: &str, sub: &str, val: bool);
     /// `root->enableRule(path)` on the current action (options.cc:938).
-    /// // SEAM(W5)
+    /// // STUB(W5)
     fn enable_rule(&mut self, path: &str) -> bool;
     /// `root->disableRule(path)` on the current action (options.cc:931).
-    /// // SEAM(W5)
+    /// // STUB(W5)
     fn disable_rule(&mut self, path: &str) -> bool;
     /// Whether a current root Action exists (`glb->allacts.getCurrent() != 0`,
-    /// options.cc:926-928).  // SEAM(W5)
+    /// options.cc:926-928).  // STUB(W5)
     fn has_current_action(&self) -> bool;
 
-    // --- translator (SEAM W2 reached via W4 glb) ---------------------------
+    // --- translator (STUB W2 reached via W4 glb) ---------------------------
 
-    /// `glb->translate->allowContextSet(val)` (options.cc:732).  // SEAM(W4)
+    /// `glb->translate->allowContextSet(val)` (options.cc:732).  // STUB(W4)
     fn allow_context_set(&mut self, val: bool);
 }
 
@@ -944,7 +944,6 @@ impl ArchOption for OptionExtraPop {
             return Err(KunaError::parse("Bad extrapop adjustment parameter"));
         }
         if !p2.is_empty() {
-            // queryFunction(p2) -> unknown name => RecovError.
             glb.set_function_extra_pop(p2, expop)?;
             Ok(format!("ExtraPop set for function {p2}"))
         } else {
@@ -1989,7 +1988,6 @@ impl ArchOption for OptionNanIgnore {
             }
             _ => return Err(KunaError::lowlevel(format!("Unknown nanignore option: {p1}"))),
         }
-        // root = getCurrent(); enable/disable "ignorenan".
         if !glb.nan_ignore_all() && !glb.nan_ignore_compare() {
             glb.disable_rule("ignorenan");
         } else {
@@ -2005,7 +2003,7 @@ impl ArchOption for OptionNanIgnore {
 }
 
 /// `ProtoModel::extrapop_unknown` (fspec.hh) — the sentinel `extrapop` value
-/// triggering recovery analysis.  // SEAM(W6): fspec owns the canonical const.
+/// triggering recovery analysis.  // STUB(W6): fspec owns the canonical const.
 pub const PROTOMODEL_EXTRAPOP_UNKNOWN: int4 = 0x8000;
 
 // ---------------------------------------------------------------------------
@@ -2024,7 +2022,7 @@ pub const PROTOMODEL_EXTRAPOP_UNKNOWN: int4 = 0x8000;
 ///
 /// The C++ owns its `Architecture *glb`; the Rust port keeps the database
 /// decoupled and passes the [`ArchOptionContext`] to `set`/`decode`, so the
-/// W4-owned `Architecture` can implement the seam without this module reaching
+/// W4-owned `Architecture` can implement the boundary without this module reaching
 /// into it.
 #[derive(Default)]
 pub struct OptionDatabase {

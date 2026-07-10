@@ -1,4 +1,4 @@
-//! End-to-end gate for **format-string varargs typing** (`s1_formatstring`
+//! End-to-end gate for **format-string varargs typing** (`formatstring`
 //! half B — the kuna analog of Ghidra's `FormatStringAnalyzer`, "Variadic
 //! Function Signature Override").
 //!
@@ -17,7 +17,7 @@
 //!
 //! The feature reads the `"%d %s\n"` format constant at `.rodata` vma 0x402004
 //! from the `printf` call's format-arg slot, parses it
-//! (`s1_formatstring::parse_output_types("%d %s\n") = [Int, CharPtr]`), builds a
+//! (`formatstring::parse_output_types("%d %s\n") = [Int, CharPtr]`), builds a
 //! per-call-site prototype override (`apply::build_override_pieces`), installs it
 //! via the existing `pending_proto_overrides` plumbing, and re-decompiles.
 //!

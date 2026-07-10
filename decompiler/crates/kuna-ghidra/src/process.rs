@@ -647,7 +647,7 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                             .map_err(WireError::Io)?;
                         write_burst(self.client.borrow_mut().sout_mut(), BURST_STRING_CLOSE)?;
                     }
-                    // A decompile failure (a decode error, an un-ported seam that
+                    // A decompile failure (a decode error, an un-ported stub that
                     // `decompile_func` caught, or a Java exception a provider
                     // surfaced) degrades to the SAME clean incomplete-function
                     // shape — empty 14/15 payload + a 16/17 warning naming the

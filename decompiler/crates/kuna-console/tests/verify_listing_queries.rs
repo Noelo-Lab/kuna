@@ -74,7 +74,7 @@ fn listing_query_surface_partition_functions_and_xrefs() {
     // funcsym after main (`__libc_csu_init`) so the ordered `next_function_after`
     // query has a concrete next-by-address successor to return. Both are real
     // funcsyms that `existing_function_addrs` would seed on the live PR2 path.
-    let mut seeds = kuna_analysis::s1_entry::collect_entries(&file, &bytes);
+    let mut seeds = kuna_analysis::entry::collect_entries(&file, &bytes);
     seeds.push(MAIN);
     seeds.push(CSU_INIT);
     seeds.sort_unstable();

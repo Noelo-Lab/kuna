@@ -228,9 +228,9 @@ fn check_facing_invariants(file: &str) -> Result<usize, String> {
         // released before the &mut self facing calls (the bank lazily re-derives
         // the high's type on read).
         struct VnEdges {
-            vn: kuna_decomp::seams::VarnodeId,
-            def: Option<kuna_decomp::seams::OpId>,
-            reads: Vec<kuna_decomp::seams::OpId>,
+            vn: kuna_decomp::context::VarnodeId,
+            def: Option<kuna_decomp::context::OpId>,
+            reads: Vec<kuna_decomp::context::OpId>,
         }
         let mut work: Vec<VnEdges> = Vec::new();
         for vn in fd.vbank().iter_loc() {

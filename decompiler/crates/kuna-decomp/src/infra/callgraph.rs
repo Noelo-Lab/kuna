@@ -20,11 +20,11 @@
 //! order, tie-breakers, and the `complement`-index bookkeeping are transcribed
 //! verbatim.
 //!
-//! **Architecture / Funcdata hooks (SEAM(W4)).**  `addNode(Funcdata*)`,
+//! **Architecture / Funcdata hooks (STUB(W4)).**  `addNode(Funcdata*)`,
 //! `setFuncdata`, `buildAllNodes`, and `buildEdges` reach into the W4
 //! `Architecture` (`symboltab`, `nameFunction`), the `Scope` iteration, and the
 //! `Funcdata` prototype / call-spec machinery (`FuncCallSpecs`, `fillinExtrapop`).
-//! Those live behind the local seam traits [`CallGraphFunc`] (the
+//! Those live behind the local boundary traits [`CallGraphFunc`] (the
 //! `Funcdata`-shaped slice `addNode`/`setFuncdata` read) and
 //! [`CallGraphArch`] (the `Architecture`-shaped slice `buildAllNodes`/
 //! `buildEdges` read); W4 supplies impls over the real types.  The pure graph
@@ -50,10 +50,10 @@ pub const ELEM_NODE: ElementId = ElementId::new("node", 227);
 pub type NodeIndex = usize;
 
 // ---------------------------------------------------------------------------
-// SEAM(W4): the Funcdata / Architecture slices callgraph reaches.
+// STUB(W4): the Funcdata / Architecture slices callgraph reaches.
 // ---------------------------------------------------------------------------
 
-/// SEAM(W4): the slice of a `Funcdata` that `CallGraph::addNode(Funcdata*)` /
+/// STUB(W4): the slice of a `Funcdata` that `CallGraph::addNode(Funcdata*)` /
 /// `CallGraphNode::setFuncdata` read.
 ///
 /// The C++ stores a `Funcdata *fd` in the node and reads `getAddress()` /
@@ -70,13 +70,13 @@ pub trait CallGraphFunc {
     fn get_name(&self) -> &[u8];
 }
 
-/// SEAM(W4): the slice of `Architecture` that `CallGraph::buildAllNodes` /
+/// STUB(W4): the slice of `Architecture` that `CallGraph::buildAllNodes` /
 /// `buildEdges` read (`symboltab` scope iteration, `nameFunction`).
 ///
 /// The full `buildAllNodes`/`buildEdges` drivers depend on the W4 symbol-table
 /// scope iteration and the W5 `FuncCallSpecs` call-site machinery, so they are
 /// deferred (see [`CallGraph::build_all_nodes`] / [`CallGraph::build_edges`]).
-/// This trait names the surface so the seam is explicit.
+/// This trait names the surface so the boundary is explicit.
 pub trait CallGraphArch {
     /// Resolve a default name for the function at the given address
     /// (C++ `Architecture::nameFunction`).
@@ -193,7 +193,7 @@ pub mod node_flags {
 
 /// Opaque token for a `Funcdata` attached to a node.
 ///
-/// SEAM(W4): the C++ stores a borrowed `Funcdata *fd`.  The W3/W4 boundary
+/// STUB(W4): the C++ stores a borrowed `Funcdata *fd`.  The W3/W4 boundary
 /// does not yet have a `Funcdata` arena handle to thread here, so the node
 /// records only *whether* a function is attached (`Some`) and an opaque id W4
 /// can replace with the real handle.
@@ -207,7 +207,7 @@ pub struct CallGraphNode {
     entryaddr: Address,
     /// Name of the function if available (C++ `name`; byte string).
     name: Vec<u8>,
-    /// Attached function, if we have it (C++ `Funcdata *fd`).  SEAM(W4).
+    /// Attached function, if we have it (C++ `Funcdata *fd`).  STUB(W4).
     fd: Option<FuncId>,
     /// In-edges (callers) (C++ `inedge`).
     inedge: Vec<CallGraphEdge>,
@@ -253,7 +253,7 @@ impl CallGraphNode {
         &self.name
     }
 
-    /// The attached function id, if any (C++ `getFuncdata`).  SEAM(W4).
+    /// The attached function id, if any (C++ `getFuncdata`).  STUB(W4).
     pub fn get_funcdata(&self) -> Option<FuncId> {
         self.fd
     }
@@ -357,7 +357,7 @@ pub struct CallGraph {
 impl CallGraph {
     /// Construct an empty call graph (C++ `CallGraph(Architecture *g)`).
     ///
-    /// SEAM(W4): the C++ retains the `Architecture *glb`; the W3/W4 boundary
+    /// STUB(W4): the C++ retains the `Architecture *glb`; the W3/W4 boundary
     /// passes it explicitly to the driver methods ([`CallGraph::build_edges`])
     /// instead, so the graph itself holds no back-pointer.
     pub fn new() -> CallGraph {
@@ -396,7 +396,7 @@ impl CallGraph {
 
     /// Add a node based on an existing function (C++ `addNode(Funcdata*)`).
     ///
-    /// SEAM(W4): takes the `Funcdata`-shaped seam plus the [`FuncId`] token to
+    /// STUB(W4): takes the `Funcdata`-shaped seam plus the [`FuncId`] token to
     /// store in `fd` (the C++ stores the `Funcdata *` itself).
     pub fn add_node_func(
         &mut self,
@@ -430,7 +430,7 @@ impl CallGraph {
 
     /// Attach a function to an existing node (C++ `CallGraphNode::setFuncdata`).
     ///
-    /// SEAM(W4): takes the seam plus the [`FuncId`] token.
+    /// STUB(W4): takes the seam plus the [`FuncId`] token.
     pub fn set_funcdata(
         &mut self,
         node: NodeIndex,
@@ -462,7 +462,6 @@ impl CallGraph {
         self.nodes[node].outedge.push(CallGraphEdge::new());
         let outsize = self.nodes[node].outedge.len();
         if outsize > 1 {
-            // for(i = outedge.size()-2; i>=slot; --i) { newi=i+1; edge[newi]=edge[i]; ... }
             let mut i = (outsize as int4) - 2;
             while i >= slot {
                 let newi = i + 1;
@@ -501,7 +500,6 @@ impl CallGraph {
         let toi = self.nodes[to].inedge.len() as int4;
         self.nodes[to].inedge.push(CallGraphEdge::new());
 
-        // fromedge = from->outedge[from_slot]
         {
             let fromedge = &mut self.nodes[from].outedge[from_slot as usize];
             fromedge.from = from;
@@ -509,7 +507,6 @@ impl CallGraph {
             fromedge.callsiteaddr = addr.clone();
             fromedge.complement = toi;
         }
-        // toedge = to->inedge.back()
         {
             let last = self.nodes[to].inedge.len() - 1;
             let toedge = &mut self.nodes[to].inedge[last];
@@ -528,7 +525,6 @@ impl CallGraph {
         let from = self.nodes[node].inedge[i as usize].from;
         let fromsize = self.nodes[from].outedge.len() as int4;
 
-        // for(j=i+1;j<tosize;++j) { inedge[j-1]=inedge[j]; if(complement>=fromi) complement-=1; }
         let mut j = i + 1;
         while j < tosize {
             let moved = self.nodes[node].inedge[j as usize].clone();
@@ -540,7 +536,6 @@ impl CallGraph {
         }
         self.nodes[node].inedge.pop();
 
-        // for(j=fromi+1;j<fromsize;++j) { outedge[j-1]=outedge[j]; if(complement>=i) complement-=1; }
         let mut j = fromi + 1;
         while j < fromsize {
             let moved = self.nodes[from].outedge[j as usize].clone();
@@ -670,7 +665,6 @@ impl CallGraph {
             allcovered = self.find_no_entry();
             while (walked as usize) < self.seeds.len() {
                 let rootnode = self.seeds[walked as usize];
-                // C++: rootnode->parentedge = walked;
                 self.nodes[rootnode].parentedge = walked as int4;
                 self.snip_cycles(rootnode);
                 walked += 1;
@@ -759,24 +753,24 @@ impl CallGraph {
         cur
     }
 
-    // --- drivers (SEAM(W4)) -------------------------------------------------
+    // --- drivers (STUB(W4)) -------------------------------------------------
 
     /// Make every function symbol into a node (C++ `buildAllNodes`).
     ///
-    /// SEAM(W4): drives the `Architecture` symbol-table scope iteration
+    /// STUB(W4): drives the `Architecture` symbol-table scope iteration
     /// (`iterateScopesRecursive`/`iterateFunctionsAddrOrder`), which is a W4
     /// subsystem.  Deferred: the W4 driver iterates the global scope and calls
     /// [`CallGraph::add_node_func`] for each `FunctionSymbol`, in address order.
     pub fn build_all_nodes(&mut self, _glb: &dyn CallGraphArch) -> KunaResult<()> {
-        // SEAM(W4): requires Architecture::symboltab + Scope iteration.
+        // STUB(W4): requires Architecture::symboltab + Scope iteration.
         Err(KunaError::lowlevel(
-            "CallGraph::build_all_nodes requires the W4 symbol table (SEAM)",
+            "CallGraph::build_all_nodes requires the W4 symbol table (STUB)",
         ))
     }
 
     /// Build edges from a decompiled function (C++ `buildEdges`).
     ///
-    /// SEAM(W4): reads the W4/W5 `FuncProto`/`FuncCallSpecs` call-site machinery
+    /// STUB(W4): reads the W4/W5 `FuncProto`/`FuncCallSpecs` call-site machinery
     /// (`getFuncProto`, `fillinExtrapop`, `numCalls`, `getCallSpecs`).
     /// Deferred: the W4 driver finds the caller node, then for each call spec
     /// with a valid entry address either reuses an existing node or
@@ -787,9 +781,9 @@ impl CallGraph {
         _fd: &dyn CallGraphFunc,
         _glb: &dyn CallGraphArch,
     ) -> KunaResult<()> {
-        // SEAM(W4): requires FuncProto / FuncCallSpecs.
+        // STUB(W4): requires FuncProto / FuncCallSpecs.
         Err(KunaError::lowlevel(
-            "CallGraph::build_edges requires the W4 prototype/call-spec model (SEAM)",
+            "CallGraph::build_edges requires the W4 prototype/call-spec model (STUB)",
         ))
     }
 

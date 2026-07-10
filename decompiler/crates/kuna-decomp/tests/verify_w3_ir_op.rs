@@ -33,7 +33,7 @@ use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::op::{
     get_cse_hash, get_nz_mask_local, is_collapsible, pcodeop_flags, PcodeOpBank,
 };
-use kuna_decomp::seams::TypeOp;
+use kuna_decomp::context::TypeOp;
 use kuna_decomp::varnode::VarnodeBank;
 
 fn dt(size: int4) -> Rc<Datatype> {
@@ -66,13 +66,13 @@ fn ram(m: &AddrSpaceManager, off: u64) -> Address {
 
 /// A constant varnode of `size` bytes holding `val`: its nzmask == offset == val
 /// (Varnode::new seeds a constant's nzm from its offset).
-fn konst(vbank: &mut VarnodeBank, m: &AddrSpaceManager, size: int4, val: u64) -> kuna_decomp::seams::VarnodeId {
+fn konst(vbank: &mut VarnodeBank, m: &AddrSpaceManager, size: int4, val: u64) -> kuna_decomp::context::VarnodeId {
     let caddr = Address::new(Rc::clone(m.get_space(0).unwrap()), val);
     vbank.create(size, caddr, dt(size))
 }
 
 /// A free (non-constant) varnode in ram: nzm defaults to full mask (u64::MAX).
-fn freevn(vbank: &mut VarnodeBank, m: &AddrSpaceManager, size: int4, off: u64) -> kuna_decomp::seams::VarnodeId {
+fn freevn(vbank: &mut VarnodeBank, m: &AddrSpaceManager, size: int4, off: u64) -> kuna_decomp::context::VarnodeId {
     vbank.create(size, ram(m, off), dt(size))
 }
 
@@ -87,10 +87,10 @@ fn build_op(
     bank: &mut PcodeOpBank,
     opc: OpCode,
     extra_flags: u32,
-    out: Option<kuna_decomp::seams::VarnodeId>,
-    inputs: &[kuna_decomp::seams::VarnodeId],
+    out: Option<kuna_decomp::context::VarnodeId>,
+    inputs: &[kuna_decomp::context::VarnodeId],
     m: &AddrSpaceManager,
-) -> kuna_decomp::seams::OpId {
+) -> kuna_decomp::context::OpId {
     let id = bank.create_at(inputs.len() as int4, ram(m, 0x100));
     // change_opcode caches TypeOp::flags into op.flags (eval-type bits, etc.)
     bank.change_opcode(id, TypeOp::new(opc, extra_flags, format!("{opc:?}")));

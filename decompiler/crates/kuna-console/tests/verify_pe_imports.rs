@@ -1,7 +1,7 @@
 //! Multi-format-loader PR-3+4 e2e gate: a **linked Windows PE32+** executable
 //! (`pe_imports.exe`, MinGW) loads and decompiles a function, and its libc
 //! imports render **named** (`puts(`/`printf(`) — not `sub_<addr>` — through the
-//! PE IAT walk (`s1_loader/pe_iat.rs`, design §3.2/§8 PR-4).
+//! PE IAT walk (`loader/pe_iat.rs`, design §3.2/§8 PR-4).
 //!
 //! This is the PE half of the headline goal ("a decompiler for most file
 //! formats"): PR-2 proved a PE *object* parses; this proves a full linked *exe*

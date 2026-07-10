@@ -66,7 +66,7 @@ fn build_struct_group(
     m: &AddrSpaceManager,
     root_size: int4,
     pieces: &[(int4, int4)],
-) -> (HighVariableBank, kuna_decomp::seams::HighVariableId, Vec<kuna_decomp::seams::HighVariableId>) {
+) -> (HighVariableBank, kuna_decomp::context::HighVariableId, Vec<kuna_decomp::context::HighVariableId>) {
     let mut vbank = VarnodeBank::new(m, 0).unwrap();
     let mut hb = HighVariableBank::new();
 
@@ -222,11 +222,11 @@ fn at4_groupless_high_is_noop() {
 fn at5_findroot_tiebreak_must_replace_on_compareorder_nonzero_not_only_negative() {
     use kuna_base::address::Address;
     use kuna_decomp::funcdata::Funcdata;
-    use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+    use kuna_decomp::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
     use kuna_num::opcodes::OpCode;
 
     fn build_fd() -> Funcdata {
-        let glb = Rc::new(Architecture::new(manager()));
+        let glb = Rc::new(ArchContext::new(manager()));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let entry = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, entry, 0x10000000, 0x40).unwrap()

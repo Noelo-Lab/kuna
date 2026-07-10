@@ -31,9 +31,9 @@
 //!   extrapop / a spacebase; a CALL test where they fired shows up as an op-count /
 //!   partition divergence (reported, never hidden).
 //!
-//! Tests that reach a W4 seam in `generate_ops` (a BRANCHIND/jump-table or an
+//! Tests that reach a W4 stub in `generate_ops` (a BRANCHIND/jump-table or an
 //! injected CALLOTHER, or a CALL into corpus-omitted bytes) are reported EXCLUDED
-//! with the seam reason.
+//! with the exclusion reason.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -49,7 +49,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_decomp::flow::{FlowEnvironment, FlowInfo};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::op::pcodeop_flags;
-use kuna_decomp::seams::{Architecture as IrArch, TypeOp};
+use kuna_decomp::context::{ArchContext as IrArch, TypeOp};
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase};
 use kuna_decomp::xml_arch::{XmlArchitecture, XmlArchitectureCapability};
 
@@ -74,7 +74,7 @@ pub enum Expect {
     /// path does not (the string documents which action); the gate requires the
     /// case to actually be DIVERGENT (never silently pass).
     DivergentBy(&'static str),
-    /// Excluded because the Rust flow reaches a W4 seam / a corpus-data boundary.
+    /// Excluded because the Rust flow reaches a W4 stub / a corpus-data boundary.
     Excluded(&'static str),
 }
 
@@ -534,7 +534,7 @@ impl PcodeEmit for NullEmit {
 /// Run the real `FlowInfo` follow-flow (`generate_ops`) + the basic-block builder
 /// (`generate_blocks`) + `structure_reset` for the case's entry, then read the
 /// recovered basic-block CFG into a [`StructModel`] (the SAME boundary the C++ B2
-/// snapshot represents).  On a W4 seam in `generate_ops` returns `Err("EXCLUDED:
+/// snapshot represents).  On a W4 stub in `generate_ops` returns `Err("EXCLUDED:
 /// ..")`.
 pub fn extract_rust_model(bs: &Bootstrap, c: &Case) -> Result<StructModel, String> {
     let base = bs.arch.sleigh().base().unwrap();
@@ -551,9 +551,9 @@ pub fn extract_rust_model(bs: &Bootstrap, c: &Case) -> Result<StructModel, Strin
         sleigh: base.translate().as_sleigh().expect("diff harness: standalone Sleigh engine"),
     };
     let mut flow = FlowInfo::new(fd, &env);
-    flow.generate_ops().map_err(|e| format!("EXCLUDED: generate_ops {}", seam_reason(&e)))?;
+    flow.generate_ops().map_err(|e| format!("EXCLUDED: generate_ops {}", exclusion_reason(&e)))?;
     flow.generate_blocks()
-        .map_err(|e| format!("EXCLUDED: generate_blocks {}", seam_reason(&e)))?;
+        .map_err(|e| format!("EXCLUDED: generate_blocks {}", exclusion_reason(&e)))?;
     flow.data.structure_reset();
 
     let fd = &flow.data;
@@ -616,7 +616,7 @@ pub fn extract_rust_model(bs: &Bootstrap, c: &Case) -> Result<StructModel, Strin
 
 /// Read a basic block's cover `(start, stop)` byte-offsets the way
 /// `FlowBlock::printHeader` renders them.
-fn block_cover_range(fd: &Funcdata, bl: kuna_decomp::seams::BlockId) -> (u64, u64) {
+fn block_cover_range(fd: &Funcdata, bl: kuna_decomp::context::BlockId) -> (u64, u64) {
     let fb = fd.bblocks_ref().block(bl);
     let cover = match fb.kind() {
         kuna_decomp::block::BlockKind::Basic(b) => &b.cover,
@@ -628,7 +628,7 @@ fn block_cover_range(fd: &Funcdata, bl: kuna_decomp::seams::BlockId) -> (u64, u6
 }
 
 /// Reduce a flow error to a short EXCLUDED reason.
-fn seam_reason(e: &KunaError) -> String {
+fn exclusion_reason(e: &KunaError) -> String {
     let s = e.to_string();
     if s.contains("jump-table") || s.contains("JumpTable") {
         "BRANCHIND jump-table recovery (W4)".into()

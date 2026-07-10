@@ -165,7 +165,7 @@ fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
 // Op-listing render (a coarse, deterministic "print raw"-ish op line).
 // ===========================================================================
 
-fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::VarnodeId) -> String {
+fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::context::VarnodeId) -> String {
     let v = match fd.vbank().get(vn) {
         Some(v) => v,
         None => return "<stale>".to_string(),
@@ -196,7 +196,7 @@ fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::Varnode
 
 /// Render one alive op as `<seq>: <out> = <OPCODE>(<ins>)` (a coarse line, just
 /// enough to read the reduction and diff op identity against the B4 oracle).
-fn render_op(arch: &Architecture, fd: &Funcdata, op: kuna_decomp::seams::OpId) -> String {
+fn render_op(arch: &Architecture, fd: &Funcdata, op: kuna_decomp::context::OpId) -> String {
     let o = fd.obank().get(op).expect("render_op: stale op");
     let sq: &SeqNum = o.get_seq_num();
     let mut s = String::new();
@@ -269,7 +269,7 @@ fn boolless_b4_deadcode_reduces_toward_oracle() {
     };
     let arch = xarch.sleigh().base().unwrap();
 
-    let mut alive: Vec<kuna_decomp::seams::OpId> = fd.obank().iter_alive().collect();
+    let mut alive: Vec<kuna_decomp::context::OpId> = fd.obank().iter_alive().collect();
     // Stable order: by block index then seqnum time.
     alive.sort_by_key(|&op| {
         let o = fd.obank().get(op).unwrap();

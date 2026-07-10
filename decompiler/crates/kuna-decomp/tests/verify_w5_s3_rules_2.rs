@@ -36,7 +36,7 @@ use kuna_decomp::op::pcodeop_flags;
 use kuna_decomp::ruleaction_2::{
     RuleBooleanUndistribute, RuleDoubleShift, RuleFloatRange, RuleShiftCompare, RuleZextEliminate,
 };
-use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+use kuna_decomp::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
 
 // -----------------------------------------------------------------------------
@@ -64,7 +64,7 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -342,7 +342,7 @@ fn w5_s3_rules_2_doubleshift_opposite_partial_negative_diffsa() {
 // shifts whose count can reach >= 64; the repair routed every such site through
 // `wshl`/`wshr` (ADR-0003).  These exercise the OTHER repaired sites
 // (RuleShiftCompare, RuleDoubleShift) plus the RuleBooleanUndistribute
-// `BooleanMatch::evaluate` seam (a strictly-conservative loss).
+// `BooleanMatch::evaluate` stub (a strictly-conservative loss).
 // =============================================================================
 
 // RuleShiftCompare LEFT info-loss branch (ruleaction.cc:2139-2156): `(V << c) == d`
@@ -405,9 +405,9 @@ fn w5_s3_rules_2_r2_doubleshift_same_dir_overshift_to_zero() {
     assert_eq!(vn_size_of(&fd, z), 4);
 }
 
-// RuleBooleanUndistribute seam (BooleanMatch::evaluate reduced to its `vn1==vn2`
+// RuleBooleanUndistribute stub (BooleanMatch::evaluate reduced to its `vn1==vn2`
 // head): `(A && B) != (A && C)` with the *same* varnode A shared verbatim must
-// still fire (seam returns `same` for identical varnodes).  centralEqual starts
+// still fire (stub returns `same` for identical varnodes).  centralEqual starts
 // false (INT_NOTEQUAL), no OR flips, so combineOpc = BOOL_AND and the inner op is
 // INT_NOTEQUAL(B,C).  Result:  A && (B != C).
 #[test]
@@ -437,20 +437,20 @@ fn w5_s3_rules_2_r2_booleanundistribute_identical_shared_clause_fires() {
     assert!((i0 == b && i1 == c) || (i0 == c && i1 == b));
 }
 
-// RuleBooleanUndistribute seam LOSS witness: a structurally-equal-but-distinct
+// RuleBooleanUndistribute stub LOSS witness: a structurally-equal-but-distinct
 // shared clause (two separate COPY-of-A varnodes) is `uncorrelated` under the
-// seam (the recursive BooleanMatch is stubbed), so the rule DECLINES where the
+// stub (the recursive BooleanMatch is stubbed), so the rule DECLINES where the
 // full C++ `BooleanMatch::evaluate` would match and transform.  Strictly
 // conservative — never a wrong rewrite, only a missed one.
 #[test]
-fn w5_s3_rules_2_r2_booleanundistribute_seam_declines_structural_match() {
+fn w5_s3_rules_2_r2_booleanundistribute_stub_declines_structural_match() {
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let a = mk_reg(&mut fd, 0x100, 1);
     let b = mk_reg(&mut fd, 0x108, 1);
     let c = mk_reg(&mut fd, 0x110, 1);
     // Two distinct COPY(A) varnodes: structurally the same boolean value, but
-    // different VarnodeIds, so the seam's `vn1==vn2` head misses them.
+    // different VarnodeIds, so the stub's `vn1==vn2` head misses them.
     let (acopy0, _a0) = mk_written(&mut fd, bl, 0x08, 1, OpCode::CPUI_COPY, &[a]);
     let (acopy1, _a1) = mk_written(&mut fd, bl, 0x0c, 1, OpCode::CPUI_COPY, &[a]);
     let (and0, _op0) = mk_written(&mut fd, bl, 0x10, 1, OpCode::CPUI_BOOL_AND, &[acopy0, b]);
@@ -460,7 +460,7 @@ fn w5_s3_rules_2_r2_booleanundistribute_seam_declines_structural_match() {
     fd.op_set_input(ne, and1, 1).unwrap();
     fd.op_insert(ne, bl, None);
 
-    // Seam declines (returns 0); the op graph is left untouched.
+    // Stub declines (returns 0); the op graph is left untouched.
     assert_eq!(RuleBooleanUndistribute.apply_op(ne, &mut fd), 0);
     assert_eq!(code_of(&fd, ne), OpCode::CPUI_INT_NOTEQUAL);
     assert_eq!(in_of(&fd, ne, 0), Some(and0));
