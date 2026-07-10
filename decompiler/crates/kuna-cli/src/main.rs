@@ -44,6 +44,7 @@ fn main() -> ExitCode {
         "functions" => decompile_all::run_functions(rest),
         "test" => cmd_test(rest),
         "catalog" => cmd_catalog(rest),
+        "modes" => cmd_modes(rest),
         "specs" => specs::run(rest),
         "fid" => fid::run(rest),
         "-V" | "--version" | "version" => {
@@ -67,11 +68,12 @@ fn usage() {
     eprintln!(
         "usage: kuna <decompile|decompile-all|functions|test|catalog|specs|fid> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--option NAME VALUE]... [--kassert ARGS]...\n\
-         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--option N V]...\n\
-         kuna functions <binary> [--json]\n\
+         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--mode reliable|aggressive] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive] [--option N V]...\n\
+         kuna functions <binary> [--json] [--mode reliable|aggressive]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\
+         kuna modes [--json]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
          kuna --version"
@@ -98,6 +100,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
     let mut raw = false;
     let mut regions = false;
     let mut options: Vec<(String, String)> = Vec::new();
+    let mut mode: Option<String> = None;
     let mut kasserts: Vec<String> = Vec::new();
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
@@ -124,6 +127,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 i += 2;
             }
+            "--mode" => mode = take_value(argv, &mut i, "--mode"),
             "--kassert" => {
                 if let Some(v) = take_value(argv, &mut i, "--kassert") {
                     kasserts.push(v);
@@ -164,6 +168,23 @@ fn cmd_decompile(argv: &[String]) -> i32 {
         }
     };
     apply_engine(engine.as_deref());
+
+    // Expand a selected `--mode` into its option overrides, PREPENDED so an
+    // explicit `--option` still wins (later `option NAME VALUE` console lines
+    // overwrite in `build_script`; the load-time env gates + `listing`
+    // auto-inject already key off the merged `options` list).
+    if let Some(m) = mode.as_deref() {
+        match decompile_all::mode_override_pairs(m) {
+            Ok(mut pairs) => {
+                pairs.extend(options);
+                options = pairs;
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                return 2;
+            }
+        }
+    }
 
     let dargs = DecompileArgs {
         binary,
@@ -313,6 +334,72 @@ fn cmd_catalog(argv: &[String]) -> i32 {
     } else {
         catalog::cmd_text(option.as_deref(), tier.as_deref())
     }
+}
+
+// --- modes -------------------------------------------------------------------
+
+/// `kuna modes [--json]` — list the decompiler mode presets (`reliable`,
+/// `aggressive`) and the `(option → value)` overrides each applies.  Modes are
+/// *not* settable catalog rows (`kuna catalog` covers those); they are presets
+/// over the option surface, applied via `--mode` / the console `mode` command.
+fn cmd_modes(argv: &[String]) -> i32 {
+    let mut json = false;
+    for a in argv {
+        match a.as_str() {
+            "--json" => json = true,
+            "-h" | "--help" => {
+                eprintln!("usage: kuna modes [--json]");
+                return 0;
+            }
+            s if s.starts_with("--") => {
+                eprintln!("error: unknown option {s}");
+                return 2;
+            }
+            other => {
+                eprintln!("error: unexpected argument {other:?}");
+                return 2;
+            }
+        }
+    }
+
+    use jsonfmt::Json;
+    if json {
+        let modes: Vec<Json> = kuna_decomp::modes::MODE_TABLE
+            .iter()
+            .map(|m| {
+                let overrides: Vec<Json> = m
+                    .overrides
+                    .iter()
+                    .map(|(opt, val)| {
+                        Json::Object(vec![
+                            ("option".into(), Json::Str((*opt).into())),
+                            ("value".into(), Json::Str((*val).into())),
+                        ])
+                    })
+                    .collect();
+                Json::Object(vec![
+                    ("name".into(), Json::Str(m.name.into())),
+                    ("summary".into(), Json::Str(m.summary.into())),
+                    ("overrides".into(), Json::Array(overrides)),
+                ])
+            })
+            .collect();
+        let root = Json::Object(vec![("modes".into(), Json::Array(modes))]);
+        println!("{}", jsonfmt::dumps_indent2(&root));
+    } else {
+        for m in kuna_decomp::modes::MODE_TABLE {
+            println!("{}", m.name);
+            println!("  {}", m.summary);
+            if m.overrides.is_empty() {
+                println!("  (no overrides — the shipped defaults)");
+            } else {
+                let joined: Vec<String> =
+                    m.overrides.iter().map(|(o, v)| format!("{o}={v}")).collect();
+                println!("  overrides: {}", joined.join(", "));
+            }
+        }
+    }
+    0
 }
 
 // --- helpers -----------------------------------------------------------------

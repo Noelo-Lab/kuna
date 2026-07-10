@@ -1419,6 +1419,31 @@ impl Architecture {
         }
     }
 
+    /// Apply a named decompiler *mode* preset (`reliable` | `aggressive`): a
+    /// batch of `(option, value)` overrides fanned out through
+    /// [`Self::set_kuna_option`]. Overrides apply in table order; any later
+    /// `set_kuna_option` -- another override or a user `option`/`--option` --
+    /// wins (last-write). `reliable` is the shipped defaults (empty override
+    /// list, a no-op alias); `aggressive` turns on every off-by-default pass.
+    /// See [`crate::modes`]. Errors on an unknown mode name.
+    pub fn apply_mode(&mut self, name: &str) -> KunaResult<String> {
+        let overrides = crate::modes::mode_overrides(name).ok_or_else(|| {
+            let known: Vec<&str> = crate::modes::mode_names().collect();
+            KunaError::parse(format!(
+                "Unknown decompiler mode: {name} (known: {})",
+                known.join(", ")
+            ))
+        })?;
+        for (opt, val) in overrides {
+            self.set_kuna_option(opt, val)?;
+        }
+        Ok(format!(
+            "mode {name} applied ({} option override{})",
+            overrides.len(),
+            if overrides.len() == 1 { "" } else { "s" }
+        ))
+    }
+
     /// Reset options modifiable by the OptionDatabase, including the action
     /// database (C++ `Architecture::resetDefaults`, `architecture.cc:1463`).
     ///

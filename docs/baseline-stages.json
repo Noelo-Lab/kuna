@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    259,
-    259
+    260,
+    260
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -206,6 +206,7 @@
     "data:iteregion #3: fix (on) -- the diamond collapses to a single ?: ternary (on pass only)",
     "data:iteregion #4: fix (on) -- the rewrite is logged",
     "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
+    "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
     "data:namestyle #3 default: unnamed call target renders as sub_<addr>",

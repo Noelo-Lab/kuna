@@ -918,6 +918,45 @@ impl IfaceCommandAction for IfcKunaPipeline {
 }
 
 // ---------------------------------------------------------------------------
+// `mode <name>` — IfcKunaMode
+// ---------------------------------------------------------------------------
+
+/// (kuna) `mode <reliable|aggressive>`: apply a decompiler mode preset — a batch
+/// of option overrides fanned out through `Architecture::apply_mode` (see
+/// `kuna_decomp::modes`).  Mirrors `IfcOption`'s dcp/conf access; issue it
+/// before `read symbols` so an analysis-tier override (`listing`/`aif`/…) is
+/// committed, exactly like an `option` command.  A later `option NAME VALUE`
+/// overrides the mode (last-write).
+pub struct IfcKunaMode;
+
+impl IfaceCommandAction for IfcKunaMode {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        s.skip_ws();
+        let name = s.read_token();
+        s.skip_ws();
+        if name.is_empty() {
+            return Err(IfaceError::parse(
+                "Missing mode name (try `mode reliable` or `mode aggressive`)",
+            ));
+        }
+        let dcp = dcp_mut(status)?;
+        if dcp.conf.is_none() {
+            return Err(IfaceError::execution("No load image present"));
+        }
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let res = prog
+            .arch_mut()
+            .apply_mode(&name)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        status.out(&format!("{res}\n"));
+        Ok(())
+    }
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // `quality` — IfcKunaQuality
 // ---------------------------------------------------------------------------
 
@@ -1130,6 +1169,7 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcKunaAssert::new()), &["kassert"]);
     status.register_com(Box::new(IfcKunaRestarts), &["restarts"]);
     status.register_com(Box::new(IfcKunaPipeline), &["pipeline"]);
+    status.register_com(Box::new(IfcKunaMode), &["mode"]);
     status.register_com(Box::new(IfcKunaQuality), &["quality"]);
     status.register_com(Box::new(IfcKunaRegionTree), &["region", "tree"]);
     status.register_com(Box::new(IfcKunaRegionBlocks), &["region", "blocks"]);

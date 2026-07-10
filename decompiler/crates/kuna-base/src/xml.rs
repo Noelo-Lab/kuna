@@ -1658,8 +1658,10 @@ mod tests {
         // and ghangr-iteregion / iteregion, angr ITERegionConverter assignment-diamond
         // -> `?:` ternary, decbench F5 O0-iproute2-ip-print_link_flags,
         // and ghangr-switchreturn / switchreturn, the continuation of earlyreturn to the
-        // WIDE multi-way switch-phi return, O0-libedit-tty__getcharindex)
-        assert_eq!(count, 162, "corpus file count drifted");
+        // WIDE multi-way switch-phi return, O0-libedit-tty__getcharindex,
+        // and modes-aggressive / the `mode reliable|aggressive` preset axis
+        // (Architecture::apply_mode; returndup-only warning as the discriminator))
+        assert_eq!(count, 163, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
