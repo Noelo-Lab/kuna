@@ -5,7 +5,7 @@ Kuna aims to improve fundamental decompiler techniques, while making them more a
 Interested in why? Read our [motivating statement](#motivation-why-another-decompiler) and our [design principles](#design). 
 
 <p align="center">
-   <img src="./assets/kuna.png" alt="Kuna Logo"/>
+   <img src="./assets/kuna.png" style="width: 30%;" alt="Kuna Logo"/>
 </p>
 
 ## Install & Usage
