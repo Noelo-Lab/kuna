@@ -1,9 +1,15 @@
 # decbench O0: the GED metric's blind spot, and the real angr/ida gap
 
 A fair O0 re-measurement (2026-07-11) of the current engine against all six decbench decompilers, plus a
-direct study of what the GED metric actually rewards. The headline: **kuna already beats Ghidra on O0**, and
-**the entire remaining gap vs ida/angr is one thing — conditional-value inlining — because the GED metric is
-blind to almost everything else.**
+direct study of what the GED metric actually rewards. The headline, in three parts (each measured):
+**(1)** kuna already **beats Ghidra** on O0 and is **≈ tied with angr in aggregate GED** (Σ 40,468 vs
+40,901) — the per-function "loses to angr 624×" count is misleading; **(2)** the GED metric is **blind to
+syntactic form** (ternaries/gotos/branchflip are all node-count-neutral); **(3)** the one *identified*
+real lever is a narrow structural case — **reused-stack-local conditional-value diamonds**
+(`if(c) v=a; else v=b;` with `v` a shared stack slot → STORE arms) that kuna can't fold and angr collapses
+to source-perfect — worth **32 functions / 721 GED (12% of the angr loss)**, a `[PROPOSAL]`-class fix, not
+the pure-arm ternary line (which is correctly GED-neutral). Sections below give the evidence and the exact
+block-level diff.
 
 ## The metric's blind spot (the most important finding)
 
@@ -28,8 +34,16 @@ moved kuna from last place to beating Ghidra, while syntactic passes did not.
 |---|---|---|---|---|
 | ghidra | 431 | 781 | **260** | kuna wins ~1.7× more than it loses |
 | ida    | 426 | 391 | **659** | the real target |
-| angr   | 426 | 406 | **623** | the real target |
+| angr   | 426 | 406 | **623** | see the aggregate caveat below |
 | phoenix| 497 | 388 | 570 | |
+
+**Per-function win/loss overstates the angr gap — in *aggregate GED* kuna ≈ angr.** On the
+2,014 O0-coreutils functions scored by both (a later re-count), the head-to-head is kuna-better
+453 / tie 937 / kuna-worse 624, yet **Σ kuna GED = 40,468 vs Σ angr GED = 40,901** — kuna is
+*marginally ahead in total edit distance*. kuna's losses are many-but-small; its wins are
+fewer-but-large (≈9.5 GED/loss vs ≈14 GED/win). So "kuna loses to angr" is a **count** artifact;
+by the metric's own summed magnitude the two are a wash, and kuna clearly beats ghidra
+(522 better / 321 worse) while still losing to ida (424 / 681).
 
 kuna **beats its ancestor Ghidra** on O0 (the primary goal is largely met). The remaining gap is to **ida
 and angr**.
@@ -65,13 +79,45 @@ angr/ida gap** (contrary to an earlier draft of this doc that framed conditional
 lever" — that framing is **refuted**). `iteexpr` (PR #161) is correctly a readability-only, default-off
 feature.
 
-**So the true cause of the O0 node-count gap vs ida/angr (e.g. `output_one_dumb_line` 48 vs 22) is still
-UNIDENTIFIED and is NOT ternaries.** It is some other basic-block-count difference (candidates to
-investigate next, all block-count movers per the metric's nature: empty/forwarding-block retention,
-sequential-block non-merging, condition-tree shape, or a Joern parsing sensitivity to kuna's `undefinedN`
-types / casts that the minimal-snippet tests don't capture). This needs a direct CFG-node diff (dump both
-Joern CFGs and see which blocks differ), not another syntactic pass. Every syntactic transform tried so far
-— ternaries, gotos, branchflip, empty-switch — is GED-neutral.
+### The gap IS identified now (direct CFG-node diff) — reused-stack-local conditional-value diamonds
+
+A **direct Joern block-level diff** of `output_one_dumb_line` (kuna 48 nodes vs angr 22, dumping each
+block's statements) finally pins the cause, and it revises the paragraph above:
+
+- **The source CFG is 22 nodes / 31 edges — and angr reproduces it EXACTLY (GED = 0.0, perfect).**
+  kuna's 48-node form is **GED = 98.0** from source. So this is *not* a form-blind wash; it is a real,
+  large, measured loss on this function.
+- kuna emits **six repeated 3-block diamonds** `if (c) v1 = <global>; else v1 = 0;` where a single local
+  `v1` is **reused across all six**. angr promotes `v1` to an SSA value and folds/inlines each into a
+  single block (`v1 = (!g?0:g_838)` / inlined into the use).
+- **Why `iteexpr` does NOT fold these** (verified: iteexpr-ON leaves the function at 48 nodes, unchanged):
+  the diamonds render as clean single-statement arms, but because `v1` is a **reused stack local**, each
+  arm assignment is a **rejected op** — a `STORE` to `v1`'s slot (and the shared merge brings
+  `MULTIEQUAL`/`INDIRECT` bookkeeping), which `single_assign_arm` correctly refuses (a `STORE` can't be a
+  ternary branch expression). `iteexpr` only ever reaches *pure-value*-arm computed ternaries, which is
+  exactly why it (and the whole computed-arm line) measured GED-neutral — that ablation was **right**, it
+  just wasn't touching *this* population.
+
+So the earlier "gap UNIDENTIFIED / diamonds are not it" wording is now superseded: the gap **is**
+conditional-value diamonds, but specifically the **reused-stack-local (STORE-arm)** subclass — a
+*structural* case that neither `iteregion` nor `iteexpr` can reach today.
+
+**Scale (O0 coreutils, the angr-near-perfect / kuna-badly-off bucket, `angr GED ≤ 1 ∧ kuna GED ≥ 10`):**
+**32 functions, 721 GED = 12% of the total kuna-vs-angr loss** (`output_one_dumb_line`'s 98 is ~14% of
+the bucket). Real and worth ~32 win-flips, but **modest** — not transformative — consistent with the
+aggregate wash above.
+
+**The fix (a `[PROPOSAL]`-class feature, deep/risky — not a rushed same-session PR):**
+- *Partial (structural fold):* extend the ITE matcher to accept **two STOREs to the same slot** and fold
+  to `*s = c ? A : B` (48 → ~30 nodes; GED 98 → ~40–50). Contained but a real IR/printer change with
+  regression surface (must prove the two stores are storage-equivalent).
+- *Full (angr parity → GED 0):* stack-local → register/SSA promotion + inline the conditional into its
+  single use, eliminating `v1` (48 → 22). This is Ghidra-style stack-var promotion that isn't firing
+  here; deep dataflow.
+
+Secondary syntactic transforms (ternaries on *pure* arms, gotos, branchflip, empty-switch) remain
+GED-neutral — the metric moves only on the **block count**, which the STORE-arm fold above is what
+actually reduces.
 
 **Process note (this cost real time):** several ablations were **false-nulls** — `run_benchmark` silently
 resumed/skipped the re-decompile (see gotchas below), so the `.c` never changed and the GED "0" was
