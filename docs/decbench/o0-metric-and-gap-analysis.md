@@ -34,33 +34,49 @@ moved kuna from last place to beating Ghidra, while syntactic passes did not.
 kuna **beats its ancestor Ghidra** on O0 (the primary goal is largely met). The remaining gap is to **ida
 and angr**.
 
-## The real gap: conditional-value inlining vs materialization
+## The gap is conditional-value materialization — but the fix is NARROW (Joern node-count study)
 
 Studying the top kuna-loses-to-angr/ida cases (e.g. coreutils `ptx::output_one_dumb_line`: angr **22** CFG
-nodes vs kuna **48**), the gap is almost entirely **how a conditional value is emitted**:
+nodes vs kuna **48**), the gap is **how a conditional value is emitted** — kuna materializes an if/else
+diamond assigning a temp (`if(c)v1=A;else v1=B; f(v1)`), angr inlines/folds it (`f(c?A:B)`). But a careful
+Joern node-count study shows the GED-movable part of this is **narrow**:
 
-- **kuna materializes it** as an if/else diamond assigning a temp, then uses the temp:
-  ```c
-  if (c) v1 = A; else v1 = B;   // 4-node diamond in the CFG
-  f(... v1 ...);
-  ```
-- **angr inlines it** into the use expression:
-  ```c
-  f(... c ? A : B ...);          // 1 node
-  ```
+| form | Joern CFG nodes |
+|---|---|
+| if/else materialized (`if(c)v=A;else v=B; f(v)`) | **4** |
+| **simple-arm** ternary `v = c ? a : b` (statement) OR `f(c?a:b)` (inline) | **1** |
+| LOAD-arm ternary `f(c ? *p : 0)` (inline) | 3 |
+| INT-arm ternary `f(c ? b+5 : b-3)` (inline OR statement) | **4** |
 
-Verified directly: `g(c ? a : b)` → **1 CFG node**; `if(c)v=a;else v=b; g(v)` → **4 nodes**. So inlining a
-conditional value collapses a 4-node diamond to 1 node — a real GED reduction. angr's `ITERegionConverter`
-**modifies the IR** to collapse the region into an expression; kuna's `iteregion` (and the new `iteexpr`,
-PR #161) are **print-only** — they render `v1 = c ? A : B;` as a *statement* and never inline it, so the
-diamond's 4 blocks survive in the printed CFG. For a **multi-use** conditional, angr duplicates the ternary
-at each use where kuna materializes once.
+**Joern only collapses a *simple-arm* ternary (variables/constants) to 1 node.** Computed-arm ternaries
+(`*p`, `b+5`) stay 3-4 nodes whether written inline or as a statement — Joern re-expands their sub-expression
+operators into control-flow. So:
 
-**This is the one lever that moves O0 GED vs angr/ida.** It is a substantial printer/dataflow change
-(the value's def is a downstream control-flow diamond, so the printer must render the ternary at the use
-site and suppress the diamond; or the S8 pass must collapse the region in the IR like angr). It is
-source-dependent (inlining diverges when the source materialized), so it belongs behind an option +
-ablation, likely a `--mode aggressive` member rather than a default flip.
+- The **only GED-positive ternary case is a simple-arm diamond (4→1)** — and kuna's shipped `iteregion`
+  (print-only statement form) **already captures it** when it matches.
+- **Inlining computed-arm ternaries is NOT the lever** — it saves 0-1 nodes/diamond. `iteexpr` (PR #161,
+  computed arms) and a would-be inline pass are both essentially **GED-neutral** (they are readability wins).
+**EMPIRICAL CONFIRMATION (a valid ablation):** re-decompiling coreutils O0 with `iteexpr` ON (forced
+correctly — `DECBENCH_DECOMPILERS=kuna` + `KUNA_SPECS`, verified the `.c` gained ternaries) and re-scoring
+gives **0 GED change across all 1477 functions** (0 improved / 0 regressed / ΣΔ = 0). So **the entire ternary
+line — `iteexpr`, computed-arm recovery, and any would-be inline pass — is a GED dead end.** Converting
+kuna's if/else diamonds to ternaries does not move the metric, which means **the diamonds are NOT the
+angr/ida gap** (contrary to an earlier draft of this doc that framed conditional-value inlining as "the
+lever" — that framing is **refuted**). `iteexpr` (PR #161) is correctly a readability-only, default-off
+feature.
+
+**So the true cause of the O0 node-count gap vs ida/angr (e.g. `output_one_dumb_line` 48 vs 22) is still
+UNIDENTIFIED and is NOT ternaries.** It is some other basic-block-count difference (candidates to
+investigate next, all block-count movers per the metric's nature: empty/forwarding-block retention,
+sequential-block non-merging, condition-tree shape, or a Joern parsing sensitivity to kuna's `undefinedN`
+types / casts that the minimal-snippet tests don't capture). This needs a direct CFG-node diff (dump both
+Joern CFGs and see which blocks differ), not another syntactic pass. Every syntactic transform tried so far
+— ternaries, gotos, branchflip, empty-switch — is GED-neutral.
+
+**Process note (this cost real time):** several ablations were **false-nulls** — `run_benchmark` silently
+resumed/skipped the re-decompile (see gotchas below), so the `.c` never changed and the GED "0" was
+meaningless. The result above is the first ablation where the output `.c` was verified to actually change.
+Always confirm that before trusting a "no change" ablation.
 
 Secondary, lower-value: jump-table recovery failures (e.g. `get_funky_string`'s CET `notrack jmp` table) —
 rare (~10 coreutils O0 fns) and **shared with Ghidra** (kuna inherits Ghidra's jumptable models), so kuna
