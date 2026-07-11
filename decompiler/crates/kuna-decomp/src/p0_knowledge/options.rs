@@ -277,6 +277,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "taildup",
     "dedupitetail",
     "iteregion",
+    "iteexpr",
     "returndup",
     "earlyreturn",
     "switchreturn",

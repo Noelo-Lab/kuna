@@ -35,15 +35,15 @@ fn surface_count_is_98() {
 }
 
 #[test]
-fn settable_count_is_75() {
+fn settable_count_is_76() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
-    assert_eq!(kuna_num_settables(), 75);
-    assert_eq!(SETTABLE_TABLE.len(), 75);
+    assert_eq!(kuna_num_settables(), 76);
+    assert_eq!(SETTABLE_TABLE.len(), 76);
 }
 
 #[test]
-fn tier_counts_are_16_core_35_transform_24_analysis() {
+fn tier_counts_are_16_core_36_transform_24_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -55,7 +55,7 @@ fn tier_counts_are_16_core_35_transform_24_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (16, 35, 24));
+    assert_eq!((core, transform, analysis), (16, 36, 24));
 }
 
 #[test]

@@ -75,6 +75,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("regionedgeorder", "on"),
     ("returndup", "on"),
+    ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),

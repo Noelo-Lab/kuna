@@ -422,7 +422,16 @@ addl-flag on the matched CBRANCH; the S9 printer
 genuinely new piece (upstream printc has no ternary operator). No p-code is
 touched; the arm COPYs stay live so later uses render unchanged. *Failure:*
 declines any deviation — multi-statement arms, different destinations, a
-side effect riding the condition. This one is an explicit **runtime
+side effect riding the condition. **`iteexpr` (option, default-off)** broadens
+`single_assign_arm` from a plain `COPY` arm to any single **computed** pure-value
+op (`v = *p`, `v = b + 5` — a `LOAD`/`INT_*`/`PTR*`/`CAST`/`SUBPIECE`, whose
+second-level operands are single-use implied varnodes), rejecting only
+side-effecting/control ops; the print-only render (`op_push_ir`) already handles
+arbitrary arm expressions. This matches angr's aggressive `?:` recovery (angr emits
+~8× more ternaries than kuna on decbench O0). It is a **readability** change only:
+Joern gives a `?:` and its equivalent `if/else` the identical CFG, so GED is
+unaffected — hence `iteexpr` ships default-off (a `--mode aggressive` member), not a
+DIV flip. This one is an explicit **runtime
 choice**: an explicit source `if/else` compiles to the same bytes, so the
 rewrite matches the source only when the source used a ternary; DIV-17
 flipped it on (ablation net-positive) and documents flipping it off per

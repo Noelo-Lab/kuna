@@ -584,6 +584,9 @@ pub struct ArchContext {
     /// when the source used a ternary).  Read by
     /// [`crate::p8_structure::kuna_iteregion`]'s `ActionIteRegion`.
     pub iteregion: bool,
+    /// (kuna) `iteexpr`: extend iteregion to computed-expression diamond arms (see
+    /// `Architecture::iteexpr`).  Per-function snapshot copy.
+    pub iteexpr: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block into each predecessor but one so a
     /// `if (c) { body; return X; } return Y;` guard shape structures as per-predecessor
@@ -837,6 +840,7 @@ impl ArchContext {
             dup_return_call_tails: false, // taildup (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
+            iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)

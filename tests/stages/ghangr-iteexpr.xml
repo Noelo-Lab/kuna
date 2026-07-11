@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    `iteexpr` (option, default-off): extend the `iteregion` diamond -> `?:` ternary
+    rewrite from single-COPY arms to any single-statement COMPUTED pure-value arm.
+
+    angr's ITERegionConverter folds `if (c) v = <expr1>; else v = <expr2>;` into
+    `v = c ? expr1 : expr2` for ANY pure-value expression arm (a LOAD, an INT_ADD,
+    ...), not just a plain COPY.  kuna's shipped `iteregion` (DIV-17, default-on)
+    only matched single-COPY arms, so it left the far more common computed-arm
+    diamonds as if/else -- on decbench O0 coreutils angr emits ~1389 ternaries to
+    kuna's ~177.  `iteexpr` on broadens the arm match (`single_assign_arm`) to any
+    single pure-value op (rejecting only side-effecting/control ops), roughly
+    doubling kuna's ternary recovery.  Print-only, and because a C ternary evaluates
+    only the taken branch it is semantics-preserving.
+
+    Reproducer (gcc -O0, expr_arm):
+        long expr_arm(long a, long b) { long x; if (a) x = b + 5; else x = b - 3;
+                                        return x; }
+    Each arm is a single COMPUTED assignment (`x = b + 5` / `x = b - 3`) -- an
+    INT_ADD/INT_SUB, not a COPY, so shipped iteregion declines it.
+
+    Pass 1 (option iteexpr off, the DEFAULT): iteregion (on) sees only COPY arms, so
+    the computed-arm diamond stays an `if (a != 0) { x = b + 5; } else { x = b - 3; }`
+    -- NO ternary.
+    Pass 2 (option iteexpr on): the arm match broadens to the INT_ADD/INT_SUB arms,
+    so the diamond folds to `x = ( a != 0 ) ? b + 5 : b - 3;` -- exactly one `?:`.
+-->
+<bytechunk space="ram" offset="0x100000">
+f30f1efa554889e548897de8488975e048837de800740e488b45e04883c005488945f8eb0c488b45e04883e803488945f8488b45f85dc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="expr_arm"/>
+</binaryimage>
+<script>
+  <!-- iteexpr is default-off; set it explicitly in pass 1 to guard a future flip,
+       then flip it on for pass 2 (the only change between the two passes). -->
+  <com>option iteexpr off</com>
+  <com>lo fu expr_arm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option iteexpr on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="iteexpr on folds a computed-arm diamond to one ?: ternary (off = if/else)" min="1" max="1">\? </stringmatch>
+</decompilertest>
