@@ -103,21 +103,34 @@ conditional-value diamonds, but specifically the **reused-stack-local (STORE-arm
 *structural* case that neither `iteregion` nor `iteexpr` can reach today.
 
 **Scale (O0 coreutils, the angr-near-perfect / kuna-badly-off bucket, `angr GED ≤ 1 ∧ kuna GED ≥ 10`):**
-**32 functions, 721 GED = 12% of the total kuna-vs-angr loss** (`output_one_dumb_line`'s 98 is ~14% of
-the bucket). Real and worth ~32 win-flips, but **modest** — not transformative — consistent with the
-aggregate wash above.
+**32 functions, 721 GED = 12% of the total kuna-vs-angr loss.** But the bucket is **heterogeneous**, and
+the STORE-arm diamond is only *one* cause in it — dedup by distinct source function (many are the same
+function compiled into sibling coreutils binaries):
 
-**The fix (a `[PROPOSAL]`-class feature, deep/risky — not a rushed same-session PR):**
-- *Partial (structural fold):* extend the ITE matcher to accept **two STOREs to the same slot** and fold
-  to `*s = c ? A : B` (48 → ~30 nodes; GED 98 → ~40–50). Contained but a real IR/printer change with
-  regression surface (must prove the two stores are storage-equivalent).
-- *Full (angr parity → GED 0):* stack-local → register/SSA promotion + inline the conditional into its
-  single use, eliminating `v1` (48 → 22). This is Ghidra-style stack-var promotion that isn't firing
-  here; deep dataflow.
+| distinct fn | GED×count | share | over-structuring cause (inspected) |
+|---|---|---|---|
+| `filename_unescape` | 28 × 9 = **252** | 35% | nested **if/else-if comparison tree** on char values + `branchflip` — *not* value diamonds |
+| `bsd_split_3` | 17 × 9 = **153** | 21% | **loop + guard structuring** (`do-while`/`for`/guard-`if`) — *not* value diamonds |
+| `output_one_dumb_line` | 98 × 1 = **98** | 14% | **the reused-stack-local STORE-arm diamond** (this section) |
+| `sort_files` | 13 × 3 = 39 | 5% | (unverified) |
+| ~10 others | 10–45 × 1 | ~25% | mixed |
+
+So the STORE-arm fold below addresses **only `output_one_dumb_line` (98 GED ≈ 1.7% of the total angr
+loss)** — a **single-function outlier**, not the 32-function lever. The bucket's real bulk (56%,
+`filename_unescape` + `bsd_split_3`) is **different, deeper structuring gaps** (comparison-tree flattening,
+loop/guard structuring) that need their own per-function root-cause. **Verdict: do NOT build the STORE-arm
+fold as a feature** — the ROI (one function) does not justify a default-changing IR/printer pass with
+regression surface. The heterogeneous bulk is the honest next target, one distinct function at a time.
+
+**The STORE-arm fold, for the record (a 1-function `[PROPOSAL]`, not recommended standalone):**
+- *Partial:* extend the ITE matcher to accept **two STOREs to the same slot** → `*s = c ? A : B`
+  (48 → ~30 nodes). Contained but a real IR/printer change; must prove storage-equivalence.
+- *Full (GED 0):* stack-local → register/SSA promotion + inline into the single use (48 → 22) — Ghidra-style
+  stack-var promotion that isn't firing here; deep dataflow. Only worth it if the promotion *also* helps the
+  comparison-tree/loop-guard bulk, which is unverified.
 
 Secondary syntactic transforms (ternaries on *pure* arms, gotos, branchflip, empty-switch) remain
-GED-neutral — the metric moves only on the **block count**, which the STORE-arm fold above is what
-actually reduces.
+GED-neutral — the metric moves only on the **block count**.
 
 **Process note (this cost real time):** several ablations were **false-nulls** — `run_benchmark` silently
 resumed/skipped the re-decompile (see gotchas below), so the `.c` never changed and the GED "0" was
