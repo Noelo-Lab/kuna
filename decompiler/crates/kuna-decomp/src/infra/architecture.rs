@@ -446,6 +446,14 @@ pub struct Architecture {
     /// format/print/flag code (`flags ? "%s," : "%s"`) — and diverges when the
     /// source used explicit if/else, so an agent flips it per function.
     pub iteregion: bool,
+    /// (kuna) `iteexpr`: extend [`iteregion`](Self::iteregion) to diamonds whose
+    /// arms are a single **computed** pure-value assignment (`v = *p`, `v = b + 5`)
+    /// — not just a plain `COPY` — matching angr's aggressive `?:` recovery.  A C
+    /// ternary evaluates only the taken branch, so the rewrite is
+    /// semantics-preserving; it is print-only.  A runtime choice, default-off (it
+    /// diverges when the source used explicit if/else); measured net-positive on the
+    /// decbench O0 set where source ternaries dominate.
+    pub iteexpr: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block (only MULTIEQUAL/COPY/RETURN, no side effects)
     /// into each predecessor but one, so the classic
@@ -964,6 +972,7 @@ impl Architecture {
             dup_return_call_tails: false,
             dedup_ite_tail: false,
             iteregion: false,
+            iteexpr: false,
             duplicate_shared_returns: false,
             early_return: false,
             switch_return: false,
@@ -1093,6 +1102,7 @@ impl Architecture {
         self.dup_return_call_tails = true; // (kuna) DIV-13 default-on (angr SAILR ReturnDuplicatorLow return-call-tail dup; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
+        self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.duplicate_shared_returns = false; // (kuna) default: upstream byte-identical (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4 returndup — opt-in). DIV-18 flipped this default-on, but the decbench re-run showed the aggregate GED perfect count REGRESSED ~976 (returndup fired 21768x, and early-return recovery diverges from the source's merged short-circuit form on the majority), so it is reverted to a per-function runtime choice (`--option returndup on`).
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
@@ -1278,6 +1288,7 @@ impl Architecture {
                 self.dedup_ite_tail = val;
                 Ok(msg)
             }
+            "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),
             "iteregion" => {
                 let (val, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
                 self.iteregion = val;
@@ -1690,6 +1701,7 @@ impl Architecture {
         ctx.dup_return_call_tails = self.dup_return_call_tails; // taildup
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
+        ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn

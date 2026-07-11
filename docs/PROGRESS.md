@@ -1,5 +1,24 @@
 # kuna Progress Log
 
+## Session (2026-07-11) — `iteexpr`: computed-arm `?:` recovery (aggressive-mode readability)
+
+New option **`iteexpr`** (default-off, transform tier, settable 75→76 / transform 35→36) extends the
+`iteregion` diamond→ternary rewrite from single-`COPY` arms to any single **computed** pure-value arm
+(`if (c) v = *p; else v = q;` → `v = c ? *p : q;`; `v = c ? b+5 : b-3;`). Broadens `single_assign_arm`
+(`p8_structure/kuna_iteregion.rs`) to accept any pure value op (`LOAD`/`INT_*`/`PTR*`/`CAST`/…), rejecting
+only side-effecting/control ops; the print-only render (`op_push_ir`) already handles arbitrary
+expressions. Matches angr/ida's aggressive `?:` recovery (angr emits ~1389 ternaries on decbench O0
+coreutils to kuna's ~177; `iteexpr` roughly doubles kuna's — ls 27→46, sort 2→21, du 19→34). Added to
+`--mode aggressive`.
+
+**Honest caveat (a central campaign finding):** this is a **readability** change, **GED-neutral**.
+Joern gives a `?:` and its equivalent `if/else` the *identical* CFG (verified: both 4 nodes / 4 edges),
+so the decbench GED metric — CFG graph-edit-distance — cannot see the difference. The same is true of
+goto-vs-`break`/`continue` and (per-function) empty-`switch()`: **the GED metric is blind to syntactic
+form; only basic-block count / structuring moves it.** So `iteexpr` ships default-off (opt-in / aggressive),
+not a DIV default flip. Gates: `make test` byte-identical (default-off), `test-stages` +1 (ghangr-iteexpr),
+`rust-test` (count bumps 75→76), `check-spec`. No DIV (no default change).
+
 ## Session (2026-07-10) — Decompiler modes: `--mode aggressive | reliable`
 
 A new **mode** axis over the option surface: a *mode* is a named, ordered list of `(option,

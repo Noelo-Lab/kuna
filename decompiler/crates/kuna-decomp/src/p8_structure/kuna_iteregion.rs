@@ -212,9 +212,9 @@ pub fn match_ite_assignment(data: &Funcdata, n: BlockId) -> Option<IteAssignMatc
     // ternary, so nothing is lost.
     let cbranch = cond_cbranch(data, cond_block)?;
 
-    // Each arm: a single leaf whose only printed op is a COPY to a variable.
-    let (true_op, dest_true) = single_copy_assign(data, true_clause)?;
-    let (else_op, dest_else) = single_copy_assign(data, else_clause)?;
+    // Each arm: a single leaf whose only printed op is a pure value assignment.
+    let (true_op, dest_true) = single_assign_arm(data, true_clause)?;
+    let (else_op, dest_else) = single_assign_arm(data, else_clause)?;
 
     // Both arms must write the SAME variable (the post-SSA merge target), so the
     // ternary has one well-defined destination.
@@ -267,11 +267,21 @@ fn cond_cbranch(data: &Funcdata, id: BlockId) -> Option<OpId> {
     Some(op)
 }
 
-/// If the structured leaf `id` is an arm whose single printed op is a `COPY`
-/// writing to a variable, return `(copy_op, out_vn)`.  This is the "single
-/// assignment" arm angr's `_find_ite_assignment_regions` requires (each child is
-/// exactly one assignment statement).
-fn single_copy_assign(data: &Funcdata, id: BlockId) -> Option<(OpId, VarnodeId)> {
+/// If the structured leaf `id` is an arm whose single printed op is a pure
+/// value-producing assignment to a variable, return `(assign_op, out_vn)`.  This
+/// is the "single assignment" arm angr's `_find_ite_assignment_regions` requires
+/// (each child is exactly one assignment statement).
+///
+/// The op need not be a plain `COPY`: any pure value op renders as the ternary's
+/// `? A`/`: B` expression via `op_push_ir` (a `LOAD` → `*p`, an `INT_ADD` → `a +
+/// b`, …), and because a C ternary evaluates only the taken branch the rewrite is
+/// semantics-preserving — exactly what angr does (`dest = cond ? *p : q`).  Any
+/// second-level operands the RHS reads are single-use *implied* varnodes that
+/// `printed_ops` already inlines, so the arm remains one statement.  Only ops that
+/// carry a **side effect** or **control flow** (a `STORE`, a call, a branch, an
+/// `INDIRECT`/`MULTIEQUAL` bookkeeping op) are rejected — those cannot be a ternary
+/// branch expression.
+fn single_assign_arm(data: &Funcdata, id: BlockId) -> Option<(OpId, VarnodeId)> {
     let bb = leaf_bblock(data, id)?;
     let ops = printed_ops(data, bb);
     if ops.len() != 1 {
@@ -279,11 +289,35 @@ fn single_copy_assign(data: &Funcdata, id: BlockId) -> Option<(OpId, VarnodeId)>
     }
     let op = ops[0];
     let o = data.obank().get(op)?;
+    // A plain `COPY` arm is the shipped `iteregion` behaviour (byte-identical).
+    // Any OTHER pure value op (a `LOAD` → `*p`, an `INT_ADD` → `a + b`, …) is the
+    // `iteexpr` extension: angr-style aggressive `?:` recovery over computed arms.
+    // It is gated on `option iteexpr on` (default-off) so the default output — and
+    // the whole datatest corpus — is unchanged.  Side-effecting / control /
+    // bookkeeping ops (a `STORE`, a call, a branch, an `INDIRECT`/`MULTIEQUAL`)
+    // can never be a ternary branch expression and are always rejected.
     if o.code() != OpCode::CPUI_COPY {
-        return None;
+        if !data.get_arch().iteexpr {
+            return None;
+        }
+        if matches!(
+            o.code(),
+            OpCode::CPUI_STORE
+                | OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_CALLOTHER
+                | OpCode::CPUI_RETURN
+                | OpCode::CPUI_BRANCH
+                | OpCode::CPUI_CBRANCH
+                | OpCode::CPUI_BRANCHIND
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_INDIRECT
+        ) {
+            return None;
+        }
     }
     let out = o.get_out()?;
-    // The COPY must have a readable source operand to render as the ternary value.
+    // The op must have a readable source operand to render as the ternary value.
     o.get_in(0)?;
     Some((op, out))
 }

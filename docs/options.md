@@ -77,6 +77,9 @@ Three tiers:
 | if (c) v = A; else v = B; assignment diamond where a ternary v = c ? A : B is expected | [`iteregion`](#iteregion) |
 | format/flag builder full of two-arm constant assignments to the same variable | [`iteregion`](#iteregion) |
 | flip off when the source likely wrote an explicit if/else | [`iteregion`](#iteregion) |
+| if (c) v = <expr1>; else v = <expr2>; where a ternary v = c ? expr1 : expr2 is expected | [`iteexpr`](#iteexpr) |
+| kuna emits far fewer ?: ternaries than angr/ida on format/flag/size code | [`iteexpr`](#iteexpr) |
+| computed-arm assignment diamond (v = *p / v = b + k) not folded to a ternary | [`iteexpr`](#iteexpr) |
 | giant short-circuit if with comma-expression side effects merging several source early-return guards | [`returndup`](#returndup) |
 | one trailing return shared by many guard paths where the source used per-guard early returns | [`returndup`](#returndup) |
 | merged guard condition containing v = f(...) assignments inline | [`returndup`](#returndup) |
@@ -390,6 +393,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Default ON (DIV-17). The diamond->ternary form matches the common format/print/flag source where the ternary dominates (compilers turn `cond ? "%s," : "%s"` into exactly this diamond; iproute2 print_link_flags, coreutils output helpers), so kuna emits `v = c ? A : B;` matching source/angr. Still a RUNTIME CHOICE an agent can flip OFF (`option iteregion off`, byte-identical to upstream) per function when explicit `if/else` is the likely source, to avoid inventing a ternary the author never wrote — the SAME object code is emitted for both, so the binary cannot distinguish them. A print-only mark; on, each rewrite is logged (`iteregion:`).
 - **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ITE-region-converter
 - **Example:** `option iteregion on`
+
+### `iteexpr` -- on | off, default `off`
+
+- **Symptoms:** if (c) v = <expr1>; else v = <expr2>; where a ternary v = c ? expr1 : expr2 is expected; kuna emits far fewer ?: ternaries than angr/ida on format/flag/size code; computed-arm assignment diamond (v = *p / v = b + k) not folded to a ternary.
+- **What it does:** Extend `iteregion` from single-`COPY` arms to any single-statement COMPUTED pure-value arm (`if (c) v = *p; else v = q;` -> `v = c ? *p : q;`, or `v = c ? b + 5 : b - 3;`). The arm's assignment op may be any pure value op (`LOAD`, `INT_*`, `PTR*`, `CAST`, `SUBPIECE`, …) whose second-level operands are single-use implied varnodes; only side-effecting/control ops (a `STORE`, a call, a branch, an `INDIRECT`/`MULTIEQUAL`) are rejected. The C ternary evaluates only the taken branch, so the rewrite is semantics-preserving. Print-only (same mechanism as iteregion). Matches angr's aggressive `?:` recovery: on decbench O0 coreutils angr emits ~1389 ternaries to kuna's ~177; this roughly doubles kuna's recovery (ls 27->46, sort 2->21, du 19->34).
+- **When to flip:** Turn ON to recover `?:` over computed arms like angr/IDA do, when the source used ternaries (common in format/print/flag/size code). A RUNTIME CHOICE, default-off: it diverges when the source used an explicit if/else (the same object code is emitted either way). Requires `option iteregion on` (default) — it broadens iteregion's arm match. Print-only; on, each rewrite is logged (`iteregion:`).
+- **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ITE-region-converter-expr
+- **Example:** `option iteexpr on`
 
 ### `returndup` -- on | off, default `off`
 
