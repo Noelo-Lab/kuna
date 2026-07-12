@@ -245,7 +245,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_38() {
+fn option_values_live_value_present_for_28_suppressed_for_39() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -346,6 +346,7 @@ fn option_values_live_value_present_for_28_suppressed_for_38() {
                             | "taildup"
                             | "dedupitetail"
                             | "iteregion"
+                            | "iteexpr"
                             | "returndup"
                             | "earlyreturn"
                             | "switchreturn"
@@ -457,7 +458,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, and switchreturn's S8 row sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 74);
+    assert_eq!(json.matches("},\n").count(), 75);
 }
 
 #[test]

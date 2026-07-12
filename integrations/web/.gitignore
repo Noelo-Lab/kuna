@@ -1,0 +1,6 @@
+# Built demo bundle (assembled by build.sh from committed sources + built wasm +
+# vendored specs). Regenerate with ./build.sh — never commit it.
+# NOTE: anchored with a leading slash so it only matches integrations/web/dist/,
+# NOT the vendored shim's own vendor/browser_wasi_shim/dist/ (that IS committed).
+/dist/
+node_modules/

@@ -1,0 +1,37 @@
+# kuna-wasm: a thin, in-process decompiler front-end designed to build for
+# `wasm32-wasip1` and run entirely client-side in the browser (via a WASI shim)
+# — the same in-process path `kuna decompile-all` drives, minus the subprocess
+# CLI layer that cannot cross the wasm boundary.  Also builds natively (the
+# parity oracle: native output must equal the wasm output byte-for-byte).
+#
+# This crate is PURELY ADDITIVE: it depends only on the existing engine crates
+# and adds no new external dependency, so it cannot change the decompiler's
+# behavior or any of the four build gates.  See docs/web-integration.md.
+[package]
+name = "kuna-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "kuna_wasm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kuna_wasm"
+path = "src/main.rs"
+
+[dependencies]
+kuna-base.workspace = true
+kuna-console.workspace = true
+kuna-decomp.workspace = true
+# `object` is already a workspace dependency (the ELF/PE/Mach-O LoadImage
+# backend); reused here only to read the ELF machine for the non-x86-64
+# `funcstart_patterns` default, mirroring `kuna decompile-all` exactly. No new
+# crate enters the dependency graph.
+object.workspace = true
+
+[lints]
+workspace = true
