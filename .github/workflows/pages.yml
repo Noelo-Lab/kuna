@@ -52,13 +52,17 @@ jobs:
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get update && sudo apt-get install -y binaryen
 
-      # build.sh needs x86-64.sla (a gitignored build artifact). Compiling just
-      # this one slaspec (~0.2s) is far cheaper than `make specs` (the whole tree).
-      - name: Build the SLEIGH compiler and the x86-64 spec
+      # build.sh copies each shipped arch's .sla (gitignored build artifacts).
+      # Compiling just the demo's slaspecs (~0.7s each) is far cheaper than
+      # `make specs` (the whole tree). Keep this list in sync with the arches
+      # integrations/web/build.sh copies (x86-64 + AArch64).
+      - name: Build the SLEIGH compiler and the demo specs (x86-64 + AArch64)
         run: |
           cargo build --release -p kuna-slacomp --manifest-path decompiler/Cargo.toml
           ./decompiler/target/release/slacomp \
             specs/Ghidra/Processors/x86/data/languages/x86-64.slaspec
+          ./decompiler/target/release/slacomp \
+            specs/Ghidra/Processors/AARCH64/data/languages/AARCH64.slaspec
 
       # Builds kuna_wasm for wasm32-wasip1 and assembles integrations/web/dist/.
       - name: Assemble the static demo (dist/)
