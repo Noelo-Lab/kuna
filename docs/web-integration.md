@@ -86,7 +86,7 @@ preopened directories:
 
 | Preopen | Guest path | Contents |
 |---|---|---|
-| specs | `/specs` | the SLEIGH tree — `Ghidra/Processors/x86/data/languages/{x86.ldefs, x86-64.sla, x86-64.pspec, x86-64-gcc.cspec, x86-64.dwarf}` (fetched once, `File` inodes reused across runs) |
+| specs | `/specs` | the SLEIGH tree for the binary's arch — e.g. `Ghidra/Processors/x86/data/languages/{x86.ldefs, x86-64.sla, x86-64.pspec, x86-64-gcc.cspec, x86-64.dwarf}` (fetched once per arch, `File` inodes reused across runs) |
 | work | `/work` | `input.bin` — the user's uploaded bytes |
 
 then runs `kuna_wasm /work/input.bin /specs decompile` with `stdout` captured via
@@ -95,11 +95,24 @@ same preopen model Node's `node:wasi` uses — the parity test (`test/parity.mjs
 the identical wasm through `node:wasi`, and the glue test (`test/glue.mjs`) drives it
 through the real browser shim; both must agree with native.
 
-**Minimal specs.** Only the x86-64 (gcc/ELF) set is shipped — **~536 KB**, verified to
-produce *byte-identical* output to the full **29 MB** tree. `scan_language_database`
-indexes whatever `.ldefs` it finds and lazily loads only the resolved language's files, so
-a one-language tree is sufficient and fast. Adding an architecture = add its files to
-`build.sh`'s `SPEC_FILES` and a manifest in `kuna-web.js`, then select by ELF machine.
+**Multi-arch, minimal specs.** The *engine* decompiles every architecture kuna
+supports; the only arch-scoped part here is which spec files get preloaded.
+`kuna-web.js` reads the uploaded binary's **ELF `e_machine`** (u16 @ offset 18,
+honoring `EI_DATA`) and lazily fetches + caches that arch's spec set from the
+`ARCHES` manifest. Two arches ship today, each a **minimal** set verified
+*byte-identical* to the full **29 MB** tree:
+
+| Arch | `e_machine` | Spec set (~size) | Verified |
+|---|---|---|---|
+| x86-64 | `0x3e` | `x86.ldefs` + `x86-64.{sla,pspec,dwarf}` + `x86-64-gcc.cspec` (~536 KB) | native == wasm == browser |
+| AArch64 | `0xb7` | `AARCH64.{ldefs,sla,pspec,cspec,dwarf}` (~600 KB) | native == wasm (WASI) + browser |
+
+`scan_language_database` indexes whatever `.ldefs` it finds and lazily loads only
+the resolved language's files, so a one-language tree per arch is sufficient and
+fast. **Add an architecture** = add its files to `build.sh`'s `SPEC_FILES` and a
+manifest entry (keyed by `e_machine`) to `ARCHES` in `kuna-web.js`. If unsure
+which language variant a given ELF resolves to (ARM has several keyed on ELF
+flags), copy the whole `.../languages/` dir — the lazy load ignores the extras.
 
 ## 4. Build & payload
 
@@ -114,28 +127,33 @@ All asset references are relative, so it serves correctly from a project subpath
 (`https://<owner>.github.io/<repo>/`); no COOP/COEP headers are needed (no threads /
 SharedArrayBuffer). Enable once under *Settings → Pages → Source = GitHub Actions*.
 
-Payload for a full x86-64 decompiler in the tab: **~1.7 MB** wasm + **~0.46 MB** specs,
-gzipped ≈ **2.2 MB**. Cold decompile of a small binary is sub-second (≈0.45 s measured in
-Node `node:wasi` and in headless Chrome on the committed fixture).
+Payload per shipped arch: **~1.7 MB** wasm (shared) + **~0.46 MB** specs each (x86-64 /
+AArch64), gzipped; specs are fetched only for the arch you actually load. Cold decompile of
+a small binary is sub-second (≈0.45 s measured in Node `node:wasi` and in headless Chrome
+on the committed fixtures).
 
 ## 5. Testing
 
-Three layers, all runnable without a browser in CI:
+Three layers, all runnable without a browser in CI, and all exercising **both** shipped
+arches:
 
 1. **`test/parity.mjs`** — runs the wasm under `node:wasi` (the same WASI preview1 ABI the
    browser shim implements) and asserts its output is **byte-identical to the native
-   `kuna_wasm`** across `list` + `decompile {all, main, sum_to, add}`. This proves the
-   port is faithful, not degraded.
+   `kuna_wasm`** across `list` + `decompile {…}` for each fixture (9 cases across x86-64 +
+   AArch64). This proves the port is faithful, not degraded.
 2. **`test/glue.mjs`** — imports the shipped `kuna-web.js` (which drives the vendored
    `@bjorn3` shim) and decompiles over HTTP against `dist/`, exercising the exact browser
-   code path minus the DOM.
+   code path minus the DOM — including the multi-arch **ELF detection + lazy per-arch spec
+   load** (it decompiles the x86-64 fixture, then the AArch64 one through the same handle).
 3. **Full UI (optional, not committed)** — a `puppeteer-core` script drives `index.html`
-   in real Chrome: upload the fixture, wait for the code panel, assert the rendered C.
-   Verified passing (Chrome 131, ~0.46 s) during development; kept out of the committed
-   suite to avoid a browser/`puppeteer` dependency.
+   in real Chrome: uploads each fixture, waits for the code panel / status, asserts the
+   rendered C and the detected arch. Verified passing (Chrome 131, ~0.46 s) during
+   development; kept out of the committed suite to avoid a browser/`puppeteer` dependency.
 
-The committed x86-64 ELF fixture (`test/fixtures/sample.elf`, source `sample.c`) exercises
-argument passing, a call chain, and a `for`-loop so structuring is covered.
+Fixtures: `test/fixtures/sample.elf` (x86-64, source `sample.c`) exercises argument
+passing, a call chain, and a `for`-loop; `test/fixtures/sample_aarch64.o` (AArch64 object,
+source `sample_aarch64.c`, rebuilt via the comment header) covers a second architecture end
+to end.
 
 ## 6. Guarantees (why this doesn't break kuna)
 
@@ -148,7 +166,9 @@ argument passing, a call chain, and a `for`-loop so structuring is covered.
 
 ## 7. Limitations & future work
 
-- **x86-64 only in the demo** — an intentional payload choice, not an engine limit (§3).
+- **x86-64 + AArch64 ship today** — more arches are a spec-delivery change, not an engine
+  one (§3): add a `SPEC_FILES` group + an `ARCHES` manifest entry. The engine already
+  decompiles every arch kuna supports.
 - **Re-bootstraps per request** — a WASI *command* module runs `_start` and exits, so
   "decompile all" (one run over every function) is the efficient path the UI uses. A
   `wasm-bindgen` **reactor** front-end (bootstrap once, export `decompile(name)`) would let

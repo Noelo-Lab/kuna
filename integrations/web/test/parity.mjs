@@ -7,12 +7,14 @@
 //   2. Its output is byte-identical to the NATIVE `kuna_wasm` build — i.e. the
 //      wasm port is a faithful decompiler, not a degraded one.
 //
-// It runs `list` + several `decompile` cases over the committed x86-64 fixture
-// and diffs native vs wasm (normalizing only the absolute `binary` path, which
-// legitimately differs between the host FS and the guest's virtual FS).
+// It runs `list` + several `decompile` cases over each committed fixture
+// (x86-64 ELF + AArch64 object) and diffs native vs wasm (normalizing only the
+// absolute `binary` path, which legitimately differs between the host FS and the
+// guest's virtual FS). Specs come from the full repo tree, so the loader
+// auto-resolves each fixture's architecture.
 //
 // Usage:  node parity.mjs           (paths auto-resolved from the repo layout)
-//         WASM=... NATIVE=... SPECS=... FIXTURE=... node parity.mjs   (overrides)
+//         SPECS=... node parity.mjs  (override the spec root)
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -26,52 +28,54 @@ const WASM = process.env.WASM ||
 const NATIVE = process.env.NATIVE ||
   join(repo, 'decompiler/target/release/kuna_wasm');
 const SPECS = process.env.SPECS || join(repo, 'specs');
-const FIXTURE = process.env.FIXTURE || join(here, 'fixtures/sample.elf');
 const RUN_WASM = join(here, 'run-wasm.mjs');
+
+// { fixture, arch, cases } — cases are argv tails for kuna_wasm.
+const FIXTURES = [
+  {
+    fixture: join(here, 'fixtures/sample.elf'),
+    arch: 'x86-64',
+    cases: [['list'], ['decompile'], ['decompile', 'main'], ['decompile', 'sum_to'], ['decompile', 'add']],
+  },
+  {
+    fixture: join(here, 'fixtures/sample_aarch64.o'),
+    arch: 'aarch64',
+    cases: [['list'], ['decompile'], ['decompile', 'sum_to'], ['decompile', 'add']],
+  },
+];
 
 function fail(msg) { console.error(`\x1b[31mFAIL\x1b[0m ${msg}`); process.exit(1); }
 
-for (const [label, p] of [['wasm', WASM], ['native', NATIVE], ['specs', SPECS], ['fixture', FIXTURE]]) {
-  if (!existsSync(p)) fail(`missing ${label}: ${p}\n  (build first: integrations/web/build.sh, and `+
-    `\`make specs\` for the .sla)`);
+for (const [label, p] of [['wasm', WASM], ['native', NATIVE], ['specs', SPECS]]) {
+  if (!existsSync(p)) fail(`missing ${label}: ${p}\n  (build first: integrations/web/build.sh, and \`make specs\` for the .sla)`);
 }
 
-// Normalize the one field that legitimately differs (host path vs virtual path).
 const normalize = (s) => s.replace(/"binary":\s*"[^"]*"/g, '"binary": "<binary>"').trim();
-
-function runNative(args) {
-  return execFileSync(NATIVE, [FIXTURE, SPECS, ...args], { encoding: 'utf8', maxBuffer: 64 << 20 });
-}
-function runWasm(args) {
-  return execFileSync('node',
-    ['--experimental-wasi-unstable-preview1', RUN_WASM, WASM, SPECS, FIXTURE, ...args],
+const runNative = (fx, args) =>
+  execFileSync(NATIVE, [fx, SPECS, ...args], { encoding: 'utf8', maxBuffer: 64 << 20 });
+const runWasm = (fx, args) =>
+  execFileSync('node', ['--experimental-wasi-unstable-preview1', RUN_WASM, WASM, SPECS, fx, ...args],
     { encoding: 'utf8', maxBuffer: 64 << 20 });
-}
 
-const cases = [
-  ['list'],
-  ['decompile'],           // all functions
-  ['decompile', 'main'],
-  ['decompile', 'sum_to'], // exercises loop structuring
-  ['decompile', 'add'],
-];
-
-let passed = 0;
-for (const c of cases) {
-  const label = c.join(' ');
-  let nat, wsm;
-  try { nat = runNative(c); } catch (e) { fail(`native \`${label}\` crashed: ${e.message}`); }
-  try { wsm = runWasm(c); } catch (e) { fail(`wasm \`${label}\` crashed: ${e.message}`); }
-  const n = normalize(nat), w = normalize(wsm);
-  if (n !== w) {
-    console.error(`--- native (${label})\n${n.slice(0, 800)}`);
-    console.error(`+++ wasm   (${label})\n${w.slice(0, 800)}`);
-    fail(`native != wasm for \`${label}\``);
+let passed = 0, total = 0;
+for (const { fixture, arch, cases } of FIXTURES) {
+  if (!existsSync(fixture)) fail(`missing fixture: ${fixture}`);
+  for (const c of cases) {
+    total++;
+    const label = `${arch}: ${c.join(' ')}`;
+    let nat, wsm;
+    try { nat = runNative(fixture, c); } catch (e) { fail(`native \`${label}\` crashed: ${e.message}`); }
+    try { wsm = runWasm(fixture, c); } catch (e) { fail(`wasm \`${label}\` crashed: ${e.message}`); }
+    const n = normalize(nat), w = normalize(wsm);
+    if (n !== w) {
+      console.error(`--- native (${label})\n${n.slice(0, 800)}`);
+      console.error(`+++ wasm   (${label})\n${w.slice(0, 800)}`);
+      fail(`native != wasm for \`${label}\``);
+    }
+    if (!n.includes('"functions"')) fail(`\`${label}\` produced no functions array`);
+    console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);
+    passed++;
   }
-  // Sanity: the payload must be real (non-empty JSON with the fixture's funcs).
-  if (!n.includes('"functions"')) fail(`\`${label}\` produced no functions array`);
-  console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);
-  passed++;
 }
 
-console.log(`\n\x1b[32mPARITY OK\x1b[0m — ${passed}/${cases.length} cases: wasm decompiler runs under WASI and matches native byte-for-byte.`);
+console.log(`\n\x1b[32mPARITY OK\x1b[0m — ${passed}/${total} cases across ${FIXTURES.length} arches: wasm runs under WASI and matches native byte-for-byte.`);
