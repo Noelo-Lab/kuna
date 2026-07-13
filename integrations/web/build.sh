@@ -16,14 +16,23 @@ DIST="$HERE/dist"
 PROFILE="release"
 TARGET="wasm32-wasip1"
 
-# The minimal x86-64 (gcc/ELF) SLEIGH set — verified byte-identical to the full
-# 29 MB spec tree. Keep in sync with X86_64_SPECS in kuna-web.js.
+# The minimal SLEIGH set per shipped architecture (default language, gcc/ELF) —
+# each verified byte-identical to the full 29 MB spec tree. Keep in sync with the
+# ARCHES manifests in kuna-web.js. To support another arch, add its files here
+# (or copy its whole `.../languages/` dir) and add a manifest in kuna-web.js.
 SPEC_FILES=(
+  # x86-64 (ELF e_machine 0x3e)
   "Ghidra/Processors/x86/data/languages/x86.ldefs"
   "Ghidra/Processors/x86/data/languages/x86-64.sla"
   "Ghidra/Processors/x86/data/languages/x86-64.pspec"
   "Ghidra/Processors/x86/data/languages/x86-64-gcc.cspec"
   "Ghidra/Processors/x86/data/languages/x86-64.dwarf"
+  # AArch64 (ELF e_machine 0xb7)
+  "Ghidra/Processors/AARCH64/data/languages/AARCH64.ldefs"
+  "Ghidra/Processors/AARCH64/data/languages/AARCH64.sla"
+  "Ghidra/Processors/AARCH64/data/languages/AARCH64.pspec"
+  "Ghidra/Processors/AARCH64/data/languages/AARCH64.cspec"
+  "Ghidra/Processors/AARCH64/data/languages/AARCH64.dwarf"
 )
 
 echo ">> checking toolchain"

@@ -43,7 +43,7 @@ and deploys `dist/` — nothing is committed. The site is served at
 | `index.html` | The demo UI (upload → function list → C). Self-contained, theme-aware. |
 | `kuna-web.js` | The glue: loads the wasm, fetches specs into an in-memory FS, runs the decompiler under the WASI shim, returns the `decompile-all --json` shape. |
 | `vendor/browser_wasi_shim/` | Vendored [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim) (MIT/Apache-2.0) — a pure-JS WASI **preview1** implementation. Pinned in `VERSION`. |
-| `build.sh` | Builds `kuna_wasm.wasm`, copies the minimal x86-64 spec set + the shim + the page into `dist/`. `wasm-opt -Oz` is applied if present. |
+| `build.sh` | Builds `kuna_wasm.wasm`, copies the minimal per-arch spec sets (x86-64 + AArch64) + the shim + the page into `dist/`. `wasm-opt -Oz` is applied if present. |
 | `test/` | Automated gates (below) + a committed x86-64 ELF fixture. |
 | `dist/` | Assembled output (gitignored — regenerate with `build.sh`). |
 
@@ -89,13 +89,19 @@ npm i -g puppeteer-core   # or local; needs a Chrome on PATH
 
 ## Scope & extending
 
-The demo ships the **x86-64 (gcc/ELF)** SLEIGH set — verified byte-identical to the full
-29 MB spec tree, but only ~536 KB. To support more architectures, add their spec files to
-`SPEC_FILES` in `build.sh` and to `X86_64_SPECS`/a new manifest in `kuna-web.js`, then
-pick the manifest by the uploaded binary's ELF machine. The engine already decompiles
-every architecture kuna supports; only the spec-delivery layer is arch-scoped here.
+The demo ships **x86-64** and **AArch64** SLEIGH sets (each a minimal per-arch set, verified
+byte-identical to the full 29 MB tree). `kuna-web.js` auto-detects the uploaded binary's
+ELF `e_machine` and lazily loads the matching set. To support another architecture:
+
+1. Add its spec files to `SPEC_FILES` in `build.sh` (or copy the whole
+   `Ghidra/Processors/<ARCH>/data/languages/` dir if unsure which variant an ELF resolves
+   to — the lazy load ignores extras).
+2. Add an entry to `ARCHES` in `kuna-web.js`, keyed by ELF `e_machine`, listing those files.
+
+The engine already decompiles every architecture kuna supports; only this spec-delivery
+layer is arch-scoped. See `docs/web-integration.md` §3.
 
 ## Payload
 
-For a full x86-64 decompiler in the tab: **~1.7 MB** wasm (gzipped) + **~0.46 MB** specs
-(gzipped) ≈ **2.2 MB**. Cold decompile of a small binary is well under a second.
+Per arch: **~1.7 MB** wasm (gzipped, shared across arches) + **~0.46 MB** specs (gzipped),
+fetched only for the arch you load. Cold decompile of a small binary is well under a second.

@@ -69,7 +69,16 @@ try {
   if (ok < 3) fail(`decompile-all produced only ${ok} bodies`);
   console.log(`\x1b[32mOK\x1b[0m   decompile all  (${ok}/${all.count} functions bodied)`);
 
-  console.log(`\n\x1b[32mGLUE OK\x1b[0m — kuna-web.js + browser WASI shim decompile client-side over HTTP.`);
+  // A SECOND architecture through the same handle — exercises kuna-web.js's ELF
+  // detection + lazy per-arch spec loading (the multi-arch path).
+  const a64 = new Uint8Array(await readFile(join(here, 'fixtures/sample_aarch64.o')));
+  if (kuna.archName(a64) !== 'aarch64') fail(`archName mis-detected the aarch64 fixture: ${kuna.archName(a64)}`);
+  const a64res = await kuna.decompile(a64, 'add');
+  const a64code = a64res.functions[0]?.code || '';
+  if (!a64code.includes('return a0 + a1')) fail(`aarch64 decompile of 'add' unexpected:\n${a64code}`);
+  console.log(`\x1b[32mOK\x1b[0m   aarch64 add  (detected + lazily loaded AArch64 specs)`);
+
+  console.log(`\n\x1b[32mGLUE OK\x1b[0m — kuna-web.js + browser WASI shim decompile client-side over HTTP (x86-64 + aarch64).`);
 } catch (e) {
   fail(e.stack || e.message);
 } finally {
