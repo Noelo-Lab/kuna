@@ -1,0 +1,88 @@
+name: Deploy web demo to GitHub Pages
+
+# Builds the in-browser (WebAssembly) decompiler demo — integrations/web —
+# and publishes it to GitHub Pages. The engine runs entirely client-side; the
+# deployed site is a static bundle (page + glue + WASI shim + wasm + x86-64
+# SLEIGH specs), so nothing talks to a backend. See docs/web-integration.md.
+
+on:
+  # Redeploy when the demo, the engine, or the vendored specs change.
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/web/**'
+      - 'decompiler/**'
+      - 'specs/**'
+      - '.github/workflows/pages.yml'
+  # Allow a manual redeploy from the Actions tab.
+  workflow_dispatch:
+
+# Least-privilege token for the Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One in-flight deploy at a time; let a running deploy finish rather than cancel.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable) + wasm32-wasip1 target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-wasip1
+
+      # The one third-party action here — the de-facto standard cargo cache.
+      # Drop it (or swap for actions/cache) if you prefer zero third-party actions.
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: decompiler
+
+      # Optional but worth it: wasm-opt -Oz shrinks the wasm ~7 MB -> ~1.7 MB.
+      # build.sh applies it only if present; the demo works without it.
+      - name: Install wasm-opt (binaryen)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      # build.sh needs x86-64.sla (a gitignored build artifact). Compiling just
+      # this one slaspec (~0.2s) is far cheaper than `make specs` (the whole tree).
+      - name: Build the SLEIGH compiler and the x86-64 spec
+        run: |
+          cargo build --release -p kuna-slacomp --manifest-path decompiler/Cargo.toml
+          ./decompiler/target/release/slacomp \
+            specs/Ghidra/Processors/x86/data/languages/x86-64.slaspec
+
+      # Builds kuna_wasm for wasm32-wasip1 and assembles integrations/web/dist/.
+      - name: Assemble the static demo (dist/)
+        run: bash integrations/web/build.sh
+
+      # Serve every file verbatim (belt-and-suspenders; the artifact path skips Jekyll).
+      - name: Disable Jekyll
+        run: touch integrations/web/dist/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: integrations/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

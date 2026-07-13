@@ -25,6 +25,17 @@ integrations/web/build.sh --serve       # -> http://localhost:8000
 Open the page, click **Load binary**, and pick an **x86-64 ELF**. The decompiler runs in
 the tab and lists every function; click one to see its C.
 
+## Hosted on GitHub Pages
+
+`.github/workflows/pages.yml` builds this bundle and publishes it to GitHub Pages on every
+push to `main` that touches `integrations/web/`, `decompiler/`, or `specs/` (and on manual
+dispatch). The workflow builds `slacomp`, compiles the one `x86-64.slaspec`, runs `build.sh`,
+and deploys `dist/` — nothing is committed. The site is served at
+`https://<owner>.github.io/<repo>/` (relative asset paths, so a project subpath just works).
+
+**One-time enablement** (repo admin): *Settings → Pages → Build and deployment → Source =
+**GitHub Actions***. The next push to `main` (or a manual run from the Actions tab) deploys.
+
 ## What's here
 
 | Path | Role |

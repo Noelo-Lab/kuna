@@ -107,6 +107,13 @@ a one-language tree is sufficient and fast. Adding an architecture = add its fil
 `wasm-opt -Oz` if available, and assembles a self-contained `integrations/web/dist/`
 (page + glue + vendored shim + wasm + specs). Serve `dist/` with any static file server.
 
+**Hosting on GitHub Pages.** `.github/workflows/pages.yml` runs this same build in CI
+(stable Rust + `wasm32-wasip1`, `binaryen` for `wasm-opt`, a targeted `x86-64.slaspec`
+compile instead of the full `make specs`) and deploys `dist/` via `actions/deploy-pages`.
+All asset references are relative, so it serves correctly from a project subpath
+(`https://<owner>.github.io/<repo>/`); no COOP/COEP headers are needed (no threads /
+SharedArrayBuffer). Enable once under *Settings → Pages → Source = GitHub Actions*.
+
 Payload for a full x86-64 decompiler in the tab: **~1.7 MB** wasm + **~0.46 MB** specs,
 gzipped ≈ **2.2 MB**. Cold decompile of a small binary is sub-second (≈0.45 s measured in
 Node `node:wasi` and in headless Chrome on the committed fixture).
