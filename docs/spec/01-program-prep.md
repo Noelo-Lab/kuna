@@ -331,11 +331,25 @@ oracle on C/C++ binaries, since unwind data survives stripping; (4) the
 AArch64/ARM/RISC-V PIE form that loads `main` indirectly through an
 `R_*_RELATIVE`-relocated GOT slot) — (kuna) the disassembly-free stand-in for the
 call-target sweep the tier cannot do without a Listing; and (5) a minimal always-on
-set of three bare x86-64 gcc prologue byte patterns. Everything is unioned,
+set of three bare x86-64 gcc prologue byte patterns; and (6, kuna) the reset +
+handler pointers of an empirically-detected **ARM Cortex-M hardware vector table**
+(`cortexm_vector_entries`) — a stripped bare-metal firmware image has no symbols,
+no `.eh_frame`, no libc idiom and no `$t` markers, so the hardware vector table at
+the base of the code section is the only entry source. The table is confirmed when
+`word[0]` is a plausible SRAM stack pointer (`0x2000_0000..=0x3FFF_FFFF`) and
+`word[1] == e_entry` (the reset vector); the odd (Thumb) handler pointers are then
+harvested, LSB-masked, up to the start of code. Everything is unioned,
 deduped, restricted to executable sections, and skipped where a real funcsym
 already exists; a discovered ARM `main` whose GOT pointer had the Thumb LSB set
 also emits its own `TMode=1` paint (a stripped binary has no `$t` symbol to paint
-from). PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
+from). On a confirmed Cortex-M image the ELF `e_entry` seed is additionally
+LSB-masked to its even (decode) address, and `cortexm_thumb_paints` region-paints
+`TMode=1` (Thumb) across every executable section — ARMv6/7/8-M is Thumb-only, and
+a Thumb `BL` does not `globalset` the callee mode, so the region paint is what lets
+`main` and the rest of the reset→main call tree decode as Thumb (wired into both
+the analysis commit path and the Listing walk's `ContextPainter`). These ARM paths
+are strict no-ops on x86-64 and on any ARM object without the vector-table
+signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 `LC_FUNCTION_STARTS`/`LC_MAIN`/`__mod_init_func`). Failure mode: discovery-only —
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
@@ -349,9 +363,11 @@ context) matches immediately before it, at instruction alignment. The
 `after="defined"`/`validcode` post-rules need a pseudo-disassembler and are a
 documented loss. Output-changing, hence default-off — but (kuna, DIV-20) the
 `decompile-all` driver turns it on for non-x86-64 binaries, where it is the
-*primary* discovery source: on stripped ARM firmware the oracles find one function
-(the entry), and the pattern scan plus the recursive-descent promotion (§1.6) lift
-betaflight STM32F405 from 1 to 1470 discovered functions.
+*primary* discovery source on stripped ARM firmware, alongside the always-on
+Cortex-M vector-table oracle (6) above: with the vector-table seeds + Thumb region
+paint, the pattern scan and the recursive-descent promotion (§1.6) lift betaflight
+STM32F405 from 1 to ~1830 discovered functions (and libopencm3 `button` from 1 to
+31, with `main` decoding as a real Thumb body rather than A32 garbage).
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its

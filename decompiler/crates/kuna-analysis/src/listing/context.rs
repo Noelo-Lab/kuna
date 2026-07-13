@@ -78,6 +78,15 @@ impl ContextPainter {
         // ARM `$t`/`$a` mapping symbols + STT_FUNC-LSB → `TMode` (Thumb). The scan
         // is ARM-gated; on a non-ARM object it returns an empty output.
         paints.extend(scan_arm_markers(file).context_paints);
+        // ARM Cortex-M: a stripped bare-metal firmware image carries none of the
+        // `$t`/FUNC-LSB markers `scan_arm_markers` reads. When a hardware vector
+        // table is detected, the whole image is Thumb-only, so region-paint
+        // `TMode=1` across every executable section — the same facts the analysis
+        // commit path (`EntryDiscoveryPass`) paints, mirrored here for the walk (a
+        // Thumb `BL` does not `globalset` the callee mode, so the region paint is
+        // what lets `main` and the rest of the call tree decode as Thumb). Empty on
+        // any non-Cortex-M ARM object and every non-ARM arch.
+        paints.extend(crate::analyzers::entry::cortexm_thumb_paints(file));
         // MIPS STT_FUNC-LSB / `STO_MIPS_MIPS16` `st_other` → `ISA_MODE` (MIPS16e /
         // microMIPS). The scan is MIPS-gated; empty on a non-MIPS object.
         paints.extend(scan_mips_isa_markers(file).context_paints);

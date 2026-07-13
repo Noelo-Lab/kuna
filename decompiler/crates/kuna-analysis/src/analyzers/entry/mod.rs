@@ -131,6 +131,14 @@ impl AnalysisPass for EntryDiscoveryPass {
         // emits a degenerate function. The exact analog of `arm_markers`'
         // STT_FUNC-LSB → `TMode=1` paint, derived here from the GOT pointer LSB.
         out.context_paints = thumb_entry_paints(ctx.file);
+        // ARM Cortex-M: once a hardware vector table is confirmed, the whole image
+        // is Thumb-only (ARMv6/7/8-M has no A32 state), so region-paint `TMode=1`
+        // across every executable section. Per-entry paints are NOT enough here — a
+        // Thumb `BL` does not `globalset` the callee's decode mode, so a `main`
+        // reached only through the reset→main call tree would still decode as A32
+        // without the region paint. Empty on any non-Cortex-M ARM object (and every
+        // non-ARM arch); see `cortexm_thumb_paints`.
+        out.context_paints.extend(cortexm_thumb_paints(ctx.file));
         // Ghidra-faithful names for the dynamic INIT/FINI entries (oracle 2 only),
         // restricted to the VMAs that actually survived into `out.entries` (a named
         // entry already covered by a funcsym is filtered out above, so its name is
@@ -333,7 +341,21 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
             // Oracle 1: ELF entry point (e_entry). EntryPointAnalyzer external entry.
             let entry = file.entry();
             if entry != 0 {
-                cand.push(entry);
+                // ARM/Thumb: `e_entry` carries the Thumb mode bit in bit 0 (a Thumb
+                // `_start`/reset vector is recorded at `addr|1`); the function bytes
+                // live at the EVEN VMA — the odd address is undecodable. Mask it so
+                // the seed lands on the real instruction (the raw odd `entry` is kept
+                // for the libc-start idiom below, whose helpers mask internally). On a
+                // stripped Cortex-M image this ALSO unlocks the reset→main call tree:
+                // the even reset vector decodes (with the Thumb region paint from
+                // `cortexm_thumb_paints`) and the recursive-descent walk follows its
+                // `BL`s. Strictly-better on any ARM object; unchanged elsewhere.
+                let seed = if file.architecture() == object::Architecture::Arm {
+                    entry & !1
+                } else {
+                    entry
+                };
+                cand.push(seed);
             }
             // Oracle 2: DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables.
             cand.extend(dynamic_entry_points(file));
@@ -342,6 +364,16 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
             // Oracle 4: _start -> main via the libc-start idiom (arch-dispatched).
             if let Some(main) = libc_start_main_target(file, entry) {
                 cand.push(main);
+            }
+            // Oracle 6 (ARM Cortex-M): the reset + exception/IRQ handler pointers
+            // from an empirically-detected Cortex-M vector table. A stripped
+            // bare-metal firmware image carries no symbols, no `.eh_frame`, no libc
+            // idiom, and no `$t` markers — the hardware vector table at the start of
+            // the code section is the only entry source. ARM-gated; a strict no-op
+            // on any ARM object that does not present the exact table signature
+            // (see `cortexm_vector_entries` / `cortexm_vector_table`).
+            if file.architecture() == object::Architecture::Arm {
+                cand.extend(cortexm_vector_entries(file));
             }
         }
         // PE: entry (AddressOfEntryPoint+ImageBase), `.pdata` RUNTIME_FUNCTION
@@ -939,6 +971,168 @@ fn thumb_entry_paints(file: &object::File) -> Vec<ContextPaint> {
         }
     }
     out
+}
+
+// ===========================================================================
+// Oracle 6: ARM Cortex-M hardware vector table (bare-metal firmware discovery)
+// ===========================================================================
+
+// The ARMv6/7/8-M initial-SP word (vector table word 0) points at on-chip SRAM.
+// The Cortex-M memory map fixes SRAM to the 0x2000_0000..0x3FFF_FFFF region
+// (the "SRAM" and "SRAM bit-band" address blocks); a valid reset SP lives there.
+const CORTEXM_SRAM_LO: u64 = 0x2000_0000;
+const CORTEXM_SRAM_HI: u64 = 0x3FFF_FFFF;
+// Defensive upper bound on how many vector-table words we walk (a Cortex-M table
+// is tens-to-low-hundreds of entries; this caps a pathological all-conforming
+// region so the scan is always O(1)-bounded).
+const CORTEXM_MAX_VECTORS: usize = 1024;
+
+/// Detect an ARM Cortex-M hardware vector table *empirically* and return the
+/// executable section that carries it (`(sec_addr, sec_end, data)`).
+///
+/// A stripped bare-metal Cortex-M image has no symbols, no `.eh_frame`, no libc
+/// idiom, and no `$t` mapping symbols — nothing paints the Thumb decode mode and
+/// nothing seeds the handlers. The one invariant the hardware guarantees is the
+/// **vector table** at the base of the code section: on reset the CPU loads word 0
+/// into `SP` and word 1 (the reset vector) into `PC`. So the table is confirmed
+/// when, at the start of an executable section, `word[0]` is a plausible SRAM
+/// stack pointer (`0x2000_0000..=0x3FFF_FFFF`) AND `word[1] == e_entry` (the reset
+/// vector the ELF header also records). That two-word signature is specific enough
+/// that a non-Cortex-M ARM object (or any non-firmware image) does not match, so
+/// every downstream use is a strict no-op there.
+///
+/// ARM-gated (32-bit ARM ELF only); returns `None` on any other arch/format or
+/// when no executable section presents the signature.
+fn cortexm_vector_table(file: &object::File) -> Option<(u64, u64, Vec<u8>)> {
+    if file.architecture() != object::Architecture::Arm {
+        return None;
+    }
+    let entry = file.entry();
+    if entry == 0 {
+        return None;
+    }
+    let le = file.is_little_endian();
+    for (addr, hi, data) in executable_sections(file) {
+        if data.len() < 8 {
+            continue;
+        }
+        let sp = read_u32(&data[0..], le) as u64;
+        let reset = read_u32(&data[4..], le) as u64;
+        // word[0] = initial SP in SRAM; word[1] = reset vector == e_entry (both the
+        // Thumb-odd and even forms are accepted — `e_entry` carries the same LSB the
+        // reset word does, so a raw `==` matches).
+        if (CORTEXM_SRAM_LO..=CORTEXM_SRAM_HI).contains(&sp) && reset == entry {
+            return Some((addr, hi, data));
+        }
+    }
+    None
+}
+
+/// Oracle 6: harvest the reset + exception/IRQ handler pointers from a detected
+/// Cortex-M vector table as function-start seeds.
+///
+/// Starting at word 1 (word 0 is the initial SP, not a code pointer), each table
+/// slot is either `0` (an unused/reserved vector) or a **Thumb** handler pointer
+/// (odd, in an executable section). We harvest the masked (even) target of every
+/// odd, in-exec pointer and stop at the first slot that is neither `0` nor a valid
+/// handler — that is where the table ends and real code/data begins ("up to the
+/// start of code"). A `min_target` guard (never read past the lowest handler
+/// address) and [`CORTEXM_MAX_VECTORS`] bound the walk defensively. Zero and
+/// duplicate entries are skipped; the result is sorted/deduped.
+///
+/// ARM-gated via [`cortexm_vector_table`]; empty when no table is present. The
+/// harvested handlers usually collapse to a few unique addresses (bare-metal
+/// firmware points most vectors at a shared default handler), but they seed the
+/// recursive-descent walk (§1.6), which then follows their `BL`s to the rest.
+fn cortexm_vector_entries(file: &object::File) -> Vec<u64> {
+    let Some((sec_addr, _sec_end, data)) = cortexm_vector_table(file) else {
+        return Vec::new();
+    };
+    let le = file.is_little_endian();
+    let execs = executable_sections(file);
+    harvest_vector_words(sec_addr, &data, le, &|vma| in_executable_section(&execs, vma))
+}
+
+/// The pure vector-table harvest loop (testable without a full ELF): walk the
+/// table words starting at word 1, emitting the masked (even) target of every
+/// odd, in-executable Thumb handler pointer, skipping zero slots, and stopping at
+/// the first slot that is neither `0` nor a valid handler (the end of the table)
+/// or once the scan reaches the lowest handler address (start of code). `in_exec`
+/// answers "is this masked VMA in an executable section?". Sorted/deduped.
+fn harvest_vector_words(
+    sec_addr: u64,
+    data: &[u8],
+    le: bool,
+    in_exec: &dyn Fn(u64) -> bool,
+) -> Vec<u64> {
+    let mut out: Vec<u64> = Vec::new();
+    let mut min_target = u64::MAX;
+    let mut i = 1usize; // skip word 0 (the initial SP)
+    while i < CORTEXM_MAX_VECTORS {
+        let off = i * 4;
+        if off + 4 > data.len() {
+            break;
+        }
+        let vma = sec_addr + off as u64;
+        // Once the scan reaches the lowest handler address, the table has ended and
+        // we would be reading real instructions — stop ("up to the start of code").
+        if vma >= min_target {
+            break;
+        }
+        let word = read_u32(&data[off..], le) as u64;
+        i += 1;
+        if word == 0 {
+            // Reserved/unused vector slot: keep scanning (Cortex-M tables embed
+            // zeros between defined handlers).
+            continue;
+        }
+        // A Cortex-M handler is a Thumb function → an odd pointer into executable
+        // memory. Any other nonzero word is not a table entry: the table ended, so
+        // stop (a contiguous {zero | Thumb-handler} run defines the table).
+        let target = word & !1;
+        if word & 1 == 0 || !in_exec(target) {
+            break;
+        }
+        if target < min_target {
+            min_target = target;
+        }
+        out.push(target);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Decode-mode (`TMode`) region paints for a Cortex-M image: once a vector table
+/// is confirmed, paint `TMode=1` (Thumb) across **every executable section**.
+///
+/// ARMv6/7/8-M is a Thumb-only profile (it has no A32/ARM execution state), so the
+/// entire code image decodes as Thumb — a whole-section region paint is exactly
+/// correct. This is the region analog of [`thumb_entry_paints`]: a per-entry point
+/// paint is NOT sufficient, because a Thumb `BL` does not `globalset` the callee's
+/// decode mode, so a function reached only through the reset→main call tree would
+/// still decode as A32 without the region paint. Wired into both the analysis
+/// commit path (`EntryDiscoveryPass::run` → `context_paints`) and the Listing
+/// walk's [`crate::listing::context::ContextPainter`].
+///
+/// Empty on any ARM object without the vector-table signature (and every non-ARM
+/// arch), so it is a strict no-op outside stripped Cortex-M firmware.
+pub(crate) fn cortexm_thumb_paints(file: &object::File) -> Vec<ContextPaint> {
+    if cortexm_vector_table(file).is_none() {
+        return Vec::new();
+    }
+    // Paint each executable section as its own `[addr, end)` region. On Cortex-M
+    // every executable section is Thumb, so painting them all is correct (and the
+    // usual single `.text` is the common case).
+    executable_sections(file)
+        .into_iter()
+        .map(|(addr, hi, _data)| ContextPaint {
+            addr,
+            end: Some(hi),
+            var: "TMode",
+            value: 1,
+        })
+        .collect()
 }
 
 /// Build `got_slot_vma → relative_target_vma` from the dynamic `R_*_RELATIVE`
@@ -2127,6 +2321,33 @@ mod tests {
         assert_eq!(main, Some(0x4d8), "arm idiom should recover main at 0x4d8 (LSB masked)");
     }
 
+    /// ARM Cortex-M vector-table harvest (oracle 6): the pure harvest loop over a
+    /// synthetic table mimicking a stripped STM32 image — word 0 is the SRAM SP
+    /// (skipped), word 1 the odd reset vector, then handler pointers (with reserved
+    /// zeros embedded), then a non-conforming word (real code) that ends the table.
+    #[test]
+    fn cortexm_vector_harvest() {
+        let sec_addr = 0x0800_0000u64;
+        // exec range [0x08000000, 0x08000c00) — the button.elf-shaped `.text`.
+        let in_exec = |vma: u64| (0x0800_0000..0x0800_0c00).contains(&vma);
+        let mut buf: Vec<u8> = Vec::new();
+        let mut push = |w: u32| buf.extend_from_slice(&w.to_le_bytes());
+        push(0x2003_0000); // word 0: initial SP in SRAM (skipped)
+        push(0x0800_09a1); // word 1: reset vector (Thumb-odd → 0x080009a0)
+        push(0x0800_0a81); // handler (→ 0x08000a80)
+        push(0x0000_0000); // reserved slot (skipped, keeps scanning)
+        push(0x0800_0a79); // handler (→ 0x08000a78)
+        push(0x0800_0a81); // duplicate handler (deduped)
+        push(0x4711_b580); // NON-conforming (even / out of exec) → table ends here
+        push(0x0800_0123); // (unreached — after the break)
+        let out = harvest_vector_words(sec_addr, &buf, true, &in_exec);
+        assert_eq!(
+            out,
+            vec![0x0800_09a0, 0x0800_0a78, 0x0800_0a80],
+            "harvest: masked, sorted, deduped handlers up to the first non-table word"
+        );
+    }
+
     /// RISC-V: `_start` (0x550) loads `main` (0x608) into `a0` via
     /// `auipc a0,0x2 ; ld a0,-1318(a0)` → GOT slot 0x2030, whose
     /// `R_RISCV_RELATIVE` addend is 0x608.
@@ -2147,11 +2368,12 @@ mod tests {
     /// and is NOT covered by any pre-existing funcsym (the discovery property).
     #[test]
     fn collect_entries_crossarch_includes_main() {
-        // `want_entry` is the raw `e_entry` oracle-1 emits — ARM's is Thumb-odd
-        // (0x3dd); the `main` recovery still uses the even bytes.
+        // `want_entry` is the VMA oracle-1 emits — ARM's `e_entry` is Thumb-odd
+        // (0x3dd) but the seed is masked to the even decode address (0x3dc, oracle
+        // A); the `main` recovery independently uses the even bytes.
         for (name, want_entry, want_main) in [
             ("entrymain_aarch64", 0x600u64, 0x714u64),
-            ("entrymain_arm", 0x3dd, 0x4d8),
+            ("entrymain_arm", 0x3dc, 0x4d8),
             ("entrymain_riscv64", 0x550, 0x608),
         ] {
             let bytes = fixture(name);

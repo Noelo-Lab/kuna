@@ -1,5 +1,36 @@
 # kuna Progress Log
 
+## Session (2026-07-12) — Stripped ARM Cortex-M Thumb function discovery
+
+On a stripped bare-metal Cortex-M image kuna decoded everything in A32 (default
+`TMode=0`) and found only one function, because nothing painted Thumb (no
+`$t`/STT_FUNC markers, no libc idiom, and a tiny image yields no prologue seeds)
+and the ELF entry seed was the raw **odd** (undecodable) address. Three additive,
+ARM-gated changes in `kuna-analysis` (`analyzers/entry/mod.rs`, `listing/context.rs`)
+fix it — **always-on, no settable, no DIV** (the trigger is a confirmed Cortex-M
+hardware vector table, so it is a strict, closer-to-Ghidra discovery-correctness fix,
+never a broad default change; it is a no-op on x86-64 and on any ARM object without
+the vector-table signature):
+
+1. **(A) Mask the odd ARM `e_entry` LSB** in `collect_entries` oracle 1 (the Thumb
+   function lives at the even VMA). Also unlocks the reset→main call tree.
+2. **(B) New oracle `cortexm_vector_entries`** — detect the vector table empirically
+   (`word[0]` an SRAM stack pointer `0x2000_0000..=0x3FFF_FFFF`, `word[1] == e_entry`),
+   then harvest the odd Thumb handler pointers (LSB-masked) as function-start seeds.
+3. **(C) New `cortexm_thumb_paints`** — region-paint `TMode=1` across every executable
+   section once a table is confirmed (ARMv6/7/8-M is Thumb-only; a Thumb `BL` does not
+   `globalset` the callee mode, so `main` needs the region paint). Wired into both the
+   analysis commit path (`EntryDiscoveryPass::run`) and the Listing walk's `ContextPainter`.
+
+Results: libopencm3 `button` **1 → 31** functions (`main` @0x8000204 now decodes as a
+real Thumb body, not A32 garbage); betaflight STM32F405 **~1470 → 1830**. x86-64
+(`coreutils/ptx`) byte-identical (257). Gates: `make test` 675/675 PARITY OK,
+`test-stages` no new failures (the 3 pre-existing CATALOG #6/#7 + `ghangr-iteexpr`
+failures are identical on pristine `main`), `rust-test` green (existing
+`collect_entries_crossarch_includes_main` ARM expectation updated 0x3dd→0x3dc; new
+`cortexm_vector_harvest` unit test), `check-spec` green (spec §1.5 updated). Spec:
+`docs/spec/01-program-prep.md`.
+
 ## Session (2026-07-11) — `iteexpr`: computed-arm `?:` recovery (aggressive-mode readability)
 
 New option **`iteexpr`** (default-off, transform tier, settable 75→76 / transform 35→36) extends the
