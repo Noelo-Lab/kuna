@@ -201,6 +201,48 @@ fn arm_decompile_all_defaults_funcstart_patterns_on() {
     );
 }
 
+/// `decompile-all` on a non-x86-64 binary ALSO defaults the Aggressive Instruction
+/// Finder (`aif`) ON — the gap-walk that seeds the disconnected call-graph components
+/// (functions reached only via indirect calls / function-pointer tables, preceded by
+/// data/literal-pools so the `funcstart_patterns` `<patternpairs>` epilogue-prepattern
+/// never matches) that the prologue matcher + recursive-descent walk structurally miss
+/// (crazyflie cf2.elf 1430 -> 2700 functions, 45% -> 82% of angr's set).  This small
+/// fixture is too sparse for AIF's prologue-fingerprint histogram (`FINGERPRINT_THRESHOLD`)
+/// to add anything — the coverage win is on real firmware, verified on the decbench ARM
+/// projects — so here we assert the injection is WIRED and NON-DESTRUCTIVE: the default
+/// path equals an explicit `--option aif on` and never discovers fewer than `aif off`.
+#[test]
+fn arm_decompile_all_defaults_aif_on() {
+    let bin = arm_thumb();
+    let sp = specs();
+    let run = |extra: &[&str]| -> Option<usize> {
+        let mut args = vec!["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()];
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                return None;
+            }
+            panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
+        }
+        Some(json_count(&stdout).expect("count in json"))
+    };
+    let Some(default_cnt) = run(&[]) else {
+        eprintln!("arm aif default: skipping (no `.sla`; run `make specs`)");
+        return;
+    };
+    let off_cnt = run(&["--option", "aif", "off"]).expect("second run");
+    let on_cnt = run(&["--option", "aif", "on"]).expect("third run");
+    assert_eq!(
+        default_cnt, on_cnt,
+        "ARM default must equal explicit `aif on` (default={default_cnt}, on={on_cnt}) — the injection did not fire"
+    );
+    assert!(
+        default_cnt >= off_cnt,
+        "AIF must never discover FEWER than off (default={default_cnt}, off={off_cnt})"
+    );
+}
+
 /// The past-pathological function of the stripped-ELF hang repro now
 /// CONVERGES: `sub_1bd04` @ 0x1bd04 used to spin forever (100% CPU, no output)
 /// in a condconst↔lowered-switch-repair fixpoint tug-of-war

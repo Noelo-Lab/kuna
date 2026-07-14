@@ -352,6 +352,38 @@ fn load_program(args: &Args, default_listing: bool) -> Result<ConsoleProgram, St
         }
     }
 
+    // (kuna, decbench ARM) `funcstart_patterns` above only seeds a candidate when a matching
+    // EPILOGUE prepattern (Ghidra `<patternpairs>`) sits immediately before it, so ~70% of a
+    // stripped Cortex-M firmware's functions — those preceded by literal pools / data /
+    // padding and living in call-graph components reachable only through indirect calls /
+    // function-pointer tables — are never seeded, and the recursive-descent walk (direct
+    // CALL/BL only) structurally cannot reach them (crazyflie: 87% of the missed functions
+    // have NO direct-call edge from what kuna found).  The ported Aggressive Instruction
+    // Finder (`aif`, Ghidra `ArmAggressiveInstructionFinderAnalyzer`) gap-walks the UNDEFINED
+    // regions the walk left uncovered, gating each candidate on a prologue-fingerprint
+    // histogram learned from the already-discovered functions + `check_valid_subroutine`, so
+    // it bridges those disconnected components.  Default it ON for non-x86-64 on the
+    // `decompile-all` surface alongside `funcstart_patterns` (crazyflie cf2.elf 1430 -> 2700
+    // functions, 45% -> 82% of angr's discovered set), unless the caller named it.  x86-64
+    // keeps it OFF (the entry+prologue oracles suffice and the aggressive gap-walk can
+    // over-produce there); only this driver changes — the engine default (`analysis_aif =
+    // false`) and the console/datatest surfaces are untouched.  Extra non-ground-truth
+    // functions are harmless to the GED benchmark (it scores per ground-truth function, matched
+    // by name).  See DIV-20 (`docs/divergences.md`).
+    if default_listing && !args.options.iter().any(|(name, _)| name == "aif") {
+        let non_x86_64 = std::fs::read(&binary)
+            .ok()
+            .and_then(|b| {
+                object::File::parse(&*b).ok().map(|f| f.architecture() != object::Architecture::X86_64)
+            })
+            .unwrap_or(false);
+        if non_x86_64 {
+            prog.arch_mut()
+                .set_kuna_option("aif", "on")
+                .map_err(|e| format!("option aif: {}", e.explain()))?;
+        }
+    }
+
     // Analysis-/printer-tier `--option`s must be applied to the architecture
     // BEFORE the gated analysis commit (the `option` < `read symbols` ordering
     // the script path enforces), so a per-pass gate takes effect.
