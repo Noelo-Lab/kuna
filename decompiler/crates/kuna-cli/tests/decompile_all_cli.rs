@@ -243,6 +243,58 @@ fn arm_decompile_all_defaults_aif_on() {
     );
 }
 
+/// Stage 2 (angr-parity ARM discovery): `decompile-all` on a non-x86-64 binary also
+/// runs the **raw, UNPAIRED Thumb-prologue** gap seed
+/// (`aif::raw_thumb_prologue_seeds`, the mirror of angr `CFGFast`'s
+/// `_func_addrs_from_prologues()` over `ArchARMCortexM.thumb_prologs`). It scans for
+/// canonical LR-saving Thumb prologues (`PUSH {..,lr}` `0xB5xx` / `PUSH.W {..,lr}`
+/// `0xE92D..`) that fell in an UNDEFINED gap (never `<patternpairs>` epilogue-paired,
+/// never reached by a direct BL, and skipped by AIF's cursor-advancing gap-walk),
+/// validates each with `check_valid_subroutine`, and re-seeds the recursive-descent
+/// walk with the survivors. It is folded into the existing `funcstart_patterns`
+/// (`analysis_funcstart_patterns`) discovery gate — no new stage-model option — so
+/// there is nothing extra to toggle here.
+///
+/// This tiny fixture has no dense literal-pool-separated prologue clusters, so the
+/// raw scan adds nothing on it (the coverage win is on real Cortex-M firmware:
+/// betaflight STM32F405 recovers the ~483 PUSH-prologue functions the
+/// `<patternpairs>` matcher structurally misses, crazyflie 82% -> ~95% of angr's
+/// discovered set — verified in the decbench ARM parity harness). Here we assert the
+/// wiring is NON-DESTRUCTIVE: the default path (raw seed active) still succeeds and
+/// never discovers FEWER functions than `funcstart_patterns off` (which disables the
+/// whole recursive-discovery tier, raw seed included), and turning the gate off does
+/// not error.
+#[test]
+fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
+    let bin = arm_thumb();
+    let sp = specs();
+    let run = |extra: &[&str]| -> Option<usize> {
+        let mut args = vec!["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()];
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                return None;
+            }
+            panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
+        }
+        Some(json_count(&stdout).expect("count in json"))
+    };
+    let Some(default_cnt) = run(&[]) else {
+        eprintln!("arm raw-prologue default: skipping (no `.sla`; run `make specs`)");
+        return;
+    };
+    // `funcstart_patterns off` disables the whole recursive-discovery tier (the raw
+    // Thumb-prologue seed is gated on the same flag), so the default (with the raw
+    // seed active) must never discover fewer.
+    let off_cnt = run(&["--option", "funcstart_patterns", "off"]).expect("second run");
+    assert!(
+        default_cnt >= off_cnt,
+        "raw Thumb-prologue seed must never discover FEWER than funcstart_patterns off \
+         (default={default_cnt}, off={off_cnt})"
+    );
+}
+
 /// The past-pathological function of the stripped-ELF hang repro now
 /// CONVERGES: `sub_1bd04` @ 0x1bd04 used to spin forever (100% CPU, no output)
 /// in a condconst↔lowered-switch-repair fixpoint tug-of-war

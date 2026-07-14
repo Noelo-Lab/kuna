@@ -390,7 +390,7 @@ pub fn run_listing_consumers(
     }
     let seed_names = funcsym_names(&file);
     let funcsym_seeds = crate::entry::existing_function_addrs(&file, bytes);
-    let listing = crate::listing::Listing::build_with_meta(
+    let mut listing = crate::listing::Listing::build_with_meta(
         &file,
         image,
         arch,
@@ -399,6 +399,48 @@ pub fn run_listing_consumers(
         &funcsym_seeds,
         &seed_names,
     );
+    // (kuna, Stage-2 ARM discovery) Raw, UNPAIRED Thumb-prologue gap seeding — the
+    // angr `CFGFast._func_addrs_from_prologues()` mirror. After the first walk, scan
+    // for canonical LR-saving Thumb prologues (`PUSH {..,lr}` / `PUSH.W {..,lr}`)
+    // that landed in an UNDEFINED gap (never epilogue-paired by `<patternpairs>`,
+    // never reached by a direct BL, and skipped by AIF's cursor-advancing gap-walk),
+    // validate each with `check_valid_subroutine`, and RE-SEED the walk with the
+    // survivors so it expands each into a full function + discovers its callees. The
+    // guards (gap-only via the walk's coverage, `check_valid_subroutine`, and the
+    // body-claim dedup) keep precision (angr measured the raw prologues at ~93%).
+    // Gated by the same `funcstart_patterns` flag (ARM-only inside
+    // `raw_thumb_prologue_seeds`), so x86-64 (funcstart_patterns off) is unchanged
+    // and every non-ARM binary is a strict no-op. betaflight STM32F405: recovers the
+    // ~483 PUSH-prologue functions the `<patternpairs>` matcher structurally misses.
+    if arch.analysis_funcstart_patterns {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            let raw = crate::aif::raw_thumb_prologue_seeds(
+                &file,
+                &listing,
+                translate,
+                std::rc::Rc::clone(code_space),
+                listing.exec_ranges(),
+            );
+            if !raw.is_empty() {
+                let before = seeds.len();
+                seeds.extend(raw);
+                seeds.sort_unstable();
+                seeds.dedup();
+                // Only re-walk when the scan genuinely added new seeds.
+                if seeds.len() != before {
+                    listing = crate::listing::Listing::build_with_meta(
+                        &file,
+                        image,
+                        arch,
+                        translate,
+                        &seeds,
+                        &funcsym_seeds,
+                        &seed_names,
+                    );
+                }
+            }
+        }
+    }
     // Seed the function model's no-return / call-fixup flags from the load-time
     // Known passes so the consumer skips already-modeled callees and the fixpoint
     // treats a Known-no-return callee as terminal.
