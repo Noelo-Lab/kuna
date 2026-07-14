@@ -474,6 +474,133 @@ fn probe_gap_start(
     check_valid_subroutine(decoder, listing, gap_start, gap_start, gap_hi)
 }
 
+// ===========================================================================
+// Stage 2: raw, UNPAIRED Thumb-prologue gap seeding (angr-style)
+// ===========================================================================
+
+/// (kuna, Stage-2 ARM discovery) The **raw, UNPAIRED Thumb-prologue seed** scan —
+/// the kuna analog of angr's `CFGFast._func_addrs_from_prologues()`
+/// (`angr/analyses/cfg/cfg_fast.py:2607`) over `ArchARMCortexM.thumb_prologs`
+/// (`archinfo/arch_arm.py:401`: `{rb"[\x00-\xff]\xb5", rb"\x2d\xe9[\x00-\xff][\x00-\xff]"}`).
+///
+/// # Why this exists (the dense-binary residual after AIF)
+///
+/// `funcstart_patterns` seeds a candidate only when a Ghidra `<patternpairs>`
+/// EPILOGUE prepattern sits immediately before it, so a function preceded by a
+/// literal pool / data / padding is never seeded; the recursive-descent walk
+/// (direct `BL` only) cannot reach a function in a call-graph component reachable
+/// only through indirect calls / pointer tables; and AIF's fingerprint gap-walk,
+/// which advances its cursor past each accepted body, skips dense back-to-back
+/// prologue clusters. The residual — measured on betaflight STM32F405 as ~483
+/// ground-truth functions that START WITH A CANONICAL THUMB PUSH — all begin with
+/// `PUSH {..,lr}` (`0xB5xx`) or `PUSH.W {..,lr}` (`0xE92D..`).
+///
+/// angr recovers exactly these by seeding EVERY prologue byte-pattern directly,
+/// with NO epilogue/prepattern/fingerprint requirement (`finditer` over exec
+/// memory at 2-byte alignment, seeds `position | 1`). This mirrors that: scan
+/// every executable section at 2-byte alignment for the two canonical LR-saving
+/// Thumb prologues and seed each match that survives the precision guards.
+///
+/// # Precision (angr measured the raw prologues at ~93%; the guards close the gap)
+///
+///  1. **gap-only** — a candidate already covered by the walk
+///     ([`Listing::is_undefined`] is false — it is an instruction start OR an
+///     instruction interior) is skipped, so a prologue-shaped byte-pair inside a
+///     discovered body never splits it. This IS the reuse of the walk's `covered`
+///     RangeList (via the Listing's code-unit partition).
+///  2. **`check_valid_subroutine`** — the SAME validity predicate AIF uses
+///     ([`check_valid_subroutine`]): the candidate must speculatively decode (in
+///     the already-painted Thumb `TMode`, `cortexm_thumb_paints`) into a valid
+///     subroutine (> 2 instructions, reaches a clean RET / computed jump /
+///     adds-info call, no undecodable byte, no out-of-image flow).
+///  3. **body-claim dedup** — candidates are processed in ascending address order
+///     and each accepted routine's body is `claimed` (the same `claimed` guard
+///     [`run_aif`] uses), so a prologue-shaped byte-pair in the interior of an
+///     already-accepted lower-address routine is skipped.
+///
+/// ARM-gated (`0xB5xx`/`0xE92D` are Thumb encodings): a strict no-op on every
+/// non-ARM object. The result is the accepted prologue VMAs, address-sorted, ready
+/// to feed the recursive-descent walk as ADDITIONAL seeds (parallel to
+/// `full_pattern_starts`), so the walk expands each into a full function and
+/// discovers its callees. Gated end-to-end by the same `funcstart_patterns`
+/// (`analysis_funcstart_patterns`) discovery flag its caller checks — no new
+/// stage-model option — so x86-64 / console / datatest are byte-identical.
+pub fn raw_thumb_prologue_seeds(
+    file: &object::File,
+    listing: &Listing,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+    exec_ranges: &[(u64, u64)],
+) -> Vec<u64> {
+    use object::read::Object;
+    // `0xB5xx` / `0xE92D` are Thumb (16-/32-bit) encodings; meaningless on any
+    // other architecture. On a confirmed Cortex-M image the whole exec region is
+    // painted `TMode=1` (`cortexm_thumb_paints`), so the speculative decode below
+    // is Thumb.
+    if file.architecture() != object::Architecture::Arm {
+        return Vec::new();
+    }
+
+    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    let mut accepted: BTreeSet<u64> = BTreeSet::new();
+    let mut claimed: BTreeSet<u64> = BTreeSet::new();
+
+    // Address-ordered scan (executable_sections is address-sorted upstream), so the
+    // `claimed` body-dedup sees a real function's entry before any prologue-shaped
+    // byte-pair in its interior.
+    for (sec_addr, _sec_hi, data) in crate::entry::executable_sections(file) {
+        // Snap to the first even (2-byte-aligned) VMA in the section, then stride
+        // by two — the Thumb instruction alignment (and angr's finditer stride).
+        let mut off = (sec_addr as usize) & 1;
+        while off + 1 < data.len() {
+            if is_thumb_lr_prologue(&data, off) {
+                let vma = sec_addr + off as u64;
+                // gap-only + not already inside an accepted routine.
+                if listing.is_undefined(vma) && !claimed.contains(&vma) {
+                    let gap_hi = listing.next_instruction_start_after(vma).unwrap_or(u64::MAX);
+                    if let Some(body) =
+                        check_valid_subroutine(&mut decoder, listing, vma, vma, gap_hi)
+                    {
+                        accepted.insert(vma);
+                        claimed.extend(body);
+                    }
+                }
+            }
+            off += 2;
+        }
+    }
+
+    accepted.into_iter().collect()
+}
+
+/// True iff the 2 (or 4) bytes at `data[off..]` are a canonical **LR-saving Thumb
+/// prologue** — `PUSH {..,lr}` (16-bit `0xB5xx`) or `PUSH.W {..,lr}` (32-bit
+/// `0xE92D..` with the LR bit). Little-endian (Cortex-M).
+///
+/// - `PUSH {registers, lr}` T1: `1011 0101 <register_list:8>` = halfword `0xB5xx`,
+///   stored little-endian as bytes `[xx, 0xB5]` — so `data[off+1] == 0xB5`
+///   (angr's `rb"[\x00-\xff]\xb5"`).
+/// - `PUSH.W {registers, lr}` T2 (`STMDB SP!`): first halfword `0xE92D` stored as
+///   `[0x2D, 0xE9]`; the second halfword's bit 14 is `M` (LR). Requiring the LR bit
+///   (`data[off+3] & 0x40`, bit 14 lives in the high byte of the 2nd halfword)
+///   keeps a non-LR `STMDB SP!` (a mid-function register spill, not a prologue) out
+///   — the precision refinement over angr's unconditional
+///   `rb"\x2d\xe9[\x00-\xff][\x00-\xff]"`.
+fn is_thumb_lr_prologue(data: &[u8], off: usize) -> bool {
+    if off + 1 >= data.len() {
+        return false;
+    }
+    // PUSH {..,lr} — 16-bit.
+    if data[off + 1] == 0xB5 {
+        return true;
+    }
+    // PUSH.W {..,lr} — 32-bit, require the second halfword's LR bit.
+    data[off] == 0x2D
+        && data[off + 1] == 0xE9
+        && off + 3 < data.len()
+        && (data[off + 3] & 0x40) != 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,6 +623,27 @@ mod tests {
         let p = AggressiveInstructionFinderPass;
         assert_eq!(p.id(), "aif");
         assert_eq!(p.phase(), Phase::P1);
+    }
+
+    #[test]
+    fn thumb_lr_prologue_matcher() {
+        // PUSH {r4,lr} = 0xB510 -> LE bytes [0x10, 0xB5]; the second byte 0xB5 is
+        // the discriminant (angr's `[\x00-\xff]\xb5`).
+        assert!(is_thumb_lr_prologue(&[0x10, 0xB5], 0));
+        assert!(is_thumb_lr_prologue(&[0xF0, 0xB5], 0)); // PUSH {r4-r7,lr}
+        assert!(is_thumb_lr_prologue(&[0x00, 0xB5], 0)); // PUSH {lr}
+        // PUSH.W {..,lr} = 0xE92D 0x4???  -> LE bytes [0x2D,0xE9, lo, hi] with the
+        // LR bit (bit 14) set in `hi` (0x40).  0xE92D4800 = PUSH.W {r11,lr}.
+        assert!(is_thumb_lr_prologue(&[0x2D, 0xE9, 0x00, 0x48], 0));
+        assert!(is_thumb_lr_prologue(&[0x2D, 0xE9, 0xF0, 0x4F], 0)); // {r4-r11,lr}
+        // A non-LR STMDB SP! (0xE92D 0x0???) is NOT a prologue — no LR bit.
+        assert!(!is_thumb_lr_prologue(&[0x2D, 0xE9, 0x00, 0x0F], 0));
+        // Random bytes / not-a-prologue.
+        assert!(!is_thumb_lr_prologue(&[0x00, 0x00], 0));
+        assert!(!is_thumb_lr_prologue(&[0xB5, 0x10], 0)); // 0xB5 in the wrong (low) byte
+        // Bounds: too short for a 32-bit check falls back to the 16-bit test.
+        assert!(!is_thumb_lr_prologue(&[0x2D, 0xE9], 0)); // no 2nd halfword => reject
+        assert!(!is_thumb_lr_prologue(&[0x2D], 0));
     }
 
     #[test]
