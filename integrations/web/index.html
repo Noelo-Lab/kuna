@@ -86,7 +86,7 @@
   </aside>
   <div style="min-width:0; display:flex; flex-direction:column;">
     <div id="empty">
-      Load an <b>x86-64</b> or <b>AArch64</b> ELF binary to decompile it — entirely in this browser tab.<br />
+      Load any <b>ELF, PE, or Mach-O</b> binary to decompile it — entirely in this browser tab.<br />
       The engine (Ghidra's decompiler, ported to Rust) runs as WebAssembly; your file never leaves the page.
     </div>
     <pre id="code" hidden></pre>
@@ -109,7 +109,7 @@
   let kuna = null;
   try {
     kuna = await loadKuna({ wasmUrl: './kuna_wasm.wasm', specRoot: './specs' });
-    setStatus('ready — load an x86-64 or AArch64 ELF', 'ok');
+    setStatus('ready — load an ELF, PE, or Mach-O binary', 'ok');
     pickEl.removeAttribute('aria-disabled');
   } catch (e) {
     setStatus('failed to load decompiler: ' + e.message, 'err');
@@ -120,8 +120,8 @@
     const f = fileEl.files[0];
     if (!f || !kuna) return;
     const bytes = new Uint8Array(await f.arrayBuffer());
-    const arch = kuna.archName(bytes);
-    setStatus(`decompiling ${f.name} (${arch || '?'}, ${bytes.length.toLocaleString()} bytes)…`);
+    const fmt = kuna.formatName(bytes);
+    setStatus(`decompiling ${f.name} (${fmt}, ${bytes.length.toLocaleString()} bytes)…`);
     listEl.innerHTML = ''; codeEl.hidden = true; emptyEl.hidden = false;
     await new Promise((r) => requestAnimationFrame(r)); // let the status paint
 
@@ -136,7 +136,7 @@
     }
     const dt = Math.round(performance.now() - t0);
     const funcs = result.functions.filter((fn) => fn.code || fn.error);
-    setStatus(`${f.name} (${arch}): ${funcs.length} functions in ${dt} ms`, 'ok');
+    setStatus(`${f.name} (${fmt}): ${funcs.length} functions in ${dt} ms`, 'ok');
     headEl.textContent = `${funcs.length} functions`;
 
     funcs.forEach((fn, i) => {

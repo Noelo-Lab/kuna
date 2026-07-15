@@ -42,6 +42,11 @@ const FIXTURES = [
     arch: 'aarch64',
     cases: [['list'], ['decompile'], ['decompile', 'sum_to'], ['decompile', 'add']],
   },
+  {
+    fixture: join(here, 'fixtures/sample_macho.o'),
+    arch: 'macho-x86-64',
+    cases: [['list'], ['decompile'], ['decompile', '_add']],
+  },
 ];
 
 function fail(msg) { console.error(`\x1b[31mFAIL\x1b[0m ${msg}`); process.exit(1); }
