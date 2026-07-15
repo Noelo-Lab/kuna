@@ -806,7 +806,22 @@ impl<'a> ParserWalkerChange<'a> {
             return Err(KunaError::lowlevel("SLEIGH parser out of state space"));
         }
         if self.ctx.alloc < 0 {
+            // C++ `ParserContext::expandState` does `state.insert(state.begin(),
+            // amount, ...)`, front-inserting `amount` nodes. In C++ the walker's
+            // `point`/`parent`/`resolve`/`base_state` are raw pointers into the
+            // heap `ConstructState` objects, so this vector reshuffle never
+            // invalidates them. kuna models those references as Vec indices, so
+            // `expand_state` already rebases the ones it owns (parent/resolve/
+            // base_state/alloc) by `amount`. The live walker cursor `self.cur.
+            // point` is the one index it can't reach — rebase it here so the
+            // in-progress parse (deep operand trees, e.g. ARM NEON `{d16-d31}`
+            // reg lists) keeps pointing at the same node after the growth.
+            let before = self.ctx.state.len();
             self.ctx.expand_state(STATE_GROWTH);
+            let amount = self.ctx.state.len() - before;
+            if let Some(p) = self.cur.point {
+                self.cur.point = Some(p + amount);
+            }
         }
         let opstate = self.ctx.alloc as usize;
         self.ctx.alloc -= 1;
