@@ -601,6 +601,186 @@ fn is_thumb_lr_prologue(data: &[u8], off: usize) -> bool {
         && (data[off + 3] & 0x40) != 0
 }
 
+// ===========================================================================
+// Stage 3: code-pointer-table (vtable / callback / ISR-handler) gap seeding
+// ===========================================================================
+
+/// (kuna, Stage-3 ARM discovery) The **code-pointer-table seed** scan — the kuna
+/// analog of Ghidra's reference-based function discovery (`ArmThumbFunctionTableScript`
+/// / the loader's data-pointer markup) and angr's `_seg_list` pointer scanning over
+/// `.data`/`.rodata`/`.text`.
+///
+/// # Why this exists (the frameless-callback residual after Stages 1-2)
+///
+/// Stages 1-2 seed the recursive-descent walk from `<patternpairs>` epilogue-paired
+/// starts and from canonical LR-saving Thumb prologues (`PUSH {..,lr}` /
+/// `PUSH.W {..,lr}`), and the walk follows every *direct* `BL`/`BLX <imm>`. That
+/// covers the whole statically-reachable + canonical-prologue population. The residual
+/// is functions reachable ONLY through an indirect / data path — their address is
+/// stored (Thumb-bit set) in a function-pointer **table** (an RTOS command/vtable, a
+/// driver op-struct, a Cortex-M exception vector) and reached via `BLX <reg>` /
+/// `LDR pc,[..]`, so no static CALL edge and no epilogue-pair points at them, and
+/// their prologue may be a bare `SUB SP,#imm` / `PUSH {..}` (no LR) / `VPUSH` that
+/// the LR-only Stage-2 matcher structurally skips.
+///
+/// # Mechanism (measured across cf2 / usart-stdio / betaflight: +12 real, 0 false)
+///
+/// Scan every allocated section at 4-byte alignment for a word whose value, with the
+/// Thumb bit cleared, points into an executable range (a code pointer). For each such
+/// target that survives the precision guards, seed it as a function. The corroborating
+/// **code-pointer reference** is what lets this safely admit a non-LR-push prologue
+/// that Stage-2 conservatively rejects.
+///
+/// # Precision — the triple signal (why this stays at ~100% and never chases the
+/// angr-over-discovery trap, e.g. crazyflie's descriptor table @0x8075xxx that
+/// force-complete-scan misreads as functions)
+///
+///  1. **gap-only** ([`Listing::is_undefined`]) + **body-claim dedup** — a target
+///     already covered by the walk, or inside an already-accepted Stage-3 body, is
+///     skipped (never split a discovered function). Same guards as Stages 1-2.
+///  2. **stack-frame prologue** ([`is_thumb_function_prologue`]) — the target's first
+///     bytes must be a frame-establishing Thumb prologue (`PUSH`/`PUSH.W`/`SUB SP`/
+///     `SUB.W SP`/`VPUSH`/`STMDB SP!`). A data word that coincidentally points into a
+///     code gap almost never lands on a prologue; the pointed-to bytes of a real
+///     function entry (nearly) always do.
+///  3. **`check_valid_subroutine`** — the SAME validity predicate Stages 1-2 use: the
+///     candidate must speculatively decode (in the painted Thumb `TMode`) into a valid
+///     subroutine (> 2 instructions, reaches a clean RET / computed jump / adds-info
+///     call, no undecodable byte, no out-of-image flow).
+///
+/// ARM-gated (Thumb code pointers): a strict no-op on every non-ARM object. The result
+/// is the accepted target VMAs, address-sorted, fed to the recursive-descent walk as
+/// ADDITIONAL seeds (parallel to Stages 1-2), so the walk expands each into a full
+/// function and discovers its callees. Gated end-to-end by the same
+/// `funcstart_patterns` discovery flag its caller checks — no new stage-model option —
+/// so x86-64 / console / datatest are byte-identical.
+pub fn code_pointer_table_seeds(
+    file: &object::File,
+    listing: &Listing,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+    exec_ranges: &[(u64, u64)],
+) -> Vec<u64> {
+    use object::read::Object;
+    use object::read::ObjectSection;
+    // Thumb code pointers are an ARM-only notion; a strict no-op elsewhere.
+    if file.architecture() != object::Architecture::Arm {
+        return Vec::new();
+    }
+    let little = file.is_little_endian();
+
+    // Executable section bytes, for the prologue byte-check of a pointer target.
+    let execs = crate::entry::executable_sections(file);
+    let exec_bytes_at = |vma: u64, n: usize| -> Option<Vec<u8>> {
+        for &(lo, hi, ref data) in &execs {
+            if vma >= lo && vma < hi {
+                let off = (vma - lo) as usize;
+                if off + n <= data.len() {
+                    return Some(data[off..off + n].to_vec());
+                }
+                return None;
+            }
+        }
+        None
+    };
+    let in_exec = |vma: u64| exec_ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi);
+
+    // Collect candidate targets: 4-byte-aligned code pointers (Thumb bit set) in any
+    // allocated section, address-sorted + deduped. Address order lets the `claimed`
+    // body-dedup see a real entry before a pointer into its interior.
+    let mut candidates: BTreeSet<u64> = BTreeSet::new();
+    for sec in file.sections() {
+        let sec_addr = sec.address();
+        if sec_addr == 0 {
+            continue;
+        }
+        let Ok(data) = sec.data() else { continue };
+        // Snap to the first 4-aligned VMA in the section, then stride by four.
+        let mut off = (4 - (sec_addr as usize & 3)) & 3;
+        while off + 4 <= data.len() {
+            let w = if little {
+                u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+            } else {
+                u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+            } as u64;
+            // A Thumb function pointer has bit 0 set and points into executable memory.
+            if (w & 1) != 0 && in_exec(w & !1) {
+                candidates.insert(w & !1);
+            }
+            off += 4;
+        }
+    }
+
+    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    let mut accepted: BTreeSet<u64> = BTreeSet::new();
+    let mut claimed: BTreeSet<u64> = BTreeSet::new();
+
+    for target in candidates {
+        // gap-only + not already inside an accepted Stage-3 routine.
+        if !listing.is_undefined(target) || claimed.contains(&target) {
+            continue;
+        }
+        // The pointed-to entry must begin with a stack-frame prologue (the precision
+        // signal that separates a real function pointer from a coincidental code
+        // pointer / mid-function label / misread data descriptor).
+        let Some(bytes) = exec_bytes_at(target, 4) else { continue };
+        if !is_thumb_function_prologue(&bytes) {
+            continue;
+        }
+        let gap_hi = listing.next_instruction_start_after(target).unwrap_or(u64::MAX);
+        if let Some(body) = check_valid_subroutine(&mut decoder, listing, target, target, gap_hi) {
+            accepted.insert(target);
+            claimed.extend(body);
+        }
+    }
+
+    accepted.into_iter().collect()
+}
+
+/// True iff the bytes at `data[0..]` are a canonical **stack-frame-establishing Thumb
+/// prologue** — a broader set than [`is_thumb_lr_prologue`] (which requires the LR
+/// bit), admissible here only because a corroborating code-pointer reference already
+/// vouches for the target (see [`code_pointer_table_seeds`]). Little-endian (Cortex-M);
+/// big-endian ARM would byte-swap, but Cortex-M is LE and this is the gated target.
+///
+/// Recognized entry prologues (first halfword):
+///  - `PUSH {registers}` T1: `0xB4xx`/`0xB5xx` (with or without LR) — stored LE as
+///    `[xx, 0xB4|0xB5]`, so `data[1] ∈ {0xB4, 0xB5}`.
+///  - `SUB SP, SP, #imm` T1: `1011 0000 1 imm7` = `0xB0(0x80|imm7)` — `data[1]==0xB0`
+///    with `data[0]` bit 7 set (the frame-allocation form, not `ADD SP`).
+///  - `PUSH.W {registers}` / `STMDB SP!` T2: `0xE92D..` — LE `[0x2D, 0xE9, ..]`.
+///  - `VPUSH {..}` T2: `0xED2D..` — LE `[0x2D, 0xED, ..]`.
+///  - `SUB.W SP, SP, #imm` T2/T3: `0xF1AD..`/`0xF2AD..` — LE `[0xAD, 0xF1|0xF2, ..]`.
+fn is_thumb_function_prologue(data: &[u8]) -> bool {
+    if data.len() < 2 {
+        return false;
+    }
+    // PUSH {..} (16-bit): 0xB4xx / 0xB5xx.
+    if data[1] == 0xB4 || data[1] == 0xB5 {
+        return true;
+    }
+    // SUB SP, SP, #imm (16-bit): 0xB0 with the imm7 form bit (bit 7 of the low byte).
+    if data[1] == 0xB0 && (data[0] & 0x80) != 0 {
+        return true;
+    }
+    if data.len() < 4 {
+        return false;
+    }
+    // PUSH.W {..} / STMDB SP! (32-bit): first halfword 0xE92D.
+    if data[0] == 0x2D && data[1] == 0xE9 {
+        return true;
+    }
+    // VPUSH {..} (32-bit): first halfword 0xED2D.
+    if data[0] == 0x2D && data[1] == 0xED {
+        return true;
+    }
+    // SUB.W SP, SP, #imm (32-bit): first halfword 0xF1AD / 0xF2AD.
+    if data[0] == 0xAD && (data[1] == 0xF1 || data[1] == 0xF2) {
+        return true;
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,6 +824,28 @@ mod tests {
         // Bounds: too short for a 32-bit check falls back to the 16-bit test.
         assert!(!is_thumb_lr_prologue(&[0x2D, 0xE9], 0)); // no 2nd halfword => reject
         assert!(!is_thumb_lr_prologue(&[0x2D], 0));
+    }
+
+    #[test]
+    fn thumb_function_prologue_matcher() {
+        // PUSH {r4,lr} = 0xB510 -> LE [0x10,0xB5]; PUSH {r4} (no LR) = 0xB410.
+        assert!(is_thumb_function_prologue(&[0x10, 0xB5]));
+        assert!(is_thumb_function_prologue(&[0x10, 0xB4])); // push without LR (Stage-2 skips this)
+        // SUB SP,SP,#8 = 0xB082 -> LE [0x82,0xB0]; the imm7-form bit (0x80) is set.
+        assert!(is_thumb_function_prologue(&[0x82, 0xB0]));
+        assert!(is_thumb_function_prologue(&[0x84, 0xB0])); // SUB SP,#0x10
+        // ADD SP,SP,#imm = 0xB0(0x00|imm7) has bit7 CLEAR -> not a frame prologue.
+        assert!(!is_thumb_function_prologue(&[0x02, 0xB0]));
+        // PUSH.W {..} = 0xE92D.. ; VPUSH = 0xED2D.. ; SUB.W SP = 0xF1AD/0xF2AD.
+        assert!(is_thumb_function_prologue(&[0x2D, 0xE9, 0x00, 0x48]));
+        assert!(is_thumb_function_prologue(&[0x2D, 0xED, 0x04, 0x8B])); // vpush {d8}
+        assert!(is_thumb_function_prologue(&[0xAD, 0xF1, 0x08, 0x0D])); // sub.w sp,sp,#8
+        assert!(is_thumb_function_prologue(&[0xAD, 0xF2, 0x08, 0x0D]));
+        // Non-prologues.
+        assert!(!is_thumb_function_prologue(&[0x00, 0x00]));
+        assert!(!is_thumb_function_prologue(&[0xB5, 0x10])); // 0xB5 in the wrong byte
+        assert!(!is_thumb_function_prologue(&[0x2D, 0xE9])); // truncated 32-bit -> reject
+        assert!(!is_thumb_function_prologue(&[0x2D]));
     }
 
     #[test]
