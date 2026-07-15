@@ -16,24 +16,16 @@ DIST="$HERE/dist"
 PROFILE="release"
 TARGET="wasm32-wasip1"
 
-# The minimal SLEIGH set per shipped architecture (default language, gcc/ELF) —
-# each verified byte-identical to the full 29 MB spec tree. Keep in sync with the
-# ARCHES manifests in kuna-web.js. To support another arch, add its files here
-# (or copy its whole `.../languages/` dir) and add a manifest in kuna-web.js.
-SPEC_FILES=(
-  # x86-64 (ELF e_machine 0x3e)
-  "Ghidra/Processors/x86/data/languages/x86.ldefs"
-  "Ghidra/Processors/x86/data/languages/x86-64.sla"
-  "Ghidra/Processors/x86/data/languages/x86-64.pspec"
-  "Ghidra/Processors/x86/data/languages/x86-64-gcc.cspec"
-  "Ghidra/Processors/x86/data/languages/x86-64.dwarf"
-  # AArch64 (ELF e_machine 0xb7)
-  "Ghidra/Processors/AARCH64/data/languages/AARCH64.ldefs"
-  "Ghidra/Processors/AARCH64/data/languages/AARCH64.sla"
-  "Ghidra/Processors/AARCH64/data/languages/AARCH64.pspec"
-  "Ghidra/Processors/AARCH64/data/languages/AARCH64.cspec"
-  "Ghidra/Processors/AARCH64/data/languages/AARCH64.dwarf"
-)
+# The demo supports WHATEVER THE CLI SUPPORTS — every format (ELF/PE/Mach-O/COFF)
+# and every architecture kuna ships a `.sla` for — with no per-arch manifest. The
+# engine resolves the language for any binary; the browser preloads the small
+# runtime files (the ~1.7 MB of `.ldefs`/`.pspec`/`.cspec`/`.dwarf`, which lets
+# the engine resolve ANY binary) and lazily fetches just the one resolved `.sla`
+# on demand. So we ship the full RUNTIME spec tree (not the `.sinc`/`.slaspec`
+# SLEIGH *source*, which the decompiler never reads) plus a preload bundle of the
+# small files. See docs/web-integration.md §3.
+RUNTIME_EXTS=(ldefs pspec cspec dwarf sla)   # what the decompiler actually reads
+SMALL_EXTS=(ldefs pspec cspec dwarf)          # everything but the big .sla (preloaded)
 
 echo ">> checking toolchain"
 command -v cargo >/dev/null || { echo "error: cargo not found"; exit 1; }
@@ -62,21 +54,48 @@ else
   cp "$WASM" "$DIST/kuna_wasm.wasm"
 fi
 
-echo ">> copying SLEIGH specs (x86-64)"
-for f in "${SPEC_FILES[@]}"; do
-  src="$REPO/specs/$f"
-  if [ ! -f "$src" ]; then
-    echo "error: missing spec $src"
-    echo "       run 'make specs' at the repo root first (the .sla are built artifacts)."
-    exit 1
-  fi
-  mkdir -p "$DIST/specs/$(dirname "$f")"
-  cp "$src" "$DIST/specs/$f"
-done
+# Sanity: the .sla are built artifacts — fail early with a helpful message.
+if [ -z "$(find "$REPO/specs" -name '*.sla' -print -quit)" ]; then
+  echo "error: no .sla found under $REPO/specs"
+  echo "       run 'make specs' at the repo root first (the .sla are built artifacts)."
+  exit 1
+fi
+
+echo ">> copying the full runtime SLEIGH tree (all formats/arches; lazy-fetched)"
+find_expr=()
+for e in "${RUNTIME_EXTS[@]}"; do find_expr+=(-name "*.$e" -o); done
+unset 'find_expr[${#find_expr[@]}-1]'   # drop trailing -o
+( cd "$REPO/specs" && find . \( "${find_expr[@]}" \) -type f -print0 ) \
+  | ( cd "$REPO/specs" && rsync -q --files-from=- -0 . "$DIST/specs/" 2>/dev/null ) \
+  || {  # rsync may be absent — fall back to cp
+    ( cd "$REPO/specs" && find . \( "${find_expr[@]}" \) -type f -print0 \
+      | while IFS= read -r -d '' f; do mkdir -p "$DIST/specs/$(dirname "$f")"; cp "$f" "$DIST/specs/$f"; done )
+  }
+
+echo ">> building the small-files preload bundle (specs-small.json)"
+small_find=()
+for e in "${SMALL_EXTS[@]}"; do small_find+=(-name "*.$e" -o); done
+unset 'small_find[${#small_find[@]}-1]'
+SPECS_DIR="$REPO/specs" DEST="$DIST/specs-small.json" python3 - "${SMALL_EXTS[@]}" <<'PY'
+import os, sys, json, base64
+root = os.environ["SPECS_DIR"]; dest = os.environ["DEST"]; exts = set("." + e for e in sys.argv[1:])
+out = {}
+for dp, _, fns in os.walk(root):
+    for fn in fns:
+        if os.path.splitext(fn)[1] in exts:
+            p = os.path.join(dp, fn)
+            rel = os.path.relpath(p, root).replace(os.sep, "/")
+            with open(p, "rb") as f:
+                out[rel] = base64.b64encode(f.read()).decode("ascii")
+with open(dest, "w") as f:
+    json.dump(out, f, separators=(",", ":"))
+print(f"   {len(out)} small files bundled -> {os.path.relpath(dest, os.path.dirname(dest))}")
+PY
 
 WSZ=$(du -h "$DIST/kuna_wasm.wasm" | cut -f1)
 SSZ=$(du -sh "$DIST/specs" | cut -f1)
-echo ">> done. dist/ ready (wasm $WSZ, specs $SSZ)."
+BSZ=$(du -h "$DIST/specs-small.json" | cut -f1)
+echo ">> done. dist/ ready (wasm $WSZ, specs $SSZ on-server, preload bundle $BSZ)."
 echo "   serve it:  (cd '$DIST' && python3 -m http.server 8000)  then open http://localhost:8000"
 
 if [ "${1:-}" = "--serve" ]; then

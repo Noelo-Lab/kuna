@@ -2,8 +2,10 @@ name: Deploy web demo to GitHub Pages
 
 # Builds the in-browser (WebAssembly) decompiler demo — integrations/web —
 # and publishes it to GitHub Pages. The engine runs entirely client-side; the
-# deployed site is a static bundle (page + glue + WASI shim + wasm + x86-64
-# SLEIGH specs), so nothing talks to a backend. See docs/web-integration.md.
+# deployed site is a static bundle (page + glue + WASI shim + wasm + the full
+# runtime SLEIGH tree, lazily fetched), so nothing talks to a backend and it
+# decompiles whatever the CLI supports (ELF/PE/Mach-O, all arches). See
+# docs/web-integration.md.
 
 on:
   # Redeploy when the demo, the engine, or the vendored specs change.
@@ -52,17 +54,13 @@ jobs:
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get update && sudo apt-get install -y binaryen
 
-      # build.sh copies each shipped arch's .sla (gitignored build artifacts).
-      # Compiling just the demo's slaspecs (~0.7s each) is far cheaper than
-      # `make specs` (the whole tree). Keep this list in sync with the arches
-      # integrations/web/build.sh copies (x86-64 + AArch64).
-      - name: Build the SLEIGH compiler and the demo specs (x86-64 + AArch64)
-        run: |
-          cargo build --release -p kuna-slacomp --manifest-path decompiler/Cargo.toml
-          ./decompiler/target/release/slacomp \
-            specs/Ghidra/Processors/x86/data/languages/x86-64.slaspec
-          ./decompiler/target/release/slacomp \
-            specs/Ghidra/Processors/AARCH64/data/languages/AARCH64.slaspec
+      # build.sh ships the full runtime SLEIGH tree (the demo lazily fetches
+      # whichever .sla a binary resolves to), so compile every .slaspec -> .sla.
+      # The .sla are gitignored build artifacts; `make specs` builds slacomp then
+      # runs it over the whole tree (~a couple minutes). This supersedes the older
+      # per-arch slaspec compile (the demo is no longer arch-scoped).
+      - name: Build all SLEIGH specs
+        run: make specs
 
       # Builds kuna_wasm for wasm32-wasip1 and assembles integrations/web/dist/.
       - name: Assemble the static demo (dist/)

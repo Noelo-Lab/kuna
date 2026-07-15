@@ -1,18 +1,23 @@
-// kuna-web.js — run the kuna decompiler entirely in the browser.
+// kuna-web.js — run the kuna decompiler entirely in the browser, for WHATEVER
+// binary the CLI supports (ELF / PE / Mach-O / COFF, every architecture kuna
+// ships a `.sla` for).
 //
-// This loads the `kuna_wasm` WebAssembly module (the engine's in-process
-// decompile path, compiled to wasm32-wasip1) and drives it through
-// @bjorn3/browser_wasi_shim — a pure-JS WASI preview1 implementation. The
-// SLEIGH specs and the user's binary are placed in an in-memory virtual
-// filesystem (WASI preopens); the decompiler reads them exactly as it would on
-// a native filesystem. NOTHING is sent to a server: the decompiler executes in
-// the page. See ../../docs/web-integration.md.
+// It loads the `kuna_wasm` WebAssembly module (the engine's in-process decompile
+// path, compiled to wasm32-wasip1) and drives it through
+// @bjorn3/browser_wasi_shim — a pure-JS WASI preview1 implementation. The SLEIGH
+// specs and the user's binary live in an in-memory virtual filesystem (WASI
+// preopens); the decompiler reads them exactly as on a native filesystem.
+// NOTHING is sent to a server: the decompiler executes in the page.
 //
-// Multi-arch: the ENGINE decompiles every architecture kuna supports; the only
-// arch-scoped part here is which SLEIGH spec files to preload. `loadKuna` reads
-// the uploaded binary's ELF machine and lazily fetches + caches that arch's spec
-// set (see `ARCHES`). Add an arch by adding its manifest here and shipping its
-// spec files (see build.sh + docs/web-integration.md §3).
+// Robustness (no per-format/per-arch JS logic — the ENGINE resolves everything):
+//   • Preload the SMALL runtime spec files once — all `.ldefs`/`.pspec`/`.cspec`/
+//     `.dwarf` (~1.7 MB / ~180 KB gzipped, bundled as `specs-small.json`). With
+//     these, the engine resolves the SLEIGH language for ANY supported binary.
+//   • The one heavy per-language file, the `.sla`, is fetched LAZILY: run the
+//     decompiler; if it reports `Could not find .sla file for <lang-id>`, map that
+//     id → its `.sla` (via the ldefs we already ship), fetch it, and retry.
+// This mirrors the CLI: the engine does all format/arch detection; the page just
+// serves files on demand. See ../../docs/web-integration.md §3.
 import {
   WASI,
   File,
@@ -22,56 +27,25 @@ import {
   ConsoleStdout,
 } from './vendor/browser_wasi_shim/dist/index.js';
 
-const X86_DIR = 'Ghidra/Processors/x86/data/languages';
-const AARCH64_DIR = 'Ghidra/Processors/AARCH64/data/languages';
-
-// ELF `e_machine` → the minimal SLEIGH spec set for that arch's default
-// (gcc/ELF) language. `files` are paths relative to `specRoot`, mirroring the
-// on-disk `Ghidra/Processors/...` layout `scan_language_database` scans. Each
-// set is verified to produce byte-identical output to the full 29 MB spec tree.
-export const ARCHES = {
-  0x3e: {
-    name: 'x86-64',
-    files: [
-      `${X86_DIR}/x86.ldefs`,
-      `${X86_DIR}/x86-64.sla`,
-      `${X86_DIR}/x86-64.pspec`,
-      `${X86_DIR}/x86-64-gcc.cspec`,
-      `${X86_DIR}/x86-64.dwarf`,
-    ],
-  },
-  0xb7: {
-    name: 'aarch64',
-    files: [
-      `${AARCH64_DIR}/AARCH64.ldefs`,
-      `${AARCH64_DIR}/AARCH64.sla`,
-      `${AARCH64_DIR}/AARCH64.pspec`,
-      `${AARCH64_DIR}/AARCH64.cspec`,
-      `${AARCH64_DIR}/AARCH64.dwarf`,
-    ],
-  },
-};
-
-// Read the ELF `e_machine` (u16 @ offset 18, honoring EI_DATA endianness).
-// Returns null for a non-ELF buffer.
-export function elfMachine(bytes) {
-  if (bytes.length < 20 || bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46)
-    return null;
-  const le = bytes[5] === 1; // EI_DATA: 1 = little-endian
-  return le ? bytes[18] | (bytes[19] << 8) : (bytes[18] << 8) | bytes[19];
+// Cosmetic only (status label) — NOT used to pick specs (the engine does that).
+export function formatName(bytes) {
+  if (bytes.length >= 4 && bytes[0] === 0x7f && bytes[1] === 0x45 && bytes[2] === 0x4c && bytes[3] === 0x46)
+    return 'ELF';
+  if (bytes.length >= 2 && bytes[0] === 0x4d && bytes[1] === 0x5a) return 'PE';
+  if (bytes.length >= 4) {
+    const be = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
+    const magics = [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe]; // Mach-O (+fat)
+    if (magics.includes(be >>> 0)) return 'Mach-O';
+  }
+  return 'binary';
 }
 
-// Compile the wasm, preferring streaming compilation but falling back to a
-// buffered compile when the server doesn't send `Content-Type: application/wasm`
-// (many static file servers don't), which would make `compileStreaming` reject.
-async function compileWasm(url) {
-  try {
-    return await WebAssembly.compileStreaming(fetch(url));
-  } catch (_) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
-    return WebAssembly.compile(await resp.arrayBuffer());
-  }
+// base64 → Uint8Array (works in both browser and Node — `atob` is global in both).
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 // Insert `inode` at `path` (slash-separated) into a nested Map tree, creating
@@ -91,73 +65,130 @@ function insertPath(rootMap, path, inode) {
   map.set(parts[parts.length - 1], inode);
 }
 
+// Compile the wasm, preferring streaming compilation but falling back to a
+// buffered compile when the server doesn't send `Content-Type: application/wasm`.
+async function compileWasm(url) {
+  try {
+    return await WebAssembly.compileStreaming(fetch(url));
+  } catch (_) {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
+    return WebAssembly.compile(await resp.arrayBuffer());
+  }
+}
+
+// Extract `id → { slafile, dir }` from an `.ldefs` file's `<language …>` tags.
+function parseLdefs(text, dir, map) {
+  const re = /<language\b([\s\S]*?)>/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const attrs = m[1];
+    const id = /id="([^"]*)"/.exec(attrs)?.[1];
+    const sla = /slafile="([^"]*)"/.exec(attrs)?.[1];
+    if (id && sla) map.set(id, { slafile: sla, dir });
+  }
+}
+
 /**
- * Load the decompiler once: compile the wasm. SLEIGH specs are fetched lazily
- * per architecture on first use and cached. Returns a handle with
- * `.decompile()` / `.list()` / `.archName()`.
+ * Load the decompiler once: compile the wasm and preload the small spec files.
+ * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
+ * formatName }`.
  *
  * @param {object} opts
- * @param {string} opts.wasmUrl   URL of kuna_wasm.wasm
- * @param {string} opts.specRoot  base URL the spec files live under
- * @param {object} [opts.arches]  ELF-machine → manifest map (defaults to ARCHES)
+ * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
+ * @param {string} opts.specRoot       base URL the spec tree lives under
+ * @param {string} [opts.smallBundleUrl]  URL of specs-small.json (default:
+ *                                         `${specRoot}-small.json`)
  */
-export async function loadKuna({ wasmUrl, specRoot, arches = ARCHES }) {
-  const wasmModule = await compileWasm(wasmUrl);
+export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
   const base = specRoot.replace(/\/$/, '');
-  const treeCache = new Map(); // machine → spec-tree Map (lazily built, reused)
+  const bundleUrl = smallBundleUrl || `${base}-small.json`;
 
-  async function specTreeFor(machine) {
-    if (treeCache.has(machine)) return treeCache.get(machine);
-    const arch = arches[machine];
-    if (!arch) return null;
-    const bufs = await Promise.all(
-      arch.files.map((f) =>
-        fetch(`${base}/${f}`).then((r) => {
-          if (!r.ok) throw new Error(`spec fetch failed (${r.status}): ${f}`);
-          return r.arrayBuffer();
-        })
-      )
-    );
-    const tree = new Map();
-    arch.files.forEach((f, i) => insertPath(tree, f, new File(new Uint8Array(bufs[i]))));
-    treeCache.set(machine, tree);
-    return tree;
+  const [wasmModule, bundle] = await Promise.all([
+    compileWasm(wasmUrl),
+    fetch(bundleUrl).then((r) => {
+      if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
+      return r.json();
+    }),
+  ]);
+
+  // Build the virtual /specs tree from the small files, and the lang-id → .sla map.
+  const tree = new Map();
+  const langMap = new Map();
+  for (const [rel, b64] of Object.entries(bundle)) {
+    const bytes = b64ToBytes(b64);
+    insertPath(tree, rel, new File(bytes));
+    if (rel.endsWith('.ldefs')) {
+      parseLdefs(new TextDecoder().decode(bytes), rel.slice(0, rel.lastIndexOf('/')), langMap);
+    }
+  }
+  const fetchedSla = new Set(); // rel paths already fetched (cache across calls)
+
+  // Resolve a language id from an engine error (which may carry a trailing
+  // `:compiler`) to its `.sla`, trimming id segments until one matches.
+  function slaForLangId(id) {
+    let key = id;
+    while (key) {
+      if (langMap.has(key)) return langMap.get(key);
+      const i = key.lastIndexOf(':');
+      if (i < 0) return null;
+      key = key.slice(0, i);
+    }
+    return null;
   }
 
-  async function invoke(binaryBytes, argv) {
-    const machine = elfMachine(binaryBytes);
-    if (machine === null) throw new Error('not an ELF file (bad magic)');
-    const tree = await specTreeFor(machine);
-    if (!tree) {
-      const supported = Object.values(arches).map((a) => a.name).join(', ');
-      throw new Error(
-        `unsupported architecture (ELF e_machine 0x${machine.toString(16)}). ` +
-          `Supported here: ${supported}. Add its specs — see docs/web-integration.md §3.`
-      );
-    }
-    const stdoutChunks = [];
-    const stderrChunks = [];
+  async function fetchSla(dir, slafile) {
+    const rel = `${dir}/${slafile}`;
+    if (fetchedSla.has(rel)) return;
+    const r = await fetch(`${base}/${rel}`);
+    if (!r.ok) throw new Error(`failed to fetch spec ${rel} (${r.status})`);
+    insertPath(tree, rel, new File(new Uint8Array(await r.arrayBuffer())));
+    fetchedSla.add(rel);
+  }
+
+  // One decompiler invocation over the current virtual FS. Instantiation is
+  // async on purpose: synchronous `new WebAssembly.Instance` is disallowed on the
+  // browser main thread for modules >4 KB (Node permits it), so we `await`
+  // `WebAssembly.instantiate`; the decompile itself then runs synchronously
+  // inside `wasi.start`.
+  async function runOnce(binaryBytes, argv) {
+    const stdout = [];
+    const stderr = [];
     const fds = [
       new OpenFile(new File([])), // stdin (unused)
-      ConsoleStdout.lineBuffered((line) => stdoutChunks.push(line)),
-      ConsoleStdout.lineBuffered((line) => stderrChunks.push(line)),
+      ConsoleStdout.lineBuffered((l) => stdout.push(l)),
+      ConsoleStdout.lineBuffered((l) => stderr.push(l)),
       new PreopenDirectory('/specs', tree),
-      new PreopenDirectory(
-        '/work',
-        new Map([['input.bin', new File(new Uint8Array(binaryBytes))]])
-      ),
+      new PreopenDirectory('/work', new Map([['input.bin', new File(new Uint8Array(binaryBytes))]])),
     ];
     const wasi = new WASI(['kuna_wasm', ...argv], [], fds, { debug: false });
-    const instance = await WebAssembly.instantiate(wasmModule, {
-      wasi_snapshot_preview1: wasi.wasiImport,
-    });
+    const instance = await WebAssembly.instantiate(wasmModule, { wasi_snapshot_preview1: wasi.wasiImport });
     let exitCode = 0;
     try {
       exitCode = wasi.start(instance);
     } catch (e) {
       exitCode = e && typeof e.code === 'number' ? e.code : 1;
     }
-    return { exitCode, stdout: stdoutChunks.join('\n'), stderr: stderrChunks.join('\n') };
+    return { exitCode, stdout: stdout.join('\n'), stderr: stderr.join('\n') };
+  }
+
+  // Run, lazily fetching any `.sla` the engine reports missing, then retrying.
+  async function invoke(binaryBytes, argv) {
+    for (let round = 0; round < 8; round++) {
+      const res = await runOnce(binaryBytes, argv);
+      if (res.exitCode === 0) return res;
+      const m = /Could not find \.sla file for (\S+)/.exec(res.stderr);
+      if (m) {
+        const hit = slaForLangId(m[1]);
+        const rel = hit && `${hit.dir}/${hit.slafile}`;
+        if (hit && !fetchedSla.has(rel)) {
+          await fetchSla(hit.dir, hit.slafile);
+          continue;
+        }
+      }
+      return res; // genuine failure (or nothing new to fetch)
+    }
+    throw new Error('too many spec-fetch rounds (unexpected)');
   }
 
   function parseOrThrow(res, what) {
@@ -170,11 +201,8 @@ export async function loadKuna({ wasmUrl, specRoot, arches = ARCHES }) {
   }
 
   return {
-    /** The supported arch name for these bytes, or null (unknown/non-ELF). */
-    archName(binaryBytes) {
-      const m = elfMachine(binaryBytes);
-      return (m !== null && arches[m]?.name) || null;
-    },
+    /** Format label for the status line (ELF / PE / Mach-O / binary). */
+    formatName,
     /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex}]}`. */
     async list(binaryBytes) {
       return parseOrThrow(await invoke(binaryBytes, ['/work/input.bin', '/specs', 'list']), 'list');
