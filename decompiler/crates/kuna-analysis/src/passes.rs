@@ -441,6 +441,50 @@ pub fn run_listing_consumers(
             }
         }
     }
+    // (kuna, Stage-3 ARM discovery) Code-pointer-table gap seeding — the
+    // reference-based (vtable / callback / Cortex-M ISR-handler) mirror of Ghidra's
+    // `ArmThumbFunctionTableScript` / angr's `_seg_list` pointer scan. After Stages
+    // 1-2 have covered the statically-reachable + canonical-LR-prologue population,
+    // scan every allocated section for 4-byte code pointers (Thumb bit set) into an
+    // UNDEFINED gap whose target BOTH begins with a stack-frame prologue AND passes
+    // `check_valid_subroutine`, and RE-SEED the walk with the survivors so it expands
+    // each into a full function + discovers its callees. The corroborating pointer
+    // reference is what safely admits a non-LR-push prologue (`SUB SP` / `PUSH {..}`
+    // no-LR / `VPUSH`) that the LR-only Stage-2 matcher structurally skips; the triple
+    // guard (gap-only + prologue + valid-subroutine) keeps precision at ~100% and never
+    // chases the angr-over-discovery trap (crazyflie's misread descriptor table).
+    // Gated by the same `funcstart_patterns` flag (ARM-only inside
+    // `code_pointer_table_seeds`), so x86-64 (funcstart_patterns off) is byte-identical
+    // and every non-ARM binary is a strict no-op. Measured recovery (real, ground-truth
+    // functions, zero false starts): cf2 +3, usart-stdio +1, betaflight +8.
+    if arch.analysis_funcstart_patterns {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            let ptr = crate::aif::code_pointer_table_seeds(
+                &file,
+                &listing,
+                translate,
+                std::rc::Rc::clone(code_space),
+                listing.exec_ranges(),
+            );
+            if !ptr.is_empty() {
+                let before = seeds.len();
+                seeds.extend(ptr);
+                seeds.sort_unstable();
+                seeds.dedup();
+                if seeds.len() != before {
+                    listing = crate::listing::Listing::build_with_meta(
+                        &file,
+                        image,
+                        arch,
+                        translate,
+                        &seeds,
+                        &funcsym_seeds,
+                        &seed_names,
+                    );
+                }
+            }
+        }
+    }
     // Seed the function model's no-return / call-fixup flags from the load-time
     // Known passes so the consumer skips already-modeled callees and the fixpoint
     // treats a Known-no-return callee as terminal.
