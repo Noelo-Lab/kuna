@@ -99,6 +99,22 @@ known. `get_exact_piece` answers "what type is the size-N slice at offset K of
 this type" (the symbol-piece seed of §5.2); `concretize` maps residual
 `TYPE_UNKNOWN` onto concrete integer types where a formal type is forced.
 
+The interning tree's order is a dependency *comparison*, not a dependency
+*ordering*: `compare_dependency` ranks by sub-metatype then **descending**
+size, so a struct contained by value sorts *after* the struct that contains
+it — walking the tree front to back is not definition-before-use. The
+explicit fix is `decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(TypeFactoryImpl::dependent_order)`, the C++
+`TypeFactory::dependentOrder`/`orderRecurse` port: a postorder DFS over each
+type's typedef base (`get_typedef`) then its component sub-types
+(`get_depend`), marked on `Rc` identity so a pointer cycle
+(`struct A { struct B *b; }` / `struct B { struct A *a; }`) terminates with
+each type listed exactly once. Its consumer is emission — chapter
+[09](09-emission.md) §9.7's `doc_type_definitions` walks the list front to
+back — and the two inline unit tests (`dependent_order_nested_struct`,
+`dependent_order_pointer_cycle`) pin both facts: the raw tree order really is
+container-first, and the DFS reorders it.
+
 ## 5.2 Inference
 
 Type recovery is **off** for the entire first `fullloop` iteration — early

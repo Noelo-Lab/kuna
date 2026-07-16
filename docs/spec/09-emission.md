@@ -398,3 +398,78 @@ the cast strategy, `cast.rs (CastStrategyJava)` — Java's pointer-encoded
 object references change which extensions and pointer conversions are
 representable as casts — kept current alongside `CastStrategyC` so a future
 `PrintJava` port is emitter wiring only.
+
+## 9.7 Whole-program document renders (`kuna decompile-project`)
+
+**(kuna) Three additive render surfaces** back the `kuna decompile-project`
+project export (the CLI driver is
+`decompiler/crates/kuna-cli/src/decompile_project.rs`; usage in
+`docs/agents.md`). All three are pure *readers* of finished state — they run
+after analysis, insert no ops, flip no options, and change no byte of any
+existing render path (the datatest / stages / `decompile-all --json` outputs
+are untouched), which is why none carries a `phases.toml` row or a DIV entry.
+
+**Type definitions — the `docTypeDefinitions` port.** `printc.rs
+(PrintC::doc_type_definitions)` is the previously-unported C++
+`PrintC::docTypeDefinitions` surface — the console `print C types` command
+(`decompiler/crates/kuna-console/src/ifacedecomp.rs (IfcPrintCTypes)`) was a
+stub and now wires through it, via the driver
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (print_c_types)`.
+It emits a C definition for every user-defined data-type in the factory,
+consuming `decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(TypeFactoryImpl::dependent_order)` (chapter [05](05-types.md) §5.1) so every
+definition precedes its uses. Core types, unnamed types, and the internal
+`Partial*` slices are skipped; what renders is typedefs, structs, unions, and
+enums (`printc.rs (render_type_definitions)`; the per-type body renderers —
+`compose_type_body`, `compose_enum_body`, `compose_typedef_line` — are pure
+functions for unit-testability, and emission is direct string building, since
+no emitter markup exists for type definitions). Two documented `(kuna)`
+divergences from the upstream emission, both in service of "the `.h` always
+compiles":
+
+- **Forward-declaration block first.** Upstream prints one anonymous
+  `typedef struct {…} name;` per type — a form that cannot express a
+  self-referential or mutually recursive pointer field. kuna instead emits a
+  `typedef struct <n> <n>;` tag+typedef forward declaration for every
+  struct/union up front, then the bodies as plain `struct <n> { … };` in
+  dependency order; an incomplete (field-less) struct emits *only* the
+  forward declaration, annotated `/* opaque */`.
+- **Explicit padding fields.** Struct field-offset gaps and trailing padding
+  (the field extents vs `get_size()`) render as `undefined1 _pad<hexoff>[N];`
+  members, so `sizeof(struct <n>)` under a recompile matches the decompiler's
+  layout. Bitfields render best-effort (`<type> <name> : <bits>;`, padding
+  suppressed since their byte coverage overlaps the gap computation); unions
+  carry no padding.
+
+A non-C identifier is rewritten by `printc.rs (sanitize_type_name)` (annotated
+`/* renamed from "…" */`), and a later duplicate name emits a
+`/* duplicate type name skipped */` comment instead of a redefinition — the
+first definition wins.
+
+**The prototype — one token stream, two documents.** The prototype segment of
+§9.2's document walk was extracted verbatim into `printc.rs
+(PrintC::emit_prototype_declaration)` — pure code motion, byte-identical
+inside `emit_function_document` — so `printc.rs (PrintC::doc_prototype)` can
+drive the IDENTICAL token sequence standalone: the same
+`set_output_stream()` → emit → `output_str()` capture harness as
+`doc_function_full`, plus a trailing `;`, minus the header warning comments.
+The contract this buys the export: the `.h` prototype minus its `;` matches
+the `.c` definition line **token-for-token** — there is no second prototype
+printer to drift. The public driver is `decompile_drive.rs
+(print_c_prototype)` (a function with no recovered proto store renders
+`void <name>(void);`).
+
+**The recompile prelude.** `decompile_drive.rs (print_c_recompile_prelude)`
+generates the typedef block that makes the other two renders compile: one
+standard-C typedef per interned *core* scalar type (`typedef unsigned int
+uint4;`, …; 8-byte integers always spell `long long` so the text is
+data-model independent; `bool` is covered by `#include <stdbool.h>`;
+`char`/`void` are real C and emit nothing), then the fixed Ghidra/kuna
+`undefined` family — `undefined`, `undefined1..8` (3/5/6/7 mapped to the next
+larger unsigned integer, each carrying a sizeof-divergence note) and
+`undefined16`/`undefined32` as byte-array structs. The non-printer half of
+the export (section enumeration, one-instruction disassembly, raw image
+bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
+console engine, `decompiler/crates/kuna-console/src/engine.rs
+(ConsoleProgram::sections, disassemble_at, read_bytes, global_data_symbols)`,
+not in this folder.

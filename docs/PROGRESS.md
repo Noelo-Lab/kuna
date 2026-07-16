@@ -1,5 +1,48 @@
 # kuna Progress Log
 
+## Session (2026-07-16) — `kuna decompile-project`: whole-binary project export (.c/.h/.asm/README.md)
+
+New CLI subcommand **`kuna decompile-project <binary>`**
+(`decompiler/crates/kuna-cli/src/decompile_project.rs`): loads + analyzes the binary once
+(the `decompile-all` in-process load-once/decompile-many core — same
+`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--slice`/`--target`/
+`--sleighpath` flags, Listing on by default; no `--json`/`--no-vars`) and writes a project
+folder — default `<binary-filename>.kuna/` next to the binary, `-o/--output DIR` overrides —
+designed so a human or LLM can study the binary and attempt recompilation:
+
+- `<name>.c` — every decompiled function, address-ordered, under `// Function: <name> @ <addr>`
+  headers (failures as `(error: ...)` comments); starts with `#include "<name>.h"`.
+- `<name>.h` — include guard + a generated **recompile prelude** (core scalar typedefs, the
+  Ghidra/kuna `undefined` family, `<stdbool.h>`), the recovered user-defined type
+  definitions, and one prototype per decompiled function — **token-identical** to the `.c`
+  definition line (both drive the same extracted `emit_prototype_declaration`).
+- `<name>.asm` — labeled linear disassembly of every CODE section: labels match the `.c`
+  names (`main:`, `sub_<addr>:`), per-function `; arg:` / `; stack:` comments map decompiled
+  variables to storage, undecodable bytes as `db` lines, and a `; --- data ---` tail
+  labeling named globals + every `dat_<hex>` the `.c` references, with raw bytes + ASCII
+  (`??` for unmapped/.bss).
+- `README.md` — binary size, arch id, entry point, function counts
+  (total/decompiled/failed), sections table, file inventory.
+
+Engine additions (f7a9346b), all additive: `TypeFactoryImpl::dependent_order`
+(`substrate/dtype.rs`) — the C++ `TypeFactory::dependentOrder`/`orderRecurse` port
+(postorder DFS, definition-before-use; the interning tree's `compareDependency` order sorts
+composites by descending size, so a by-value inner struct sorts AFTER its container — the
+reason the DFS exists, pinned by unit tests); `PrintC::doc_type_definitions`
+(`p9_emit/printc.rs`) — the previously-unported `docTypeDefinitions` surface (the console
+`print C types` stub is now wired), with two documented `(kuna)` divergences:
+forward-declaration block first (`typedef struct <n> <n>;`, `/* opaque */` for field-less
+structs) and explicit `undefined1 _pad<off>[N];` padding members; `PrintC::doc_prototype`
+via the pure-code-motion `emit_prototype_declaration` extraction; drivers
+`print_c_types`/`print_c_prototype`/`print_c_recompile_prelude` (`infra/decompile_drive.rs`);
+export surface `ConsoleProgram::sections`/`disassemble_at`/`read_bytes`/`global_data_symbols`
+(kuna-console `engine.rs`).
+
+Zero change to existing decompiler output — no `phases.toml` row, no DIV entry, no
+`docs/options.md` regen, no baseline re-pin. Gates: `make test` 675/675 PARITY OK,
+`make test-stages` 261/261 PARITY OK, `kuna decompile-all --json` byte-identical,
+`make check-spec` green (spec §5.1 updated + new §9.7; CLI docs in `docs/agents.md`).
+
 ## Session (2026-07-12) — Stripped ARM Cortex-M Thumb function discovery
 
 On a stripped bare-metal Cortex-M image kuna decoded everything in A32 (default
