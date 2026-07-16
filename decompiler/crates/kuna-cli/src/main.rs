@@ -19,6 +19,7 @@
 mod catalog;
 mod decompile;
 mod decompile_all;
+mod decompile_project;
 mod fid;
 mod jsonfmt;
 mod paths;
@@ -41,6 +42,7 @@ fn main() -> ExitCode {
     let code = match sub {
         "decompile" => cmd_decompile(rest),
         "decompile-all" => decompile_all::run(rest),
+        "decompile-project" => decompile_project::run(rest),
         "functions" => decompile_all::run_functions(rest),
         "test" => cmd_test(rest),
         "catalog" => cmd_catalog(rest),
@@ -66,10 +68,11 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|decompile-all|functions|test|catalog|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|decompile-project|functions|test|catalog|specs|fid> ...\n\
          \n\
          kuna decompile <binary> <func> [--addr] [--slice ARCH] [--mode reliable|aggressive] [--option NAME VALUE]... [--kassert ARGS]...\n\
          kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive] [--option N V]...\n\
+         kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode reliable|aggressive] [--option N V]...\n\
          kuna functions <binary> [--json] [--mode reliable|aggressive]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\
