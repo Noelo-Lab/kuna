@@ -78,7 +78,7 @@ use crate::interface::{
 };
 use kuna_base::types::{int4, uintb, uintm};
 use kuna_decomp::decompile_drive::{
-    build_and_follow_flow, build_and_follow_flow_with_override, print_c,
+    build_and_follow_flow, build_and_follow_flow_with_override, print_c, print_c_types,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
@@ -2089,14 +2089,24 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcPrintCTypes`: `print C types`.
+    /// C++ `IfcPrintCTypes`: `print C types` — render every user-defined
+    /// data-type as C definitions (`PrintLanguage::docTypeDefinitions`,
+    /// `ifacedecomp.cc:960`).  Output goes to the bulk stream (`fileoptr`),
+    /// mirroring `print C` (`IfcPrintCStruct` below): render with `dcp`
+    /// borrowed, then write to the status.  Returns nothing (an empty string)
+    /// when no user types are interned — empty is not an error.
     IfcPrintCTypes,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
-        }
-        Err(engine_unavailable("PrintLanguage::docTypeDefinitions (Architecture::print/types)"))
+        let text = {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
+            let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+            print_c_types(prog.arch_mut())
+        };
+        status.file_out(&text);
+        Ok(())
     }
 );
 

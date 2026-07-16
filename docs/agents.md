@@ -75,6 +75,10 @@ kuna decompile-all ./a.out --json                              # machine-readabl
 kuna decompile-all ./a.out --functions main,parse --json       # a subset
 kuna functions ./a.out --json                                  # just enumerate (name + address)
 
+# Export a whole binary as a recompile-oriented project folder (.c/.h/.asm/README.md)
+kuna decompile-project ./a.out                                 # writes ./a.out.kuna/
+kuna decompile-project ./a.out -o proj --functions main,parse  # subset, custom dir
+
 # Flip a stage-model assertion per decompilation (the LLM control surface)
 kuna catalog --json                                            # discover settable assertions
 kuna decompile ./a.out main --option compareform canonical
@@ -106,6 +110,22 @@ at the action/rule-pool/heritage loop boundaries) and recorded as that function'
 stage-model settable (zero output change for any function that converges; the console /
 `decomp_dbg` parity path never arms it). The decbench backend
 (`decbench/decompilers/raw/kuna_raw.py`) shells out to `kuna decompile-all --json`.
+`kuna decompile-project` is the **project-export** face of the same in-process core
+(`decompiler/crates/kuna-cli/src/decompile_project.rs`; identical load-once/decompile-many
+path and flags — `--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--slice`/
+`--target`/`--sleighpath`, listing on by default; no `--json`): it writes a project folder —
+default `<binary-filename>.kuna/` next to the binary, `-o/--output DIR` overrides — of four
+artifacts designed so a human or LLM can study the binary and attempt recompilation:
+`<name>.c` (every decompiled function, address-ordered, under `// Function: <name> @ <addr>`
+headers, failures as comments, `#include "<name>.h"`), `<name>.h` (include guard + a
+generated recompile prelude — core scalar and `undefined`-family typedefs — the recovered
+user-defined type definitions, and one prototype per decompiled function, token-identical
+to the `.c` definition line), `<name>.asm` (labeled linear disassembly of every CODE
+section — labels match the `.c` function names, per-function `; arg:`/`; stack:` comments
+map decompiled variables to storage, undecodable bytes as `db` lines, and a `; --- data ---`
+tail labeling named globals plus every `dat_<hex>` the `.c` references, with raw bytes), and
+`README.md` (size, arch id, entry point, function counts, sections table, file inventory).
+Purely additive — no new settable, no change to any existing output path (spec §9.7).
 `kuna catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
 `phase catalog` JSON (single source of truth: `settableTable`, generated from
 `decompiler/crates/kuna-decomp/phases.toml`) into the documented, flippable assertion list —

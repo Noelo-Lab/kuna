@@ -1850,6 +1850,62 @@ impl PrintC {
         bytes
     }
 
+    /// (kuna) Render ONLY the function's prototype declaration —
+    /// `<ret> <name>(<params>);` — as plain text, for the `kuna
+    /// decompile-project` `.h` artifact.
+    ///
+    /// Mirrors [`doc_function_full`](PrintC::doc_function_full)'s capture
+    /// harness (`set_output_stream()` reset → emit → `output_str()`), driving
+    /// the IDENTICAL [`emit_prototype_declaration`](PrintC::emit_prototype_declaration)
+    /// token sequence the full function document emits, so the `.h` prototype
+    /// (minus the trailing `;` added here) matches the `.c` definition line
+    /// char-for-char.  Deliberately does NOT emit the header warning comments
+    /// (`emit_comment_func_header`) — prototype only.
+    pub fn doc_prototype(&mut self, fd: &Funcdata, arch: &Architecture) -> String {
+        self.emit.set_output_stream();
+        // Same per-function realtypes context resolution as
+        // `emit_function_document` — the type-name chokepoints read `rt_ctx`.
+        self.rt_ctx = RealTypeCtx::from_arch(arch);
+        let markup = MarkupRef::none();
+        self.emit_prototype_declaration(fd, arch, &markup);
+        self.emit.print(";", SyntaxHighlight::NoColor);
+        // C++ docFunction ends in emit->flush(); EmitNoMarkup writes straight
+        // to its sink so this is a formality (kept for harness parity).
+        let _ = self.emit.flush();
+        self.emit.output_str().to_string()
+    }
+
+    /// (kuna) C++ `PrintC::docTypeDefinitions` (decompiler/cpp/printc.cc:2779):
+    /// emit a C definition for every user-defined data-type in the factory, in
+    /// [`TypeFactoryImpl::dependent_order`](crate::dtype::TypeFactoryImpl::dependent_order)
+    /// (definition-before-use), skipping core types — the `.h` artifact of
+    /// `kuna decompile-project`.
+    ///
+    /// Documented `(kuna)` divergences from the upstream emission (which prints
+    /// one `typedef struct {…} name;` per type through the emitter):
+    ///
+    ///   * **forward-declaration block first**: every struct/union gets a
+    ///     `typedef struct <n> <n>;` up front, then bodies follow as plain
+    ///     `struct <n> { … };` in dependency order.  Upstream's anonymous
+    ///     `typedef struct {…} n;` form cannot express a self-referential or
+    ///     mutually-recursive pointer field; the tag+typedef split always can.
+    ///     An incomplete (fieldless) struct emits ONLY the forward declaration,
+    ///     annotated `/* opaque */`.
+    ///   * **padding fields**: struct field-offset gaps and trailing padding
+    ///     render as explicit `undefined1 _pad<hexoff>[N];` members so
+    ///     `sizeof(struct <n>)` matches the decompiler's layout when recompiled.
+    ///   * **name sanitisation + dedup**: a non-C identifier is rewritten
+    ///     (annotated `/* renamed from "…" */`); a later duplicate name emits
+    ///     `/* duplicate type name skipped: <n> */` instead of a redefinition.
+    ///
+    /// Emission is direct string building (no emitter markup exists for type
+    /// definitions); the per-type body renderers are pure functions
+    /// ([`compose_type_body`] etc.) for unit-testability.
+    pub fn doc_type_definitions(&mut self, arch: &Architecture) -> String {
+        let deporder = arch.types_impl().dependent_order();
+        render_type_definitions(&deporder, RealTypeCtx::from_arch(arch))
+    }
+
     /// The shared body-emission sequence of C++ `PrintC::docFunction`
     /// (printc.cc:2790), back-end-agnostic: `beginFunction` → header comment →
     /// prototype declaration → `openBraceIndent` → local var decls → block graph →
@@ -1877,23 +1933,6 @@ impl PrintC {
         // pick them up in order.
         self.setup_comments(fd, arch);
         let markup = MarkupRef::none();
-        let display = fd.get_display_name().to_string();
-        // Return type from the recovered proto output (C++ `getFuncProto().
-        // getOutputType()`), defaulting to "void".  The output storage/type is
-        // recovered by `ActionOutputPrototype` (the stand-alone `ProtoStoreInternal`
-        // path).  The TYPE NAME is the W8 `ActionInferTypes` surface: until it
-        // lands the recovered output type is the size-correct but un-inferred
-        // base (metatype UNKNOWN), rendered as `undefined<N>` — the documented
-        // residual vs. the oracle's inferred `uint1`.
-        let rt = self.rt_ctx;
-        let ret_type = if fd.get_func_proto().has_store() {
-            fd.get_func_proto()
-                .get_output_type()
-                .map(|t| type_name_for_decl(t, rt))
-                .unwrap_or_else(|| "void".to_string())
-        } else {
-            "void".to_string()
-        };
 
         let id1 = self.emit.begin_function();
         // emitCommentFuncHeader(fd): the header warning comments (C++
@@ -1904,24 +1943,9 @@ impl PrintC {
         self.emit_comment_func_header(fd, arch);
         self.emit.tag_line(); // emitCommentFuncHeader trailing tagLine
 
-        // emitFunctionDeclaration shell.
-        let idp = self.emit.begin_func_proto();
-        let idret = self.emit.begin_return_type(&markup);
-        self.emit.tag_type(&ret_type, SyntaxHighlight::TypeColor, &markup);
-        self.emit.end_return_type(idret);
-        self.emit.spaces(1, 0);
-        let id1g = self.emit.open_group();
-        self.emit.tag_func_name(&display, SyntaxHighlight::FuncnameColor, &markup);
-        let id2 = self.emit.open_paren("(", 0);
-        // emitPrototypeInputs (printc.cc:2298): the recovered proto's parameter
-        // list, or `void` when there are none.  Each `ProtoParameter` renders its
-        // declared type + name (`twostruct *ptr`, `int8 a`) via the C-declarator
-        // builder; the backing-`Symbol` path (`emitVarDecl`) is the W4 scope
-        // surface, so the param's own stored name + type are used directly.
-        self.emit_prototype_inputs(fd, arch, &markup);
-        self.emit.close_paren(")", id2);
-        self.emit.close_group(id1g);
-        self.emit.end_func_proto(idp);
+        // emitFunctionDeclaration shell (the prototype segment, shared with
+        // `doc_prototype`).
+        self.emit_prototype_declaration(fd, arch, &markup);
 
         let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
         // emitLocalVarDecls(fd) (printc.cc:2805 / emitGlobalVarDeclsRecursive +
@@ -1947,6 +1971,61 @@ impl PrintC {
         // (kuna) Retire the scoped fd pointer (see the field doc): it is valid
         // only for this call's dynamic extent.
         self.emit_fd = None;
+    }
+
+    /// Emit the function prototype declaration (the `emitFunctionDeclaration`
+    /// shell of C++ `PrintC::docFunction`, printc.cc:2790 →
+    /// `emitFunctionDeclaration`, printc.cc:2380): the recovered return type,
+    /// the function name, and the parenthesised
+    /// [`emit_prototype_inputs`](PrintC::emit_prototype_inputs) parameter list —
+    /// `<ret> <name>(<params>)`, no trailing `;` or body.
+    ///
+    /// Pure code motion out of
+    /// [`emit_function_document`](PrintC::emit_function_document) (byte-identical
+    /// there) so [`doc_prototype`](PrintC::doc_prototype) can emit the IDENTICAL
+    /// token sequence standalone — the `.h`-prototype == `.c`-definition-line
+    /// contract of `kuna decompile-project`.
+    fn emit_prototype_declaration(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        markup: &MarkupRef,
+    ) {
+        let display = fd.get_display_name().to_string();
+        // Return type from the recovered proto output (C++ `getFuncProto().
+        // getOutputType()`), defaulting to "void".  The output storage/type is
+        // recovered by `ActionOutputPrototype` (the stand-alone `ProtoStoreInternal`
+        // path).  The TYPE NAME is the W8 `ActionInferTypes` surface: until it
+        // lands the recovered output type is the size-correct but un-inferred
+        // base (metatype UNKNOWN), rendered as `undefined<N>` — the documented
+        // residual vs. the oracle's inferred `uint1`.
+        let rt = self.rt_ctx;
+        let ret_type = if fd.get_func_proto().has_store() {
+            fd.get_func_proto()
+                .get_output_type()
+                .map(|t| type_name_for_decl(t, rt))
+                .unwrap_or_else(|| "void".to_string())
+        } else {
+            "void".to_string()
+        };
+
+        let idp = self.emit.begin_func_proto();
+        let idret = self.emit.begin_return_type(markup);
+        self.emit.tag_type(&ret_type, SyntaxHighlight::TypeColor, markup);
+        self.emit.end_return_type(idret);
+        self.emit.spaces(1, 0);
+        let id1g = self.emit.open_group();
+        self.emit.tag_func_name(&display, SyntaxHighlight::FuncnameColor, markup);
+        let id2 = self.emit.open_paren("(", 0);
+        // emitPrototypeInputs (printc.cc:2298): the recovered proto's parameter
+        // list, or `void` when there are none.  Each `ProtoParameter` renders its
+        // declared type + name (`twostruct *ptr`, `int8 a`) via the C-declarator
+        // builder; the backing-`Symbol` path (`emitVarDecl`) is the W4 scope
+        // surface, so the param's own stored name + type are used directly.
+        self.emit_prototype_inputs(fd, arch, markup);
+        self.emit.close_paren(")", id2);
+        self.emit.close_group(id1g);
+        self.emit.end_func_proto(idp);
     }
 
     /// Emit the function's header warning comments (C++
@@ -6968,6 +7047,291 @@ pub fn type_to_c_string(
 ) -> String {
     let (front, back) = declarator_parts(ct, RealTypeCtx::from_arch(arch));
     format!("{front}{back}")
+}
+
+// ===========================================================================
+// (kuna) `doc_type_definitions` rendering helpers — the pure per-type body
+// renderers behind the `docTypeDefinitions` port (see
+// `PrintC::doc_type_definitions` for the emission shape + divergences).  All
+// take an explicit `RealTypeCtx` and hand-built `Datatype`s so they unit-test
+// without an `Architecture`.
+// ===========================================================================
+
+/// (kuna) Rewrite `name` into a valid C identifier: every character outside
+/// `[A-Za-z0-9_]` becomes `_`, and a leading digit gains a `_` prefix.
+/// Borrowed unchanged when already valid (the caller emits a
+/// `/* renamed from "…" */` comment when it changed).
+fn sanitize_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+    let ok_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let clean = !name.is_empty()
+        && name.chars().all(ok_char)
+        && !name.starts_with(|c: char| c.is_ascii_digit());
+    if clean {
+        return std::borrow::Cow::Borrowed(name);
+    }
+    let mut s = String::with_capacity(name.len() + 1);
+    if name.starts_with(|c: char| c.is_ascii_digit()) {
+        s.push('_');
+    }
+    for c in name.chars() {
+        s.push(if ok_char(c) { c } else { '_' });
+    }
+    std::borrow::Cow::Owned(s)
+}
+
+/// (kuna) One member declaration `<front><name><back>` via the C-declarator
+/// builder [`declarator_parts`] — the same front/name spacing rule the emit
+/// loop uses (`a `*` front glues to the identifier with no space).
+fn field_decl_text(
+    ct: &std::rc::Rc<crate::dtype::Datatype>,
+    name: &str,
+    rt: RealTypeCtx,
+) -> String {
+    let (front, back) = declarator_parts(ct, rt);
+    let sep = if front.ends_with('*') || name.is_empty() { "" } else { " " };
+    format!("{front}{sep}{name}{back}")
+}
+
+/// (kuna) The unsigned C integer spelling for a byte size (the empty-enum /
+/// fallback scalar spelling; 8 covers any larger size best-effort).
+fn unsigned_c_int_of_size(size: int4) -> &'static str {
+    match size {
+        1 => "unsigned char",
+        2 => "unsigned short",
+        4 => "unsigned int",
+        _ => "unsigned long long",
+    }
+}
+
+/// (kuna) Render ONE complete composite (struct/union) body definition —
+/// `struct <name> { … };` — as a pure function of the data-type.
+///
+/// Struct field-offset gaps and trailing padding (vs `get_size()`) become
+/// explicit `undefined1 _pad<hexoff>[N];` members.  Bitfields render
+/// best-effort as `<type> <name> : <bits>;` with padding suppressed (their
+/// byte coverage overlaps the gap computation).  Unions carry no padding.
+/// Returns `""` for a non-composite kind.
+fn compose_type_body(
+    ct: &std::rc::Rc<crate::dtype::Datatype>,
+    name: &str,
+    rt: RealTypeCtx,
+) -> String {
+    use crate::dtype::DatatypeKind;
+    let mut out = String::new();
+    match &ct.kind {
+        DatatypeKind::Struct { field, bitfield } => {
+            out.push_str(&format!("struct {name} {{\n"));
+            let have_bits = !bitfield.is_empty();
+            let mut cur: int4 = 0;
+            for f in field {
+                if !have_bits && f.offset > cur {
+                    out.push_str(&format!(
+                        "    undefined1 _pad{:x}[{}];\n",
+                        cur,
+                        f.offset - cur
+                    ));
+                }
+                let fname = sanitize_type_name(&f.name);
+                out.push_str(&format!(
+                    "    {};\n",
+                    field_decl_text(&f.field_type, &fname, rt)
+                ));
+                cur = cur.max(f.offset + f.field_type.get_size());
+            }
+            if have_bits {
+                out.push_str(
+                    "    /* bitfields (byte layout approximate; padding omitted) */\n",
+                );
+                for bf in bitfield {
+                    let bname = sanitize_type_name(&bf.name);
+                    out.push_str(&format!(
+                        "    {} : {};\n",
+                        field_decl_text(&bf.field_type, &bname, rt),
+                        bf.num_bits
+                    ));
+                }
+            } else if ct.get_size() > cur {
+                out.push_str(&format!(
+                    "    undefined1 _pad{:x}[{}];\n",
+                    cur,
+                    ct.get_size() - cur
+                ));
+            }
+            out.push_str("};\n");
+        }
+        DatatypeKind::Union { field } => {
+            out.push_str(&format!("union {name} {{\n"));
+            for f in field {
+                let fname = sanitize_type_name(&f.name);
+                out.push_str(&format!(
+                    "    {};\n",
+                    field_decl_text(&f.field_type, &fname, rt)
+                ));
+            }
+            out.push_str("};\n");
+        }
+        _ => {}
+    }
+    out
+}
+
+/// (kuna) Render ONE enum definition — `typedef enum <name> { A = <v>, … }
+/// <name>;` — from the `TypeEnum` namemap.  A `TYPE_INT`-facing enum (the
+/// decode-time `TYPE_ENUM_INT` form) prints signed decimal values
+/// (sign-extended by the enum's byte size); the `TYPE_UINT` form prints hex.
+/// An empty namemap falls back to a plain integer typedef (an empty `enum {}`
+/// is not valid C).
+fn compose_enum_body(ct: &std::rc::Rc<crate::dtype::Datatype>, name: &str) -> String {
+    use crate::dtype::type_metatype;
+    let Some(nmap) = ct.as_enum_namemap() else {
+        return String::new();
+    };
+    let size = ct.get_size();
+    if nmap.is_empty() {
+        return format!(
+            "typedef {} {name}; /* empty enum */\n",
+            unsigned_c_int_of_size(size)
+        );
+    }
+    let signed = ct.get_metatype() == type_metatype::TYPE_INT;
+    let mut out = format!("typedef enum {name} {{\n");
+    let n = nmap.len();
+    for (i, (val, ename)) in nmap.iter().enumerate() {
+        let ename = sanitize_type_name(ename);
+        let vtxt = if signed && size > 0 && size <= 8 {
+            format!("{}", kuna_base::address::sign_extend(*val as i64, size * 8 - 1))
+        } else {
+            format!("0x{val:x}")
+        };
+        let comma = if i + 1 < n { "," } else { "" };
+        out.push_str(&format!("    {ename} = {vtxt}{comma}\n"));
+    }
+    out.push_str(&format!("}} {name};\n"));
+    out
+}
+
+/// (kuna) Render ONE typedef — `typedef <declarator around name>;` — of the
+/// typedef's immediate base type (`get_typedef()`), via the C-declarator
+/// builder (so `typedef char *mystr;` and array typedefs lay out correctly).
+fn compose_typedef_line(
+    base: &std::rc::Rc<crate::dtype::Datatype>,
+    name: &str,
+    rt: RealTypeCtx,
+) -> String {
+    format!("typedef {};\n", field_decl_text(base, name, rt))
+}
+
+/// (kuna) The full `docTypeDefinitions` walk over an already
+/// dependency-ordered type list (see
+/// [`PrintC::doc_type_definitions`](PrintC::doc_type_definitions) for the
+/// shape + divergence notes): pass 1 emits the struct/union forward-declaration
+/// block, pass 2 the bodies (struct/union/enum/typedef) in dependency order.
+/// Pure over the input slice for unit-testability.
+fn render_type_definitions(
+    deporder: &[std::rc::Rc<crate::dtype::Datatype>],
+    rt: RealTypeCtx,
+) -> String {
+    use crate::dtype::{Datatype, DatatypeKind};
+    use std::collections::HashSet;
+    use std::rc::Rc;
+
+    let is_composite = |ct: &Rc<Datatype>| {
+        matches!(&ct.kind, DatatypeKind::Struct { .. } | DatatypeKind::Union { .. })
+    };
+    // A type this emitter renders: user-defined (non-core), named, not an
+    // internal partial (`has_stripped`), and a typedef / struct / union / enum.
+    let relevant = |ct: &Rc<Datatype>| {
+        !ct.is_core_type()
+            && !ct.get_name().is_empty()
+            && !ct.has_stripped()
+            && (ct.get_typedef().is_some() || is_composite(ct) || ct.is_enum_type())
+    };
+
+    // Which sanitized composite tag names have a COMPLETE definition somewhere
+    // (drives the `/* opaque */` annotation on forward-only names).
+    let mut complete_names: HashSet<String> = HashSet::new();
+    for ct in deporder {
+        if relevant(ct) && is_composite(ct) && ct.get_typedef().is_none() && !ct.is_incomplete()
+        {
+            complete_names.insert(sanitize_type_name(ct.get_name()).into_owned());
+        }
+    }
+
+    let mut out = String::new();
+
+    // -- Pass 1: the forward-declaration block (every struct/union tag). -----
+    let mut fwd: HashSet<String> = HashSet::new();
+    for ct in deporder {
+        if !relevant(ct) || !is_composite(ct) || ct.get_typedef().is_some() {
+            continue;
+        }
+        let raw = ct.get_name();
+        let name = sanitize_type_name(raw);
+        if !fwd.insert(name.to_string()) {
+            continue; // one forward declaration per tag name
+        }
+        let kw = if matches!(&ct.kind, DatatypeKind::Union { .. }) { "union" } else { "struct" };
+        out.push_str(&format!("typedef {kw} {name} {name};"));
+        if name != raw {
+            out.push_str(&format!(" /* renamed from \"{raw}\" */"));
+        }
+        if !complete_names.contains(name.as_ref()) {
+            out.push_str(" /* opaque */");
+        }
+        out.push('\n');
+    }
+    if !fwd.is_empty() {
+        out.push('\n');
+    }
+
+    // -- Pass 2: bodies in dependency order. ---------------------------------
+    let mut defined: HashSet<String> = HashSet::new();
+    for ct in deporder {
+        if !relevant(ct) {
+            continue;
+        }
+        let raw = ct.get_name();
+        let name = sanitize_type_name(raw);
+        if let Some(base) = ct.get_typedef() {
+            // A typedef (of anything, including a composite clone — checked
+            // FIRST since the clone carries the base's kind).  The struct-tag
+            // forward typedef already claims its own name, so a same-named
+            // typedef-of-struct is exactly that declaration — skip as a dup.
+            if fwd.contains(name.as_ref()) || !defined.insert(name.to_string()) {
+                out.push_str(&format!("/* duplicate type name skipped: {name} */\n"));
+                continue;
+            }
+            if name != raw {
+                out.push_str(&format!("/* renamed from \"{raw}\" */\n"));
+            }
+            out.push_str(&compose_typedef_line(base, &name, rt));
+            out.push('\n');
+        } else if is_composite(ct) {
+            if ct.is_incomplete() {
+                continue; // forward-declared only (`/* opaque */`)
+            }
+            if !defined.insert(name.to_string()) {
+                out.push_str(&format!("/* duplicate type name skipped: {name} */\n"));
+                continue;
+            }
+            if name != raw {
+                out.push_str(&format!("/* renamed from \"{raw}\" */\n"));
+            }
+            out.push_str(&compose_type_body(ct, &name, rt));
+            out.push('\n');
+        } else if ct.is_enum_type() {
+            if fwd.contains(name.as_ref()) || !defined.insert(name.to_string()) {
+                out.push_str(&format!("/* duplicate type name skipped: {name} */\n"));
+                continue;
+            }
+            if name != raw {
+                out.push_str(&format!("/* renamed from \"{raw}\" */\n"));
+            }
+            out.push_str(&compose_enum_body(ct, &name));
+            out.push('\n');
+        }
+    }
+    out
 }
 
 /// The type-token text for a local declaration.  Mirrors C++ `pushTypeStart`

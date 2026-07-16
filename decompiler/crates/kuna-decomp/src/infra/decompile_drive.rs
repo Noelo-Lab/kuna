@@ -953,6 +953,110 @@ pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
     out
 }
 
+/// (kuna) Render every user-defined data-type in the architecture's type
+/// factory as C definitions (the `PrintC::docTypeDefinitions` port,
+/// [`crate::printc::PrintC::doc_type_definitions`]) — the type-definition
+/// block of the `kuna decompile-project` `.h` artifact.  Same
+/// take/put split-borrow dance as [`print_c`] (the printer is owned by `arch`).
+pub fn print_c_types(arch: &mut Architecture) -> String {
+    let mut printer = arch.take_print();
+    let out = printer.doc_type_definitions(arch);
+    arch.put_print(printer);
+    out
+}
+
+/// (kuna) Render ONLY the decompiled function's prototype declaration —
+/// `<ret> <name>(<params>);` — via
+/// [`crate::printc::PrintC::doc_prototype`]: the `.h`-prototype half of the
+/// `kuna decompile-project` prototype == definition-line contract (the emitted
+/// text minus the trailing `;` appears char-for-char inside [`print_c`]'s
+/// render of the same `Funcdata`).  A function whose prototype was never
+/// recovered (no proto store) renders as `void <name>(void);`.
+pub fn print_c_prototype(arch: &mut Architecture, fd: &Funcdata) -> String {
+    let mut printer = arch.take_print();
+    let out = printer.doc_prototype(fd, arch);
+    arch.put_print(printer);
+    out
+}
+
+/// (kuna) The generated recompile prelude for a `kuna decompile-project` `.h`:
+/// C typedefs for the architecture's interned **core** scalar types (`uint4`,
+/// `int8`, `float8`, …, spelled per standard C — 8-byte integers always use
+/// `long long` so the text is data-model independent) plus the fixed Ghidra
+/// `undefined` family block (`undefined`, `undefined1..8` — 3/5/6/7 mapped to
+/// the next larger unsigned integer with a sizeof note — and `undefined16/32`
+/// as byte-array structs).  `bool` is covered by `#include <stdbool.h>`;
+/// `char`/`void` are real C and emit nothing.
+pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
+    use crate::dtype::type_metatype::*;
+    let mut out = String::new();
+    out.push_str("/* kuna recompile prelude (generated): core scalar typedefs */\n");
+    out.push_str("#include <stdbool.h>\n\n");
+
+    // Generated typedefs for the interned core types (dependent_order filtered
+    // on is_core_type; sorted by name for a stable, readable block).
+    let mut lines: Vec<String> = Vec::new();
+    for ct in arch.types_impl().dependent_order() {
+        if !ct.is_core_type() {
+            continue;
+        }
+        let name = ct.get_name();
+        // `void`/`char` are real C; `bool` comes from <stdbool.h> above.
+        if name.is_empty() || matches!(name, "void" | "char" | "bool") {
+            continue;
+        }
+        let size = ct.get_size();
+        let (spelling, note): (&str, &str) = match ct.get_metatype() {
+            TYPE_INT => match size {
+                1 => ("signed char", ""),
+                2 => ("short", ""),
+                4 => ("int", ""),
+                8 => ("long long", ""),
+                _ => continue,
+            },
+            TYPE_UINT | TYPE_UNKNOWN => match size {
+                1 => ("unsigned char", ""),
+                2 => ("unsigned short", ""),
+                4 => ("unsigned int", ""),
+                8 => ("unsigned long long", ""),
+                _ => continue,
+            },
+            TYPE_FLOAT => match size {
+                4 => ("float", ""),
+                8 => ("double", ""),
+                10 | 16 => ("long double", " /* sizeof may differ */"),
+                _ => continue,
+            },
+            // The pseudo "function body" type: only ever used as `code *`;
+            // a 1-byte scalar keeps `sizeof(code)` meaningful too.
+            TYPE_CODE => ("unsigned char", " /* pseudo (function body) type */"),
+            _ => continue,
+        };
+        lines.push(format!("typedef {spelling} {name};{note}\n"));
+    }
+    lines.sort();
+    lines.dedup();
+    for l in &lines {
+        out.push_str(l);
+    }
+
+    // The fixed Ghidra/kuna `undefined` family (the anonymous-unknown
+    // rendering `undefined<N>`, printc.rs `declarator_parts`).
+    out.push_str("\n/* the Ghidra/kuna `undefined` family */\n");
+    out.push_str("typedef unsigned char undefined;\n");
+    out.push_str("typedef unsigned char undefined1;\n");
+    out.push_str("typedef unsigned short undefined2;\n");
+    out.push_str("typedef unsigned int undefined3; /* 3 bytes in the decompiler; sizeof differs */\n");
+    out.push_str("typedef unsigned int undefined4;\n");
+    out.push_str("typedef unsigned long long undefined5; /* 5 bytes in the decompiler; sizeof differs */\n");
+    out.push_str("typedef unsigned long long undefined6; /* 6 bytes in the decompiler; sizeof differs */\n");
+    out.push_str("typedef unsigned long long undefined7; /* 7 bytes in the decompiler; sizeof differs */\n");
+    out.push_str("typedef unsigned long long undefined8;\n");
+    out.push_str("typedef struct { unsigned char b[16]; } undefined16;\n");
+    out.push_str("typedef struct { unsigned char b[32]; } undefined32;\n");
+    out
+}
+
 /// A recovered variable surfaced for the machine-readable batch output
 /// (`kuna decompile-all --json`) — the fields decbench's `type_match` metric
 /// consumes from a decompiler's per-function variable list.

@@ -44,35 +44,36 @@ use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use object::Object; // `File::architecture()` (ARM-discovery default, decbench)
 use kuna_decomp::decompile_drive::{
-    decompile_func_full_with_override_dyn, extract_variables, print_c, VarInfo,
+    decompile_func_full_with_override_dyn, extract_variables, print_c, print_c_prototype, VarInfo,
 };
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
 
 use crate::jsonfmt::{dumps_indent2, Json};
 use crate::paths;
 
-/// Parsed `decompile-all` / `functions` arguments (the two share a loader).
-struct Args {
-    binary: String,
-    json: bool,
+/// Parsed `decompile-all` / `functions` arguments (the two share a loader;
+/// `decompile-project` reuses the same parse via its own wrapper).
+pub(crate) struct Args {
+    pub(crate) binary: String,
+    pub(crate) json: bool,
     /// `--functions a,b,c`: restrict to these names (None ⇒ every function).
-    names: Option<Vec<String>>,
+    pub(crate) names: Option<Vec<String>>,
     /// `--addr 0xVMA` (repeatable): decompile specific entry addresses, even if
     /// unnamed (stripped / LLM use).  Combined with `--functions` if both given.
-    addrs: Vec<u64>,
+    pub(crate) addrs: Vec<u64>,
     /// `--no-vars`: skip the per-function variable extraction (faster; drops the
     /// `variables` array used by decbench's `type_match`).
-    no_vars: bool,
-    /// `--max-fn-seconds N` (decompile-all only): per-function decompile
-    /// watchdog budget in seconds; `0` disables.  A function that exceeds it is
-    /// recorded as that function's `error` (the batch continues) instead of
-    /// hanging the whole run — the defensive cap for the known stripped-ELF
-    /// non-convergence hang (`tests/hang-repro/`).  Default 120.
-    max_fn_seconds: u64,
-    options: Vec<(String, String)>,
-    slice: Option<String>,
-    target: Option<String>,
-    sleighpath: Option<String>,
+    pub(crate) no_vars: bool,
+    /// `--max-fn-seconds N` (decompile-all / decompile-project): per-function
+    /// decompile watchdog budget in seconds; `0` disables.  A function that
+    /// exceeds it is recorded as that function's `error` (the batch continues)
+    /// instead of hanging the whole run — the defensive cap for the known
+    /// stripped-ELF non-convergence hang (`tests/hang-repro/`).  Default 120.
+    pub(crate) max_fn_seconds: u64,
+    pub(crate) options: Vec<(String, String)>,
+    pub(crate) slice: Option<String>,
+    pub(crate) target: Option<String>,
+    pub(crate) sleighpath: Option<String>,
 }
 
 /// `kuna decompile-all` entry point.
@@ -150,13 +151,18 @@ pub fn run_functions(argv: &[String]) -> i32 {
 
 /// One decompiled function's result (success carries `code`; failure carries
 /// `error`).
-struct FuncResult {
-    name: String,
-    address: u64,
-    size: i64,
-    code: Option<String>,
-    error: Option<String>,
-    variables: Vec<VarInfo>,
+pub(crate) struct FuncResult {
+    pub(crate) name: String,
+    pub(crate) address: u64,
+    pub(crate) size: i64,
+    pub(crate) code: Option<String>,
+    pub(crate) error: Option<String>,
+    /// The `.h` prototype line (`<ret> <name>(<params>);`), captured only when
+    /// the caller asked for it (`decompile_targets(want_proto=true)` — the
+    /// `decompile-project` surface).  Always `None` on the `decompile-all`
+    /// path, whose JSON must stay byte-identical.
+    pub(crate) proto: Option<String>,
+    pub(crate) variables: Vec<VarInfo>,
 }
 
 /// Load + analyze the binary once, then decompile every selected function.
@@ -174,6 +180,22 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
 
+    Ok(decompile_targets(&mut prog, targets, args.no_vars, /* want_proto= */ false))
+}
+
+/// Decompile each `(name, entry)` target in turn against the already-loaded
+/// program, returning one [`FuncResult`] per target (success or per-function
+/// `error` — a bad function never aborts the batch).  `want_proto`
+/// additionally captures the function's prototype line
+/// ([`print_c_prototype`]) inside the same panic guard as the C render — the
+/// `decompile-project` `.h` surface; `decompile-all` passes `false`, keeping
+/// its JSON byte-identical.
+pub(crate) fn decompile_targets(
+    prog: &mut ConsoleProgram,
+    targets: Vec<(String, Address)>,
+    no_vars: bool,
+    want_proto: bool,
+) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
     for (name, entry) in targets {
         let address = entry.get_offset();
@@ -225,7 +247,6 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
                 // would otherwise abort the WHOLE binary and discard every function
                 // already decompiled. Containing it here honors the per-function
                 // isolation contract (one bad function → one `error` record).
-                let no_vars = args.no_vars;
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
@@ -233,15 +254,24 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
                     let code = print_c(prog.arch_mut(), &fd).trim_matches('\n').to_string();
                     let variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
-                    (code, variables)
+                    // The prototype must be captured HERE (fd is dropped at the
+                    // end of the iteration) and inside the same guard (the
+                    // declarator walk shares the printer's fail-fast invariants).
+                    let proto = if want_proto {
+                        Some(print_c_prototype(prog.arch_mut(), &fd))
+                    } else {
+                        None
+                    };
+                    (code, variables, proto)
                 }));
                 match rendered {
-                    Ok((code, variables)) => out.push(FuncResult {
+                    Ok((code, variables, proto)) => out.push(FuncResult {
                         name,
                         address,
                         size,
                         code: Some(code),
                         error: None,
+                        proto,
                         variables,
                     }),
                     Err(_) => out.push(FuncResult {
@@ -250,6 +280,7 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
                         size: 0,
                         code: None,
                         error: Some("panic while rendering C / extracting variables".into()),
+                        proto: None,
                         variables: Vec::new(),
                     }),
                 }
@@ -260,11 +291,12 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
                 size: 0,
                 code: None,
                 error: Some(e.explain().to_string()),
+                proto: None,
                 variables: Vec::new(),
             }),
         }
     }
-    Ok(out)
+    out
 }
 
 /// Enumerate the program's functions as `(name, address)` (the `functions`
@@ -287,7 +319,7 @@ fn list_functions(args: &Args) -> Result<Vec<(String, u64)>, String> {
 /// `--option`s in the correct order.  `default_listing` injects the Listing
 /// default of the `decompile-all` surface (decbench F1, DIV-15) — `true` from
 /// [`decompile_all`], `false` from [`list_functions`] (enumeration stays cheap).
-fn load_program(args: &Args, default_listing: bool) -> Result<ConsoleProgram, String> {
+pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
         .to_string_lossy()
@@ -396,7 +428,10 @@ fn load_program(args: &Args, default_listing: bool) -> Result<ConsoleProgram, St
 /// Build the target `(name, Address)` list from the filters: `--addr` entries
 /// (named via the symbol table, else `name_function`), `--functions` names, or —
 /// with no filter — every enumerated function.
-fn resolve_targets(prog: &ConsoleProgram, args: &Args) -> Result<Vec<(String, Address)>, String> {
+pub(crate) fn resolve_targets(
+    prog: &ConsoleProgram,
+    args: &Args,
+) -> Result<Vec<(String, Address)>, String> {
     let code_space = prog
         .arch()
         .manage()
@@ -596,7 +631,7 @@ fn var_json(v: &VarInfo) -> Json {
 
 /// Render the functions as concatenated C with `// Function:` headers (the human
 /// output, mirroring `DecompilationResult.to_c_file`).
-fn render_c(funcs: &[FuncResult]) -> String {
+pub(crate) fn render_c(funcs: &[FuncResult]) -> String {
     let mut out = String::new();
     for f in funcs {
         match (&f.code, &f.error) {
@@ -633,7 +668,7 @@ pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> 
     }
 }
 
-fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
+pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let mut binary: Option<String> = None;
     let mut json = false;
     let mut names: Option<Vec<String>> = None;
@@ -660,7 +695,7 @@ fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
                 let v = take(argv, &mut i, "--addr")?;
                 addrs.push(parse_hex(&v)?);
             }
-            "--max-fn-seconds" if cmd == "decompile-all" => {
+            "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = v
                     .trim()

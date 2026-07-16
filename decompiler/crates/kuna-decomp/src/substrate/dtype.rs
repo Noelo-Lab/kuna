@@ -1898,8 +1898,9 @@ impl Datatype {
     }
 
     /// Borrow a `TypeEnum`'s `namemap`, used where the C++ casts `&op` to
-    /// `TypeEnum *`.  `None` if not an enum.
-    fn as_enum_namemap(&self) -> Option<&std::collections::BTreeMap<u64, String>> {
+    /// `TypeEnum *`.  `None` if not an enum.  `pub(crate)` for the enum body
+    /// rendering in [`crate::printc`] (`doc_type_definitions`).
+    pub(crate) fn as_enum_namemap(&self) -> Option<&std::collections::BTreeMap<u64, String>> {
         match &self.kind {
             DatatypeKind::Enum { namemap } => Some(namemap),
             _ => None,
@@ -4826,6 +4827,62 @@ impl TypeFactoryImpl {
         Ok(())
     }
 
+    // -- Dependency ordering (type.cc:3745-3773) ------------------------------
+
+    /// Place all interned data-types in dependency order (C++
+    /// `TypeFactory::dependentOrder`, decompiler/cpp/type.cc): every data-type
+    /// is preceded by the types it depends on (its typedef base and its
+    /// component sub-types), so a definition-before-use walk (e.g. emitting C
+    /// type definitions, `PrintC::docTypeDefinitions`) can consume the list
+    /// front to back.
+    ///
+    /// The interning `tree` itself is ordered by `compareDependency` — submeta,
+    /// then *descending* size ([`Datatype::compare_dependency_base`]) — which is
+    /// NOT definition-before-use (a struct containing another struct by value
+    /// sorts *before* its component); hence this explicit postorder DFS.
+    pub fn dependent_order(&self) -> Vec<Rc<Datatype>> {
+        // Snapshot the tree contents so the recursion never holds the store
+        // borrow (the same pattern as `cache_core_types`).
+        let entries: Vec<Rc<Datatype>> = {
+            let store = self.store.borrow();
+            store.tree.iter().map(|k| Rc::clone(&k.0)).collect()
+        };
+        let mut deporder: Vec<Rc<Datatype>> = Vec::with_capacity(entries.len());
+        let mut mark: std::collections::HashSet<*const Datatype> =
+            std::collections::HashSet::new();
+        for ct in &entries {
+            Self::order_recurse(&mut deporder, &mut mark, ct);
+        }
+        deporder
+    }
+
+    /// Make sure the dependents of `ct` are in the order list, then add `ct`
+    /// (C++ `TypeFactory::orderRecurse`, decompiler/cpp/type.cc).  The mark set
+    /// keys on `Rc::as_ptr` object identity — the same identity
+    /// [`Datatype::compare_dependency_ptr`] orders by — so a pointer cycle
+    /// (`struct A { struct B *b; }; struct B { struct A *a; };`) terminates
+    /// with each data-type appearing exactly once.
+    fn order_recurse(
+        deporder: &mut Vec<Rc<Datatype>>,
+        mark: &mut std::collections::HashSet<*const Datatype>,
+        ct: &Rc<Datatype>,
+    ) {
+        if !mark.insert(Rc::as_ptr(ct)) {
+            return; // Already inserted before
+        }
+        if let Some(td) = ct.get_typedef() {
+            let td = Rc::clone(td);
+            Self::order_recurse(deporder, mark, &td);
+        }
+        let size = ct.num_depend();
+        for i in 0..size {
+            if let Some(dep) = ct.get_depend(i) {
+                Self::order_recurse(deporder, mark, &dep);
+            }
+        }
+        deporder.push(Rc::clone(ct));
+    }
+
     // -- Atomic / core getters (type.cc:4056-4198) ---------------------------
 
     /// Get the unique "void" data-type (C++ `TypeFactory::getTypeVoid`,
@@ -6920,6 +6977,150 @@ mod tests {
             Some(4),
             "high slice records its byte offset into the parent enum"
         );
+    }
+
+    /// `TypeFactory::dependentOrder` (type.cc) puts a component BEFORE its
+    /// container: for `struct outer { struct inner in_; ... }` the postorder
+    /// DFS yields `inner` before `outer`, while the raw interning `tree`
+    /// (ordered by `compareDependency`: submeta, then DESCENDING size) has
+    /// `outer` (size 16) before `inner` (size 8) — emitting C definitions in
+    /// raw tree order would use `inner` before defining it.  This pins WHY the
+    /// explicit DFS exists.
+    #[test]
+    fn dependent_order_nested_struct() {
+        use type_metatype::*;
+        let f = factory();
+        let i4 = f.get_base(4, TYPE_INT).unwrap();
+        // struct inner { int4 a@0; int4 b@4; } (size 8).
+        let inner = {
+            let mut s = Datatype::new_with_align(8, 4, TYPE_STRUCT);
+            s.name = "inner".to_string();
+            s.display_name = "inner".to_string();
+            s.id = Datatype::hash_name("inner");
+            s.kind = DatatypeKind::Struct {
+                field: vec![
+                    TypeField::new(0, 0, "a", Rc::clone(&i4)),
+                    TypeField::new(1, 4, "b", Rc::clone(&i4)),
+                ],
+                bitfield: vec![],
+            };
+            f.find_add(s).unwrap()
+        };
+        // struct outer { inner in_@0; int4 c@8; int4 d@12; } (size 16) —
+        // contains inner BY VALUE.
+        let outer = {
+            let mut s = Datatype::new_with_align(16, 4, TYPE_STRUCT);
+            s.name = "outer".to_string();
+            s.display_name = "outer".to_string();
+            s.id = Datatype::hash_name("outer");
+            s.kind = DatatypeKind::Struct {
+                field: vec![
+                    TypeField::new(0, 0, "in_", Rc::clone(&inner)),
+                    TypeField::new(1, 8, "c", Rc::clone(&i4)),
+                    TypeField::new(2, 12, "d", Rc::clone(&i4)),
+                ],
+                bitfield: vec![],
+            };
+            f.find_add(s).unwrap()
+        };
+
+        // The raw tree order is BROKEN for definition-before-use: same submeta,
+        // descending size puts the bigger `outer` first.
+        let tree_pos = |t: &Rc<Datatype>| {
+            f.store
+                .borrow()
+                .tree
+                .iter()
+                .position(|k| Rc::ptr_eq(&k.0, t))
+                .expect("struct is interned in the tree")
+        };
+        assert!(
+            tree_pos(&outer) < tree_pos(&inner),
+            "precondition: raw compareDependency tree order has outer (size 16) \
+             before inner (size 8) — the order the DFS must correct"
+        );
+
+        // dependentOrder: the component precedes its container.
+        let order = f.dependent_order();
+        let pos = |t: &Rc<Datatype>| {
+            order.iter().position(|c| Rc::ptr_eq(c, t)).expect("type is in dependentOrder")
+        };
+        assert!(
+            pos(&inner) < pos(&outer),
+            "dependentOrder must place inner before the outer struct containing it"
+        );
+        assert!(pos(&i4) < pos(&inner), "the int4 component precedes inner");
+        // Every interned tree entry appears in the order (the C++ walk seeds
+        // from every tree node).
+        let store = f.store.borrow();
+        for k in store.tree.iter() {
+            assert!(
+                order.iter().any(|c| Rc::ptr_eq(c, &k.0)),
+                "tree entry `{}` missing from dependentOrder",
+                k.0.get_name()
+            );
+        }
+    }
+
+    /// `dependentOrder` on a POINTER CYCLE (`struct A { B *pb; }; struct B
+    /// { A *pa; };`, built through the real incomplete-struct + assignRawFields
+    /// flow) terminates — the `Rc::as_ptr` mark set breaks the cycle — and each
+    /// data-type object appears exactly once.
+    #[test]
+    fn dependent_order_pointer_cycle() {
+        use type_metatype::*;
+        let f = factory();
+        // The real construction flow: two incomplete structs, mutual pointers,
+        // then complete each with a field pointing at the other.
+        let a0 = f.get_type_struct("cycA").unwrap();
+        let b0 = f.get_type_struct("cycB").unwrap();
+        let pb = f.get_type_pointer(8, Rc::clone(&b0), 1).unwrap();
+        let pa = f.get_type_pointer(8, Rc::clone(&a0), 1).unwrap();
+        let a1 = f
+            .assign_raw_fields_struct(
+                &a0,
+                vec![TypeField::new(0, -1, "next_b", Rc::clone(&pb))],
+                vec![],
+            )
+            .unwrap();
+        let b1 = f
+            .assign_raw_fields_struct(
+                &b0,
+                vec![TypeField::new(0, -1, "next_a", Rc::clone(&pa))],
+                vec![],
+            )
+            .unwrap();
+
+        // Terminates (would loop forever without the mark set) and each object
+        // appears EXACTLY once.
+        let order = f.dependent_order();
+        let mut seen: std::collections::HashSet<*const Datatype> =
+            std::collections::HashSet::new();
+        for ct in &order {
+            assert!(
+                seen.insert(Rc::as_ptr(ct)),
+                "data-type `{}` appears twice in dependentOrder",
+                ct.get_name()
+            );
+        }
+        // The completed structs and both pointers are all present.
+        for (what, t) in
+            [("cycA", &a1), ("cycB", &b1), ("cycA *", &pa), ("cycB *", &pb)]
+        {
+            assert!(
+                order.iter().any(|c| Rc::ptr_eq(c, t)),
+                "`{what}` missing from dependentOrder"
+            );
+        }
+        // Every interned tree entry made it into the order.
+        let store = f.store.borrow();
+        for k in store.tree.iter() {
+            assert!(
+                order.iter().any(|c| Rc::ptr_eq(c, &k.0)),
+                "tree entry `{}` missing from dependentOrder",
+                k.0.get_name()
+            );
+        }
     }
 
     /// `getPtrToFromParent` (type.cc:3157-3171) walks `getSubType` down a container
