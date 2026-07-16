@@ -47,7 +47,7 @@ use kuna_decomp::options::register_option_elements;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
-use kuna_sleigh::loadimage::{LoadImage, LoadImageFunc};
+use kuna_sleigh::loadimage::{LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
@@ -58,6 +58,23 @@ use kuna_sleigh::translate::register_translate_ids;
 struct ProgramSymbol {
     name: String,
     addr: Address,
+}
+
+/// (kuna) A one-shot [`AssemblyEmit`](kuna_sleigh::translate::AssemblyEmit)
+/// sink: `Translate::print_assembly` dumps exactly one instruction, whose
+/// mnemonic/body strings are captured here (the single-instruction form of the
+/// `IfcPrintdisasm` listing emitter in `ifacedecomp.rs`).
+#[derive(Default)]
+struct OneShotAssemblyEmit {
+    mnem: String,
+    body: String,
+}
+
+impl kuna_sleigh::translate::AssemblyEmit for OneShotAssemblyEmit {
+    fn dump(&mut self, _addr: &Address, mnem: &str, body: &str) {
+        self.mnem = mnem.to_string();
+        self.body = body.to_string();
+    }
 }
 
 /// The console's loaded program: the engine assembly (C++ `dcp->conf`, an
@@ -173,6 +190,122 @@ impl ConsoleProgram {
     /// raw-backend convention — the engine reports every function it found.
     pub fn function_entries(&self) -> impl Iterator<Item = (&str, &Address)> {
         self.symbols.iter().map(|s| (s.name.as_str(), &s.addr))
+    }
+
+    /// (kuna) Every section of bytes the load image maps, as `(vma, size, flags)`
+    /// triples — `flags` bits per [`kuna_sleigh::loadimage::section_flags`]
+    /// (CODE/DATA/READONLY/UNALLOC/NOLOAD).
+    ///
+    /// Consumes the LoadImage section-iteration API
+    /// (`openSectionInfo`/`getNextSection`/`closeSectionInfo`) in one shot, the
+    /// same loop shape as `CodeDataAnalysis::runModel` (`codedata.rs`), reached
+    /// through the engine's shared loader handle (`translate().loader_rc()`) —
+    /// the loader the bootstrap handed to the engine via `set_loader`.
+    /// Zero-size records are skipped (the `runModel` convention). Empty when the
+    /// loader publishes no section info (e.g. the XML `<binaryimage>` corpus
+    /// loader, which keeps the trait's default no-op iteration).
+    pub fn sections(&self) -> Vec<(u64, u64, u32)> {
+        let loader_rc = self.arch().translate().loader_rc();
+        // The iteration methods are `&self` (C++ `const` with a `mutable`
+        // cursor; interior mutability here), so a shared borrow suffices.
+        let loader = loader_rc.borrow();
+        let mut out = Vec::new();
+        let mut secinfo = LoadImageSection::default();
+        loader.open_section_info();
+        loop {
+            // getNextSection fills `secinfo` and returns whether ANOTHER record
+            // follows — so the record is consumed BEFORE the loop-exit check
+            // (the runModel shape). An empty section list leaves the default
+            // record (size 0), which the skip below drops.
+            let moresections = loader.get_next_section(&mut secinfo);
+            if secinfo.size != 0 {
+                out.push((secinfo.address.get_offset(), secinfo.size, secinfo.flags));
+            }
+            if !moresections {
+                break;
+            }
+        }
+        loader.close_section_info();
+        out
+    }
+
+    /// (kuna) Disassemble the single machine instruction at code-space VMA
+    /// `vma`, returning `(length, mnemonic, body)` — the one-instruction form
+    /// of the `disassemble` console command (`IfcPrintdisasm`), for a caller
+    /// that walks a range itself (advance by `length` per step).
+    ///
+    /// Builds the `Address` in the engine's default code space (the
+    /// `function_named_at` idiom) and drives `Translate::print_assembly`
+    /// through a one-shot [`AssemblyEmit`](kuna_sleigh::translate::AssemblyEmit)
+    /// sink. An undecodable/unmapped address surfaces as the translator's
+    /// `Err` (C++ `BadDataError`/`DataUnavailError`).
+    pub fn disassemble_at(&self, vma: u64) -> KunaResult<(int4, String, String)> {
+        let code_space = Rc::clone(
+            self.arch()
+                .manage()
+                .get_default_code_space()
+                .ok_or_else(|| KunaError::lowlevel("no default code space"))?,
+        );
+        let addr = Address::new(code_space, vma);
+        let mut emit = OneShotAssemblyEmit::default();
+        let length = self.arch().translate().print_assembly(&mut emit, &addr)?;
+        Ok((length, emit.mnem, emit.body))
+    }
+
+    /// (kuna) Read `size` raw image bytes at code-space VMA `vma` through the
+    /// engine's load image (`LoadImage::load`, the `loader_rc()` handle) —
+    /// `None` when the range is not backed by the image (e.g. `.bss`, an
+    /// unmapped address, or a `size` beyond the C++ `int4` read contract).
+    pub fn read_bytes(&self, vma: u64, size: usize) -> Option<Vec<u8>> {
+        if size > i32::MAX as usize {
+            return None; // LoadImage::load reads at most int4 bytes (C++ contract).
+        }
+        let code_space = Rc::clone(self.arch().manage().get_default_code_space()?);
+        let addr = Address::new(code_space, vma);
+        let loader_rc = self.arch().translate().loader_rc();
+        // `load` is `&mut self` (it seeks/caches); the RefCell covers it.
+        let bytes = loader_rc.borrow_mut().load(size as i32, &addr);
+        bytes.ok()
+    }
+
+    /// (kuna) Every **named global data symbol** mapped into the engine's
+    /// default data space, as `(name, vma, type_size)` — the label set a
+    /// whole-binary exporter cross-references against the `dat_<addr>` tokens
+    /// the C printer generates for unnamed data.
+    ///
+    /// Enumerates the global scope (`Database::get_global_scope`) via
+    /// `scope_space_symbol_specs` over the default data space (`ram` on every
+    /// vendored processor; Harvard-style splits follow the data space).
+    /// FunctionSymbols live in the SAME per-space rangemap (`add_function` maps
+    /// them at their entry address) and the specs tuple's `uint4` is the
+    /// varnode `flags` word — which does NOT distinguish them (functions carry
+    /// `namelock|typelock`, but so can data) — so functions are excluded by
+    /// their datatype instead: a FunctionSymbol's type is exactly the
+    /// TYPE_CODE base, and every `metatype == TYPE_CODE` spec is dropped.
+    /// This also drops the deliberately code-typed untyped Data placeholders
+    /// some gated analysis passes install (size-1, no real extent — useless as
+    /// data labels); typed data (DWARF `undefined<N>` globals, `char[N]`
+    /// string symbols) is kept. `type_size` is the mapped datatype's byte size.
+    /// Sorted by VMA.
+    pub fn global_data_symbols(&self) -> Vec<(String, u64, i64)> {
+        use kuna_decomp::dtype::type_metatype;
+        let arch = self.arch();
+        let Some(scope) = arch.symboltab.get_global_scope() else {
+            return Vec::new();
+        };
+        let Some(data_space) = arch.manage().get_default_data_space() else {
+            return Vec::new();
+        };
+        let space_index = data_space.get_index() as usize;
+        let mut out: Vec<(String, u64, i64)> = arch
+            .symboltab
+            .scope_space_symbol_specs(scope, space_index)
+            .into_iter()
+            .filter(|(_, ct, _, _)| ct.get_metatype() != type_metatype::TYPE_CODE)
+            .map(|(name, ct, addr, _)| (name, addr.get_offset(), i64::from(ct.get_size())))
+            .collect();
+        out.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+        out
     }
 
     /// (kuna) Is a (possibly `::`-scoped) symbol of full name `full_name` present in

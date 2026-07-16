@@ -188,6 +188,327 @@ mod w10_input_prototype_declarator {
     }
 }
 
+// ===========================================================================
+// (kuna decompile-project) `doc_type_definitions` pure renderers —
+// `compose_type_body` / `compose_enum_body` / `render_type_definitions` /
+// `sanitize_type_name` over hand-built Datatypes + `RealTypeCtx::OFF` (the
+// same pattern as `w10_input_prototype_declarator` above).
+// ===========================================================================
+mod decompile_project_type_render {
+    use crate::dtype::{flags, type_metatype, Datatype, DatatypeKind, TypeField};
+    use crate::printc::{
+        compose_enum_body, compose_type_body, render_type_definitions, sanitize_type_name,
+        RealTypeCtx,
+    };
+    use std::rc::Rc;
+
+    fn named(size: i32, m: type_metatype, nm: &str) -> Rc<Datatype> {
+        let mut t = Datatype::new_with_align(size, -1, m);
+        t.name = nm.to_string();
+        t.display_name = nm.to_string();
+        t.id = Datatype::hash_name(nm);
+        Rc::new(t)
+    }
+
+    fn ptr_to(ptrto: Rc<Datatype>) -> Rc<Datatype> {
+        let mut p = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+        p.kind = DatatypeKind::Pointer { ptrto, spaceid: None, truncate: None, wordsize: 1 };
+        Rc::new(p)
+    }
+
+    fn array_of(arrayof: Rc<Datatype>, n: i32) -> Rc<Datatype> {
+        let elt = arrayof.get_size().max(1);
+        let mut a = Datatype::new_with_align(elt * n, -1, type_metatype::TYPE_ARRAY);
+        a.kind = DatatypeKind::Array { arrayof, arraysize: n };
+        Rc::new(a)
+    }
+
+    /// A complete named struct with the given (offset, name, type) fields and
+    /// total size.
+    fn struct_of(nm: &str, size: i32, fields: &[(i32, &str, Rc<Datatype>)]) -> Rc<Datatype> {
+        let mut s = Datatype::new_with_align(size, -1, type_metatype::TYPE_STRUCT);
+        s.name = nm.to_string();
+        s.display_name = nm.to_string();
+        s.id = Datatype::hash_name(nm);
+        s.kind = DatatypeKind::Struct {
+            field: fields
+                .iter()
+                .enumerate()
+                .map(|(i, (off, fnm, ft))| TypeField::new(i as i32, *off, *fnm, Rc::clone(ft)))
+                .collect(),
+            bitfield: vec![],
+        };
+        Rc::new(s)
+    }
+
+    fn make_enum(nm: &str, size: i32, m: type_metatype, entries: &[(u64, &str)]) -> Rc<Datatype> {
+        let mut dt = Datatype::new_with_align(size, size, m);
+        dt.name = nm.to_string();
+        dt.display_name = nm.to_string();
+        dt.id = Datatype::hash_name(nm);
+        dt.flags |= flags::enumtype;
+        let mut namemap = std::collections::BTreeMap::new();
+        for (v, n) in entries {
+            namemap.insert(*v, (*n).to_string());
+        }
+        dt.kind = DatatypeKind::Enum { namemap };
+        Rc::new(dt)
+    }
+
+    /// Struct body with a scalar, a pointer, an array, an interior padding gap
+    /// AND trailing padding: every member/padding shape at once.
+    #[test]
+    fn struct_body_scalar_pointer_array_gap_trailing_pad() {
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        let ch = named(1, type_metatype::TYPE_INT, "char");
+        // struct mystruct { int4 a@0; <gap 4>; char *p@8; int4 arr[4]@16;
+        //                   <trailing pad 8> } size 40.
+        let s = struct_of(
+            "mystruct",
+            40,
+            &[
+                (0, "a", Rc::clone(&i4)),
+                (8, "p", ptr_to(ch)),
+                (16, "arr", array_of(i4, 4)),
+            ],
+        );
+        let body = compose_type_body(&s, "mystruct", RealTypeCtx::OFF);
+        assert_eq!(
+            body,
+            "struct mystruct {\n\
+             \x20   int4 a;\n\
+             \x20   undefined1 _pad4[4];\n\
+             \x20   char *p;\n\
+             \x20   int4 arr[4];\n\
+             \x20   undefined1 _pad20[8];\n\
+             };\n",
+            "struct body: scalar + gap pad + glued pointer + array tail + trailing pad"
+        );
+    }
+
+    /// Union body: every field at offset 0, NO padding members.
+    #[test]
+    fn union_body_no_padding() {
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        let f8 = named(8, type_metatype::TYPE_FLOAT, "float8");
+        let mut u = Datatype::new_with_align(8, -1, type_metatype::TYPE_UNION);
+        u.name = "myunion".to_string();
+        u.display_name = "myunion".to_string();
+        u.id = Datatype::hash_name("myunion");
+        u.kind = DatatypeKind::Union {
+            field: vec![
+                TypeField::new(0, 0, "as_int", i4),
+                TypeField::new(1, 0, "as_float", f8),
+            ],
+        };
+        let u = Rc::new(u);
+        let body = compose_type_body(&u, "myunion", RealTypeCtx::OFF);
+        assert_eq!(
+            body,
+            "union myunion {\n\
+             \x20   int4 as_int;\n\
+             \x20   float8 as_float;\n\
+             };\n"
+        );
+        assert!(!body.contains("_pad"), "unions carry no padding members");
+    }
+
+    /// Enum values: the TYPE_INT (decode-time TYPE_ENUM_INT) form prints
+    /// SIGNED decimal sign-extended by the enum size; the TYPE_UINT form hex.
+    #[test]
+    fn enum_signed_and_unsigned_value_forms() {
+        // Signed 4-byte enum: 0xffffffff sign-extends to -1.
+        let se = make_enum(
+            "serrs",
+            4,
+            type_metatype::TYPE_INT,
+            &[(0, "OK"), (0xffff_ffff, "FAIL")],
+        );
+        let body = compose_enum_body(&se, "serrs");
+        assert_eq!(
+            body,
+            "typedef enum serrs {\n\
+             \x20   OK = 0,\n\
+             \x20   FAIL = -1\n\
+             } serrs;\n"
+        );
+        // Unsigned 4-byte enum: hex values.
+        let ue = make_enum(
+            "uflags",
+            4,
+            type_metatype::TYPE_UINT,
+            &[(0x1, "LO"), (0x80, "HI")],
+        );
+        let body = compose_enum_body(&ue, "uflags");
+        assert_eq!(
+            body,
+            "typedef enum uflags {\n\
+             \x20   LO = 0x1,\n\
+             \x20   HI = 0x80\n\
+             } uflags;\n"
+        );
+    }
+
+    /// A typedef renders through the declarator builder; a plain scalar
+    /// typedef and a pointer typedef both lay out correctly.
+    #[test]
+    fn typedef_renders_via_declarator() {
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        let td = {
+            let mut t = (*i4).clone();
+            t.name = "myint".to_string();
+            t.display_name = "myint".to_string();
+            t.id = Datatype::hash_name("myint");
+            t.typedef_imm = Some(Rc::clone(&i4));
+            Rc::new(t)
+        };
+        let out = render_type_definitions(&[Rc::clone(&i4), Rc::clone(&td)], RealTypeCtx::OFF);
+        assert!(
+            out.contains("typedef int4 myint;\n"),
+            "scalar typedef line missing:\n{out}"
+        );
+        // Pointer typedef: `typedef char *mystr;` (the `*` glues to the name).
+        let ch = named(1, type_metatype::TYPE_INT, "char");
+        let pstr = ptr_to(ch);
+        let tdp = {
+            let mut t = (*pstr).clone();
+            t.name = "mystr".to_string();
+            t.display_name = "mystr".to_string();
+            t.id = Datatype::hash_name("mystr");
+            t.typedef_imm = Some(Rc::clone(&pstr));
+            Rc::new(t)
+        };
+        let out = render_type_definitions(&[tdp], RealTypeCtx::OFF);
+        assert!(
+            out.contains("typedef char *mystr;\n"),
+            "pointer typedef line missing:\n{out}"
+        );
+    }
+
+    /// An INCOMPLETE struct emits ONLY the forward declaration, annotated
+    /// `/* opaque */` — never a body.  A complete struct gets forward decl
+    /// (un-annotated) FIRST, then its body.
+    #[test]
+    fn incomplete_struct_forward_decl_only() {
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        let complete = struct_of("solid", 4, &[(0, "a", i4)]);
+        let opaque = {
+            let mut s = Datatype::new_with_align(1, -1, type_metatype::TYPE_STRUCT);
+            s.name = "mystery".to_string();
+            s.display_name = "mystery".to_string();
+            s.id = Datatype::hash_name("mystery");
+            s.flags |= flags::type_incomplete;
+            s.kind = DatatypeKind::Struct { field: vec![], bitfield: vec![] };
+            Rc::new(s)
+        };
+        let out =
+            render_type_definitions(&[Rc::clone(&opaque), Rc::clone(&complete)], RealTypeCtx::OFF);
+        assert!(
+            out.contains("typedef struct mystery mystery; /* opaque */\n"),
+            "opaque forward decl missing:\n{out}"
+        );
+        assert!(!out.contains("struct mystery {"), "opaque struct must have NO body:\n{out}");
+        assert!(
+            out.contains("typedef struct solid solid;\n"),
+            "complete struct forward decl missing (and must not be /* opaque */):\n{out}"
+        );
+        assert!(out.contains("struct solid {"), "complete struct body missing:\n{out}");
+        // Forward-decl block precedes ALL bodies (the self-reference guarantee).
+        let fwd_pos = out.find("typedef struct solid").unwrap();
+        let body_pos = out.find("struct solid {").unwrap();
+        assert!(fwd_pos < body_pos, "forward declarations must precede bodies:\n{out}");
+    }
+
+    /// Name sanitisation: non-identifier characters become `_` (with the
+    /// `/* renamed from … */` note); a digit-first name gains a `_` prefix.
+    #[test]
+    fn sanitize_type_names() {
+        assert_eq!(sanitize_type_name("good_Name2"), "good_Name2");
+        assert!(matches!(
+            sanitize_type_name("good_Name2"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert_eq!(sanitize_type_name("bad-name$1"), "bad_name_1");
+        assert_eq!(sanitize_type_name("9lives"), "_9lives");
+        assert_eq!(sanitize_type_name("std::vector<int>"), "std__vector_int_");
+
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        let s = struct_of("bad-name$1", 4, &[(0, "a", i4)]);
+        let out = render_type_definitions(&[s], RealTypeCtx::OFF);
+        assert!(
+            out.contains(
+                "typedef struct bad_name_1 bad_name_1; /* renamed from \"bad-name$1\" */"
+            ),
+            "renamed forward decl missing:\n{out}"
+        );
+        assert!(out.contains("struct bad_name_1 {"), "renamed body missing:\n{out}");
+    }
+
+    /// Duplicate type names: the FIRST definition wins; a later same-named
+    /// complete type emits only the `/* duplicate type name skipped */` note.
+    #[test]
+    fn duplicate_type_name_first_wins() {
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        let i8t = named(8, type_metatype::TYPE_INT, "int8");
+        let first = struct_of("dup", 4, &[(0, "a", i4)]);
+        let second = struct_of("dup", 8, &[(0, "b", i8t)]);
+        let out = render_type_definitions(&[first, second], RealTypeCtx::OFF);
+        assert_eq!(
+            out.matches("typedef struct dup dup;").count(),
+            1,
+            "exactly one forward decl for the shared tag:\n{out}"
+        );
+        assert_eq!(
+            out.matches("struct dup {").count(),
+            1,
+            "exactly one body for the shared tag:\n{out}"
+        );
+        assert!(out.contains("int4 a;"), "the FIRST definition's body wins:\n{out}");
+        assert!(!out.contains("int8 b;"), "the second definition must be skipped:\n{out}");
+        assert!(
+            out.contains("/* duplicate type name skipped: dup */"),
+            "duplicate note missing:\n{out}"
+        );
+    }
+
+    /// Core types and unnamed types never render; an enum name colliding with
+    /// a struct tag is skipped as a duplicate (the tag's forward typedef
+    /// already claims the identifier).
+    #[test]
+    fn core_unnamed_and_cross_kind_collisions_skipped() {
+        // A core type (flagged) is skipped even though it is a composite.
+        let i4 = named(4, type_metatype::TYPE_INT, "int4");
+        let core_struct = {
+            let s = struct_of("sys", 4, &[(0, "a", Rc::clone(&i4))]);
+            let mut c = (*s).clone();
+            c.flags |= flags::coretype;
+            Rc::new(c)
+        };
+        // An unnamed struct is skipped.
+        let anon = {
+            let mut s = Datatype::new_with_align(4, -1, type_metatype::TYPE_STRUCT);
+            s.kind = DatatypeKind::Struct {
+                field: vec![TypeField::new(0, 0, "a", Rc::clone(&i4))],
+                bitfield: vec![],
+            };
+            Rc::new(s)
+        };
+        let named_struct = struct_of("tagged", 4, &[(0, "a", Rc::clone(&i4))]);
+        let colliding_enum = make_enum("tagged", 4, type_metatype::TYPE_UINT, &[(1, "ONE")]);
+        let out = render_type_definitions(
+            &[core_struct, anon, Rc::clone(&named_struct), colliding_enum],
+            RealTypeCtx::OFF,
+        );
+        assert!(!out.contains("sys"), "core types must be skipped:\n{out}");
+        assert!(out.contains("struct tagged {"), "named struct body missing:\n{out}");
+        assert!(
+            out.contains("/* duplicate type name skipped: tagged */"),
+            "enum colliding with a struct tag must be skipped as a duplicate:\n{out}"
+        );
+        assert!(!out.contains("typedef enum tagged"), "colliding enum must not define:\n{out}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Operator token table (printc.cc:24-78)
 // ---------------------------------------------------------------------------
