@@ -23,10 +23,16 @@ integrations/web/build.sh --serve       # -> http://localhost:8000
 ```
 
 Open the page, click **Load binary**, and pick any **ELF, PE, or Mach-O** binary. The
-decompiler runs in the tab and lists every function; click one to see its C. It supports
-whatever the CLI supports — every format and architecture kuna has a `.sla` for — with no
-per-format configuration (the engine resolves each binary; the page fetches only the one
-`.sla` it needs). See `docs/web-integration.md` §3.
+decompiler runs in the tab and lists every function; click one to see its C, **syntax
+highlighted** (comments/strings/keywords/types/numbers/calls, plus the kuna type family and
+`dat_<hex>` globals — theme-aware, both light and dark). The sidebar groups **PLT stubs and
+import thunks** (the engine's per-function `kind`) below a divider, in purple, so real code
+stays on top. The **Download Binary Source** button exports the whole binary as a
+recompile-oriented project — `<name>.c` / `<name>.h` / `<name>.asm` / `README.md`, the
+`kuna decompile-project` artifacts — zipped client-side (`zip.js`, a dependency-free STORE
+zip writer) into `<name>.kuna.zip`. It supports whatever the CLI supports — every format and
+architecture kuna has a `.sla` for — with no per-format configuration (the engine resolves
+each binary; the page fetches only the one `.sla` it needs). See `docs/web-integration.md` §3.
 
 ## Hosted on GitHub Pages
 
@@ -43,8 +49,9 @@ and deploys `dist/` — nothing is committed. The site is served at
 
 | Path | Role |
 |---|---|
-| `index.html` | The demo UI (upload → function list → C). Self-contained, theme-aware. |
-| `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), runs the decompiler under the WASI shim, returns the `decompile-all --json` shape. |
+| `index.html` | The demo UI (upload → function list → highlighted C, stubs grouped, project-zip download). Self-contained, theme-aware. |
+| `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), runs the decompiler under the WASI shim; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
+| `zip.js` | Dependency-free STORE-only ZIP writer (CRC-32, UTF-8 names, fixed timestamp → deterministic) for the Download Binary Source button. |
 | `vendor/browser_wasi_shim/` | Vendored [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim) (MIT/Apache-2.0) — a pure-JS WASI **preview1** implementation. Pinned in `VERSION`. |
 | `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + the page into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
 | `test/` | Automated gates (below) + committed ELF/Mach-O fixtures. |
@@ -69,13 +76,19 @@ node integrations/web/test/parity.mjs
 # B. Browser-glue — the ACTUAL browser code path (kuna-web.js + the vendored
 #    @bjorn3 shim) decompiling over HTTP against dist/.
 node integrations/web/test/glue.mjs
+
+# C. Zip writer — no build needed (zip.js has no wasm dependency).
+node integrations/web/test/zip.mjs
 ```
 
 - **`parity.mjs`** proves the decompiler *runs* under a WASI runtime and matches native
-  byte-for-byte across `list` + several `decompile` cases.
+  byte-for-byte across `list` + several `decompile` cases + a whole-binary `project` export.
 - **`glue.mjs`** proves the exact browser stack (the vendored WASI shim + `kuna-web.js`)
   works, minus the DOM — including the lazy-`.sla` mechanism across ELF + Mach-O, x86-64 +
-  AArch64.
+  AArch64, and the `project` export the download button uses.
+- **`zip.mjs`** validates `zip.js` structurally: it re-parses its own output (EOCD, central
+  directory, local headers), recomputes every CRC-32 independently, asserts the archive is
+  byte-deterministic, and (if a system `unzip` exists) runs `unzip -t` as a bonus check.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
 

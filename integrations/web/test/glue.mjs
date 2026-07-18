@@ -3,8 +3,9 @@
 //
 // It imports the shipped `kuna-web.js` (which drives the vendored
 // @bjorn3/browser_wasi_shim — the SAME WASI implementation the browser uses) and
-// runs `loadKuna().decompile()` against a `dist/` served over HTTP, exactly as a
-// page would. This is where the robust spec mechanism is proven end to end:
+// runs `loadKuna().decompile()` (and the whole-binary `.project()` export)
+// against a `dist/` served over HTTP, exactly as a page would. This is where
+// the robust spec mechanism is proven end to end:
 // kuna-web.js preloads only the small `specs-small.json` bundle, then LAZILY
 // fetches each binary's `.sla` on demand — across formats (ELF + Mach-O) and
 // architectures (x86-64 + AArch64). Only the DOM chrome in index.html is not
@@ -77,6 +78,16 @@ try {
   const mres = await kuna.list(macho);
   if (!mres.functions.some((f) => f.name === '_compute')) fail(`Mach-O list missing '_compute'`);
   console.log(`\x1b[32mOK\x1b[0m   Mach-O x86-64  (${mres.count} funcs; engine resolved a non-ELF format)`);
+
+  // 4. Whole-binary project export through the same handle (the zip's payload).
+  const proj = await kuna.project(elf, 'sample.elf');
+  const wantFiles = ['README.md', 'sample.elf.asm', 'sample.elf.c', 'sample.elf.h'];
+  const gotFiles = Object.keys(proj.files || {}).sort();
+  if (gotFiles.join(',') !== wantFiles.join(','))
+    fail(`project files = [${gotFiles.join(', ')}], want [${wantFiles.join(', ')}]`);
+  if (!proj.files['sample.elf.c'].includes('// Function:')) fail(`project .c missing '// Function:' headers`);
+  if (!(proj.count > 0)) fail(`project count = ${proj.count}`);
+  console.log(`\x1b[32mOK\x1b[0m   project export  (${proj.count} functions -> 4 artifacts)`);
 
   console.log(`\n\x1b[32mGLUE OK\x1b[0m — kuna-web.js decompiles ELF + Mach-O, x86-64 + AArch64, client-side over HTTP; ${slaFetches} .sla lazily fetched, no per-format JS.`);
 } catch (e) {
