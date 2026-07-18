@@ -13,11 +13,15 @@ kuna-base.workspace = true
 kuna-num.workspace = true
 kuna-sleigh.workspace = true
 kuna-analysis.workspace = true
+# The shared decompile-project core (`src/project.rs`) re-parses the binary via
+# `object` for the README metadata (entry point + named sections — the engine's
+# LoadImage sections carry no names); the Listing/xref tier integration test
+# (`tests/verify_listing_core.rs`) also parses the fixture ELF into an
+# `object::File` to drive `Listing::build`.  Already in the workspace graph via
+# kuna-analysis, so this adds no new crate.
+object.workspace = true
 
 [dev-dependencies]
-# The Listing/xref tier integration test (`tests/verify_listing_core.rs`) parses
-# the fixture ELF into an `object::File` to drive `Listing::build`.
-object.workspace = true
 # The register<->global over-merge render gate (`tests/verify_global_regmerge.rs`)
 # asserts, via a word-boundary regex, that no raw register / `Unique<hex>` leaks.
 regex.workspace = true
