@@ -111,7 +111,9 @@ stage-model settable (zero output change for any function that converges; the co
 `decomp_dbg` parity path never arms it). The decbench backend
 (`decbench/decompilers/raw/kuna_raw.py`) shells out to `kuna decompile-all --json`.
 `kuna decompile-project` is the **project-export** face of the same in-process core
-(`decompiler/crates/kuna-cli/src/decompile_project.rs`; identical load-once/decompile-many
+(`decompiler/crates/kuna-cli/src/decompile_project.rs`, a thin wrapper over the shared
+`kuna_console::project` module — the decompile loop + artifact builders also behind the
+web UI's Download-Binary-Source zip and `kuna_wasm project`; identical load-once/decompile-many
 path and flags — `--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--slice`/
 `--target`/`--sleighpath`, listing on by default; no `--json`): it writes a project folder —
 default `<binary-filename>.kuna/` next to the binary, `-o/--output DIR` overrides — of four

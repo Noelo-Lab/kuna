@@ -1,5 +1,46 @@
 # kuna Progress Log
 
+## Session (2026-07-18) — web UI: syntax highlighting, Download Binary Source (project zip), PLT/thunk grouping
+
+Three additions to the in-browser integration (`integrations/web` + `kuna-wasm`), plus the
+refactor that makes the second one honest:
+
+- **Shared decompile-project core** — `kuna_console::project` (new): `FuncResult` (now with
+  `proto`), `decompile_targets`, `render_c`, and the four artifact builders
+  (`build_header`/`build_c`/`build_asm`/`build_readme` + `collect_dat_addrs`/`sanitize_guard`)
+  moved line-faithfully out of `kuna-cli` so `wasm32-wasip1` can reach them without the CLI's
+  subprocess machinery. `kuna-cli`'s `decompile_all.rs`/`decompile_project.rs` are now thin
+  wrappers; `kuna decompile-all --json` and the `decompile-project` folder verified
+  **byte-identical** across the move (the one signature change, `build_readme`'s new
+  `path_label`, is fed `binary_path.display()` by the CLI). `kuna-console` promotes `object`
+  from dev-dep to dep (already in the workspace graph).
+- **`kuna_wasm project [<display-name>]`** — the `decompile-project` flow with the folder
+  write replaced by one JSON document (`{binary,name,count,ok,failed,files:{.c,.h,.asm,
+  README.md}}`); artifacts named after the display name (default: binary basename), README
+  `Path` row shows the display name (no `canonicalize()` under WASI). The page's
+  **Download Binary Source** button runs it and zips the artifacts client-side —
+  `integrations/web/zip.js`, a dependency-free STORE-only ZIP writer (CRC-32, UTF-8 names,
+  fixed timestamp ⇒ deterministic), validated structurally by the new `test/zip.mjs`
+  (independent CRC recompute + `unzip -t` when available).
+- **Per-function `kind` (`"func"|"plt"|"thunk"`)** — kuna-wasm-only JSON field (after
+  `address_hex` in `list` and `decompile`): `kuna-wasm/src/classify.rs` re-parses the binary
+  with `object` (import-stub section ranges: ELF `.plt`/`.plt.got`/`.plt.sec`/`.iplt`/
+  `.MIPS.stubs`, Mach-O `S_SYMBOL_STUBS`; import-name set: UND dynsyms / PE imports) and
+  probes lone-jump entries via the new additive `ConsoleProgram::lone_jump_target`
+  (one-instruction p-code lift: unconditional `BRANCH` to another known entry, or
+  `BRANCHIND`). Verified against `readelf` on `/usr/bin/true`: plt ⇔ stub sections exactly.
+  The sidebar groups stubs below a `— imports & thunks —` divider in purple; real code first.
+- **Syntax highlighting** — self-contained tokenizer in `index.html` (comments/strings/
+  chars/numbers/keywords/types incl. the kuna `undefined`/`intN`/`uintN` family and `*_t`/
+  call-sites/`dat_<hex>` globals), theme-aware `--tok-*` vars in light + dark; all emitted
+  text HTML-escaped (binary-derived identifiers are untrusted).
+
+Native CLI JSON and all decompiler output unchanged (no new settable, no DIV). Gates: 675/675
++ 261/261 stages PARITY OK, workspace suite green, check-spec green; web parity now **15/15**
+(list + decompile + `project` byte-identical native↔wasm across ELF x86-64 / AArch64 .o /
+Mach-O .o), glue + zip gates green. Docs: `docs/web-integration.md` §2/§5/§6/§8,
+`integrations/web/README.md`.
+
 ## Session (2026-07-16) — `kuna decompile-project`: whole-binary project export (.c/.h/.asm/README.md)
 
 New CLI subcommand **`kuna decompile-project <binary>`**
