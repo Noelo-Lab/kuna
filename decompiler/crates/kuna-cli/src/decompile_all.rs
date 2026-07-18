@@ -42,10 +42,11 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+// The decompile loop + result shape live in the shared decompile-project core
+// (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
+use kuna_console::project::{decompile_targets, render_c, FuncResult};
 use object::Object; // `File::architecture()` (ARM-discovery default, decbench)
-use kuna_decomp::decompile_drive::{
-    decompile_func_full_with_override_dyn, extract_variables, print_c, print_c_prototype, VarInfo,
-};
+use kuna_decomp::decompile_drive::VarInfo;
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
 
 use crate::jsonfmt::{dumps_indent2, Json};
@@ -149,22 +150,6 @@ pub fn run_functions(argv: &[String]) -> i32 {
     }
 }
 
-/// One decompiled function's result (success carries `code`; failure carries
-/// `error`).
-pub(crate) struct FuncResult {
-    pub(crate) name: String,
-    pub(crate) address: u64,
-    pub(crate) size: i64,
-    pub(crate) code: Option<String>,
-    pub(crate) error: Option<String>,
-    /// The `.h` prototype line (`<ret> <name>(<params>);`), captured only when
-    /// the caller asked for it (`decompile_targets(want_proto=true)` — the
-    /// `decompile-project` surface).  Always `None` on the `decompile-all`
-    /// path, whose JSON must stay byte-identical.
-    pub(crate) proto: Option<String>,
-    pub(crate) variables: Vec<VarInfo>,
-}
-
 /// Load + analyze the binary once, then decompile every selected function.
 fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
     let mut prog = load_program(args, /* default_listing= */ true)?;
@@ -181,122 +166,6 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
     }
 
     Ok(decompile_targets(&mut prog, targets, args.no_vars, /* want_proto= */ false))
-}
-
-/// Decompile each `(name, entry)` target in turn against the already-loaded
-/// program, returning one [`FuncResult`] per target (success or per-function
-/// `error` — a bad function never aborts the batch).  `want_proto`
-/// additionally captures the function's prototype line
-/// ([`print_c_prototype`]) inside the same panic guard as the C render — the
-/// `decompile-project` `.h` surface; `decompile-all` passes `false`, keeping
-/// its JSON byte-identical.
-pub(crate) fn decompile_targets(
-    prog: &mut ConsoleProgram,
-    targets: Vec<(String, Address)>,
-    no_vars: bool,
-    want_proto: bool,
-) -> Vec<FuncResult> {
-    let mut out = Vec::with_capacity(targets.len());
-    for (name, entry) in targets {
-        let address = entry.get_offset();
-        // Mirror IfcDecompile: re-seed this function's DWARF stack locals (so a
-        // `-g` binary renders DWARF names/types) and decompile.  The drive itself
-        // catches un-ported-seam panics and returns Err, so a single bad function
-        // degrades to an `error` record instead of aborting the binary.
-        let mapped = prog.dwarf_locals_for(address);
-        // (kuna, Ghidra-gap) `CALL_RETURN` flow overrides for the binary's
-        // `call error(nonzero,…)` sites — prune the fall-through so the flow-follower
-        // stops at the no-return call (Ghidra "Subroutine does not return") instead of
-        // walking into the next function and absorbing it. The whole binary's list is
-        // passed; only sites this function's flow actually visits are applied. Empty
-        // unless the Listing + `noreturn_error` are on (so `kuna functions`/console are
-        // unaffected).
-        let flow_ovr: Vec<(kuna_base::address::Address, kuna_base::types::uint4)> =
-            match entry.get_space() {
-                Some(space) if !prog.arch().error_noreturn_callsites.is_empty() => prog
-                    .arch()
-                    .error_noreturn_callsites
-                    .iter()
-                    .map(|&off| {
-                        (
-                            kuna_base::address::Address::new(std::rc::Rc::clone(space), off),
-                            kuna_decomp::overrides::flow_type::CALL_RETURN,
-                        )
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
-        match decompile_func_full_with_override_dyn(
-            prog.arch_mut(),
-            &name,
-            entry,
-            0, // UNBOUNDED: the function's natural flow extent
-            &mapped,
-            &[],
-            &[],
-            None,
-            &flow_ovr,
-            &[],
-            &[],
-        ) {
-            Ok(fd) => {
-                let size = fd.get_size() as i64;
-                // Render + extract under `catch_unwind`: the decompile drive only
-                // guards the pipeline (decompile_drive.rs), so a fail-fast invariant
-                // in the printer / type declarator on an exotic recovered function
-                // would otherwise abort the WHOLE binary and discard every function
-                // already decompiled. Containing it here honors the per-function
-                // isolation contract (one bad function → one `error` record).
-                let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    // Trim the surrounding newlines the same way `kuna decompile`
-                    // does (`decompile.rs::trim_newlines`), so the per-function
-                    // `code` is byte-identical to the single-shot path.
-                    let code = print_c(prog.arch_mut(), &fd).trim_matches('\n').to_string();
-                    let variables =
-                        if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
-                    // The prototype must be captured HERE (fd is dropped at the
-                    // end of the iteration) and inside the same guard (the
-                    // declarator walk shares the printer's fail-fast invariants).
-                    let proto = if want_proto {
-                        Some(print_c_prototype(prog.arch_mut(), &fd))
-                    } else {
-                        None
-                    };
-                    (code, variables, proto)
-                }));
-                match rendered {
-                    Ok((code, variables, proto)) => out.push(FuncResult {
-                        name,
-                        address,
-                        size,
-                        code: Some(code),
-                        error: None,
-                        proto,
-                        variables,
-                    }),
-                    Err(_) => out.push(FuncResult {
-                        name,
-                        address,
-                        size: 0,
-                        code: None,
-                        error: Some("panic while rendering C / extracting variables".into()),
-                        proto: None,
-                        variables: Vec::new(),
-                    }),
-                }
-            }
-            Err(e) => out.push(FuncResult {
-                name,
-                address,
-                size: 0,
-                code: None,
-                error: Some(e.explain().to_string()),
-                proto: None,
-                variables: Vec::new(),
-            }),
-        }
-    }
-    out
 }
 
 /// Enumerate the program's functions as `(name, address)` (the `functions`
@@ -627,29 +496,6 @@ fn var_json(v: &VarInfo) -> Json {
         ),
         ("size".into(), Json::Number(v.size.to_string())),
     ])
-}
-
-/// Render the functions as concatenated C with `// Function:` headers (the human
-/// output, mirroring `DecompilationResult.to_c_file`).
-pub(crate) fn render_c(funcs: &[FuncResult]) -> String {
-    let mut out = String::new();
-    for f in funcs {
-        match (&f.code, &f.error) {
-            (Some(code), _) => {
-                out.push_str(&format!("// Function: {} @ 0x{:x}\n", f.name, f.address));
-                out.push_str(code);
-                out.push_str("\n\n");
-            }
-            (None, Some(err)) => {
-                out.push_str(&format!(
-                    "// Function: {} @ 0x{:x}  (error: {})\n\n",
-                    f.name, f.address, err
-                ));
-            }
-            (None, None) => {}
-        }
-    }
-    out
 }
 
 // --- argument parsing --------------------------------------------------------

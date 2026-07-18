@@ -47,6 +47,9 @@ use kuna_decomp::options::register_option_elements;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
+use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
+
 use kuna_sleigh::loadimage::{LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_sleigh::loadimage_xml::LoadImageXml;
@@ -74,6 +77,29 @@ impl kuna_sleigh::translate::AssemblyEmit for OneShotAssemblyEmit {
     fn dump(&mut self, _addr: &Address, mnem: &str, body: &str) {
         self.mnem = mnem.to_string();
         self.body = body.to_string();
+    }
+}
+
+/// (kuna) A one-shot [`PcodeEmit`](kuna_sleigh::translate::PcodeEmit) sink:
+/// `Translate::one_instruction` dumps exactly one instruction's p-code, each
+/// op captured here as opcode + first input (the single-instruction pcode
+/// analogue of [`OneShotAssemblyEmit`], mirroring `kuna_analysis`'s
+/// `listing/decode.rs::OpCapture` — `in0` is all
+/// [`ConsoleProgram::lone_jump_target`]'s shape tests need).
+#[derive(Default)]
+struct OneShotPcodeEmit {
+    ops: Vec<(OpCode, Option<VarnodeData>)>,
+}
+
+impl kuna_sleigh::translate::PcodeEmit for OneShotPcodeEmit {
+    fn dump(
+        &mut self,
+        _addr: &Address,
+        opc: OpCode,
+        _outvar: Option<&VarnodeData>,
+        vars: &[VarnodeData],
+    ) {
+        self.ops.push((opc, vars.first().cloned()));
     }
 }
 
@@ -250,6 +276,73 @@ impl ConsoleProgram {
         let mut emit = OneShotAssemblyEmit::default();
         let length = self.arch().translate().print_assembly(&mut emit, &addr)?;
         Ok((length, emit.mnem, emit.body))
+    }
+
+    /// (kuna) The `kuna_wasm` per-function `kind` classification probe: lift
+    /// the single instruction at code-space VMA `vma` to p-code (a one-shot
+    /// [`PcodeEmit`](kuna_sleigh::translate::PcodeEmit) sink against the
+    /// translator — the pcode analogue of [`Self::disassemble_at`]'s
+    /// `AssemblyEmit` dance) and test it for the two **lone-jump** shapes a
+    /// thunk/PLT-stub entry decompiles from:
+    ///
+    /// * `Some(Some(target))` — the p-code ends in an unconditional `BRANCH`
+    ///   to a non-constant-space address (a real code-space target, not a
+    ///   p-code-relative one — `flow.rs`'s constant-space-`in0` rule) and
+    ///   contains no other flow op (`CALL`/`CBRANCH`/`RETURN`/...): a direct
+    ///   lone jump; `target` is the destination offset.
+    /// * `Some(None)` — the p-code ends in `BRANCHIND` with no other flow op
+    ///   (address-computation ops like `LOAD`/`INT_ADD`/`COPY` before it are
+    ///   fine): an indirect lone jump (the `jmp [GOT]` PLT shape).
+    /// * `None` — anything else, including a decode error or an unmapped
+    ///   address (conservative: the probe never panics).
+    pub fn lone_jump_target(&self, vma: u64) -> Option<Option<u64>> {
+        let code_space = Rc::clone(self.arch().manage().get_default_code_space()?);
+        let addr = Address::new(code_space, vma);
+        let mut emit = OneShotPcodeEmit::default();
+        // Advisory probe: contain a decode `Err` AND any translator panic on
+        // exotic bytes to `None` (the classification falls back to "func").
+        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.arch().translate().one_instruction(&mut emit, &addr)
+        }));
+        match decoded {
+            Ok(Ok(_len)) => {}
+            _ => return None,
+        }
+        let (last_opc, last_in0) = emit.ops.last()?;
+        // Exactly ONE flow op, and it is the last op — anything richer (a
+        // conditional, a call, a fall-through mid-branch) is not a lone jump.
+        let flow_ops = emit
+            .ops
+            .iter()
+            .filter(|(opc, _)| {
+                matches!(
+                    opc,
+                    OpCode::CPUI_BRANCH
+                        | OpCode::CPUI_CBRANCH
+                        | OpCode::CPUI_BRANCHIND
+                        | OpCode::CPUI_CALL
+                        | OpCode::CPUI_CALLIND
+                        | OpCode::CPUI_CALLOTHER
+                        | OpCode::CPUI_RETURN
+                )
+            })
+            .count();
+        if flow_ops != 1 {
+            return None;
+        }
+        match last_opc {
+            OpCode::CPUI_BRANCH => {
+                let in0 = last_in0.as_ref()?;
+                let space = in0.space.as_ref()?;
+                if space.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT {
+                    None // p-code-relative branch, not a code-space target
+                } else {
+                    Some(Some(in0.offset))
+                }
+            }
+            OpCode::CPUI_BRANCHIND => Some(None),
+            _ => None,
+        }
     }
 
     /// (kuna) Read `size` raw image bytes at code-space VMA `vma` through the

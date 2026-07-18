@@ -7,7 +7,7 @@
 //
 // Usage:
 //   node --experimental-wasi-unstable-preview1 run-wasm.mjs \
-//        <wasm> <specs-dir> <binary> <list|decompile> [name|0xaddr]
+//        <wasm> <specs-dir> <binary> <list|decompile|project> [name|0xaddr|display-name]
 //
 // Writes the decompiler's stdout (JSON) to this process's stdout.
 import { WASI } from 'node:wasi';
@@ -16,7 +16,7 @@ import { basename, dirname, resolve } from 'node:path';
 
 const [wasmPath, specsDir, binaryPath, cmd, arg] = process.argv.slice(2);
 if (!wasmPath || !specsDir || !binaryPath || !cmd) {
-  console.error('usage: run-wasm.mjs <wasm> <specs-dir> <binary> <list|decompile> [name|0xaddr]');
+  console.error('usage: run-wasm.mjs <wasm> <specs-dir> <binary> <list|decompile|project> [name|0xaddr|display-name]');
   process.exit(64);
 }
 

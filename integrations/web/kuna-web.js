@@ -1,6 +1,8 @@
 // kuna-web.js — run the kuna decompiler entirely in the browser, for WHATEVER
 // binary the CLI supports (ELF / PE / Mach-O / COFF, every architecture kuna
-// ships a `.sla` for).
+// ships a `.sla` for). Exposes `list` (enumerate functions), `decompile` (one
+// function or all of them), and `project` (whole-binary .c/.h/.asm/README
+// export — the "Download Binary Source" zip).
 //
 // It loads the `kuna_wasm` WebAssembly module (the engine's in-process decompile
 // path, compiled to wasm32-wasip1) and drives it through
@@ -92,7 +94,7 @@ function parseLdefs(text, dir, map) {
 /**
  * Load the decompiler once: compile the wasm and preload the small spec files.
  * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
- * formatName }`.
+ * project, formatName }`.
  *
  * @param {object} opts
  * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
@@ -215,6 +217,17 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
       const argv = ['/work/input.bin', '/specs', 'decompile'];
       if (target) argv.push(target);
       return parseOrThrow(await invoke(binaryBytes, argv), 'decompile');
+    },
+    /**
+     * Export the whole binary as a recompile-oriented project (every function,
+     * one run). `displayName` names the artifacts. Returns `{binary, name,
+     * count, ok, failed, files: {"<name>.c", "<name>.h", "<name>.asm",
+     * "README.md"}}`.
+     */
+    async project(binaryBytes, displayName) {
+      const argv = ['/work/input.bin', '/specs', 'project'];
+      if (displayName) argv.push(displayName);
+      return parseOrThrow(await invoke(binaryBytes, argv), 'project');
     },
   };
 }

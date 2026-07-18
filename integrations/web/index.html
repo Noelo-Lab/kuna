@@ -9,12 +9,18 @@
     --bg: #ffffff; --fg: #1b1f24; --muted: #5c6773; --line: #e3e7ec;
     --panel: #f7f8fa; --accent: #3b7dd8; --accent-fg: #fff;
     --code-bg: #f6f8fa; --err: #c0392b; --ok: #1e7e46;
+    --stub: #8250df;
+    --tok-com: #5f7a61; --tok-str: #a3512e; --tok-chr: #99622d; --tok-num: #9a6700;
+    --tok-kw: #0550ae; --tok-type: #0f766e; --tok-fn: #3b7dd8; --tok-glob: #57606a;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0f1216; --fg: #d7dde3; --muted: #8b97a3; --line: #232a31;
       --panel: #161b21; --accent: #4c8ef0; --accent-fg: #fff;
       --code-bg: #12161b; --err: #ff6b5e; --ok: #4cc38a;
+      --stub: #b392f0;
+      --tok-com: #7f9583; --tok-str: #ce9178; --tok-chr: #d8a35f; --tok-num: #e5c07b;
+      --tok-kw: #79b8ff; --tok-type: #56b6c2; --tok-fn: #4c8ef0; --tok-glob: #9aa7b3;
     }
   }
   * { box-sizing: border-box; }
@@ -39,6 +45,8 @@
     border-radius: 8px; transition: border-color .12s, background .12s;
   }
   button:hover, label.filebtn:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:disabled:hover { border-color: var(--line); }
   label.filebtn { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   input[type=file] { display: none; }
   #status { font-size: 12.5px; color: var(--muted); min-height: 18px; }
@@ -58,12 +66,25 @@
   .fn.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); }
   .fn .nm { overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .fn .ad { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
-  .fn.bad .nm { color: var(--err); }
+  .fn.stub .nm { color: var(--stub); opacity: .8; }
+  .fn.bad .nm { color: var(--err); }  /* after .stub so error rows keep the err color */
+  .fndiv {
+    padding: 8px 14px 5px; border-bottom: 1px solid var(--line); white-space: nowrap;
+    font-size: 11px; color: var(--muted); user-select: none;
+  }
   #code {
     margin: 0; padding: 18px 20px; overflow: auto; white-space: pre;
     font-family: ui-monospace, SFMono-Regular, Menlo, "Liberation Mono", monospace;
     font-size: 13px; tab-size: 4; background: var(--code-bg);
   }
+  .tok-com { color: var(--tok-com); }
+  .tok-str { color: var(--tok-str); }
+  .tok-chr { color: var(--tok-chr); }
+  .tok-num { color: var(--tok-num); }
+  .tok-kw { color: var(--tok-kw); }
+  .tok-type { color: var(--tok-type); }
+  .tok-fn { color: var(--tok-fn); }
+  .tok-glob { color: var(--tok-glob); font-style: italic; }
   #empty { padding: 40px; color: var(--muted); text-align: center; }
   #empty code { background: var(--panel); padding: 1px 6px; border-radius: 5px; }
   a { color: var(--accent); }
@@ -75,6 +96,7 @@
   <span class="tag">100% in-browser · WebAssembly · no server</span>
   <div class="spacer"></div>
   <span id="status">loading decompiler…</span>
+  <button id="dlbtn" disabled>Download Binary Source</button>
   <label class="filebtn" id="pick" aria-disabled="true">
     Load binary <input type="file" id="file" />
   </label>
@@ -95,6 +117,7 @@
 
 <script type="module">
   import { loadKuna } from './kuna-web.js';
+  import { makeZip } from './zip.js';
 
   const statusEl = document.getElementById('status');
   const pickEl = document.getElementById('pick');
@@ -103,10 +126,12 @@
   const headEl = document.getElementById('fnhead');
   const codeEl = document.getElementById('code');
   const emptyEl = document.getElementById('empty');
+  const dlEl = document.getElementById('dlbtn');
 
   const setStatus = (msg, cls = '') => { statusEl.textContent = msg; statusEl.className = cls; };
 
   let kuna = null;
+  let loaded = null; // { bytes, fileName } of the last successfully decompiled binary
   try {
     kuna = await loadKuna({ wasmUrl: './kuna_wasm.wasm', specRoot: './specs' });
     setStatus('ready — load an ELF, PE, or Mach-O binary', 'ok');
@@ -123,6 +148,7 @@
     const fmt = kuna.formatName(bytes);
     setStatus(`decompiling ${f.name} (${fmt}, ${bytes.length.toLocaleString()} bytes)…`);
     listEl.innerHTML = ''; codeEl.hidden = true; emptyEl.hidden = false;
+    loaded = null; dlEl.disabled = true;
     await new Promise((r) => requestAnimationFrame(r)); // let the status paint
 
     const t0 = performance.now();
@@ -135,29 +161,118 @@
       return;
     }
     const dt = Math.round(performance.now() - t0);
-    const funcs = result.functions.filter((fn) => fn.code || fn.error);
-    setStatus(`${f.name} (${fmt}): ${funcs.length} functions in ${dt} ms`, 'ok');
-    headEl.textContent = `${funcs.length} functions`;
+    loaded = { bytes, fileName: f.name };
+    dlEl.disabled = false;
 
-    funcs.forEach((fn, i) => {
+    // Split into normal functions and PLT/import-thunk stubs (`kind` from the
+    // engine; a missing kind means a plain function), each address-ascending:
+    // real code first, the boilerplate stubs grouped after a divider.
+    const isStub = (fn) => fn.kind === 'plt' || fn.kind === 'thunk';
+    const shown = result.functions.filter((fn) => fn.code || fn.error);
+    const byAddr = (a, b) => a.address - b.address;
+    const normal = shown.filter((fn) => !isStub(fn)).sort(byAddr);
+    const stubs = shown.filter(isStub).sort(byAddr);
+    setStatus(`${f.name} (${fmt}): ${shown.length} functions in ${dt} ms`, 'ok');
+    headEl.textContent = `${normal.length} functions · ${stubs.length} stubs`;
+
+    const rows = [];
+    const addRow = (fn) => {
       const row = document.createElement('div');
-      row.className = 'fn' + (fn.error ? ' bad' : '');
+      row.className = 'fn' + (isStub(fn) ? ' stub' : '') + (fn.error ? ' bad' : '');
       row.innerHTML =
         `<span class="nm">${escapeHtml(fn.name)}</span><span class="ad">${fn.address_hex}</span>`;
-      row.addEventListener('click', () => select(i, row, fn));
+      row.addEventListener('click', () => select(row, fn));
       listEl.appendChild(row);
-    });
-    const firstReal = funcs.findIndex((fn) => fn.code);
-    if (firstReal >= 0) listEl.children[firstReal].click();
+      rows.push({ row, fn });
+    };
+    normal.forEach(addRow);
+    if (stubs.length) {
+      const div = document.createElement('div');
+      div.className = 'fndiv';
+      div.textContent = `— imports & thunks (${stubs.length}) —`;
+      listEl.appendChild(div);
+      stubs.forEach(addRow);
+    }
+    const first = rows.find((r) => !isStub(r.fn) && r.fn.code) || rows.find((r) => r.fn.code);
+    if (first) first.row.click();
   });
 
-  function select(i, row, fn) {
+  // Download Binary Source: run the whole-binary project export and hand the
+  // four artifacts (<name>.c/.h/.asm/README.md) over as a zip.
+  dlEl.addEventListener('click', async () => {
+    if (!loaded || !kuna) return;
+    const safeName = loaded.fileName.replace(/[^A-Za-z0-9._-]/g, '_');
+    dlEl.disabled = true;
+    setStatus('building project…');
+    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
+    try {
+      const proj = await kuna.project(loaded.bytes, safeName); // one wasm run
+      const entries = Object.entries(proj.files)
+        .map(([name, data]) => ({ name: `${safeName}.kuna/${name}`, data }));
+      const zip = makeZip(entries);
+      const url = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.kuna.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus(`${safeName}.kuna.zip downloaded (${zip.length.toLocaleString()} bytes)`, 'ok');
+    } catch (e) {
+      setStatus('project export failed: ' + e.message, 'err');
+      console.error(e);
+    } finally {
+      if (loaded) dlEl.disabled = false;
+    }
+  });
+
+  function select(row, fn) {
     [...listEl.children].forEach((c) => c.classList.remove('sel'));
     row.classList.add('sel');
     emptyEl.hidden = true; codeEl.hidden = false;
-    codeEl.textContent = fn.error
-      ? `/* ${fn.name} @ ${fn.address_hex} — decompile error:\n   ${fn.error} */`
-      : fn.code;
+    if (fn.error) {
+      codeEl.textContent =
+        `/* ${fn.name} @ ${fn.address_hex} — decompile error:\n   ${fn.error} */`;
+    } else {
+      codeEl.innerHTML = highlightC(fn.code);
+    }
+  }
+
+  // --- C syntax highlighting -----------------------------------------------
+  // One linear scan with a regex alternation; every emitted substring goes
+  // through escapeHtml (identifiers come from the binary and are
+  // attacker-controlled, so nothing reaches innerHTML unescaped).
+  const KEYWORDS = new Set(('if else while do for return break continue goto switch case default ' +
+    'sizeof struct union enum typedef static extern const volatile unsigned signed register').split(' '));
+  const TYPES = new Set(('void char short int long float double bool undefined byte word dword qword ' +
+    'uint ushort ulong uchar code char16_t wchar_t size_t').split(' '));
+  for (let n = 1; n <= 8; n++) ['undefined', 'int', 'uint'].forEach((b) => TYPES.add(b + n));
+
+  const TOK_RE = /\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|0[xX][0-9a-fA-F]+[uUlL]*|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[fFlLuU]*|[A-Za-z_][A-Za-z0-9_]*/g;
+
+  function classify(tok, next) {
+    const c = tok[0];
+    if (c === '/') return 'tok-com'; // only comments start with '/' in TOK_RE
+    if (c === '"') return 'tok-str';
+    if (c === "'") return 'tok-chr';
+    if (c === '.' || (c >= '0' && c <= '9')) return 'tok-num';
+    if (/^dat_[0-9a-fA-F]+$/.test(tok)) return 'tok-glob';
+    if (KEYWORDS.has(tok)) return 'tok-kw';
+    if (TYPES.has(tok) || tok.endsWith('_t')) return 'tok-type';
+    if (next === '(') return 'tok-fn';
+    return '';
+  }
+
+  function highlightC(code) {
+    TOK_RE.lastIndex = 0;
+    let out = '', last = 0, m;
+    while ((m = TOK_RE.exec(code))) {
+      const tok = m[0], end = m.index + tok.length;
+      if (m.index > last) out += escapeHtml(code.slice(last, m.index));
+      const cls = classify(tok, code[end]);
+      out += cls ? `<span class="${cls}">${escapeHtml(tok)}</span>` : escapeHtml(tok);
+      last = end;
+    }
+    return out + escapeHtml(code.slice(last));
   }
 
   function escapeHtml(s) {

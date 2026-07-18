@@ -42,7 +42,7 @@ WASM="$ENGINE/target/$TARGET/$PROFILE/kuna_wasm.wasm"
 echo ">> assembling $DIST"
 rm -rf "$DIST"
 mkdir -p "$DIST/specs"
-cp "$HERE/index.html" "$HERE/kuna-web.js" "$DIST/"
+cp "$HERE/index.html" "$HERE/kuna-web.js" "$HERE/zip.js" "$DIST/"
 cp -r "$HERE/vendor" "$DIST/vendor"
 
 # Optionally shrink the wasm (nice-to-have; the demo works without it).

@@ -7,11 +7,13 @@
 //   2. Its output is byte-identical to the NATIVE `kuna_wasm` build — i.e. the
 //      wasm port is a faithful decompiler, not a degraded one.
 //
-// It runs `list` + several `decompile` cases over each committed fixture
-// (x86-64 ELF + AArch64 object) and diffs native vs wasm (normalizing only the
-// absolute `binary` path, which legitimately differs between the host FS and the
-// guest's virtual FS). Specs come from the full repo tree, so the loader
-// auto-resolves each fixture's architecture.
+// It runs `list` + several `decompile` cases + a whole-binary `project` export
+// over each committed fixture (x86-64 ELF + AArch64 object) and diffs native vs
+// wasm (normalizing only the absolute `binary` path, which legitimately differs
+// between the host FS and the guest's virtual FS; `project` gets the same
+// explicit display name on both sides, so its artifacts match as-is). Specs
+// come from the full repo tree, so the loader auto-resolves each fixture's
+// architecture.
 //
 // Usage:  node parity.mjs           (paths auto-resolved from the repo layout)
 //         SPECS=... node parity.mjs  (override the spec root)
@@ -35,17 +37,19 @@ const FIXTURES = [
   {
     fixture: join(here, 'fixtures/sample.elf'),
     arch: 'x86-64',
-    cases: [['list'], ['decompile'], ['decompile', 'main'], ['decompile', 'sum_to'], ['decompile', 'add']],
+    cases: [['list'], ['decompile'], ['decompile', 'main'], ['decompile', 'sum_to'], ['decompile', 'add'],
+      ['project', 'sample.elf']],
   },
   {
     fixture: join(here, 'fixtures/sample_aarch64.o'),
     arch: 'aarch64',
-    cases: [['list'], ['decompile'], ['decompile', 'sum_to'], ['decompile', 'add']],
+    cases: [['list'], ['decompile'], ['decompile', 'sum_to'], ['decompile', 'add'],
+      ['project', 'sample_aarch64.o']],
   },
   {
     fixture: join(here, 'fixtures/sample_macho.o'),
     arch: 'macho-x86-64',
-    cases: [['list'], ['decompile'], ['decompile', '_add']],
+    cases: [['list'], ['decompile'], ['decompile', '_add'], ['project', 'sample_macho.o']],
   },
 ];
 
@@ -77,7 +81,8 @@ for (const { fixture, arch, cases } of FIXTURES) {
       console.error(`+++ wasm   (${label})\n${w.slice(0, 800)}`);
       fail(`native != wasm for \`${label}\``);
     }
-    if (!n.includes('"functions"')) fail(`\`${label}\` produced no functions array`);
+    const want = c[0] === 'project' ? '"files"' : '"functions"'; // project emits a files map
+    if (!n.includes(want)) fail(`\`${label}\` produced no ${want} payload`);
     console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);
     passed++;
   }
