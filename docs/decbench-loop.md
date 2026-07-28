@@ -147,8 +147,15 @@ python3 -m scripts.decbench.showcase --perfect --limit 40 \
 # 3. JUDGE — this is the step that decides. Never ship a mined candidate unread.
 # 4. EMIT — render the picks straight out of the bundles, no retyping
 python3 -m scripts.decbench.showcase --dump /tmp/showcase-cands --emit picks.json
-#   picks.json = [{"case_id": "...", "name": "...", "meta": "...", "note": "..."}, ...]
+#   picks.json = [{"case_id": "..."}, ...]   — `name` (the dropdown label) and
+#   `meta` (the provenance line) are generated; override only to disambiguate.
 ```
+
+The page carries **no per-sample commentary**, by design: the dropdown label is a
+neutral identifier (`fn() — project binary, arch`), the line under it is provenance,
+and the only claim made is the measured GED for the pair on screen. A caption telling
+the reader what to notice would be the one thing there that is not machine-derived —
+the panes are the argument. Keep the emitter's output free of prose.
 
 **Step 3 is the whole job.** GED is a *filter*, not a verdict: roughly half of decbench's
 cross-decompiler gaps are scoring artifacts (see *Caveats*), and a metric win says

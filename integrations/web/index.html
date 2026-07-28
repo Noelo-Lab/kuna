@@ -224,23 +224,29 @@
       `${g[rival.id]} <span class="dim">(lower is better; 0 = structurally exact)</span>`;
   }
 
+  // Display-only: kuna and Ghidra both print a blank line between a function's
+  // signature and its opening brace. Collapse it so the panes start at the same
+  // place. Whitespace only, and only before a column-0 `{` — the committed data
+  // stays byte-verbatim, which is what scripts.decbench.showcase --verify checks.
+  const tightenHeader = (code) => code.replace(/\n[ \t]*\n(?=\{[ \t]*(\n|$))/g, '\n');
+
   function render() {
     const s = SAMPLES[Number(sampleEl.value) || 0];
     const rival = RIVALS.find((r) => r.id === rivalEl.value) || RIVALS[0];
     if (!s) return;
 
+    // Provenance and the measured score only — no editorial. The panes are the
+    // argument; a reader draws their own conclusion from them.
     const ged = gedLine(s, rival);
-    metaEl.innerHTML = `<b>${escapeHtml(s.meta || '')}</b>` +
-      (s.note ? `<br>${escapeHtml(s.note)}` : '') +
-      (ged ? `<br>${ged}` : '');
-    kunaEl.innerHTML = highlightC(s.kuna);
+    metaEl.innerHTML = `<b>${escapeHtml(s.meta || '')}</b>` + (ged ? `<br>${ged}` : '');
+    kunaEl.innerHTML = highlightC(tightenHeader(s.kuna));
     kunaNoteEl.textContent = 'kuna decompile';
 
     rivalNameEl.textContent = rival.name;
     const code = (s.vs || {})[rival.id];
     rivalCodeEl.hidden = !code;
     rivalPendEl.hidden = !!code;
-    if (code) rivalCodeEl.innerHTML = highlightC(code);
+    if (code) rivalCodeEl.innerHTML = highlightC(tightenHeader(code));
   }
 
   sampleEl.addEventListener('change', render);

@@ -174,6 +174,14 @@ screen (`ged:` in the sample, rendered under the dropdowns). A mined candidate i
 shipped unread — the selection procedure, including what disqualifies a sample, is
 `docs/decbench-loop.md` → *Finding good kuna examples*.
 
+The section shows **provenance and the measured score, and nothing else** — no captions,
+and a neutral dropdown label (`fn() — project binary, arch`); the reader draws their own
+conclusion from the two panes. The right pane defaults to IDA. The one display-only
+normalization is in `index.html`'s `tightenHeader`: kuna and Ghidra both print a blank line
+between a function's signature and its opening brace, and it is collapsed so the panes
+start level. It is whitespace, and only before a column-0 `{` — the committed data stays
+byte-verbatim, which is what `--verify` checks against.
+
 **Hosting on GitHub Pages.** `.github/workflows/pages.yml` runs this same build in CI
 (stable Rust + `wasm32-wasip1`, `binaryen` for `wasm-opt`, `make specs` to compile the
 whole `.sla` tree) and deploys `dist/` via `actions/deploy-pages`. All asset references are

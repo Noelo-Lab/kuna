@@ -12,6 +12,11 @@
 //            `ged` (optional) is the measured DecBench score per decompiler;
 //            the page prints the kuna/rival pair under the dropdowns.
 //
+// There is deliberately NO per-sample commentary field. The page shows the
+// provenance line and the measured score, and lets the two panes speak; a
+// caption telling the reader what to think would be the only thing on the page
+// that is not machine-derived. Keep it that way.
+//
 // PROVENANCE. Every pane below is verbatim tool output. The stripped-binary
 // samples come from one DecBench run (https://decbench.com) in which all five
 // decompilers were given the SAME fully stripped, gcc -O2 binary; DecBench then
@@ -45,14 +50,13 @@ export const RIVALS = [
 
 // The right-hand pane defaults to this rival (it should be one that has output
 // recorded for most samples, so the section does not open on a placeholder).
-export const DEFAULT_RIVAL = 'source';
+export const DEFAULT_RIVAL = 'ida';
 
 export const SAMPLES = [
   {
     id: 'O2-openssh-portable-scp-sshbuf_b64tod',
-    name: "sshbuf_b64tod() — error-return chain, x86-64",
+    name: "sshbuf_b64tod() — openssh-portable scp, x86-64",
     meta: "openssh-portable scp · ELF x86-64 · gcc -O2, stripped · 0x2c500",
-    note: "Four guard clauses, flat and in source order, each returning the value the source returns — 0, -2, -4, and the propagated sshbuf_put error. IDA types the function double and returns 0.0.",
     ged: { kuna: 0, ida: 15, ghidra: 4, binja: 5, angr: 26 },
     kuna:
 `/* WARNING: earlyreturn: hoisted 2 const-guard early-return(s) in sshbuf_b64tod */
@@ -317,9 +321,8 @@ sshbuf_b64tod(struct sshbuf *buf, const char *b64)
 
   {
     id: 'O2-noinline-dpkg-dpkg-packages',
-    name: "packages() — un-merged if/else tail, x86-64",
+    name: "packages() — dpkg, x86-64",
     meta: "dpkg · ELF x86-64 · gcc -O2 -fno-inline, stripped · 0x14780",
-    note: "gcc merged both badusage() call sites into one shared tail and negated the guard; kuna un-merges and un-flips it — the two WARNING lines say so — landing the if/else in source order with no goto.",
     ged: { kuna: 0, ida: 5, ghidra: 3, binja: 11, angr: 5 },
     kuna:
 `unsigned long packages(int8 *a0)
@@ -605,9 +608,8 @@ LABEL_414853:
 
   {
     id: 'O2-coreutils-fmt-main',
-    name: "main() — the getopt_long switch, x86-64",
+    name: "main() — coreutils fmt, x86-64",
     meta: "coreutils fmt · ELF x86-64 · gcc -O2, stripped · 0x26a0",
-    note: "The option dispatch stays one switch with all seven cases and four gotos; Ghidra breaks the same code into four switches and nine gotos, IDA into seven gotos over six labels.",
     ged: { kuna: 29, ida: 51, ghidra: 32, binja: 38, angr: 17 },
     kuna:
 `uint8 main(int4 a0,void *a1)
@@ -1807,9 +1809,8 @@ LABEL_402a46:
 
   {
     id: 'O2-noinline-zlib-libz.so.1.2-gz_look',
-    name: "gz_look() — dual cleanup paths, x86-64",
+    name: "gz_look() — zlib libz.so.1.2, x86-64",
     meta: "zlib libz.so.1.2 · ELF x86-64 · gcc -O2 -fno-inline, stripped · 0xec60",
-    note: "A 74-line function with both out-of-memory cleanups written out in full, leaving one goto and one label; IDA needs four of each, and angr emits the whole copy-out block twice.",
     ged: { kuna: 3, ida: 8, ghidra: 8, binja: 13, angr: 4 },
     kuna:
 `/* WARNING: earlyreturn: hoisted 4 const-guard early-return(s) in gz_look */
@@ -2341,9 +2342,8 @@ LABEL_40ec8b:
 
   {
     id: 'O2-noinline-openssh-portable-sshd-should_drop_connection',
-    name: "should_drop_connection() — guard clauses, x86-64",
+    name: "should_drop_connection() — openssh-portable sshd, x86-64",
     meta: "openssh-portable sshd · ELF x86-64 · gcc -O2 -fno-inline, stripped · 0x102d0",
-    note: "Three source guard clauses, three flat early returns in the same order. Ghidra and angr nest them behind a bool flag; the -fzero-call-used-regs scrub leaves IDA returning 0.0 and Binary Ninja an int512_t.",
     ged: { kuna: 0, ida: 12, ghidra: 11, binja: 12, angr: 11 },
     kuna:
 `/* WARNING: earlyreturn: hoisted 3 const-guard early-return(s) in should_drop_connection */
@@ -2607,9 +2607,8 @@ unsigned int should_drop_connection(int a0)
 
   {
     id: 'O2-libacl-setfacl-seq_get_cmd',
-    name: "seq_get_cmd() — three-way dispatch, x86-64",
+    name: "seq_get_cmd() — libacl setfacl, x86-64",
     meta: "libacl setfacl · ELF x86-64 · gcc -O2, stripped · 0x5340",
-    note: "Every arm returns its constant straight out. IDA and Binary Ninja thread a result variable through the whole body; Ghidra assigns it inside the condition, as (uVar2 = 1, param_3 != NULL).",
     ged: { kuna: 2, ida: 11, ghidra: 7, binja: 6, angr: 3 },
     kuna:
 `/* WARNING: earlyreturn: hoisted 3 const-guard early-return(s) in seq_get_cmd */
@@ -2805,9 +2804,8 @@ unsigned int seq_get_cmd(struct_0 **a0, unsigned int a1, struct_0 **a2)
 
   {
     id: 'O2-cronie-crontab-strcmp_until',
-    name: "strcmp_until() — compound loop condition, x86-64",
+    name: "strcmp_until() — cronie crontab, x86-64",
     meta: "cronie crontab · ELF x86-64 · gcc -O2, stripped · 0x80f0",
-    note: "The source's three-term while survives as one goto-free while with char-typed operands. IDA, Binary Ninja and angr each split it into an if guard wrapping a do/while; Ghidra exits its loop with a goto.",
     ged: { kuna: 18, ida: 26, ghidra: 19, binja: 26, angr: 28 },
     kuna:
 `int4 strcmp_until(char *a0,char *a1,char a2)
@@ -2969,9 +2967,8 @@ LAB_00108127:
 
   {
     id: 'O2-noinline-tar-tar-sys_exec_command',
-    name: "sys_exec_command() — fork guard + noreturn, x86-64",
+    name: "sys_exec_command() — tar, x86-64",
     meta: "tar · ELF x86-64 · gcc -O2 -fno-inline, stripped · 0x2b640",
-    note: "kuna keeps the source's polarity — parent tests first, closes, returns — and ends the function at the noreturn exec. All four rivals invert the fork test; IDA also falls through past the exec.",
     ged: { kuna: 0, ida: 6, ghidra: 8, binja: 8, angr: 6 },
     kuna:
 `unsigned int sys_exec_command(unsigned long a0,char a1,unsigned long a2)
@@ -3153,9 +3150,8 @@ long long sys_exec_command(char *a0, char a1, struct_1 *a2)
 
   {
     id: 'O2-iproute2-ip-xdp_parse',
-    name: "xdp_parse() — nested guards + flag ORs, x86-64",
+    name: "xdp_parse() — iproute2 ip, x86-64",
     meta: "iproute2 ip · ELF x86-64 · gcc -O2, stripped · 0x427a0",
-    note: "The only pane of five without the -O2 stack-probe loop — IDA's opens with an empty while (...) ; — and the two-strcmp short-circuit stays nested inside the argc test, flags OR'd as plain v8 | 2.",
     ged: { kuna: 0, ida: 5, ghidra: 20, binja: 39, angr: 22 },
     kuna:
 `/* WARNING: earlyreturn: hoisted 1 const-guard early-return(s) in xdp_parse */
@@ -3590,9 +3586,8 @@ int xdp_parse(void)
 
   {
     id: 'O2-noinline-cleanflight-cleanflight_DALRCF405-sendSatalliteSignalQualityAsTemperature2',
-    name: "sendSatalliteSignalQualityAsTemperature2() — ARM Cortex-M",
+    name: "sendSatalliteSignalQualityAsTemperature2() — cleanflight_DALRCF405, ARM",
     meta: "cleanflight_DALRCF405 · ELF ARM · gcc -O2 -fno-inline, stripped · 0x80339d8",
-    note: "Stripped STM32F405 flight-controller firmware: the rounding step comes back as the source's (x < 0) ? -0.5 : 0.5 ternary, where IDA, Ghidra and Binary Ninja re-expand it into an if/else diamond.",
     ged: { kuna: 0, ida: 3, ghidra: 3, binja: 8, angr: 3 },
     kuna:
 `/* WARNING: iteregion: rewrote 1 if/else assignment diamond(s) to ?: ternary in sendSatalliteSignalQualityAsTemperature2 */
@@ -3773,9 +3768,8 @@ int sendSatalliteSignalQualityAsTemperature2(unsigned int a0)
   //    the "not recorded yet" placeholder by design.
   {
     id: 'x86-sum_to',
-    name: 'sum_to() — counted loop, x86-64',
+    name: 'sum_to() — sample.elf fixture, x86-64',
     meta: 'ELF · x86-64 · gcc 11.4, PIE, DWARF · 0x1161',
-    note: 'The accumulator stays a single variable and the induction loop comes back as a for.',
     kuna:
 `int8 sum_to(int4 a0)
 
@@ -3801,9 +3795,8 @@ int sendSatalliteSignalQualityAsTemperature2(unsigned int a0)
 
   {
     id: 'x86-main',
-    name: 'main() — nested calls, x86-64',
+    name: 'main() — sample.elf fixture, x86-64',
     meta: 'ELF · x86-64 · gcc 11.4, PIE, DWARF · 0x1198',
-    note: 'Call results feed straight into the next call instead of spilling to a temporary per step.',
     kuna:
 `int8 main(int4 a0)
 
@@ -3827,9 +3820,8 @@ int sendSatalliteSignalQualityAsTemperature2(unsigned int a0)
 
   {
     id: 'arm-sum_to',
-    name: 'sum_to() — the same loop on AArch64',
+    name: 'sum_to() — sample_aarch64.o fixture, AArch64',
     meta: 'ELF relocatable · AArch64 · clang -O0, freestanding · 0x400048',
-    note: 'Same engine, same shape, different instruction set — the SLEIGH spec is the only thing that changed.',
     kuna:
 `int8 sum_to(int4 a0)
 

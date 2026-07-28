@@ -222,6 +222,9 @@ def dump_bundles(cands: list[dict], outdir: Path) -> list[dict]:
         meta["binary_path"] = str(binary) if binary else None
         meta["stripped_path"] = config.stripped_path(str(binary)) if binary else None
         meta["binary_desc"] = describe_binary(binary)
+        arch = meta["binary_desc"].removeprefix("ELF ").strip()
+        meta["label"] = f"{c['function']}() — {stem if stem.startswith(proj) else f'{proj} {stem}'}" + (
+            f", {arch}" if arch else "")
         where = stem if stem.startswith(proj) else f"{proj} {stem}"
         meta["meta_line"] = " · ".join(x for x in (
             where, meta["binary_desc"],
@@ -315,9 +318,16 @@ def _js_literal(code: str) -> str:
 def emit_samples_js(picks: list[dict], bundles: Path) -> str:
     """Render ``SAMPLES`` entries for the picks (paste into compare-samples.js).
 
-    ``picks`` rows are ``{case_id, name, note}`` (plus an optional ``meta`` that
-    overrides the generated provenance line); code comes off disk from the
-    ``--dump`` bundles so nothing is retyped by hand.
+    ``picks`` rows are just ``{case_id}``; ``name`` and ``meta`` default to the
+    generated dropdown label and provenance line and only need overriding to
+    disambiguate. Code comes off disk from the ``--dump`` bundles so nothing is
+    retyped by hand.
+
+    Deliberately no per-sample commentary, and the default label is a neutral
+    identifier (``fn() — project binary, arch``) rather than a claim about what
+    the sample shows: the page gives provenance and the measured GED and lets the
+    panes speak. Anything editorial would be the one thing on the page that is
+    not machine-derived.
     """
     out = []
     for p in picks:
@@ -335,9 +345,8 @@ def emit_samples_js(picks: list[dict], bundles: Path) -> str:
         out.append(
             f"  {{\n"
             f"    id: '{p['case_id']}',\n"
-            f"    name: {_js_str(p['name'])},\n"
+            f"    name: {_js_str(p.get('name') or meta.get('label', p['case_id']))},\n"
             f"    meta: {_js_str(p.get('meta') or meta.get('meta_line', ''))},\n"
-            f"    note: {_js_str(p.get('note', ''))},\n"
             f"    ged: {{ {gedjs} }},\n"
             f"    kuna:\n`{kuna}`,\n"
             f"    vs: {{\n" + "\n".join(vs) + "\n    },\n"
@@ -376,7 +385,7 @@ def main(argv=None) -> None:
                     help="write per-candidate bundles (source + all five panes)")
     ap.add_argument("--emit", metavar="PICKS.JSON",
                     help="render compare-samples.js entries for the picks in this "
-                         "file ([{case_id,name,meta,note}]); needs --dump's DIR")
+                         "file ([{case_id,name}], optional meta); needs --dump's DIR")
     ap.add_argument("--verify", action="store_true",
                     help="re-decompile every dumped bundle with the CURRENT kuna "
                          "and report whether the recorded pane still reproduces")
