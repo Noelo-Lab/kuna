@@ -9,9 +9,9 @@ everything else is one lookup away via the **doc map** at the bottom.
 kuna is an **agent-first decompiler written in Rust**: a decompilation engine plus a SLEIGH
 compiler, organized around an explicit phase model whose decision points are exposed as
 per-run, flippable options — the LLM control surface is the product. It started as a Rust
-port of Ghidra's decompiler (https://github.com/NationalSecurityAgency/ghidra, Apache-2.0)
-and has since diverged on its own defaults and features; the origin story lives in
-`README.md` and `docs/rust-port/`, and is not needed for day-to-day work.
+port of Ghidra's decompiler (Apache-2.0 — see `LICENSE` and `NOTICE`) and has since
+diverged on its own defaults and features; the origin story lives in `README.md` and
+`docs/rust-port/`, and is not needed for day-to-day work.
 
 ## Layout
 

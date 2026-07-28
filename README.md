@@ -133,3 +133,10 @@ Ported from Ghidra commit `cef869af04c4740a71ad31a55704045b1b0d1644`. The SLEIGH
 XML regression corpus are still vendored from upstream; the C++ source that the engine was
 ported from is recorded at that commit and recoverable from git history (the tree was removed
 once the port was proven — see `docs/UPSTREAM.md` and `docs/rust-port/README.md`).
+
+## License
+
+kuna is released under the [Apache License 2.0](LICENSE). It is derived from
+[Ghidra](https://github.com/NationalSecurityAgency/ghidra), developed at the National
+Security Agency and released under Apache-2.0 — see [NOTICE](NOTICE) for attribution
+(including the angr-ported portions, BSD-2-Clause).
