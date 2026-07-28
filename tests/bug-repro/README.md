@@ -35,29 +35,35 @@ firmware needs that tier to find the function at all.
 ```bash
 K=decompiler/target/release/kuna
 
-# stack-protector load kept after the check is dropped (dead read of an
-# undefined `// fs_offset` local as the first body statement)
-$K decompile-all tests/bug-repro/sort    --addr 0x6e80    # coreutils sort  zaptemp
-$K decompile-all tests/bug-repro/faillog --addr 0x3320    # shadow faillog  setmax_one
+# #180 — overflow guard rendered against the post-add value
+$K decompile-all tests/bug-repro/grep --addr 0x7c90                        # grep nlscan
 
-# libc data imported by a COPY relocation stays `dat_<addr>` (stderr, stdout,
-# optind, optarg …) where every other decompiler prints the name
-$K decompile-all tests/bug-repro/faillog --addr 0x3320    # two fprintf(stderr, …)
+# #181 — the copy of a call's out-parameter is hoisted above the call
+$K decompile-all tests/bug-repro/libselinux.so.1 --addr 0x17370            # lsetfilecon_raw
 
-# overflow guard rendered against the post-add value
-$K decompile-all tests/bug-repro/grep --addr 0x7c90       # grep nlscan
+# #182 — stack array declared too small for the stores emitted into it; the
+#        slots past the end become scalars that are read but never assigned
+$K decompile-all tests/bug-repro/betaflight_STM32F405.elf --addr 0x801b4a4 # cliServo
 
-# a stack load that happens after a call is hoisted above it
-$K decompile-all tests/bug-repro/libselinux.so.1 --addr 0x17370   # lsetfilecon_raw
+# #183 — stackguard drops the canary check but leaves the fs:0x28 load behind
+$K decompile-all tests/bug-repro/sort    --addr 0x6e80                     # sort zaptemp
+$K decompile-all tests/bug-repro/faillog --addr 0x3320                     # faillog setmax_one
+$K decompile-all tests/bug-repro/sort    --addr 0x6e80 --option stackguard off   # A/B
 
-# stack array declared too small for the stores emitted into it; the slots past
-# the end become separate scalars that are read but never assigned
-$K decompile-all tests/bug-repro/betaflight_STM32F405.elf --addr 0x801b4a4  # cliServo
+# #184 — libc data imported by a COPY relocation stays `dat_<addr>` (stderr,
+#        stdout, optind, optarg …) where every other decompiler prints the name
+$K decompile-all tests/bug-repro/faillog --addr 0x3320                     # two fprintf(stderr, …)
 ```
 
-Each open issue links the binary and address it needs; see the repository's
-issue list for the current status of each. `faillog` carries two distinct bugs,
-which is why it is here once and referenced twice.
+| issue | severity | binary · address |
+|---|---|---|
+| [#180](https://github.com/Noelo-Lab/kuna/issues/180) | correctness | `grep` · `0x7c90` |
+| [#181](https://github.com/Noelo-Lab/kuna/issues/181) | correctness | `libselinux.so.1` · `0x17370` |
+| [#182](https://github.com/Noelo-Lab/kuna/issues/182) | correctness | `betaflight_STM32F405.elf` · `0x801b4a4` |
+| [#183](https://github.com/Noelo-Lab/kuna/issues/183) | readability | `sort` · `0x6e80`, `faillog` · `0x3320` |
+| [#184](https://github.com/Noelo-Lab/kuna/issues/184) | readability | `faillog` · `0x3320` |
+
+`faillog` carries two distinct bugs, which is why it is here once and listed twice.
 
 ## Adding to this directory
 
