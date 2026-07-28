@@ -62,7 +62,7 @@ asset path is relative, so a project subpath just works.
 |---|---|
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
 | `decompile/index.html` | The decompiler application (upload → function list → highlighted C, stubs grouped, project-zip download). Reaches the wasm/specs/glue at the bundle root with `../`. |
-| `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane). Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output. |
+| `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), and `js/highlight-c.js` — the one C highlighter both pages use. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
 | `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), runs the decompiler under the WASI shim; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |

@@ -179,6 +179,7 @@ p{margin:0;}
 .selbox select:hover{border-color:var(--ink);}
 .cmpmeta{flex:1 1 100%;font-size:.75rem;line-height:1.7;color:var(--muted);max-width:78ch;}
 .cmpmeta b{font-weight:400;color:var(--ink-2);}
+.cmpmeta .dim{opacity:.7;}
 
 .panes{display:grid;grid-template-columns:1fr 1fr;gap:clamp(12px,1.4vw,18px);
   margin-top:20px;align-items:stretch;}
@@ -300,7 +301,11 @@ body.app main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width:860px){
-  .hero{grid-template-columns:1fr;gap:36px;}
+  /* minmax(0,…), not a bare 1fr: the .cmd block's non-wrapping command lines
+     have a min-content width wider than a phone, and a bare 1fr track refuses
+     to shrink under it — the column (and the page) then overflow instead of
+     .cmd scrolling inside its own overflow-x:auto box. */
+  .hero{grid-template-columns:minmax(0,1fr);gap:36px;}
   .mark{width:132px;}
   .facts{max-width:46ch;}
   .goals{grid-template-columns:1fr;gap:28px;}

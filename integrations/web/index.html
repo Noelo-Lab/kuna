@@ -215,13 +215,24 @@
   RIVALS.forEach((r) => rivalEl.add(new Option(r.name, r.id)));
   if (RIVALS.some((r) => r.id === DEFAULT_RIVAL)) rivalEl.value = DEFAULT_RIVAL;
 
+  // "kuna 0 · IDA (Hex-Rays) 8" — the measured DecBench score for the pair on
+  // screen, when the sample carries one and the right pane is a decompiler.
+  function gedLine(s, rival) {
+    const g = s.ged;
+    if (!g || rival.id === 'source' || g.kuna == null || g[rival.id] == null) return '';
+    return `DecBench GED &mdash; kuna ${g.kuna} &middot; ${escapeHtml(rival.name)} ` +
+      `${g[rival.id]} <span class="dim">(lower is better; 0 = structurally exact)</span>`;
+  }
+
   function render() {
     const s = SAMPLES[Number(sampleEl.value) || 0];
     const rival = RIVALS.find((r) => r.id === rivalEl.value) || RIVALS[0];
     if (!s) return;
 
+    const ged = gedLine(s, rival);
     metaEl.innerHTML = `<b>${escapeHtml(s.meta || '')}</b>` +
-      (s.note ? `<br>${escapeHtml(s.note)}` : '');
+      (s.note ? `<br>${escapeHtml(s.note)}` : '') +
+      (ged ? `<br>${ged}` : '');
     kunaEl.innerHTML = highlightC(s.kuna);
     kunaNoteEl.textContent = 'kuna decompile';
 

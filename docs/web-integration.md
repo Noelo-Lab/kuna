@@ -165,6 +165,15 @@ page is otherwise inert — no wasm, no network — and `compare-samples.js` is 
 adding a comparison is a data edit (its header documents the schema; every pane must be
 verbatim tool output).
 
+The samples are **mined, not chosen by hand**: `python3 -m scripts.decbench.showcase` reads
+the DecBench results tree for optimized, medium-sized functions where kuna out-scores IDA
+and no rival out-scores kuna, dumps all five panes plus the original source per candidate,
+and re-decompiles each one with the current build (`--verify`) so a shipped pane is still
+byte-for-byte what kuna prints today. Every sample carries the measured GED for the pair on
+screen (`ged:` in the sample, rendered under the dropdowns). A mined candidate is never
+shipped unread — the selection procedure, including what disqualifies a sample, is
+`docs/decbench-loop.md` → *Finding good kuna examples*.
+
 **Hosting on GitHub Pages.** `.github/workflows/pages.yml` runs this same build in CI
 (stable Rust + `wasm32-wasip1`, `binaryen` for `wasm-opt`, `make specs` to compile the
 whole `.sla` tree) and deploys `dist/` via `actions/deploy-pages`. All asset references are
