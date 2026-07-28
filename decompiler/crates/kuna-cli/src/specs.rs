@@ -9,7 +9,7 @@
 //!
 //! The byte-for-byte oracle the Python `kuna.slacomp` used (`sleigh_opt`) no
 //! longer exists in-tree; its result (148/148 content-identical) is recorded in
-//! docs/RUST_PORT.md and is subsumed by `kuna test` (the Rust-built specs decode
+//! docs/rust-port/README.md and is subsumed by `kuna test` (the Rust-built specs decode
 //! to 675/675).  So `--diff` is a documentation note, not a live comparison.
 
 use std::process::Command;
@@ -21,7 +21,7 @@ kuna specs --diff: the C++ differential is moot.
 
 The Python `kuna.slacomp` differential compiled each .slaspec with both the C++
 `sleigh_opt` and the Rust `slacomp` and required byte-identical .sla content.
-The C++ tree was removed (see docs/RUST_PORT.md); there is no in-tree oracle to
+The C++ tree was removed (see docs/rust-port/README.md); there is no in-tree oracle to
 diff against anymore.  The recorded result was 148/148 content-identical, and it
 is subsumed by `kuna test`: rebuilding all specs with the Rust `slacomp` and
 re-running the datatest corpus yields 675/675, proving the Rust-built specs

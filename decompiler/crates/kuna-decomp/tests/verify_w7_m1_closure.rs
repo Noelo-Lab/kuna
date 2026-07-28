@@ -50,7 +50,7 @@ fn read_test_file(stem: &str) -> String {
 
 /// The C++ `TEST(name)` names of the three in-scope upstream unit-test files,
 /// FROZEN here. They were derived from `decompiler/unittests/<stem>.cc` while the
-/// C++ tree existed; that tree has since been removed (see docs/RUST_PORT.md), so
+/// C++ tree existed; that tree has since been removed (see docs/rust-port/README.md), so
 /// the name-parity contract is now pinned to this snapshot — a future rename in the
 /// Rust files still fails this test, which is the contract's whole point.
 fn cpp_test_names(stem: &str) -> Vec<String> {

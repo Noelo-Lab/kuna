@@ -123,7 +123,7 @@ end — the self-sufficient correctness gate. `docs/baseline.json` is the record
 | `tests/datatests/` | Upstream XML decompilation regression tests (83 files → 675 assertions); the corpus `make test` runs |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH processor specs; `.sla` are build artifacts produced by `slacomp` |
 | `Makefile` | Top-level build/test driver (Rust-only) |
-| `docs/RUST_PORT.md` | The port summary (what/why/how/validation) |
+| `docs/rust-port/README.md` | The port summary (what/why/how/validation) |
 | `scripts/` | Python helpers backing the autonomous feature `pipeline/` (the user-facing CLI is the Rust `kuna` binary) |
 | `tools/sync_upstream.py` | Pulls upstream Ghidra `specs/` + `tests/datatests/` updates |
 
@@ -132,4 +132,4 @@ end — the self-sufficient correctness gate. `docs/baseline.json` is the record
 Ported from Ghidra commit `cef869af04c4740a71ad31a55704045b1b0d1644`. The SLEIGH specs and the
 XML regression corpus are still vendored from upstream; the C++ source that the engine was
 ported from is recorded at that commit and recoverable from git history (the tree was removed
-once the port was proven — see `docs/UPSTREAM.md` and `docs/RUST_PORT.md`).
+once the port was proven — see `docs/UPSTREAM.md` and `docs/rust-port/README.md`).

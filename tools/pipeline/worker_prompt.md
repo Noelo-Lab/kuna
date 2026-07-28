@@ -16,7 +16,7 @@ complete and honest.
 - angr test method: `{{TEST_NAME}}`
 - Binary: `{{BINARY}}`
 - Function selector: `{{SELECTOR}}`   (arch override: `{{ARCH}}`)
-- Feature slug: `{{SLUG}}`  → new module `decompiler/crates/kuna-decomp/src/kuna_{{SLUG}}.rs`, option name `{{SLUG}}` (pick a clean option name if `{{SLUG}}` is awkward), test `tests/stages/ghangr-{{SLUG}}.xml`, bundle `docs/features/{{SLUG}}/`.
+- Feature slug: `{{SLUG}}`  → new module `kuna_{{SLUG}}.rs` inside its owning phase folder under `decompiler/crates/kuna-decomp/src/` (e.g. `p2_lift/kuna_{{SLUG}}.rs`), option name `{{SLUG}}` (pick a clean option name if `{{SLUG}}` is awkward), test `tests/stages/ghangr-{{SLUG}}.xml`, bundle `docs/features/{{SLUG}}/`.
 
 ## Environment (already set for this worktree)
 
@@ -39,7 +39,8 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 ## Hard rules
 
 1. **Exactly one feature.** No drive-by refactors. New logic goes in
-   `decompiler/crates/kuna-decomp/src/kuna_{{SLUG}}.rs` (declare it as a `mod` in `lib.rs`).
+   `decompiler/crates/kuna-decomp/src/<phase folder>/kuna_{{SLUG}}.rs` (wire it into
+   `lib.rs` the way the existing `kuna_*` modules are).
    Edits to the ported core files are allowed ONLY where an anchor demands it (registering the
    action/option, a flag on the architecture struct); keep them minimal, mark each with a
    `// (kuna)` comment, and record them in `docs/UPSTREAM.md` *Divergence*.
@@ -52,7 +53,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
    `source_decompiler="angr"`, `inspiration="{{TEST_NAME}}; <angr pass/class>; {{SELECTOR}}"`,
    `change_kind` ∈ correctness-fix|presentation-default|structure-recovery|opt-in-tool, plus `summary` (WHAT), — plus `tier` (transform if it restructures/duplicates/removes/inserts code; core if near-always-better rendering; analysis for prep passes) and `symptoms` (2–5 output-shaped phrases an LLM would grep for).
    `use_when` (the angr-vs-kuna symptom = WHEN), `example` (HOW). Register the option in
-   `decompiler/crates/kuna-decomp/src/options.rs` (so it appears in `KUNA_OPTION_NAMES`).
+   `decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs` (so it appears in `KUNA_OPTION_NAMES`).
 5. **If an existing option already covers this gap** (check `kuna catalog --json`), do NOT
    duplicate it. Record that finding in `docs/features/{{SLUG}}/record.json`, set state `--status failed
    --note "covered by <option>"`, and stop without a PR.
@@ -74,7 +75,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - Read `AGENTS.md`, `docs/phases.md`, `docs/history/stage-mapping.md`, `docs/divergences.md`, `docs/options.md`,
   `tests/stages/README.md`, and the **loweredswitch** feature as the canonical template:
   `git log --oneline | grep loweredswitch`, then read
-  `decompiler/crates/kuna-decomp/src/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /
+  `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /
   `universalaction.rs` / `options.rs` / `architecture.rs` / `phases.toml`, and
   `tests/stages/ghangr-loweredswitch.xml`.
 - Reproduce the gap: `{{KUNA_PY}} -m scripts.pipeline.compare --entry {{TEST_NAME}}` (read both

@@ -40,7 +40,7 @@ re-queues anything that violates one.
    the bug, default = the fix). It must exercise the full `binary → decompile(addr|func)` path;
    a self-contained bytechunk is allowed only when it reproduces the same construct.
 3. **Output-changing ⇒ logged + flaggable.** Any feature that can change emitted C MUST sit
-   behind a runtime `--option <name>` (registered in `stages.toml` settableTable + `options.rs`)
+   behind a runtime `--option <name>` (registered in `phases.toml` settableTable + `options.rs`)
    and be recorded in `docs/PROGRESS.md` and `docs/divergences.md` (a DIV-N entry iff default-ON).
    No silent output change ever reaches default.
 4. **Always measure + record speed (speed is critical).** Every `record.json` carries a speed
@@ -57,6 +57,10 @@ re-queues anything that violates one.
    (`state proposal`), and stops. The orchestrator surfaces every `[PROPOSAL]` draft to the user
    for an explicit go/no-go; on approval an implementation worker resumes the branch
    (`IMPL_PROPOSAL=1 RESUME_BRANCH=feat/angr-<slug>`) and un-drafts the PR when green.
+6. **The spec is live.** Any change that affects decompiler behavior updates the owning
+   `docs/spec/` chapter in the same PR (chapters map one-to-one onto the phase folders; find
+   the chapter from its `Anchors:` header), and `make check-spec` must pass. A pure
+   move/rename updates only the anchor paths; a test-only change touches nothing.
 
 ## Components
 
@@ -112,7 +116,7 @@ python -m scripts.pipeline.select --json                                       #
 ## The LLM-augmentability contract (PHASES)
 
 Every feature the loop ships MUST register a fully self-describing `settableTable` row in
-`decompiler/crates/kuna-decomp/stages.toml`, so the next agent can discover and choose it
+`decompiler/crates/kuna-decomp/phases.toml`, so the next agent can discover and choose it
 from `kuna catalog --json` without reading the engine source. Beyond the original fields
 (`summary`=WHAT, `use_when`=WHEN, `values`+`example`=HOW, `stage`/`substage`, `strength`,
 `destructive`), pipeline features carry provenance:

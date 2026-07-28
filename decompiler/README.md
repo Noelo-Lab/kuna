@@ -1,61 +1,40 @@
-# kuna Rust port
+# The kuna engine (cargo workspace)
 
-A parallel Rust reimplementation of the kuna C++ decompiler. The C++ tree
-(`../decompiler/cpp/`) is the **test oracle** and stays green throughout the
-port; the Rust binaries speak the same console-command surface as
-`decomp_dbg`/`decomp_test_dbg`, so the XML datatests and the Python harness
-(`kuna/run_tests.py`, `kuna/decompile.py`) verify the port unchanged.
+The Rust decompilation engine — the whole product lives in this workspace. It began as a
+line-faithful port of Ghidra's C++ decompiler and SLEIGH compiler (the C++ tree has been
+removed; see `../docs/rust-port/README.md`) and has since grown its own analysis tier,
+CLI, and front-ends.
 
 Design decisions live in `../docs/rust-port/` — start with the ADRs in
-`../docs/rust-port/adr/` (IR arenas, ordered containers, integer semantics,
-error model, dispatch, stage registry, re-runability).
+`../docs/rust-port/adr/` (IR arenas, ordered containers, integer semantics, error model,
+dispatch, stage registry, re-runability). Working conventions: `../docs/agents.md`.
 
 ## Layout
 
-| Crate | What (C++ -> crate mapping in each crate's `lib.rs`) |
+| Crate | What |
 |---|---|
 | `crates/kuna-base` | Foundation: types, errors, XML + marshaling, spaces/addresses, raw p-code, context db, compression, translate/loadimage traits. |
 | `crates/kuna-num` | Multiprecision, IEEE float emulation, CircleRange. |
-| `crates/kuna-sleigh` | `.sla` reader + instruction decode runtime. **No compiler** — `sleigh_opt` stays C++ and keeps producing the `.sla` files. |
-| `crates/kuna-decomp` | The decompiler core: DECCORE + the kuna stage model. |
-| `crates/kuna-console` | Console front-end; bins `decomp_dbg` and `decomp_test_dbg`. |
-| `crates/kuna-harness` | Dev-only differential helpers (Rust engine vs. C++ oracle). |
+| `crates/kuna-sleigh` | `.sla` reader + instruction decode runtime + the compile-side pattern machinery. |
+| `crates/kuna-slacomp` | The SLEIGH compiler (binary `slacomp`, same CLI as upstream `sleigh_opt`). |
+| `crates/kuna-decomp` | The decompiler core (phase-foldered `src/`: `p0_knowledge/`…`p9_emit/`, `substrate/`, `infra/`) + the phase model/option surface. |
+| `crates/kuna-analysis` | The program-prep loader/analyzer tier (ELF markup, strings, DWARF, function discovery). |
+| `crates/kuna-console` | Console front-end; bins `decomp_dbg` and `decomp_test_dbg`; the in-process engine + project-export modules. |
+| `crates/kuna-cli` | The user-facing `kuna` binary (`../docs/cli.md`). |
+| `crates/kuna-ghidra` | The `kuna_ghidra` binary — kuna as stock Ghidra's decompiler core (`../docs/ghidra-integration.md`). |
+| `crates/kuna-wasm` | The `kuna_wasm` binary (wasm32-wasip1) — the in-browser decompiler (`../docs/web-integration.md`). |
+| `crates/kuna-harness`, `crates/kuna-lift-diff` | Dev-only test-harness + differential helpers. |
 
-Dependency edges: `num`/`sleigh` -> `base`; `decomp` -> `base`+`num`+`sleigh`;
-`console` -> `decomp`; `harness` -> everything.
+## Build & test
 
-## Build
-
-From the repo root (preferred — matches the C++ build driver):
-
-```bash
-make rust        # cargo build --release -p kuna-console (the two binaries)
-make rust-test   # cargo test --workspace
-```
-
-Or directly:
+From the repo root, `make binaries` / `make test` / `make rust-test` (see
+`../docs/agents.md`). Or directly:
 
 ```bash
-cd rust
-cargo build --workspace
+cd decompiler
+cargo build --release -p kuna-console -p kuna-harness -p kuna-slacomp -p kuna-cli
 cargo test --workspace
 cargo clippy --workspace -- -D warnings   # HashMap/HashSet are deny (clippy.toml)
 ```
 
-Binaries land in `rust/target/release/decomp_dbg` and
-`rust/target/release/decomp_test_dbg` (placeholders for now: they print
-"kuna rust engine: not yet implemented" and exit 1).
-
-## Engine switch
-
-The Python tooling selects the engine via `KUNA_ENGINE`:
-
-```bash
-KUNA_ENGINE=rust python -m kuna.decompile ./a.out main
-KUNA_ENGINE=rust python -m kuna.run_tests --all --baseline docs/baseline.json
-```
-
-Default (unset or `KUNA_ENGINE=cpp`) is the C++ oracle under
-`decompiler/cpp/`. With `KUNA_ENGINE=rust` the same harness drives
-`rust/target/release/decomp_dbg` / `decomp_test_dbg` instead — same commands,
-same datatests, same baseline.
+Binaries land in `decompiler/target/release/`.
