@@ -44,8 +44,12 @@ without disturbing the WASI path.
 
 ```
 decompiler/crates/kuna-wasm/     the wasm (and native) binary: `kuna_wasm`
-integrations/web/                the browser harness (assembles a static dist/)
+integrations/web/                the project site + browser harness (assembles a static dist/)
 ```
+
+The deployed site is two pages: a **landing page** at `/` and the **decompiler
+application** at `/decompile/` (§4.1). Only the second one loads the wasm; everything below
+describes it.
 
 `kuna-wasm` is a **purely additive leaf crate**. It depends only on existing engine crates
 (`kuna-console`, `kuna-decomp`, `kuna-base`) and the already-present `object`; it adds no
@@ -133,16 +137,45 @@ browser`, and a real PE executable (152 functions) through the browser lazy path
 
 `integrations/web/build.sh` builds `kuna_wasm.wasm` for `wasm32-wasip1`, applies
 `wasm-opt -Oz` if available, and assembles a self-contained `integrations/web/dist/`:
-the page + glue + vendored shim + wasm, the **full runtime SLEIGH tree** under `specs/`
+the site + glue + vendored shim + wasm, the **full runtime SLEIGH tree** under `specs/`
 (every `.ldefs`/`.pspec`/`.cspec`/`.dwarf`/`.sla` — ~15 MB static, lazily fetched), and
 the `specs-small.json` preload bundle. Serve `dist/` with any static file server.
+
+### 4.1 The site layout
+
+```
+/                     index.html          landing page: hero, compare, goals
+/decompile/           decompile/index.html the decompiler application (loads the wasm)
+/assets/              css/site.css · fonts/ · img/ · js/highlight-c.js
+/compare-samples.js   the compare section's data (samples + rival outputs)
+/CNAME                kuna.noelo.org — the custom domain, copied into the bundle
+/kuna-web.js /zip.js /kuna_wasm.wasm /specs/ /specs-small.json /vendor/
+```
+
+The engine-facing files stay at the **root** — `/decompile/` reaches them with `../`, so
+`test/glue.mjs` and `test/parity.mjs` (which serve `dist/` and import `kuna-web.js`
+directly) are unaffected by the page move, and a project subpath still works.
+
+The design shares the Noelo Lab site's palette and typefaces (`noelo.org`, BSD-2-Clause;
+provenance note at the top of `assets/css/site.css`) but not its layout: kuna's pages are
+tool pages — one display line, then monospace throughout, small red-ticked section labels
+instead of a lab-page rail. One stylesheet serves both pages; `assets/js/highlight-c.js` is
+the single C highlighter shared by the compare panes and the function view. The landing
+page is otherwise inert — no wasm, no network — and `compare-samples.js` is pure data, so
+adding a comparison is a data edit (its header documents the schema; every pane must be
+verbatim tool output).
 
 **Hosting on GitHub Pages.** `.github/workflows/pages.yml` runs this same build in CI
 (stable Rust + `wasm32-wasip1`, `binaryen` for `wasm-opt`, `make specs` to compile the
 whole `.sla` tree) and deploys `dist/` via `actions/deploy-pages`. All asset references are
-relative, so it serves correctly from a project subpath (`https://<owner>.github.io/<repo>/`);
-no COOP/COEP headers are needed (no threads / SharedArrayBuffer). Enable once under
-*Settings → Pages → Source = GitHub Actions*.
+relative, so it serves correctly either from the custom domain or from a project subpath
+(`https://<owner>.github.io/<repo>/`); no COOP/COEP headers are needed (no threads /
+SharedArrayBuffer). Enable once under *Settings → Pages → Source = GitHub Actions*.
+
+The site is **`kuna.noelo.org`**: `integrations/web/CNAME` is copied into the bundle by
+`build.sh`, and DNS points that name at GitHub Pages. With the Actions deploy flow the
+repo's *Settings → Pages → Custom domain* field is the authoritative half — set it there
+too, or the CNAME file alone may not claim the name.
 
 Payload: **~1.7 MB** wasm (gzipped, shared) + a **~180 KB** gzipped spec bundle once, then
 **~475 KB** per distinct language (`.sla`, fetched on demand and cached). The ~15 MB of
@@ -169,10 +202,13 @@ architectures**:
    (**`test/zip.mjs`**, a fourth gate needing no build, structurally validates the `zip.js`
    writer: it re-parses its own archive, recomputes every CRC-32 independently, and asserts
    byte-determinism.)
-3. **Full UI (optional, not committed)** — a `puppeteer-core` script drives `index.html`
-   in real Chrome: uploads an ELF then a Mach-O, waits for the code panel / status, asserts
-   the rendered C and the detected format. Verified passing during development; kept out of
-   the committed suite to avoid a browser/`puppeteer` dependency.
+3. **Full UI (optional, not committed)** — a `puppeteer-core` script drives
+   `decompile/index.html` in real Chrome: uploads an ELF then a Mach-O, waits for the code
+   panel / status, asserts the rendered C and the detected format. Verified passing during
+   development; kept out of the committed suite to avoid a browser/`puppeteer` dependency.
+   (Headless Chrome alone can do the same without `puppeteer`: copy the page into `dist/`
+   with an appended module script that sets `#file`'s `files` from a `DataTransfer` and
+   dispatches `change`, then run `--headless --virtual-time-budget=… --dump-dom`.)
 
 Fixtures (all benign, small, reproducible from the committed source via the comment
 header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `sample_aarch64.o`

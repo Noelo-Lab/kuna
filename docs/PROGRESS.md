@@ -2914,3 +2914,29 @@ DIV-logged when the behavior ships in Phase 2). Phases: 2 = engine bridge (Archi
 from wire specs, GhidraLoadImage/ContextGhidra, minimal `Funcdata::encode`,
 PrintC→EmitMarkup — first real C in the GUI); 3 = lazy providers; 4 = parity
 (rename/retype id echo, structureGraph, parammeasures, BSim signatures, overlays).
+
+## 2026-07-28 — the project site: landing page + /decompile (branch feat/site)
+
+`integrations/web/` grew from "the wasm demo page" into the **project site** at
+**kuna.noelo.org** (`CNAME` rides in the bundle; `.github/workflows/pages.yml` already
+deploys `dist/`). Two pages, one static bundle, no server:
+
+- **`/`** — a single landing page: hero (mark, what Kuna is, `[SOURCE] [TRY IT]`, a block
+  of real commands), a **compare** section (two dropdowns over `compare-samples.js` —
+  Kuna's output beside another decompiler's or the original source; a rival with nothing
+  recorded renders a "not recorded yet" pane rather than a fake one), and the three
+  **goals** (autonomous refinement · llm-facing · tunable).
+- **`/decompile/`** — the in-browser decompiler, restyled onto the same system. Same
+  engine path as before; it reaches the wasm/specs/glue at the bundle root with `../`, so
+  `test/glue.mjs` and `test/parity.mjs` are untouched by the move.
+
+Design shares the Noelo Lab site's palette and typefaces (BSD-2, credited at the top of
+`assets/css/site.css`) but not its layout — a tool page, not a lab page. `assets/` holds
+the one stylesheet, the two vendored webfonts, the mark (cropped + background-normalized
+from `assets/kuna.png`), and `js/highlight-c.js`, the single C highlighter both pages use.
+
+No engine change: nothing under `decompiler/` or `specs/` is touched, so the datatest /
+stage / workspace gates are unaffected; `make check-spec` stays green. Verified in real
+headless Chrome against a built `dist/`: engine loads, `sample.elf` → 13 functions,
+selection + highlighting, and the project-zip export (`sample.elf.kuna.zip`, 18,980 B);
+compare section exercised across all samples × rivals; no horizontal overflow at 375 px.

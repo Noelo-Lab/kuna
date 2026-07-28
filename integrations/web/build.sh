@@ -42,7 +42,15 @@ WASM="$ENGINE/target/$TARGET/$PROFILE/kuna_wasm.wasm"
 echo ">> assembling $DIST"
 rm -rf "$DIST"
 mkdir -p "$DIST/specs"
-cp "$HERE/index.html" "$HERE/kuna-web.js" "$HERE/zip.js" "$DIST/"
+# The site: the landing page at /, the decompiler application at /decompile/,
+# and the shared design system (css/fonts/images/highlighter) under /assets/.
+# kuna-web.js, zip.js, the wasm and specs stay at the root — /decompile/ reaches
+# them with '../', and the Node tests serve dist/ the same way a browser does.
+# CNAME rides along so the deployed bundle claims kuna.noelo.org.
+cp "$HERE/index.html" "$HERE/compare-samples.js" "$HERE/kuna-web.js" "$HERE/zip.js" \
+   "$HERE/CNAME" "$DIST/"
+cp -r "$HERE/assets" "$DIST/assets"
+cp -r "$HERE/decompile" "$DIST/decompile"
 cp -r "$HERE/vendor" "$DIST/vendor"
 
 # Optionally shrink the wasm (nice-to-have; the demo works without it).
