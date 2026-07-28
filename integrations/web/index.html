@@ -1,283 +1,257 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>kuna — decompiler in your browser</title>
-<style>
-  :root {
-    --bg: #ffffff; --fg: #1b1f24; --muted: #5c6773; --line: #e3e7ec;
-    --panel: #f7f8fa; --accent: #3b7dd8; --accent-fg: #fff;
-    --code-bg: #f6f8fa; --err: #c0392b; --ok: #1e7e46;
-    --stub: #8250df;
-    --tok-com: #5f7a61; --tok-str: #a3512e; --tok-chr: #99622d; --tok-num: #9a6700;
-    --tok-kw: #0550ae; --tok-type: #0f766e; --tok-fn: #3b7dd8; --tok-glob: #57606a;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f1216; --fg: #d7dde3; --muted: #8b97a3; --line: #232a31;
-      --panel: #161b21; --accent: #4c8ef0; --accent-fg: #fff;
-      --code-bg: #12161b; --err: #ff6b5e; --ok: #4cc38a;
-      --stub: #b392f0;
-      --tok-com: #7f9583; --tok-str: #ce9178; --tok-chr: #d8a35f; --tok-num: #e5c07b;
-      --tok-kw: #79b8ff; --tok-type: #56b6c2; --tok-fn: #4c8ef0; --tok-glob: #9aa7b3;
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  body {
-    background: var(--bg); color: var(--fg); display: flex; flex-direction: column;
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  header {
-    display: flex; align-items: center; gap: 14px; padding: 12px 18px;
-    border-bottom: 1px solid var(--line); flex-wrap: wrap;
-  }
-  header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
-  header .tag {
-    font-size: 11px; color: var(--muted); border: 1px solid var(--line);
-    padding: 2px 8px; border-radius: 999px;
-  }
-  header .spacer { flex: 1; }
-  button, label.filebtn {
-    font: inherit; cursor: pointer; border: 1px solid var(--line);
-    background: var(--panel); color: var(--fg); padding: 7px 13px;
-    border-radius: 8px; transition: border-color .12s, background .12s;
-  }
-  button:hover, label.filebtn:hover { border-color: var(--accent); }
-  button:disabled { opacity: .45; cursor: default; }
-  button:disabled:hover { border-color: var(--line); }
-  label.filebtn { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-  input[type=file] { display: none; }
-  #status { font-size: 12.5px; color: var(--muted); min-height: 18px; }
-  #status.err { color: var(--err); } #status.ok { color: var(--ok); }
-  main { flex: 1; display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
-  @media (max-width: 720px) { main { grid-template-columns: 1fr; } #sidebar { max-height: 34vh; } }
-  #sidebar { border-right: 1px solid var(--line); overflow: auto; }
-  #sidebar .head {
-    position: sticky; top: 0; background: var(--bg); padding: 9px 14px;
-    border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted);
-  }
-  .fn {
-    display: flex; justify-content: space-between; gap: 10px; padding: 7px 14px;
-    cursor: pointer; border-bottom: 1px solid var(--line); white-space: nowrap;
-  }
-  .fn:hover { background: var(--panel); }
-  .fn.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); }
-  .fn .nm { overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .fn .ad { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
-  .fn.stub .nm { color: var(--stub); opacity: .8; }
-  .fn.bad .nm { color: var(--err); }  /* after .stub so error rows keep the err color */
-  .fndiv {
-    padding: 8px 14px 5px; border-bottom: 1px solid var(--line); white-space: nowrap;
-    font-size: 11px; color: var(--muted); user-select: none;
-  }
-  #code {
-    margin: 0; padding: 18px 20px; overflow: auto; white-space: pre;
-    font-family: ui-monospace, SFMono-Regular, Menlo, "Liberation Mono", monospace;
-    font-size: 13px; tab-size: 4; background: var(--code-bg);
-  }
-  .tok-com { color: var(--tok-com); }
-  .tok-str { color: var(--tok-str); }
-  .tok-chr { color: var(--tok-chr); }
-  .tok-num { color: var(--tok-num); }
-  .tok-kw { color: var(--tok-kw); }
-  .tok-type { color: var(--tok-type); }
-  .tok-fn { color: var(--tok-fn); }
-  .tok-glob { color: var(--tok-glob); font-style: italic; }
-  #empty { padding: 40px; color: var(--muted); text-align: center; }
-  #empty code { background: var(--panel); padding: 1px 6px; border-radius: 5px; }
-  a { color: var(--accent); }
-</style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuna — an agent-first decompiler</title>
+<meta name="description" content="Kuna is a self-refining decompiler built to be used by agents: loosely based on Ghidra's decompiler, written in Rust, and runnable from the CLI, inside Ghidra, or entirely in the browser.">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" href="./assets/img/favicon.png">
+<link rel="stylesheet" href="./assets/css/site.css">
 </head>
 <body>
-<header>
-  <h1>kuna</h1>
-  <span class="tag">100% in-browser · WebAssembly · no server</span>
-  <div class="spacer"></div>
-  <span id="status">loading decompiler…</span>
-  <button id="dlbtn" disabled>Download Binary Source</button>
-  <label class="filebtn" id="pick" aria-disabled="true">
-    Load binary <input type="file" id="file" />
-  </label>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <img src="./assets/img/kuna-mark.png" alt="">
+      <span class="wordmark">Kuna</span>
+      <span class="at">an agent&#8209;first decompiler</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="./decompile/">/decompile</a>
+      <a href="https://noelo.org">/noelo</a>
+    </nav>
+  </div>
 </header>
-<main>
-  <aside id="sidebar">
-    <div class="head" id="fnhead">functions</div>
-    <div id="fnlist"></div>
-  </aside>
-  <div style="min-width:0; display:flex; flex-direction:column;">
-    <div id="empty">
-      Load any <b>ELF, PE, or Mach-O</b> binary to decompile it — entirely in this browser tab.<br />
-      The engine (Ghidra's decompiler, ported to Rust) runs as WebAssembly; your file never leaves the page.
-    </div>
-    <pre id="code" hidden></pre>
+
+<main id="main">
+
+  <!-- ── Hero ──────────────────────────────────────────────────────────── -->
+  <div class="wrap">
+    <section class="hero">
+      <div>
+        <p class="shead">
+          <svg class="tick" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+            <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/>
+            <circle cx="6" cy="6" r="2" fill="currentColor"/>
+          </svg>
+          <span class="name">a noelo lab project</span>
+        </p>
+
+        <h1>An agent-first decompiler.</h1>
+
+        <p class="lede">
+          Kuna is a self-refining decompiler built to be used by agents.
+          It is loosely based on the Ghidra decompiler, written in Rust, and
+          integrates modern features from other open-source decompilers and research.
+          Kuna is an experiment to see how far agents can take self-refining tools.
+        </p>
+
+        <div class="actions">
+          <a class="btn" href="https://github.com/Noelo-Lab/kuna">Source</a>
+          <a class="btn ghost" href="./decompile/">Try it</a>
+        </div>
+
+        <div class="cmd">
+          <div><span class="p">$</span> kuna decompile ./a.out main</div>
+          <div><span class="p">$</span> kuna decompile ./stripped.bin 0x401040 --addr</div>
+          <div><span class="p">$</span> kuna decompile-all ./a.out --json</div>
+          <div><span class="p">$</span> kuna decompile ./a.out main --option compareform canonical</div>
+        </div>
+      </div>
+
+      <div>
+        <img class="mark" src="./assets/img/kuna-mark.png"
+             alt="The kuna mark: an eel coiled around a target.">
+        <ul class="facts">
+          <li><b>built on</b> Rust &middot; SLEIGH</li>
+          <li><b>runs in</b> CLI &middot; the browser (wasm) &middot; Ghidra GUI (extension)</li>
+          <li><b>license</b> Apache&#8209;2.0</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <!-- ── Compare ───────────────────────────────────────────────────────── -->
+  <div class="wrap">
+    <section class="sec" id="compare">
+      <p class="shead">
+        <svg class="tick" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+          <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/>
+          <circle cx="6" cy="6" r="2" fill="currentColor"/>
+        </svg>
+        <span class="name">compare</span>
+      </p>
+      <p class="ssub">
+        The same function out of the same binary: Kuna on the left, another
+        decompiler (or the original source) on the right.
+      </p>
+
+      <div class="cmpbar">
+        <div class="field">
+          <label class="label" for="sample">Sample</label>
+          <span class="selbox"><select id="sample"></select></span>
+        </div>
+        <div class="field">
+          <label class="label" for="rival">Compared against</label>
+          <span class="selbox"><select id="rival"></select></span>
+        </div>
+        <p class="cmpmeta" id="cmpmeta"></p>
+      </div>
+
+      <div class="panes">
+        <article class="pane kuna">
+          <header class="panehead">
+            <svg class="tick" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+              <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/>
+              <circle cx="6" cy="6" r="2" fill="currentColor"/>
+            </svg>
+            <span class="label">kuna</span>
+            <span class="grow"></span>
+            <span class="note" id="kunanote"></span>
+          </header>
+          <pre class="code" id="kunacode"></pre>
+        </article>
+
+        <article class="pane">
+          <header class="panehead">
+            <span class="label" id="rivalname">&mdash;</span>
+            <span class="grow"></span>
+            <span class="note">for reference</span>
+          </header>
+          <pre class="code" id="rivalcode" hidden></pre>
+          <div class="pending" id="rivalpending" hidden>
+            <p>
+              <b>Not recorded yet.</b>
+              No output committed for this decompiler on this sample.
+              Add it in <code>compare-samples.js</code>.
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+  </div>
+
+  <!-- ── Goals ─────────────────────────────────────────────────────────── -->
+  <div class="wrap">
+    <section class="sec" id="goals">
+      <p class="shead">
+        <svg class="tick" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+          <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/>
+          <circle cx="6" cy="6" r="2" fill="currentColor"/>
+        </svg>
+        <span class="name">goals</span>
+      </p>
+      <p class="ssub">This project optimizes for three specific goals.</p>
+
+      <ol class="goals">
+        <li class="goal">
+          <p class="n">01</p>
+          <h3>Autonomous Refinement</h3>
+          <p>
+            LLM agents should drive the majority or all of code writing in Kuna, supported
+            by a dataset which directs the models towards quality metrics.
+            As such, code is optimized to be used, read, and modified by agents, as well
+            as debugged in the context of big dataset competitions like <a href="https://decbench.com">DecBench</a>.
+          </p>
+        </li>
+        <li class="goal">
+          <p class="n">02</p>
+          <h3>LLM-Facing</h3>
+          <p>
+            LLMs are likely to become the main consumers of decompiled code in the future.
+            As such, Kuna optimizes to be read by LLMs.
+            That means GUI development is largely untouched and UX is on the lower side
+            of priorities for this project.
+            This also means decompilation text quality and speed are our top priority.
+          </p>
+        </li>
+        <li class="goal">
+          <p class="n">03</p>
+          <h3>Tunable</h3>
+          <p>
+            Based on <a href="https://www.usenix.org/system/files/usenixsecurity24-basque.pdf">recent research in decompilation</a>, not all decompiler features are always good.
+            Some are useful in only specific contexts.
+            As such, every feature is developed in this context: is it always good? How can we know? Can it be enabled dynamically and robustly?
+          </p>
+        </li>
+      </ol>
+    </section>
   </div>
 </main>
 
+<footer class="foot">
+  <div class="wrap">
+    <p>
+      Kuna &mdash; an agent&#8209;first decompiler, from the Noelo Lab at the University of
+      Georgia. Apache&#8209;2.0, derived from Ghidra.
+    </p>
+    <span class="links">
+      <a href="https://github.com/Noelo-Lab/kuna">source</a>
+      <a href="https://github.com/Noelo-Lab/kuna/issues">issues</a>
+      <a href="./decompile/">decompile</a>
+      <a href="https://noelo.org">noelo.org</a>
+    </span>
+  </div>
+</footer>
+
 <script type="module">
-  import { loadKuna } from './kuna-web.js';
-  import { makeZip } from './zip.js';
+  // The compare section: two dropdowns over compare-samples.js, nothing else.
+  import { highlightC, escapeHtml } from './assets/js/highlight-c.js';
+  import { SAMPLES, RIVALS, DEFAULT_RIVAL } from './compare-samples.js';
 
-  const statusEl = document.getElementById('status');
-  const pickEl = document.getElementById('pick');
-  const fileEl = document.getElementById('file');
-  const listEl = document.getElementById('fnlist');
-  const headEl = document.getElementById('fnhead');
-  const codeEl = document.getElementById('code');
-  const emptyEl = document.getElementById('empty');
-  const dlEl = document.getElementById('dlbtn');
+  const sampleEl = document.getElementById('sample');
+  const rivalEl = document.getElementById('rival');
+  const metaEl = document.getElementById('cmpmeta');
+  const kunaEl = document.getElementById('kunacode');
+  const kunaNoteEl = document.getElementById('kunanote');
+  const rivalNameEl = document.getElementById('rivalname');
+  const rivalCodeEl = document.getElementById('rivalcode');
+  const rivalPendEl = document.getElementById('rivalpending');
 
-  const setStatus = (msg, cls = '') => { statusEl.textContent = msg; statusEl.className = cls; };
+  SAMPLES.forEach((s, i) => sampleEl.add(new Option(s.name, String(i))));
+  RIVALS.forEach((r) => rivalEl.add(new Option(r.name, r.id)));
+  if (RIVALS.some((r) => r.id === DEFAULT_RIVAL)) rivalEl.value = DEFAULT_RIVAL;
 
-  let kuna = null;
-  let loaded = null; // { bytes, fileName } of the last successfully decompiled binary
-  try {
-    kuna = await loadKuna({ wasmUrl: './kuna_wasm.wasm', specRoot: './specs' });
-    setStatus('ready — load an ELF, PE, or Mach-O binary', 'ok');
-    pickEl.removeAttribute('aria-disabled');
-  } catch (e) {
-    setStatus('failed to load decompiler: ' + e.message, 'err');
-    console.error(e);
+  // "kuna 0 · IDA (Hex-Rays) 8" — the measured DecBench score for the pair on
+  // screen, when the sample carries one and the right pane is a decompiler.
+  function gedLine(s, rival) {
+    const g = s.ged;
+    if (!g || rival.id === 'source' || g.kuna == null || g[rival.id] == null) return '';
+    return `DecBench GED &mdash; kuna ${g.kuna} &middot; ${escapeHtml(rival.name)} ` +
+      `${g[rival.id]} <span class="dim">(lower is better; 0 = structurally exact)</span>`;
   }
 
-  fileEl.addEventListener('change', async () => {
-    const f = fileEl.files[0];
-    if (!f || !kuna) return;
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    const fmt = kuna.formatName(bytes);
-    setStatus(`decompiling ${f.name} (${fmt}, ${bytes.length.toLocaleString()} bytes)…`);
-    listEl.innerHTML = ''; codeEl.hidden = true; emptyEl.hidden = false;
-    loaded = null; dlEl.disabled = true;
-    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
+  // Display-only: kuna and Ghidra both print a blank line between a function's
+  // signature and its opening brace. Collapse it so the panes start at the same
+  // place. Whitespace only, and only before a column-0 `{` — the committed data
+  // stays byte-verbatim, which is what scripts.decbench.showcase --verify checks.
+  const tightenHeader = (code) => code.replace(/\n[ \t]*\n(?=\{[ \t]*(\n|$))/g, '\n');
 
-    const t0 = performance.now();
-    let result;
-    try {
-      result = await kuna.decompile(bytes); // all functions, one wasm run
-    } catch (e) {
-      setStatus('decompile failed: ' + e.message, 'err');
-      console.error(e);
-      return;
-    }
-    const dt = Math.round(performance.now() - t0);
-    loaded = { bytes, fileName: f.name };
-    dlEl.disabled = false;
+  function render() {
+    const s = SAMPLES[Number(sampleEl.value) || 0];
+    const rival = RIVALS.find((r) => r.id === rivalEl.value) || RIVALS[0];
+    if (!s) return;
 
-    // Split into normal functions and PLT/import-thunk stubs (`kind` from the
-    // engine; a missing kind means a plain function), each address-ascending:
-    // real code first, the boilerplate stubs grouped after a divider.
-    const isStub = (fn) => fn.kind === 'plt' || fn.kind === 'thunk';
-    const shown = result.functions.filter((fn) => fn.code || fn.error);
-    const byAddr = (a, b) => a.address - b.address;
-    const normal = shown.filter((fn) => !isStub(fn)).sort(byAddr);
-    const stubs = shown.filter(isStub).sort(byAddr);
-    setStatus(`${f.name} (${fmt}): ${shown.length} functions in ${dt} ms`, 'ok');
-    headEl.textContent = `${normal.length} functions · ${stubs.length} stubs`;
+    // Provenance and the measured score only — no editorial. The panes are the
+    // argument; a reader draws their own conclusion from them.
+    const ged = gedLine(s, rival);
+    metaEl.innerHTML = `<b>${escapeHtml(s.meta || '')}</b>` + (ged ? `<br>${ged}` : '');
+    kunaEl.innerHTML = highlightC(tightenHeader(s.kuna));
+    kunaNoteEl.textContent = 'kuna decompile';
 
-    const rows = [];
-    const addRow = (fn) => {
-      const row = document.createElement('div');
-      row.className = 'fn' + (isStub(fn) ? ' stub' : '') + (fn.error ? ' bad' : '');
-      row.innerHTML =
-        `<span class="nm">${escapeHtml(fn.name)}</span><span class="ad">${fn.address_hex}</span>`;
-      row.addEventListener('click', () => select(row, fn));
-      listEl.appendChild(row);
-      rows.push({ row, fn });
-    };
-    normal.forEach(addRow);
-    if (stubs.length) {
-      const div = document.createElement('div');
-      div.className = 'fndiv';
-      div.textContent = `— imports & thunks (${stubs.length}) —`;
-      listEl.appendChild(div);
-      stubs.forEach(addRow);
-    }
-    const first = rows.find((r) => !isStub(r.fn) && r.fn.code) || rows.find((r) => r.fn.code);
-    if (first) first.row.click();
-  });
-
-  // Download Binary Source: run the whole-binary project export and hand the
-  // four artifacts (<name>.c/.h/.asm/README.md) over as a zip.
-  dlEl.addEventListener('click', async () => {
-    if (!loaded || !kuna) return;
-    const safeName = loaded.fileName.replace(/[^A-Za-z0-9._-]/g, '_');
-    dlEl.disabled = true;
-    setStatus('building project…');
-    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
-    try {
-      const proj = await kuna.project(loaded.bytes, safeName); // one wasm run
-      const entries = Object.entries(proj.files)
-        .map(([name, data]) => ({ name: `${safeName}.kuna/${name}`, data }));
-      const zip = makeZip(entries);
-      const url = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${safeName}.kuna.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus(`${safeName}.kuna.zip downloaded (${zip.length.toLocaleString()} bytes)`, 'ok');
-    } catch (e) {
-      setStatus('project export failed: ' + e.message, 'err');
-      console.error(e);
-    } finally {
-      if (loaded) dlEl.disabled = false;
-    }
-  });
-
-  function select(row, fn) {
-    [...listEl.children].forEach((c) => c.classList.remove('sel'));
-    row.classList.add('sel');
-    emptyEl.hidden = true; codeEl.hidden = false;
-    if (fn.error) {
-      codeEl.textContent =
-        `/* ${fn.name} @ ${fn.address_hex} — decompile error:\n   ${fn.error} */`;
-    } else {
-      codeEl.innerHTML = highlightC(fn.code);
-    }
+    rivalNameEl.textContent = rival.name;
+    const code = (s.vs || {})[rival.id];
+    rivalCodeEl.hidden = !code;
+    rivalPendEl.hidden = !!code;
+    if (code) rivalCodeEl.innerHTML = highlightC(tightenHeader(code));
   }
 
-  // --- C syntax highlighting -----------------------------------------------
-  // One linear scan with a regex alternation; every emitted substring goes
-  // through escapeHtml (identifiers come from the binary and are
-  // attacker-controlled, so nothing reaches innerHTML unescaped).
-  const KEYWORDS = new Set(('if else while do for return break continue goto switch case default ' +
-    'sizeof struct union enum typedef static extern const volatile unsigned signed register').split(' '));
-  const TYPES = new Set(('void char short int long float double bool undefined byte word dword qword ' +
-    'uint ushort ulong uchar code char16_t wchar_t size_t').split(' '));
-  for (let n = 1; n <= 8; n++) ['undefined', 'int', 'uint'].forEach((b) => TYPES.add(b + n));
-
-  const TOK_RE = /\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|0[xX][0-9a-fA-F]+[uUlL]*|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[fFlLuU]*|[A-Za-z_][A-Za-z0-9_]*/g;
-
-  function classify(tok, next) {
-    const c = tok[0];
-    if (c === '/') return 'tok-com'; // only comments start with '/' in TOK_RE
-    if (c === '"') return 'tok-str';
-    if (c === "'") return 'tok-chr';
-    if (c === '.' || (c >= '0' && c <= '9')) return 'tok-num';
-    if (/^dat_[0-9a-fA-F]+$/.test(tok)) return 'tok-glob';
-    if (KEYWORDS.has(tok)) return 'tok-kw';
-    if (TYPES.has(tok) || tok.endsWith('_t')) return 'tok-type';
-    if (next === '(') return 'tok-fn';
-    return '';
-  }
-
-  function highlightC(code) {
-    TOK_RE.lastIndex = 0;
-    let out = '', last = 0, m;
-    while ((m = TOK_RE.exec(code))) {
-      const tok = m[0], end = m.index + tok.length;
-      if (m.index > last) out += escapeHtml(code.slice(last, m.index));
-      const cls = classify(tok, code[end]);
-      out += cls ? `<span class="${cls}">${escapeHtml(tok)}</span>` : escapeHtml(tok);
-      last = end;
-    }
-    return out + escapeHtml(code.slice(last));
-  }
-
-  function escapeHtml(s) {
-    return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  }
+  sampleEl.addEventListener('change', render);
+  rivalEl.addEventListener('change', render);
+  render();
 </script>
 </body>
 </html>
