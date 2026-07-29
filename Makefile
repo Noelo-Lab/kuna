@@ -14,7 +14,7 @@ BINDIR  := $(ENGINE)/target/$(PROFILE)
 SLACOMP := $(BINDIR)/slacomp
 PYTHON  ?= python3
 
-.PHONY: all binaries specs test test-stages rust rust-test clean check-spec
+.PHONY: all binaries specs test test-stages rust rust-test clean check-spec version
 
 all: binaries specs
 
@@ -58,6 +58,11 @@ $(BINDIR)/kuna:
 # exactly one chapter, and (strict) every settable option is mentioned.
 check-spec:
 	python3 tools/check_spec.py
+
+# Print the repo version as MAJOR.MINOR (VERSION file + commit count -- the
+# scheme release CI tags with; see docs/release.md).
+version:
+	@bash scripts/version.sh
 
 # The Rust workspace's own unit/integration tests (the ported TEST() suites, the
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).

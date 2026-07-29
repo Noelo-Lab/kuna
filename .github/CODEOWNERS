@@ -1,0 +1,4 @@
+# The VERSION file holds the release MAJOR number; the minor is derived from
+# the commit count (docs/release.md). Only maintainers bump the major --
+# enforced when branch protection on main requires code-owner review.
+/VERSION @mahaloz

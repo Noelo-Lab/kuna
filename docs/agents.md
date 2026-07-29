@@ -132,4 +132,5 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/ghidra-integration.md` | kuna as Ghidra's decompiler core (architecture + wire protocol). |
 | `docs/web-integration.md` | The WASM/browser front-end and the project site. |
 | `docs/devcontainer.md` | The reproducible build container + cross-arch fixture builds. |
+| `docs/release.md` | The MAJOR.MINOR version scheme (`VERSION` file + commit count, `make version`) and the binary release CI. |
 | `docs/history.md` | The condensed project history: milestone timeline, the C++→Rust port + its verification, the DIV registry (why a default differs from upstream), vendored-tree provenance (`GHIDRA_REV`) + sync procedure. |
