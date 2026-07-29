@@ -12,7 +12,7 @@ the analyzers that feed it. This document inventories the gap, with emphasis on
 what affects naming and symbol resolution for ELF binaries (the class of problem
 that produced `sub_400510(...)` instead of `puts(...)`).
 
-The live, normative stage model is in [`stages.md`](stages.md) /
+The live, normative stage model is in [`phases.md`](phases.md) /
 [`history/stage-model.md`](history/stage-model.md); every upstream *decompiler* module is mapped
 to a stage in [`history/stage-mapping.md`](history/stage-mapping.md). The items below are the
 *application-layer* steps that sit **outside** that stage model.
@@ -29,19 +29,17 @@ tables (`kuna_decomp::{architecture, database}`):
 kuna-base / kuna-num -> kuna-sleigh -> kuna-decomp -> kuna-analysis -> kuna-console / kuna-cli
 ```
 
-Modules are grouped by the stage they feed (mostly P0/S1), mirroring the
-`kuna-decomp` stage-folder scheme: `loadimage_object.rs` (the real-ELF
-`LoadImage` backend), `s1_loader/` (PLT/GOT markup — `elf_plt.rs` — and, planned,
-the `.symtab`/`.dynsym` reader and no-return detection), and one folder per
-planned analysis (`s1_strings/`, `s1_dwarf/`, `s1_demangle/`, `s1_entry/`,
-`s1_protos/`).
+Modules are grouped by what they feed (mostly P0/S1): `loadimage_object.rs` (the
+real-ELF `LoadImage` backend), `loader/` (image-format markup — `elf_plt.rs`,
+relocations, PE/Mach-O stubs, no-return detection), `analyzers/` (one module per
+analysis pass), and `listing/` (the disassembly/xref tier).
 
 Each analysis implements **`kuna_analysis::pass::AnalysisPass`** — the
 generalization of the de-facto `elf_plt` contract: a focused module that reads
 the object and produces a flat, deduplicated `AnalysisOutput` of *facts*
 (symbols, entries, no-return names, read-only ranges), never panicking and never
 failing — it only ever contributes more knowledge. Each pass's `id()` registers
-in `stages.toml` as a settable option (and in `KUNA_OPTION_NAMES`), so it appears
+in `phases.toml` as a settable option (and in `KUNA_OPTION_NAMES`), so it appears
 in `kuna catalog --json` and is **flippable per-decompilation via `--option <id>
 on|off`** — implemented as of the analysis-port "option-gating" Increment. The
 passes are **default-on** (faithful to Ghidra's default-on analyzers), except
@@ -88,7 +86,7 @@ structurally untouched.
 and turn each PLT stub into a thunk to an external function. The decompiler then
 sees the import name at the call site.
 
-**kuna now:** [`kuna-analysis/src/s1_loader/elf_plt.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs)
+**kuna now:** [`kuna-analysis/src/loader/elf_plt.rs`](../decompiler/crates/kuna-analysis/src/loader/elf_plt.rs)
 reconstructs `got_slot → name` from the dynamic relocations and decodes each
 `.plt*` stub's GOT reference per architecture (x86-64, x86-32, AArch64, ARM32,
 RISC-V, SPARC; classic, CET `.plt.sec`, PIE, and stripped layouts). SPARC is the

@@ -1,0 +1,29 @@
+kuna
+Copyright 2026 The kuna Authors
+
+kuna is derived from Ghidra (https://github.com/NationalSecurityAgency/ghidra),
+released under the Apache License, Version 2.0. The decompiler engine and the
+SLEIGH compiler are a Rust port of Ghidra's C++ decompiler and SLEIGH compiler
+(sleigh_opt); the SLEIGH processor specifications (specs/Ghidra/Processors/)
+and the decompiler regression corpus (tests/datatests/) are vendored from
+Ghidra. The pinned upstream commit is recorded in docs/UPSTREAM.md.
+
+The following attribution is reproduced from Ghidra's NOTICE file:
+
+    Ghidra
+
+    This product includes software developed at National Security Agency
+    (https://www.nsa.gov)
+
+    Portions of this product were created by the U.S. Government and not
+    subject to U.S. copyright protections under 17 U.S.C.
+
+    The remaining portions are copyright their respective authors and have
+    been contributed under the terms of one or more open source licenses,
+    and made available to you under the terms of those licenses. (See
+    LICENSE)
+
+Portions of the structuring and region-recovery code are ported from angr
+(https://github.com/angr/angr), released under the BSD 2-Clause License;
+ported algorithms are tagged with their source decompiler in
+decompiler/crates/kuna-decomp/phases.toml and docs/spec/.

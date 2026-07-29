@@ -2,7 +2,7 @@
 
 > **The vendored C++ source (`decompiler/cpp/`, `decompiler/unittests/`) has been removed** —
 > the decompiler and SLEIGH compiler are now fully ported to Rust (`decompiler/`); see
-> `docs/RUST_PORT.md`. Still vendored from upstream: the SLEIGH `specs/` and the XML
+> `docs/rust-port/README.md`. Still vendored from upstream: the SLEIGH `specs/` and the XML
 > regression corpus `tests/datatests/`. The C++ anchors cited throughout the Rust code
 > and docs refer to the upstream Ghidra commit below (recoverable from git history or an
 > upstream checkout). `tools/sync_upstream.py` now applies only to `specs/` + `datatests/`.
@@ -179,6 +179,11 @@ make test    # 675/675 PARITY OK
 
 # 4. Review `git diff`, then commit. The script updates GHIDRA_REV above on success.
 ```
+
+If the sync *intentionally* changes datatest behavior or the corpus itself (new or
+changed XML tests), regenerate the oracle against the new tree —
+`kuna test --datatests --save-baseline docs/baseline.json` — and say so in the commit.
+Never re-pin to absorb an unexplained regression.
 
 The script diffs the ghidra repo between `GHIDRA_REV` and `--to` restricted to the
 vendored upstream paths. The diff is taken with `--no-renames` (renames arrive as plain

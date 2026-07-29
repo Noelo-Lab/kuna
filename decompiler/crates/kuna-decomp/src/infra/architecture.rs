@@ -760,7 +760,7 @@ pub struct Architecture {
     /// Actions that can be applied in this architecture (C++ `allacts`).
     pub allacts: ActionDatabase,
     /// (kuna) Per-program restart-trigger side table (C++ file-static
-    /// `restartTable`, owned here per `docs/RUST_PORT.md` — one log per loaded
+    /// `restartTable`, owned here per `docs/rust-port/README.md` — one log per loaded
     /// program; survives `Funcdata::clear()` because it lives outside the
     /// Funcdata).  The `restarts` console command renders it.
     pub restart_log: crate::kuna_restartlog::RestartLog,

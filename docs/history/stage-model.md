@@ -1,4 +1,4 @@
-> **ARCHIVED (2026-07).** Theory/design-rationale document (the 2026-06 Ghidra/angr/Reko side-by-side study). Its upstream C++/Python anchors describe trees not in this repo. The live, normative description of what kuna actually does is the chaptered spec under `docs/spec/` (until that lands: `docs/stages.md`). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
+> **ARCHIVED (2026-07).** Theory/design-rationale document (the 2026-06 Ghidra/angr/Reko side-by-side study). Its upstream C++/Python anchors describe trees not in this repo. The live, normative description of what kuna actually does is the chaptered spec under `docs/spec/` (one-screen map: `docs/phases.md`). Retained for provenance; paths and terminology inside are frozen pre-rename (stage = phase, S-codes = P-codes).
 
 # The kuna Stage Model
 
@@ -16,7 +16,7 @@ derived by studying the three decompilers side by side:
 All `file:line` anchors below refer to: Ghidra anchors → `decompiler/cpp/` in this repo;
 angr anchors → `angr/angr/analyses/decompiler/`; Reko anchors → `reko/src/`.
 Raw exploration evidence (structured reports with ~168 pipeline steps, ~80 feedback loops,
-~98 decision points, ~150 intervention surfaces) is archived under `docs/evidence/`.
+~98 decision points, ~150 intervention surfaces) is archived under `docs/history/evidence/`.
 
 ---
 
@@ -547,11 +547,11 @@ artifacts and must not be forced into one box (the old taxonomy's recurring erro
 Derived 2026-06 from parallel structured exploration of the three codebases (10 readers),
 three independent taxonomy designs (artifact-, decision-, and scheduling-centric lenses),
 and two adversarial critique passes (evidence coverage + kuna usability), followed by
-manual verification of every load-bearing claim in source. Raw reports: `docs/evidence/`.
+manual verification of every load-bearing claim in source. Raw reports: `docs/history/evidence/`.
 
 Provenance note: edge 1 (mechanism c′, `stageJumpTable`) is corroborated by direct manual
 source verification (funcdata_block.cc:509-538) rather than by an exploration report; the
-nearest exploration-evidenced analog is Reko's `Backwalker` (docs/evidence/08.json). All
+nearest exploration-evidenced analog is Reko's `Backwalker` (docs/history/evidence/08.json). All
 other mechanisms have multiple direct loop instances in the evidence files.
 
 Key verified anchors: `universalAction`+`buildDefaultGroups` coreaction.cc:5566-5896;

@@ -1,9 +1,10 @@
 # Stage-model evidence
 
-Raw structured outputs from the 2026-06 study that produced `docs/stage-model.md` and the
-rewritten `STAGES.md`. Anchors inside these files refer to the source trees as of the study
-date (Ghidra anchors → `decompiler/cpp/` in this repo; angr → `angr/angr/analyses/decompiler/`;
-Reko → `reko/src/`); the curated, verified subset lives in `stage-model.md`.
+Raw structured outputs from the 2026-06 study that produced the stage model
+(`../stage-model.md`; the live one-screen model is `docs/phases.md`). Anchors inside these
+files refer to the source trees as of the study date (Ghidra anchors → the since-removed
+`decompiler/cpp/` C++ tree; angr → `angr/angr/analyses/decompiler/`; Reko → `reko/src/`);
+the curated, verified subset lives in `../stage-model.md`.
 
 ## Exploration reports (10 parallel readers, structured schema)
 

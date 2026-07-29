@@ -1,0 +1,138 @@
+# The `kuna` CLI reference
+
+The user-facing commands are the single Rust binary `kuna`
+(`decompiler/crates/kuna-cli`, built to `decompiler/target/release/kuna` by
+`make binaries`). This is the full reference; the one-screen version is in
+`docs/agents.md`.
+
+## `kuna test` — the parity gates
+
+```bash
+kuna test --all --baseline docs/baseline.json          # expect: PARITY OK
+kuna test --datatests --json                           # machine-readable
+kuna test --datatests --datatests-dir tests/stages \
+    --baseline docs/baseline-stages.json               # the stage-issue corpus (= make test-stages)
+```
+
+`kuna test` parses the harness's two streams separately (unit results on **stderr**,
+datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
+`--save-baseline PATH` re-records a baseline. Routine use: `docs/baseline-stages.json`
+when adding stage tests. `docs/baseline.json` is re-pinned only for sanctioned intentional
+changes (an upstream sync per `docs/UPSTREAM.md`, a DIV-recorded default flip) — never to
+absorb a regression.
+
+## `kuna decompile` — one function
+
+```bash
+kuna decompile ./a.out main
+kuna decompile ./stripped.bin 0x401040 --addr
+kuna decompile ./a.out main --option compareform canonical
+kuna decompile ./sparc.elf main --option returnpair single
+```
+
+Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`, so
+interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
+`--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
+reliable|aggressive` applies an option preset (`docs/modes.md`).
+
+## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
+
+```bash
+kuna decompile-all ./a.out --json                      # every function
+kuna decompile-all ./a.out --functions main,parse --json
+kuna functions ./a.out --json                          # just enumerate (name + address)
+```
+
+The whole-binary surface (the benchmark + LLM path). Runs **in-process**
+(`kuna_console::engine::bootstrap_from_object` → `commit_pending_analysis` → loop
+`decompile_func` + `print_c`), loading + analyzing the binary **once** instead of
+`kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
+
+`--json` emits `{binary,count,functions:[{name,address,address_hex,size,code,error,
+variables:[{name,type,kind,arg_index,stack_offset,size}]}]}` (`kuna functions --json`
+emits `name`/`address`/`address_hex` per function) — per-function `code` matches
+`kuna decompile ... --option listing on` byte-for-byte on x86-64 (elsewhere, see the
+injected defaults below), `error` isolates a single failed function, and `variables`
+(params in ABI order + DWARF/stack locals) feed type-recovery scoring.
+
+Behaviors specific to `decompile-all`:
+
+- **Injected default options**: it injects `option listing on` unless the caller names
+  `listing` (DIV-15), so the default-on `noreturn_propagate` call-graph fixpoint fires and
+  a stripped binary's unnamed exit/fatal wrappers no longer swallow the functions after
+  them; on non-x86-64 binaries it likewise injects `funcstart_patterns on` and `aif on`
+  unless the caller names them (see `docs/divergences.md`). `--option listing off` opts
+  out; `kuna functions` and the `kuna decompile`/console path keep listing off.
+- **Per-function watchdog** — `--max-fn-seconds N` (default 120, `0` disables): a function
+  whose decompile drive exceeds the budget is cut off cooperatively (deadline probes at
+  the action/rule-pool/heritage loop boundaries) and recorded as that function's `error`
+  (`"per-function decompile budget exceeded (N s)"`), the batch continuing. Driver policy,
+  not a stage-model settable — zero output change for any function that converges; the
+  console / `decomp_dbg` parity path never arms it.
+
+The decbench backend (`decbench/decompilers/raw/kuna_raw.py`) shells out to
+`kuna decompile-all --json`.
+
+## `kuna decompile-project` — recompile-oriented project export
+
+```bash
+kuna decompile-project ./a.out                         # writes ./a.out.kuna/
+kuna decompile-project ./a.out -o proj --functions main,parse
+```
+
+The project-export face of the same in-process core
+(`decompiler/crates/kuna-cli/src/decompile_project.rs`, a thin wrapper over the shared
+`kuna_console::project` module — the decompile loop + artifact builders also behind the
+web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
+load-once/decompile-many path and flags —
+`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--slice`/`--target`/
+`--sleighpath`, listing on by default; no `--json`.
+
+Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
+`-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the
+binary and attempt recompilation:
+
+- `<name>.c` — every decompiled function, address-ordered, under
+  `// Function: <name> @ <addr>` headers, failures as comments, `#include "<name>.h"`.
+- `<name>.h` — include guard + a generated recompile prelude (core scalar and
+  `undefined`-family typedefs), the recovered user-defined type definitions, and one
+  prototype per decompiled function, token-identical to the `.c` definition line.
+- `<name>.asm` — labeled linear disassembly of every CODE section: labels match the `.c`
+  function names, per-function `; arg:`/`; stack:` comments map decompiled variables to
+  storage, undecodable bytes as `db` lines, and a `; --- data ---` tail labeling named
+  globals plus every `dat_<hex>` the `.c` references, with raw bytes.
+- `README.md` — size, arch id, entry point, function counts, sections table, file
+  inventory.
+
+Purely additive — no new settable, no change to any existing output path (spec §9.7).
+
+## `kuna catalog` — option discovery (the LLM control API)
+
+```bash
+kuna catalog --json              # the flippable assertion list, for an agent
+kuna catalog --markdown          # regenerate docs/options.md
+kuna catalog --check             # fail on catalog/registration drift (CI)
+kuna catalog --tier transform    # filter to the transform-tier control surface
+```
+
+Parses the decompiler's `phase catalog` JSON (single source of truth: `settableTable`,
+generated from `decompiler/crates/kuna-decomp/phases.toml`) into the documented, flippable
+assertion list. `--markdown` output is tier-grouped and symptom-indexed; `--check`
+cross-checks the catalog against `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
+The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
+`docs/spec/`; the defaults are recorded in `docs/divergences.md`.
+
+## `kuna specs` — the SLEIGH compiler
+
+```bash
+kuna specs -a specs/             # compile every .slaspec under a dir (slacomp's -a mode)
+kuna specs <file.slaspec>        # compile one
+```
+
+A thin alias for `slacomp` (same CLI as upstream's `sleigh_opt`).
+
+## Everything else
+
+`kuna modes` (list the option presets) and `kuna fid` (function identification) also
+exist, plus minor flags not covered here (`--no-vars`, `--raw`, `--regions`, `--timeout`,
+…) — see the usage block in `decompiler/crates/kuna-cli/src/main.rs`.

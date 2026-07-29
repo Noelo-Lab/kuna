@@ -1,7 +1,7 @@
 # kuna top-level build driver (Rust).
 #
 # The decompiler and the SLEIGH compiler are a Rust port of Ghidra's C++
-# originals (see docs/RUST_PORT.md); the vendored C++ tree was removed once the
+# originals (see docs/rust-port/README.md); the vendored C++ tree was removed once the
 # port reached parity. Everything below builds and tests the Rust engine under
 # decompiler/. The decompiler binaries keep the upstream names
 # (decomp_dbg / decomp_test_dbg); the SLEIGH compiler is `slacomp`.

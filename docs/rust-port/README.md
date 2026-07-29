@@ -104,9 +104,9 @@ Every integration passed, and the final state satisfies, all of:
    `docs/baseline.json` stayed byte-for-byte unmodified — the parity results are differential
    against an unmoved reference, not self-graded.
 
-The detailed audit trail lives in `docs/rust-port/` (the decompiler port: `losses.md`,
-`reviews/`, `stage-*.md`) and `docs/rust-port/sleigh-compiler/` (the compiler port: `STATUS.md`
-and the per-wave `ws*.md`).
+The detailed audit trail lives alongside this file in `docs/rust-port/`: `losses.md`
+(deliberate divergences), `verification.md`, `upstream-bugs.md`, `plan.md`, `cli-port.md`,
+and the ADRs under `adr/`.
 
 ## The C++ tree removal
 
