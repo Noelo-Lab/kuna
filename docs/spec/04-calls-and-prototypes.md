@@ -197,6 +197,36 @@ in the schedule is `decompiler/crates/kuna-decomp/src/infra/universalaction.rs
 (universal_sched)`: setup before fullloop, the trial passes inside mainloop,
 finalization in the one-shot tail (00 §0.6).
 
+### Seeding: the prototype the function is decompiled against
+
+Everything below is *recovery* — what runs when the function's prototype is
+unknown. Before any of it, the drive
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`) asks whether the
+signature is already known, and locks it if so
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::apply_locked_prototype)`). Two sources, in precedence order: a
+prototype the operator declared for this run (`parse line extern …`), then the
+prototype parked on the function's own global `FunctionSymbol` — which is where
+the DWARF pass's recovered `DW_TAG_subprogram` signature lands (01 §1.4) and
+where the library-prototype table lands for a named libc function.
+
+The parked prototype used to be read only by a *caller*: `ActionDefaultParams`
+copies a callee's pieces into the call site, so a DWARF-described callee typed
+its arguments correctly at every call while its own decompile ignored the
+signature and re-derived it from data flow. Applying it to the function itself is
+the difference between `undefined16 main(uint4 a0, void *a1)` and
+`int main(int argc, char **argv)` on any `-g` binary. Storage assignment that
+hits an unported seam degrades gracefully — the prototype is dropped and the
+function decompiles unlocked, exactly as before.
+
+Locking the output is also what collapses the bogus wide return described under
+`ActionReturnRecovery` below: with no locked output, return recovery registers a
+trial for every output register the model characterizes (x86-64 SysV: `RAX` *and*
+`RDX`), the cspec's `join_dual_class` output rule accepts the consecutive pair as
+one 16-byte return, and the result is a `char[16]` whose high half is whatever
+uninitialized value `RDX` happened to hold. A known `int` return never enters
+that machinery.
+
 ### Setup (once, before fullloop)
 
 - **`ActionPrototypeTypes`** (`coreaction_protos.rs (ActionPrototypeTypes)`)

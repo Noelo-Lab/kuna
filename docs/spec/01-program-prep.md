@@ -247,7 +247,10 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   emits a function symbol, each top-level `DW_TAG_variable` with a `DW_OP_addr`
   location a data symbol; (2) typed signatures — return + formal-parameter DIEs
   mapped to kuna `Datatype`s (structs as named opaques, with a recursion-depth cap
-  against type cycles), registered *after* libproto so real source signatures win;
+  against type cycles), registered *after* libproto so real source signatures win,
+  and read back at *two* points: by a caller's `ActionDefaultParams` for the call
+  site, and by the drive as the function's own locked prototype (04 §4.2 —
+  `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
   symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1); nested
   lexical-block locals and composite locations are a documented loss. (ida) The
