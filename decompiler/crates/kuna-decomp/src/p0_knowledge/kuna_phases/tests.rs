@@ -35,15 +35,15 @@ fn surface_count_is_98() {
 }
 
 #[test]
-fn settable_count_is_76() {
+fn settable_count_is_77() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
-    assert_eq!(kuna_num_settables(), 76);
-    assert_eq!(SETTABLE_TABLE.len(), 76);
+    assert_eq!(kuna_num_settables(), 77);
+    assert_eq!(SETTABLE_TABLE.len(), 77);
 }
 
 #[test]
-fn tier_counts_are_16_core_36_transform_24_analysis() {
+fn tier_counts_are_16_core_37_transform_24_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -55,7 +55,7 @@ fn tier_counts_are_16_core_36_transform_24_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (16, 36, 24));
+    assert_eq!((core, transform, analysis), (16, 37, 24));
 }
 
 #[test]
@@ -336,6 +336,7 @@ fn option_values_live_value_present_for_28_suppressed_for_39() {
                             | "regionstructure"
                             | "regionlooprefine"
                             | "regionedgeorder"
+                            | "condfold"
                             | "stackguard"
                             | "branchflip"
                             | "namestyle"
@@ -458,7 +459,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, and switchreturn's S8 row sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 75);
+    assert_eq!(json.matches("},\n").count(), 76);
 }
 
 #[test]

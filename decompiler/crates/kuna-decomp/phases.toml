@@ -1895,6 +1895,25 @@ tier = "transform"
 symptoms = "more gotos than angr on a function forced to virtualize several edges|goto cut at an awkward edge where a dominance/post-dominator ordering exposes more structure"
 
 [[settable]]
+option = "condfold"
+values = "off|on|wide"
+default = "off"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "angr-tr-build-spec-list"
+summary = "Extend the short-circuit condition fold (ruleBlockOr / _match_acyclic_short_circuit_conditions) so it also fires when the SIBLING condition block carries a bounded, side-effect-ordered prefix. Ghidra declines the A || B fold whenever the sibling is complex (BlockBasic::isComplex: more than two statements), so one spill or address computation parked in front of the second test costs a crossing goto back into the first arm's clause (coreutils tr build_spec_list: `result_idx = &v10; if (es_match(es,v12,'=')) goto label_40242e;`). With this on, a complex sibling is accepted provided it is a BlockCopy of ONE basic block whose printed prefix is bounded (<=1 call, and <=5 statements at `on` / <=9 at `wide`), branch-free, and comment-free; the prefix then renders inside the &&/|| operand as a C comma expression, which the printer already supports. The fold moves no p-code -- it re-parents two existing structuring nodes -- and C short-circuit plus comma sequencing preserves the original execution paths and order. Applied at BOTH structuring paths (region_structurer try_block_or and the CollapseStructure rule_block_or fallback). Port of the angr Phoenix MultiStatementExpression relaxation (_should_use_multistmtexprs / _build_multistatementexpr_statements) under its default MAX_ONE_CALL policy; `on` is exact angr parity (threshold 5) and `wide` raises only the statement cap to 9, because kuna's printed-statement granularity is finer than angr's AIL for the same block (argument recovery and address-tied copy shadows split one AIL statement into several printed ones)."
+use_when = "kuna emits a crossing `if (cond) goto label_X;` from the else arm back into the then arm's clause, or a nested if where angr short-circuits into `A || B` / `A && B`, because the second condition block also assigns something (a spill, a pointer setup, a call whose result is the test). Default off: byte-identical to upstream (the eligibility precompute is skipped and both gate disjuncts are dead). Try `on` first (angr's own caps); go to `wide` when the sibling is a kuna-noisy block (copy shadows, unrecovered call arguments) that `on` still declines -- on tr build_spec_list `on` removes the crossing goto and `wide` additionally folds the third term, 5 gotos -> 3. Flip back off when you prefer a nested if to a comma expression in the condition, or when the folded operand reads as too dense."
+example = "option condfold wide"
+source_decompiler = "angr"
+inspiration = "angr PhoenixStructurer._match_acyclic_short_circuit_conditions types a-d (phoenix.py:2578) + MultiStatementExpression wrap at phoenix.py:2688 gated by _should_use_multistmtexprs (MultiStmtExprMode.MAX_ONE_CALL, _multistmtexpr_stmt_threshold=5) and _build_multistatementexpr_statements; coreutils tr build_spec_list"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "crossing goto from the else arm back into the then arm's shared clause|nested if where angr emits one compound short-circuit condition|second condition block assigns one value before its test and the fold is declined"
+
+[[settable]]
 option = "gotoreduce"
 values = "on|off"
 default = "on"

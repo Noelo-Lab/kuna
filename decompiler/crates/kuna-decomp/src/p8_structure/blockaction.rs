@@ -1486,6 +1486,20 @@ pub struct CollapseStructure<'a> {
     /// resolution must use the stable bblocks topology.  Precomputed in
     /// `ActionBlockStructure::apply` (which holds `&mut Funcdata`).
     switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+    /// (kuna, `option condfold`) bblocks `BlockBasic` ids that may be folded into
+    /// a short-circuit condition operand *despite* being \e complex — a bounded,
+    /// branch-free, comment-free printed-statement prefix in front of the trailing
+    /// CBRANCH (angr Phoenix's `MultiStatementExpression` relaxation; see
+    /// [`crate::p8_structure::kuna_condfold`]).  Empty (and every use dead) when
+    /// the option is off.
+    condfold_blocks: std::collections::BTreeSet<BlockId>,
+    /// (kuna, `option condfold`) structuring nodes produced by a condfold-relaxed
+    /// [`rule_block_or`](Self::rule_block_or) fold.  `BlockCondition::isComplex`
+    /// delegates to sub-block 0, so a folded node whose *right* operand carries a
+    /// comma chain would look trivial to `ruleBlockWhileDo` and the whole chain
+    /// would be swallowed into a `while(...)` header.  [`is_complex`](Self::is_complex)
+    /// reports these as complex unconditionally.
+    condfolded: std::collections::BTreeSet<BlockId>,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1506,7 +1520,22 @@ impl<'a> CollapseStructure<'a> {
             complex_blocks: std::collections::BTreeSet::new(),
             switch_blocks: std::collections::BTreeMap::new(),
             switch_case_edges: std::collections::BTreeMap::new(),
+            condfold_blocks: std::collections::BTreeSet::new(),
+            condfolded: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// (kuna, `option condfold`) install the precomputed set of condfold-eligible
+    /// bblocks `BlockBasic` ids (see
+    /// [`kuna_condfold::compute_condfold_blocks`](crate::p8_structure::kuna_condfold::compute_condfold_blocks)).
+    /// Builder method; the empty default (option off, and every hand-built unit-test
+    /// graph) means "nothing is condfold-eligible", i.e. upstream-identical behavior.
+    pub fn with_condfold_blocks(
+        mut self,
+        condfold_blocks: std::collections::BTreeSet<BlockId>,
+    ) -> Self {
+        self.condfold_blocks = condfold_blocks;
+        self
     }
 
     /// Install the precomputed set of \e complex bblocks `BlockBasic` ids (C++
@@ -2011,6 +2040,15 @@ impl<'a> CollapseStructure<'a> {
     pub(crate) fn is_complex(&self, bl: BlockId) -> bool {
         let mut bl = bl;
         loop {
+            // (kuna, `option condfold`) a node produced by a condfold-relaxed fold
+            // is complex regardless of its left operand: its RIGHT operand carries
+            // a comma chain that `BlockCondition::isComplex`'s delegation to
+            // sub-block 0 cannot see, and `ruleBlockWhileDo` must never lift that
+            // chain into a `while(...)` header.  Checked BEFORE the Condition
+            // delegation.  Empty set when the option is off.
+            if !self.condfolded.is_empty() && self.condfolded.contains(&bl) {
+                return true;
+            }
             match self.graph.block(bl).get_type() {
                 // BlockCopy: the copied BlockBasic's statement-count verdict,
                 // precomputed in `complex_blocks`.
@@ -2064,9 +2102,19 @@ impl<'a> CollapseStructure<'a> {
             if self.graph.block(bl).is_back_edge_out(i) {
                 continue; // Don't use loop branch to get to orblock
             }
-            if self.is_complex(orblock) {
-                continue;
-            }
+            // (kuna, `option condfold`) upstream declines outright on a complex
+            // sibling.  When condfold is on, a complex sibling is still accepted
+            // when it is a BlockCopy of a single bounded, branch-free, comment-free
+            // BlockBasic — angr Phoenix's MultiStatementExpression relaxation.  See
+            // [`crate::p8_structure::kuna_condfold`].
+            let relaxed = if self.is_complex(orblock) {
+                if !self.condfold_ok(orblock) {
+                    continue;
+                }
+                true
+            } else {
+                false
+            };
             let clauseblock = self.graph.block(bl).get_out(1 - i);
             if clauseblock == bl {
                 continue; // No looping
@@ -2102,10 +2150,38 @@ impl<'a> CollapseStructure<'a> {
             }
 
             let graph_id = self.graph_id;
-            self.graph.new_block_condition(graph_id, bl, orblock)?;
+            let newcond = self.graph.new_block_condition(graph_id, bl, orblock)?;
+            if relaxed {
+                // (kuna, `option condfold`) the right operand carries a comma
+                // chain: force the folded node complex so `ruleBlockWhileDo` can
+                // never hoist it into a `while(...)` header.
+                self.condfolded.insert(newcond);
+            }
             return Ok(true);
         }
         Ok(false)
+    }
+
+    /// (kuna, `option condfold`) may the *complex* structuring node `bl` still be
+    /// folded into a short-circuit condition operand?
+    ///
+    /// Yes only when `bl` is a [`BlockCopy`](crate::block::BlockKind::Copy) of a
+    /// single bblocks `BlockBasic` that the precomputed `condfold_blocks` set marks
+    /// eligible (see [`crate::p8_structure::kuna_condfold::condfold_eligible`]).  A
+    /// `BlockList`/`BlockIf`/`BlockCondition` operand can render braces, multiple
+    /// lines, or a label inside the parentheses — i.e. invalid C — so those are
+    /// never relaxed.  Always `false` when the option is off (the set is empty).
+    fn condfold_ok(&self, bl: BlockId) -> bool {
+        if self.condfold_blocks.is_empty() {
+            return false;
+        }
+        if self.graph.block(bl).get_type() != BlockType::Copy {
+            return false;
+        }
+        match self.graph.block(bl).get_copy() {
+            Some(basic) => self.condfold_blocks.contains(&basic),
+            None => false,
+        }
     }
 
     /// Attempt to apply a 2-component form of BlockIf (C++
@@ -3508,9 +3584,19 @@ impl Action for ActionBlockStructure {
                 switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
             }
         }
+        // (kuna, `option condfold`) the condfold-eligible subset of the *complex*
+        // blocks: a bounded, branch-free, comment-free printed-statement prefix in
+        // front of the trailing CBRANCH may still be folded into a short-circuit
+        // operand as a comma expression (angr Phoenix's MultiStatementExpression
+        // relaxation).  Empty and unbuilt when the option is off.
+        let condfold_blocks = crate::p8_structure::kuna_condfold::compute_condfold_blocks(
+            data,
+            data.get_arch().cond_fold,
+        );
         let sroot = data.sblocks_root();
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_complex_blocks(complex_blocks)
+            .with_condfold_blocks(condfold_blocks)
             .with_switch_blocks(switch_blocks)
             .with_switch_case_edges(switch_case_edges);
         let collapse_res = collapse.collapse_all();

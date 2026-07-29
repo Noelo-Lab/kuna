@@ -1662,8 +1662,11 @@ mod tests {
         // and modes-aggressive / the `mode reliable|aggressive` preset axis
         // (Architecture::apply_mode; returndup-only warning as the discriminator),
         // and ghangr-iteexpr / the `iteexpr` computed-arm ?: extension of iteregion
-        // (angr ITERegionConverter over computed arms; ternary in the on-pass only))
-        assert_eq!(count, 164, "corpus file count drifted");
+        // (angr ITERegionConverter over computed arms; ternary in the on-pass only),
+        // and ghangr-condfold / the `condfold` short-circuit fold across a
+        // non-trivial sibling (angr Phoenix MultiStatementExpression relaxation;
+        // crossing goto in the off-pass, comma-expression operand in the on-pass))
+        assert_eq!(count, 165, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

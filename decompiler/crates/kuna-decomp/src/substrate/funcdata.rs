@@ -502,6 +502,21 @@ impl Funcdata {
         std::mem::take(&mut self.pending_comments)
     }
 
+    /// Read-only view of the buffered analysis comments (the
+    /// `(comment_type, placement_address, text)` triples that
+    /// [`Self::drain_pending_comments`] will hand to the console `Architecture`'s
+    /// comment database).
+    ///
+    /// Used by [`crate::p8_structure::kuna_condfold`] to decline folding a basic
+    /// block that carries an instruction comment into a condition operand: the
+    /// printer suppresses `emitCommentGroup` under `comma_separate`, so such a
+    /// fold would silently drop the comment.
+    pub fn pending_comments_ref(
+        &self,
+    ) -> &[(kuna_base::types::uint4, Address, String)] {
+        &self.pending_comments
+    }
+
     /// Buffer an already-prefixed comment triple (the cross-function carry path:
     /// `FlowInfo::inlineFlow` drains a nested callee flow's buffered comments and
     /// re-buffers them on the top-level function, since both reach the same
