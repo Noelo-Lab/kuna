@@ -1,0 +1,186 @@
+name: Release binaries
+
+# Builds the user-facing binaries (kuna + its engine siblings decomp_dbg and
+# slacomp) for Linux, macOS, and Windows on every push to main, then tags the
+# commit vMAJOR.MINOR and publishes a GitHub Release with the archives plus a
+# platform-independent compiled SLEIGH spec tree (the engine needs .sla files
+# at runtime). The version scheme -- VERSION file = MAJOR, commits since it
+# last changed = MINOR -- lives in scripts/version.sh and docs/release.md.
+
+on:
+  push:
+    branches: [main]
+  # Allow a manual (re-)release from the Actions tab.
+  workflow_dispatch:
+
+# `gh release create` pushes the tag and the release.
+permissions:
+  contents: write
+
+# One release at a time, in order; never cancel a half-published one.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Compute MAJOR.MINOR once; everything downstream consumes it.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      exists: ${{ steps.ver.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the minor number is a commit count
+
+      - name: Compute MAJOR.MINOR and check the tag is free
+        id: ver
+        run: |
+          ver="$(bash scripts/version.sh)"
+          echo "version=$ver" | tee -a "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$ver" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "tag v$ver already exists -- skipping (re-run of a released commit)"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: linux-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: macos-arm64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: macos-x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    env:
+      # Baked into `kuna --version` via option_env! in kuna-cli.
+      KUNA_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable) + target
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+
+      # The one third-party action here (same as pages.yml) — the de-facto
+      # standard cargo cache.
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: decompiler
+          key: ${{ matrix.target }}
+
+      - name: Build release binaries
+        working-directory: decompiler
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }} -p kuna-cli -p kuna-console -p kuna-slacomp
+
+      # x86_64-apple-darwin is cross-compiled on the arm64 runner; skip running it.
+      - name: Smoke test (kuna --version reports the release version)
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          out="$(./decompiler/target/${{ matrix.target }}/release/kuna$ext --version)"
+          echo "$out"
+          [ "$out" = "kuna ${{ needs.version.outputs.version }}" ]
+
+      - name: Package archive
+        shell: bash
+        run: |
+          ver="${{ needs.version.outputs.version }}"
+          bindir="decompiler/target/${{ matrix.target }}/release"
+          pkg="kuna-v${ver}-${{ matrix.name }}"
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          mkdir -p "dist/$pkg"
+          cp "$bindir/kuna$ext" "$bindir/decomp_dbg$ext" "$bindir/slacomp$ext" "dist/$pkg/"
+          cp LICENSE NOTICE "dist/$pkg/"
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$pkg.zip" "$pkg" >/dev/null
+          else
+            tar czf "$pkg.tar.gz" "$pkg"
+          fi
+          rm -r "$pkg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuna-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  # The compiled SLEIGH tree the binaries need at runtime -- .sla files are
+  # platform-independent, so build once and ship one asset for all OSes.
+  specs:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: decompiler
+
+      - name: Compile every .slaspec -> .sla
+        run: make specs
+
+      - name: Package the runtime SLEIGH tree
+        run: |
+          mkdir -p dist
+          tar czf "dist/kuna-v${{ needs.version.outputs.version }}-specs.tar.gz" specs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuna-specs
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [version, build, specs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create tag + GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${{ needs.version.outputs.version }}"
+          ls -l dist/
+          gh release create "v$ver" \
+            --target "$GITHUB_SHA" \
+            --title "kuna v$ver" \
+            --generate-notes \
+            --notes "$(printf 'Each archive ships `kuna` (the CLI), `decomp_dbg` (the decompiler console), and `slacomp` (the SLEIGH compiler).\n\nThe engine needs compiled SLEIGH specs at runtime: extract `kuna-v%s-specs.tar.gz` and point `KUNA_SPECS` at the extracted `specs/` directory. See docs/release.md.' "$ver")" \
+            dist/*

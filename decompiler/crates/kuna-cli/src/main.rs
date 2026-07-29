@@ -50,7 +50,9 @@ fn main() -> ExitCode {
         "specs" => specs::run(rest),
         "fid" => fid::run(rest),
         "-V" | "--version" | "version" => {
-            println!("kuna {}", env!("CARGO_PKG_VERSION"));
+            // Release CI bakes the repo-derived MAJOR.MINOR (docs/release.md)
+            // via KUNA_VERSION; dev builds report the workspace Cargo version.
+            println!("kuna {}", option_env!("KUNA_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")));
             0
         }
         "-h" | "--help" | "help" => {
