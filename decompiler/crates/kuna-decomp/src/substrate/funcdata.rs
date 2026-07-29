@@ -515,6 +515,24 @@ impl Funcdata {
         self.pending_comments.push((tp, ad, txt));
     }
 
+    /// (kuna) Is any analysis comment buffered at placement address `ad`?
+    ///
+    /// The comment database lives on the console `Architecture`, which the in-pipeline
+    /// `Funcdata` cannot see (`get_arch()` is the `ArchContext` seam), so an in-pipeline
+    /// pass that must not *lose* a comment consults the buffer the drive will flush.
+    /// Used by [`kuna_condjoin`](crate::p8_structure::kuna_condjoin) (precondition S5:
+    /// the `COMMA_SEPARATE` printer path skips `emitCommentGroup`, so a clause block
+    /// carrying a comment is never absorbed into a short-circuit condition).
+    pub fn has_pending_comment_at(&self, ad: &Address) -> bool {
+        self.pending_comments.iter().any(|(_, a, _)| a == ad)
+    }
+
+    /// (kuna) Are there any buffered analysis comments at all?  Fast bail for
+    /// [`Self::has_pending_comment_at`] scans.
+    pub fn has_pending_comments(&self) -> bool {
+        !self.pending_comments.is_empty()
+    }
+
     /// Get the entry point address (C++ `getAddress`).
     pub fn get_address(&self) -> &Address {
         &self.baseaddr

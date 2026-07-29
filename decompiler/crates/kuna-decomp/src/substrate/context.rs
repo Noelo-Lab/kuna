@@ -554,6 +554,13 @@ pub struct ArchContext {
     /// Only changes WHICH goto is chosen when virtualizing, so OFF is byte-identical.
     /// Read by [`crate::p8_structure::region_structurer::run_region_structurer`].
     pub region_edge_order: bool,
+    /// (kuna) condition-based join restructuring (`cond_join`, option `condjoin`,
+    /// opt-in default-off).  When set, the short-circuit condition fold may absorb a
+    /// *complex* clause block as a comma-separated multi-statement operand, removing
+    /// a forward `goto` into a shared body.  Read by
+    /// [`crate::p8_structure::blockaction`]'s `ActionBlockStructure` and
+    /// [`crate::p8_structure::region_structurer::run_region_structurer`].
+    pub cond_join: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -834,6 +841,7 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
+            cond_join: false,            // condjoin (opt-in default-off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)

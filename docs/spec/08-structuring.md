@@ -82,6 +82,63 @@ run to a fixpoint *before* everything else by `blockaction.rs
 (CollapseStructure::collapse_conditions)`, so cascading guards fold into one
 compound condition before the if-rules can consume them separately.
 
+**The condition-fold readability budget, and relaxing it (angr, `option
+condjoin`).** `rule_block_or` declines whenever the clause block it would
+absorb is *complex* — `substrate/funcdata_block.rs
+(Funcdata::bb_is_complex)`, the port of Ghidra `BlockBasic::isComplex`, calls
+a block complex once its statement count exceeds two, counting the branch as
+one and every call as one. That is a **readability budget, not a correctness
+gate**: the printer already renders a folded `BlockCondition`'s second
+operand under `COMMA_SEPARATE` (`p9_emit/printc.rs
+(PrintC::emit_block_condition)` sets the modifier on the right operand, and
+`(PrintC::emit_basic_block_ops)` under it walks *every* op in the block and
+emits them comma-separated with the semicolon suppressed), so a two-statement
+clause simply renders `(v = getegid(), v == getgid())` and nothing is lost.
+Ghidra already exercises that path for the one-extra-statement case the
+budget admits.
+
+The cost of declining is a `goto`. When a short-circuit guard cascade's arms
+reconverge on a shared body — the classic `if (uid == 0 || (euid == uid &&
+egid == gid)) { body } else { fail }` permission check — the fold is the only
+way to give the shared body a single predecessor, so a declined fold forces
+one of the two edges into the body to be virtualized: a forward `goto
+label_X;` out of one arm plus a `label_X:` inside the sibling arm. angr does
+not decline in that situation; `phoenix._match_acyclic_short_circuit_
+conditions` wraps a non-single-statement operand in a
+`MultiStatementExpression` (its comma expression), gated by `MultiStmtExprMode`
+and a statement threshold.
+
+**(angr) `option condjoin`** (default-off) gives kuna the same escape hatch by
+relaxing that one gate — in both engines, since §8.2's `try_block_or` carries
+the identical predicate. `p8_structure/kuna_condjoin.rs
+(compute_condfold_blocks)` precomputes, over the live `bblocks` op lists, the
+set of complex blocks that are nonetheless safe to absorb, and
+`blockaction.rs (CollapseStructure::condjoin_admits)` consults it beside
+`is_complex`. A block is admitted only when every op is expression-shaped —
+markers, ops with an output, void `CALL`/`CALLIND`, `STORE`, and one terminal
+`CBRANCH`; a `RETURN`, a second branch, a `BRANCHIND`, a `CALLOTHER`, or a
+no-return call declines it — and only within caps: at most two
+conservatively-scored printed statements and two calls per block, at most four
+condition leaves and four total statements in the folded condition. A block
+carrying a comment is declined outright, because the `COMMA_SEPARATE` path
+skips `emitCommentGroup` and the text would vanish. Statement scoring uses the
+same conservative `Varnode::calc_explicit` approximation `bb_is_complex` uses
+and never reads `Varnode::isExplicit`, which is not yet computed when
+structuring runs; the approximation over-counts, so the caps bind
+conservatively.
+
+The transform performs **no reordering**, which is why predicates that call
+functions need no purity analysis: `substrate/block.rs
+(BlockGraph::new_block_condition)` only relabels two blocks that are already
+sequenced in the CFG as the left and right operands of a `&&`/`||`, and C's
+short-circuit and comma operators both sequence strictly left to right, so the
+emitted expression reproduces the CFG's own evaluation order and
+conditionality exactly. The only synthesized operation is
+`negate_condition_rec`, an order-neutral boolean sense flip. Declining is
+always correct — the fold does not happen and the existing goto stands — so
+with the option off every gate falls back to the verbatim upstream verdict and
+output is byte-identical.
+
 **Goto selection (the pathological case).** When the cascade stalls with more
 than one component live, `blockaction.rs (CollapseStructure::select_goto)`
 marks one edge unstructured and the cascade retries. Which edge matters
@@ -284,6 +341,20 @@ merge the natural-loop walk mistook for a head — is bailed on
 (`LoopRefineOutcome::Irreducible`) and left to the acyclic schemas. Because
 refinement only touches loops the base schemas already declined, reducible
 code is byte-identical with the flag off or on.
+
+**Short-circuit folding and `condjoin` (angr).** The region structurer's
+`region_structurer.rs (RegionStructurer::match_acyclic_short_circuit_
+conditions)` / `(RegionStructurer::try_block_or)` is a faithful port of
+§8.1's `rule_block_or` over the same `BlockCondition` builder, so it carries
+the same `isComplex` readability budget and the same **(angr) `option
+condjoin`** relaxation of it — `run_region_structurer` precomputes the
+condjoin-admissible set the same way `ActionBlockStructure` does and threads
+it in, and `(RegionStructurer::condjoin_admits)` applies the identical caps.
+Both engines therefore behave the same on a guard cascade whose arms
+reconverge, which matters because a function the region structurer cannot
+converge on falls back to `CollapseStructure` and would otherwise lose the
+option's effect. See §8.1 for the preconditions and the no-reordering
+argument.
 
 **Invariant.** The region structurer is byte-identical to `CollapseStructure`
 across the full datatest corpus (DIV-12's verification) and structurally

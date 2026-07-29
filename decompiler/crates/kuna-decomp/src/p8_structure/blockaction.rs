@@ -1468,6 +1468,14 @@ pub struct CollapseStructure<'a> {
     /// live op lists (which the structuring graph — a BlockCopy mirror — does not
     /// own) and consulted by [`is_complex`] through the BlockCopy `copy` pointer.
     complex_blocks: std::collections::BTreeSet<BlockId>,
+    /// (kuna, `option condjoin on`) bblocks `BlockBasic` ids that are *complex* but
+    /// nonetheless safe to absorb into a short-circuit condition as a comma-separated
+    /// multi-statement operand, mapped to their conservatively-scored printed-statement
+    /// count.  Precomputed by
+    /// [`compute_condfold_blocks`](crate::p8_structure::kuna_condjoin::compute_condfold_blocks)
+    /// and read only by [`is_condfoldable`]/[`cond_stmt_count`] from the relaxed
+    /// `rule_block_or` gate.  Empty when the option is off ⇒ byte-identical output.
+    condfold_blocks: std::collections::BTreeMap<BlockId, int4>,
     /// Map from a **bblocks** `BlockBasic` id (the underlying switch block, i.e.
     /// the `BlockCopy::copy` of the switch's exit-leaf) to the `Funcdata::jumpvec`
     /// slot of its [`JumpTable`](crate::jumptable::JumpTable).  Precomputed by
@@ -1504,6 +1512,7 @@ impl<'a> CollapseStructure<'a> {
             dataflow_changecount: 0,
             pending_flips: Vec::new(),
             complex_blocks: std::collections::BTreeSet::new(),
+            condfold_blocks: std::collections::BTreeMap::new(),
             switch_blocks: std::collections::BTreeMap::new(),
             switch_case_edges: std::collections::BTreeMap::new(),
         }
@@ -1520,6 +1529,20 @@ impl<'a> CollapseStructure<'a> {
         complex_blocks: std::collections::BTreeSet<BlockId>,
     ) -> Self {
         self.complex_blocks = complex_blocks;
+        self
+    }
+
+    /// (kuna, `option condjoin on`) Install the precomputed set of *condjoin-admissible*
+    /// bblocks `BlockBasic` ids (see
+    /// [`kuna_condjoin`](crate::p8_structure::kuna_condjoin)), mapped to their
+    /// conservatively-scored printed-statement count.  Builder method: the default is
+    /// empty, which makes the relaxed `rule_block_or` gate inert and reproduces
+    /// upstream Ghidra exactly.
+    pub fn with_condfold_blocks(
+        mut self,
+        condfold_blocks: std::collections::BTreeMap<BlockId, int4>,
+    ) -> Self {
+        self.condfold_blocks = condfold_blocks;
         self
     }
 
@@ -2029,6 +2052,111 @@ impl<'a> CollapseStructure<'a> {
         }
     }
 
+    /// (kuna, `option condjoin on`) Is `bl` safe to absorb into a short-circuit
+    /// condition as a **comma-separated multi-statement operand**, even though
+    /// [`is_complex`] says it exceeds Ghidra's readability budget?
+    ///
+    /// Mirrors [`is_complex`]'s virtual dispatch, but resolves through
+    /// `condfold_blocks` (see [`kuna_condjoin`](crate::p8_structure::kuna_condjoin) for
+    /// the per-`BlockBasic` preconditions):
+    ///
+    ///   * `BlockCopy` — admissible when the copied `BlockBasic` passed the condjoin
+    ///     preconditions, or when it is not complex at all (already accepted upstream).
+    ///   * `BlockCondition` — **both** sub-blocks must be admissible.  Unlike
+    ///     `isComplex`, this is not a `getBlock(0)`-only delegation: when a
+    ///     `BlockCondition` is nested as the *right* operand of another fold,
+    ///     `PrintC::emit_block_condition` emits both of its sub-blocks under
+    ///     `COMMA_SEPARATE`, so both must render as expressions.
+    ///   * anything else — declined (a `BlockList`/`BlockIf`/loop can never be an
+    ///     expression).
+    ///
+    /// Always `false` when the option is off (`condfold_blocks` is empty), except for
+    /// the not-complex leaves the upstream gate already admitted — which the caller
+    /// short-circuits away before ever asking.
+    fn is_condfoldable(&self, bl: BlockId) -> bool {
+        match self.graph.block(bl).get_type() {
+            BlockType::Copy => match self.graph.block(bl).get_copy() {
+                Some(basic) => {
+                    self.condfold_blocks.contains_key(&basic)
+                        || !self.complex_blocks.contains(&basic)
+                }
+                None => false,
+            },
+            BlockType::Condition => {
+                let b0 = self.graph.block(bl).get_block(0);
+                let b1 = self.graph.block(bl).get_block(1);
+                self.is_condfoldable(b0) && self.is_condfoldable(b1)
+            }
+            _ => false,
+        }
+    }
+
+    /// (kuna, `condjoin` S4) Number of condition leaves under `bl` — 1 for a leaf,
+    /// the sum of both operands for a `BlockCondition`.  Caps how wide a compound
+    /// condition the relaxed fold may build (`collapse_conditions` is a fixpoint loop
+    /// with no natural bound).
+    fn cond_leaf_count(&self, bl: BlockId) -> int4 {
+        match self.graph.block(bl).get_type() {
+            BlockType::Condition => {
+                let b0 = self.graph.block(bl).get_block(0);
+                let b1 = self.graph.block(bl).get_block(1);
+                self.cond_leaf_count(b0) + self.cond_leaf_count(b1)
+            }
+            _ => 1,
+        }
+    }
+
+    /// (kuna, `condjoin` S4) Conservatively-scored printed statements that `bl` would
+    /// contribute to a comma-separated condition.  A leaf with no recorded score is
+    /// charged the per-block maximum [`MAX_CONDJOIN_STMTS`] (a not-complex block holds
+    /// at most that many by definition), so the sum is always an upper bound.
+    fn cond_stmt_count(&self, bl: BlockId) -> int4 {
+        match self.graph.block(bl).get_type() {
+            BlockType::Condition => {
+                let b0 = self.graph.block(bl).get_block(0);
+                let b1 = self.graph.block(bl).get_block(1);
+                self.cond_stmt_count(b0) + self.cond_stmt_count(b1)
+            }
+            BlockType::Copy => match self.graph.block(bl).get_copy() {
+                Some(basic) => *self
+                    .condfold_blocks
+                    .get(&basic)
+                    .unwrap_or(&crate::p8_structure::kuna_condjoin::MAX_CONDJOIN_STMTS),
+                None => crate::p8_structure::kuna_condjoin::MAX_CONDJOIN_STMTS,
+            },
+            _ => crate::p8_structure::kuna_condjoin::MAX_CONDJOIN_STMTS,
+        }
+    }
+
+    /// (kuna, `option condjoin on`) May the `ruleBlockOr` fold of `bl` with the complex
+    /// `orblock` proceed anyway?  See
+    /// [`kuna_condjoin`](crate::p8_structure::kuna_condjoin) — this is the S4 half
+    /// (expression-size caps); the per-block S2/S3/S5 preconditions were resolved when
+    /// `condfold_blocks` was precomputed.
+    fn condjoin_admits(&self, bl: BlockId, orblock: BlockId) -> bool {
+        if self.condfold_blocks.is_empty() {
+            return false; // option off — no precomputation was done
+        }
+        if !self.is_condfoldable(orblock) {
+            return false;
+        }
+        if self.cond_leaf_count(bl) + self.cond_leaf_count(orblock)
+            > crate::p8_structure::kuna_condjoin::MAX_CONDJOIN_LEAVES
+        {
+            return false;
+        }
+        // Only `orblock` renders under COMMA_SEPARATE at this fold; `bl`'s leading
+        // statements are emitted by the NO_BRANCH pass ahead of the `if`.  But a later
+        // fold can nest this whole BlockCondition as someone else's right operand, at
+        // which point every leaf prints inside the expression — so budget both sides.
+        if self.cond_stmt_count(bl) + self.cond_stmt_count(orblock)
+            > crate::p8_structure::kuna_condjoin::MAX_CONDJOIN_TOTAL_STMTS
+        {
+            return false;
+        }
+        true
+    }
+
     /// Attempt to apply a BlockCondition structure (C++ `CollapseStructure::ruleBlockOr`,
     /// `blockaction.cc:1321`).
     fn rule_block_or(&mut self, bl: BlockId) -> KunaResult<bool> {
@@ -2064,7 +2192,12 @@ impl<'a> CollapseStructure<'a> {
             if self.graph.block(bl).is_back_edge_out(i) {
                 continue; // Don't use loop branch to get to orblock
             }
-            if self.is_complex(orblock) {
+            // (kuna) `option condjoin on` relaxes this one gate: a complex `orblock`
+            // may still be absorbed as a comma-separated multi-statement operand when
+            // it renders as an expression and stays inside the condjoin caps.  With the
+            // option off `condjoin_admits` is unconditionally false and this is the
+            // verbatim upstream gate.
+            if self.is_complex(orblock) && !self.condjoin_admits(bl, orblock) {
                 continue;
             }
             let clauseblock = self.graph.block(bl).get_out(1 - i);
@@ -3508,9 +3641,18 @@ impl Action for ActionBlockStructure {
                 switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
             }
         }
+        // (kuna) `option condjoin on`: the complex-but-expression-shaped clause blocks
+        // `rule_block_or` is allowed to absorb as comma-separated multi-statement
+        // operands.  Empty (and never computed) when the option is off.
+        let condfold_blocks = if data.get_arch().cond_join {
+            crate::p8_structure::kuna_condjoin::compute_condfold_blocks(data)
+        } else {
+            std::collections::BTreeMap::new()
+        };
         let sroot = data.sblocks_root();
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_complex_blocks(complex_blocks)
+            .with_condfold_blocks(condfold_blocks)
             .with_switch_blocks(switch_blocks)
             .with_switch_case_edges(switch_case_edges);
         let collapse_res = collapse.collapse_all();

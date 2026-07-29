@@ -412,6 +412,18 @@ pub struct Architecture {
     /// structurer is already forced to emit one).  Port of angr SAILR
     /// `phoenix._last_resort_refinement` + `sailr._order_virtualizable_edges`.
     pub region_edge_order: bool,
+    /// (kuna) Condition-based join restructuring (`condjoin`, default-OFF opt-in):
+    /// let the short-circuit condition fold (`ruleBlockOr` in both the region
+    /// structurer and `CollapseStructure`) absorb a *complex* clause block as a
+    /// comma-separated multi-statement operand, instead of declining on Ghidra's
+    /// `BlockBasic::isComplex` readability budget.  Removes a forward `goto` into a
+    /// shared body when a guard cascade's arms reconverge (lighttpd `server.c::main`:
+    /// 1 goto / 1 label -> 0 / 0).  The printer already renders such an operand via
+    /// `modifiers::COMMA_SEPARATE`, so nothing is dropped; the fold performs no
+    /// reordering (see `p8_structure::kuna_condjoin`).  OFF ⇒ the verbatim upstream
+    /// gate, byte-identical output.  Analog of angr `MultiStatementExpression` /
+    /// `MultiStmtExprMode` in `phoenix._match_acyclic_short_circuit_conditions`.
+    pub cond_join: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
@@ -966,6 +978,7 @@ impl Architecture {
             region_structure: true,
             region_loop_refine: false,
             region_edge_order: false,
+            cond_join: false,
             reduce_return_gotos: false,
             flatten_ifelse: false,
             revert_cross_jumps: false,
@@ -1096,6 +1109,7 @@ impl Architecture {
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
+        self.cond_join = false; // (kuna) condjoin default-OFF opt-in (relaxes the ruleBlockOr isComplex readability budget so a multi-statement clause folds into the short-circuit condition; OFF is byte-identical)
         self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
@@ -1254,6 +1268,10 @@ impl Architecture {
             "regionlooprefine" => on_off!(
                 region_loop_refine,
                 "Region structurer multi-exit/irreducible loop-successor refinement"
+            ),
+            "condjoin" => on_off!(
+                cond_join,
+                "Condition-based join restructuring (multi-statement short-circuit clause fold)"
             ),
             "regionedgeorder" => on_off!(
                 region_edge_order,
@@ -1695,6 +1713,7 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
+        ctx.cond_join = self.cond_join; // condjoin
         ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert

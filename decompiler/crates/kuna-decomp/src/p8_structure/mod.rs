@@ -4,6 +4,7 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod blockaction;
+pub mod kuna_condjoin;
 pub mod kuna_crossjumpreverter;
 pub mod kuna_dedupitetail;
 pub mod kuna_gotoreduce;

@@ -1,0 +1,92 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr condition-based join restructuring (option condjoin, default-OFF;
+    ELEM 4113), S8 goto-quality sub-stage.  Closes proposal #56 (lighttpd
+    server.c::main in the angr corpus binary `newbury` @0x40f696, which reaches
+    0 gotos / 0 labels with this option on, down from 1 / 1).
+
+    THE SHAPE.  A short-circuit permission guard whose arms reconverge on one
+    shared body:
+
+      B0: if (uid() == 0)          -> BODY  else B1
+      B1: if (euid() != want_uid)  -> BAD   else B2
+      B2: if (egid() != want_gid)  -> BAD   else BODY
+      BAD:  r = -1; warn();  -> RET   (in-degree 2: B1, B2)
+      BODY: setup(); run() x13; r = 0;  -> RET   (in-degree 2: B0, B2)
+
+    Every gate of CollapseStructure::ruleBlockOr holds for (B1,B2) and then for
+    (B0, B1||B2) EXCEPT one: BlockBasic::isComplex.  That predicate calls a
+    block complex once its statement count exceeds 2, and a clause block holding
+    a call plus its branch plus one more statement is already at 3.  So the fold
+    is declined, the cascade is left to the if/sequence schemas, and one of the
+    two edges into BODY must be virtualized: kuna emits a forward "goto label_X"
+    out of one arm plus a "label_X:" inside the sibling arm.  angr emits
+    neither, because when its _match_acyclic_short_circuit_conditions hits a
+    non-single-statement operand it wraps the operand in a
+    MultiStatementExpression instead of declining.
+
+    THE FIX.  option condjoin relaxes that one gate.  kuna's printer already
+    renders a folded BlockCondition's second operand under
+    modifiers::COMMA_SEPARATE (emit_basic_block_ops walks EVERY op in the block
+    and emits them comma-separated with the semicolon suppressed), so nothing is
+    dropped - isComplex is a readability budget, not a correctness gate.  With
+    the option on the cascade folds into one compound condition and BODY becomes
+    the fall-through join.
+
+    NO REORDERING IS POSSIBLE.  new_block_condition only relabels two blocks
+    that are ALREADY sequenced in the CFG as the left and right operands of a
+    "&amp;&amp;" / "||".  C short-circuits left to right and the comma operator
+    sequences left to right, so the emitted expression evaluates B1's statements
+    and condition and then - only if the short circuit does not cut - B2's.
+    That is the CFG's own order and conditionality, which is why predicates that
+    call functions need no purity analysis.  See p8_structure/kuna_condjoin.rs.
+
+    WITNESS.  Self-contained, no relocations: gcc -O2 output for
+
+      int f(int argc, int uid, int gid) {
+        int r;
+        if (su_uid() == 0 || (su_euid() == uid &amp;&amp; su_egid() == gid)) {
+          su_setup(); su_run(argc+0) ... su_run(argc+11); r = 0;
+        } else { r = -1; su_warn(); }
+        return r;
+      }
+
+    with every callee a local stub in the same chunk (no PLT, no data
+    references).  The body is 13 calls wide so the default-on taildup does not
+    duplicate it away - taildup only removes this goto for a tiny tail.
+
+    Pass 1 (option condjoin off): the fold is declined and one edge into the
+    shared body is virtualized - "goto" appears exactly once, and so does the
+    "label_" prefix of its target line.
+    Pass 2 (option condjoin on): the cascade folds, so neither token appears in
+    the second pass, and the de Morgan orientation ruleBlockOr applies turns the
+    two equality guards into the inverted disjunction "su_euid() != " that
+    guards the terminating arm.
+-->
+<bytechunk space="ram" offset="0x100000">
+b801000000c3662e0f1f840000000000b802000000c3662e0f1f840000000000b803000000c3662e0f1f840000000000b805000000c3662e0f1f840000000000b806000000c3662e0f1f840000000000c366662e0f1f8400000000000f1f400089f9e899ffffff85c07412e8a0ffffff39f07574e8a7ffffff39d0756be8beffffff89cf31c0e8c5ffffff8d7901e8bdffffff8d7902e8b5ffffff8d7903e8adffffff8d7904e8a5ffffff8d7905e89dffffff8d7906e895ffffff8d7907e88dffffff8d7908e885ffffff8d7909e87dffffff8d790ae875ffffff8d790be86dffffffc30f1f4000e843ffffffb8ffffffffc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="su_uid"/>
+<symbol space="ram" offset="0x100010" name="su_euid"/>
+<symbol space="ram" offset="0x100020" name="su_egid"/>
+<symbol space="ram" offset="0x100030" name="su_warn"/>
+<symbol space="ram" offset="0x100040" name="su_setup"/>
+<symbol space="ram" offset="0x100050" name="su_run"/>
+<symbol space="ram" offset="0x100060" name="f"/>
+</binaryimage>
+<script>
+  <com>option condjoin off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condjoin on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="condjoin #1: OFF virtualizes one of the two edges into the shared body to a goto; ON folds the cascade so no goto is emitted" min="1" max="1">goto</stringmatch>
+<stringmatch name="condjoin #2: OFF must also emit the goto's target label inside the sibling arm; ON emits no label" min="1" max="1">label_[0-9a-f]+:</stringmatch>
+<stringmatch name="condjoin #3: ON folds the two equality guards into one inverted short-circuit condition guarding the terminating arm" min="1" max="1">su_euid\(\) != </stringmatch>
+<stringmatch name="condjoin #4: OFF keeps the guards positive and nested (the un-inverted form appears only in the OFF pass)" min="1" max="1">su_euid\(\) == </stringmatch>
+</decompilertest>
