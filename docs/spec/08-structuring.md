@@ -112,13 +112,13 @@ the *same* skip rules the printer applies (`p9_emit/printc.rs
 (PrintC::emit_basic_block_ops)`: not-printed ops, SSA markers, ops whose output
 varnode is implied, and the bare `CPUI_BRANCH`), so the caps govern exactly
 what will appear, and declines on: more than the policy's statement cap or more
-than one call; any non-terminal branch op (angr's own refusal — a `goto` is not
-an expression); a block that does not end in a `CPUI_CBRANCH`; or a block
-carrying an instruction comment, because `emit_basic_block_ops` suppresses
-`emit_comment_group` under `comma_separate` and folding would silently delete
-the comment. The verdict is precomputed per `BlockBasic` alongside the existing
-`complex_blocks` set, in both engines' precompute sites, and read through the
-`BlockCopy` `copy` pointer.
+than one *statement-root* call; any non-terminal branch op (angr's own refusal
+— a `goto` is not an expression); a block that does not end in a
+`CPUI_CBRANCH`; or a block carrying an instruction comment, because
+`emit_basic_block_ops` suppresses `emit_comment_group` under `comma_separate`
+and folding would silently delete the comment. The verdict is precomputed per
+`BlockBasic` alongside the existing `complex_blocks` set, in both engines'
+precompute sites, and read through the `BlockCopy` `copy` pointer.
 
 Two guards live at the gate rather than in the predicate. The sibling must be a
 `BlockCopy` — a `BlockList`/`BlockIf`/`BlockCondition` operand could render
@@ -144,12 +144,25 @@ control used to fall into the sibling; and the comma operator is a sequence
 point, so the prefix still runs before the test. Every guard listed above is
 therefore a rendering-validity or readability guard, not a semantic one.
 
-Option `condfold`, default **off**, three-valued: `on` is exact angr parity
-(cap 5 statements, 1 call) and `wide` raises only the statement cap to 9.
-`wide` exists because kuna's *printed* statement granularity is finer than
-angr's AIL for the same block — argument recovery may leave operand
-computations as separate assignments where angr renders one call statement,
-and an address-tied stack variable prints copy shadows the AIL never
+The call cap deserves a precise statement, because it is *not* an exact match
+for angr's `MAX_ONE_CALL`. The eligibility walk mirrors the printer, and the
+printer's implied-output skip runs **before** the call test — so the cap counts
+only calls printed as their own comma-chain element (statement roots). A call
+whose result is inlined into the sibling's own condition is not charged, and a
+folded operand may therefore render more than one call; on the aggregate sweep
+1 of the 46 new call-bearing operands does (`mv -O2 copy_internal` at `wide`
+renders `cached_umask(...)`, counted, alongside `fchmod(...)`, implied into the
+test and not counted). Since the fold moves no p-code and the sequencing
+argument above is independent of the call count, this is a readability bound
+only: the looser count cannot produce wrong C, it only admits a denser operand
+than angr would.
+
+Option `condfold`, default **off**, three-valued: `on` uses angr's statement
+threshold (cap 5 statements, 1 statement-root call) and `wide` raises only the
+statement cap to 9. `wide` exists because kuna's *printed* statement
+granularity is finer than angr's AIL for the same block — argument recovery may
+leave operand computations as separate assignments where angr renders one call
+statement, and an address-tied stack variable prints copy shadows the AIL never
 materializes — so a block angr folds as one statement can print as seven in
 kuna. Both levels apply to **both** engines (`blockaction.rs
 (CollapseStructure::rule_block_or)` and `region_structurer.rs

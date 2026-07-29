@@ -420,12 +420,19 @@ pub struct Architecture {
     /// address computation parked in front of the second test costs a crossing
     /// `goto` back into the first arm's clause.  When this is set, a complex
     /// sibling is accepted anyway provided it is a `BlockCopy` of ONE `BlockBasic`
-    /// with a bounded (<=5 printed statements, <=1 call), branch-free,
-    /// comment-free prefix; the prefix then renders inside the `&&`/`||` operand as
-    /// a C comma expression, which the printer already supports
+    /// with a bounded (<=5 printed statements, <=1 *statement-root* call),
+    /// branch-free, comment-free prefix; the prefix then renders inside the
+    /// `&&`/`||` operand as a C comma expression, which the printer already supports
     /// (`comma_separate`).  The fold moves no p-code — it re-parents two existing
     /// structuring nodes — and C's short-circuit + comma sequencing preserves the
     /// original execution paths and order.
+    ///
+    /// The call cap counts only calls printed as their own comma-chain element: the
+    /// eligibility walk mirrors the printer, whose implied-output skip runs before
+    /// the call test, so a call inlined into the sibling's own condition is not
+    /// charged and a folded operand can render more than one call.  It is a
+    /// readability bound, not a soundness bound — see
+    /// [`MAX_PREFIX_CALLS`](crate::p8_structure::kuna_condfold::MAX_PREFIX_CALLS).
     ///
     /// The value is the **printed-statement cap**, i.e. the option's policy level:
     /// `0` = `option condfold off` (byte-identical to upstream: the precompute is

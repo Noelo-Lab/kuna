@@ -89,8 +89,17 @@
 //!
 //! 1. bounded printed-statement count ([`MAX_PREFIX_STMTS_ANGR`] at `on`,
 //!    [`MAX_PREFIX_STMTS_WIDE`] at `wide`) and call count ([`MAX_PREFIX_CALLS`]) —
-//!    `on` is angr's own tuned policy; an unbounded comma chain in an `if (...)` is
-//!    less readable than the nested `if` it replaces;
+//!    `on` uses angr's own tuned statement threshold; an unbounded comma chain in an
+//!    `if (...)` is less readable than the nested `if` it replaces.  Note the call
+//!    cap counts **statement-root** calls only, so it is *not* an exact match for
+//!    angr's `MAX_ONE_CALL`: [`condfold_eligible`] skips an op whose output varnode
+//!    is *implied* before it reaches the `is_call` test, so a call inlined into the
+//!    sibling's own condition expression is never charged.  A folded operand can
+//!    therefore render more than one call — measured, `mv -O2 copy_internal` at
+//!    `wide` renders both `cached_umask(...)` (a statement root, counted) and
+//!    `fchmod(...)` (implied into the test, not counted).  This is a readability
+//!    bound, not a soundness bound (see *Why no p-code moves* above), so the looser
+//!    count cannot produce wrong C;
 //! 2. no non-terminal branch op — mirrors angr's
 //!    `_build_multistatementexpr_statements` refusing a mid-block `ConditionalJump`
 //!    or any `Jump` (such an op renders a `goto`, which is not an expression);
@@ -129,7 +138,8 @@ use crate::funcdata::Funcdata;
 /// (4100 gotoreduce, 4101 tailcalljump, 4102 regionstructure, 4103 noreturn_extern,
 /// 4104 noreturn_externmatch, 4105 crossjumprevert, 4106 switchsharedcase,
 /// 4107 ifelseflatten, 4108 taildup, 4109 dedupitetail, 4110 returndup,
-/// 4111 earlyreturn, 4112 loopbreak are taken; this is 4113).
+/// 4111 earlyreturn, 4112 switchreturn are taken; this is 4113.  `condjoin`
+/// (PR #194), developed in parallel with this one, takes 4114).
 pub const ELEM_CONDFOLD: ElementId = ElementId::new("condfold", 4113);
 
 /// The statement cap of `option condfold on` — **angr parity**: angr's
@@ -155,10 +165,31 @@ pub const MAX_PREFIX_STMTS_ANGR: int4 = 5;
 /// soundness and rendering-validity guard is identical at both levels.
 pub const MAX_PREFIX_STMTS_WIDE: int4 = 9;
 
-/// Maximum number of calls in the folded sibling, at every policy level.  angr's
-/// default `MultiStmtExprMode.MAX_ONE_CALL` policy (`_should_use_multistmtexprs`,
-/// phoenix.py:3239) allows at most one, and a comma chain with two calls in an
-/// `if (...)` is unreadable regardless of the statement count.
+/// Maximum number of **statement-root** calls in the folded sibling, at every policy
+/// level.  angr's default `MultiStmtExprMode.MAX_ONE_CALL` policy
+/// (`_should_use_multistmtexprs`, phoenix.py:3239) allows at most one, and a comma
+/// chain with two printed call statements in an `if (...)` is unreadable regardless
+/// of the statement count.
+///
+/// **What this actually counts — read before quoting it as angr parity.**
+/// [`condfold_eligible`] walks the block with the printer's own skip rules, and the
+/// *implied*-output skip runs **before** the `is_call` test.  A call whose result is
+/// inlined into the sibling's condition expression is therefore never charged
+/// against this cap.  The bound the code enforces is "at most one call printed as
+/// its own comma-chain element", not "at most one call in the rendered operand": a
+/// folded operand may render two or more calls when the extra ones are implied.
+/// Measured on the aggregate sweep, 1 of the 46 new call-bearing folded operands
+/// does exactly that — `mv -O2 copy_internal` at `wide` renders `cached_umask(...)`
+/// (a statement root, counted) *and* `fchmod(...)` (implied into the test, not
+/// counted).
+///
+/// This is a **readability** bound, not a soundness bound: the fold moves no p-code
+/// and the short-circuit + comma sequencing argument in the module docs is
+/// independent of how many calls appear, so the looser count cannot produce wrong C.
+/// Charging implied calls too is a two-line reorder (hoist the `is_call` test above
+/// the implied-output skip), but it *tightens* the gate and would change the
+/// measured metric table, the aggregate sweep and the stage-test witness — see
+/// PR #193 for that deliberately-open choice.
 pub const MAX_PREFIX_CALLS: int4 = 1;
 
 /// Is the **bblocks** `BlockBasic` `bb` an acceptable right operand of a folded
@@ -183,7 +214,9 @@ pub const MAX_PREFIX_CALLS: int4 = 1;
 /// Declines when:
 ///
 /// * more than `max_stmts` printed statements or more than [`MAX_PREFIX_CALLS`]
-///   calls (angr's policy);
+///   **statement-root** calls — because the implied-output skip above runs first, a
+///   call inlined into the condition expression is not charged, so the rendered
+///   operand can hold more than one call (see [`MAX_PREFIX_CALLS`]);
 /// * any non-terminal branch op survives the skips (a mid-block conditional jump —
 ///   angr `_build_multistatementexpr_statements` refuses these, and a `goto` is not
 ///   an expression);
@@ -372,7 +405,10 @@ mod tests {
     fn on_matches_the_angr_policy_constants() {
         // angr PhoenixStructurer._multistmtexpr_stmt_threshold default (phoenix.py:103)
         assert_eq!(MAX_PREFIX_STMTS_ANGR, 5);
-        // angr MultiStmtExprMode.MAX_ONE_CALL (phoenix.py:73-80, ctor default :102)
+        // angr MultiStmtExprMode.MAX_ONE_CALL (phoenix.py:73-80, ctor default :102).
+        // The *value* matches; the counting does not — `condfold_eligible` charges
+        // only statement-root calls (see MAX_PREFIX_CALLS' docs), so a folded
+        // operand can render more than one call when the extras are implied.
         assert_eq!(MAX_PREFIX_CALLS, 1);
         // `wide` only ever loosens the statement cap, never the call cap.
         assert!(MAX_PREFIX_STMTS_WIDE > MAX_PREFIX_STMTS_ANGR);
