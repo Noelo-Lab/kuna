@@ -2,12 +2,12 @@
 
 The Rust decompilation engine — the whole product lives in this workspace. It began as a
 line-faithful port of Ghidra's C++ decompiler and SLEIGH compiler (the C++ tree has been
-removed; see `../docs/rust-port/README.md`) and has since grown its own analysis tier,
+removed; see `../docs/history.md`) and has since grown its own analysis tier,
 CLI, and front-ends.
 
-Design decisions live in `../docs/rust-port/` — start with the ADRs in
-`../docs/rust-port/adr/` (IR arenas, ordered containers, integer semantics, error model,
-dispatch, stage registry, re-runability). Working conventions: `../docs/agents.md`.
+The port's design decisions (IR arenas, ordered containers, integer semantics, error
+model, dispatch, stage registry, re-runability) are summarized in `../docs/history.md`;
+the full ADRs are in git history. Working conventions: `../docs/agents.md`.
 
 ## Layout
 

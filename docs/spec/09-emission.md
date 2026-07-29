@@ -28,7 +28,7 @@ knobs (`nocastprinting`, `integerformat`, `nullprinting`, `inplaceops`,
 `maxlinewidth`, `indentincrement`) are surfaceTable rows in `phases.toml`, set
 via the console `option` command, and are not part of the settable catalog.
 The intentional default divergences are DIV-1/2/5/6/7 in
-`docs/divergences.md`.
+`docs/history.md`.
 
 ## 9.1 Casts
 

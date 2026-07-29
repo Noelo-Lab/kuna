@@ -15,7 +15,7 @@ __pycache__/
 .pytest_cache/
 
 # kuna pipeline runtime state: worker inventory, heartbeats, logs, isolated worktrees.
-# The durable backlog (docs/pipeline/*.json, matrix.md) IS committed; live state is not.
+# The durable backlog (docs/improvement-pipeline/*.json, matrix.md) IS committed; live state is not.
 .kuna-pipeline/
 
 # Rewritten patch left by tools/sync_upstream.py (dry runs / failed applies)

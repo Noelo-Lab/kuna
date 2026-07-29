@@ -291,7 +291,7 @@ MIPS so GOT-slot loads fold to import names,
 (6) the per-function snapshot copy (§0.5), after which the value is frozen for that
 function's drive.
 Which defaults deliberately diverge from upstream, and the measurements behind
-each flip, live in `docs/divergences.md`, not here.
+each flip, live in `docs/history.md`, not here.
 
 ## 0.5 The two Architecture types
 
@@ -420,8 +420,8 @@ The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the
 in-tree repeat groups (§0.6), these are the edges where a *later* phase dirties
 an *earlier* phase's artifact, what each persists, and where each lives in kuna.
 (The mechanism taxonomy — local fixpoint, staged re-entry, restart-with-hints,
-reduced sub-query, knowledge-store re-run — derives from the study in
-`docs/history/stage-model.md`; every row below is re-verified against the Rust.)
+reduced sub-query, knowledge-store re-run — derives from the 2026-06 stage-model
+study summarized in `docs/history.md`; every row below is re-verified against the Rust.)
 
 | Edge | Mechanism | Trigger | Survives / persisted where | kuna anchor |
 |---|---|---|---|---|
@@ -472,15 +472,14 @@ Conventions worth knowing before reading anything:
   `decompiler/crates/kuna-decomp/src/infra/universalaction.rs` +
   `decompiler/crates/kuna-decomp/src/infra/universalaction/tests.rs`).
 - **C++ citations in code comments** (`decompiler/cpp/<file>.cc`) are upstream
-  Ghidra anchors at the pinned `GHIDRA_REV` (`docs/UPSTREAM.md`) — the tree kuna
+  Ghidra anchors at the pinned `GHIDRA_REV` (`docs/history.md`) — the tree kuna
   was ported from — not paths in this repository.
 - **`Funcdata` methods are phase-owned**: find the owning phase through the impl
   map (§0.3) rather than grepping one giant file.
 - Option metadata lives in the generated catalog
   ([docs/options.md](../options.md)); the phase model at a glance in
-  [docs/phases.md](../phases.md); intentional default divergences and their
-  measurements in `docs/divergences.md`; the original derivation study in
-  `docs/history/stage-model.md`.
+  [docs/phases.md](../phases.md); intentional default divergences, their
+  measurements, and the original derivation study in `docs/history.md`.
 
 Suggested order for a first full read: this chapter, then 01 → 02 → 03 (the
 world up to SSA), then 04/05/06 as one unit (they converge together, §0.6), then

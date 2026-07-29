@@ -21,7 +21,7 @@ one-shot tail after `fullloop` exits — the exact order is the pass tree in
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional
-default-divergences are DIV-3/14 in `docs/divergences.md`.
+default-divergences are DIV-3/14 in `docs/history.md`.
 
 > Scope note: several actions of this phase live outside the `p6_variables`
 > folder for file-lineage reasons — `ActionRestructureVarnode`,
@@ -428,7 +428,7 @@ negatives over reordering bugs. When the predicate passes, the output falls
 through to the ordinary implied machinery of §6.1 — the fold itself is just
 `if (timespec_cmp(...) <= -1)` emerging from the printer's normal recursion.
 `off` restores the upstream always-spill form byte-for-byte; four datatest
-files pin that form via per-test opt-outs (DIV-14, `docs/divergences.md`).
+files pin that form via per-test opt-outs (DIV-14, `docs/history.md`).
 Provenance: `docs/features/call-return-variable-folding-dcde82/record.json`
 (ablation: 5 upstream assertions change; measured speed delta −3.2%).
 

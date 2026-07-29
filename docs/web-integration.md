@@ -242,7 +242,7 @@ benign PE is committed because this environment has no PE linker.
   lone_jump_target`) that no native output path calls.
 - No new dependency, no new stage-model option, no native output change: `kuna_wasm` == the
   `decompile-all` path (+ the wasm-only `"kind"` field and `project` command), so
-  `docs/divergences.md`, `phases.toml`, and `docs/options.md` are untouched.
+  `docs/history.md`, `phases.toml`, and `docs/options.md` are untouched.
 - The four gates (`make test`, `make test-stages`, `make rust-test`, `make check-spec`)
   are unaffected — the crate is invisible to all but `rust-test`, where it only compiles.
 

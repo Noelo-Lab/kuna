@@ -1,6 +1,6 @@
 # The decbench improvement loop
 
-The decbench-driven continuation of the angr feature campaign (`docs/pipeline.md`).
+The decbench-driven continuation of the angr feature campaign (`docs/improvement-pipeline.md`).
 The signal source changes — a real-binary benchmark instead of angr's testcase
 corpus — but the feature factory downstream is identical: one PR per feature,
 option-gated, default-on when clean, measured.
@@ -31,9 +31,9 @@ Decisions baked in:
 
 ## Standing requirements
 
-Rules 1–5 of `docs/pipeline.md` → *Standing requirements* apply verbatim
+Rules 1–5 of `docs/improvement-pipeline.md` → *Standing requirements* apply verbatim
 (one PR per feature; end-to-end two-pass stage test; output-changing ⇒ option +
-PROGRESS/DIV; speed always measured via `scripts.pipeline.timeit` with the ≤5%
+history/DIV record; speed always measured via `scripts.pipeline.timeit` with the ≤5%
 budget; large work goes through a `[PROPOSAL]` draft PR). Plus:
 
 6. **Every output-changing PR records its benchmark delta.** Run
@@ -100,7 +100,7 @@ python3 -m scripts.decbench.status
 6. Root-cause in angr: the venv site-packages (9.2.213 — the version that ran) is
    ground truth; `~/github/angr-dev/angr` master for readability. Name the
    pass/class.
-7. Owning kuna stage from `docs/phases.md` + `docs/history/stage-mapping.md`.
+7. Owning kuna stage from `docs/phases.md`.
 8. Scope: small option-gated pass vs `[PROPOSAL]`.
 9. Check siblings reproduce the same symptom.
 10. Write `docs/decbench/triage/<case-id>.md`:

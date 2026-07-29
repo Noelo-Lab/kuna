@@ -18,7 +18,7 @@ kuna test --datatests --datatests-dir tests/stages \
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
 `--save-baseline PATH` re-records a baseline. Routine use: `docs/baseline-stages.json`
 when adding stage tests. `docs/baseline.json` is re-pinned only for sanctioned intentional
-changes (an upstream sync per `docs/UPSTREAM.md`, a DIV-recorded default flip) — never to
+changes (an upstream sync per `docs/history.md`, a DIV-recorded default flip) — never to
 absorb a regression.
 
 ## `kuna decompile` — one function
@@ -61,7 +61,7 @@ Behaviors specific to `decompile-all`:
   `listing` (DIV-15), so the default-on `noreturn_propagate` call-graph fixpoint fires and
   a stripped binary's unnamed exit/fatal wrappers no longer swallow the functions after
   them; on non-x86-64 binaries it likewise injects `funcstart_patterns on` and `aif on`
-  unless the caller names them (see `docs/divergences.md`). `--option listing off` opts
+  unless the caller names them (see `docs/history.md`). `--option listing off` opts
   out; `kuna functions` and the `kuna decompile`/console path keep listing off.
 - **Per-function watchdog** — `--max-fn-seconds N` (default 120, `0` disables): a function
   whose decompile drive exceeds the budget is cut off cooperatively (deadline probes at
@@ -120,7 +120,7 @@ generated from `decompiler/crates/kuna-decomp/phases.toml`) into the documented,
 assertion list. `--markdown` output is tier-grouped and symptom-indexed; `--check`
 cross-checks the catalog against `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
 The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
-`docs/spec/`; the defaults are recorded in `docs/divergences.md`.
+`docs/spec/`; the defaults are recorded in `docs/history.md`.
 
 ## `kuna specs` — the SLEIGH compiler
 

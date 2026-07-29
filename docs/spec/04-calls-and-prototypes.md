@@ -497,7 +497,7 @@ into the per-function snapshot per 00 §0.5.
 
 It is a **destructive opt-in**, deliberately not flipped in the default-on
 sweeps: the gate cannot distinguish a passively-live pair from a genuine
-128-bit two-register return, and the DIV-2 ablation (`docs/divergences.md`)
+128-bit two-register return, and the DIV-2 ablation (`docs/history.md`)
 found 3 of the 675 upstream assertions legitimately need the join — a global
 `single` default would truncate real wide returns. Flip it per function on the
 CONCAT-return symptom; the symptom table and flip guidance live in

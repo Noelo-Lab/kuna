@@ -3,11 +3,11 @@
 
 kuna no longer vendors Ghidra's C++ decompiler source (it was ported to Rust and
 removed); what remains vendored from upstream is the SLEIGH processor specs and the
-XML decompiler datatest corpus (see docs/UPSTREAM.md). This script diffs a Ghidra
+XML decompiler datatest corpus (see docs/history.md). This script diffs a Ghidra
 checkout between the recorded ``GHIDRA_REV`` and a target revision, restricted to
 those vendored paths, rewrites the path prefixes to kuna's layout, and applies the
 patch with ``git apply`` (plain apply first, ``--3way`` fallback). On success it
-rewrites ``GHIDRA_REV`` in docs/UPSTREAM.md.
+rewrites ``GHIDRA_REV`` in docs/history.md.
 
 The upstream diff is taken with ``--no-renames`` so every change arrives as a plain
 add/delete/modify of a single path -- a rename can then never straddle the vendored
@@ -227,13 +227,13 @@ def main(argv=None):
     p.add_argument("--ghidra", required=True, help="path to a ghidra git checkout")
     p.add_argument("--to", default="origin/master", help="target revision (default origin/master)")
     p.add_argument("--from", dest="from_rev", default=None,
-                   help="base revision (default: GHIDRA_REV from UPSTREAM.md)")
+                   help="base revision (default: GHIDRA_REV from docs/history.md)")
     p.add_argument("--root", default=".", help="kuna repo root (default: cwd)")
     p.add_argument("--dry-run", action="store_true", help="report and `git apply --check` only")
     args = p.parse_args(argv)
 
     root = os.path.abspath(args.root)
-    upstream_md = os.path.join(root, "docs", "UPSTREAM.md")
+    upstream_md = os.path.join(root, "docs", "history.md")
     ghidra = os.path.abspath(args.ghidra)
 
     if not os.path.isdir(os.path.join(ghidra, ".git")):
@@ -242,7 +242,7 @@ def main(argv=None):
 
     from_rev = args.from_rev or read_ghidra_rev(upstream_md)
     if not from_rev:
-        print("error: no --from given and GHIDRA_REV not found in UPSTREAM.md", file=sys.stderr)
+        print("error: no --from given and GHIDRA_REV not found in docs/history.md", file=sys.stderr)
         return 2
 
     for rev in (from_rev, args.to):
@@ -279,7 +279,7 @@ def main(argv=None):
         rewritten, skipped = rewrite_patch(diff)
     except PatchRewriteError as e:
         print("error: %s" % e, file=sys.stderr)
-        print("Nothing was applied. Handle this sync manually (see UPSTREAM.md).",
+        print("Nothing was applied. Handle this sync manually (see docs/history.md).",
               file=sys.stderr)
         return 1
     if not rewritten.strip():

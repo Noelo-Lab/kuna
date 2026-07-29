@@ -21,7 +21,7 @@ the `stackstall` rule pools → block structure → constant-pointer recovery �
 Option defaults, tiers, and flip guidance for every option named below live in
 the generated catalog ([docs/options.md](../options.md)); the rows are defined
 in `decompiler/crates/kuna-decomp/phases.toml` and the type-phase default
-divergences are DIV-2 in `docs/divergences.md`. Untagged prose is the
+divergences are DIV-2 in `docs/history.md`. Untagged prose is the
 Ghidra-derived port; `(kuna)` marks kuna-original passes (each named with the
 upstream GH issue that inspired it, per its `phases.toml` row).
 
@@ -266,7 +266,7 @@ from degrade — the visible ping that the 7-pass ceiling exists to bound.
 ## 5.3 Ranges & consume bits
 
 The rest of the S5 fact fabric (the framing derives from the study in
-`docs/history/stage-model.md` §7.3; every claim below is re-verified against
+the archived stage-model study (git history) §7.3; every claim below is re-verified against
 the Rust).
 
 **Circular ranges.**

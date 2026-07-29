@@ -56,7 +56,7 @@ def repo_root() -> Path:
 
 
 def pipeline_docs_dir() -> Path:
-    return repo_root() / "docs" / "pipeline"
+    return repo_root() / "docs" / "improvement-pipeline"
 
 
 def features_dir() -> Path:

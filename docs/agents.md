@@ -10,8 +10,8 @@ kuna is an **agent-first decompiler written in Rust**: a decompilation engine pl
 compiler, organized around an explicit phase model whose decision points are exposed as
 per-run, flippable options — the LLM control surface is the product. It started as a Rust
 port of Ghidra's decompiler (Apache-2.0 — see `LICENSE` and `NOTICE`) and has since
-diverged on its own defaults and features; the origin story lives in `README.md` and
-`docs/rust-port/`, and is not needed for day-to-day work.
+diverged on its own defaults and features; the origin story lives in `docs/history.md`, and 
+is not needed for day-to-day work.
 
 ## Layout
 
@@ -22,7 +22,7 @@ diverged on its own defaults and features; the origin story lives in `README.md`
 | `tests/stages/` | kuna-owned issue testcases — `make test-stages`. Conventions: `tests/stages/README.md`. |
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`). |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH specs. `.sla` files are built artifacts (gitignored), produced by `slacomp`. |
-| `scripts/` + `tools/pipeline/` | Python helpers (`decompile.py` library shim, `paths.py`, `pipeline/`, `decbench/`) + driver for the feature pipeline (`docs/pipeline.md`) and the decbench campaign (`docs/decbench-loop.md`). |
+| `scripts/` + `tools/pipeline/` | Python helpers (`decompile.py` library shim, `paths.py`, `pipeline/`, `decbench/`) + driver for the improvement pipeline (`docs/improvement-pipeline.md`) and the decbench campaign (`docs/decbench-loop.md`). |
 | `integrations/` | Front-ends embedding the engine: `ghidra/` (kuna as stock Ghidra's decompiler core), `web/` (the project site + in-browser decompiler at `kuna.noelo.org`). |
 
 ## Build & test
@@ -47,7 +47,7 @@ make specs      # compile all .slaspec → .sla with slacomp
 
 - **Never re-pin `docs/baseline.json` to absorb a regression** — fix the code or make the
   change opt-in. The only sanctioned re-pins are an intentional upstream sync or a
-  DIV-recorded default change (`kuna test --save-baseline`; see `docs/UPSTREAM.md`).
+  DIV-recorded default change (`kuna test --save-baseline`; see `docs/history.md`).
   Adding a stage test DOES re-record the stages baseline:
   `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`.
 - `docs/options.md` is generated — after touching option metadata:
@@ -95,28 +95,27 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   `tests/stages/kuna-catalog.xml` count assertions. Grep for the current total, or
   `make rust-test`/`make test-stages` fail opaquely.
 - **Default-ON needs evidence**: only if the flip changes 0/675 datatest assertions and
-  passes the speed budget; every default flip gets a DIV entry in `docs/divergences.md`
+  passes the speed budget; every default flip gets a DIV row in `docs/history.md`
   (a `transform`-tier flip also updates the option's `phases.toml` row prose).
-- **The spec is live**: any behavior change updates the owning `docs/spec/` chapter in the
-  same PR (each phase folder has exactly one owning chapter; find yours via its `Anchors:`
-  header). Run `make check-spec`.
+- **The spec is live**: every new feature or behavior change is described in natural-language
+  prose in the owning `docs/spec/` chapter in the same PR — not just an anchor update (each
+  phase folder has exactly one owning chapter; find yours via its `Anchors:` header). Run
+  `make check-spec`.
 - **One PR per feature**, with an end-to-end `tests/stages/` testcase (two-pass: option
   off = the bug, default = the fix) and a measured speed delta. Large/multi-part features
   go through a draft `[PROPOSAL]` PR first.
-- Full normative list: `docs/pipeline.md` → *Standing requirements*.
+- Full normative list: `docs/improvement-pipeline.md` → *Standing requirements*.
 
 ## Conventions
 
 - kuna ElementIds use the 4000+ range; kuna PcodeOp addlflags bits start at 0x1000.
-- Edits to ported-core files stay minimal, are marked with a `// (kuna)` comment, and get
-  a row in `docs/UPSTREAM.md` → *Divergence*.
 - Code comments citing `decompiler/cpp/<file>.{cc,hh}` are **upstream Ghidra anchors** —
   the C++ tree kuna was ported from, *not* paths in this repo. The pinned upstream commit
-  (`GHIDRA_REV`) and the vendored-tree sync procedure are in `docs/UPSTREAM.md`.
+  (`GHIDRA_REV`) and the vendored-tree sync procedure are in `docs/history.md`.
 - New functionality → new modules; match the surrounding code's conventions (ported files
   name methods after their C++ originals).
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`).
-- Commit at milestones with descriptive messages; keep `docs/PROGRESS.md` current.
+- Commit at milestones with descriptive messages.
 
 ## Doc map (look up on demand — don't preload)
 
@@ -125,15 +124,12 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/phases.md` | The phase model on one screen (P0–P9, Band B, feedback edges). |
 | `docs/spec/` | How any algorithm/pass actually works (start `00-overview.md`). |
 | `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
-| `docs/divergences.md` | Why a default differs from upstream (DIV-N entries + evidence). |
 | `docs/cli.md` | The full `kuna` CLI reference. |
-| `docs/pipeline.md` | The feature pipeline + standing requirements for feature PRs. |
+| `docs/improvement-pipeline.md` | The autonomous improvement pipeline + standing requirements for feature PRs. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |
 | `docs/modes.md` | `--mode reliable\|aggressive` option presets. |
-| `docs/missing-analyses.md` | The `kuna-analysis` tier: pass contract, commit gating. |
-| `docs/ghidra-integration.md` | kuna as Ghidra's decompiler core (wire contract: `docs/decompiler-core-interface.md`). |
+| `docs/missing-ghidra-analyses.md` | The `kuna-analysis` tier: the analyzer gap vs Ghidra, pass contract, commit gating. |
+| `docs/ghidra-integration.md` | kuna as Ghidra's decompiler core (architecture + wire protocol). |
 | `docs/web-integration.md` | The WASM/browser front-end and the project site. |
-| `docs/UPSTREAM.md` | Vendored-tree provenance (`GHIDRA_REV`) + `tools/sync_upstream.py` usage. |
 | `docs/devcontainer.md` | The reproducible build container + cross-arch fixture builds. |
-| `docs/rust-port/` | The C++→Rust port: summary (`README.md`), ADRs, losses, verification. |
-| `docs/history/` | Frozen design docs and finished campaigns (the archive). |
+| `docs/history.md` | The condensed project history: milestone timeline, the C++→Rust port + its verification, the DIV registry (why a default differs from upstream), vendored-tree provenance (`GHIDRA_REV`) + sync procedure. |

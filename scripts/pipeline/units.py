@@ -23,9 +23,9 @@ Optionally we best-effort scan the matching peephole test files for a concrete
 (binary, function) reproduce target and attach it to the pass whose class the test imports.
 When no confident target is found a unit gets ``repro="synthesize"`` and ``comparable=False``.
 
-Output: ``docs/pipeline/units.json`` -- the schema consumed by ``scripts.pipeline.select``.
+Output: ``docs/improvement-pipeline/units.json`` -- the schema consumed by ``scripts.pipeline.select``.
 
-    python -m scripts.pipeline.units              # write docs/pipeline/units.json
+    python -m scripts.pipeline.units              # write docs/improvement-pipeline/units.json
     python -m scripts.pipeline.units --json       # also print the list to stdout
     python -m scripts.pipeline.units --limit 10   # cap entries (for testing)
 """
@@ -520,7 +520,7 @@ def main(argv=None):
         description="Generate the angr small-units (peephole + local optimization pass) worklist.")
     p.add_argument("--json", action="store_true", help="also print the entry list to stdout")
     p.add_argument("--limit", type=int, default=None, help="cap the number of entries (testing)")
-    p.add_argument("--out", default=None, help="output path (default: docs/pipeline/units.json)")
+    p.add_argument("--out", default=None, help="output path (default: docs/improvement-pipeline/units.json)")
     args = p.parse_args(argv)
 
     entries = build_entries(limit=args.limit)

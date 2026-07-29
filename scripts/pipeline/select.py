@@ -1,6 +1,6 @@
 """Pick the next opportunity for a worker to implement.
 
-Reads the ranked backlog (docs/pipeline/opportunities.json), skips anything already
+Reads the ranked backlog (docs/improvement-pipeline/opportunities.json), skips anything already
 claimed or done (scripts.pipeline.state), and returns the highest-scoring remaining gap.
 Emits shell-eval-able assignments so the driver loop can launch a worker without jq.
 

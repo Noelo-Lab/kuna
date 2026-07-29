@@ -2,7 +2,7 @@
 
 kuna-owned datatests derived from **real, open decompiler issues** (sourced from the
 PHADE issue dataset), each demonstrating that the issue is fixable through the kuna
-stage model (`docs/phases.md`, `docs/history/stage-model.md`): a named sub-stage decision point,
+stage model (`docs/phases.md`): a named sub-stage decision point,
 controlled by a durable P0 assertion, instead of a hardcoded heuristic.
 
 These run with the same upstream harness as `tests/datatests/` but from a
@@ -43,7 +43,7 @@ writeup, not here.
 |---|---|---|---|
 | `gh558-compareform.xml` | [GH-558](https://github.com/NationalSecurityAgency/ghidra/issues/558) | S3 simplification quiescence (`canonicalcompare`) → S9 presentation (`presentcompare`) | `option compareform canonical\|original` |
 | `gh558-arraynotation.xml` | [GH-558](https://github.com/NationalSecurityAgency/ghidra/issues/558) (secondary) | S9 literal/format policy (pointer notation) | `option arraynotation on\|off` |
-| `gh2786-unaryspacing.xml` | [GH-2786](https://github.com/NationalSecurityAgency/ghidra/issues/2786) | S9 surface (adjacent sign tokens) | default-flip ([DIV-1](../../docs/divergences.md)) |
+| `gh2786-unaryspacing.xml` | [GH-2786](https://github.com/NationalSecurityAgency/ghidra/issues/2786) | S9 surface (adjacent sign tokens) | default-flip (DIV-1, `docs/history.md`) |
 | `gh8471-thumbfuncptr.xml` | [GH-8471](https://github.com/NationalSecurityAgency/ghidra/issues/8471) | S5 const-pointer (Thumb mode bit) | `option thumbfuncptr on\|off` |
 | `gh6930-inferfuncentry.xml` | [GH-6930](https://github.com/NationalSecurityAgency/ghidra/issues/6930) | S5 const-pointer (single-bit image base) | `option inferfuncentry on\|off` |
 | `gh6990-returnpair.xml` | [GH-6990](https://github.com/NationalSecurityAgency/ghidra/issues/6990) | S4 trial finalization (return-register join) | `option returnpair pair\|single` |
@@ -114,7 +114,6 @@ observability on the switchmulti multistage restart), `kuna-pipeline-quality.xml
 RegionIdentifier port over the REAL `bblocks` CFG — `build_from_block_graph`, the
 W7 block-graph adapter closed in regionstructure Inc 0, including the per-block
 `endsWithBranchindOrCbranch` `lastOp` probe — on a loop+diamond CFG;
-`docs/history/regions.md`), `kuna-listing-flag.xml`
+`docs/spec/07-regions.md`), `kuna-listing-flag.xml`
 (the Listing/xref disassembly tier flag `option listing on|off`, default-off: parses,
-round-trips, and is inert on the XML path — PR1 of the Listing/xref tier,
-`docs/history/listing-tier-design.md`).
+round-trips, and is inert on the XML path — PR1 of the Listing/xref tier).

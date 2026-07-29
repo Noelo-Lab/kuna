@@ -1,7 +1,7 @@
 //! Unit tests for the kuna phase registry (`kuna_phases.rs`).
 //!
 //! Parity targets (origin: `decompiler/cpp/kuna_stages.cc`, since grown):
-//! group=39, subphase=40, surface=98, settable=75, plus the phase-code
+//! group/subphase/surface/settable counts pinned by the asserts below, plus the phase-code
 //! helpers, the lookup API, the typed `OptionValues` defaults, and the
 //! catalog emitter.
 

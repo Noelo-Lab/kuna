@@ -26,7 +26,7 @@ live implementation is
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional
-default-divergences are DIV-3/4/13/14 in `docs/divergences.md`.
+default-divergences are DIV-3/4/13/14 in `docs/history.md`.
 
 > Scope note: `decompiler/crates/kuna-decomp/src/p2_lift/funcdata_resolveflow.rs
 > (Funcdata::resolve_in_flow)` is, despite its name, the union-field

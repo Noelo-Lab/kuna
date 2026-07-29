@@ -10,14 +10,9 @@ extension that spawns it — is on branch `feat/ghidra-mode`).
 12.2-DEV checkout at commit `f9e13846` (2026-06-16). Java paths are under
 `Ghidra/Features/Decompiler/src/main/java/ghidra/app/decompiler/` unless otherwise
 noted; C++ paths under `Ghidra/Features/Decompiler/src/decompile/cpp/`. kuna's own
-pinned port anchor is `GHIDRA_REV` `cef869af` (2026-06-01, `docs/UPSTREAM.md`); the one
+pinned port anchor is `GHIDRA_REV` `cef869af` (2026-06-01, `docs/history.md`); the one
 protocol-relevant delta between the two revisions is called out in §8. kuna paths are
 relative to `decompiler/crates/`.
-
-The companion document **`docs/decompiler-core-interface.md`** specifies the same
-interface from the *other* side — what Ghidra requires from *any* replacement core, with
-no kuna knowledge assumed. This document is the kuna-specific plan; details of the
-protocol that are fully specified there are only summarized here.
 
 ---
 
@@ -29,7 +24,7 @@ over stdin/stdout with a burst-framed binary protocol (`DecompileProcess.java:54
 Upstream, that process is the C++ `ghidra_opt` build — the same DECCORE engine kuna
 ported, linked against a `GHIDRA` glue group (`ghidra_process.cc`, `ghidra_arch.cc`,
 `ghidra_translate.cc`, …) that kuna deliberately excluded from the port (LOSS-002,
-`docs/rust-port/losses.md`).
+see `docs/history.md`).
 
 **kuna reimplements exactly that glue group**: a new **`kuna-ghidra`** crate producing a
 binary that speaks the full decompiler-process protocol, backed by kuna's engine. The
@@ -89,7 +84,8 @@ DecompilerProvider/Controller/Manager           main loop: readCommand()
 
 ## 3. The wire protocol, condensed
 
-Full byte-level specification: `docs/decompiler-core-interface.md` §3–§5. Summary:
+The byte-level ground truth is the upstream implementation (`DecompileProcess.java`,
+`ghidra_arch.cc`). Summary:
 
 **Burst framing** (`DecompileProcess.java:54-63`; `ghidra_arch.cc:50-77`): every marker
 is written as `{0x00,0x00,0x01,code}` and read tolerantly (skip garbage, one-or-more
@@ -294,8 +290,7 @@ Documented fallbacks (no code, release installs): **build/os file-drop** — a b
 `<install>/Ghidra/Features/Decompiler/build/os/<platform>/decompile` shadows the stock
 `os/` copy because `getModuleOSFile` checks `build/os/` first unconditionally; and the
 **patch-dir class shadow** — `<install>/Ghidra/patch` jars precede module jars in
-release mode only (`GhidraLauncher.java:182-183`). Full ranking and the why-nots:
-`docs/decompiler-core-interface.md` §2.
+release mode only (`GhidraLauncher.java:182-183`).
 
 ## 8. Version policy (decided)
 
@@ -311,7 +306,7 @@ program-open with "Did not accept decompiler options" (`DecompInterface.java:301
 kuna therefore **deliberately diverges from upstream: unknown option elements are
 skipped with a warning instead of failing the command** — one stale option must not
 brick the decompiler view. This is output-invariant for known options; it gets a DIV
-entry in `docs/divergences.md` when the behavior ships (Phase 2, when `setOptions`
+row in `docs/history.md` when the behavior ships (Phase 2, when `setOptions`
 stops being a stub).
 
 A second, smaller **deliberate divergence** hardens the process against a malformed
@@ -381,8 +376,8 @@ What breaks when a partial core omits pieces — all failure modes are clean:
   end of the pipe: sends command bursts, answers queries from canned tables, asserts
   the byte-exact response framing (including the response-open-before-params ordering,
   the always-present 16/17 frame, and the self-alignment/exception paths). This is the
-  same differential discipline as the port — the protocol spec in
-  `docs/decompiler-core-interface.md` is the oracle.
+  same differential discipline as the port — the upstream implementation
+  (`DecompileProcess.java`, `ghidra_arch.cc`) is the oracle.
 - **Phase 2+: DecompileDebug captures as fixtures.** Ghidra's "Debug Function
   Decompilation" action (`DecompInterface.enableDebug`, `DebugDecompilerAction.java:38-73`)
   records every callback answer into an `<xml_savefile>` — exactly the document kuna's
@@ -411,8 +406,8 @@ What breaks when a partial core omits pieces — all failure modes are clean:
 - [x] These two documents.
 
 **Phase 2 — engine bridge (first real C in the GUI). DONE** (PR #135, branch
-`feat/ghidra-mode-phase2`). Full plan + risk assessment + sequencing:
-**`docs/rust-port/ghidra-phase2-plan.md`**. Each step landed as its own commit
+`feat/ghidra-mode-phase2`). Full plan + risk assessment + sequencing: the retired
+`docs/rust-port/ghidra-phase2-plan.md` (git history). Each step landed as its own commit
 keeping `make test` at 675/675 PARITY OK. One design refinement vs the plan: the
 translator seam is a `Box<dyn EngineTranslate>` **trait**, not an enum — an enum
 variant naming `kuna-ghidra`'s `GhidraTranslate` would be a `kuna-decomp`↔`kuna-ghidra`

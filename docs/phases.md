@@ -3,15 +3,14 @@
 > **The phase model at a glance.** The normative, live description of what each phase
 > actually computes — algorithms, thresholds, failure modes, provenance — is the chaptered
 > spec under **`docs/spec/`** (start at `docs/spec/00-overview.md`). This page is the
-> one-screen map; the original 2026-06 derivation study (Ghidra/angr/Reko) is archived at
-> `docs/history/stage-model.md`.
+> one-screen map; the original 2026-06 derivation study (Ghidra/angr/Reko) is summarized
+> in `docs/history.md` (full text in git history).
 
 The kuna phase model: **ordered phases + explicit typed feedback edges**, with one
 orthogonal plane and one fixed-point band. This is the model kuna is organized around —
 the runtime registry (queryable via the `phase list`/`phase map`/`phase catalog` console
-commands; `stage ...` still works as a deprecated alias), the per-file source mapping
-(`docs/history/stage-mapping.md`), the option catalog (`docs/options.md`), and the issue
-testcases (`tests/stages/`) all speak it.
+commands; `stage ...` still works as a deprecated alias), the option catalog
+(`docs/options.md`), and the issue testcases (`tests/stages/`) all speak it.
 
 A decompiler is not a feed-forward pipeline: phases fire in order on the *first* pass, but
 information learned later routinely rewinds or modifies earlier phases (the feedback-edge
@@ -41,8 +40,8 @@ per-decompiler scheduling regime, not part of the model.
 
 The decompiler source is **physically organized by phase**: every module file under
 `decompiler/crates/kuna-decomp/src/` lives in a phase-named folder (the folder name carries the phase code `pN` so it greps against this doc and the registry, plus a plain word so the tree reads to a newcomer). Module *names* stay flat (`kuna_decomp::flow`) via re-exports in
-`lib.rs`, so the layout is documentation, not an API change. The per-file assignment is
-`docs/history/stage-mapping.md`; the live group→phase registry is `phases.toml`.
+`lib.rs`, so the layout is documentation, not an API change. The live group→phase
+registry is `phases.toml`.
 
 | Phase | Folder | Reads as |
 |---|---|---|
@@ -71,7 +70,7 @@ heuristic, human, or LLM agent — changes the phase's artifact and everything d
 Every sub-phase names the **assertion** that overrides it, with strength **HARD** (blocks
 inference, e.g. typelock) or **HINT** (biases it), a **re-run scope**, and a **LATENT**
 flag when the decision is hardcoded with no override today (the LATENT set is the kuna
-roadmap). Full catalogs per phase: `docs/history/stage-model.md` §4–§10; the machine-readable,
+roadmap). The machine-readable,
 flippable subset is `docs/options.md` (`kuna catalog --json`).
 
 ## Feedback mechanisms
@@ -95,14 +94,12 @@ surviving state:
 - **(f)** worklist re-enqueue (address-grain) and **(g)** lazy-dirty recompute
   (object-grain) as edge annotations
 
-Edge table with anchors: `docs/history/stage-model.md` §11.
-
 ## Interventions
 
 All interventions are durable typed assertions written to P0 and consulted on (re-)run —
 never imperative mid-pipeline edits: `assert(phase, anchor, type, value, strength)`. An
 LLM agent is just another assertion writer driving the feedback edges deliberately.
-Symptom→sub-phase navigation table: `docs/history/stage-model.md` §13 (caveat from practice: a
+For symptom→sub-phase navigation use `docs/options.md`'s symptom index (caveat from practice: a
 symptom's phase is not always its decision's phase — wrong-looking constants in the
 rendered C are usually destroyed in Band B, not mis-rendered at P9).
 
@@ -118,11 +115,9 @@ The model is physical in kuna:
   assertion is phase-addressed in `kuna_phases.rs`; `phase list/map/status/catalog`,
   `kassert`, `pipeline`, `quality`, `restarts` operate it. The P7 region tree is
   directly observable via `region tree/blocks/walk` (the angr RegionIdentifier
-  port — `docs/history/regions.md`).
+  port — `docs/spec/07-regions.md`).
 - **Issues fixed through the model** (each pinned by a `tests/stages/` testcase
   asserting both directions of the decision): GH-558, 2786, 8471, 6930, 6990, 1282,
-  7190, 8817, 8913, 9230, 1537. Per-phase changelog: `docs/history/stage-implementation.md`.
+  7190, 8817, 8913, 9230, 1537.
 - **Defaults**: eight sub-phase fixes are kuna defaults (DIV-2); the destructive ones
-  stay opt-in per the ablation evidence. Record: `docs/divergences.md`.
-- **Empirical critique** of the model against those fixes (phase-fit, ablations,
-  navigation score, per-phase verdicts): `docs/history/stage-critique.md`.
+  stay opt-in per the ablation evidence. Record: `docs/history.md`.

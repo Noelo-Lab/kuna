@@ -21,7 +21,7 @@ option-gated below is registered with `source_decompiler = "angr"` in
 defaults, tiers, symptoms, and flip guidance for every option named below
 live in the generated catalog ([docs/options.md](../options.md)); this
 chapter names only the divergence record that flipped a default
-(DIV-10/12/14/17/18/23/25 in `docs/divergences.md`).
+(DIV-10/12/14/17/18/23/25 in `docs/history.md`).
 
 Structuring operates on a dedicated arena: `sblocks`, a `BlockCopy` mirror of
 the real basic blocks seeded by
@@ -145,7 +145,7 @@ sorting, the §8.3 `scopeBreak` hook, `mark_unstructured` (labelling every
 goto target so the printer emits `label_N:`), and `mark_label_bump_up` (a
 loop-head label is hoisted above the loop rather than into its condition).
 `blockaction.rs (ActionNormalizeBranches)` is transcribed control-flow with
-its mutating half still stubbed (recorded in `docs/rust-port/losses.md`).
+its mutating half still stubbed (recorded in the retired losses ledger, see `docs/history.md`).
 
 **(angr) `ActionBranchFlip`** also lives here (`blockaction.rs
 (ActionBranchFlip)`), scheduled on the *final* structured tree right after
@@ -174,7 +174,7 @@ that pin the pre-flip polarity via per-test opt-outs); registered at the
 port of angr's Phoenix/SAILR structurer (parenthetical provenance: angr
 `analyses/decompiler/structuring/{recursive_structurer,phoenix,sailr}.py`),
 grown increment by increment (the archived plan is
-`docs/history/region-structurer-roadmap.md`) and made the default S8 engine
+the retired region-structurer roadmap, git history) and made the default S8 engine
 by DIV-12 under `option regionstructure`.
 
 **Input.** `region_structurer.rs (run_region_structurer)` first runs the
@@ -557,7 +557,7 @@ structural preconditions and caps. This is a recorded, intentional gap: the
 `goto-quality-acceptance` subphase row in
 `decompiler/crates/kuna-decomp/phases.toml` registers the accept-or-rollback
 decision as LATENT, with the `quality` command as its observable half, and
-the archived phase-model study (`docs/history/stage-model.md`, mechanism
+the archived phase-model study (git history, mechanism
 "speculate-validate-rollback") names porting it as future work. In practice
 the validation loop runs *outside* the engine instead: the default flips in
 this chapter were each gated on a measured decbench GED ablation

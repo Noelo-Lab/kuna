@@ -2,7 +2,7 @@
 
 **Generated** by `kuna catalog --markdown` from `settableTable` in `decompiler/crates/kuna-decomp/phases.toml` -- do not edit by hand; edit the registry row and regenerate.
 
-Set any option per run: `kuna decompile <bin> <fn> --option <name> <value>` (repeatable), `kuna decompile-all <bin> --option <name> <value>`, or the console `option <name> <value>`. Defaults are the shipped values; every intentional default change is logged in `docs/divergences.md`. The algorithms behind these options are described in `docs/spec/`.
+Set any option per run: `kuna decompile <bin> <fn> --option <name> <value>` (repeatable), `kuna decompile-all <bin> --option <name> <value>`, or the console `option <name> <value>`. Defaults are the shipped values; every intentional default change is logged in `docs/history.md`. The algorithms behind these options are described in `docs/spec/`.
 
 Three tiers:
 

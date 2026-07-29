@@ -1,7 +1,7 @@
 # Vendored Ghidra function-start byte-pattern XMLs
 
 The `*.xml` here are vendored **verbatim** from upstream Ghidra
-(`GHIDRA_REV` in `docs/UPSTREAM.md`, `cef869af04c4740a71ad31a55704045b1b0d1644`),
+(`GHIDRA_REV` in `docs/history.md`, `cef869af04c4740a71ad31a55704045b1b0d1644`),
 copied from `Ghidra/Processors/<P>/data/patterns/`. They are embedded via
 `include_str!` in `mod.rs` (the analyzer tier has no spec-root file handle) and
 parsed by the faithful port of `DittedBitSequence.initFromDittedStringData` +

@@ -43,7 +43,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
    `lib.rs` the way the existing `kuna_*` modules are).
    Edits to the ported core files are allowed ONLY where an anchor demands it (registering the
    action/option, a flag on the architecture struct); keep them minimal, mark each with a
-   `// (kuna)` comment, and record them in `docs/UPSTREAM.md` *Divergence*.
+   `// (kuna)` comment.
 2. **Never modify `docs/baseline.json`.** The loop must keep `kuna test --all --baseline docs/baseline.json`
    at PARITY OK without re-pinning. (You DO regenerate `docs/baseline-stages.json` to add your new stage test.)
 3. **ElementId** in the 4000+ range — grep the existing `kuna_*.rs` sources and `phases.toml`
@@ -72,7 +72,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 ## Protocol
 
 ### 1. analyze — reproduce and localize the gap
-- Read `AGENTS.md`, `docs/phases.md`, `docs/history/stage-mapping.md`, `docs/divergences.md`, `docs/options.md`,
+- Read `AGENTS.md`, `docs/phases.md`, `docs/history.md`, `docs/options.md`,
   `tests/stages/README.md`, and the **loweredswitch** feature as the canonical template:
   `git log --oneline | grep loweredswitch`, then read
   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /
@@ -114,6 +114,12 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   the `universalAction` registration (`coreaction*.rs` / `universalaction.rs`) and the option in
   `options.rs`, and add the `settableTable` row (rule 4). Gate the action to early-return when the
   flag is off so default output is byte-identical.
+- **Bump the hard-coded catalog counts** (adding an option changes them in THREE places; missing one
+  fails `make rust-test`/`make test-stages` opaquely): the count asserts in
+  `src/p0_knowledge/kuna_phases/tests.rs`; the count asserts AND the `tests/fixtures/phase_catalog.json`
+  fixture in `decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs` (regenerate the fixture with the
+  console recapture documented in that file's header); and the `tests/stages/kuna-catalog.xml` stringmatch
+  counts (bump whichever bucket your `source_decompiler`/`change_kind` lands in).
 
 ### 4. build + test
 - `make binaries`. Then write `tests/stages/ghangr-{{SLUG}}.xml`: a two-pass `decompilertest` — pass 1 with
@@ -132,11 +138,11 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - Run the full ablation: `kuna test --all --baseline docs/baseline.json`.
 - **If 0/675 upstream assertions change with the feature default-ON _and_ the speed gate passes**
   (`speed_within_budget` true, i.e. `speed_delta_pct` ≤ the budget), flip the option default to ON (set the
-  flag default in the architecture reset path, `shipped` in the `settableTable` row), add a `docs/divergences.md`
-  DIV-N entry, and re-verify PARITY OK.
+  flag default in the architecture reset path, `shipped` in the `settableTable` row), add a `docs/history.md`
+  DIV row, and re-verify PARITY OK.
 - **If the ablation is clean but the speed gate FAILS** (over budget or unmeasured), keep it **default-OFF
-  opt-in**, set `"speed_forced_off": true` in `record.json`, and note the regression in the PR body +
-  `docs/PROGRESS.md` (no DIV entry — output stays byte-identical).
+  opt-in**, set `"speed_forced_off": true` in `record.json`, and note the regression in the PR body
+  (no DIV entry — output stays byte-identical).
 - **Otherwise** (ablation changes >0) keep it default-OFF (opt-in), no DIV entry.
 - Either way the run MUST end at **PARITY OK** (you never re-pin `docs/baseline.json`). The speed gate can only
   ever push a feature from default-ON to opt-in; it never touches the baseline.
@@ -148,10 +154,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - Regenerate `docs/options.md`: `kuna catalog --markdown > docs/options.md` (freshness-fenced by `make rust-test`)
 
 ### 7. docs + record
-- `docs/UPSTREAM.md` *Divergence*: add a row per ported-core file you touched.
 - `docs/spec/`: update the chapter owning the phase you changed (find it via its `Anchors:` block); run `make check-spec`.
-- `docs/PROGRESS.md`: a `## Session ({{DATE}}) — {{SLUG}} (option {{SLUG}}[, DIV-N])` entry: the angr testcase,
-  why angr was better, the mechanism, the ablation result, on/off default decision.
 - Finalise `docs/features/{{SLUG}}/record.json`: `{ "opportunity": "{{OPPORTUNITY_ID}}", "test_name", "binary",
   "selector", "func_addr", "angr_version", "option", "flag", "element_id", "change_kind", "source_decompiler":"angr",
   "inspiration", "default_on": bool, "ablation_changed": N, "parity": "OK",
@@ -176,7 +179,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 ## Definition of done
 A pushed `{{BRANCH}}` + open PR adding exactly one `kuna_{{SLUG}}.rs`, one LLM-discoverable `settableTable`
 option (provenance fields populated), one `tests/stages/ghangr-{{SLUG}}.xml` + baseline bump, the doc touches,
-a `docs/PROGRESS.md` entry, and a complete `docs/features/{{SLUG}}/` bundle — with catalog/parity/stage
+and a complete `docs/features/{{SLUG}}/` bundle — with catalog/parity/stage
 gates all green — opened via `tools/pipeline/open_pr.sh` so the before/after demo is embedded.
 
 **Negative result (you cannot reach a green, shippable feature** — e.g. the gap needs deeper restructuring than

@@ -56,7 +56,7 @@ verbatim console captures:
      space NAME instead of a raw offset (`(const,ram,8)`): in C++ that
      offset is the heap address of the `AddrSpace` object, the only
      nondeterministic value in a raw lift.  The Rust port stores the space
-     index instead (docs/rust-port/losses.md LOSS-015); both engines must
+     index instead (LOSS-015, see docs/history.md); both engines must
      normalize to the name when emitting this line.
    - A decode failure ends the dump with
      `lifterror <class> <space>:<offset> <message>` where `<class>` is one of

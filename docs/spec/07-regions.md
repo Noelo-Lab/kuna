@@ -22,7 +22,7 @@ schedule places in fullloop's tail. Option defaults and flip guidance for
 every option named below live in the generated catalog
 ([docs/options.md](../options.md)); the registry rows are in
 `decompiler/crates/kuna-decomp/phases.toml` and the default divergences are
-DIV-12/DIV-14 in `docs/divergences.md`.
+DIV-12/DIV-14 in `docs/history.md`.
 
 ## 7.1 The region graph (angr)
 
@@ -262,7 +262,7 @@ its label.
 the binary executes (`REMOVES CODE` in its catalog row, `destructive = true`)
 — exactly the "near-always better on the right shape, wrong on the wrong one"
 contract of the toggleable-transform tier (flip guidance: the catalog row).
-Default **on** since DIV-14 (`docs/divergences.md`; live flag
+Default **on** since DIV-14 (`docs/history.md`; live flag
 `strip_stack_guard` set in
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (reset_defaults_internal)` and carried to the per-function ArchContext); the

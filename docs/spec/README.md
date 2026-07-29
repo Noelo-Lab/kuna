@@ -53,7 +53,6 @@ chapter is anchored to the code that implements it.
 ## Where things that are not algorithms live
 
 - Option catalog (the on/off control surface): `docs/options.md` (generated).
-- Intentional default divergences from upstream + measurements: `docs/divergences.md`.
+- Intentional default divergences from upstream + measurements: `docs/history.md`.
 - The phase model at a glance: `docs/phases.md`.
-- Port history, ADRs, losses: `docs/rust-port/` (summary in its `README.md`).
-- Archived design docs and the original phase-model derivation study: `docs/history/`.
+- Project history (the C++→Rust port, ADRs, retired campaigns): `docs/history.md`.

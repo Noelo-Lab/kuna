@@ -11,9 +11,9 @@ We AST-parse (never execute) the test file. For each ``test_*`` method we recove
     so the sweep can note lower fidelity -- we still run angr with its defaults).
 
 AST parsing (not regex) is what lets us capture arch/load_debug/custom-options faithfully.
-Output is ``docs/pipeline/worklist.json``.
+Output is ``docs/improvement-pipeline/worklist.json``.
 
-    python -m scripts.pipeline.worklist                      # write docs/pipeline/worklist.json
+    python -m scripts.pipeline.worklist                      # write docs/improvement-pipeline/worklist.json
     python -m scripts.pipeline.worklist --only-existing      # drop binaries not on disk
     python -m scripts.pipeline.worklist --print              # human summary to stdout
 """
@@ -286,7 +286,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m scripts.pipeline.worklist",
                                 description="Build the angr testcase (binary, function) worklist.")
     p.add_argument("--test-file", default=None, help="reference test file (default: angr test_decompiler.py)")
-    p.add_argument("--out", default=None, help="output JSON (default: docs/pipeline/worklist.json)")
+    p.add_argument("--out", default=None, help="output JSON (default: docs/improvement-pipeline/worklist.json)")
     p.add_argument("--only-existing", action="store_true", help="drop entries whose binary is not on disk")
     p.add_argument("--high-confidence", action="store_true", help="keep only single-target high-confidence entries")
     p.add_argument("--print", action="store_true", dest="do_print", help="print a human summary instead of writing")

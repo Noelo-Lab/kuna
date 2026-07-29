@@ -1,96 +1,82 @@
 # Kuna
 
-An agent-first decompiler, based on [Ghidra](https://github.com/NationalSecurityAgency/ghidra), written in Rust.
-Kuna aims to improve fundamental decompiler techniques, while making them more accessible to agents and thier human users.
-Interested in why? Read our [motivating statement](#motivation-why-another-decompiler) and our [design principles](#design). 
-
 <p align="center">
-   <img src="./assets/kuna.png" style="width: 30%;" alt="Kuna Logo"/>
+   <img src="./assets/kuna_transparent.png" style="width: 30%;" alt="Kuna Logo"/>
 </p>
 
-## Install & Usage
-### Install
-Use the release. 
+An agent-first decompiler designed to be refined by other agents.
+Kuna is written in Rust and was originally ported from [Ghidra](https://github.com/nationalsecurityagency/ghidra), but has since diverged on multiple features and pipeline designs.
+This project is an _experiment_ to establish how far the autonomous refinement of decompilers can push research in the field.
+Learn more about this approach in this [post](https://noelo.org/blog/kuna-release/).
 
-### Usage
-The user-facing command is the single Rust binary **`kuna`** (`decompiler/target/release/kuna`):
+## Install & Usage
+Kuna is distributed as a single Rust binary and can be run on most systems.
+You can download the latest release or [build it from source](#building-from-source).
+
+### CLI Usage
+If building from source, you can find the `kuna` binary in `decompiler/target/release/kuna`.
 
 ```bash
-KUNA=decompiler/target/release/kuna
+kuna decompile ./a.out main
+kuna decompile ./stripped.bin 0x401040 --addr
+# decompiles a full binary, returning a .c, .h, and .asm file
+kuna decompile-project ./a.out
+# flip a feature internal to the decompiler (useful for LLMs)
+kuna decompile ./a.out main --option compareform canonical
+``` 
 
-# Decompile a function by name, or by address in a stripped binary
-$KUNA decompile ./a.out main
-$KUNA decompile ./stripped.bin 0x401040 --addr
-```
+LLM agents should utilize the `./docs/options.md` file, which will inform about the features which can be toggled in run-time associated with situations they may be helpful.
+If bugs are found during usage, please report them with an issue. 
 
-Example output for a tiny `int add(int a,int b){return a+b;} int main(){return add(2,3);}`:
+### Web Browser Usage
+Since Kuna is written in Rust, you can also use it in the web browser through WebAssembly.
+This will do all of the work on your machine, which means the binary remains private.
 
-```c
-void main(void)
+Visit [kuna.noelo.org/decompile](https://kuna.noelo.org/decompile) to use it.
 
-{
-  add(2,3);
-  return;
-}
-```
+The code for deploying your own site can be found in `./integrations/web`
 
-kuna reads ELF/PE/etc. via the `object` crate and selects the SLEIGH language automatically.
-`decompile` drives `decomp_dbg` and captures the emitted C cleanly (interactive prompts never
-pollute the output).
+### Ghidra GUI Usage
+Since Kuna is originally a Ghidra port, the output format has remained largely compatible with Ghidra proper.
+You can use the Kuna core as the Ghidra decompiler inside of the traditional Ghidra GUI.
+To do that, build the extension in `./integrations/ghidra`.
 
-## Motivation: Why Another Decompiler?
+All features of Ghidra are not yet supported. 
+
+
+## Project Goals
 
 LLM agents, like [Codex](https://chatgpt.com/codex/), have fundamentally changed how we reverse engineer and ultimately secure binaries.
-Instead of humans looking directly at decompilers, LLMs are increasingly the ones using them, and humans instead read the agents' logs. As such, it feels natural that decompilers should become oriented and optimized around agents.
+Instead of humans looking directly at decompilers, LLMs are increasingly the ones using them, and humans instead read the agents' logs.
+As such, it feels natural that decompilers should become oriented and optimized around agents.
+Additionally, we can use those agents to automatically refine the tool they depend on.
 
-This paradigm shift requires more than just an [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) or a [generic CLI](https://github.com/binsync/declib). It requires a composable, tunable decompiler design that can be modified on-the-fly for the situation. This hypothetical decompiler must also be fast, to reduce the agent bottleneck, and positioned to be developed rapidly.
+Although agents should write most of the code in this project, insight into what should be written an how it should be designed is still needed at times.
+This project takes two main stances on pipeline design and feature design based on other decompilers that have shown success.
 
-Kuna prioritizes the following:
+In total, this projects aims for the following goals:
 
-* Quality decompilation: text is what LLMs consume, so make it the best on the planet to get better performance from LLMs.
-* Speed: remove the bottleneck common on larger binaries.
-* Flexibility: give LLMs access to many knobs that change decompilation based on the goal.
-* Quick development: LLMs will do the majority of coding, so target ways to improve that experience.
-
-To achieve this, Kuna is built as an agent-first decompiler. 
-The decompiler is broken into stages that can be adjusted during runtime using assertions, allowing decompilation behavior to be tuned for the task at hand. 
-It is based on Ghidra, due to its speed and architectural support, but rewritten in Rust to enable safer and faster LLM-assisted development.
-
-Kuna is also being actively improved with state-of-the-art techniques from decompilers like [angr](https://github.com/angr/angr), differential testing against Hex-Rays, and new workflows designed specifically for agent-driven reverse engineering.
-
-There is still a lot of work to do. If you are interested in decompilers, reverse engineering, program analysis, or building tools for the next generation of LLM agents, we'd love your help. 
-Join us as we push decompilers into their next stage of evolution.
-
+1. **Autonomous refinement**: we must design datasets, prompts, and tools for LLMs to continue to improve the decompiler while we are sleeping. This improvement should be based on science, and, ideally, solid metrics. Currently, [DecBench](https://decbench.com/) serves to facilitate the data and metrics needed for refinement. 
+2. **Agent-first**: we muse prioritize the quality of the decompilation text over other (normally important) aspects of decompilers, like GUIs or visualization tools. This also means we should strike a balance between features and speed, since the bottleneck on big binaries will be the decompiler. Additionally, we will explore optimal ways to give LLMs access to the decompiler.
+3. **Tunable**: when we instruct our LLMs to develop new features, either through human involvement or automation, we should make these features toggalable and configurable for different context. As an example, reversers may want high-level code, while pwners want low-level code. This discrepancy means uses have different goals of decompilation, and our feature implementation style should match that.
 
 ## Design
-kuna is organized around an explicit **stage model** (a P0 knowledge plane + S1–S9 with a
-Band-B fixed point and typed feedback edges), not a linear pipeline:
 
-- `docs/phases.md` — the stage model at a glance; `docs/history/stage-model.md` — the full normative
-  model (sub-stage catalogs, feedback edges, code anchors).
-- `docs/history/stage-mapping.md` — every source file mapped to a stage, anchored to the real pass
-  pipeline (`universalAction`) and the runtime registry (queryable via the `stage list/map/
-  catalog` console commands).
+On the engineering side, the decompiler design aims to align with two other aspects:
+
+1. **Phase based**: each phase of the decompiler should be well defined to give LLMs a better chance at finding features and code when they need to make changes. This also makes it easier to debug and improve.
+2. **Natural language spec**: every impactful feature and algorithm should be described, at least in part, in the natural language specification of the decompiler (`./docs/spec`). This is closely aligned with the stage-based model, and should provide a way for humans to audit high-level ideas in the decompiler. 
+
+The phases are described in the following files:
+- `docs/phases.md` — the stage model at a glance (the runtime registry is queryable via the `stage list/map/catalog` console commands).
 - `docs/options.md` — the tiered option catalog (transforms = the LLM control surface,
-  with a generated symptom index); `docs/divergences.md` records
-  kuna's intentional default changes.
-
-### The stage-model control surface
-
-kuna exposes Ghidra's pipeline as an explicit **stage model** with per-run, flippable sub-stage
-assertions (the "LLM control API"):
-
-```bash
-$KUNA catalog --json                                   # discover the settable assertions
-$KUNA decompile ./a.out main --option compareform canonical
-$KUNA decompile ./sparc.elf main --option returnpair single
-```
-
-`catalog --markdown` regenerates `docs/options.md`; `catalog --check` fails on
-catalog/registration drift (CI).
-
+  with a generated symptom index)
 
 ## Development
+
+The majority of code analysis and creation is expected to be done with frontier LLMs in an agentic framework like Codex or Claude Code.
+The agent-facing guidance lives in [`AGENTS.md`](AGENTS.md) (a symlink to `docs/agents.md`), which holds the enforced rules for contributing features and a doc map to everything else.
+
 ### Building from Source
 You only need a **Rust toolchain** (`cargo`).
 
@@ -105,34 +91,33 @@ Everything lands in `decompiler/target/release/`. For development, work in the c
 directly: `cd decompiler && cargo build` / `cargo test --workspace`.
 
 ### Test
+Four gates, all expected green before every commit:
+
 ```bash
-make test        # the 675/675 decompiler regression parity (datatests + docs/baseline.json)
+make test        # the 675/675 decompiler regression parity (tests/datatests/ vs docs/baseline.json)
+make test-stages # the kuna-owned issue testcases (tests/stages/ vs docs/baseline-stages.json)
 make rust-test   # the full cargo workspace suite (ported unit tests, golden differential
-                 # vectors, SLEIGH-compiler .sla content-parity, ...)
+                 # vectors, SLEIGH-compiler .sla content-parity, docs/options.md freshness, ...)
+make check-spec  # docs/spec/ honesty: anchors and inline code paths resolve, and each
+                 # phase folder is owned by exactly one spec chapter
 ```
 
 `make test` compiles the specs with the Rust SLEIGH compiler and decodes the XML regression
-corpus (`tests/datatests/`, 83 files / 675 assertions) with the Rust decompiler, end to
-end — the self-sufficient correctness gate. `docs/baseline.json` is the recorded oracle.
+corpus (`tests/datatests/`, 83 files / 675 assertions) with the Rust decompiler.
 
 ### Layout
 
 | Path | What it is |
 |---|---|
-| `decompiler/` | The engine — a cargo workspace. `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (decompiler), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (SLEIGH compiler, `slacomp`), `kuna-cli` (the `kuna` binary) |
+| `decompiler/` | The engine — a cargo workspace. `kuna-decomp` (the decompiler, phase-foldered `p0_knowledge/`…`p9_emit/`), `kuna-analysis` (the loader/analyzer tier), `kuna-sleigh`/`kuna-slacomp` (SLEIGH runtime + compiler, binary `slacomp`), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-cli` (the `kuna` binary), `kuna-ghidra`/`kuna-wasm` (the Ghidra and browser front-ends), plus support crates |
 | `tests/datatests/` | Upstream XML decompilation regression tests (83 files → 675 assertions); the corpus `make test` runs |
+| `tests/stages/` | kuna-owned issue testcases; the corpus `make test-stages` runs |
+| `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`) |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH processor specs; `.sla` are build artifacts produced by `slacomp` |
+| `integrations/` | Front-ends embedding the engine: `ghidra/` (kuna as stock Ghidra's decompiler core) and `web/` (the project site + in-browser decompiler) |
+| `scripts/` + `tools/` | Python helpers and drivers for the improvement pipeline (`docs/improvement-pipeline.md`) and the decbench campaign (`docs/decbench-loop.md`) |
 | `Makefile` | Top-level build/test driver (Rust-only) |
-| `docs/rust-port/README.md` | The port summary (what/why/how/validation) |
-| `scripts/` | Python helpers backing the autonomous feature `pipeline/` (the user-facing CLI is the Rust `kuna` binary) |
-| `tools/sync_upstream.py` | Pulls upstream Ghidra `specs/` + `tests/datatests/` updates |
-
-## Provenance
-
-Ported from Ghidra commit `cef869af04c4740a71ad31a55704045b1b0d1644`. The SLEIGH specs and the
-XML regression corpus are still vendored from upstream; the C++ source that the engine was
-ported from is recorded at that commit and recoverable from git history (the tree was removed
-once the port was proven — see `docs/UPSTREAM.md` and `docs/rust-port/README.md`).
+| `docs/history.md` | The project history, incl. the C++→Rust port and its validation |
 
 ## License
 

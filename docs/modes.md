@@ -24,7 +24,7 @@ default path is untouched, so every corpus/test gate is unaffected.
 ## `reliable`
 
 The current defaults are already a well-tuned, net-positive-on-benchmark set
-(many angr structuring flags are default-on; see `docs/divergences.md`).
+(many angr structuring flags are default-on; see `docs/history.md`).
 `reliable` is a stable, named alias for that set — its override list is
 deliberately empty. Pinning options here (e.g. `listing off`) would *change*
 behaviour versus the defaults (`decompile-all` auto-enables the Listing, DIV-15),
@@ -74,4 +74,4 @@ net-positive-zero-regression (the DIV process).
 `aggressive` is a first-class measurement lever: run the decbench GED benchmark
 with a `kuna-aggressive` backend (or `kuna decompile-all --mode aggressive`) and
 compare against the default `kuna` (== `reliable`) to find options that net-help,
-which then become candidate default-on flips (a new `docs/divergences.md` DIV).
+which then become candidate default-on flips (a new `docs/history.md` DIV row).

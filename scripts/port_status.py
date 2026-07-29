@@ -10,7 +10,7 @@ Two views:
      stored here is the OUTCOMES table below: the human assessment the catalog
      can't know (real win vs a faithful no-op that just matches Ghidra vs infra).
   2. TESTCASE COVERAGE -- how many angr testcases kuna now MATCHES (no structural
-     gap), from the latest angr-vs-kuna sweep (docs/pipeline/opportunities.json),
+     gap), from the latest angr-vs-kuna sweep (docs/improvement-pipeline/opportunities.json),
      plus the top remaining gaps so you can see what's left.
 
 Usage:
@@ -26,8 +26,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STAGES = os.path.join(ROOT, "decompiler", "crates", "kuna-decomp", "phases.toml")
-OPPS = os.path.join(ROOT, "docs", "pipeline", "opportunities.json")
-MATRIX = os.path.join(ROOT, "docs", "pipeline", "matrix.md")
+OPPS = os.path.join(ROOT, "docs", "improvement-pipeline", "opportunities.json")
+MATRIX = os.path.join(ROOT, "docs", "improvement-pipeline", "matrix.md")
 
 # --- the one thing not in the catalog: the OUTCOME of each port ---------------
 # kind buckets:
@@ -172,7 +172,7 @@ def main(argv=None):
 
     if cov:
         print("-" * 74)
-        print("  TESTCASE COVERAGE   (latest angr-vs-kuna sweep, docs/pipeline/opportunities.json)")
+        print("  TESTCASE COVERAGE   (latest angr-vs-kuna sweep, docs/improvement-pipeline/opportunities.json)")
         print()
         print("    kuna matches angr   " + bar(cov["match"], cov["comparable"]))
         print("    %d of %d comparable angr testcases have NO structural gap;" % (cov["match"], cov["comparable"]))
@@ -186,7 +186,7 @@ def main(argv=None):
         print()
         print("  (refresh coverage with:  PYTHONPATH=. python -m scripts.pipeline.sweep --arch x86)")
     else:
-        print("  (no sweep data at docs/pipeline/opportunities.json — run scripts.pipeline.sweep)")
+        print("  (no sweep data at docs/improvement-pipeline/opportunities.json — run scripts.pipeline.sweep)")
     print()
     return 0
 

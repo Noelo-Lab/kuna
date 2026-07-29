@@ -53,6 +53,603 @@ export const RIVALS = [
 export const DEFAULT_RIVAL = 'ida';
 
 export const SAMPLES = [
+  // This sample deviates from the one-DecBench-run provenance above: the kuna
+  // and IDA panes were regenerated locally on 2026-07-29 (kuna 0.1.0 release
+  // build @ HEAD; IDA Professional 9.2 via decbench's idalib backend, code
+  // normalization included) against the classic SAILR `fmt` binary
+  // (angr-dev binaries/tests/x86_64/decompiler/fmt, coreutils, gcc 8.4.0 -O2,
+  // `strip --strip-all`), with decbench's one relabel (`main`) applied. The
+  // ghidra/binja/angr panes are not recorded for THIS binary yet, and the GED
+  // row is omitted: DecBench's scores measured a different fmt build.
+  {
+    id: 'O2-coreutils-fmt-main',
+    name: "main() — coreutils fmt, x86-64",
+    meta: "coreutils fmt · ELF x86-64 · gcc 8.4.0 -O2, stripped · 0x1900",
+    kuna:
+`long long main(uint4 a0,void *a1)
+{
+  uint1 *v1;
+  unsigned long v10; // rax
+  char v11 [16];
+  int8 v12; // rcx
+  uint8 v13; // rdx
+  uint8 v14; // rdx
+  uint8 v15; // rdx
+  uint8 v16; // rdx
+  uint8 v17;
+  uint8 v18; // rdx
+  unsigned long v19; // rdx
+  bool v2;
+  uint1 *v20; // rsi
+  uint1 *v21;
+  uint1 *v22; // rdi
+  uint1 *v23;
+  uint4 v24; // eax
+  char *v25;
+  char *v26;
+  char *v27;
+  bool v28; // cf
+  bool v29;
+  int4 v3; // eax
+  uint1 v30; // df
+  unsigned long v31; // stack - 0x38
+  uint4 v4;
+  char v5 [16];
+  char *v6; // rax
+  void *v7; // rax
+  unsigned long v8; // rax
+  unsigned long v9;
+  
+  v30 = 0;
+  v25 = (char *)0x0;
+  sub_3610(*a1);
+  setlocale(6,"");
+  bindtextdomain(0x68d8,"/usr/local/share/locale");
+  textdomain(0x68d8);
+  sub_67f0(sub_3400);
+  dat_215130 = 0;
+  dat_215131 = 0;
+  dat_215132 = 0;
+  dat_215133 = 0;
+  dat_215120 = 0x4b;
+  dat_215128 = "";
+  dat_21511c = 0;
+  dat_215118 = 0;
+  dat_215114 = 0;
+  if (((2 <= (int4)a0) && (v26 = (char *)a1[1], *v26 == '-')) && ((uint4)((int4)v26[1] - 0x30U) <= 9)) {
+    v25 = &v26[1];
+    v9 = *a1;
+    a0 = a0 - 1;
+    a1 = &a1[1];
+    *a1 = v9;
+  }
+  v26 = (char *)0x0;
+  while (v3 = getopt_long(a0,a1,"0123456789cstuw:p:g:",0x209aa0,0), v3 != -1) {
+    switch(v3) {
+      default:
+        if ((uint4)(v3 - 0x30U) <= 9) {
+          error(0,0,dcgettext(0,"invalid option -- %c; -WIDTH is recognized only when it is the first\\noption; use -w N instead",5),v3);
+        }
+                    /* WARNING: Subroutine does not return */
+        sub_3000(1);
+      case 99:
+        dat_215133 = 1;
+        break;
+      case 0x67:
+        v26 = dat_20a0a0;
+        break;
+      case 0x70:
+        dat_215118 = 0;
+        v27 = dat_20a0a0;
+        if (*dat_20a0a0 == ' ') {
+          do {
+            dat_215118 = (1U - (int4)dat_20a0a0) + (int4)v27;
+            v27 = &v27[1];
+          } while (*v27 == ' ');
+        }
+        dat_215128 = v27;
+        dat_21511c = (int4)strlen(v27);
+        v6 = &v27[dat_21511c];
+        if (v27 < v6) {
+          do {
+            if (v6[-1] != ' ') break;
+            v6 = &v6[-1];
+          } while (v27 != v6);
+        }
+        *v6 = '\\0';
+        dat_215114 = (int4)v6 - (int4)v27;
+        break;
+      case 0x73:
+        dat_215131 = 1;
+        break;
+      case 0x74:
+        dat_215132 = 1;
+        break;
+      case 0x75:
+        dat_215130 = 1;
+        break;
+      case 0x77:
+        v25 = dat_20a0a0;
+        break;
+      case -0x83:
+        sub_5920(dat_20a088,0x685a,"GNU coreutils",dat_20a010,"Ross Paterson",0);
+                    /* WARNING: Subroutine does not return */
+        exit(0);
+      case -0x82:
+                    /* WARNING: Subroutine does not return */
+        sub_3000(0);
+      
+    }
+  }
+                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
+  if (v25 != (char *)0x0) {
+    v3 = sub_6010(v25,0,0x9c4,0x7661,dcgettext(0,"invalid width",5),0);
+    dat_215120 = v3;
+                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
+    if (v26 != (char *)0x0) {
+      dat_215110 = sub_6010(v26,0,(int8)v3,0x7661,dcgettext(0,"invalid width",5),0);
+      v17 = v13;
+    }
+    else {
+label_1d19:
+      dat_215110 = (dat_215120 * 0xbb) / 200;
+      v17 = (int8)(dat_215120 * 0xbb) % 200 & 0xffffffff;
+    }
+  }
+  else {
+    if (v26 == (char *)0x0) goto label_1d19;
+    dat_215110 = sub_6010(v26,0,0x4b,0x7661,dcgettext(0,"invalid width",5),0);
+    dat_215120 = dat_215110 + 10;
+    v17 = v18;
+  }
+                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
+  if (dat_20a098 != a0) {
+    v24 = 1;
+    if ((int4)a0 <= (int4)dat_20a098) {
+                    /* WARNING: taildup: duplicated return-call tail to remove goto */
+      v5[0] = (v24 ^ 1) & 0xff;
+      v5[4] = 0;
+      v5[8] = v31;
+      return v5;
+    }
+    v28 = 0;
+    v2 = 0;
+    v29 = 1;
+    v24 = 1;
+    v4 = dat_20a098;
+    do {
+      v12 = 2;
+      v1 = (uint1 *)a1[(int4)v4];
+      v21 = v1;
+      v23 = (uint1 *)0x6f52;
+      do {
+        if (v12 == 0) break;
+        v12 = v12 + -1;
+        v22 = &v23[(uint8)v30 * -2 + 1];
+        v20 = &v21[(uint8)v30 * -2 + 1];
+        v28 = *v21 < *v23;
+        v29 = *v21 == *v23;
+        v21 = v20;
+        v23 = v22;
+      } while (v29);
+                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
+      if ((!v28 && !v29) != v28) {
+        v7 = fopen((char *)v1,"r");
+                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
+        if (v7 != (void *)0x0) {
+          v24 = v24 & sub_29c0(v7);
+          v17 = v15;
+        }
+        else {
+          v9 = sub_5130(4,v1);
+          v8 = dcgettext(0,"cannot open %s for reading",5);
+          v24 = 0;
+          error(0,*(void *)__errno_location(),v8,v9);
+          v17 = v16;
+        }
+      }
+      else {
+        v2 = 1;
+        v4 = sub_29c0(dat_20a090,v1,v17);
+        v24 = v24 & v4;
+        v17 = v14;
+      }
+      v4 = dat_20a098 + 1;
+      v28 = v4 < a0;
+      v29 = v4 == a0;
+      dat_20a098 = v4;
+    } while ((int4)v4 < (int4)a0);
+    if (!v2) {
+      v5[0] = (v24 ^ 1) & 0xff;
+      v5[4] = 0;
+      v5[8] = v31;
+      return v5;
+    }
+  }
+  else {
+    v24 = sub_29c0(dat_20a090,0x6f52,v17);
+  }
+  v3 = sub_34f0(dat_20a090);
+  if (v3 != 0) {
+    v9 = dcgettext(0,"closing standard input",5);
+    error(1,*(void *)__errno_location(),0x6f0c,v9);
+    v11[8] = v19;
+    v11[0] = v10;
+    return v11;
+  }
+  v5[0] = (v24 ^ 1) & 0xff;
+  v5[4] = 0;
+  v5[8] = v31;
+  return v5;
+}`,
+    vs: {
+      source:
+`int
+main (int argc, char **argv)
+{
+  int optchar;
+  bool ok = true;
+  char const *max_width_option = NULL;
+  char const *goal_width_option = NULL;
+
+  initialize_main (&argc, &argv);
+  set_program_name (argv[0]);
+  setlocale (LC_ALL, "");
+  bindtextdomain (PACKAGE, LOCALEDIR);
+  textdomain (PACKAGE);
+
+  atexit (close_stdout);
+
+  crown = tagged = split = uniform = false;
+  max_width = WIDTH;
+  prefix = "";
+  prefix_length = prefix_lead_space = prefix_full_length = 0;
+
+  if (argc > 1 && argv[1][0] == '-' && ISDIGIT (argv[1][1]))
+    {
+      /* Old option syntax; a dash followed by one or more digits.  */
+      max_width_option = argv[1] + 1;
+
+      /* Make the option we just parsed invisible to getopt.  */
+      argv[1] = argv[0];
+      argv++;
+      argc--;
+    }
+
+  while ((optchar = getopt_long (argc, argv, "0123456789cstuw:p:g:",
+                                 long_options, NULL))
+         != -1)
+    switch (optchar)
+      {
+      default:
+        if (ISDIGIT (optchar))
+          error (0, 0, _("invalid option -- %c; -WIDTH is recognized\\
+ only when it is the first\\noption; use -w N instead"),
+                 optchar);
+        usage (EXIT_FAILURE);
+
+      case 'c':
+        crown = true;
+        break;
+
+      case 's':
+        split = true;
+        break;
+
+      case 't':
+        tagged = true;
+        break;
+
+      case 'u':
+        uniform = true;
+        break;
+
+      case 'w':
+        max_width_option = optarg;
+        break;
+
+      case 'g':
+        goal_width_option = optarg;
+        break;
+
+      case 'p':
+        set_prefix (optarg);
+        break;
+
+      case_GETOPT_HELP_CHAR;
+
+      case_GETOPT_VERSION_CHAR (PROGRAM_NAME, AUTHORS);
+
+      }
+
+  if (max_width_option)
+    {
+      /* Limit max_width to MAXCHARS / 2; otherwise, the resulting
+         output can be quite ugly.  */
+      max_width = xdectoumax (max_width_option, 0, MAXCHARS / 2, "",
+                              _("invalid width"), 0);
+    }
+
+  if (goal_width_option)
+    {
+      /* Limit goal_width to max_width.  */
+      goal_width = xdectoumax (goal_width_option, 0, max_width, "",
+                               _("invalid width"), 0);
+      if (max_width_option == NULL)
+        max_width = goal_width + 10;
+    }
+  else
+    {
+      goal_width = max_width * (2 * (100 - LEEWAY) + 1) / 200;
+    }
+
+  bool have_read_stdin = false;
+
+  if (optind == argc)
+    {
+      have_read_stdin = true;
+      ok = fmt (stdin, "-");
+    }
+  else
+    {
+      for (; optind < argc; optind++)
+        {
+          char *file = argv[optind];
+          if (STREQ (file, "-"))
+            {
+              ok &= fmt (stdin, file);
+              have_read_stdin = true;
+            }
+          else
+            {
+              FILE *in_stream;
+              in_stream = fopen (file, "r");
+              if (in_stream != NULL)
+                ok &= fmt (in_stream, file);
+              else
+                {
+                  error (0, errno, _("cannot open %s for reading"),
+                         quoteaf (file));
+                  ok = false;
+                }
+            }
+        }
+    }
+
+  if (have_read_stdin && fclose (stdin) != 0)
+    die (EXIT_FAILURE, errno, "%s", _("closing standard input"));
+
+  return ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}`,
+      ida:
+`long long main(int a1, char **a2, char **a3)
+{
+  char *v3; // r12
+  int v4; // ebp
+  char *const *v5; // rbx
+  char *v6; // rax
+  char *v7; // r13
+  int v8; // r15d
+  char *v9; // r15
+  int v10; // eax
+  char *v11; // rax
+  char *v12; // rax
+  int v13; // r12d
+  char *v14; // rax
+  int v15; // eax
+  int v16; // r12d
+  char v17; // r14
+  const char *v18; // r15
+  FILE *v19; // rax
+  long long v21; // r15
+  char *v22; // r12
+  int *v23; // rax
+  const char *v24; // rdx
+  char *v25; // rax
+  char *v26; // rax
+  char *v27; // rbx
+  int *v28; // rax
+
+  v3 = 0;
+  v4 = a1;
+  v5 = a2;
+  sub_3610(*a2);
+  setlocale(6, "");
+  bindtextdomain("coreutils", "/usr/local/share/locale");
+  textdomain("coreutils");
+  sub_67F0(sub_3400);
+  byte_215130 = 0;
+  byte_215131 = 0;
+  byte_215132 = 0;
+  byte_215133 = 0;
+  dword_215120 = 75;
+  s = (char *)"";
+  dword_21511C = 0;
+  dword_215118 = 0;
+  dword_215114 = 0;
+  if ( a1 > 1 )
+  {
+    v6 = a2[1];
+    if ( *v6 == 45 && (unsigned int)(v6[1] - 48) <= 9 )
+    {
+      v3 = v6 + 1;
+      v4 = a1 - 1;
+      v5 = a2 + 1;
+      a2[1] = *a2;
+    }
+  }
+  v7 = 0;
+  while ( 1 )
+  {
+    v8 = getopt_long(v4, v5, "0123456789cstuw:p:g:", &longopts, 0);
+    if ( v8 == -1 )
+      break;
+    if ( v8 == 112 )
+    {
+      v9 = optarg;
+      dword_215118 = 0;
+      if ( *optarg == 32 )
+      {
+        do
+          v10 = 1 - (int)optarg + (int)v9++;
+        while ( *v9 == 32 );
+        dword_215118 = v10;
+      }
+      s = v9;
+      dword_21511C = strlen(v9);
+      v11 = &v9[dword_21511C];
+      if ( v9 < v11 )
+      {
+        do
+        {
+          if ( *(v11 - 1) != 32 )
+            break;
+          --v11;
+        }
+        while ( v9 != v11 );
+      }
+      *v11 = 0;
+      dword_215114 = (int)v11 - (int)v9;
+    }
+    else if ( v8 <= 112 )
+    {
+      if ( v8 == -130 )
+        sub_3000(0);
+      if ( v8 <= -130 )
+      {
+        if ( v8 == -131 )
+        {
+          sub_5920(
+            (int)stdout,
+            (unsigned int)"fmt",
+            (unsigned int)"GNU coreutils",
+            (int)off_20A010,
+            (unsigned int)"Ross Paterson",
+            0);
+          exit(0);
+        }
+LABEL_53:
+        if ( (unsigned int)(v8 - 48) <= 9 )
+        {
+          v26 = dcgettext(
+                  0,
+                  "invalid option -- %c; -WIDTH is recognized only when it is the first\\noption; use -w N instead",
+                  5);
+          error(0, 0, v26, (unsigned int)v8);
+        }
+        sub_3000(1);
+      }
+      if ( v8 == 99 )
+      {
+        byte_215133 = 1;
+      }
+      else
+      {
+        if ( v8 != 103 )
+          goto LABEL_53;
+        v7 = optarg;
+      }
+    }
+    else if ( v8 == 116 )
+    {
+      byte_215132 = 1;
+    }
+    else if ( v8 <= 116 )
+    {
+      if ( v8 != 115 )
+        goto LABEL_53;
+      byte_215131 = 1;
+    }
+    else if ( v8 == 117 )
+    {
+      byte_215130 = 1;
+    }
+    else
+    {
+      if ( v8 != 119 )
+        goto LABEL_53;
+      v3 = optarg;
+    }
+  }
+  if ( v3 )
+  {
+    v12 = dcgettext(0, "invalid width", 5);
+    v13 = sub_6010(v3, 0, 2500, "", v12, 0);
+    dword_215120 = v13;
+    if ( v7 )
+    {
+      v14 = dcgettext(0, "invalid width", 5);
+      dword_215110 = sub_6010(v7, 0, v13, "", v14, 0);
+      goto LABEL_37;
+    }
+    goto LABEL_50;
+  }
+  if ( !v7 )
+  {
+LABEL_50:
+    dword_215110 = 187 * dword_215120 / 200;
+    goto LABEL_37;
+  }
+  v25 = dcgettext(0, "invalid width", 5);
+  dword_215110 = sub_6010(v7, 0, 75, "", v25, 0);
+  dword_215120 = dword_215110 + 10;
+LABEL_37:
+  v15 = optind;
+  if ( optind == v4 )
+  {
+    LOBYTE(v16) = sub_29C0(stdin);
+  }
+  else
+  {
+    LOBYTE(v16) = 1;
+    if ( optind >= v4 )
+      return (unsigned char)v16 ^ 1u;
+    v17 = 0;
+    v16 = 1;
+    do
+    {
+      v18 = v5[v15];
+      if ( !strcmp(v18, "-") )
+      {
+        v17 = 1;
+        v16 &= sub_29C0(stdin);
+      }
+      else
+      {
+        v19 = fopen(v18, "r");
+        if ( v19 )
+        {
+          v16 &= sub_29C0(v19);
+        }
+        else
+        {
+          v21 = sub_5130(4, v18);
+          v22 = dcgettext(0, "cannot open %s for reading", 5);
+          v23 = __errno_location();
+          v24 = v22;
+          v16 = 0;
+          error(0, *v23, v24, v21);
+        }
+      }
+      v15 = optind + 1;
+      optind = v15;
+    }
+    while ( v15 < v4 );
+    if ( !v17 )
+      return (unsigned char)v16 ^ 1u;
+  }
+  if ( (unsigned int)sub_34F0(stdin) )
+  {
+    v27 = dcgettext(0, "closing standard input", 5);
+    v28 = __errno_location();
+    error(1, *v28, "%s", v27);
+    start();
+  }
+  return (unsigned char)v16 ^ 1u;
+}`,
+    },
+  },
+
   {
     id: 'O2-openssh-portable-scp-sshbuf_b64tod',
     name: "sshbuf_b64tod() — openssh-portable scp, x86-64",
@@ -602,1207 +1199,6 @@ LABEL_414853:
     sub_418e90(v2, v3, v4, v5, v6, v7);
     sub_41f340(v2, v3, v4, v5, v6, v7);
     return 0;
-}`,
-    },
-  },
-
-  {
-    id: 'O2-coreutils-fmt-main',
-    name: "main() — coreutils fmt, x86-64",
-    meta: "coreutils fmt · ELF x86-64 · gcc -O2, stripped · 0x26a0",
-    ged: { kuna: 29, ida: 51, ghidra: 32, binja: 38, angr: 17 },
-    kuna:
-`uint8 main(int4 a0,void *a1)
-
-{
-  unsigned int v1;
-  uint8 v10;
-  uint8 v11; // rdx
-  uint4 v12; // eax
-  void *v13;
-  char *v14;
-  char *v15; // stack - 0x48
-  char *v16; // stack - 0x40
-  bool v2;
-  int4 v3;
-  uint4 v4; // eax
-  char *v5; // rax
-  void *v6; // rax
-  unsigned long v7; // rax
-  unsigned long v8; // rax
-  uint8 v9; // rdx
-  
-  sub_4350(*a1);
-  setlocale(6,"");
-  bindtextdomain(0x80bd,"/usr/local/share/locale");
-  textdomain(0x80bd);
-  sub_7b90(sub_4100);
-  dat_17130 = 0;
-  dat_17131 = 0;
-  dat_17132 = 0;
-  dat_17133 = 0;
-  dat_17120 = 0x4b;
-  dat_17128 = "";
-  dat_1711c = 0;
-  dat_17118 = 0;
-  dat_17114 = 0;
-  v16 = (char *)0x0;
-  v13 = a1;
-  if (((2 <= a0) && (v14 = (char *)a1[1], *v14 == '-')) && ((uint4)((int4)v14[1] - 0x30U) <= 9)) {
-    v16 = &v14[1];
-    v13 = &a1[1];
-    a0 = a0 + -1;
-    *v13 = *a1;
-  }
-  v15 = (char *)0x0;
-  while (v3 = getopt_long(a0,v13,"0123456789cstuw:p:g:",0xbaa0,0), v3 != -1) {
-    if (0x77 < v3) {
-label_2acd:
-      if ((uint4)(v3 - 0x30U) <= 9) {
-        error(0,0,dcgettext(0,"invalid option -- %c; -WIDTH is recognized only when it is the first\\noption; use -w N instead",5),v3);
-      }
-                    /* WARNING: Subroutine does not return */
-      sub_3d70(1);
-    }
-    if (v3 <= 0x62) {
-      if (v3 == -0x83) {
-        sub_6c80(dat_c088,0x803c,"GNU coreutils",dat_c010,"Ross Paterson",0);
-                    /* WARNING: Subroutine does not return */
-        exit(0);
-      }
-      if (v3 == -0x82) {
-                    /* WARNING: Subroutine does not return */
-        sub_3d70(0);
-      }
-      goto label_2acd;
-    }
-    switch(v3) {
-      case 99:
-        dat_17133 = 1;
-        break;
-      default:
-        goto label_2acd;
-      case 0x67:
-        v15 = dat_c0a0;
-        break;
-      case 0x70:
-        dat_17118 = 0;
-        v14 = dat_c0a0;
-        if (*dat_c0a0 == ' ') {
-          do {
-            dat_17118 = (1U - (int4)dat_c0a0) + (int4)v14;
-            v14 = &v14[1];
-          } while (*v14 == ' ');
-        }
-        dat_17128 = v14;
-        dat_1711c = (int4)strlen(v14);
-        v5 = &v14[dat_1711c];
-        if (v14 < v5) {
-          do {
-            if (v5[-1] != ' ') break;
-            v5 = &v5[-1];
-          } while (v14 != v5);
-        }
-        *v5 = '\\0';
-        dat_17114 = (int4)v5 - (int4)v14;
-        break;
-      case 0x73:
-        dat_17131 = 1;
-        break;
-      case 0x74:
-        dat_17132 = 1;
-        break;
-      case 0x75:
-        dat_17130 = 1;
-        break;
-      case 0x77:
-        v16 = dat_c0a0;
-      
-    }
-  }
-                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
-  if (v16 != (char *)0x0) {
-    v3 = sub_74a0(v16,0,0x9c4,0x8bc1,dcgettext(0,"invalid width",5),0);
-    dat_17120 = v3;
-                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
-    if (v15 != (char *)0x0) {
-      dat_17110 = sub_74a0(v15,0,(int8)v3,0x8bc1,dcgettext(0,"invalid width",5),0);
-      v10 = v9;
-    }
-    else {
-label_2a19:
-      dat_17110 = (dat_17120 * 0xbb) / 200;
-      v10 = (int8)(dat_17120 * 0xbb) % 200 & 0xffffffff;
-    }
-  }
-  else {
-    if (v15 == (char *)0x0) goto label_2a19;
-    dat_17110 = sub_74a0(v15,0,0x4b,0x8bc1,dcgettext(0,"invalid width",5),0);
-    dat_17120 = dat_17110 + 10;
-    v10 = v11;
-  }
-                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
-  if (dat_c098 != a0) {
-    v2 = 0;
-    v12 = 1;
-    v3 = dat_c098;
-    if (a0 <= dat_c098) {
-                    /* WARNING: taildup: duplicated return-call tail to remove goto */
-      return (uint8)((v12 ^ 1) & 0xff);
-    }
-    do {
-      v14 = (char *)v13[v3];
-                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
-      if (strcmp(v14,"-") != 0) {
-        v6 = fopen(v14,"r");
-                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
-        if (v6 != (void *)0x0) {
-          v12 = v12 & sub_3700(v6);
-        }
-        else {
-          v7 = sub_6030(4,v14);
-          v8 = dcgettext(0,"cannot open %s for reading",5);
-          v12 = 0;
-          error(0,*(void *)__errno_location(),v8,v7);
-        }
-      }
-      else {
-        v4 = sub_3700(dat_c090,v14);
-        v2 = 1;
-        v12 = v12 & v4;
-      }
-      v3 = dat_c098 + 1;
-      dat_c098 = v3;
-    } while (v3 < a0);
-    if (!v2) {
-      return (uint8)((v12 ^ 1) & 0xff);
-    }
-  }
-  else {
-    v12 = sub_3700(dat_c090,0x8792,v10);
-  }
-  v3 = sub_41f0(dat_c090);
-  if (v3 != 0) {
-    v7 = dcgettext(0,"closing standard input",5);
-    v1 = *(void *)__errno_location();
-    return error(1,v1,0x874a,v7);
-  }
-  return (uint8)((v12 ^ 1) & 0xff);
-}`,
-    vs: {
-      source:
-`int
-main (int argc, char **argv)
-{
-  int optchar;
-  bool ok = true;
-  char const *max_width_option = NULL;
-  char const *goal_width_option = NULL;
-
-  initialize_main (&argc, &argv);
-  set_program_name (argv[0]);
-  setlocale (LC_ALL, "");
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-
-  atexit (close_stdout);
-
-  crown = tagged = split = uniform = false;
-  max_width = WIDTH;
-  prefix = "";
-  prefix_length = prefix_lead_space = prefix_full_length = 0;
-
-  if (argc > 1 && argv[1][0] == '-' && ISDIGIT (argv[1][1]))
-    {
-      /* Old option syntax; a dash followed by one or more digits.  */
-      max_width_option = argv[1] + 1;
-
-      /* Make the option we just parsed invisible to getopt.  */
-      argv[1] = argv[0];
-      argv++;
-      argc--;
-    }
-
-  while ((optchar = getopt_long (argc, argv, "0123456789cstuw:p:g:",
-                                 long_options, NULL))
-         != -1)
-    switch (optchar)
-      {
-      default:
-        if (ISDIGIT (optchar))
-          error (0, 0, _("invalid option -- %c; -WIDTH is recognized\\
- only when it is the first\\noption; use -w N instead"),
-                 optchar);
-        usage (EXIT_FAILURE);
-
-      case 'c':
-        crown = true;
-        break;
-
-      case 's':
-        split = true;
-        break;
-
-      case 't':
-        tagged = true;
-        break;
-
-      case 'u':
-        uniform = true;
-        break;
-
-      case 'w':
-        max_width_option = optarg;
-        break;
-
-      case 'g':
-        goal_width_option = optarg;
-        break;
-
-      case 'p':
-        set_prefix (optarg);
-        break;
-
-      case_GETOPT_HELP_CHAR;
-
-      case_GETOPT_VERSION_CHAR (PROGRAM_NAME, AUTHORS);
-
-      }
-
-  if (max_width_option)
-    {
-      /* Limit max_width to MAXCHARS / 2; otherwise, the resulting
-         output can be quite ugly.  */
-      max_width = xdectoumax (max_width_option, 0, MAXCHARS / 2, "",
-                              _("invalid width"), 0);
-    }
-
-  if (goal_width_option)
-    {
-      /* Limit goal_width to max_width.  */
-      goal_width = xdectoumax (goal_width_option, 0, max_width, "",
-                               _("invalid width"), 0);
-      if (max_width_option == NULL)
-        max_width = goal_width + 10;
-    }
-  else
-    {
-      goal_width = max_width * (2 * (100 - LEEWAY) + 1) / 200;
-    }
-
-  bool have_read_stdin = false;
-
-  if (optind == argc)
-    {
-      have_read_stdin = true;
-      ok = fmt (stdin, "-");
-    }
-  else
-    {
-      for (; optind < argc; optind++)
-        {
-          char *file = argv[optind];
-          if (STREQ (file, "-"))
-            {
-              ok &= fmt (stdin, file);
-              have_read_stdin = true;
-            }
-          else
-            {
-              FILE *in_stream;
-              in_stream = fopen (file, "r");
-              if (in_stream != NULL)
-                ok &= fmt (in_stream, file);
-              else
-                {
-                  error (0, errno, _("cannot open %s for reading"),
-                         quoteaf (file));
-                  ok = false;
-                }
-            }
-        }
-    }
-
-  if (have_read_stdin && fclose (stdin) != 0)
-    die (EXIT_FAILURE, errno, "%s", _("closing standard input"));
-
-  return ok ? EXIT_SUCCESS : EXIT_FAILURE;
-}`,
-      ghidra:
-`byte main(int param_1,undefined8 *param_2)
-
-{
-  byte bVar1;
-  byte bVar2;
-  int iVar3;
-  size_t sVar4;
-  char *pcVar5;
-  FILE *pFVar6;
-  undefined8 uVar7;
-  undefined8 *puVar8;
-  int *piVar9;
-  undefined8 uVar10;
-  ulong extraout_RDX;
-  ulong uVar11;
-  ulong extraout_RDX_00;
-  char *pcVar12;
-  char *unaff_R15;
-  char *local_48;
-  char *local_40;
-  
-  FUN_00104350(*param_2);
-  setlocale(6,"");
-  bindtextdomain("coreutils","/usr/local/share/locale");
-  textdomain("coreutils");
-  FUN_00107b90(FUN_00104100);
-  DAT_00117130 = 0;
-  DAT_00117131 = 0;
-  DAT_00117132 = 0;
-  DAT_00117133 = 0;
-  DAT_00117120 = 0x4b;
-  DAT_00117128 = "";
-  DAT_0011711c = 0;
-  DAT_00117118 = 0;
-  DAT_00117114 = 0;
-  local_40 = (char *)0x0;
-  puVar8 = param_2;
-  if (((1 < param_1) && (pcVar12 = (char *)param_2[1], *pcVar12 == '-')) &&
-     ((int)pcVar12[1] - 0x30U < 10)) {
-    local_40 = pcVar12 + 1;
-    puVar8 = param_2 + 1;
-    param_1 = param_1 + -1;
-    *puVar8 = *param_2;
-  }
-  local_48 = (char *)0x0;
-  pcVar12 = "0123456789cstuw:p:g:";
-  while (iVar3 = getopt_long(param_1,puVar8,"0123456789cstuw:p:g:",&PTR_s_crown_margin_0010baa0,0),
-        iVar3 != -1) {
-    if (0x77 < iVar3) {
-switchD_001027cb_caseD_64:
-      if (iVar3 - 0x30U < 10) {
-        uVar7 = dcgettext(0,
-                          "invalid option -- %c; -WIDTH is recognized only when it is the first\\noption; use -w N instead"
-                          ,5);
-        error(0,0,uVar7,iVar3);
-      }
-      FUN_00103d70(1);
-LAB_00102adf:
-      FUN_00106c80(stdout,&DAT_0010803c,"GNU coreutils",PTR_DAT_0010c010,"Ross Paterson",0);
-                    /* WARNING: Subroutine does not return */
-      exit(0);
-    }
-    if (iVar3 < 99) {
-      if (iVar3 == -0x83) goto LAB_00102adf;
-      if (iVar3 != -0x82) goto switchD_001027cb_caseD_64;
-      FUN_00103d70(0);
-      break;
-    }
-    switch(iVar3) {
-    case 99:
-      DAT_00117133 = 1;
-      break;
-    default:
-      goto switchD_001027cb_caseD_64;
-    case 0x67:
-      local_48 = optarg;
-      break;
-    case 0x70:
-      DAT_00117118 = 0;
-      unaff_R15 = optarg;
-      if (*optarg == ' ') {
-        do {
-          DAT_00117118 = (1 - (int)optarg) + (int)unaff_R15;
-          unaff_R15 = unaff_R15 + 1;
-        } while (*unaff_R15 == ' ');
-      }
-      DAT_00117128 = unaff_R15;
-      sVar4 = strlen(unaff_R15);
-      DAT_0011711c = (int)sVar4;
-      pcVar5 = unaff_R15 + DAT_0011711c;
-      if (unaff_R15 < pcVar5) {
-        do {
-          if (pcVar5[-1] != ' ') break;
-          pcVar5 = pcVar5 + -1;
-        } while (unaff_R15 != pcVar5);
-      }
-      *pcVar5 = '\\0';
-      DAT_00117114 = (int)pcVar5 - (int)unaff_R15;
-      break;
-    case 0x73:
-      DAT_00117131 = 1;
-      break;
-    case 0x74:
-      DAT_00117132 = 1;
-      break;
-    case 0x75:
-      DAT_00117130 = 1;
-      break;
-    case 0x77:
-      local_40 = optarg;
-    }
-  }
-  if (local_40 == (char *)0x0) {
-    if (local_48 != (char *)0x0) {
-      uVar7 = dcgettext(0,"invalid width",5);
-      DAT_00117110 = FUN_001074a0(local_48,0,0x4b,"",uVar7,0);
-      DAT_00117120 = DAT_00117110 + 10;
-      uVar11 = extraout_RDX_00;
-      goto LAB_00102954;
-    }
-  }
-  else {
-    pcVar12 = "invalid width";
-    uVar7 = dcgettext(0,"invalid width",5);
-    iVar3 = FUN_001074a0(local_40,0,0x9c4,"",uVar7,0);
-    DAT_00117120 = iVar3;
-    if (local_48 != (char *)0x0) {
-      uVar7 = dcgettext(0,"invalid width",5);
-      DAT_00117110 = FUN_001074a0(local_48,0,(long)iVar3,"",uVar7,0);
-      uVar11 = extraout_RDX;
-      goto LAB_00102954;
-    }
-  }
-  DAT_00117110 = (DAT_00117120 * 0xbb) / 200;
-  uVar11 = (long)(DAT_00117120 * 0xbb) % 200 & 0xffffffff;
-LAB_00102954:
-  if (optind == param_1) {
-    bVar2 = FUN_00103700(stdin,&DAT_00108792,uVar11);
-    goto LAB_00102a46;
-  }
-  local_48 = (char *)0x0;
-  bVar2 = 1;
-  pcVar12 = "-";
-  unaff_R15 = "r";
-  if (param_1 <= optind) {
-LAB_00102a5a:
-    return bVar2 ^ 1;
-  }
-  do {
-    pcVar5 = (char *)puVar8[optind];
-    iVar3 = strcmp(pcVar5,pcVar12);
-    if (iVar3 == 0) {
-      bVar1 = FUN_00103700(stdin,pcVar5);
-      local_48 = (char *)0x1;
-      bVar2 = bVar2 & bVar1;
-    }
-    else {
-      pFVar6 = fopen(pcVar5,unaff_R15);
-      if (pFVar6 == (FILE *)0x0) goto LAB_00102b6f;
-      bVar1 = FUN_00103700(pFVar6,pcVar5);
-      bVar2 = bVar2 & bVar1;
-    }
-    while (optind = optind + 1, param_1 <= optind) {
-      if ((char)local_48 == '\\0') goto LAB_00102a5a;
-LAB_00102a46:
-      iVar3 = FUN_001041f0(stdin);
-      if (iVar3 == 0) goto LAB_00102a5a;
-      puVar8 = (undefined8 *)dcgettext(0,"closing standard input",5);
-      piVar9 = __errno_location();
-      error(1,*piVar9,"%s",puVar8);
-LAB_00102b6f:
-      uVar7 = FUN_00106030(4);
-      uVar10 = dcgettext(0,"cannot open %s for reading",5);
-      piVar9 = __errno_location();
-      bVar2 = 0;
-      error(0,*piVar9,uVar10,uVar7);
-    }
-  } while( true );
-}`,
-      ida:
-`long long main(int a1, char **a2, char **a3)
-{
-  const char *v3; // r15
-  char *const *v4; // r12
-  int v5; // ebp
-  char *v6; // rax
-  const char *v7; // r13
-  int v8; // ecx
-  int v9; // ecx
-  const char *v10; // rax
-  char *v11; // rax
-  int v12; // ebx
-  char *v13; // rax
-  int v14; // eax
-  int v15; // ebx
-  const char *v16; // r14
-  const char *v17; // rsi
-  FILE *v18; // rdi
-  char *v20; // rax
-  char *v21; // rax
-  char *v22; // rbx
-  int *v23; // rax
-  const char *v24; // rdx
-  char *v25; // [rsp+0h] [rbp-48h]
-  unsigned int v26; // [rsp+0h] [rbp-48h]
-  char *v27; // [rsp+8h] [rbp-40h]
-  long long v28; // [rsp+8h] [rbp-40h]
-
-  v4 = a2;
-  v5 = a1;
-  sub_4350(*a2);
-  setlocale(6, "");
-  bindtextdomain("coreutils", "/usr/local/share/locale");
-  textdomain("coreutils");
-  sub_7B90(sub_4100);
-  byte_17130 = 0;
-  byte_17131 = 0;
-  byte_17132 = 0;
-  byte_17133 = 0;
-  dword_17120 = 75;
-  s = (char *)"";
-  dword_1711C = 0;
-  dword_17118 = 0;
-  dword_17114 = 0;
-  v27 = 0;
-  if ( a1 > 1 )
-  {
-    v6 = a2[1];
-    if ( *v6 == 45 && (unsigned int)(v6[1] - 48) <= 9 )
-    {
-      v4 = a2 + 1;
-      v5 = a1 - 1;
-      v27 = v6 + 1;
-      a2[1] = *a2;
-    }
-  }
-  v25 = 0;
-  v7 = "0123456789cstuw:p:g:";
-  while ( 2 )
-  {
-    v8 = getopt_long(v5, v4, "0123456789cstuw:p:g:", &longopts, 0);
-    if ( v8 != -1 )
-    {
-      if ( v8 <= 119 )
-      {
-        if ( v8 > 98 )
-        {
-          switch ( v8 )
-          {
-            case 'c':
-              byte_17133 = 1;
-              continue;
-            case 'g':
-              v25 = optarg;
-              continue;
-            case 'p':
-              dword_17118 = 0;
-              v3 = optarg;
-              if ( *optarg == 32 )
-              {
-                do
-                  v9 = 1 - (int)optarg + (int)v3++;
-                while ( *v3 == 32 );
-                dword_17118 = v9;
-              }
-              s = (char *)v3;
-              dword_1711C = strlen(v3);
-              v10 = &v3[dword_1711C];
-              if ( v3 < v10 )
-              {
-                do
-                {
-                  if ( *(v10 - 1) != 32 )
-                    break;
-                  --v10;
-                }
-                while ( v3 != v10 );
-              }
-              *v10 = 0;
-              dword_17114 = (int)v10 - (int)v3;
-              continue;
-            case 's':
-              byte_17131 = 1;
-              continue;
-            case 't':
-              byte_17132 = 1;
-              continue;
-            case 'u':
-              byte_17130 = 1;
-              continue;
-            case 'w':
-              v27 = optarg;
-              continue;
-            default:
-              goto LABEL_45;
-          }
-        }
-        if ( v8 == -131 )
-        {
-          sub_6C80(stdout, (char)v25);
-          exit(0);
-        }
-        if ( v8 == -130 )
-          sub_3D70(0);
-      }
-LABEL_45:
-      if ( (unsigned int)(v8 - 48) <= 9 )
-      {
-        v26 = v8;
-        v21 = dcgettext(
-                0,
-                "invalid option -- %c; -WIDTH is recognized only when it is the first\\noption; use -w N instead",
-                5);
-        error(0, 0, v21, v26);
-      }
-      sub_3D70(1);
-    }
-    break;
-  }
-  if ( v27 )
-  {
-    v7 = "invalid width";
-    v11 = dcgettext(0, "invalid width", 5);
-    dword_17120 = sub_74A0(v27, 0, 2500, "", v11, 0);
-    v12 = dword_17120;
-    if ( v25 )
-    {
-      v13 = dcgettext(0, "invalid width", 5);
-      dword_17110 = sub_74A0(v25, 0, v12, "", v13, 0);
-      goto LABEL_28;
-    }
-    goto LABEL_39;
-  }
-  if ( !v25 )
-  {
-LABEL_39:
-    dword_17110 = 187 * dword_17120 / 200;
-    goto LABEL_28;
-  }
-  v20 = dcgettext(0, "invalid width", 5);
-  dword_17110 = sub_74A0(v25, 0, 75, "", v20, 0);
-  dword_17120 = dword_17110 + 10;
-LABEL_28:
-  v14 = optind;
-  if ( optind == v5 )
-  {
-    LOBYTE(v15) = sub_3700(stdin);
-    goto LABEL_41;
-  }
-  LOBYTE(v25) = 0;
-  v15 = 1;
-  v7 = "-";
-  v3 = "r";
-  if ( optind < v5 )
-  {
-    while ( 1 )
-    {
-      v16 = v4[v14];
-      if ( !strcmp(v16, v7) )
-      {
-        LOBYTE(v25) = 1;
-        v15 &= sub_3700(stdin);
-        goto LABEL_32;
-      }
-      v17 = v16;
-      v18 = fopen(v16, v3);
-      if ( v18 )
-      {
-        v15 &= sub_3700(v18);
-        goto LABEL_32;
-      }
-      while ( 1 )
-      {
-        v28 = sub_6030(4, v17);
-        v22 = dcgettext(0, "cannot open %s for reading", 5);
-        v23 = __errno_location();
-        v24 = v22;
-        v15 = 0;
-        error(0, *v23, v24, v28);
-LABEL_32:
-        v14 = optind + 1;
-        optind = v14;
-        if ( v14 < v5 )
-          break;
-        if ( !(char)v25 )
-          return (unsigned char)v15 ^ 1u;
-LABEL_41:
-        if ( !(unsigned int)sub_41F0(stdin) )
-          return (unsigned char)v15 ^ 1u;
-        v4 = (char *const *)dcgettext(0, "closing standard input", 5);
-        v17 = (const char *)(unsigned int)*__errno_location();
-        error(1, (int)v17, "%s", (const char *)v4);
-      }
-    }
-  }
-  return (unsigned char)v15 ^ 1u;
-}`,
-      binja:
-`int32_t main(int32_t argc, char** argv, char** envp)
-
-{
-    char* entry_mode;
-    char* entry_mode_1 = entry_mode;
-    char** argv_1 = argv;
-    int32_t argc_1 = argc;
-    int64_t rcx;
-    int64_t rdx;
-    uint64_t r8;
-    ssize_t r9;
-    rcx = sub_404350(*argv);
-    int32_t category;
-    int32_t category_1;
-    setlocale(6, &data_408ba6[0x1b], rdx, rcx, r8, r9, category, category_1);
-    bindtextdomain("coreutils", "/usr/local/share/locale");
-    textdomain("coreutils");
-    sub_407b90(sub_404100);
-    data_417130 = 0;
-    data_417131 = 0;
-    data_417132 = 0;
-    data_417133 = 0;
-    data_417120 = 0x4b;
-    data_417128 = &data_408ba6[0x1b];
-    data_41711c = 0;
-    data_417118 = 0;
-    data_417114 = 0;
-    uint64_t* const var_40 = nullptr;
-    
-    if (argc_1 > 1)
-    {
-        char* rax_1 = argv_1[1];
-        
-        if (*rax_1 == 0x2d && rax_1[1] - 0x30 <= 9)
-        {
-            argv_1 = &argv_1[1];
-            argc_1 -= 1;
-            var_40 = &rax_1[1];
-            *argv_1 = argv_1[-1];
-        }
-    }
-    
-    uint64_t* const var_48 = nullptr;
-    char const* const r13 = "0123456789cstuw:p:g:";
-    int32_t rax_2;
-    
-    while (true)
-    {
-        rax_2 = getopt_long(argc_1, argv_1, "0123456789cstuw:p:g:", &data_40baa0, nullptr);
-        
-        if (rax_2 == 0xffffffff)
-        {
-            if (var_40)
-            {
-                r13 = "invalid width";
-                int32_t rax_12 = sub_4074a0(var_40, 0, 0x9c4, &data_408ba6[0x1b], 
-                    dcgettext(nullptr, "invalid width", 5), 0);
-                data_417120 = rax_12;
-                
-                if (!var_48)
-                    data_417110 = data_417120 * 0xbb / 0xc8;
-                else
-                    data_417110 = sub_4074a0(var_48, 0, rax_12, &data_408ba6[0x1b], 
-                        dcgettext(nullptr, "invalid width", 5), 0);
-            }
-            else if (var_48)
-            {
-                int32_t rax_29 = sub_4074a0(var_48, 0, 0x4b, &data_408ba6[0x1b], 
-                    dcgettext(nullptr, "invalid width", 5), 0);
-                data_417110 = rax_29;
-                data_417120 = rax_29 + 0xa;
-            }
-            else
-                data_417110 = data_417120 * 0xbb / 0xc8;
-            
-            int32_t optind_1 = *optind;
-            int32_t rbx_2;
-            char* filename_1;
-            
-            if (optind_1 == argc_1)
-            {
-                rbx_2 = sub_403700(stdin, "-");
-            label_402a4d:
-                
-                if (sub_4041f0(stdin))
-                {
-                    argv_1 = dcgettext(nullptr, "closing standard input", 5);
-                    filename_1 = error(1, *__errno_location(), "%s", argv_1);
-                label_402b74:
-                    char* rax_39 = sub_406030(4, filename_1);
-                    char* message = dcgettext(nullptr, "cannot open %s for reading", 5);
-                    rbx_2 = 0;
-                    error(0, *__errno_location(), message, rax_39);
-                    goto label_40299b;
-                }
-            }
-            else
-            {
-                var_48 = 0;
-                rbx_2 = 1;
-                r13 = &data_408792;
-                entry_mode = "r";
-                
-                if (optind_1 < argc_1)
-                {
-                    do
-                    {
-                        char* filename = argv_1[optind_1];
-                        
-                        if (!strcmp(filename, r13))
-                        {
-                            var_48 = 1;
-                            rbx_2 &= sub_403700(stdin, filename);
-                        }
-                        else
-                        {
-                            FILE* rax_19 = fopen(filename, entry_mode);
-                            filename_1 = filename;
-                            
-                            if (!rax_19)
-                                goto label_402b74;
-                            
-                            rbx_2 &= sub_403700(rax_19, filename_1);
-                        }
-                        
-                    label_40299b:
-                        optind_1 = *optind + 1;
-                        *optind = optind_1;
-                    } while (optind_1 < argc_1);
-                    
-                    if (var_48)
-                        goto label_402a4d;
-                }
-            }
-            return rbx_2 ^ 1;
-        }
-        
-        if (rax_2 > 0x77)
-            break;
-        
-        if (rax_2 <= 0x62)
-        {
-            if (rax_2 == 0xffffff7d)
-            {
-                sub_406c80(stdout, &data_40803c, "GNU coreutils", data_40c010);
-                exit(0);
-                /* no return */
-            }
-            
-            if (rax_2 != 0xffffff7e)
-                break;
-            
-            sub_403d70(0);
-            /* no return */
-        }
-        
-        uint64_t rax_3 = rax_2 - 0x63;
-        
-        if (rax_3 > 0x14)
-            break;
-        
-        switch (rax_3)
-        {
-            case 0:
-            {
-                data_417133 = 1;
-                continue;
-            }
-            case 1:
-            case 2:
-            case 3:
-            case 5:
-            case 6:
-            case 7:
-            case 8:
-            case 9:
-            case 0xa:
-            case 0xb:
-            case 0xc:
-            case 0xe:
-            case 0xf:
-            case 0x13:
-            {
-                break;
-                break;
-            }
-            case 4:
-            {
-                var_48 = optarg;
-                continue;
-            }
-            case 0xd:
-            {
-                data_417118 = 0;
-                entry_mode = optarg;
-                
-                if (*optarg == 0x20)
-                {
-                    int32_t rcx_2;
-                    
-                    do
-                    {
-                        rcx_2 = 1 - optarg + entry_mode;
-                        entry_mode = &entry_mode[1];
-                    } while (*entry_mode == 0x20);
-                    
-                    data_417118 = rcx_2;
-                }
-                
-                data_417128 = entry_mode;
-                int32_t rax_7 = strlen(entry_mode);
-                data_41711c = rax_7;
-                char* rax_9 = &entry_mode[rax_7];
-                
-                if (entry_mode < rax_9)
-                {
-                    while (rax_9[-1] == 0x20)
-                    {
-                        rax_9 -= 1;
-                        
-                        if (entry_mode == rax_9)
-                            break;
-                    }
-                }
-                
-                *rax_9 = 0;
-                data_417114 = rax_9 - entry_mode;
-                continue;
-            }
-            case 0x10:
-            {
-                data_417131 = 1;
-                continue;
-            }
-            case 0x11:
-            {
-                data_417132 = 1;
-                continue;
-            }
-            case 0x12:
-            {
-                data_417130 = 1;
-                continue;
-            }
-            case 0x14:
-            {
-                var_40 = optarg;
-                continue;
-            }
-        }
-    }
-    
-    if (rax_2 - 0x30 <= 9)
-    {
-        var_48 = rax_2;
-        error(0, 0, 
-            dcgettext(nullptr, 
-                "invalid option -- %c; -WIDTH is recognized only when it is the first\\noption; use -w N "
-        "instead", 
-                5), 
-            var_48);
-    }
-    
-    sub_403d70(1);
-    /* no return */
-}`,
-      angr:
-`typedef struct option {
-    char * name;
-    int has_arg;
-    char padding_c[4];
-    int * flag;
-    int val;
-} option;
-
-extern char g_408bc1;
-extern option g_40baa0;
-extern long long g_40c010;
-extern unsigned int g_417110;
-extern unsigned int g_417114;
-extern unsigned int g_417118;
-extern unsigned int g_41711c;
-extern unsigned int g_417120;
-extern unsigned long long g_417128;
-extern char g_417130;
-extern char g_417131;
-extern char g_417132;
-extern char g_417133;
-extern void* optarg;
-extern unsigned int optind;
-extern long long stdin;
-extern long long stdout;
-
-int main(int a0, void* a1)
-{
-    void* iter;  // r12
-    int v4;  // ebp
-    unsigned int v11;  // ebx
-    unsigned long v12;  // r14
-    unsigned long fp;  // rax
-    char *v14;  // rax
-    int *err;  // rax
-    int *err1;  // rax
-    char v5[2];  // rax
-    int v6;  // ecx
-    void* v7;  // r15
-    void* v8;  // r15
-    void* node;  // rax
-    unsigned int v10;  // eax
-    void* v0;  // [bp-0x48], Other Possible Types: unsigned long, unsigned long long
-    void* v1;  // [bp-0x40], Other Possible Types: unsigned long long
-
-    iter = a1;
-    v4 = a0;
-    sub_404350(*((long long *)a1));
-    setlocale(6, &g_408bc1);
-    bindtextdomain("coreutils", "/usr/local/share/locale");
-    textdomain("coreutils");
-    sub_407b90(sub_404100);
-    g_417130 = 0;
-    g_417131 = 0;
-    g_417132 = 0;
-    g_417133 = 0;
-    g_417120 = 75;
-    g_417128 = &g_408bc1;
-    g_41711c = 0;
-    g_417118 = 0;
-    g_417114 = 0;
-    v1 = NULL;
-    if (v4 > 1)
-    {
-        v5 = (long long)iter[8];
-        if (v5[0] == 45 && v5[1] - 48 <= 9)
-        {
-            iter += 8;
-            v4 -= 1;
-            v1 = &v5[1];
-            *((long long *)iter) = (long long)iter[8];
-        }
-    }
-    v0 = NULL;
-    v6 = getopt_long(v4, iter, "0123456789cstuw:p:g:", &g_40baa0.name, NULL);
-    if (v6 != -1)
-    {
-        if (v6 > 0x77)
-            goto LABEL_402acd;
-        if (v6 > 98)
-        {
-            switch (v6)
-            {
-            case 99:
-                g_417133 = 1;
-                break;
-            case 103:
-                v0 = optarg;
-                break;
-            case 112:
-                g_417118 = 0;
-                v7 = optarg;
-                if (*((char *)optarg) == 32)
-                {
-                    do
-                    {
-                        v7 += 1;
-                    } while (*((char *)v7) == 32);
-                    g_417118 = (unsigned int)(1 - optarg) + (unsigned int)v8;
-                }
-                g_417128 = v7;
-                g_41711c = strlen(v7);
-                node = g_41711c + v7;
-                if (v7 < node)
-                {
-                    do
-                    {
-                    } while ((char)node[1] == 32 && (node -= 1, v7 != node));
-                }
-                *((char *)node) = 0;
-                g_417114 = node - v7;
-                break;
-            case 115:
-                g_417131 = 1;
-                break;
-            case 116:
-                g_417132 = 1;
-                break;
-            case 117:
-                g_417130 = 1;
-                break;
-            case 119:
-                v1 = optarg;
-                break;
-            default:
-LABEL_402acd:
-                if (v6 - 48 <= 9)
-                {
-                    *((int *)&v0) = v6;
-                    error(0, 0, dcgettext(NULL, "invalid option -- %c; -WIDTH is recognized only when it is the first\\noption; use -w N instead", 5));
-                }
-                sub_403d70(1); /* do not return */
-            }
-        }
-        else if (v6 == -131)
-        {
-            sub_406c80(stdout, "fmt", "GNU coreutils", g_40c010, "Ross Paterson", 0);
-            exit(0); /* do not return */
-        }
-        else if (v6 == -130)
-        {
-            sub_403d70(0); /* do not return */
-        }
-    }
-    if (v1)
-    {
-        g_417120 = sub_4074a0(v1, 0, 2500, &g_408bc1, dcgettext(NULL, "invalid width", 5), 0);
-        if (!v0)
-            goto LABEL_402a19;
-        g_417110 = sub_4074a0(v0, 0, g_417120, &g_408bc1, dcgettext(NULL, "invalid width", 5), 0);
-    }
-    else if (!v0)
-    {
-LABEL_402a19:
-        g_417110 = g_417120 * 0xbb / 200;
-    }
-    else
-    {
-        g_417110 = sub_4074a0(v0, 0, 75, &g_408bc1, dcgettext(NULL, "invalid width", 5), 0);
-        g_417120 = g_417110 + 10;
-    }
-    v10 = optind;
-    if (optind != v4)
-    {
-        *((char *)&v0) = 0;
-        v11 = 1;
-        if (optind < v4)
-        {
-            do
-            {
-                v12 = *((long long *)((char *)iter + 8 * v10));
-                if (!strcmp(v12, "-"))
-                {
-                    *((char *)&v0) = 1;
-                    v11 &= sub_403700(stdin, v12);
-                }
-                else
-                {
-                    fp = fopen(v12, "r");
-                    if (fp)
-                    {
-                        v11 &= sub_403700(fp, v12);
-                    }
-                    else
-                    {
-                        v1 = sub_406030(4);
-                        v14 = dcgettext(NULL, "cannot open %s for reading", 5);
-                        err = __errno_location();
-                        v11 = 0;
-                        error(0, *(err), v14);
-                    }
-                }
-            } while ((v10 = optind + 1, optind = v10, v10 < v4));
-            if ((char)v0)
-                goto LABEL_402a46;
-        }
-    }
-    else
-    {
-        v11 = sub_403700(stdin, "-");
-LABEL_402a46:
-        if (sub_4041f0(stdin))
-        {
-            dcgettext(NULL, "closing standard input", 5);
-            err1 = __errno_location();
-            error(1, *(err1), "%s");
-        }
-    }
-    return (char)v11 ^ 1;
 }`,
     },
   },

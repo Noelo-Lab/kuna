@@ -2,8 +2,8 @@
 where the reference is better into a backlog the worker (and a human) can act on.
 
 Writes:
-  - docs/pipeline/opportunities.json  -- the ranked backlog (machine-readable)
-  - docs/pipeline/matrix.md           -- the human-readable angr-vs-kuna recovery matrix
+  - docs/improvement-pipeline/opportunities.json  -- the ranked backlog (machine-readable)
+  - docs/improvement-pipeline/matrix.md           -- the human-readable angr-vs-kuna recovery matrix
 
 The sweep is deliberately corpus-agnostic and resumable: filter by arch / confidence /
 limit, run N comparisons concurrently (each is two independent subprocesses), and tolerate
@@ -149,8 +149,8 @@ def main(argv=None):
     p.add_argument("--skip-custom", action="store_true", help="skip tests that pass non-default angr options")
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--jobs", type=int, default=6)
-    p.add_argument("--out", default=None, help="opportunities JSON (default: docs/pipeline/opportunities.json)")
-    p.add_argument("--matrix", default=None, help="matrix markdown (default: docs/pipeline/matrix.md)")
+    p.add_argument("--out", default=None, help="opportunities JSON (default: docs/improvement-pipeline/opportunities.json)")
+    p.add_argument("--matrix", default=None, help="matrix markdown (default: docs/improvement-pipeline/matrix.md)")
     p.add_argument("--print", action="store_true", dest="do_print", help="print top opportunities, don't write")
     p.add_argument("--progress", action="store_true", help="per-case progress to stderr")
     args = p.parse_args(argv)

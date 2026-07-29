@@ -18,7 +18,7 @@ rebuilds, until Band B reaches mutual quiescence.
 Option metadata (defaults, tiers, symptoms, flip guidance) for every option
 named below lives in the generated catalog ([docs/options.md](../options.md));
 the rows are defined in `decompiler/crates/kuna-decomp/phases.toml` and the
-default-divergence measurements are DIV-2/DIV-3 in `docs/divergences.md`.
+default-divergence measurements are DIV-2/DIV-3 in `docs/history.md`.
 
 ## 3.1 Heritage
 
@@ -420,7 +420,7 @@ per-op to the live gate on the per-function architecture snapshot (e.g. `kuna_bo
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (reset_defaults_internal)`, mirrored by the `default` column of
 `decompiler/crates/kuna-decomp/phases.toml` (the source quoted below; the
-DIV-2/DIV-3 rows of `docs/divergences.md` carry the ablation evidence). With a
+DIV-2/DIV-3 rows of `docs/history.md` carry the ablation evidence). With a
 gate off, the rule returns 0 unconditionally and output is byte-identical to
 upstream. Full option metadata: [docs/options.md](../options.md).
 
