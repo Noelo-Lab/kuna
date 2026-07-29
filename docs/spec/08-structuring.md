@@ -122,10 +122,12 @@ conservatively-scored printed statements and two calls per block, at most four
 condition leaves and four total statements in the folded condition. A block
 carrying a comment is declined outright, because the `COMMA_SEPARATE` path
 skips `emitCommentGroup` and the text would vanish. Statement scoring uses the
-same conservative `Varnode::calc_explicit` approximation `bb_is_complex` uses
-and never reads `Varnode::isExplicit`, which is not yet computed when
-structuring runs; the approximation over-counts, so the caps bind
-conservatively.
+same `Varnode::calc_explicit` approximation `bb_is_complex` uses and never
+reads `Varnode::isExplicit`, which is not yet computed when structuring runs —
+Ghidra's own approximation, and inexact in both directions, so a block admitted
+at the cap can render one statement wider than the nominal budget. That is a
+readability slack, not a correctness one: `COMMA_SEPARATE` emits every op
+either way.
 
 The transform performs **no reordering**, which is why predicates that call
 functions need no purity analysis: `substrate/block.rs

@@ -950,6 +950,7 @@ impl<'a> RegionStructurer<'a> {
         {
             return false;
         }
+        crate::p8_structure::kuna_condjoin::trace_admit_fold("region_structurer", bl, orblock);
         true
     }
 

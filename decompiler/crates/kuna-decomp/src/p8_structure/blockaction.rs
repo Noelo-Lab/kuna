@@ -2154,6 +2154,7 @@ impl<'a> CollapseStructure<'a> {
         {
             return false;
         }
+        crate::p8_structure::kuna_condjoin::trace_admit_fold("CollapseStructure", bl, orblock);
         true
     }
 

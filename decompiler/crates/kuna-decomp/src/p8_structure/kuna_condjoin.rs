@@ -102,13 +102,17 @@
 //!   `CBRANCH`.  Anything else — `RETURN`, a second branch, `BRANCHIND`, `CALLOTHER`
 //!   (userop rendering can be multi-line/special), or any op flagged no-return —
 //!   declines the block.  The last op must be that `CBRANCH`.
-//! * **S3 — statement budget.**  At most [`MAX_CONDJOIN_STMTS`] printed statements and
-//!   at most [`MAX_CONDJOIN_CALLS`] calls in the block.  "Printed statement" is scored
-//!   with the *same conservative* `Varnode::calc_explicit` approximation
-//!   `bb_is_complex` uses (addr-tied / no-descend / used-outside-block / over
-//!   `max_implied_ref` refs ⇒ printed), never by reading `Varnode::is_explicit()`:
-//!   structuring runs before `ActionMarkExplicit`, so the flags are not yet meaningful.
-//!   The approximation over-counts, so the budget is conservative.
+//! * **S3 — statement budget.**  At most [`MAX_CONDJOIN_STMTS`] *scored* statements and
+//!   at most [`MAX_CONDJOIN_CALLS`] calls in the block.  A statement is scored with the
+//!   *same* `Varnode::calc_explicit` approximation `bb_is_complex` uses (addr-tied /
+//!   no-descend / used-outside-block / over `max_implied_ref` refs ⇒ printed), never by
+//!   reading `Varnode::is_explicit()`: structuring runs before `ActionMarkExplicit`, so
+//!   the flags are not yet meaningful.  This is Ghidra's own approximation and it is
+//!   *not* exact in either direction — a varnode the final `ActionMarkExplicit` makes
+//!   explicit can score as implied here, so a block admitted at the cap can render one
+//!   statement wider than the nominal budget (bash `get_random` is the observed case:
+//!   scored 2, renders 3).  That is a readability slack, never a correctness one —
+//!   `COMMA_SEPARATE` emits every op either way.
 //! * **S5 — no comment loss.**  `emit_basic_block_ops` skips `emit_comment_group`
 //!   entirely under `COMMA_SEPARATE`, so a block carrying a comment (e.g. a
 //!   "WARNING: Subroutine does not return" annotation) is declined.  Ghidra already
@@ -159,9 +163,9 @@ pub const MAX_CONDJOIN_CALLS: int4 = 2;
 /// target needs 3 (`getuid` test, `geteuid` test, `getegid` test).
 pub const MAX_CONDJOIN_LEAVES: int4 = 4;
 
-/// Maximum conservatively-scored statements summed over every leaf of the folded
-/// `BlockCondition`.  The target scores 4 (2 per relaxed clause block, both
-/// over-counted: only one statement per block actually prints).
+/// Maximum scored statements summed over every leaf of the folded `BlockCondition`.
+/// The `newbury::main` target scores 0 (both of its relaxed clause blocks reduce to
+/// two calls whose outputs inline), so the cap binds only on wider folds.
 pub const MAX_CONDJOIN_TOTAL_STMTS: int4 = 4;
 
 /// Score a `bblocks` `BlockBasic` for condjoin admissibility.
@@ -170,10 +174,11 @@ pub const MAX_CONDJOIN_TOTAL_STMTS: int4 = 4;
 /// docs) and may therefore be absorbed into a short-circuit condition as a
 /// comma-separated multi-statement operand; `None` when any precondition fails.
 ///
-/// The statement count uses the same conservative `Varnode::calc_explicit`
-/// approximation as [`Funcdata::bb_is_complex`] — it deliberately does **not** read
+/// The statement count uses the same `Varnode::calc_explicit` approximation as
+/// [`Funcdata::bb_is_complex`] — it deliberately does **not** read
 /// `Varnode::is_explicit()`/`is_implied()`, which are not yet computed when structuring
-/// runs.  The approximation only ever over-counts, so the budget stays conservative.
+/// runs.  Like Ghidra's own use of it, the approximation is inexact in both directions;
+/// see S3 in the module docs.
 fn score_condfold_block(data: &Funcdata, bb: BlockId) -> Option<int4> {
     // Decline with a reason, traced to stderr under `KUNA_CONDJOIN_DEBUG=1` (run
     // `decomp_dbg` directly to see it; the `kuna` CLI drops the child's stderr).
@@ -288,6 +293,17 @@ fn score_condfold_block(data: &Funcdata, bb: BlockId) -> Option<int4> {
 fn trace(bb: BlockId, reason: &str) {
     if std::env::var_os("KUNA_CONDJOIN_DEBUG").is_some() {
         eprintln!("[condjoin] decline {bb:?}: {reason}");
+    }
+}
+
+/// Trace an admitted relaxed fold under `KUNA_CONDJOIN_DEBUG=1` (stderr), naming the
+/// engine that took it — `CollapseStructure` (§8.1) or `region_structurer` (§8.2).
+/// Both carry the identical gate, and which one runs on a given function depends on
+/// whether the region structurer converges, so this is how a witness for either half
+/// is confirmed.
+pub fn trace_admit_fold(engine: &str, bl: BlockId, orblock: BlockId) {
+    if std::env::var_os("KUNA_CONDJOIN_DEBUG").is_some() {
+        eprintln!("[condjoin] {engine}: fold {bl:?} with complex {orblock:?}");
     }
 }
 

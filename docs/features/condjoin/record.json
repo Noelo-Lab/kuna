@@ -1,0 +1,78 @@
+{
+  "slug": "condjoin",
+  "option": "condjoin",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/newbury",
+  "selector": "main",
+  "func_addr": "0x40f696",
+  "test_name": "ghangr-condjoin",
+  "default_on": false,
+  "proposal_pr": 56,
+  "proposal_dir": "docs/features/newburry-main-57ccb1",
+  "source_decompiler": "angr",
+  "change_kind": "structure-recovery",
+  "tier": "transform",
+  "phase": "P8",
+  "inspiration": "angr PhoenixStructurer._match_acyclic_short_circuit_conditions + the MultiStatementExpression escape hatch (MultiStmtExprMode, multistmtexpr_stmt_threshold)",
+  "speed_off_ms": 527.27,
+  "speed_on_ms": 518.37,
+  "speed_delta_pct": -1.69,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+
+  "target_metrics": {
+    "note": "scripts.pipeline.compare.metrics; the angr column is the proposal branch's angr-vs-kuna.txt (angr 9.2.213), re-metricked with the same function",
+    "angr": {"loc": 206, "gotos": 0, "labels": 0, "ifs": 20, "loops": 6, "ternaries": 1, "switches": 0},
+    "kuna_off": {"loc": 138, "gotos": 1, "labels": 1, "ifs": 16, "loops": 6, "ternaries": 1, "switches": 0},
+    "kuna_on": {"loc": 131, "gotos": 0, "labels": 0, "ifs": 14, "loops": 6, "ternaries": 1, "switches": 0},
+    "criterion": "0 gotos / 0 labels with the option on — MET"
+  },
+
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 265/265",
+    "make rust-test": "green",
+    "make check-spec": "green (lenient and --strict)",
+    "kuna catalog --check": "catalog OK"
+  },
+
+  "aggregate_sanity": {
+    "protocol": "kuna decompile-all --json, option OFF vs ON; per changed function, gcc -fsyntax-only against a permissive prelude; a body that parses OFF but not ON is a hard stop",
+    "binaries": ["x86_64/cat", "x86_64/decompiler/dirname", "x86_64/decompiler/basenc", "x86_64/decompiler/dd", "x86_64/decompiler/du"],
+    "functions": 1367,
+    "functions_changed": 68,
+    "crashes": 0,
+    "functions_lost": 0,
+    "invalid_c": 0,
+    "goto_regressions": 0,
+    "gotos_off": 638,
+    "gotos_on": 620,
+    "labels_off": 379,
+    "labels_on": 369,
+    "loc_off": 34675,
+    "loc_on": 34415,
+    "comma_operands_off": 173,
+    "comma_operands_on": 214
+  },
+
+  "decbench": {
+    "protocol": "scripts.decbench.mine --select 28, then option OFF vs ON on each mined case; only cases whose output changes are rescored",
+    "mined_cases": 28,
+    "cases_changed_by_condjoin": 1,
+    "ged_case": "O2-bash-bash-get_random",
+    "ged_before": 33.0,
+    "ged_after": 36.0,
+    "ged_delta": 3.0,
+    "ged_perfect_after": false,
+    "ged_options": ["condjoin=on"],
+    "ged_kuna_commit": "45cee90f",
+    "note": "The one mined case condjoin touches loses 3 GED points while dropping its goto 1 -> 0: the fold absorbs seedrand(); seeded_subshell = v1; v1 = brand() into the guard as a comma operand, which is correct and denser but structurally further from the source CFG. The mine tagged this case artifact-suspect (source_nodes = 1). This is exactly the presentation trade-off that keeps the option default-OFF; no DIV is claimed."
+  },
+
+  "engine_witnesses": {
+    "note": "KUNA_CONDJOIN_DEBUG=1 traces which engine took each relaxed fold",
+    "CollapseStructure": "newbury::main (the region structurer bails on this function and re-seeds to the CollapseStructure fallback)",
+    "region_structurer": "newbury::main pre-bail, and bash O2 get_random end-to-end"
+  }
+}

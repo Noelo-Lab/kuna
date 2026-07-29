@@ -1,0 +1,521 @@
+==============================================================================
+test_decompiling_newburry_main :: main   (angr 9.2.213 @ 0x40f696)
+==============================================================================
+
+--- angr ---
+typedef struct FILE {
+} FILE;
+
+extern unsigned long long connection_joblist;
+extern unsigned int g_45f1f0;
+extern unsigned int g_45f1f4;
+extern char graceful_restart;
+extern unsigned int graceful_shutdown;
+extern uint128_t graceful_sockets;
+extern uint128_t inherited_sockets;
+extern unsigned long long log_epoch_secs;
+extern int oneshot_fd;
+extern unsigned long long oneshot_fdn;
+extern int oneshot_fdout;
+extern unsigned int optind;
+extern FILE *stderr;
+
+unsigned int main(unsigned int a0, long long a1)
+{
+    unsigned int v1;  // eax
+    unsigned int v2;  // eax
+    int v11;  // xmm1
+    unsigned long long v12;  // rax
+    unsigned int v13;  // edx
+    unsigned long long index;  // rax
+    unsigned long long v15;  // rax
+    unsigned int v16;  // edx
+    unsigned long long v17;  // rax
+    unsigned long long pos;  // rax
+    unsigned long long v19;  // rax
+    unsigned int v20;  // r12d
+    void* ptr;  // rbp
+    unsigned int v21;  // edx
+    unsigned long long v22;  // rax
+    unsigned long long off;  // rax
+    unsigned long long v24;  // rax
+    unsigned int v25;  // edx
+    unsigned long long v26;  // rax
+    unsigned long long idx4;  // rax
+    unsigned long long v28;  // rax
+    int v29;  // xmm3
+    int v30;  // xmm4
+    long long v4;  // rdi
+    long long v5;  // rsi
+    long long v6;  // rdx
+    long long v7;  // rcx
+    long long v8;  // r8
+    long long v9;  // r9
+    unsigned long t;  // rax
+
+    if (getuid())
+    {
+        v1 = geteuid();
+        if (v1 != getuid() || !((v2 = (unsigned int)(unsigned long long)getegid(), (unsigned int)(unsigned long long)getegid() == (unsigned int)(unsigned long long)getgid())))
+        {
+            fputs("Are you nuts ? Don't apply a SUID bit to this binary\n", stderr);
+            return 4294967295;
+        }
+    }
+    setlocale(2, "C");
+    tzset();
+    while (true)
+    {
+        ptr = calloc(1, 456);
+        if (!ptr)
+            log_failed_assert("server.c", 231, "assertion failed: srv"); /* do not return */
+        *((unsigned long long *)&ptr[40]) = buffer_init();
+        connection_joblist = ptr + 64;
+        strftime_cache_reset(v4, v5, v6, v7, v8, v9);
+        li_rand_reseed(v4, v5, v6, v7, v8, v9);
+        t = time(NULL);
+        *((unsigned long *)&ptr[416]) = t;
+        log_epoch_secs = t;
+        *((unsigned long long *)&ptr[152]) = log_error_st_init(v4, v5, v6, v7, v8, v9);
+        config_init(ptr);
+        *((unsigned long long *)&ptr[168]) = 0;
+        *((unsigned long long *)&ptr[176]) = 0;
+        *((void* *)&ptr[32]) = plugins_call_handle_request_env;
+        *((unsigned long long *)&ptr[184]) = 0;
+        *((int *)&ptr[444]) = -1;
+        if (*((int *)&graceful_restart))
+        {
+            v11 = (int)graceful_sockets;
+            v12 = 0;
+            *((void*)&graceful_sockets) = 0;
+            ptr[368] = v11;
+            v13 = (int)ptr[380];
+            *((uint128_t *)&ptr[384]) = inherited_sockets;
+            *((void*)&inherited_sockets) = 0;
+            while (true)
+            {
+                index = v12;
+                if (v13 <= (unsigned int)index)
+                    break;
+                v15 = index + 1;
+                *((void* *)(*((long long *)((long long)ptr[368] + index * 8)) + 128)) = ptr;
+                v12 = v15;
+            }
+            v16 = (int)ptr[396];
+            v17 = 0;
+            while (true)
+            {
+                pos = v17;
+                if (v16 <= (unsigned int)pos)
+                    break;
+                v19 = pos + 1;
+                *((void* *)(*((long long *)((long long)ptr[384] + pos * 8)) + 128)) = ptr;
+                v17 = v19;
+            }
+            optind = 1;
+        }
+        v20 = server_main_setup(ptr, a0, a1);
+        if (v20 > 0)
+        {
+            server_main_loop(ptr);
+            if (graceful_shutdown || *((int *)&graceful_restart))
+                server_graceful_state(ptr);
+            if (graceful_shutdown == 2)
+            {
+                log_error((long long)ptr[152], "server.c", 1972, "server stopped after idle timeout");
+            }
+            else if (!oneshot_fd)
+            {
+                log_error((long long)ptr[152], "server.c", 1976, "server stopped by UID = %d PID = %d", g_45f1f4, g_45f1f0);
+            }
+        }
+        remove_pid_file(ptr);
+        config_log_error_close(ptr);
+        if (*((int *)&graceful_restart))
+        {
+            v21 = (int)ptr[380];
+            v22 = 0;
+            while (true)
+            {
+                off = v22;
+                if (v21 <= (unsigned int)off)
+                    break;
+                v24 = off + 1;
+                *((unsigned long *)(*((long long *)((long long)ptr[368] + off * 8)) + 128)) = 0;
+                v22 = v24;
+            }
+            v25 = (int)ptr[396];
+            v26 = 0;
+            while (true)
+            {
+                idx4 = v26;
+                if (v25 <= (unsigned int)idx4)
+                    break;
+                v28 = idx4 + 1;
+                *((unsigned long *)(*((long long *)((long long)ptr[384] + idx4 * 8)) + 128)) = 0;
+                v26 = v28;
+            }
+            v29 = (int)(int128_t)ptr[368];
+            v30 = (int)(int128_t)ptr[384];
+            ptr[368] = 0;
+            *((void*)&graceful_sockets) = v29;
+            *((void*)&inherited_sockets) = v30;
+            ptr[384] = 0;
+        }
+        else
+        {
+            network_close(ptr);
+        }
+        request_pool_free(v4, v5, v6, v7, v8, v9);
+        connections_free(ptr);
+        plugins_free(ptr);
+        if (oneshot_fd > 0)
+        {
+            if (oneshot_fdn)
+            {
+                fdevent_fdnode_event_del((long long)ptr[16]);
+                fdevent_unregister((long long)ptr[16], oneshot_fd);
+                oneshot_fdn = 0;
+            }
+            close(oneshot_fd);
+        }
+        if (oneshot_fdout >= 0)
+            close(oneshot_fdout);
+        if ((int)ptr[444] >= 0)
+            close((int)ptr[444]);
+        buffer_free((long long)ptr[40]);
+        fdevent_free((long long)ptr[16]);
+        config_free(ptr);
+        free((long long)ptr[64]);
+        free((long long)ptr[80]);
+        free((long long)ptr[96]);
+        stat_cache_free(v4, v5, v6, v7, v8, v9);
+        li_rand_cleanup(v4, v5, v6, v7, v8, v9);
+        chunkqueue_chunk_pool_free(v4, v5, v6, v7, v8, v9);
+        log_error_st_free((long long)ptr[152]);
+        free(ptr);
+        if (v20 < 0)
+        {
+            return v20;
+        }
+        else if (*((int *)&graceful_restart))
+        {
+            do
+            { } while (fdevent_waitpid(4294967295, 0, 0) > 0);
+            if (!*((int *)&graceful_restart))
+                return v20;
+        }
+        else
+        {
+            return v20;
+        }
+    }
+}
+
+
+--- kuna (name mode) ---
+int4 main(int4 a0,char **a1)
+
+{
+  server *srv; // rax
+  uint4 v1;
+  int4 v2; // eax
+  int4 v3; // eax
+  unsigned long v4; // rax
+  log_error_st *v5; // rax
+  int8 v6; // rax
+  
+  v2 = getuid();
+  if (v2 == 0) {
+label_f6ec:
+    setlocale(2,0x43620);
+    tzset();
+    do {
+      srv = calloc(1,0x1c8);
+      if (srv == (server *)0x0) {
+        log_failed_assert("server.c",0xe7,"assertion failed: srv");
+      }
+      v4 = buffer_init();
+      *(void *)((int8)srv + 0x28) = v4;
+      Unique00008f00 = (void *)((int8)srv + 0x40);
+      strftime_cache_reset();
+      li_rand_reseed();
+      RAX = time(0);
+      *(void *)((int8)srv + 0x1a0) = RAX;
+      v5 = log_error_st_init();
+      *(log_error_st **)((int8)srv + 0x98) = v5;
+      config_init(srv);
+      *(void *)((int8)srv + 0xa8) = 0;
+      *(void *)((int8)srv + 0xb0) = 0;
+      *(code **)((int8)srv + 0x20) = plugins_call_handle_request_env;
+      *(void *)((int8)srv + 0xb8) = 0;
+      *(void *)((int8)srv + 0x1bc) = 0xffffffff;
+      if (dat_5f278 != 0) {
+        dat_5f290 = 0;
+        dat_5f298 = 0;
+        *(void *)((int8)srv + 0x170) = Unique10000578;
+        *(void *)((int8)srv + 0x178) = dat_5f298;
+        v1 = *(uint4 *)((int8)srv + 0x17c);
+        *(void *)((int8)srv + 0x180) = dat_5f280;
+        *(void *)((int8)srv + 0x188) = dat_5f288;
+        dat_5f280 = 0;
+        dat_5f288 = 0;
+        for (v6 = 0; (uint4)v6 < v1; v6 = v6 + 1) {
+          *(server **)(*(int8 *)(*(int8 *)((int8)srv + 0x170) + v6 * 8) + 0x80) = srv;
+        }
+        v1 = *(uint4 *)((int8)srv + 0x18c);
+        for (v6 = 0; (uint4)v6 < v1; v6 = v6 + 1) {
+          *(server **)(*(int8 *)(*(int8 *)((int8)srv + 0x180) + v6 * 8) + 0x80) = srv;
+        }
+        dat_5f108 = 1;
+      }
+      v2 = server_main_setup(srv,a0,a1);
+      if (1 <= v2) {
+        server_main_loop(srv);
+        if ((dat_5f274 != 0) || (dat_5f278 != 0)) {
+          server_graceful_state(srv);
+        }
+        if (dat_5f274 == 2) {
+          log_error(*(void **)((int8)srv + 0x98),"server.c",0x7b4,"server stopped after idle timeout");
+        }
+        else if (dat_5f2b0 == 0) {
+          log_error(*(void **)((int8)srv + 0x98),"server.c",0x7b8,"server stopped by UID = %d PID = %d",(uint8)dat_5f1f4,(uint8)dat_5f1f0);
+        }
+      }
+      remove_pid_file(srv);
+      config_log_error_close(srv);
+      if (dat_5f278 == 0) {
+        network_close(srv);
+      }
+      else {
+        v1 = *(uint4 *)((int8)srv + 0x17c);
+        for (v6 = 0; (uint4)v6 < v1; v6 = v6 + 1) {
+          *(void *)(*(int8 *)(*(int8 *)((int8)srv + 0x170) + v6 * 8) + 0x80) = 0;
+        }
+        v1 = *(uint4 *)((int8)srv + 0x18c);
+        for (v6 = 0; (uint4)v6 < v1; v6 = v6 + 1) {
+          *(void *)(*(int8 *)(*(int8 *)((int8)srv + 0x180) + v6 * 8) + 0x80) = 0;
+        }
+        Unique10000480 = *(void *)((int8)srv + 0x170);
+        Unique10000488 = *(void *)((int8)srv + 0x178);
+        Unique10000498 = *(void *)((int8)srv + 0x180);
+        Unique100004a0 = *(void *)((int8)srv + 0x188);
+        *(void *)((int8)srv + 0x170) = 0;
+        *(void *)((int8)srv + 0x178) = 0;
+        *(void *)((int8)srv + 0x180) = 0;
+        *(void *)((int8)srv + 0x188) = 0;
+      }
+      request_pool_free();
+      connections_free(srv);
+      plugins_free(srv);
+      if (1 <= dat_5f2b0) {
+        if (dat_5f2a8 != 0) {
+          fdevent_fdnode_event_del(*(void *)((int8)srv + 0x10));
+          fdevent_unregister(*(fdevents **)((int8)srv + 0x10),dat_5f2b0);
+          dat_5f2a8 = 0;
+        }
+        close(dat_5f2b0);
+      }
+      if (0 <= dat_5f018) {
+        close();
+      }
+      if (0 <= *(int4 *)((int8)srv + 0x1bc)) {
+        close();
+      }
+      buffer_free(*(anon_struct **)((int8)srv + 0x28));
+      fdevent_free(*(fdevents **)((int8)srv + 0x10));
+      config_free(srv);
+      free(*(void **)((int8)srv + 0x40));
+      free(*(void **)((int8)srv + 0x50));
+      free(*(void **)((int8)srv + 0x60));
+      stat_cache_free();
+      li_rand_cleanup();
+      chunkqueue_chunk_pool_free();
+      log_error_st_free(*(log_error_st **)((int8)srv + 0x98));
+      free(srv);
+      if (v2 < 0) {
+        return v2;
+      }
+      if (dat_5f278 == 0) {
+        return v2;
+      }
+      do {
+        v3 = fdevent_waitpid(-1,(int4 *)0x0,0);
+      } while (0 < v3);
+    } while (dat_5f278 != 0);
+  }
+  else {
+    v2 = geteuid();
+    v3 = getuid();
+    if (v2 == v3) {
+      v2 = getegid();
+      v3 = getgid();
+      if (v2 == v3) goto label_f6ec;
+    }
+    v2 = -1;
+    fputs("Are you nuts ? Don\'t apply a SUID bit to this binary\n",dat_5f140);
+  }
+  return v2;
+}
+
+--- metrics (reference | kuna) ---
+  loc           205 | 141 
+  gotos           0 | 1   
+  labels          0 | 1   
+  switches        0 | 0   
+  cases           0 | 0   
+  ifs            20 | 16  
+  loops           6 | 6   
+  ternaries       1 | 1   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (0 vs 1)
+  * ref has fewer labels (0 vs 1)
+
+
+==============================================================================
+kuna AFTER  (this PR, `--option condjoin on`, commit 45cee90f+)
+==============================================================================
+
+int4 main(int4 a0,char **a1)
+
+{
+  server *srv; // rax
+  uint4 v1;
+  int4 v2; // eax
+  int8 v3; // rax
+  
+  if ((getuid() != 0) && ((v2 = geteuid(), v2 != getuid() || (v2 = getegid(), v2 != getgid())))) {
+    v2 = -1;
+    fputs("Are you nuts ? Don\'t apply a SUID bit to this binary\n",dat_5f140);
+  }
+  else {
+    setlocale(2,"C");
+    tzset();
+    do {
+      srv = calloc(1,0x1c8);
+      if (srv == (server *)0x0) {
+                    /* WARNING: Subroutine does not return */
+        log_failed_assert("server.c",0xe7,"assertion failed: srv");
+      }
+      *(void *)((int8)srv + 0x28) = buffer_init();
+      dat_5fc98 = (void *)((int8)srv + 0x40);
+      strftime_cache_reset();
+      li_rand_reseed();
+      dat_5f460 = time(0);
+      *(void *)((int8)srv + 0x1a0) = dat_5f460;
+      *(log_error_st **)((int8)srv + 0x98) = log_error_st_init();
+      config_init(srv);
+      *(void *)((int8)srv + 0xa8) = 0;
+      *(void *)((int8)srv + 0xb0) = 0;
+      *(code **)((int8)srv + 0x20) = plugins_call_handle_request_env;
+      *(void *)((int8)srv + 0xb8) = 0;
+      *(void *)((int8)srv + 0x1bc) = 0xffffffff;
+      if (dat_5f278 != 0) {
+        dat_5f290 = 0;
+        dat_5f298 = 0;
+        *(void *)((int8)srv + 0x170) = dat_5f290;
+        *(void *)((int8)srv + 0x178) = dat_5f298;
+        v1 = *(uint4 *)((int8)srv + 0x17c);
+        *(void *)((int8)srv + 0x180) = dat_5f280;
+        *(void *)((int8)srv + 0x188) = dat_5f288;
+        dat_5f280 = 0;
+        dat_5f288 = 0;
+        for (v3 = 0; (uint4)v3 < v1; v3 = v3 + 1) {
+          *(server **)(*(int8 *)(*(int8 *)((int8)srv + 0x170) + v3 * 8) + 0x80) = srv;
+        }
+        v1 = *(uint4 *)((int8)srv + 0x18c);
+        for (v3 = 0; (uint4)v3 < v1; v3 = v3 + 1) {
+          *(server **)(*(int8 *)(*(int8 *)((int8)srv + 0x180) + v3 * 8) + 0x80) = srv;
+        }
+        dat_5f108 = 1;
+      }
+      v2 = server_main_setup(srv,a0,a1);
+      if (1 <= v2) {
+        server_main_loop(srv);
+        if ((dat_5f274 != 0) || (dat_5f278 != 0)) {
+          server_graceful_state(srv);
+        }
+                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
+        if (dat_5f274 != 2) {
+          if (oneshot_fd == 0) {
+            log_error(*(void **)((int8)srv + 0x98),"server.c",0x7b8,"server stopped by UID = %d PID = %d",(uint8)dat_5f1f4,(uint8)dat_5f1f0);
+          }
+        }
+        else {
+          log_error(*(void **)((int8)srv + 0x98),"server.c",0x7b4,"server stopped after idle timeout");
+        }
+      }
+      remove_pid_file(srv);
+      config_log_error_close(srv);
+                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
+      if (dat_5f278 != 0) {
+        v1 = *(uint4 *)((int8)srv + 0x17c);
+        for (v3 = 0; (uint4)v3 < v1; v3 = v3 + 1) {
+          *(void *)(*(int8 *)(*(int8 *)((int8)srv + 0x170) + v3 * 8) + 0x80) = 0;
+        }
+        v1 = *(uint4 *)((int8)srv + 0x18c);
+        for (v3 = 0; (uint4)v3 < v1; v3 = v3 + 1) {
+          *(void *)(*(int8 *)(*(int8 *)((int8)srv + 0x180) + v3 * 8) + 0x80) = 0;
+        }
+        dat_5f290 = *(void *)((int8)srv + 0x170);
+        dat_5f298 = *(void *)((int8)srv + 0x178);
+        dat_5f280 = *(void *)((int8)srv + 0x180);
+        dat_5f288 = *(void *)((int8)srv + 0x188);
+        *(void *)((int8)srv + 0x170) = 0;
+        *(void *)((int8)srv + 0x178) = 0;
+        *(void *)((int8)srv + 0x180) = 0;
+        *(void *)((int8)srv + 0x188) = 0;
+      }
+      else {
+        network_close(srv);
+      }
+      request_pool_free();
+      connections_free(srv);
+      plugins_free(srv);
+      if (1 <= oneshot_fd) {
+        if (oneshot_fdn != 0) {
+          fdevent_fdnode_event_del(*(void *)((int8)srv + 0x10));
+          fdevent_unregister(*(fdevents **)((int8)srv + 0x10),oneshot_fd);
+          oneshot_fdn = 0;
+        }
+        close(oneshot_fd);
+      }
+      if (0 <= oneshot_fdout) {
+        close();
+      }
+      if (0 <= *(int4 *)((int8)srv + 0x1bc)) {
+        close();
+      }
+      buffer_free(*(anon_struct **)((int8)srv + 0x28));
+      fdevent_free(*(fdevents **)((int8)srv + 0x10));
+      config_free(srv);
+      free(*(void **)((int8)srv + 0x40));
+      free(*(void **)((int8)srv + 0x50));
+      free(*(void **)((int8)srv + 0x60));
+      stat_cache_free();
+      li_rand_cleanup();
+      chunkqueue_chunk_pool_free();
+      log_error_st_free(*(log_error_st **)((int8)srv + 0x98));
+      free(srv);
+      if (v2 < 0) {
+        return v2;
+      }
+      if (dat_5f278 == 0) {
+        return v2;
+      }
+      do {
+      } while (0 < fdevent_waitpid(-1,(int4 *)0x0,0));
+    } while (dat_5f278 != 0);
+  }
+  return v2;
+}
+--- metrics (angr | kuna condjoin OFF | kuna condjoin ON) ---
+  loc           206 | 138 | 131
+  gotos           0 |   1 |   0
+  labels          0 |   1 |   0
+  switches        0 |   0 |   0
+  ifs            20 |  16 |  14
+  loops           6 |   6 |   6
+  ternaries       1 |   1 |   1
