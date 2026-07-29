@@ -532,3 +532,44 @@ found 3 of the 675 upstream assertions legitimately need the join — a global
 `single` default would truncate real wide returns. Flip it per function on the
 CONCAT-return symptom; the symptom table and flip guidance live in
 [`docs/options.md`](../options.md#returnpair).
+
+### (ida) The uncomputed half of a recovered return pair
+
+The same passive-pair symptom, decided on evidence instead of by fiat, and
+therefore default and unflagged
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs`). Two
+shapes reach a RETURN carrying a register the function never meant to return: a
+**callee-saved restore**, where the epilogue reloads a register from a frame slot
+the function only ever read, and a **clobber at a synthesized return**, where the
+flow model turns a call that never returns into one and the output registers hold
+the callee's INDIRECT creations. Both are movement ancestor realism is right to
+call realistic — it is asking whether a value could legitimately *reach* the
+RETURN, not whether the function meant to return it — so the pair forms, and on
+x86-64 SysV the result is `undefined16 main(…)` whose emitted body writes
+`v[8] = <uninitialized stack slot>`: output that reads memory the function never
+wrote.
+
+The rule is that a half carrying no value the function computed is not a return
+value. "Computed" is a bounded walk back through the operations that only *move* a
+value — copies, phis, indirects, piece/subpiece reshaping — stopping at the first
+one that produces one. An unwritten Varnode and an INDIRECT creation are
+uncomputed; a constant is computed, because returning a literal is a real return;
+anything the walk cannot classify is computed, so an unfamiliar shape keeps
+today's answer. The RETURN is then rewritten to the surviving half and the dead
+concatenation destroyed.
+
+Timing is the load-bearing detail. At recovery time the restore is still
+`COPY(LOAD(sp − k))` and indistinguishable from `return *p`, so there is nothing
+to decide on; the repair therefore runs in the one-shot tail, just before
+`ActionOutputPrototype` reads the storage and type off the RETURN, by which point
+heritage has resolved that load into a bare unwritten Varnode. A genuine wide
+return is safe from it twice over: both halves of a real struct return are
+computed (built from constants, arithmetic, or loads through a pointer — a LOAD
+is not a move, so the walk stops there), and the rule only ever edits an existing
+*pair*, never a lone recovered return value. Where every half is uncomputed — the
+synthesized-return case — the low, first-in-class register is kept so the
+function's output storage still agrees across every RETURN.
+
+This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages/
+gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
+blunt per-function instrument for a pair this rule judges genuine.

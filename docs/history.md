@@ -140,6 +140,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-27 | own-prototype seeding (bug fix, no flag) | a function's parked (DWARF/libproto) signature is applied to its OWN decompile, not just to its callers | 0/675; also kills the bogus `undefined16` RAX:RDX return |
 | DIV-28 | mid-string literals (bug fix, no flag) | a constant pointing INTO a readonly char array is typed `char *` (`bindtextdomain(0x68d8,…)` → `"coreutils"`) | 0/675; interior hits only, exact-hit path untouched |
 | DIV-29 | DWARF enums (no flag) | `DW_TAG_enumeration_type` builds a real enum type (`quotearg_style(4,…)` → `…(shell_escape_always_quoting_style,…)`) | 0/675; falls back to the underlying int when anonymous/memberless |
+| DIV-30 | uncomputed return half (no flag) | a recovered return PAIR whose half is a callee-saved restore / callee clobber is narrowed to the real half (kills `undefined16 main` + `v[8] = <uninit>`) | 0/675; subsumes `returnpair` on GH-6990 (3 stage assertions re-worded, 261/261) |
 
 ## Upstream provenance & sync
 

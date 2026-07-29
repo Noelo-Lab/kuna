@@ -8,3 +8,4 @@ pub mod fspec;
 pub mod modelrules;
 pub mod coreaction_protos;
 pub mod kuna_returnpair;
+pub mod kuna_returnuncomputed;

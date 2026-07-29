@@ -1817,6 +1817,19 @@ impl Action for ActionOutputPrototype {
                 return 0;
             }
         }
+        // (kuna, ida) Repair a RETURN whose value is a bogus register PAIR before
+        // the output storage and type are read off it. Return recovery registers
+        // one trial per output register the model characterizes (x86-64 SysV: RAX
+        // *and* RDX) and marks a trial active when its value survives ancestor
+        // realism — which asks whether a value could legitimately REACH the
+        // RETURN, not whether the function meant to return it. A callee-saved
+        // register restore passes that test, so the spec's `join_dual_class`
+        // output rule accepts the consecutive pair as one 16-byte return and the
+        // function renders `undefined16 main(...)` with a phantom
+        // `v[8] = <uninitialized stack slot>` — output that reads memory the
+        // function never wrote. Here, unlike at recovery time, heritage has
+        // finished and the leftover half is plainly an unwritten Varnode.
+        crate::kuna_returnuncomputed::strip_uncomputed_return_piece(data);
         let retop = match data.get_first_return_op() {
             Some(op) => op,
             None => return 0,

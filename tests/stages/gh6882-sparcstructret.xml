@@ -39,9 +39,17 @@
     `(*pcVar1)()` and the function tail is lost.
     Pass 2 (option sparcstructret on): assertion #2 proves the fix; the `unimp`
     falls through, the rest of the function is recovered, and `p` renders its
-    real `return CONCAT44(...)` tail (the bogus `(*pcVar1)()` is gone).  The two
-    assertions are over the cumulative two-pass output: `(*pcVar1)()` appears
-    exactly once (pass 1 only) and `return CONCAT44` exactly once (pass 2 only).
+    real return tail (the bogus `(*pcVar1)()` is gone).  The two assertions are
+    over the cumulative two-pass output: `(*pcVar1)()` appears exactly once
+    (pass 1 only) and the recovered tail exactly once (pass 2 only).
+
+    NOTE on assertion #2's text: it used to look for `return CONCAT44`, because
+    the recovered tail arrived as a spurious o0:o1 join, the GH-6990 artifact:
+    `p` returns normally and has no struct return.  `kuna_returnuncomputed` now
+    drops that passive half by default, so the tail renders as the real
+    `return v1 + a0`.  The assertion names that expression directly: it tests the
+    thing the option is for (the tail exists at all) rather than a symptom of a
+    second, unrelated bug.
 -->
 <bytechunk space="ram" offset="0x0">
 9de3bfa0f007a04081c7e00c81e800009de3bf98b007bff87ffffffaf023a04000000008f007bff87ffffff6f027bff4f007bff481c7e00891ee0008
@@ -71,5 +79,5 @@
   <com>quit</com>
 </script>
 <stringmatch name="GH6882 #1: post-call unimp renders as a computed call (bug reproduced)" min="1" max="1">\(\*v1\)\(\)</stringmatch>
-<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (return CONCAT44)" min="1" max="1">return CONCAT44</stringmatch>
+<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (the real return expression)" min="1" max="1">return v1 \+ a0;</stringmatch>
 </decompilertest>
