@@ -1,0 +1,162 @@
+{
+  "opportunity": "test_decompiling_tr_build_spec_list::build_spec_list",
+  "test_name": "test_decompiling_tr_build_spec_list",
+  "closes_proposal": "tr-build-spec-list-ea32be (PR #39)",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o",
+  "selector": "build_spec_list",
+  "func_addr": "0xbc0",
+  "arch": "x86_64",
+  "angr_version": "9.2.223 (decbench venv; the short-circuit code is unchanged from the 9.2.213 the proposal pinned)",
+  "option": "condfold",
+  "values": "off|on|wide",
+  "default": "off",
+  "change_kind": "structure-recovery",
+  "tier": "transform",
+  "source_decompiler": "angr",
+  "scope": "increment",
+  "proposal": false,
+  "covered_by_existing": null,
+
+  "what_shipped": "A second, narrower disjunct at the single `is_complex(orblock)` decline inside the short-circuit schema of BOTH structurers (CollapseStructure::rule_block_or, blockaction.rs; RegionStructurer::try_block_or, region_structurer.rs). A *complex* sibling condition block is accepted anyway when it is a BlockCopy of ONE BlockBasic whose printed prefix is bounded, branch-free, and comment-free (kuna_condfold.rs::condfold_eligible). The prefix then renders inside the &&/|| operand as a C comma expression under the printer's existing comma_separate modifier. Port of the angr Phoenix MultiStatementExpression relaxation (_match_acyclic_short_circuit_conditions types a-d, phoenix.py:2688; _should_use_multistmtexprs MAX_ONE_CALL policy; _build_multistatementexpr_statements).",
+
+  "proposal_verdict_corrected": {
+    "proposal_said": "LARGE / new pass type / needs region condition synthesis + C-printer support",
+    "actual": "increment: kuna already has the BlockCondition node kind, the &&/|| printer, the comma-expression rendering for a multi-statement operand (comma_separate), and TWO independent short-circuit schema implementations. The whole delta was one boolean at the is_complex decline.",
+    "angr_algorithm_corrected": "angr does NOT hoist the prefix; it wraps the operand in a MultiStatementExpression (a comma expression) in place. No p-code is moved by this PR either.",
+    "path_corrected": "On build_spec_list the region structurer does NOT converge ([rs] STUCK / ok=false) and ActionBlockStructure re-seeds sblocks and falls through to CollapseStructure -- so blockaction.rs is what emits every character of the measured output. Both paths are patched anyway (they are verbatim copies)."
+  },
+
+  "measurement_vehicles": {
+    "tr.o": "the proposal's own target, loaded directly (ET_REL, relocobjects default-on)",
+    "tr_synth.elf": "the proposal's documented full-fidelity vehicle: gcc -no-pie -nostdlib -nostartfiles -static -Wl,-Ttext-segment=0x400000 tr.o stubs.c ; build_spec_list @ 0x402370. This is where the proposal's named defect (the crossing `goto label_40242e`) is present."
+  },
+
+  "metric_table": {
+    "note": "gotos/labels/ifs/loops counted with comment lines stripped; angr's labels are the LABEL_xxxx: form.",
+    "columns": ["loc", "gotos", "labels", "ifs", "loops", "or", "and"],
+    "angr_reference": [123, 4, 3, 15, 2, 1, 1],
+    "tr_synth.elf": {
+      "kuna_off": [118, 6, 4, 16, 3, 0, 0],
+      "kuna_on": [115, 5, 3, 15, 3, 1, 0],
+      "kuna_wide": [109, 3, 2, 14, 3, 1, 1]
+    },
+    "tr.o": {
+      "kuna_off": [112, 5, 3, 15, 3, 1, 0],
+      "kuna_on": [112, 5, 3, 15, 3, 1, 0],
+      "kuna_wide": [107, 3, 2, 14, 3, 1, 1]
+    }
+  },
+
+  "success_criterion": {
+    "stated": "on the linked full-fidelity ELF the crossing `goto label_40242e` disappears and the compound condition appears; on tr.o directly, gotos 5 -> 4 (angr parity). Do not regress the two-term fold that already works.",
+    "met": true,
+    "elf_crossing_goto": "gone at `on`. OFF: `result_idx = &v10; if (es_match(es,v12,'=')) goto label_40242e;`  ON: `if ((v2) || (result_idx = &v10, es_match(es,v12,'='))) {`",
+    "tr_o_gotos": "5 -> 5 at `on` (the angr-parity cap of 5 statements declines the third-term fold: that sibling prints 7 kuna statements) ; 5 -> 3 at `wide`, beating angr's 4.",
+    "two_term_fold_not_regressed": "the pre-existing tr.o fold `(es_match() != '\\0') || (es_match() != '\\0')` is present in all three settings."
+  },
+
+  "why_wide_exists": "kuna's PRINTED statement granularity is finer than angr's AIL for the same source block. On the tr.o third-term candidate, angr renders `find_closing_delim(ptr, v11, *((char *)(v10+cur)), &v7)` as ONE AIL statement; kuna recovers only two arguments and prints the operand computations plus two address-tied copy shadows (`v14 = v1; v14 = v14;`) as separate statements -- 7 printed statements for the same block. `on` is exact angr parity (threshold 5, MAX_ONE_CALL); `wide` raises ONLY the statement cap to 9. The call cap and every soundness/rendering guard are identical at both levels.",
+
+  "bonus_pr53": {
+    "target": "true_ubuntu1804::usage",
+    "claim_in_brief": "a measured residual of exactly +2 ifs vs angr, from the same root (angr short-circuits `if (!v30 || !strncmp(v30,\"en_\",3))` twice where kuna emits two nested ifs)",
+    "result": "CLOSED at `wide`, unchanged at `on`.",
+    "off": {"loc": 107, "gotos": 1, "labels": 1, "ifs": 9, "or": 0, "and": 1},
+    "on": {"loc": 107, "gotos": 1, "labels": 1, "ifs": 9, "or": 0, "and": 1},
+    "wide": {"loc": 103, "gotos": 2, "labels": 2, "ifs": 7, "or": 1, "and": 2},
+    "reading": "ifs 9 -> 7 is exactly the +2 residual PR #53 measured, and both `!v30 || !strncmp(...)` pairs now fold into angr's shape. It costs +1 goto (1 -> 2) from the downstream restructuring, and -4 loc. Strong evidence of generality: this is a different binary, a different function, and the same gate.",
+    "recon_caveat_resolved": "the recon agent could not confirm this statically (its hand count of the strncmp block came to 2 statements). The empirical answer is that the block exceeds the angr-parity cap of 5 printed statements but not the wide cap of 9 -- which is why `on` is a no-op here and `wide` fires."
+  },
+
+  "aggregate_sanity_sweep": {
+    "method": "kuna decompile-all --json at off/on/wide over 5 real binaries; every function whose text CHANGED vs off was syntax-checked by wrapping it in a permissive C translation unit and running `gcc -fsyntax-only` (undeclared-identifier / unknown-type diagnostics filtered out, syntax errors NOT). The checker was validated to reject both failure modes this option could produce: a label inside an expression and an unbalanced condition.",
+    "hard_stop_definition": "a function that parses with the option OFF and does not parse with it ON",
+    "hard_stops": 0,
+    "binaries": {
+      "du": {"funcs": 655, "off": {"gotos": 212, "ifs": 2310, "loc": 18211, "or": 334, "and": 570}, "on": {"gotos": 212, "ifs": 2296, "loc": 18153, "or": 335, "and": 583}, "wide": {"gotos": 204, "ifs": 2285, "loc": 18108, "or": 338, "and": 593}, "on_changed": 11, "wide_changed": 25, "invalid_c": 0},
+      "dd": {"funcs": 204, "off": {"gotos": 160, "ifs": 710, "loc": 5694, "or": 96, "and": 128}, "on": {"gotos": 153, "ifs": 694, "loc": 5639, "or": 98, "and": 142}, "wide": {"gotos": 152, "ifs": 689, "loc": 5616, "or": 99, "and": 147}, "on_changed": 6, "wide_changed": 13, "invalid_c": 0},
+      "true_ubuntu1804": {"funcs": 130, "off": {"gotos": 62, "ifs": 218, "loc": 2325, "or": 11, "and": 43}, "on": {"gotos": 59, "ifs": 215, "loc": 2314, "or": 14, "and": 43}, "wide": {"gotos": 60, "ifs": 211, "loc": 2302, "or": 15, "and": 46}, "on_changed": 1, "wide_changed": 4, "invalid_c": 0},
+      "basenc": {"funcs": 202, "off": {"gotos": 123, "ifs": 489, "loc": 5494, "or": 49, "and": 86}, "on": {"gotos": 121, "ifs": 484, "loc": 5479, "or": 52, "and": 88}, "wide": {"gotos": 120, "ifs": 481, "loc": 5472, "or": 53, "and": 90}, "on_changed": 4, "wide_changed": 7, "invalid_c": 0},
+      "mv_-O2": {"funcs": 389, "off": {"gotos": 374, "ifs": 1350, "loc": 11239, "or": 116, "and": 189}, "on": {"gotos": 370, "ifs": 1312, "loc": 11077, "or": 132, "and": 211}, "wide": {"gotos": 366, "ifs": 1295, "loc": 10994, "or": 136, "and": 224}, "on_changed": 11, "wide_changed": 25, "invalid_c": 0}
+    },
+    "totals": {
+      "functions": 1580,
+      "gotos": {"off": 931, "on": 915, "wide": 902},
+      "ifs": {"off": 5077, "on": 5001, "wide": 4961},
+      "loc": {"off": 42963, "on": 42662, "wide": 42492},
+      "functions_changed": {"on": 33, "wide": 74},
+      "invalid_c": 0
+    },
+    "reading": "Monotone improvement in every aggregate metric in both directions, with no invalid C. The only per-binary inversion is true_ubuntu1804 gotos at wide (59 -> 60), which is the `usage` case above trading +1 goto for -2 ifs and -4 loc.",
+    "note": "The sweep was run with the default P8 goto-quality set ON (the real configuration), not with them ablated."
+  },
+
+  "speed": {
+    "method": "The box was under heavy third-party load during measurement (load average 21-35 from another user's Ghidra headless jobs, 80 cores). scripts.pipeline.timeit times all OFF samples and then all ON samples, so load drift over the run does not cancel: successive invocations of the SAME configuration varied from 209 ms to 568 ms median, and the tool reported deltas of +7.9%, +24.1% and +72.0% on three consecutive runs of the same measurement. Those numbers are machine noise, not signal. The honest measurement is INTERLEAVED (alternate off/on/wide per iteration so drift cancels) and on CPU time (user+sys of the child, insensitive to contention).",
+    "interleaved_cpu_ms": {"off": 323.66, "on": 322.97, "wide": 322.79, "samples": 25},
+    "delta_pct_cpu": {"on": -0.21, "wide": -0.27},
+    "interleaved_wallclock_delta_pct": {"on": -4.27, "wide": -2.43, "samples": 21},
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "timeit_raw_unreliable": [
+      {"repeat": 7, "off_ms": 308.02, "on_ms": 332.36, "delta_pct": 7.9},
+      {"repeat": 21, "off_ms": 209.12, "on_ms": 259.48, "delta_pct": 24.08},
+      {"repeat": 15, "off_ms": 330.6, "on_ms": 568.55, "delta_pct": 71.98}
+    ],
+    "expected_cost": "one extra predicate inside the loop that already calls bb_is_complex (skipped entirely when off), plus one BTreeSet lookup at an existing decline. Structurally sub-1%.",
+    "speed_forced_off": false,
+    "note": "The option ships default-OFF for readability reasons, not speed. With it off the precompute is skipped and both gate disjuncts are dead."
+  },
+
+  "gates": {
+    "make test": "675/675 datatest assertions, PARITY OK",
+    "make test-stages": "268/268 assertions, PARITY OK (was 261; +7 from ghangr-condfold.xml)",
+    "make rust-test": "green (exit 0, 0 FAILED targets)",
+    "make check-spec": "OK in lenient AND strict mode",
+    "baseline_json_repinned": false,
+    "baseline_stages_rerecorded": true
+  },
+
+  "soundness": {
+    "argument": "The fold is rendering-only. BlockGraph::new_block_condition re-parents two existing structuring nodes; no p-code op is moved, reordered, cloned, or deleted. Soundness rests on a precondition rule_block_or already enforces and this option never weakens: orblock.size_in() == 1, so the sibling's statements cannot run on a path where the compound condition is not evaluated. C's short-circuit rule evaluates the right operand exactly when control used to fall into the sibling, and the comma operator is a sequence point, so the prefix still runs before the test.",
+    "inherited_preconditions_unchanged": [
+      "bl.size_out() == 2, !bl.is_goto_out(0|1), !bl.is_switch_out()",
+      "orblock.size_in() == 1  (the load-bearing one)",
+      "orblock.size_out() == 2, !orblock.is_switch_out()",
+      "!orblock.is_interior_goto_target()  (NEVER relaxed: emit_block_copy emits the label statement first, so a labelled sibling would print `label_x:` inside an expression)",
+      "!bl.is_back_edge_out(i)",
+      "clauseblock is one of orblock's outs; no self-loop either way"
+    ],
+    "new_guards_all_rendering_or_quality": [
+      "orblock must be BlockType::Copy of a single BlockBasic (a BlockList/BlockIf/BlockCondition operand could render braces, multiple lines, or a label inside the parens = invalid C)",
+      "bounded printed statements (<=5 at on, <=9 at wide) and <=1 call, counted with the printer's own skip rules (not_printed / markers / implied-out / bare CPUI_BRANCH) so the cap governs exactly what appears",
+      "no non-terminal branch op (mirrors angr _build_multistatementexpr_statements refusing a non-terminal ConditionalJump or any Jump; a goto is not an expression)",
+      "the block must end in a CPUI_CBRANCH",
+      "no instruction comment attached in the block (emit_basic_block_ops suppresses emit_comment_group under comma_separate, so folding would silently DELETE a WARNING: line -- decline instead)",
+      "a relaxed fold's node is force-marked complex, because BlockCondition::isComplex delegates to sub-block 0 and would otherwise report the LEFT operand's trivial verdict for a node whose right operand is a comma chain, letting rule_block_while_do hoist the whole chain into a while(...) header"
+    ],
+    "is_complex_blast_radius": "is_complex() itself was NOT changed. The relaxation is a disjunct at the two rule_block_or/try_block_or call sites only; the other two callers (rule_block_while_do at blockaction.rs and its region_structurer twin) see the unchanged verdict. This is why the 675-assertion corpus is untouched.",
+    "known_limitation": "The comment guard reads Funcdata's buffered analysis comments (pending_comments). A user comment already resident in the console Architecture's comment database is not visible from Funcdata at P8 and would not be seen. Analysis warnings -- the WARNING: lines this option could actually destroy -- are covered."
+  },
+
+  "decbench": {
+    "protocol": "docs/decbench-loop.md, MINIMAL comparison only (time-boxed per the task brief).",
+    "mine": "scripts.decbench.mine --select 28 completed in under 10 minutes and regenerated docs/decbench/ (4062 cases).",
+    "rescore": "SKIPPED, time-boxed out. A search for a mined case whose kuna output condfold actually changes (decompile-all off vs wide over the highest-margin binaries, intersected with case addresses) did not finish inside the box on a machine at load average 21-35 from another user's Ghidra headless jobs. No ged_before/ged_after is claimed. The direct metric table and the 1580-function aggregate sanity sweep above ARE complete and are the substantive comparison.",
+    "note": "Not a blocker: the option is default-OFF, so the benchmark cannot move either way without an explicit opt-in."
+  },
+
+  "which_structurer_actually_fires": {
+    "finding": "On every function measured -- build_spec_list (both vehicles), true_ubuntu1804::usage, the synthetic stage witness, and all 13 functions condfold changes in dd and all 7 in basenc -- the region structurer does NOT converge ([rs] structure -> ok=false) and ActionBlockStructure re-seeds sblocks and falls through to CollapseStructure. So blockaction.rs::rule_block_or is the code path the measurements exercise.",
+    "verified_preexisting": "Confirmed identical on main's prebuilt binary (same [rs] STUCK trace on basenc::rpl_fflush), so this is pre-existing region-structurer behavior on these binaries, not a regression from this PR.",
+    "region_structurer_converges_somewhere": "Yes -- e.g. basenc::isbase64 and basenc::quote report ok=true. It just does not converge on any function where this fold applies, on the binaries measured.",
+    "why_the_mirror_ships_anyway": "try_block_or and rule_block_or are verbatim copies of each other; the change is byte-for-byte identical in both. Shipping only one would silently no-op on any function where the OTHER engine converges. The mirror is currently unexercised end-to-end on the measured corpus -- stated here rather than glossed over.",
+    "unit_coverage": "The gate logic itself (decline when off, fold when eligible, refuse a non-BlockCopy operand, and the force-complex marking that keeps rule_block_while_do from hoisting a comma chain into a while(...) header) is covered by 5 hand-built-graph unit tests in blockaction/tests.rs plus 3 in kuna_condfold.rs."
+  },
+
+  "not_closed": [
+    "The region structurer still does not converge on build_spec_list ([rs] STUCK: 22 components remain). Making it converge is a separate, larger opportunity; this PR patches both paths but only the CollapseStructure one is exercised on this function.",
+    "Default-ON. That needs its own 0/675 ablation and a DIV row; the aggregate sweep above is supporting evidence (monotone improvement, no invalid C), not the ablation.",
+    "angr's four schema arms are matched only through Ghidra's ruleBlockOr shape. angr's type_b/type_d (the with-else forms) can fire on graphs ruleBlockOr's topology checks reject; those remain unfolded."
+  ]
+}

@@ -1,0 +1,157 @@
+==============================================================================
+test_decompiling_tr_build_spec_list :: build_spec_list   (angr 9.2.213 @ 0x400bc0)
+==============================================================================
+
+--- angr ---
+typedef struct struct_0 {
+    unsigned long long field_0;
+    char padding_8[8];
+    long long field_10;
+} struct_0;
+
+unsigned int build_spec_list(struct_0 *ptr, long long a1)
+{
+    unsigned long cur;  // rbx
+    unsigned long long v10;  // r14
+    unsigned int v18;  // eax
+    unsigned long v19;  // rax
+    char *v20;  // rax
+    char *v21;  // rsi
+    long long v23;  // rbx
+    long long v11;  // r13
+    unsigned long v12;  // r8
+    unsigned long v13;  // rax
+    unsigned long long v14;  // rcx
+    char v15;  // r11b
+    unsigned int v16;  // eax
+    char *v17;  // rax
+    char *v0;  // [bp-0x80]
+    long long v1;  // [bp-0x78]
+    long long v2;  // [bp-0x70]
+    unsigned long v3;  // [bp-0x68]
+    unsigned long long v4;  // [bp-0x60]
+    char v5;  // [bp-0x51]
+    unsigned long v6;  // [bp-0x50]
+    char v7;  // [bp-0x48]
+
+    cur = 0;
+    v10 = ptr->field_0;
+    if (ptr->field_10 > 2)
+    {
+        v11 = 2;
+        v0 = &v6;
+        do
+        {
+            cur += 1;
+            if ((char)es_match(ptr, cur, 91))
+            {
+                if (!(char)es_match() && !(char)es_match() || !(char)find_closing_delim(ptr, v11, *((char *)(v10 + cur)), &v7))
+                {
+LABEL_400d08:
+                    v16 = find_bracketed_repeat(ptr, cur, &v5);
+                    if (!v16)
+                    {
+                        append_repeated_char(a1, v5, v7);
+                        cur = v6 + 1;
+                        continue;
+                    }
+                    else if (v16 != 4294967295)
+                    {
+                        return 0;
+                    }
+                    goto LABEL_400d2a;
+                }
+                v12 = v7;
+                v2 = v10 + v11;
+                v13 = v12 - 2;
+                v1 = v13 - cur;
+                if (v13 == cur)
+                {
+                    v21 = "missing character class name '[::]'";
+                    if (v15 != 58)
+                        v21 = "missing equivalence class character '[==]'";
+                    error(0, 0, dcgettext(NULL, v21, 5));
+                    return 0;
+                }
+                v4 = v14;
+                v3 = v12;
+                if (v15 != 58)
+                {
+                    if ((char)append_equiv_class(a1, v2, v1))
+                        goto LABEL_400e40;
+                    if ((char)star_digits_closebracket(ptr, v11))
+                        goto LABEL_400d08;
+                    v19 = make_printable_str(v2, v1);
+                    v20 = dcgettext(NULL, "%s: equivalence class operand must be a single character", 5);
+                }
+                else if (!(char)append_char_class(a1, v2, v1))
+                {
+                    if ((char)star_digits_closebracket(ptr, v11))
+                        goto LABEL_400d08;
+                    v19 = make_printable_str(v2, v1);
+                    quote(v19);
+                    v20 = dcgettext(NULL, "invalid character class %s", 5);
+                }
+                else
+                {
+LABEL_400e40:
+                    cur = v3 + 2;
+                    continue;
+                }
+                error(0, 0, v20);
+                free(v19);
+                return 0;
+            }
+LABEL_400d2a:
+            v17 = v10 + cur;
+            if ((char)(es_match(ptr, cur, 45) & 4294967295))
+            {
+                v18 = append_range(a1, *(v17), *((char *)(v10 + v11)));
+                if (!(char)v18)
+                    return v18;
+                cur += 3;
+            }
+            else
+            {
+                append_normal_char(a1, *(v17));
+            }
+        } while ((v11 = (long long)(cur + 2), v11 < ptr->field_10));
+    }
+    while (true)
+    {
+        v23 = cur;
+        if (ptr->field_10 <= v23)
+            break;
+        append_normal_char(a1, *((char *)(v10 + v23)));
+        cur = v23 + 1;
+    }
+    return 1;
+}
+
+
+--- kuna (addr mode) ---
+  (no output: addr-mode: no C output for '0x400bc0' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load addr 0x400bc0
+Execution error: Unable to load 512 bytes at r0x00400bc0
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_cygkf05i.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit (name-mode: no C output for 'build_spec_list' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load function build_spec_list
+Execution error: Unable to load 512 bytes at r0x00000bc0
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_82vfil2k.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit))
