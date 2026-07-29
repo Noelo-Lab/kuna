@@ -136,6 +136,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-23 | `earlyreturn` | per-edge const-guard early-return peeling | decbench +47 perfect / −576 GED; 1 opt-out |
 | DIV-24 | DWARF global naming (bug fix) | globals mapped at real byte size so wide accesses get their name | 0/675 |
 | DIV-25 | `switchreturn` | per-case const returns for wide switches (≤256 cases) | +2 perfect / −107 GED; 1 opt-out |
+| DIV-26 | ELF data-symbol naming (no flag) | `.symtab`/`.dynsym` `STT_OBJECT` entries named as globals (`dat_20a098` → `optind`) | 0/675; commits last, DWARF+strings keep precedence |
 
 ## Upstream provenance & sync
 

@@ -101,6 +101,31 @@ symbol-table property map eagerly at bootstrap (loader markup, not a gated pass)
 they are what lets the printer prove a constant points into read-only memory and
 render a string literal.
 
+The **data** half of those same two symbol tables is read alongside the function
+half (`loadimage_object.rs (data_symbols)`): every defined, named `STT_OBJECT`
+entry with a non-zero `st_size`, deduplicated by address, `.symtab` before
+`.dynsym`. Zero-size entries are dropped because the linker's section-boundary
+markers (`__bss_start`, `_edata`, `_end`) are exactly the sizeless ones, and a
+sizeless symbol would plant a name on the first byte of whatever object follows
+it. Each surviving entry becomes a named `undefined<size>` global — the same
+shape §1.4's DWARF data globals use, and for the same reason: a size-1 entry does
+not contain a 4- or 8-byte access, so the printer's covering-symbol query would
+miss and fall back to `dat_<addr>`. Naming what the symbol table names is not
+optional and carries no flag, matching IDA Pro and Ghidra, which both name data
+objects from the symbol table independently of any debug info.
+
+Precedence is what makes this safe to add underneath the existing sources. The
+loader's data symbols commit **last** (`engine.rs (commit_analysis_output)`),
+after the DWARF globals and after the detected string literals, and each is
+skipped where a function or a covering data symbol already sits. So a
+DWARF-described global keeps its DWARF-recovered extent and a detected string
+keeps its `char[N]` typelock; the loader arm only fills addresses neither source
+reaches. That residue is the interesting one: a copy-relocated libc extern
+(`optind`, `stdin`, `stdout`, `optarg`) has a real `.bss` address and a `.dynsym`
+entry but no DIE in the program's own `.debug_info`, so nothing else could name
+it. Relocatable objects are excluded — `elf_reloc` rebases only the function half
+of the symbol table, so a `.o` keeps its previous behavior.
+
 Format dispatch is by magic (`engine.rs (is_object_binary)`): ELF, thin or fat
 Mach-O, PE (`MZ`, validated downstream by the typed PE parser), and bare COFF
 objects recognized by a whitelisted leading `IMAGE_FILE_MACHINE_*` u16 — anything

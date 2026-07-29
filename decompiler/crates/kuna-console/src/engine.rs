@@ -162,6 +162,21 @@ pub struct ConsoleProgram {
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
     analysis_image: Option<(String, Vec<u8>)>,
+    /// (kuna) The loader's defined `STT_OBJECT` data symbols as `(addr, name,
+    /// size)`, read from `.symtab`/`.dynsym` at load
+    /// ([`ObjectLoadImage::data_symbols`]) and installed as named globals by
+    /// [`commit_analysis_output`].
+    ///
+    /// This is **loader markup**, not an analysis pass: it is the data twin of the
+    /// funcsym stream `read_loader_symbols` already installs, so it carries no
+    /// `--option` gate — kuna has never made "name what the symbol table names"
+    /// optional. It is installed at the analysis commit rather than eagerly at
+    /// bootstrap purely for *precedence*: a DWARF-described global and a detected
+    /// string literal both claim their address first, and this arm only fills the
+    /// addresses neither covered (which is where the imported libc objects —
+    /// `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML datatest
+    /// path and for a relocatable object.
+    loader_data_objects: Vec<(u64, String, u64)>,
 }
 
 impl ConsoleProgram {
@@ -540,7 +555,7 @@ impl ConsoleProgram {
     /// gated) facts merge into the same `merged` output committed below. Default
     /// (listing off) ⇒ this whole block is skipped ⇒ byte-identical to today.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
-        if self.pending_analysis.is_empty() {
+        if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
             // Drop the deferred-Listing stash too: nothing to commit against, and
             // a session with no analysis tier (XML path) must not build a Listing.
             self.analysis_image = None;
@@ -952,6 +967,7 @@ pub fn bootstrap_program(
         analysis_code_space: None,
         dwarf_locals: Vec::new(),
         analysis_image: None,
+        loader_data_objects: Vec::new(),
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -1104,6 +1120,11 @@ pub fn bootstrap_from_object(
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let symbols = read_loader_symbols_generic(&loader);
+    // The data half of the same symbol tables (`STT_OBJECT`), read here for the
+    // same reason — the loader is about to be moved into the engine. Installed at
+    // the analysis commit, after DWARF and the detected strings have claimed their
+    // addresses. See `ConsoleProgram::loader_data_objects`.
+    let loader_data_objects = loader.data_symbols();
 
     // Hand the loader to the engine (the C++ `loader` back-pointer the decode
     // reads on load_fill).
@@ -1127,6 +1148,7 @@ pub fn bootstrap_from_object(
         // (`read symbols`) when the flag is known — not at load. `bytes` is moved
         // here (it is unused below this point).
         analysis_image: Some((path.to_string(), bytes)),
+        loader_data_objects,
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
@@ -1428,6 +1450,50 @@ fn commit_analysis_output(
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, arr, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+    }
+
+    // 4a. Loader data symbols: the defined `STT_OBJECT` entries of `.symtab` /
+    //     `.dynsym` (`ConsoleProgram::loader_data_objects`). Installed exactly like
+    //     the DWARF data globals of arm 1a — an `undefined<size>` global with
+    //     `namelock` only, so the container query matches at the real access width
+    //     and type propagation still infers the object's real type — but committed
+    //     HERE, last, so the two richer sources win every address they claim: a
+    //     DWARF-described global keeps its DWARF extent (arm 1a) and a detected
+    //     string literal keeps its `char[N]` typelock (arm 4). What is left is the
+    //     set neither reaches, and that is precisely the interesting one: a
+    //     copy-relocated libc extern (`optind`, `stdin`, `stdout`, `optarg`) has a
+    //     `.bss` address and a `.dynsym` entry but no `.debug_info` DIE, so before
+    //     this arm it rendered `dat_20a098`. IDA Pro and Ghidra both name data
+    //     objects from the symbol table independently of debug info.
+    let loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
+    for (sym_addr, name, size) in &loader_data_objects {
+        let addr = Address::new(Rc::clone(code_space), *sym_addr);
+        let occupied = {
+            let arch = prog.arch();
+            match arch.symboltab.get_global_scope() {
+                Some(global) => {
+                    arch.symboltab.find_function(global, &addr).is_some()
+                        || arch
+                            .symboltab
+                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .is_some()
+                }
+                None => false,
+            }
+        };
+        if occupied {
+            continue;
+        }
+        let ct = prog
+            .arch()
+            .types()
+            .get_base((*size).max(1) as int4, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?;
+        let arch = prog.arch_mut();
+        let (scope, base) =
+            arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+        let (sid, _) =
+            arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
+        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
 
     // 5. Library prototypes (the kuna analog of ApplyDataArchiveAnalyzer): park each
