@@ -444,6 +444,22 @@ keeps a call-crossing cover. The wrong-list failure mode is structural: a
 missing `<unaffected>` stack-pointer record makes every call guard the stack
 pointer, skewing the entire frame layout.
 
+(ida) One record kuna adds that the vendored specs leave implicit: the **x86
+direction flag** (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_dfunaffected.rs`).
+Every x86 string instruction scales its pointer step by `1 − 2·DF`, and SLEIGH
+lowers that faithfully, so the flag reaches emitted output as a live variable and
+a `(uint8)df * -2 + 1` stride on every inlined `strcmp`/`memcpy`. The flag is not
+unknown — the processor spec pins it to 0 at function entry (§1.3's tracked-value
+seeding) and `ActionConstbase` materializes that — but the gcc prototype's
+`<unaffected>` list omits `DF`, so a *call* forces the unknown-effect INDIRECT
+guard and the constant never reaches the stride. Both x86 ABIs require the
+direction flag clear at every function boundary, and the Microsoft prototype in
+the same spec already records it, so kuna states the same guarantee for the models
+that are silent, at model-decode time. A spec that mentions `DF` either way has
+made a deliberate statement and is left alone, and a language with no such
+register is a structural no-op — the assertion is keyed on the SLEIGH register
+name and a lookup miss is the exit.
+
 ### The spacebase placeholder
 
 A call that may take stack arguments cannot find them until the caller's
