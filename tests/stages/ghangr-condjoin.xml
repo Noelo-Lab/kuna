@@ -2,7 +2,7 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     angr condition-based join restructuring (option condjoin, default-OFF;
-    ELEM 4113), S8 goto-quality sub-stage.  Closes proposal #56 (lighttpd
+    ELEM 4114), S8 goto-quality sub-stage.  Closes proposal #56 (lighttpd
     server.c::main in the angr corpus binary `newbury` @0x40f696, which reaches
     0 gotos / 0 labels with this option on, down from 1 / 1).
 

@@ -145,9 +145,10 @@ use crate::context::{BlockId, OpId};
 use crate::funcdata::Funcdata;
 
 /// Marshaling element `<condjoin>` (kuna).  ElementIds live in the 4000+ range
-/// (…4111 earlyreturn, 4112 switchreturn taken; this is 4113).
+/// (…4111 earlyreturn, 4112 switchreturn taken on `main`; 4113 is taken by
+/// `condfold` (PR #193), developed in parallel with this one — so this is 4114).
 pub const ELEM_CONDJOIN: kuna_base::marshal::ElementId =
-    kuna_base::marshal::ElementId::new("condjoin", 4113);
+    kuna_base::marshal::ElementId::new("condjoin", 4114);
 
 /// Maximum conservatively-scored printed statements in a single relaxed or-block.
 /// Ghidra's own budget admits 1 (its `statement > 2` counts the branch); angr's
