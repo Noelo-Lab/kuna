@@ -65,7 +65,18 @@ dispatch. The variants worth knowing:
   sub-byte fields (§5.6); `Union` carries fields that all start at offset 0 and
   is never accessed directly — every read/write goes through resolution (§5.4).
 - `Enum` carries the value→name map; rendering a constant as an OR of enum
-  names is an emission concern (`EnumRepresentation`, same file).
+  names is an emission concern (`EnumRepresentation`, same file). Two
+  constructors: `get_type_enum` builds at the factory's configured enum width,
+  which `setup_sizes` derives from the architecture default (8 bytes on x86-64) —
+  the C parser's notion of "an enum" — while `get_type_enum_sized` takes an
+  explicit width and signedness, for an enum whose declaration states its own
+  (a C `enum` is normally `int`-sized, and DWARF records it; a type whose size
+  disagrees with the storage it describes will not bind to it, and a wrong size
+  is worse than a missing name). Filling the map is a re-intern
+  (`set_enum_values`), so the value map must be complete before installation:
+  constructing a same-named enum a second time is rejected as an altered
+  definition, not treated as a no-op, and a recovery pass that sees the same
+  declaration once per compilation unit has to look before it builds.
 - The `Partial*` variants (`PartialStruct`/`PartialUnion`/`PartialEnum`) stand
   for a byte-slice of a container — the type a Varnode gets when it holds only
   part of a struct/union/enum — each carrying the container, the byte offset,
