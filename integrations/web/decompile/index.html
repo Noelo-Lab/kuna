@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>decompile — Kuna in your browser</title>
+<meta name="description" content="Run the Kuna decompiler entirely client-side: load an ELF, PE, or Mach-O binary and read its C, in this browser tab. No server, no upload.">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body class="app">
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="../">
+      <img src="../assets/img/kuna-mark.png" alt="">
+      <span class="wordmark">Kuna</span>
+      <span class="at">in&#8209;browser &middot; webassembly &middot; no server</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="./" class="here" aria-current="page">/decompile</a>
+      <a href="https://noelo.org">/noelo</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="bar">
+    <div class="wrap">
+      <p class="status busy" id="status" role="status" aria-live="polite"><span class="dot"></span>loading decompiler&hellip;</p>
+      <button class="tinybtn" id="dlbtn" disabled>Download binary source</button>
+      <label class="tinybtn primary" id="pick" aria-disabled="true">
+        Load binary <input type="file" id="file">
+      </label>
+    </div>
+  </div>
+
+  <div class="work">
+    <aside id="sidebar">
+      <p class="lhead label" id="fnhead">functions</p>
+      <div id="fnlist"></div>
+    </aside>
+
+    <div class="view">
+      <div id="empty">
+        <div class="inner">
+          <p class="eyebrow label">
+            <svg class="tick" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+              <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/>
+              <circle cx="6" cy="6" r="2" fill="currentColor"/>
+            </svg>
+            Client&#8209;side decompiler
+          </p>
+          <h2>Load a binary to decompile it here.</h2>
+          <p>
+            Any <b>ELF</b>, <b>PE</b>, or <b>Mach&#8209;O</b> file. The engine &mdash;
+            Ghidra's decompiler, ported to Rust &mdash; runs in this tab as WebAssembly:
+            your file is never uploaded and no server takes part.
+          </p>
+          <p class="hint">
+            Every function comes back at once. Stubs and import thunks are grouped at the
+            bottom of the list; <code>Download binary source</code> exports the whole
+            binary as a <code>.c</code>/<code>.h</code>/<code>.asm</code> project zip.
+          </p>
+        </div>
+      </div>
+
+      <div class="vhead" id="vhead" hidden>
+        <span class="fname" id="vname"></span>
+        <span class="fmeta" id="vmeta"></span>
+      </div>
+      <pre id="code" hidden></pre>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { loadKuna } from '../kuna-web.js';
+  import { makeZip } from '../zip.js';
+  import { highlightC, escapeHtml } from '../assets/js/highlight-c.js';
+
+  const statusEl = document.getElementById('status');
+  const pickEl = document.getElementById('pick');
+  const fileEl = document.getElementById('file');
+  const listEl = document.getElementById('fnlist');
+  const headEl = document.getElementById('fnhead');
+  const codeEl = document.getElementById('code');
+  const emptyEl = document.getElementById('empty');
+  const vheadEl = document.getElementById('vhead');
+  const vnameEl = document.getElementById('vname');
+  const vmetaEl = document.getElementById('vmeta');
+  const dlEl = document.getElementById('dlbtn');
+
+  const setStatus = (msg, cls = 'busy') => {
+    statusEl.className = 'status ' + cls;
+    statusEl.innerHTML = '<span class="dot"></span>' + escapeHtml(msg);
+  };
+
+  let kuna = null;
+  let loaded = null; // { bytes, fileName } of the last successfully decompiled binary
+  try {
+    kuna = await loadKuna({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs' });
+    setStatus('ready — load an ELF, PE, or Mach-O binary', 'ok');
+    pickEl.removeAttribute('aria-disabled');
+  } catch (e) {
+    setStatus('failed to load decompiler: ' + e.message, 'err');
+    console.error(e);
+  }
+
+  fileEl.addEventListener('change', async () => {
+    const f = fileEl.files[0];
+    if (!f || !kuna) return;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const fmt = kuna.formatName(bytes);
+    setStatus(`decompiling ${f.name} (${fmt}, ${bytes.length.toLocaleString()} bytes)…`);
+    listEl.innerHTML = '';
+    codeEl.hidden = true; vheadEl.hidden = true; emptyEl.hidden = false;
+    loaded = null; dlEl.disabled = true;
+    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
+
+    const t0 = performance.now();
+    let result;
+    try {
+      result = await kuna.decompile(bytes); // all functions, one wasm run
+    } catch (e) {
+      setStatus('decompile failed: ' + e.message, 'err');
+      console.error(e);
+      return;
+    }
+    const dt = Math.round(performance.now() - t0);
+    loaded = { bytes, fileName: f.name };
+    dlEl.disabled = false;
+
+    // Split into normal functions and PLT/import-thunk stubs (`kind` from the
+    // engine; a missing kind means a plain function), each address-ascending:
+    // real code first, the boilerplate stubs grouped after a divider.
+    const isStub = (fn) => fn.kind === 'plt' || fn.kind === 'thunk';
+    const shown = result.functions.filter((fn) => fn.code || fn.error);
+    const byAddr = (a, b) => a.address - b.address;
+    const normal = shown.filter((fn) => !isStub(fn)).sort(byAddr);
+    const stubs = shown.filter(isStub).sort(byAddr);
+    setStatus(`${f.name} (${fmt}) — ${shown.length} functions in ${dt} ms`, 'ok');
+    headEl.textContent = `${normal.length} functions · ${stubs.length} stubs`;
+
+    const rows = [];
+    const addRow = (fn) => {
+      const row = document.createElement('div');
+      row.className = 'fn' + (isStub(fn) ? ' stub' : '') + (fn.error ? ' bad' : '');
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.innerHTML =
+        `<span class="nm">${escapeHtml(fn.name)}</span><span class="ad">${fn.address_hex}</span>`;
+      row.addEventListener('click', () => select(row, fn));
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(row, fn); }
+      });
+      listEl.appendChild(row);
+      rows.push({ row, fn });
+    };
+    normal.forEach(addRow);
+    if (stubs.length) {
+      const div = document.createElement('div');
+      div.className = 'fndiv label';
+      div.textContent = `imports & thunks (${stubs.length})`;
+      listEl.appendChild(div);
+      stubs.forEach(addRow);
+    }
+    const first = rows.find((r) => !isStub(r.fn) && r.fn.code) || rows.find((r) => r.fn.code);
+    if (first) first.row.click();
+  });
+
+  // Download binary source: run the whole-binary project export and hand the
+  // four artifacts (<name>.c/.h/.asm/README.md) over as a zip.
+  dlEl.addEventListener('click', async () => {
+    if (!loaded || !kuna) return;
+    const safeName = loaded.fileName.replace(/[^A-Za-z0-9._-]/g, '_');
+    dlEl.disabled = true;
+    setStatus('building project…');
+    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
+    try {
+      const proj = await kuna.project(loaded.bytes, safeName); // one wasm run
+      const entries = Object.entries(proj.files)
+        .map(([name, data]) => ({ name: `${safeName}.kuna/${name}`, data }));
+      const zip = makeZip(entries);
+      const url = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.kuna.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus(`${safeName}.kuna.zip downloaded (${zip.length.toLocaleString()} bytes)`, 'ok');
+    } catch (e) {
+      setStatus('project export failed: ' + e.message, 'err');
+      console.error(e);
+    } finally {
+      if (loaded) dlEl.disabled = false;
+    }
+  });
+
+  function select(row, fn) {
+    [...listEl.children].forEach((c) => c.classList.remove('sel'));
+    row.classList.add('sel');
+    emptyEl.hidden = true;
+    vheadEl.hidden = false;
+    codeEl.hidden = false;
+    vnameEl.textContent = fn.name;
+    const tags = [fn.address_hex];
+    if (fn.kind === 'plt' || fn.kind === 'thunk') tags.push(fn.kind);
+    if (fn.error) tags.push('decompile error');
+    vmetaEl.textContent = tags.join(' · ');
+    if (fn.error) {
+      codeEl.textContent =
+        `/* ${fn.name} @ ${fn.address_hex} — decompile error:\n   ${fn.error} */`;
+    } else {
+      codeEl.innerHTML = highlightC(fn.code);
+    }
+  }
+</script>
+</body>
+</html>

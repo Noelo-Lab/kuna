@@ -2914,3 +2914,70 @@ DIV-logged when the behavior ships in Phase 2). Phases: 2 = engine bridge (Archi
 from wire specs, GhidraLoadImage/ContextGhidra, minimal `Funcdata::encode`,
 PrintC→EmitMarkup — first real C in the GUI); 3 = lazy providers; 4 = parity
 (rename/retype id echo, structureGraph, parammeasures, BSim signatures, overlays).
+
+## 2026-07-28 — the project site: landing page + /decompile (branch feat/site)
+
+`integrations/web/` grew from "the wasm demo page" into the **project site** at
+**kuna.noelo.org** (`CNAME` rides in the bundle; `.github/workflows/pages.yml` already
+deploys `dist/`). Two pages, one static bundle, no server:
+
+- **`/`** — a single landing page: hero (mark, what Kuna is, `[SOURCE] [TRY IT]`, a block
+  of real commands), a **compare** section (two dropdowns over `compare-samples.js` —
+  Kuna's output beside another decompiler's or the original source; a rival with nothing
+  recorded renders a "not recorded yet" pane rather than a fake one), and the three
+  **goals** (autonomous refinement · llm-facing · tunable).
+- **`/decompile/`** — the in-browser decompiler, restyled onto the same system. Same
+  engine path as before; it reaches the wasm/specs/glue at the bundle root with `../`, so
+  `test/glue.mjs` and `test/parity.mjs` are untouched by the move.
+
+Design shares the Noelo Lab site's palette and typefaces (BSD-2, credited at the top of
+`assets/css/site.css`) but not its layout — a tool page, not a lab page. `assets/` holds
+the one stylesheet, the two vendored webfonts, the mark (cropped + background-normalized
+from `assets/kuna.png`), and `js/highlight-c.js`, the single C highlighter both pages use.
+
+No engine change: nothing under `decompiler/` or `specs/` is touched, so the datatest /
+stage / workspace gates are unaffected; `make check-spec` stays green. Verified in real
+headless Chrome against a built `dist/`: engine loads, `sample.elf` → 13 functions,
+selection + highlighting, and the project-zip export (`sample.elf.kuna.zip`, 18,980 B);
+compare section exercised across all samples × rivals; no horizontal overflow at 375 px.
+
+### 2026-07-28 (cont.) — ten mined compare samples + `scripts.decbench.showcase`
+
+The compare section shipped with three toy fixtures and empty rival panes. It now leads
+with **ten real functions out of stripped, `gcc -O2` binaries**, each with all four rival
+decompilers *and* the original source recorded, and each carrying its measured **DecBench
+GED** (printed under the dropdowns for whichever pair is on screen).
+
+Samples are **mined, not hand-picked**. New tool `scripts/decbench/showcase.py` — the
+mirror of `scripts.decbench.mine`, which hunts kuna's losses — reads the DecBench results
+tree for optimized, 22–100-line functions where kuna out-scores IDA and *no* rival
+out-scores kuna, one row per source function, and dumps
+`<case-id>/{kuna,ida,ghidra,binja,angr,source}.c` per candidate. `--verify` re-runs
+`kuna decompile-all <stripped binary> --addr <vma>` on today's build and diffs; `--emit`
+renders `compare-samples.js` entries straight from the bundles, so no pane is retyped.
+
+**GED only nominates; humans (agents) decide.** An 89-candidate mined pool went through a
+read-every-pane review pass and then an adversarial pass briefed to prove each survivor
+would embarrass the project. That killed roughly three quarters of it, on defects the
+metric cannot see — a `SCARRY8` overflow guard reading the post-add value in
+`grep::nlscan`, `freecon(NULL)` from a load hoisted above its call in
+`libselinux::{f,l}setfilecon_raw`, phantom uninitialized reads in `betaflight::cliServo`,
+unresolved `stderr`/format-string constants every rival resolves. The procedure, and what
+disqualifies a sample, is `docs/decbench-loop.md` → *Finding good kuna examples*: an agent
+told to "find good kuna examples" now has a written recipe.
+
+The ten span coreutils `fmt::main` (the getopt_long switch — one switch and four gotos vs
+Ghidra's four switches and nine, IDA's seven gotos over six labels), openssh
+`scp::sshbuf_b64tod` and `sshd::should_drop_connection`, `dpkg::packages`,
+zlib `gz_look`, `libacl::seq_get_cmd`, `cronie::strcmp_until`, `tar::sys_exec_command`,
+`iproute2::xdp_parse`, and — on stripped STM32F405 flight-controller firmware —
+cleanflight `sendSatalliteSignalQualityAsTemperature2`. All **11/11 verified panes
+reproduce byte-for-byte** on the current build (the ten plus `ip::flush_rule`, held as an
+alternate). The three fixture samples stay, last, as the reproduce-from-this-repo set.
+
+Also fixed a **pre-existing mobile layout bug** on this branch: `.hero`'s ≤860px rule used
+a bare `1fr`, whose min-content floor is the `.cmd` block's non-wrapping command lines, so
+the page overflowed ~146px at phone widths instead of `.cmd` scrolling in its own box —
+now `minmax(0,1fr)`. Re-measured in headless Chrome across every sample × rival at 375 /
+414 / 768 / 1440 px: **0 px horizontal overflow everywhere**. No engine change;
+`make check-spec` green.

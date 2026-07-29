@@ -122,6 +122,75 @@ scope: small | proposal
 ## Proposed fix      (mechanism, owning files, risks)
 ```
 
+## Finding good kuna examples
+
+The loop above mines kuna's **losses**. The same results tree also answers the mirror
+question — *where does kuna already beat everyone?* — which is what stocks the landing
+page's compare section (`integrations/web/compare-samples.js`, rendered at
+[kuna.noelo.org](https://kuna.noelo.org) → *compare*). Ask an agent to **"find good kuna
+examples"** and this is the procedure it runs.
+
+```bash
+# 1. MINE — optimized builds, medium functions, kuna beats ida and nobody beats kuna
+python3 -m scripts.decbench.showcase --perfect --limit 40 \
+        --dump /tmp/showcase-cands
+#   --rival ghidra|binja|angr   compare against a different decompiler
+#   --no-sweep                  accept beating --rival only (default: beat all four)
+#   --perfect                   require kuna GED == 0 (structurally exact)
+#   --min-size/--max-size       pane fit, default 22..100 decompiled lines
+#   -> /tmp/showcase-cands/<case-id>/{kuna,ida,ghidra,binja,angr,source}.c + meta.json
+
+# 2. VERIFY — does the recorded pane still reproduce on today's build?
+python3 -m scripts.decbench.showcase --perfect --limit 40 \
+        --dump /tmp/showcase-cands --verify        # nonzero exit on any drift
+
+# 3. JUDGE — this is the step that decides. Never ship a mined candidate unread.
+# 4. EMIT — render the picks straight out of the bundles, no retyping
+python3 -m scripts.decbench.showcase --dump /tmp/showcase-cands --emit picks.json
+#   picks.json = [{"case_id": "..."}, ...]   — `name` (the dropdown label) and
+#   `meta` (the provenance line) are generated; override only to disambiguate.
+```
+
+The page carries **no per-sample commentary**, by design: the dropdown label is a
+neutral identifier (`fn() — project binary, arch`), the line under it is provenance,
+and the only claim made is the measured GED for the pair on screen. A caption telling
+the reader what to notice would be the one thing there that is not machine-derived —
+the panes are the argument. Keep the emitter's output free of prose.
+
+**Step 3 is the whole job.** GED is a *filter*, not a verdict: roughly half of decbench's
+cross-decompiler gaps are scoring artifacts (see *Caveats*), and a metric win says
+nothing about whether kuna's pane is pleasant to read. So fan out one reviewer per
+handful of candidates — each reads **all six panes in full** — then run an **adversarial
+second pass** whose brief is *"this sample is about to embarrass kuna on its own front
+page; find the reason"*. Both passes were what turned an 89-candidate mined pool into
+the shipped samples; the first pass rejected roughly two thirds, and the skeptics killed
+half of what survived.
+
+Reject a candidate for any of:
+
+- **Semantic wrongness** — kuna's body disagrees with `source.c` (dropped call, inverted
+  test, a value read before the call that produces it). A pretty but wrong pane is fatal.
+- **A rival that simply reads better.** The visitor can flip the dropdown; if Ghidra or
+  angr wins that pane, the sample backfires. This is why the miner defaults to `--sweep`.
+- **An invisible GED win** — kuna scores lower only because it *dropped* code the rivals
+  recovered (compare pane lengths, then read for the missing block).
+- **Constants kuna alone fails to resolve** — a bare `0x7f373` in a `printf` format slot,
+  or a `dat_XXXX` where all four rivals print `stderr`. One or two is normal on a stripped
+  binary; a pattern of it while every rival resolves is a loss the visitor sees.
+- Raw register names as variables, leaked uniques, `halt_baddata`, a truncated decode.
+- A trivial three-line wrapper, or a source pane that is macro soup (`source_status:
+  "preprocessed"` in `meta.json` — the `.c` was unavailable and the `.i` was used).
+
+Explicitly **not** a defect: kuna's own `/* WARNING: <pass>: ... */` transform banners
+(`branchflip`, `taildup`, `earlyreturn`, `tailcalljump`, …). They are documented,
+default-on provenance annotations (`docs/options.md`) — judge the code, not them.
+
+Provenance the page must state correctly: decbench decompiled the **stripped** binary
+with every decompiler, then renamed each function's own `sub_<addr>` placeholder to its
+DWARF name (`_relabel_to_dwarf`). Callees stay `sub_`/`dat_` in every pane. That rename
+is the *only* edit — bodies are verbatim tool output, which `--verify` re-checks against
+the current build before anything ships.
+
 ## Refreshing the signal
 
 After a future benchmark re-run (e.g. post hang-fix): point `KUNA_DECBENCH_RESULTS`
