@@ -138,6 +138,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-25 | `switchreturn` | per-case const returns for wide switches (≤256 cases) | +2 perfect / −107 GED; 1 opt-out |
 | DIV-26 | ELF data-symbol naming (no flag) | `.symtab`/`.dynsym` `STT_OBJECT` entries named as globals (`dat_20a098` → `optind`) | 0/675; commits last, DWARF+strings keep precedence |
 | DIV-27 | own-prototype seeding (bug fix, no flag) | a function's parked (DWARF/libproto) signature is applied to its OWN decompile, not just to its callers | 0/675; also kills the bogus `undefined16` RAX:RDX return |
+| DIV-28 | mid-string literals (bug fix, no flag) | a constant pointing INTO a readonly char array is typed `char *` (`bindtextdomain(0x68d8,…)` → `"coreutils"`) | 0/675; interior hits only, exact-hit path untouched |
 
 ## Upstream provenance & sync
 
