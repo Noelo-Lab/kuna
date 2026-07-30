@@ -166,8 +166,7 @@ fn collect_error_noreturn_callsites(
     for (&entry, _) in listing.functions() {
         let next = listing.next_function_after(entry).map(|f| f.entry);
         let body: Vec<(u64, &Insn)> = listing
-            .instructions()
-            .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+            .instructions_in_range(entry, next)
             .map(|(&vma, insn)| (vma, insn))
             .collect();
         for i in 0..body.len() {
@@ -367,11 +366,9 @@ fn function_is_no_return(
     error_recog: &ErrorRecognizer,
 ) -> bool {
     let next = listing.next_function_after(entry).map(|f| f.entry);
-    // The function body in address order (the Listing's `instructions()` is a
-    // BTreeMap iterator, already sorted).
+    // The function body in address order.
     let body: Vec<(u64, &Insn)> = listing
-        .instructions()
-        .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+        .instructions_in_range(entry, next)
         .map(|(&vma, insn)| (vma, insn))
         .collect();
     if body.is_empty() {
@@ -463,8 +460,7 @@ fn function_reaches_only_noreturn(
     let next = listing.next_function_after(entry).map(|f| f.entry);
     // Address-indexed body for O(log n) successor lookup.
     let body: BTreeMap<u64, &Insn> = listing
-        .instructions()
-        .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+        .instructions_in_range(entry, next)
         .map(|(&vma, insn)| (vma, insn))
         .collect();
     reaches_only_noreturn_walk(&body, entry, next, terminal, error_recog)
