@@ -1663,10 +1663,14 @@ mod tests {
         // (Architecture::apply_mode; returndup-only warning as the discriminator),
         // and ghangr-iteexpr / the `iteexpr` computed-arm ?: extension of iteregion
         // (angr ITERegionConverter over computed arms; ternary in the on-pass only),
-        // and ghangr-condfold / the `condfold` short-circuit fold across a
-        // non-trivial sibling (angr Phoenix MultiStatementExpression relaxation;
-        // crossing goto in the off-pass, comma-expression operand in the on-pass))
-        assert_eq!(count, 165, "corpus file count drifted");
+        // and the TWO `condfold` witnesses for the short-circuit fold across a
+        // COMPLEX sibling (angr Phoenix MultiStatementExpression relaxation):
+        // ghangr-condfold / Rule A, the bounded prefix (crossing goto in the
+        // off-pass, comma-expression operand in the on-pass), and
+        // ghangr-condfold-newbury / Rule B, the statement-shape allowlist folding
+        // a guard cascade through a nested BlockCondition (goto+label in the
+        // off-pass, neither in the on-pass))
+        assert_eq!(count, 166, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

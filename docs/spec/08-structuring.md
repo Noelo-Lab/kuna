@@ -82,94 +82,157 @@ run to a fixpoint *before* everything else by `blockaction.rs
 (CollapseStructure::collapse_conditions)`, so cascading guards fold into one
 compound condition before the if-rules can consume them separately.
 
-**(angr) `condfold` — folding across a non-trivial sibling.** `rule_block_or`
+**(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
 of the prospective `&&`/`||`) to be *non-complex*: `substrate/funcdata_block.rs
 (Funcdata::bb_is_complex)` counts the block's statements — the trailing branch
 counts as one — and anything past two declines the fold. In practice that means
 the sibling must be a bare test. When the compiler parked even one extra
 statement in front of the second test (a spill, an address computation, a call
-whose result *is* the test), upstream refuses to fold and the second condition
-is emitted as its own block that branches back into the first arm's clause —
-the crossing `goto` shape, where angr renders one compound condition. On
-coreutils `tr::build_spec_list` that is literally `result_idx = &v10; if
-(es_match(es,v12,'=')) goto label_40242e;`.
+whose result *is* the test), upstream refuses to fold. Two shapes pay for that,
+and they are the two proposals this option closes:
 
-angr does not decline here. `phoenix._match_acyclic_short_circuit_conditions`
+* a **crossing goto** — the second condition becomes its own block that
+  branches back into the first arm's clause, where angr renders one compound
+  condition. On coreutils `tr::build_spec_list` that is literally `result_idx =
+  &v10; if (es_match(es,v12,'=')) goto label_40242e;`.
+* a **goto + label into a guard cascade's shared body** — three permission
+  guards whose arms reconverge cannot fold pairwise, so one of the two edges
+  into the body has to be virtualized. On lighttpd `server.c::main` (angr
+  corpus binary `newbury`) kuna emits 1 goto / 1 label where angr emits 0 / 0.
+
+angr does not decline on either. `phoenix._match_acyclic_short_circuit_conditions`
 (types a–d) checks `_is_single_statement_block` and, on a multi-statement
 sibling, wraps the operand in an AIL `MultiStatementExpression` — a C **comma
 expression** — under the `_should_use_multistmtexprs` policy (`MAX_ONE_CALL`:
 at most one call and at most `_multistmtexpr_stmt_threshold`, default 5,
 non-label statements), refusing outright on a non-terminal conditional jump or
-any unconditional jump.
+any unconditional jump. kuna's `comma_separate` printer modifier *is*
+`MultiStatementExpression`; kuna's `bb_is_complex` *is*
+`_is_single_statement_block`.
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_condfold.rs` ports exactly
-that relaxation and nothing else. It adds a second, narrower disjunct at the
-single `is_complex(orblock)` decline: a complex sibling is accepted anyway when
-it is a `BlockCopy` of one `BlockBasic` that `kuna_condfold.rs
-(condfold_eligible)` approves. Eligibility walks the block's live op list with
-the *same* skip rules the printer applies (`p9_emit/printc.rs
-(PrintC::emit_basic_block_ops)`: not-printed ops, SSA markers, ops whose output
-varnode is implied, and the bare `CPUI_BRANCH`), so the caps govern exactly
-what will appear, and declines on: more than the policy's statement cap or more
-than one *statement-root* call; any non-terminal branch op (angr's own refusal
-— a `goto` is not an expression); a block that does not end in a
-`CPUI_CBRANCH`; or a block carrying an instruction comment, because
-`emit_basic_block_ops` suppresses `emit_comment_group` under `comma_separate`
-and folding would silently delete the comment. The verdict is precomputed per
-`BlockBasic` alongside the existing `complex_blocks` set, in both engines'
-precompute sites, and read through the `BlockCopy` `copy` pointer.
+that relaxation and nothing else. It widens the single `is_complex(orblock)`
+decline in both engines: a complex sibling is accepted when **either** of two
+admission rules takes it. The predicate is their union — the two rules were
+derived independently against the two shapes above and neither subsumes the
+other.
 
-Two guards live at the gate rather than in the predicate. The sibling must be a
-`BlockCopy` — a `BlockList`/`BlockIf`/`BlockCondition` operand could render
-braces, multiple lines, or a label inside the parentheses, i.e. invalid C — and
-the pre-existing `!is_interior_goto_target` decline is never relaxed, because
-`printc.rs (PrintC::emit_block_copy)` emits the label statement *first* and a
-labelled sibling would print `label_x:` inside an expression. Finally, a node
-produced by a relaxed fold is force-marked complex, because
-`BlockCondition::isComplex` delegates to sub-block 0 and would otherwise report
-the *left* operand's trivial verdict for a node whose right operand is a comma
-chain — letting `rule_block_while_do` hoist the whole chain into a `while(...)`
-header.
+**Rule A — bounded prefix.** The sibling is a `BlockCopy` of one `BlockBasic`
+that `kuna_condfold.rs (prefix_eligible)` approves. Eligibility walks the
+block's live op list with the *same* skip rules the printer applies
+(`p9_emit/printc.rs (PrintC::emit_basic_block_ops)`: not-printed ops, SSA
+markers, ops whose output varnode is implied, and the bare `CPUI_BRANCH`), so
+the caps govern exactly what will appear, and declines on: more than the
+policy's statement cap or more than one *statement-root* call; any non-terminal
+branch op (angr's own refusal — a `goto` is not an expression); a block that
+does not end in a `CPUI_CBRANCH`; or a block carrying an instruction comment,
+because `emit_basic_block_ops` suppresses `emit_comment_group` under
+`comma_separate` and folding would silently delete the comment. A
+`BlockList`/`BlockIf`/`BlockCondition` sibling is never taken by this rule — such
+an operand could render braces, multiple lines, or a label inside the
+parentheses, i.e. invalid C.
+
+**Rule B — statement shape.** `kuna_condfold.rs (shape_score)` applies an
+explicit allowlist instead of a length bound: every op must be a marker (never
+printed), an op with an output varnode, a void `CALL`/`CALLIND`, a `STORE`, or
+the single terminal `CBRANCH`. A `RETURN`, a second branch, a `BRANCHIND`, a
+`CALLOTHER` (userop rendering can be multi-line or special-cased) or a
+no-return call declines the block outright, as does a comment. Per block it
+allows at most two conservatively-scored statements and two calls — counting
+*every* call, unlike Rule A. Statements are scored with the same
+`Varnode::calc_explicit` approximation `bb_is_complex` uses rather than by
+reading `Varnode::is_explicit()`, which is not yet meaningful when structuring
+runs; the approximation is inexact in both directions, so a block admitted at
+the cap can render one statement wider than the nominal budget. That is
+readability slack, never a correctness one — `comma_separate` emits every op
+either way.
+
+Rule B additionally admits a **nested `BlockCondition`** as the sibling, which
+Rule A never does, and that is what lets a guard *cascade* fold: `newbury::main`
+folds its second and third guards first and then takes the resulting Condition
+as the sibling of the first. `printc.rs (PrintC::emit_block_condition)` emits
+*both* sub-blocks of a nested Condition under `comma_separate`, so every leaf
+must itself be Rule-B admissible (the recursion in `blockaction.rs
+(CollapseStructure::is_shape_foldable)`), and the fold site enforces two
+expression-size caps — at most four condition leaves and at most four scored
+statements summed over them — because `collapse_conditions` is a fixpoint loop
+with no natural bound. A leaf admitted only by Rule A is deliberately *not*
+admissible as a nested leaf: Rule A's cap is up to nine printed statements,
+which the expression-size caps have no honest way to charge, so a Rule-A block
+may only ever be the direct operand of one fold.
+
+Two guards live at the gate rather than in either predicate. The pre-existing
+`!is_interior_goto_target` decline is never relaxed, because `printc.rs
+(PrintC::emit_block_copy)` emits the label statement *first* and a labelled
+sibling would print `label_x:` inside an expression. And a node produced by a
+relaxed fold is force-marked complex, because `BlockCondition::isComplex`
+delegates to sub-block 0 and would otherwise report the *left* operand's
+trivial verdict for a node whose right operand is a comma chain — letting
+`rule_block_while_do` hoist the whole chain into a `while(...)` header. That
+marking is also what keeps Rule B's expression-size caps reachable: a relaxed
+result always re-enters the admission check instead of slipping past it as
+non-complex. The caps nonetheless bound the relaxation only at each site where
+it is *exercised*; they are not a global bound on the final condition's width,
+because a purely upstream-legal fold (both operands non-complex) can still
+extend a cascade on the left without consulting them, exactly as it can with
+the option off.
 
 Nothing moves. `substrate/block.rs (BlockGraph::new_block_condition)`
 re-parents two existing structuring nodes; no p-code op is moved, reordered,
-cloned, or deleted, and the prefix statements are printed by `printc.rs
+cloned, or deleted, and the absorbed statements are printed by `printc.rs
 (PrintC::emit_block_condition)` inside the right operand under the existing
 `comma_separate` modifier. Soundness rests on a precondition `rule_block_or`
 already enforces and this option never weakens: the sibling is single-in, so
 its statements cannot execute on a path where the compound condition is not
 evaluated; C's short-circuit rule evaluates the right operand exactly when
 control used to fall into the sibling; and the comma operator is a sequence
-point, so the prefix still runs before the test. Every guard listed above is
-therefore a rendering-validity or readability guard, not a semantic one.
+point, so the prefix still runs before the test. The only synthesized operation
+is `negate_condition_rec`, a boolean sense flip on an already-computed
+condition, which is order-neutral. Consequently the concern raised in the
+second proposal — that a de Morgan inversion cannot reorder predicates which
+call `getuid`/`geteuid`/`getegid`/`getgid` — does not arise: the operands are
+never swapped, only relabelled, and no purity analysis is needed. Every guard
+listed above is a rendering-validity or readability guard, not a semantic one.
 
-The call cap deserves a precise statement, because it is *not* an exact match
-for angr's `MAX_ONE_CALL`. The eligibility walk mirrors the printer, and the
-printer's implied-output skip runs **before** the call test — so the cap counts
-only calls printed as their own comma-chain element (statement roots). A call
-whose result is inlined into the sibling's own condition is not charged, and a
-folded operand may therefore render more than one call; on the aggregate sweep
-1 of the 46 new call-bearing operands does (`mv -O2 copy_internal` at `wide`
-renders `cached_umask(...)`, counted, alongside `fchmod(...)`, implied into the
-test and not counted). Since the fold moves no p-code and the sequencing
-argument above is independent of the call count, this is a readability bound
-only: the looser count cannot produce wrong C, it only admits a denser operand
-than angr would.
+Rule A's call cap deserves a precise statement, because it is *not* an exact
+match for angr's `MAX_ONE_CALL`. The eligibility walk mirrors the printer, and
+the printer's implied-output skip necessarily runs **before** the call test —
+an implied call is not a statement at all — so the cap counts only calls
+printed as their own comma-chain element. A call whose result is inlined into
+the sibling's own condition is not charged, and a folded operand may therefore
+render more than one call (`mv -O2 copy_internal` at `wide` renders
+`cached_umask(...)`, counted, alongside `fchmod(...)`, implied into the test
+and not counted). Keeping the statement-root semantics is a deliberate choice:
+the cap exists to bound the printed comma chain, the fold moves no p-code, and
+the sequencing argument above is independent of the call count, so the looser
+count cannot produce wrong C — it only admits a denser operand than angr would.
+Rule B, which charges every call op, is the tighter half of the union.
 
 Option `condfold`, default **off**, three-valued: `on` uses angr's statement
-threshold (cap 5 statements, 1 statement-root call) and `wide` raises only the
-statement cap to 9. `wide` exists because kuna's *printed* statement
-granularity is finer than angr's AIL for the same block — argument recovery may
-leave operand computations as separate assignments where angr renders one call
-statement, and an address-tied stack variable prints copy shadows the AIL never
-materializes — so a block angr folds as one statement can print as seven in
-kuna. Both levels apply to **both** engines (`blockaction.rs
+threshold (Rule A cap 5 statements, 1 statement-root call) and `wide` raises
+**only** Rule A's statement cap to 9; every Rule B cap and every soundness or
+rendering guard is identical at both levels. `wide` exists because kuna's
+*printed* statement granularity is finer than angr's AIL for the same block —
+argument recovery may leave operand computations as separate assignments where
+angr renders one call statement, and an address-tied stack variable prints copy
+shadows the AIL never materializes — so a block angr folds as one statement can
+print as seven in kuna. Both levels apply to **both** engines (`blockaction.rs
 (CollapseStructure::rule_block_or)` and `region_structurer.rs
 (RegionStructurer::try_block_or)`, which are verbatim copies of each other);
 implementing only one would no-op on functions where the other converges. Off,
-the precompute is skipped and both disjuncts are dead, so output is
+the precompute is skipped and every disjunct is dead, so output is
 byte-identical to upstream.
+
+Two effects are accepted rather than fixed. The option is **not a monotone goto
+reducer**: folding changes which edges the structurer can subsequently match,
+so an individual function can gain a goto even where the aggregate falls
+sharply. And a **later-produced advisory comment can be lost**: both rules
+decline a block that already carries a comment, but the check only sees the
+comments buffered in `Funcdata` at structuring time, while `comma_separate`
+suppresses `emit_comment_group` for the whole operand — so an advisory emitted
+by a pass that runs after structuring can still vanish. Those are kuna
+annotations, never a correctness signal, and the emitted C is unaffected.
 
 **Goto selection (the pathological case).** When the cascade stalls with more
 than one component live, `blockaction.rs (CollapseStructure::select_goto)`

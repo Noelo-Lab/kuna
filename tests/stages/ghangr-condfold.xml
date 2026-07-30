@@ -19,10 +19,18 @@
         if (es_match(es,v12,'=')) goto label_40242e;
 
     THE OPTION.  `option condfold off|on|wide` (default OFF, ELEM 4113) adds a
-    second, narrower disjunct at that single decline: a complex sibling is
-    accepted anyway when it is a BlockCopy of ONE basic block whose printed
-    prefix is bounded (<=1 call; <=5 statements at `on`, angr's own threshold,
-    <=9 at `wide`), branch-free, and comment-free.  The prefix then renders
+    second disjunct at that single decline, whose admission predicate is the
+    UNION of two rules.  This witness exercises Rule A (bounded prefix, from
+    PR #193): a complex sibling is accepted when it is a BlockCopy of ONE basic
+    block whose printed prefix is bounded (<=1 statement-root call; <=5
+    statements at `on`, angr's own threshold, <=9 at `wide`), branch-free, and
+    comment-free.  Rule A is tried first and is the disjunct that fires here
+    (traced with KUNA_CONDFOLD_DEBUG=1).  Rule B (the statement-shape allowlist,
+    from PR #194) is exercised end to end by the companion witness
+    tests/stages/ghangr-condfold-newbury.xml, which needs Rule B's nested
+    BlockCondition operand to fold a guard cascade; the two rules are isolated
+    from each other by the unit tests in p8_structure/blockaction/tests.rs.
+    The prefix then renders
     inside the AND/OR operand as a C comma expression, which the printer
     already supports (comma_separate).  No p-code is moved, cloned, or deleted:
     the fold re-parents two existing structuring nodes, and C's short-circuit
