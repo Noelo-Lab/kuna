@@ -132,6 +132,32 @@ struct FuncSym {
     name: Vec<u8>,
 }
 
+/// One **data** symbol: a defined `.symtab`/`.dynsym` `STT_OBJECT` entry (the BFD
+/// `BSF_OBJECT` twin of [`FuncSym`]).
+///
+/// The function half of the symbol table has always been read (the `funcsyms`
+/// stream that names `main`/`fmt`); the data half was dropped, so an imported
+/// libc global — `optind`, `stdin`, `stdout`, `optarg` — rendered `dat_20a098`
+/// where IDA Pro and Ghidra show its name. Both of those name data objects from
+/// the symbol table independently of any debug info, which is what reaches a
+/// copy-relocated (`R_X86_64_COPY`) extern: it has a real defined address in the
+/// importing binary's `.bss` and a `STT_OBJECT` `.dynsym` entry, but never
+/// appears in the program's own `.debug_info`.
+///
+/// `size` is the symbol's `st_size`, carried so the commit can map a covering
+/// `SymbolEntry` of the right extent — a size-1 entry does not contain a 4-/8-byte
+/// access, which is exactly the bug the DWARF data globals hit (see
+/// [`crate::pass::DataObjectFact`]).
+#[derive(Debug, Clone)]
+struct DataSym {
+    /// Symbol vma.
+    addr: u64,
+    /// Symbol name, `@VERSION` suffix already stripped.
+    name: Vec<u8>,
+    /// `st_size` (bytes); `0` when the object declares no size.
+    size: u64,
+}
+
 /// \brief A [`LoadImage`] over a real ELF executable, backed by the [`object`]
 /// crate (the kuna substitution for C++ `LoadImageBfd`).
 ///
@@ -159,6 +185,9 @@ pub struct ObjectLoadImage {
     sections: Vec<SectionInfo>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
+    /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
+    /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
+    datasyms: Vec<DataSym>,
     /// (kuna) Extra `[start, stop]` (inclusive) byte ranges to treat as *constant*
     /// (read-only) beyond the section-flag scan — the MIPS GOT external slots,
     /// whose static contents (the `.MIPS.stubs` stub addresses) the engine folds
@@ -177,6 +206,43 @@ pub struct ObjectLoadImage {
     cursymbol: RefCell<usize>,
     /// `openSectionInfo`/`getNextSection` cursor (C++ `mutable secinfoptr`).
     cursection: RefCell<usize>,
+}
+
+/// Admit one defined `STT_OBJECT` symbol into the data-symbol stream, deduped by
+/// address (first table wins, so `.symtab` beats `.dynsym` exactly as the funcsym
+/// walk orders them).
+///
+/// The filters mirror the funcsym walk: an *undefined* entry is an import
+/// placeholder with no address of its own, an empty name carries no information,
+/// and an `@VERSION` suffix is stripped so a versioned glibc export
+/// (`optind@@GLIBC_2.2.5`) installs as `optind`.  A **zero `st_size`** entry is
+/// dropped as well — with no extent there is nothing to size a covering
+/// `SymbolEntry` against, and the linker's section-boundary markers
+/// (`__bss_start`, `_edata`, `_end`) are exactly the zero-size entries that would
+/// otherwise plant a spurious name on the first byte of an unrelated object.
+fn collect_data_sym<'a>(
+    sym: &impl object::ObjectSymbol<'a>,
+    out: &mut Vec<DataSym>,
+    seen: &mut HashSet<u64>,
+) {
+    if sym.is_undefined() {
+        return;
+    }
+    let size = sym.size();
+    if size == 0 {
+        return;
+    }
+    let name = match sym.name_bytes() {
+        Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
+        _ => return,
+    };
+    if name.is_empty() {
+        return;
+    }
+    let addr = sym.address();
+    if seen.insert(addr) {
+        out.push(DataSym { addr, name, size });
+    }
 }
 
 impl ObjectLoadImage {
@@ -275,6 +341,10 @@ impl ObjectLoadImage {
         //      whose `.symtab` is gone.
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
+        // The data half of the same two symbol tables (`STT_OBJECT`), collected in
+        // the same walks and deduped on its own address set.  See [`DataSym`].
+        let mut datasyms: Vec<DataSym> = Vec::new();
+        let mut seen_data: HashSet<u64> = HashSet::new();
 
         // 1. `.symtab` defined functions.  Skip *undefined* (import-placeholder)
         //    entries — e.g. the ELF UND `puts@@GLIBC_2.2.5` (`st_value == 0`),
@@ -290,6 +360,10 @@ impl ObjectLoadImage {
         //    this is behavior-identical on the ELF arm and additionally admits a
         //    COFF object's defined-at-0 function (design §3.6 object-vs-image).
         for sym in file.symbols() {
+            if sym.kind() == SymbolKind::Data {
+                collect_data_sym(&sym, &mut datasyms, &mut seen_data);
+                continue;
+            }
             if sym.kind() != SymbolKind::Text {
                 continue;
             }
@@ -324,6 +398,10 @@ impl ObjectLoadImage {
         //    dynamic binary stripped of `.symtab` still exports its defined
         //    functions in `.dynsym`.
         for sym in file.dynamic_symbols() {
+            if sym.kind() == SymbolKind::Data {
+                collect_data_sym(&sym, &mut datasyms, &mut seen_data);
+                continue;
+            }
             if sym.kind() != SymbolKind::Text {
                 continue;
             }
@@ -358,6 +436,7 @@ impl ObjectLoadImage {
             segments,
             sections,
             funcsyms,
+            datasyms,
             const_ranges,
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
@@ -429,6 +508,11 @@ impl ObjectLoadImage {
             segments,
             sections,
             funcsyms,
+            // A relocatable object's symbol addresses are section-relative and are
+            // rebased by [`elf_reloc::layout_relocatable`], which resolves the
+            // function half only (`RelocLayout::funcsyms`).  Data-symbol naming is
+            // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
+            datasyms: Vec::new(),
             const_ranges: Vec::new(),
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
@@ -481,6 +565,20 @@ impl ObjectLoadImage {
         self.funcsyms
             .iter()
             .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned()))
+            .collect()
+    }
+
+    /// The loader's **data** symbols as `(vma, name, size)` triples — the
+    /// `STT_OBJECT` half of the same `.symtab`/`.dynsym` walks [`Self::func_symbols`]
+    /// reads, filtered to defined, named, non-zero-size entries (see [`DataSym`]).
+    ///
+    /// The engine installs each as a named, `undefined<size>`-typed global so a
+    /// memory access of the object renders the symbol name (`optind`) rather than
+    /// `dat_<addr>`, matching IDA Pro and Ghidra. Empty for a relocatable object.
+    pub fn data_symbols(&self) -> Vec<(u64, String, u64)> {
+        self.datasyms
+            .iter()
+            .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned(), s.size))
             .collect()
     }
 
