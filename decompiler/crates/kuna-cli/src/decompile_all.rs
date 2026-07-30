@@ -41,7 +41,7 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, FunctionEntry};
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
 use kuna_console::project::{decompile_targets, render_c, FuncResult};
@@ -119,11 +119,13 @@ pub fn run_functions(argv: &[String]) -> i32 {
                 let arr = Json::Array(
                     entries
                         .iter()
-                        .map(|(n, a)| {
+                        .map(|e| {
+                            let a = e.addr.get_offset();
                             Json::Object(vec![
-                                ("name".into(), Json::Str(n.clone())),
+                                ("name".into(), Json::Str(e.name.clone())),
                                 ("address".into(), Json::Number(a.to_string())),
                                 ("address_hex".into(), Json::Str(format!("0x{a:x}"))),
+                                ("aliases".into(), aliases_json(&e.aliases)),
                             ])
                         })
                         .collect(),
@@ -137,8 +139,15 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     ]))
                 );
             } else {
-                for (name, addr) in &entries {
-                    println!("0x{addr:x}\t{name}");
+                for e in &entries {
+                    // Alias names follow the canonical one on the same line, so
+                    // the plain listing stays one line per function.
+                    let extra = if e.aliases.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\t({})", e.aliases.join(", "))
+                    };
+                    println!("0x{:x}\t{}{extra}", e.addr.get_offset(), e.name);
                 }
             }
             0
@@ -168,19 +177,14 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
     Ok(decompile_targets(&mut prog, targets, args.no_vars, /* want_proto= */ false))
 }
 
-/// Enumerate the program's functions as `(name, address)` (the `functions`
-/// command + the default `decompile-all` target set).
-fn list_functions(args: &Args) -> Result<Vec<(String, u64)>, String> {
+/// Enumerate the program's functions, one [`FunctionEntry`] per entry address
+/// (the `functions` command + the default `decompile-all` target set).
+fn list_functions(args: &Args) -> Result<Vec<FunctionEntry>, String> {
     let prog = load_program(args, /* default_listing= */ false)?;
-    let mut entries: Vec<(String, u64)> = prog
-        .function_entries()
-        .map(|(n, a)| (n.to_string(), a.get_offset()))
-        .collect();
-    // Deduplicate by (address, name) — a symbol can appear in both the loader set
-    // and a later register — and sort by address for a stable, readable order.
-    entries.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-    entries.dedup();
-    Ok(entries)
+    // One record per entry address, address-ordered, alias names carried as data
+    // (issue #197 — this used to dedup by (address, name), so a function the
+    // loader and an analysis pass both named was listed twice).
+    Ok(prog.function_entries_canonical())
 }
 
 /// Bootstrap the architecture from the binary and run the analysis commit (the
@@ -294,46 +298,48 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
     Ok(prog)
 }
 
-/// Build the target `(name, Address)` list from the filters: `--addr` entries
-/// (named via the symbol table, else `name_function`), `--functions` names, or —
-/// with no filter — every enumerated function.
+/// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
+/// (the canonical record at that address, else a record named via the symbol
+/// table / `name_function`), `--functions` names or aliases, or — with no filter
+/// — every enumerated function, each exactly once.
 pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
-) -> Result<Vec<(String, Address)>, String> {
+) -> Result<Vec<FunctionEntry>, String> {
     let code_space = prog
         .arch()
         .manage()
         .get_default_code_space()
         .ok_or("no default code space")?;
 
-    // The full enumerated set as (name -> Address), used by the name filter and
-    // the no-filter default.
-    let all: Vec<(String, Address)> = {
-        let mut v: Vec<(String, Address)> =
-            prog.function_entries().map(|(n, a)| (n.to_string(), a.clone())).collect();
-        v.sort_by(|a, b| a.1.get_offset().cmp(&b.1.get_offset()).then_with(|| a.0.cmp(&b.0)));
-        v.dedup_by(|a, b| a.0 == b.0 && a.1.get_offset() == b.1.get_offset());
-        v
-    };
-
-    let mut targets: Vec<(String, Address)> = Vec::new();
+    let mut targets: Vec<FunctionEntry> = Vec::new();
 
     // `--addr 0xVMA`: build the Address directly; name it from the symbol table
     // (or the default `FUN_<addr>` name) so the print/proto path has a name.
+    // Prefer the canonical record when the enumeration knows this entry, so an
+    // explicitly-addressed function reports the same name + aliases it would in
+    // a whole-binary run.
     for &vma in &args.addrs {
-        let addr = Address::new(Rc::clone(code_space), vma);
-        let name = prog
-            .function_named_at(vma)
-            .unwrap_or_else(|| prog.arch().name_function(&addr));
-        targets.push((name, addr));
+        match prog.find_entry_at(vma) {
+            Some(e) => targets.push(e),
+            None => {
+                let addr = Address::new(Rc::clone(code_space), vma);
+                let name = prog
+                    .function_named_at(vma)
+                    .unwrap_or_else(|| prog.arch().name_function(&addr));
+                targets.push(FunctionEntry { name, addr, aliases: Vec::new() });
+            }
+        }
     }
 
-    // `--functions a,b,c`: intersect names with the enumerated set.
+    // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
+    // resolves too — collapsing the enumeration must not make a name that used
+    // to select a function stop working (the decbench name-narrowing looks up
+    // generated `sub_<addr>` names).
     if let Some(names) = &args.names {
         for want in names {
-            match all.iter().find(|(n, _)| n == want) {
-                Some((n, a)) => targets.push((n.clone(), a.clone())),
+            match prog.find_entry_by_name(want) {
+                Some(e) => targets.push(e),
                 None => eprintln!("warning: no function named {want:?} in {}", args.binary),
             }
         }
@@ -343,13 +349,13 @@ pub(crate) fn resolve_targets(
     // `--functions f` can resolve to the same function, and decompiling it twice
     // just wastes work + duplicates the JSON entry.
     let mut seen = std::collections::HashSet::new();
-    targets.retain(|(_, a)| seen.insert(a.get_offset()));
+    targets.retain(|e| seen.insert(e.addr.get_offset()));
 
-    // No filter at all ⇒ every function (the `all` set is already deduped by
-    // (name, offset), preserving distinct alias names at one address for the
-    // decbench name-narrowing).
+    // No filter at all ⇒ every function, exactly once (issue #197: `all` used to
+    // be deduped by (name, offset), so one function appeared once per name it
+    // carried — and on ARM once more per Thumb `entry|1` twin).
     if args.addrs.is_empty() && args.names.is_none() {
-        targets = all;
+        targets = prog.function_entries_canonical();
     }
     Ok(targets)
 }
@@ -455,6 +461,7 @@ fn result_json(binary: &str, funcs: &[FuncResult]) -> Json {
                     ("name".into(), Json::Str(f.name.clone())),
                     ("address".into(), Json::Number(f.address.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
+                    ("aliases".into(), aliases_json(&f.aliases)),
                     ("size".into(), Json::Number(f.size.to_string())),
                     (
                         "code".into(),
@@ -474,6 +481,15 @@ fn result_json(binary: &str, funcs: &[FuncResult]) -> Json {
         ("count".into(), Json::Number(funcs.len().to_string())),
         ("functions".into(), functions),
     ])
+}
+
+/// (kuna, issue #197) The `aliases` array: every OTHER name the reported entry
+/// carries.  Always present (`[]` when the entry has exactly one name) so a
+/// consumer can read the field unconditionally.  Additive — no existing field
+/// changes shape, and the names that used to appear as extra top-level records
+/// are all still here, one level down.
+fn aliases_json(aliases: &[String]) -> Json {
+    Json::Array(aliases.iter().map(|a| Json::Str(a.clone())).collect())
 }
 
 /// One `VariableInfo`-shaped JSON object (the fields decbench's `type_match`

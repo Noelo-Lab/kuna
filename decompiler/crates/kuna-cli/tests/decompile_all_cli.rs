@@ -47,6 +47,23 @@ fn arm_thumb() -> String {
         .to_string()
 }
 
+/// A larger **ARM 32-bit** ELF fixture with functions the prologue-`<patternpairs>`
+/// matcher genuinely finds and the entry oracles do not (`0x3e0`, `0x410`,
+/// `0x3c520`) — the fixture the DIV-20 `funcstart_patterns` assertion needs.
+///
+/// `arm_thumb()` cannot serve that role: it holds exactly two functions, both
+/// already named by `.symtab`, so `funcstart_patterns` adds no real entry there.
+/// Before issue #197 the assertion appeared to pass on it only because the pass's
+/// extra "discoveries" were duplicate records for those same two functions (a
+/// `sub_<addr>` alias plus an odd-address Thumb `entry|1` phantom).
+fn arm_entrymain() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/entrymain_arm")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// Parse the `"count": N` field out of the decompile-all `--json` header.
 fn json_count(stdout: &str) -> Option<usize> {
     let i = stdout.find("\"count\":")? + "\"count\":".len();
@@ -166,9 +183,16 @@ fn decompile_all_emits_json_for_main() {
 /// discovers only the ELF entry; with it the prologue `<patternpairs>` matcher finds
 /// more. The default must match an explicit `--option funcstart_patterns on` and beat
 /// `off`.
+///
+/// Runs on `entrymain_arm`, where the pass finds three functions nothing else does
+/// (`0x3e0`, `0x410`, `0x3c520`): 10 entries `off` vs 13 by default. It used to run
+/// on the two-function `arm_thumb()` fixture, where the "extra" entries the
+/// assertion counted were in fact duplicate records for functions already found —
+/// so the fixture swap is what keeps this assertion meaningful once issue #197
+/// stops the enumeration reporting one function more than once.
 #[test]
 fn arm_decompile_all_defaults_funcstart_patterns_on() {
-    let bin = arm_thumb();
+    let bin = arm_entrymain();
     let sp = specs();
     let run = |extra: &[&str]| -> Option<usize> {
         let mut args = vec!["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()];
@@ -292,6 +316,148 @@ fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
         default_cnt >= off_cnt,
         "raw Thumb-prologue seed must never discover FEWER than funcstart_patterns off \
          (default={default_cnt}, off={off_cnt})"
+    );
+}
+
+/// Issue #197: a whole-binary run reports each function ENTRY exactly once.
+///
+/// `arm_thumb_linked_le32` holds exactly two functions (`compute` @ 0x100b8 and
+/// `_start` @ 0x100d6 — see the fixture's `.c`), but `decompile-all` used to emit
+/// **six** records for them: one per name the entry carried (`compute` +
+/// `sub_100b8`), plus one per ARM Thumb `entry|1` twin (`sub_100b9`, `sub_100d7`)
+/// — the ELF `.symtab` stores these functions at the ODD `st_value` 0x100b9 /
+/// 0x100d7, the mode bit, and the unmasked value was being seeded as a function
+/// start.  The odd twins are not merely redundant: 0x100b9 is not an instruction
+/// boundary, so it decompiled to a bogus empty `void sub_100b9(void)`.
+///
+/// Asserts the canonical shape: two entries, at the two even addresses, named by
+/// their real symbols, with the generated `sub_<addr>` name kept in `aliases` (so
+/// nothing that could be looked up before stops resolving) and no odd address
+/// anywhere in the output.
+#[test]
+fn decompile_all_reports_each_entry_once() {
+    let bin = arm_thumb();
+    let sp = specs();
+    let (stdout, stderr, ok) =
+        run_kuna(&["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("entry dedup: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
+    }
+    assert_eq!(
+        json_count(&stdout),
+        Some(2),
+        "the 2-function ARM fixture must report 2 entries, not one per name/twin:\n{stdout}"
+    );
+    // The real symbols win the `name` slot ...
+    for want in ["\"name\": \"compute\"", "\"name\": \"_start\""] {
+        assert!(stdout.contains(want), "expected {want} in:\n{stdout}");
+    }
+    // ... the generated placeholders survive as aliases, not as extra records ...
+    for want in ["\"sub_100b8\"", "\"sub_100d6\""] {
+        assert!(stdout.contains(want), "expected the alias {want} in:\n{stdout}");
+    }
+    assert!(
+        !stdout.contains("\"name\": \"sub_100b8\"") && !stdout.contains("\"name\": \"sub_100d6\""),
+        "a generic `sub_<addr>` alias must not be a function's reported name:\n{stdout}"
+    );
+    // ... and the Thumb `entry|1` phantoms are gone entirely (address AND name).
+    for gone in ["0x100b9", "0x100d7", "sub_100b9", "sub_100d7"] {
+        assert!(
+            !stdout.contains(gone),
+            "the ARM Thumb `entry|1` twin {gone} must not be reported at all:\n{stdout}"
+        );
+    }
+}
+
+/// Issue #197, the companion guarantee: collapsing the enumeration must not make a
+/// name that used to select a function stop working.  `--functions <alias>` still
+/// resolves an entry through its alias list — the lookup decbench's name-narrowing
+/// relies on — and reports it under its canonical name.
+#[test]
+fn decompile_all_functions_filter_resolves_an_alias() {
+    let bin = arm_thumb();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        bin.as_str(),
+        "--json",
+        "--sleighpath",
+        sp.as_str(),
+        "--functions",
+        "sub_100b8",
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("alias lookup: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
+    }
+    assert_eq!(
+        json_count(&stdout),
+        Some(1),
+        "`--functions sub_100b8` must still select exactly one function:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"name\": \"compute\"") && stdout.contains("\"0x100b8\""),
+        "the alias must resolve to `compute` @ 0x100b8:\n{stdout}"
+    );
+}
+
+/// Issue #197, `--addr` on an ARM/Thumb `entry|1` address.
+///
+/// An ARM caller legitimately holds odd addresses — an ELF `st_value`, a DWARF
+/// entry PC, a benchmark case address all carry the Thumb mode bit. Asking for
+/// `--addr 0x100b9` used to decompile literally there, landing mid-`push {r7}`
+/// and returning an empty `void compute(void) { return; }`. It now resolves to the
+/// real entry, and the odd address must NOT fold on a byte-aligned ISA, where an
+/// odd function address is genuine (`cet_pie_x86_64` really has
+/// `elaborate_debug_symbol` at 0x1357).
+#[test]
+fn decompile_all_addr_tolerates_the_arm_thumb_bit() {
+    let sp = specs();
+    let arm = arm_thumb();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", arm.as_str(), "--json", "--sleighpath", sp.as_str(), "--addr", "0x100b9",
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("thumb --addr: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
+    }
+    assert!(
+        stdout.contains("\"address_hex\": \"0x100b8\"") && stdout.contains("\"name\": \"compute\""),
+        "--addr 0x100b9 must resolve to `compute` at its real entry 0x100b8:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("a0 * 3 + 7"),
+        "--addr 0x100b9 must decompile the real body, not an empty phantom:\n{stdout}"
+    );
+
+    // The x86-64 guardrail: an odd address there is a real entry, never folded.
+    let x86 = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/cet_pie_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", x86.as_str(), "--json", "--sleighpath", sp.as_str(), "--addr", "0x1357",
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            return;
+        }
+        panic!("kuna decompile-all failed on the x86-64 fixture: {stderr}");
+    }
+    assert!(
+        stdout.contains("\"address_hex\": \"0x1357\""),
+        "an odd x86-64 address is a REAL entry and must not be Thumb-masked:\n{stdout}"
     );
 }
 

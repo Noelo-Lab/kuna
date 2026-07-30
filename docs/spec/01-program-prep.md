@@ -374,7 +374,20 @@ the base of the code section is the only entry source. The table is confirmed wh
 `word[1] == e_entry` (the reset vector); the odd (Thumb) handler pointers are then
 harvested, LSB-masked, up to the start of code. Everything is unioned,
 deduped, restricted to executable sections, and skipped where a real funcsym
-already exists; a discovered ARM `main` whose GOT pointer had the Thumb LSB set
+already exists. That funcsym set
+(`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (existing_function_addrs)`)
+is itself Thumb-masked on 32-bit ARM
+(`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (thumb_masked)`),
+because an ARM/Thumb function's ELF symbol stores the mode bit in bit 0 of
+`st_value` and the odd address is not an instruction boundary. Masking it is what
+makes the skip comparable with the already-masked `e_entry` candidate — otherwise
+a named function is re-emitted as a "new" start and picks up a generated
+`sub_<addr>` name — and it keeps the raw odd address from being seeded as a
+function start in its own right, which would yield a phantom entry that decodes
+mid-instruction to an empty body. The mask is gated to `Architecture::Arm`: on a
+byte-aligned ISA an odd entry address is genuine (x86-64 fixtures have real
+functions at `0x40071d` and `0x1357`), and AArch64 has no Thumb state. A
+discovered ARM `main` whose GOT pointer had the Thumb LSB set
 also emits its own `TMode=1` paint (a stripped binary has no `$t` symbol to paint
 from). On a confirmed Cortex-M image the ELF `e_entry` seed is additionally
 LSB-masked to its even (decode) address, and `cortexm_thumb_paints` region-paints

@@ -9,12 +9,11 @@
 //! `kuna-cli`'s subprocess machinery.  The callers keep their own argument
 //! parsing / program loading (`load_program` / `resolve_targets` stay in
 //! `kuna-cli`); everything here operates on an already-loaded
-//! [`ConsoleProgram`] and the resolved `(name, Address)` target list.
+//! [`ConsoleProgram`] and the resolved [`FunctionEntry`] target list.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
     decompile_func_full_with_override_dyn, extract_variables, print_c, print_c_prototype, VarInfo,
 };
@@ -26,7 +25,7 @@ use kuna_decomp::decompile_drive::{
 use kuna_sleigh::loadimage::section_flags;
 use object::{Object, ObjectSection};
 
-use crate::engine::ConsoleProgram;
+use crate::engine::{ConsoleProgram, FunctionEntry};
 
 /// `dat_` blocks larger than this are truncated in the `.asm` data tail (the
 /// printer's `dat_<hex>` names carry no size; the label only marks the start).
@@ -46,6 +45,13 @@ pub struct FuncResult {
     /// path, whose JSON must stay byte-identical.
     pub proto: Option<String>,
     pub variables: Vec<VarInfo>,
+    /// (kuna, issue #197) Every OTHER name this entry carries — a generic
+    /// `sub_<addr>` placeholder, an ELF weak/strong twin, a PE
+    /// decorated/undecorated pair.  Carried through from
+    /// [`crate::engine::FunctionEntry`] so collapsing the enumeration to one
+    /// record per entry loses no name; empty for a target the caller named
+    /// itself (`--addr` on an address the enumeration does not know).
+    pub aliases: Vec<String>,
 }
 
 /// Decompile each `(name, entry)` target in turn against the already-loaded
@@ -57,12 +63,12 @@ pub struct FuncResult {
 /// its JSON byte-identical.
 pub fn decompile_targets(
     prog: &mut ConsoleProgram,
-    targets: Vec<(String, Address)>,
+    targets: Vec<FunctionEntry>,
     no_vars: bool,
     want_proto: bool,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
-    for (name, entry) in targets {
+    for FunctionEntry { name, addr: entry, aliases } in targets {
         let address = entry.get_offset();
         // Mirror IfcDecompile: re-seed this function's DWARF stack locals (so a
         // `-g` binary renders DWARF names/types) and decompile.  The drive itself
@@ -138,6 +144,7 @@ pub fn decompile_targets(
                         error: None,
                         proto,
                         variables,
+                        aliases,
                     }),
                     Err(_) => out.push(FuncResult {
                         name,
@@ -147,6 +154,7 @@ pub fn decompile_targets(
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
                         variables: Vec::new(),
+                        aliases,
                     }),
                 }
             }
@@ -158,6 +166,7 @@ pub fn decompile_targets(
                 error: Some(e.explain().to_string()),
                 proto: None,
                 variables: Vec::new(),
+                aliases,
             }),
         }
     }

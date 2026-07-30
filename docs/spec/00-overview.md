@@ -52,7 +52,15 @@ the order is load-bearing:
    order, and installs them through
    `decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`. Every
    commit arm is additive and idempotent against the loader symbols already
-   installed (the `find_function` overlap check no-ops a duplicate).
+   installed *in the symbol table* (the `find_function` overlap check no-ops a
+   duplicate). Idempotence does **not** extend to the flat name→address stream
+   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::register_symbol)`
+   maintains: that retains by NAME, so an entry the loader already named
+   accumulates a second record whenever a pass supplies a different name for it —
+   a debug-info name (DWARF/PDB/pclntab/objc), a FID rename, or the generated
+   `sub_<addr>` placeholder for a rediscovered entry. Several names for one entry
+   is therefore the normal state, and §0.2 defines how the whole-binary surfaces
+   collapse it.
 
 Two pass families cannot run at load at all and are deferred *into* the commit:
 the Listing walk and its consumers (the call-graph no-return fixpoint, §1.6–§1.7;
@@ -107,6 +115,38 @@ Four front-ends drive one engine assembly:
   discard the functions already decompiled. `kuna functions` is enumeration only
   and keeps the Listing off (the build would turn a cheap symbol walk into a
   whole-program decode).
+
+  The enumeration these surfaces walk is
+  `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_canonical)`,
+  which yields **exactly one record per function entry address**, address-ordered.
+  It exists because the raw symbol stream
+  (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries)`)
+  holds one record per NAME (§0.1), so without it a whole-binary run reports — and
+  decompiles — the same function once per name it carries. Each record keeps the
+  most informative name and carries the rest as aliases, ranked by
+  `decompiler/crates/kuna-console/src/engine.rs (entry_name_rank)`: a real symbol
+  outranks a synthesized dynamic-table name (`_INIT_<i>` / `_FINI_<i>` /
+  `_DT_INIT` / `_DT_FINI`,
+  `decompiler/crates/kuna-console/src/engine.rs (is_structural_entry_name)`), which
+  outranks a generated placeholder
+  (`decompiler/crates/kuna-console/src/engine.rs (is_generic_placeholder_name)`);
+  ties prefer the unprefixed spelling over the underscore-prefixed one, then the
+  shorter name, then lexicographic order, so the choice is total and independent of
+  symbol-stream order. Name-keyed selection resolves aliases too
+  (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::find_entry_by_name)`),
+  so collapsing the records never makes a name stop selecting its function. On an
+  ARM-family spec the grouping key folds away the Thumb mode bit (`vma & !1`, the
+  same normalization
+  `decompiler/crates/kuna-console/src/project.rs (build_asm)` applies to its
+  labels), so an `entry` and its `entry|1` twin are one entry; address-keyed
+  selection folds it too
+  (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::find_entry_at)`),
+  so `--addr` on an odd ARM address reaches the function rather than decoding
+  mid-instruction. Both folds are gated to ARM, where an odd symbol address is
+  never an instruction boundary; elsewhere an odd address is genuine and is left
+  alone. All four whole-binary surfaces — `decompile-all`, `functions`,
+  `decompile-project` (`decompiler/crates/kuna-cli/src/decompile_project.rs`), and
+  the wasm front-end (`decompiler/crates/kuna-wasm/src/lib.rs`) — share it.
 - **`kuna_ghidra`** (`decompiler/crates/kuna-ghidra/src/bin/kuna_ghidra.rs`) —
   the ghidra-mode process front-end: the stock Ghidra GUI spawns it as its
   decompiler core and talks the burst-framed stdin/stdout protocol
