@@ -72,8 +72,10 @@ bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + 
 ```
 
 Its `--json` is `kuna decompile-all --json`'s fields (`name`, `address`, `address_hex`,
-`size`, `code`, `error`, `variables[{name,type,kind,arg_index,stack_offset,size}]`) plus
-one kuna-wasm-only per-function field: `"kind"` — `"func"` | `"plt"` | `"thunk"`
+`aliases`, `size`, `code`, `error`, `variables[{name,type,kind,arg_index,stack_offset,size}]`)
+— including the one-record-per-entry contract and the `aliases` array documented in
+`docs/cli.md`, since both front-ends share `ConsoleProgram::function_entries_canonical` —
+plus one kuna-wasm-only per-function field: `"kind"` — `"func"` | `"plt"` | `"thunk"`
 (`kuna-wasm/src/classify.rs`: an `object`-crate re-parse marks entries inside import-stub
 sections — the `.plt` family, Mach-O symbol stubs — or named as imports as `"plt"`, and
 lone-jump entries (`ConsoleProgram::lone_jump_target`, direct-to-another-function or

@@ -48,14 +48,30 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 `decompile_func` + `print_c`), loading + analyzing the binary **once** instead of
 `kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
 
-`--json` emits `{binary,count,functions:[{name,address,address_hex,size,code,error,
+`--json` emits `{binary,count,functions:[{name,address,address_hex,aliases,size,code,error,
 variables:[{name,type,kind,arg_index,stack_offset,size}]}]}` (`kuna functions --json`
-emits `name`/`address`/`address_hex` per function) — per-function `code` matches
+emits `name`/`address`/`address_hex`/`aliases` per function) — per-function `code` matches
 `kuna decompile ... --option listing on` byte-for-byte on x86-64 (elsewhere, see the
 injected defaults below), `error` isolates a single failed function, and `variables`
 (params in ABI order + DWARF/stack locals) feed type-recovery scoring.
 
 Behaviors specific to `decompile-all`:
+
+- **One record per function entry** — a whole-binary run reports (and decompiles) each
+  entry address exactly once. A function can carry several names: a `.symtab` symbol
+  plus a debug-info one (`macho_dwarf.o` has `_l0` and `first_byte` at `0x0`), a
+  decorated/undecorated PE pair, or the generated `sub_<addr>` placeholder an analysis
+  pass registers over an already-named entry. `name` reports the most informative of
+  them — a real symbol beats a synthesized `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT`/`_DT_FINI`
+  table name, which beats a generated `sub_`/`func_`/`FUN_`/`LAB_` placeholder; ties
+  prefer the unprefixed spelling (`main` over `_main`), then the shorter name — and
+  `aliases` carries the rest (`[]` when there is only one). `--functions <name>` matches
+  aliases too, so any name that used to select a function still does. On ARM the Thumb
+  mode bit is folded out of symbol addresses, so a function whose ELF `st_value` is odd
+  (`compute` at `0x100b9`) is reported once, at its real even entry — and `--addr` accepts
+  either spelling, resolving an odd ARM address to the entry it belongs to instead of
+  decompiling mid-instruction. The fold is ARM-only: an odd address on a byte-aligned ISA
+  is a genuine entry and is left alone.
 
 - **Injected default options**: it injects `option listing on` unless the caller names
   `listing` (DIV-15), so the default-on `noreturn_propagate` call-graph fixpoint fires and
@@ -94,6 +110,9 @@ binary and attempt recompilation:
 
 - `<name>.c` — every decompiled function, address-ordered, under
   `// Function: <name> @ <addr>` headers, failures as comments, `#include "<name>.h"`.
+  One definition per entry address: the export shares `decompile-all`'s
+  one-record-per-entry enumeration above, so a function carrying several names cannot
+  produce several (identical, and therefore uncompilable) definitions.
 - `<name>.h` — include guard + a generated recompile prelude (core scalar and
   `undefined`-family typedefs), the recovered user-defined type definitions, and one
   prototype per decompiled function, token-identical to the `.c` definition line.

@@ -125,6 +125,80 @@ fn decompile_all_enumerates_and_decompiles_every_function() {
     assert!(!args[0].type_name.is_empty(), "parameter type string is empty");
 }
 
+/// The vendored ARM/Thumb fixture — two functions (`compute` @ 0x100b8, `_start`
+/// @ 0x100d6) whose ELF `.symtab` records them at the ODD `st_value` 0x100b9 /
+/// 0x100d7 (the Thumb mode bit).
+fn arm_thumb() -> PathBuf {
+    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_linked_le32")
+}
+
+/// Issue #197, at the shared seam: `function_entries_canonical` yields exactly one
+/// record per entry ADDRESS, and every name the raw stream knew is still reachable
+/// (as the record's `name` or one of its `aliases`).
+///
+/// This is the invariant all four whole-binary surfaces inherit — `decompile-all`,
+/// `functions`, `decompile-project`, and the wasm front-end, which has no test
+/// directory of its own and is covered only here.  Checked on both an x86-64 ELF
+/// (`fauxware`) and the ARM/Thumb fixture (whose odd `st_value`s are what made the
+/// duplicates un-collapsible by address alone).
+#[test]
+fn canonical_enumeration_reports_each_entry_address_once() {
+    let root = repo_root();
+    let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
+
+    for fixture in [fauxware(), arm_thumb()] {
+        let Some(bin) = fixture.to_str().map(|s| s.to_string()) else { continue };
+        let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!(
+                    "canonical enumeration: skipping {bin} (bootstrap failed, build `.sla` \
+                     with `make specs`): {}",
+                    e.explain()
+                );
+                continue;
+            }
+        };
+        prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
+
+        let canonical = prog.function_entries_canonical();
+        assert!(!canonical.is_empty(), "{bin}: canonical enumeration is empty");
+
+        // One record per entry address, strictly ascending (the accessor's order
+        // contract — the surfaces emit it as-is).
+        let mut prev: Option<u64> = None;
+        for e in &canonical {
+            let off = e.addr.get_offset();
+            if let Some(p) = prev {
+                assert!(p < off, "{bin}: entries not strictly address-ordered at 0x{off:x}");
+            }
+            prev = Some(off);
+            // A generated placeholder may only be the reported name when it is the
+            // ONLY name this entry has.
+            if e.name.starts_with("sub_") || e.name.starts_with("FUN_") {
+                assert!(
+                    e.aliases.is_empty(),
+                    "{bin}: 0x{off:x} reports the placeholder {:?} while also carrying {:?}",
+                    e.name,
+                    e.aliases
+                );
+            }
+        }
+
+        // Nothing is lost: every name in the raw stream is still reachable, and
+        // resolves back to the entry that owns it.
+        for (name, _) in prog.function_entries() {
+            let found = prog
+                .find_entry_by_name(name)
+                .unwrap_or_else(|| panic!("{bin}: raw name {name:?} no longer resolves"));
+            assert!(
+                found.name == name || found.aliases.iter().any(|a| a == name),
+                "{bin}: {name:?} resolved to an entry that does not carry it"
+            );
+        }
+    }
+}
+
 /// Assert the cross-cutting `VarInfo` invariants the type_match metric relies on:
 /// non-empty type strings, dense ordered parameter `arg_index`es, and no
 /// `arg_index` on stack locals.

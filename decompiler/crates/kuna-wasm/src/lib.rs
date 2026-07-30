@@ -24,7 +24,7 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, FunctionEntry};
 use kuna_console::project::{
     build_asm, build_c, build_header, build_readme, collect_dat_addrs, decompile_targets,
     FuncResult,
@@ -85,16 +85,16 @@ pub fn run(binary: &str, spec_root: &str, cmd: &str, arg: Option<&str>) -> Resul
 
     match command {
         Cmd::List => {
-            let mut entries: Vec<(String, u64)> = prog
-                .function_entries()
-                .map(|(n, a)| (n.to_string(), a.get_offset()))
-                .collect();
-            entries.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-            entries.dedup();
+            // One record per entry address, alias names carried as data
+            // (issue #197 — this used to dedup by (address, name), so one
+            // function was listed once per name it carried).
+            let entries = prog.function_entries_canonical();
             let classifier =
-                Classifier::new(&prog, binary, entries.iter().map(|&(_, vma)| vma));
-            let kinds: Vec<&'static str> =
-                entries.iter().map(|(n, vma)| classifier.kind(&prog, n, *vma)).collect();
+                Classifier::new(&prog, binary, entries.iter().map(|e| e.addr.get_offset()));
+            let kinds: Vec<&'static str> = entries
+                .iter()
+                .map(|e| classifier.kind(&prog, &e.name, e.addr.get_offset()))
+                .collect();
             Ok(list_json(binary, &entries, &kinds))
         }
         Cmd::Project(display) => project(binary, &mut prog, &display),
@@ -105,7 +105,7 @@ pub fn run(binary: &str, spec_root: &str, cmd: &str, arg: Option<&str>) -> Resul
             let classifier = Classifier::new(
                 &prog,
                 binary,
-                prog.function_entries().map(|(_, a)| a.get_offset()),
+                prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()),
             );
             let out = decompile_targets(&mut prog, targets, /* no_vars= */ false,
                 /* want_proto= */ false);
@@ -203,38 +203,32 @@ fn load_program(
 fn resolve_targets(
     prog: &ConsoleProgram,
     command: &Cmd,
-) -> Result<Vec<(String, Address)>, String> {
+) -> Result<Vec<FunctionEntry>, String> {
     let code_space = prog
         .arch()
         .manage()
         .get_default_code_space()
         .ok_or("no default code space")?;
 
-    let all: Vec<(String, Address)> = {
-        let mut v: Vec<(String, Address)> = prog
-            .function_entries()
-            .map(|(n, a)| (n.to_string(), a.clone()))
-            .collect();
-        v.sort_by(|a, b| {
-            a.1.get_offset().cmp(&b.1.get_offset()).then_with(|| a.0.cmp(&b.0))
-        });
-        v.dedup_by(|a, b| a.0 == b.0 && a.1.get_offset() == b.1.get_offset());
-        v
-    };
-
     match command {
-        Cmd::DecompileAll => Ok(all),
-        Cmd::DecompileName(want) => match all.iter().find(|(n, _)| n == want) {
-            Some((n, a)) => Ok(vec![(n.clone(), a.clone())]),
+        // One record per entry address, alias names carried as data (issue #197).
+        Cmd::DecompileAll => Ok(prog.function_entries_canonical()),
+        // An ALIAS resolves too — collapsing the enumeration must not make a
+        // name that used to select a function stop working.
+        Cmd::DecompileName(want) => match prog.find_entry_by_name(want) {
+            Some(e) => Ok(vec![e]),
             None => Err(format!("no function named {want:?} in the binary")),
         },
-        Cmd::DecompileAddr(vma) => {
-            let addr = Address::new(Rc::clone(&code_space), *vma);
-            let name = prog
-                .function_named_at(*vma)
-                .unwrap_or_else(|| prog.arch().name_function(&addr));
-            Ok(vec![(name, addr)])
-        }
+        Cmd::DecompileAddr(vma) => match prog.find_entry_at(*vma) {
+            Some(e) => Ok(vec![e]),
+            None => {
+                let addr = Address::new(Rc::clone(&code_space), *vma);
+                let name = prog
+                    .function_named_at(*vma)
+                    .unwrap_or_else(|| prog.arch().name_function(&addr));
+                Ok(vec![FunctionEntry { name, addr, aliases: Vec::new() }])
+            }
+        },
         Cmd::List | Cmd::Project(_) => unreachable!("List/Project handled by caller"),
     }
 }
@@ -248,19 +242,21 @@ fn parse_addr(s: &str) -> Option<u64> {
 // --- JSON (self-contained; the `decompile-all --json` fields + `kind`) ------
 
 /// The `list` document:
-/// `{binary, count, functions:[{name, address, address_hex, kind}]}`.
+/// `{binary, count, functions:[{name, address, address_hex, aliases, kind}]}`.
 /// `kinds` is parallel to `entries` (the classifier's verdict per entry).
-fn list_json(binary: &str, entries: &[(String, u64)], kinds: &[&'static str]) -> String {
+fn list_json(binary: &str, entries: &[FunctionEntry], kinds: &[&'static str]) -> String {
     let mut s = String::from("{\n");
     s.push_str(&format!("  \"binary\": {},\n", json_str(binary)));
     s.push_str(&format!("  \"count\": {},\n", entries.len()));
     s.push_str("  \"functions\": [");
-    for (i, (name, addr)) in entries.iter().enumerate() {
+    for (i, e) in entries.iter().enumerate() {
+        let addr = e.addr.get_offset();
         s.push_str(if i == 0 { "\n" } else { ",\n" });
         s.push_str("    {");
-        s.push_str(&format!("\"name\": {}, ", json_str(name)));
+        s.push_str(&format!("\"name\": {}, ", json_str(&e.name)));
         s.push_str(&format!("\"address\": {}, ", addr));
         s.push_str(&format!("\"address_hex\": {}, ", json_str(&format!("0x{addr:x}"))));
+        s.push_str(&format!("\"aliases\": {}, ", json_str_array(&e.aliases)));
         s.push_str(&format!("\"kind\": {}", json_str(kinds[i])));
         s.push('}');
     }
@@ -281,6 +277,7 @@ fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> St
         s.push_str(&format!("      \"name\": {},\n", json_str(&f.name)));
         s.push_str(&format!("      \"address\": {},\n", f.address));
         s.push_str(&format!("      \"address_hex\": {},\n", json_str(&format!("0x{:x}", f.address))));
+        s.push_str(&format!("      \"aliases\": {},\n", json_str_array(&f.aliases)));
         s.push_str(&format!("      \"kind\": {},\n", json_str(kinds[i])));
         s.push_str(&format!("      \"size\": {},\n", f.size));
         s.push_str(&format!("      \"code\": {},\n", json_opt_str(f.code.as_deref())));
@@ -342,6 +339,21 @@ fn json_opt_num(v: Option<i64>) -> String {
         Some(n) => n.to_string(),
         None => "null".to_string(),
     }
+}
+
+/// (kuna, issue #197) A JSON array of strings — the `aliases` field: every
+/// OTHER name the reported entry carries.  Always present (`[]` when the entry
+/// has exactly one name).
+fn json_str_array(items: &[String]) -> String {
+    let mut out = String::from("[");
+    for (i, s) in items.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&json_str(s));
+    }
+    out.push(']');
+    out
 }
 
 /// Encode a Rust string as a JSON string literal (RFC 8259 escaping).

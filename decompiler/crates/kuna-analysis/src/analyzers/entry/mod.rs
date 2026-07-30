@@ -308,7 +308,7 @@ fn existing_function_addrs_for_file(file: &object::File) -> Vec<u64> {
         if sym.kind() != SymbolKind::Text {
             continue;
         }
-        let addr = sym.address();
+        let addr = thumb_masked(file, sym.address());
         if addr != 0 {
             out.push(addr);
         }
@@ -500,6 +500,39 @@ pub(crate) fn in_executable_section(execs: &[(u64, u64, Vec<u8>)], vma: u64) -> 
     execs.iter().any(|&(lo, hi, _)| vma >= lo && vma < hi)
 }
 
+/// (kuna, issue #197) Fold the ARM/Thumb mode bit out of a **symbol** address.
+///
+/// On 32-bit ARM a Thumb function's ELF symbol stores the mode bit in bit 0 of
+/// `st_value` (this repo's `arm_thumb_linked_le32` fixture records `compute` at
+/// `0x100b9` and `_start` at `0x100d7`, while `objdump` shows both functions
+/// starting at the even VMA); the odd address is not an instruction boundary at
+/// all.  Oracle 1 already masks `e_entry` this way (`collect_entries`); this is
+/// the same rule for the symbol-table stream, whose consumers were left unmasked:
+///
+/// * the raw odd VMA reached `listing_seeds` and became a `DiscoveredFunction`,
+///   which `funcdisc_recursive` then re-emitted as a "discovered entry" —
+///   the phantom `sub_100b9` that decompiles to an empty `void sub_100b9(void)`;
+/// * and because this same vec is the funcsym-skip set `collect_entries` tests
+///   against, a masked `e_entry` (`0x100d7` → `0x100d6`) failed to match the
+///   *unmasked* `0x100d7` recorded here, so `_start` was re-emitted as a "new"
+///   entry and picked up the generic `sub_100d6` alias.  Masking both sides
+///   restores that comparison.
+///
+/// **Strictly gated to `Architecture::Arm` (32-bit).** x86 instructions are
+/// byte-aligned, so an odd function address there is a genuine address — in-repo
+/// fixtures have real x86-64 functions at `0x40071d` and `0x1357`, and masking
+/// those would corrupt every x86 binary.  AArch64 is a distinct `object`
+/// architecture with no Thumb state, so it is correctly excluded.  MIPS16 /
+/// microMIPS use the same odd-address convention but need an `st_other` test as
+/// well, so they are deliberately not folded in here (`mips_markers`).
+pub(crate) fn thumb_masked(file: &object::File, addr: u64) -> u64 {
+    if file.architecture() == object::Architecture::Arm {
+        addr & !1
+    } else {
+        addr
+    }
+}
+
 /// Sorted VMAs of every already-named function: `.symtab`/`.dynsym` *defined*
 /// FUNC symbols (UND imports have `st_value == 0`) plus PLT import stubs. The
 /// commit seam's `find_function` already no-ops a covered address, but skipping
@@ -510,7 +543,7 @@ pub(crate) fn existing_function_addrs(file: &object::File, bytes: &[u8]) -> Vec<
         if sym.kind() != SymbolKind::Text {
             continue;
         }
-        let addr = sym.address();
+        let addr = thumb_masked(file, sym.address());
         if addr != 0 {
             out.push(addr);
         }

@@ -142,6 +142,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-29 | DWARF enums (no flag) | `DW_TAG_enumeration_type` builds a real enum type (`quotearg_style(4,…)` → `…(shell_escape_always_quoting_style,…)`) | 0/675; falls back to the underlying int when anonymous/memberless |
 | DIV-30 | uncomputed return half (no flag) | a recovered return PAIR whose half is a callee-saved restore / callee clobber is narrowed to the real half (kills `undefined16 main` + `v[8] = <uninit>`) | 0/675; subsumes `returnpair` on GH-6990 (3 stage assertions re-worded, 261/261) |
 | DIV-31 | x86 `DF` unaffected (no flag) | the ABI's direction-flag guarantee is stated where the cspec is silent, folding `(uint8)df * -2 + 1` strides to `+1` | 0/675; x86-only, spec-silent models only |
+| DIV-32 | whole-binary entry dedup (bug fix, no flag) | `decompile-all`/`functions`/`decompile-project`/wasm report each entry ADDRESS once — extra names move to `aliases[]`, and ARM/Thumb `entry\|1` addresses fold onto the real entry (symbol seeds, the enumeration key, and `--addr`) | 0/675 (analysis tier is parity-isolated); `arm_thumb_linked_le32` 6→2 entries, `fmt_arm` 32→14, x86-64 unchanged; 713/713 surviving functions byte-identical |
 
 ## Upstream provenance & sync
 

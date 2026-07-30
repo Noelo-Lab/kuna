@@ -33,6 +33,7 @@
 //! function entry the faithful way (the binaryimage's own symbol records, which
 //! is precisely what `readLoaderSymbols` reads).
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -61,6 +62,26 @@ use kuna_sleigh::translate::register_translate_ids;
 struct ProgramSymbol {
     name: String,
     addr: Address,
+}
+
+/// (kuna, issue #197) One **canonical** function entry — the unit of a
+/// whole-binary run, produced by [`ConsoleProgram::function_entries_canonical`].
+///
+/// Exactly one of these exists per function entry address.  `name` is the most
+/// informative symbol the entry carries ([`entry_name_rank`]); `aliases` holds
+/// every other name for it — a generic `sub_<addr>` placeholder, a debug-info
+/// name alongside the linker one, a decorated/undecorated pair — in the same
+/// preference order, so nothing the raw symbol stream knew is lost and a
+/// name-keyed lookup still resolves.
+#[derive(Debug, Clone)]
+pub struct FunctionEntry {
+    /// The most informative name at this entry (never a placeholder when the
+    /// entry also carries a real symbol).
+    pub name: String,
+    /// The entry address, Thumb-bit normalized on an ARM-family spec.
+    pub addr: Address,
+    /// Every other name this same entry carries, in the same preference order.
+    pub aliases: Vec<String>,
 }
 
 /// (kuna) A one-shot [`AssemblyEmit`](kuna_sleigh::translate::AssemblyEmit)
@@ -231,6 +252,125 @@ impl ConsoleProgram {
     /// raw-backend convention — the engine reports every function it found.
     pub fn function_entries(&self) -> impl Iterator<Item = (&str, &Address)> {
         self.symbols.iter().map(|s| (s.name.as_str(), &s.addr))
+    }
+
+    /// (kuna, issue #197) The **canonical** whole-binary function enumeration:
+    /// exactly one [`FunctionEntry`] per function ENTRY, address-ordered, with
+    /// every other name that entry carries kept as an alias.
+    ///
+    /// [`Self::function_entries`] is the raw symbol stream, in which one function
+    /// can appear several times — [`Self::register_symbol`] retains by NAME, so
+    /// two names at one address are two records.  Three producers feed that:
+    ///
+    /// 1. **A generic alias at the same address.** An analysis pass re-registers a
+    ///    discovered entry under the engine placeholder `sub_<addr>` even though
+    ///    the loader already named it, so `compute` and `sub_100b8` both sit at
+    ///    `0x100b8`.  Likewise every FID/PDB/demangle *rename* leaves the old
+    ///    placeholder behind in the symbol stream.
+    /// 2. **The ARM Thumb `entry|1` twin.** An ARM/Thumb function's ELF symbol
+    ///    stores the mode bit IN `st_value` (this repo's `arm_thumb_linked_le32`
+    ///    fixture has `compute` at `st_value = 0x100b9`), so an unmasked consumer
+    ///    reports a second entry one byte above the real one.  That twin is not
+    ///    merely redundant: `0x100b9` is not an instruction boundary, so it
+    ///    decompiles to a bogus empty `void sub_100b9(void)`.
+    /// 3. **A second, genuinely different name for one function.** A debug-info
+    ///    pass (DWARF/PDB/pclntab/objc) emits a name the linker symbol table does
+    ///    not have, and it is registered beside the loader's: `macho_dwarf.o`
+    ///    carries `_l0`+`first_byte` at `0x0` and `_main`+`main` at `0x40`, and a
+    ///    decorated/undecorated PE pair takes the same path.  (The loader's own
+    ///    funcsym stream cannot do this — it is address-deduped as it is read.)
+    ///
+    /// Producers 1 and 3 collapse by address; producer 2 needs the same Thumb-bit
+    /// normalization [`crate::project::build_asm`] already applies to its labels
+    /// (`vma & !1` on an ARM-family spec), which is also what the loader does when
+    /// it turns an odd `st_value` into an even entry address.
+    ///
+    /// The retained `name` is the most informative one ([`entry_name_rank`]);
+    /// `aliases` keeps the rest so a name-keyed lookup
+    /// ([`Self::find_entry_by_name`], behind `--functions <alias>`) still
+    /// resolves.  Nothing is lost — one function is simply reported, and
+    /// decompiled, once.
+    pub fn function_entries_canonical(&self) -> Vec<FunctionEntry> {
+        let normalize = |vma: u64| self.thumb_normalized(vma);
+
+        // Group every name by normalized entry offset, keeping one Address per
+        // group (rebuilt at the normalized offset, so an ARM twin reports the
+        // real, even entry).
+        let mut groups: BTreeMap<u64, (Address, Vec<String>)> = BTreeMap::new();
+        for s in &self.symbols {
+            // A sentinel (spaceless) address cannot be normalized or rebuilt;
+            // such a record is not a real entry, so skip it rather than guess.
+            let Some(space) = s.addr.get_space() else { continue };
+            let vma = normalize(s.addr.get_offset());
+            let entry = groups
+                .entry(vma)
+                .or_insert_with(|| (Address::new(Rc::clone(space), vma), Vec::new()));
+            if !entry.1.iter().any(|n| n == &s.name) {
+                entry.1.push(s.name.clone());
+            }
+        }
+
+        groups
+            .into_iter()
+            .map(|(_, (addr, mut names))| {
+                // Most informative first — see `entry_name_rank`.
+                names.sort_by(|a, b| {
+                    entry_name_rank(a).cmp(&entry_name_rank(b)).then_with(|| a.cmp(b))
+                });
+                let name = names.remove(0);
+                FunctionEntry { name, addr, aliases: names }
+            })
+            .collect()
+    }
+
+    /// (kuna, issue #197) Resolve a canonical entry by ANY of its names — the
+    /// reported `name` or any of its `aliases`.
+    ///
+    /// The name-keyed lookup behind `kuna decompile-all --functions <name>` (and
+    /// the wasm `decompile <name>` command).  Collapsing the enumeration must not
+    /// make a name that used to select a function stop working, so the filter
+    /// searches the alias set too — this is what preserves the decbench
+    /// name-narrowing the old `(name, offset)` dedup was keeping duplicate records
+    /// for.  Shared by both front-ends so the two `resolve_targets` copies cannot
+    /// drift apart on it.
+    pub fn find_entry_by_name(&self, want: &str) -> Option<FunctionEntry> {
+        self.function_entries_canonical()
+            .into_iter()
+            .find(|e| e.name == want || e.aliases.iter().any(|a| a == want))
+    }
+
+    /// (kuna, issue #197) Resolve the canonical entry AT `vma`, tolerating an
+    /// ARM/Thumb `entry|1` address.
+    ///
+    /// Backs `kuna decompile-all --addr 0xVMA` (and the wasm `decompile 0xADDR`
+    /// command).  An ARM caller legitimately holds odd addresses — an ELF symbol
+    /// value, a DWARF entry PC, or a benchmark case address all carry the Thumb
+    /// mode bit — and decompiling literally there lands mid-instruction and
+    /// yields an empty body.  Folding the bit reaches the real function.
+    ///
+    /// Deliberately conservative: it only ever returns an entry the enumeration
+    /// already knows, so an address that is not a discovered function start is
+    /// still `None` and the caller keeps decompiling exactly where it was asked.
+    pub fn find_entry_at(&self, vma: u64) -> Option<FunctionEntry> {
+        let want = self.thumb_normalized(vma);
+        self.function_entries_canonical()
+            .into_iter()
+            .find(|e| e.addr.get_offset() == want)
+    }
+
+    /// (kuna, issue #197) Fold the ARM/Thumb mode bit out of `vma`.
+    ///
+    /// On an ARM-family spec a Thumb function's recorded address carries the mode
+    /// bit in bit 0 while the instructions live at the even VMA — the same test
+    /// and mask [`crate::project::build_asm`] applies to its labels, and the
+    /// console-tier counterpart of the analysis tier's `thumb_masked`.  A no-op on
+    /// every other architecture, where an odd code address is genuine.
+    fn thumb_normalized(&self, vma: u64) -> u64 {
+        if self.description().starts_with("ARM") {
+            vma & !1
+        } else {
+            vma
+        }
     }
 
     /// (kuna) Every section of bytes the load image maps, as `(vma, size, flags)`
@@ -726,6 +866,48 @@ fn is_generic_placeholder_name(name: &str) -> bool {
         || name.starts_with("func_")
         || name.starts_with("FUN_")
         || name.starts_with("LAB_")
+}
+
+/// (kuna, issue #197) Is `name` a synthesized STRUCTURAL name rather than one the
+/// binary actually carries?
+///
+/// `_INIT_<i>` / `_FINI_<i>` / `_DT_INIT` / `_DT_FINI` are minted by the entry
+/// oracle for the ELF dynamic INIT/FINI tables (Ghidra `ElfProgramBuilder`'s
+/// naming, threaded through `AnalysisOutput::entry_names`).  They say what the
+/// table SLOT is, not what the function is called, so a real symbol at the same
+/// address must outrank them — `fmt_arm`'s `0x4c0` reports
+/// `__do_global_dtors_aux` with `_FINI_0` as an alias, not the reverse.
+fn is_structural_entry_name(name: &str) -> bool {
+    name == "_DT_INIT"
+        || name == "_DT_FINI"
+        || name
+            .strip_prefix("_INIT_")
+            .or_else(|| name.strip_prefix("_FINI_"))
+            .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// (kuna, issue #197) How informative is `name`?  Smaller sorts first when
+/// [`ConsoleProgram::function_entries_canonical`] picks which of an entry's names
+/// to report; the rest become aliases.  Ordered by decreasing importance:
+///
+/// 1. **Not an engine placeholder.**  `sub_`/`func_`/`FUN_`/`LAB_`
+///    ([`is_generic_placeholder_name`]) carry no information beyond the address,
+///    which the record already holds, so they always lose.
+/// 2. **Not a synthesized structural name** ([`is_structural_entry_name`]).
+/// 3. **No leading underscore.**  Where one function carries both a linker symbol
+///    and a debug-info symbol, the underscore-prefixed one is the mangled/ABI
+///    spelling: `macho_dwarf.o` has `_l0`+`first_byte` at `0x0` and `_main`+`main`
+///    at `0x40`, and the reported mingw-PE pair is `_pre_c_init`+`pre_c_init`.
+///    The unprefixed name is the one a reader wants.
+/// 4. **Shorter**, then **lexicographic** — so the choice is total and stable
+///    run to run rather than dependent on symbol-stream order.
+fn entry_name_rank(name: &str) -> (bool, bool, bool, usize) {
+    (
+        is_generic_placeholder_name(name),
+        is_structural_entry_name(name),
+        name.starts_with('_'),
+        name.len(),
+    )
 }
 
 /// Build the marshaling [`IdRegistry`] the console bootstrap needs (the same
