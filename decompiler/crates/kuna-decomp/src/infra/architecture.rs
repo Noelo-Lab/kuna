@@ -412,6 +412,37 @@ pub struct Architecture {
     /// structurer is already forced to emit one).  Port of angr SAILR
     /// `phoenix._last_resort_refinement` + `sailr._order_virtualizable_edges`.
     pub region_edge_order: bool,
+    /// (kuna) Short-circuit condition folding across a **non-trivial sibling
+    /// block** (angr Phoenix's `MultiStatementExpression` relaxation of
+    /// `_match_acyclic_short_circuit_conditions`).  Ghidra's `ruleBlockOr` declines
+    /// the `A || B` fold whenever the sibling condition block is *complex*
+    /// (`BlockBasic::isComplex`: more than two statements), so a single spill /
+    /// address computation parked in front of the second test costs a crossing
+    /// `goto` back into the first arm's clause.  When this is set, a complex
+    /// sibling is accepted anyway provided it is a `BlockCopy` of ONE `BlockBasic`
+    /// with a bounded (<=5 printed statements, <=1 *statement-root* call),
+    /// branch-free, comment-free prefix; the prefix then renders inside the
+    /// `&&`/`||` operand as a C comma expression, which the printer already supports
+    /// (`comma_separate`).  The fold moves no p-code — it re-parents two existing
+    /// structuring nodes — and C's short-circuit + comma sequencing preserves the
+    /// original execution paths and order.
+    ///
+    /// The call cap counts only calls printed as their own comma-chain element: the
+    /// eligibility walk mirrors the printer, whose implied-output skip runs before
+    /// the call test, so a call inlined into the sibling's own condition is not
+    /// charged and a folded operand can render more than one call.  It is a
+    /// readability bound, not a soundness bound — see
+    /// [`MAX_PREFIX_CALLS`](crate::p8_structure::kuna_condfold::MAX_PREFIX_CALLS).
+    ///
+    /// The value is the **printed-statement cap**, i.e. the option's policy level:
+    /// `0` = `option condfold off` (byte-identical to upstream: the precompute is
+    /// skipped and both gate disjuncts are dead), `5`
+    /// ([`MAX_PREFIX_STMTS_ANGR`](crate::p8_structure::kuna_condfold::MAX_PREFIX_STMTS_ANGR))
+    /// = `on` (angr parity), `9`
+    /// ([`MAX_PREFIX_STMTS_WIDE`](crate::p8_structure::kuna_condfold::MAX_PREFIX_STMTS_WIDE))
+    /// = `wide` (absorbs kuna's finer printed-statement granularity).  Default-OFF
+    /// opt-in.  See [`crate::p8_structure::kuna_condfold`].
+    pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
@@ -966,6 +997,7 @@ impl Architecture {
             region_structure: true,
             region_loop_refine: false,
             region_edge_order: false,
+            cond_fold: 0,
             reduce_return_gotos: false,
             flatten_ifelse: false,
             revert_cross_jumps: false,
@@ -1096,6 +1128,7 @@ impl Architecture {
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
+        self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
         self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
@@ -1259,6 +1292,12 @@ impl Architecture {
                 region_edge_order,
                 "Region structurer H2 post-dominator + dominance-tiered edge-virtualization ordering"
             ),
+            "condfold" => {
+                let (val, msg) =
+                    crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
+                self.cond_fold = val;
+                Ok(msg)
+            }
             "gotoreduce" => {
                 let (val, msg) =
                     crate::p8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
@@ -1695,6 +1734,7 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
+        ctx.cond_fold = self.cond_fold; // condfold
         ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert

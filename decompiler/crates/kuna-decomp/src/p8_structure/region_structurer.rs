@@ -174,6 +174,17 @@ pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<Block
     // `sblocks` `BlockCopy`'s `copy` references.
     let complex_blocks = compute_complex_blocks(data);
 
+    // (kuna, `option condfold`, default-OFF) the condfold-eligible subset of the
+    // complex blocks — a bounded, branch-free, comment-free printed-statement
+    // prefix in front of the trailing CBRANCH may still be folded into a
+    // short-circuit operand, rendered as a C comma expression (angr Phoenix's
+    // `MultiStatementExpression`).  Read while we still hold `&Funcdata`; empty
+    // (and unbuilt) when the option is off, so OFF is byte-identical.
+    let condfold_blocks = crate::p8_structure::kuna_condfold::compute_condfold_blocks(
+        data,
+        data.get_arch().cond_fold,
+    );
+
     // ---- 1d. Read the cyclic loop-successor refinement gate (regionlooprefine) -
     // Opt-in (default-OFF).  When ON, a multi-exit / multi-latch / mid-entry loop
     // that the base cyclic schemas cannot fold is refined (its secondary exits and
@@ -221,6 +232,7 @@ pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<Block
     let mut st = RegionStructurer::new(graph, sroot)
         .with_switch_maps(switch_blocks, switch_case_edges)
         .with_complex_blocks(complex_blocks)
+        .with_condfold_blocks(condfold_blocks)
         .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
         .with_edge_order(edge_order);
     let ok = st.structure()?;
@@ -322,6 +334,18 @@ struct RegionStructurer<'a> {
     /// `ruleBlockOr`).  Empty ⇒ every block is treated as complex (conservative,
     /// never folds), so an unset map is honest-partial-safe.
     complex_blocks: std::collections::BTreeSet<BlockId>,
+    /// (kuna, `option condfold`) the condfold-eligible subset: bblocks
+    /// `BlockBasic` ids that may be folded into a short-circuit condition operand
+    /// *despite* being complex, because they are a bounded, branch-free,
+    /// comment-free printed-statement prefix in front of the trailing CBRANCH
+    /// (angr Phoenix's `MultiStatementExpression` relaxation; see
+    /// [`crate::p8_structure::kuna_condfold`]).  Empty (and dead) when off.
+    condfold_blocks: std::collections::BTreeSet<BlockId>,
+    /// (kuna, `option condfold`) structuring nodes produced by a condfold-relaxed
+    /// [`try_block_or`](Self::try_block_or) fold — reported complex unconditionally
+    /// by [`is_complex`](Self::is_complex) so the loop schemas never lift a comma
+    /// chain into a `while(...)` header.
+    condfolded: std::collections::BTreeSet<BlockId>,
     /// `bblocks` `BlockBasic` ids whose CBRANCH op must have its
     /// `boolean_flip`/`fallthru_true` toggled (the deferred data-flow half of
     /// `BlockBasic::negateCondition`) — mirrors `CollapseStructure::pending_flips`.
@@ -378,6 +402,8 @@ impl<'a> RegionStructurer<'a> {
             switch_blocks: std::collections::BTreeMap::new(),
             switch_case_edges: std::collections::BTreeMap::new(),
             complex_blocks: std::collections::BTreeSet::new(),
+            condfold_blocks: std::collections::BTreeSet::new(),
+            condfolded: std::collections::BTreeSet::new(),
             pending_flips: Vec::new(),
             loop_refine: false,
             cyclic_loops: std::collections::BTreeMap::new(),
@@ -440,6 +466,35 @@ impl<'a> RegionStructurer<'a> {
     ) -> Self {
         self.complex_blocks = complex_blocks;
         self
+    }
+
+    /// (kuna, `option condfold`) attach the precomputed condfold-eligible set.
+    /// Mirrors [`CollapseStructure::with_condfold_blocks`](crate::blockaction::CollapseStructure).
+    fn with_condfold_blocks(
+        mut self,
+        condfold_blocks: std::collections::BTreeSet<BlockId>,
+    ) -> Self {
+        self.condfold_blocks = condfold_blocks;
+        self
+    }
+
+    /// (kuna, `option condfold`) may the *complex* structuring node `bl` still be
+    /// folded into a short-circuit condition operand?  Identical to
+    /// [`CollapseStructure::condfold_ok`](crate::blockaction::CollapseStructure):
+    /// only a `BlockCopy` of a single eligible bblocks `BlockBasic` qualifies, so a
+    /// multi-line/braced/labelled operand can never land inside the parentheses.
+    fn condfold_ok(&self, bl: BlockId) -> bool {
+        use crate::block::BlockType;
+        if self.condfold_blocks.is_empty() {
+            return false;
+        }
+        if self.graph.block(bl).get_type() != BlockType::Copy {
+            return false;
+        }
+        match self.graph.block(bl).get_copy() {
+            Some(basic) => self.condfold_blocks.contains(&basic),
+            None => false,
+        }
     }
 
     /// The XOR-reduced set of `bblocks` `BlockBasic` ids whose CBRANCH op flags
@@ -823,6 +878,13 @@ impl<'a> RegionStructurer<'a> {
         use crate::block::BlockType;
         let mut bl = bl;
         loop {
+            // (kuna, `option condfold`) a condfold-relaxed fold's right operand
+            // carries a comma chain the `BlockCondition` delegation to sub-block 0
+            // cannot see; report it complex so no loop schema hoists it into a
+            // `while(...)` header.  Empty set (dead) when the option is off.
+            if !self.condfolded.is_empty() && self.condfolded.contains(&bl) {
+                return true;
+            }
             match self.graph.block(bl).get_type() {
                 // BlockCopy: the copied BlockBasic's precomputed `complex_blocks` verdict.
                 BlockType::Copy => {
@@ -916,9 +978,18 @@ impl<'a> RegionStructurer<'a> {
             if self.graph.block(bl).is_back_edge_out(i) {
                 continue; // Don't use loop branch to get to orblock
             }
-            if self.is_complex(orblock) {
-                continue;
-            }
+            // (kuna, `option condfold`) accept a complex sibling when it is a
+            // BlockCopy of a bounded, branch-free, comment-free BlockBasic (angr
+            // Phoenix's MultiStatementExpression relaxation).  Byte-identical to
+            // upstream when the option is off.
+            let relaxed = if self.is_complex(orblock) {
+                if !self.condfold_ok(orblock) {
+                    continue;
+                }
+                true
+            } else {
+                false
+            };
             let clauseblock = self.graph.block(bl).get_out(1 - i);
             if clauseblock == bl {
                 continue; // No looping
@@ -950,7 +1021,10 @@ impl<'a> RegionStructurer<'a> {
             }
 
             let graph_id = self.graph_id;
-            self.graph.new_block_condition(graph_id, bl, orblock)?;
+            let newcond = self.graph.new_block_condition(graph_id, bl, orblock)?;
+            if relaxed {
+                self.condfolded.insert(newcond);
+            }
             return Ok(true);
         }
         Ok(false)

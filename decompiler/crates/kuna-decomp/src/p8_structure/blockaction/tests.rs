@@ -885,3 +885,121 @@ fn is_complex_condition_delegates_to_component_zero() {
     let cs = CollapseStructure::new(&mut g, root).with_complex_blocks(complex);
     assert!(cs.is_complex(cond), "complex getBlock(0) -> the condition is complex");
 }
+
+// ---------------------------------------------------------------------------
+// (kuna) `option condfold` -- the short-circuit fold across a COMPLEX sibling.
+// ---------------------------------------------------------------------------
+
+/// Build the canonical `ruleBlockOr` shape, oriented so neither
+/// `negate_condition_rec` call is needed (`orblock` is already `bl`'s out 0 and
+/// `clauseblock` is already `orblock`'s out 1):
+///
+/// ```text
+///   bl --0--> orblock --0--> other
+///    \--1--> clause <---1---/
+/// ```
+///
+/// Returns `(graph, root, bl, orblock, bb_bl, bb_or)` where the `bb_*` ids are
+/// the underlying "bblocks" `BlockBasic`s the two `BlockCopy` leaves point at.
+#[allow(clippy::type_complexity)]
+fn build_block_or_shape() -> (BlockGraph, BlockId, BlockId, BlockId, BlockId, BlockId) {
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    let bb_bl = g.new_block_basic(root);
+    let bb_or = g.new_block_basic(root);
+    let bl = g.new_block_copy(root, bb_bl);
+    let orblock = g.new_block_copy(root, bb_or);
+    let clause = g.new_block(root);
+    let other = g.new_block(root);
+    g.add_edge(bl, orblock); // bl out 0 -> the sibling condition
+    g.add_edge(bl, clause); // bl out 1 -> the shared clause
+    g.add_edge(orblock, other); // orblock out 0
+    g.add_edge(orblock, clause); // orblock out 1 -> the shared clause
+    (g, root, bl, orblock, bb_bl, bb_or)
+}
+
+#[test]
+fn condfold_off_leaves_rule_block_or_declining_a_complex_sibling() {
+    // The upstream behavior, and the byte-identical guarantee of `condfold off`:
+    // a complex `orblock` is refused outright, so nothing folds.
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    // No `with_condfold_blocks` -> the option is off.
+    let mut cs = CollapseStructure::new(&mut g, root).with_complex_blocks(complex);
+    assert!(
+        !cs.rule_block_or(bl).expect("rule_block_or"),
+        "a complex sibling must be refused when condfold is off"
+    );
+}
+
+#[test]
+fn condfold_on_folds_a_complex_but_eligible_sibling() {
+    // The whole feature: the SAME graph and the SAME complex verdict, but the
+    // sibling's underlying BlockBasic is in the condfold-eligible set.
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    let mut condfold = std::collections::BTreeSet::new();
+    condfold.insert(bb_or);
+    let mut cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_blocks(condfold);
+    assert!(
+        cs.rule_block_or(bl).expect("rule_block_or"),
+        "an eligible complex sibling folds when condfold is on"
+    );
+}
+
+#[test]
+fn condfold_relaxed_fold_reports_itself_complex() {
+    // Guard for `rule_block_while_do`: BlockCondition::isComplex delegates to
+    // getBlock(0), which here is the trivial LEFT operand -- so without the
+    // `condfolded` marking the comma chain in the RIGHT operand would be lifted
+    // into a `while(...)` header.
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or); // note: bb_bl (the LEFT operand) is NOT complex
+    let mut condfold = std::collections::BTreeSet::new();
+    condfold.insert(bb_or);
+    let mut cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_blocks(condfold);
+    assert!(cs.rule_block_or(bl).expect("rule_block_or"));
+    // The folded node is the graph's newest component.
+    let folded = *cs
+        .graph
+        .block(root)
+        .get_list()
+        .last()
+        .expect("the folded BlockCondition is the newest component");
+    assert_eq!(cs.graph.block(folded).get_type(), BlockType::Condition);
+    assert!(
+        cs.is_complex(folded),
+        "a condfold-relaxed BlockCondition must report itself complex despite \
+         its trivial left operand"
+    );
+}
+
+#[test]
+fn condfold_ok_refuses_a_non_copy_operand() {
+    // Precondition: only a BlockCopy of ONE BlockBasic may be relaxed.  A
+    // BlockList / BlockIf / BlockCondition operand can render braces, multiple
+    // lines, or a label inside the parentheses -- i.e. invalid C.
+    let (mut g, root, _bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let plain = g.new_block(root); // not a BlockCopy
+    let mut condfold = std::collections::BTreeSet::new();
+    condfold.insert(bb_or);
+    let cs = CollapseStructure::new(&mut g, root).with_condfold_blocks(condfold);
+    assert!(!cs.condfold_ok(plain), "a non-BlockCopy operand is never relaxed");
+}
+
+#[test]
+fn condfold_ok_is_dead_when_the_option_is_off() {
+    // With an empty eligible set (the `condfold off` state) the gate can never
+    // fire, whatever the operand is.
+    let (mut g, root, _bl, orblock, _bb_bl, _bb_or) = build_block_or_shape();
+    let cs = CollapseStructure::new(&mut g, root);
+    assert!(!cs.condfold_ok(orblock), "empty set -> the relaxation is dead");
+}
