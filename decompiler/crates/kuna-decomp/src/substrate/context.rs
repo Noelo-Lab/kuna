@@ -557,14 +557,15 @@ pub struct ArchContext {
     /// (kuna) short-circuit condition folding across a COMPLEX sibling block
     /// (`cond_fold`, option `condfold`, opt-in default-off).  When set, the
     /// short-circuit schema of BOTH structurers accepts a *complex* sibling
-    /// condition block when either admission rule takes it — Rule A, a `BlockCopy`
-    /// of one bounded, branch-free, comment-free `BlockBasic`; or Rule B, the
+    /// condition block when it fits the level's printed-width budget AND either
+    /// admission rule takes it — Rule A, a `BlockCopy` of one branch-free,
+    /// comment-free `BlockBasic` with at most one statement-root call; or Rule B, the
     /// statement-shape allowlist, which also admits a nested `BlockCondition` so a
     /// guard cascade can fold.  The absorbed statements then render inside the
     /// `&&`/`||` operand as a C comma expression (angr Phoenix's
     /// `MultiStatementExpression`).  Read by
     /// [`crate::p8_structure::kuna_condfold::compute_condfold_sets`] at both
-    /// precompute sites.  The value is Rule A's printed-statement cap, which
+    /// precompute sites.  The value is the shared printed-width budget, which
     /// doubles as the option's on/off sentinel: `0` = off, `5` = `on` (angr
     /// parity), `9` = `wide`.
     pub cond_fold: int4,

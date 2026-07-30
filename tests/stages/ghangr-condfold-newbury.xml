@@ -43,13 +43,34 @@
     That is the CFG's own order and conditionality, which is why predicates that
     call functions need no purity analysis.  See p8_structure/kuna_condfold.rs.
 
+    WHICH LEVEL, AND WHY `wide`.  Both admission rules sit on top of ONE shared
+    printed-width budget: the folded operand may render at most 5 comma elements
+    at `on` and 9 at `wide`, measured by kuna_condfold.rs (printed_shape) with
+    the printer's own skip rules.  On THIS vehicle the stub callees have no
+    prototype and no frame recovery, so each guard block still carries the
+    call's stack-effect ops (INT_ADD / STORE / LOAD around the CALL) when
+    structuring runs, and printed_shape measures 6 for a block whose operand
+    finally emits none.  The measure over-counts, which only ever declines a
+    fold - so this witness needs `wide`, while the REAL newbury::main (whose
+    libc calls are prototyped) measures 3 per guard block and closes at `on`.
+    That is deliberate and is itself the two-pass proof of the shared budget:
+    under the pre-review code, where Rule B had no width cap at all, this shape
+    folded at `on`.
+
     WHICH RULE FIRES.  `condfold`'s admission predicate is the UNION of two
-    rules.  Rule A (bounded prefix) requires a BlockCopy of ONE basic block with
-    a bounded printed-statement prefix; it does NOT accept a nested
-    BlockCondition, so it cannot fold a guard CASCADE.  Rule B (statement-shape
-    allowlist) does, and Rule B is what this witness exercises; it is the half
-    of the union that came from PR #194.  The companion witness
-    tests/stages/ghangr-condfold.xml exercises Rule A.
+    rules.  Rule A (bounded prefix) requires a BlockCopy of ONE basic block; it
+    does NOT accept a nested BlockCondition, so it cannot fold a guard CASCADE
+    whose sibling is itself a folded condition.  Rule B (statement-shape
+    allowlist) can, and that is the capability this shape is here for.  At
+    `wide` BOTH rules admit these particular guard blocks and condfold_ok
+    consults Rule A first, so this XML proves the guard-cascade shape folds end
+    to end but does NOT by itself isolate Rule B; Rule B's exclusive
+    nested-BlockCondition power is proven by the unit tests in
+    p8_structure/blockaction/tests.rs
+    (condfold_rule_b_admits_a_nested_condition_operand and its siblings) and, on
+    a real binary, by KUNA_CONDFOLD_DEBUG=1 on newbury::main, which traces
+    `shape` folds taking a freshly-created BlockCondition as the sibling.  The
+    companion witness tests/stages/ghangr-condfold.xml exercises Rule A.
 
     WITNESS.  Self-contained, no relocations: gcc -O2 output for
 
@@ -68,9 +89,9 @@
     Pass 1 (option condfold off): the fold is declined and one edge into the
     shared body is virtualized - "goto" appears exactly once, and so does the
     "label_" prefix of its target line.
-    Pass 2 (option condfold on): the cascade folds, so neither token appears in
-    the second pass, and the de Morgan orientation ruleBlockOr applies turns the
-    two equality guards into the inverted disjunction "su_euid() != " that
+    Pass 2 (option condfold wide): the cascade folds, so neither token appears
+    in the second pass, and the de Morgan orientation ruleBlockOr applies turns
+    the two equality guards into the inverted disjunction "su_euid() != " that
     guards the terminating arm.
 -->
 <bytechunk space="ram" offset="0x100000">
@@ -89,7 +110,7 @@ b801000000c3662e0f1f840000000000b802000000c3662e0f1f840000000000b803000000c3662e
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option condfold on</com>
+  <com>option condfold wide</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>

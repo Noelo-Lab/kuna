@@ -118,35 +118,46 @@ admission rules takes it. The predicate is their union — the two rules were
 derived independently against the two shapes above and neither subsumes the
 other.
 
-**Rule A — bounded prefix.** The sibling is a `BlockCopy` of one `BlockBasic`
-that `kuna_condfold.rs (prefix_eligible)` approves. Eligibility walks the
-block's live op list with the *same* skip rules the printer applies
+**The shared width budget.** Every admitted sibling first has to fit the
+policy level's **printed-width budget**: `kuna_condfold.rs (printed_shape)`
+walks the block's live op list with the *same* skip rules the printer applies
 (`p9_emit/printc.rs (PrintC::emit_basic_block_ops)`: not-printed ops, SSA
-markers, ops whose output varnode is implied, and the bare `CPUI_BRANCH`), so
-the caps govern exactly what will appear, and declines on: more than the
-policy's statement cap or more than one *statement-root* call; any non-terminal
-branch op (angr's own refusal — a `goto` is not an expression); a block that
-does not end in a `CPUI_CBRANCH`; or a block carrying an instruction comment,
-because `emit_basic_block_ops` suppresses `emit_comment_group` under
-`comma_separate` and folding would silently delete the comment. A
+markers, ops whose output varnode is implied, and the bare `CPUI_BRANCH`) and
+counts what is left, the terminal `CPUI_CBRANCH` included because it renders as
+the chain's last element. That count must not exceed five at `on` or nine at
+`wide`. `printed_shape` also refuses outright on a block that does not end in a
+`CPUI_CBRANCH`, or in which a non-terminal branch op survives the skips — angr's
+own refusal, and a `goto` is not an expression. Both admission rules are then
+applied on top of that one measure, so the level is the only thing that changes
+how wide an operand either rule will let through.
+
+**Rule A — bounded prefix.** The sibling is a `BlockCopy` of one `BlockBasic`
+that `kuna_condfold.rs (prefix_eligible)` approves: within the width budget,
+with at most one *statement-root* call, and carrying no comment — because
+`emit_basic_block_ops` suppresses `emit_comment_group` under `comma_separate`
+and folding would silently delete the comment. A
 `BlockList`/`BlockIf`/`BlockCondition` sibling is never taken by this rule — such
 an operand could render braces, multiple lines, or a label inside the
 parentheses, i.e. invalid C.
 
 **Rule B — statement shape.** `kuna_condfold.rs (shape_score)` applies an
-explicit allowlist instead of a length bound: every op must be a marker (never
-printed), an op with an output varnode, a void `CALL`/`CALLIND`, a `STORE`, or
-the single terminal `CBRANCH`. A `RETURN`, a second branch, a `BRANCHIND`, a
-`CALLOTHER` (userop rendering can be multi-line or special-cased) or a
-no-return call declines the block outright, as does a comment. Per block it
-allows at most two conservatively-scored statements and two calls — counting
-*every* call, unlike Rule A. Statements are scored with the same
-`Varnode::calc_explicit` approximation `bb_is_complex` uses rather than by
+explicit allowlist on top of the same width budget: every op must be a marker
+(never printed), an op with an output varnode, a void `CALL`/`CALLIND`, a
+`STORE`, or the single terminal `CBRANCH`. A `RETURN`, a second branch, a
+`BRANCHIND`, a `CALLOTHER` (userop rendering can be multi-line or
+special-cased) or a no-return call declines the block outright, as does a
+comment of any type. Per block it allows at most two conservatively-scored
+statements and two calls — counting *every* call, unlike Rule A.
+
+Those two *scored* statements are counted with the same
+`Varnode::calc_explicit` approximation `bb_is_complex` uses, rather than by
 reading `Varnode::is_explicit()`, which is not yet meaningful when structuring
-runs; the approximation is inexact in both directions, so a block admitted at
-the cap can render one statement wider than the nominal budget. That is
-readability slack, never a correctness one — `comma_separate` emits every op
-either way.
+runs. **That score is an approximation of printed width and is not one.** On
+`tr::build_spec_list`'s third-term sibling it reads 2 for a block that renders
+seven comma elements; while it was Rule B's only length cap, `on` emitted the
+option's widest operands and `wide` could not tell itself apart from `on` on any
+named target. The score is retained only because the cross-leaf caps below are
+expressed in it.
 
 Rule B additionally admits a **nested `BlockCondition`** as the sibling, which
 Rule A never does, and that is what lets a guard *cascade* fold: `newbury::main`
@@ -155,12 +166,12 @@ as the sibling of the first. `printc.rs (PrintC::emit_block_condition)` emits
 *both* sub-blocks of a nested Condition under `comma_separate`, so every leaf
 must itself be Rule-B admissible (the recursion in `blockaction.rs
 (CollapseStructure::is_shape_foldable)`), and the fold site enforces two
-expression-size caps — at most four condition leaves and at most four scored
+cross-leaf caps — at most four condition leaves and at most four scored
 statements summed over them — because `collapse_conditions` is a fixpoint loop
 with no natural bound. A leaf admitted only by Rule A is deliberately *not*
-admissible as a nested leaf: Rule A's cap is up to nine printed statements,
-which the expression-size caps have no honest way to charge, so a Rule-A block
-may only ever be the direct operand of one fold.
+admissible as a nested leaf: a Rule-A block can hold up to nine printed
+statements, which the cross-leaf caps have no honest way to charge, so a Rule-A
+block may only ever be the direct operand of one fold.
 
 Two guards live at the gate rather than in either predicate. The pre-existing
 `!is_interior_goto_target` decline is never relaxed, because `printc.rs
@@ -177,6 +188,27 @@ it is *exercised*; they are not a global bound on the final condition's width,
 because a purely upstream-legal fold (both operands non-complex) can still
 extend a cascade on the left without consulting them, exactly as it can with
 the option off.
+
+**What the width budget bounds, stated exactly.** Per admitted leaf, the comma
+chain `printed_shape` measures is at most five elements at `on` and nine at
+`wide`. Measured across 2827 functions in seven binaries, the widest comma
+operand the option *creates* is five elements at `on` and seven at `wide`; the
+widest operand present in the emitted C at `on` is six, in `dd::human_readable`,
+and that one is already there with the option **off** — Ghidra's own
+`bb_is_complex` budget has the same score-versus-width slack, and refusing to
+inherit it is the whole point of this measure. Three things the budget does not
+bound. It is a per-leaf bound, so a Rule-B cascade of up to four leaves has no
+bound on their summed printed width (the only cross-leaf cap is expressed in the
+weak score). It is taken on the op list as it stands at structuring time, so a
+later pass can still add or drop an op — on `tr::build_spec_list` the measure
+reads six to nine across the structuring passes and the operand finally emits
+eight elements. And where a call's stack-effect ops are still live at
+structuring time (an unprototyped callee with no frame recovery), it
+over-counts: the stage witness `tests/stages/ghangr-condfold-newbury.xml`
+measures six for a guard block whose operand finally emits none, which is why
+that witness needs `wide` although the real `newbury::main` closes at `on`.
+Over-counting only ever declines a fold, so the error is in the safe
+direction.
 
 Nothing moves. `substrate/block.rs (BlockGraph::new_block_condition)`
 re-parents two existing structuring nodes; no p-code op is moved, reordered,
@@ -210,9 +242,10 @@ count cannot produce wrong C — it only admits a denser operand than angr would
 Rule B, which charges every call op, is the tighter half of the union.
 
 Option `condfold`, default **off**, three-valued: `on` uses angr's statement
-threshold (Rule A cap 5 statements, 1 statement-root call) and `wide` raises
-**only** Rule A's statement cap to 9; every Rule B cap and every soundness or
-rendering guard is identical at both levels. `wide` exists because kuna's
+threshold (width budget 5, and Rule A additionally 1 statement-root call) and
+`wide` raises the width budget to 9 for **both** rules; Rule A's call cap, Rule
+B's shape allowlist and scored caps, the cross-leaf caps and every soundness or
+rendering guard are identical at both levels. `wide` exists because kuna's
 *printed* statement granularity is finer than angr's AIL for the same block —
 argument recovery may leave operand computations as separate assignments where
 angr renders one call statement, and an address-tied stack variable prints copy
@@ -231,7 +264,8 @@ sharply. And a **later-produced advisory comment can be lost**: both rules
 decline a block that already carries a comment, but the check only sees the
 comments buffered in `Funcdata` at structuring time, while `comma_separate`
 suppresses `emit_comment_group` for the whole operand — so an advisory emitted
-by a pass that runs after structuring can still vanish. Those are kuna
+by a pass that runs after structuring can still vanish (`newbury::main` emits
+four `WARNING:` lines at `off` and three at `on`). Those are kuna
 annotations, never a correctness signal, and the emitted C is unaffected.
 
 **Goto selection (the pathological case).** When the cascade stalls with more

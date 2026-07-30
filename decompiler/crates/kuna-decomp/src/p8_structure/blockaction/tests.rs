@@ -955,7 +955,16 @@ fn shape_only(
 ) -> crate::p8_structure::kuna_condfold::CondFoldSets {
     let mut s = crate::p8_structure::kuna_condfold::CondFoldSets::default();
     for &(bb, n) in entries {
-        s.shape.insert(bb, n);
+        // `printed` is not consulted at the fold site (the printed-width budget is
+        // enforced when `condfold_sets` is built, per block); mirror `scored` so the
+        // fixture stays self-consistent.
+        s.shape.insert(
+            bb,
+            crate::p8_structure::kuna_condfold::ShapeVerdict {
+                scored: n,
+                printed: n,
+            },
+        );
     }
     s
 }

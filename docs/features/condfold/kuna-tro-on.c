@@ -32,7 +32,14 @@ unsigned long build_spec_list(int8 *a0,unsigned long a1)
       v13 = v12 + 1;
                     /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
       if (es_match(a0,v12,0x5b) != '\0') {
-        if (((es_match() != '\0') || (es_match() != '\0')) && (v16 = *(char *)(v2 + v13), v9 = &v14, v1 = v14, v3 = v14, v14 = v1, v14 = v14, find_closing_delim(a0,v17) != '\0')) {
+        if ((es_match() != '\0') || (es_match() != '\0')) {
+          v16 = *(char *)(v2 + v13);
+          v9 = &v14;
+          v1 = v14;
+          v3 = v14;
+          v14 = v1;
+          v14 = v14;
+          if (find_closing_delim(a0,v17) == '\0') goto label_400d08;
           v1 = v2 + v17;
           v6 = (v14 + -2) - v12;
           if (v6 == 0) {
@@ -43,35 +50,32 @@ unsigned long build_spec_list(int8 *a0,unsigned long a1)
             error(0,0,dcgettext(0,v5,5));
             return 0;
           }
-                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
-          if (v16 != ':') {
-            if (append_equiv_class() == '\0') {
-              if (star_digits_closebracket(a0,v17) == '\0') {
-                v7 = make_printable_str(v1,v6,v10,v9);
-                v8 = dcgettext(0,0x4048b0,5);
-                v5 = v7;
-                    /* WARNING: taildup: duplicated return-call tail to remove goto */
-                error(0,0,v8,v7);
-                free(v5);
-                return 0;
-              }
-              goto label_400d08;
-            }
-          }
-          else {
+          if (v16 == ':') {
             v14 = v14;
-            if (append_char_class(a1,v1,v6) == '\0') {
-              if (star_digits_closebracket(a0,v17) == '\0') {
-                v5 = make_printable_str(v1,v6,v11,v9);
-                v7 = quote(v5);
-                v8 = dcgettext(0,0x4044bf,5);
-                error(0,0,v8,v7);
-                free(v5);
-                return 0;
-              }
-              goto label_400d08;
+            if (append_char_class(a1,v1,v6) != '\0') goto label_400e40;
+            if (star_digits_closebracket(a0,v17) == '\0') {
+              v5 = make_printable_str(v1,v6,v11,v9);
+              v7 = quote(v5);
+              v8 = dcgettext(0,0x4044bf,5);
+                    /* WARNING: taildup: duplicated return-call tail to remove goto */
+              error(0,0,v8,v7);
+              free(v5);
+              return 0;
             }
+            goto label_400d08;
           }
+          if (append_equiv_class() == '\0') {
+            if (star_digits_closebracket(a0,v17) == '\0') {
+              v7 = make_printable_str(v1,v6,v10,v9);
+              v8 = dcgettext(0,0x4048b0,5);
+              v5 = v7;
+              error(0,0,v8,v7);
+              free(v5);
+              return 0;
+            }
+            goto label_400d08;
+          }
+label_400e40:
           v13 = v3 + 2;
         }
         else {

@@ -32,7 +32,15 @@ bool build_spec_list(E_string *es,Spec_list *result)
       if (es_match(es,i,'[')) {
         v11 = i;
         v2 = es_match(es_00,i,':');
-        if (((v2) || (result_idx = &v9, es_match(es_00,v11,'='))) && (pre_bracket_char = *(char *)(v1 + i), result_idx = &v9, v4 = v9, v11 = v9, v2 = find_closing_delim(es,start_idx,pre_bracket_char,result_idx), v9 = v4, v9 = v9, v2)) {
+        if ((v2) || (result_idx = &v9, es_match(es_00,v11,'='))) {
+          pre_bracket_char = *(char *)(v1 + i);
+          result_idx = &v9;
+          v4 = v9;
+          v11 = v9;
+          v2 = find_closing_delim(es,start_idx,pre_bracket_char,result_idx);
+          v9 = v4;
+          v9 = v9;
+          if (!v2) goto label_4024b8;
           v5 = (char *)(v1 + start_idx);
           v4 = (v9 - 2) - i;
           if (v4 == 0) {
@@ -43,35 +51,32 @@ bool build_spec_list(E_string *es,Spec_list *result)
             error(0,0,dcgettext(0,v5,5));
             return 0;
           }
-                    /* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */
-          if (pre_bracket_char != ':') {
-            if (!append_equiv_class(result,v5,v4)) {
-              if (!star_digits_closebracket(es,start_idx)) {
-                v6 = make_printable_str(v5,v4);
-                v7 = dcgettext(0,"%s: equivalence class operand must be a single character",5);
-                v5 = v6;
-                    /* WARNING: taildup: duplicated return-call tail to remove goto */
-                error(0,0,v7,v6);
-                free(v5);
-                return 0;
-              }
-              goto label_4024b8;
-            }
-          }
-          else {
+          if (pre_bracket_char == ':') {
             v9 = v9;
-            if (!append_char_class(result,v5,v4)) {
-              if (!star_digits_closebracket(es,start_idx)) {
-                v5 = make_printable_str(v5,v4);
-                v6 = (char *)quote(v5);
-                v7 = dcgettext(0,"invalid character class %s",5);
-                error(0,0,v7,v6);
-                free(v5);
-                return 0;
-              }
-              goto label_4024b8;
+            if (append_char_class(result,v5,v4)) goto label_4025f0;
+            if (!star_digits_closebracket(es,start_idx)) {
+              v5 = make_printable_str(v5,v4);
+              v6 = (char *)quote(v5);
+              v7 = dcgettext(0,"invalid character class %s",5);
+                    /* WARNING: taildup: duplicated return-call tail to remove goto */
+              error(0,0,v7,v6);
+              free(v5);
+              return 0;
             }
+            goto label_4024b8;
           }
+          if (!append_equiv_class(result,v5,v4)) {
+            if (!star_digits_closebracket(es,start_idx)) {
+              v6 = make_printable_str(v5,v4);
+              v7 = dcgettext(0,"%s: equivalence class operand must be a single character",5);
+              v5 = v6;
+              error(0,0,v7,v6);
+              free(v5);
+              return 0;
+            }
+            goto label_4024b8;
+          }
+label_4025f0:
           i = v11 + 2;
         }
         else {

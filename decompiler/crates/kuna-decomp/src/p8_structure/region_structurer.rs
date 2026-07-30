@@ -561,7 +561,12 @@ impl<'a> RegionStructurer<'a> {
                 self.cond_stmt_count(b0) + self.cond_stmt_count(b1)
             }
             BlockType::Copy => match self.graph.block(bl).get_copy() {
-                Some(basic) => *self.condfold_sets.shape.get(&basic).unwrap_or(&cap),
+                Some(basic) => self
+                    .condfold_sets
+                    .shape
+                    .get(&basic)
+                    .map(|v| v.scored)
+                    .unwrap_or(cap),
                 None => cap,
             },
             _ => cap,
