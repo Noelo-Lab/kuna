@@ -112,6 +112,9 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 - Code comments citing `decompiler/cpp/<file>.{cc,hh}` are **upstream Ghidra anchors** —
   the C++ tree kuna was ported from, *not* paths in this repo. The pinned upstream commit
   (`GHIDRA_REV`) and the vendored-tree sync procedure are in `docs/history.md`.
+- Minimize comments. We should almost never have comments inline. Comments belong in mostly
+  two places: the function header or the file header. The function header ones should be 
+  minimal as well. Only comment inline when it is a confusing or complex hack.
 - New functionality → new modules; match the surrounding code's conventions (ported files
   name methods after their C++ originals).
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`).
