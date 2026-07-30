@@ -1,0 +1,124 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr short-circuit condition folding across a COMPLEX sibling, `option
+    condfold off|on|wide` (default-OFF; ELEM 4113), S8 goto-quality sub-stage.
+    This witness exists for ONE purpose: to isolate **Rule B**, the
+    statement-shape half of condfold's union admission predicate, so that
+    deleting Rule B breaks a gate.
+
+    WHY A THIRD CONDFOLD WITNESS.  condfold admits a complex sibling when
+    EITHER rule takes it, and `condfold_ok` consults Rule A first:
+
+      Rule A (prefix_eligible)  a BlockCopy of ONE BlockBasic, inside the
+                                shared printed-width budget, with at most
+                                MAX_PREFIX_ROOT_CALLS = 1 statement-root call.
+      Rule B (shape_score)      a statement-shape allowlist with
+                                MAX_SHAPE_CALLS = 2 calls and MAX_SHAPE_STMTS =
+                                2 conservatively-scored statements, which via
+                                is_shape_foldable also recurses into a nested
+                                BlockCondition operand.
+
+    The two existing witnesses both fold through Rule A:
+    tests/stages/ghangr-condfold.xml by construction, and
+    tests/stages/ghangr-condfold-newbury.xml because at `wide` Rule A's budget
+    also admits its guard blocks and Rule A is tried first (measured with
+    KUNA_CONDFOLD_DEBUG=1: 2 `prefix` folds per engine, 0 `shape`).  Neither
+    would notice if Rule B were deleted.  This one would.
+
+    WHAT MAKES IT RULE-B-ONLY.  The shared printed-width budget cannot separate
+    the rules (both enforce it, on the same printed_shape measure), and the
+    comment guard declines both.  The one per-block cap that differs is the
+    call cap, and it does NOT move with the policy level: Rule A charges at
+    most 1 statement-root call at `on` AND at `wide`, while Rule B allows 2.
+    So a guard block holding TWO calls that each print as their own comma
+    element is structurally outside Rule A at every level and inside Rule B.
+    The middle guard here is exactly that block:
+
+        su_log();                 <- a void call: its own comma element
+        x = su_euid();            <- an output that ESCAPES the block (the
+                                     failure arm consumes it), so it is not
+                                     implied and prints as its own element too
+        if (x != wu) ...
+
+    measured `scored 2, prints 4` at `on` and admitted by `shape` alone
+    (`admit(prefix)` is never traced for it).  Rule B's second exclusive
+    power is exercised in the same run: once the (middle, last) guard pair
+    has folded, the fold of the FIRST guard takes that BlockCondition as its
+    sibling, and Rule A can never accept a non-Copy operand.  Both folds are
+    traced as `shape` in both engines (region_structurer and
+    CollapseStructure), and a get_type() probe at the admit site reports the
+    first fold's sibling as `type Copy leaves 1` and the second's as
+    `type Condition leaves 2`: both exclusive properties, one run.
+
+    THE SHAPE.  A three-guard permission cascade whose arms reconverge:
+
+      B0: if (su_uid() == 0)             -> BODY  else B1
+      B1: su_log(); x = su_euid();
+          if (x != wu)                   -> BAD   else B2
+      B2: if (su_egid() != wg)           -> BAD   else BODY
+      BAD:  su_warn(x); return -1        (in-degree 2: B1, B2)
+      BODY: su_setup(); su_run() x12; return 0   (in-degree 2: B0, B2)
+
+    Every gate of ruleBlockOr holds for (B1,B2) and then for (B0, B1||B2)
+    except BlockBasic::isComplex, which is the single decline condfold
+    relaxes.  No p-code moves: new_block_condition re-parents two structuring
+    nodes that the CFG already sequences as the left and right operands of a
+    short circuit, and the printer renders the right operand's statements
+    comma-separated under modifiers::COMMA_SEPARATE.  C's short-circuit plus
+    comma sequencing therefore preserves both the order and the conditionality
+    of su_log / su_euid / su_egid, which is why predicates that call functions
+    need no purity analysis.  See p8_structure/kuna_condfold.rs.
+
+    WITNESS.  Self-contained, no relocations, no data references: gcc -O2
+    output for
+
+      int f(int argc, int wu, int wg) {
+        int r, x = 0;
+        if (su_uid() == 0
+            || ((su_log(), (x = su_euid()) == wu) &amp;&amp; su_egid() == wg)) {
+          su_setup(); su_run(argc+0) ... su_run(argc+11); r = 0;
+        } else { r = -1; su_warn(x); }
+        return r;
+      }
+
+    with every callee a local stub in the same chunk.  f keeps a real frame
+    (push/sub rsp), so the CALL's stack-effect ops are recovered away and
+    printed_shape measures the guard blocks at their emitted width; the body is
+    12 calls wide so the default-on taildup does not duplicate it away.
+
+    Pass 1 (option condfold off): the fold is declined, so the middle guard's
+    two calls are emitted as plain statements ahead of a nested if.
+    Pass 2 (option condfold on): the whole cascade folds into one compound
+    condition whose right operand is the comma expression.  `on` is enough here
+    (angr's own threshold of 5); the level is not what admits this shape.
+-->
+<bytechunk space="ram" offset="0x100000">
+b801000000c3662e0f1f840000000000b802000000c3662e0f1f840000000000b803000000c3662e0f1f840000000000c366662e0f1f8400000000000f1f4000c366662e0f1f8400000000000f1f4000c366662e0f1f8400000000000f1f4000c366662e0f1f8400000000000f1f400041554189d541545589f55389fb4883ec08e87affffff85c0741fe8a1ffffffe87cffffff4189c439e80f8581000000e87cffffff4439e87577e892ffffff89dfe89bffffff8d7b01e893ffffff8d7b02e88bffffff8d7b03e883ffffff8d7b04e87bffffff8d7b05e873ffffff8d7b06e86bffffff8d7b07e863ffffff8d7b08e85bffffff8d7b09e853ffffff8d7b0ae84bffffff8d7b0be843ffffff31c04883c4085b5d415c415dc3660f1f4400004489e7e838ffffffb8ffffffffebe0
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="su_uid"/>
+<symbol space="ram" offset="0x100010" name="su_euid"/>
+<symbol space="ram" offset="0x100020" name="su_egid"/>
+<symbol space="ram" offset="0x100030" name="su_log"/>
+<symbol space="ram" offset="0x100040" name="su_setup"/>
+<symbol space="ram" offset="0x100050" name="su_run"/>
+<symbol space="ram" offset="0x100060" name="su_warn"/>
+<symbol space="ram" offset="0x100070" name="f"/>
+</binaryimage>
+<script>
+  <com>option condfold off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="condfold-ruleb #1: ON, the whole three-guard cascade folds into ONE short-circuit condition whose right operand is the comma expression (pass 2 only; Rule A cannot produce this - the middle guard has two statement-root calls and the outer fold's sibling is a nested BlockCondition)" min="1" max="1">\(su_uid\(\) != 0\) &amp;&amp; \(\(su_log\(\), v1 = su_euid\(\), v1 != a1 \|\| \(su_egid\(\) != a2\)\)\)</stringmatch>
+<stringmatch name="condfold-ruleb #2: OFF, the fold is declined and the sibling's void call stays a statement of its own ahead of the inner test (pass 1 only)" min="1" max="1">^    su_log\(\);</stringmatch>
+<stringmatch name="condfold-ruleb #3: OFF, so does the second statement-root call - the one that puts this block over Rule A's single-call cap (pass 1 only)" min="1" max="1">^    v1 = su_euid\(\);</stringmatch>
+<stringmatch name="condfold-ruleb #4: OFF, the declined cascade nests the last two guards inside the first one's arm (pass 1 only)" min="1" max="1">if \(\(v1 != a1\) \|\| \(su_egid\(\) != a2\)\)</stringmatch>
+<stringmatch name="condfold-ruleb #5: the failure arm consumes the escaping call result in both renderings, which is what keeps that result non-implied and printed (off plus on = 2)" min="2" max="2">su_warn\(v1\);</stringmatch>
+<stringmatch name="condfold-ruleb #6: the guarded body is untouched by the fold (off plus on = 2)" min="2" max="2">su_run\(a0 \+ 0xb\);</stringmatch>
+</decompilertest>

@@ -173,6 +173,34 @@ admissible as a nested leaf: a Rule-A block can hold up to nine printed
 statements, which the cross-leaf caps have no honest way to charge, so a Rule-A
 block may only ever be the direct operand of one fold.
 
+**Which rule fires, and what separates them.** The disjuncts are tried in
+order — `blockaction.rs (CollapseStructure::condfold_ok)` asks Rule A first — so
+a sibling both rules accept folds through Rule A, and the two properties the
+rules share can never tell them apart: the printed-width budget is enforced by
+both on the same measure, and the comment guard declines both. Two properties
+are Rule B's alone. One is the nested `BlockCondition` operand above. The other
+is the call cap, and unlike the width budget it does **not** move with the
+policy level: Rule A charges at most one statement-root call at `on` *and* at
+`wide`, where Rule B allows two. A guard block holding two calls that each print
+as their own comma element is therefore outside Rule A at every level and inside
+Rule B. That is the shape of the middle guard in `tests/stages/ghangr-condfold-ruleb.xml`
+(`su_log(); x = su_euid(); if (x != wu)`, where the failure arm consumes `x` so
+the second call's output is not implied and prints as its own element): both of
+its folds are Rule B's, in both engines, and the second one's sibling is a
+nested `BlockCondition`, so the witness covers both exclusive properties in one
+run. Removing Rule B reverts its second pass to its first.
+`tests/stages/ghangr-condfold.xml` is the Rule A witness, and
+`tests/stages/ghangr-condfold-newbury.xml` — the guard-cascade *shape* witness —
+folds through Rule A too, because at `wide` Rule A's budget also admits its
+guard blocks.
+
+Both are observable. `KUNA_CONDFOLD_DEBUG=1` traces every per-block admission
+verdict (with its decline reason and both of Rule B's measures) and every
+relaxed fold, naming the engine that took it and the rule that admitted it;
+`KUNA_CONDFOLD_DEBUG=ops` additionally lists each op `printed_shape` charges,
+the terminal `CBRANCH` included, so the listing is exactly as long as the width
+the same walk reports and a measurement can be reconciled element by element.
+
 Two guards live at the gate rather than in either predicate. The pre-existing
 `!is_interior_goto_target` decline is never relaxed, because `printc.rs
 (PrintC::emit_block_copy)` emits the label statement *first* and a labelled

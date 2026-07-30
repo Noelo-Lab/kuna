@@ -1,11 +1,14 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
-    angr short-circuit condition folding across a COMPLEX sibling, Rule B:
-    the statement-shape half of `option condfold off|on|wide` (default-OFF;
-    ELEM 4113), S8 goto-quality sub-stage.  Closes proposal #56 (lighttpd
-    server.c::main in the angr corpus binary `newbury` @0x40f696, which reaches
-    0 gotos / 0 labels with this option on, down from 1 / 1).
+    angr short-circuit condition folding across a COMPLEX sibling, the GUARD
+    CASCADE shape: `option condfold off|on|wide` (default-OFF; ELEM 4113), S8
+    goto-quality sub-stage.  Closes proposal #56 (lighttpd server.c::main in the
+    angr corpus binary `newbury` @0x40f696, which reaches 0 gotos / 0 labels
+    with this option on, down from 1 / 1).
+
+    This witness folds through RULE A; the Rule-B isolation lives in
+    tests/stages/ghangr-condfold-ruleb.xml.  See WHICH RULE FIRES below.
 
     THE SHAPE.  A short-circuit permission guard whose arms reconverge on one
     shared body:
@@ -57,20 +60,16 @@
     under the pre-review code, where Rule B had no width cap at all, this shape
     folded at `on`.
 
-    WHICH RULE FIRES.  `condfold`'s admission predicate is the UNION of two
-    rules.  Rule A (bounded prefix) requires a BlockCopy of ONE basic block; it
-    does NOT accept a nested BlockCondition, so it cannot fold a guard CASCADE
-    whose sibling is itself a folded condition.  Rule B (statement-shape
-    allowlist) can, and that is the capability this shape is here for.  At
-    `wide` BOTH rules admit these particular guard blocks and condfold_ok
-    consults Rule A first, so this XML proves the guard-cascade shape folds end
-    to end but does NOT by itself isolate Rule B; Rule B's exclusive
-    nested-BlockCondition power is proven by the unit tests in
-    p8_structure/blockaction/tests.rs
-    (condfold_rule_b_admits_a_nested_condition_operand and its siblings) and, on
-    a real binary, by KUNA_CONDFOLD_DEBUG=1 on newbury::main, which traces
-    `shape` folds taking a freshly-created BlockCondition as the sibling.  The
-    companion witness tests/stages/ghangr-condfold.xml exercises Rule A.
+    WHICH RULE FIRES.  Rule A, both times.  `condfold`'s admission predicate is
+    the UNION of two rules and condfold_ok consults Rule A first; at `wide` Rule
+    A's budget also admits these guard blocks (measured with
+    KUNA_CONDFOLD_DEBUG=1: 2 `prefix` folds per engine, 0 `shape`), so this
+    witness proves the guard-cascade SHAPE folds end to end but does NOT isolate
+    Rule B.  Deleting Rule B would leave it green.  Rule B is isolated by the
+    third condfold witness, tests/stages/ghangr-condfold-ruleb.xml, whose middle
+    guard holds two statement-root calls and is therefore outside Rule A's
+    MAX_PREFIX_ROOT_CALLS = 1 at every level; the companion witness
+    tests/stages/ghangr-condfold.xml exercises Rule A on its own.
 
     WITNESS.  Self-contained, no relocations: gcc -O2 output for
 
@@ -115,8 +114,8 @@ b801000000c3662e0f1f840000000000b802000000c3662e0f1f840000000000b803000000c3662e
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="condfold-newbury #1: OFF virtualizes one of the two edges into the shared body to a goto; ON folds the cascade so no goto is emitted" min="1" max="1">goto</stringmatch>
-<stringmatch name="condfold-newbury #2: OFF must also emit the goto's target label inside the sibling arm; ON emits no label" min="1" max="1">label_[0-9a-f]+:</stringmatch>
-<stringmatch name="condfold-newbury #3: ON folds the two equality guards into one inverted short-circuit condition guarding the terminating arm" min="1" max="1">su_euid\(\) != </stringmatch>
-<stringmatch name="condfold-newbury #4: OFF keeps the guards positive and nested (the un-inverted form appears only in the OFF pass)" min="1" max="1">su_euid\(\) == </stringmatch>
+<stringmatch name="condfold-newbury #1: OFF virtualizes one of the two edges into the shared body to a goto; WIDE folds the cascade so no goto is emitted" min="1" max="1">goto</stringmatch>
+<stringmatch name="condfold-newbury #2: OFF must also emit the goto's target label inside the sibling arm; WIDE emits no label" min="1" max="1">label_[0-9a-f]+:</stringmatch>
+<stringmatch name="condfold-newbury #3: WIDE folds the two equality guards into one inverted short-circuit condition guarding the terminating arm" min="1" max="1">su_euid\(\) != </stringmatch>
+<stringmatch name="condfold-newbury #4: OFF keeps the guards positive and nested (the un-inverted form appears only in the OFF pass, the WIDE pass has none)" min="1" max="1">su_euid\(\) == </stringmatch>
 </decompilertest>

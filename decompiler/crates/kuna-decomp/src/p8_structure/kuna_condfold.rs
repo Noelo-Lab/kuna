@@ -163,6 +163,28 @@
 //! (`collapse_conditions` is a fixpoint loop with no natural bound, so without them a
 //! long cascade would fold into an unreadable monster).
 //!
+//! ## Which rule fires, and what separates the two in the corpus
+//!
+//! `CollapseStructure::condfold_ok` asks Rule A first, so a sibling both rules accept
+//! folds through Rule A.  Neither shared property can tell them apart — the width
+//! budget is enforced by both on the same measure, and the comment guard declines
+//! both.  Exactly two properties are Rule B's alone: the nested `BlockCondition`
+//! operand above, and the **call cap**, which unlike the width budget does *not* move
+//! with the policy level ([`MAX_PREFIX_ROOT_CALLS`] = 1 at `on` *and* at `wide`,
+//! against [`MAX_SHAPE_CALLS`] = 2).  A block with two calls that each print as their
+//! own comma element is therefore outside Rule A at every level and inside Rule B.
+//!
+//! The three stage witnesses split along exactly that line:
+//!
+//! | witness | folds through |
+//! |---|---|
+//! | `tests/stages/ghangr-condfold.xml` | Rule A (a store prefix, no calls) |
+//! | `tests/stages/ghangr-condfold-newbury.xml` | Rule A (the guard-cascade *shape*; at `wide` Rule A's budget also admits its guard blocks) |
+//! | `tests/stages/ghangr-condfold-ruleb.xml` | Rule B, twice, in both engines — a middle guard with two statement-root calls, then a nested `BlockCondition` sibling |
+//!
+//! Only the third one notices if Rule B is removed.  Which rule fired is traceable:
+//! see [`trace_admit_fold`] and [`trace_ops`].
+//!
 //! ## What the width budget bounds, and what it does not
 //!
 //! Rule B *also* keeps a second, weaker measure: it scores a statement with the same
@@ -398,6 +420,25 @@ fn printed_shape(data: &Funcdata, ops: &[OpId]) -> Option<PrintedShape> {
         stmts: 0,
         root_calls: 0,
     };
+    // Charge ONE comma-chain element.  Every `out.stmts` increment goes through
+    // here, so the `KUNA_CONDFOLD_DEBUG=ops` listing and the width this function
+    // reports can never drift apart: a block measured at N lists exactly N ops.
+    // (It used to be possible: the terminal CBRANCH was charged at its own
+    // `continue`, which skipped the trace, so every block listed one op short of
+    // its own measurement.)
+    macro_rules! charge {
+        ($o:expr) => {{
+            out.stmts += 1;
+            if trace_ops() {
+                eprintln!(
+                    "[condfold] op #{} {:?} @ {:#x}",
+                    out.stmts,
+                    $o.code(),
+                    $o.get_addr().get_offset()
+                );
+            }
+        }};
+    }
     for (idx, &op) in ops.iter().enumerate() {
         let o = data.obank().get(op)?;
         // printc.rs emit_basic_block_ops: `if o.not_printed() { continue; }`
@@ -411,9 +452,9 @@ fn printed_shape(data: &Funcdata, ops: &[OpId]) -> Option<PrintedShape> {
                 continue;
             }
             // The terminal CBRANCH is the operand's condition — the chain's last
-            // element, so it is charged like any other.
+            // element, so it is charged (and listed) like any other.
             if idx + 1 == ops.len() {
-                out.stmts += 1;
+                charge!(o);
                 continue;
             }
             // Any other branch (a mid-block conditional jump, a BRANCHIND, a
@@ -436,15 +477,7 @@ fn printed_shape(data: &Funcdata, ops: &[OpId]) -> Option<PrintedShape> {
         if o.is_call() {
             out.root_calls += 1;
         }
-        if trace_ops() {
-            eprintln!(
-                "[condfold] op #{} {:?} @ {:#x}",
-                out.stmts + 1,
-                o.code(),
-                o.get_addr().get_offset()
-            );
-        }
-        out.stmts += 1;
+        charge!(o);
     }
     Some(out)
 }
@@ -680,6 +713,11 @@ pub struct ShapeVerdict {
 /// `KUNA_CONDFOLD_DEBUG=ops`: also list every op [`printed_shape`] charges, so a
 /// measured width can be reconciled against the emitted comma chain op by op.  This
 /// is the facility the consolidation's reviewer had to reconstruct by hand.
+///
+/// The listing is exactly as long as the width the same walk reports — every charge
+/// goes through `printed_shape`'s `charge!`, terminal CBRANCH included.  It did not
+/// used to: the CBRANCH was charged at its own early `continue`, so a block measured
+/// at 6 listed 5 ops and the trace could not be reconciled at all.
 fn trace_ops() -> bool {
     std::env::var_os("KUNA_CONDFOLD_DEBUG").is_some_and(|v| v == "ops")
 }
@@ -953,5 +991,273 @@ mod tests {
         assert!(msg.contains("off"));
         assert!(OptionCondFold.apply("maybe").is_err());
         assert!(OptionCondFold.apply("7").is_err());
+    }
+
+    //=======================================================================
+    // The two scorers, on REAL op lists
+    //
+    // Everything above pins constants and the option parse; the tests below run
+    // `printed_shape` / `prefix_eligible` / `shape_score` over hand-built
+    // `BlockBasic`s carrying live p-code, with the real `type_op_for` flag table
+    // (so `is_call`/`is_branch`/`is_marker`/`is_flow_break` mean what they mean
+    // in the engine).  The load-bearing one is
+    // `two_statement_root_calls_are_rule_bs_alone`, the unit-scale form of the
+    // `tests/stages/ghangr-condfold-ruleb.xml` witness.
+    //=======================================================================
+
+    use std::rc::Rc;
+
+    use kuna_base::address::Address;
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+    };
+
+    use crate::context::{ArchContext, VarnodeId};
+
+    /// A minimal `Funcdata` over a `const`/`unique`/`ram` space manager.
+    fn scorer_fd() -> Funcdata {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+        let glb = Rc::new(ArchContext::new(m));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let entry = Address::new(ram, 0x1000);
+        Funcdata::new("g", "g", glb, entry, 0x10000000, 0x40).unwrap()
+    }
+
+    fn ram_at(fd: &Funcdata, off: u64) -> Address {
+        Address::new(
+            Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap()),
+            off,
+        )
+    }
+
+    /// A fresh `BlockBasic` covering `off`, with `outs` successors wired.  A
+    /// short-circuit sibling is a 2-out condition block by construction, so
+    /// `shape_score` refuses anything else out of hand.
+    fn scorer_block(fd: &mut Funcdata, off: u64, outs: int4) -> BlockId {
+        let root = fd.bblocks_root_pub();
+        let bl = fd.bblocks_mut().new_block_basic(root);
+        let beg = ram_at(fd, off);
+        let end = ram_at(fd, off);
+        fd.set_basic_block_range(bl, &beg, &end);
+        for _ in 0..outs {
+            let sink = fd.bblocks_mut().new_block_basic(root);
+            fd.bblocks_mut().add_edge(bl, sink);
+        }
+        bl
+    }
+
+    /// Append `opc` with `inputs` distinct constant operands to `bl`; no output.
+    fn push_void(fd: &mut Funcdata, bl: BlockId, off: u64, opc: OpCode, inputs: int4) -> OpId {
+        let addr = ram_at(fd, off);
+        let op = fd.new_op(inputs, addr);
+        fd.op_set_opcode(op, crate::typeop::type_op_for(opc));
+        for slot in 0..inputs {
+            let c = fd.new_constant(4, off + slot as u64);
+            fd.op_set_input(op, c, slot).expect("input slot");
+        }
+        fd.op_insert_end(op, bl);
+        op
+    }
+
+    /// Same, with a fresh `unique` output nothing consumes — which is what the
+    /// `calc_explicit` approximation calls *printed* (`has_no_descend`), and what
+    /// the printer emits as its own comma element (not implied).
+    fn push_out(fd: &mut Funcdata, bl: BlockId, off: u64, opc: OpCode, inputs: int4) -> VarnodeId {
+        let op = push_void(fd, bl, off, opc, inputs);
+        fd.new_unique_out(4, op).expect("unique out")
+    }
+
+    /// Append the block's terminal `CBRANCH`, reading `cond` in slot 1.
+    fn push_cbranch(fd: &mut Funcdata, bl: BlockId, off: u64, cond: VarnodeId) -> OpId {
+        let addr = ram_at(fd, off);
+        let op = fd.new_op(2, addr);
+        fd.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_CBRANCH));
+        let target = fd.new_constant(8, 0x9000);
+        fd.op_set_input(op, target, 0).expect("branch target");
+        fd.op_set_input(op, cond, 1).expect("condition");
+        fd.op_insert_end(op, bl);
+        op
+    }
+
+    /// Splice an interior op in ahead of `before`.  `op_insert_end` cannot place
+    /// one: like C++ `Funcdata::opInsertEnd` it steps back over a trailing flow
+    /// break, so appending after a branch is impossible by construction.
+    fn push_before(
+        fd: &mut Funcdata,
+        bl: BlockId,
+        off: u64,
+        opc: OpCode,
+        inputs: int4,
+        before: OpId,
+    ) {
+        let addr = ram_at(fd, off);
+        let op = fd.new_op(inputs, addr);
+        fd.op_set_opcode(op, crate::typeop::type_op_for(opc));
+        for slot in 0..inputs {
+            let c = fd.new_constant(4, off + slot as u64);
+            fd.op_set_input(op, c, slot).expect("input slot");
+        }
+        fd.op_insert(op, bl, Some(before));
+    }
+
+    #[test]
+    fn printed_shape_charges_the_terminal_cbranch() {
+        // `STORE; v = INT_ADD(..); if (v) ...` renders as a three-element comma
+        // chain: the store, the assignment, and the condition itself.  The
+        // CBRANCH is the element `KUNA_CONDFOLD_DEBUG=ops` used to omit.
+        let mut fd = scorer_fd();
+        let bl = scorer_block(&mut fd, 0x2000, 2);
+        push_void(&mut fd, bl, 0x2000, OpCode::CPUI_STORE, 3);
+        let v = push_out(&mut fd, bl, 0x2004, OpCode::CPUI_INT_ADD, 2);
+        push_cbranch(&mut fd, bl, 0x2008, v);
+        let shape = printed_shape(&fd, &fd.bb_ops(bl)).expect("renders as an expression");
+        assert_eq!(shape.stmts, 3, "STORE + assignment + the CBRANCH condition");
+        assert_eq!(shape.root_calls, 0);
+    }
+
+    #[test]
+    fn printed_shape_skips_markers_and_the_bare_branch() {
+        // The printer emits neither an SSA marker nor an unconditional BRANCH, so
+        // neither is an element of the comma chain.
+        let mut fd = scorer_fd();
+        let bl = scorer_block(&mut fd, 0x2000, 2);
+        push_out(&mut fd, bl, 0x2000, OpCode::CPUI_INDIRECT, 2);
+        let v = push_out(&mut fd, bl, 0x2008, OpCode::CPUI_INT_ADD, 2);
+        let cb = push_cbranch(&mut fd, bl, 0x200c, v);
+        push_before(&mut fd, bl, 0x2004, OpCode::CPUI_BRANCH, 1, cb);
+        let shape = printed_shape(&fd, &fd.bb_ops(bl)).expect("renders as an expression");
+        assert_eq!(shape.stmts, 2, "only the assignment and the condition print");
+    }
+
+    #[test]
+    fn printed_shape_refuses_what_cannot_render_as_an_expression() {
+        // No terminal CBRANCH: there is no condition to fold.
+        let mut fd = scorer_fd();
+        let bl = scorer_block(&mut fd, 0x2000, 2);
+        push_void(&mut fd, bl, 0x2000, OpCode::CPUI_CALL, 1);
+        assert!(printed_shape(&fd, &fd.bb_ops(bl)).is_none());
+
+        // A non-terminal branch survives the skips: angr's
+        // `_build_multistatementexpr_statements` refuses the same shape, and a
+        // `goto` is not an expression.
+        let mut fd = scorer_fd();
+        let bl = scorer_block(&mut fd, 0x3000, 2);
+        let c0 = push_out(&mut fd, bl, 0x3000, OpCode::CPUI_INT_EQUAL, 2);
+        let cb = push_cbranch(&mut fd, bl, 0x3004, c0);
+        push_before(&mut fd, bl, 0x3002, OpCode::CPUI_BRANCHIND, 1, cb);
+        assert!(printed_shape(&fd, &fd.bb_ops(bl)).is_none());
+    }
+
+    /// Build the unit-scale form of the `tests/stages/ghangr-condfold-ruleb.xml`
+    /// middle guard: `su_log(); x = su_euid(); if (x != wu)`, i.e. TWO calls that
+    /// each print as their own comma element.
+    fn two_call_guard(fd: &mut Funcdata, off: u64) -> BlockId {
+        let bl = scorer_block(fd, off, 2);
+        // su_log() -- a void call.
+        push_void(fd, bl, off, OpCode::CPUI_CALL, 1);
+        // x = su_euid() -- an output the block does not consume (the failure arm
+        // does), so it is neither implied nor in-block-only: it prints.
+        push_out(fd, bl, off + 4, OpCode::CPUI_CALL, 1);
+        // if (x != wu) -- the compare feeds only the CBRANCH, so it is inlined.
+        let cond = push_out(fd, bl, off + 8, OpCode::CPUI_INT_EQUAL, 2);
+        push_cbranch(fd, bl, off + 12, cond);
+        bl
+    }
+
+    #[test]
+    fn two_statement_root_calls_are_rule_bs_alone() {
+        // THE separation between the two admission rules, on a real op list.
+        // Rule A's call cap is 1 and does NOT move with the policy level; Rule B
+        // allows 2.  So this block is outside Rule A at `on` AND at `wide`, and
+        // inside Rule B at both -- which is exactly why the stage witness built on
+        // this shape fails if Rule B is deleted.
+        let mut fd = scorer_fd();
+        let bl = two_call_guard(&mut fd, 0x2000);
+
+        let shape = printed_shape(&fd, &fd.bb_ops(bl)).expect("renders as an expression");
+        assert_eq!(shape.stmts, 4, "two calls, the compare, and the condition");
+        assert_eq!(shape.root_calls, 2, "both calls print as their own element");
+
+        assert!(
+            !prefix_eligible(&fd, bl, MAX_PREFIX_STMTS_ANGR),
+            "Rule A refuses a second statement-root call at `on`"
+        );
+        assert!(
+            !prefix_eligible(&fd, bl, MAX_PREFIX_STMTS_WIDE),
+            "and at `wide` -- the call cap is not a level knob"
+        );
+
+        let verdict = shape_score(&fd, bl, MAX_PREFIX_STMTS_ANGR).expect("Rule B admits");
+        assert_eq!(verdict.printed, 4);
+        assert_eq!(
+            verdict.scored, 2,
+            "both calls score; the compare is inlined into the condition"
+        );
+
+        // The precompute agrees, and records the block under Rule B only.
+        let sets = compute_condfold_sets(&fd, MAX_PREFIX_STMTS_ANGR);
+        assert!(!sets.prefix.contains(&bl));
+        assert_eq!(sets.shape.get(&bl), Some(&verdict));
+    }
+
+    #[test]
+    fn the_shared_width_budget_binds_rule_b_too() {
+        // The consolidation's fix: Rule B is measured against the SAME budget Rule
+        // A is.  The four-element guard above is admitted at `on` (5) and refused
+        // below it, even though its `calc_explicit` score is unchanged at 2.
+        let mut fd = scorer_fd();
+        let bl = two_call_guard(&mut fd, 0x2000);
+        assert!(shape_score(&fd, bl, 4).is_some(), "exactly at the budget");
+        assert!(shape_score(&fd, bl, 3).is_none(), "one over: refused");
+    }
+
+    #[test]
+    fn shape_score_refuses_the_shapes_outside_its_allowlist() {
+        // A CALLOTHER: userop rendering can be multi-line or special-cased.
+        let mut fd = scorer_fd();
+        let bl = scorer_block(&mut fd, 0x2000, 2);
+        push_void(&mut fd, bl, 0x2000, OpCode::CPUI_CALLOTHER, 1);
+        let cond = push_out(&mut fd, bl, 0x2004, OpCode::CPUI_INT_EQUAL, 2);
+        push_cbranch(&mut fd, bl, 0x2008, cond);
+        assert!(shape_score(&fd, bl, MAX_PREFIX_STMTS_WIDE).is_none());
+
+        // An interior flow break (a RETURN before the tail).
+        let mut fd = scorer_fd();
+        let bl = scorer_block(&mut fd, 0x3000, 2);
+        let cond = push_out(&mut fd, bl, 0x3000, OpCode::CPUI_INT_EQUAL, 2);
+        let cb = push_cbranch(&mut fd, bl, 0x3008, cond);
+        push_before(&mut fd, bl, 0x3004, OpCode::CPUI_RETURN, 1, cb);
+        assert!(shape_score(&fd, bl, MAX_PREFIX_STMTS_WIDE).is_none());
+
+        // A one-out block is not a short-circuit sibling at all.
+        let mut fd = scorer_fd();
+        let bl = scorer_block(&mut fd, 0x4000, 1);
+        let cond = push_out(&mut fd, bl, 0x4000, OpCode::CPUI_INT_EQUAL, 2);
+        push_cbranch(&mut fd, bl, 0x4004, cond);
+        assert!(shape_score(&fd, bl, MAX_PREFIX_STMTS_WIDE).is_none());
+    }
+
+    #[test]
+    fn the_precompute_is_dead_at_budget_zero() {
+        // `condfold off` is the 0 sentinel: no block is admitted under EITHER rule,
+        // so every gate disjunct is dead and the emitted C is upstream's.
+        let mut fd = scorer_fd();
+        let bl = two_call_guard(&mut fd, 0x2000);
+        assert!(shape_score(&fd, bl, MAX_PREFIX_STMTS_ANGR).is_some());
+        assert!(compute_condfold_sets(&fd, 0).is_empty());
     }
 }

@@ -44,7 +44,35 @@
     ]
   },
   "reviewer_defects_addressed": {
-    "_round": "Two review rounds are recorded. `round_2_*` entries are the NEEDS_WORK feedback on the consolidation itself and are what the latest commits address; `round_1_*` are the findings the consolidation already carried.",
+    "_round": "Three review rounds are recorded.  `round_3_*` are the follow-up findings on the consolidated branch (a coverage gap and two documentation defects) and are what the latest commit addresses; `round_2_*` are the NEEDS_WORK feedback on the consolidation itself; `round_1_*` are the findings the consolidation already carried.",
+    "round_3_defect_1_no_test_exercised_rule_b": {
+      "finding": "Measured with KUNA_CONDFOLD_DEBUG=1: ghangr-condfold-newbury.xml at `wide` takes 2 `prefix` folds per engine and 0 `shape`; ghangr-condfold.xml at `on` takes 1 `prefix`; the whole 272-assertion stages corpus took ZERO `shape` folds.  Deleting Rule B entirely would have left `make test-stages` green.",
+      "why_the_obvious_route_is_not_sufficient": "Prototyping the newbury witness's callees so its guards measure <=5 does NOT isolate Rule B: at <=5 Rule A's `on` budget also admits, and condfold_ok consults Rule A first.  The shared printed-width budget can never separate the rules (both enforce it, on the same measure), and the comment guard declines both.",
+      "the_two_properties_that_are_rule_bs_alone": [
+        "a nested BlockCondition operand (Rule A takes only a BlockCopy of ONE BlockBasic)",
+        "the call cap, which unlike the width budget does NOT move with the policy level: MAX_PREFIX_ROOT_CALLS = 1 at `on` AND at `wide`, against MAX_SHAPE_CALLS = 2"
+      ],
+      "fix": "New witness tests/stages/ghangr-condfold-ruleb.xml (6 assertions, off -> on): a three-guard cascade whose MIDDLE guard is `su_log(); x = su_euid(); if (x != wu)` -- a void call plus a call whose output the failure arm consumes, so both print as their own comma element.  Both of its folds are `shape`, in both engines, and the second takes the freshly-built BlockCondition as its sibling.",
+      "trace_at_on": [
+        "admit(shape) BlockId(3v1) @ 0x10008a: scored 2, prints 4 (budget 5)  [and NO admit(prefix) for that block]",
+        "region_structurer/shape: fold BlockId(2v1) with complex BlockId(3v1)",
+        "region_structurer/shape: fold BlockId(2v1) with complex BlockId(7v1)",
+        "CollapseStructure/shape: fold BlockId(2v1) with complex BlockId(3v1)",
+        "CollapseStructure/shape: fold BlockId(2v1) with complex BlockId(7v1)"
+      ],
+      "acceptance_check_rule_b_stubbed_out": "shape_score made to always decline, rebuilt, `make test-stages`: 274/278, FAILURES = condfold-ruleb #1..#4, REGRESSED (4), PARITY FAIL, make exit 1.  Restored: 278/278, PARITY OK.  ghangr-condfold.xml and ghangr-condfold-newbury.xml both stayed GREEN under the stub, reproducing the reviewer's finding verbatim.",
+      "also_added": "Seven unit tests in kuna_condfold.rs that run printed_shape / prefix_eligible / shape_score / compute_condfold_sets over REAL hand-built op lists (real type_op_for flags).  The pre-existing unit tests only covered the gate (condfold_ok / shape_admits) against synthetic CondFoldSets and never ran the scorers.",
+      "nested_condition_confirmed_not_inferred": "A throwaway probe printing self.graph.block(orblock).get_type() at the admit site reports `orblock BlockId(3v1) type Copy leaves 1` for the first fold and `orblock BlockId(7v1) type Condition leaves 2` for the second, in BOTH engines -- so the witness covers both of Rule B's exclusive properties (the two-statement-root-call leaf and the nested BlockCondition operand) in one run."
+    },
+    "round_3_defect_2_ops_trace_off_by_one": {
+      "finding": "printed_shape charged the terminal CBRANCH at its own early `continue`, which skipped the trace_ops() print, so KUNA_CONDFOLD_DEBUG=ops listed one op fewer than the width the same walk reported -- exactly the op-by-op reconciliation the docs advertised.",
+      "fix": "Every out.stmts increment now goes through one `charge!` macro inside printed_shape, terminal CBRANCH included.",
+      "verified_on": "ghangr-condfold-newbury.xml: the guard block at 0x100060 lists 7 ops and reports `prints 7`; the one at 0x10006b lists 6 and reports `prints 6`.  ghangr-condfold-ruleb.xml: 4 ops listed, `prints 4`."
+    },
+    "round_3_defect_3_newbury_assertion_names_said_ON": {
+      "finding": "data:condfold-newbury #1..#4 said `ON` while the pass runs `wide` -- deliberate in round 2, to avoid re-recording docs/baseline-stages.json.",
+      "fix": "Renamed to say WIDE.  The four regexes, their min/max and their verdicts are byte-identical; the stages baseline is re-recorded anyway for defect 1."
+    },
     "round_2_defect_1_rule_b_cap_did_not_bound_printed_width": {
       "finding": "Rule B's only length cap was MAX_SHAPE_STMTS = 2 *calc_explicit-scored* statements, which is not a printed width. On the PR's own headline witness KUNA_CONDFOLD_DEBUG reported `admit(shape) BlockId(7v1) @ 0x40242e: 2 statement(s)` for a block that renders SEVEN statements plus the branch. Consequences: the widest emitted comma operand was 7 elements at BOTH `on` and `wide`; `on` and `wide` were byte-identical on all four named targets; an operator following `try on first` got the option's WIDEST folds at the conservative setting.",
       "fix": "A single shared width measure, kuna_condfold.rs (printed_shape), factored out of Rule A's walk and enforced by BOTH rules against the policy level's cap (5 at `on`, 9 at `wide`). Rule B's shape allowlist and call cap are UNCHANGED (they are the soundness-relevant half and are byte-identical to #194). The calc_explicit score is kept only because the cross-leaf caps MAX_JOIN_LEAVES / MAX_JOIN_TOTAL_STMTS are expressed in it.",
@@ -587,14 +615,14 @@
   },
   "gates": {
     "make test": "675/675 datatest assertions, PARITY OK",
-    "make test-stages": "272/272 assertions, PARITY OK",
-    "make rust-test": "green (cargo exit 0; 4319 tests passed across 291 suites)",
+    "make test-stages": "278/278 assertions, PARITY OK",
+    "make rust-test": "green (cargo exit 0; 4326 tests passed across 291 suites -- 4319 + the 7 new scorer tests)",
     "make check-spec": "OK in lenient AND --strict mode",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
     "baseline_json_repinned": false,
     "baseline_json_diff_vs_main": "empty",
-    "baseline_stages_rerecorded": false,
-    "baseline_stages_note": "Not re-recorded in the review round: the Rule-B witness's option value moved from `on` to `wide`, but every assertion name and every verdict is unchanged, so the recorded baseline still matches."
+    "baseline_stages_rerecorded": true,
+    "baseline_stages_note": "Re-recorded in round 3 (the sanctioned re-record: `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`).  Additive and tightening: 272 -> 278 keys = the 6 new condfold-ruleb assertions plus the 4 condfold-newbury renames (same regexes, same min/max, same verdicts).  No key was dropped.  docs/baseline.json is untouched."
   },
   "wiring": {
     "phases_toml_row": "one row, values off|on|wide, tier transform, symptoms populated",
@@ -607,7 +635,7 @@
       "tests/catalog_bytecompat.rs": "fixture_has_all_77_settables",
       "tests/fixtures/phase_catalog.json": "regenerated byte-exact from decomp_dbg `phase catalog` with no program loaded (the phases.toml prose changed in the review round)",
       "tests/stages/kuna-catalog.xml": "#6 source_decompiler angr 30 -> 31, #7 change_kind structure-recovery 19 -> 20",
-      "kuna-base/src/xml.rs": "corpus file count 164 -> 166 (TWO new stage XMLs)"
+      "kuna-base/src/xml.rs": "corpus file count 164 -> 167 (THREE new stage XMLs: ghangr-condfold, ghangr-condfold-newbury, ghangr-condfold-ruleb)"
     },
     "docs_options_md": "regenerated with `kuna catalog --markdown` after the prose rewrite",
     "spec": "ONE merged section in docs/spec/08-structuring.md (not two concatenated)"
@@ -624,13 +652,25 @@
     },
     {
       "file": "tests/stages/ghangr-condfold-newbury.xml",
-      "rule": "B's shape (guard cascade)",
+      "rule": "A (this witness folds through Rule A; it is the guard-cascade SHAPE witness, not the Rule-B isolation)",
       "assertions": 4,
       "level": "wide",
       "level_moved_in_the_review_round": "on -> wide",
       "why": "Its stub callees are unprototyped and get no frame recovery, so each guard block still carries the call's stack-effect ops when structuring runs and printed_shape measures 6 for a block whose operand finally emits none. The measure over-counts, which only ever declines -- so this vehicle needs `wide` while the REAL newbury::main (prototyped libc calls, 3 measured elements per guard) closes at `on`. THE MOVE IS ITSELF THE PROOF of the Defect-1 fix: under the pre-review predicate this shape folded at `on` because Rule B had no width cap.",
-      "honest_limit": "At `wide` BOTH rules admit these leaves and condfold_ok consults Rule A first, so this XML proves the guard-cascade shape folds end to end but no longer ISOLATES Rule B. Rule B's exclusive nested-BlockCondition capability is covered by blockaction/tests.rs (condfold_rule_b_admits_a_nested_condition_operand, condfold_rule_b_declines_a_nested_condition_with_an_inadmissible_leaf, condfold_rule_b_folds_a_complex_but_shape_admissible_sibling) and, on a real binary, by KUNA_CONDFOLD_DEBUG=1 on newbury::main, which traces `shape` folds taking a freshly-created BlockCondition as the sibling.",
-      "assertions_unchanged": true
+      "honest_limit": "At `wide` BOTH rules admit these leaves and condfold_ok consults Rule A first, so this XML proves the guard-cascade shape folds end to end but does NOT isolate Rule B: measured, it takes 2 `prefix` folds per engine and 0 `shape`, and stays green with Rule B stubbed out.  Rule B is isolated by tests/stages/ghangr-condfold-ruleb.xml (round 3).",
+      "assertions_unchanged": true,
+      "assertion_names_renamed_in_round_3": "ON -> WIDE (regexes and min/max untouched)"
+    },
+    {
+      "file": "tests/stages/ghangr-condfold-ruleb.xml",
+      "rule": "B (statement shape) -- ISOLATED",
+      "assertions": 6,
+      "level": "on",
+      "added_in_round": 3,
+      "shape": "two-pass; pass 1 `option condfold off` = the middle guard's two calls emitted as plain statements ahead of a nested if, pass 2 `option condfold on` = the whole three-guard cascade folded into one short-circuit condition whose right operand is the comma expression",
+      "why_it_isolates_rule_b": "Its middle guard holds TWO statement-root calls (a void su_log() plus x = su_euid() whose output the failure arm consumes, so neither is implied), which is over Rule A's MAX_PREFIX_ROOT_CALLS = 1 -- a cap that does not move with the policy level.  The second fold additionally takes a nested BlockCondition as its sibling, which Rule A can never accept.",
+      "engine_trace": "KUNA_CONDFOLD_DEBUG=1 shows `shape` firing twice in BOTH region_structurer and CollapseStructure, and NO admit(prefix) line for the middle guard.  A get_type() probe at the admit site confirms the first fold's sibling is `type Copy leaves 1` and the second's is `type Condition leaves 2`.",
+      "acceptance_check": "With shape_score stubbed to always decline, `make test-stages` goes 274/278 / PARITY FAIL on exactly this file's #1..#4; restored, 278/278 / PARITY OK"
     }
   ],
   "which_structurer_fires": {
@@ -643,7 +683,6 @@
     "The width measure is taken at structuring time and OVER-counts where a call's stack-effect ops are still live (unprototyped callee, no frame recovery). Safe direction -- it only declines -- but it makes the option needlessly conservative on such code; the Rule-B stage witness is the reproducible case.",
     "Rule B's cross-leaf caps are not a GLOBAL bound on the folded condition's width; a purely upstream-legal fold can extend a cascade on the left without consulting them (unchanged from the previous round).",
     "A comment produced by a pass that runs AFTER structuring can still be dropped by the comma_separate operand (newbury::main loses one branchflip advisory).",
-    "The Rule-B stage witness no longer ISOLATES Rule B at the level it now runs at; Rule B's exclusive capability is proven by unit tests and a real-binary trace instead.",
     "angr's four schema arms are matched only through Ghidra's ruleBlockOr shape. angr's type_b/type_d (the with-else forms) can fire on graphs ruleBlockOr's topology checks reject; those remain unfolded.",
     "The region structurer still does not fully converge on build_spec_list; making it converge is a separate, larger opportunity."
   ],
