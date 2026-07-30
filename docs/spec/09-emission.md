@@ -338,6 +338,29 @@ and `printc.rs (print_unicode)` emits the named C escapes then falls to `print_c
 (not in the loadimage) can be registered under a constant-space hash address
 and resolve through the same cache.
 
+The probe's entry condition is a **type**, not a detected string boundary: the
+manager reads from whatever address it is handed, so the whole question is
+whether the constant arrived carrying a character-pointer type. Type inference
+supplies that for a typed callee parameter, and for a constant that hits the
+start of a detected literal `ActionConstantPtr` supplies it via the global
+spacebase reference. (ida) The remaining case is a pointer into the **interior**
+of a read-only character array — how a compiler that merges string constants
+shares one literal's tail (`"coreutils"` is stored only as bytes 4.. of
+`"GNU coreutils"`; `"%s"` as the tail of `"%s: %s"`). `ActionConstantPtr`
+recognizes it — upstream deliberately relaxes its exact-hit requirement for
+character arrays — but the reference it builds for an interior hit is a spacebase
+`PTRSUB` plus an `INT_ADD` of the residual, and constant folding collapses the
+pair straight back to the bare constant, discarding the type; the exact-start
+case survives only because its residual is zero. Upstream repairs this later
+(`RulePtrsubCharConstant` rewrites the reference into a typed constant); kuna
+instead types the constant where the evidence already exists — the covering
+symbol is a character-printable array, which is stronger proof than inspecting
+the bytes — and leaves the exact-hit path untouched
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionConstantPtr)`). Everything after that is the ordinary probe, including its
+fallback: if the address turns out not to be read-only, or the bytes do not
+decode, the constant prints as an integer exactly as before.
+
 **Comments.** Comments reach the output through the P0 knowledge plane, never
 inline in the IR: analysis passes call `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::warning, Funcdata::warning_header)` — buffered per function, then

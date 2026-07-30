@@ -247,7 +247,16 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   emits a function symbol, each top-level `DW_TAG_variable` with a `DW_OP_addr`
   location a data symbol; (2) typed signatures — return + formal-parameter DIEs
   mapped to kuna `Datatype`s (structs as named opaques, with a recursion-depth cap
-  against type cycles), registered *after* libproto so real source signatures win;
+  against type cycles), registered *after* libproto so real source signatures win,
+  and read back at *two* points: by a caller's `ActionDefaultParams` for the call
+  site, and by the drive as the function's own locked prototype (04 §4.2 —
+  `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
+  a `DW_TAG_enumeration_type` becomes a real enum type — name, declared width,
+  signedness, and the `DW_TAG_enumerator` value→name map (05 §5.1), which is what
+  turns `quotearg_style(4, …)` into
+  `quotearg_style(shell_escape_always_quoting_style, …)`; the enum is looked up
+  before it is built, because the same declaration recurs in every compilation
+  unit that includes its header;
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
   symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1); nested
   lexical-block locals and composite locations are a documented loss. (ida) The

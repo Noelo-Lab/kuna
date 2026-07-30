@@ -3221,6 +3221,15 @@ impl Architecture {
                 )?;
             }
         }
+        // (kuna, ida) State the x86 direction-flag guarantee the compiler spec
+        // leaves implicit. See `kuna_dfunaffected`: without it every call plants
+        // `DF = INDIRECT(DF, <call>)`, the entry-block `DF = 0` never reaches the
+        // string-op stride, and `1 - 2*DF` survives into the output as
+        // `(uint8)v18 * -2 + 1`. Applied only where the spec is silent, and a
+        // structural no-op on any language with no `DF` register.
+        crate::kuna_dfunaffected::assert_direction_flag_unaffected(&mut model, |nm| {
+            self.translate.get_register_varnode(nm)
+        })?;
         Ok(model)
     }
 

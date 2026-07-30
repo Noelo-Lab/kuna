@@ -137,6 +137,11 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-24 | DWARF global naming (bug fix) | globals mapped at real byte size so wide accesses get their name | 0/675 |
 | DIV-25 | `switchreturn` | per-case const returns for wide switches (≤256 cases) | +2 perfect / −107 GED; 1 opt-out |
 | DIV-26 | ELF data-symbol naming (no flag) | `.symtab`/`.dynsym` `STT_OBJECT` entries named as globals (`dat_20a098` → `optind`) | 0/675; commits last, DWARF+strings keep precedence |
+| DIV-27 | own-prototype seeding (bug fix, no flag) | a function's parked (DWARF/libproto) signature is applied to its OWN decompile, not just to its callers | 0/675; also kills the bogus `undefined16` RAX:RDX return |
+| DIV-28 | mid-string literals (bug fix, no flag) | a constant pointing INTO a readonly char array is typed `char *` (`bindtextdomain(0x68d8,…)` → `"coreutils"`) | 0/675; interior hits only, exact-hit path untouched |
+| DIV-29 | DWARF enums (no flag) | `DW_TAG_enumeration_type` builds a real enum type (`quotearg_style(4,…)` → `…(shell_escape_always_quoting_style,…)`) | 0/675; falls back to the underlying int when anonymous/memberless |
+| DIV-30 | uncomputed return half (no flag) | a recovered return PAIR whose half is a callee-saved restore / callee clobber is narrowed to the real half (kills `undefined16 main` + `v[8] = <uninit>`) | 0/675; subsumes `returnpair` on GH-6990 (3 stage assertions re-worded, 261/261) |
+| DIV-31 | x86 `DF` unaffected (no flag) | the ABI's direction-flag guarantee is stated where the cspec is silent, folding `(uint8)df * -2 + 1` strides to `+1` | 0/675; x86-only, spec-silent models only |
 
 ## Upstream provenance & sync
 

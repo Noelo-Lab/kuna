@@ -9,23 +9,26 @@
               (real `main` @ 0x32148 in binaries/6990/SPARC_GCC_O0_pcodtest.txt,
                SPARC32 BE, GCC -O0; bytes verbatim below)
 
-    Default output (bug):  xunknown8 main(xunknown4 param_1,xunknown4 param_2)
-                           { return CONCAT44(param_2,param_1); }
+    The bug:  xunknown8 main(xunknown4 param_1,xunknown4 param_2)
+              { return CONCAT44(param_2,param_1); }
 
     Root cause: SparcV9_32.cspec <output> joins o0:o1 via
     <rule><datatype name="any" maxsize="8"/><join storage="general"/></rule>.
     On-the-fly return recovery (ActionReturnRecovery) marks BOTH o0 and o1
     output trials active because their prologue values pass through the
-    save/restore window to the RETURN (realistic but passive ancestry).
+    save/restore window to the RETURN: realistic, but passive, ancestry.
     buildReturnOutput then emits CONCAT44(o1,o0) as an 8-byte return.
 
-    Stage model: S4 trial finalization, sub-stage `returnpair`.  P0 assertion
-    `option returnpair pair|single` (default `pair` = upstream join behavior).
-    When `single`, buildReturnOutput keeps only the first (low) return
-    register, so the spurious 64-bit join collapses to a single 4-byte return.
+    This is now fixed BY DEFAULT, and on every architecture: kuna_returnuncomputed
+    inspects the built pair once heritage has settled and rewrites the RETURN to
+    the half that carries a value the function actually computed, dropping the
+    passive one.  The same repair is what stops x86-64 SysV rendering
+    `undefined16 main(...)` with a phantom `v[8] = <uninitialized stack slot>`.
 
-    Pass 1 (default): assertion #1 reproduces the bug (CONCAT44 join).
-    Pass 2 (returnpair single): assertion #2 proves the join is dropped.
+    `option returnpair single` (P0 assertion, S4 trial finalization) predates it
+    and remains the blunt per-function instrument: it refuses ANY multi-register
+    join, including a genuine one.  Here the two agree; pass 2 has nothing left
+    to drop.
 -->
 <bytechunk space="ram" offset="0x32148" readonly="true">
 9de3bf480100000081e8000081c3e008010000009de3bfa00100000081e80000
@@ -41,6 +44,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH6990 #1: default pipeline over-claims o0:o1 as 64-bit return (bug reproduced)" min="1" max="1">return CONCAT44\(a1,a0\)</stringmatch>
-<stringmatch name="GH6990 #2: returnpair single drops the o1 join (single-register return)" min="1" max="1">unsigned int main\(unsigned int a0\)</stringmatch>
+<stringmatch name="GH6990 #1: the passive o1 join is dropped in BOTH passes (default already recovers the single-register return)" min="2" max="2">unsigned int main\(unsigned int a0\)</stringmatch>
+<stringmatch name="GH6990 #2: no CONCAT44 join survives anywhere" min="0" max="0">return CONCAT44\(a1,a0\)</stringmatch>
 </decompilertest>

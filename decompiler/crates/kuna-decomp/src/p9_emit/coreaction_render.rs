@@ -737,6 +737,52 @@ impl Action for ActionConstantPtr {
             // Set check flag AFTER searching for the symbol.
             data.vbank_mut().get_mut(vn).expect("constantptr: stale vn").set_ptr_check();
             if let Some((entry, rampoint)) = resolved {
+                // (kuna) Mid-string char pointer. `is_pointer` admits a constant
+                // that lands in the MIDDLE of a read-only character array (it
+                // clears `needexacthit` for exactly that case), which is how a
+                // compiler shares one literal's tail: `"coreutils"` at 0x68d8 is
+                // the tail of `"GNU coreutils"` at 0x68d4, and `"%s"` at 0x6f0c the
+                // tail of `"%s: %s"`. The spacebase reference built below cannot
+                // survive for such a constant — it is `PTRSUB(spacebase, symaddr)`
+                // plus an INT_ADD of the residual, and constant folding collapses
+                // the pair straight back to the original bare constant, dropping
+                // the type with it. The constant then reaches the printer as
+                // `undefined8` and renders `bindtextdomain(0x68d8, ...)`.
+                //
+                // Upstream reaches the same end state by a different road: it keeps
+                // the reference and lets `RulePtrsubCharConstant` rewrite it into a
+                // constant carrying a char-pointer type, which the printer turns
+                // into the literal. That rule is an un-ported stub here, so type the
+                // constant directly — the same answer, one step earlier, and only
+                // for the interior case. An exact hit still takes the reference path
+                // below, unchanged.
+                //
+                // The type is the evidence: `push_ptr_char_constant_ir` re-proves
+                // the address is read-only and reads to the NUL itself, and falls
+                // back to the integer print if either fails. So the worst case is
+                // today's output.
+                if rampoint != entry.entry_addr {
+                    if let Some(elem) = entry
+                        .symbol_type
+                        .as_ref()
+                        .filter(|t| t.get_metatype() == type_metatype::TYPE_ARRAY)
+                        .and_then(|t| t.get_array_base())
+                        .filter(|e| e.is_char_print())
+                    {
+                        use crate::dtype::TypeFactory as _;
+                        let charptr = data
+                            .get_arch()
+                            .types_rc()
+                            .and_then(|t| t.get_type_pointer(size, elem, rspc.get_word_size()).ok());
+                        if let Some(charptr) = charptr {
+                            if let Some(v) = data.vbank_mut().get_mut(vn) {
+                                v.update_type_locked(charptr, true, true);
+                            }
+                            self.base.count += 1;
+                            continue;
+                        }
+                    }
+                }
                 // C++ `spacebaseConstant` never returns an error; the Rust signature
                 // is fallible only for the can't-happen missing-factory/entry-type
                 // paths (gated by is_pointer having returned a typed entry).  Skip

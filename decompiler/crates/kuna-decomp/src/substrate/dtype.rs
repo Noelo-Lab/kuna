@@ -3951,6 +3951,26 @@ pub trait TypeFactory {
     ) -> KunaResult<Rc<Datatype>>;
     /// Create an (empty) enumeration (C++ `getTypeEnum`).
     fn get_type_enum(&self, n: &str) -> KunaResult<Rc<Datatype>>;
+    /// Create an (empty) enumeration of an EXPLICIT width and signedness.
+    ///
+    /// [`Self::get_type_enum`] builds at the factory's configured enum width,
+    /// which `setup_sizes` derives from the architecture default (8 bytes on
+    /// x86-64) — the C parser's notion of "an enum". A recovered enum has its own
+    /// declared width (a C `enum` is normally `int`-sized, and DWARF records it in
+    /// `DW_AT_byte_size`), and a type whose size disagrees with the storage it
+    /// describes is worse than no type at all. Upstream expresses the same thing
+    /// through the `<type metatype="enum_uint" size="N">` decode path; this is the
+    /// programmatic equivalent.
+    ///
+    /// `m` selects the signedness (`TYPE_ENUM_INT` / `TYPE_ENUM_UINT`).
+    fn get_type_enum_sized(
+        &self,
+        _n: &str,
+        _s: int4,
+        _m: type_metatype,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::getTypeEnum(sized) not supported by this factory"))
+    }
     /// Create a "spacebase" type (C++ `getTypeSpacebase`).
     fn get_type_spacebase(&self, id: Rc<AddrSpace>, addr: &Address) -> KunaResult<Rc<Datatype>>;
 
@@ -5344,10 +5364,20 @@ impl TypeFactoryImpl {
 
     /// Create an (empty) enumeration (C++ `getTypeEnum`, type.cc:4441-4447).
     fn get_type_enum_impl(&self, n: &str) -> KunaResult<Rc<Datatype>> {
+        self.get_type_enum_sized_impl(n, self.enumsize.get(), self.enumtype.get())
+    }
+
+    /// [`get_type_enum_impl`](Self::get_type_enum_impl) with the width and
+    /// signedness supplied by the caller instead of read off the factory defaults
+    /// (the recovered-enum case — see `TypeFactory::get_type_enum_sized`).
+    fn get_type_enum_sized_impl(
+        &self,
+        n: &str,
+        s: int4,
+        m: type_metatype,
+    ) -> KunaResult<Rc<Datatype>> {
         // TypeEnum(enumsize,enumtype,n): TypeBase(s,m,nm) -> submeta = base2sub(m),
         // then flags|=enumtype and metatype = INT/UINT.
-        let s = self.enumsize.get();
-        let m = self.enumtype.get();
         let mut tmp = Datatype::new(s, m); // submeta = base2sub(ENUM_INT/UINT)
         tmp.name = n.to_string();
         tmp.display_name = n.to_string();
@@ -5902,6 +5932,9 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn get_type_enum(&self, n: &str) -> KunaResult<Rc<Datatype>> {
         self.get_type_enum_impl(n)
+    }
+    fn get_type_enum_sized(&self, n: &str, s: int4, m: type_metatype) -> KunaResult<Rc<Datatype>> {
+        self.get_type_enum_sized_impl(n, s, m)
     }
     fn get_type_spacebase(&self, id: Rc<AddrSpace>, addr: &Address) -> KunaResult<Rc<Datatype>> {
         self.get_type_spacebase_impl(id, addr)

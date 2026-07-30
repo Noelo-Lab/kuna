@@ -788,6 +788,9 @@ pub fn decompile_func_full_with_override_dyn(
     // rule-pool / heritage loop boundaries.
     arch.kuna_fn_deadline = arch.kuna_fn_budget.map(|b| std::time::Instant::now() + b);
     let result = (|| {
+        // Kept for the parked-prototype lookup below (the flow build consumes the
+        // address).
+        let entry_addr = funcaddr.clone();
         let mut fd = build_and_follow_flow_with_override_and_protos(
             arch,
             name,
@@ -796,10 +799,45 @@ pub fn decompile_func_full_with_override_dyn(
             flow_overrides,
             proto_overrides,
         )?;
-        // Apply any parsed-and-locked prototype to the fresh funcp (the input-param
+        // The prototype the function is decompiled *against*. Two sources, in
+        // precedence order:
+        //
+        //  1. `pending_proto` — a prototype the operator declared for this run
+        //     (`parse line extern ...`). An explicit declaration always wins.
+        //  2. The prototype parked on this function's own global FunctionSymbol.
+        //     That is where the DWARF pass's recovered `DW_TAG_subprogram`
+        //     signature lands (`set_function_prototype_pieces`), and where the
+        //     library-prototype table lands for a named libc function.
+        //
+        // Source 2 used to be read *only* by a CALLER — `ActionDefaultParams`
+        // copies a callee's parked prototype into the call site, so `fmt(FILE*,
+        // char const*)` typed its arguments correctly at every call — while the
+        // function's own decompile ignored it and re-derived everything from data
+        // flow. So `main`, fully described by `.debug_info` as
+        // `int main(int argc, char **argv)`, rendered `undefined16 main(uint4
+        // a0, void *a1)`: the recovered signature existed and was thrown away.
+        //
+        // Applying it locks the inputs and the output, which is also what
+        // collapses the bogus wide return. With no locked output,
+        // `ActionPrototypeTypes` turns on return recovery, `Heritage::guard_returns`
+        // registers a trial per output register the model characterizes (x86-64
+        // gcc: RAX *and* RDX), and the cspec's `join_dual_class` output rule
+        // accepts the consecutive pair as one 16-byte return — materialized as
+        // `PIECE(RDX,RAX)` and typed `undefined16`, with the never-written RDX half
+        // picking up an uninitialized stack slot. A known `int` return skips that
+        // machinery entirely.
+        let recovered_proto = if pending_proto.is_none() {
+            arch.symboltab
+                .get_global_scope()
+                .and_then(|g| arch.symboltab.function_proto_pieces(g, &entry_addr))
+                .cloned()
+        } else {
+            None
+        };
+        // Apply the resolved prototype to the fresh funcp (the input-param
         // recovery SEED): after this the inputs/output are type-locked, so
         // ActionPrototypeTypes forces the typed Varnodes.
-        if let Some(pieces) = pending_proto {
+        if let Some(pieces) = pending_proto.or(recovered_proto.as_ref()) {
             fd.apply_locked_prototype(pieces)?;
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost

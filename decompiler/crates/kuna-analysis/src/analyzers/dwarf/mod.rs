@@ -196,6 +196,11 @@ struct DieSnap {
     encoding: Option<gimli::DwAte>,
     /// `DW_AT_count`/`DW_AT_upper_bound` (array subrange length).
     array_count: Option<u64>,
+    /// `DW_AT_const_value` of a `DW_TAG_enumerator` — the enum member's value.
+    /// Read as signed and masked to the enum's width when the map is built, so a
+    /// negative member of a small enum lands on the same key the decompiler will
+    /// look up. `None` for every other tag.
+    const_value: Option<i64>,
     /// True if `DW_AT_declaration` is set (a declaration-only DIE — skip).
     declaration: bool,
     /// True if the DIE carries a `DW_AT_location` (a global var has a real address).
@@ -224,6 +229,7 @@ impl DieSnap {
             byte_size: None,
             encoding: None,
             array_count: None,
+            const_value: None,
             declaration: false,
             has_location: false,
             addr_location: None,
@@ -295,6 +301,13 @@ fn snapshot_unit(
             entry.attr_value(gimli::DW_AT_upper_bound).and_then(|v| v.udata_value())
         {
             snap.array_count = Some(ub + 1);
+        }
+        // Enumerator member value. gcc/clang emit it as `sdata` for a signed
+        // underlying type and `data<N>`/`udata` otherwise, so try signed first and
+        // fall back to unsigned (`udata_value` covers the `data<N>` forms gimli
+        // does not report as `sdata`).
+        if let Some(v) = entry.attr_value(gimli::DW_AT_const_value) {
+            snap.const_value = v.sdata_value().or_else(|| v.udata_value().map(|u| u as i64));
         }
         if matches!(entry.attr_value(gimli::DW_AT_declaration), Some(gimli::AttributeValue::Flag(true)))
         {
@@ -475,13 +488,80 @@ fn build_datatype(
             types.get_type_union(n).ok()
         }
         gimli::DW_TAG_enumeration_type => {
-            // Render an enum as its underlying integer (size from byte_size).
             let size = die.byte_size.map(|b| b as i32).unwrap_or(4).max(1);
-            types.get_base(size, type_metatype::TYPE_INT).ok()
+            build_enum(die, dies, types, size)
+                // Anonymous, memberless, or the wrong width for the factory's
+                // enum size: fall back to the plain underlying integer, which is
+                // what this arm always used to produce.
+                .or_else(|| types.get_base(size, type_metatype::TYPE_INT).ok())
         }
         // Any other tag (e.g. subroutine_type) -> give up on this type cleanly.
         _ => None,
     }
+}
+
+/// Build a real kuna enum `Datatype` from a `DW_TAG_enumeration_type` DIE and its
+/// `DW_TAG_enumerator` children (`DWARFDataTypeImporter.makeDataTypeForEnum`).
+///
+/// The decompiler already renders an enum-typed constant by member name; what was
+/// missing was the type. This arm used to flatten every enum to its underlying
+/// integer, so `quotearg_style(shell_escape_always_quoting_style, ...)` printed
+/// `quotearg_style(4, ...)`.
+///
+/// `None` (and the caller falls back to the plain integer) when the enum is
+/// anonymous, has no usable members, or is not the width the type factory builds
+/// enums at — a size mismatch would misdescribe the storage, and a wrong size is
+/// worse than a missing name.
+///
+/// Member values are masked to the enum's width, matching how the printer looks a
+/// constant up: a `-1` member of a 4-byte enum is keyed `0xffffffff`, the value
+/// the constant Varnode actually carries.
+fn build_enum(
+    die: &DieSnap,
+    dies: &BTreeMap<usize, DieSnap>,
+    types: &dyn TypeFactory,
+    size: i32,
+) -> Option<Rc<Datatype>> {
+    if die.name.is_empty() {
+        return None;
+    }
+    let mask: u64 = if size >= 8 { u64::MAX } else { (1u64 << (size * 8)) - 1 };
+    let mut nmap: std::collections::BTreeMap<u64, String> = std::collections::BTreeMap::new();
+    for &coff in &die.children {
+        let Some(child) = dies.get(&coff) else { continue };
+        if child.tag != gimli::DW_TAG_enumerator || child.name.is_empty() {
+            continue;
+        }
+        let Some(v) = child.const_value else { continue };
+        // First member at a value wins; a duplicate value is an alias the printer
+        // could not disambiguate anyway.
+        nmap.entry((v as u64) & mask).or_insert_with(|| child.name.clone());
+    }
+    if nmap.is_empty() {
+        return None;
+    }
+    // Signedness from `DW_AT_encoding` (gcc emits `DW_ATE_unsigned` for an enum
+    // whose members are all non-negative, `DW_ATE_signed` otherwise). The width
+    // is the DIE's own `DW_AT_byte_size`, not the factory's architecture default
+    // (8 on x86-64) -- a C enum is normally int-sized, and a type that misstates
+    // its storage width will not bind to the 4-byte constant it describes.
+    let meta = match die.encoding {
+        Some(gimli::DW_ATE_signed) | Some(gimli::DW_ATE_signed_char) => {
+            type_metatype::TYPE_ENUM_INT
+        }
+        _ => type_metatype::TYPE_ENUM_UINT,
+    };
+    // The type factory interns by name, and a real program repeats the same enum
+    // definition in every compilation unit that includes its header. Constructing
+    // it a second time is an ERROR, not a no-op — the fresh (memberless) shell no
+    // longer matches the filled definition already installed — so look first and
+    // reuse. Guarded on shape: a same-named type that is not an enum of this width
+    // owns the name, and we do not fight it.
+    if let Ok(Some(existing)) = types.find_by_name(&die.name) {
+        return (existing.is_enum_type() && existing.get_size() == size).then_some(existing);
+    }
+    let ct = types.get_type_enum_sized(&die.name, size, meta).ok()?;
+    types.set_enum_values(&ct, nmap).ok()
 }
 
 /// Build [`PrototypePieces`] for a defined subprogram DIE (`DWARFFunction.read` +

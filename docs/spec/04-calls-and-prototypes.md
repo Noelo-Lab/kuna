@@ -197,6 +197,36 @@ in the schedule is `decompiler/crates/kuna-decomp/src/infra/universalaction.rs
 (universal_sched)`: setup before fullloop, the trial passes inside mainloop,
 finalization in the one-shot tail (00 §0.6).
 
+### Seeding: the prototype the function is decompiled against
+
+Everything below is *recovery* — what runs when the function's prototype is
+unknown. Before any of it, the drive
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`) asks whether the
+signature is already known, and locks it if so
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::apply_locked_prototype)`). Two sources, in precedence order: a
+prototype the operator declared for this run (`parse line extern …`), then the
+prototype parked on the function's own global `FunctionSymbol` — which is where
+the DWARF pass's recovered `DW_TAG_subprogram` signature lands (01 §1.4) and
+where the library-prototype table lands for a named libc function.
+
+The parked prototype used to be read only by a *caller*: `ActionDefaultParams`
+copies a callee's pieces into the call site, so a DWARF-described callee typed
+its arguments correctly at every call while its own decompile ignored the
+signature and re-derived it from data flow. Applying it to the function itself is
+the difference between `undefined16 main(uint4 a0, void *a1)` and
+`int main(int argc, char **argv)` on any `-g` binary. Storage assignment that
+hits an unported seam degrades gracefully — the prototype is dropped and the
+function decompiles unlocked, exactly as before.
+
+Locking the output is also what collapses the bogus wide return described under
+`ActionReturnRecovery` below: with no locked output, return recovery registers a
+trial for every output register the model characterizes (x86-64 SysV: `RAX` *and*
+`RDX`), the cspec's `join_dual_class` output rule accepts the consecutive pair as
+one 16-byte return, and the result is a `char[16]` whose high half is whatever
+uninitialized value `RDX` happened to hold. A known `int` return never enters
+that machinery.
+
 ### Setup (once, before fullloop)
 
 - **`ActionPrototypeTypes`** (`coreaction_protos.rs (ActionPrototypeTypes)`)
@@ -414,6 +444,22 @@ keeps a call-crossing cover. The wrong-list failure mode is structural: a
 missing `<unaffected>` stack-pointer record makes every call guard the stack
 pointer, skewing the entire frame layout.
 
+(ida) One record kuna adds that the vendored specs leave implicit: the **x86
+direction flag** (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_dfunaffected.rs`).
+Every x86 string instruction scales its pointer step by `1 − 2·DF`, and SLEIGH
+lowers that faithfully, so the flag reaches emitted output as a live variable and
+a `(uint8)df * -2 + 1` stride on every inlined `strcmp`/`memcpy`. The flag is not
+unknown — the processor spec pins it to 0 at function entry (§1.3's tracked-value
+seeding) and `ActionConstbase` materializes that — but the gcc prototype's
+`<unaffected>` list omits `DF`, so a *call* forces the unknown-effect INDIRECT
+guard and the constant never reaches the stride. Both x86 ABIs require the
+direction flag clear at every function boundary, and the Microsoft prototype in
+the same spec already records it, so kuna states the same guarantee for the models
+that are silent, at model-decode time. A spec that mentions `DF` either way has
+made a deliberate statement and is left alone, and a language with no such
+register is a structural no-op — the assertion is keyed on the SLEIGH register
+name and a lookup miss is the exit.
+
 ### The spacebase placeholder
 
 A call that may take stack arguments cannot find them until the caller's
@@ -502,3 +548,44 @@ found 3 of the 675 upstream assertions legitimately need the join — a global
 `single` default would truncate real wide returns. Flip it per function on the
 CONCAT-return symptom; the symptom table and flip guidance live in
 [`docs/options.md`](../options.md#returnpair).
+
+### (ida) The uncomputed half of a recovered return pair
+
+The same passive-pair symptom, decided on evidence instead of by fiat, and
+therefore default and unflagged
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs`). Two
+shapes reach a RETURN carrying a register the function never meant to return: a
+**callee-saved restore**, where the epilogue reloads a register from a frame slot
+the function only ever read, and a **clobber at a synthesized return**, where the
+flow model turns a call that never returns into one and the output registers hold
+the callee's INDIRECT creations. Both are movement ancestor realism is right to
+call realistic — it is asking whether a value could legitimately *reach* the
+RETURN, not whether the function meant to return it — so the pair forms, and on
+x86-64 SysV the result is `undefined16 main(…)` whose emitted body writes
+`v[8] = <uninitialized stack slot>`: output that reads memory the function never
+wrote.
+
+The rule is that a half carrying no value the function computed is not a return
+value. "Computed" is a bounded walk back through the operations that only *move* a
+value — copies, phis, indirects, piece/subpiece reshaping — stopping at the first
+one that produces one. An unwritten Varnode and an INDIRECT creation are
+uncomputed; a constant is computed, because returning a literal is a real return;
+anything the walk cannot classify is computed, so an unfamiliar shape keeps
+today's answer. The RETURN is then rewritten to the surviving half and the dead
+concatenation destroyed.
+
+Timing is the load-bearing detail. At recovery time the restore is still
+`COPY(LOAD(sp − k))` and indistinguishable from `return *p`, so there is nothing
+to decide on; the repair therefore runs in the one-shot tail, just before
+`ActionOutputPrototype` reads the storage and type off the RETURN, by which point
+heritage has resolved that load into a bare unwritten Varnode. A genuine wide
+return is safe from it twice over: both halves of a real struct return are
+computed (built from constants, arithmetic, or loads through a pointer — a LOAD
+is not a move, so the walk stops there), and the rule only ever edits an existing
+*pair*, never a lone recovered return value. Where every half is uncomputed — the
+synthesized-return case — the low, first-in-class register is kept so the
+function's output storage still agrees across every RETURN.
+
+This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages/
+gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
+blunt per-function instrument for a pair this rule judges genuine.
