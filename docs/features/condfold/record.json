@@ -1,0 +1,695 @@
+{
+  "slug": "condfold",
+  "option": "condfold",
+  "values": "off|on|wide",
+  "default": "off",
+  "elem_id": 4113,
+  "phase": "P8",
+  "subphase": "goto-quality",
+  "tier": "transform",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "scope": "increment",
+  "proposal": false,
+  "consolidation": {
+    "supersedes": [
+      193,
+      194
+    ],
+    "closes_proposals": [
+      39,
+      56
+    ],
+    "released_element_id": 4114,
+    "measured_against_main": "d09f21ce (the six-PR IDA-parity stack: DWARF prototypes, DWARF enums by member name, mid-string literals, ELF data-global naming, return-pair repair, x86 direction-flag folding). EVERY number in this file was re-measured on that main AFTER the review-feedback round (the shared printed-width budget); none is carried over from #193, #194, or the pre-review consolidation.",
+    "why_one_option": "Both PRs relax THE IDENTICAL GATE -- the is_complex(orblock) decline inside rule_block_or (p8_structure/blockaction.rs) and its verbatim twin try_block_or (p8_structure/region_structurer.rs). The shared root cause is Ghidra's BlockBasic::isComplex >2-statement readability budget. They collided hard: both added a CollapseStructure field named condfold_blocks, both added a builder named with_condfold_blocks, condjoin's entry point was even named compute_condfold_blocks, and both bumped the option count 76 -> 77. They differed only in the admission predicate and the value surface.",
+    "predicate_is_the_union": "A sibling must fit the level's PRINTED-WIDTH BUDGET (<=5 comma elements at `on`, <=9 at `wide`, measured by kuna_condfold.rs printed_shape with the printer's own skip rules) and then be taken by EITHER rule. Rule A (from #193) is the bounded-prefix rule; Rule B (from #194) is the statement-shape allowlist. Neither subsumes the other -- Rule A admits a 5-to-9-statement straight-line prefix Rule B's shape/scored caps refuse, Rule B admits a second call and a NESTED BlockCondition (what a guard CASCADE needs) that Rule A never takes. Rule A is tried first at the fold site.",
+    "condjoin_disappears": "There is no `condjoin` option name, no cond_join Architecture/ArchContext field, no kuna_condjoin.rs, and no second spec section. Exactly ONE net new option: 76 -> 77."
+  },
+  "soundness": {
+    "argument": "Rendering-only. BlockGraph::new_block_condition re-parents two existing structuring nodes; no p-code op is moved, reordered, cloned, or deleted. Soundness rests on a precondition rule_block_or already enforces and this option never weakens: orblock.size_in() == 1, so the sibling's statements cannot run on a path where the compound condition is not evaluated. C's short-circuit rule evaluates the right operand exactly when control used to fall into the sibling, and the comma operator is a sequence point, so the absorbed statements still run before the test, in order. The only synthesized operation is negate_condition_rec, a boolean sense flip on an already-computed condition; it is order-neutral.",
+    "proposal_56_worry_does_not_arise": "Proposal #56 warned that a wrong de Morgan inversion emits wrong C because the predicates call getuid/geteuid/getegid/getgid, which cannot be reordered past one another. No such reordering is possible: the operands are never swapped, only relabelled. NO PURITY ANALYSIS IS NEEDED. Both original agents and both independent reviewers established this separately.",
+    "is_complex_blast_radius": "is_complex() itself was NOT changed. The relaxation is a disjunct at the two rule_block_or/try_block_or call sites only; the other callers (rule_block_while_do and its region_structurer twin) see the unchanged verdict. This is why the 675-assertion corpus is untouched.",
+    "new_guards_all_rendering_or_quality": [
+      "BOTH rules: the operand's printed comma chain is bounded by the policy level (<=5 elements at `on`, <=9 at `wide`), counted with the printer's own skip rules (not_printed / markers / implied-out / bare CPUI_BRANCH), the terminal CBRANCH included",
+      "BOTH rules: printed_shape refuses outright on a block with no terminal CPUI_CBRANCH, or with a non-terminal branch op surviving the skips (mirrors angr _build_multistatementexpr_statements refusing a non-terminal ConditionalJump or any Jump)",
+      "Rule A: orblock must be BlockType::Copy of a single BlockBasic (a BlockList/BlockIf/BlockCondition operand could render braces, multiple lines, or a label inside the parens = invalid C)",
+      "Rule A: <=1 statement-root call",
+      "Rule B: statement-shape allowlist (marker | op with an output | void CALL/CALLIND | STORE | the single terminal CBRANCH); declines RETURN, a second branch, BRANCHIND, CALLOTHER, and any no-return call",
+      "Rule B: <=2 calc_explicit-scored statements and <=2 calls per block (counting EVERY call, unlike Rule A). The scored count is NOT a width -- see reviewer_defects_addressed",
+      "Rule B: a nested BlockCondition operand requires BOTH sub-blocks admissible (not isComplex's getBlock(0)-only delegation), plus <=4 condition leaves and <=4 total scored statements at the fold site",
+      "both rules: NO buffered comment of any type at an address the block covers (emit_basic_block_ops suppresses emit_comment_group under comma_separate, so folding would silently DELETE a WARNING: line -- decline instead)",
+      "gate: the pre-existing !orblock.is_interior_goto_target() decline is NEVER relaxed (emit_block_copy emits the label statement first, so a labelled sibling would print `label_x:` inside an expression)",
+      "gate: a relaxed fold's node is force-marked complex, because BlockCondition::isComplex delegates to sub-block 0 and would otherwise report the LEFT operand's trivial verdict for a node whose right operand is a comma chain, letting rule_block_while_do hoist the whole chain into a while(...) header"
+    ]
+  },
+  "reviewer_defects_addressed": {
+    "_round": "Three review rounds are recorded.  `round_3_*` are the follow-up findings on the consolidated branch (a coverage gap and two documentation defects) and are what the latest commit addresses; `round_2_*` are the NEEDS_WORK feedback on the consolidation itself; `round_1_*` are the findings the consolidation already carried.",
+    "round_3_defect_1_no_test_exercised_rule_b": {
+      "finding": "Measured with KUNA_CONDFOLD_DEBUG=1: ghangr-condfold-newbury.xml at `wide` takes 2 `prefix` folds per engine and 0 `shape`; ghangr-condfold.xml at `on` takes 1 `prefix`; the whole 272-assertion stages corpus took ZERO `shape` folds.  Deleting Rule B entirely would have left `make test-stages` green.",
+      "why_the_obvious_route_is_not_sufficient": "Prototyping the newbury witness's callees so its guards measure <=5 does NOT isolate Rule B: at <=5 Rule A's `on` budget also admits, and condfold_ok consults Rule A first.  The shared printed-width budget can never separate the rules (both enforce it, on the same measure), and the comment guard declines both.",
+      "the_two_properties_that_are_rule_bs_alone": [
+        "a nested BlockCondition operand (Rule A takes only a BlockCopy of ONE BlockBasic)",
+        "the call cap, which unlike the width budget does NOT move with the policy level: MAX_PREFIX_ROOT_CALLS = 1 at `on` AND at `wide`, against MAX_SHAPE_CALLS = 2"
+      ],
+      "fix": "New witness tests/stages/ghangr-condfold-ruleb.xml (6 assertions, off -> on): a three-guard cascade whose MIDDLE guard is `su_log(); x = su_euid(); if (x != wu)` -- a void call plus a call whose output the failure arm consumes, so both print as their own comma element.  Both of its folds are `shape`, in both engines, and the second takes the freshly-built BlockCondition as its sibling.",
+      "trace_at_on": [
+        "admit(shape) BlockId(3v1) @ 0x10008a: scored 2, prints 4 (budget 5)  [and NO admit(prefix) for that block]",
+        "region_structurer/shape: fold BlockId(2v1) with complex BlockId(3v1)",
+        "region_structurer/shape: fold BlockId(2v1) with complex BlockId(7v1)",
+        "CollapseStructure/shape: fold BlockId(2v1) with complex BlockId(3v1)",
+        "CollapseStructure/shape: fold BlockId(2v1) with complex BlockId(7v1)"
+      ],
+      "acceptance_check_rule_b_stubbed_out": "shape_score made to always decline, rebuilt, `make test-stages`: 274/278, FAILURES = condfold-ruleb #1..#4, REGRESSED (4), PARITY FAIL, make exit 1.  Restored: 278/278, PARITY OK.  ghangr-condfold.xml and ghangr-condfold-newbury.xml both stayed GREEN under the stub, reproducing the reviewer's finding verbatim.",
+      "also_added": "Seven unit tests in kuna_condfold.rs that run printed_shape / prefix_eligible / shape_score / compute_condfold_sets over REAL hand-built op lists (real type_op_for flags).  The pre-existing unit tests only covered the gate (condfold_ok / shape_admits) against synthetic CondFoldSets and never ran the scorers.",
+      "nested_condition_confirmed_not_inferred": "A throwaway probe printing self.graph.block(orblock).get_type() at the admit site reports `orblock BlockId(3v1) type Copy leaves 1` for the first fold and `orblock BlockId(7v1) type Condition leaves 2` for the second, in BOTH engines -- so the witness covers both of Rule B's exclusive properties (the two-statement-root-call leaf and the nested BlockCondition operand) in one run."
+    },
+    "round_3_defect_2_ops_trace_off_by_one": {
+      "finding": "printed_shape charged the terminal CBRANCH at its own early `continue`, which skipped the trace_ops() print, so KUNA_CONDFOLD_DEBUG=ops listed one op fewer than the width the same walk reported -- exactly the op-by-op reconciliation the docs advertised.",
+      "fix": "Every out.stmts increment now goes through one `charge!` macro inside printed_shape, terminal CBRANCH included.",
+      "verified_on": "ghangr-condfold-newbury.xml: the guard block at 0x100060 lists 7 ops and reports `prints 7`; the one at 0x10006b lists 6 and reports `prints 6`.  ghangr-condfold-ruleb.xml: 4 ops listed, `prints 4`."
+    },
+    "round_3_defect_3_newbury_assertion_names_said_ON": {
+      "finding": "data:condfold-newbury #1..#4 said `ON` while the pass runs `wide` -- deliberate in round 2, to avoid re-recording docs/baseline-stages.json.",
+      "fix": "Renamed to say WIDE.  The four regexes, their min/max and their verdicts are byte-identical; the stages baseline is re-recorded anyway for defect 1."
+    },
+    "round_2_defect_1_rule_b_cap_did_not_bound_printed_width": {
+      "finding": "Rule B's only length cap was MAX_SHAPE_STMTS = 2 *calc_explicit-scored* statements, which is not a printed width. On the PR's own headline witness KUNA_CONDFOLD_DEBUG reported `admit(shape) BlockId(7v1) @ 0x40242e: 2 statement(s)` for a block that renders SEVEN statements plus the branch. Consequences: the widest emitted comma operand was 7 elements at BOTH `on` and `wide`; `on` and `wide` were byte-identical on all four named targets; an operator following `try on first` got the option's WIDEST folds at the conservative setting.",
+      "fix": "A single shared width measure, kuna_condfold.rs (printed_shape), factored out of Rule A's walk and enforced by BOTH rules against the policy level's cap (5 at `on`, 9 at `wide`). Rule B's shape allowlist and call cap are UNCHANGED (they are the soundness-relevant half and are byte-identical to #194). The calc_explicit score is kept only because the cross-leaf caps MAX_JOIN_LEAVES / MAX_JOIN_TOTAL_STMTS are expressed in it.",
+      "value_surface_restored": {
+        "widest_comma_operand_condfold_CREATES": {
+          "on": 5,
+          "wide": 7
+        },
+        "widest_comma_operand_before_this_fix": {
+          "on": 7,
+          "wide": 7
+        },
+        "note": "The widest operand present anywhere in the emitted C at `on` is 6, in dd::human_readable -- and that operand is already there with the option OFF. Ghidra's own bb_is_complex budget has the same score-versus-width slack; refusing to inherit it is what this measure is for.",
+        "named_targets_now_differentiate": "3 of 4 (tr.o, tr_synth.elf, true_ubuntu1804::usage all differ between `on` and `wide`; newbury::main is byte-identical because it already closes at `on`)"
+      },
+      "debug_facility": "KUNA_CONDFOLD_DEBUG=1 now prints BOTH measures on every admit (`scored N, prints M (budget B)`) and the numbers on every decline; KUNA_CONDFOLD_DEBUG=ops additionally lists every op printed_shape charges, so a measured width can be reconciled op by op against the emitted chain. The reviewer had to reconstruct that by hand."
+    },
+    "round_2_defect_2_stale_measurement_text": {
+      "finding": "kuna_condfold.rs listed #193's `newbury::network_init 3 -> 4` and `newbury::lshpack_enc_encode 16 -> 17`, contradicted by record.json in the same commit.",
+      "fix": "Re-measured after the Defect-1 change and rewritten in the module docs, architecture.rs, phases.toml use_when and docs/spec/08-structuring.md. phases.toml and docs/options.md had the round-1 numbers, which are also now stale and were rewritten. Every surface now carries the SAME freshly measured set.",
+      "measured_now": {
+        "clientloop.o::process_escapes": {
+          "off": 26,
+          "on": 28,
+          "wide": 28
+        },
+        "true_ubuntu1804::usage": {
+          "off": 1,
+          "on": 1,
+          "wide": 2
+        },
+        "gone": [
+          "newbury::network_init (4 -> 5 before this fix; no longer regresses)",
+          "newbury::lshpack_enc_encode (a #193-era number; already gone on this main)"
+        ]
+      }
+    },
+    "round_2_defect_3_comment_guard_narrowed": {
+      "finding": "#194 declined a Rule-B fold on ANY buffered comment at a covered address; the consolidation filtered to comment_type::warning. Behaviourally equivalent today (only warning/warningheader ever enter pending_comments) but a strictly weaker guard resting on an unstated invariant, and the failure mode is a silently deleted comment.",
+      "fix": "block_carries_comment no longer looks at the type: any buffered comment at a covered address declines the fold, restoring #194's guard. The only type this newly covers is a warningheader landing on an address the block covers.",
+      "cost": "None measurable: the 2827-function sweep below was run WITH the broadened guard and shows monotone improvement at both levels and 0 invalid-C hard stops."
+    },
+    "round_2_defect_4_document_the_width_slack_honestly": {
+      "finding": "The docs claimed a block admitted at the cap 'can render one statement wider than the nominal budget'. The real slack was ~7x.",
+      "fix": "That sentence is gone from all four surfaces. Each now states exactly what the enforced budget bounds and what it does not.",
+      "what_the_budget_bounds": "Per admitted leaf, the comma chain printed_shape measures is <=5 elements at `on` and <=9 at `wide`.",
+      "what_it_does_not_bound": [
+        "The summed printed width of a Rule-B CASCADE's leaves: it is a per-leaf bound, and the only cross-leaf cap (MAX_JOIN_TOTAL_STMTS) is expressed in the weak calc_explicit score. Not tightened: converting that cap to printed width would decline newbury::main, whose three leaves print 2-3 elements each.",
+        "The final condition's GLOBAL width: a purely upstream-legal fold (both operands non-complex) can still extend a cascade on the LEFT without consulting any condfold cap -- exactly as it can with the option off (this disclosure is unchanged).",
+        "Post-structuring drift: the measure is taken on the op list as it stands at structuring time. On tr::build_spec_list it reads 6-9 across the structuring passes and the operand finally emits 8 elements.",
+        "It OVER-counts where a call's stack-effect ops are still live at structuring time (unprototyped callee, no frame recovery). Over-counting only ever declines a fold, so the error is in the safe direction -- but it is why the Rule-B stage witness needs `wide` while the real newbury::main closes at `on`."
+      ],
+      "kept_disclosures": [
+        "the caps bound the relaxation at each site where it is EXERCISED, not the final condition's global width",
+        "THIS IS NOT A MONOTONE GOTO REDUCER",
+        "a comment produced by a pass that runs AFTER structuring can still be dropped"
+      ]
+    },
+    "round_1_rule_a_call_cap_semantics": {
+      "finding": "condfold's call cap was documented as `<=1 call` but prefix_eligible's implied-output skip runs before the is_call test, so a call inlined into the condition is never charged. Witness: mv -O2 copy_internal at `wide` renders both cached_umask(...) (counted) and fchmod(...) (not counted).",
+      "decision": "KEEP the statement-root semantics; make them unmistakable rather than tighten.",
+      "actions": [
+        "constant renamed MAX_PREFIX_CALLS -> MAX_PREFIX_ROOT_CALLS so the name IS the contract",
+        "docs in kuna_condfold.rs, architecture.rs, phases.toml summary/use_when and docs/spec/08-structuring.md all state statement-root counting explicitly"
+      ],
+      "still_true_after_round_2": "Yes. The width budget bounds the number of comma ELEMENTS, not how many calls hide inside one of them."
+    },
+    "round_1_rule_b_cap_bypass": {
+      "finding": "MAX_CONDJOIN_LEAVES / MAX_CONDJOIN_TOTAL_STMTS were consulted only inside the admission check, which is only reached when is_complex(orblock) is true. Because is_complex(BlockCondition) delegates to getBlock(0) alone, a fold whose LEFTMOST leaf was non-complex escaped the caps.",
+      "action": "CLOSED by inheriting #193's `condfolded` force-complex marking: every relaxed result reports itself complex, so it always re-enters the admission check.",
+      "residual_documented_not_hidden": "The caps bound the relaxation at each site where it is EXERCISED, not the final condition's global width.",
+      "unit_test": "blockaction/tests.rs::condfold_rule_b_enforces_the_total_statement_cap"
+    },
+    "round_1_not_a_monotone_goto_reducer": {
+      "finding": "The use_when/symptoms prose read as if the option always reduces gotos.",
+      "action": "phases.toml use_when says THIS IS NOT A MONOTONE GOTO REDUCER in those words, with the measured per-function regressions; the spec and the module docs carry the same statement. Numbers refreshed in round 2 -- see round_2_defect_2_stale_measurement_text."
+    },
+    "round_1_comment_loss": {
+      "finding": "The comment guard only sees comments buffered in Funcdata at structuring time; COMMA_SEPARATE suppresses emit_comment_group, so a later-produced advisory can vanish.",
+      "action": "Documented as a known effect on all four surfaces. Not fixed: fixing it would require the structurer to predict comments passes have not produced yet.",
+      "reproduced_on_this_main": "newbury::main -- 4 WARNING comments at off, 3 at on AND at wide; the lost one is `/* WARNING: branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped) */`. A kuna advisory annotation, never a correctness signal; the emitted C is unaffected."
+    }
+  },
+  "metric_tables": {
+    "method": "ONE counter for every column including the angr panes: loc = non-blank lines INCLUDING comment lines; gotos = /\\bgoto\\b/; labels = /^\\s*\\w+:\\s*$/; ifs = /\\bif\\s*\\(/; loops = /\\b(while|for)\\s*\\(/ plus /\\bdo\\s*\\{/. The angr columns are the `--- angr ---` pane of each proposal's angr-vs-kuna text run through that same counter (angr 9.2.213), so every number in these tables is comparable to every other. They are NOT comparable to #193/#194's own tables, which stripped comment lines.",
+    "proposal_39_tr_build_spec_list": {
+      "angr_9.2.213": {
+        "loc": 122,
+        "gotos": 4,
+        "labels": 3,
+        "ifs": 15,
+        "loops": 3
+      },
+      "tr_synth.elf": {
+        "what": "the linked full-fidelity ELF, build_spec_list @0x402370",
+        "off": {
+          "loc": 117,
+          "gotos": 7,
+          "labels": 4,
+          "ifs": 16,
+          "loops": 3
+        },
+        "on": {
+          "loc": 114,
+          "gotos": 6,
+          "labels": 3,
+          "ifs": 15,
+          "loops": 3
+        },
+        "wide": {
+          "loc": 109,
+          "gotos": 4,
+          "labels": 2,
+          "ifs": 14,
+          "loops": 3
+        }
+      },
+      "tr.o": {
+        "what": "ET_REL, loaded directly (relocobjects default-on)",
+        "off": {
+          "loc": 114,
+          "gotos": 6,
+          "labels": 3,
+          "ifs": 15,
+          "loops": 3
+        },
+        "on": {
+          "loc": 114,
+          "gotos": 6,
+          "labels": 3,
+          "ifs": 15,
+          "loops": 3
+        },
+        "wide": {
+          "loc": 110,
+          "gotos": 4,
+          "labels": 2,
+          "ifs": 14,
+          "loops": 3
+        }
+      },
+      "elf_link_recipe": "gcc -no-pie -nostdlib -nostartfiles -static -Wl,-Ttext-segment=0x400000 tr.o docs/features/condfold/stubs.c",
+      "criterion": "the crossing `goto label_40242e` disappears and the compound condition appears",
+      "met_at": "on for the ELF vehicle (the crossing goto is gone at `on`); WIDE for full angr goto parity (4) and for the ET_REL vehicle, which is byte-identical to `off` at `on`. This restores #193's original finding: the tr sibling prints 7-8 comma elements, over the angr-parity budget of 5.",
+      "off_text": "result_idx = &v9; if (es_match(es_00,v11,'=')) goto label_40242e;",
+      "on_text": "if ((v2) || (result_idx = &v9, es_match(es_00,v11,'=')))",
+      "wide_text": "if (((v2) || (result_idx = &v9, es_match(es_00,v11,'='))) && (pre_bracket_char = *(char *)(v1 + i), result_idx = &v9, v4 = v9, v11 = v9, v2 = find_closing_delim(es,start_idx,pre_bracket_char,result_idx), v9 = v4, v9 = v9, v2)) {",
+      "goto_parity_vs_angr": "`wide` reaches 4 gotos on both vehicles, matching angr's 4 exactly. `on` reaches 6 on the ELF and does not move the ET_REL vehicle."
+    },
+    "proposal_56_newbury_main": {
+      "angr_9.2.213": {
+        "loc": 205,
+        "gotos": 0,
+        "labels": 0,
+        "ifs": 20,
+        "loops": 7
+      },
+      "kuna": {
+        "off": {
+          "loc": 138,
+          "gotos": 1,
+          "labels": 1,
+          "ifs": 16,
+          "loops": 8
+        },
+        "on": {
+          "loc": 131,
+          "gotos": 0,
+          "labels": 0,
+          "ifs": 14,
+          "loops": 8
+        },
+        "wide": {
+          "loc": 131,
+          "gotos": 0,
+          "labels": 0,
+          "ifs": 14,
+          "loops": 8
+        }
+      },
+      "criterion": "0 gotos / 0 labels",
+      "met_at": "on",
+      "on_text": "if ((getuid() != 0) && ((v2 = geteuid(), v2 != getuid() || (v2 = getegid(), v2 != getgid())))) {",
+      "note": "on and wide are byte-identical here because the target already closes at `on`: its three guard leaves print 2-3 comma elements each, well inside the angr-parity budget."
+    },
+    "bonus_pr53_true_ubuntu1804_usage": {
+      "off": {
+        "loc": 107,
+        "gotos": 1,
+        "labels": 1,
+        "ifs": 9,
+        "loops": 3
+      },
+      "on": {
+        "loc": 107,
+        "gotos": 1,
+        "labels": 1,
+        "ifs": 9,
+        "loops": 3
+      },
+      "wide": {
+        "loc": 103,
+        "gotos": 2,
+        "labels": 2,
+        "ifs": 7,
+        "loops": 3
+      },
+      "met_at": "wide",
+      "reading": "ifs 9 -> 7 is exactly the +2 residual PR #53 measured; both `!v30 || !strncmp(...)` pairs fold into angr's shape. It costs +1 goto and -4 loc. Byte-identical to `off` at `on`."
+    },
+    "byte_identity": "off/on/wide are three distinct outputs on tr_synth.elf; on == wide on newbury::main; off == on on tr.o and on true_ubuntu1804::usage."
+  },
+  "value_level_verdict": {
+    "on": "CLOSES proposal #56: newbury::main is 0 gotos / 0 labels. On tr_synth.elf it removes #39's crossing `goto label_40242e` (gotos 7 -> 6) but does not reach angr's 4, and it leaves tr.o and true_ubuntu1804::usage byte-identical to `off`. This is the angr-parity width and it is the conservative setting in the way the docs claim: the widest comma operand it creates across 2827 functions is exactly 5 elements.",
+    "wide": "DIFFERENTIATES ITSELF ON 3 OF THE 4 NAMED TARGETS. It closes #39 fully -- goto parity with angr (4) on BOTH tr vehicles -- and delivers the #53 bonus (usage ifs 9 -> 7). In aggregate over 2827 functions it removes 29 more gotos, 14 more labels, 129 more ifs and 451 more lines than `on`, and changes 103 more functions. Its widest created comma operand is 7 elements.",
+    "why_the_split_is_real_again": "Before this review round Rule B admitted by SHAPE with no width cap, so the tr sibling (7-8 printed elements, calc_explicit score 1-2) was taken at `on` and `wide` had nothing left to do on any named target. With one shared printed-width budget the level means what it says.",
+    "does_on_over_fire": "NO. On the 7-binary / 2827-function sweep, `on` improves EVERY aggregate metric and every per-binary metric monotonically, with 0 invalid-C hard stops, and creates no comma operand wider than its own budget."
+  },
+  "speed": {
+    "method": "INTERLEAVED off/on/wide on CHILD CPU TIME (user+sys via os.wait4 rusage). Each iteration runs all three levels back to back so load drift cancels rather than landing in one arm; scripts.pipeline.timeit runs all-OFF-then-all-ON and is unusable under this box's variable load. Box load average during measurement: 11-14 (other users' jobs).",
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "tr_synth_elf_build_spec_list": {
+      "samples": 21,
+      "off_cpu_ms": 318.25,
+      "on_cpu_ms": 318.9,
+      "wide_cpu_ms": 322.95,
+      "on_delta_pct": 0.2,
+      "wide_delta_pct": 1.48,
+      "off_arm_noise_floor_pct": [
+        -26.34,
+        22.51
+      ]
+    },
+    "newbury_main": [
+      {
+        "samples": 15,
+        "off_cpu_ms": 4159.11,
+        "on_cpu_ms": 3930.78,
+        "wide_cpu_ms": 4216.48,
+        "on_delta_pct": -5.49,
+        "wide_delta_pct": 1.38,
+        "off_arm_noise_floor_pct": [
+          -9.76,
+          13.63
+        ]
+      },
+      {
+        "samples": 15,
+        "off_cpu_ms": 4047.57,
+        "on_cpu_ms": 4262.98,
+        "wide_cpu_ms": 4110.39,
+        "on_delta_pct": 5.32,
+        "wide_delta_pct": 1.55,
+        "off_arm_noise_floor_pct": [
+          -7.4,
+          28.02
+        ]
+      }
+    ],
+    "honest_reading": "THE MEASUREMENT DOES NOT RESOLVE THE OPTION'S COST ON THIS BOX, and is reported that way rather than rounded into a claim. On the small function the deltas are under 1.5%. On lighttpd main -- a 4-second outlier where the option fires several times -- two independent interleaved runs put `on` at -5.5% and +5.3%, i.e. straddling zero with a 10.8-point spread between replicates, while the OFF arm's OWN sample spread within a single run is -10% to +28% even on CPU time. `wide` is the more consistent arm at +1.4% and +1.6%. Medians are inside the 5% budget; the noise floor is larger than the effect.",
+    "expected_cost": "one extra predicate inside the loop that already calls bb_is_complex (skipped entirely when off), plus a set/map lookup at an existing decline, plus the two-rule precompute over the bblocks list -- which now also runs the printed_shape walk once per block per rule. The bigger term on a large function is second-order: more folds mean the fixpoint structuring loop matches more schemas, which is why `on` (fewer folds than before this fix) is not obviously slower than `off`.",
+    "speed_forced_off": false,
+    "note": "The option ships default-OFF for readability/presentation reasons, not speed. With it off the precompute is skipped and every gate disjunct is dead."
+  },
+  "aggregate_invalid_c_sweep": {
+    "method": "kuna decompile-all --json at off/on/wide over 7 real binaries; every function whose text CHANGED vs off was syntax-checked by wrapping it in a permissive C translation unit and running `gcc -fsyntax-only -std=gnu99`. Semantic diagnostics a decompiled body always produces in a prelude-only TU (undeclared identifier, unknown type name, has no member, argument count, conflicting types, incomplete type, ...) are filtered out; SYNTAX errors are not. Metrics use the SAME counter as the metric tables above.",
+    "hard_stop_definition": "a function that parses with the option OFF and does not parse with it ON",
+    "checker_validated_against_the_failure_modes_this_option_can_produce": {
+      "label-inside-expression": "REJECTED (error: expected ')' before ':' token)",
+      "unbalanced-condition": "REJECTED (error: expected ')' before '{' token)",
+      "clean-comma-fold": "ACCEPTED"
+    },
+    "binaries": [
+      "decompiler/du",
+      "decompiler/dd",
+      "decompiler/basenc",
+      "decompiler/newbury",
+      "true_ubuntu1804",
+      "mv_-O2",
+      "decompiler/clientloop.o"
+    ],
+    "functions": 2827,
+    "functions_changed": {
+      "on": 83,
+      "wide": 186
+    },
+    "functions_lost": 0,
+    "hard_stops": 0,
+    "gotos_added": {
+      "on": 2,
+      "wide": 3
+    },
+    "gotos_removed": {
+      "on": 77,
+      "wide": 106
+    },
+    "goto_regressions": [
+      {
+        "function": "clientloop.o::process_escapes",
+        "off": 26,
+        "on": 28,
+        "wide": 28
+      },
+      {
+        "function": "true_ubuntu1804::usage",
+        "off": 1,
+        "on": 1,
+        "wide": 2
+      }
+    ],
+    "widest_comma_operand": {
+      "definition": "elements of the widest comma-expression operand inside any if/while condition, counted by a paren-matching walk that distinguishes a comma OPERATOR from an argument separator (a '(' preceded by an identifier character opens a call).",
+      "created_by_condfold": {
+        "on": 5,
+        "wide": 7
+      },
+      "widest_anywhere_in_the_emitted_C": {
+        "off": 6,
+        "on": 6,
+        "wide": 7
+      },
+      "note": "The 6-element operand at `off` and `on` is the same one, in dd::human_readable, and it is present with the option OFF -- Ghidra's own bb_is_complex budget produced it. The widest operand condfold itself CREATES is exactly its own budget at `on` (5) and well inside it at `wide` (7 of 9, in mv -O2 copy_internal). BEFORE this fix the number was 7 at BOTH levels."
+    },
+    "aggregate": {
+      "off": {
+        "loc": 87959,
+        "gotos": 2294,
+        "labels": 1408,
+        "ifs": 10492,
+        "ors": 941,
+        "ands": 1820
+      },
+      "on": {
+        "loc": 87088,
+        "gotos": 2219,
+        "labels": 1385,
+        "ifs": 10255,
+        "ors": 1029,
+        "ands": 1970
+      },
+      "wide": {
+        "loc": 86637,
+        "gotos": 2191,
+        "labels": 1371,
+        "ifs": 10126,
+        "ors": 1050,
+        "ands": 2079
+      }
+    },
+    "per_binary": {
+      "du": {
+        "funcs": 655,
+        "off": {
+          "loc": 18990,
+          "gotos": 221,
+          "labels": 122,
+          "ifs": 2309
+        },
+        "on": {
+          "loc": 18926,
+          "gotos": 220,
+          "labels": 121,
+          "ifs": 2293
+        },
+        "wide": {
+          "loc": 18877,
+          "gotos": 212,
+          "labels": 117,
+          "ifs": 2280
+        },
+        "changed_on": 12,
+        "changed_wide": 26
+      },
+      "dd": {
+        "funcs": 204,
+        "off": {
+          "loc": 6049,
+          "gotos": 174,
+          "labels": 111,
+          "ifs": 711
+        },
+        "on": {
+          "loc": 5991,
+          "gotos": 167,
+          "labels": 110,
+          "ifs": 694
+        },
+        "wide": {
+          "loc": 5966,
+          "gotos": 166,
+          "labels": 108,
+          "ifs": 688
+        },
+        "changed_on": 6,
+        "changed_wide": 13
+      },
+      "basenc": {
+        "funcs": 202,
+        "off": {
+          "loc": 5703,
+          "gotos": 135,
+          "labels": 76,
+          "ifs": 491
+        },
+        "on": {
+          "loc": 5688,
+          "gotos": 133,
+          "labels": 76,
+          "ifs": 486
+        },
+        "wide": {
+          "loc": 5679,
+          "gotos": 132,
+          "labels": 75,
+          "ifs": 482
+        },
+        "changed_on": 4,
+        "changed_wide": 7
+      },
+      "newbury": {
+        "funcs": 986,
+        "off": {
+          "loc": 37222,
+          "gotos": 1063,
+          "labels": 643,
+          "ifs": 4783
+        },
+        "on": {
+          "loc": 36967,
+          "gotos": 1046,
+          "labels": 637,
+          "ifs": 4709
+        },
+        "wide": {
+          "loc": 36772,
+          "gotos": 1041,
+          "labels": 634,
+          "ifs": 4649
+        },
+        "changed_on": 33,
+        "changed_wide": 89
+      },
+      "true_ubuntu1804": {
+        "funcs": 130,
+        "off": {
+          "loc": 2447,
+          "gotos": 67,
+          "labels": 41,
+          "ifs": 216
+        },
+        "on": {
+          "loc": 2426,
+          "gotos": 63,
+          "labels": 40,
+          "ifs": 210
+        },
+        "wide": {
+          "loc": 2411,
+          "gotos": 63,
+          "labels": 41,
+          "ifs": 205
+        },
+        "changed_on": 2,
+        "changed_wide": 6
+      },
+      "mv_-O2": {
+        "funcs": 390,
+        "off": {
+          "loc": 11665,
+          "gotos": 389,
+          "labels": 263,
+          "ifs": 1350
+        },
+        "on": {
+          "loc": 11479,
+          "gotos": 379,
+          "labels": 260,
+          "ifs": 1307
+        },
+        "wide": {
+          "loc": 11398,
+          "gotos": 375,
+          "labels": 257,
+          "ifs": 1288
+        },
+        "changed_on": 12,
+        "changed_wide": 26
+      },
+      "clientloop.o": {
+        "funcs": 260,
+        "off": {
+          "loc": 5883,
+          "gotos": 245,
+          "labels": 152,
+          "ifs": 632
+        },
+        "on": {
+          "loc": 5611,
+          "gotos": 211,
+          "labels": 141,
+          "ifs": 556
+        },
+        "wide": {
+          "loc": 5534,
+          "gotos": 202,
+          "labels": 139,
+          "ifs": 534
+        },
+        "changed_on": 14,
+        "changed_wide": 19
+      }
+    },
+    "reading": "Monotone improvement in EVERY aggregate metric at both levels, and no per-binary inversion at all except true_ubuntu1804's labels (40 at `on`, 41 at `wide`, 41 at `off`). 0 invalid C with a checker validated against the two failure modes this option could actually produce. The sweep was run with the default P8 goto-quality set ON (the real configuration), not with them ablated, and WITH the broadened comment guard."
+  },
+  "decbench": {
+    "protocol": "docs/decbench-loop.md. The pre-review round regenerated docs/decbench/ on this main, decompiled all 28 queue cases at off/on/wide, and rescored the one the option touches.",
+    "queue_cases_scanned": 28,
+    "queue_cases_changed_by_condfold": 1,
+    "regression_reported_not_hidden": {
+      "case": "O2-bash-bash-get_random",
+      "ged_before": 33.0,
+      "ged_after": 36.0,
+      "ged_delta": 3.0,
+      "ged_options": [
+        "condfold=on"
+      ],
+      "source_nodes": 1,
+      "bucket": "inherited",
+      "artifact_suspect": true,
+      "reading": "The fold absorbs `seedrand(), seeded_subshell = v1, v1 = brand()` into the guard as a 4-element comma operand while dropping the function's goto 1 -> 0: correct and denser, but structurally FURTHER from the source CFG, so GED rises. Tagged artifact-suspect (source_nodes = 1, a degenerate source CFG; the campaign's own central finding is that such cases account for about half the angr-beats-kuna pool). A reason the option stays default-OFF, not something to hide; no DIV is claimed."
+    },
+    "rechecked_after_the_width_budget_fix": {
+      "method": "Rather than re-run the scorer (time-boxed), the fix was ABLATED: a temporary build gated Rule B's new printed-width decline behind an env var, reproducing the pre-review predicate exactly, and the emitted bodies were diffed. The ablation was validated first by reproducing the pre-review tr_synth.elf `on` output byte-for-byte (loc 109 / gotos 4, i.e. the `wide` output -- the very collapse the reviewer reported).",
+      "result": "bash::get_random at `on` is BYTE-IDENTICAL before and after the fix (its guard blocks print 3-4 comma elements, inside the angr-parity budget). The GED regression 33.0 -> 36.0 therefore stands unchanged; no rescore was needed.",
+      "also_checked": "newbury::main at `on` is byte-identical before/after (closes at `on` either way). tr.o and true_ubuntu1804::usage at `on` DID change -- they now match `off` and need `wide`, which is the intended effect.",
+      "scorer_rerun": false
+    },
+    "not_committed": "docs/decbench/ is a regenerable snapshot and is NOT part of this PR's diff."
+  },
+  "gates": {
+    "make test": "675/675 datatest assertions, PARITY OK",
+    "make test-stages": "278/278 assertions, PARITY OK",
+    "make rust-test": "green (cargo exit 0; 4326 tests passed across 291 suites -- 4319 + the 7 new scorer tests)",
+    "make check-spec": "OK in lenient AND --strict mode",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "baseline_json_repinned": false,
+    "baseline_json_diff_vs_main": "empty",
+    "baseline_stages_rerecorded": true,
+    "baseline_stages_note": "Re-recorded in round 3 (the sanctioned re-record: `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`).  Additive and tightening: 272 -> 278 keys = the 6 new condfold-ruleb assertions plus the 4 condfold-newbury renames (same regexes, same min/max, same verdicts).  No key was dropped.  docs/baseline.json is untouched."
+  },
+  "wiring": {
+    "phases_toml_row": "one row, values off|on|wide, tier transform, symptoms populated",
+    "options_rs": "\"condfold\" in KUNA_OPTION_NAMES",
+    "architecture_field": "Architecture::cond_fold: int4 (0 = off, 5 = on, 9 = wide; the SHARED printed-width budget doubles as the whole option's on/off sentinel)",
+    "arch_seam_copy": "ctx.cond_fold = self.cond_fold in build_arch_handle -- present and verified (a per-function config flag not copied into the seam is silently ignored)",
+    "apply_mode": "self.cond_fold = 0 (default-OFF opt-in) in the mode reset",
+    "counts_bumped": {
+      "kuna_phases/tests.rs": "settable_count_is_77, tier_counts_are_16_core_37_transform_24_analysis, emit_catalog_json_static_form_brackets_and_commas 76, suppressed-live-value list +condfold",
+      "tests/catalog_bytecompat.rs": "fixture_has_all_77_settables",
+      "tests/fixtures/phase_catalog.json": "regenerated byte-exact from decomp_dbg `phase catalog` with no program loaded (the phases.toml prose changed in the review round)",
+      "tests/stages/kuna-catalog.xml": "#6 source_decompiler angr 30 -> 31, #7 change_kind structure-recovery 19 -> 20",
+      "kuna-base/src/xml.rs": "corpus file count 164 -> 167 (THREE new stage XMLs: ghangr-condfold, ghangr-condfold-newbury, ghangr-condfold-ruleb)"
+    },
+    "docs_options_md": "regenerated with `kuna catalog --markdown` after the prose rewrite",
+    "spec": "ONE merged section in docs/spec/08-structuring.md (not two concatenated)"
+  },
+  "stage_tests": [
+    {
+      "file": "tests/stages/ghangr-condfold.xml",
+      "rule": "A (bounded prefix)",
+      "assertions": 7,
+      "level": "on",
+      "shape": "two-pass; pass 1 `option condfold off` = the crossing goto + label, pass 2 `option condfold on` = one compound condition carrying the sibling prefix as a 3-element comma expression",
+      "engine_trace": "KUNA_CONDFOLD_DEBUG=1 shows `prefix` firing in BOTH region_structurer and CollapseStructure",
+      "unchanged_by_the_review_round": true
+    },
+    {
+      "file": "tests/stages/ghangr-condfold-newbury.xml",
+      "rule": "A (this witness folds through Rule A; it is the guard-cascade SHAPE witness, not the Rule-B isolation)",
+      "assertions": 4,
+      "level": "wide",
+      "level_moved_in_the_review_round": "on -> wide",
+      "why": "Its stub callees are unprototyped and get no frame recovery, so each guard block still carries the call's stack-effect ops when structuring runs and printed_shape measures 6 for a block whose operand finally emits none. The measure over-counts, which only ever declines -- so this vehicle needs `wide` while the REAL newbury::main (prototyped libc calls, 3 measured elements per guard) closes at `on`. THE MOVE IS ITSELF THE PROOF of the Defect-1 fix: under the pre-review predicate this shape folded at `on` because Rule B had no width cap.",
+      "honest_limit": "At `wide` BOTH rules admit these leaves and condfold_ok consults Rule A first, so this XML proves the guard-cascade shape folds end to end but does NOT isolate Rule B: measured, it takes 2 `prefix` folds per engine and 0 `shape`, and stays green with Rule B stubbed out.  Rule B is isolated by tests/stages/ghangr-condfold-ruleb.xml (round 3).",
+      "assertions_unchanged": true,
+      "assertion_names_renamed_in_round_3": "ON -> WIDE (regexes and min/max untouched)"
+    },
+    {
+      "file": "tests/stages/ghangr-condfold-ruleb.xml",
+      "rule": "B (statement shape) -- ISOLATED",
+      "assertions": 6,
+      "level": "on",
+      "added_in_round": 3,
+      "shape": "two-pass; pass 1 `option condfold off` = the middle guard's two calls emitted as plain statements ahead of a nested if, pass 2 `option condfold on` = the whole three-guard cascade folded into one short-circuit condition whose right operand is the comma expression",
+      "why_it_isolates_rule_b": "Its middle guard holds TWO statement-root calls (a void su_log() plus x = su_euid() whose output the failure arm consumes, so neither is implied), which is over Rule A's MAX_PREFIX_ROOT_CALLS = 1 -- a cap that does not move with the policy level.  The second fold additionally takes a nested BlockCondition as its sibling, which Rule A can never accept.",
+      "engine_trace": "KUNA_CONDFOLD_DEBUG=1 shows `shape` firing twice in BOTH region_structurer and CollapseStructure, and NO admit(prefix) line for the middle guard.  A get_type() probe at the admit site confirms the first fold's sibling is `type Copy leaves 1` and the second's is `type Condition leaves 2`.",
+      "acceptance_check": "With shape_score stubbed to always decline, `make test-stages` goes 274/278 / PARITY FAIL on exactly this file's #1..#4; restored, 278/278 / PARITY OK"
+    }
+  ],
+  "which_structurer_fires": {
+    "finding": "Both, and both rules. On tr_synth.elf::build_spec_list KUNA_CONDFOLD_DEBUG=1 traces relaxed folds under BOTH `region_structurer/...` and `CollapseStructure/...`, at both levels.",
+    "rule_mix_on_tr_elf": "at `on`, 4 prefix + 3 shape folds per engine; at `wide`, 22-25 prefix + 3-6 shape folds per engine. The Rule A stage witness traces `prefix` in both engines."
+  },
+  "not_closed": [
+    "Default-ON. That needs its own 0/675 ablation and a DIV row; the 2827-function sweep is supporting evidence (monotone improvement, no invalid C), not the ablation. The decbench regression and the comment-loss effect are both presentation arguments for staying opt-in.",
+    "The width budget is a PER-LEAF bound. A Rule-B cascade of up to 4 leaves has no bound on their summed printed width, because the only cross-leaf cap is expressed in the weak calc_explicit score. Converting that cap to printed width would decline newbury::main, so it is documented rather than tightened.",
+    "The width measure is taken at structuring time and OVER-counts where a call's stack-effect ops are still live (unprototyped callee, no frame recovery). Safe direction -- it only declines -- but it makes the option needlessly conservative on such code; the Rule-B stage witness is the reproducible case.",
+    "Rule B's cross-leaf caps are not a GLOBAL bound on the folded condition's width; a purely upstream-legal fold can extend a cascade on the left without consulting them (unchanged from the previous round).",
+    "A comment produced by a pass that runs AFTER structuring can still be dropped by the comma_separate operand (newbury::main loses one branchflip advisory).",
+    "angr's four schema arms are matched only through Ghidra's ruleBlockOr shape. angr's type_b/type_d (the with-else forms) can fire on graphs ruleBlockOr's topology checks reject; those remain unfolded.",
+    "The region structurer still does not fully converge on build_spec_list; making it converge is a separate, larger opportunity."
+  ],
+  "neither_rule_subsumes_the_other": {
+    "rule_b_is_necessary": "newbury::main (proposal #56) folds ENTIRELY under Rule B -- KUNA_CONDFOLD_DEBUG=1 shows `shape` folds and zero `prefix` folds in each engine, two of them taking a freshly-created nested BlockCondition as the sibling. Rule A never accepts a nested BlockCondition, so #193's predicate alone cannot close #56 at any width budget.",
+    "rule_a_is_necessary": "On tr_synth.elf at `wide` the trace is dominated by `prefix` folds (22-25 per engine against 3-6 `shape`), and the specific witness `prefix: fold BlockId(35v1) with complex BlockId(8v1)` is a block Rule B declines with `over MAX_SHAPE_STMTS`. Rule B admits by shape and its scored cap of 2 refuses the straight-line prefixes Rule A exists for.",
+    "changed_by_the_review_round": "The old argument -- 'the entire aggregate delta of `wide` over `on` is Rule A, because Rule B's caps do not move between levels' -- NO LONGER HOLDS: the shared width budget moves for both rules. The necessity of each rule is now argued from the per-target traces above instead.",
+    "conclusion": "The predicate must be the UNION. Intersecting them, or dropping either, loses a closed proposal."
+  }
+}

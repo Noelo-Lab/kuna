@@ -554,6 +554,21 @@ pub struct ArchContext {
     /// Only changes WHICH goto is chosen when virtualizing, so OFF is byte-identical.
     /// Read by [`crate::p8_structure::region_structurer::run_region_structurer`].
     pub region_edge_order: bool,
+    /// (kuna) short-circuit condition folding across a COMPLEX sibling block
+    /// (`cond_fold`, option `condfold`, opt-in default-off).  When set, the
+    /// short-circuit schema of BOTH structurers accepts a *complex* sibling
+    /// condition block when it fits the level's printed-width budget AND either
+    /// admission rule takes it — Rule A, a `BlockCopy` of one branch-free,
+    /// comment-free `BlockBasic` with at most one statement-root call; or Rule B, the
+    /// statement-shape allowlist, which also admits a nested `BlockCondition` so a
+    /// guard cascade can fold.  The absorbed statements then render inside the
+    /// `&&`/`||` operand as a C comma expression (angr Phoenix's
+    /// `MultiStatementExpression`).  Read by
+    /// [`crate::p8_structure::kuna_condfold::compute_condfold_sets`] at both
+    /// precompute sites.  The value is the shared printed-width budget, which
+    /// doubles as the option's on/off sentinel: `0` = off, `5` = `on` (angr
+    /// parity), `9` = `wide`.
+    pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -834,6 +849,7 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
+            cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)

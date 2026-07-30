@@ -412,6 +412,69 @@ pub struct Architecture {
     /// structurer is already forced to emit one).  Port of angr SAILR
     /// `phoenix._last_resort_refinement` + `sailr._order_virtualizable_edges`.
     pub region_edge_order: bool,
+    /// (kuna) Short-circuit condition folding across a **complex sibling block**
+    /// (angr Phoenix's `MultiStatementExpression` relaxation of
+    /// `_match_acyclic_short_circuit_conditions`).  Ghidra's `ruleBlockOr` declines
+    /// the `A || B` fold whenever the sibling condition block is *complex*
+    /// (`BlockBasic::isComplex`: more than two statements), so a single spill,
+    /// address computation or extra call parked in front of the second test costs a
+    /// crossing `goto` back into the first arm's clause — or, on a guard cascade
+    /// whose arms reconverge, a `goto` + label into the shared body.  When this is
+    /// set, a complex sibling is accepted when it fits the level's **printed-width
+    /// budget** (the operand renders at most 5 comma elements at `on` / 9 at `wide`,
+    /// counted with the printer's own skip rules) **and** either admission rule takes
+    /// it:
+    ///
+    /// * **Rule A** — a `BlockCopy` of ONE `BlockBasic`, branch-free, comment-free,
+    ///   with at most 1 *statement-root* call;
+    /// * **Rule B** — the statement-shape allowlist (marker / op with an output /
+    ///   void `CALL`/`CALLIND` / `STORE` / the single terminal `CBRANCH`), <=2
+    ///   `calc_explicit`-scored statements and <=2 calls per block, no comment, and —
+    ///   because Rule B also admits a nested `BlockCondition` so a cascade can fold —
+    ///   <=4 condition leaves and <=4 total scored statements at the fold site.
+    ///
+    /// The absorbed statements then render inside the `&&`/`||` operand as a C comma
+    /// expression, which the printer already supports (`comma_separate`).  The fold
+    /// moves no p-code — it re-parents two existing structuring nodes — and C's
+    /// short-circuit + comma sequencing preserves the original execution paths and
+    /// order, so predicates that call functions need no purity analysis.
+    ///
+    /// **What the budget bounds.**  Per admitted leaf, the comma chain measured at
+    /// structuring time is at most the level's cap; measured over 2827 functions the
+    /// widest operand condfold *creates* is 5 elements at `on` and 7 at `wide`.  It
+    /// does NOT bound the summed width of a Rule-B cascade's leaves (the only
+    /// cross-leaf cap is expressed in the weak `calc_explicit` score), it is taken on
+    /// the op list as it stands at structuring time (later passes can add or drop an
+    /// op), and it over-counts where a call's stack-effect ops are still live — an
+    /// error in the declining, i.e. safe, direction.  Rule B's <=2 *scored* statements
+    /// is explicitly **not** a width bound: a block can score 2 and render 7, which is
+    /// exactly why the printed-width budget exists.
+    ///
+    /// Rule A's call cap counts only calls printed as their own comma-chain element:
+    /// the eligibility walk mirrors the printer, whose implied-output skip
+    /// necessarily runs before the call test, so a call inlined into the sibling's
+    /// own condition is not charged and a folded operand can render more than one
+    /// call.  That is deliberate and is a readability bound, not a soundness bound —
+    /// see
+    /// [`MAX_PREFIX_ROOT_CALLS`](crate::p8_structure::kuna_condfold::MAX_PREFIX_ROOT_CALLS).
+    /// Rule B charges every call op.
+    ///
+    /// Two effects are accepted rather than fixed: this is **not a monotone goto
+    /// reducer** (an individual function can gain a goto even where the aggregate
+    /// falls), and an advisory comment produced by a pass that runs *after*
+    /// structuring can be dropped by the `comma_separate` operand (the guard declines
+    /// on any comment buffered at structuring time, but sees no later one).
+    ///
+    /// The value is the **shared printed-width budget**, which doubles as the whole
+    /// option's policy level: `0` = `option condfold off` (byte-identical to
+    /// upstream: the precompute is skipped and every gate disjunct is dead), `5`
+    /// ([`MAX_PREFIX_STMTS_ANGR`](crate::p8_structure::kuna_condfold::MAX_PREFIX_STMTS_ANGR))
+    /// = `on` (angr parity), `9`
+    /// ([`MAX_PREFIX_STMTS_WIDE`](crate::p8_structure::kuna_condfold::MAX_PREFIX_STMTS_WIDE))
+    /// = `wide` (absorbs kuna's finer printed-statement granularity).  The level moves
+    /// the budget for BOTH rules and nothing else.  Default-OFF opt-in.  See
+    /// [`crate::p8_structure::kuna_condfold`].
+    pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
@@ -966,6 +1029,7 @@ impl Architecture {
             region_structure: true,
             region_loop_refine: false,
             region_edge_order: false,
+            cond_fold: 0,
             reduce_return_gotos: false,
             flatten_ifelse: false,
             revert_cross_jumps: false,
@@ -1096,6 +1160,7 @@ impl Architecture {
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
+        self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
         self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
@@ -1259,6 +1324,12 @@ impl Architecture {
                 region_edge_order,
                 "Region structurer H2 post-dominator + dominance-tiered edge-virtualization ordering"
             ),
+            "condfold" => {
+                let (val, msg) =
+                    crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
+                self.cond_fold = val;
+                Ok(msg)
+            }
             "gotoreduce" => {
                 let (val, msg) =
                     crate::p8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
@@ -1695,6 +1766,7 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
+        ctx.cond_fold = self.cond_fold; // condfold
         ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert

@@ -1486,6 +1486,22 @@ pub struct CollapseStructure<'a> {
     /// resolution must use the stable bblocks topology.  Precomputed in
     /// `ActionBlockStructure::apply` (which holds `&mut Funcdata`).
     switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+    /// (kuna, `option condfold`) the two admission-rule verdicts for every bblocks
+    /// `BlockBasic`: Rule A (bounded, branch-free, comment-free printed-statement
+    /// prefix in front of the trailing CBRANCH) and Rule B (statement-shape
+    /// allowlist).  A *complex* sibling may be folded into a short-circuit condition
+    /// operand when EITHER rule admits it — angr Phoenix's
+    /// `MultiStatementExpression` relaxation; see
+    /// [`crate::p8_structure::kuna_condfold`].  Empty (and every use dead) when the
+    /// option is off.
+    condfold_sets: crate::p8_structure::kuna_condfold::CondFoldSets,
+    /// (kuna, `option condfold`) structuring nodes produced by a condfold-relaxed
+    /// [`rule_block_or`](Self::rule_block_or) fold.  `BlockCondition::isComplex`
+    /// delegates to sub-block 0, so a folded node whose *right* operand carries a
+    /// comma chain would look trivial to `ruleBlockWhileDo` and the whole chain
+    /// would be swallowed into a `while(...)` header.  [`is_complex`](Self::is_complex)
+    /// reports these as complex unconditionally.
+    condfolded: std::collections::BTreeSet<BlockId>,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1506,7 +1522,21 @@ impl<'a> CollapseStructure<'a> {
             complex_blocks: std::collections::BTreeSet::new(),
             switch_blocks: std::collections::BTreeMap::new(),
             switch_case_edges: std::collections::BTreeMap::new(),
+            condfold_sets: Default::default(),
+            condfolded: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// (kuna, `option condfold`) install the precomputed admission-rule verdicts (see
+    /// [`kuna_condfold::compute_condfold_sets`](crate::p8_structure::kuna_condfold::compute_condfold_sets)).
+    /// Builder method; the empty default (option off, and every hand-built unit-test
+    /// graph) means "nothing is condfold-eligible", i.e. upstream-identical behavior.
+    pub fn with_condfold_sets(
+        mut self,
+        condfold_sets: crate::p8_structure::kuna_condfold::CondFoldSets,
+    ) -> Self {
+        self.condfold_sets = condfold_sets;
+        self
     }
 
     /// Install the precomputed set of \e complex bblocks `BlockBasic` ids (C++
@@ -2011,6 +2041,15 @@ impl<'a> CollapseStructure<'a> {
     pub(crate) fn is_complex(&self, bl: BlockId) -> bool {
         let mut bl = bl;
         loop {
+            // (kuna, `option condfold`) a node produced by a condfold-relaxed fold
+            // is complex regardless of its left operand: its RIGHT operand carries
+            // a comma chain that `BlockCondition::isComplex`'s delegation to
+            // sub-block 0 cannot see, and `ruleBlockWhileDo` must never lift that
+            // chain into a `while(...)` header.  Checked BEFORE the Condition
+            // delegation.  Empty set when the option is off.
+            if !self.condfolded.is_empty() && self.condfolded.contains(&bl) {
+                return true;
+            }
             match self.graph.block(bl).get_type() {
                 // BlockCopy: the copied BlockBasic's statement-count verdict,
                 // precomputed in `complex_blocks`.
@@ -2064,9 +2103,19 @@ impl<'a> CollapseStructure<'a> {
             if self.graph.block(bl).is_back_edge_out(i) {
                 continue; // Don't use loop branch to get to orblock
             }
-            if self.is_complex(orblock) {
-                continue;
-            }
+            // (kuna, `option condfold`) upstream declines outright on a complex
+            // sibling.  When condfold is on, a complex sibling is still accepted if
+            // EITHER admission rule takes it — angr Phoenix's
+            // MultiStatementExpression relaxation.  See
+            // [`crate::p8_structure::kuna_condfold`].
+            let relaxed = if self.is_complex(orblock) {
+                if !self.condfold_ok(bl, orblock) {
+                    continue;
+                }
+                true
+            } else {
+                false
+            };
             let clauseblock = self.graph.block(bl).get_out(1 - i);
             if clauseblock == bl {
                 continue; // No looping
@@ -2102,10 +2151,168 @@ impl<'a> CollapseStructure<'a> {
             }
 
             let graph_id = self.graph_id;
-            self.graph.new_block_condition(graph_id, bl, orblock)?;
+            let newcond = self.graph.new_block_condition(graph_id, bl, orblock)?;
+            if relaxed {
+                // (kuna, `option condfold`) the right operand carries a comma
+                // chain: force the folded node complex so `ruleBlockWhileDo` can
+                // never hoist it into a `while(...)` header.
+                self.condfolded.insert(newcond);
+            }
             return Ok(true);
         }
         Ok(false)
+    }
+
+    /// (kuna, `option condfold`) may the fold of `bl` with the *complex* sibling
+    /// `orblock` proceed anyway?  The union of the two admission rules — see
+    /// [`crate::p8_structure::kuna_condfold`] for why they are a union and not an
+    /// intersection.
+    ///
+    /// * **Rule A (bounded prefix).**  `orblock` is a
+    ///   [`BlockCopy`](crate::block::BlockKind::Copy) of a single bblocks
+    ///   `BlockBasic` in the precomputed `prefix` set.  A `BlockList`/`BlockIf`/
+    ///   `BlockCondition` operand can render braces, multiple lines, or a label
+    ///   inside the parentheses — i.e. invalid C — so this rule never takes one.
+    /// * **Rule B (statement shape).**  [`Self::shape_admits`] — the allowlist
+    ///   verdict plus the expression-size caps, which additionally permits a nested
+    ///   `BlockCondition` operand so a guard *cascade* can fold.
+    ///
+    /// Always `false` when the option is off (both sets are empty).
+    fn condfold_ok(&self, bl: BlockId, orblock: BlockId) -> bool {
+        if self.condfold_sets.is_empty() {
+            return false;
+        }
+        // Rule A.
+        if self.graph.block(orblock).get_type() == BlockType::Copy {
+            if let Some(basic) = self.graph.block(orblock).get_copy() {
+                if self.condfold_sets.prefix.contains(&basic) {
+                    crate::p8_structure::kuna_condfold::trace_admit_fold(
+                        "CollapseStructure",
+                        "prefix",
+                        bl,
+                        orblock,
+                    );
+                    return true;
+                }
+            }
+        }
+        // Rule B.
+        self.shape_admits(bl, orblock)
+    }
+
+    /// (kuna, `option condfold`, Rule B) Is `bl` safe to absorb into a short-circuit
+    /// condition as a **comma-separated multi-statement operand** under the
+    /// statement-shape allowlist, even though [`Self::is_complex`] says it exceeds
+    /// Ghidra's readability budget?
+    ///
+    /// Mirrors [`Self::is_complex`]'s virtual dispatch, but resolves through the
+    /// precomputed `shape` map:
+    ///
+    ///   * `BlockCopy` — admissible when the copied `BlockBasic` passed Rule B, or
+    ///     when it is not complex at all (already accepted upstream).  A block that
+    ///     only passed *Rule A* is deliberately NOT admitted here: Rule A's cap is
+    ///     up to 9 printed statements, which the expression-size caps below have no
+    ///     honest way to charge, so a Rule-A block may only ever be the direct
+    ///     operand of one fold (which is exactly what #193 shipped).
+    ///   * `BlockCondition` — **both** sub-blocks must be admissible.  Unlike
+    ///     `isComplex`, this is not a `getBlock(0)`-only delegation: when a
+    ///     `BlockCondition` is nested as the *right* operand of another fold,
+    ///     `PrintC::emit_block_condition` emits both of its sub-blocks under
+    ///     `COMMA_SEPARATE`, so both must render as expressions.
+    ///   * anything else — declined (a `BlockList`/`BlockIf`/loop can never be an
+    ///     expression).
+    fn is_shape_foldable(&self, bl: BlockId) -> bool {
+        match self.graph.block(bl).get_type() {
+            BlockType::Copy => match self.graph.block(bl).get_copy() {
+                Some(basic) => {
+                    self.condfold_sets.shape.contains_key(&basic)
+                        || !self.complex_blocks.contains(&basic)
+                }
+                None => false,
+            },
+            BlockType::Condition => {
+                let b0 = self.graph.block(bl).get_block(0);
+                let b1 = self.graph.block(bl).get_block(1);
+                self.is_shape_foldable(b0) && self.is_shape_foldable(b1)
+            }
+            _ => false,
+        }
+    }
+
+    /// (kuna, `option condfold`, Rule B) Number of condition leaves under `bl` — 1 for
+    /// a leaf, the sum of both operands for a `BlockCondition`.  Caps how wide a
+    /// compound condition a relaxed fold may build (`collapse_conditions` is a fixpoint
+    /// loop with no natural bound).
+    fn cond_leaf_count(&self, bl: BlockId) -> int4 {
+        match self.graph.block(bl).get_type() {
+            BlockType::Condition => {
+                let b0 = self.graph.block(bl).get_block(0);
+                let b1 = self.graph.block(bl).get_block(1);
+                self.cond_leaf_count(b0) + self.cond_leaf_count(b1)
+            }
+            _ => 1,
+        }
+    }
+
+    /// (kuna, `option condfold`, Rule B) Conservatively-scored printed statements that
+    /// `bl` would contribute to a comma-separated condition.  A leaf with no recorded
+    /// score is charged the per-block maximum
+    /// [`MAX_SHAPE_STMTS`](crate::p8_structure::kuna_condfold::MAX_SHAPE_STMTS) (a
+    /// not-complex block holds at most that many by definition), so the sum is always
+    /// an upper bound.
+    fn cond_stmt_count(&self, bl: BlockId) -> int4 {
+        let cap = crate::p8_structure::kuna_condfold::MAX_SHAPE_STMTS;
+        match self.graph.block(bl).get_type() {
+            BlockType::Condition => {
+                let b0 = self.graph.block(bl).get_block(0);
+                let b1 = self.graph.block(bl).get_block(1);
+                self.cond_stmt_count(b0) + self.cond_stmt_count(b1)
+            }
+            BlockType::Copy => match self.graph.block(bl).get_copy() {
+                Some(basic) => self
+                    .condfold_sets
+                    .shape
+                    .get(&basic)
+                    .map(|v| v.scored)
+                    .unwrap_or(cap),
+                None => cap,
+            },
+            _ => cap,
+        }
+    }
+
+    /// (kuna, `option condfold`, Rule B) May the fold of `bl` with the complex
+    /// `orblock` proceed under the statement-shape rule?  The per-block allowlist and
+    /// caps were resolved when `condfold_sets` was precomputed; this is the
+    /// expression-size half.
+    fn shape_admits(&self, bl: BlockId, orblock: BlockId) -> bool {
+        if self.condfold_sets.shape.is_empty() {
+            return false;
+        }
+        if !self.is_shape_foldable(orblock) {
+            return false;
+        }
+        if self.cond_leaf_count(bl) + self.cond_leaf_count(orblock)
+            > crate::p8_structure::kuna_condfold::MAX_JOIN_LEAVES
+        {
+            return false;
+        }
+        // Only `orblock` renders under COMMA_SEPARATE at this fold; `bl`'s leading
+        // statements are emitted by the NO_BRANCH pass ahead of the `if`.  But a later
+        // fold can nest this whole BlockCondition as someone else's right operand, at
+        // which point every leaf prints inside the expression — so budget both sides.
+        if self.cond_stmt_count(bl) + self.cond_stmt_count(orblock)
+            > crate::p8_structure::kuna_condfold::MAX_JOIN_TOTAL_STMTS
+        {
+            return false;
+        }
+        crate::p8_structure::kuna_condfold::trace_admit_fold(
+            "CollapseStructure",
+            "shape",
+            bl,
+            orblock,
+        );
+        true
     }
 
     /// Attempt to apply a 2-component form of BlockIf (C++
@@ -3508,9 +3715,21 @@ impl Action for ActionBlockStructure {
                 switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
             }
         }
+        // (kuna, `option condfold`) the condfold-admissible subset of the *complex*
+        // blocks under either admission rule: a bounded, branch-free, comment-free
+        // printed-statement prefix in front of the trailing CBRANCH (Rule A), or the
+        // statement-shape allowlist (Rule B).  Such a sibling may still be folded
+        // into a short-circuit operand as a comma expression (angr Phoenix's
+        // MultiStatementExpression relaxation).  Empty and unbuilt when the option
+        // is off.
+        let condfold_sets = crate::p8_structure::kuna_condfold::compute_condfold_sets(
+            data,
+            data.get_arch().cond_fold,
+        );
         let sroot = data.sblocks_root();
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_complex_blocks(complex_blocks)
+            .with_condfold_sets(condfold_sets)
             .with_switch_blocks(switch_blocks)
             .with_switch_case_edges(switch_case_edges);
         let collapse_res = collapse.collapse_all();

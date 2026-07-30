@@ -1630,7 +1630,7 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 74 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
+        // 83 datatests + 84 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
         // ghangr-missing-function-call-1101b1, ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump,
         // branchflip-negated-guard / branchflip,
         // regionstructure-seq + regionstructure-loop + regionstructure-switch +
@@ -1662,8 +1662,17 @@ mod tests {
         // and modes-aggressive / the `mode reliable|aggressive` preset axis
         // (Architecture::apply_mode; returndup-only warning as the discriminator),
         // and ghangr-iteexpr / the `iteexpr` computed-arm ?: extension of iteregion
-        // (angr ITERegionConverter over computed arms; ternary in the on-pass only))
-        assert_eq!(count, 164, "corpus file count drifted");
+        // (angr ITERegionConverter over computed arms; ternary in the on-pass only),
+        // and the THREE `condfold` witnesses for the short-circuit fold across a
+        // COMPLEX sibling (angr Phoenix MultiStatementExpression relaxation),
+        // whose admission predicate is the UNION of two rules:
+        // ghangr-condfold / Rule A, the bounded prefix (crossing goto in the
+        // off-pass, comma-expression operand in the on-pass),
+        // ghangr-condfold-newbury / the guard-cascade shape, goto+label in the
+        // off-pass and neither at `wide` (it folds through Rule A), and
+        // ghangr-condfold-ruleb / Rule B ISOLATED, a guard whose two
+        // statement-root calls put it outside Rule A's call cap at every level)
+        assert_eq!(count, 167, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

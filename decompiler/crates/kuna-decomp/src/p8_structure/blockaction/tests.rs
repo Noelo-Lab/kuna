@@ -885,3 +885,262 @@ fn is_complex_condition_delegates_to_component_zero() {
     let cs = CollapseStructure::new(&mut g, root).with_complex_blocks(complex);
     assert!(cs.is_complex(cond), "complex getBlock(0) -> the condition is complex");
 }
+
+// ---------------------------------------------------------------------------
+// (kuna) `option condfold` -- the short-circuit fold across a COMPLEX sibling.
+// ---------------------------------------------------------------------------
+
+/// Build the canonical `ruleBlockOr` shape, oriented so neither
+/// `negate_condition_rec` call is needed (`orblock` is already `bl`'s out 0 and
+/// `clauseblock` is already `orblock`'s out 1):
+///
+/// ```text
+///   bl --0--> orblock --0--> other
+///    \--1--> clause <---1---/
+/// ```
+///
+/// Returns `(graph, root, bl, orblock, bb_bl, bb_or)` where the `bb_*` ids are
+/// the underlying "bblocks" `BlockBasic`s the two `BlockCopy` leaves point at.
+#[allow(clippy::type_complexity)]
+fn build_block_or_shape() -> (BlockGraph, BlockId, BlockId, BlockId, BlockId, BlockId) {
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    let bb_bl = g.new_block_basic(root);
+    let bb_or = g.new_block_basic(root);
+    let bl = g.new_block_copy(root, bb_bl);
+    let orblock = g.new_block_copy(root, bb_or);
+    let clause = g.new_block(root);
+    let other = g.new_block(root);
+    g.add_edge(bl, orblock); // bl out 0 -> the sibling condition
+    g.add_edge(bl, clause); // bl out 1 -> the shared clause
+    g.add_edge(orblock, other); // orblock out 0
+    g.add_edge(orblock, clause); // orblock out 1 -> the shared clause
+    (g, root, bl, orblock, bb_bl, bb_or)
+}
+
+/// Build a standalone `BlockCondition` over two fresh `BlockCopy` leaves of the
+/// given bblocks `BlockBasic`s, wired in the canonical or-shape
+/// `x --0--> y`, `x --1--> shared`, `y --0--> other`, `y --1--> shared` that
+/// [`BlockGraph::new_block_condition`] expects.
+fn build_nested_condition(
+    g: &mut BlockGraph,
+    root: BlockId,
+    bb_x: BlockId,
+    bb_y: BlockId,
+) -> BlockId {
+    let leaf_x = g.new_block_copy(root, bb_x);
+    let leaf_y = g.new_block_copy(root, bb_y);
+    let shared = g.new_block(root);
+    let other = g.new_block(root);
+    g.add_edge(leaf_x, leaf_y);
+    g.add_edge(leaf_x, shared);
+    g.add_edge(leaf_y, other);
+    g.add_edge(leaf_y, shared);
+    g.new_block_condition(root, leaf_x, leaf_y)
+        .expect("nested BlockCondition")
+}
+
+/// A `CondFoldSets` admitting `bb` under **Rule A** (bounded prefix) only.
+fn prefix_only(bb: BlockId) -> crate::p8_structure::kuna_condfold::CondFoldSets {
+    let mut s = crate::p8_structure::kuna_condfold::CondFoldSets::default();
+    s.prefix.insert(bb);
+    s
+}
+
+/// A `CondFoldSets` admitting each `(bb, scored_statements)` under **Rule B**
+/// (statement shape) only.
+fn shape_only(
+    entries: &[(BlockId, int4)],
+) -> crate::p8_structure::kuna_condfold::CondFoldSets {
+    let mut s = crate::p8_structure::kuna_condfold::CondFoldSets::default();
+    for &(bb, n) in entries {
+        // `printed` is not consulted at the fold site (the printed-width budget is
+        // enforced when `condfold_sets` is built, per block); mirror `scored` so the
+        // fixture stays self-consistent.
+        s.shape.insert(
+            bb,
+            crate::p8_structure::kuna_condfold::ShapeVerdict {
+                scored: n,
+                printed: n,
+            },
+        );
+    }
+    s
+}
+
+#[test]
+fn condfold_off_leaves_rule_block_or_declining_a_complex_sibling() {
+    // The upstream behavior, and the byte-identical guarantee of `condfold off`:
+    // a complex `orblock` is refused outright, so nothing folds.
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    // No `with_condfold_sets` -> the option is off.
+    let mut cs = CollapseStructure::new(&mut g, root).with_complex_blocks(complex);
+    assert!(
+        !cs.rule_block_or(bl).expect("rule_block_or"),
+        "a complex sibling must be refused when condfold is off"
+    );
+}
+
+#[test]
+fn condfold_rule_a_folds_a_complex_but_bounded_prefix_sibling() {
+    // Rule A (PR #193 / proposal #39): the SAME graph and the SAME complex verdict,
+    // but the sibling's underlying BlockBasic is in the bounded-prefix set.
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    let mut cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_sets(prefix_only(bb_or));
+    assert!(
+        cs.rule_block_or(bl).expect("rule_block_or"),
+        "a bounded-prefix complex sibling folds when condfold is on"
+    );
+}
+
+#[test]
+fn condfold_rule_b_folds_a_complex_but_shape_admissible_sibling() {
+    // Rule B (PR #194 / proposal #56): the union's second disjunct fires on its own,
+    // with an EMPTY Rule A set.  This is the guarantee that the consolidation did not
+    // silently drop one of the two predicates.
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    let mut cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_sets(shape_only(&[(bb_or, 1)]));
+    assert!(
+        cs.rule_block_or(bl).expect("rule_block_or"),
+        "a shape-admissible complex sibling folds when condfold is on"
+    );
+}
+
+#[test]
+fn condfold_relaxed_fold_reports_itself_complex() {
+    // Guard for `rule_block_while_do`: BlockCondition::isComplex delegates to
+    // getBlock(0), which here is the trivial LEFT operand -- so without the
+    // `condfolded` marking the comma chain in the RIGHT operand would be lifted
+    // into a `while(...)` header.  It is ALSO what keeps Rule B's expression-size
+    // caps reachable on a cascade (a relaxed result always re-enters the gate).
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or); // note: bb_bl (the LEFT operand) is NOT complex
+    let mut cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_sets(prefix_only(bb_or));
+    assert!(cs.rule_block_or(bl).expect("rule_block_or"));
+    // The folded node is the graph's newest component.
+    let folded = *cs
+        .graph
+        .block(root)
+        .get_list()
+        .last()
+        .expect("the folded BlockCondition is the newest component");
+    assert_eq!(cs.graph.block(folded).get_type(), BlockType::Condition);
+    assert!(
+        cs.is_complex(folded),
+        "a condfold-relaxed BlockCondition must report itself complex despite \
+         its trivial left operand"
+    );
+}
+
+#[test]
+fn condfold_rule_a_refuses_a_non_copy_operand() {
+    // Rule A precondition: only a BlockCopy of ONE BlockBasic may be relaxed.  A
+    // BlockList / BlockIf / BlockCondition operand can render braces, multiple
+    // lines, or a label inside the parentheses -- i.e. invalid C.  (Rule B is the
+    // only disjunct that may take a nested BlockCondition, and its set is empty
+    // here, so nothing admits `plain`.)
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let plain = g.new_block(root); // not a BlockCopy
+    let cs = CollapseStructure::new(&mut g, root).with_condfold_sets(prefix_only(bb_or));
+    assert!(
+        !cs.condfold_ok(bl, plain),
+        "a non-BlockCopy operand is never relaxed by Rule A"
+    );
+}
+
+#[test]
+fn condfold_rule_b_admits_a_nested_condition_operand() {
+    // Rule B's distinguishing power: a guard CASCADE folds because a
+    // BlockCondition sibling is admissible when BOTH of its leaves are.  Rule A
+    // never takes one (that is `condfold_rule_a_refuses_a_non_copy_operand`).
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let bb_x = g.new_block_basic(root);
+    let nested = build_nested_condition(&mut g, root, bb_x, bb_or);
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    complex.insert(bb_x);
+    let cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_sets(shape_only(&[(bb_or, 1), (bb_x, 1)]));
+    assert!(
+        cs.condfold_ok(bl, nested),
+        "a nested BlockCondition whose leaves are both shape-admissible folds"
+    );
+}
+
+#[test]
+fn condfold_rule_b_declines_a_nested_condition_with_an_inadmissible_leaf() {
+    // Both sub-blocks of a nested Condition print under COMMA_SEPARATE, so one
+    // inadmissible leaf declines the whole operand -- this is NOT `isComplex`'s
+    // getBlock(0)-only delegation.
+    let (mut g, root, bl, _orblock, _bb_bl, bb_or) = build_block_or_shape();
+    let bb_x = g.new_block_basic(root);
+    let nested = build_nested_condition(&mut g, root, bb_x, bb_or);
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    complex.insert(bb_x);
+    // bb_x is complex and NOT in the shape map -> inadmissible.
+    let cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_sets(shape_only(&[(bb_or, 1)]));
+    assert!(
+        !cs.condfold_ok(bl, nested),
+        "one inadmissible leaf declines the whole nested operand"
+    );
+}
+
+#[test]
+fn condfold_rule_b_enforces_the_total_statement_cap() {
+    // The S4 expression-size cap: two leaves each scored at the per-block maximum
+    // exceed MAX_JOIN_TOTAL_STMTS once `bl`'s own charge is added, so the fold is
+    // declined even though every leaf is individually admissible.
+    use crate::p8_structure::kuna_condfold::{MAX_JOIN_TOTAL_STMTS, MAX_SHAPE_STMTS};
+    let (mut g, root, bl, _orblock, bb_bl, bb_or) = build_block_or_shape();
+    let bb_x = g.new_block_basic(root);
+    let nested = build_nested_condition(&mut g, root, bb_x, bb_or);
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(bb_or);
+    complex.insert(bb_x);
+    complex.insert(bb_bl);
+    let cs = CollapseStructure::new(&mut g, root)
+        .with_complex_blocks(complex)
+        .with_condfold_sets(shape_only(&[
+            (bb_or, MAX_SHAPE_STMTS),
+            (bb_x, MAX_SHAPE_STMTS),
+            (bb_bl, MAX_SHAPE_STMTS),
+        ]));
+    assert!(
+        3 * MAX_SHAPE_STMTS > MAX_JOIN_TOTAL_STMTS,
+        "the fixture must actually exceed the cap"
+    );
+    assert!(
+        !cs.condfold_ok(bl, nested),
+        "the expression-size cap must decline an over-wide fold"
+    );
+}
+
+#[test]
+fn condfold_ok_is_dead_when_the_option_is_off() {
+    // With both admission sets empty (the `condfold off` state) the gate can never
+    // fire, whatever the operand is.
+    let (mut g, root, bl, orblock, _bb_bl, _bb_or) = build_block_or_shape();
+    let cs = CollapseStructure::new(&mut g, root);
+    assert!(
+        !cs.condfold_ok(bl, orblock),
+        "empty sets -> the relaxation is dead"
+    );
+}
