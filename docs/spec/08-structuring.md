@@ -95,7 +95,7 @@ and they are the two proposals this option closes:
 * a **crossing goto** — the second condition becomes its own block that
   branches back into the first arm's clause, where angr renders one compound
   condition. On coreutils `tr::build_spec_list` that is literally `result_idx =
-  &v10; if (es_match(es,v12,'=')) goto label_40242e;`.
+  &v9; if (es_match(es_00,v11,'=')) goto label_40242e;`.
 * a **goto + label into a guard cascade's shared body** — three permission
   guards whose arms reconverge cannot fold pairwise, so one of the two edges
   into the body has to be virtualized. On lighttpd `server.c::main` (angr

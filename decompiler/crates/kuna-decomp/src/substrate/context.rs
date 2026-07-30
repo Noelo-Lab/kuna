@@ -554,16 +554,19 @@ pub struct ArchContext {
     /// Only changes WHICH goto is chosen when virtualizing, so OFF is byte-identical.
     /// Read by [`crate::p8_structure::region_structurer::run_region_structurer`].
     pub region_edge_order: bool,
-    /// (kuna) short-circuit condition folding across a non-trivial sibling block
+    /// (kuna) short-circuit condition folding across a COMPLEX sibling block
     /// (`cond_fold`, option `condfold`, opt-in default-off).  When set, the
     /// short-circuit schema of BOTH structurers accepts a *complex* sibling
-    /// condition block, provided it is a `BlockCopy` of one bounded, branch-free,
-    /// comment-free `BlockBasic` — its prefix statements then render inside the
+    /// condition block when either admission rule takes it — Rule A, a `BlockCopy`
+    /// of one bounded, branch-free, comment-free `BlockBasic`; or Rule B, the
+    /// statement-shape allowlist, which also admits a nested `BlockCondition` so a
+    /// guard cascade can fold.  The absorbed statements then render inside the
     /// `&&`/`||` operand as a C comma expression (angr Phoenix's
     /// `MultiStatementExpression`).  Read by
-    /// [`crate::p8_structure::kuna_condfold::compute_condfold_blocks`] at both
-    /// precompute sites.  The value is the printed-statement cap: `0` = off,
-    /// `5` = `on` (angr parity), `9` = `wide`.
+    /// [`crate::p8_structure::kuna_condfold::compute_condfold_sets`] at both
+    /// precompute sites.  The value is Rule A's printed-statement cap, which
+    /// doubles as the option's on/off sentinel: `0` = off, `5` = `on` (angr
+    /// parity), `9` = `wide`.
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by

@@ -412,36 +412,55 @@ pub struct Architecture {
     /// structurer is already forced to emit one).  Port of angr SAILR
     /// `phoenix._last_resort_refinement` + `sailr._order_virtualizable_edges`.
     pub region_edge_order: bool,
-    /// (kuna) Short-circuit condition folding across a **non-trivial sibling
-    /// block** (angr Phoenix's `MultiStatementExpression` relaxation of
+    /// (kuna) Short-circuit condition folding across a **complex sibling block**
+    /// (angr Phoenix's `MultiStatementExpression` relaxation of
     /// `_match_acyclic_short_circuit_conditions`).  Ghidra's `ruleBlockOr` declines
     /// the `A || B` fold whenever the sibling condition block is *complex*
-    /// (`BlockBasic::isComplex`: more than two statements), so a single spill /
-    /// address computation parked in front of the second test costs a crossing
-    /// `goto` back into the first arm's clause.  When this is set, a complex
-    /// sibling is accepted anyway provided it is a `BlockCopy` of ONE `BlockBasic`
-    /// with a bounded (<=5 printed statements, <=1 *statement-root* call),
-    /// branch-free, comment-free prefix; the prefix then renders inside the
-    /// `&&`/`||` operand as a C comma expression, which the printer already supports
-    /// (`comma_separate`).  The fold moves no p-code — it re-parents two existing
-    /// structuring nodes — and C's short-circuit + comma sequencing preserves the
-    /// original execution paths and order.
+    /// (`BlockBasic::isComplex`: more than two statements), so a single spill,
+    /// address computation or extra call parked in front of the second test costs a
+    /// crossing `goto` back into the first arm's clause — or, on a guard cascade
+    /// whose arms reconverge, a `goto` + label into the shared body.  When this is
+    /// set, a complex sibling is accepted when **either** admission rule takes it:
     ///
-    /// The call cap counts only calls printed as their own comma-chain element: the
-    /// eligibility walk mirrors the printer, whose implied-output skip runs before
-    /// the call test, so a call inlined into the sibling's own condition is not
-    /// charged and a folded operand can render more than one call.  It is a
-    /// readability bound, not a soundness bound — see
-    /// [`MAX_PREFIX_CALLS`](crate::p8_structure::kuna_condfold::MAX_PREFIX_CALLS).
+    /// * **Rule A** — a `BlockCopy` of ONE `BlockBasic` with a bounded (<=5 printed
+    ///   statements at `on` / <=9 at `wide`, <=1 *statement-root* call),
+    ///   branch-free, comment-free prefix;
+    /// * **Rule B** — the statement-shape allowlist (marker / op with an output /
+    ///   void `CALL`/`CALLIND` / `STORE` / the single terminal `CBRANCH`), <=2
+    ///   scored statements and <=2 calls per block, no comment, and — because
+    ///   Rule B also admits a nested `BlockCondition` so a cascade can fold — <=4
+    ///   condition leaves and <=4 total scored statements at the fold site.
     ///
-    /// The value is the **printed-statement cap**, i.e. the option's policy level:
-    /// `0` = `option condfold off` (byte-identical to upstream: the precompute is
-    /// skipped and both gate disjuncts are dead), `5`
+    /// The absorbed statements then render inside the `&&`/`||` operand as a C comma
+    /// expression, which the printer already supports (`comma_separate`).  The fold
+    /// moves no p-code — it re-parents two existing structuring nodes — and C's
+    /// short-circuit + comma sequencing preserves the original execution paths and
+    /// order, so predicates that call functions need no purity analysis.
+    ///
+    /// Rule A's call cap counts only calls printed as their own comma-chain element:
+    /// the eligibility walk mirrors the printer, whose implied-output skip
+    /// necessarily runs before the call test, so a call inlined into the sibling's
+    /// own condition is not charged and a folded operand can render more than one
+    /// call.  That is deliberate and is a readability bound, not a soundness bound —
+    /// see
+    /// [`MAX_PREFIX_ROOT_CALLS`](crate::p8_structure::kuna_condfold::MAX_PREFIX_ROOT_CALLS).
+    /// Rule B charges every call op.
+    ///
+    /// Two effects are accepted rather than fixed: this is **not a monotone goto
+    /// reducer** (an individual function can gain a goto even where the aggregate
+    /// falls), and an advisory comment produced by a pass that runs *after*
+    /// structuring can be dropped by the `comma_separate` operand (the guard only
+    /// sees comments buffered at structuring time).
+    ///
+    /// The value is Rule A's **printed-statement cap**, which doubles as the whole
+    /// option's policy level: `0` = `option condfold off` (byte-identical to
+    /// upstream: the precompute is skipped and every gate disjunct is dead), `5`
     /// ([`MAX_PREFIX_STMTS_ANGR`](crate::p8_structure::kuna_condfold::MAX_PREFIX_STMTS_ANGR))
     /// = `on` (angr parity), `9`
     /// ([`MAX_PREFIX_STMTS_WIDE`](crate::p8_structure::kuna_condfold::MAX_PREFIX_STMTS_WIDE))
-    /// = `wide` (absorbs kuna's finer printed-statement granularity).  Default-OFF
-    /// opt-in.  See [`crate::p8_structure::kuna_condfold`].
+    /// = `wide` (absorbs kuna's finer printed-statement granularity; it moves ONLY
+    /// Rule A's cap).  Default-OFF opt-in.  See
+    /// [`crate::p8_structure::kuna_condfold`].
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
