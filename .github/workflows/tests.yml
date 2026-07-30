@@ -1,0 +1,150 @@
+name: Tests
+
+# Runs the repository's own gates -- the checks AGENTS.md requires green before
+# every commit -- on every pull request and every push to main:
+#
+#   make test              datatest corpus vs docs/baseline.json          (PARITY OK)
+#   make test-stages       stage corpus vs docs/baseline-stages.json      (PARITY OK)
+#   make check-spec        docs/spec/ anchors + phase-folder ownership
+#   kuna catalog --check   docs/options.md documents exactly the registered options
+#   make rust-test         the full cargo workspace suite
+#
+# Until this workflow existed the only automated checks on a PR were GitHub's
+# default CodeQL scan (the "Analyze (...)" jobs). CodeQL never builds the
+# engine and never evaluates a single decompiler assertion, so a change that
+# regressed every datatest still presented an all-green PR.
+#
+# The gates are split across two jobs that run in parallel: the parity gates
+# answer in minutes and catch the common regression, while the workspace suite
+# (a debug build of the whole workspace plus ~4300 tests) is the long pole.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR supersedes that PR's in-flight run; runs on main are never
+# cancelled, so every commit that lands keeps a result of its own.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+defaults:
+  run:
+    # Naming bash explicitly is what enables `-o pipefail`; the implicit default
+    # (`bash -e`) does not set it, which would let a failing command inside a
+    # pipeline report success.
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  gates:
+    name: parity gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      # Same cache action and workspace the release/pages workflows use.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: decompiler
+          key: gates
+
+      - name: Build binaries and compile the SLEIGH specs
+        run: make binaries specs
+
+      # `.sla` files are gitignored build artifacts and EVERY datatest decodes
+      # through them. `make test` would bootstrap them on demand, but asserting
+      # the tree is complete here turns a partial spec build into a clear
+      # failure instead of a confusing corpus error.
+      - name: Verify the compiled spec tree is complete
+        run: |
+          want=$(find specs -name '*.slaspec' | wc -l)
+          got=$(find specs -name '*.sla' | wc -l)
+          echo "compiled $got of $want .slaspec"
+          if [ "$got" -ne "$want" ] || [ "$got" -eq 0 ]; then
+            echo "::error::compiled $got .sla for $want .slaspec -- the spec tree is incomplete"
+            exit 1
+          fi
+
+      - name: make test -- datatest corpus vs docs/baseline.json
+        run: make test
+
+      - name: make test-stages -- stage corpus vs docs/baseline-stages.json
+        run: make test-stages
+
+      - name: make check-spec
+        run: make check-spec
+
+      - name: kuna catalog --check
+        run: ./decompiler/target/release/kuna catalog --check
+
+  rust-test:
+    name: cargo workspace suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: decompiler
+          key: rust-test
+
+      # THIS STEP IS LOAD-BEARING, not a convenience. ~55 tests across the
+      # kuna-console/kuna-analysis suites bootstrap a real binary, and when no
+      # `.sla` is present they print "skipping (bootstrap failed, build `.sla`
+      # with `make specs`)" and return early -- by design, so a specs-less
+      # checkout is a visible skip rather than a false failure. But cargo
+      # CAPTURES the output of a passing test, so without `--nocapture` that
+      # notice is invisible: the suite reports "ok" in 0.05 s instead of doing
+      # the work. Compiling the specs first is what makes those tests real.
+      - name: Compile the SLEIGH specs
+        run: make specs
+
+      - name: Verify the compiled spec tree is complete
+        run: |
+          want=$(find specs -name '*.slaspec' | wc -l)
+          got=$(find specs -name '*.sla' | wc -l)
+          echo "compiled $got of $want .slaspec"
+          if [ "$got" -ne "$want" ] || [ "$got" -eq 0 ]; then
+            echo "::error::compiled $got .sla for $want .slaspec -- the spec tree is incomplete"
+            exit 1
+          fi
+
+      # The canary for the trap described above: run one engine-bootstrapping
+      # suite with output shown and fail if it announces a spec-related skip.
+      # The completeness check above should already guarantee this; this catches
+      # the case where the tree is fully built but the engine still cannot
+      # resolve a language id, which would otherwise silently hollow out the
+      # whole run. Cheap -- the binary is built by the suite step regardless.
+      - name: Canary -- engine e2e tests must not skip
+        run: |
+          cd decompiler
+          out=$(cargo test -p kuna-console --test verify_decompile_all -- --nocapture 2>&1)
+          echo "$out"
+          if grep -qE 'skipping \(.*(\.sla|make specs|specs tree)' <<<"$out"; then
+            echo "::error::engine e2e tests skipped for missing/unusable SLEIGH specs -- the suite would be a false green"
+            exit 1
+          fi
+
+      - name: make rust-test -- the full cargo workspace suite
+        run: make rust-test
