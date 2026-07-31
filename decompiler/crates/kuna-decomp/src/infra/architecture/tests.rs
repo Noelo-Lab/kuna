@@ -137,7 +137,7 @@ fn reset_defaults_is_idempotent_after_mutation() {
 }
 
 #[test]
-fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850() {
+fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     // Off-by-default under the shipped defaults.
     assert!(!arch.analysis_listing);
@@ -147,6 +147,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850() {
     assert!(!arch.duplicate_shared_returns);
     assert!(!arch.sparc_struct_return);
     assert!(!arch.v850_indirect_branch);
+    assert!(!arch.analysis_dwarf_lines);
 
     arch.apply_mode("aggressive").expect("aggressive mode applies");
 
@@ -157,9 +158,11 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850() {
     assert!(arch.switch_guard_bound);
     assert!(arch.duplicate_shared_returns);
     assert!(arch.sparc_struct_return); // SPARC-idiom-gated, safe to enable
-    // The one intentional exclusion: aggressive must NOT enable this (it
-    // reclassifies register-indirect calls on non-V850 targets).
+    // Exclusion 1: reclassifies register-indirect calls on non-V850 targets.
     assert!(!arch.v850_indirect_branch);
+    // Exclusion 2: annotates every statement of a `-g` binary with a
+    // `/* src.c:NNN */` comment — noise, not recovery.
+    assert!(!arch.analysis_dwarf_lines);
 }
 
 #[test]

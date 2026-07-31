@@ -17,7 +17,8 @@
 //!     alias with an empty override list). Anchors the "give me the safe output"
 //!     product surface and future-proofs the preset if defaults later drift.
 //!   - **`aggressive`** -- turn on every off-by-default quality/recovery/analysis
-//!     pass for the most-recovered (and slowest, most speculative) output.
+//!     pass for the most-recovered (and slowest, most speculative) output. Two
+//!     options are excluded (see [`AGGRESSIVE_OVERRIDES`]).
 //!   - **`fast`** -- replace exhaustive discovery with a rooted recursive pass
 //!     plus conservative pointer validation while retaining per-function transforms.
 //!
@@ -67,9 +68,10 @@ pub const MODE_TABLE: &[Mode] = &[
     Mode {
         name: "aggressive",
         summary: "Maximum recovery: turn on every off-by-default quality, \
-                  structuring, and analysis pass. Slower and more speculative \
-                  (may over-recover); best for readability and the benchmark \
-                  ceiling, not for guaranteed faithfulness.",
+                  structuring, and analysis pass except v850indirectbranch and \
+                  dwarf_lines. Slower and more speculative (may over-recover); \
+                  best for readability and the benchmark ceiling, not for \
+                  guaranteed faithfulness.",
         automatic: false,
         overrides: AGGRESSIVE_OVERRIDES,
     },
@@ -91,16 +93,24 @@ pub const MODE_TABLE: &[Mode] = &[
 const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 
 /// `aggressive` = every off-by-default option flipped ON, **except**
-/// `v850indirectbranch`.
+/// `v850indirectbranch` and `dwarf_lines`.
 ///
-/// All 21 default-off options are safe to blanket-enable except that one: unlike
+/// The default-off options are safe to blanket-enable except those two. Unlike
 /// the format-gated no-ops (`rtti`/`pdb`=PE, `objc`/`macho-arm64e`=Mach-O,
-/// `sparcstructret`=SPARC `unimp`-trap idiom -- all inert off their target),
-/// `v850indirectbranch`'s predicate matches *any* register-indirect `CALLIND`
-/// (`kuna_is_v850_indirect_jmp`, `p2_lift/kuna_v850indbranch.rs`), so on x86-64 /
-/// ARM it would reclassify every `call reg` into an indirect branch -- corruption,
-/// not recovery. It stays a manual per-target opt-in (`--option
-/// v850indirectbranch on`) even under `--mode aggressive`.
+/// `sparcstructret`=SPARC `unimp`-trap idiom -- all inert off their target):
+///
+///   - `v850indirectbranch`'s predicate matches *any* register-indirect `CALLIND`
+///     (`kuna_is_v850_indirect_jmp`, `p2_lift/kuna_v850indbranch.rs`), so on
+///     x86-64 / ARM it would reclassify every `call reg` into an indirect branch
+///     -- corruption, not recovery.
+///   - `dwarf_lines` recovers nothing. It annotates every instruction with its
+///     `.debug_line` `file:line` and those comments survive into the C body, so
+///     on any binary built with `-g` it buries the code under interleaved
+///     `/* src.c:NNN */` lines (`auto` picks `aggressive` under 500 KiB, which
+///     made that the *default* rendering for small debug binaries).
+///
+/// Both stay manual per-run opt-ins (`--option v850indirectbranch on`, `--option
+/// dwarf_lines on`) even under `--mode aggressive`.
 const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // transform-tier default-off recovery/structuring passes.
     ("switchmodbound", "on"),
@@ -117,7 +127,6 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("fast_funcdisc", "on"),
     ("eh_frame_full", "on"),
     ("funcstart_patterns", "on"),
-    ("dwarf_lines", "on"),
     ("addrtable", "on"),
     ("operand_refs", "on"),
     ("formatstring", "on"),
@@ -241,12 +250,17 @@ mod tests {
     }
 
     #[test]
-    fn aggressive_excludes_v850_but_includes_the_rest() {
+    fn aggressive_excludes_v850_and_dwarf_lines_but_includes_the_rest() {
         let agg = mode_overrides("aggressive").unwrap();
-        // The one intentional exclusion: it corrupts non-V850 targets.
+        // The two intentional exclusions: corruption off-V850, and source-line
+        // comment noise over every statement of a `-g` binary.
         assert!(
             !agg.iter().any(|(o, _)| *o == "v850indirectbranch"),
             "aggressive must NOT enable v850indirectbranch (reclassifies x86-64 call reg)"
+        );
+        assert!(
+            !agg.iter().any(|(o, _)| *o == "dwarf_lines"),
+            "aggressive must NOT enable dwarf_lines (buries `-g` output in /* src.c:N */)"
         );
         // Representative members that MUST be on.
         for want in ["listing", "aif", "switchguardbound", "returndup", "sparcstructret"] {

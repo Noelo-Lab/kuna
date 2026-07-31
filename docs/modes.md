@@ -21,7 +21,7 @@ session changes only the options that second mode names. Discover them with
 |---|---|
 | `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger. |
 | `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list. |
-| `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
+| `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass except `v850indirectbranch` and `dwarf_lines`. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
 | `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. |
 
 ## `auto` (default)
@@ -67,7 +67,7 @@ future-proofs the preset: if the defaults later drift more aggressive,
 
 ## `aggressive`
 
-`aggressive` flips **every** off-by-default option on, with **one** exclusion.
+`aggressive` flips **every** off-by-default option on, with **two** exclusions.
 The options it enables:
 
 - **transform tier**: `switchmodbound`, `switchguardbound` (speed-costly),
@@ -75,21 +75,32 @@ The options it enables:
   `regionedgeorder`, `returndup`, `iteexpr`
 - **analysis tier**: `listing` (the master gate that enables the
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
-  `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `dwarf_lines`, `addrtable`,
+  `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
   `operand_refs`, `formatstring`, `fid`, `rtti`, `aif`, `objc`, `pdb`,
   `macho-arm64e`
 
-### The one exclusion: `v850indirectbranch`
+### The two exclusions: `v850indirectbranch` and `dwarf_lines`
 
 Every other off-by-default option is safe to blanket-enable: the format-specific
 ones are inert off their target (`rtti`/`pdb` = PE, `objc`/`macho-arm64e` =
 Mach-O, `sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off
-SPARC). `v850indirectbranch` is the exception — its predicate
-(`kuna_is_v850_indirect_jmp`, `p2_lift/kuna_v850indbranch.rs`) matches **any**
-register-indirect `CALLIND`, so on x86-64/ARM it would reclassify every
-`call reg` into an indirect branch — corruption, not recovery. It therefore stays
-a manual per-target opt-in (`--option v850indirectbranch on`) even under
-`--mode aggressive`.
+SPARC). Two are not:
+
+- **`v850indirectbranch`** — its predicate (`kuna_is_v850_indirect_jmp`,
+  `p2_lift/kuna_v850indbranch.rs`) matches **any** register-indirect `CALLIND`,
+  so on x86-64/ARM it would reclassify every `call reg` into an indirect branch
+  — corruption, not recovery.
+- **`dwarf_lines`** — it recovers nothing. It attaches every instruction's
+  `.debug_line` `file:line` as a comment, and those survive into the emitted C,
+  so on any `-g` binary the body renders interleaved with `/* src.c:NNN */`
+  lines (often several per statement, since one C statement spans many
+  instructions). Because `auto` selects `aggressive` under 500 KiB, including it
+  here made that annotated form the *default* rendering for small debug
+  binaries, which is a readability regression, not a recovery win (DIV-43).
+
+Both therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
+`--option dwarf_lines on`) even under `--mode aggressive`; a named `--option`
+still wins over the preset by last-write precedence.
 
 ### Caveats
 

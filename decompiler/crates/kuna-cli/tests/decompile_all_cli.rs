@@ -906,3 +906,58 @@ fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
         "the single-function `kuna decompile` path must prune the error(2) fall-through:\n{on}"
     );
 }
+
+/// `dwarf_lines` must stay a per-run opt-in even under `--mode aggressive`.
+///
+/// `auto` (the file-frontend default since DIV-40) resolves to `aggressive`
+/// below 500 KiB, so while `aggressive` carried `dwarf_lines on` every small
+/// `-g` binary rendered its whole body interleaved with `/* src.c:NNN */`
+/// comments by default. `cet_pie_x86_64` (20 KiB, DWARF, resolves to
+/// `aggressive`) is the repro: annotated only when the option is named.
+#[test]
+fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/cet_pie_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let code = |extra: &[&str]| -> Option<String> {
+        let mut a: Vec<&str> =
+            vec!["decompile", &bin, "elaborate_debug_symbol", "--sleighpath", &sp];
+        a.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&a);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                return None;
+            }
+            panic!("kuna decompile failed for {extra:?}: {stderr}");
+        }
+        Some(stdout)
+    };
+
+    let Some(default) = code(&[]) else {
+        return; // specs-less skip
+    };
+    assert!(
+        default.contains("elaborate_debug_symbol"),
+        "expected the function body, got:\n{default}"
+    );
+    assert!(
+        !default.contains("/* debug_symbol.c:"),
+        "the default (auto -> aggressive here) must NOT annotate source lines:\n{default}"
+    );
+
+    let aggressive = code(&["--mode", "aggressive"]).expect("second run succeeds");
+    assert!(
+        !aggressive.contains("/* debug_symbol.c:"),
+        "--mode aggressive must NOT annotate source lines:\n{aggressive}"
+    );
+
+    // Named explicitly, the pass still works — and outranks the mode.
+    let opted_in = code(&["--option", "dwarf_lines", "on"]).expect("third run succeeds");
+    assert!(
+        opted_in.contains("/* debug_symbol.c:124 */"),
+        "`--option dwarf_lines on` must still annotate source lines:\n{opted_in}"
+    );
+}
