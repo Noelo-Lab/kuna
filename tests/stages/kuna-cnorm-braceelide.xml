@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna C-surface normalization: a single-statement if body drops its braces
+    and prints the statement indented on the next line (user-reported
+    readability issue on the angr fmt corpus binary; no upstream GH issue).
+
+    Upstream Ghidra always braces the body.  kuna adds the settable option
+    `braceelide` (DIV-37, docs/history.md), default-on: emit_block_if elides
+    the braces when the then-body is a plain single-statement BlockCopy leaf
+    (no label, no comment, exactly one printed op).  Labels, comments,
+    multi-statement bodies, else arms, and loop/switch bodies keep braces;
+    the `if (cond) goto L;` one-liner and `else if` collapse are unaffected.
+
+    Stage model: S9 emission / brace-form policy.  P0 assertion:
+    `option braceelide on|off`.
+
+    be_fn (0x100000): int4 be_fn(int4 x) { if (x) return 7; return 3; }
+      test edi,edi / jz +6 / mov eax,7 / ret / mov eax,3 / ret
+
+    Pass 1 (default): the braceless form - `if (x)` with `return 7;` on the
+    next line at one extra indent (assert #1, a 2-line chain, exactly once;
+    the braced form cannot match because ` {` breaks the `$` anchor).
+    Pass 2 (option braceelide off): the upstream braced `if (x) {`
+    (assert #2, exactly once).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+85ff7406b807000000c3b803000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="be_fn"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 be_fn(int4 x);</com>
+  <com>lo fu be_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option braceelide off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CNORM-BRACEELIDE #1: default renders the single-statement body braceless, indented (DIV-37)" min="1" max="1">if \(x\)$
+^ {4}return 7;$</stringmatch>
+<stringmatch name="CNORM-BRACEELIDE #2: braceelide off restores the upstream braced body" min="1" max="1">if \(x\) \{</stringmatch>
+</decompilertest>

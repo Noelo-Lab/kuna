@@ -17,6 +17,8 @@ d4ffffffecffffff04000000
 <symbol space="ram" offset="0x100000" name="testval"/>
 </binaryimage>
 <script>
+  <!-- kuna: braceelide default-on (DIV-37); this upstream test pins the braced single-statement if-body rendering -->
+  <com>option braceelide off</com>
   <com>lo fu testval</com>
   <com>decompile</com>
   <com>print C</com>

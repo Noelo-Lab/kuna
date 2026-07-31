@@ -1679,8 +1679,10 @@ mod tests {
         // and kuna-cnorm-compoundassign / the DIV-35 emitInplaceOp port
         // (out = out OP y renders out OP= y; inplaceops off restores),
         // and kuna-cnorm-truthycond / the DIV-36 truthy condition option
-        // (if (x != 0) renders if (x), if (p == 0) renders if (!p))
-        assert_eq!(count, 171, "corpus file count drifted");
+        // (if (x != 0) renders if (x), if (p == 0) renders if (!p)),
+        // and kuna-cnorm-braceelide / the DIV-37 single-statement if-body
+        // brace elision (braceless indented statement; braceelide off restores)
+        assert_eq!(count, 172, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

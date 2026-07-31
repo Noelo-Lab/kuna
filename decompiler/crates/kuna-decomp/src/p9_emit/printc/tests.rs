@@ -682,6 +682,9 @@ fn option_defaults_match_reset_defaults_printc() {
     // (kuna) DIV-36: boolean-context zero comparisons render in truthy form
     // (`option truthycond off` restores the explicit comparisons).
     assert!(o.truthy_cond);
+    // (kuna) DIV-37: single-statement if bodies drop their braces
+    // (`option braceelide off` restores the braced form).
+    assert!(o.brace_elide);
     // (kuna) DIV-33: no blank line between the prototype and `{` (upstream
     // skip_line; `option braceformat function skip` restores it).
     assert_eq!(o.brace_func, BraceStyle::NextLine);
@@ -705,6 +708,8 @@ fn option_setters() {
     assert_eq!(o.brace_func, BraceStyle::SkipLine);
     o.set_truthy_cond(false);
     assert!(!o.truthy_cond());
+    o.set_brace_elide(false);
+    assert!(!o.brace_elide());
 }
 
 // ---------------------------------------------------------------------------
