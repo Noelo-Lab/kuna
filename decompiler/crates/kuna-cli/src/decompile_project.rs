@@ -3,7 +3,7 @@
 //! ```text
 //!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
 //!                          [--addr 0xVMA].. [--max-fn-seconds N]
-//!                          [--mode reliable|aggressive] [--option N V]..
+//!                          [--mode reliable|aggressive|fast] [--option N V]..
 //!                          [--slice ARCH] [--target T] [--sleighpath D]
 //! ```
 //!
@@ -12,7 +12,7 @@
 //! `<binary-filename>.kuna/` next to the binary, `-o DIR` overrides — designed
 //! so a human or LLM can study the binary and attempt recompilation:
 //!
-//! * `<name>.c`   — every decompiled function (`// Function: <name> @ <addr>`
+//! * `<name>.c`   — every selected executable function (`// Function: <name> @ <addr>`
 //!   headers, exactly the `decompile-all` rendering), `#include "<name>.h"`.
 //! * `<name>.h`   — include-guarded recompile prelude (core scalar +
 //!   `undefined` typedefs), the user-defined type definitions
@@ -95,12 +95,12 @@ pub fn run(argv: &[String]) -> i32 {
 fn usage() {
     eprintln!(
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
-         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode reliable|aggressive] \\\n\
+         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode reliable|aggressive|fast] \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile a whole binary in one in-process load and write a project folder\n\
          (default `<binary-filename>.kuna/` next to the binary; -o DIR overrides):\n\
-         \x20 <name>.c    every decompiled function (#include \"<name>.h\")\n\
+         \x20 <name>.c    every selected executable function (#include \"<name>.h\")\n\
          \x20 <name>.h    recompile prelude + type definitions + prototypes\n\
          \x20 <name>.asm  labeled disassembly (function labels, stack-var comments,\n\
          \x20             dat_<hex> data labels with raw bytes)\n\

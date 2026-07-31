@@ -1672,15 +1672,15 @@ mod tests {
         // off-pass and neither at `wide` (it folds through Rule A), and
         // ghangr-condfold-ruleb / Rule B ISOLATED, a guard whose two
         // statement-root calls put it outside Rule A's call cap at every level,
-        // and kuna-cnorm-protogap / the DIV-33 brace-placement default flip
+        // and kuna-cnorm-protogap / the DIV-34 brace-placement default flip
         // (no blank line between a prototype and `{`; braceformat restores),
-        // and kuna-cnorm-nullprint / the DIV-34 NULL-token default flip
+        // and kuna-cnorm-nullprint / the DIV-35 NULL-token default flip
         // (zero pointer constants render NULL; nullprinting off restores),
-        // and kuna-cnorm-compoundassign / the DIV-35 emitInplaceOp port
+        // and kuna-cnorm-compoundassign / the DIV-36 emitInplaceOp port
         // (out = out OP y renders out OP= y; inplaceops off restores),
-        // and kuna-cnorm-truthycond / the DIV-36 truthy condition option
+        // and kuna-cnorm-truthycond / the DIV-37 truthy condition option
         // (if (x != 0) renders if (x), if (p == 0) renders if (!p)),
-        // and kuna-cnorm-braceelide / the DIV-37 single-statement if-body
+        // and kuna-cnorm-braceelide / the DIV-38 single-statement if-body
         // brace elision (braceless indented statement; braceelide off restores)
         assert_eq!(count, 172, "corpus file count drifted");
     }

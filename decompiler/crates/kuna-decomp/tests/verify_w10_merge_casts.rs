@@ -399,7 +399,7 @@ mod harness {
 /// now-active `ActionSetCasts` must leave this *exactly* unchanged — no spurious
 /// CAST/PTRSUB inserted into a typeless integer body.
 const BOOLLESS_CPP_B5: &str =
-    // (Header gap adjusted for the kuna DIV-33 brace-placement default.)
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
     "\nuint1 boolless(void)\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
 
 #[test]

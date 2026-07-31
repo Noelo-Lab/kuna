@@ -395,12 +395,12 @@ pub struct PrintCOptions {
     /// `base + index` (C++ `option_arraynotation`, printc.hh:152).
     pub array_notation: bool,
     /// (kuna) In boolean contexts (if/while/for/ternary conditions, `&&`/`||`/
-    /// `!` operands), render `x != 0` as `x` and `x == 0` as `!x` (DIV-36,
+    /// `!` operands), render `x != 0` as `x` and `x == 0` as `!x` (DIV-37,
     /// `option truthycond`).  Float compares, enum-typed and equate-named
     /// zeros are excluded; value contexts (`v = (x != 0)`) never normalize.
     pub truthy_cond: bool,
     /// (kuna) A single-statement if-body drops its braces and prints the
-    /// statement indented on the next line (DIV-37, `option braceelide`).
+    /// statement indented on the next line (DIV-38, `option braceelide`).
     /// Copy-leaf single-statement bodies only; labels/comments keep braces.
     pub brace_elide: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
@@ -424,25 +424,25 @@ impl PrintCOptions {
     ///
     /// Note the kuna DIV-2 default-on `array_notation = true` (printc.cc:1658),
     /// the `&base[index]` form for a standalone PTRADD (GH-558), the kuna
-    /// DIV-33 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
+    /// DIV-34 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
     /// line between the prototype and `{`; `option braceformat function skip`
-    /// restores it), the kuna DIV-34 `null = true` (a zero pointer constant
+    /// restores it), the kuna DIV-35 `null = true` (a zero pointer constant
     /// renders as `NULL`, not `(type *)0x0`; `option nullprinting off`
-    /// restores the casted form), and the kuna DIV-35 `inplace_ops = true`
+    /// restores the casted form), and the kuna DIV-36 `inplace_ops = true`
     /// (`out = out OP y` renders as `out OP= y` via the ported
     /// `emitInplaceOp`; `option inplaceops off` restores).
     pub fn new() -> PrintCOptions {
         PrintCOptions {
             convention: true,
             hide_exts: true,
-            inplace_ops: true, // (kuna) DIV-35; upstream flag default off + never consumed
+            inplace_ops: true, // (kuna) DIV-36; upstream flag default off + never consumed
             nocasts: false,
-            null: true, // (kuna) DIV-34; upstream option_NULL default off
+            null: true, // (kuna) DIV-35; upstream option_NULL default off
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
-            truthy_cond: true, // (kuna) DIV-36; no upstream equivalent
-            brace_elide: true, // (kuna) DIV-37; no upstream equivalent
-            brace_func: BraceStyle::NextLine,   // (kuna) DIV-33; upstream Emit::skip_line
+            truthy_cond: true, // (kuna) DIV-37; no upstream equivalent
+            brace_elide: true, // (kuna) DIV-38; no upstream equivalent
+            brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
             brace_switch: BraceStyle::SameLine, // Emit::same_line
@@ -477,7 +477,7 @@ impl PrintCOptions {
     pub fn set_array_notation(&mut self, val: bool) {
         self.array_notation = val;
     }
-    /// (kuna) Toggle truthy condition rendering (`option truthycond`, DIV-36).
+    /// (kuna) Toggle truthy condition rendering (`option truthycond`, DIV-37).
     pub fn set_truthy_cond(&mut self, val: bool) {
         self.truthy_cond = val;
     }
@@ -486,7 +486,7 @@ impl PrintCOptions {
         self.truthy_cond
     }
     /// (kuna) Toggle single-statement if-body brace elision (`option
-    /// braceelide`, DIV-37).
+    /// braceelide`, DIV-38).
     pub fn set_brace_elide(&mut self, val: bool) {
         self.brace_elide = val;
     }
@@ -3083,7 +3083,7 @@ impl PrintC {
             self.emit.spaces(1, 0);
             self.emit_goto_statement(fd, cond_block, target, fd.sblocks_ref().block(blk).get_if_goto_type());
         } else if self.if_body_elides(fd, fd.sblocks_ref().block(blk).get_block(1)) {
-            // (kuna braceelide, DIV-37) A single-statement then-body drops its
+            // (kuna braceelide, DIV-38) A single-statement then-body drops its
             // braces: the statement prints on the next line at one extra indent
             // (its own tag_line in emit_basic_block_ops breaks the line).  The
             // predicate is Copy-leaf-only, so the body can never itself be an
@@ -3163,7 +3163,7 @@ impl PrintC {
         }
     }
 
-    /// (kuna braceelide, DIV-37) Does this if-body render braceless?  True when
+    /// (kuna braceelide, DIV-38) Does this if-body render braceless?  True when
     /// `option braceelide` is on and the body is a plain single-statement
     /// `BlockCopy` leaf: no label line (an unstructured-goto target keeps its
     /// braces), exactly ONE op that `emit_basic_block_ops` would print under
@@ -3803,7 +3803,7 @@ impl PrintC {
     /// C++ `PrintC::emitInplaceOp` (printc.cc, directly above `emitExpression`;
     /// gated by the `option_inplace_ops` head at printc.cc:2546 which upstream
     /// never wires beyond the flag — ported here as the flag's consumer,
-    /// default-on per kuna DIV-35).
+    /// default-on per kuna DIV-36).
     ///
     /// When the statement is `out = out OP y` — a two-input integer op whose
     /// first input is the SAME high-level variable as the output — render the
@@ -3886,7 +3886,7 @@ impl PrintC {
     /// open an assignment to it, then push the op's expression and recurse.
     fn emit_expression_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         // C++ `if (option_inplace_ops && emitInplaceOp(op)) return;`
-        // (printc.cc:2546) — the in-place `OP=` render, kuna DIV-35 default-on
+        // (printc.cc:2546) — the in-place `OP=` render, kuna DIV-36 default-on
         // (`option inplaceops off` restores the upstream `out = out OP y` form).
         // Applied to standalone `;`-terminated statements only: comma contexts
         // (for-loop headers, condition-block side effects) keep the upstream
@@ -3936,7 +3936,7 @@ impl PrintC {
     /// printc.cc:806-830); every other override ignores it.
     fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
-        // (kuna truthycond, DIV-36) CONDITION_CONTEXT only survives through the
+        // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
         // context, so scope the bit off across this dispatch (the mod-stack
         // frame restores it for our siblings).
@@ -4003,7 +4003,7 @@ impl PrintC {
                 if booleanflip {
                     self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
                 }
-                // (kuna truthycond, DIV-36) The condition value is consumed as
+                // (kuna truthycond, DIV-37) The condition value is consumed as
                 // a boolean — mark the context so a `!= 0`/`== 0` comparison
                 // renders in truthy form; same mod-stack frame carries the
                 // negate-token absorption.
@@ -4129,7 +4129,7 @@ impl PrintC {
         } else {
             tok
         };
-        // (kuna truthycond, DIV-36) A comparison consumed as a boolean: after
+        // (kuna truthycond, DIV-37) A comparison consumed as a boolean: after
         // the negate-token flip has settled which comparison actually prints,
         // `x != 0` renders as `x` and `x == 0` as `!x`.  The surviving operand
         // keeps CONDITION_CONTEXT (so `(a != 0) != 0` collapses fully); the
@@ -4172,7 +4172,7 @@ impl PrintC {
         }
     }
 
-    /// (kuna truthycond, DIV-36) For an INT_EQUAL/INT_NOTEQUAL comparison with
+    /// (kuna truthycond, DIV-37) For an INT_EQUAL/INT_NOTEQUAL comparison with
     /// exactly one zero operand eligible for truthy rendering, return the OTHER
     /// operand.  A zero is eligible when it is a plain constant 0 (directly, or
     /// through one implied CAST — the casted null-pointer shape) whose
@@ -4280,7 +4280,7 @@ impl PrintC {
     ///   - Otherwise print `!` followed by our input.
     fn op_bool_negate_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
-        // (kuna truthycond, DIV-36) Whether the operand may render truthy
+        // (kuna truthycond, DIV-37) Whether the operand may render truthy
         // depends on the arm: when the `!` is PRINTED (arm 3), the printed
         // operator re-booleanizes the value, so its operand is always a
         // boolean context.  When the `!` is ABSORBED (arm 2's negate-token

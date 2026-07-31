@@ -177,6 +177,88 @@ fn decompile_all_emits_json_for_main() {
     );
 }
 
+#[test]
+fn fast_mode_matches_explicit_options_and_user_override_wins() {
+    let bin = arm_entrymain();
+    let sp = specs();
+    let run = |extra: &[&str]| -> Option<String> {
+        let mut args =
+            vec!["decompile-all", bin.as_str(), "--json", "--no-vars", "--sleighpath", sp.as_str()];
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                return None;
+            }
+            panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
+        }
+        Some(stdout)
+    };
+
+    let Some(fast) = run(&["--mode", "fast"]) else {
+        eprintln!("fast mode: skipping (no `.sla`; run `make specs`)");
+        return;
+    };
+    let explicit = run(&[
+        "--option",
+        "listing",
+        "off",
+        "--option",
+        "funcstart_patterns",
+        "off",
+        "--option",
+        "aif",
+        "off",
+    ])
+    .expect("explicit fast-equivalent run");
+    assert_eq!(fast, explicit, "fast must equal its three explicit option overrides");
+
+    let noreturn = noreturn_fixture();
+    let base = [
+        "decompile-all",
+        noreturn.as_str(),
+        "--functions",
+        "compute",
+        "--json",
+        "--no-vars",
+        "--sleighpath",
+        sp.as_str(),
+    ];
+    let mut fast_args = base.to_vec();
+    fast_args.extend_from_slice(&["--mode", "fast"]);
+    let (fast_out, stderr, ok) = run_kuna(&fast_args);
+    assert!(ok, "fast no-return control failed: {stderr}");
+    assert!(
+        !code_field(&fast_out).contains("Subroutine does not return"),
+        "fast must keep the Listing/no-return consumer disabled"
+    );
+
+    let mut restored_args = base.to_vec();
+    restored_args.extend_from_slice(&["--mode", "fast", "--option", "listing", "on"]);
+    let (restored_out, stderr, ok) = run_kuna(&restored_args);
+    assert!(ok, "fast with Listing restored failed: {stderr}");
+    assert!(
+        code_field(&restored_out).contains("Subroutine does not return"),
+        "an explicit option after fast must win with last-write precedence"
+    );
+}
+
+#[test]
+fn modes_command_lists_fast_speed_preset() {
+    let (stdout, stderr, ok) = run_kuna(&["modes", "--json"]);
+    assert!(ok, "kuna modes failed: {stderr}");
+    let fast = stdout
+        .split("\"name\": \"fast\"")
+        .nth(1)
+        .expect("modes JSON must list fast after its name");
+    for option in ["listing", "funcstart_patterns", "aif"] {
+        assert!(
+            fast.contains(&format!("\"option\": \"{option}\"")),
+            "fast mode JSON missing {option}: {stdout}"
+        );
+    }
+}
+
 /// DIV-20: on a **non-x86-64** binary, `decompile-all` defaults
 /// `funcstart_patterns` ON — the primary function-discovery source when oracle 5
 /// (the x86-64-only prologue scan) does not apply. Without it a stripped ARM binary

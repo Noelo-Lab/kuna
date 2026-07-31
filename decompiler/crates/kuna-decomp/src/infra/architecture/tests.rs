@@ -171,6 +171,23 @@ fn apply_mode_reliable_is_a_no_op() {
 }
 
 #[test]
+fn apply_mode_fast_disables_only_program_wide_analysis() {
+    let mut arch = Architecture::new("test:LE:32", bare_sleigh());
+    arch.analysis_listing = true;
+    arch.analysis_funcstart_patterns = true;
+    arch.analysis_aif = true;
+
+    arch.apply_mode("fast").expect("fast mode applies");
+
+    assert!(!arch.analysis_listing);
+    assert!(!arch.analysis_funcstart_patterns);
+    assert!(!arch.analysis_aif);
+    assert!(arch.infer_funcentry);
+    assert!(arch.analysis_noreturn_propagate);
+    assert!(!arch.switch_guard_bound);
+}
+
+#[test]
 fn apply_mode_unknown_errors() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     assert!(arch.apply_mode("turbo").is_err());
