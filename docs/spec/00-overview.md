@@ -116,7 +116,7 @@ Four front-ends drive one engine assembly:
   and keeps the Listing off (the build would turn a cheap symbol walk into a
   whole-program decode).
 
-  The enumeration these surfaces walk is
+  The full callable-symbol inventory these surfaces share is
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_canonical)`,
   which yields **exactly one record per function entry address**, address-ordered.
   It exists because the raw symbol stream
@@ -144,9 +144,16 @@ Four front-ends drive one engine assembly:
   so `--addr` on an odd ARM address reaches the function rather than decoding
   mid-instruction. Both folds are gated to ARM, where an odd symbol address is
   never an instruction boundary; elsewhere an odd address is genuine and is left
-  alone. All four whole-binary surfaces — `decompile-all`, `functions`,
-  `decompile-project` (`decompiler/crates/kuna-cli/src/decompile_project.rs`), and
-  the wasm front-end (`decompiler/crates/kuna-wasm/src/lib.rs`) — share it.
+  alone. `kuna functions` and wasm `list` report this complete canonical
+  inventory, including callable import pointer slots. Unfiltered
+  `decompile-all`, `decompile-project`, and wasm whole-binary runs derive their
+  default target set through
+  `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_executable)`:
+  only entries inside a loader section carrying `CODE` are treated as function
+  bodies. Import slots remain installed for call naming, prototypes, and
+  unrestricted explicit address selection; name selection keeps its normal
+  first matching canonical-entry behavior when a stub and slot share a name. A
+  loader that publishes no section metadata retains the complete canonical set.
 - **`kuna_ghidra`** (`decompiler/crates/kuna-ghidra/src/bin/kuna_ghidra.rs`) —
   the ghidra-mode process front-end: the stock Ghidra GUI spawns it as its
   decompiler core and talks the burst-framed stdin/stdout protocol
@@ -301,13 +308,16 @@ and an agent writes:
   a *mode* is a named, ordered list of `(option, value)` overrides layered over the
   shipped defaults — a P0 pipeline-variant preset over the option surface, **not** a
   `[[settable]]` row (it references existing option names, so it never touches the
-  catalog or its count/tier gates). Two ship: **`reliable`** (the shipped defaults, an
-  empty-override alias) and **`aggressive`** (every off-by-default recovery/analysis
-  pass on, except `v850indirectbranch` which would mis-decode register-indirect calls
-  off-V850). Selected with `--mode` on `kuna decompile`/`decompile-all`/`functions` or
-  the console `mode <name>` command; overrides are applied *before* the user's
-  `--option` (last-write, so an explicit `--option` still wins). Discover with
-  `kuna modes`; full membership in [docs/modes.md](../modes.md).
+  catalog or its count/tier gates). Three ship: **`reliable`** (the shipped
+  defaults, an empty-override alias), **`aggressive`** (every off-by-default
+  recovery/analysis pass on, except `v850indirectbranch` which would mis-decode
+  register-indirect calls off-V850), and **`fast`** (`listing`,
+  `funcstart_patterns`, and `aif` off to avoid program-wide decode and
+  speculative discovery). Selected with `--mode` on `kuna decompile`,
+  `decompile-all`, `decompile-project`, or `functions`, or the console
+  `mode <name>` command; overrides are applied *before* the user's `--option`
+  (last-write, so an explicit `--option` still wins). Discover with `kuna modes`;
+  full membership in [docs/modes.md](../modes.md).
 - **The restart log** (kuna)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs (RestartLog)`):
   owned by the engine `Architecture` so it survives function clears; every

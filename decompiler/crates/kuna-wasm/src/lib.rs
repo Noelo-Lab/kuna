@@ -38,7 +38,7 @@ use classify::Classifier;
 enum Cmd {
     /// Enumerate functions only (cheap: no per-function decompile, Listing off).
     List,
-    /// Decompile every function.
+    /// Decompile every CODE-backed function.
     DecompileAll,
     /// Decompile one function, selected by name.
     DecompileName(String),
@@ -211,8 +211,8 @@ fn resolve_targets(
         .ok_or("no default code space")?;
 
     match command {
-        // One record per entry address, alias names carried as data (issue #197).
-        Cmd::DecompileAll => Ok(prog.function_entries_canonical()),
+        // Automatic whole-binary runs target code, not import pointer slots.
+        Cmd::DecompileAll => Ok(prog.function_entries_executable()),
         // An ALIAS resolves too — collapsing the enumeration must not make a
         // name that used to select a function stop working.
         Cmd::DecompileName(want) => match prog.find_entry_by_name(want) {

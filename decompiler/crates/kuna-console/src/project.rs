@@ -12,6 +12,7 @@
 //! [`ConsoleProgram`] and the resolved [`FunctionEntry`] target list.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::Path;
 
 use kuna_decomp::decompile_drive::{
@@ -298,6 +299,92 @@ pub fn collect_dat_addrs(results: &[FuncResult]) -> BTreeSet<u64> {
 /// address survive `resolve_targets`) results anchored at a normalized VMA.
 type LabelMap<'a> = BTreeMap<u64, Vec<&'a FuncResult>>;
 
+/// Reusable storage for the full-section disassembly sweep.
+struct AssemblyScratch {
+    mnem: String,
+    body: String,
+    raw: Vec<u8>,
+    line: String,
+    db_start: Option<u64>,
+    db: Vec<u8>,
+}
+
+impl AssemblyScratch {
+    fn new() -> Self {
+        Self {
+            mnem: String::with_capacity(16),
+            body: String::with_capacity(64),
+            raw: Vec::with_capacity(16),
+            line: String::with_capacity(128),
+            db_start: None,
+            db: Vec::with_capacity(8),
+        }
+    }
+
+    fn emit_instruction(&mut self, addr: u64, out: &mut String) {
+        self.line.clear();
+        write!(&mut self.line, "  {addr:08x}: ").unwrap();
+        for (idx, &byte) in self.raw.iter().enumerate() {
+            if idx != 0 {
+                self.line.push(' ');
+            }
+            push_lower_hex_byte(&mut self.line, byte);
+        }
+        let raw_width = self.raw.len().saturating_mul(3).saturating_sub(1);
+        for _ in raw_width..24 {
+            self.line.push(' ');
+        }
+        self.line.push_str("  ");
+        self.line.push_str(&self.mnem);
+        for _ in self.mnem.chars().count()..10 {
+            self.line.push(' ');
+        }
+        self.line.push(' ');
+        self.line.push_str(&self.body);
+        self.line.truncate(self.line.trim_end().len());
+        self.line.push('\n');
+        out.push_str(&self.line);
+    }
+
+    fn push_db(&mut self, addr: u64, byte: u8, out: &mut String) {
+        if self.db_start.is_none() {
+            self.db_start = Some(addr);
+        }
+        self.db.push(byte);
+        if self.db.len() == 8 {
+            self.flush_db(out);
+        }
+    }
+
+    fn flush_db(&mut self, out: &mut String) {
+        let Some(addr) = self.db_start.take() else { return };
+        self.line.clear();
+        write!(&mut self.line, "  {addr:08x}: db ").unwrap();
+        for (idx, &byte) in self.db.iter().enumerate() {
+            if idx != 0 {
+                self.line.push_str(", ");
+            }
+            self.line.push_str("0x");
+            push_lower_hex_byte(&mut self.line, byte);
+        }
+        self.line.push('\n');
+        out.push_str(&self.line);
+        self.db.clear();
+    }
+
+    fn emit_unreadable(&mut self, addr: u64, out: &mut String) {
+        self.line.clear();
+        writeln!(&mut self.line, "  {addr:08x}: db ?? (unreadable)").unwrap();
+        out.push_str(&self.line);
+    }
+}
+
+fn push_lower_hex_byte(out: &mut String, byte: u8) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    out.push(HEX[(byte >> 4) as usize] as char);
+    out.push(HEX[(byte & 0xf) as usize] as char);
+}
+
 /// `<name>.asm`: linear sweep of every CODE section with function labels +
 /// stack-var comment blocks, then the `; --- data ---` tail (named globals ∪
 /// the `dat_<hex>` set, with raw bytes).
@@ -328,10 +415,11 @@ pub fn build_asm(
         .map(|&(vma, size, _)| (vma, size))
         .collect();
     code_secs.sort_unstable();
+    let mut scratch = AssemblyScratch::new();
     for (vma, size) in code_secs {
         let end = vma.saturating_add(size);
         out.push_str(&format!("\n; --- code section 0x{vma:x}..0x{end:x} ---\n"));
-        sweep_code(prog, &labels, vma, end, &mut out);
+        sweep_code(prog, &labels, vma, end, &mut scratch, &mut out);
     }
 
     emit_data_tail(prog, &sections, dat_addrs, &mut out);
@@ -341,20 +429,18 @@ pub fn build_asm(
 /// Disassemble `[start, end)` linearly: labels + stack-var headers at function
 /// entries, one instruction line per decode, `db` byte lines (coalesced up to
 /// 8, clamped at the next label) where decoding fails.
-fn sweep_code(prog: &ConsoleProgram, labels: &LabelMap, start: u64, end: u64, out: &mut String) {
-    // Pending `db` bytes not yet flushed: (start VMA, bytes).
-    let mut db: Option<(u64, Vec<u8>)> = None;
-    let flush_db = |db: &mut Option<(u64, Vec<u8>)>, out: &mut String| {
-        if let Some((at, bytes)) = db.take() {
-            let hex = bytes.iter().map(|b| format!("0x{b:02x}")).collect::<Vec<_>>().join(", ");
-            out.push_str(&format!("  {at:08x}: db {hex}\n"));
-        }
-    };
-
+fn sweep_code(
+    prog: &ConsoleProgram,
+    labels: &LabelMap,
+    start: u64,
+    end: u64,
+    scratch: &mut AssemblyScratch,
+    out: &mut String,
+) {
     let mut addr = start;
     while addr < end {
         if let Some(rs) = labels.get(&addr) {
-            flush_db(&mut db, out);
+            scratch.flush_db(out);
             for r in rs {
                 out.push('\n');
                 out.push_str(&format!("{}:  ; 0x{:x}\n", r.name, r.address));
@@ -366,37 +452,131 @@ fn sweep_code(prog: &ConsoleProgram, labels: &LabelMap, start: u64, end: u64, ou
         // section end.
         let next_stop =
             labels.range(addr + 1..).next().map(|(&a, _)| a.min(end)).unwrap_or(end);
-        match prog.disassemble_at(addr) {
-            Ok((len, mnem, body)) if len > 0 && addr + len as u64 <= next_stop => {
-                flush_db(&mut db, out);
-                let bytes = prog.read_bytes(addr, len as usize).unwrap_or_default();
-                let hex = bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
-                let line = format!("  {addr:08x}: {hex:<24}  {mnem:<10} {body}");
-                out.push_str(line.trim_end());
-                out.push('\n');
+        match prog.disassemble_at_into(addr, &mut scratch.mnem, &mut scratch.body) {
+            Ok(len) if len > 0 && addr + len as u64 <= next_stop => {
+                scratch.flush_db(out);
+                prog.read_bytes_into(addr, len as usize, &mut scratch.raw);
+                scratch.emit_instruction(addr, out);
                 addr += len as u64;
             }
             _ => {
                 // Decode failure (or a decode that would cross the next label):
                 // one raw byte, coalesced into up-to-8-byte `db` lines.
-                match prog.read_bytes(addr, 1) {
-                    Some(bytes) => {
-                        let (_, pending) = db.get_or_insert_with(|| (addr, Vec::new()));
-                        pending.push(bytes[0]);
-                        if pending.len() >= 8 {
-                            flush_db(&mut db, out);
-                        }
-                    }
-                    None => {
-                        flush_db(&mut db, out);
-                        out.push_str(&format!("  {addr:08x}: db ?? (unreadable)\n"));
-                    }
+                if prog.read_bytes_into(addr, 1, &mut scratch.raw) {
+                    scratch.push_db(addr, scratch.raw[0], out);
+                } else {
+                    scratch.flush_db(out);
+                    scratch.emit_unreadable(addr, out);
                 }
                 addr += 1;
             }
         }
     }
-    flush_db(&mut db, out);
+    scratch.flush_db(out);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AssemblyScratch;
+
+    fn legacy_instruction_line(addr: u64, raw: &[u8], mnem: &str, body: &str) -> String {
+        let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+        let line = format!("  {addr:08x}: {hex:<24}  {mnem:<10} {body}");
+        format!("{}\n", line.trim_end())
+    }
+
+    #[test]
+    fn assembly_scratch_formats_exactly_without_reallocating() {
+        let mut scratch = AssemblyScratch::new();
+        let capacities = (
+            scratch.mnem.capacity(),
+            scratch.body.capacity(),
+            scratch.raw.capacity(),
+            scratch.line.capacity(),
+            scratch.db.capacity(),
+        );
+        let pointers = (
+            scratch.mnem.as_ptr(),
+            scratch.body.as_ptr(),
+            scratch.raw.as_ptr(),
+            scratch.line.as_ptr(),
+            scratch.db.as_ptr(),
+        );
+        let mut out = String::new();
+
+        scratch.mnem.push_str("PUSH");
+        scratch.body.push_str("RBP");
+        scratch.raw.push(0x55);
+        scratch.emit_instruction(0x40071d, &mut out);
+
+        scratch.mnem.clear();
+        scratch.body.clear();
+        scratch.raw.clear();
+        scratch.mnem.push_str("RET");
+        scratch.raw.push(0xc3);
+        scratch.emit_instruction(0x40071e, &mut out);
+
+        for (idx, byte) in [0x00, 0x0f, 0xa5, 0xff].into_iter().enumerate() {
+            scratch.push_db(0x400720 + idx as u64, byte, &mut out);
+        }
+        scratch.flush_db(&mut out);
+
+        assert_eq!(
+            out,
+            concat!(
+                "  0040071d: 55                        PUSH       RBP\n",
+                "  0040071e: c3                        RET\n",
+                "  00400720: db 0x00, 0x0f, 0xa5, 0xff\n",
+            )
+        );
+        assert_eq!(
+            capacities,
+            (
+                scratch.mnem.capacity(),
+                scratch.body.capacity(),
+                scratch.raw.capacity(),
+                scratch.line.capacity(),
+                scratch.db.capacity(),
+            )
+        );
+        assert_eq!(
+            pointers,
+            (
+                scratch.mnem.as_ptr(),
+                scratch.body.as_ptr(),
+                scratch.raw.as_ptr(),
+                scratch.line.as_ptr(),
+                scratch.db.as_ptr(),
+            )
+        );
+    }
+
+    #[test]
+    fn assembly_scratch_matches_legacy_format_edge_cases() {
+        let cases: &[(&[u8], &str, &str)] = &[
+            (&[], "", ""),
+            (&[0x00, 0x01, 0x7f, 0x80, 0xfe, 0xff], "LOAD", "R0,0xff "),
+            (
+                &[0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99],
+                "TENLETTERS",
+                "",
+            ),
+            (&[0xab], "é", "operand"),
+        ];
+        let mut scratch = AssemblyScratch::new();
+        for (idx, &(raw, mnem, body)) in cases.iter().enumerate() {
+            scratch.raw.clear();
+            scratch.raw.extend_from_slice(raw);
+            scratch.mnem.clear();
+            scratch.mnem.push_str(mnem);
+            scratch.body.clear();
+            scratch.body.push_str(body);
+            let mut actual = String::new();
+            let addr = 0x400700 + idx as u64;
+            scratch.emit_instruction(addr, &mut actual);
+            assert_eq!(actual, legacy_instruction_line(addr, raw, mnem, body));
+        }
+    }
 }
 
 /// The per-function variable comment block: `; arg:` lines (ABI order), then

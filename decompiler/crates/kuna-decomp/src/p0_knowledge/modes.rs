@@ -8,20 +8,23 @@
 //! / the catalog count+tier gates. With no mode selected, behaviour is
 //! byte-identical to the shipped defaults.
 //!
-//! Two modes ship:
+//! Three modes ship:
 //!   - **`reliable`** -- the shipped, well-tested defaults (a stable, named
 //!     alias with an empty override list). Anchors the "give me the safe output"
 //!     product surface and future-proofs the preset if defaults later drift.
 //!   - **`aggressive`** -- turn on every off-by-default quality/recovery/analysis
 //!     pass for the most-recovered (and slowest, most speculative) output.
+//!   - **`fast`** -- disable whole-program decoding and speculative function
+//!     discovery to prioritize latency while retaining per-function transforms.
 //!
 //! The mode is applied through `Architecture::apply_mode` (which fans out to
 //! `set_kuna_option`), reachable from `kuna decompile`, `kuna decompile-all`,
-//! and the interactive console `mode <name>` command.
+//! `kuna decompile-project`, `kuna functions`, and the interactive console
+//! `mode <name>` command.
 
 /// A named preset over the option surface.
 pub struct Mode {
-    /// The mode token (`reliable`, `aggressive`).
+    /// The mode token (`reliable`, `aggressive`, `fast`).
     pub name: &'static str,
     /// One-line human/LLM description.
     pub summary: &'static str,
@@ -31,7 +34,7 @@ pub struct Mode {
     pub overrides: &'static [(&'static str, &'static str)],
 }
 
-/// The two shipped modes.
+/// The three shipped modes.
 pub const MODE_TABLE: &[Mode] = &[
     Mode {
         name: "reliable",
@@ -47,12 +50,20 @@ pub const MODE_TABLE: &[Mode] = &[
                   ceiling, not for guaranteed faithfulness.",
         overrides: AGGRESSIVE_OVERRIDES,
     },
+    Mode {
+        name: "fast",
+        summary: "Speed-first whole-binary analysis: disable the Listing, \
+                  prologue-pattern discovery, and AIF gap walk. Retains the \
+                  shipped per-function transforms and explicit selectors.",
+        overrides: FAST_OVERRIDES,
+    },
 ];
 
 /// `reliable` = the shipped defaults. Deliberately empty: pinning any option
 /// here (e.g. `listing off`) would *change* behaviour vs the defaults -- in
-/// particular `decompile-all` auto-enables the Listing (DIV-15), so an explicit
-/// `listing off` would regress it. An empty list leaves every default untouched.
+/// particular `decompile` and `decompile-all` auto-enable the Listing, so an
+/// explicit `listing off` would change them. An empty list leaves every surface
+/// default untouched.
 const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 
 /// `aggressive` = every off-by-default option flipped ON, **except**
@@ -91,6 +102,15 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("objc", "on"),          // Mach-O-only; no-op off-Mach-O
     ("pdb", "on"),           // PE-only; no-op off-PE
     ("macho-arm64e", "on"),  // Mach-O arm64e-only; no-op elsewhere
+];
+
+/// `fast` = avoid the three program-wide decode/discovery paths that dominate
+/// large-binary latency. Keeping all three explicit also suppresses the
+/// decompile driver defaults that would otherwise enable them.
+const FAST_OVERRIDES: &[(&str, &str)] = &[
+    ("listing", "off"),
+    ("funcstart_patterns", "off"),
+    ("aif", "off"),
 ];
 
 /// The override list for `name`, or `None` if `name` is not a known mode.
@@ -147,14 +167,22 @@ mod tests {
     }
 
     #[test]
+    fn fast_disables_only_program_wide_decode_and_discovery() {
+        assert_eq!(
+            mode_overrides("fast").unwrap(),
+            &[("listing", "off"), ("funcstart_patterns", "off"), ("aif", "off")]
+        );
+    }
+
+    #[test]
     fn unknown_mode_is_none() {
         assert!(mode_overrides("turbo").is_none());
         assert!(mode_overrides("").is_none());
     }
 
     #[test]
-    fn mode_names_lists_both() {
+    fn mode_names_lists_all() {
         let names: Vec<_> = mode_names().collect();
-        assert_eq!(names, vec!["reliable", "aggressive"]);
+        assert_eq!(names, vec!["reliable", "aggressive", "fast"]);
     }
 }
