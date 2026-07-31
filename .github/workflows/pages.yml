@@ -66,6 +66,9 @@ jobs:
       - name: Assemble the static demo (dist/)
         run: bash integrations/web/build.sh
 
+      - name: Test the browser Worker boundary
+        run: node integrations/web/test/worker.mjs
+
       # Serve every file verbatim (belt-and-suspenders; the artifact path skips Jekyll).
       - name: Disable Jekyll
         run: touch integrations/web/dist/.nojekyll

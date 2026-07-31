@@ -30,6 +30,7 @@
   <div class="bar">
     <div class="wrap">
       <p class="status busy" id="status" role="status" aria-live="polite"><span class="dot"></span>loading decompiler&hellip;</p>
+      <button class="tinybtn" id="cancelbtn" disabled>Cancel</button>
       <button class="tinybtn" id="dlbtn" disabled>Download binary source</button>
       <label class="tinybtn primary" id="pick" aria-disabled="true">
         Load binary <input type="file" id="file">
@@ -60,9 +61,10 @@
             your file is never uploaded and no server takes part.
           </p>
           <p class="hint">
-            Every function comes back at once. Stubs and import thunks are grouped at the
-            bottom of the list; <code>Download binary source</code> exports the whole
-            binary as a <code>.c</code>/<code>.h</code>/<code>.asm</code> project zip.
+            The function inventory loads first; each body is decompiled when selected.
+            Stubs and import thunks are grouped at the bottom of the list;
+            <code>Download binary source</code> exports the whole binary as a
+            <code>.c</code>/<code>.h</code>/<code>.asm</code> project zip.
           </p>
         </div>
       </div>
@@ -77,8 +79,10 @@
 </main>
 
 <script type="module">
-  import { loadKuna } from '../kuna-web.js';
-  import { makeZip } from '../zip.js';
+  import {
+    KunaWorkerCancelledError,
+    KunaWorkerClient,
+  } from '../kuna-worker-client.js';
   import { highlightC, escapeHtml } from '../assets/js/highlight-c.js';
 
   const statusEl = document.getElementById('status');
@@ -92,6 +96,7 @@
   const vnameEl = document.getElementById('vname');
   const vmetaEl = document.getElementById('vmeta');
   const dlEl = document.getElementById('dlbtn');
+  const cancelEl = document.getElementById('cancelbtn');
 
   const setStatus = (msg, cls = 'busy') => {
     statusEl.className = 'status ' + cls;
@@ -99,9 +104,44 @@
   };
 
   let kuna = null;
-  let loaded = null; // { bytes, fileName } of the last successfully decompiled binary
+  let loaded = null;
+  let active = null;
+  let operationId = 0;
+  let selectedRow = null;
+  let bodies = new Map();
+
+  const syncButtons = () => {
+    cancelEl.disabled = !active;
+    dlEl.disabled = !loaded || !!active;
+  };
+
+  const beginOperation = (kind, clearSession = false) => {
+    if (active) {
+      active = null;
+      operationId++;
+      if (clearSession) kuna.clear('superseded by a new binary');
+      else kuna.cancel('superseded by another operation');
+    }
+    active = { id: ++operationId, kind };
+    syncButtons();
+    return active;
+  };
+
+  const isCurrent = (operation) => active?.id === operation.id;
+
+  const finishOperation = (operation) => {
+    if (!isCurrent(operation)) return false;
+    active = null;
+    syncButtons();
+    return true;
+  };
+
   try {
-    kuna = await loadKuna({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs' });
+    kuna = new KunaWorkerClient({
+      wasmUrl: '../kuna_wasm.wasm',
+      specRoot: '../specs',
+    });
+    await kuna.ready();
     setStatus('ready — load an ELF, PE, or Mach-O binary', 'ok');
     pickEl.removeAttribute('aria-disabled');
   } catch (e) {
@@ -112,36 +152,42 @@
   fileEl.addEventListener('change', async () => {
     const f = fileEl.files[0];
     if (!f || !kuna) return;
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    const fmt = kuna.formatName(bytes);
-    setStatus(`decompiling ${f.name} (${fmt}, ${bytes.length.toLocaleString()} bytes)…`);
+    const operation = beginOperation('load', true);
+    setStatus(`reading ${f.name}…`);
     listEl.innerHTML = '';
     codeEl.hidden = true; vheadEl.hidden = true; emptyEl.hidden = false;
-    loaded = null; dlEl.disabled = true;
-    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
+    loaded = null;
+    selectedRow = null;
+    bodies = new Map();
+    headEl.textContent = 'functions';
 
     const t0 = performance.now();
     let result;
     try {
-      result = await kuna.decompile(bytes); // all functions, one wasm run
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (!isCurrent(operation)) return;
+      setStatus(`indexing ${f.name} (${bytes.length.toLocaleString()} bytes)…`);
+      result = await kuna.load(bytes, { fileName: f.name, mode: 'auto' });
     } catch (e) {
-      setStatus('decompile failed: ' + e.message, 'err');
+      if (!isCurrent(operation)) return;
+      setStatus('function inventory failed: ' + e.message, 'err');
       console.error(e);
+      finishOperation(operation);
       return;
     }
+    if (!isCurrent(operation)) return;
     const dt = Math.round(performance.now() - t0);
-    loaded = { bytes, fileName: f.name };
-    dlEl.disabled = false;
+    loaded = {
+      fileName: f.name,
+      format: result.format,
+      count: result.functions.length,
+    };
 
-    // Split into normal functions and PLT/import-thunk stubs (`kind` from the
-    // engine; a missing kind means a plain function), each address-ascending:
-    // real code first, the boilerplate stubs grouped after a divider.
     const isStub = (fn) => fn.kind === 'plt' || fn.kind === 'thunk';
-    const shown = result.functions.filter((fn) => fn.code || fn.error);
     const byAddr = (a, b) => a.address - b.address;
-    const normal = shown.filter((fn) => !isStub(fn)).sort(byAddr);
-    const stubs = shown.filter(isStub).sort(byAddr);
-    setStatus(`${f.name} (${fmt}) — ${shown.length} functions in ${dt} ms`, 'ok');
+    const normal = result.functions.filter((fn) => !isStub(fn)).sort(byAddr);
+    const stubs = result.functions.filter(isStub).sort(byAddr);
+    setStatus(`${f.name} (${result.format}) — ${result.functions.length} functions indexed in ${dt} ms`, 'ok');
     headEl.textContent = `${normal.length} functions · ${stubs.length} stubs`;
 
     const rows = [];
@@ -167,40 +213,65 @@
       listEl.appendChild(div);
       stubs.forEach(addRow);
     }
-    const first = rows.find((r) => !isStub(r.fn) && r.fn.code) || rows.find((r) => r.fn.code);
+    const first = rows.find((r) => !isStub(r.fn)) || rows[0];
+    finishOperation(operation);
     if (first) first.row.click();
   });
 
-  // Download binary source: run the whole-binary project export and hand the
-  // four artifacts (<name>.c/.h/.asm/README.md) over as a zip.
   dlEl.addEventListener('click', async () => {
     if (!loaded || !kuna) return;
-    const safeName = loaded.fileName.replace(/[^A-Za-z0-9._-]/g, '_');
-    dlEl.disabled = true;
+    const operation = beginOperation('project');
     setStatus('building project…');
-    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
     try {
-      const proj = await kuna.project(loaded.bytes, safeName); // one wasm run
-      const entries = Object.entries(proj.files)
-        .map(([name, data]) => ({ name: `${safeName}.kuna/${name}`, data }));
-      const zip = makeZip(entries);
-      const url = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
+      const project = await kuna.project(loaded.fileName);
+      if (!isCurrent(operation)) return;
+      const url = URL.createObjectURL(new Blob([project.bytes], { type: 'application/zip' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${safeName}.kuna.zip`;
+      a.download = project.downloadName;
       a.click();
       URL.revokeObjectURL(url);
-      setStatus(`${safeName}.kuna.zip downloaded (${zip.length.toLocaleString()} bytes)`, 'ok');
+      setStatus(
+        `${project.downloadName} downloaded (${project.bytes.length.toLocaleString()} bytes)`,
+        'ok',
+      );
     } catch (e) {
+      if (!isCurrent(operation)) return;
       setStatus('project export failed: ' + e.message, 'err');
       console.error(e);
     } finally {
-      if (loaded) dlEl.disabled = false;
+      finishOperation(operation);
     }
   });
 
-  function select(row, fn) {
-    [...listEl.children].forEach((c) => c.classList.remove('sel'));
+  cancelEl.addEventListener('click', () => {
+    if (!active || !kuna) return;
+    const cancelled = active;
+    active = null;
+    operationId++;
+    if (cancelled.kind === 'load') {
+      kuna.clear('cancelled by user');
+      loaded = null;
+      listEl.innerHTML = '';
+      headEl.textContent = 'functions';
+      codeEl.hidden = true; vheadEl.hidden = true; emptyEl.hidden = false;
+    } else {
+      kuna.cancel('cancelled by user');
+      if (cancelled.kind === 'function') {
+        codeEl.textContent =
+          `/* ${vnameEl.textContent || 'function'} — decompilation cancelled */`;
+      }
+    }
+    syncButtons();
+    setStatus(
+      loaded ? `cancelled — ${loaded.fileName} remains loaded` : 'cancelled — load another binary',
+      loaded ? 'ok' : '',
+    );
+  });
+
+  async function select(row, fn) {
+    if (selectedRow) selectedRow.classList.remove('sel');
+    selectedRow = row;
     row.classList.add('sel');
     emptyEl.hidden = true;
     vheadEl.hidden = false;
@@ -208,15 +279,72 @@
     vnameEl.textContent = fn.name;
     const tags = [fn.address_hex];
     if (fn.kind === 'plt' || fn.kind === 'thunk') tags.push(fn.kind);
-    if (fn.error) tags.push('decompile error');
     vmetaEl.textContent = tags.join(' · ');
-    if (fn.error) {
-      codeEl.textContent =
-        `/* ${fn.name} @ ${fn.address_hex} — decompile error:\n   ${fn.error} */`;
-    } else {
-      codeEl.innerHTML = highlightC(fn.code);
+
+    const cached = bodies.get(fn.address_hex);
+    if (cached) {
+      const projectActive = active?.kind === 'project';
+      if (active?.kind === 'function') {
+        active = null;
+        operationId++;
+        kuna.cancel('superseded by a cached function');
+        syncButtons();
+      }
+      renderFunction(row, fn, cached);
+      if (!projectActive) {
+        setStatus(
+          `${loaded.fileName} (${loaded.format}) — ${fn.name} loaded from cache`,
+          cached.error ? 'err' : 'ok',
+        );
+      }
+      return;
+    }
+
+    const operation = beginOperation('function');
+    setStatus(`decompiling ${fn.name} @ ${fn.address_hex}…`);
+    codeEl.textContent = `/* decompiling ${fn.name} @ ${fn.address_hex}… */`;
+    const t0 = performance.now();
+    try {
+      const result = await kuna.decompile(fn.address_hex);
+      if (!isCurrent(operation)) return;
+      const body = result.functions[0];
+      if (!body) throw new Error(`no result returned for ${fn.address_hex}`);
+      bodies.set(fn.address_hex, body);
+      renderFunction(row, fn, body);
+      const dt = Math.round(performance.now() - t0);
+      setStatus(
+        `${loaded.fileName} (${loaded.format}) — ${fn.name} decompiled in ${dt} ms`,
+        body.error ? 'err' : 'ok',
+      );
+    } catch (e) {
+      if (!isCurrent(operation)) return;
+      if (!(e instanceof KunaWorkerCancelledError)) {
+        row.classList.add('bad');
+        codeEl.textContent =
+          `/* ${fn.name} @ ${fn.address_hex} — decompile failed:\n   ${e.message} */`;
+        setStatus('decompile failed: ' + e.message, 'err');
+        console.error(e);
+      }
+    } finally {
+      finishOperation(operation);
     }
   }
+
+  function renderFunction(row, fn, body) {
+    row.classList.toggle('bad', !!body.error);
+    const tags = [fn.address_hex];
+    if (fn.kind === 'plt' || fn.kind === 'thunk') tags.push(fn.kind);
+    if (body.error) tags.push('decompile error');
+    vmetaEl.textContent = tags.join(' · ');
+    if (body.error) {
+      codeEl.textContent =
+        `/* ${fn.name} @ ${fn.address_hex} — decompile error:\n   ${body.error} */`;
+    } else {
+      codeEl.innerHTML = highlightC(body.code);
+    }
+  }
+
+  window.addEventListener('beforeunload', () => kuna?.close());
 </script>
 </body>
 </html>
