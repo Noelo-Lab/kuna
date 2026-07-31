@@ -1,4 +1,4 @@
-# Decompiler modes (`reliable` | `aggressive` | `fast`)
+# Decompiler modes (`auto` | `reliable` | `aggressive` | `fast`)
 
 A **mode** is a named preset over kuna's runtime option surface: an ordered list
 of `(option, value)` overrides layered on top of the shipped defaults. Modes are
@@ -8,8 +8,10 @@ they reference existing option names and live in one table,
 by `Architecture::apply_mode` (a fan-out over `set_kuna_option`).
 
 Select a mode with `--mode <name>` on `kuna decompile`, `kuna decompile-all`,
-`kuna decompile-project`, or `kuna functions`, or with the console `mode <name>`
-command. A mode's overrides are applied **before** the user's
+`kuna decompile-project`, or `kuna functions`. If the flag is omitted, these
+file-based front-ends use `auto`. The console `mode <name>` command accepts the
+three concrete presets; `auto` must be resolved by a front-end that knows the
+input file size. A mode's overrides are applied **before** the user's
 `--option`/`option` lines, so an explicit `--option` always wins (last-write).
 Modes are override batches, not resets: applying a second mode in one console
 session changes only the options that second mode names. Discover them with
@@ -17,12 +19,34 @@ session changes only the options that second mode names. Discover them with
 
 | Mode | What it does |
 |---|---|
-| `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list, so it is byte-identical to running with no `--mode` at all. |
+| `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger. |
+| `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list. |
 | `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
 | `fast` | Latency first: disables the Listing, prologue-pattern function discovery, and AIF gap walk. Keeps the shipped per-function transforms and explicit selectors, but may discover fewer functions and recover fewer program-wide facts. |
 
-Running with **no** `--mode` is exactly `reliable` (the current defaults) — the
-default path is untouched, so every corpus/test gate is unaffected.
+## `auto` (default)
+
+`auto` selects a concrete preset from the raw input file length:
+
+| File size | Selected preset |
+|---:|---|
+| `< 512,000` bytes (500 KiB) | `aggressive` |
+| `512,000` through `2,097,151` bytes | `reliable` |
+| `>= 2,097,152` bytes (2 MiB) | `fast` |
+
+The boundary comparisons are exact: a 500 KiB file is `reliable`, and a 2 MiB
+file is `fast`. “Standard mode” in the size policy means the existing
+`reliable` preset. The native CLI reads filesystem metadata; the browser/WASI
+front-end classifies the uploaded virtual file's byte length through the same
+Rust function. An explicit concrete `--mode` bypasses size selection, and a
+later explicit `--option` still overrides the selected preset.
+
+This makes small binaries favor maximum recovery while bounding the work a
+browser or bulk export attempts for large inputs. On private PE
+`bc4c15d826aaebeace3fec6360eb687e5662cba8745605093254931dcdb3ae1b`
+(3,457,296 bytes), `auto` resolves to `fast`; the composed performance stack
+exports 351 executable functions in a 3.23-second median, while the same
+default-analysis control remained incomplete after 618.60 seconds.
 
 ## `reliable`
 
@@ -119,8 +143,9 @@ Listing while leaving speculative function discovery and AIF disabled.
 
 `aggressive` and `fast` are first-class measurement levers. Run the decbench GED
 benchmark with a `kuna-aggressive` backend (or `kuna decompile-all --mode
-aggressive`) and compare against the default `kuna` (== `reliable`) to find
+aggressive`) and compare against an explicit `--mode reliable` baseline to find
 options that net-help, which then become candidate default-on flips (a new
-`docs/history.md` DIV row).
+`docs/history.md` DIV row). The omitted-mode `auto` policy intentionally changes
+with input size and is therefore not a stable benchmark baseline.
 Use `fast` for latency-sensitive bulk export and compare its function inventory
 and output against `reliable` before adopting the coverage tradeoff.

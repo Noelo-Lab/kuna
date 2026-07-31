@@ -134,7 +134,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/improvement-pipeline.md` | The autonomous improvement pipeline + standing requirements for feature PRs. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |
-| `docs/modes.md` | `--mode reliable\|aggressive\|fast` option presets. |
+| `docs/modes.md` | `--mode auto\|reliable\|aggressive\|fast` option presets and size thresholds. |
 | `docs/missing-ghidra-analyses.md` | The `kuna-analysis` tier: the analyzer gap vs Ghidra, pass contract, commit gating. |
 | `docs/ghidra-integration.md` | kuna as Ghidra's decompiler core (architecture + wire protocol). |
 | `docs/web-integration.md` | The WASM/browser front-end and the project site. |

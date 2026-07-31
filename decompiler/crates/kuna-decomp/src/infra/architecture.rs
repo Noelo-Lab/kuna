@@ -1516,15 +1516,23 @@ impl Architecture {
         }
     }
 
-    /// Apply a named decompiler *mode* preset (`reliable` | `aggressive` | `fast`): a
-    /// batch of `(option, value)` overrides fanned out through
-    /// [`Self::set_kuna_option`]. Overrides apply in table order; any later
-    /// `set_kuna_option` -- another override or a user `option`/`--option` --
-    /// wins (last-write). `reliable` is the shipped defaults (empty override
-    /// list, a no-op alias); `aggressive` turns on every off-by-default pass;
-    /// `fast` disables expensive whole-program decode and discovery.
-    /// See [`crate::modes`]. Errors on an unknown mode name.
+    /// Apply a named, concrete decompiler *mode* preset (`reliable` |
+    /// `aggressive` | `fast`): a batch of `(option, value)` overrides fanned out
+    /// through [`Self::set_kuna_option`]. Overrides apply in table order; any
+    /// later `set_kuna_option` -- another override or a user
+    /// `option`/`--option` -- wins (last-write). `reliable` is the shipped
+    /// defaults (empty override list, a no-op alias); `aggressive` turns on
+    /// every off-by-default pass; `fast` disables expensive whole-program
+    /// decode and discovery.
+    /// See [`crate::modes`]. The frontend-only `auto` policy errors here because
+    /// an Architecture has no input-file size; file frontends resolve it to a
+    /// concrete preset before this method. Errors on an unknown mode name.
     pub fn apply_mode(&mut self, name: &str) -> KunaResult<String> {
+        if crate::modes::mode_is_automatic(name) {
+            return Err(KunaError::parse(
+                "Decompiler mode auto requires input binary size; resolve it in a file frontend",
+            ));
+        }
         let overrides = crate::modes::mode_overrides(name).ok_or_else(|| {
             let known: Vec<&str> = crate::modes::mode_names().collect();
             KunaError::parse(format!(

@@ -4,9 +4,10 @@
 # CLI layer that cannot cross the wasm boundary.  Also builds natively (the
 # parity oracle: native output must equal the wasm output byte-for-byte).
 #
-# This crate is PURELY ADDITIVE: it depends only on the existing engine crates
-# and adds no new external dependency, so it cannot change the decompiler's
-# behavior or any of the four build gates.  See docs/web-integration.md.
+# This crate depends only on the existing engine crates and adds no external
+# dependency. It shares the native file frontends' size-based `auto` mode and is
+# covered by the workspace plus native/WASI/browser parity gates. See
+# docs/web-integration.md.
 [package]
 name = "kuna-wasm"
 version.workspace = true
@@ -28,9 +29,10 @@ kuna-base.workspace = true
 kuna-console.workspace = true
 kuna-decomp.workspace = true
 # `object` is already a workspace dependency (the ELF/PE/Mach-O LoadImage
-# backend); reused here only to read the ELF machine for the non-x86-64
-# `funcstart_patterns` default, mirroring `kuna decompile-all` exactly. No new
-# crate enters the dependency graph.
+# backend); reused here to read the machine for the non-x86-64
+# `funcstart_patterns`/`aif` injections that remain after resolving `auto`,
+# mirroring `kuna decompile-all` exactly. No new crate enters the dependency
+# graph.
 object.workspace = true
 
 [lints]

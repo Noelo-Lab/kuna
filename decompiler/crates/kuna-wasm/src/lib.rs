@@ -36,7 +36,8 @@ use classify::Classifier;
 
 /// Parsed command.
 enum Cmd {
-    /// Enumerate functions only (cheap: no per-function decompile, Listing off).
+    /// Enumerate functions only (no per-function decompile; analysis follows
+    /// the selected concrete mode).
     List,
     /// Decompile every CODE-backed function.
     DecompileAll,
@@ -50,9 +51,25 @@ enum Cmd {
     Project(String),
 }
 
-/// Run the front-end. `binary` and `spec_root` are (virtual) filesystem paths;
-/// `cmd`/`arg` come from argv. Returns the stdout payload (JSON) on success.
+/// Run the front-end with the automatic size-based mode policy.
+///
+/// `binary` and `spec_root` are (virtual) filesystem paths; `cmd`/`arg` come
+/// from argv. Returns the stdout payload (JSON) on success.
 pub fn run(binary: &str, spec_root: &str, cmd: &str, arg: Option<&str>) -> Result<String, String> {
+    run_with_mode(binary, spec_root, cmd, arg, None)
+}
+
+/// Run the front-end with an optional explicit mode.
+///
+/// `None` and `Some("auto")` select `aggressive` below 500 KiB, `reliable`
+/// from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and above.
+pub fn run_with_mode(
+    binary: &str,
+    spec_root: &str,
+    cmd: &str,
+    arg: Option<&str>,
+    requested_mode: Option<&str>,
+) -> Result<String, String> {
     let command = match cmd {
         "list" => Cmd::List,
         "decompile" => match arg {
@@ -80,8 +97,17 @@ pub fn run(binary: &str, spec_root: &str, cmd: &str, arg: Option<&str>) -> Resul
         }
     };
 
+    let requested = requested_mode.unwrap_or("auto");
+    let binary_size = if kuna_decomp::modes::mode_is_automatic(requested) {
+        std::fs::metadata(binary)
+            .map_err(|e| format!("could not read binary metadata for {binary}: {e}"))?
+            .len()
+    } else {
+        0
+    };
+    let mode = resolve_mode(requested_mode, binary_size)?;
     let want_decompile = !matches!(command, Cmd::List);
-    let mut prog = load_program(binary, spec_root, want_decompile)?;
+    let mut prog = load_program(binary, spec_root, want_decompile, mode)?;
 
     match command {
         Cmd::List => {
@@ -114,6 +140,14 @@ pub fn run(binary: &str, spec_root: &str, cmd: &str, arg: Option<&str>) -> Resul
             Ok(result_json(binary, &out, &kinds))
         }
     }
+}
+
+fn resolve_mode(requested: Option<&str>, binary_size: u64) -> Result<&'static str, String> {
+    kuna_decomp::modes::resolve_mode_for_size(requested, binary_size).ok_or_else(|| {
+        let requested = requested.unwrap_or("auto");
+        let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
+        format!("unknown mode {requested:?} (known: {})", known.join(", "))
+    })
 }
 
 /// The `project` command: the `kuna decompile-project` flow
@@ -162,36 +196,75 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
 
 /// Bootstrap the architecture from the binary and run the analysis commit — the
 /// in-process `load file` + `read symbols`. `default_listing` injects the
-/// `decompile-all` surface's defaults (Listing on; `funcstart_patterns` on for
-/// non-x86-64) so the output matches `kuna decompile-all` (DIV-15 / DIV-20).
+/// `decompile-all` surface's defaults unless the selected mode owns those
+/// options, matching the CLI's mode-then-explicit-default ordering.
 fn load_program(
     binary: &str,
     spec_root: &str,
     default_listing: bool,
+    mode: &str,
 ) -> Result<ConsoleProgram, String> {
+    let overrides = kuna_decomp::modes::mode_overrides(mode)
+        .ok_or_else(|| format!("unknown mode {mode:?}"))?;
+    let owns_arm64e = overrides
+        .iter()
+        .any(|(option, _)| *option == "macho-arm64e");
+    let previous_arm64e = std::env::var_os("KUNA_MACHO_ARM64E");
+    if owns_arm64e {
+        std::env::remove_var("KUNA_MACHO_ARM64E");
+    }
+    if overrides
+        .iter()
+        .any(|(option, value)| *option == "macho-arm64e" && *value == "on")
+    {
+        std::env::set_var("KUNA_MACHO_ARM64E", "1");
+    }
+
     let spec_roots = vec![spec_root.to_string()];
-    let mut prog = bootstrap_from_object(binary, "", &spec_roots)
+    let bootstrap = bootstrap_from_object(binary, "", &spec_roots);
+    if owns_arm64e {
+        match previous_arm64e {
+            Some(value) => std::env::set_var("KUNA_MACHO_ARM64E", value),
+            None => std::env::remove_var("KUNA_MACHO_ARM64E"),
+        }
+    }
+    let mut prog = bootstrap
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
-    if default_listing {
+    prog.arch_mut()
+        .apply_mode(mode)
+        .map_err(|e| format!("mode {mode}: {}", e.explain()))?;
+    let mode_owns = |name: &str| overrides.iter().any(|(option, _)| *option == name);
+
+    if default_listing && !mode_owns("listing") {
         prog.arch_mut()
             .set_kuna_option("listing", "on")
             .map_err(|e| format!("option listing: {}", e.explain()))?;
+    }
 
-        // (kuna, decbench ARM / DIV-20) `funcstart_patterns` is the primary
-        // discovery source on a stripped **non-x86-64** binary; default it on
-        // there, exactly as `decompile-all` does. x86-64 keeps it off.
-        if let Ok(bytes) = std::fs::read(binary) {
-            use object::Object;
-            let non_x86_64 = object::File::parse(&*bytes)
-                .map(|f| f.architecture() != object::Architecture::X86_64)
-                .unwrap_or(false);
-            if non_x86_64 {
-                prog.arch_mut()
-                    .set_kuna_option("funcstart_patterns", "on")
-                    .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
-            }
-        }
+    use object::Object;
+    let non_x86_64 =
+        if default_listing && (!mode_owns("funcstart_patterns") || !mode_owns("aif")) {
+            std::fs::read(binary)
+                .ok()
+                .and_then(|bytes| {
+                    object::File::parse(&*bytes)
+                        .ok()
+                        .map(|file| file.architecture() != object::Architecture::X86_64)
+                })
+                .unwrap_or(false)
+        } else {
+            false
+        };
+    if default_listing && non_x86_64 && !mode_owns("funcstart_patterns") {
+        prog.arch_mut()
+            .set_kuna_option("funcstart_patterns", "on")
+            .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
+    }
+    if default_listing && non_x86_64 && !mode_owns("aif") {
+        prog.arch_mut()
+            .set_kuna_option("aif", "on")
+            .map_err(|e| format!("option aif: {}", e.explain()))?;
     }
 
     prog.commit_pending_analysis()
@@ -375,4 +448,34 @@ fn json_str(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_mode;
+    use kuna_decomp::modes::{AUTO_FAST_MIN_BYTES, AUTO_RELIABLE_MIN_BYTES};
+
+    #[test]
+    fn auto_mode_uses_exact_browser_size_boundaries() {
+        assert_eq!(
+            resolve_mode(Some("auto"), AUTO_RELIABLE_MIN_BYTES - 1).unwrap(),
+            "aggressive"
+        );
+        assert_eq!(
+            resolve_mode(Some("auto"), AUTO_RELIABLE_MIN_BYTES).unwrap(),
+            "reliable"
+        );
+        assert_eq!(resolve_mode(None, AUTO_FAST_MIN_BYTES - 1).unwrap(), "reliable");
+        assert_eq!(resolve_mode(None, AUTO_FAST_MIN_BYTES).unwrap(), "fast");
+    }
+
+    #[test]
+    fn explicit_mode_overrides_binary_size() {
+        assert_eq!(resolve_mode(Some("fast"), 1).unwrap(), "fast");
+        assert_eq!(
+            resolve_mode(Some("aggressive"), 4 * AUTO_FAST_MIN_BYTES).unwrap(),
+            "aggressive"
+        );
+        assert!(resolve_mode(Some("turbo"), 1).unwrap_err().contains("unknown mode"));
+    }
 }

@@ -29,30 +29,31 @@ revision and compiler flags for each. Nothing here is kuna-authored.
 
 Every command is a single function out of a whole-binary load. Use
 `decompile-all --addr`, not `decompile <addr> --addr`: it is the surface DecBench
-drives, the Listing analysis tier is on by default there, and stripped ARM
-firmware needs that tier to find the function at all.
+drives. Pin `--mode reliable` so the Listing analysis tier is on independently
+of the fixture's file size; stripped ARM firmware needs that tier to find the
+function at all.
 
 ```bash
 K=decompiler/target/release/kuna
 
 # #180 — overflow guard rendered against the post-add value
-$K decompile-all tests/bug-repro/grep --addr 0x7c90                        # grep nlscan
+$K decompile-all tests/bug-repro/grep --mode reliable --addr 0x7c90                        # grep nlscan
 
 # #181 — the copy of a call's out-parameter is hoisted above the call
-$K decompile-all tests/bug-repro/libselinux.so.1 --addr 0x17370            # lsetfilecon_raw
+$K decompile-all tests/bug-repro/libselinux.so.1 --mode reliable --addr 0x17370            # lsetfilecon_raw
 
 # #182 — stack array declared too small for the stores emitted into it; the
 #        slots past the end become scalars that are read but never assigned
-$K decompile-all tests/bug-repro/betaflight_STM32F405.elf --addr 0x801b4a4 # cliServo
+$K decompile-all tests/bug-repro/betaflight_STM32F405.elf --mode reliable --addr 0x801b4a4 # cliServo
 
 # #183 — stackguard drops the canary check but leaves the fs:0x28 load behind
-$K decompile-all tests/bug-repro/sort    --addr 0x6e80                     # sort zaptemp
-$K decompile-all tests/bug-repro/faillog --addr 0x3320                     # faillog setmax_one
-$K decompile-all tests/bug-repro/sort    --addr 0x6e80 --option stackguard off   # A/B
+$K decompile-all tests/bug-repro/sort    --mode reliable --addr 0x6e80                     # sort zaptemp
+$K decompile-all tests/bug-repro/faillog --mode reliable --addr 0x3320                     # faillog setmax_one
+$K decompile-all tests/bug-repro/sort    --mode reliable --addr 0x6e80 --option stackguard off   # A/B
 
 # #184 — libc data imported by a COPY relocation stays `dat_<addr>` (stderr,
 #        stdout, optind, optarg …) where every other decompiler prints the name
-$K decompile-all tests/bug-repro/faillog --addr 0x3320                     # two fprintf(stderr, …)
+$K decompile-all tests/bug-repro/faillog --mode reliable --addr 0x3320                     # two fprintf(stderr, …)
 ```
 
 | issue | severity | binary · address |

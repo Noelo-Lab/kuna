@@ -72,10 +72,10 @@ fn usage() {
     eprintln!(
         "usage: kuna <decompile|decompile-all|decompile-project|functions|test|catalog|modes|specs|fid> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--mode reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
-         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive|fast] [--option N V]...\n\
-         kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode reliable|aggressive|fast] [--option N V]...\n\
-         kuna functions <binary> [--json] [--mode reliable|aggressive|fast]\n\
+         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
+         kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
+         kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\
          kuna modes [--json]\n\
@@ -132,7 +132,10 @@ fn cmd_decompile(argv: &[String]) -> i32 {
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 i += 2;
             }
-            "--mode" => mode = take_value(argv, &mut i, "--mode"),
+            "--mode" => match take_value(argv, &mut i, "--mode") {
+                Some(value) => mode = Some(value),
+                None => return 2,
+            },
             "--kassert" => {
                 if let Some(v) = take_value(argv, &mut i, "--kassert") {
                     kasserts.push(v);
@@ -174,20 +177,14 @@ fn cmd_decompile(argv: &[String]) -> i32 {
     };
     apply_engine(engine.as_deref());
 
-    // Expand a selected `--mode` into its option overrides, PREPENDED so an
-    // explicit `--option` still wins (later `option NAME VALUE` console lines
-    // overwrite in `build_script`; the load-time env gates + `listing`
-    // auto-inject already key off the merged `options` list).
-    if let Some(m) = mode.as_deref() {
-        match decompile_all::mode_override_pairs(m) {
-            Ok(mut pairs) => {
-                pairs.extend(options);
-                options = pairs;
-            }
-            Err(e) => {
-                eprintln!("error: {e}");
-                return 2;
-            }
+    // Omitted mode is the size-driven `auto` policy. Preset overrides are
+    // prepended so explicit `--option` pairs remain last-write-wins in the
+    // generated console script.
+    match decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options) {
+        Ok(merged) => options = merged,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 2;
         }
     }
 
@@ -343,10 +340,10 @@ fn cmd_catalog(argv: &[String]) -> i32 {
 
 // --- modes -------------------------------------------------------------------
 
-/// `kuna modes [--json]` — list the decompiler mode presets (`reliable`,
-/// `aggressive`, `fast`) and the `(option → value)` overrides each applies. Modes are
-/// *not* settable catalog rows (`kuna catalog` covers those); they are presets
-/// over the option surface, applied via `--mode` / the console `mode` command.
+/// `kuna modes [--json]` — list the decompiler mode policies and presets.
+/// Modes are *not* settable catalog rows (`kuna catalog` covers those);
+/// concrete modes are option presets, while `auto` selects one using input
+/// file size.
 fn cmd_modes(argv: &[String]) -> i32 {
     let mut json = false;
     for a in argv {
@@ -385,6 +382,7 @@ fn cmd_modes(argv: &[String]) -> i32 {
                 Json::Object(vec![
                     ("name".into(), Json::Str(m.name.into())),
                     ("summary".into(), Json::Str(m.summary.into())),
+                    ("automatic".into(), Json::Bool(m.automatic)),
                     ("overrides".into(), Json::Array(overrides)),
                 ])
             })
@@ -395,7 +393,9 @@ fn cmd_modes(argv: &[String]) -> i32 {
         for m in kuna_decomp::modes::MODE_TABLE {
             println!("{}", m.name);
             println!("  {}", m.summary);
-            if m.overrides.is_empty() {
+            if m.automatic {
+                println!("  (automatic size policy; no direct overrides)");
+            } else if m.overrides.is_empty() {
                 println!("  (no overrides — the shipped defaults)");
             } else {
                 let joined: Vec<String> =
