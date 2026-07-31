@@ -381,6 +381,15 @@ scalar configuration — every tuning value and (kuna) every rule gate — plus
 read-only snapshots of the global symbol scope, callee prototypes, and tracked
 registers.
 
+The global-symbol snapshot
+(`decompiler/crates/kuna-decomp/src/substrate/context.rs (GlobalQuery)`) groups
+mapped entries by address-space index once when it is built. Grouping is stable:
+the encounter order of entries within one space is unchanged, preserving
+`findContainer`'s first-match behavior for equal-size overlaps and its
+use-point selection. Property, naming, container, and callee lookups first
+isolate the requested space, so register, stack, and other non-global varnodes
+do not scan mappings from unrelated spaces.
+
 The copy happens in exactly one place:
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs (build_arch_handle)`,
 called from `(Architecture::new_funcdata)` when a function's `Funcdata` is

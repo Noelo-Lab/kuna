@@ -106,8 +106,8 @@ fn typed_entry(
 fn tf1_typelocked_symbol_forces_its_formatted_type() {
     let ram = ram_space(3);
     let octint4 = fmt_int(4, "octint4", 3 /* Symbol::force_oct */);
-    let gq = GlobalQuery {
-        entries: vec![typed_entry(
+    let gq = GlobalQuery::new(
+        vec![typed_entry(
             &ram,
             0x301018,
             0x30101b,
@@ -116,9 +116,9 @@ fn tf1_typelocked_symbol_forces_its_formatted_type() {
             varnode_flags::typelock | varnode_flags::addrtied | varnode_flags::mapped,
             Some(octint4),
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     let (dt, off) = gq
@@ -146,8 +146,8 @@ fn tf1_typelocked_symbol_forces_its_formatted_type() {
 fn tf2_non_typelocked_symbol_forces_no_type() {
     let ram = ram_space(3);
     let some_int = fmt_int(4, "int4", 0);
-    let gq = GlobalQuery {
-        entries: vec![typed_entry(
+    let gq = GlobalQuery::new(
+        vec![typed_entry(
             &ram,
             0x301014,
             0x301017,
@@ -157,9 +157,9 @@ fn tf2_non_typelocked_symbol_forces_no_type() {
             varnode_flags::addrtied | varnode_flags::mapped,
             Some(some_int),
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     assert!(
@@ -181,8 +181,8 @@ fn tf2_non_typelocked_symbol_forces_no_type() {
 fn tf3_sized_offset_is_access_minus_first_plus_entry_offset() {
     let ram = ram_space(3);
     let wide = fmt_int(8, "wide_struct", 1 /* force_hex, irrelevant here */);
-    let gq = GlobalQuery {
-        entries: vec![typed_entry(
+    let gq = GlobalQuery::new(
+        vec![typed_entry(
             &ram,
             0x500,
             0x507,
@@ -191,9 +191,9 @@ fn tf3_sized_offset_is_access_minus_first_plus_entry_offset() {
             varnode_flags::typelock | varnode_flags::mapped,
             Some(wide),
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     let (_dt, off) = gq
@@ -214,8 +214,8 @@ fn tf3_sized_offset_is_access_minus_first_plus_entry_offset() {
 fn tf4_constant_address_is_never_type_forced() {
     let ram = ram_space(3);
     let octint4 = fmt_int(4, "octint4", 3);
-    let gq = GlobalQuery {
-        entries: vec![typed_entry(
+    let gq = GlobalQuery::new(
+        vec![typed_entry(
             &ram,
             0x100,
             0x103,
@@ -224,9 +224,9 @@ fn tf4_constant_address_is_never_type_forced() {
             varnode_flags::typelock | varnode_flags::mapped,
             Some(octint4),
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let cst = kuna_base::address::Address::new(
         Rc::new(kuna_base::space::ConstantSpace::new()),
         0x100,
@@ -250,8 +250,8 @@ fn tf4_constant_address_is_never_type_forced() {
 #[test]
 fn tf5_typelocked_entry_without_type_yields_none() {
     let ram = ram_space(3);
-    let gq = GlobalQuery {
-        entries: vec![typed_entry(
+    let gq = GlobalQuery::new(
+        vec![typed_entry(
             &ram,
             0x700,
             0x703,
@@ -260,9 +260,9 @@ fn tf5_typelocked_entry_without_type_yields_none() {
             varnode_flags::typelock | varnode_flags::mapped,
             None,
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     assert!(
@@ -282,9 +282,9 @@ fn tf5_typelocked_entry_without_type_yields_none() {
 fn tf6_query_past_last_byte_forces_no_type() {
     let ram = ram_space(3);
     let octint4 = fmt_int(4, "octint4", 3);
-    let gq = GlobalQuery {
-        // Covers [0x600, 0x603].
-        entries: vec![typed_entry(
+    // Covers [0x600, 0x603].
+    let gq = GlobalQuery::new(
+        vec![typed_entry(
             &ram,
             0x600,
             0x603,
@@ -293,9 +293,9 @@ fn tf6_query_past_last_byte_forces_no_type() {
             varnode_flags::typelock | varnode_flags::mapped,
             Some(octint4),
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     // A 4-byte access at 0x601 needs [0x601,0x604]; 0x604 > last(0x603): no match.

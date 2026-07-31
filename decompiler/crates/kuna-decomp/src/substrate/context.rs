@@ -178,8 +178,9 @@ pub struct GlobalEntry {
 /// `Funcdata` at [`build_arch_handle`](crate::architecture::Architecture::build_arch_handle).
 #[derive(Debug, Clone, Default)]
 pub struct GlobalQuery {
-    /// Every whole-and-piece mapped storage in the global scope, all spaces.
-    pub entries: Vec<GlobalEntry>,
+    /// Every whole-and-piece mapped storage in the global scope, stably grouped
+    /// by address-space index by [`GlobalQuery::new`].
+    entries: Vec<GlobalEntry>,
     /// The global scope's owned data ranges (C++ `Scope::rangetree`), for the
     /// `inScope` discovery branch of `queryProperties`.
     pub owned: kuna_base::address::RangeList,
@@ -188,6 +189,31 @@ pub struct GlobalQuery {
 }
 
 impl GlobalQuery {
+    /// Build a snapshot whose entries are grouped by address space while
+    /// retaining their original order within each space.
+    pub fn new(
+        mut entries: Vec<GlobalEntry>,
+        owned: kuna_base::address::RangeList,
+        flagbase: kuna_base::partmap::PartMap<Address, uint4>,
+    ) -> Self {
+        entries.sort_by_key(|entry| entry.space_index);
+        Self {
+            entries,
+            owned,
+            flagbase,
+        }
+    }
+
+    /// Return only entries belonging to one address space.
+    fn entries_for_space(&self, space_index: int4) -> &[GlobalEntry] {
+        let first = self
+            .entries
+            .partition_point(|entry| entry.space_index < space_index);
+        let entries = &self.entries[first..];
+        let len = entries.partition_point(|entry| entry.space_index == space_index);
+        &entries[..len]
+    }
+
     /// C++ `Database::getProperty(addr)` (`database.hh:949`): the boolean
     /// properties (read-only/volatile) painted on a memory range.
     fn get_property(&self, addr: &Address) -> uint4 {
@@ -208,10 +234,7 @@ impl GlobalQuery {
         let end = start.wrapping_add(size as u64).wrapping_sub(1);
         let mut best: Option<&GlobalEntry> = None;
         let mut oldsize: int4 = -1;
-        for e in &self.entries {
-            if e.space_index != space_index {
-                continue;
-            }
+        for e in self.entries_for_space(space_index) {
             // Containment: first <= addr (entries are storage at >= first) and
             // last >= end.  The rangemap subsort walk already filters to
             // first <= addr; here check both bounds explicitly.
@@ -261,10 +284,7 @@ impl GlobalQuery {
         let end = start.wrapping_add(size as u64).wrapping_sub(1);
         let mut best: Option<&GlobalEntry> = None;
         let mut oldsize: int4 = -1;
-        for e in &self.entries {
-            if e.space_index != space_index {
-                continue;
-            }
+        for e in self.entries_for_space(space_index) {
             if e.first > start || e.last < end {
                 continue;
             }
@@ -385,6 +405,10 @@ impl GlobalQuery {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "context_tests.rs"]
+mod tests;
 
 /// Global configuration data for the program being decompiled (C++
 /// `Architecture`, owned by `Funcdata` as `glb`).
@@ -1250,8 +1274,8 @@ impl ArchContext {
         let gq = self.global_query.as_ref()?;
         let space_index = entry.get_space()?.get_index();
         let start = entry.get_offset();
-        for e in &gq.entries {
-            if e.space_index != space_index || e.first != start {
+        for e in gq.entries_for_space(space_index) {
+            if e.first != start {
                 continue;
             }
             if let Some(ct) = &e.symbol_type {
@@ -1282,8 +1306,8 @@ impl ArchContext {
         let space = entry.get_space()?;
         let space_index = space.get_index();
         let start = entry.get_offset();
-        for e in &gq.entries {
-            if e.space_index != space_index || e.first != start {
+        for e in gq.entries_for_space(space_index) {
+            if e.first != start {
                 continue;
             }
             // C++ `Scope::queryFunction(addr)` returns the `FunctionSymbol`'s
