@@ -1,12 +1,18 @@
 {
   "data_footer": [
-    282,
-    282
+    288,
+    288
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
+    "data:CNORM-INPLACE #1: default renders the self-add as += (DIV-35)",
+    "data:CNORM-INPLACE #2: default renders the self-and as &=",
+    "data:CNORM-INPLACE #3: default folds the negative addend to -= 3",
+    "data:CNORM-INPLACE #4: inplaceops off restores the spelled-out add",
+    "data:CNORM-INPLACE #5: inplaceops off restores the spelled-out and",
+    "data:CNORM-INPLACE #6: inplaceops off restores the raw negative addend",
     "data:CNORM-NULLPRINT #1: default renders the zero pointer as NULL (DIV-34)",
     "data:CNORM-NULLPRINT #2: nullprinting off restores the upstream casted zero",
     "data:CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-33)",

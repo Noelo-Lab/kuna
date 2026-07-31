@@ -20,6 +20,8 @@ ffff8b45f43945ec7fcf90c9c3
 <symbol space="ram" offset="0x40067b" name="might_change"/>
 </binaryimage>
 <script>
+  <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->
+  <com>option inplaceops off</com>
   <com>parse line extern void printf(char *,...);</com>
   <com>parse line extern void noforloop_alias(int4 max);</com>
   <com>lo fu noforloop_alias</com>

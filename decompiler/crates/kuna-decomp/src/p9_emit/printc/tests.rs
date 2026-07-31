@@ -668,7 +668,10 @@ fn option_defaults_match_reset_defaults_printc() {
     let o = PrintCOptions::new();
     assert!(o.convention);
     assert!(o.hide_exts);
-    assert!(!o.inplace_ops);
+    // (kuna) DIV-35: `out OP= y` compound assignments render by default
+    // (upstream ships the flag off and never consumed it; `option inplaceops
+    // off` restores the `out = out OP y` form).
+    assert!(o.inplace_ops);
     assert!(!o.nocasts);
     // (kuna) DIV-34: zero pointer constants render as NULL (upstream
     // option_NULL default off; `option nullprinting off` restores).
@@ -688,11 +691,11 @@ fn option_defaults_match_reset_defaults_printc() {
 fn option_setters() {
     let mut o = PrintCOptions::new();
     o.set_null_printing(false);
-    o.set_inplace_ops(true);
+    o.set_inplace_ops(false);
     o.set_no_cast_printing(true);
     o.set_array_notation(false);
     assert!(!o.null);
-    assert!(o.inplace_ops);
+    assert!(!o.inplace_ops);
     assert!(o.nocasts);
     assert!(!o.array_notation());
     o.set_brace_format_function(BraceStyle::SkipLine);

@@ -145,6 +145,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-32 | whole-binary entry dedup (bug fix, no flag) | `decompile-all`/`functions`/`decompile-project`/wasm report each entry ADDRESS once — extra names move to `aliases[]`, and ARM/Thumb `entry\|1` addresses fold onto the real entry (symbol seeds, the enumeration key, and `--addr`) | 0/675 (analysis tier is parity-isolated); `arm_thumb_linked_le32` 6→2 entries, `fmt_arm` 32→14, x86-64 unchanged; 713/713 surviving functions byte-identical |
 | DIV-33 | `braceformat function next` (upstream option, new default) | no blank line between a function prototype and its `{` (upstream skip_line renders `)\n\n{`); `option braceformat function skip` restores | 0/675; print-only |
 | DIV-34 | `nullprinting on` (upstream option, new default) | zero pointer constants render as `NULL` instead of `(type *)0x0` (upstream option_NULL default off); `option nullprinting off` restores | 675/675 via 1 datatest opt-out (forloop_loaditer); 2 stage asserts re-worded; print-only |
+| DIV-35 | `inplaceops on` (upstream option, new default + ported consumer) | `out = out OP y` statements render as `out OP= y` (the upstream `emitInplaceOp` consumer of option_inplace_ops was never wired; kuna ports it), `x += -c` folds to `x -= c`; comma contexts (for-headers) exempt; `option inplaceops off` restores | 675/675 via 9 datatest opt-outs; 1 stage assert re-worded; print-only |
 
 ## Upstream provenance & sync
 

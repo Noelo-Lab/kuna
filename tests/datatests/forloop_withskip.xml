@@ -11,6 +11,8 @@
 <symbol space="ram" offset="0x400592" name="forloop_withskip"/>
 </binaryimage>
 <script>
+  <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->
+  <com>option inplaceops off</com>
   <com>map addr r0x601030 int4 globvar</com>
   <com>parse line extern void forloop_withskip(int4 val);</com>
   <com>lo fu forloop_withskip</com>

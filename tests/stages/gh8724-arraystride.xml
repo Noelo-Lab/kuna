@@ -54,6 +54,7 @@ e8cbfeffff4939dc75d64883c4085b5d415c415dc30f1f00c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8724 #1: default pipeline leaves the raw strided accumulator (+ 0x414), index lost" min="1" max="1">\+ 0x414</stringmatch>
+<!-- (DIV-35: the self-accumulator renders as `iVar += 0x414` under inplaceops.) -->
+<stringmatch name="GH8724 #1: default pipeline leaves the raw strided accumulator (+ 0x414), index lost" min="1" max="1">\+= 0x414</stringmatch>
 <stringmatch name="GH8724 #2: option arraystride on recovers the array index as counter * 0x414" min="1" max="1">\* 0x414</stringmatch>
 </decompilertest>
