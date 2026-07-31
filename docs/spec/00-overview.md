@@ -386,9 +386,14 @@ The global-symbol snapshot
 mapped entries by address-space index once when it is built. Grouping is stable:
 the encounter order of entries within one space is unchanged, preserving
 `findContainer`'s first-match behavior for equal-size overlaps and its
-use-point selection. Property, naming, container, and callee lookups first
-isolate the requested space, so register, stack, and other non-global varnodes
-do not scan mappings from unrelated spaces.
+use-point selection. Within each space, an offset interval index restricts
+container candidates to entries whose first offset is at or below the query
+start and whose last offset reaches the query end. The final reduction still
+uses stable encounter order for equal-size entries, preserves the effect of the
+exact-size early break, and applies the original use-point validity test.
+Property, naming, container, and callee lookups first isolate the requested
+space, so register, stack, and other non-global varnodes do not scan mappings
+from unrelated spaces.
 
 The copy happens in exactly one place:
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs (build_arch_handle)`,
