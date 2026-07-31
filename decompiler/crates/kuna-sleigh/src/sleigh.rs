@@ -2362,17 +2362,40 @@ impl Sleigh {
         emit: &mut dyn AssemblyEmit,
         baseaddr: &Address,
     ) -> KunaResult<i32> {
-        let pos = self.obtain_context(baseaddr, ParseState::Disassembly)?;
-        let table = &self.base.symtab;
-        let mut walker = ParserWalker::new(&pos, table, self);
-        walker.base_state();
-        let ct = walker.get_constructor_inner()?;
-        let mut mons = String::new();
-        table.get_constructor(ct)?.print_mnemonic(&mut mons, &mut walker, table)?;
+        let mut mnemonic = String::new();
         let mut body = String::new();
-        table.get_constructor(ct)?.print_body(&mut body, &mut walker, table)?;
-        emit.dump(baseaddr, &mons, &body);
-        Ok(pos.get_length())
+        let length = self.print_assembly_into(baseaddr, &mut mnemonic, &mut body)?;
+        emit.dump(baseaddr, &mnemonic, &body);
+        Ok(length)
+    }
+
+    /// Disassemble into reusable caller-owned strings.
+    ///
+    /// Both strings are cleared before decoding and again if decoding returns
+    /// an error.
+    pub fn print_assembly_into(
+        &self,
+        baseaddr: &Address,
+        mnemonic: &mut String,
+        body: &mut String,
+    ) -> KunaResult<i32> {
+        mnemonic.clear();
+        body.clear();
+        let result = (|| {
+            let pos = self.obtain_context(baseaddr, ParseState::Disassembly)?;
+            let table = &self.base.symtab;
+            let mut walker = ParserWalker::new(&pos, table, self);
+            walker.base_state();
+            let ct = walker.get_constructor_inner()?;
+            table.get_constructor(ct)?.print_mnemonic(mnemonic, &mut walker, table)?;
+            table.get_constructor(ct)?.print_body(body, &mut walker, table)?;
+            Ok(pos.get_length())
+        })();
+        if result.is_err() {
+            mnemonic.clear();
+            body.clear();
+        }
+        result
     }
 
     /// C++ `Translate::oneInstruction`.
@@ -2539,5 +2562,13 @@ impl Translate for Sleigh {
     }
     fn print_assembly(&self, emit: &mut dyn AssemblyEmit, baseaddr: &Address) -> KunaResult<i32> {
         Sleigh::print_assembly(self, emit, baseaddr)
+    }
+    fn print_assembly_into(
+        &self,
+        baseaddr: &Address,
+        mnemonic: &mut String,
+        body: &mut String,
+    ) -> KunaResult<i32> {
+        Sleigh::print_assembly_into(self, baseaddr, mnemonic, body)
     }
 }
