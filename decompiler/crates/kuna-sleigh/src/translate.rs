@@ -217,6 +217,20 @@ pub trait AssemblyEmit {
     fn dump(&mut self, addr: &Address, mnem: &str, body: &str);
 }
 
+struct AssemblyStringEmit<'a> {
+    mnemonic: &'a mut String,
+    body: &'a mut String,
+}
+
+impl AssemblyEmit for AssemblyStringEmit<'_> {
+    fn dump(&mut self, _addr: &Address, mnem: &str, body: &str) {
+        self.mnemonic.clear();
+        self.mnemonic.push_str(mnem);
+        self.body.clear();
+        self.body.push_str(body);
+    }
+}
+
 /// Tagged addresses in the \e unique address space (C++
 /// `Translate::UniqueLayout`)
 #[allow(non_camel_case_types)] // C++ enumerator names (spacetype precedent)
@@ -479,6 +493,30 @@ pub trait Translate: RegisterLookup {
     /// \param emit is the disassembly emitting object
     /// \param baseaddr is the address of the machine instruction to disassemble
     fn print_assembly(&self, emit: &mut dyn AssemblyEmit, baseaddr: &Address) -> KunaResult<i32>;
+
+    /// Disassemble into reusable caller-owned strings.
+    ///
+    /// Both output strings are cleared before decoding and remain empty if
+    /// decoding fails. Implementors can override this to render without
+    /// allocating intermediate strings.
+    fn print_assembly_into(
+        &self,
+        baseaddr: &Address,
+        mnemonic: &mut String,
+        body: &mut String,
+    ) -> KunaResult<i32> {
+        mnemonic.clear();
+        body.clear();
+        let result = {
+            let mut emit = AssemblyStringEmit { mnemonic, body };
+            self.print_assembly(&mut emit, baseaddr)
+        };
+        if result.is_err() {
+            mnemonic.clear();
+            body.clear();
+        }
+        result
+    }
 
     // --- C++ non-virtual members, provided over translate_base() ---
 
@@ -1395,6 +1433,10 @@ mod tests {
             emit: &mut dyn AssemblyEmit,
             baseaddr: &Address,
         ) -> KunaResult<i32> {
+            if baseaddr.get_offset() == 4 {
+                emit.dump(baseaddr, "PARTIAL", "assembly");
+                return Err(KunaError::lowlevel("assembly failed"));
+            }
             emit.dump(baseaddr, "NOP", "");
             Ok(4)
         }
@@ -1461,6 +1503,24 @@ mod tests {
         let mut asm = CollectAsm(Vec::new());
         assert_eq!(dyn_trans.print_assembly(&mut asm, &addr).unwrap(), 4);
         assert_eq!(asm.0, vec![(0, "NOP".to_string(), String::new())]);
+
+        let mut mnemonic = String::from("stale mnemonic");
+        let mut body = String::from("stale body");
+        assert_eq!(
+            dyn_trans.print_assembly_into(&addr, &mut mnemonic, &mut body).unwrap(),
+            4
+        );
+        assert_eq!(mnemonic, "NOP");
+        assert!(body.is_empty());
+
+        let error_addr = Address::new(Rc::clone(&register), 4);
+        mnemonic.push_str(" stale");
+        body.push_str("stale");
+        assert!(dyn_trans
+            .print_assembly_into(&error_addr, &mut mnemonic, &mut body)
+            .is_err());
+        assert!(mnemonic.is_empty());
+        assert!(body.is_empty());
     }
 
     /// The VarnodeStorage <-> VarnodeData conversions are exact and the two

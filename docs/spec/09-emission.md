@@ -496,3 +496,14 @@ bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::sections, disassemble_at, read_bytes, global_data_symbols)`,
 not in this folder.
+
+**Assembly sweep scratch storage.** The linear code-section walk reuses
+caller-owned mnemonic, operand-body, raw-byte, and line buffers across
+instructions (`decompiler/crates/kuna-console/src/project.rs (sweep_code)`).
+`decompiler/crates/kuna-sleigh/src/translate.rs
+(Translate::print_assembly_into)` lets the concrete translator render into the
+cleared strings directly, and the console engine fills the reusable byte
+buffer through `ConsoleProgram::read_bytes_into`. Failed reads and decodes
+leave their scratch outputs empty. This changes allocation only: section and
+label order, sequential context effects, decode attempts, text formatting, and
+the final bytes are identical, and no instruction result is cached.
