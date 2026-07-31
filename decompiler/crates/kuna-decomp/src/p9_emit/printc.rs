@@ -3223,6 +3223,10 @@ impl PrintC {
         // it again for the real walk.)
         let bb_index = fd.bblocks_ref().block(under).get_index();
         self.commsorter.setup_block_list(bb_index);
+        // setup_block_list sets start/stop but NOT the has_next() bound
+        // (opstop); setup_op_list(None) widens it to the whole block window,
+        // exactly as the real statement walk does before its has_next loop.
+        self.commsorter.setup_op_list(None);
         !self.commsorter.has_next()
     }
 
