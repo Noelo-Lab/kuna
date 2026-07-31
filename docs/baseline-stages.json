@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    292,
-    292
+    294,
+    294
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -21,6 +21,8 @@
     "data:CNORM-TRUTHY #2: default renders the null test as a negation",
     "data:CNORM-TRUTHY #3: truthycond off restores the explicit != 0",
     "data:CNORM-TRUTHY #4: truthycond off restores the explicit NULL compare (DIV-34 form)",
+    "data:CNORM-TRUTHY #5: a VALUE position keeps its comparison in BOTH passes (negate-absorption safety)",
+    "data:CNORM-TRUTHY #6: the value-elision bug shape never appears",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
