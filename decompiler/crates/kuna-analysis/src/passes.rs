@@ -209,7 +209,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // immediate scan over-accepts. See docs/history/analysis-port-buildplan.md §1.2.
 
         // `AggressiveInstructionFinderAnalyzer` (AIF) is NOT a pure-`ctx` pass here:
-        // it is the third *Listing/xref consumer* (`aif`, the sound substitute the
+        // it is a *Listing/xref consumer* (`aif`, the sound substitute the
         // buildplan §1.3 prescribed, gated off-by-default like upstream's
         // `setDefaultEnablement(false)`). It speculatively decodes the undefined gaps
         // the Listing left, which needs the live SLEIGH decoder, so it is driven by
@@ -324,15 +324,25 @@ pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
 /// propagation analyzer (`noreturn_propagate`, the kuna analog of angr's CFGFast
 /// call-graph no-return propagation), and the FID fingerprint matcher (`fid`, the
 /// kuna analog of Ghidra's FID identification analyzer — re-identify a stripped
-/// function by full-hash fingerprint). Each is still gated by its own
-/// `--option <id> on|off` flag at commit time
-/// (`engine.rs::analysis_pass_enabled`), so a default run skips it.
-fn listing_consumer_passes() -> Vec<Box<dyn AnalysisPass>> {
+/// function by full-hash fingerprint). Each is gated by its own
+/// `--option <id> on|off` flag before it runs; the commit-time gate in
+/// `engine.rs::analysis_pass_enabled` remains as a defensive boundary.
+fn listing_consumer_passes(arch: &Architecture) -> Vec<(bool, Box<dyn AnalysisPass>)> {
     vec![
-        Box::new(crate::noreturn_disc::NoReturnDiscoveredPass),
-        Box::new(crate::noreturn_propagate::NoReturnPropagatePass),
-        Box::new(crate::fid::FidPass),
+        (
+            arch.analysis_noreturn_disc,
+            Box::new(crate::noreturn_disc::NoReturnDiscoveredPass),
+        ),
+        (
+            arch.analysis_noreturn_propagate,
+            Box::new(crate::noreturn_propagate::NoReturnPropagatePass),
+        ),
+        (arch.analysis_fid, Box::new(crate::fid::FidPass)),
     ]
+}
+
+fn dispatch_if_enabled<T>(enabled: bool, run: impl FnOnce() -> T) -> Option<T> {
+    enabled.then(run)
 }
 
 /// Build the Listing/xref tier and run the Listing **consumer** passes over it,
@@ -347,7 +357,7 @@ fn listing_consumer_passes() -> Vec<Box<dyn AnalysisPass>> {
 /// The console calls this from `commit_pending_analysis` (reached at `read
 /// symbols`), gated on `arch.analysis_listing`; it parses `bytes`, builds the
 /// Listing with funcsym names + Known-no-return/call-fixup seed metadata, and runs
-/// every [`listing_consumer_passes`] pass.
+/// the enabled [`listing_consumer_passes`] passes.
 ///
 /// A parse failure (or no exec ranges) yields an empty list (additive, never
 /// fails). Bound to the real-ELF path: the XML datatest path never calls this, so
@@ -490,27 +500,32 @@ pub fn run_listing_consumers(
     // treats a Known-no-return callee as terminal.
     let listing = listing.with_noreturn_seeds(noreturn_seeds, callfixup_seeds);
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: Some(&listing) };
-    let mut out: Vec<(&'static str, AnalysisOutput)> = listing_consumer_passes()
-        .iter()
-        .map(|pass| (pass.id(), pass.run(&ctx)))
+    let mut out: Vec<(&'static str, AnalysisOutput)> = listing_consumer_passes(arch)
+        .into_iter()
+        .filter_map(|(enabled, pass)| {
+            let id = pass.id();
+            dispatch_if_enabled(enabled, || (id, pass.run(&ctx)))
+        })
         .collect();
 
-    // The Aggressive Instruction Finder gap-walk (`aif`, the third Listing
-    // consumer) is NOT a pure-`ctx` pass: it speculatively decodes undecoded gap
-    // bytes, so it needs the live SLEIGH decoder (the upstream builds its own
-    // `PseudoDisassembler`). Drive it here with the same `translate`/code-space the
-    // Listing build held, keyed by its `aif` id so the deferred commit gates it via
-    // `analysis_pass_enabled` exactly like the pure consumers. A no-op (empty
-    // `entries`) when there is no code space.
-    if let Some(code_space) = arch.manage().get_default_code_space() {
-        let mut aif_out = AnalysisOutput::default();
-        aif_out.entries = crate::aif::run_aif(
-            &listing,
-            translate,
-            std::rc::Rc::clone(code_space),
-            listing.exec_ranges(),
-        );
-        out.push(("aif", aif_out));
+    // The Aggressive Instruction Finder gap-walk (`aif`) is NOT a pure-`ctx`
+    // pass: it speculatively decodes undecoded gap bytes, so it needs the live
+    // SLEIGH decoder (the upstream builds its own `PseudoDisassembler`). Drive it
+    // here with the same `translate`/code-space the Listing build held. Its option
+    // is checked before this speculative work; the output keeps the `aif` id for
+    // the defensive commit gate. A no-op (empty `entries`) when there is no code
+    // space.
+    if arch.analysis_aif {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            let mut aif_out = AnalysisOutput::default();
+            aif_out.entries = crate::aif::run_aif(
+                &listing,
+                translate,
+                std::rc::Rc::clone(code_space),
+                listing.exec_ranges(),
+            );
+            out.push(("aif", aif_out));
+        }
     }
 
     // (kuna, recursive-descent discovery) Promote the walk's discovered functions — the
@@ -656,8 +671,38 @@ pub fn run_default_analyses_per_pass(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
     use crate::pass::AnalysisPass;
+    use kuna_base::address::Address;
+    use kuna_base::error::{KunaError, KunaResult};
+    use kuna_sleigh::globalcontext::ContextInternal;
+    use kuna_sleigh::loadimage::LoadImage;
+    use kuna_sleigh::sleigh::Sleigh;
+
+    struct DummyImage;
+
+    impl LoadImage for DummyImage {
+        fn get_file_name(&self) -> &str {
+            "dummy"
+        }
+
+        fn load_fill(&mut self, _ptr: &mut [u8], _addr: &Address) -> KunaResult<()> {
+            Err(KunaError::data_unavail("dummy"))
+        }
+
+        fn get_arch_type(&self) -> Vec<u8> {
+            Vec::new()
+        }
+
+        fn adjust_vma(&mut self, _adjust: i64) {}
+    }
+
+    fn test_arch() -> Architecture {
+        let sleigh = Sleigh::new(Box::new(DummyImage), Box::new(ContextInternal::new()));
+        Architecture::new("test:LE:32", sleigh)
+    }
 
     fn ids(passes: &[Box<dyn AnalysisPass>]) -> Vec<&'static str> {
         passes.iter().map(|p| p.id()).collect()
@@ -667,6 +712,46 @@ mod tests {
     /// PE-gated and the `objc` pass is Mach-O-gated, so an ELF (neither) format
     /// gives the byte-identical pre-rtti/pre-objc set.
     const NON_PE: object::BinaryFormat = object::BinaryFormat::Elf;
+
+    #[test]
+    fn disabled_dispatch_does_not_invoke_consumer() {
+        let calls = Cell::new(0);
+        let output = dispatch_if_enabled(false, || {
+            calls.set(calls.get() + 1);
+            7
+        });
+        assert_eq!(output, None);
+        assert_eq!(calls.get(), 0);
+
+        let output = dispatch_if_enabled(true, || {
+            calls.set(calls.get() + 1);
+            7
+        });
+        assert_eq!(output, Some(7));
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn listing_consumer_schedule_pairs_each_pass_with_its_option() {
+        let mut arch = test_arch();
+        arch.analysis_noreturn_disc = false;
+        arch.analysis_noreturn_propagate = true;
+        arch.analysis_fid = false;
+
+        let schedule: Vec<(&str, bool)> = listing_consumer_passes(&arch)
+            .into_iter()
+            .map(|(enabled, pass)| (pass.id(), enabled))
+            .collect();
+
+        assert_eq!(
+            schedule,
+            vec![
+                ("noreturn_disc", false),
+                ("noreturn_propagate", true),
+                ("fid", false)
+            ]
+        );
+    }
 
     /// `passes_for(Unknown, non-PE)` MUST be exactly today's `default_passes()`
     /// contents — the no-Rust default must never silently drop a pass (the guard the
