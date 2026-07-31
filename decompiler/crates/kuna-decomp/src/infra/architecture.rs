@@ -1501,12 +1501,13 @@ impl Architecture {
         }
     }
 
-    /// Apply a named decompiler *mode* preset (`reliable` | `aggressive`): a
+    /// Apply a named decompiler *mode* preset (`reliable` | `aggressive` | `fast`): a
     /// batch of `(option, value)` overrides fanned out through
     /// [`Self::set_kuna_option`]. Overrides apply in table order; any later
     /// `set_kuna_option` -- another override or a user `option`/`--option` --
     /// wins (last-write). `reliable` is the shipped defaults (empty override
-    /// list, a no-op alias); `aggressive` turns on every off-by-default pass.
+    /// list, a no-op alias); `aggressive` turns on every off-by-default pass;
+    /// `fast` disables expensive whole-program decode and discovery.
     /// See [`crate::modes`]. Errors on an unknown mode name.
     pub fn apply_mode(&mut self, name: &str) -> KunaResult<String> {
         let overrides = crate::modes::mode_overrides(name).ok_or_else(|| {

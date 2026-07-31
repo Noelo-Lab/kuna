@@ -3,9 +3,11 @@
 //!
 //! ```text
 //!   kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \
-//!                       [--no-vars] [--max-fn-seconds N] [--option N V].. \
+//!                       [--no-vars] [--max-fn-seconds N] [--mode MODE] \
+//!                       [--option N V].. \
 //!                       [--slice ARCH] [--target T] [--sleighpath D]
-//!   kuna functions <binary> [--json] [--slice ARCH] [--target T] [--sleighpath D]
+//!   kuna functions <binary> [--json] [--mode MODE] [--slice ARCH] [--target T]
+//!                  [--sleighpath D]
 //! ```
 //!
 //! Unlike `kuna decompile` (which spawns a fresh `decomp_dbg` subprocess **per
@@ -34,9 +36,9 @@
 //! angr-style call-graph no-return fixpoint) actually fires and a call to an
 //! unnamed internal exit/fatal wrapper in a stripped binary terminates the
 //! caller instead of swallowing the following functions.  Opt out with
-//! `--option listing off`.  `kuna functions` and the subprocess
-//! `kuna decompile` / `decomp_dbg` surfaces keep the engine default
-//! (listing off).
+//! `--option listing off`. Single-function `kuna decompile` uses the same
+//! injection; `kuna functions` and the interactive `decomp_dbg` surface keep
+//! the engine default (listing off).
 
 use std::rc::Rc;
 
@@ -516,7 +518,7 @@ fn var_json(v: &VarInfo) -> Json {
 
 // --- argument parsing --------------------------------------------------------
 
-/// Expand a decompiler *mode* name (`reliable` | `aggressive`) into its owned
+/// Expand a decompiler *mode* name (`reliable` | `aggressive` | `fast`) into its owned
 /// `(option, value)` overrides. Callers PREPEND these before the user's
 /// `--option` pairs so an explicit `--option` still wins (last-write, matching
 /// the console's `mode` then `option` ordering). Errors on an unknown mode.
@@ -629,7 +631,7 @@ fn parse_hex(s: &str) -> Result<u64, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive] \\\n\
+         \x20                   [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive|fast] \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
@@ -646,7 +648,7 @@ fn usage_decompile_all() {
 
 fn usage_functions() {
     eprintln!(
-        "usage: kuna functions <binary> [--json] [--mode reliable|aggressive] [--slice ARCH] [--target T] [--sleighpath D]\n\
+        "usage: kuna functions <binary> [--json] [--mode reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,functions:[{{name,address}}]}})."

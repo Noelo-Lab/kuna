@@ -308,13 +308,16 @@ and an agent writes:
   a *mode* is a named, ordered list of `(option, value)` overrides layered over the
   shipped defaults — a P0 pipeline-variant preset over the option surface, **not** a
   `[[settable]]` row (it references existing option names, so it never touches the
-  catalog or its count/tier gates). Two ship: **`reliable`** (the shipped defaults, an
-  empty-override alias) and **`aggressive`** (every off-by-default recovery/analysis
-  pass on, except `v850indirectbranch` which would mis-decode register-indirect calls
-  off-V850). Selected with `--mode` on `kuna decompile`/`decompile-all`/`functions` or
-  the console `mode <name>` command; overrides are applied *before* the user's
-  `--option` (last-write, so an explicit `--option` still wins). Discover with
-  `kuna modes`; full membership in [docs/modes.md](../modes.md).
+  catalog or its count/tier gates). Three ship: **`reliable`** (the shipped
+  defaults, an empty-override alias), **`aggressive`** (every off-by-default
+  recovery/analysis pass on, except `v850indirectbranch` which would mis-decode
+  register-indirect calls off-V850), and **`fast`** (`listing`,
+  `funcstart_patterns`, and `aif` off to avoid program-wide decode and
+  speculative discovery). Selected with `--mode` on `kuna decompile`,
+  `decompile-all`, `decompile-project`, or `functions`, or the console
+  `mode <name>` command; overrides are applied *before* the user's `--option`
+  (last-write, so an explicit `--option` still wins). Discover with `kuna modes`;
+  full membership in [docs/modes.md](../modes.md).
 - **The restart log** (kuna)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs (RestartLog)`):
   owned by the engine `Architecture` so it survives function clears; every
