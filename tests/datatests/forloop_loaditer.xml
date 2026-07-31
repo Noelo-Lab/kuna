@@ -17,6 +17,8 @@
 <symbol space="ram" offset="0x400440" name="printf"/>
 </binaryimage>
 <script>
+  <!-- kuna: truthycond default-on (DIV-36); this upstream test pins the explicit != 0 / == 0 comparison rendering -->
+  <com>option truthycond off</com>
   <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->
   <com>option inplaceops off</com>
   <!-- kuna: nullprinting default-on (DIV-34); this upstream test pins the pre-NULL (casted zero) rendering -->

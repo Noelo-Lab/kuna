@@ -14,4 +14,5 @@ pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_arraynotation;
 pub mod kuna_dedupvardecls;
+pub mod kuna_truthycond;
 pub mod coreaction_render;

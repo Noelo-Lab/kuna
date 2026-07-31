@@ -172,6 +172,12 @@ pub mod modifiers {
     pub const HIDE_THISPARAM: uint4 = 0x4000;
     /// The current block may need to surround itself with additional braces.
     pub const PENDING_BRACE: uint4 = 0x8000;
+    /// (kuna) The expression being pushed is consumed as a BOOLEAN (an
+    /// if/while/for/ternary condition or a `&&`/`||`/`!` operand), so a
+    /// comparison against zero may render in its truthy form (`x` / `!x`)
+    /// under `option truthycond` (DIV-36).  Scoped off across any
+    /// non-boolean-preserving operator by `op_push_ir`.
+    pub const CONDITION_CONTEXT: uint4 = 0x10000;
 }
 
 /// Possible types of [`Atom`] (C++ `PrintLanguage::tagtype`,

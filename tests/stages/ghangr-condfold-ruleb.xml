@@ -115,7 +115,8 @@ b801000000c3662e0f1f840000000000b802000000c3662e0f1f840000000000b803000000c3662e
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="condfold-ruleb #1: ON, the whole three-guard cascade folds into ONE short-circuit condition whose right operand is the comma expression (pass 2 only; Rule A cannot produce this - the middle guard has two statement-root calls and the outer fold's sibling is a nested BlockCondition)" min="1" max="1">\(su_uid\(\) != 0\) &amp;&amp; \(\(su_log\(\), v1 = su_euid\(\), v1 != a1 \|\| \(su_egid\(\) != a2\)\)\)</stringmatch>
+<!-- (DIV-36 truthycond: boolean-context zero compares render in truthy form below.) -->
+<stringmatch name="condfold-ruleb #1: ON, the whole three-guard cascade folds into ONE short-circuit condition whose right operand is the comma expression (pass 2 only; Rule A cannot produce this - the middle guard has two statement-root calls and the outer fold's sibling is a nested BlockCondition)" min="1" max="1">\(su_uid\(\)\) &amp;&amp; \(\(su_log\(\), v1 = su_euid\(\), v1 != a1 \|\| \(su_egid\(\) != a2\)\)\)</stringmatch>
 <stringmatch name="condfold-ruleb #2: OFF, the fold is declined and the sibling's void call stays a statement of its own ahead of the inner test (pass 1 only)" min="1" max="1">^    su_log\(\);</stringmatch>
 <stringmatch name="condfold-ruleb #3: OFF, so does the second statement-root call - the one that puts this block over Rule A's single-call cap (pass 1 only)" min="1" max="1">^    v1 = su_euid\(\);</stringmatch>
 <stringmatch name="condfold-ruleb #4: OFF, the declined cascade nests the last two guards inside the first one's arm (pass 1 only)" min="1" max="1">if \(\(v1 != a1\) \|\| \(su_egid\(\) != a2\)\)</stringmatch>

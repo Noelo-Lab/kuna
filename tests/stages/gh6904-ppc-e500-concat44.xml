@@ -55,8 +55,9 @@
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-36 truthycond: boolean-context zero compares render in truthy form below.) -->
 <!-- (DIV-34: the zero pointer renders as NULL, not (void **)0x0.) -->
-<stringmatch name="GH6904 #1: r3/ptr compared as a plain 32-bit pointer (no widening)" min="1" max="1">if \(ptr != NULL\)</stringmatch>
+<stringmatch name="GH6904 #1: r3/ptr compared as a plain 32-bit pointer (no widening)" min="1" max="1">if \(ptr\)</stringmatch>
 <stringmatch name="GH6904 #2: no spurious CONCAT44 over the 64-bit r3 parameter" min="0" max="0">CONCAT44\(in_r3</stringmatch>
 <stringmatch name="GH6904 #3: no spurious CONCAT44 widening of ptr at all" min="0" max="0">CONCAT44\([^)]*ptr\)</stringmatch>
 </decompilertest>

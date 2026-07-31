@@ -52,6 +52,8 @@
 <symbol space="ram" offset="0x100000" name="bf"/>
 </binaryimage>
 <script>
+  <!-- kuna: truthycond default-on (DIV-36); this test is ABOUT comparison polarity, so pin the explicit forms -->
+  <com>option truthycond off</com>
   <com>parse line extern int4 bf(int4 x, int4 *p);</com>
   <com>lo fu bf</com>
   <!-- kuna: branchflip is now default-on (DIV-13); pass 1 explicitly turns it OFF to assert the pre-flip (Ghidra-polarity) rendering -->

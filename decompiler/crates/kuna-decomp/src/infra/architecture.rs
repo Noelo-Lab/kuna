@@ -1269,6 +1269,11 @@ impl Architecture {
                 self.print_mut().options.set_array_notation(val);
                 Ok(msg)
             }
+            "truthycond" => {
+                let (val, msg) = crate::kuna_truthycond::OptionTruthyCond.apply(p1)?;
+                self.print_mut().options.set_truthy_cond(val);
+                Ok(msg)
+            }
             "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),
             "inferfuncentry" => on_off!(infer_funcentry, "Function-entry constant inference"),
             "returnpair" => {

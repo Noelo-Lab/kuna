@@ -1,0 +1,86 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna C-surface normalization: a boolean-context comparison against zero
+    renders in truthy form - `if (x != 0)` as `if (x)` and `if (p == 0)` as
+    `if (!p)` (user-reported readability issue on the angr fmt corpus binary:
+    `if (v8 != (char *)0x0)`; no upstream GH issue).
+
+    Upstream Ghidra always renders the explicit comparison.  kuna adds the
+    settable option `truthycond` (DIV-36, docs/history.md), default-on:
+    the printer marks boolean contexts (if/while/for/ternary conditions,
+    &&/||/! operands) with a CONDITION_CONTEXT mod and elides the eligible
+    zero operand at INT_EQUAL/INT_NOTEQUAL.  Float compares, enum-typed and
+    equate-named zeros keep the explicit form; value uses never rewrite.
+
+    Stage model: S9 emission / condition-form policy.  P0 assertion:
+    `option truthycond on|off`.
+
+    tfn (0x100000): int4 tfn(int4 x) { if (x) return 7; return 3; }
+      test edi,edi / jz +6 / mov eax,7 / ret / mov eax,3 / ret
+    pfn (0x100020): int4 pfn(int8 *p) { if (!p) return 1; return *p; }
+      test rdi,rdi / jnz +6 / mov eax,1 / ret / mov eax,[rdi] / ret
+
+    vfn (0x100040, clang -O1 x86_64 of: int b = (x != 0); sink(b);
+    return (x == 0)*3 + 4;): one `test edi,edi` feeds BOTH a setne (a VALUE
+    consumed as a call argument) and a sete, so the setne lifts as
+    BOOL_NEGATE over a shared INT_EQUAL that survives to print - the
+    adversarial shape for the negate-absorption path.  A VALUE position must
+    NEVER truthy-elide: `sink(x != 0)` would become `sink(x)` (5 instead of
+    1 for x=5).  Asserts #5-#6 pin the value-safety in BOTH passes.
+
+    Pass 1 (default): `if (x)` and `if (!p)` (asserts #1-#2, exactly once
+    each; the explicit forms cannot match the truthy patterns).
+    Pass 2 (option truthycond off): the explicit `if (x != 0)` and - with
+    the DIV-34 NULL default - `if (p == NULL)` (asserts #3-#4).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+85ff7406b807000000c3b803000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100020" readonly="true">
+4885ff7506b801000000c38b07c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100040" readonly="true">
+554889e5535031c031db85ff0f95c00f94c389c7e8170000008d045b83c0044883c4085b5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x100070" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="tfn"/>
+<symbol space="ram" offset="0x100020" name="pfn"/>
+<symbol space="ram" offset="0x100040" name="vfn"/>
+<symbol space="ram" offset="0x100070" name="sink"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 tfn(int4 x);</com>
+  <com>parse line extern int4 pfn(int8 *p);</com>
+  <com>parse line extern int4 vfn(int4 x);</com>
+  <com>parse line extern int4 sink(int4 b);</com>
+  <com>lo fu tfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option truthycond off</com>
+  <com>lo fu tfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CNORM-TRUTHY #1: default renders the nonzero test truthy (DIV-36)" min="1" max="1">if \(x\)</stringmatch>
+<stringmatch name="CNORM-TRUTHY #2: default renders the null test as a negation" min="1" max="1">if \(!p\)</stringmatch>
+<stringmatch name="CNORM-TRUTHY #3: truthycond off restores the explicit != 0" min="1" max="1">if \(x != 0\)</stringmatch>
+<stringmatch name="CNORM-TRUTHY #4: truthycond off restores the explicit NULL compare (DIV-34 form)" min="1" max="1">if \(p == NULL\)</stringmatch>
+<stringmatch name="CNORM-TRUTHY #5: a VALUE position keeps its comparison in BOTH passes (negate-absorption safety)" min="2" max="2">sink\(\(uint4\)\(x != 0\)\);</stringmatch>
+<stringmatch name="CNORM-TRUTHY #6: the value-elision bug shape never appears" min="0" max="0">sink\(\(uint4\)x\)|sink\(x\)</stringmatch>
+</decompilertest>

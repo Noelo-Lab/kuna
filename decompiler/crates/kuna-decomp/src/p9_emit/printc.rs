@@ -394,6 +394,11 @@ pub struct PrintCOptions {
     /// (kuna) Render standalone PTRADD as `&base[index]` rather than
     /// `base + index` (C++ `option_arraynotation`, printc.hh:152).
     pub array_notation: bool,
+    /// (kuna) In boolean contexts (if/while/for/ternary conditions, `&&`/`||`/
+    /// `!` operands), render `x != 0` as `x` and `x == 0` as `!x` (DIV-37,
+    /// `option truthycond`).  Float compares, enum-typed and equate-named
+    /// zeros are excluded; value contexts (`v = (x != 0)`) never normalize.
+    pub truthy_cond: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
     pub brace_func: BraceStyle,
     /// How if/else-block braces are formatted (C++ `option_brace_ifelse`).
@@ -431,6 +436,7 @@ impl PrintCOptions {
             null: true, // (kuna) DIV-35; upstream option_NULL default off
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
+            truthy_cond: true, // (kuna) DIV-37; no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
@@ -465,6 +471,14 @@ impl PrintCOptions {
     /// (kuna) C++ `setArrayNotation(val)` (printc.hh:250).
     pub fn set_array_notation(&mut self, val: bool) {
         self.array_notation = val;
+    }
+    /// (kuna) Toggle truthy condition rendering (`option truthycond`, DIV-37).
+    pub fn set_truthy_cond(&mut self, val: bool) {
+        self.truthy_cond = val;
+    }
+    /// (kuna) Current truthy-condition rendering flag.
+    pub fn truthy_cond(&self) -> bool {
+        self.truthy_cond
     }
     /// (kuna) C++ `getArrayNotation()` (printc.hh:251).
     pub fn array_notation(&self) -> bool {
@@ -3806,6 +3820,42 @@ impl PrintC {
     /// printc.cc:806-830); every other override ignores it.
     fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
+        // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
+        // boolean-preserving operators; any other operator's operands are value
+        // context, so scope the bit off across this dispatch (the mod-stack
+        // frame restores it for our siblings).
+        let scope_off_cond = self.context.is_set(modifiers::CONDITION_CONTEXT)
+            && !matches!(
+                opc,
+                OpCode::CPUI_INT_EQUAL
+                    | OpCode::CPUI_INT_NOTEQUAL
+                    | OpCode::CPUI_FLOAT_EQUAL
+                    | OpCode::CPUI_FLOAT_NOTEQUAL
+                    | OpCode::CPUI_BOOL_AND
+                    | OpCode::CPUI_BOOL_OR
+                    | OpCode::CPUI_BOOL_NEGATE
+                    | OpCode::CPUI_CBRANCH
+            );
+        if scope_off_cond {
+            self.context.push_mod();
+            self.context.unset_mod(modifiers::CONDITION_CONTEXT);
+        }
+        self.op_push_ir_inner(fd, arch, op, read_op, opc);
+        if scope_off_cond {
+            self.context.pop_mod();
+        }
+    }
+
+    /// The per-opcode dispatch body of [`op_push_ir`](Self::op_push_ir) (split
+    /// out so the CONDITION_CONTEXT scoping wraps every arm uniformly).
+    fn op_push_ir_inner(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        read_op: Option<OpId>,
+        opc: OpCode,
+    ) {
         match opc {
             // INT_SEXT (printc.cc:819 opIntSext) / INT_ZEXT (printc.cc:806 opIntZext):
             // the cast-strategy decides whether the extension renders as an explicit
@@ -3837,16 +3887,19 @@ impl PrintC {
                 if booleanflip {
                     self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
                 }
+                // (kuna truthycond, DIV-37) The condition value is consumed as
+                // a boolean — mark the context so a `!= 0`/`== 0` comparison
+                // renders in truthy form; same mod-stack frame carries the
+                // negate-token absorption.
+                self.context.push_mod();
+                self.context.set_mod(modifiers::CONDITION_CONTEXT);
                 if use_negate_token {
-                    self.context.push_mod();
                     self.context.set_mod(modifiers::NEGATETOKEN);
                 }
                 if let Some(vn) = in1 {
                     self.push_vn_ir(fd, arch, vn, op);
                 }
-                if use_negate_token {
-                    self.context.pop_mod();
-                }
+                self.context.pop_mod();
                 // recurse() drains the stack: direct resolution above already
                 // drained it (the RPN engine unwinds on the final push_atom), so
                 // the paren can close now.
@@ -3960,15 +4013,110 @@ impl PrintC {
         } else {
             tok
         };
+        // (kuna truthycond, DIV-37) A comparison consumed as a boolean: after
+        // the negate-token flip has settled which comparison actually prints,
+        // `x != 0` renders as `x` and `x == 0` as `!x`.  The surviving operand
+        // keeps CONDITION_CONTEXT (so `(a != 0) != 0` collapses fully); the
+        // non-normalized comparison clears it (its operands are values).
+        if self.context.is_set(modifiers::CONDITION_CONTEXT)
+            && (tok.print1 == "==" || tok.print1 == "!=")
+        {
+            self.context.unset_mod(modifiers::CONDITION_CONTEXT);
+            if self.options.truthy_cond {
+                if let Some(other) = self.truthy_other_operand(fd, op) {
+                    if tok.print1 == "==" {
+                        self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
+                    }
+                    self.context.push_mod();
+                    self.context.set_mod(modifiers::CONDITION_CONTEXT);
+                    self.push_vn_ir(fd, arch, other, op);
+                    self.context.pop_mod();
+                    return;
+                }
+            }
+        }
         self.push_op(tok, Some(op_key(op)));
+        // (kuna truthycond) `&&`/`||` operands are boolean contexts themselves
+        // (this is semantics-preserving even in value position: both sides of
+        // the equivalence yield the same 0/1).
+        let boolean_operands = tok.print1 == "&&" || tok.print1 == "||";
         // C++ pushes in1 then in0 onto the LIFO nodepend; resolving directly,
         // push in0 then in1 so the operands print in0 <op> in1.
-        if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
-            self.push_vn_ir(fd, arch, v0, op);
+        for slot in 0..2 {
+            if let Some(v) = fd.obank().get(op).and_then(|o| o.get_in(slot)) {
+                if boolean_operands {
+                    self.context.push_mod();
+                    self.context.set_mod(modifiers::CONDITION_CONTEXT);
+                    self.push_vn_ir(fd, arch, v, op);
+                    self.context.pop_mod();
+                } else {
+                    self.push_vn_ir(fd, arch, v, op);
+                }
+            }
         }
-        if let Some(v1) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
-            self.push_vn_ir(fd, arch, v1, op);
+    }
+
+    /// (kuna truthycond, DIV-37) For an INT_EQUAL/INT_NOTEQUAL comparison with
+    /// exactly one zero operand eligible for truthy rendering, return the OTHER
+    /// operand.  A zero is eligible when it is a plain constant 0 (directly, or
+    /// through one implied CAST — the casted null-pointer shape) whose
+    /// read-facing type is not a float or an enum and which carries no
+    /// equate/display override.
+    fn truthy_other_operand(&self, fd: &Funcdata, op: OpId) -> Option<VarnodeId> {
+        let o = fd.obank().get(op)?;
+        if !matches!(o.code(), OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL) {
+            return None;
         }
+        let (a, b) = (o.get_in(0)?, o.get_in(1)?);
+        let za = self.is_truthy_zero(fd, a, op);
+        let zb = self.is_truthy_zero(fd, b, op);
+        match (za, zb) {
+            (true, false) => Some(b),
+            (false, true) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// Whether `vn` is a zero constant eligible for truthy elision (see
+    /// [`truthy_other_operand`](Self::truthy_other_operand)).
+    fn is_truthy_zero(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> bool {
+        let eligible_const = |fd: &Funcdata, cvn: VarnodeId, read_op: OpId| -> bool {
+            let v = match fd.vbank().get(cvn) {
+                Some(v) => v,
+                None => return false,
+            };
+            if !v.is_constant() || v.get_offset() != 0 {
+                return false;
+            }
+            let ct = v.get_type_read_facing(read_op).clone();
+            if ct.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT {
+                return false;
+            }
+            if ct.is_enum_type() {
+                return false;
+            }
+            // An equate symbol names this zero; keep the name visible.
+            fd.vn_high_display_format(cvn) == 0
+        };
+        let v = match fd.vbank().get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if v.is_constant() {
+            return eligible_const(fd, vn, op);
+        }
+        // Look through ONE implied CAST (the `(char *)0x0` shape when a real
+        // CAST op was inserted rather than the constant being retyped).
+        if v.is_implied() && v.is_written() {
+            if let Some(def) = v.get_def() {
+                if fd.obank().get(def).map(|o| o.code()) == Some(OpCode::CPUI_CAST) {
+                    if let Some(inner) = fd.obank().get(def).and_then(|o| o.get_in(0)) {
+                        return eligible_const(fd, inner, def);
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// C++ `PrintLanguage::opUnary` over the IR (printlanguage.cc:573).
@@ -4016,17 +4164,35 @@ impl PrintC {
     ///   - Otherwise print `!` followed by our input.
     fn op_bool_negate_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
+        // (kuna truthycond, DIV-37) Whether the operand may render truthy
+        // depends on the arm: when the `!` is PRINTED (arm 3), the printed
+        // operator re-booleanizes the value, so its operand is always a
+        // boolean context.  When the `!` is ABSORBED (arm 2's negate-token
+        // flip) or CANCELLED (arm 1's double negation), no boolean operator
+        // remains in the render — eliding a zero-compare there would change
+        // the VALUE (`v = !(x == 0)` must stay `v = x != 0`, never `v = x`) —
+        // so those arms only propagate a bit that a genuine boolean consumer
+        // (CBRANCH / `&&` / `||` / a printed `!`) already established.
+        let entry_cond = self.context.is_set(modifiers::CONDITION_CONTEXT);
         if self.context.is_set(modifiers::NEGATETOKEN) {
             // Negated by a previous BOOL_NEGATE: consume the mod, print input as-is.
             self.context.unset_mod(modifiers::NEGATETOKEN);
+            self.context.push_mod();
+            if entry_cond {
+                self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            }
             if let Some(vn) = in0 {
                 self.push_vn_ir(fd, arch, vn, op);
             }
+            self.context.pop_mod();
         } else if in0.map(|vn| self.check_print_negation(fd, vn)).unwrap_or(false) {
             // The next operator can be flipped: print the input with `negatetoken`
             // active (C++ `pushVn(in0, op, mods|negatetoken)`).
             self.context.push_mod();
             self.context.set_mod(modifiers::NEGATETOKEN);
+            if entry_cond {
+                self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            }
             if let Some(vn) = in0 {
                 self.push_vn_ir(fd, arch, vn, op);
             }
@@ -4034,9 +4200,12 @@ impl PrintC {
         } else {
             // Otherwise print ourselves: `!` then the input.
             self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
+            self.context.push_mod();
+            self.context.set_mod(modifiers::CONDITION_CONTEXT);
             if let Some(vn) = in0 {
                 self.push_vn_ir(fd, arch, vn, op);
             }
+            self.context.pop_mod();
         }
     }
 

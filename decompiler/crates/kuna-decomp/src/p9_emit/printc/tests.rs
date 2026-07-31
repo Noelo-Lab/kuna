@@ -668,17 +668,20 @@ fn option_defaults_match_reset_defaults_printc() {
     let o = PrintCOptions::new();
     assert!(o.convention);
     assert!(o.hide_exts);
-    // (kuna) DIV-35: `out OP= y` compound assignments render by default
+    // (kuna) DIV-36: `out OP= y` compound assignments render by default
     // (upstream ships the flag off and never consumed it; `option inplaceops
     // off` restores the `out = out OP y` form).
     assert!(o.inplace_ops);
     assert!(!o.nocasts);
-    // (kuna) DIV-34: zero pointer constants render as NULL (upstream
+    // (kuna) DIV-35: zero pointer constants render as NULL (upstream
     // option_NULL default off; `option nullprinting off` restores).
     assert!(o.null);
     assert!(!o.unplaced);
     // (kuna) DIV-2 default-on: &base[index] for standalone PTRADD (GH-558).
     assert!(o.array_notation);
+    // (kuna) DIV-37: boolean-context zero comparisons render in truthy form
+    // (`option truthycond off` restores the explicit comparisons).
+    assert!(o.truthy_cond);
     // (kuna) DIV-34: no blank line between the prototype and `{` (upstream
     // skip_line; `option braceformat function skip` restores it).
     assert_eq!(o.brace_func, BraceStyle::NextLine);
@@ -700,6 +703,8 @@ fn option_setters() {
     assert!(!o.array_notation());
     o.set_brace_format_function(BraceStyle::SkipLine);
     assert_eq!(o.brace_func, BraceStyle::SkipLine);
+    o.set_truthy_cond(false);
+    assert!(!o.truthy_cond());
 }
 
 // ---------------------------------------------------------------------------
