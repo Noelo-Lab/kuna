@@ -1675,8 +1675,10 @@ mod tests {
         // and kuna-cnorm-protogap / the DIV-34 brace-placement default flip
         // (no blank line between a prototype and `{`; braceformat restores),
         // and kuna-cnorm-nullprint / the DIV-35 NULL-token default flip
-        // (zero pointer constants render NULL; nullprinting off restores)
-        assert_eq!(count, 169, "corpus file count drifted");
+        // (zero pointer constants render NULL; nullprinting off restores),
+        // and kuna-cnorm-compoundassign / the DIV-36 emitInplaceOp port
+        // (out = out OP y renders out OP= y; inplaceops off restores)
+        assert_eq!(count, 170, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

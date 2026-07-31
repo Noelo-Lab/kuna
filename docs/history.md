@@ -146,6 +146,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-33 | executable batch targets (bug fix, no flag) | unfiltered `decompile-all`/`decompile-project`/wasm runs skip callable symbols in data sections while preserving them for naming, inventory, and explicit address selection | 0/675 (analysis tier is parity-isolated); private PE `bc4c15d8…3ae1b` 693→351 targets and 63.58→7.78 s; all 351 executable artifacts byte-identical |
 | DIV-34 | `braceformat function next` (upstream option, new default) | no blank line between a function prototype and its `{` (upstream skip_line renders `)\n\n{`); `option braceformat function skip` restores | 0/675; print-only |
 | DIV-35 | `nullprinting on` (upstream option, new default) | zero pointer constants render as `NULL` instead of `(type *)0x0` (upstream option_NULL default off); `option nullprinting off` restores | 675/675 via 1 datatest opt-out (forloop_loaditer); 2 stage asserts re-worded; print-only |
+| DIV-36 | `inplaceops on` (upstream option, new default + ported consumer) | `out = out OP y` statements render as `out OP= y` (the upstream `emitInplaceOp` consumer of option_inplace_ops was never wired; kuna ports it), `x += -c` folds to `x -= c`; comma contexts (for-headers) exempt; `option inplaceops off` restores | 675/675 via 9 datatest opt-outs; 1 stage assert re-worded; print-only |
 
 ## Upstream provenance & sync
 

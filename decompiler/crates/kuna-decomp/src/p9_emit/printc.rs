@@ -417,14 +417,16 @@ impl PrintCOptions {
     /// the `&base[index]` form for a standalone PTRADD (GH-558), the kuna
     /// DIV-34 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
     /// line between the prototype and `{`; `option braceformat function skip`
-    /// restores it), and the kuna DIV-35 `null = true` (a zero pointer constant
+    /// restores it), the kuna DIV-35 `null = true` (a zero pointer constant
     /// renders as `NULL`, not `(type *)0x0`; `option nullprinting off`
-    /// restores the casted form).
+    /// restores the casted form), and the kuna DIV-36 `inplace_ops = true`
+    /// (`out = out OP y` renders as `out OP= y` via the ported
+    /// `emitInplaceOp`; `option inplaceops off` restores).
     pub fn new() -> PrintCOptions {
         PrintCOptions {
             convention: true,
             hide_exts: true,
-            inplace_ops: false,
+            inplace_ops: true, // (kuna) DIV-36; upstream flag default off + never consumed
             nocasts: false,
             null: true, // (kuna) DIV-35; upstream option_NULL default off
             unplaced: false,
@@ -3668,9 +3670,103 @@ impl PrintC {
         }
     }
 
+    /// C++ `PrintC::emitInplaceOp` (printc.cc, directly above `emitExpression`;
+    /// gated by the `option_inplace_ops` head at printc.cc:2546 which upstream
+    /// never wires beyond the flag — ported here as the flag's consumer,
+    /// default-on per kuna DIV-36).
+    ///
+    /// When the statement is `out = out OP y` — a two-input integer op whose
+    /// first input is the SAME high-level variable as the output — render the
+    /// C compound-assignment form `out OP= y` instead.  Returns `true` when the
+    /// in-place form was emitted (the caller stops), `false` to fall through to
+    /// the ordinary `out = expr` render.
+    ///
+    /// Faithful to the upstream shape: the token map covers the ten integer
+    /// ops with `OP=` tokens (printc.cc:62-71); the identity test is HighVariable
+    /// equality (same high ⇒ same printed name); `in0` is pushed with
+    /// `pushVnExplicit` (never expanded), `in1` with the ordinary `pushVn`.
+    fn emit_inplace_op(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        let (opc, out, in0, in1, num_input) = match fd.obank().get(op) {
+            Some(o) => (o.code(), o.get_out(), o.get_in(0), o.get_in(1), o.num_input()),
+            None => return false,
+        };
+        let tok: &'static OpToken = match opc {
+            OpCode::CPUI_INT_MULT => &tokens::MULTEQUAL,
+            OpCode::CPUI_INT_DIV | OpCode::CPUI_INT_SDIV => &tokens::DIVEQUAL,
+            OpCode::CPUI_INT_REM | OpCode::CPUI_INT_SREM => &tokens::REMEQUAL,
+            OpCode::CPUI_INT_ADD => &tokens::PLUSEQUAL,
+            OpCode::CPUI_INT_SUB => &tokens::MINUSEQUAL,
+            OpCode::CPUI_INT_LEFT => &tokens::LEFTEQUAL,
+            OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => &tokens::RIGHTEQUAL,
+            OpCode::CPUI_INT_AND => &tokens::ANDEQUAL,
+            OpCode::CPUI_INT_OR => &tokens::OREQUAL,
+            OpCode::CPUI_INT_XOR => &tokens::XOREQUAL,
+            _ => return false,
+        };
+        if num_input != 2 {
+            return false;
+        }
+        let (out, in0, in1) = match (out, in0, in1) {
+            (Some(a), Some(b), Some(c)) => (a, b, c),
+            _ => return false,
+        };
+        // C++ `op->getOut()->getHigh() != vn->getHigh()` — pre-merge Nones never
+        // fold (a None high is "not the same variable").
+        let out_high = fd.vbank().get(out).and_then(|v| v.get_high());
+        let in0_high = fd.vbank().get(in0).and_then(|v| v.get_high());
+        match (out_high, in0_high) {
+            (Some(a), Some(b)) if a == b => {}
+            _ => return false,
+        }
+        // (kuna) `x += -c` reads poorly: when the INT_ADD addend is a plain
+        // negative signed constant (no equate/display override, not char-typed,
+        // not the unnegatable type minimum), render `x -= c` with the negated
+        // magnitude instead.  The dataflow canonicalizes `sub x, c` into
+        // INT_ADD(x, -c), so this restores the source's subtraction form.
+        if opc == OpCode::CPUI_INT_ADD {
+            if let Some(v) = fd.vbank().get(in1) {
+                if v.is_constant() && fd.vn_high_display_format(in1) == 0 {
+                    let ct = v.get_type_read_facing(op).clone();
+                    let sz = v.get_size();
+                    let mask = calc_mask(sz);
+                    let val = v.get_offset() & mask;
+                    let topbit = (mask >> 1) + 1;
+                    if ct.get_metatype() == crate::dtype::type_metatype::TYPE_INT
+                        && !ct.is_char_print()
+                        && !ct.is_enum_type()
+                        && (val & topbit) != 0
+                        && val != topbit
+                    {
+                        let mag = (!val).wrapping_add(1) & mask;
+                        self.push_op(&tokens::MINUSEQUAL, Some(op_key(op)));
+                        self.push_vn_explicit_ir(fd, arch, in0, op);
+                        self.push_constant_ir_fmt_sign(mag, sz, op, 0, true);
+                        return true;
+                    }
+                }
+            }
+        }
+        self.push_op(tok, Some(op_key(op)));
+        self.push_vn_explicit_ir(fd, arch, in0, op);
+        self.push_vn_ir(fd, arch, in1, op);
+        true
+    }
+
     /// C++ `PrintC::emitExpression` (printc.cc:2544): if the op has an output,
     /// open an assignment to it, then push the op's expression and recurse.
     fn emit_expression_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        // C++ `if (option_inplace_ops && emitInplaceOp(op)) return;`
+        // (printc.cc:2546) — the in-place `OP=` render, kuna DIV-36 default-on
+        // (`option inplaceops off` restores the upstream `out = out OP y` form).
+        // Applied to standalone `;`-terminated statements only: comma contexts
+        // (for-loop headers, condition-block side effects) keep the upstream
+        // `out = out OP y` form, so `for (...; i = i + 1)` renders unchanged.
+        if self.options.inplace_ops
+            && !self.context.is_set(modifiers::COMMA_SEPARATE)
+            && self.emit_inplace_op(fd, arch, op)
+        {
+            return;
+        }
         // C++ special-printing dispatch (printc.cc:2547-2566): a STORE/INSERT
         // marked by the bitfield transforms renders as `ptr->field = value`
         // (the constructor and SUBPIECE special-print arms are other surfaces).

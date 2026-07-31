@@ -14,6 +14,8 @@ e54883ec0848897df8c7052d09200000
 <symbol space="ram" offset="0x4006ed" name="noforloop_globcall"/>
 </binaryimage>
 <script>
+  <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->
+  <com>option inplaceops off</com>
   <com>parse line extern void noforloop_globcall(int4 *ptr);</com>
   <com>map addr r0x601030 int4 globvar</com>
   <com>lo fu noforloop_globcall</com>

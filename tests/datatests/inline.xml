@@ -26,6 +26,8 @@ ffff4883c408c3c3
 <symbol space="ram" offset="0x10006d" name="collatz"/>
 </binaryimage>
 <script>
+  <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->
+  <com>option inplaceops off</com>
   <!-- kuna: foldcallret default-on (DIV-13); this upstream test pins the pre-foldcallret rendering -->
   <com>option foldcallret off</com>
   <com>parse line extern int4 add50(int4 a);</com>

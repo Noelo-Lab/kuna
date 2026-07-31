@@ -24,6 +24,8 @@ ebffffff
 <symbol space="ram" offset="0x100000" name="switchloop"/>
 </binaryimage>
 <script>
+  <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->
+  <com>option inplaceops off</com>
   <com>option readonly on</com>
   <com>parse line extern uint4 switchloop(uint4 startval);</com>
   <com>lo fu switchloop</com>

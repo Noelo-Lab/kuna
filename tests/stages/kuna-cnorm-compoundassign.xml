@@ -1,0 +1,84 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna C-surface normalization: a statement of the shape `out = out OP y`
+    (same high-level variable on both sides) renders as the C compound
+    assignment `out OP= y` (user-reported readability issue on the angr fmt
+    corpus binary: `v13 = v13 & v17;`; no upstream GH issue).
+
+    Upstream Ghidra carries option_inplace_ops + the ten `OP=` tokens
+    (printc.cc:62-71) but never consumed the flag; kuna ports the
+    emitInplaceOp consumer and flips the default on (DIV-35,
+    docs/history.md).  `option inplaceops off` restores the spelled-out
+    form.  Comma contexts (for-loop headers) are exempt, so upstream
+    `for (...; i = i + 1)` renders keep their shape.  A negative signed
+    INT_ADD constant folds to subtraction: `x += -3` renders `x -= 3`.
+
+    Stage model: S9 emission / statement-form policy.  P0 assertion:
+    `option inplaceops on|off` (upstream OptionInPlaceOps).
+
+    Three tiny loop functions, one self-op each (the loop-carried
+    accumulator plus a store keeps the statement explicit; a trailing store
+    keeps the tail from rerolling into a for-header, a comma context which
+    inplaceops deliberately exempts):
+
+    ca_add (0x100000):    mov eax,edi / jmp check /
+                          body: add eax,esi ; x += y
+                          mov [rdx],eax ; *p = x
+                          check: cmp eax,0x63 / jle body / ret
+    ca_and (0x100020):    same, body op and eax,esi ; x &= y
+    ca_negadd (0x100040): mov eax,edi / jmp check /
+                          body: add eax,-3 ; x -= 3 (negative-addend fold)
+                          mov [rsi],eax ; *p = x
+                          check: test eax,eax / jg body / ret
+
+    Pass 1 (default): `+= y;` / `&= y;` / `-= 3;` each appear exactly once
+    (asserts #1-#3) and the spelled-out forms do not.
+    Pass 2 (option inplaceops off): the spelled-out ` + y;` / ` & y;` /
+    ` + -3;` forms appear exactly once each (asserts #4-#6).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+89f8eb0401f0890283f8637ef7c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100020" readonly="true">
+89f8eb0421f0890283f8637ef7c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100040" readonly="true">
+89f8eb0583c0fd890685c07ff7c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="ca_add"/>
+<symbol space="ram" offset="0x100020" name="ca_and"/>
+<symbol space="ram" offset="0x100040" name="ca_negadd"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 ca_add(int4 x,int4 y,int4 *p);</com>
+  <com>parse line extern int4 ca_and(int4 x,int4 y,int4 *p);</com>
+  <com>parse line extern int4 ca_negadd(int4 x,int4 *p);</com>
+  <com>lo fu ca_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ca_and</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ca_negadd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option inplaceops off</com>
+  <com>lo fu ca_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ca_and</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ca_negadd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CNORM-INPLACE #1: default renders the self-add as += (DIV-35)" min="1" max="1">\+= y;</stringmatch>
+<stringmatch name="CNORM-INPLACE #2: default renders the self-and as &amp;=" min="1" max="1">&amp;= y;</stringmatch>
+<stringmatch name="CNORM-INPLACE #3: default folds the negative addend to -= 3" min="1" max="1">-= 3;</stringmatch>
+<stringmatch name="CNORM-INPLACE #4: inplaceops off restores the spelled-out add" min="1" max="1"> \+ y;</stringmatch>
+<stringmatch name="CNORM-INPLACE #5: inplaceops off restores the spelled-out and" min="1" max="1"> &amp; y;</stringmatch>
+<stringmatch name="CNORM-INPLACE #6: inplaceops off restores the raw negative addend" min="1" max="1"> \+ -3;</stringmatch>
+</decompilertest>
