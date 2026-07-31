@@ -11,8 +11,9 @@
 //!   (ADR 0001): `ConstructState` nodes live in `ParserContext::state`, child
 //!   links are `Option<usize>` indices, the `ParserWalker` carries a node
 //!   index plus the breadcrumb path.
-//! - [`PcodeCacher`] / [`DisassemblyCache`] / [`SleighBuilder`] / [`Sleigh`]
-//!   from `sleigh.{hh,cc}`.
+//! - [`PcodeCacher`] / [`SleighBuilder`] / [`Sleigh`] from `sleigh.{hh,cc}`.
+//!   Parser contexts are recycled between decodes while retaining their state
+//!   arenas, the allocation-saving part of the C++ `DisassemblyCache`.
 //!
 //! The walker implements the `SymbolWalker`/`SymbolWalkerChange`/
 //! `PatternExpressionContext` hooks (slghsymbol.rs / slghpatexpress.rs):
@@ -28,6 +29,7 @@
 //! re-enters a cache mid-borrow).
 
 use std::cell::RefCell;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use kuna_base::address::{calc_mask, Address};
@@ -66,6 +68,7 @@ const MAX_INSTRUCTION_LEN: i32 = 16;
 const INITIAL_STATE_NUM: i32 = 64;
 /// C++ `ParserContext::STATE_GROWTH`.
 const STATE_GROWTH: i32 = 64;
+const PARSER_CONTEXT_POOL_CAPACITY: usize = 8;
 
 /// C++ `ConstructState`: a node in the subconstructor tree.  Pointers become
 /// arena indices into [`ParserContext::state`] (ADR 0001).
@@ -109,6 +112,16 @@ impl ConstructState {
             offset: 0,
             matched_pattern: None,
         }
+    }
+
+    fn reset(&mut self) {
+        self.ct = None;
+        self.hand = FixedHandle::default();
+        self.resolve.fill(None);
+        self.parent = None;
+        self.length = 0;
+        self.offset = 0;
+        self.matched_pattern = None;
     }
 }
 
@@ -205,6 +218,22 @@ impl ParserContext {
             .map(|_| ConstructState::with_operands(MAX_OPERAND as usize))
             .collect();
         self.base_state = n - 1;
+    }
+
+    fn reset(&mut self, contextsize: i32, spc: Rc<AddrSpace>, addr: Address) {
+        self.parsestate = ParseState::Uninitialized;
+        self.const_space = Some(spc);
+        self.buf.fill(0);
+        self.context.resize(contextsize.max(0) as usize, 0);
+        self.context.fill(0);
+        self.contextcommit.clear();
+        self.set_addr(addr);
+        self.naddr = Address::new_invalid();
+        self.calladdr = Address::new_invalid();
+        self.base_state = self.state.len() - 1;
+        self.alloc = self.state.len() as i32 - 2;
+        self.delayslot = 0;
+        self.state[self.base_state].reset();
     }
 
     /// C++ `getBuffer` write target.
@@ -826,8 +855,8 @@ impl<'a> ParserWalkerChange<'a> {
         let opstate = self.ctx.alloc as usize;
         self.ctx.alloc -= 1;
         let parent = self.point();
+        self.ctx.state[opstate].reset();
         self.ctx.state[opstate].parent = Some(parent);
-        self.ctx.state[opstate].ct = None;
         self.ctx.state[parent].resolve[i as usize] = Some(opstate);
         if self.cur.depth > MAX_DEPTH - 2 {
             return Err(KunaError::lowlevel("SLEIGH exceeded maximum parse depth"));
@@ -1027,6 +1056,35 @@ impl PcodeCacher {
     }
 }
 
+struct ParserContextGuard {
+    context: Option<ParserContext>,
+    pool: Rc<RefCell<Vec<ParserContext>>>,
+}
+
+impl Deref for ParserContextGuard {
+    type Target = ParserContext;
+
+    fn deref(&self) -> &ParserContext {
+        self.context.as_ref().expect("parser context guard is live")
+    }
+}
+
+impl DerefMut for ParserContextGuard {
+    fn deref_mut(&mut self) -> &mut ParserContext {
+        self.context.as_mut().expect("parser context guard is live")
+    }
+}
+
+impl Drop for ParserContextGuard {
+    fn drop(&mut self) {
+        if let Some(context) = self.context.take() {
+            let mut pool = self.pool.borrow_mut();
+            if pool.len() < PARSER_CONTEXT_POOL_CAPACITY {
+                pool.push(context);
+            }
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // SleighBuilder (sleigh.hh/.cc)
@@ -1038,7 +1096,7 @@ impl PcodeCacher {
 /// can walk them by index without re-entering the (RefCell) caches.
 struct ResolvedCtx {
     addr: Address,
-    ctx: ParserContext,
+    ctx: ParserContextGuard,
 }
 
 /// C++ `SleighBuilder : PcodeBuilder`: walks the parse tree and prepares data
@@ -1074,7 +1132,7 @@ impl<'a> SleighBuilder<'a> {
     fn walker(&self) -> ParserWalker<'_> {
         ParserWalker {
             ctx: &self.contexts[self.cur_ctx].ctx,
-            cross: self.cross_ctx.map(|i| &self.contexts[i].ctx),
+            cross: self.cross_ctx.map(|i| &*self.contexts[i].ctx),
             table: self.table,
             engine: self.engine,
             cur: self.cur.clone(),
@@ -1473,11 +1531,10 @@ const SIZEOF_SPACE: u32 = 8;
 
 /// C++ `Sleigh : SleighBase`: a full SLEIGH engine.
 ///
-/// Each `oneInstruction`/`instructionLength` resolves a fresh
-/// [`ParserContext`] (the C++ `DisassemblyCache` is an optimization, not a
-/// correctness requirement — resolution is a pure function of the bytes and
-/// the painted context).  The load image and context database/cache sit behind
-/// `RefCell` so the `const` C++ trait methods stay `&self` (see module docs).
+/// Each `oneInstruction`/`instructionLength` checks out a reset
+/// [`ParserContext`] from a scratch pool. The load image and context
+/// database/cache sit behind `RefCell` so the `const` C++ trait methods stay
+/// `&self` (see module docs).
 pub struct Sleigh {
     /// The SLEIGH spec core (spaces, symbol table, templates, register map).
     base: SleighBase,
@@ -1493,6 +1550,9 @@ pub struct Sleigh {
     context_db: RefCell<Box<dyn ContextDatabase>>,
     /// Cache of recently used context values (C++ `cache`).
     cache: RefCell<ContextCache>,
+    /// Reusable parser arenas. Checked-out contexts are removed from the pool,
+    /// so nested `inst_next2` and delay-slot decodes receive distinct storage.
+    parser_contexts: Rc<RefCell<Vec<ParserContext>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1554,6 +1614,7 @@ impl Sleigh {
             loader: Rc::new(RefCell::new(loader)),
             context_db: RefCell::new(context_db),
             cache: RefCell::new(ContextCache::new()),
+            parser_contexts: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -1718,13 +1779,24 @@ impl Sleigh {
         self.loader.borrow_mut().load_fill(buf, &addr)
     }
 
-    /// Build a fresh, uninitialized parser context positioned at `addr`.
-    fn fresh_context(&self, addr: &Address) -> ParserContext {
+    /// Check out a reset parser context positioned at `addr`.
+    fn checkout_context(&self, addr: &Address) -> ParserContextGuard {
         let contextsize = self.context_db.borrow().get_context_size();
-        let mut pos = ParserContext::new(contextsize);
-        pos.initialize(self.const_space(), INITIAL_STATE_NUM);
-        pos.set_addr(addr.clone());
-        pos
+        let const_space = self.const_space();
+        let pooled = {
+            let mut pool = self.parser_contexts.borrow_mut();
+            pool.pop()
+        };
+        let mut pos = pooled.unwrap_or_else(|| {
+            let mut pos = ParserContext::new(contextsize);
+            pos.initialize(Rc::clone(&const_space), INITIAL_STATE_NUM);
+            pos
+        });
+        pos.reset(contextsize, const_space, addr.clone());
+        ParserContextGuard {
+            context: Some(pos),
+            pool: Rc::clone(&self.parser_contexts),
+        }
     }
 
     /// C++ `Sleigh::resolve`: build the constructor tree (disassembly state).
@@ -1734,9 +1806,8 @@ impl Sleigh {
         {
             let db = self.context_db.borrow();
             let mut cache = self.cache.borrow_mut();
-            let mut buf = vec![0u32; pos.context.len()];
-            cache.get_context(&**db, &pos.addr, &mut buf);
-            pos.context = buf;
+            let addr = pos.addr.clone();
+            cache.get_context(&**db, &addr, &mut pos.context);
         }
         pos.set_delay_slot(0);
         pos.clear_commits();
@@ -1908,9 +1979,13 @@ impl Sleigh {
         Ok(())
     }
 
-    /// C++ `Sleigh::obtainContext`: resolve a fresh context up to `state`.
-    fn obtain_context(&self, addr: &Address, state: ParseState) -> KunaResult<ParserContext> {
-        let mut pos = self.fresh_context(addr);
+    /// C++ `Sleigh::obtainContext`: resolve a checked-out context up to `state`.
+    fn obtain_context(
+        &self,
+        addr: &Address,
+        state: ParseState,
+    ) -> KunaResult<ParserContextGuard> {
+        let mut pos = self.checkout_context(addr);
         self.resolve(&mut pos)?;
         if state == ParseState::Disassembly {
             return Ok(pos);
