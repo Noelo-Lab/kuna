@@ -1217,25 +1217,10 @@ impl Heritage {
         write.clear();
         input.clear();
         remove.clear();
-        let start = memrange.addr.get_offset();
         let endaddr = &memrange.addr + i64::from(memrange.size);
-        let spc = memrange.addr.get_space().expect("collect: range space").clone();
+        memrange.addr.get_space().expect("collect: range space");
         let mut maxsize = 0;
-        // The C++ wraparound branch (endaddr < start) scans to the end of the
-        // space (`endLoc(Address(space,highest))` → the whole rest of the
-        // space); otherwise the scan stops at `beginLoc(endaddr)`.  We collect
-        // the space's Varnodes once and bound by offset, which covers both: the
-        // wraparound case is "everything from start to the space's end".
-        let wraparound = endaddr.get_offset() < start;
-        let space_ids = fd.vbank().loc_space_ids(&spc);
-        let ids: Vec<crate::context::VarnodeId> = space_ids
-            .into_iter()
-            .filter(|&id| {
-                let off = fd.vbank().get(id).expect("collect: stale vn").get_addr().get_offset();
-                off >= start && (wraparound || off < endaddr.get_offset())
-            })
-            .collect();
-        for vn in ids {
+        for vn in fd.vbank().iter_loc_addr_range(&memrange.addr, &endaddr) {
             let v = fd.vbank().get(vn).expect("collect: stale vn");
             if v.is_write_mask() {
                 continue;
@@ -4392,6 +4377,56 @@ mod tests {
             let allowed = h.dead_removal_allowed_seen(&ram);
             assert_eq!(allowed, h.pass > h.get_dead_code_delay(&ram));
         }
+    }
+
+    #[test]
+    fn collect_preserves_half_open_range_outputs() {
+        use kuna_num::opcodes::OpCode;
+
+        let mut fd = build_fd();
+        let copy = || crate::context::TypeOp::new(OpCode::CPUI_COPY, 0, "copy");
+
+        let read = fd.new_varnode(1, &raddr(&fd, 0x100), None);
+        let read_op = fd.new_op(1, raddr(&fd, 0x2000));
+        fd.op_set_opcode(read_op, copy());
+        fd.op_set_input(read_op, read, 0).unwrap();
+
+        let write_op = fd.new_op(1, raddr(&fd, 0x2001));
+        fd.op_set_opcode(write_op, copy());
+        let write = fd.new_varnode_out(4, &raddr(&fd, 0x108), write_op).unwrap();
+
+        let input_free = fd.new_varnode(2, &raddr(&fd, 0x10c), None);
+        let input = fd.set_input_varnode(input_free).unwrap();
+
+        let end_op = fd.new_op(1, raddr(&fd, 0x2002));
+        fd.op_set_opcode(end_op, copy());
+        let _end_write = fd.new_varnode_out(8, &raddr(&fd, 0x110), end_op).unwrap();
+
+        let below_op = fd.new_op(1, raddr(&fd, 0x2003));
+        fd.op_set_opcode(below_op, copy());
+        let _below_write = fd.new_varnode_out(8, &raddr(&fd, 0xff), below_op).unwrap();
+
+        let mut range =
+            MemRange::new(raddr(&fd, 0x100), 0x10, memrange_flags::new_addresses);
+        let mut reads = Vec::new();
+        let mut writes = Vec::new();
+        let mut inputs = Vec::new();
+        let mut removes = Vec::new();
+        let maxsize = Heritage::new().collect(
+            &fd,
+            &mut range,
+            &mut reads,
+            &mut writes,
+            &mut inputs,
+            &mut removes,
+        );
+
+        assert_eq!(reads, vec![read], "the start address is inclusive");
+        assert_eq!(writes, vec![write]);
+        assert_eq!(inputs, vec![input]);
+        assert!(removes.is_empty());
+        assert_eq!(maxsize, 4, "the larger writes below and at the end are excluded");
+        assert!(range.new_addresses());
     }
 
     // ---- bumpDeadcodeDelay + restart recorder anchor ----------------------
