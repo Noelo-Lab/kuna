@@ -33,7 +33,7 @@ kuna decompile ./sparc.elf main --option returnpair single
 Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`, so
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
-reliable|aggressive` applies an option preset (`docs/modes.md`).
+reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
@@ -78,7 +78,11 @@ Behaviors specific to `decompile-all`:
   a stripped binary's unnamed exit/fatal wrappers no longer swallow the functions after
   them; on non-x86-64 binaries it likewise injects `funcstart_patterns on` and `aif on`
   unless the caller names them (see `docs/history.md`). `--option listing off` opts
-  out; `kuna functions` and the `kuna decompile`/console path keep listing off.
+  out; single-function `kuna decompile` also injects Listing, while `kuna
+  functions` and the interactive console keep the engine default off.
+  `--mode fast` names and disables all three program-wide decode/discovery
+  options (`listing`, `funcstart_patterns`, `aif`), suppressing these injections;
+  a later explicit `--option` still wins.
 - **Per-function watchdog** — `--max-fn-seconds N` (default 120, `0` disables): a function
   whose decompile drive exceeds the budget is cut off cooperatively (deadline probes at
   the action/rule-pool/heritage loop boundaries) and recorded as that function's `error`

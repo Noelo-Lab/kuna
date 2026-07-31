@@ -3,7 +3,7 @@
 //! ```text
 //!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
 //!                          [--addr 0xVMA].. [--max-fn-seconds N]
-//!                          [--mode reliable|aggressive] [--option N V]..
+//!                          [--mode reliable|aggressive|fast] [--option N V]..
 //!                          [--slice ARCH] [--target T] [--sleighpath D]
 //! ```
 //!
@@ -95,7 +95,7 @@ pub fn run(argv: &[String]) -> i32 {
 fn usage() {
     eprintln!(
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
-         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode reliable|aggressive] \\\n\
+         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode reliable|aggressive|fast] \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile a whole binary in one in-process load and write a project folder\n\
