@@ -3,8 +3,8 @@
 //!
 //! ```text
 //!   sections()             (vma, size, flags) — the loader's section map
-//!   disassemble_at(vma)    (length, mnemonic, body) — one instruction
-//!   read_bytes(vma, size)  raw image bytes (None when unmapped)
+//!   disassemble_at[_into]   one instruction, allocating or buffer-reusing
+//!   read_bytes[_into]       raw image bytes, allocating or buffer-reusing
 //!   global_data_symbols()  (name, vma, type_size) — named global data
 //! ```
 //!
@@ -83,6 +83,20 @@ fn export_helpers_report_sections_disasm_bytes_and_globals() {
     let (len, mnem, _body) = prog.disassemble_at(main_vma).expect("disassemble_at(main) failed");
     assert!(len > 0, "instruction length must be positive, got {len}");
     assert!(!mnem.is_empty(), "empty mnemonic at main entry");
+    let mut reuse_mnem = String::with_capacity(32);
+    let mut reuse_body = String::with_capacity(128);
+    reuse_mnem.push_str("stale mnemonic");
+    reuse_body.push_str("stale body");
+    let reuse_caps = (reuse_mnem.capacity(), reuse_body.capacity());
+    let reuse_ptrs = (reuse_mnem.as_ptr(), reuse_body.as_ptr());
+    let reuse_len = prog
+        .disassemble_at_into(main_vma, &mut reuse_mnem, &mut reuse_body)
+        .expect("disassemble_at_into(main) failed");
+    let (_, expected_mnem, expected_body) =
+        prog.disassemble_at(main_vma).expect("second disassemble_at(main) failed");
+    assert_eq!((reuse_len, &reuse_mnem, &reuse_body), (len, &expected_mnem, &expected_body));
+    assert_eq!(reuse_caps, (reuse_mnem.capacity(), reuse_body.capacity()));
+    assert_eq!(reuse_ptrs, (reuse_mnem.as_ptr(), reuse_body.as_ptr()));
 
     // (3) read_bytes: correct length, stable across two calls, and a byte-exact
     // round-trip against the fixture file at the corresponding file offset
@@ -92,6 +106,17 @@ fn export_helpers_report_sections_disasm_bytes_and_globals() {
     assert_eq!(got.len(), n, "read_bytes returned the wrong number of bytes");
     let again = prog.read_bytes(main_vma, n).expect("second read_bytes(main) returned None");
     assert_eq!(got, again, "read_bytes not stable across two calls");
+    let mut reuse_bytes = Vec::with_capacity(n + 16);
+    reuse_bytes.extend_from_slice(b"stale bytes");
+    let reuse_cap = reuse_bytes.capacity();
+    let reuse_ptr = reuse_bytes.as_ptr();
+    assert!(
+        prog.read_bytes_into(main_vma, n, &mut reuse_bytes),
+        "read_bytes_into(main) returned false"
+    );
+    assert_eq!(reuse_bytes, got, "read_bytes_into differs from read_bytes");
+    assert_eq!(reuse_bytes.capacity(), reuse_cap);
+    assert_eq!(reuse_bytes.as_ptr(), reuse_ptr);
     let file = std::fs::read(fauxware()).expect("read fixture file");
     let off = (main_vma - LOAD_BASE) as usize;
     assert_eq!(
@@ -102,6 +127,10 @@ fn export_helpers_report_sections_disasm_bytes_and_globals() {
     // An address far below the image is unmapped: Err maps to None (the `.bss` /
     // hole contract the `.asm` data tail relies on).
     assert!(prog.read_bytes(0x10, 4).is_none(), "read of unmapped address must be None");
+    assert!(!prog.read_bytes_into(0x1000, 4, &mut reuse_bytes));
+    assert!(reuse_bytes.is_empty(), "failed read_bytes_into must clear stale bytes");
+    assert_eq!(reuse_bytes.capacity(), reuse_cap);
+    assert_eq!(reuse_bytes.as_ptr(), reuse_ptr);
 
     // (4) global_data_symbols(): returns without error; every tuple is sane
     // (non-empty name, positive type size) and no function symbol leaks through

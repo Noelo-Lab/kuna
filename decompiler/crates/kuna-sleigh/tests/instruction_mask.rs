@@ -17,11 +17,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_sleigh::globalcontext::ContextInternal;
 use kuna_sleigh::loadimage::LoadImage;
 use kuna_sleigh::sleigh::{OpObject, Sleigh};
-use kuna_sleigh::translate::Translate;
+use kuna_sleigh::translate::{AssemblyEmit, Translate};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -53,6 +53,36 @@ impl LoadImage for MemImg {
         Vec::new()
     }
     fn adjust_vma(&mut self, _adjust: i64) {}
+}
+
+struct MissingImg;
+
+impl LoadImage for MissingImg {
+    fn get_file_name(&self) -> &str {
+        "missing"
+    }
+    fn load_fill(&mut self, _ptr: &mut [u8], _addr: &Address) -> KunaResult<()> {
+        Err(KunaError::data_unavail("missing"))
+    }
+    fn get_arch_type(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn adjust_vma(&mut self, _adjust: i64) {}
+}
+
+#[derive(Default)]
+struct TextEmit {
+    mnemonic: String,
+    body: String,
+}
+
+impl AssemblyEmit for TextEmit {
+    fn dump(&mut self, _addr: &Address, mnemonic: &str, body: &str) {
+        self.mnemonic.clear();
+        self.mnemonic.push_str(mnemonic);
+        self.body.clear();
+        self.body.push_str(body);
+    }
 }
 
 /// The full x86-64 context block the language needs to decode 64-bit code
@@ -362,4 +392,47 @@ fn mov_mem_disp32_masks_displacement() {
         "expected a Scalar operand == 0x12345678 (the disp32), got {:?}",
         m.operands
     );
+}
+
+#[test]
+fn assembly_into_matches_legacy_and_clears_reused_buffers() {
+    let code = [0x48, 0x01, 0xfe, 0xb9, 0x44, 0x33, 0x22, 0x11];
+    let mut sleigh = build_x86_64(&code);
+    let first = code_addr(&sleigh, VMA);
+
+    let mut emitted = TextEmit::default();
+    let legacy_len = sleigh.print_assembly(&mut emitted, &first).unwrap();
+    let mut mnemonic = String::from("stale mnemonic");
+    let mut body = String::from("stale body");
+    let direct_len = {
+        let translate: &dyn Translate = &sleigh;
+        translate
+            .print_assembly_into(&first, &mut mnemonic, &mut body)
+            .unwrap()
+    };
+    assert_eq!(direct_len, legacy_len);
+    assert_eq!(mnemonic, emitted.mnemonic);
+    assert_eq!(body, emitted.body);
+
+    let second = code_addr(&sleigh, VMA + legacy_len as u64);
+    let mut second_emit = TextEmit::default();
+    let second_len = sleigh.print_assembly(&mut second_emit, &second).unwrap();
+    let direct_second_len = {
+        let translate: &dyn Translate = &sleigh;
+        translate
+            .print_assembly_into(&second, &mut mnemonic, &mut body)
+            .unwrap()
+    };
+    assert_eq!(direct_second_len, second_len);
+    assert_eq!(mnemonic, second_emit.mnemonic);
+    assert_eq!(body, second_emit.body);
+
+    sleigh.set_loader(Box::new(MissingImg));
+    mnemonic.push_str(" stale");
+    body.push_str(" stale");
+    assert!(sleigh
+        .print_assembly_into(&first, &mut mnemonic, &mut body)
+        .is_err());
+    assert!(mnemonic.is_empty());
+    assert!(body.is_empty());
 }

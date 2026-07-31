@@ -145,7 +145,7 @@ fn w10_eob_condconst_conn_forms_andand_byte_identical() {
     let body = slice_function(&block, "condconst_conn")
         .unwrap_or_else(|| panic!("condconst_conn not in dump:\n{block}"));
     // The C++ oracle B5 for condconst_conn (from `decomp_test_dbg KUNA_DUMP=1`);
-    // header gap adjusted for the kuna DIV-33 brace-placement default
+    // header gap adjusted for the kuna DIV-34 brace-placement default
     // (`braceformat function next`; semantic content unchanged).
     const CPP: &str = "int4 condconst_conn(int4 x,int4 y)\n\
 {\n  int4 v1; // stack - 0xc\n  \n  v1 = x;\n  \
@@ -173,7 +173,7 @@ fn w10_eob_boolless_not_perturbed_byte_identical() {
         eprintln!("SKIP: rust decomp_test_dbg / specs unavailable");
         return;
     };
-    // (Header gap adjusted for the kuna DIV-33 brace-placement default.)
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
     const CPP: &str = "\nuint1 boolless(void)\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
     assert_eq!(
         block.trim_end(),

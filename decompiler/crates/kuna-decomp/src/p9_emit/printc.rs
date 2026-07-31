@@ -415,23 +415,23 @@ impl PrintCOptions {
     ///
     /// Note the kuna DIV-2 default-on `array_notation = true` (printc.cc:1658),
     /// the `&base[index]` form for a standalone PTRADD (GH-558), the kuna
-    /// DIV-33 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
+    /// DIV-34 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
     /// line between the prototype and `{`; `option braceformat function skip`
-    /// restores it), the kuna DIV-34 `null = true` (a zero pointer constant
+    /// restores it), the kuna DIV-35 `null = true` (a zero pointer constant
     /// renders as `NULL`, not `(type *)0x0`; `option nullprinting off`
-    /// restores the casted form), and the kuna DIV-35 `inplace_ops = true`
+    /// restores the casted form), and the kuna DIV-36 `inplace_ops = true`
     /// (`out = out OP y` renders as `out OP= y` via the ported
     /// `emitInplaceOp`; `option inplaceops off` restores).
     pub fn new() -> PrintCOptions {
         PrintCOptions {
             convention: true,
             hide_exts: true,
-            inplace_ops: true, // (kuna) DIV-35; upstream flag default off + never consumed
+            inplace_ops: true, // (kuna) DIV-36; upstream flag default off + never consumed
             nocasts: false,
-            null: true, // (kuna) DIV-34; upstream option_NULL default off
+            null: true, // (kuna) DIV-35; upstream option_NULL default off
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
-            brace_func: BraceStyle::NextLine,   // (kuna) DIV-33; upstream Emit::skip_line
+            brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
             brace_switch: BraceStyle::SameLine, // Emit::same_line
@@ -3673,7 +3673,7 @@ impl PrintC {
     /// C++ `PrintC::emitInplaceOp` (printc.cc, directly above `emitExpression`;
     /// gated by the `option_inplace_ops` head at printc.cc:2546 which upstream
     /// never wires beyond the flag — ported here as the flag's consumer,
-    /// default-on per kuna DIV-35).
+    /// default-on per kuna DIV-36).
     ///
     /// When the statement is `out = out OP y` — a two-input integer op whose
     /// first input is the SAME high-level variable as the output — render the
@@ -3756,7 +3756,7 @@ impl PrintC {
     /// open an assignment to it, then push the op's expression and recurse.
     fn emit_expression_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         // C++ `if (option_inplace_ops && emitInplaceOp(op)) return;`
-        // (printc.cc:2546) — the in-place `OP=` render, kuna DIV-35 default-on
+        // (printc.cc:2546) — the in-place `OP=` render, kuna DIV-36 default-on
         // (`option inplaceops off` restores the upstream `out = out OP y` form).
         // Applied to standalone `;`-terminated statements only: comma contexts
         // (for-loop headers, condition-block side effects) keep the upstream
