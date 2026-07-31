@@ -452,13 +452,14 @@ relocation guard that defends it is weak on non-PIE executables.
 
 ## 1.6 The Listing tier
 
-The Listing (`listing`, default-off as an engine option;
+The Listing model (`listing`, default-off as an engine option;
 `decompiler/crates/kuna-analysis/src/listing/mod.rs (Listing)`) is the program-wide
 recursive-descent disassembly the analyzer tier otherwise lacks — three read-only
 sub-models behind one facade: instructions, cross-references (call/code edges both
 directions), and discovered functions. It is built **at the deferred commit point**,
-not at load, for both reasons of §1.1: its gate is an `option` line applied after
-`load file`, and its decoder is the engine's own SLEIGH translator, whose loadimage
+not at load, when either the full `listing` tier or the bounded
+`fast_funcdisc` consumer requests it. Both gates are `option` lines applied after
+`load file`, and the decoder is the engine's own SLEIGH translator, whose loadimage
 is attached only after the load-time passes run
 (`passes.rs (run_listing_consumers)`, driven from
 `engine.rs (commit_pending_analysis)`).
@@ -483,7 +484,39 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
-Its **consumers** run over the built Listing and are individually gated before
+**Fast function discovery with conservative pointer validation** (`fast_funcdisc`, default-off;
+`decompiler/crates/kuna-analysis/src/analyzers/fast_funcdisc/mod.rs
+(pointer_table_seeds)`) reuses that one walk without enabling the full Listing
+tier. Its initial roots are only the loader-backed function symbols and the §1.5
+format oracles; full `funcstart_patterns` roots are included only when both
+`listing` and that option are on. The Listing walk recursively follows every
+static CALL from those trustworthy roots, and `fast_funcdisc` commits all
+resulting function entries.
+
+The second source covers indirect-only callbacks. On non-ARM objects, scan
+allocated, initialized, non-executable data for pointer-width runs of at least
+two absolute values into executable ranges. Ignore a table longer than 256
+slots. If the remaining tables produce more than 512 unique targets, discard
+targets referenced by fewer than two distinct tables. Rank the survivors by
+independent-table count and validate at most 4096. A candidate must still be
+undefined in the Listing and must satisfy both AIF corroborators: its first two
+decoded instruction mnemonics and their byte length form a fingerprint seen at
+least four times among already-reached functions, and the bounded
+`check_valid_subroutine` probe must cover more than two instructions without a
+bad decode or out-of-image flow and reach either a terminal/computed jump or an
+informative call/edge into known code. Accepted bodies are claimed so a later
+candidate cannot split them. ARM instead reuses the existing Thumb-pointer
+oracle: an aligned odd code pointer is accepted only at an undefined
+frame-establishing prologue that passes the same valid-subroutine probe.
+
+Pointer-derived roots are committed but are deliberately not fed through a
+second recursive walk. Thus the bounded path obtains direct-call closure and
+high-confidence callback/vtable roots while avoiding the full prologue scan,
+the AIF cursor over every undefined code gap, and recursive expansion from
+disconnected pointer roots. Turning on `fast_funcdisc` alone does not run no-return, FID, AIF, or any
+other ordinary Listing consumer.
+
+The full Listing **consumers** run over the built model and are individually gated before
 invocation (with the commit gate retained defensively): the
 no-return consumers of §1.7 (`noreturn_disc`, and `noreturn_propagate` carrying
 the `noreturn_error`/`noreturn_reach` sub-rules), the FID matcher (§1.4), the AIF
@@ -497,8 +530,8 @@ decodes each undefined gap between discovered functions and accepts a gap start
 only when it both disassembles into a valid subroutine (a clean flow to RET, more
 than 2 instructions, no bad byte or out-of-range flow) *and* its prologue matches a
 start fingerprint shared by at least 4 already-discovered functions
-(`FINGERPRINT_THRESHOLD`) — the only oracle that can find a function reachable
-solely through a `.rodata` pointer table. `operand_refs` (default-off, matching
+(`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
+static or accepted pointer-table root. `operand_refs` (default-off, matching
 upstream's ELF-off default) shares the deferred slot for the same
 decoder-availability reason but does its own linear decode rather than reading the
 Listing, planting `char[N]` facts for immediate operands that point into read-only
@@ -507,11 +540,16 @@ data.
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's
-unnamed exit wrappers swallow the functions after them. `kuna functions` keeps it
-off: name enumeration gains nothing, and the whole-program decode turned a 0.21 s
-listing of a stripped tar into 5.7 s (DIV-15). The console and datatest paths never
-build one, which is what keeps every parity gate byte-identical while the
-consumers' *option* defaults are on.
+unnamed exit wrappers swallow the functions after them. Under the `fast` preset
+(DIV-41), those full-tier injections stay off and `fast_funcdisc` is on for
+unfiltered `decompile-all`, `decompile-project`, and `functions` inventory runs.
+An explicit address selection suppresses the preset-provided walk unless the
+caller spells `--option fast_funcdisc on`; name selection retains discovery so
+a generated `sub_<addr>` name can resolve. Selection remains exact even when
+analysis is forced on. Under `reliable`, `kuna functions` keeps the Listing off: metadata-only
+name enumeration gains nothing from the 0.21 s → 5.7 s full decode measured for a
+stripped tar (DIV-15). The console and XML datatest paths never build either model
+by default, which keeps every parity gate byte-identical.
 
 ## 1.7 The no-return family
 

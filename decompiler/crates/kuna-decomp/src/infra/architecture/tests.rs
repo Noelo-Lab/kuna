@@ -142,6 +142,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850() {
     // Off-by-default under the shipped defaults.
     assert!(!arch.analysis_listing);
     assert!(!arch.analysis_aif);
+    assert!(!arch.analysis_fast_funcdisc);
     assert!(!arch.switch_guard_bound);
     assert!(!arch.duplicate_shared_returns);
     assert!(!arch.sparc_struct_return);
@@ -152,6 +153,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850() {
     // Representative aggressive members turned on.
     assert!(arch.analysis_listing);
     assert!(arch.analysis_aif);
+    assert!(arch.analysis_fast_funcdisc);
     assert!(arch.switch_guard_bound);
     assert!(arch.duplicate_shared_returns);
     assert!(arch.sparc_struct_return); // SPARC-idiom-gated, safe to enable
@@ -171,7 +173,7 @@ fn apply_mode_reliable_is_a_no_op() {
 }
 
 #[test]
-fn apply_mode_fast_disables_only_program_wide_analysis() {
+fn apply_mode_fast_replaces_exhaustive_with_bounded_discovery() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     arch.analysis_listing = true;
     arch.analysis_funcstart_patterns = true;
@@ -182,6 +184,7 @@ fn apply_mode_fast_disables_only_program_wide_analysis() {
     assert!(!arch.analysis_listing);
     assert!(!arch.analysis_funcstart_patterns);
     assert!(!arch.analysis_aif);
+    assert!(arch.analysis_fast_funcdisc);
     assert!(arch.infer_funcentry);
     assert!(arch.analysis_noreturn_propagate);
     assert!(!arch.switch_guard_bound);

@@ -1,0 +1,63 @@
+{
+  "opportunity": "user-report::fast-project-missing-bodies",
+  "test_name": "ghdec-fast-funcdisc",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe",
+  "selector": "sub_140001000",
+  "func_addr": null,
+  "angr_version": null,
+  "option": "fast_funcdisc",
+  "flag": "analysis_fast_funcdisc",
+  "element_id": null,
+  "phase": "P1",
+  "subphase": "code-data-partition",
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "Ghidra recursive disassembly/CreateFunctionCmd and AddressTableAnalyzer; AIF fingerprint histogram and PseudoDisassembler.checkValidSubroutine",
+  "default_on": false,
+  "enabled_by_modes": [
+    "fast",
+    "aggressive"
+  ],
+  "ablation_changed": 0,
+  "parity": "OK",
+  "private_binary_sha256": "bc4c15d826aaebeace3fec6360eb687e5662cba8745605093254931dcdb3ae1b",
+  "speed_off_ms": 1496.28,
+  "speed_on_ms": 3702.51,
+  "speed_delta_pct": 147.45,
+  "speed_samples": 5,
+  "speed_budget_pct": 5,
+  "speed_within_budget": false,
+  "speed_forced_off": true,
+  "speed_method": "Median wall time for `kuna functions <private> --mode fast --json --option fast_funcdisc VALUE`; off consistently returned 693 canonical entries and omitted 0x402d80, on consistently returned 3495 and included it.",
+  "speed_off_samples_ms": [
+    1582.87,
+    1496.28,
+    1529.75,
+    1144.77,
+    1136.5
+  ],
+  "speed_on_samples_ms": [
+    3598.09,
+    3694.86,
+    3928.09,
+    3702.51,
+    3930.01
+  ],
+  "project_benchmark": {
+    "command": "kuna decompile-project <private> --mode fast --max-fn-seconds 10",
+    "elapsed_seconds": 462.28,
+    "peak_rss_mib": 1475.1,
+    "definitions": 3153,
+    "successful_bodies": 3140,
+    "isolated_failures": 13,
+    "reliable_control_incomplete_seconds": 935.91
+  },
+  "decisions": [
+    "The old fast preset was not a valid speed baseline because it omitted nearly the entire internal program.",
+    "Keep the option default-off because discovery is output-changing and exceeds the per-feature speed budget.",
+    "Enable it in fast mode because a project that finishes without real function definitions is incorrect, while the reliable control does not complete.",
+    "Use direct-call closure plus conservative pointer roots; keep exhaustive prologue and undefined-gap scans disabled.",
+    "Do not recursively expand pointer-derived roots, and bound non-ARM table size and candidate validation.",
+    "Explicit address selection suppresses preset discovery unless the caller explicitly forces the option on."
+  ]
+}

@@ -41,15 +41,15 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_80() {
+fn settable_count_is_81() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
-    assert_eq!(kuna_num_settables(), 80);
-    assert_eq!(SETTABLE_TABLE.len(), 80);
+    assert_eq!(kuna_num_settables(), 81);
+    assert_eq!(SETTABLE_TABLE.len(), 81);
 }
 
 #[test]
-fn tier_counts_are_19_core_37_transform_24_analysis() {
+fn tier_counts_are_19_core_37_transform_25_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -61,7 +61,7 @@ fn tier_counts_are_19_core_37_transform_24_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (19, 37, 24));
+    assert_eq!((core, transform, analysis), (19, 37, 25));
 }
 
 #[test]
@@ -251,7 +251,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_40() {
+fn option_values_live_value_present_for_28_suppressed_for_41() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -290,6 +290,7 @@ fn option_values_live_value_present_for_28_suppressed_for_40() {
         "operand_refs",
         "formatstring",
         "listing",
+        "fast_funcdisc",
         "noreturn_disc",
         "noreturn_propagate",
         // (kuna, decbench F2) The error(nonzero,…)-conditional recognizer — a
@@ -457,7 +458,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 72 rows: 71 trailing commas (the last, macho-arm64e, has none;
+    // 81 rows: 80 trailing commas (the last, macho-arm64e, has none;
     // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
@@ -468,7 +469,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, and switchreturn's S8 row sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 79);
+    assert_eq!(json.matches("},\n").count(), 80);
 }
 
 #[test]

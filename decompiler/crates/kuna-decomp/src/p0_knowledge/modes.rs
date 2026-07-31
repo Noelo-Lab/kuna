@@ -18,8 +18,8 @@
 //!     product surface and future-proofs the preset if defaults later drift.
 //!   - **`aggressive`** -- turn on every off-by-default quality/recovery/analysis
 //!     pass for the most-recovered (and slowest, most speculative) output.
-//!   - **`fast`** -- disable whole-program decoding and speculative function
-//!     discovery to prioritize latency while retaining per-function transforms.
+//!   - **`fast`** -- replace exhaustive discovery with a rooted recursive pass
+//!     plus conservative pointer validation while retaining per-function transforms.
 //!
 //! Concrete presets are applied through `Architecture::apply_mode` (which fans
 //! out to `set_kuna_option`). File frontends first resolve `auto` from binary
@@ -75,9 +75,9 @@ pub const MODE_TABLE: &[Mode] = &[
     },
     Mode {
         name: "fast",
-        summary: "Speed-first whole-binary analysis: disable the Listing, \
-                  prologue-pattern discovery, and AIF gap walk. Retains the \
-                  shipped per-function transforms and explicit selectors.",
+        summary: "Speed-first whole-binary analysis: replace exhaustive Listing, \
+                  prologue-pattern, and AIF discovery with rooted recursive \
+                  function discovery plus conservative pointer validation.",
         automatic: false,
         overrides: FAST_OVERRIDES,
     },
@@ -114,6 +114,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),
+    ("fast_funcdisc", "on"),
     ("eh_frame_full", "on"),
     ("funcstart_patterns", "on"),
     ("dwarf_lines", "on"),
@@ -128,13 +129,14 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("macho-arm64e", "on"),  // Mach-O arm64e-only; no-op elsewhere
 ];
 
-/// `fast` = avoid the three program-wide decode/discovery paths that dominate
-/// large-binary latency. Keeping all three explicit also suppresses the
-/// decompile driver defaults that would otherwise enable them.
+/// `fast` = avoid the three exhaustive program-wide discovery paths that dominate
+/// large-binary latency, while retaining rooted recursive discovery and
+/// conservative pointer validation for a usable whole-binary project.
 const FAST_OVERRIDES: &[(&str, &str)] = &[
     ("listing", "off"),
     ("funcstart_patterns", "off"),
     ("aif", "off"),
+    ("fast_funcdisc", "on"),
 ];
 
 /// Select the concrete preset for `size_bytes` under the `auto` policy.
@@ -258,10 +260,15 @@ mod tests {
     }
 
     #[test]
-    fn fast_disables_only_program_wide_decode_and_discovery() {
+    fn fast_replaces_exhaustive_with_bounded_discovery() {
         assert_eq!(
             mode_overrides("fast").unwrap(),
-            &[("listing", "off"), ("funcstart_patterns", "off"), ("aif", "off")]
+            &[
+                ("listing", "off"),
+                ("funcstart_patterns", "off"),
+                ("aif", "off"),
+                ("fast_funcdisc", "on")
+            ]
         );
     }
 

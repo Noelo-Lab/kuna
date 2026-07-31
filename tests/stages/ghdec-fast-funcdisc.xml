@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Fast whole-project function discovery (`option fast_funcdisc on|off`).
+
+    The XML wrapper only provides the harness architecture. Both passes clear
+    it and load the real public PE fixture through the same object bootstrap as
+    `decompile-project`.
+
+    Pass 1 (`mode fast`, overridden with `fast_funcdisc off`) reproduces the
+    metadata-only inventory:
+    entry `0x140001010` is known, but its direct CALL target `0x140001000`
+    is absent from `functions`.
+
+    Pass 2 applies only `mode fast`, exercising the shipped preset default. It
+    builds the rooted Listing, promotes the direct target into `functions` as
+    `sub_140001000`, and decompiles its real arithmetic body.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe</com>
+  <com>mode fast</com>
+  <com>option fast_funcdisc off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe</com>
+  <com>mode fast</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_140001000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FAST-FUNCDISC #1: loader-known entry is present in both inventories" min="2" max="2">0x140001010 sub_140001010</stringmatch>
+<stringmatch name="FAST-FUNCDISC #2: direct callee is absent off and present on" min="1" max="1">0x140001000 sub_140001000</stringmatch>
+<stringmatch name="FAST-FUNCDISC #3: the newly inventoried callee has a real decompiled body" min="1" max="1">return a1 \* 7 \+ a0 \* 3;</stringmatch>
+</decompilertest>

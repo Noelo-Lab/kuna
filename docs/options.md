@@ -157,6 +157,9 @@ Three tiers:
 | noreturn discovery inert on a stripped binary | [`listing`](#listing) |
 | analysis passes that need whole-image xrefs do nothing | [`listing`](#listing) |
 | no program-wide instruction/xref/function model for consumer passes | [`listing`](#listing) |
+| fast decompile-project emits only import veneers and the binary entry | [`fast_funcdisc`](#fast_funcdisc) |
+| internal direct callees have no project bodies | [`fast_funcdisc`](#fast_funcdisc) |
+| function reachable through a callback or vtable pointer is absent while explicit --addr decompiles it | [`fast_funcdisc`](#fast_funcdisc) |
 | stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid) |
 | no .fid database renames applied in a stripped binary | [`fid`](#fid) |
 | msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti) |
@@ -653,6 +656,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; the Listing is not built and there is zero decode cost). Flip on to make the program-wide instruction/xref/function model available to consumer passes (e.g. discovered-no-return) on a real-ELF target.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-listing
 - **Example:** `option listing on`
+
+### `fast_funcdisc` -- on | off, default `off`
+
+- **Symptoms:** fast decompile-project emits only import veneers and the binary entry; internal direct callees have no project bodies; function reachable through a callback or vtable pointer is absent while explicit --addr decompiles it.
+- **What it does:** Discover real function bodies for latency-sensitive whole-project exports without the exhaustive prologue and AIF gap scans. Starting from loader-backed entries, build one recursive Listing walk that promotes every direct CALL target. Then recover indirect-only callbacks from absolute code pointers in non-executable initialized data. On non-ARM objects, admit a target only when its first two decoded mnemonics match a fingerprint shared by at least four already-reached functions and a bounded control-flow probe validates a >2-instruction subroutine with a terminating path or informative call/edge into known code; ignore tables above 256 slots, require two distinct eligible tables when the image has more than 512 unique candidates, and validate at most 4096 candidates. ARM instead reuses the established Thumb-pointer prologue oracle. Pointer-derived roots are emitted without recursively walking their disconnected callees. Default-off as an output-changing analysis; the fast preset enables it while keeping listing, full prologue patterns, and exhaustive AIF off.
+- **When to flip:** Enabled by fast mode for unfiltered or name-selected decompile-all/decompile-project/functions so a stripped binary does not collapse to imports plus its entry point. Flip off to restore the old metadata-only fast inventory, or when even the rooted whole-image recursive decode is too costly. Explicit --addr selections skip the preset's discovery work unless this option is explicitly turned on.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-fast-function-discovery
+- **Example:** `--mode fast --option fast_funcdisc on`
 
 ### `fid` -- on | off, default `off`
 

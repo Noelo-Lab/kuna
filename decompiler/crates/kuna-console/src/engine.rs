@@ -766,11 +766,14 @@ impl ConsoleProgram {
         // program loadimage is only attached AFTER the load-time pass list
         // (`set_loader` in `bootstrap_from_object`). Each is gated on its own
         // `--option` flag (now in effect). Default-off (both) ⇒ skipped ⇒ zero cost.
-        // Real-ELF path only (the XML path stashes no image). The stash is consumed
+        // Real-object path only (the XML path stashes no image). The stash is consumed
         // once and shared by both deferred passes.
         let want_listing = self.arch().analysis_listing;
+        let want_fast_funcdisc = self.arch().analysis_fast_funcdisc;
         let want_operand_refs = self.arch().analysis_operand_refs;
-        if (want_listing || want_operand_refs) && self.analysis_image.is_some() {
+        if (want_listing || want_fast_funcdisc || want_operand_refs)
+            && self.analysis_image.is_some()
+        {
             if let Some((path, bytes)) = self.analysis_image.take() {
                 // A throwaway loadimage just to satisfy the pass contracts (their
                 // `image` arg is unused — the decode reads through `translate`); a
@@ -778,11 +781,11 @@ impl ConsoleProgram {
                 if let Ok(image) = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(
                     &path, &bytes,
                 ) {
-                    // Deferred Listing build + consumer run, gated on the listing
-                    // flag. The call-fixup seed list is the names the load-time pass
-                    // flagged resolved to addresses via the (already installed)
-                    // symbol table.
-                    if want_listing {
+                    // Deferred Listing build + consumer/fast-inventory run, gated
+                    // on the matching option. The call-fixup seed list is the names
+                    // the load-time pass flagged resolved to addresses via the
+                    // (already installed) symbol table.
+                    if want_listing || want_fast_funcdisc {
                         let arch = self.arch();
                         // The call-fixup seed list is empty: a fixup'd callee is also
                         // skipped via the consumer's no-return-disc `function_at(..)`
@@ -864,6 +867,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
+        "fast_funcdisc" => arch.analysis_fast_funcdisc,
         "noreturn_disc" => arch.analysis_noreturn_disc,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
         "fid" => arch.analysis_fid,

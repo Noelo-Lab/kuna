@@ -176,7 +176,9 @@ fn cmd_decompile(argv: &[String]) -> i32 {
         }
     };
     apply_engine(engine.as_deref());
+    addr |= decompile::looks_like_addr(&target);
 
+    let explicit_fast_funcdisc = options.iter().any(|(name, _)| name == "fast_funcdisc");
     // Omitted mode is the size-driven `auto` policy. Preset overrides are
     // prepended so explicit `--option` pairs remain last-write-wins in the
     // generated console script.
@@ -186,6 +188,9 @@ fn cmd_decompile(argv: &[String]) -> i32 {
             eprintln!("error: {e}");
             return 2;
         }
+    }
+    if addr && !explicit_fast_funcdisc {
+        options.push(("fast_funcdisc".into(), "off".into()));
     }
 
     let dargs = DecompileArgs {

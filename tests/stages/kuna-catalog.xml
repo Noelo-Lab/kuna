@@ -29,6 +29,8 @@
   <com>lo fu gh558</com>
   <com>phase catalog</com>
   <com>phase catalog returnpair</com>
+  <com>option fast_funcdisc on</com>
+  <com>phase catalog fast_funcdisc</com>
   <com>quit</com>
 </script>
 <stringmatch name="KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address" min="1" max="1">"option": "compareform", "values": \["canonical", "original"\], "default": "original", "current": "original", "destructive_as_default": false, "phase": "P3"</stringmatch>
@@ -40,4 +42,5 @@
 <stringmatch name="KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold)" min="20" max="20">"change_kind": "structure-recovery"</stringmatch>
 <stringmatch name="KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip)" min="12" max="12">"change_kind": "opt-in-tool"</stringmatch>
 <stringmatch name="KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility" min="10" max="160">"change_kind": </stringmatch>
+<stringmatch name="KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable" min="1" max="1">"option": "fast_funcdisc", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
 </decompilertest>

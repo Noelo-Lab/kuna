@@ -38,6 +38,11 @@ Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and
 2,097,152 bytes. A later explicit `--option` wins over the resolved preset.
+Address-selected single-function decompilation suppresses a preset-provided
+`fast_funcdisc` whole-image walk because the requested entry is already known.
+Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
+explicitly spelling `--option fast_funcdisc on` opts an address run back into
+that analysis.
 
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
@@ -66,7 +71,8 @@ Behaviors specific to `decompile-all`:
   IATs, Mach-O symbol-pointer sections, and similar data areas remain in `kuna
   functions`, remain installed for named calls and prototypes, and remain
   reachable through explicit `--addr`; they are not automatically decoded as
-  function bodies. `--functions` retains its normal first-match behavior when a
+  function bodies. Analysis-discovered entries inside executable sections join
+  this default set. `--functions` retains its normal first-match behavior when a
   stub and slot share a name. Loaders without section metadata retain the
   complete inventory.
 
@@ -97,9 +103,15 @@ Behaviors specific to `decompile-all`:
   engine default off; an auto-selected `aggressive` preset intentionally turns
   Listing on even for inventory.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
-  names and disables all three program-wide decode/discovery
-  options (`listing`, `funcstart_patterns`, `aif`), suppressing these injections;
-  a later explicit `--option` still wins.
+  names and disables the three exhaustive program-wide decode/discovery options
+  (`listing`, `funcstart_patterns`, `aif`), suppressing those injections, and
+  enables `fast_funcdisc`. That bounded pass recursively promotes direct CALL
+  targets from loader-backed roots and adds conservatively validated
+  pointer-table targets, so a stripped project does not collapse to imports plus
+  its entry point. An explicit `--addr` selector suppresses the preset-provided
+  pass because the entry is already known; `--functions` keeps discovery active
+  so generated names can resolve. Explicitly spelling `--option fast_funcdisc
+  on` opts an address run back in. A later explicit `--option` always wins.
 - **Per-function watchdog** — `--max-fn-seconds N` (default 120, `0` disables): a function
   whose decompile drive exceeds the budget is cut off cooperatively (deadline probes at
   the action/rule-pool/heritage loop boundaries) and recorded as that function's `error`
@@ -125,8 +137,13 @@ load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--slice`/`--target`/
 `--sleighpath`; no `--json`. Omitted mode is the same size-based `auto` policy
 as the other file front-ends. In particular, a project input at least 2 MiB
-automatically suppresses Listing and speculative function discovery through
-the `fast` preset.
+automatically suppresses the exhaustive Listing consumers, prologue scan, and
+AIF gap walk through the `fast` preset, while substituting rooted direct-call
+and bounded pointer-table discovery. Explicit `--addr` selections remain exact
+and suppress that whole-image walk by default; named selections keep it so
+generated names can resolve. Explicit `--option fast_funcdisc on` can restore
+its program facts for an address-selected run, but does not add definitions
+outside the selection.
 
 Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the
@@ -134,7 +151,8 @@ binary and attempt recompilation:
 
 - `<name>.c` — every decompiled function, address-ordered, under
   `// Function: <name> @ <addr>` headers, failures as comments, `#include "<name>.h"`.
-  One definition per executable entry address: the export shares
+  One definition per loader- or analysis-discovered executable entry address:
+  the export shares
   `decompile-all`'s CODE-backed target policy and one-record-per-entry
   enumeration above, so data import slots are not rendered as functions and a
   function carrying several names cannot produce several identical definitions.
@@ -148,7 +166,9 @@ binary and attempt recompilation:
 - `README.md` — size, arch id, entry point, function counts, sections table, file
   inventory.
 
-Purely additive — no new settable, no change to any existing output path (spec §9.7).
+The artifact format is purely additive and has no exporter-specific transform
+(spec §9.7); the set of emitted definitions follows the selected P1 discovery
+options, including `fast_funcdisc`.
 
 ## `kuna catalog` — option discovery (the LLM control API)
 

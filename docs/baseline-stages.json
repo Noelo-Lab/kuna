@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    301,
-    301
+    305,
+    305
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -30,6 +30,9 @@
     "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
     "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
     "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
+    "data:FAST-FUNCDISC #1: loader-known entry is present in both inventories",
+    "data:FAST-FUNCDISC #2: direct callee is absent off and present on",
+    "data:FAST-FUNCDISC #3: the newly inventoried callee has a real decompiled body",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
@@ -133,6 +136,7 @@
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",
+    "data:KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
     "data:KUNA-CATALOG #2: arraynotation documented as default-on, P9 pointer-notation",
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",

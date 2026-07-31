@@ -52,7 +52,8 @@ use kuna_base::xml::{DocumentStorage, Element};
 
 use kuna_console::engine::bootstrap_program;
 use kuna_console::ifacedecomp::{
-    mainloop, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
+    mainloop, register_console_commands, register_decomp_commands, IfaceDecompData,
+    DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_console::interface::{FileOut, IfaceError, IfaceStatus};
@@ -578,8 +579,9 @@ impl FunctionTestCollection {
         // Rust rebuild for the fresh command feed must preserve the program).
         let carried_conf = self.take_conf();
         let mut console = build_console_with(self.commands.clone());
-        if let (Some(prog), Some(dcp)) = (carried_conf, console_dcp_mut(&mut console)) {
-            dcp.conf = Some(prog);
+        if let Some(dcp) = console_dcp_mut(&mut console) {
+            dcp.spec_roots = self.spec_roots.clone();
+            dcp.conf = carried_conf;
         }
         self.console = console;
 
@@ -667,6 +669,7 @@ fn build_console_with(commands: Vec<String>) -> IfaceStatus {
     let mut console = ConsoleCommands::into_status(commands);
     register_decomp_commands(&mut console);
     register_kuna_commands(&mut console);
+    register_console_commands(&mut console);
     console.set_error_is_done(true);
     console
 }

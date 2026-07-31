@@ -97,6 +97,7 @@ pub fn run_with_mode(
         }
     };
 
+    let want_fast_funcdisc = command_wants_fast_funcdisc(&command);
     let requested = requested_mode.unwrap_or("auto");
     let binary_size = if kuna_decomp::modes::mode_is_automatic(requested) {
         std::fs::metadata(binary)
@@ -107,7 +108,8 @@ pub fn run_with_mode(
     };
     let mode = resolve_mode(requested_mode, binary_size)?;
     let want_decompile = !matches!(command, Cmd::List);
-    let mut prog = load_program(binary, spec_root, want_decompile, mode)?;
+    let mut prog =
+        load_program(binary, spec_root, want_decompile, mode, want_fast_funcdisc)?;
 
     match command {
         Cmd::List => {
@@ -140,6 +142,10 @@ pub fn run_with_mode(
             Ok(result_json(binary, &out, &kinds))
         }
     }
+}
+
+fn command_wants_fast_funcdisc(command: &Cmd) -> bool {
+    !matches!(command, Cmd::DecompileAddr(_))
 }
 
 fn resolve_mode(requested: Option<&str>, binary_size: u64) -> Result<&'static str, String> {
@@ -203,6 +209,7 @@ fn load_program(
     spec_root: &str,
     default_listing: bool,
     mode: &str,
+    want_fast_funcdisc: bool,
 ) -> Result<ConsoleProgram, String> {
     let overrides = kuna_decomp::modes::mode_overrides(mode)
         .ok_or_else(|| format!("unknown mode {mode:?}"))?;
@@ -234,6 +241,11 @@ fn load_program(
     prog.arch_mut()
         .apply_mode(mode)
         .map_err(|e| format!("mode {mode}: {}", e.explain()))?;
+    if !want_fast_funcdisc {
+        prog.arch_mut()
+            .set_kuna_option("fast_funcdisc", "off")
+            .map_err(|e| format!("option fast_funcdisc: {}", e.explain()))?;
+    }
     let mode_owns = |name: &str| overrides.iter().any(|(option, _)| *option == name);
 
     if default_listing && !mode_owns("listing") {
@@ -452,8 +464,9 @@ fn json_str(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_mode;
+    use super::{command_wants_fast_funcdisc, resolve_mode, Cmd};
     use kuna_decomp::modes::{AUTO_FAST_MIN_BYTES, AUTO_RELIABLE_MIN_BYTES};
+    use std::path::PathBuf;
 
     #[test]
     fn auto_mode_uses_exact_browser_size_boundaries() {
@@ -477,5 +490,51 @@ mod tests {
             "aggressive"
         );
         assert!(resolve_mode(Some("turbo"), 1).unwrap_err().contains("unknown mode"));
+    }
+
+    #[test]
+    fn only_address_selection_skips_fast_discovery() {
+        assert!(!command_wants_fast_funcdisc(&Cmd::DecompileAddr(0x1234)));
+        assert!(command_wants_fast_funcdisc(&Cmd::DecompileName("sub_1234".into())));
+        assert!(command_wants_fast_funcdisc(&Cmd::DecompileAll));
+        assert!(command_wants_fast_funcdisc(&Cmd::Project("binary".into())));
+        assert!(command_wants_fast_funcdisc(&Cmd::List));
+    }
+
+    #[test]
+    fn fast_project_exports_discovered_wasm_bodies() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        let binary = root.join("decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe");
+        let specs = root.join("specs");
+        let result = super::run_with_mode(
+            binary.to_str().unwrap(),
+            specs.to_str().unwrap(),
+            "project",
+            Some("pdb_prog.exe"),
+            Some("fast"),
+        );
+        let json = match result {
+            Ok(json) => json,
+            Err(error)
+                if error.contains("could not build an architecture")
+                    || error.contains("SLEIGH")
+                    || error.contains("Could not discover") =>
+            {
+                eprintln!("fast_project_exports_discovered_wasm_bodies: skipping: {error}");
+                return;
+            }
+            Err(error) => panic!("WASM fast project failed: {error}"),
+        };
+        assert!(
+            json.contains("@ 0x140001000"),
+            "hidden direct callee missing: {json}"
+        );
+        assert!(
+            json.contains("return a1 * 7 + a0 * 3;"),
+            "hidden direct callee has no real body: {json}"
+        );
     }
 }

@@ -681,6 +681,7 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
 
+    let explicit_fast_funcdisc = options.iter().any(|(name, _)| name == "fast_funcdisc");
     // Omitted mode is the size-driven `auto` policy. Mode overrides are
     // PREPENDED so an explicit `--option` still wins (last-write). Every
     // downstream consumer (`apply_loadtime_env`, the listing/funcstart
@@ -688,6 +689,9 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     // is the single wire point for decompile-all, decompile-project, and
     // functions.
     options = mode_options_for_binary(mode.as_deref(), &binary, options)?;
+    if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
+        options.push(("fast_funcdisc".into(), "off".into()));
+    }
 
     Ok(Args { binary, json, names, addrs, no_vars, max_fn_seconds, options, slice, target, sleighpath })
 }
@@ -795,6 +799,63 @@ mod mode_tests {
                 .collect();
             assert_eq!(listing, vec!["off", "on"], "{cmd} precedence");
         }
+        std::fs::remove_file(path).expect("remove auto-mode fixture");
+    }
+
+    #[test]
+    fn address_selection_skips_preset_discovery_but_names_do_not() {
+        let path = sparse_binary(kuna_decomp::modes::AUTO_FAST_MIN_BYTES);
+        let binary = path.to_string_lossy().into_owned();
+        let address_args = parse_args(
+            &[
+                binary.clone(),
+                "--addr".into(),
+                "0x1234".into(),
+                "--mode".into(),
+                "fast".into(),
+            ],
+            "decompile-project",
+        )
+        .unwrap();
+        assert_eq!(
+            last_option_value(&address_args.options, "fast_funcdisc"),
+            Some("off")
+        );
+
+        let explicit_args = parse_args(
+            &[
+                binary.clone(),
+                "--addr".into(),
+                "0x1234".into(),
+                "--mode".into(),
+                "fast".into(),
+                "--option".into(),
+                "fast_funcdisc".into(),
+                "on".into(),
+            ],
+            "decompile-project",
+        )
+        .unwrap();
+        assert_eq!(
+            last_option_value(&explicit_args.options, "fast_funcdisc"),
+            Some("on")
+        );
+
+        let named_args = parse_args(
+            &[
+                binary,
+                "--functions".into(),
+                "sub_1234".into(),
+                "--mode".into(),
+                "fast".into(),
+            ],
+            "decompile-project",
+        )
+        .unwrap();
+        assert_eq!(
+            last_option_value(&named_args.options, "fast_funcdisc"),
+            Some("on")
+        );
         std::fs::remove_file(path).expect("remove auto-mode fixture");
     }
 

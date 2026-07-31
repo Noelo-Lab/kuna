@@ -26,6 +26,8 @@
 //!   [`Architecture`] flags ([`kuna_live_value`], the port of
 //!   `kuna_console.cc kunaLiveValue`). `tests/stages/kuna-catalog.xml`
 //!   string-matches this output.
+//! - [`IfcKunaFunctions`] — `functions`: emit the canonical executable
+//!   function inventory used by whole-binary decompilation.
 //! - [`IfcKunaAssert`] — `kassert ...`: validate a typed assertion against the
 //!   registry and route it to a store. The **validation + routing decision**
 //!   core (parse-error precedence, `kassert list`, the LATENT/unroutable
@@ -206,6 +208,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
+        "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
         "gopclntab" => on_off(conf.analysis_gopclntab),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the
@@ -1143,6 +1146,34 @@ impl IfaceCommandAction for IfcKunaRegionWalk {
     }
 }
 
+/// (kuna) `functions`: print the canonical executable function inventory.
+pub struct IfcKunaFunctions;
+
+impl IfaceCommandAction for IfcKunaFunctions {
+    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+        let entries = {
+            let dcp = dcp_mut(status)?;
+            let prog = dcp
+                .conf
+                .as_mut()
+                .ok_or_else(|| IfaceError::execution("No load image present"))?;
+            prog.commit_pending_analysis()
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            prog.function_entries_executable()
+        };
+        let mut out = String::new();
+        for entry in entries {
+            out.push_str(&format!("{:#x} {}\n", entry.addr.get_offset(), entry.name));
+        }
+        status.file_out(&out);
+        Ok(())
+    }
+
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Registration — IfaceKunaCapability::registerCommands
 // ---------------------------------------------------------------------------
@@ -1171,6 +1202,7 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcKunaPipeline), &["pipeline"]);
     status.register_com(Box::new(IfcKunaMode), &["mode"]);
     status.register_com(Box::new(IfcKunaQuality), &["quality"]);
+    status.register_com(Box::new(IfcKunaFunctions), &["functions"]);
     status.register_com(Box::new(IfcKunaRegionTree), &["region", "tree"]);
     status.register_com(Box::new(IfcKunaRegionBlocks), &["region", "blocks"]);
     status.register_com(Box::new(IfcKunaRegionWalk), &["region", "walk"]);

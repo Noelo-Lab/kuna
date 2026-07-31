@@ -53,8 +53,11 @@ describes it.
 
 `kuna-wasm` is a **purely additive leaf crate**. It depends only on existing engine crates
 (`kuna-console`, `kuna-decomp`, `kuna-base`) and the already-present `object`; it adds no
-new external dependency or stage-model option. Like the native file front-ends, it
-resolves the default `auto` mode from the input byte length. `make binaries` builds a
+new external dependency or wasm-only stage-model option. Like the native file
+front-ends, it resolves the default `auto` mode from the input byte length and
+uses the core `fast_funcdisc` option for rooted whole-image inventory recovery
+with conservative pointer validation.
+`make binaries` builds a
 fixed crate list that does not include it, and
 `check_spec.py` only scans `kuna-decomp`/`kuna-analysis`, so the only gate that touches it
 is `make rust-test` (`cargo test --workspace`), which compiles it natively and
@@ -69,7 +72,7 @@ artifact builders, moved there from `kuna-cli` so wasm32-wasip1 can reach them w
 ```
 metadata(binary).len() → auto_mode_for_size(...) // <500 KiB aggressive; <2 MiB reliable; else fast
   → bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + build translator
-  → apply concrete mode + non-conflicting driver injections
+  → apply concrete mode + command-scoped discovery policy + non-conflicting driver injections
   → commit_pending_analysis()                                   // the `read symbols` seam
   → kuna_console::project::decompile_targets(...)  // the same loop kuna decompile-all runs
 ```
@@ -78,11 +81,15 @@ Its `--json` is `kuna decompile-all --json`'s fields (`name`, `address`, `addres
 `aliases`, `size`, `code`, `error`, `variables[{name,type,kind,arg_index,stack_offset,size}]`)
 — including the one-record-per-entry contract and the `aliases` array documented in
 `docs/cli.md`. Wasm `list` reports the full canonical callable-symbol inventory
-under the selected mode;
-unfiltered `decompile` and `project` use the shared CODE-backed target set, while
-explicit address selection can still reach any canonical symbol (name selection
-keeps its normal first-match behavior). This is the same split as the native
-front-end. The output adds one kuna-wasm-only per-function field: `"kind"` —
+under the selected mode. In `fast`, that inventory includes the bounded Listing's
+direct-call closure and validated absolute pointer-table roots, not just loader
+metadata. Unfiltered `decompile` and `project` use the shared CODE-backed target set, while
+explicit address decompile suppresses that whole-image discovery pass and
+reaches the requested entry directly. Name selection keeps discovery active so
+a generated `sub_<addr>` name can resolve, then exports only the selected
+function. This is the same selector/inventory split as the native front-end:
+selecting one function does not silently export its discovered call closure.
+The output adds one kuna-wasm-only per-function field: `"kind"` —
 `"func"` | `"plt"` | `"thunk"`
 (`kuna-wasm/src/classify.rs`: an `object`-crate re-parse marks entries inside import-stub
 sections — the `.plt` family, Mach-O symbol stubs — or named as imports as `"plt"`, and
@@ -100,8 +107,11 @@ document — `{binary, name, count, ok, failed, files:{"<name>.c", "<name>.h", "
 "README.md"}}` (artifacts named after `<display-name>`, default the binary's basename;
 whole binary only). Omitted mode and explicit `--mode auto` use the shared
 native/browser policy: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB`
-selects `reliable`, and `>=2 MiB` selects `fast`. The page's **Download Binary
-Source** button runs it and zips the four
+selects `reliable`, and `>=2 MiB` selects `fast`. Because `project` is
+whole-binary only, the fast selection runs `fast_funcdisc`: the downloaded C/H
+inventory contains directly reached and validated indirect-only internal
+functions while the exhaustive prologue and AIF scans remain off. The page's
+**Download Binary Source** button runs it and zips the four
 artifacts client-side (`integrations/web/zip.js`, a dependency-free STORE zip writer). The
 only artifact difference vs the CLI is the README's `Path` row, which shows the display
 name instead of a canonicalized host path (there is none in the virtual FS).
@@ -253,15 +263,22 @@ benign PE is committed because this environment has no PE linker.
   from `kuna-cli` with the CLI's `decompile-all`/`decompile-project` outputs verified
   byte-identical across the move) plus one additive probe (`ConsoleProgram::
   lone_jump_target`) that no native output path calls.
-- No new dependency or stage-model option: `kuna_wasm` and the native file
-  front-ends resolve the same `auto` policy and then use the same concrete mode
-  presets. `phases.toml` and `docs/options.md` remain untouched; the intentional
-  driver-default change is recorded as DIV-40 in `docs/history.md`.
+- No wasm-only dependency or option: `kuna_wasm` and the native file front-ends
+  resolve the same `auto` policy, use the same concrete mode presets, and share
+  the core `fast_funcdisc` discovery implementation. The size-driven mode
+  default is recorded as DIV-40 and the corrected fast inventory as DIV-41 in
+  `docs/history.md`.
 - The four gates (`make test`, `make test-stages`, `make rust-test`, `make
   check-spec`) remain mandatory. Native/WASI parity and browser-glue tests cover
   the additional frontend policy.
 
 ## 7. Limitations & future work
+
+- The WASM project surface does not yet arm the native CLI's per-function
+  watchdog. Discovery correctness is shared, but a multi-thousand-function
+  browser export can still be delayed indefinitely by a pathological function
+  and can exceed a browser tab's memory budget; watchdog and worker/sharding
+  work are separate from DIV-41.
 
 - **Supports whatever the CLI supports** — every format (ELF/PE/Mach-O/COFF) and every
   architecture kuna ships a `.sla` for, resolved by the engine with no per-format JS (§3).

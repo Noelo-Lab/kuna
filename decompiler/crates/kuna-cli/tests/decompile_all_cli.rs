@@ -211,9 +211,12 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
         "--option",
         "aif",
         "off",
+        "--option",
+        "fast_funcdisc",
+        "on",
     ])
     .expect("explicit fast-equivalent run");
-    assert_eq!(fast, explicit, "fast must equal its three explicit option overrides");
+    assert_eq!(fast, explicit, "fast must equal its four explicit option overrides");
 
     let noreturn = noreturn_fixture();
     let base = [
@@ -263,7 +266,7 @@ fn modes_command_lists_auto_policy_and_fast_preset() {
         .split("\"name\": \"fast\"")
         .nth(1)
         .expect("modes JSON must list fast after its name");
-    for option in ["listing", "funcstart_patterns", "aif"] {
+    for option in ["listing", "funcstart_patterns", "aif", "fast_funcdisc"] {
         assert!(
             fast.contains(&format!("\"option\": \"{option}\"")),
             "fast mode JSON missing {option}: {stdout}"

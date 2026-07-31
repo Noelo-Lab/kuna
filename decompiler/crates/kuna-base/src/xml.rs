@@ -1684,7 +1684,9 @@ mod tests {
         // brace elision (braceless indented statement; braceelide off restores),
         // and kuna-cnorm-warnstyle / the DIV-39 terse end-of-line warning slugs
         // (usage(1); // no-return; warnstyle banner restores the WARNING lines)
-        assert_eq!(count, 173, "corpus file count drifted");
+        // and ghdec-fast-funcdisc / the bounded fast-project inventory
+        // (old fast omits a direct callee; default fast emits its real body)
+        assert_eq!(count, 174, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
