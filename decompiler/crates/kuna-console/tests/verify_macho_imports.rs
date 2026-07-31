@@ -80,6 +80,7 @@ fn fixtures() -> PathBuf {
 //     __stubs printf @ 0x1000005a0
 const X64_MAIN_VMA: u64 = 0x1000005b0;
 const X64_PRINTF_STUB: u64 = 0x1000005cc;
+const X64_PRINTF_PTR: u64 = 0x100003000;
 
 /// Bootstrap, run a `load …`-driven `decompile` → `print C`, and return the
 /// captured C. `func_cmd` is the `load function …` / `load addr …` command that
@@ -193,6 +194,33 @@ fn macho_x64_names_printf_stub_by_address() {
     assert!(
         !out.contains(&format!("sub_{X64_PRINTF_STUB:x}")),
         "Mach-O (by addr): the printf stub should no longer be sub_{X64_PRINTF_STUB:x}:\n{out}"
+    );
+}
+
+/// The executable stub remains an automatic batch target while its symbol
+/// pointer remains available only through the full inventory and lookup.
+#[test]
+fn macho_batch_targets_exclude_import_pointer_slots() {
+    let Some(mut prog) = boot("macho_imports") else { return };
+    prog.commit_pending_analysis().expect("Mach-O analysis commit must succeed");
+
+    let canonical = prog.function_entries_canonical();
+    assert!(
+        canonical.iter().any(|entry| entry.addr.get_offset() == X64_PRINTF_PTR),
+        "Mach-O: canonical inventory must retain the printf pointer slot"
+    );
+    let executable = prog.function_entries_executable();
+    assert!(
+        executable.iter().any(|entry| entry.addr.get_offset() == X64_PRINTF_STUB),
+        "Mach-O: executable inventory must retain the printf stub"
+    );
+    assert!(
+        !executable.iter().any(|entry| entry.addr.get_offset() == X64_PRINTF_PTR),
+        "Mach-O: executable inventory must exclude the printf pointer slot"
+    );
+    assert!(
+        prog.find_entry_at(X64_PRINTF_PTR).is_some(),
+        "Mach-O: explicit lookup must retain the printf pointer slot"
     );
 }
 

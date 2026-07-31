@@ -68,6 +68,12 @@ fn decompile_all_enumerates_and_decompiles_every_function() {
     let names: Vec<String> = prog.function_entries().map(|(n, _)| n.to_string()).collect();
     assert!(!names.is_empty(), "function_entries returned no functions");
     assert!(names.iter().any(|n| n == "main"), "enumeration missing `main`: {names:?}");
+    assert!(
+        prog.function_entries_executable()
+            .iter()
+            .any(|entry| entry.addr.get_offset() == 0x400510),
+        "executable enumeration must retain the ELF puts PLT stub"
+    );
 
     // The address an entry reports must round-trip back to the same function via
     // the symbol-table lookup (i.e. the addresses are real entry VMAs).

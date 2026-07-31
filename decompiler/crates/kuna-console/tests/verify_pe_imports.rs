@@ -70,6 +70,8 @@ fn fixtures() -> PathBuf {
 //   __imp_puts IAT @ 0x14000d33c   (the slot the thunk jumps through)
 //   printf wrapper @ 0x140001550   (a *local* MinGW fn; not an import)
 const MAIN_VMA: u64 = 0x140001592;
+const PUTS_THUNK_VMA: u64 = 0x140007240;
+const PUTS_IAT_VMA: u64 = 0x14000d33c;
 
 /// Bootstrap, run `load function`/`load addr`-driven `decompile` → `print C`, and
 /// return the captured C. `func_cmd` is the `load function …`/`load addr …`
@@ -183,5 +185,32 @@ fn pe_stripped_exe_names_puts_via_iat_thunk() {
         out.contains("sub_140001550"),
         "stripped PE: the local printf wrapper should stay sub_<addr> (it is not \
          an import), got:\n{out}"
+    );
+}
+
+/// Automatic batch decompilation targets the executable thunk, not the IAT
+/// pointer slot. The slot remains a symbol so calls and explicit lookup work.
+#[test]
+fn pe_batch_targets_exclude_iat_data_slots() {
+    let Some(mut prog) = boot("pe_imports_stripped.exe") else { return };
+    prog.commit_pending_analysis().expect("PE analysis commit must succeed");
+
+    let canonical = prog.function_entries_canonical();
+    assert!(
+        canonical.iter().any(|entry| entry.addr.get_offset() == PUTS_IAT_VMA),
+        "PE: canonical inventory must retain the puts IAT slot"
+    );
+    let executable = prog.function_entries_executable();
+    assert!(
+        executable.iter().any(|entry| entry.addr.get_offset() == PUTS_THUNK_VMA),
+        "PE: executable inventory must retain the puts thunk"
+    );
+    assert!(
+        !executable.iter().any(|entry| entry.addr.get_offset() == PUTS_IAT_VMA),
+        "PE: executable inventory must exclude the puts IAT slot"
+    );
+    assert!(
+        prog.find_entry_at(PUTS_IAT_VMA).is_some(),
+        "PE: explicit lookup must retain the puts IAT slot"
     );
 }

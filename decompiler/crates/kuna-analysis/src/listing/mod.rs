@@ -28,6 +28,7 @@ pub mod model;
 pub mod walk;
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 use std::rc::Rc;
 
 use kuna_base::address::RangeList;
@@ -206,6 +207,20 @@ impl Listing {
     /// Iterate the decoded instructions in address order.
     pub fn instructions(&self) -> impl Iterator<Item = (&u64, &Insn)> {
         self.insns.iter()
+    }
+
+    /// Iterate decoded instructions in `[start, end)`, or from `start` onward
+    /// when `end` is `None`.
+    pub fn instructions_in_range(
+        &self,
+        start: u64,
+        end: Option<u64>,
+    ) -> impl Iterator<Item = (&u64, &Insn)> {
+        let end = end.map(|end| end.max(start));
+        self.insns.range((
+            Bound::Included(start),
+            end.map_or(Bound::Unbounded, Bound::Excluded),
+        ))
     }
 
     /// The VMA of the first decoded instruction that starts strictly after `vma`
@@ -399,5 +414,51 @@ fn finalize_refs(map: &mut BTreeMap<u64, Vec<Reference>>, by_source: bool) {
             pa.cmp(&pb).then_with(|| ref_kind_ord(a.kind).cmp(&ref_kind_ord(b.kind)))
         });
         refs.dedup_by(|a, b| a.from == b.from && a.to == b.to && a.kind == b.kind);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn insn(addr: u64) -> Insn {
+        Insn {
+            addr,
+            len: 1,
+            fall_through: addr.checked_add(1),
+            flow: Default::default(),
+            flows: Vec::new(),
+            mnemonic: String::new(),
+            operands: String::new(),
+            pcode: None,
+        }
+    }
+
+    #[test]
+    fn instruction_ranges_are_start_inclusive_and_end_exclusive() {
+        let insns = [0x10, 0x20, u64::MAX]
+            .into_iter()
+            .map(|addr| (addr, insn(addr)))
+            .collect();
+        let listing = Listing {
+            insns,
+            refs_to: BTreeMap::new(),
+            refs_from: BTreeMap::new(),
+            funcs: BTreeMap::new(),
+            covered: RangeList::new(),
+            exec_ranges: Vec::new(),
+        };
+        let addrs = |start, end| {
+            listing
+                .instructions_in_range(start, end)
+                .map(|(&addr, _)| addr)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(addrs(0x10, Some(0x20)), vec![0x10]);
+        assert_eq!(addrs(0x15, Some(u64::MAX)), vec![0x20]);
+        assert_eq!(addrs(0x20, None), vec![0x20, u64::MAX]);
+        assert!(addrs(0x20, Some(0x20)).is_empty());
+        assert!(addrs(0x20, Some(0x10)).is_empty());
     }
 }

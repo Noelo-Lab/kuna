@@ -93,8 +93,8 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase
 /// The structural no-return propagation consumer pass (the second Listing/xref
 /// consumer).
 ///
-/// Default-OFF (gate id `noreturn_propagate`); short-circuits to an empty output
-/// when no Listing is built (`ctx.listing.is_none()`).
+/// Option-gated (gate id `noreturn_propagate`, default on); short-circuits to an
+/// empty output when no Listing is built (`ctx.listing.is_none()`).
 #[derive(Default)]
 pub struct NoReturnPropagatePass;
 
@@ -110,8 +110,7 @@ impl AnalysisPass for NoReturnPropagatePass {
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         // Listing-dependent: a no-op when the Listing is absent (the `--option
-        // listing on` flag is off). This keeps the pass inert by default even if
-        // its own gate is flipped on without the Listing.
+        // listing on` flag is off).
         let Some(listing) = ctx.listing else {
             return out;
         };
@@ -166,8 +165,7 @@ fn collect_error_noreturn_callsites(
     for (&entry, _) in listing.functions() {
         let next = listing.next_function_after(entry).map(|f| f.entry);
         let body: Vec<(u64, &Insn)> = listing
-            .instructions()
-            .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+            .instructions_in_range(entry, next)
             .map(|(&vma, insn)| (vma, insn))
             .collect();
         for i in 0..body.len() {
@@ -367,11 +365,9 @@ fn function_is_no_return(
     error_recog: &ErrorRecognizer,
 ) -> bool {
     let next = listing.next_function_after(entry).map(|f| f.entry);
-    // The function body in address order (the Listing's `instructions()` is a
-    // BTreeMap iterator, already sorted).
+    // The function body in address order.
     let body: Vec<(u64, &Insn)> = listing
-        .instructions()
-        .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+        .instructions_in_range(entry, next)
         .map(|(&vma, insn)| (vma, insn))
         .collect();
     if body.is_empty() {
@@ -463,8 +459,7 @@ fn function_reaches_only_noreturn(
     let next = listing.next_function_after(entry).map(|f| f.entry);
     // Address-indexed body for O(log n) successor lookup.
     let body: BTreeMap<u64, &Insn> = listing
-        .instructions()
-        .filter(|(&vma, _)| vma >= entry && next.map_or(true, |n| vma < n))
+        .instructions_in_range(entry, next)
         .map(|(&vma, insn)| (vma, insn))
         .collect();
     reaches_only_noreturn_walk(&body, entry, next, terminal, error_recog)

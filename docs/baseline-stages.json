@@ -17,7 +17,7 @@
     "data:CNORM-INPLACE #6: inplaceops off restores the raw negative addend",
     "data:CNORM-NULLPRINT #1: default renders the zero pointer as NULL (DIV-34)",
     "data:CNORM-NULLPRINT #2: nullprinting off restores the upstream casted zero",
-    "data:CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-33)",
+    "data:CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-34)",
     "data:CNORM-PROTOGAP #2: braceformat function skip restores the upstream blank line",
     "data:CNORM-TRUTHY #1: default renders the nonzero test truthy (DIV-36)",
     "data:CNORM-TRUTHY #2: default renders the null test as a negation",

@@ -47,6 +47,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
+<!-- (DIV-39 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="mode aggressive enables returndup (warning appears once); mode reliable does not" min="1" max="1">return-dupe x2</stringmatch>
 </decompilertest>
