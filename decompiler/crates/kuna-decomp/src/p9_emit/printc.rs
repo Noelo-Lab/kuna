@@ -1412,6 +1412,9 @@ impl PrintC {
         let markup = MarkupRef::none();
 
         let id1 = self.emit.begin_function();
+        // (kuna warnstyle, DIV-38) defensive: never let a pending slug from a
+        // previous function on this shared printer leak into this one.
+        self.eol_warns.clear();
         // emitCommentFuncHeader(fd) — the header comment line (the full
         // CommentSorter is the comment item; emit the marker header).
         self.emit.tag_line();
@@ -1472,6 +1475,10 @@ impl PrintC {
             "/* WARNING: body emission blocked on upstream decompilation passes (raw p-code IR) */",
             SyntaxHighlight::CommentColor,
         );
+        // (kuna warnstyle, DIV-38) drain any slug still pending from a
+        // construct with no closer flush point onto the last body line, so no
+        // warning is ever silently dropped or carried out of this function.
+        self.flush_eol_warnings();
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
@@ -2092,10 +2099,18 @@ impl PrintC {
         // `doc_prototype`).
         self.emit_prototype_declaration(fd, arch, &markup);
         // (kuna warnstyle, DIV-38) header-warning slugs collected by
-        // emit_comment_func_header land at the end of the prototype line.
-        self.flush_eol_warnings();
-
-        let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
+        // emit_comment_func_header land at the end of the prototype line —
+        // except under `braceformat function same`, where the brace shares
+        // that line and must print BEFORE the comment (a `// slug {` would
+        // swallow the brace).
+        let id = if self.options.brace_func == BraceStyle::SameLine {
+            let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
+            self.flush_eol_warnings();
+            id
+        } else {
+            self.flush_eol_warnings();
+            self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func))
+        };
         // emitLocalVarDecls(fd) (printc.cc:2805 / emitGlobalVarDeclsRecursive +
         // the scope walk): one `<type> <name>;` per named local HighVariable, in
         // name order, followed by a blank separating line before the body.  The
@@ -2113,6 +2128,10 @@ impl PrintC {
                 SyntaxHighlight::CommentColor,
             );
         }
+        // (kuna warnstyle, DIV-38) drain any slug still pending from a
+        // construct with no closer flush point onto the last body line, so no
+        // warning is ever silently dropped or carried out of this function.
+        self.flush_eol_warnings();
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
@@ -3550,6 +3569,9 @@ impl PrintC {
         self.context.pop_mod();
         let brace_id =
             self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_switch));
+        // (kuna warnstyle, DIV-38) warnings pending from the switch block land
+        // after the `switch (v) {` header brace.
+        self.flush_eol_warnings();
 
         let ncase = fd.sblocks_ref().block(blk).switch_caseblocks().len();
         for i in 0..ncase {
@@ -3698,6 +3720,9 @@ impl PrintC {
             self.emit.tag_line();
             let gototype = fd.sblocks_ref().block(blk).get_goto_type();
             self.emit_goto_statement(fd, inner, target, gototype);
+            // (kuna warnstyle, DIV-38) pending block warnings land after the
+            // trailing goto/break/continue.
+            self.flush_eol_warnings();
         }
     }
 
@@ -3844,6 +3869,9 @@ impl PrintC {
         self.context.set_mod(modifiers::ONLY_BRANCH);
         self.emit_block(fd, arch, body);
         self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        // (kuna warnstyle, DIV-38) body/condition warnings still pending land
+        // at the end of the `} while (cond);` line.
+        self.flush_eol_warnings();
         self.context.pop_mod();
     }
 
@@ -3871,6 +3899,9 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id2);
         self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        // (kuna warnstyle, DIV-38) pending body warnings land at the end of
+        // the `} while ( true );` line.
+        self.flush_eol_warnings();
         self.context.pop_mod();
     }
 
@@ -3972,8 +4003,13 @@ impl PrintC {
             }
             self.emit_statement(fd, arch, inst);
             // (kuna warnstyle, DIV-38) warnings collected for this statement
-            // land after its semicolon.
-            self.flush_eol_warnings();
+            // land after its semicolon — but NEVER inside a comma-separated
+            // header (`while (...)` / `for (...)` parens), where an inline
+            // `// slug` would comment out the rest of the header line
+            // (invalid C); those slugs ride to the header's own flush point.
+            if !self.context.is_set(modifiers::COMMA_SEPARATE) {
+                self.flush_eol_warnings();
+            }
             separator = true;
         }
         // emitCommentGroup(None): any remaining comments in the block.

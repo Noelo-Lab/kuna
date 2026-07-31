@@ -20,27 +20,55 @@
     indirect jump, which P2 flow converts to a CALLIND + return with the
     upstream "Treating indirect jump as call" warning at the call.
 
+    wa_fn (0x100010, under `option readonly on`): a while-loop whose
+    CONDITION block stores to a readonly global, so the "Read-only address
+    is written" warning attaches INSIDE a comma-separated loop header - the
+    adversarial shape for the flush machinery: the slug must ride to the
+    header's own flush point after `{`, never fire inside the parens (which
+    would comment out `) {` - invalid C).
+
     Pass 1 (default): the call statement carries the terse slug at end of
-    line (assert #1, exactly once; assert #3 proves no banner remains).
-    Pass 2 (option warnstyle banner): the upstream banner line (assert #2,
-    exactly once).
+    line (assert #1, exactly once; assert #3 proves no banner remains) and
+    the loop header stays intact with the slug after the brace (asserts
+    #4-#5).
+    Pass 2 (option warnstyle banner): the upstream banner lines (assert #2
+    and the Read-only banner inside #3's count).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 ff27
 </bytechunk>
+<bytechunk space="ram" offset="0x100010" readonly="true">
+eb02ffcf893de600000085ff75f4c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+00000000
+</bytechunk>
 <symbol space="ram" offset="0x100000" name="ws_fn"/>
+<symbol space="ram" offset="0x100010" name="wa_fn"/>
+<symbol space="ram" offset="0x100100" name="rodat"/>
 </binaryimage>
 <script>
+  <com>option readonly on</com>
   <com>parse line extern void ws_fn(int8 *p);</com>
+  <com>parse line extern void wa_fn(int4 x);</com>
   <com>lo fu ws_fn</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu wa_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option warnstyle banner</com>
+  <com>lo fu ws_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wa_fn</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CNORM-WARNSTYLE #1: default renders the terse end-of-line slug (DIV-38)" min="1" max="1">; // jump-as-call</stringmatch>
 <stringmatch name="CNORM-WARNSTYLE #2: warnstyle banner restores the upstream WARNING line" min="1" max="1">/\* WARNING: Treating indirect jump as call \*/</stringmatch>
-<stringmatch name="CNORM-WARNSTYLE #3: no banner WARNING line remains in the inline pass" min="1" max="1">WARNING</stringmatch>
+<stringmatch name="CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)" min="2" max="2">WARNING</stringmatch>
+<stringmatch name="CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace" min="1" max="1">\) \{ // writes-rodata</stringmatch>
+<stringmatch name="CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens" min="0" max="0">// writes-rodata\)</stringmatch>
 </decompilertest>

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    299,
-    299
+    301,
+    301
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -27,7 +27,9 @@
     "data:CNORM-TRUTHY #6: the value-elision bug shape never appears",
     "data:CNORM-WARNSTYLE #1: default renders the terse end-of-line slug (DIV-38)",
     "data:CNORM-WARNSTYLE #2: warnstyle banner restores the upstream WARNING line",
-    "data:CNORM-WARNSTYLE #3: no banner WARNING line remains in the inline pass",
+    "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
+    "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
+    "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
