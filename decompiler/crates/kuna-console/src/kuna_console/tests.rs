@@ -60,18 +60,18 @@ fn run_one(line: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn registers_all_sixteen_kuna_commands() {
+fn registers_all_seventeen_kuna_commands() {
     // register_decomp_commands registers 105 (see ifacedecomp/tests.rs); the
-    // kuna capability adds 16: phase list/map/status/catalog (plus the four
+    // kuna capability adds 17: phase list/map/status/catalog (plus the four
     // deprecated `stage ...` alias registrations), kassert, restarts,
-    // pipeline, mode, quality, region tree/blocks/walk.
+    // pipeline, mode, quality, functions, region tree/blocks/walk.
     let only_kuna = {
         let mut st = ConsoleCommands::into_status(vec![]);
         register_kuna_commands(&mut st);
         st.num_commands()
     };
-    assert_eq!(only_kuna, 16);
-    assert_eq!(console(&[]).num_commands(), 105 + 16);
+    assert_eq!(only_kuna, 17);
+    assert_eq!(console(&[]).num_commands(), 105 + 17);
 }
 
 #[test]
@@ -89,6 +89,7 @@ fn kuna_command_prefixes_expand() {
     assert_eq!(status.resolve("kassert list").unwrap(), vec!["kassert"]);
     assert_eq!(status.resolve("pipeline list").unwrap(), vec!["pipeline"]);
     assert_eq!(status.resolve("quality").unwrap(), vec!["quality"]);
+    assert_eq!(status.resolve("functions").unwrap(), vec!["functions"]);
     assert_eq!(status.resolve("region tree").unwrap(), vec!["region", "tree"]);
     assert_eq!(status.resolve("region blocks").unwrap(), vec!["region", "blocks"]);
     assert_eq!(status.resolve("region walk").unwrap(), vec!["region", "walk"]);

@@ -678,6 +678,11 @@ pub struct Architecture {
     /// with the consumer analysis passes. Default-off ⇒ the Listing is never
     /// built and every parity gate is byte-identical.
     pub analysis_listing: bool,
+    /// (kuna) Gate the rooted fast whole-project function discovery pass
+    /// (`fast_funcdisc`); default **off**. It recursively follows direct calls
+    /// from metadata-backed roots and admits pointer-table targets only after
+    /// fingerprint and valid-subroutine checks. The `fast` mode enables it.
+    pub analysis_fast_funcdisc: bool,
     /// (kuna) Gate the discovered-no-return consumer (`noreturn_disc`), the first
     /// Listing/xref consumer; default **off**. It is a flow heuristic (a callee is
     /// no-return if ≥3 of its call sites show no valid fall-through, iterated to a
@@ -1073,6 +1078,7 @@ impl Architecture {
             analysis_operand_refs: false,
             analysis_formatstring: false,
             analysis_listing: false,
+            analysis_fast_funcdisc: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
             analysis_noreturn_error: false,
@@ -1214,6 +1220,7 @@ impl Architecture {
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
+        self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_error = true; // (kuna) DIV-16 default-on: REMOVES CODE (conclude error(nonzero,...) wrappers no-return, dropping the dead fall-through at every caller). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_error off`
@@ -1464,6 +1471,9 @@ impl Architecture {
                 on_off!(analysis_formatstring, "Format-string varargs-typing pass")
             }
             "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
+            "fast_funcdisc" => {
+                on_off!(analysis_fast_funcdisc, "Fast whole-project function discovery")
+            }
             "noreturn_disc" => {
                 on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
             }

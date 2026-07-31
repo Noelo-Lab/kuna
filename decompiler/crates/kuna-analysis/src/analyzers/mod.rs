@@ -11,6 +11,7 @@ pub mod demangle;
 pub mod dwarf;
 pub mod entry;
 pub mod fid;
+pub mod fast_funcdisc;
 pub mod formatstring;
 pub mod noreturn_disc;
 pub mod noreturn_propagate;

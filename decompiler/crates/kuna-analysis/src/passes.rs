@@ -355,12 +355,13 @@ fn dispatch_if_enabled<T>(enabled: bool, run: impl FnOnce() -> T) -> Option<T> {
 /// (before `read symbols`). So the Listing — and any pass that reads it — must be
 /// built/run at the deferred commit point, when the flag is finally in effect.
 /// The console calls this from `commit_pending_analysis` (reached at `read
-/// symbols`), gated on `arch.analysis_listing`; it parses `bytes`, builds the
-/// Listing with funcsym names + Known-no-return/call-fixup seed metadata, and runs
-/// the enabled [`listing_consumer_passes`] passes.
+/// symbols`), gated on `arch.analysis_listing` or `arch.analysis_fast_funcdisc`;
+/// it parses `bytes`, builds the Listing with funcsym names +
+/// Known-no-return/call-fixup seed metadata, and either runs the enabled
+/// [`listing_consumer_passes`] passes or emits the fast discovery inventory.
 ///
 /// A parse failure (or no exec ranges) yields an empty list (additive, never
-/// fails). Bound to the real-ELF path: the XML datatest path never calls this, so
+/// fails). Bound to the real-object path: the XML datatest path never calls this, so
 /// the parity oracles are structurally untouched.
 ///
 /// `noreturn_seeds`/`callfixup_seeds` are the addresses the load-time Known
@@ -388,7 +389,7 @@ pub fn run_listing_consumers(
     // have no recognizable prologue (Ghidra's disassembler-driven recursive descent).
     // betaflight STM32F405: the walk grows 1 -> 1470 discovered functions (Ghidra 1822).
     // Gated by the same flag, so x86-64 (funcstart_patterns off) is unchanged.
-    if arch.analysis_funcstart_patterns {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns {
         let execs = crate::entry::executable_sections(&file);
         seeds.extend(
             crate::entry::full_pattern_starts(&file)
@@ -422,7 +423,7 @@ pub fn run_listing_consumers(
     // `raw_thumb_prologue_seeds`), so x86-64 (funcstart_patterns off) is unchanged
     // and every non-ARM binary is a strict no-op. betaflight STM32F405: recovers the
     // ~483 PUSH-prologue functions the `<patternpairs>` matcher structurally misses.
-    if arch.analysis_funcstart_patterns {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let raw = crate::aif::raw_thumb_prologue_seeds(
                 &file,
@@ -467,7 +468,7 @@ pub fn run_listing_consumers(
     // `code_pointer_table_seeds`), so x86-64 (funcstart_patterns off) is byte-identical
     // and every non-ARM binary is a strict no-op. Measured recovery (real, ground-truth
     // functions, zero false starts): cf2 +3, usart-stdio +1, betaflight +8.
-    if arch.analysis_funcstart_patterns {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let ptr = crate::aif::code_pointer_table_seeds(
                 &file,
@@ -495,18 +496,34 @@ pub fn run_listing_consumers(
             }
         }
     }
+    let mut fast_pointer_seeds = Vec::new();
+    if arch.analysis_fast_funcdisc {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            fast_pointer_seeds = crate::fast_funcdisc::pointer_table_seeds(
+                &file,
+                &listing,
+                translate,
+                std::rc::Rc::clone(code_space),
+            );
+        }
+    }
+
     // Seed the function model's no-return / call-fixup flags from the load-time
     // Known passes so the consumer skips already-modeled callees and the fixpoint
     // treats a Known-no-return callee as terminal.
     let listing = listing.with_noreturn_seeds(noreturn_seeds, callfixup_seeds);
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: Some(&listing) };
-    let mut out: Vec<(&'static str, AnalysisOutput)> = listing_consumer_passes(arch)
-        .into_iter()
-        .filter_map(|(enabled, pass)| {
-            let id = pass.id();
-            dispatch_if_enabled(enabled, || (id, pass.run(&ctx)))
-        })
-        .collect();
+    let mut out: Vec<(&'static str, AnalysisOutput)> = if arch.analysis_listing {
+        listing_consumer_passes(arch)
+            .into_iter()
+            .filter_map(|(enabled, pass)| {
+                let id = pass.id();
+                dispatch_if_enabled(enabled, || (id, pass.run(&ctx)))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     // The Aggressive Instruction Finder gap-walk (`aif`) is NOT a pure-`ctx`
     // pass: it speculatively decodes undecoded gap bytes, so it needs the live
@@ -515,7 +532,7 @@ pub fn run_listing_consumers(
     // is checked before this speculative work; the output keeps the `aif` id for
     // the defensive commit gate. A no-op (empty `entries`) when there is no code
     // space.
-    if arch.analysis_aif {
+    if arch.analysis_listing && arch.analysis_aif {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let mut aif_out = AnalysisOutput::default();
             aif_out.entries = crate::aif::run_aif(
@@ -535,10 +552,21 @@ pub fn run_listing_consumers(
     // CreateFunctionCmd analog); the commit arm names them `sub_<addr>` and dedups against
     // the already-committed set. Gated by `funcdisc_recursive` → the same
     // `analysis_funcstart_patterns` flag, so x86-64 (funcstart_patterns off) is byte-identical.
-    if arch.analysis_funcstart_patterns {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns {
         let mut rd_out = AnalysisOutput::default();
         rd_out.entries = listing.functions().map(|(&vma, _)| vma).collect();
         out.push(("funcdisc_recursive", rd_out));
+    }
+    if arch.analysis_fast_funcdisc {
+        let mut fast_out = AnalysisOutput::default();
+        fast_out.entries = listing
+            .functions()
+            .map(|(&vma, _)| vma)
+            .chain(fast_pointer_seeds)
+            .collect();
+        fast_out.entries.sort_unstable();
+        fast_out.entries.dedup();
+        out.push(("fast_funcdisc", fast_out));
     }
     out
 }

@@ -305,7 +305,7 @@ fn build_fingerprint_histogram(listing: &Listing) -> BTreeMap<Fingerprint, usize
 ///  - a `RETURN` (terminal) reached on a path is a valid termination
 ///    (`didTerminate`); a computed/indirect jump is also a terminate signal
 ///    (`flowType.isComputed() ⇒ didTerminate = true`);
-///  - a `CALL` (or a `JUMP` into already-discovered code) "adds info"
+///  - a `CALL` or `JUMP` into already-discovered code "adds info"
 ///    (`didCallValidSubroutine`);
 ///  - reject a two-instruction-or-shorter routine ([`MIN_SUBROUTINE_INSNS`] —
 ///    `numInstr <= 2`);
@@ -321,6 +321,27 @@ fn check_valid_subroutine(
     gap_lo: u64,
     gap_hi: u64,
 ) -> Option<BTreeSet<u64>> {
+    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, false)
+}
+
+fn check_valid_subroutine_strict(
+    decoder: &mut GapDecoder,
+    listing: &Listing,
+    entry: u64,
+    gap_lo: u64,
+    gap_hi: u64,
+) -> Option<BTreeSet<u64>> {
+    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, true)
+}
+
+fn check_valid_subroutine_with_policy(
+    decoder: &mut GapDecoder,
+    listing: &Listing,
+    entry: u64,
+    gap_lo: u64,
+    gap_hi: u64,
+    strict: bool,
+) -> Option<BTreeSet<u64>> {
     let mut body: BTreeSet<u64> = BTreeSet::new();
     let mut worklist: Vec<u64> = vec![entry];
     let mut did_terminate = false;
@@ -333,6 +354,9 @@ fn check_valid_subroutine(
         }
         steps += 1;
         if steps > MAX_FOLLOW_INSNS {
+            if strict {
+                return None;
+            }
             break;
         }
 
@@ -349,9 +373,12 @@ fn check_valid_subroutine(
             if !decoder.in_exec(vma) {
                 return None;
             }
-            // Outside the gap but inside exec and not a known instruction start:
-            // a flow into the interior of existing code or an unreached region; do
-            // not chase it (the upstream stops at the existing-code boundary).
+            // Outside the gap but inside exec and not a known instruction start.
+            // The established AIF/ARM oracles stop at this boundary; the fast
+            // pointer-root validator rejects the uncorroborated escape.
+            if strict {
+                return None;
+            }
             continue;
         }
 
@@ -376,7 +403,9 @@ fn check_valid_subroutine(
                 return None; // flow leaves the executable image (`!memory.contains`)
             }
             if insn.is_call {
-                adds_info = true; // a call (to any in-image target) adds info
+                if !strict || listing.is_instruction_start(target) {
+                    adds_info = true;
+                }
             } else {
                 worklist.push(target); // branch target → intra-routine successor
             }
@@ -472,6 +501,40 @@ fn probe_gap_start(
         return None;
     }
     check_valid_subroutine(decoder, listing, gap_start, gap_start, gap_hi)
+}
+
+pub(crate) fn validate_pointer_targets(
+    listing: &Listing,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+    exec_ranges: &[(u64, u64)],
+    candidates: impl IntoIterator<Item = u64>,
+) -> Vec<u64> {
+    let hist = build_fingerprint_histogram(listing);
+    if !hist.values().any(|&count| count >= FINGERPRINT_THRESHOLD) {
+        return Vec::new();
+    }
+
+    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    let mut accepted = BTreeSet::new();
+    let mut claimed = BTreeSet::new();
+    for target in candidates {
+        if !listing.is_undefined(target) || claimed.contains(&target) {
+            continue;
+        }
+        let Some(fp) = decoder.fingerprint(target) else { continue };
+        if hist.get(&fp).copied().unwrap_or(0) < FINGERPRINT_THRESHOLD {
+            continue;
+        }
+        let gap_hi = listing.next_instruction_start_after(target).unwrap_or(u64::MAX);
+        if let Some(body) =
+            check_valid_subroutine_strict(&mut decoder, listing, target, target, gap_hi)
+        {
+            accepted.insert(target);
+            claimed.extend(body);
+        }
+    }
+    accepted.into_iter().collect()
 }
 
 // ===========================================================================

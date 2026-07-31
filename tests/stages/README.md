@@ -130,3 +130,6 @@ W7 block-graph adapter closed in regionstructure Inc 0, including the per-block
 `docs/spec/07-regions.md`), `kuna-listing-flag.xml`
 (the Listing/xref disassembly tier flag `option listing on|off`, default-off: parses,
 round-trips, and is inert on the XML path — PR1 of the Listing/xref tier).
+`ghdec-fast-funcdisc.xml` clears that wrapper architecture and loads a real PE
+twice: option off reproduces the missing direct callee, and option on discovers
+and decompiles its body.

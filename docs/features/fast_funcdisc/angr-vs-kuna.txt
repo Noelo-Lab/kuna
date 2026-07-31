@@ -1,0 +1,35 @@
+Source: captured kuna project exports; no reference decompiler is involved.
+Public fixture: decompiler/crates/kuna-analysis/tests/fixtures/pdb_prog.exe
+
+COMMAND (before)
+  kuna decompile-project pdb_prog.exe --mode fast --option fast_funcdisc off
+
+RESULT
+  functions: 1 ok, 0 failed
+
+  // Function: sub_140001010 @ 0x140001010
+  void sub_140001010(void)
+  {
+    sub_140001000(2,3);
+    return;
+  }
+The project calls sub_140001000 but contains no definition for it.
+
+COMMAND (after)
+  kuna decompile-project pdb_prog.exe --mode fast --option fast_funcdisc on
+
+RESULT
+  functions: 2 ok, 0 failed
+
+  // Function: sub_140001000 @ 0x140001000
+  int4 sub_140001000(int4 a0,int4 a1)
+  {
+    return a1 * 7 + a0 * 3;
+  }
+
+  // Function: sub_140001010 @ 0x140001010
+  void sub_140001010(void)
+  {
+    sub_140001000(2,3);
+    return;
+  }

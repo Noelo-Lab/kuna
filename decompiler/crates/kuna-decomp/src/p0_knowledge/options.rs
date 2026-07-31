@@ -330,9 +330,13 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (Ghidra `FormatStringAnalyzer.setDefaultEnablement(false)`).
     "formatstring",
     // (kuna) Listing/xref disassembly tier: a program-wide recursive-descent
-    // Listing/xref model built once at load (real-ELF path only) and shared
+    // Listing/xref model built once at load (real-object path only) and shared
     // read-only with consumer passes.  Default-off (the Listing is never built).
     "listing",
+    // (kuna) Rooted whole-project discovery used by fast mode: recursively
+    // follow direct calls from trustworthy roots and validate address-table
+    // targets without the exhaustive AIF gap walk.
+    "fast_funcdisc",
     // (kuna) Discovered-no-return consumer: the first Listing/xref consumer, a flow
     // heuristic (callee no-return if ≥3 call sites show no valid fall-through,
     // iterated to a fixpoint over the Listing).  The kuna analog of Ghidra's

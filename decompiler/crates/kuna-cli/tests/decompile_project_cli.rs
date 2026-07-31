@@ -248,3 +248,170 @@ fn arm_thumb_project_smoke() {
         "arm .asm has no function labels:\n{asm_text}"
     );
 }
+
+#[test]
+fn fast_project_discovers_real_function_bodies() {
+    let bin = fixture("pdb_prog.exe");
+    let dir = out_dir("fast_bodies");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        dir.to_str().unwrap(),
+        "--mode",
+        "fast",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("fast_project_discovers_real_function_bodies: skipping: {stderr}");
+            return;
+        }
+        panic!("fast project failed: {stderr}");
+    }
+    let c = std::fs::read_to_string(dir.join("pdb_prog.exe.c")).unwrap();
+    assert!(c.contains("@ 0x140001010"), "entry function missing:\n{c}");
+    assert!(c.contains("@ 0x140001000"), "direct-call target missing:\n{c}");
+    assert!(c.contains("return a1 * 7 + a0 * 3;"), "discovered function has no real body:\n{c}");
+    assert!(stdout.contains("functions: 2 ok, 0 failed"), "unexpected project summary: {stdout}");
+
+    let control = out_dir("fast_bodies_off");
+    let (_stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        control.to_str().unwrap(),
+        "--mode",
+        "fast",
+        "--option",
+        "fast_funcdisc",
+        "off",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(ok, "fast discovery control failed: {stderr}");
+    let control_c = std::fs::read_to_string(control.join("pdb_prog.exe.c")).unwrap();
+    assert!(
+        !control_c.contains("@ 0x140001000"),
+        "disabled fast discovery unexpectedly found the hidden leaf:\n{control_c}"
+    );
+}
+
+#[test]
+fn fast_project_discovers_indirect_pointer_target() {
+    let bin = fixture("aif_gap_x86_64");
+    let dir = out_dir("fast_pointer");
+    let (_stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        dir.to_str().unwrap(),
+        "--mode",
+        "fast",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("fast_project_discovers_indirect_pointer_target: skipping: {stderr}");
+            return;
+        }
+        panic!("fast pointer project failed: {stderr}");
+    }
+    let c = std::fs::read_to_string(dir.join("aif_gap_x86_64.c")).unwrap();
+    assert!(c.contains("@ 0x13ae"), "pointer-only function missing:\n{c}");
+    assert!(
+        c.contains("return (a0 + 0x40) * 2 + 9;"),
+        "pointer-only function has no real body:\n{c}"
+    );
+
+    let control = out_dir("fast_pointer_off");
+    let (_stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        control.to_str().unwrap(),
+        "--mode",
+        "fast",
+        "--option",
+        "fast_funcdisc",
+        "off",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(ok, "fast pointer discovery control failed: {stderr}");
+    let control_c = std::fs::read_to_string(control.join("aif_gap_x86_64.c")).unwrap();
+    assert!(
+        !control_c.contains("@ 0x13ae"),
+        "disabled fast discovery unexpectedly found the pointer-only target:\n{control_c}"
+    );
+}
+
+#[test]
+fn fast_project_does_not_promote_switch_case_labels() {
+    let bin = fixture("switchtab_x86_64");
+    let dir = out_dir("fast_switch_labels");
+    let (_stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        dir.to_str().unwrap(),
+        "--mode",
+        "fast",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("fast_project_does_not_promote_switch_case_labels: skipping: {stderr}");
+            return;
+        }
+        panic!("fast switch-table project failed: {stderr}");
+    }
+    let c = std::fs::read_to_string(dir.join("switchtab_x86_64.c")).unwrap();
+    for case in [
+        0x401119_u64,
+        0x40111f,
+        0x401125,
+        0x40112b,
+        0x401131,
+        0x401137,
+        0x40113d,
+        0x401149,
+    ] {
+        assert!(
+            !c.contains(&format!("@ 0x{case:x}")),
+            "switch case 0x{case:x} was promoted to a function:\n{c}"
+        );
+    }
+}
+
+#[test]
+fn fast_selected_project_does_not_expand_to_callees() {
+    let bin = fixture("pdb_prog.exe");
+    let dir = out_dir("fast_selected");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &bin,
+        "-o",
+        dir.to_str().unwrap(),
+        "--addr",
+        "0x140001010",
+        "--mode",
+        "fast",
+        "--sleighpath",
+        &specs(),
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("fast_selected_project_does_not_expand_to_callees: skipping: {stderr}");
+            return;
+        }
+        panic!("fast selected project failed: {stderr}");
+    }
+    let c = std::fs::read_to_string(dir.join("pdb_prog.exe.c")).unwrap();
+    assert!(c.contains("@ 0x140001010"), "selected function missing:\n{c}");
+    assert!(!c.contains("@ 0x140001000"), "selector expanded to an unrequested callee:\n{c}");
+    assert!(stdout.contains("functions: 1 ok, 0 failed"), "unexpected project summary: {stdout}");
+}

@@ -48,7 +48,7 @@ fn last_option_value<'a>(options: &'a [(String, String)], name: &str) -> Option<
 
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
 /// function name; use `--addr` for bare numeric addresses) — `_looks_like_addr`.
-fn looks_like_addr(target: &str) -> bool {
+pub(crate) fn looks_like_addr(target: &str) -> bool {
     target.starts_with("0x") || target.starts_with("0X")
 }
 

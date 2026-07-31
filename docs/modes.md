@@ -22,7 +22,7 @@ session changes only the options that second mode names. Discover them with
 | `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger. |
 | `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list. |
 | `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
-| `fast` | Latency first: disables the Listing, prologue-pattern function discovery, and AIF gap walk. Keeps the shipped per-function transforms and explicit selectors, but may discover fewer functions and recover fewer program-wide facts. |
+| `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. |
 
 ## `auto` (default)
 
@@ -44,9 +44,14 @@ later explicit `--option` still overrides the selected preset.
 This makes small binaries favor maximum recovery while bounding the work a
 browser or bulk export attempts for large inputs. On private PE
 `bc4c15d826aaebeace3fec6360eb687e5662cba8745605093254931dcdb3ae1b`
-(3,457,296 bytes), `auto` resolves to `fast`; the composed performance stack
-exports 351 executable functions in a 3.23-second median, while the same
-default-analysis control remained incomplete after 618.60 seconds.
+(3,457,296 bytes), `auto` resolves to `fast`. The original 3.23-second result was
+not a valid successful export: its 351 executable targets were 350 import
+veneers plus the PE entry, so the project omitted ordinary internal bodies such
+as `0x402d80` even though an explicit decompile at that address produced code.
+The rooted discovery correction below preserves the latency-first policy while
+making the whole-project inventory useful. With a 10-second per-function
+watchdog, the corrected private export completed in 462.28 seconds at 1,475 MiB
+peak RSS: 3,140 real C bodies, 13 isolated failures, and 3,153 definitions total.
 
 ## `reliable`
 
@@ -69,7 +74,7 @@ The options it enables:
   `regionedgeorder`, `returndup`, `iteexpr`
 - **analysis tier**: `listing` (the master gate that enables the
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
-  `eh_frame_full`, `funcstart_patterns`, `dwarf_lines`, `addrtable`,
+  `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `dwarf_lines`, `addrtable`,
   `operand_refs`, `formatstring`, `fid`, `rtti`, `aif`, `objc`, `pdb`,
   `macho-arm64e`
 
@@ -99,45 +104,70 @@ net-positive-zero-regression (the DIV process).
 
 ## `fast`
 
-`fast` applies exactly three overrides:
+`fast` applies exactly four overrides:
 
 ```text
 listing=off
 funcstart_patterns=off
 aif=off
+fast_funcdisc=on
 ```
 
-These are the program-wide decode and speculative-discovery paths that dominate
-large-binary latency. Naming `listing` suppresses its default injection on all
-three decompile surfaces; naming `funcstart_patterns` and `aif` suppresses their
-non-x86-64 injections on `decompile-all` and `decompile-project`.
-`funcstart_patterns` is independently important: on private PE
+The first three disable the exhaustive program-wide decode and speculative
+discovery paths that dominate large-binary latency. Naming `listing` suppresses
+its default injection on all three decompile surfaces; naming
+`funcstart_patterns` and `aif` suppresses their non-x86-64 injections on
+`decompile-all` and `decompile-project`. `funcstart_patterns` is independently
+important: on private PE
 `bc4c15d826aaebeace3fec6360eb687e5662cba8745605093254931dcdb3ae1b`,
 enabling it with the other two disabled expands the inventory from 693 to 4,452
 entries.
 
-The tradeoff is deliberate. With no Listing, Listing consumers such as
-discovered no-return propagation do not run. With function-start patterns and
-AIF disabled, stripped non-x86-64 binaries can expose fewer functions. Loader
-symbols, architecture context, import naming, explicit function/address
+`fast_funcdisc` performs one recursive SLEIGH Listing walk from loader-backed
+entries and promotes every statically reached direct-call target. It then scans
+absolute code-pointer tables and admits an indirect-only target only after the
+established AIF fingerprint and valid-subroutine checks corroborate it. On
+non-ARM objects, tables above 256 slots are ignored; large candidate sets
+require two independent table references and validate at most 4096 targets.
+ARM uses the established Thumb-pointer prologue oracle. The pointer-derived
+roots are not recursively expanded. This supplies real project bodies without
+the full prologue corpus or byte-by-byte undefined-gap walk.
+
+The tradeoff remains deliberate. With `listing=off`, ordinary Listing consumers
+such as discovered no-return propagation and FID do not run. With full
+function-start patterns and AIF disabled, functions that are neither directly
+reachable nor represented by an accepted pointer table can remain absent.
+Loader symbols, architecture context, import naming, explicit function/address
 selection, and all shipped per-function transforms remain active.
 
-On that private PE, the old default `decompile-project` run had not completed
-after 935.91 seconds. `--mode fast` completes in a 64.13-second median
-(62.85/64.13/64.87, 141,548 KiB median peak RSS), an observed lower-bound
-speedup of 14.6×. Its `.c`, `.h`, and `.asm` artifacts are byte-identical to the
-three explicit options above. This measurement isolates the mode; filtering the
-binary's non-code import slots is a separate batch-target concern.
+The broken metadata-only fast policy completed quickly precisely because it did
+not discover the private PE's internal program. The corrected
+`--mode fast --max-fn-seconds 10` export completed in 462.28 seconds at 1,475
+MiB peak RSS, producing 3,140 bodies and 13 isolated failures; the non-fast
+control remained incomplete after 935.91 seconds. Public regressions pin both
+halves of the replacement: `pdb_prog.exe` contributes a direct internal callee,
+and `aif_gap_x86_64` contributes an indirect-only pointer-table target, with
+real C bodies in both cases.
+
+Explicit `--addr` commands already have their target set, so the file
+front-ends suppress preset-provided `fast_funcdisc` work for those commands.
+Name selection keeps discovery enabled because a generated `sub_<addr>` name
+does not exist until discovery registers it. Address-selected callers can opt
+back in explicitly with `--option fast_funcdisc on`; an explicit option always
+wins.
 
 An explicit option selectively restores analysis while keeping the rest of the
 preset:
 
 ```bash
 kuna decompile-project ./a.out --mode fast --option listing on
+kuna decompile-project ./a.out --mode fast --option fast_funcdisc off
 ```
 
-Because explicit options are applied after the mode, that command restores the
-Listing while leaving speculative function discovery and AIF disabled.
+Because explicit options are applied after the mode, the first command restores
+ordinary Listing consumers while leaving prologue patterns and AIF disabled;
+the second restores the old metadata-only fast inventory for measurement or an
+especially tight latency budget.
 
 ## Measuring with modes
 
