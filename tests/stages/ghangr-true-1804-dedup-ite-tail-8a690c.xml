@@ -91,7 +91,8 @@
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="P1: TOTAL shared() epilogue count across both passes is 3 (off clones to 2, on dedups to 1)" min="3" max="3">shared\(</stringmatch>
-<stringmatch name="P2: on merges the duplicated if/else tail and logs the dedup" min="1" max="1">dedupitetail: merged</stringmatch>
+<stringmatch name="P2: on merges the duplicated if/else tail and logs the dedup" min="1" max="1">// ite-dedupe</stringmatch>
 <stringmatch name="P3: the convergence sink post() is untouched (one per pass = 2 total)" min="2" max="2">post\(</stringmatch>
 </decompilertest>

@@ -90,8 +90,9 @@
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="P1: default (crossjumprevert off) emits the condensed cross-jump goto" min="1" max="1">goto label_</stringmatch>
 <stringmatch name="P1b: default labels the shared condensed tail" min="1" max="1">label_[0-9a-f]+:</stringmatch>
-<stringmatch name="P2: on duplicates the cross-jump tail and logs the reversion" min="1" max="1">crossjumprevert: duplicated cross-jump tail</stringmatch>
+<stringmatch name="P2: on duplicates the cross-jump tail and logs the reversion" min="1" max="1">// crossjump-dupe</stringmatch>
 <stringmatch name="P3: TOTAL goto-label count across both passes is 1 (off: 1, on: 0)" min="1" max="1">goto label_</stringmatch>
 </decompilertest>

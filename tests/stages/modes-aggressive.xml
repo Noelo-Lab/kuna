@@ -11,7 +11,7 @@
     `reliable` == the shipped defaults (an empty override list, a no op alias);
     `aggressive` turns ON every off by default recovery/analysis pass, INCLUDING
     `returndup` (default OFF, angr ReturnDuplicatorHigh, s8_structure/kuna_returndup.rs).
-    So `returndup`s emit only warning ("returndup: duplicated N shared bare
+    So `returndup`s emit only warning ("// return-dupe N shared bare
     epilogue return(s)") is the clean discriminator between the two modes:
     it can appear ONLY under `mode aggressive` and NEVER under `mode reliable`.
 
@@ -47,5 +47,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="mode aggressive enables returndup (warning appears once); mode reliable does not" min="1" max="1">returndup: duplicated</stringmatch>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
+<stringmatch name="mode aggressive enables returndup (warning appears once); mode reliable does not" min="1" max="1">return-dupe x2</stringmatch>
 </decompilertest>

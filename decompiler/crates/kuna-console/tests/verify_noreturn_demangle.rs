@@ -107,7 +107,7 @@ fn demangled_std_terminate_is_no_return_in_fail() {
     // This is the direct proof the address-resolved no-return reached flow
     // analysis even though the funcsym was renamed by demangle.
     assert!(
-        out.contains("Subroutine does not return"),
+        out.contains("// no-return"),
         "expected the no-return warning on `std::terminate` (the seam fix), got:\n{out}"
     );
 

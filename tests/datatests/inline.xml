@@ -26,6 +26,8 @@ ffff4883c408c3c3
 <symbol space="ram" offset="0x10006d" name="collatz"/>
 </binaryimage>
 <script>
+  <!-- kuna: warnstyle default-inline (DIV-38); this upstream test pins the full-line WARNING banner rendering -->
+  <com>option warnstyle banner</com>
   <!-- kuna: truthycond default-on (DIV-36); this upstream test pins the explicit != 0 / == 0 comparison rendering -->
   <com>option truthycond off</com>
   <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->

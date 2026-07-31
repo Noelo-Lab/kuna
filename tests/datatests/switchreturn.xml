@@ -13,6 +13,8 @@ fa630b620018084000650b9700ef0065
 <symbol space="ram" offset="0x10020" name="testcall"/>
 </binaryimage>
 <script>
+  <!-- kuna: warnstyle default-inline (DIV-38); this upstream test pins the full-line WARNING banner rendering -->
+  <com>option warnstyle banner</com>
   <com>set context ISA_MODE 1 [ram,0x10000] [ram,0x20000]</com>
   <com>set context RELP 1 [ram,0x10000] [ram,0x20000]</com>
   <com>lo fu switchreturn</com>

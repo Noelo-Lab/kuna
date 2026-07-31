@@ -611,7 +611,7 @@ fn decompile_all_listing_default_collapses_noreturn_wrapper() {
     }
     let on_code = code_field(&on_out).to_string();
     assert!(
-        on_code.contains("Subroutine does not return"),
+        on_code.contains("// no-return"),
         "default decompile-all must mark the my_die() wrapper call no-return \
          (the Listing default is not reaching noreturn_propagate):\n{on_code}"
     );
@@ -623,7 +623,7 @@ fn decompile_all_listing_default_collapses_noreturn_wrapper() {
     assert!(ok, "kuna decompile-all --option listing off failed: {stderr}");
     let off_code = code_field(&off_out).to_string();
     assert!(
-        !off_code.contains("Subroutine does not return"),
+        !off_code.contains("// no-return"),
         "listing-off output must NOT mark my_die() no-return (the opt-out must \
          restore the pre-F1 rendering):\n{off_code}"
     );

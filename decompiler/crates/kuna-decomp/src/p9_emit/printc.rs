@@ -403,6 +403,10 @@ pub struct PrintCOptions {
     /// statement indented on the next line (DIV-37, `option braceelide`).
     /// Copy-leaf single-statement bodies only; labels/comments keep braces.
     pub brace_elide: bool,
+    /// (kuna) Warnings render as terse `// slug` end-of-line comments on the
+    /// statement they describe instead of full `/* WARNING: ... */` banner
+    /// lines (DIV-38, `option warnstyle inline|banner`).
+    pub warn_inline: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
     pub brace_func: BraceStyle,
     /// How if/else-block braces are formatted (C++ `option_brace_ifelse`).
@@ -442,6 +446,7 @@ impl PrintCOptions {
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
             truthy_cond: true, // (kuna) DIV-36; no upstream equivalent
             brace_elide: true, // (kuna) DIV-37; no upstream equivalent
+            warn_inline: true, // (kuna) DIV-38; no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-33; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
@@ -494,6 +499,14 @@ impl PrintCOptions {
     pub fn brace_elide(&self) -> bool {
         self.brace_elide
     }
+    /// (kuna) Toggle inline warning style (`option warnstyle`, DIV-38).
+    pub fn set_warn_inline(&mut self, val: bool) {
+        self.warn_inline = val;
+    }
+    /// (kuna) Current warning-style flag (true = inline `// slug`).
+    pub fn warn_inline(&self) -> bool {
+        self.warn_inline
+    }
     /// (kuna) C++ `getArrayNotation()` (printc.hh:251).
     pub fn array_notation(&self) -> bool {
         self.array_notation
@@ -519,6 +532,95 @@ impl PrintCOptions {
 // ===========================================================================
 // Self-contained constant / type formatting
 // ===========================================================================
+
+/// (kuna warnstyle, DIV-38) Map a stored warning text (which carries its
+/// `WARNING: ` / `WARNING (jumptable): ` prefix from `Funcdata::warning_prefix`)
+/// to the terse `// slug` form.  Producer-tagged kuna warnings (`branchflip:`,
+/// `taildup:`, ...) map by their stable prefix; upstream texts by their stable
+/// stem; anything unrecognized keeps its full text behind a `warn:` marker so
+/// no information is silently dropped.  Count-carrying header warnings
+/// (`earlyreturn: hoisted 3 ...`) keep the count as an ` xN` suffix.
+pub fn warning_slug(text: &str) -> String {
+    let (body, jumptable) = if let Some(rest) = text.strip_prefix("WARNING (jumptable): ") {
+        (rest, true)
+    } else if let Some(rest) = text.strip_prefix("WARNING: ") {
+        (rest, false)
+    } else {
+        (text, false)
+    };
+    // First integer in the body (the `{changes}` count of the P8 header warnings).
+    let count: Option<u64> = {
+        let digits: String = {
+            let mut started = false;
+            let mut out = String::new();
+            for c in body.chars() {
+                if c.is_ascii_digit() {
+                    started = true;
+                    out.push(c);
+                } else if started {
+                    break;
+                }
+            }
+            out
+        };
+        digits.parse().ok()
+    };
+    let xn = |slug: &str| -> String {
+        match count {
+            Some(n) if n > 1 => format!("{slug} x{n}"),
+            _ => slug.to_string(),
+        }
+    };
+    let slug = if body.starts_with("Subroutine does not return")
+        || body.starts_with("Does not return")
+    {
+        "no-return".to_string()
+    } else if body.starts_with("Treating indirect jump as call") {
+        "jump-as-call".to_string()
+    } else if body.starts_with("Treating indirect jump as return") {
+        "jump-as-return".to_string()
+    } else if body.starts_with("Could not inline here")
+        || body.starts_with("No fallthrough prevents inlining here")
+        || body.starts_with("Return address prevents inlining here")
+    {
+        "inline-failed".to_string()
+    } else if body.starts_with("Read-only address") {
+        "writes-rodata".to_string()
+    } else if body.starts_with("branchflip:") {
+        "branch-flip".to_string()
+    } else if body.starts_with("tailcalljump:") {
+        "tail-call".to_string()
+    } else if body.starts_with("taildup:") {
+        "return-dupe".to_string()
+    } else if body.starts_with("crossjumprevert:") {
+        "crossjump-dupe".to_string()
+    } else if body.starts_with("returndup:") {
+        xn("return-dupe")
+    } else if body.starts_with("earlyreturn:") {
+        xn("early-return")
+    } else if body.starts_with("switchreturn:") {
+        xn("switch-return")
+    } else if body.starts_with("dedupitetail:") {
+        xn("ite-dedupe")
+    } else if body.starts_with("iteregion:") {
+        xn("ternary")
+    } else if body.starts_with("ifelseflatten:") {
+        xn("else-flattened")
+    } else if let Some(name) = body.strip_prefix("Inlined function: ") {
+        format!("inlined: {name}")
+    } else if body.starts_with("Function: ") && body.contains("replaced with injection") {
+        "injected".to_string()
+    } else if body.starts_with("Unable to use symbol") {
+        "symbol-size-mismatch".to_string()
+    } else {
+        format!("warn: {body}")
+    };
+    if jumptable {
+        format!("jt: {slug}")
+    } else {
+        slug
+    }
+}
 
 /// C++ `PrintC::printCharHexEscape` (printc.cc:1580-1591).
 ///
@@ -1222,6 +1324,13 @@ pub struct PrintC {
     /// types as real C types.  Refreshed at the top of [`doc_function_full`] from
     /// the live `arch`; `OFF` until then (so an out-of-band print never relabels).
     rt_ctx: RealTypeCtx,
+    /// (kuna warnstyle, DIV-38) Warning slugs collected under `warn_inline` by
+    /// [`emit_comment_group`](PrintC::emit_comment_group) /
+    /// [`emit_comment_func_header`](PrintC::emit_comment_func_header), flushed
+    /// as one `// slug, slug` end-of-line comment by
+    /// [`flush_eol_warnings`](PrintC::flush_eol_warnings) at the owning line's
+    /// last token (statement `;`, `if (cond) {` header, prototype, ...).
+    eol_warns: Vec<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>,
 }
 
 impl Default for PrintC {
@@ -1246,6 +1355,7 @@ impl PrintC {
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             rt_ctx: RealTypeCtx::OFF,
+            eol_warns: Vec::new(),
         }
     }
 
@@ -1981,6 +2091,9 @@ impl PrintC {
         // emitFunctionDeclaration shell (the prototype segment, shared with
         // `doc_prototype`).
         self.emit_prototype_declaration(fd, arch, &markup);
+        // (kuna warnstyle, DIV-38) header-warning slugs collected by
+        // emit_comment_func_header land at the end of the prototype line.
+        self.flush_eol_warnings();
 
         let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
         // emitLocalVarDecls(fd) (printc.cc:2805 / emitGlobalVarDeclsRecursive +
@@ -2094,6 +2207,12 @@ impl PrintC {
         };
         let off = func_addr.get_offset();
         for text in headers {
+            // (kuna warnstyle, DIV-38) Inline mode: header warnings collect as
+            // slugs and flush at the end of the prototype line.
+            if self.options.warn_inline {
+                self.eol_warns.push((warning_slug(&text), std::rc::Rc::clone(&space), off));
+                continue;
+            }
             // emitLineComment(0, comm): a fresh line then the `/* text */` token.
             self.emit.tag_line();
             self.emit.tag_comment(
@@ -2883,11 +3002,50 @@ impl PrintC {
             if (instr_comment_type & tp) == 0 {
                 continue;
             }
+            // (kuna warnstyle, DIV-38) Inline mode: a WARNING comment becomes a
+            // terse `// slug` collected for the owning line's end; every other
+            // comment type keeps the banner-line render.
+            if self.options.warn_inline && (tp & ct::WARNING) != 0 {
+                if let (Some(space), text_str) =
+                    (addr.get_space().map(std::rc::Rc::clone), String::from_utf8_lossy(&text))
+                {
+                    self.eol_warns.push((
+                        warning_slug(&text_str),
+                        space,
+                        addr.get_offset(),
+                    ));
+                    self.commsorter.mark_last_emitted();
+                    continue;
+                }
+            }
             self.emit_line_comment(-1, &text, &addr);
             // emitLineComment sets comm->setEmitted(true) (printlanguage.cc:655),
             // so a later walk over the same window skips it.
             self.commsorter.mark_last_emitted();
         }
+    }
+
+    /// (kuna warnstyle, DIV-38) Append the collected warning slugs to the
+    /// current line as one `// slug, slug` comment token.  Call sites are the
+    /// last token of the line the warnings describe: the statement semicolon,
+    /// the `if (cond)` header (brace / goto / elided forms), the loop header
+    /// brace, the ternary statement, and the function prototype.  No-op when
+    /// nothing was collected.
+    fn flush_eol_warnings(&mut self) {
+        if self.eol_warns.is_empty() {
+            return;
+        }
+        let warns = std::mem::take(&mut self.eol_warns);
+        let (space, off) = (std::rc::Rc::clone(&warns[0].1), warns[0].2);
+        let joined =
+            warns.iter().map(|w| w.0.as_str()).collect::<Vec<_>>().join(", ");
+        self.emit.spaces(1, 0);
+        self.emit.tag_comment(
+            &format!("// {joined}"),
+            SyntaxHighlight::CommentColor,
+            &space,
+            off,
+        );
     }
 
     /// C++ `PrintLanguage::emitLineComment` (printlanguage.cc:596): a fresh line
@@ -3082,6 +3240,9 @@ impl PrintC {
         if let Some(target) = goto_target {
             self.emit.spaces(1, 0);
             self.emit_goto_statement(fd, cond_block, target, fd.sblocks_ref().block(blk).get_if_goto_type());
+            // (kuna warnstyle, DIV-38) condition-attached warnings land at the
+            // end of the one-line `if (cond) goto L;` form.
+            self.flush_eol_warnings();
         } else if self.if_body_elides(fd, fd.sblocks_ref().block(blk).get_block(1)) {
             // (kuna braceelide, DIV-37) A single-statement then-body drops its
             // braces: the statement prints on the next line at one extra indent
@@ -3090,6 +3251,9 @@ impl PrintC {
             // `if` and the dangling-else hazard cannot arise; the else arm (if
             // any) opens with its own tag_line below, unchanged.
             self.context.set_mod(modifiers::NO_BRANCH);
+            // (kuna warnstyle, DIV-38) condition-attached warnings land at the
+            // end of the braceless `if (cond)` header line.
+            self.flush_eol_warnings();
             let body = fd.sblocks_ref().block(blk).get_block(1);
             let id = self.emit.start_indent();
             let id1 = self.emit.begin_block(0);
@@ -3123,6 +3287,9 @@ impl PrintC {
             let id = self
                 .emit
                 .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+            // (kuna warnstyle, DIV-38) condition-attached warnings land after
+            // the `if (cond) {` header brace.
+            self.flush_eol_warnings();
             let id1 = self.emit.begin_block(0);
             self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
             self.emit.end_block(id1);
@@ -3219,15 +3386,31 @@ impl PrintC {
             return false;
         }
         // A comment positioned in this block forces its own line; keep braces.
-        // (The probe re-positions the sorter window; emit_basic_block_ops sets
-        // it again for the real walk.)
+        // (kuna warnstyle, DIV-38: a WARNING comment under `warn_inline`
+        // renders at end-of-line instead, so it does NOT force braces.)
+        // The probe re-positions the sorter window without marking anything
+        // emitted; emit_basic_block_ops sets the window again for the real walk.
         let bb_index = fd.bblocks_ref().block(under).get_index();
         self.commsorter.setup_block_list(bb_index);
         // setup_block_list sets start/stop but NOT the has_next() bound
         // (opstop); setup_op_list(None) widens it to the whole block window,
         // exactly as the real statement walk does before its has_next loop.
         self.commsorter.setup_op_list(None);
-        !self.commsorter.has_next()
+        while self.commsorter.has_next() {
+            let (emitted, tp) = {
+                let c = self.commsorter.get_next();
+                (c.is_emitted(), c.get_type())
+            };
+            if emitted {
+                continue;
+            }
+            let inline_ok =
+                self.options.warn_inline && (tp & crate::comment::comment_type::WARNING) != 0;
+            if !inline_ok {
+                return false;
+            }
+        }
+        true
     }
 
     /// (kuna) Is `blk` a two-arm assignment diamond that the S8 `iteregion` pass
@@ -3334,6 +3517,9 @@ impl PrintC {
         self.op_push_ir(fd, arch, m.else_op, None);
         self.emit.end_statement(sid);
         self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        // (kuna warnstyle, DIV-38) condition-attached warnings land at the end
+        // of the ternary statement line.
+        self.flush_eol_warnings();
 
         // Close the pending brace if it fired (the else-clause `{ ... }`).
         if my_pending_indent >= 0 {
@@ -3556,6 +3742,9 @@ impl PrintC {
         self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
         let indent =
             self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        // (kuna warnstyle, DIV-38) condition-attached warnings land after the
+        // `for (...) {` header brace.
+        self.flush_eol_warnings();
         self.context.set_mod(modifiers::NO_BRANCH); // Don't print goto at bottom of clause
         let id2 = self.emit.begin_block(0);
         self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
@@ -3617,6 +3806,9 @@ impl PrintC {
             self.context.pop_mod();
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
             indent = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+            // (kuna warnstyle, DIV-38) condition-attached warnings land after
+            // the `while (cond) {` header brace.
+            self.flush_eol_warnings();
         }
         self.context.set_mod(modifiers::NO_BRANCH); // don't print goto at bottom of clause
         let id2 = self.emit.begin_block(0);
@@ -3779,11 +3971,18 @@ impl PrintC {
                 self.emit.tag_line();
             }
             self.emit_statement(fd, arch, inst);
+            // (kuna warnstyle, DIV-38) warnings collected for this statement
+            // land after its semicolon.
+            self.flush_eol_warnings();
             separator = true;
         }
         // emitCommentGroup(None): any remaining comments in the block.
         if !self.context.is_set(modifiers::COMMA_SEPARATE) {
             self.emit_comment_group(fd, None);
+            // (kuna warnstyle) trailing warnings — most commonly one attached
+            // to this block's suppressed CBRANCH — stay PENDING here: for a
+            // condition block the right line is the upcoming `if (cond)`
+            // header, whose emitter flushes them.
         }
     }
 

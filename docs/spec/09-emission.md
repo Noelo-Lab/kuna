@@ -15,7 +15,8 @@ is presentation: after `ActionSetCasts` the IR is only mutated by inserting
 print-support ops (CAST, `PTRSUB #0`), never by changing computation. In the
 registry (`decompiler/crates/kuna-decomp/phases.toml`) P9 carries the
 sub-decisions `cast-policy`, `naming-policy`, `literal-format`,
-`pointer-notation`, `condition-form`, `brace-form`, and `external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
+`pointer-notation`, `condition-form`, `brace-form`, `warning-style`, and
+`external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
 (the console/`kassert` assertion writer — an output *consumer* that writes P0
 assertions for the next run, not an algorithm of this folder). One P9-registered
 pass lives outside the folder: the (kuna, GH-558) comparison canonicalizer
@@ -30,7 +31,7 @@ via the console `option` command, and are not part of the settable catalog.
 The intentional default divergences are DIV-1/2/5/6/7 and the C-surface
 normalization defaults (DIV-33 brace placement, DIV-34 NULL printing,
 DIV-35 compound assignments, DIV-36 truthy conditions, DIV-37 single-statement
-brace elision) in `docs/history.md`.
+brace elision, DIV-38 inline warning slugs) in `docs/history.md`.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
@@ -60,6 +61,24 @@ Multi-statement bodies, else arms, and loop/switch bodies always keep their
 braces; the pre-existing `if (cond) goto L;` one-liner and the `else if`
 collapse are unaffected. `option braceelide off` restores upstream Ghidra's
 braced form, exercised by `tests/stages/kuna-cnorm-braceelide.xml`.
+
+**Warning style (P9/`warning-style`, `option warnstyle`).** Analysis warnings
+render as terse `// slug` end-of-line comments on the line they describe
+(kuna default `inline`, DIV-38): `printc.rs (PrintC::emit_comment_group)`
+maps each WARNING-type comment through the slug table
+(`printc.rs (warning_slug)` — `no-return`, `branch-flip`, `return-dupe`,
+`jump-as-call`, count-suffixed header slugs like `early-return x3`; an
+unrecognized text keeps its full body behind a `warn:` marker) and collects
+it; `printc.rs (PrintC::flush_eol_warnings)` appends the collected slugs as
+one `// slug, slug` token at the owning line's last token — the statement
+semicolon, the `if (cond)` header (braced, braceless, goto, and ternary
+forms), the loop-header brace, and the function prototype for header
+warnings. Non-warning comments (user comments, `dwarf_lines`) always keep
+their banner-line form, and a body whose only pending comments are
+inline-rendered warnings still qualifies for `braceelide`. `option
+warnstyle banner` restores upstream Ghidra's full
+`/* WARNING: ... */` lines, exercised by
+`tests/stages/kuna-cnorm-warnstyle.xml`.
 
 ## 9.1 Casts
 

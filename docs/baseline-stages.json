@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    294,
-    294
+    297,
+    297
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -23,6 +23,9 @@
     "data:CNORM-TRUTHY #2: default renders the null test as a negation",
     "data:CNORM-TRUTHY #3: truthycond off restores the explicit != 0",
     "data:CNORM-TRUTHY #4: truthycond off restores the explicit NULL compare (DIV-34 form)",
+    "data:CNORM-WARNSTYLE #1: default renders the terse end-of-line slug (DIV-38)",
+    "data:CNORM-WARNSTYLE #2: warnstyle banner restores the upstream WARNING line",
+    "data:CNORM-WARNSTYLE #3: no banner WARNING line remains in the inline pass",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",

@@ -65,7 +65,8 @@
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)" min="1" max="1">if \(x == 0\)</stringmatch>
 <stringmatch name="BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)" min="1" max="1">if \(x != 0\)</stringmatch>
-<stringmatch name="BRANCHFLIP #3: the flip is logged so its effect is observable" min="1" max="1">branchflip: flipped negated guard</stringmatch>
+<stringmatch name="BRANCHFLIP #3: the flip is logged so its effect is observable" min="1" max="1">// branch-flip</stringmatch>
 </decompilertest>

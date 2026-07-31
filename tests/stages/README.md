@@ -116,6 +116,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-33+ in
 | `kuna-cnorm-compoundassign.xml` | `out = out OP y` statements render as `out OP= y`, `x += -c` folds to `x -= c` (DIV-35) | `option inplaceops on\|off` (upstream option, kuna default flip + ported `emitInplaceOp` consumer) |
 | `kuna-cnorm-truthycond.xml` | boolean-context zero compares render truthy: `if (x)` / `if (!p)` (DIV-36) | `option truthycond on\|off` (new kuna settable, P9 `condition-form`) |
 | `kuna-cnorm-braceelide.xml` | single-statement if bodies drop their braces (statement indented) (DIV-37) | `option braceelide on\|off` (new kuna settable, P9 `brace-form`) |
+| `kuna-cnorm-warnstyle.xml` | warnings render as terse `// slug` end-of-line comments (DIV-38) | `option warnstyle inline\|banner` (new kuna settable, P9 `warning-style`) |
 
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`

@@ -44,7 +44,7 @@
     Pass 1 (option iteregion off): the diamond renders as a literal `if/else`
     (`else {`, the else-arm `= 0x10;`). Pass 2 (option iteregion on): the same
     diamond renders as the single ternary `v = (x == 0) ? 0x20 : 0x10;` and the
-    rewrite is logged (`iteregion: rewrote 1`). In both passes the merged variable
+    rewrite is logged (`// ternary`). In both passes the merged variable
     still feeds the `sub_401106` call, proving the p-code is untouched.
 
     The `option ... off` preamble pins the pre-sweep (DIV-13 flags-off) structuring
@@ -83,9 +83,10 @@ f30f1efa554889e54883ec08897dfc837dfc007407b810000000eb05b82000000089c7e8c5ffffff
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="iteregion #1: bug (off) -- the assignment diamond renders as a literal if/else (else-arm only, off pass)" min="1" max="1">else \{</stringmatch>
 <stringmatch name="iteregion #2: bug (off) -- the else-arm constant assignment is a separate statement (off pass only)" min="1" max="1">= 0x10;</stringmatch>
 <stringmatch name="iteregion #3: fix (on) -- the diamond collapses to a single ?: ternary (on pass only)" min="1" max="1">\? 0x20 : 0x10</stringmatch>
-<stringmatch name="iteregion #4: fix (on) -- the rewrite is logged" min="1" max="1">iteregion: rewrote 1</stringmatch>
+<stringmatch name="iteregion #4: fix (on) -- the rewrite is logged" min="1" max="1">// ternary</stringmatch>
 <stringmatch name="iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes" min="2" max="2">sub_401106\(</stringmatch>
 </decompilertest>

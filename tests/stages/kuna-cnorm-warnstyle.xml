@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna C-surface normalization: analysis warnings render as terse `// slug`
+    end-of-line comments on the line they describe, instead of full
+    `/* WARNING: ... */` banner lines at the comment indent (user-reported
+    readability issue on the angr fmt corpus binary; no upstream GH issue).
+
+    kuna adds the settable option `warnstyle inline|banner` (DIV-38,
+    docs/history.md), default inline: emit_comment_group maps each WARNING
+    comment through warning_slug and flush_eol_warnings appends the slugs at
+    the owning line's last token (statement `;`, `if (cond) {` header,
+    function prototype).  Non-warning comments always keep banner lines;
+    `option warnstyle banner` restores the upstream form.
+
+    Stage model: S9 emission / warning-style policy.  P0 assertion:
+    `option warnstyle inline|banner`.
+
+    ws_fn (0x100000): jmp qword ptr [rdi]  (ff 27) - an unrecoverable
+    indirect jump, which P2 flow converts to a CALLIND + return with the
+    upstream "Treating indirect jump as call" warning at the call.
+
+    Pass 1 (default): the call statement carries the terse slug at end of
+    line (assert #1, exactly once; assert #3 proves no banner remains).
+    Pass 2 (option warnstyle banner): the upstream banner line (assert #2,
+    exactly once).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+ff27
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="ws_fn"/>
+</binaryimage>
+<script>
+  <com>parse line extern void ws_fn(int8 *p);</com>
+  <com>lo fu ws_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option warnstyle banner</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CNORM-WARNSTYLE #1: default renders the terse end-of-line slug (DIV-38)" min="1" max="1">; // jump-as-call</stringmatch>
+<stringmatch name="CNORM-WARNSTYLE #2: warnstyle banner restores the upstream WARNING line" min="1" max="1">/\* WARNING: Treating indirect jump as call \*/</stringmatch>
+<stringmatch name="CNORM-WARNSTYLE #3: no banner WARNING line remains in the inline pass" min="1" max="1">WARNING</stringmatch>
+</decompilertest>
