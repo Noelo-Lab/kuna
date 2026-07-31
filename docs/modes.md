@@ -50,8 +50,9 @@ veneers plus the PE entry, so the project omitted ordinary internal bodies such
 as `0x402d80` even though an explicit decompile at that address produced code.
 The rooted discovery correction below preserves the latency-first policy while
 making the whole-project inventory useful. With a 10-second per-function
-watchdog, the corrected private export completed in 462.28 seconds at 1,475 MiB
-peak RSS: 3,140 real C bodies, 13 isolated failures, and 3,153 definitions total.
+watchdog, now the default for unfiltered fast whole-binary runs, a no-flag
+confirmation completed in 445.06 seconds at 1,476 MiB peak RSS: 3,140 real C
+bodies, 13 isolated failures, and 3,153 definitions total.
 
 ## `reliable`
 
@@ -141,13 +142,17 @@ Loader symbols, architecture context, import naming, explicit function/address
 selection, and all shipped per-function transforms remain active.
 
 The broken metadata-only fast policy completed quickly precisely because it did
-not discover the private PE's internal program. The corrected
-`--mode fast --max-fn-seconds 10` export completed in 462.28 seconds at 1,475
-MiB peak RSS, producing 3,140 bodies and 13 isolated failures; the non-fast
-control remained incomplete after 935.91 seconds. Public regressions pin both
-halves of the replacement: `pdb_prog.exe` contributes a direct internal callee,
-and `aif_gap_x86_64` contributes an indirect-only pointer-table target, with
-real C bodies in both cases.
+not discover the private PE's internal program. The corrected `--mode fast`
+export's unfiltered watchdog defaults to 10 seconds per function. The private
+export completed in 445.06 seconds at 1,476 MiB peak RSS, producing 3,140 bodies
+and 13 isolated failures without an explicit watchdog flag; the non-fast
+control remained incomplete after 935.91 seconds. Native explicit name/address
+selections retain the 120-second default, and `--max-fn-seconds` always wins
+(including `0` to disable). The WASM front-end arms the 10-second budget only
+for fast whole-binary decompile/project commands. Public regressions pin both
+halves of the discovery replacement: `pdb_prog.exe` contributes a direct
+internal callee, and `aif_gap_x86_64` contributes an indirect-only
+pointer-table target, with real C bodies in both cases.
 
 Explicit `--addr` commands already have their target set, so the file
 front-ends suppress preset-provided `fast_funcdisc` work for those commands.

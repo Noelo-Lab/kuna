@@ -181,9 +181,14 @@ prologue-pattern pass is the primary discovery source where the x86-64 scan
 oracle does not apply). Both yield to an explicit caller option; neither touches
 the engine default or the console/datatest surfaces.
 
-(kuna) **The watchdog.** `decompile-all --max-fn-seconds N` (default 120, `0`
-disables) is driver policy, not a phase-model option: it sets a per-function
-budget on the architecture (`decompiler/crates/kuna-cli/src/decompile_all.rs
+(kuna) **The watchdog.** `decompile-all --max-fn-seconds N` (`0` disables) is
+driver policy, not a phase-model option. An unfiltered whole-binary run in the
+resolved `fast` preset defaults to 10 seconds per function. Native selected
+runs and other presets retain 120 seconds, and an explicit value always wins.
+The WASM front-end arms the same 10-second budget only for fast whole-binary
+`decompile` and `project` commands; its other commands remain unbudgeted. The
+driver sets the budget on the
+architecture (`decompiler/crates/kuna-cli/src/decompile_all.rs
 (decompile_all)`), which the drive arms as a wall-clock deadline covering
 flow-follow, the jump-table sub-pipeline, and the action pipeline
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
@@ -195,9 +200,11 @@ rule-pool loop (`decompiler/crates/kuna-decomp/src/infra/action.rs
 (POOL_DEADLINE_STRIDE)`), and at the heritage loop
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`). On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
-function's `error` record and the batch continues. A function that converges is
-byte-identical with or without a budget, and the console/parity paths never set
-one.
+function's `error` record and the batch continues. A function whose drive
+completes before expiry is byte-identical with or without a budget, and the
+console/parity paths never set one. It is not a hard wall around discovery,
+unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
+construction, total project time, or memory.
 
 (kuna) **Load-time env bridges.** Four loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option

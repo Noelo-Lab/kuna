@@ -27,7 +27,7 @@ use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, FunctionEntry};
 use kuna_console::project::{
     build_asm, build_c, build_header, build_readme, collect_dat_addrs, decompile_targets,
-    FuncResult,
+    FuncResult, FAST_WHOLE_BINARY_FN_BUDGET_SECONDS,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
@@ -107,9 +107,12 @@ pub fn run_with_mode(
         0
     };
     let mode = resolve_mode(requested_mode, binary_size)?;
-    let want_decompile = !matches!(command, Cmd::List);
+    let want_decompile = !matches!(&command, Cmd::List);
     let mut prog =
         load_program(binary, spec_root, want_decompile, mode, want_fast_funcdisc)?;
+    if let Some(seconds) = command_fn_budget_seconds(&command, mode) {
+        prog.arch_mut().kuna_fn_budget = Some(std::time::Duration::from_secs(seconds));
+    }
 
     match command {
         Cmd::List => {
@@ -146,6 +149,14 @@ pub fn run_with_mode(
 
 fn command_wants_fast_funcdisc(command: &Cmd) -> bool {
     !matches!(command, Cmd::DecompileAddr(_))
+}
+
+fn command_fn_budget_seconds(command: &Cmd, mode: &str) -> Option<u64> {
+    if mode == "fast" && matches!(command, Cmd::DecompileAll | Cmd::Project(_)) {
+        Some(FAST_WHOLE_BINARY_FN_BUDGET_SECONDS)
+    } else {
+        None
+    }
 }
 
 fn resolve_mode(requested: Option<&str>, binary_size: u64) -> Result<&'static str, String> {
@@ -464,7 +475,8 @@ fn json_str(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{command_wants_fast_funcdisc, resolve_mode, Cmd};
+    use super::{command_fn_budget_seconds, command_wants_fast_funcdisc, resolve_mode, Cmd};
+    use kuna_console::project::FAST_WHOLE_BINARY_FN_BUDGET_SECONDS;
     use kuna_decomp::modes::{AUTO_FAST_MIN_BYTES, AUTO_RELIABLE_MIN_BYTES};
     use std::path::PathBuf;
 
@@ -499,6 +511,29 @@ mod tests {
         assert!(command_wants_fast_funcdisc(&Cmd::DecompileAll));
         assert!(command_wants_fast_funcdisc(&Cmd::Project("binary".into())));
         assert!(command_wants_fast_funcdisc(&Cmd::List));
+    }
+
+    #[test]
+    fn fast_whole_binary_commands_use_the_short_watchdog() {
+        assert_eq!(command_fn_budget_seconds(&Cmd::List, "fast"), None);
+        assert_eq!(
+            command_fn_budget_seconds(&Cmd::DecompileAll, "fast"),
+            Some(FAST_WHOLE_BINARY_FN_BUDGET_SECONDS)
+        );
+        assert_eq!(
+            command_fn_budget_seconds(&Cmd::Project("binary".into()), "fast"),
+            Some(FAST_WHOLE_BINARY_FN_BUDGET_SECONDS)
+        );
+        assert_eq!(command_fn_budget_seconds(&Cmd::DecompileAddr(0x1234), "fast"), None);
+        assert_eq!(
+            command_fn_budget_seconds(&Cmd::DecompileName("main".into()), "fast"),
+            None
+        );
+        assert_eq!(command_fn_budget_seconds(&Cmd::DecompileAll, "reliable"), None);
+        assert_eq!(
+            command_fn_budget_seconds(&Cmd::Project("binary".into()), "aggressive"),
+            None
+        );
     }
 
     #[test]

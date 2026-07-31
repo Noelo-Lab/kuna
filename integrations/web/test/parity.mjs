@@ -39,7 +39,7 @@ const FIXTURES = [
     fixture: join(here, 'fixtures/sample.elf'),
     arch: 'x86-64',
     cases: [['list'], ['decompile'], ['decompile', 'main'], ['decompile', 'sum_to'], ['decompile', 'add'],
-      ['project', 'sample.elf']],
+      ['project', 'sample.elf', '--mode', 'fast']],
   },
   {
     fixture: join(here, 'fixtures/sample_aarch64.o'),

@@ -112,12 +112,20 @@ Behaviors specific to `decompile-all`:
   pass because the entry is already known; `--functions` keeps discovery active
   so generated names can resolve. Explicitly spelling `--option fast_funcdisc
   on` opts an address run back in. A later explicit `--option` always wins.
-- **Per-function watchdog** — `--max-fn-seconds N` (default 120, `0` disables): a function
-  whose decompile drive exceeds the budget is cut off cooperatively (deadline probes at
-  the action/rule-pool/heritage loop boundaries) and recorded as that function's `error`
-  (`"per-function decompile budget exceeded (N s)"`), the batch continuing. Driver policy,
-  not a stage-model settable — zero output change for any function that converges; the
-  console / `decomp_dbg` parity path never arms it.
+- **Per-function watchdog** — `--max-fn-seconds N` (`0` disables): an
+  unfiltered `decompile-all`/`decompile-project` run in the resolved `fast`
+  preset defaults to 10 seconds per function. On native, selected-function runs
+  and the other presets retain 120 seconds; an explicit value always wins. WASM
+  arms only the fast whole-binary 10-second policy and leaves its other commands
+  unbudgeted. A function whose decompile drive exceeds the budget is cut off
+  cooperatively (deadline probes at the action/rule-pool/heritage loop
+  boundaries) and recorded as that function's `error` (`"per-function
+  decompile budget exceeded (N s)"`), the batch continuing. This is not a hard
+  process timer: it does not bound discovery, unprobed decoder work, C/variable
+  rendering, artifact construction, total export time, or memory. Driver
+  policy, not a stage-model settable — zero output change for a function whose
+  drive completes before expiry; the console / `decomp_dbg` parity path never
+  arms it.
 
 The decbench backend (`decbench/decompilers/raw/kuna_raw.py`) shells out to
 `kuna decompile-all --json`.
@@ -139,8 +147,10 @@ load-once/decompile-many path and flags —
 as the other file front-ends. In particular, a project input at least 2 MiB
 automatically suppresses the exhaustive Listing consumers, prologue scan, and
 AIF gap walk through the `fast` preset, while substituting rooted direct-call
-and bounded pointer-table discovery. Explicit `--addr` selections remain exact
-and suppress that whole-image walk by default; named selections keep it so
+and bounded pointer-table discovery. Its unfiltered per-function watchdog also
+defaults to 10 seconds instead of 120; `--max-fn-seconds` overrides it,
+including `0` to disable. Explicit `--addr` selections remain exact and
+suppress that whole-image walk by default; named selections keep it so
 generated names can resolve. Explicit `--option fast_funcdisc on` can restore
 its program facts for an address-selected run, but does not add definitions
 outside the selection.

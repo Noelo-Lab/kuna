@@ -32,6 +32,17 @@ use crate::engine::{ConsoleProgram, FunctionEntry};
 /// printer's `dat_<hex>` names carry no size; the label only marks the start).
 const DAT_SIZE_CAP: u64 = 32;
 
+pub const DEFAULT_FN_BUDGET_SECONDS: u64 = 120;
+pub const FAST_WHOLE_BINARY_FN_BUDGET_SECONDS: u64 = 10;
+
+pub fn default_fn_budget_seconds(mode: &str, whole_binary: bool) -> u64 {
+    if mode == "fast" && whole_binary {
+        FAST_WHOLE_BINARY_FN_BUDGET_SECONDS
+    } else {
+        DEFAULT_FN_BUDGET_SECONDS
+    }
+}
+
 /// One decompiled function's result (success carries `code`; failure carries
 /// `error`).
 pub struct FuncResult {
