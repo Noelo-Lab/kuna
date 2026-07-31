@@ -56,10 +56,12 @@ load-bearing twice over: only ranges with new addresses get call/return guards
 
 **The simple case.** For each disjoint range, `heritage.rs (Heritage::collect)`
 partitions the range's varnodes into reads (free), writes (defined), and
-inputs. Writes smaller than the range are widened through a PIECE concatenation
-(`normalize_write_size`), reads smaller than the range are served by a SUBPIECE
-(`normalize_read_size`), and input holes are filled and concatenated
-(`guard_input`). Phi placement then runs the Bilardi–Pingali
+inputs. It walks the loc-tree's bounded half-open `[start,end)` slice in
+location order (a wrapped end runs to the current space's end), rather than
+scanning every varnode. Writes smaller than the range are widened through a
+PIECE concatenation (`normalize_write_size`), reads smaller than the range are
+served by a SUBPIECE (`normalize_read_size`), and input holes are filled and
+concatenated (`guard_input`). Phi placement then runs the Bilardi–Pingali
 augmented-dominator-tree algorithm (`heritage.rs (Heritage::build_adt)`,
 `heritage.rs (Heritage::calc_multiequals)`) with a depth-keyed, LIFO-within-depth
 priority queue (`heritage.rs (PriorityQueue)`) — the queue order decides
