@@ -178,6 +178,10 @@ Three tiers:
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
 | indexed array form where base + offset arithmetic is desired for diffing | [`arraynotation`](#arraynotation) |
+| if (x != 0) where idiomatic C reads if (x) | [`truthycond`](#truthycond) |
+| if (p == NULL) where if (!p) is wanted | [`truthycond`](#truthycond) |
+| explicit zero comparison in conditions unwanted | [`truthycond`](#truthycond) |
+| truthy condition rendering needs to match upstream ghidra for diffing | [`truthycond`](#truthycond) |
 | thumb function pointer renders as symbolic &fn[1] where the raw odd-address constant is wanted | [`thumbfuncptr`](#thumbfuncptr) |
 | callback constant on arm resolves to a function symbol plus one instead of a bare hex literal | [`thumbfuncptr`](#thumbfuncptr) |
 | a bare constant equal to a function entry renders as the named function pointer | [`inferfuncentry`](#inferfuncentry) |
@@ -725,6 +729,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Flip off if the consumer expects raw pointer-arithmetic rendering; on (default) is more readable.
 - **Where / provenance:** P9/pointer-notation · ghidra-upstream · presentation-default · GH-558
 - **Example:** `option arraynotation off`
+
+### `truthycond` -- on | off, default `on`
+
+- **Symptoms:** if (x != 0) where idiomatic C reads if (x); if (p == NULL) where if (!p) is wanted; explicit zero comparison in conditions unwanted; truthy condition rendering needs to match upstream ghidra for diffing.
+- **What it does:** Render a boolean-context zero comparison in truthy form (if (x) / if (!p)) vs the explicit comparison (if (x != 0) / if (p == NULL)).
+- **When to flip:** On by default (DIV-36): idiomatic C for if/while/for/ternary conditions and &&/||/! operands. Flip off to reproduce upstream Ghidra's explicit comparisons or to diff against Ghidra output. Float compares, enum-typed zeros, and equate-named zeros always keep the explicit form; value uses (v = (x != 0)) are never rewritten.
+- **Where / provenance:** P9/condition-form · kuna · presentation-default · kuna-cnorm-fmt
+- **Example:** `option truthycond off`
 
 ### `thumbfuncptr` -- on | off, default `on`
 

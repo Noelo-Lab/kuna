@@ -1677,8 +1677,10 @@ mod tests {
         // and kuna-cnorm-nullprint / the DIV-34 NULL-token default flip
         // (zero pointer constants render NULL; nullprinting off restores),
         // and kuna-cnorm-compoundassign / the DIV-35 emitInplaceOp port
-        // (out = out OP y renders out OP= y; inplaceops off restores)
-        assert_eq!(count, 170, "corpus file count drifted");
+        // (out = out OP y renders out OP= y; inplaceops off restores),
+        // and kuna-cnorm-truthycond / the DIV-36 truthy condition option
+        // (if (x != 0) renders if (x), if (p == 0) renders if (!p))
+        assert_eq!(count, 171, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

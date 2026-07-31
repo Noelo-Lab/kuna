@@ -679,6 +679,9 @@ fn option_defaults_match_reset_defaults_printc() {
     assert!(!o.unplaced);
     // (kuna) DIV-2 default-on: &base[index] for standalone PTRADD (GH-558).
     assert!(o.array_notation);
+    // (kuna) DIV-36: boolean-context zero comparisons render in truthy form
+    // (`option truthycond off` restores the explicit comparisons).
+    assert!(o.truthy_cond);
     // (kuna) DIV-33: no blank line between the prototype and `{` (upstream
     // skip_line; `option braceformat function skip` restores it).
     assert_eq!(o.brace_func, BraceStyle::NextLine);
@@ -700,6 +703,8 @@ fn option_setters() {
     assert!(!o.array_notation());
     o.set_brace_format_function(BraceStyle::SkipLine);
     assert_eq!(o.brace_func, BraceStyle::SkipLine);
+    o.set_truthy_cond(false);
+    assert!(!o.truthy_cond());
 }
 
 // ---------------------------------------------------------------------------

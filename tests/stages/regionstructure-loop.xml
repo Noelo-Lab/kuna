@@ -86,8 +86,9 @@ ebc7908b45f85dc3
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-36 truthycond: boolean-context zero compares render in truthy form below.) -->
 <stringmatch name="regionstructure-loop #1: do-while recovered (BlockDoWhile), both passes" min="2" max="2">  } while \(v2 &lt; a0\);</stringmatch>
 <stringmatch name="regionstructure-loop #2: for/while recovered (BlockWhileDo), both passes" min="2" max="2">for \(v2 = 0; v2 &lt; a0; v2 = v2 \+ 1\) \{</stringmatch>
-<stringmatch name="regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes" min="2" max="2">  while \(v1 = v1 \+ \*\(int4 \*\)\(a1 \+ \(int8\)v2 \* 4\), \*\(int4 \*\)\(a1 \+ \(int8\)v2 \* 4\) != 0\) \{</stringmatch>
+<stringmatch name="regionstructure-loop #3: inf-loop-with-break recovered (BlockInfLoop), both passes" min="2" max="2">  while \(v1 = v1 \+ \*\(int4 \*\)\(a1 \+ \(int8\)v2 \* 4\), \*\(int4 \*\)\(a1 \+ \(int8\)v2 \* 4\)\) \{</stringmatch>
 <stringmatch name="regionstructure-loop #4: ZERO gotos - region structurer matches Ghidra on reducible loops (parity)" min="0" max="0">goto </stringmatch>
 </decompilertest>

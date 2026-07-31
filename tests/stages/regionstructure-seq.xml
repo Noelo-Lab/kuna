@@ -74,7 +74,8 @@ fc8b45fcf7d88905ea2e0000d165fc8b
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="regionstructure #1: the if/else diamond is structured (true clause), both passes" min="2" max="2">if \(a0 == 0\) \{</stringmatch>
+<!-- (DIV-36 truthycond: boolean-context zero compares render in truthy form below.) -->
+<stringmatch name="regionstructure #1: the if/else diamond is structured (true clause), both passes" min="2" max="2">if \(!a0\) \{</stringmatch>
 <stringmatch name="regionstructure #2: the else clause is structured, both passes" min="2" max="2">  else \{</stringmatch>
 <stringmatch name="regionstructure #3: the join sequence + tail return is recovered, both passes" min="2" max="2">return v1 \* 2 \+ dat_40402c;</stringmatch>
 <stringmatch name="regionstructure #4: ZERO gotos  -  region structurer matches Ghidra's acyclic structuring (parity)" min="0" max="0">goto </stringmatch>

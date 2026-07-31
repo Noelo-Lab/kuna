@@ -15,6 +15,8 @@ fc0475098b45f889057b0f0000905dc3
 <symbol space="ram" offset="0x10004f" name="myglob"/>
 </binaryimage>
 <script>
+  <!-- kuna: truthycond default-on (DIV-36); this upstream test pins the explicit != 0 / == 0 comparison rendering -->
+  <com>option truthycond off</com>
   <!-- kuna: branchflip default-on (DIV-13); this upstream test pins the pre-branchflip (Ghidra polarity) rendering -->
   <com>option branchflip off</com>
   <com>map addr r0x101000 int4 myarr[2]</com>

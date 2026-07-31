@@ -71,9 +71,10 @@ b800000000eb05b80200000044
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-36 truthycond: boolean-context zero compares render in truthy form below.) -->
 <stringmatch name="regionstructure-edgeorder #1: else-arm constant assignment recovered, both passes" min="2" max="2">    v1 = 2;</stringmatch>
 <stringmatch name="regionstructure-edgeorder #2: then-arm constant assignment recovered, both passes" min="2" max="2">    v1 = 1;</stringmatch>
-<stringmatch name="regionstructure-edgeorder #3: post-test guard recovered, both passes" min="2" max="2">  if \(a0 != 0\) \{</stringmatch>
+<stringmatch name="regionstructure-edgeorder #3: post-test guard recovered, both passes" min="2" max="2">  if \(a0\) \{</stringmatch>
 <stringmatch name="regionstructure-edgeorder #4: function returns the accumulator, both passes" min="2" max="2">  return v1;</stringmatch>
 <stringmatch name="regionstructure-edgeorder #5: regionedgeorder on is byte-identical to off (parity invariant)" min="2" max="2"> goto label_</stringmatch>
 </decompilertest>

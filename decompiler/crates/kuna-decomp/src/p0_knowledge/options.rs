@@ -243,6 +243,7 @@ pub const ELEM_HIDEEXTENSIONS: ElementId = ElementId::new("hideextensions", 4090
 pub const KUNA_OPTION_NAMES: &[&str] = &[
     "compareform",
     "arraynotation",
+    "truthycond",
     "thumbfuncptr",
     "inferfuncentry",
     "returnpair",

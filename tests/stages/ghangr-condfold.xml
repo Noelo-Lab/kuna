@@ -72,9 +72,10 @@ f30f1efa85ff7526488915f10f0000893df30f000085f6751583fe037f08b8070000
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)" min="1" max="1">if \(v1 == 0\) goto label_401019;</stringmatch>
+<!-- (DIV-36 truthycond: boolean-context zero compares render in truthy form below.) -->
+<stringmatch name="condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)" min="1" max="1">if \(!v1\) goto label_401019;</stringmatch>
 <stringmatch name="condfold #2: OFF, the crossing goto needs a label on the shared continuation (pass 1 only)" min="1" max="1">^label_401019:</stringmatch>
-<stringmatch name="condfold #3: ON, the two conditions fold into one short-circuit OR whose right operand carries the sibling prefix as a comma expression (pass 2 only)" min="1" max="1">\(a0 != 0\) \|\| \(dat_402008 = 0, dat_402000 = a2, v1 != 0\)</stringmatch>
+<stringmatch name="condfold #3: ON, the two conditions fold into one short-circuit OR whose right operand carries the sibling prefix as a comma expression (pass 2 only)" min="1" max="1">\(a0\) \|\| \(dat_402008 = 0, dat_402000 = a2, v1\)</stringmatch>
 <stringmatch name="condfold #4: ON, the folded node then chains with the shared clause's own condition as an AND (pass 2 only)" min="1" max="1">&amp;&amp; \(dat_402000 = a1, 10 &lt;= a0\)</stringmatch>
 <stringmatch name="condfold #5: the sibling prefix stores survive verbatim in both renderings, only their placement changes (off plus on = 2 each)" min="2" max="2">dat_402008 = 0</stringmatch>
 <stringmatch name="condfold #6: the shared clause body is unchanged by the fold (off plus on = 2)" min="2" max="2">return a0 \* v1 \+ 5;</stringmatch>

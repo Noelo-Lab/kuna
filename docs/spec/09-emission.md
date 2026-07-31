@@ -15,7 +15,7 @@ is presentation: after `ActionSetCasts` the IR is only mutated by inserting
 print-support ops (CAST, `PTRSUB #0`), never by changing computation. In the
 registry (`decompiler/crates/kuna-decomp/phases.toml`) P9 carries the
 sub-decisions `cast-policy`, `naming-policy`, `literal-format`,
-`pointer-notation`, and `external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
+`pointer-notation`, `condition-form`, and `external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
 (the console/`kassert` assertion writer — an output *consumer* that writes P0
 assertions for the next run, not an algorithm of this folder). One P9-registered
 pass lives outside the folder: the (kuna, GH-558) comparison canonicalizer
@@ -29,7 +29,24 @@ knobs (`nocastprinting`, `integerformat`, `nullprinting`, `inplaceops`,
 via the console `option` command, and are not part of the settable catalog.
 The intentional default divergences are DIV-1/2/5/6/7 and the C-surface
 normalization defaults (DIV-33 brace placement, DIV-34 NULL printing,
-DIV-35 compound assignments) in `docs/history.md`.
+DIV-35 compound assignments, DIV-36 truthy conditions) in `docs/history.md`.
+
+**Condition form (P9/`condition-form`, `option truthycond`).** In boolean
+contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
+— a comparison against zero carries no information beyond the value's own
+truthiness, so the kuna default (DIV-36) renders `if (x != 0)` as `if (x)`
+and `if (p == NULL)` as `if (!p)`. The printer threads a
+`CONDITION_CONTEXT` mod bit from the condition push sites
+(`printc.rs (PrintC::op_push_ir)` scopes it off across every
+non-boolean-preserving operator, so a value use like `v = (x != 0)` never
+rewrites), and `printc.rs (PrintC::op_binary_ir)` consumes it — after the
+negate-token flip has settled which comparison prints — by eliding the one
+eligible zero operand (`printc.rs (PrintC::truthy_other_operand)`: a plain
+constant zero, directly or through one implied CAST, that is not
+float-typed, enum-typed, or equate-named). The surviving operand keeps the
+context bit, so stacked boolean comparisons collapse fully. `option
+truthycond off` restores upstream Ghidra's explicit comparisons, exercised
+by `tests/stages/kuna-cnorm-truthycond.xml`.
 
 ## 9.1 Casts
 
