@@ -17,6 +17,8 @@
 <symbol space="ram" offset="0x400440" name="printf"/>
 </binaryimage>
 <script>
+  <!-- kuna: nullprinting default-on (DIV-34); this upstream test pins the pre-NULL (casted zero) rendering -->
+  <com>option nullprinting off</com>
   <com>parse line extern void printf(char *,...);</com>
   <com>parse line extern void forloop_loaditer(int4 **ptr);</com>
   <com>lo fu forloop_loaditer</com>

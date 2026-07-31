@@ -1659,8 +1659,8 @@ mod tests {
         // -> `?:` ternary, decbench F5 O0-iproute2-ip-print_link_flags,
         // and ghangr-switchreturn / switchreturn, the continuation of earlyreturn to the
         // WIDE multi-way switch-phi return, O0-libedit-tty__getcharindex,
-        // and modes-aggressive / the `mode reliable|aggressive|fast` preset axis
-        // (Architecture::apply_mode; catalog state and returndup warning as discriminators),
+        // and modes-aggressive / the `mode reliable|aggressive` preset axis
+        // (Architecture::apply_mode; returndup-only warning as the discriminator),
         // and ghangr-iteexpr / the `iteexpr` computed-arm ?: extension of iteregion
         // (angr ITERegionConverter over computed arms; ternary in the on-pass only),
         // and the THREE `condfold` witnesses for the short-circuit fold across a
@@ -1673,8 +1673,10 @@ mod tests {
         // ghangr-condfold-ruleb / Rule B ISOLATED, a guard whose two
         // statement-root calls put it outside Rule A's call cap at every level,
         // and kuna-cnorm-protogap / the DIV-34 brace-placement default flip
-        // (no blank line between a prototype and `{`; braceformat restores)
-        assert_eq!(count, 168, "corpus file count drifted");
+        // (no blank line between a prototype and `{`; braceformat restores),
+        // and kuna-cnorm-nullprint / the DIV-35 NULL-token default flip
+        // (zero pointer constants render NULL; nullprinting off restores)
+        assert_eq!(count, 169, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

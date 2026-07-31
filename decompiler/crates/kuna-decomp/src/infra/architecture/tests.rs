@@ -382,6 +382,9 @@ fn arch_option_context_mutates_config_fields() {
 fn arch_option_context_drives_the_printer() {
     let mut arch = Architecture::new("t", bare_sleigh());
     assert!(arch.print_is_c_language());
+    // (kuna) DIV-34: NULL printing is default-on; the option still drives it.
+    assert!(arch.print().options.null);
+    arch.set_null_printing(false);
     assert!(!arch.print().options.null);
     arch.set_null_printing(true);
     assert!(arch.print().options.null);
