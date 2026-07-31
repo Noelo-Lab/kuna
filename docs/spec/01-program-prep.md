@@ -210,6 +210,17 @@ funcsym stream:
   calls. `INDIRECT_SYMBOL_LOCAL`/`ABS` entries are skipped; the C-ABI leading `_`
   is stripped.
 
+The import currency deliberately includes both executable linkage stubs and
+pointer slots in data sections: the latter must be function symbols so indirect
+calls resolve to a name and library prototype. They are not function bodies.
+The complete canonical inventory retains both, while automatic whole-binary
+decompilation selects only entries contained by a loader `CODE` section
+(`decompiler/crates/kuna-console/src/engine.rs
+(ConsoleProgram::function_entries_executable)`). Explicit address selection
+remains unrestricted; name selection keeps its normal first-match behavior when
+a stub and slot share a name. Loaders without section metadata keep the complete
+inventory.
+
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:

@@ -51,7 +51,7 @@ use kuna_decomp::xml_arch::XmlArchitectureCapability;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
-use kuna_sleigh::loadimage::{LoadImage, LoadImageFunc, LoadImageSection};
+use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
@@ -239,8 +239,7 @@ impl ConsoleProgram {
     }
 
     /// (kuna) Iterate every function symbol kuna knows for the loaded program as
-    /// `(name, entry Address)` — the enumeration a whole-binary driver
-    /// (`kuna decompile-all`) loops over.
+    /// `(name, entry Address)` — the full callable-symbol inventory.
     ///
     /// After [`Self::commit_pending_analysis`] (`read symbols`) this covers both
     /// the loader's function symbols (`.symtab`/`.dynsym`/PLT stubs, read at load
@@ -319,6 +318,28 @@ impl ConsoleProgram {
                 });
                 let name = names.remove(0);
                 FunctionEntry { name, addr, aliases: names }
+            })
+            .collect()
+    }
+
+    /// The canonical entries eligible for automatic whole-binary decompilation.
+    ///
+    /// Import pointer slots remain in the canonical inventory for call naming
+    /// and explicit address selection, but data addresses are not function bodies.
+    /// Loaders without section metadata retain the complete inventory.
+    pub fn function_entries_executable(&self) -> Vec<FunctionEntry> {
+        let sections = self.sections();
+        if sections.is_empty() {
+            return self.function_entries_canonical();
+        }
+
+        self.function_entries_canonical()
+            .into_iter()
+            .filter(|entry| {
+                let vma = entry.addr.get_offset();
+                sections.iter().any(|&(start, size, flags)| {
+                    flags & section_flags::CODE != 0 && vma >= start && vma - start < size
+                })
             })
             .collect()
     }
