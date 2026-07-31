@@ -412,8 +412,11 @@ fn option_command_mutates_the_real_architecture() {
     set(arch, "readonly", "off").expect("option readonly off");
     assert!(!arch.readonlypropagate, "option readonly off did not clear readonlypropagate");
 
-    // (2) the printer: `option nullprinting on` -> PrintC option flips.
-    assert!(!arch.print().options.null, "precondition: null printing off");
+    // (2) the printer: `option nullprinting off` -> PrintC option flips.
+    //     (kuna DIV-34: null printing is default-ON; the option still drives it.)
+    assert!(arch.print().options.null, "precondition: null printing on (DIV-34)");
+    set(arch, "nullprinting", "off").expect("option nullprinting off");
+    assert!(!arch.print().options.null, "option nullprinting off did not flip the printer");
     set(arch, "nullprinting", "on").expect("option nullprinting on");
     assert!(arch.print().options.null, "option nullprinting on did not flip the printer");
 
