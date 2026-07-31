@@ -52,10 +52,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust (stable)
+      - name: Install Rust (stable) + wasm32-wasip1 target
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+          rustup target add wasm32-wasip1
 
       # Same cache action and workspace the release/pages workflows use.
       - uses: Swatinem/rust-cache@v2
@@ -91,6 +92,11 @@ jobs:
 
       - name: kuna catalog --check
         run: ./decompiler/target/release/kuna catalog --check
+
+      - name: Assemble and test the browser Worker boundary
+        run: |
+          bash integrations/web/build.sh
+          node integrations/web/test/worker.mjs
 
   rust-test:
     name: cargo workspace suite

@@ -44,10 +44,12 @@ rm -rf "$DIST"
 mkdir -p "$DIST/specs"
 # The site: the landing page at /, the decompiler application at /decompile/,
 # and the shared design system (css/fonts/images/highlighter) under /assets/.
-# kuna-web.js, zip.js, the wasm and specs stay at the root — /decompile/ reaches
-# them with '../', and the Node tests serve dist/ the same way a browser does.
+# The decompiler glue, Worker, client, zip.js, wasm, and specs stay at the root
+# — /decompile/ reaches them with '../', and the Node tests serve dist/ the same
+# way a browser does.
 # CNAME rides along so the deployed bundle claims kuna.noelo.org.
-cp "$HERE/index.html" "$HERE/compare-samples.js" "$HERE/kuna-web.js" "$HERE/zip.js" \
+cp "$HERE/index.html" "$HERE/compare-samples.js" "$HERE/kuna-web.js" \
+   "$HERE/kuna-worker.js" "$HERE/kuna-worker-client.js" "$HERE/zip.js" \
    "$HERE/CNAME" "$DIST/"
 cp -r "$HERE/assets" "$DIST/assets"
 cp -r "$HERE/decompile" "$DIST/decompile"

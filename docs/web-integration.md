@@ -5,9 +5,10 @@ one seam that makes it work, the virtual-filesystem mapping, the build, and the 
 Audience: kuna developers extending or maintaining the web front-end. The practical
 "build and serve it" guide is `integrations/web/README.md`.
 
-This is a genuine in-browser decompiler: the engine runs *in the page* as WebAssembly.
-Nothing is uploaded and no server participates in decompilation. A WASI runtime
-implemented in JavaScript hosts the module; the browser is the whole stack.
+This is a genuine in-browser decompiler: the engine runs in a module Worker as
+WebAssembly. Nothing is uploaded and no server participates in decompilation. A WASI
+runtime implemented in JavaScript hosts the module; the browser is the whole stack. The
+Worker keeps synchronous `wasi.start()` calls off the UI thread.
 
 ---
 
@@ -112,14 +113,16 @@ selects `reliable`, and `>=2 MiB` selects `fast`. Because `project` is
 whole-binary only, the fast selection runs `fast_funcdisc`: the downloaded C/H
 inventory contains directly reached and validated indirect-only internal
 functions while the exhaustive prologue and AIF scans remain off. The page's
-**Download Binary Source** button runs it and zips the four
-artifacts client-side (`integrations/web/zip.js`, a dependency-free STORE zip writer). The
-only artifact difference vs the CLI is the README's `Path` row, which shows the display
-name instead of a canonicalized host path (there is none in the virtual FS).
+**Download Binary Source** button runs it and zips the four artifacts inside the module
+Worker (`integrations/web/zip.js`, a dependency-free STORE zip writer). Only the final ZIP
+`ArrayBuffer` is transferred to the main thread. The only artifact difference vs the CLI
+is the README's `Path` row, which shows the display name instead of a canonicalized host
+path (there is none in the virtual FS).
 
 ## 3. The virtual filesystem (the whole trick)
 
-`integrations/web/kuna-web.js` drives [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim)
+`integrations/web/kuna-worker.js` calls `integrations/web/kuna-web.js`, which drives
+[`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim)
 (vendored under `integrations/web/vendor/`, pinned in `VERSION`), a pure-JS WASI
 **preview1** implementation. For each decompile it builds a fresh instance with two
 preopened directories:
@@ -134,6 +137,26 @@ then runs `kuna_wasm /work/input.bin /specs decompile --mode auto` with `stdout`
 same preopen model Node's `node:wasi` uses — the parity test (`test/parity.mjs`) drives
 the identical wasm through `node:wasi`, and the glue test (`test/glue.mjs`) drives it
 through the real browser shim; both must agree with native.
+
+The page and Worker communicate through `kuna-worker-client.js`:
+
+```
+upload bytes → Worker `list` → address-only rows
+click row    → Worker `decompile 0xADDR` → one C body
+download     → Worker `project` → Worker `makeZip` → transferred ArrayBuffer
+cancel       → terminate Worker → create Worker → rehydrate binary on next request
+```
+
+Function bodies are cached by address in the page after the first click. Inventory,
+one-function decompilation, and project export all retain `--mode auto`, so the Rust
+front-end remains the source of truth for the 500 KiB and 2 MiB thresholds.
+
+Termination is intentional. WASI execution is synchronous after `wasi.start()` enters
+WebAssembly, so an ordinary cancel message cannot be handled until that call returns.
+`Worker.terminate()` is the browser primitive that can stop it while leaving the UI
+responsive. The client rejects every in-flight RPC with `KunaWorkerCancelledError`,
+creates a clean Worker, and keeps the uploaded bytes on the page side solely to restore
+the session for the next request.
 
 **Robust, format-agnostic specs (whatever the CLI supports).** The demo carries
 **no per-format or per-arch logic** — the *engine* detects the format
@@ -173,12 +196,15 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 /assets/              css/site.css · fonts/ · img/ · js/highlight-c.js
 /compare-samples.js   the compare section's data (samples + rival outputs)
 /CNAME                kuna.noelo.org — the custom domain, copied into the bundle
-/kuna-web.js /zip.js /kuna_wasm.wasm /specs/ /specs-small.json /vendor/
+/kuna-web.js /kuna-worker.js /kuna-worker-client.js /zip.js
+/kuna_wasm.wasm /specs/ /specs-small.json /vendor/
 ```
 
 The engine-facing files stay at the **root** — `/decompile/` reaches them with `../`, so
-`test/glue.mjs` and `test/parity.mjs` (which serve `dist/` and import `kuna-web.js`
-directly) are unaffected by the page move, and a project subpath still works.
+the Worker is a sibling of `kuna-web.js`/`zip.js`, the existing tests can import the glue
+directly, and a project subpath still works. The RPC client resolves the wasm/spec URLs
+against the document before sending them to the Worker; resolving those `../` paths in
+the root-level Worker would otherwise escape a GitHub Pages project subpath.
 
 The design shares the Noelo Lab site's palette and typefaces (`noelo.org`, BSD-2-Clause;
 provenance note at the top of `assets/css/site.css`) but not its layout: kuna's pages are
@@ -226,7 +252,7 @@ Chrome on the committed fixtures).
 
 ## 5. Testing
 
-Three layers, all runnable without a browser in CI, spanning **multiple formats and
+Four layers, all runnable without a browser in CI, spanning **multiple formats and
 architectures**:
 
 1. **`test/parity.mjs`** — runs the wasm under `node:wasi` (the same WASI preview1 ABI the
@@ -240,10 +266,15 @@ architectures**:
    preloads only `specs-small.json`, then decompiles an ELF (x86-64), an ELF (AArch64), and
    a **Mach-O** through the same handle, lazily fetching each `.sla`, with no per-format JS —
    plus the `project` export the download button uses.
-   (**`test/zip.mjs`**, a fourth gate needing no build, structurally validates the `zip.js`
-   writer: it re-parses its own archive, recomputes every CRC-32 independently, and asserts
-   byte-determinism.)
-3. **Full UI (optional, not committed)** — a `puppeteer-core` script drives
+   (**`test/zip.mjs`**, an independent gate needing no build, structurally validates the
+   `zip.js` writer: it re-parses its own archive, recomputes every CRC-32 independently,
+   and asserts byte-determinism.)
+3. **`test/worker.mjs`** — hosts the shipped module Worker in a Node worker thread and
+   drives the real RPC client over HTTP. It asserts the initial response has inventory but
+   no eager C, a selected address produces one body, cancellation terminates/recreates the
+   Worker and rehydrates the session, and project export transfers a structurally complete
+   ZIP rather than the four-artifact JSON object. The Pages build runs this test.
+4. **Full UI (optional, not committed)** — a `puppeteer-core` script drives
    `decompile/index.html` in real Chrome: uploads an ELF then a Mach-O, waits for the code
    panel / status, asserts the rendered C and the detected format. Verified passing during
    development; kept out of the committed suite to avoid a browser/`puppeteer` dependency.
@@ -272,33 +303,45 @@ benign PE is committed because this environment has no PE linker.
 - The four gates (`make test`, `make test-stages`, `make rust-test`, `make
   check-spec`) remain mandatory. Native/WASI parity and browser-glue tests cover
   the additional frontend policy.
+- The Worker keeps mode resolution and every engine entrypoint in the Rust/WASI front-end:
+  upload uses the inventory command, a click uses explicit-address decompilation, and
+  download uses the existing project command before transport packages its artifacts.
+  `test/worker.mjs` covers that browser boundary; native/WASI and browser-glue tests
+  continue to cover the underlying commands. The lazy selected-function path is
+  intentionally not described as byte-identical to the old eager whole-binary UI path.
 
 ## 7. Limitations & future work
 
 - Fast WASM whole-binary decompile/project arms the same cooperative 10-second
   per-function budget as the native fast batch policy. It isolates probed
   decompile-pipeline stalls as function errors, but it is not a hard timer over
-  discovery, rendering, artifact construction, total wall time, or memory. The
-  current browser harness still runs WASM and ZIP/JSON work on the main thread,
-  so a multi-thousand-function export can freeze the page or exceed a tab's
-  memory budget; worker execution, hard cancellation, and lazy/sharded output
-  remain separate work.
+  discovery, rendering, artifact construction, total wall time, or memory. User
+  cancellation is a separate hard boundary: it terminates the entire Worker and
+  discards that operation's partial output. A multi-thousand-function export can
+  still consume substantial Worker time or exceed a tab's memory budget, but it
+  no longer monopolizes the UI thread.
 
 - **Supports whatever the CLI supports** — every format (ELF/PE/Mach-O/COFF) and every
   architecture kuna ships a `.sla` for, resolved by the engine with no per-format JS (§3).
   Object files (`.o`/Mach-O `MH_OBJECT`) decompile to thin bodies — an engine-level
   relocation limit, not a demo one; linked executables are unaffected.
-- **Re-bootstraps per request** — a WASI *command* module runs `_start` and exits, so
-  "decompile all" (one run over every CODE-backed function) is the efficient path the UI uses. A
-  `wasm-bindgen` **reactor** front-end (bootstrap once, export `decompile(name)`) would let
-  the page keep a warm `Architecture` across clicks; it can be added beside this crate
-  without touching the WASI path or the engine.
+- **Re-bootstraps per request** — a WASI *command* module runs `_start` and exits. The UI
+  deliberately trades that repeated bootstrap cost for inventory-first rendering and lazy
+  one-address bodies. A `wasm-bindgen` **reactor** front-end (bootstrap once, export
+  `decompile(name)`) would preserve lazy rendering while keeping a warm `Architecture`; it
+  can be added beside this crate without touching the WASI path or the engine.
+- **Responsive is not faster or smaller** — moving work to a Worker prevents synchronous
+  WASI from blocking input/paint and makes termination possible. Whole-project export still
+  performs the same work and can still consume substantial Worker time and memory. The ZIP
+  is built off-thread and only its final buffer crosses to the page, but its artifacts and
+  archive coexist transiently inside the Worker.
 - **No `wasm-opt` in the default toolchain** — the shipped wasm is unoptimized (~7 MB raw,
   ~1.7 MB gzipped); installing `binaryen` shrinks it further.
 
 ## 8. Pointers
 
 - Harness & commands: `integrations/web/README.md`
+- Browser worker boundary: `integrations/web/{kuna-worker.js,kuna-worker-client.js}`
 - The crate: `decompiler/crates/kuna-wasm/{Cargo.toml, src/lib.rs, src/main.rs, src/classify.rs}`
 - The shared decompile loop + artifact builders: `decompiler/crates/kuna-console/src/project.rs`
   (the CLI wrappers: `decompiler/crates/kuna-cli/src/{decompile_all.rs, decompile_project.rs}`)

@@ -33,16 +33,25 @@ integrations/web/build.sh --serve       # -> http://localhost:8000
 ```
 
 Open the landing page, follow **Try it** to `/decompile/`, click **Load binary**, and pick
-any **ELF, PE, or Mach-O** binary. The decompiler runs in the tab and lists every function;
-click one to see its C, **syntax highlighted** (comments/strings/keywords/types/numbers/calls,
-plus the kuna type family and `dat_<hex>` globals). The sidebar groups **PLT stubs and
-import thunks** (the engine's per-function `kind`) below a divider, in purple, so real code
-stays on top. The **Download Binary Source** button exports the whole binary as a
-recompile-oriented project — `<name>.c` / `<name>.h` / `<name>.asm` / `README.md`, the
-`kuna decompile-project` artifacts — zipped client-side (`zip.js`, a dependency-free STORE
-zip writer) into `<name>.kuna.zip`. It supports whatever the CLI supports — every format and
+any **ELF, PE, or Mach-O** binary. A module Worker inventories the functions without
+blocking the page; click one to decompile just that address and see its C, **syntax
+highlighted** (comments/strings/keywords/types/numbers/calls, plus the kuna type family and
+`dat_<hex>` globals). The sidebar groups **PLT stubs and import thunks** (the engine's
+per-function `kind`) below a divider, in purple, so real code stays on top. The
+**Download Binary Source** button exports the whole binary as a recompile-oriented project
+— `<name>.c` / `<name>.h` / `<name>.asm` / `README.md`, the `kuna decompile-project`
+artifacts — and builds the `<name>.kuna.zip` inside the Worker. Only the final ZIP buffer
+crosses back to the page. It supports whatever the CLI supports — every format and
 architecture kuna has a `.sla` for — with no per-format configuration (the engine resolves
-each binary; the page fetches only the one `.sla` it needs). See `docs/web-integration.md` §3.
+each binary; the Worker fetches only the one `.sla` it needs). See
+`docs/web-integration.md` §3.
+
+WASI execution is synchronous once `wasi.start()` enters the WebAssembly module. The page
+therefore cancels an inventory, function, or project operation by terminating the Worker,
+not by sending it a message that cannot be processed until decompilation finishes. The RPC
+client immediately creates a fresh Worker and retains the selected binary so the next
+operation can rebuild the session. Cancellation is a responsiveness boundary, not a claim
+that the underlying decompilation takes less time or memory.
 
 The WASM front-end also selects a decompiler mode from the uploaded byte length: binaries
 below 500 KiB use `aggressive`, binaries from 500 KiB through just below 2 MiB use
@@ -67,12 +76,14 @@ asset path is relative, so a project subpath just works.
 | Path | Role |
 |---|---|
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
-| `decompile/index.html` | The decompiler application (upload → function list → highlighted C, stubs grouped, project-zip download). Reaches the wasm/specs/glue at the bundle root with `../`. |
+| `decompile/index.html` | The decompiler application (upload → inventory → lazy highlighted C, stubs grouped, cancellable project-zip download). Reaches the worker and shared assets at the bundle root with `../`. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), and `js/highlight-c.js` — the one C highlighter both pages use. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
 | `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), and runs the decompiler under the WASI shim with the automatic size-based mode policy; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
-| `zip.js` | Dependency-free STORE-only ZIP writer (CRC-32, UTF-8 names, fixed timestamp → deterministic) for the Download Binary Source button. |
+| `kuna-worker.js` | The module Worker: owns the binary and WASI handle, lists first, decompiles one selected address, and builds whole-project ZIPs off the UI thread. |
+| `kuna-worker-client.js` | The page-side RPC client. Cancellation terminates/recreates its Worker and rehydrates the retained binary on the next request. |
+| `zip.js` | Dependency-free STORE-only ZIP writer (CRC-32, UTF-8 names, fixed timestamp → deterministic), invoked inside the Worker for Download Binary Source. |
 | `vendor/browser_wasi_shim/` | Vendored [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim) (MIT/Apache-2.0) — a pure-JS WASI **preview1** implementation. Pinned in `VERSION`. |
 | `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + both pages + `assets/` into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
 | `test/` | Automated gates (below) + committed ELF/Mach-O fixtures. |
@@ -103,6 +114,10 @@ node integrations/web/test/zip.mjs
 
 # D. Automatic-mode argv wiring — no build needed.
 node integrations/web/test/auto-mode.mjs
+
+# E. Worker boundary — real module Worker, lazy address decompile, hard
+#    cancellation/restart, and worker-side project ZIP.
+node integrations/web/test/worker.mjs
 ```
 
 - **`parity.mjs`** proves the decompiler *runs* under a WASI runtime and matches native
@@ -116,6 +131,10 @@ node integrations/web/test/auto-mode.mjs
   byte-deterministic, and (if a system `unzip` exists) runs `unzip -t` as a bonus check.
 - **`auto-mode.mjs`** pins the explicit `--mode auto` WASM argv for all three browser
   operations and the programmatic explicit-mode override.
+- **`worker.mjs`** runs the shipped module Worker and RPC client through Node's worker
+  threads, proving inventory-first/lazy-address behavior, terminate-and-recreate
+  cancellation, session rehydration, and transfer of a complete project ZIP without its
+  intermediate artifact object.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
 
