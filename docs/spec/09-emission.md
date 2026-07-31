@@ -28,7 +28,8 @@ knobs (`nocastprinting`, `integerformat`, `nullprinting`, `inplaceops`,
 `maxlinewidth`, `indentincrement`) are surfaceTable rows in `phases.toml`, set
 via the console `option` command, and are not part of the settable catalog.
 The intentional default divergences are DIV-1/2/5/6/7 and the C-surface
-normalization defaults (DIV-33 brace placement) in `docs/history.md`.
+normalization defaults (DIV-33 brace placement, DIV-34 NULL printing) in
+`docs/history.md`.
 
 ## 9.1 Casts
 
@@ -246,8 +247,11 @@ p-code, and how statement groups map to addresses.
 constant/type-name chokepoints of this walk: `option integerformat`
 (hex/dec/best — "best" scores which base makes the constant's digit pattern
 most natural, `printlanguage.rs (most_natural_base)`), `option nullprinting`
-(the `NULL` token for pointer zeros, default off — a null pointer renders
-`(type *)0x0`), `option inplaceops` (`+=`-style rendering, default off), and
+(the `NULL` token for pointer zeros — kuna DIV-34 flips it default-ON, so a
+null pointer renders `NULL` where upstream renders `(type *)0x0`; `option
+nullprinting off` restores the casted form, exercised by
+`tests/stages/kuna-cnorm-nullprint.xml`), `option inplaceops` (`+=`-style
+rendering, default off), and
 the (kuna, DIV-6) `realtypes` relabel: residual `TYPE_UNKNOWN` values render
 as size-correct real C types (`char`/`unsigned short`/`unsigned
 int`/`unsigned long`, pointer-to-unknown as `void *`) at the declarator/cast

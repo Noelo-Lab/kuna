@@ -54,8 +54,10 @@
   <com>quit</com>
 </script>
 <!-- The fix: the call resolves to the named `setlocale` (its prototype is
-     applied), with the NULL `locale` argument typed as a `char *` constant. -->
-<stringmatch name="SETLOCALE RETTYPE #1: NULL locale arg is typed char *" min="1" max="1">setlocale\([^)]*\(char \*\)0x0\)</stringmatch>
+     applied), with the NULL `locale` argument typed as a pointer: only a
+     pointer-typed zero renders as the NULL token (DIV-34); an unapplied
+     prototype would leave a bare integer `0`. -->
+<stringmatch name="SETLOCALE RETTYPE #1: NULL locale arg is typed char *" min="1" max="1">setlocale\([^)]*NULL\)</stringmatch>
 <!-- The pre-fix shapes must be gone: no untyped indirect call through a data
      pointer, and the call is the named setlocale. -->
 <stringmatch name="SETLOCALE RETTYPE #2: no untyped indirect call" min="0" max="0">\(\*(code|dat_)</stringmatch>

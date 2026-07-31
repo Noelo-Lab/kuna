@@ -112,6 +112,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-33+ in
 | File | Normalization | P0 assertion |
 |---|---|---|
 | `kuna-cnorm-protogap.xml` | no blank line between a function prototype and its `{` (DIV-33) | `option braceformat function skip\|next` (upstream option, kuna default flip) |
+| `kuna-cnorm-nullprint.xml` | zero pointer constants render as `NULL`, not `(type *)0x0` (DIV-34) | `option nullprinting on\|off` (upstream option, kuna default flip) |
 
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`

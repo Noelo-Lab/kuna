@@ -670,7 +670,9 @@ fn option_defaults_match_reset_defaults_printc() {
     assert!(o.hide_exts);
     assert!(!o.inplace_ops);
     assert!(!o.nocasts);
-    assert!(!o.null);
+    // (kuna) DIV-34: zero pointer constants render as NULL (upstream
+    // option_NULL default off; `option nullprinting off` restores).
+    assert!(o.null);
     assert!(!o.unplaced);
     // (kuna) DIV-2 default-on: &base[index] for standalone PTRADD (GH-558).
     assert!(o.array_notation);
@@ -685,11 +687,11 @@ fn option_defaults_match_reset_defaults_printc() {
 #[test]
 fn option_setters() {
     let mut o = PrintCOptions::new();
-    o.set_null_printing(true);
+    o.set_null_printing(false);
     o.set_inplace_ops(true);
     o.set_no_cast_printing(true);
     o.set_array_notation(false);
-    assert!(o.null);
+    assert!(!o.null);
     assert!(o.inplace_ops);
     assert!(o.nocasts);
     assert!(!o.array_notation());
