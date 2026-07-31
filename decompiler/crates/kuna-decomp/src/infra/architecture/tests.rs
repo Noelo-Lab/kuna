@@ -194,6 +194,15 @@ fn apply_mode_unknown_errors() {
 }
 
 #[test]
+fn apply_mode_auto_requires_frontend_binary_metadata() {
+    let mut arch = Architecture::new("test:LE:32", bare_sleigh());
+    let err = arch
+        .apply_mode("auto")
+        .expect_err("Architecture cannot resolve auto");
+    assert!(err.explain().contains("requires input binary size"));
+}
+
+#[test]
 fn name_function_angr_vs_upstream() {
     let mut arch = Architecture::new("t", bare_sleigh());
     // Need a space to make an address; use a constant-space address (any space

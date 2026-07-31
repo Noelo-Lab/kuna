@@ -44,6 +44,12 @@ zip writer) into `<name>.kuna.zip`. It supports whatever the CLI supports — ev
 architecture kuna has a `.sla` for — with no per-format configuration (the engine resolves
 each binary; the page fetches only the one `.sla` it needs). See `docs/web-integration.md` §3.
 
+The WASM front-end also selects a decompiler mode from the uploaded byte length: binaries
+below 500 KiB use `aggressive`, binaries from 500 KiB through just below 2 MiB use
+`reliable`, and binaries at or above 2 MiB use `fast`. The same automatic choice applies to
+function listing, decompilation, and project export. The JavaScript glue requests
+`--mode auto`; the Rust front-end owns the exact boundary policy.
+
 ## Hosted on GitHub Pages
 
 `.github/workflows/pages.yml` builds this bundle and publishes it to GitHub Pages on every
@@ -65,7 +71,7 @@ asset path is relative, so a project subpath just works.
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), and `js/highlight-c.js` — the one C highlighter both pages use. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
-| `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), runs the decompiler under the WASI shim; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
+| `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), and runs the decompiler under the WASI shim with the automatic size-based mode policy; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
 | `zip.js` | Dependency-free STORE-only ZIP writer (CRC-32, UTF-8 names, fixed timestamp → deterministic) for the Download Binary Source button. |
 | `vendor/browser_wasi_shim/` | Vendored [`@bjorn3/browser_wasi_shim`](https://github.com/bjorn3/browser_wasi_shim) (MIT/Apache-2.0) — a pure-JS WASI **preview1** implementation. Pinned in `VERSION`. |
 | `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + both pages + `assets/` into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
@@ -94,16 +100,22 @@ node integrations/web/test/glue.mjs
 
 # C. Zip writer — no build needed (zip.js has no wasm dependency).
 node integrations/web/test/zip.mjs
+
+# D. Automatic-mode argv wiring — no build needed.
+node integrations/web/test/auto-mode.mjs
 ```
 
 - **`parity.mjs`** proves the decompiler *runs* under a WASI runtime and matches native
-  byte-for-byte across `list` + several `decompile` cases + a whole-binary `project` export.
+  byte-for-byte across `list` + several `decompile` cases + a whole-binary `project` export,
+  and checks the automatic mode immediately below and at both size boundaries.
 - **`glue.mjs`** proves the exact browser stack (the vendored WASI shim + `kuna-web.js`)
   works, minus the DOM — including the lazy-`.sla` mechanism across ELF + Mach-O, x86-64 +
   AArch64, and the `project` export the download button uses.
 - **`zip.mjs`** validates `zip.js` structurally: it re-parses its own output (EOCD, central
   directory, local headers), recomputes every CRC-32 independently, asserts the archive is
   byte-deterministic, and (if a system `unzip` exists) runs `unzip -t` as a bonus check.
+- **`auto-mode.mjs`** pins the explicit `--mode auto` WASM argv for all three browser
+  operations and the programmatic explicit-mode override.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
 

@@ -200,6 +200,8 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
         return;
     };
     let explicit = run(&[
+        "--mode",
+        "reliable",
         "--option",
         "listing",
         "off",
@@ -246,9 +248,17 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
 }
 
 #[test]
-fn modes_command_lists_fast_speed_preset() {
+fn modes_command_lists_auto_policy_and_fast_preset() {
     let (stdout, stderr, ok) = run_kuna(&["modes", "--json"]);
     assert!(ok, "kuna modes failed: {stderr}");
+    let auto = stdout
+        .split("\"name\": \"auto\"")
+        .nth(1)
+        .expect("modes JSON must list auto after its name");
+    assert!(
+        auto.contains("\"automatic\": true"),
+        "auto mode JSON must identify a dynamic policy: {stdout}"
+    );
     let fast = stdout
         .split("\"name\": \"fast\"")
         .nth(1)
@@ -261,12 +271,53 @@ fn modes_command_lists_fast_speed_preset() {
     }
 }
 
-/// DIV-20: on a **non-x86-64** binary, `decompile-all` defaults
+#[test]
+fn omitted_and_explicit_auto_match_aggressive_on_a_small_binary() {
+    let bin = fauxware();
+    let sp = specs();
+    let run = |mode: Option<&str>| -> Option<String> {
+        let mut args = vec![
+            "functions",
+            bin.as_str(),
+            "--json",
+            "--sleighpath",
+            sp.as_str(),
+        ];
+        if let Some(mode) = mode {
+            args.extend_from_slice(&["--mode", mode]);
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                return None;
+            }
+            panic!("kuna functions failed for mode {mode:?}: {stderr}");
+        }
+        Some(stdout)
+    };
+
+    let Some(omitted) = run(None) else {
+        eprintln!("auto mode: skipping (no `.sla`; run `make specs`)");
+        return;
+    };
+    assert_eq!(omitted, run(Some("auto")).expect("explicit auto"));
+    assert_eq!(omitted, run(Some("aggressive")).expect("explicit aggressive"));
+}
+
+#[test]
+fn decompile_mode_requires_a_value() {
+    let bin = fauxware();
+    let (_stdout, stderr, ok) = run_kuna(&["decompile", bin.as_str(), "main", "--mode"]);
+    assert!(!ok, "missing --mode value must fail");
+    assert!(stderr.contains("--mode requires a value"), "unexpected error: {stderr}");
+}
+
+/// DIV-20: in `reliable` mode on a **non-x86-64** binary, `decompile-all` defaults
 /// `funcstart_patterns` ON — the primary function-discovery source when oracle 5
 /// (the x86-64-only prologue scan) does not apply. Without it a stripped ARM binary
 /// discovers only the ELF entry; with it the prologue `<patternpairs>` matcher finds
-/// more. The default must match an explicit `--option funcstart_patterns on` and beat
-/// `off`.
+/// more. The reliable driver fallback must match an explicit
+/// `--option funcstart_patterns on` and beat `off`.
 ///
 /// Runs on `entrymain_arm`, where the pass finds three functions nothing else does
 /// (`0x3e0`, `0x410`, `0x3c520`): 10 entries `off` vs 13 by default. It used to run
@@ -279,7 +330,10 @@ fn arm_decompile_all_defaults_funcstart_patterns_on() {
     let bin = arm_entrymain();
     let sp = specs();
     let run = |extra: &[&str]| -> Option<usize> {
-        let mut args = vec!["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()];
+        let mut args = vec![
+            "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
+            "--mode", "reliable",
+        ];
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
@@ -309,7 +363,7 @@ fn arm_decompile_all_defaults_funcstart_patterns_on() {
     );
 }
 
-/// `decompile-all` on a non-x86-64 binary ALSO defaults the Aggressive Instruction
+/// `decompile-all --mode reliable` on a non-x86-64 binary ALSO defaults the Aggressive Instruction
 /// Finder (`aif`) ON — the gap-walk that seeds the disconnected call-graph components
 /// (functions reached only via indirect calls / function-pointer tables, preceded by
 /// data/literal-pools so the `funcstart_patterns` `<patternpairs>` epilogue-prepattern
@@ -324,7 +378,10 @@ fn arm_decompile_all_defaults_aif_on() {
     let bin = arm_thumb();
     let sp = specs();
     let run = |extra: &[&str]| -> Option<usize> {
-        let mut args = vec!["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()];
+        let mut args = vec![
+            "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
+            "--mode", "reliable",
+        ];
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
@@ -351,7 +408,7 @@ fn arm_decompile_all_defaults_aif_on() {
     );
 }
 
-/// Stage 2 (angr-parity ARM discovery): `decompile-all` on a non-x86-64 binary also
+/// Stage 2 (angr-parity ARM discovery): reliable `decompile-all` on a non-x86-64 binary also
 /// runs the **raw, UNPAIRED Thumb-prologue** gap seed
 /// (`aif::raw_thumb_prologue_seeds`, the mirror of angr `CFGFast`'s
 /// `_func_addrs_from_prologues()` over `ArchARMCortexM.thumb_prologs`). It scans for
@@ -377,7 +434,10 @@ fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
     let bin = arm_thumb();
     let sp = specs();
     let run = |extra: &[&str]| -> Option<usize> {
-        let mut args = vec!["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()];
+        let mut args = vec![
+            "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
+            "--mode", "reliable",
+        ];
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
@@ -566,7 +626,10 @@ fn decompile_all_addr_tolerates_the_arm_thumb_bit() {
 fn decompile_all_converges_on_past_pathological_function() {
     let bin = hang_repro();
     let res = run_kuna_with_timeout(
-        &["decompile-all", &bin, "--addr", "0x1bd04", "--json", "--sleighpath", &specs()],
+        &[
+            "decompile-all", &bin, "--addr", "0x1bd04", "--json", "--sleighpath",
+            &specs(), "--mode", "reliable",
+        ],
         Duration::from_secs(300),
     );
     let (stdout, stderr, ok) = match res {
@@ -613,7 +676,10 @@ fn decompile_all_watchdog_quiet_on_healthy_function() {
     // 0x5020 is a tiny PLT-style thunk (`sub_5020`) that decompiles in
     // milliseconds on a release build; the default 120s budget applies.
     let res = run_kuna_with_timeout(
-        &["decompile-all", &bin, "--addr", "0x5020", "--json", "--sleighpath", &specs()],
+        &[
+            "decompile-all", &bin, "--addr", "0x5020", "--json", "--sleighpath",
+            &specs(), "--mode", "reliable",
+        ],
         Duration::from_secs(300),
     );
     let (stdout, stderr, ok) = match res {
@@ -669,7 +735,7 @@ fn code_field(stdout: &str) -> &str {
 
 /// decbench F1 (DIV-15), the two-pass gate at the exact benchmark surface:
 ///
-/// - **default** (`listing` injected on ⇒ the default-on `noreturn_propagate`
+/// - **reliable fallback** (`listing` injected on ⇒ the default-on `noreturn_propagate`
 ///   fixpoint fires): `compute`'s single `call my_die` is concluded no-return —
 ///   the no-return terminator appears and the post-call dead fall-through is
 ///   gone (the "collapsed" form);
@@ -682,9 +748,12 @@ fn code_field(stdout: &str) -> &str {
 fn decompile_all_listing_default_collapses_noreturn_wrapper() {
     let bin = noreturn_fixture();
     let sleigh = specs();
-    let base = ["decompile-all", bin.as_str(), "--functions", "compute", "--json", "--sleighpath", sleigh.as_str()];
+    let base = [
+        "decompile-all", bin.as_str(), "--functions", "compute", "--json",
+        "--sleighpath", sleigh.as_str(), "--mode", "reliable",
+    ];
 
-    // Pass 1: the default — Listing injected on, noreturn_propagate fires.
+    // Pass 1: reliable has no listing override, so the driver fallback fires.
     let (on_out, stderr, ok) = run_kuna(&base);
     if !ok {
         if is_specs_skip(&stderr) {

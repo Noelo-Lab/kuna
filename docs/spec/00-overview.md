@@ -112,9 +112,10 @@ Four front-ends drive one engine assembly:
   function. A failed function degrades to a per-function `error` record — the
   pipeline drive catches un-ported-seam panics, and the render/variable
   extraction is wrapped in its own `catch_unwind` so a printer invariant cannot
-  discard the functions already decompiled. `kuna functions` is enumeration only
-  and keeps the Listing off (the build would turn a cheap symbol walk into a
-  whole-program decode).
+  discard the functions already decompiled. `kuna functions` is enumeration
+  only; under concrete `reliable`/`fast` it keeps the Listing off, while an
+  auto-selected `aggressive` preset intentionally enables the broader analysis
+  even for inventory.
 
   The full callable-symbol inventory these surfaces share is
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_canonical)`,
@@ -308,16 +309,21 @@ and an agent writes:
   a *mode* is a named, ordered list of `(option, value)` overrides layered over the
   shipped defaults — a P0 pipeline-variant preset over the option surface, **not** a
   `[[settable]]` row (it references existing option names, so it never touches the
-  catalog or its count/tier gates). Three ship: **`reliable`** (the shipped
-  defaults, an empty-override alias), **`aggressive`** (every off-by-default
-  recovery/analysis pass on, except `v850indirectbranch` which would mis-decode
-  register-indirect calls off-V850), and **`fast`** (`listing`,
-  `funcstart_patterns`, and `aif` off to avoid program-wide decode and
-  speculative discovery). Selected with `--mode` on `kuna decompile`,
-  `decompile-all`, `decompile-project`, or `functions`, or the console
-  `mode <name>` command; overrides are applied *before* the user's `--option`
-  (last-write, so an explicit `--option` still wins). Discover with `kuna modes`;
-  full membership in [docs/modes.md](../modes.md).
+  catalog or its count/tier gates). Three concrete presets ship:
+  **`reliable`** (the shipped defaults, an empty-override alias),
+  **`aggressive`** (every off-by-default recovery/analysis pass on, except
+  `v850indirectbranch` which would mis-decode register-indirect calls off-V850),
+  and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
+  program-wide decode and speculative discovery). A fourth frontend policy,
+  **`auto`**, resolves from the raw input length before the Architecture is
+  built: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB` selects `reliable`,
+  and `>=2 MiB` selects `fast`. File-based CLI commands use `auto` when
+  `--mode` is omitted; the WASI/browser frontend uses the same Rust classifier.
+  The interactive console accepts concrete `mode <name>` presets but cannot
+  apply unresolved `auto`, because an Architecture has no input-file metadata.
+  Overrides are applied *before* the user's `--option` (last-write, so an
+  explicit `--option` still wins). Discover with `kuna modes`; full membership
+  and exact byte boundaries are in [docs/modes.md](../modes.md).
 - **The restart log** (kuna)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs (RestartLog)`):
   owned by the engine `Architecture` so it survives function clears; every
@@ -331,13 +337,17 @@ and an agent writes:
 layered, in order: (1) the engine default —
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs (reset_defaults_internal)`
 is the *single source*, and the `default` column of
-`decompiler/crates/kuna-decomp/phases.toml` mirrors it (a hard-coded live-default assertion, `decompiler/crates/kuna-decomp/src/infra/architecture/tests.rs (kuna_anchor_flags_default_to_div_values)`, pins the engine defaults to the DIV values; the toml column mirrors them by convention); (2) per-program
-loader adjustments made at bootstrap (e.g. `readonlypropagate` forced on for
+`decompiler/crates/kuna-decomp/phases.toml` mirrors it (a hard-coded live-default assertion, `decompiler/crates/kuna-decomp/src/infra/architecture/tests.rs (kuna_anchor_flags_default_to_div_values)`, pins the engine defaults to the DIV values; the toml column mirrors them by convention); (2)
+the file frontend's mode policy (`auto` when omitted) resolves to a concrete
+preset, and load-time members plus explicit load-time options are exported
+before bootstrap with last-write precedence; (3) per-program loader adjustments
+made at bootstrap (e.g. `readonlypropagate` forced on for
 MIPS so GOT-slot loads fold to import names,
 `decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_object)`);
-(3) driver surface injections (`listing`, non-x86-64 `funcstart_patterns`, §0.2);
-(4) a selected `--mode`/`mode` preset (`modes.rs`), prepended to the option list;
-(5) the user's `--option`/`kassert` lines (which override the mode); and finally
+(4) driver surface injections (`listing`, non-x86-64
+`funcstart_patterns`/`aif`, §0.2) for options the concrete preset did not name;
+(5) the concrete mode's runtime overrides followed by the user's
+`--option`/`kassert` lines (which override the mode); and finally
 (6) the per-function snapshot copy (§0.5), after which the value is frozen for that
 function's drive.
 Which defaults deliberately diverge from upstream, and the measurements behind

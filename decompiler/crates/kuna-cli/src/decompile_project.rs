@@ -3,12 +3,12 @@
 //! ```text
 //!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
 //!                          [--addr 0xVMA].. [--max-fn-seconds N]
-//!                          [--mode reliable|aggressive|fast] [--option N V]..
+//!                          [--mode auto|reliable|aggressive|fast] [--option N V]..
 //!                          [--slice ARCH] [--target T] [--sleighpath D]
 //! ```
 //!
-//! Loads + analyzes the binary once (the `decompile-all` in-process path,
-//! Listing on by default) and writes a **project folder** — default
+//! Loads + analyzes the binary once (the `decompile-all` in-process path, with
+//! omitted `--mode` resolved from file size) and writes a **project folder** — default
 //! `<binary-filename>.kuna/` next to the binary, `-o DIR` overrides — designed
 //! so a human or LLM can study the binary and attempt recompilation:
 //!
@@ -95,7 +95,7 @@ pub fn run(argv: &[String]) -> i32 {
 fn usage() {
     eprintln!(
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
-         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode reliable|aggressive|fast] \\\n\
+         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile a whole binary in one in-process load and write a project folder\n\

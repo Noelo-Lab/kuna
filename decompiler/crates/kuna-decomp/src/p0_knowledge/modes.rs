@@ -1,14 +1,18 @@
 //! P0 -- decompiler MODES: named presets over the runtime option surface.
 //!
-//! A *mode* is a named, ordered list of `(option, value)` overrides layered on
-//! top of the shipped defaults, applied *before* any explicit user `--option`
-//! (last-write-wins, so a user `--option` always overrides the mode). A mode is
-//! **not** a `[[settable]]` row -- it references existing option names and lives
-//! entirely in this table, so it never touches `phases.toml` / `SETTABLE_TABLE`
-//! / the catalog count+tier gates. With no mode selected, behaviour is
-//! byte-identical to the shipped defaults.
+//! A concrete *mode* is a named, ordered list of `(option, value)` overrides
+//! layered on top of the shipped defaults, applied *before* any explicit user
+//! `--option` (last-write-wins, so a user `--option` always overrides the
+//! mode). A mode is **not** a `[[settable]]` row -- it references existing
+//! option names and lives entirely in this table, so it never touches
+//! `phases.toml` / `SETTABLE_TABLE` / the catalog count+tier gates. File
+//! frontends resolve an omitted mode as the size-driven `auto` policy.
 //!
-//! Three modes ship:
+//! Four modes ship:
+//!   - **`auto`** -- a frontend policy that selects a concrete preset from the
+//!     input binary's file size. It is not itself applicable to an
+//!     [`Architecture`](crate::architecture::Architecture), which has no input
+//!     file metadata.
 //!   - **`reliable`** -- the shipped, well-tested defaults (a stable, named
 //!     alias with an empty override list). Anchors the "give me the safe output"
 //!     product surface and future-proofs the preset if defaults later drift.
@@ -17,29 +21,47 @@
 //!   - **`fast`** -- disable whole-program decoding and speculative function
 //!     discovery to prioritize latency while retaining per-function transforms.
 //!
-//! The mode is applied through `Architecture::apply_mode` (which fans out to
-//! `set_kuna_option`), reachable from `kuna decompile`, `kuna decompile-all`,
-//! `kuna decompile-project`, `kuna functions`, and the interactive console
-//! `mode <name>` command.
+//! Concrete presets are applied through `Architecture::apply_mode` (which fans
+//! out to `set_kuna_option`). File frontends first resolve `auto` from binary
+//! metadata; the interactive console has no file-size policy and accepts only
+//! concrete presets.
 
 /// A named preset over the option surface.
 pub struct Mode {
-    /// The mode token (`reliable`, `aggressive`, `fast`).
+    /// The mode token (`auto`, `reliable`, `aggressive`, `fast`).
     pub name: &'static str,
     /// One-line human/LLM description.
     pub summary: &'static str,
+    /// Whether this is a frontend policy that must first select a concrete
+    /// preset using input metadata.
+    pub automatic: bool,
     /// Ordered `(option, value)` overrides. Applied in order; a later
     /// `set_kuna_option` (another override, or a user `--option`) wins. An empty
-    /// slice = the shipped defaults (a no-op alias).
+    /// slice means either the shipped defaults (`reliable`) or a dynamic policy
+    /// with no direct overrides (`auto`); consult [`Self::automatic`].
     pub overrides: &'static [(&'static str, &'static str)],
 }
 
-/// The three shipped modes.
+/// First file size at which `auto` stops selecting `aggressive`.
+pub const AUTO_RELIABLE_MIN_BYTES: u64 = 500 * 1024;
+
+/// First file size at which `auto` selects `fast`.
+pub const AUTO_FAST_MIN_BYTES: u64 = 2 * 1024 * 1024;
+
+/// The four shipped modes.
 pub const MODE_TABLE: &[Mode] = &[
+    Mode {
+        name: "auto",
+        summary: "Select aggressive below 500 KiB, reliable from 500 KiB up to \
+                  2 MiB, and fast at 2 MiB or larger, using the input file size.",
+        automatic: true,
+        overrides: &[],
+    },
     Mode {
         name: "reliable",
         summary: "The shipped, well-tested defaults -- the safe, stable baseline \
-                  (no extra transforms). Byte-identical to running with no mode.",
+                  with no extra transform overrides.",
+        automatic: false,
         overrides: RELIABLE_OVERRIDES,
     },
     Mode {
@@ -48,6 +70,7 @@ pub const MODE_TABLE: &[Mode] = &[
                   structuring, and analysis pass. Slower and more speculative \
                   (may over-recover); best for readability and the benchmark \
                   ceiling, not for guaranteed faithfulness.",
+        automatic: false,
         overrides: AGGRESSIVE_OVERRIDES,
     },
     Mode {
@@ -55,6 +78,7 @@ pub const MODE_TABLE: &[Mode] = &[
         summary: "Speed-first whole-binary analysis: disable the Listing, \
                   prologue-pattern discovery, and AIF gap walk. Retains the \
                   shipped per-function transforms and explicit selectors.",
+        automatic: false,
         overrides: FAST_OVERRIDES,
     },
 ];
@@ -113,9 +137,44 @@ const FAST_OVERRIDES: &[(&str, &str)] = &[
     ("aif", "off"),
 ];
 
-/// The override list for `name`, or `None` if `name` is not a known mode.
+/// Select the concrete preset for `size_bytes` under the `auto` policy.
+pub fn auto_mode_for_size(size_bytes: u64) -> &'static str {
+    if size_bytes < AUTO_RELIABLE_MIN_BYTES {
+        "aggressive"
+    } else if size_bytes < AUTO_FAST_MIN_BYTES {
+        "reliable"
+    } else {
+        "fast"
+    }
+}
+
+/// Resolve an omitted or named frontend mode to a concrete preset.
+///
+/// Omission selects `auto`. Explicit concrete presets ignore `size_bytes`.
+/// Returns `None` for an unknown name.
+pub fn resolve_mode_for_size(
+    requested: Option<&str>,
+    size_bytes: u64,
+) -> Option<&'static str> {
+    let requested = requested.unwrap_or("auto");
+    let mode = MODE_TABLE.iter().find(|mode| mode.name == requested)?;
+    if mode.automatic {
+        Some(auto_mode_for_size(size_bytes))
+    } else {
+        Some(mode.name)
+    }
+}
+
+/// Whether `name` identifies a frontend policy rather than a static preset.
+pub fn mode_is_automatic(name: &str) -> bool {
+    MODE_TABLE.iter().any(|m| m.name == name && m.automatic)
+}
+
+/// The override list for a static `name`, or `None` if `name` is unknown or
+/// automatic. Frontends must resolve `auto` with [`resolve_mode_for_size`]
+/// first.
 pub fn mode_overrides(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
-    MODE_TABLE.iter().find(|m| m.name == name).map(|m| m.overrides)
+    MODE_TABLE.iter().find(|m| m.name == name && !m.automatic).map(|m| m.overrides)
 }
 
 /// The shipped mode names, in table order.
@@ -145,6 +204,38 @@ mod tests {
     #[test]
     fn reliable_is_a_no_op_alias() {
         assert!(mode_overrides("reliable").unwrap().is_empty());
+    }
+
+    #[test]
+    fn auto_uses_exact_binary_size_boundaries() {
+        assert_eq!(auto_mode_for_size(0), "aggressive");
+        assert_eq!(auto_mode_for_size(AUTO_RELIABLE_MIN_BYTES - 1), "aggressive");
+        assert_eq!(auto_mode_for_size(AUTO_RELIABLE_MIN_BYTES), "reliable");
+        assert_eq!(auto_mode_for_size(AUTO_FAST_MIN_BYTES - 1), "reliable");
+        assert_eq!(auto_mode_for_size(AUTO_FAST_MIN_BYTES), "fast");
+        assert_eq!(auto_mode_for_size(u64::MAX), "fast");
+    }
+
+    #[test]
+    fn frontend_resolution_defaults_to_auto_and_preserves_concrete_modes() {
+        assert_eq!(resolve_mode_for_size(None, 0), Some("aggressive"));
+        assert_eq!(
+            resolve_mode_for_size(Some("auto"), AUTO_RELIABLE_MIN_BYTES),
+            Some("reliable")
+        );
+        assert_eq!(resolve_mode_for_size(Some("fast"), 0), Some("fast"));
+        assert_eq!(
+            resolve_mode_for_size(Some("aggressive"), u64::MAX),
+            Some("aggressive")
+        );
+        assert_eq!(resolve_mode_for_size(Some("turbo"), 0), None);
+    }
+
+    #[test]
+    fn auto_is_dynamic_not_a_static_override_list() {
+        assert!(mode_is_automatic("auto"));
+        assert!(!mode_is_automatic("reliable"));
+        assert!(mode_overrides("auto").is_none());
     }
 
     #[test]
@@ -183,6 +274,6 @@ mod tests {
     #[test]
     fn mode_names_lists_all() {
         let names: Vec<_> = mode_names().collect();
-        assert_eq!(names, vec!["reliable", "aggressive", "fast"]);
+        assert_eq!(names, vec!["auto", "reliable", "aggressive", "fast"]);
     }
 }

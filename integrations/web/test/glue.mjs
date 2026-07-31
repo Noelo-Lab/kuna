@@ -89,6 +89,23 @@ try {
   if (!(proj.count > 0)) fail(`project count = ${proj.count}`);
   console.log(`\x1b[32mOK\x1b[0m   project export  (${proj.count} functions -> 4 artifacts)`);
 
+  // 5. The browser WASI path resolves every exact auto-mode boundary to the
+  //    same output as the corresponding explicit concrete mode.
+  for (const [size, mode] of [
+    [500 * 1024 - 1, 'aggressive'],
+    [500 * 1024, 'reliable'],
+    [2 * 1024 * 1024 - 1, 'reliable'],
+    [2 * 1024 * 1024, 'fast'],
+  ]) {
+    const padded = new Uint8Array(size);
+    padded.set(elf);
+    const automatic = await kuna.list(padded);
+    const explicit = await kuna.list(padded, { mode });
+    if (JSON.stringify(automatic) !== JSON.stringify(explicit))
+      fail(`browser auto mode at ${size} bytes did not match explicit ${mode}`);
+  }
+  console.log(`\x1b[32mOK\x1b[0m   browser auto-mode boundaries  (511999, 512000, 2097151, 2097152 bytes)`);
+
   console.log(`\n\x1b[32mGLUE OK\x1b[0m — kuna-web.js decompiles ELF + Mach-O, x86-64 + AArch64, client-side over HTTP; ${slaFetches} .sla lazily fetched, no per-format JS.`);
 } catch (e) {
   fail(e.stack || e.message);

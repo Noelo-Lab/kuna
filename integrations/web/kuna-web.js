@@ -42,6 +42,14 @@ export function formatName(bytes) {
   return 'binary';
 }
 
+/** Build one kuna_wasm command, delegating the byte-size policy to Rust. */
+export function wasmCommandArgs(command, arg, mode = 'auto') {
+  const argv = ['/work/input.bin', '/specs', command];
+  if (arg) argv.push(arg);
+  argv.push('--mode', mode);
+  return argv;
+}
+
 // base64 → Uint8Array (works in both browser and Node — `atob` is global in both).
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -206,17 +214,18 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
     /** Format label for the status line (ELF / PE / Mach-O / binary). */
     formatName,
     /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex}]}`. */
-    async list(binaryBytes) {
-      return parseOrThrow(await invoke(binaryBytes, ['/work/input.bin', '/specs', 'list']), 'list');
+    async list(binaryBytes, { mode = 'auto' } = {}) {
+      return parseOrThrow(await invoke(binaryBytes, wasmCommandArgs('list', undefined, mode)), 'list');
     },
     /**
      * Decompile. With no `target`, decompiles ALL functions; otherwise a single
      * function by name or `0x`-address. Returns the `decompile-all --json` shape.
      */
-    async decompile(binaryBytes, target) {
-      const argv = ['/work/input.bin', '/specs', 'decompile'];
-      if (target) argv.push(target);
-      return parseOrThrow(await invoke(binaryBytes, argv), 'decompile');
+    async decompile(binaryBytes, target, { mode = 'auto' } = {}) {
+      return parseOrThrow(
+        await invoke(binaryBytes, wasmCommandArgs('decompile', target, mode)),
+        'decompile',
+      );
     },
     /**
      * Export the whole binary as a recompile-oriented project (every function,
@@ -224,10 +233,11 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
      * count, ok, failed, files: {"<name>.c", "<name>.h", "<name>.asm",
      * "README.md"}}`.
      */
-    async project(binaryBytes, displayName) {
-      const argv = ['/work/input.bin', '/specs', 'project'];
-      if (displayName) argv.push(displayName);
-      return parseOrThrow(await invoke(binaryBytes, argv), 'project');
+    async project(binaryBytes, displayName, { mode = 'auto' } = {}) {
+      return parseOrThrow(
+        await invoke(binaryBytes, wasmCommandArgs('project', displayName, mode)),
+        'project',
+      );
     },
   };
 }

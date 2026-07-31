@@ -33,7 +33,11 @@ kuna decompile ./sparc.elf main --option returnpair single
 Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`, so
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
-reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
+from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
+The raw on-disk byte length is used, with exact cutovers at 512,000 and
+2,097,152 bytes. A later explicit `--option` wins over the resolved preset.
 
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
@@ -82,14 +86,18 @@ Behaviors specific to `decompile-all`:
   decompiling mid-instruction. The fold is ARM-only: an odd address on a byte-aligned ISA
   is a genuine entry and is left alone.
 
-- **Injected default options**: it injects `option listing on` unless the caller names
+- **Injected default options**: under the concrete `reliable` preset it injects
+  `option listing on` unless the caller names
   `listing` (DIV-15), so the default-on `noreturn_propagate` call-graph fixpoint fires and
   a stripped binary's unnamed exit/fatal wrappers no longer swallow the functions after
   them; on non-x86-64 binaries it likewise injects `funcstart_patterns on` and `aif on`
   unless the caller names them (see `docs/history.md`). `--option listing off` opts
-  out; single-function `kuna decompile` also injects Listing, while `kuna
-  functions` and the interactive console keep the engine default off.
-  `--mode fast` names and disables all three program-wide decode/discovery
+  out; single-function `kuna decompile` also injects Listing. Under explicit
+  `--mode reliable`, `kuna functions` and the interactive console keep the
+  engine default off; an auto-selected `aggressive` preset intentionally turns
+  Listing on even for inventory.
+  Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
+  names and disables all three program-wide decode/discovery
   options (`listing`, `funcstart_patterns`, `aif`), suppressing these injections;
   a later explicit `--option` still wins.
 - **Per-function watchdog** — `--max-fn-seconds N` (default 120, `0` disables): a function
@@ -115,7 +123,10 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--slice`/`--target`/
-`--sleighpath`, listing on by default; no `--json`.
+`--sleighpath`; no `--json`. Omitted mode is the same size-based `auto` policy
+as the other file front-ends. In particular, a project input at least 2 MiB
+automatically suppresses Listing and speculative function discovery through
+the `fast` preset.
 
 Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the

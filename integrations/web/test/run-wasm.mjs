@@ -7,23 +7,26 @@
 //
 // Usage:
 //   node --experimental-wasi-unstable-preview1 run-wasm.mjs \
-//        <wasm> <specs-dir> <binary> <list|decompile|project> [name|0xaddr|display-name]
+//        <wasm> <specs-dir> <binary> <list|decompile|project> \
+//        [name|0xaddr|display-name] [--mode auto|reliable|aggressive|fast]
 //
 // Writes the decompiler's stdout (JSON) to this process's stdout.
 import { WASI } from 'node:wasi';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 
-const [wasmPath, specsDir, binaryPath, cmd, arg] = process.argv.slice(2);
+const [wasmPath, specsDir, binaryPath, cmd, ...cmdArgs] = process.argv.slice(2);
 if (!wasmPath || !specsDir || !binaryPath || !cmd) {
-  console.error('usage: run-wasm.mjs <wasm> <specs-dir> <binary> <list|decompile|project> [name|0xaddr|display-name]');
+  console.error(
+    'usage: run-wasm.mjs <wasm> <specs-dir> <binary> <list|decompile|project> ' +
+    '[name|0xaddr|display-name] [--mode auto|reliable|aggressive|fast]',
+  );
   process.exit(64);
 }
 
 const workDir = resolve(dirname(binaryPath));
 const guestBinary = '/work/' + basename(binaryPath);
-const args = ['kuna_wasm', guestBinary, '/specs', cmd];
-if (arg !== undefined) args.push(arg);
+const args = ['kuna_wasm', guestBinary, '/specs', cmd, ...cmdArgs];
 
 const wasi = new WASI({
   version: 'preview1',

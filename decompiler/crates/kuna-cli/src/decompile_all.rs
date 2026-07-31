@@ -30,16 +30,14 @@
 //! it the command prints concatenated C with `// Function: <name> @ <addr>`
 //! headers (the human surface).
 //!
-//! **The Listing is on by default for `decompile-all`** (decbench F1, DIV-15):
-//! the decompile surface injects `--option listing on` unless the caller names
-//! `listing` explicitly, so the default-on `noreturn_propagate` consumer (the
-//! angr-style call-graph no-return fixpoint) actually fires and a call to an
-//! unnamed internal exit/fatal wrapper in a stripped binary terminates the
-//! caller instead of swallowing the following functions.  Opt out with
-//! `--option listing off`. Single-function `kuna decompile` uses the same
-//! injection; `kuna functions` and the interactive `decomp_dbg` surface keep
-//! the engine default (listing off).
+//! Omitted `--mode` resolves the size-based `auto` policy. Under its concrete
+//! `reliable` preset, the decompile surface injects `--option listing on`
+//! (decbench F1, DIV-15) unless the caller names `listing`, so the default-on
+//! `noreturn_propagate` consumer fires and an unnamed internal exit/fatal
+//! wrapper cannot swallow following functions. `aggressive` names Listing on;
+//! `fast` names it off. A later explicit `--option` always wins.
 
+use std::ffi::{OsStr, OsString};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -201,8 +199,10 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
         .into_owned();
     // Load-time loader gates are read by `bootstrap_from_object` itself, so they
     // must be exported BEFORE it runs (the same gates `kuna decompile` threads to
-    // the subprocess env).
-    apply_loadtime_env(&args.options, args.slice.as_deref());
+    // the subprocess env). Keep the restoration guard alive through runtime
+    // option recording too: `relocobjects` and `i386_pie_plt` update their env
+    // bridges again inside `set_kuna_option` and must not leak into a later load.
+    let _loadtime_env = apply_loadtime_env(&args.options, args.slice.as_deref());
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
@@ -221,12 +221,12 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
     // family, e.g. coreutils `xalloc_die`: 118 LOC / 2 gotos swallowed vs the
     // true 4-instruction body).  Only this driver changes: the engine default
     // (`analysis_listing = false`) and the subprocess surfaces (`kuna
-    // decompile` → `decomp_dbg`, the datatest harness) are untouched.  `kuna
-    // functions` also keeps the engine default: its default output cannot
-    // change (no-return facts never add or remove entries — only the
-    // default-OFF `aif`/`fid` consumers do that) and the Listing build would
-    // turn the cheap enumeration into a whole-program decode (measured 0.21 s →
-    // 5.7 s on a stripped tar).  See DIV-15 (`docs/divergences.md`).
+    // decompile` → `decomp_dbg`, the datatest harness) are untouched. `kuna
+    // functions` does not add this driver fallback: no-return facts never add
+    // or remove entries, while the Listing build would turn cheap enumeration
+    // into a whole-program decode (measured 0.21 s → 5.7 s on a stripped tar).
+    // A selected mode can still name Listing explicitly. See DIV-15
+    // (`docs/divergences.md`).
     if default_listing && !args.options.iter().any(|(name, _)| name == "listing") {
         prog.arch_mut()
             .set_kuna_option("listing", "on")
@@ -372,34 +372,77 @@ fn is_loadtime_gate(name: &str) -> bool {
     matches!(name, "relocobjects" | "i386_pie_plt" | "macho-arm64e")
 }
 
+fn last_option_value<'a>(options: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    options
+        .iter()
+        .rev()
+        .find(|(option_name, _)| option_name == name)
+        .map(|(_, value)| value.as_str())
+}
+
+#[derive(Default)]
+struct LoadtimeEnv {
+    previous: Vec<(&'static str, Option<OsString>)>,
+}
+
+impl LoadtimeEnv {
+    fn set(&mut self, name: &'static str, value: impl AsRef<OsStr>) {
+        self.previous.push((name, std::env::var_os(name)));
+        std::env::set_var(name, value);
+    }
+
+    fn remove(&mut self, name: &'static str) {
+        self.previous.push((name, std::env::var_os(name)));
+        std::env::remove_var(name);
+    }
+}
+
+impl Drop for LoadtimeEnv {
+    fn drop(&mut self) {
+        for (name, previous) in self.previous.drain(..).rev() {
+            if let Some(value) = previous {
+                std::env::set_var(name, value);
+            } else {
+                std::env::remove_var(name);
+            }
+        }
+    }
+}
+
 /// Export the load-time loader gates (and the Mach-O slice) onto this process's
 /// environment before `bootstrap_from_object` reads them — the in-process analog
 /// of the `Command::env(...)` calls in `decompile.rs`.
-fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) {
+fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> LoadtimeEnv {
+    let mut env = LoadtimeEnv::default();
     if let Some(slice) = slice.filter(|s| !s.trim().is_empty()) {
-        std::env::set_var("KUNA_MACHO_SLICE", slice);
+        env.set("KUNA_MACHO_SLICE", slice);
     }
-    for (name, value) in options {
-        match name.as_str() {
-            "relocobjects" => {
-                let off = matches!(value.trim(), "0" | "off" | "false" | "no" | "OFF");
-                std::env::set_var(RELOC_OBJECTS_ENV, if off { "0" } else { "1" });
-            }
-            "i386_pie_plt" => {
-                let on = !matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "off" | "0" | "false"
-                );
-                std::env::set_var("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
-            }
-            "macho-arm64e" => {
-                if matches!(value.trim().to_ascii_lowercase().as_str(), "on" | "true" | "1" | "yes") {
-                    std::env::set_var("KUNA_MACHO_ARM64E", "1");
-                }
-            }
-            _ => {}
+
+    if let Some(value) = last_option_value(options, "relocobjects") {
+        let off = matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "0" | "off" | "false" | "no"
+        );
+        env.set(RELOC_OBJECTS_ENV, if off { "0" } else { "1" });
+    }
+    if let Some(value) = last_option_value(options, "i386_pie_plt") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
+    }
+    if let Some(value) = last_option_value(options, "macho-arm64e") {
+        if matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "on" | "true" | "1" | "yes"
+        ) {
+            env.set("KUNA_MACHO_ARM64E", "1");
+        } else {
+            env.remove("KUNA_MACHO_ARM64E");
         }
     }
+    env
 }
 
 /// Apply each `--option NAME VALUE` to the live architecture, mirroring the
@@ -518,11 +561,15 @@ fn var_json(v: &VarInfo) -> Json {
 
 // --- argument parsing --------------------------------------------------------
 
-/// Expand a decompiler *mode* name (`reliable` | `aggressive` | `fast`) into its owned
-/// `(option, value)` overrides. Callers PREPEND these before the user's
-/// `--option` pairs so an explicit `--option` still wins (last-write, matching
-/// the console's `mode` then `option` ordering). Errors on an unknown mode.
+/// Expand a concrete decompiler mode into its owned `(option, value)`
+/// overrides. Callers PREPEND these before the user's `--option` pairs so an
+/// explicit `--option` still wins (last-write, matching the console's `mode`
+/// then `option` ordering). `auto` must first be resolved from binary metadata
+/// by [`mode_options_for_binary`].
 pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> {
+    if kuna_decomp::modes::mode_is_automatic(mode) {
+        return Err("mode `auto` requires input binary size".into());
+    }
     match kuna_decomp::modes::mode_overrides(mode) {
         Some(ovr) => Ok(ovr.iter().map(|(o, v)| ((*o).to_string(), (*v).to_string())).collect()),
         None => {
@@ -530,6 +577,41 @@ pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> 
             Err(format!("unknown mode {mode:?} (known: {})", known.join(", ")))
         }
     }
+}
+
+/// Resolve an omitted or explicit `auto` mode from `binary_size`; explicit
+/// concrete modes ignore the size.
+fn mode_override_pairs_for_size(
+    mode: Option<&str>,
+    binary_size: u64,
+) -> Result<Vec<(String, String)>, String> {
+    let concrete = kuna_decomp::modes::resolve_mode_for_size(mode, binary_size).ok_or_else(|| {
+        let requested = mode.unwrap_or("auto");
+        let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
+        format!("unknown mode {requested:?} (known: {})", known.join(", "))
+    })?;
+    mode_override_pairs(concrete)
+}
+
+/// Resolve the frontend mode policy and prepend its overrides to the user's
+/// explicit options. Omission is `auto`; file metadata is only read for an
+/// omitted or explicitly automatic mode.
+pub(crate) fn mode_options_for_binary(
+    mode: Option<&str>,
+    binary: &str,
+    explicit: Vec<(String, String)>,
+) -> Result<Vec<(String, String)>, String> {
+    let requested = mode.unwrap_or("auto");
+    let mut merged = if kuna_decomp::modes::mode_is_automatic(requested) {
+        let size = std::fs::metadata(binary)
+            .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
+            .len();
+        mode_override_pairs_for_size(Some(requested), size)?
+    } else {
+        mode_override_pairs(requested)?
+    };
+    merged.extend(explicit);
+    Ok(merged)
 }
 
 pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
@@ -599,16 +681,13 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
 
-    // Expand a selected `--mode` into its option overrides, PREPENDED so an
-    // explicit `--option` still wins (last-write). Every downstream consumer
-    // (`apply_loadtime_env`, the listing/funcstart auto-inject skips,
-    // `apply_runtime_options`) reads `args.options`, so this is the single wire
-    // point for both `decompile-all` and `functions`.
-    if let Some(m) = mode {
-        let mut merged = mode_override_pairs(&m)?;
-        merged.extend(options);
-        options = merged;
-    }
+    // Omitted mode is the size-driven `auto` policy. Mode overrides are
+    // PREPENDED so an explicit `--option` still wins (last-write). Every
+    // downstream consumer (`apply_loadtime_env`, the listing/funcstart
+    // auto-inject skips, `apply_runtime_options`) reads `args.options`, so this
+    // is the single wire point for decompile-all, decompile-project, and
+    // functions.
+    options = mode_options_for_binary(mode.as_deref(), &binary, options)?;
 
     Ok(Args { binary, json, names, addrs, no_vars, max_fn_seconds, options, slice, target, sleighpath })
 }
@@ -631,7 +710,7 @@ fn parse_hex(s: &str) -> Result<u64, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive|fast] \\\n\
+         \x20                   [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
@@ -640,17 +719,97 @@ fn usage_decompile_all() {
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 120,\n\
          0 disables); a function over budget becomes its own `error` record and the\n\
          batch continues (the stripped-ELF hang watchdog, see tests/hang-repro/).\n\
-         The Listing analysis tier is ON by default on this surface (so the\n\
-         no-return call-graph fixpoint `noreturn_propagate` fires on stripped\n\
-         binaries); opt out with `--option listing off`."
+         Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
+         2 MiB, and fast at 2 MiB or larger. Explicit --option values win."
     );
 }
 
 fn usage_functions() {
     eprintln!(
-        "usage: kuna functions <binary> [--json] [--mode reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
+        "usage: kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,functions:[{{name,address}}]}})."
     );
+}
+
+#[cfg(test)]
+mod mode_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+    fn sparse_binary(size: u64) -> std::path::PathBuf {
+        let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "kuna-auto-mode-{}-{id}.bin",
+            std::process::id()
+        ));
+        let file = std::fs::File::create(&path).expect("create auto-mode fixture");
+        file.set_len(size).expect("size auto-mode fixture");
+        path
+    }
+
+    #[test]
+    fn omitted_and_explicit_auto_select_the_same_concrete_presets() {
+        for (size, concrete) in [
+            (0, "aggressive"),
+            (kuna_decomp::modes::AUTO_RELIABLE_MIN_BYTES, "reliable"),
+            (kuna_decomp::modes::AUTO_FAST_MIN_BYTES, "fast"),
+        ] {
+            let expected = mode_override_pairs(concrete).unwrap();
+            assert_eq!(mode_override_pairs_for_size(None, size).unwrap(), expected);
+            assert_eq!(mode_override_pairs_for_size(Some("auto"), size).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn explicit_concrete_mode_ignores_binary_metadata() {
+        let missing = std::env::temp_dir().join(format!(
+            "kuna-auto-mode-missing-{}.bin",
+            std::process::id()
+        ));
+        let options =
+            mode_options_for_binary(Some("fast"), missing.to_str().unwrap(), Vec::new()).unwrap();
+        assert_eq!(options, mode_override_pairs("fast").unwrap());
+    }
+
+    #[test]
+    fn shared_parsers_default_to_auto_and_keep_user_options_last() {
+        let path = sparse_binary(kuna_decomp::modes::AUTO_FAST_MIN_BYTES);
+        let binary = path.to_string_lossy().into_owned();
+        for cmd in ["decompile-all", "decompile-project", "functions"] {
+            let argv = vec![
+                binary.clone(),
+                "--option".into(),
+                "listing".into(),
+                "on".into(),
+            ];
+            let args = parse_args(&argv, cmd).unwrap();
+            let listing: Vec<&str> = args
+                .options
+                .iter()
+                .filter(|(name, _)| name == "listing")
+                .map(|(_, value)| value.as_str())
+                .collect();
+            assert_eq!(listing, vec!["off", "on"], "{cmd} precedence");
+        }
+        std::fs::remove_file(path).expect("remove auto-mode fixture");
+    }
+
+    #[test]
+    fn loadtime_gates_use_the_last_named_option() {
+        let options = vec![
+            ("relocobjects".into(), "on".into()),
+            ("i386_pie_plt".into(), "on".into()),
+            ("macho-arm64e".into(), "on".into()),
+            ("relocobjects".into(), "off".into()),
+            ("i386_pie_plt".into(), "off".into()),
+            ("macho-arm64e".into(), "off".into()),
+        ];
+        assert_eq!(last_option_value(&options, "relocobjects"), Some("off"));
+        assert_eq!(last_option_value(&options, "i386_pie_plt"), Some("off"));
+        assert_eq!(last_option_value(&options, "macho-arm64e"), Some("off"));
+    }
 }

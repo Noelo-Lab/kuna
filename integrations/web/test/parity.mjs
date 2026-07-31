@@ -18,7 +18,8 @@
 // Usage:  node parity.mjs           (paths auto-resolved from the repo layout)
 //         SPECS=... node parity.mjs  (override the spec root)
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -86,6 +87,42 @@ for (const { fixture, arch, cases } of FIXTURES) {
     console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);
     passed++;
   }
+}
+
+const boundaryDir = mkdtempSync(join(tmpdir(), 'kuna-wasm-auto-mode-'));
+const source = readFileSync(FIXTURES[0].fixture);
+const boundaries = [
+  [500 * 1024 - 1, 'aggressive'],
+  [500 * 1024, 'reliable'],
+  [2 * 1024 * 1024 - 1, 'reliable'],
+  [2 * 1024 * 1024, 'fast'],
+];
+try {
+  for (const [size, expectedMode] of boundaries) {
+    total++;
+    const fixture = join(boundaryDir, `sample-${size}.elf`);
+    const padded = Buffer.alloc(size);
+    source.copy(padded);
+    writeFileSync(fixture, padded);
+
+    const autoArgs = ['list', '--mode', 'auto'];
+    const explicitArgs = ['list', '--mode', expectedMode];
+    const natAuto = normalize(runNative(fixture, autoArgs));
+    const natExplicit = normalize(runNative(fixture, explicitArgs));
+    if (natAuto !== natExplicit) {
+      fail(`auto mode at ${size} bytes did not match explicit ${expectedMode}`);
+    }
+    const wsmAuto = normalize(runWasm(fixture, autoArgs));
+    if (wsmAuto !== natAuto) {
+      fail(`native != wasm for auto mode at ${size} bytes`);
+    }
+    console.log(
+      `\x1b[32mOK\x1b[0m   auto mode @ ${size} bytes -> ${expectedMode} (native==wasm)`,
+    );
+    passed++;
+  }
+} finally {
+  rmSync(boundaryDir, { recursive: true, force: true });
 }
 
 console.log(`\n\x1b[32mPARITY OK\x1b[0m — ${passed}/${total} cases across ${FIXTURES.length} arches: wasm runs under WASI and matches native byte-for-byte.`);

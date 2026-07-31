@@ -53,10 +53,12 @@ describes it.
 
 `kuna-wasm` is a **purely additive leaf crate**. It depends only on existing engine crates
 (`kuna-console`, `kuna-decomp`, `kuna-base`) and the already-present `object`; it adds no
-new external dependency, defines no stage-model option, and changes no decompiler
-behavior. `make binaries` builds a fixed crate list that does not include it, and
+new external dependency or stage-model option. Like the native file front-ends, it
+resolves the default `auto` mode from the input byte length. `make binaries` builds a
+fixed crate list that does not include it, and
 `check_spec.py` only scans `kuna-decomp`/`kuna-analysis`, so the only gate that touches it
-is `make rust-test` (`cargo test --workspace`), which merely compiles it natively.
+is `make rust-test` (`cargo test --workspace`), which compiles it natively and
+runs its frontend tests.
 
 `kuna_wasm` runs `kuna decompile-all`'s core loop via the **shared decompile-project
 core** — `kuna_console::project` (`decompile_targets` + the `.c`/`.h`/`.asm`/`README.md`
@@ -65,8 +67,9 @@ artifact builders, moved there from `kuna-cli` so wasm32-wasip1 can reach them w
 *exact* engine entry points:
 
 ```
-bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + build translator
-  → set "listing" on (+ "funcstart_patterns" for non-x86-64)   // decompile-all defaults (DIV-15/20)
+metadata(binary).len() → auto_mode_for_size(...) // <500 KiB aggressive; <2 MiB reliable; else fast
+  → bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + build translator
+  → apply concrete mode + non-conflicting driver injections
   → commit_pending_analysis()                                   // the `read symbols` seam
   → kuna_console::project::decompile_targets(...)  // the same loop kuna decompile-all runs
 ```
@@ -74,7 +77,8 @@ bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + 
 Its `--json` is `kuna decompile-all --json`'s fields (`name`, `address`, `address_hex`,
 `aliases`, `size`, `code`, `error`, `variables[{name,type,kind,arg_index,stack_offset,size}]`)
 — including the one-record-per-entry contract and the `aliases` array documented in
-`docs/cli.md`. Wasm `list` reports the full canonical callable-symbol inventory;
+`docs/cli.md`. Wasm `list` reports the full canonical callable-symbol inventory
+under the selected mode;
 unfiltered `decompile` and `project` use the shared CODE-backed target set, while
 explicit address selection can still reach any canonical symbol (name selection
 keeps its normal first-match behavior). This is the same split as the native
@@ -86,15 +90,18 @@ lone-jump entries (`ConsoleProgram::lone_jump_target`, direct-to-another-functio
 indirect) as `"thunk"`; the UI folds those below a divider). CLI:
 
 ```
-kuna_wasm <binary> <spec-root> list                       # enumerate functions (cheap)
-kuna_wasm <binary> <spec-root> decompile [name|0xADDR]    # one function, or all
-kuna_wasm <binary> <spec-root> project [<display-name>]   # whole-binary .c/.h/.asm/README
+kuna_wasm <binary> <spec-root> list [--mode MODE]
+kuna_wasm <binary> <spec-root> decompile [name|0xADDR] [--mode MODE]
+kuna_wasm <binary> <spec-root> project [<display-name>] [--mode MODE]
 ```
 
 `project` is the `kuna decompile-project` flow with the folder write replaced by one JSON
 document — `{binary, name, count, ok, failed, files:{"<name>.c", "<name>.h", "<name>.asm",
 "README.md"}}` (artifacts named after `<display-name>`, default the binary's basename;
-whole binary only). The page's **Download Binary Source** button runs it and zips the four
+whole binary only). Omitted mode and explicit `--mode auto` use the shared
+native/browser policy: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB`
+selects `reliable`, and `>=2 MiB` selects `fast`. The page's **Download Binary
+Source** button runs it and zips the four
 artifacts client-side (`integrations/web/zip.js`, a dependency-free STORE zip writer). The
 only artifact difference vs the CLI is the README's `Path` row, which shows the display
 name instead of a canonicalized host path (there is none in the virtual FS).
@@ -111,7 +118,7 @@ preopened directories:
 | specs | `/specs` | the SLEIGH tree — all the small runtime files preloaded, plus each `.sla` added as it's lazily fetched (`File` inodes reused across runs) |
 | work | `/work` | `input.bin` — the user's uploaded bytes |
 
-then runs `kuna_wasm /work/input.bin /specs decompile` with `stdout` captured via
+then runs `kuna_wasm /work/input.bin /specs decompile --mode auto` with `stdout` captured via
 `ConsoleStdout.lineBuffered`. The captured stdout is the JSON the UI renders. This is the
 same preopen model Node's `node:wasi` uses — the parity test (`test/parity.mjs`) drives
 the identical wasm through `node:wasi`, and the glue test (`test/glue.mjs`) drives it
@@ -246,11 +253,13 @@ benign PE is committed because this environment has no PE linker.
   from `kuna-cli` with the CLI's `decompile-all`/`decompile-project` outputs verified
   byte-identical across the move) plus one additive probe (`ConsoleProgram::
   lone_jump_target`) that no native output path calls.
-- No new dependency, no new stage-model option, no native output change: `kuna_wasm` == the
-  `decompile-all` path (+ the wasm-only `"kind"` field and `project` command), so
-  `docs/history.md`, `phases.toml`, and `docs/options.md` are untouched.
-- The four gates (`make test`, `make test-stages`, `make rust-test`, `make check-spec`)
-  are unaffected — the crate is invisible to all but `rust-test`, where it only compiles.
+- No new dependency or stage-model option: `kuna_wasm` and the native file
+  front-ends resolve the same `auto` policy and then use the same concrete mode
+  presets. `phases.toml` and `docs/options.md` remain untouched; the intentional
+  driver-default change is recorded as DIV-40 in `docs/history.md`.
+- The four gates (`make test`, `make test-stages`, `make rust-test`, `make
+  check-spec`) remain mandatory. Native/WASI parity and browser-glue tests cover
+  the additional frontend policy.
 
 ## 7. Limitations & future work
 

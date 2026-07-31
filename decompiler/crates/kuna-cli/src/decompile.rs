@@ -38,6 +38,14 @@ fn is_on(value: &str) -> bool {
     matches!(value.trim().to_ascii_lowercase().as_str(), "on" | "true" | "1" | "yes")
 }
 
+fn last_option_value<'a>(options: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    options
+        .iter()
+        .rev()
+        .find(|(option_name, _)| option_name == name)
+        .map(|(_, value)| value.as_str())
+}
+
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
 /// function name; use `--addr` for bare numeric addresses) — `_looks_like_addr`.
 fn looks_like_addr(target: &str) -> bool {
@@ -68,13 +76,11 @@ fn build_script(
     // commit would be a no-op (the analysis-port conflict #4 ordering fix). The
     // upstream/printer options here are order-independent w.r.t. `read symbols`.
     //
-    // (kuna, Ghidra-gap / DIV-15) Build the Listing by default (unless the caller names
-    // `listing`), matching `decompile-all`: the Listing drives the no-return analysis
-    // (noreturn_propagate/reach/error/disc) that marks called functions no-return, so the
-    // flow-follower does NOT overrun past a `call error(nonzero)`/`abort`/… into the
-    // following function. Without it the single-function decompile inflates a function
-    // that ends in a no-returning call by absorbing its neighbour. Opt out with
-    // `--option listing off`.
+    // (kuna, Ghidra-gap / DIV-15) Build the Listing when neither the selected
+    // mode nor the caller names `listing`, matching `decompile-all`. The
+    // Listing drives the no-return analysis that prevents a function ending in
+    // a no-returning call from absorbing its neighbour. The default `auto`
+    // policy names Listing off through `fast` for binaries at least 2 MiB.
     if !options.iter().any(|(name, _)| name == "listing") {
         lines.push("option listing on".into());
     }
@@ -200,13 +206,12 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
         // `load file` — before the `option` lines in the script are processed.
         // Bridge it to the subprocess env var the loader reads at load time so the
         // off-switch (and the before/after demo) work for the single-shot CLI.
-        let reloc_env: Option<&'static str> = args
-            .options
-            .iter()
-            .rev()
-            .find(|(n, _)| n == "relocobjects")
-            .map(|(_, v)| {
-                if matches!(v.trim(), "0" | "off" | "false" | "no" | "OFF") {
+        let reloc_env: Option<&'static str> =
+            last_option_value(&args.options, "relocobjects").map(|value| {
+                if matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "0" | "off" | "false" | "no"
+                ) {
                     "0"
                 } else {
                     "1"
@@ -228,12 +233,12 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
         // not just a console `option` line. Export it when requested; the
         // `option macho-arm64e on` line still flows (so the option is recognized
         // and recorded), but the env var is what makes the spec selection live.
-        if args
-            .options
-            .iter()
-            .any(|(n, v)| n == "macho-arm64e" && is_on(v))
-        {
-            cmd.env("KUNA_MACHO_ARM64E", "1");
+        if let Some(value) = last_option_value(&args.options, "macho-arm64e") {
+            if is_on(value) {
+                cmd.env("KUNA_MACHO_ARM64E", "1");
+            } else {
+                cmd.env_remove("KUNA_MACHO_ARM64E");
+            }
         }
         // (kuna) Loader-tier `i386_pie_plt` gate: the PLT→name map is baked at
         // `load file`, *before* the `option` lines in the script run, so an
@@ -241,11 +246,12 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
         // (`kuna_i386_pie_plt::I386_PIE_PLT_ENV`) set on the subprocess up front.
         // (The harmless `option i386_pie_plt …` line still runs for the catalog
         // confirmation; it just can't retro-resolve the already-loaded image.)
-        for (name, value) in &args.options {
-            if name == "i386_pie_plt" {
-                let on = !matches!(value.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false");
-                cmd.env("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
-            }
+        if let Some(value) = last_option_value(&args.options, "i386_pie_plt") {
+            let on = !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false"
+            );
+            cmd.env("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
         }
         let output = cmd
             .stdin(std::process::Stdio::piped())
