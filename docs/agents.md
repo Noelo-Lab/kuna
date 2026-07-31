@@ -123,6 +123,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   name methods after their C++ originals).
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`).
 - Commit at milestones with descriptive messages.
+- Any time any public thing is created fully automatically, it should start with `[AUTOMATED]`. That goes for PRs, Issues (opening and responses). It should also be in the commit message, but can go outside of the tagline and more inside the extended part.
 
 ## Doc map (look up on demand — don't preload)
 
