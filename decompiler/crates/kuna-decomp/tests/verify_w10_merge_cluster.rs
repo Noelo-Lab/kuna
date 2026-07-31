@@ -192,7 +192,8 @@ fn w10_mc_a2_boolless_constant_join_stays_tied_byte_identical() {
 
     // The C++ oracle B5 for boolless (KUNA_DUMP, cpp engine).  The `acc` register
     // stays an explicit whole-function local `v1` (NOT folded into `dat_52`).
-    const CPP: &str = "uint1 boolless(void)\n\n\
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
+    const CPP: &str = "uint1 boolless(void)\n\
 {\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  \
 if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}";
     assert_eq!(
@@ -215,7 +216,8 @@ fn w10_mc_a3a_readstruct_pointer_return_byte_identical() {
     let body = slice_function(&block, "readstruct")
         .unwrap_or_else(|| panic!("readstruct not in dump:\n{block}"));
     eprintln!("=== RUST readstruct ===\n{body}");
-    const CPP: &str = "int4 readstruct(twostruct *ptr,int8 a,int8 b)\n\n\
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
+    const CPP: &str = "int4 readstruct(twostruct *ptr,int8 a,int8 b)\n\
 {\n  return ptr->array[b + a];\n}";
     assert_eq!(
         body, CPP,
@@ -245,7 +247,8 @@ fn w10_mc_a3b_condconst_stack_and_void_persist_untouched() {
         .unwrap_or_else(|| panic!("condconst_copy not in dump:\n{block}"));
     eprintln!("=== RUST condconst_conn ===\n{conn}\n=== RUST condconst_copy ===\n{copy}");
 
-    const CPP_CONN: &str = "int4 condconst_conn(int4 x,int4 y)\n\n\
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
+    const CPP_CONN: &str = "int4 condconst_conn(int4 x,int4 y)\n\
 {\n  int4 v1; // stack - 0xc\n  \n  v1 = x;\n  \
 if ((x == 0) && (y != 10)) {\n    v1 = 0x14;\n  }\n  return v1;\n}";
     assert_eq!(
@@ -254,7 +257,8 @@ if ((x == 0) && (y != 10)) {\n    v1 = 0x14;\n  }\n  return v1;\n}";
          --- rust ---\n{conn}\n--- cpp ---\n{CPP_CONN}"
     );
 
-    const CPP_COPY: &str = "void condconst_copy(int4 d)\n\n\
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
+    const CPP_COPY: &str = "void condconst_copy(int4 d)\n\
 {\n  if (d == 0) {\n    glob1 = 0;\n  }\n  glob2 = d;\n  \
 if (d == 10) {\n    glob3 = 10;\n    glob4 = 10;\n  }\n  return;\n}";
     assert_eq!(

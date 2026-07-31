@@ -306,7 +306,8 @@ fn zz_dump_boolless_cfg() {
 }
 
 /// The committed C++ B5 oracle for boolless (tests/golden/snapshots/cpp/...).
-const CPP_B5_ORACLE: &str = "\nuint1 boolless(void)\n\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
+const CPP_B5_ORACLE: &str = "\nuint1 boolless(void)\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
 
 #[test]
 fn boolless_print_c_emits_structured_body() {

@@ -27,8 +27,8 @@ generated catalog ([docs/options.md](../options.md)); the upstream console
 knobs (`nocastprinting`, `integerformat`, `nullprinting`, `inplaceops`,
 `maxlinewidth`, `indentincrement`) are surfaceTable rows in `phases.toml`, set
 via the console `option` command, and are not part of the settable catalog.
-The intentional default divergences are DIV-1/2/5/6/7 in
-`docs/history.md`.
+The intentional default divergences are DIV-1/2/5/6/7 and the C-surface
+normalization defaults (DIV-34 brace placement) in `docs/history.md`.
 
 ## 9.1 Casts
 
@@ -225,9 +225,12 @@ overflow permanently raises inner indents to guarantee at least half a line of
 working space (`prettyprint.rs (EmitPrettyPrint::overflow)`), and inside a
 comment every forced break re-emits the comment fill prefix. Defaults: 100
 columns (`option maxlinewidth`), indent step 2 (`option indentincrement`),
-comment indent 20; brace placement per construct (function braces on their own
-line, if/loop/switch braces on the same line) via the four `braceformat`
-fields of `printc.rs (PrintCOptions)`.
+comment indent 20; brace placement per construct via the four `braceformat`
+fields of `printc.rs (PrintCOptions)`: if/loop/switch braces sit on the same
+line as their construct, and a function's brace sits directly under its
+prototype (kuna DIV-34 — upstream's `skip_line` default leaves a blank line
+between the prototype and `{`; `option braceformat function skip` restores
+it, exercised by `tests/stages/kuna-cnorm-protogap.xml`).
 
 **Position maps.** Every token can carry a resolved back-reference,
 `prettyprint.rs (MarkupRef)`: an op reference (the op's `getTime`, the same id

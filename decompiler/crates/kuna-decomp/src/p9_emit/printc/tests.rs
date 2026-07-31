@@ -674,7 +674,9 @@ fn option_defaults_match_reset_defaults_printc() {
     assert!(!o.unplaced);
     // (kuna) DIV-2 default-on: &base[index] for standalone PTRADD (GH-558).
     assert!(o.array_notation);
-    assert_eq!(o.brace_func, BraceStyle::SkipLine);
+    // (kuna) DIV-34: no blank line between the prototype and `{` (upstream
+    // skip_line; `option braceformat function skip` restores it).
+    assert_eq!(o.brace_func, BraceStyle::NextLine);
     assert_eq!(o.brace_ifelse, BraceStyle::SameLine);
     assert_eq!(o.brace_loop, BraceStyle::SameLine);
     assert_eq!(o.brace_switch, BraceStyle::SameLine);
@@ -691,8 +693,8 @@ fn option_setters() {
     assert!(o.inplace_ops);
     assert!(o.nocasts);
     assert!(!o.array_notation());
-    o.set_brace_format_function(BraceStyle::NextLine);
-    assert_eq!(o.brace_func, BraceStyle::NextLine);
+    o.set_brace_format_function(BraceStyle::SkipLine);
+    assert_eq!(o.brace_func, BraceStyle::SkipLine);
 }
 
 // ---------------------------------------------------------------------------

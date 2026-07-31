@@ -420,7 +420,8 @@ fn w10_implied_multiwrite_return_stays_explicit_not_overinlined() {
 fn w10_implied_boolless_acc_unregressed_byte_parity() {
     // The committed C++ B5 oracle (same constant as print_b5_boolless.rs).
     const CPP_B5_ORACLE: &str =
-        "\nuint1 boolless(void)\n\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
+    // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
+        "\nuint1 boolless(void)\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
 
     let rust = match render_one("boolless", 0) {
         Ok(r) => r,

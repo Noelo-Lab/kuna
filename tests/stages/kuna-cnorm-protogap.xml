@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna C-surface normalization: no blank line between the function prototype
+    and the opening brace (user-reported readability issue on the angr fmt
+    corpus binary; no upstream GH issue).
+
+    Upstream Ghidra's resetDefaultsPrintC sets the function brace style to
+    Emit::skip_line, so every function renders as
+
+        int4 f(int4 x)
+        <blank>
+        {
+
+    kuna flips the default to next_line (DIV-34, docs/history.md): the brace
+    follows the prototype immediately.  The upstream form stays reachable via
+    the ported braceformat option.
+
+    Stage model: S9 emission / brace-format surface policy.  P0 assertion:
+    `option braceformat function skip|next` (upstream OptionBraceFormat).
+
+    Pass 1 (default): the fix - prototype line is immediately followed by `{`
+    (assert #1 matches exactly once, and the 3-line blank-gap chain of
+    assert #2 matches zero times in this pass).
+    Pass 2 (option braceformat function skip): the legacy form - `)` then a
+    blank line then `{` (assert #2 matches exactly once; assert #1 cannot
+    match because the blank line breaks the 2-line chain).
+
+    Source: int gh558(int x) { if (x <= 8) return 1; return 0; }  (the
+    gh558-compareform.xml bytes, reused purely as a minimal function body).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="protogap_fn"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 protogap_fn(int4 x);</com>
+  <com>lo fu protogap_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option braceformat function skip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-34)" min="1" max="1">\)$
+^\{$</stringmatch>
+<stringmatch name="CNORM-PROTOGAP #2: braceformat function skip restores the upstream blank line" min="1" max="1">\)$
+^$
+^\{$</stringmatch>
+</decompilertest>

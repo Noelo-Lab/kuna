@@ -144,6 +144,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-31 | x86 `DF` unaffected (no flag) | the ABI's direction-flag guarantee is stated where the cspec is silent, folding `(uint8)df * -2 + 1` strides to `+1` | 0/675; x86-only, spec-silent models only |
 | DIV-32 | whole-binary entry dedup (bug fix, no flag) | `decompile-all`/`functions`/`decompile-project`/wasm report each entry ADDRESS once — extra names move to `aliases[]`, and ARM/Thumb `entry\|1` addresses fold onto the real entry (symbol seeds, the enumeration key, and `--addr`) | 0/675 (analysis tier is parity-isolated); `arm_thumb_linked_le32` 6→2 entries, `fmt_arm` 32→14, x86-64 unchanged; 713/713 surviving functions byte-identical |
 | DIV-33 | executable batch targets (bug fix, no flag) | unfiltered `decompile-all`/`decompile-project`/wasm runs skip callable symbols in data sections while preserving them for naming, inventory, and explicit address selection | 0/675 (analysis tier is parity-isolated); private PE `bc4c15d8…3ae1b` 693→351 targets and 63.58→7.78 s; all 351 executable artifacts byte-identical |
+| DIV-34 | `braceformat function next` (upstream option, new default) | no blank line between a function prototype and its `{` (upstream skip_line renders `)\n\n{`); `option braceformat function skip` restores | 0/675; print-only |
 
 ## Upstream provenance & sync
 
