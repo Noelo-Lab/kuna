@@ -105,14 +105,14 @@ fn named_entry(
 #[test]
 fn av1_smallest_containing_symbol_name_wins() {
     let ram = ram_space(3);
-    let gq = GlobalQuery {
-        entries: vec![
+    let gq = GlobalQuery::new(
+        vec![
             named_entry(&ram, 0x301014, 0x301017, "glob1", 0),
             named_entry(&ram, 0x301014, 0x30101b, "widepair", 0),
         ],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     let (name4, off4, _t) = gq
@@ -139,15 +139,15 @@ fn av1_smallest_containing_symbol_name_wins() {
 #[test]
 fn av2_symbol_offset_is_access_minus_first_plus_entry_offset() {
     let ram = ram_space(3);
-    let gq = GlobalQuery {
-        entries: vec![
+    let gq = GlobalQuery::new(
+        vec![
             named_entry(&ram, 0x400, 0x40f, "arr", 0),
             // A piece mapped at 0x500 that is the OFFSET-4 slice of its Symbol.
             named_entry(&ram, 0x500, 0x503, "structpiece", 4),
         ],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     let (name, off, _t) = gq
@@ -175,12 +175,12 @@ fn av2_symbol_offset_is_access_minus_first_plus_entry_offset() {
 fn av3_constant_address_is_never_named() {
     let cst = the_constant_space();
     let ram = ram_space(3);
-    let gq = GlobalQuery {
-        // An entry in the constant space's index that would "contain" 0x100.
-        entries: vec![named_entry(&ram, 0x100, 0x103, "phantom", 0)],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    // An entry in the constant space's index that would "contain" 0x100.
+    let gq = GlobalQuery::new(
+        vec![named_entry(&ram, 0x100, 0x103, "phantom", 0)],
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
     assert!(
         gq.name_for_varnode(&addr(&cst, 0x100), 4, &up).is_none(),
@@ -199,11 +199,11 @@ fn av3_constant_address_is_never_named() {
 #[test]
 fn av4_no_match_returns_none() {
     let ram = ram_space(3);
-    let gq = GlobalQuery {
-        entries: vec![named_entry(&ram, 0x301014, 0x301017, "glob1", 0)],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    let gq = GlobalQuery::new(
+        vec![named_entry(&ram, 0x301014, 0x301017, "glob1", 0)],
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let up = Address::new_invalid();
 
     assert!(
@@ -239,11 +239,11 @@ fn av5_inuse_usepoint_gate() {
     let code = code_space(4);
 
     // Address-tied: named at an invalid usepoint.
-    let tied = GlobalQuery {
-        entries: vec![named_entry(&ram, 0x600, 0x603, "tiedglob", 0)],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    let tied = GlobalQuery::new(
+        vec![named_entry(&ram, 0x600, 0x603, "tiedglob", 0)],
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     assert!(
         tied.name_for_varnode(&addr(&ram, 0x600), 4, &Address::new_invalid()).is_some(),
         "an address-tied global is named regardless of usepoint",
@@ -255,11 +255,7 @@ fn av5_inuse_usepoint_gate() {
     let mut limited = named_entry(&ram, 0x700, 0x703, "limitedglob", 0);
     limited.addrtied = false;
     limited.uselimit = uselimit;
-    let gq = GlobalQuery {
-        entries: vec![limited],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    let gq = GlobalQuery::new(vec![limited], RangeList::new(), PartMap::new(0u32));
     // Invalid usepoint → not inUse → None.
     assert!(
         gq.name_for_varnode(&addr(&ram, 0x700), 4, &Address::new_invalid()).is_none(),

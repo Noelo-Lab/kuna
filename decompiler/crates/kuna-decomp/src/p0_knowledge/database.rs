@@ -3127,11 +3127,11 @@ impl Database {
             }
         }
         let scope = &self.scopes[gid];
-        crate::context::GlobalQuery {
+        crate::context::GlobalQuery::new(
             entries,
-            owned: scope.rangetree.clone(),
-            flagbase: self.flagbase.clone(),
-        }
+            scope.rangetree.clone(),
+            self.flagbase.clone(),
+        )
     }
 
     /// Snapshot every global FunctionSymbol's source-declared prototype, keyed by

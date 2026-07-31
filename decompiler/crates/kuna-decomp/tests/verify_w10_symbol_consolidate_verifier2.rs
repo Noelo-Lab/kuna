@@ -93,11 +93,11 @@ fn v1_query_properties_returns_covering_symbol_all_flags() {
         | varnode_flags::addrtied
         | varnode_flags::persist
         | varnode_flags::readonly;
-    let gq = GlobalQuery {
-        entries: vec![entry(&ram, 0x4000, 0x4003, fl, None)],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    let gq = GlobalQuery::new(
+        vec![entry(&ram, 0x4000, 0x4003, fl, None)],
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let usepoint = Address::new_invalid();
     let got = gq.query_properties(&addr(&ram, 0x4000), 4, &usepoint);
     // C++ `flags = res->getAllFlags()` — verbatim, NOT OR'd with anything extra.
@@ -120,11 +120,11 @@ fn v2_query_properties_owned_no_symbol_is_mapped_addrtied_persist() {
     let mut flagbase = PartMap::new(0u32);
     *flagbase.split(&addr(&ram, 0x5000)) = varnode_flags::readonly;
     *flagbase.split(&addr(&ram, 0x5008)) = 0;
-    let gq = GlobalQuery {
-        entries: Vec::new(), // NO covering symbol
+    let gq = GlobalQuery::new(
+        Vec::new(), // NO covering symbol
         owned,
         flagbase,
-    };
+    );
     let usepoint = Address::new_invalid();
     let got = gq.query_properties(&addr(&ram, 0x5000), 4, &usepoint);
     // C++: flags = mapped|addrtied|persist | getProperty(addr).
@@ -154,11 +154,11 @@ fn v3_query_properties_flagbase_only_and_constant_guard() {
     let mut flagbase = PartMap::new(0u32);
     *flagbase.split(&addr(&ram, 0x9000)) = varnode_flags::readonly;
     *flagbase.split(&addr(&ram, 0x9004)) = 0;
-    let gq = GlobalQuery {
-        entries: Vec::new(),  // no symbol
-        owned: RangeList::new(), // not owned
+    let gq = GlobalQuery::new(
+        Vec::new(), // no symbol
+        RangeList::new(), // not owned
         flagbase,
-    };
+    );
     let usepoint = Address::new_invalid();
     // No symbol, not owned: just getProperty (NOT mapped/addrtied/persist).
     let got = gq.query_properties(&addr(&ram, 0x9000), 4, &usepoint);
@@ -195,14 +195,14 @@ fn v4_smallest_containing_flags_win() {
     // selection is by size, not iteration position.
     let small_fl = varnode_flags::mapped | varnode_flags::addrtied | varnode_flags::persist;
     let big_fl = small_fl | varnode_flags::readonly;
-    let gq = GlobalQuery {
-        entries: vec![
+    let gq = GlobalQuery::new(
+        vec![
             entry(&ram, 0x4000, 0x4007, big_fl, None),
             entry(&ram, 0x4000, 0x4003, small_fl, None),
         ],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let usepoint = Address::new_invalid();
     let got4 = gq.query_properties(&addr(&ram, 0x4000), 4, &usepoint);
     assert_eq!(
@@ -230,17 +230,17 @@ fn v5_sized_type_only_when_typelocked_and_boundary_inclusive() {
     let usepoint = Address::new_invalid();
 
     // (a) NON-typelocked covering Symbol → None (inference stays free).
-    let gq_nolock = GlobalQuery {
-        entries: vec![entry(
+    let gq_nolock = GlobalQuery::new(
+        vec![entry(
             &ram,
             0x6000,
             0x6003,
             varnode_flags::mapped | varnode_flags::addrtied | varnode_flags::persist,
             Some(ty.clone()),
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     assert!(
         gq_nolock
             .sized_type_geometry(&addr(&ram, 0x6000), 4, &usepoint)
@@ -249,8 +249,8 @@ fn v5_sized_type_only_when_typelocked_and_boundary_inclusive() {
     );
 
     // (b) typelocked covering Symbol → Some((type, off=0)).
-    let gq_lock = GlobalQuery {
-        entries: vec![entry(
+    let gq_lock = GlobalQuery::new(
+        vec![entry(
             &ram,
             0x6000,
             0x6003,
@@ -260,9 +260,9 @@ fn v5_sized_type_only_when_typelocked_and_boundary_inclusive() {
                 | varnode_flags::typelock,
             Some(ty.clone()),
         )],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let got = gq_lock.sized_type_geometry(&addr(&ram, 0x6000), 4, &usepoint);
     assert!(got.is_some(), "a typelocked covering Symbol forces its type");
     assert_eq!(got.unwrap().1, 0, "whole-symbol access → in-symbol offset 0");

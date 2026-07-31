@@ -89,11 +89,11 @@ fn tied_entry(space: &Rc<AddrSpace>, first: u64, last: u64, all_flags: u32) -> G
 fn av1_containment_boundary_is_inclusive_last_and_first() {
     let ram = ram_space(3);
     let flags = varnode_flags::mapped | varnode_flags::addrtied | varnode_flags::persist;
-    let gq = GlobalQuery {
-        entries: vec![tied_entry(&ram, 0x100, 0x103, flags)],
-        owned: RangeList::new(), // no owning-scope fallback for this test
-        flagbase: PartMap::new(0u32),
-    };
+    let gq = GlobalQuery::new(
+        vec![tied_entry(&ram, 0x100, 0x103, flags)],
+        RangeList::new(), // no owning-scope fallback for this test
+        PartMap::new(0u32),
+    );
     let usepoint = Address::new_invalid();
 
     // Exact whole-entry match: returns the entry's flags.
@@ -130,7 +130,7 @@ fn av2_owned_scope_fallback_sets_mapped_addrtied_persist_plus_property() {
     let mut flagbase = PartMap::new(0u32);
     *flagbase.split(&addr(&ram, 0x200)) = varnode_flags::readonly;
     *flagbase.split(&addr(&ram, 0x300)) = 0; // close the painted range at 0x300
-    let gq = GlobalQuery { entries: vec![], owned, flagbase };
+    let gq = GlobalQuery::new(vec![], owned, flagbase);
     let usepoint = Address::new_invalid();
 
     let expected = varnode_flags::mapped
@@ -167,11 +167,11 @@ fn av3_constant_address_never_matches() {
     // owned tree (adversarial: try to trick the owned fallback too).
     let mut owned = RangeList::new();
     owned.insert_range(cst.clone(), 0x40, 0x4f);
-    let gq = GlobalQuery {
-        entries: vec![tied_entry(&ram, 0x40, 0x43, flags)],
+    let gq = GlobalQuery::new(
+        vec![tied_entry(&ram, 0x40, 0x43, flags)],
         owned,
-        flagbase: PartMap::new(0u32),
-    };
+        PartMap::new(0u32),
+    );
     let usepoint = Address::new_invalid();
     assert!(cst.get_type() == spacetype::IPTR_CONSTANT, "fixture sanity: const space");
     // Constant 0x40, size 4 => guarded to 0 regardless of entries/owned.
@@ -208,11 +208,11 @@ fn av4_smallest_in_use_entry_wins() {
     // Order shouldn't matter (non-overlapping symbols don't occur, but nested
     // whole/piece entries do): put the BIG one first so a naive "first match
     // wins" would pick the wrong (larger) entry.
-    let gq = GlobalQuery {
-        entries: vec![big.clone(), small.clone()],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    let gq = GlobalQuery::new(
+        vec![big.clone(), small.clone()],
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let usepoint = Address::new_invalid();
     assert_eq!(
         gq.query_properties(&addr(&ram, 0x300), 2, &usepoint),
@@ -238,11 +238,11 @@ fn av4_smallest_in_use_entry_wins() {
         is_function: false,
         func_inject_id: -1,
     };
-    let gq2 = GlobalQuery {
-        entries: vec![big.clone(), limited.clone()],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    let gq2 = GlobalQuery::new(
+        vec![big.clone(), limited.clone()],
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     // Invalid usepoint: the use-limited (smaller) entry is NOT inUse, so the big
     // addr-tied entry answers.
     assert_eq!(
@@ -278,11 +278,11 @@ fn av5_end_offset_wrap_near_u64_max_does_not_panic() {
     let ram = ram_space(3);
     let flags = varnode_flags::mapped | varnode_flags::persist;
     // An entry at the very top byte.
-    let gq = GlobalQuery {
-        entries: vec![tied_entry(&ram, u64::MAX, u64::MAX, flags)],
-        owned: RangeList::new(),
-        flagbase: PartMap::new(0u32),
-    };
+    let gq = GlobalQuery::new(
+        vec![tied_entry(&ram, u64::MAX, u64::MAX, flags)],
+        RangeList::new(),
+        PartMap::new(0u32),
+    );
     let usepoint = Address::new_invalid();
     // size 1 at u64::MAX: end = MAX + 1 - 1 = MAX (wrap-safe), exact match.
     assert_eq!(
