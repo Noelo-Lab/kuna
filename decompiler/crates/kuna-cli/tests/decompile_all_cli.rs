@@ -229,7 +229,9 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
     let (fast_out, stderr, ok) = run_kuna(&fast_args);
     assert!(ok, "fast no-return control failed: {stderr}");
     assert!(
-        !code_field(&fast_out).contains("Subroutine does not return"),
+        // (kuna DIV-39) the no-return warning renders as the `// no-return`
+        // slug under the default inline warnstyle.
+        !code_field(&fast_out).contains("// no-return"),
         "fast must keep the Listing/no-return consumer disabled"
     );
 
@@ -238,7 +240,7 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
     let (restored_out, stderr, ok) = run_kuna(&restored_args);
     assert!(ok, "fast with Listing restored failed: {stderr}");
     assert!(
-        code_field(&restored_out).contains("Subroutine does not return"),
+        code_field(&restored_out).contains("// no-return"),
         "an explicit option after fast must win with last-write precedence"
     );
 }
