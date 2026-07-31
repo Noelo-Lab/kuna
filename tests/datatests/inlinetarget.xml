@@ -19,6 +19,8 @@
 <symbol space="ram" offset="0x10000410" name="epilogue"/>
 </binaryimage>
 <script>
+  <!-- kuna: warnstyle default-inline (DIV-38); this upstream test pins the full-line WARNING banner rendering -->
+  <com>option warnstyle banner</com>
   <com>option inline prologue</com>
   <com>option inline epilogue</com>
   <com>map fun r0x10000424 main</com>

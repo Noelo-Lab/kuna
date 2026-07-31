@@ -22,7 +22,7 @@
     return v;), so the token return appears exactly ONCE.
     Pass 2 (option earlyreturn on): the constant guard arm is peeled to its own
     early return, so there are TWO returns (if (!guard) { return 1; } return 0;) and
-    the earlyreturn: hoisted line is logged. return appears TWICE. Total 3.
+    the // early-return line is logged. return appears TWICE. Total 3.
 -->
 <bytechunk space="ram" offset="0x100000">
 f30f1efa554889e5897dfc8b45fc83e83083f8360f97c284d2752648baff037e0000007e0089c148d3ea4889d083e0014885c00f95c084c07407b801000000eb05b8000000005dc3
@@ -40,6 +40,7 @@ f30f1efa554889e5897dfc8b45fc83e83083f8360f97c284d2752648baff037e0000007e0089c148
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)" min="1" max="1">else</stringmatch>
-<stringmatch name="earlyreturn #2: ON logs the const-guard hoist exactly once" min="1" max="1">earlyreturn: hoisted</stringmatch>
+<stringmatch name="earlyreturn #2: ON logs the const-guard hoist exactly once" min="1" max="1">// early-return</stringmatch>
 </decompilertest>

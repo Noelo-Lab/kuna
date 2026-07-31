@@ -151,12 +151,12 @@ fn error_nonzero_wrapper_concludes_no_return() {
     );
     // 2. ON: the wrapper is no-return, so the terminator appears at its call site.
     assert!(
-        on.contains("WARNING: Subroutine does not return"),
+        on.contains("// no-return"),
         "error-on output must carry the no-return terminator after err_fatal():\n{on}"
     );
     // 3. OFF: the wrapper is treated as returning — no terminator.
     assert!(
-        !off.contains("WARNING: Subroutine does not return"),
+        !off.contains("// no-return"),
         "error-off output must NOT mark the wrapper no-return (dead code present):\n{off}"
     );
 }
@@ -172,7 +172,7 @@ fn error_zero_status_wrapper_is_not_concluded() {
     };
     eprintln!("---- compute_warn (noreturn_error ON) ----\n{on}");
     assert!(
-        !on.contains("WARNING: Subroutine does not return"),
+        !on.contains("// no-return"),
         "error(0,…) returns, so err_warn must NOT be marked no-return:\n{on}"
     );
 }
@@ -216,7 +216,7 @@ fn discovered_consumer_does_not_fix_single_site_error_wrapper() {
     let disc = status.optr.clone();
     eprintln!("---- compute (noreturn_disc ON only) ----\n{disc}");
     assert!(
-        !disc.contains("WARNING: Subroutine does not return"),
+        !disc.contains("// no-return"),
         "noreturn_disc must NOT conclude the single-site error(nonzero) wrapper — \
          that is the gap noreturn_error closes:\n{disc}"
     );

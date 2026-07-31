@@ -157,7 +157,7 @@ fn propagation_eliminates_dead_code_after_single_call_wrapper() {
     // 2. ON: `my_die` is marked no-return, so the no-return terminator appears and
     //    the dead fall-through after the call is gone.
     assert!(
-        on.contains("WARNING: Subroutine does not return"),
+        on.contains("// no-return"),
         "propagate-on output must carry the no-return terminator after my_die():\n{on}"
     );
     assert!(
@@ -168,7 +168,7 @@ fn propagation_eliminates_dead_code_after_single_call_wrapper() {
     // 3. OFF (default): `my_die` is treated as returning — the dead code is present
     //    (the no-return terminator is absent).
     assert!(
-        !off.contains("WARNING: Subroutine does not return"),
+        !off.contains("// no-return"),
         "default output must NOT mark my_die() no-return (the dead code is present):\n{off}"
     );
 }
@@ -184,7 +184,7 @@ fn discovered_consumer_does_not_fix_this_fixture() {
     };
     eprintln!("---- compute (noreturn_disc ON) ----\n{disc}");
     assert!(
-        !disc.contains("WARNING: Subroutine does not return"),
+        !disc.contains("// no-return"),
         "noreturn_disc must NOT conclude my_die no-return here (single call site, NOP \
          padding after the call) — that is exactly the gap noreturn_propagate closes:\n{disc}"
     );
@@ -200,7 +200,7 @@ fn wrapper_itself_is_concluded_no_return() {
     };
     eprintln!("---- my_die.constprop.0 (noreturn_propagate ON) ----\n{die}");
     assert!(
-        die.contains("abort") || die.contains("WARNING: Subroutine does not return"),
+        die.contains("abort") || die.contains("// no-return"),
         "my_die() must tail-call abort / be no-return:\n{die}"
     );
 }

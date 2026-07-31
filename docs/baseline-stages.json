@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    297,
-    297
+    301,
+    301
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -25,6 +25,11 @@
     "data:CNORM-TRUTHY #4: truthycond off restores the explicit NULL compare (DIV-34 form)",
     "data:CNORM-TRUTHY #5: a VALUE position keeps its comparison in BOTH passes (negate-absorption safety)",
     "data:CNORM-TRUTHY #6: the value-elision bug shape never appears",
+    "data:CNORM-WARNSTYLE #1: default renders the terse end-of-line slug (DIV-38)",
+    "data:CNORM-WARNSTYLE #2: warnstyle banner restores the upstream WARNING line",
+    "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
+    "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
+    "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
@@ -243,7 +248,6 @@
     "data:iteregion #4: fix (on) -- the rewrite is logged",
     "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
-    "data:mode fast reaches the live engine and leaves Listing off",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
     "data:namestyle #3 default: unnamed call target renders as sub_<addr>",

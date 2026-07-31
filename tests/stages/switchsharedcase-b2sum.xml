@@ -42,7 +42,7 @@
     and re-run findNormalized so the table sizes at 35 and the switch structures.
 
     Pass 1 (default, option off): assertion #1 proves the bug reproduces; the
-    dispatch downgrades to an indirect call ("Treating indirect jump as call").
+    dispatch downgrades to an indirect call ("// jump-as-call").
     Assertion #2 (switch count == 1) proves NO switch is recovered on the off pass
     (the single match comes from the option-on pass only).
     Pass 2 (option switchsharedcase on): assertion #2 proves the table is bounded
@@ -68,6 +68,7 @@ b5d3ffff00d5ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffffb8d6ffff
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="switchsharedcase #1: option off downgrades the dispatch to an indirect call (bug reproduced)" min="1" max="2">Treating indirect jump as call</stringmatch>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
+<stringmatch name="switchsharedcase #1: option off downgrades the dispatch to an indirect call (bug reproduced)" min="1" max="2">// jump-as-call</stringmatch>
 <stringmatch name="switchsharedcase #2: option on bounds the table and recovers the switch (recovered exactly once, on-pass only)" min="1" max="1">switch\(</stringmatch>
 </decompilertest>

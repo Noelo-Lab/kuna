@@ -685,6 +685,9 @@ fn option_defaults_match_reset_defaults_printc() {
     // (kuna) DIV-38: single-statement if bodies drop their braces
     // (`option braceelide off` restores the braced form).
     assert!(o.brace_elide);
+    // (kuna) DIV-39: warnings render as terse end-of-line slugs
+    // (`option warnstyle banner` restores the WARNING banner lines).
+    assert!(o.warn_inline);
     // (kuna) DIV-34: no blank line between the prototype and `{` (upstream
     // skip_line; `option braceformat function skip` restores it).
     assert_eq!(o.brace_func, BraceStyle::NextLine);
@@ -710,6 +713,8 @@ fn option_setters() {
     assert!(!o.truthy_cond());
     o.set_brace_elide(false);
     assert!(!o.brace_elide());
+    o.set_warn_inline(false);
+    assert!(!o.warn_inline());
 }
 
 // ---------------------------------------------------------------------------

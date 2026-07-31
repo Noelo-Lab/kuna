@@ -100,8 +100,9 @@ fn mcount_call_is_dissolved_by_the_applied_fixup() {
     // The engine emits a marker when a CALL is replaced by an injection — the
     // direct proof the analyzer-driven fixup tag reached the inherited inject path.
     assert!(
-        out.contains("replaced with injection"),
-        "expected the `replaced with injection` marker (fixup applied), got:\n{out}"
+        // (kuna DIV-38) inline warnstyle renders the header as `// injected`.
+        out.contains("// injected") || out.contains("replaced with injection"),
+        "expected the injection marker (fixup applied), got:\n{out}"
     );
 
     // The bogus `mcount()` profiling CALL must NOT survive as a call statement.

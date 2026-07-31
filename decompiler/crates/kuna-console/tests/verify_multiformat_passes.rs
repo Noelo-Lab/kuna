@@ -169,7 +169,7 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
 
     assert!(on.contains("exit("), "PE: the tail call must be named exit(:\n{on}");
     assert!(
-        on.contains("Subroutine does not return"),
+        on.contains("// no-return"),
         "PE: exit must be marked no-return (the PeMac list fired):\n{on}"
     );
     // The dead self-recursion after exit is present OFF, gone ON.

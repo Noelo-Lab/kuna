@@ -140,7 +140,7 @@ fn discovered_noreturn_eliminates_dead_code_after_custom_wrapper() {
     // 2. Flags ON: `die` is marked no-return, so the engine emits the no-return
     //    terminator and eliminates the dead fall-through.
     assert!(
-        on.contains("WARNING: Subroutine does not return"),
+        on.contains("// no-return"),
         "flags-on output must carry the no-return terminator after die():\n{on}"
     );
     assert!(
@@ -152,7 +152,7 @@ fn discovered_noreturn_eliminates_dead_code_after_custom_wrapper() {
     //    follows the fall-through past `call die` into the next function's bytes —
     //    the dead code is present (the no-return terminator is absent).
     assert!(
-        !off.contains("WARNING: Subroutine does not return"),
+        !off.contains("// no-return"),
         "default output must NOT mark die() no-return (the dead code is present):\n{off}"
     );
 }
@@ -185,7 +185,7 @@ fn die_wrapper_tail_calls_exit() {
     };
     eprintln!("---- die (flags ON) ----\n{die}");
     assert!(
-        die.contains("exit") || die.contains("WARNING: Subroutine does not return"),
+        die.contains("exit") || die.contains("// no-return"),
         "die() must tail-call exit / be no-return:\n{die}"
     );
 }

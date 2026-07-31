@@ -48,7 +48,7 @@
     (`v1 = 0xffffffff`), NOT a return.
     Pass 2 (option switchreturn on): every constant case arm is peeled to its own
     return (`case 0: return 0; ... default: return 0xffffffff;`), the switch head
-    preserved and the merged `return v1` gone; the `switchreturn: hoisted` line is
+    preserved and the merged `return v1` gone; the `// switch-return` line is
     logged exactly once.
 -->
 <bytechunk space="ram" offset="0x401106" readonly="true">
@@ -76,7 +76,8 @@ ffffa6f1ffff
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="switchreturn #1: the switch dispatch head survives in BOTH passes (only the case bodies change)" min="2" max="2">switch\(a0\) \{</stringmatch>
 <stringmatch name="switchreturn #2: ON hoists each const case into its own return, so the default 0xffffffff becomes a return exactly once (ON pass only)" min="1" max="1">return 0xffffffff;</stringmatch>
-<stringmatch name="switchreturn #3: ON logs the const-case return hoist exactly once" min="1" max="1">switchreturn: hoisted</stringmatch>
+<stringmatch name="switchreturn #3: ON logs the const-case return hoist exactly once" min="1" max="1">// switch-return</stringmatch>
 </decompilertest>

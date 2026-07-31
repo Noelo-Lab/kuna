@@ -229,7 +229,9 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
     let (fast_out, stderr, ok) = run_kuna(&fast_args);
     assert!(ok, "fast no-return control failed: {stderr}");
     assert!(
-        !code_field(&fast_out).contains("Subroutine does not return"),
+        // (kuna DIV-39) the no-return warning renders as the `// no-return`
+        // slug under the default inline warnstyle.
+        !code_field(&fast_out).contains("// no-return"),
         "fast must keep the Listing/no-return consumer disabled"
     );
 
@@ -238,7 +240,7 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
     let (restored_out, stderr, ok) = run_kuna(&restored_args);
     assert!(ok, "fast with Listing restored failed: {stderr}");
     assert!(
-        code_field(&restored_out).contains("Subroutine does not return"),
+        code_field(&restored_out).contains("// no-return"),
         "an explicit option after fast must win with last-write precedence"
     );
 }
@@ -693,7 +695,7 @@ fn decompile_all_listing_default_collapses_noreturn_wrapper() {
     }
     let on_code = code_field(&on_out).to_string();
     assert!(
-        on_code.contains("Subroutine does not return"),
+        on_code.contains("// no-return"),
         "default decompile-all must mark the my_die() wrapper call no-return \
          (the Listing default is not reaching noreturn_propagate):\n{on_code}"
     );
@@ -705,7 +707,7 @@ fn decompile_all_listing_default_collapses_noreturn_wrapper() {
     assert!(ok, "kuna decompile-all --option listing off failed: {stderr}");
     let off_code = code_field(&off_out).to_string();
     assert!(
-        !off_code.contains("Subroutine does not return"),
+        !off_code.contains("// no-return"),
         "listing-off output must NOT mark my_die() no-return (the opt-out must \
          restore the pre-F1 rendering):\n{off_code}"
     );

@@ -37,7 +37,7 @@
     Pass 1 (option noreturn_externmatch off): the bug - the dead `0xdeadbeef`
     after the call is emitted (`return 0xdeadbeef;`).
     Pass 2 (option noreturn_externmatch on): the fix - flow halts at the call
-    (`/* WARNING: Subroutine does not return */`), so `0xdeadbeef` is gone.
+    (`/* WARNING: // no-return */`), so `0xdeadbeef` is gone.
 -->
 <bytechunk space="ram" offset="0x1000">
 e8fb0f0000b8efbeaddec3
@@ -60,7 +60,8 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- (DIV-38 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
 <stringmatch name="angr-incorrect-duplication-chcon #1: the no-return call is present in both passes" min="2" max="2">__stack_chk_fail\(</stringmatch>
 <stringmatch name="angr-incorrect-duplication-chcon #2: dead code after the call survives only with the option OFF (bug); dropped with ON (fix)" min="1" max="1">0xdeadbeef</stringmatch>
-<stringmatch name="angr-incorrect-duplication-chcon #3: with the option ON the call is recognized no-return (artificial halt planted)" min="1" max="1">Subroutine does not return</stringmatch>
+<stringmatch name="angr-incorrect-duplication-chcon #3: with the option ON the call is recognized no-return (artificial halt planted)" min="1" max="1">// no-return</stringmatch>
 </decompilertest>
