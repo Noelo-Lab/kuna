@@ -13,7 +13,7 @@
 //! analysis tier every time), this loads and analyzes the binary **once**
 //! in-process (`bootstrap_from_object` → `commit_pending_analysis`, i.e. the
 //! `load file` + `read symbols` seam), then loops `decompile` + `print C` over
-//! every function.  The marginal per-function cost drops from a full image load
+//! every executable entry. The marginal per-function cost drops from a full image load
 //! to just the IR build + pipeline — the load-once shape benchmark harnesses
 //! (decbench) and an LLM driver need.
 //!
@@ -57,7 +57,7 @@ use crate::paths;
 pub(crate) struct Args {
     pub(crate) binary: String,
     pub(crate) json: bool,
-    /// `--functions a,b,c`: restrict to these names (None ⇒ every function).
+    /// `--functions a,b,c`: restrict to these names (None ⇒ CODE-backed entries).
     pub(crate) names: Option<Vec<String>>,
     /// `--addr 0xVMA` (repeatable): decompile specific entry addresses, even if
     /// unnamed (stripped / LLM use).  Combined with `--functions` if both given.
@@ -177,8 +177,8 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
     Ok(decompile_targets(&mut prog, targets, args.no_vars, /* want_proto= */ false))
 }
 
-/// Enumerate the program's functions, one [`FunctionEntry`] per entry address
-/// (the `functions` command + the default `decompile-all` target set).
+/// Enumerate the program's full callable-symbol inventory, one
+/// [`FunctionEntry`] per entry address (the `functions` command).
 fn list_functions(args: &Args) -> Result<Vec<FunctionEntry>, String> {
     let prog = load_program(args, /* default_listing= */ false)?;
     // One record per entry address, address-ordered, alias names carried as data
@@ -301,7 +301,7 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
 /// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
 /// (the canonical record at that address, else a record named via the symbol
 /// table / `name_function`), `--functions` names or aliases, or — with no filter
-/// — every enumerated function, each exactly once.
+/// — every CODE-backed entry, each exactly once.
 pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
@@ -351,11 +351,11 @@ pub(crate) fn resolve_targets(
     let mut seen = std::collections::HashSet::new();
     targets.retain(|e| seen.insert(e.addr.get_offset()));
 
-    // No filter at all ⇒ every function, exactly once (issue #197: `all` used to
-    // be deduped by (name, offset), so one function appeared once per name it
-    // carried — and on ARM once more per Thumb `entry|1` twin).
+    // No filter at all ⇒ every executable function, exactly once. Import pointer
+    // slots remain explicitly selectable, but are data rather than function
+    // bodies.
     if args.addrs.is_empty() && args.names.is_none() {
-        targets = prog.function_entries_canonical();
+        targets = prog.function_entries_executable();
     }
     Ok(targets)
 }
@@ -632,7 +632,7 @@ fn usage_decompile_all() {
          \x20                   [--no-vars] [--max-fn-seconds N] [--mode reliable|aggressive] \\\n\
          \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
-         Decompile every function of a binary in one in-process load (load-once,\n\
+         Decompile every CODE-backed function in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
          without it, concatenated C with `// Function:` headers.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 120,\n\

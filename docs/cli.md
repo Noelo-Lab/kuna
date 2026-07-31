@@ -38,9 +38,9 @@ reliable|aggressive` applies an option preset (`docs/modes.md`).
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash
-kuna decompile-all ./a.out --json                      # every function
+kuna decompile-all ./a.out --json                      # every CODE-backed function
 kuna decompile-all ./a.out --functions main,parse --json
-kuna functions ./a.out --json                          # just enumerate (name + address)
+kuna functions ./a.out --json                          # full callable-symbol inventory
 ```
 
 The whole-binary surface (the benchmark + LLM path). Runs **in-process**
@@ -56,6 +56,15 @@ injected defaults below), `error` isolates a single failed function, and `variab
 (params in ABI order + DWARF/stack locals) feed type-recovery scoring.
 
 Behaviors specific to `decompile-all`:
+
+- **Executable default targets** — an unfiltered run decompiles canonical entries
+  contained by loader sections marked `CODE`. Callable import pointer slots in PE
+  IATs, Mach-O symbol-pointer sections, and similar data areas remain in `kuna
+  functions`, remain installed for named calls and prototypes, and remain
+  reachable through explicit `--addr`; they are not automatically decoded as
+  function bodies. `--functions` retains its normal first-match behavior when a
+  stub and slot share a name. Loaders without section metadata retain the
+  complete inventory.
 
 - **One record per function entry** — a whole-binary run reports (and decompiles) each
   entry address exactly once. A function can carry several names: a `.symtab` symbol
@@ -110,9 +119,10 @@ binary and attempt recompilation:
 
 - `<name>.c` — every decompiled function, address-ordered, under
   `// Function: <name> @ <addr>` headers, failures as comments, `#include "<name>.h"`.
-  One definition per entry address: the export shares `decompile-all`'s
-  one-record-per-entry enumeration above, so a function carrying several names cannot
-  produce several (identical, and therefore uncompilable) definitions.
+  One definition per executable entry address: the export shares
+  `decompile-all`'s CODE-backed target policy and one-record-per-entry
+  enumeration above, so data import slots are not rendered as functions and a
+  function carrying several names cannot produce several identical definitions.
 - `<name>.h` — include guard + a generated recompile prelude (core scalar and
   `undefined`-family typedefs), the recovered user-defined type definitions, and one
   prototype per decompiled function, token-identical to the `.c` definition line.

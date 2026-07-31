@@ -116,7 +116,7 @@ Four front-ends drive one engine assembly:
   and keeps the Listing off (the build would turn a cheap symbol walk into a
   whole-program decode).
 
-  The enumeration these surfaces walk is
+  The full callable-symbol inventory these surfaces share is
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_canonical)`,
   which yields **exactly one record per function entry address**, address-ordered.
   It exists because the raw symbol stream
@@ -144,9 +144,16 @@ Four front-ends drive one engine assembly:
   so `--addr` on an odd ARM address reaches the function rather than decoding
   mid-instruction. Both folds are gated to ARM, where an odd symbol address is
   never an instruction boundary; elsewhere an odd address is genuine and is left
-  alone. All four whole-binary surfaces — `decompile-all`, `functions`,
-  `decompile-project` (`decompiler/crates/kuna-cli/src/decompile_project.rs`), and
-  the wasm front-end (`decompiler/crates/kuna-wasm/src/lib.rs`) — share it.
+  alone. `kuna functions` and wasm `list` report this complete canonical
+  inventory, including callable import pointer slots. Unfiltered
+  `decompile-all`, `decompile-project`, and wasm whole-binary runs derive their
+  default target set through
+  `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_executable)`:
+  only entries inside a loader section carrying `CODE` are treated as function
+  bodies. Import slots remain installed for call naming, prototypes, and
+  unrestricted explicit address selection; name selection keeps its normal
+  first matching canonical-entry behavior when a stub and slot share a name. A
+  loader that publishes no section metadata retains the complete canonical set.
 - **`kuna_ghidra`** (`decompiler/crates/kuna-ghidra/src/bin/kuna_ghidra.rs`) —
   the ghidra-mode process front-end: the stock Ghidra GUI spawns it as its
   decompiler core and talks the burst-framed stdin/stdout protocol
