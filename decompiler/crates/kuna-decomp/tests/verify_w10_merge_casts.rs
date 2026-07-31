@@ -388,7 +388,10 @@ mod harness {
         arch.early_return = false; // (kuna) C++-parity test: opt out of earlyreturn (DIV-23 default-on)
         arch.switch_return = false; // (kuna) also opt out of switchreturn (DIV-25 default-on)
         let fd = decompile_func(arch, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
-        Ok(print_c(arch, &fd))
+        // (kuna DIV-37) The frozen C++ oracles pin the upstream braced
+    // single-statement if-body form; reset braceelide for the comparison.
+    arch.print_mut().options.set_brace_elide(false);
+    Ok(print_c(arch, &fd))
     }
 }
 

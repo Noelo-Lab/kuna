@@ -399,6 +399,10 @@ pub struct PrintCOptions {
     /// `option truthycond`).  Float compares, enum-typed and equate-named
     /// zeros are excluded; value contexts (`v = (x != 0)`) never normalize.
     pub truthy_cond: bool,
+    /// (kuna) A single-statement if-body drops its braces and prints the
+    /// statement indented on the next line (DIV-38, `option braceelide`).
+    /// Copy-leaf single-statement bodies only; labels/comments keep braces.
+    pub brace_elide: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
     pub brace_func: BraceStyle,
     /// How if/else-block braces are formatted (C++ `option_brace_ifelse`).
@@ -437,6 +441,7 @@ impl PrintCOptions {
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
             truthy_cond: true, // (kuna) DIV-37; no upstream equivalent
+            brace_elide: true, // (kuna) DIV-38; no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
@@ -479,6 +484,15 @@ impl PrintCOptions {
     /// (kuna) Current truthy-condition rendering flag.
     pub fn truthy_cond(&self) -> bool {
         self.truthy_cond
+    }
+    /// (kuna) Toggle single-statement if-body brace elision (`option
+    /// braceelide`, DIV-38).
+    pub fn set_brace_elide(&mut self, val: bool) {
+        self.brace_elide = val;
+    }
+    /// (kuna) Current brace-elision flag.
+    pub fn brace_elide(&self) -> bool {
+        self.brace_elide
     }
     /// (kuna) C++ `getArrayNotation()` (printc.hh:251).
     pub fn array_notation(&self) -> bool {
@@ -3068,6 +3082,41 @@ impl PrintC {
         if let Some(target) = goto_target {
             self.emit.spaces(1, 0);
             self.emit_goto_statement(fd, cond_block, target, fd.sblocks_ref().block(blk).get_if_goto_type());
+        } else if self.if_body_elides(fd, fd.sblocks_ref().block(blk).get_block(1)) {
+            // (kuna braceelide, DIV-38) A single-statement then-body drops its
+            // braces: the statement prints on the next line at one extra indent
+            // (its own tag_line in emit_basic_block_ops breaks the line).  The
+            // predicate is Copy-leaf-only, so the body can never itself be an
+            // `if` and the dangling-else hazard cannot arise; the else arm (if
+            // any) opens with its own tag_line below, unchanged.
+            self.context.set_mod(modifiers::NO_BRANCH);
+            let body = fd.sblocks_ref().block(blk).get_block(1);
+            let id = self.emit.start_indent();
+            let id1 = self.emit.begin_block(0);
+            self.emit_block(fd, arch, body);
+            self.emit.end_block(id1);
+            self.emit.stop_indent(id);
+            if size == 3 {
+                self.emit.tag_line();
+                self.emit.print(keywords::KEYWORD_ELSE, SyntaxHighlight::KeywordColor);
+                let else_block = fd.sblocks_ref().block(blk).get_block(2);
+                let else_is_if = fd.sblocks_ref().block(else_block).get_type()
+                    == crate::block::BlockType::If;
+                if else_is_if {
+                    self.context.set_mod(modifiers::PENDING_BRACE);
+                    let id2 = self.emit.begin_block(0);
+                    self.emit_block(fd, arch, else_block);
+                    self.emit.end_block(id2);
+                } else {
+                    let id2 = self
+                        .emit
+                        .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+                    let id3 = self.emit.begin_block(0);
+                    self.emit_block(fd, arch, else_block);
+                    self.emit.end_block(id3);
+                    self.emit.close_brace_indent(keywords::CLOSE_CURLY, id2);
+                }
+            }
         } else {
             // The true body in braces.
             self.context.set_mod(modifiers::NO_BRANCH);
@@ -3112,6 +3161,73 @@ impl PrintC {
         if my_pending_indent >= 0 {
             self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
         }
+    }
+
+    /// (kuna braceelide, DIV-38) Does this if-body render braceless?  True when
+    /// `option braceelide` is on and the body is a plain single-statement
+    /// `BlockCopy` leaf: no label line (an unstructured-goto target keeps its
+    /// braces), exactly ONE op that `emit_basic_block_ops` would print under
+    /// NO_BRANCH (not-printed ops, branches, and implied-output ops are
+    /// skipped, exactly mirroring its filter), and no comment positioned in the
+    /// block (a comment renders as its own line).  Copy-leaf-only also rules
+    /// out a nested `if` body, so eliding can never capture a dangling else.
+    fn if_body_elides(&mut self, fd: &Funcdata, body: BlockId) -> bool {
+        use crate::block::BlockType;
+        if !self.options.brace_elide {
+            return false;
+        }
+        if fd.sblocks_ref().block(body).get_type() != BlockType::Copy {
+            return false;
+        }
+        // Would emit_any_label_statement print a `label_xxx:` line?
+        if !fd.sblocks_ref().block(body).is_label_bump_up() {
+            if let Some(front) = fd.sblocks_ref().get_front_leaf(body) {
+                if fd.sblocks_ref().block(front).is_unstructured_target() {
+                    return false;
+                }
+            }
+        }
+        let Some(under) = fd.sblocks_ref().block(body).get_copy() else {
+            return false;
+        };
+        let mut printed = 0;
+        let mut cur = fd.bb_op_head(under);
+        while let Some(inst) = cur {
+            cur = fd.bb_op_next(inst);
+            let o = match fd.obank().get(inst) {
+                Some(o) => o,
+                None => continue,
+            };
+            if o.not_printed() {
+                continue;
+            }
+            // The body always prints under NO_BRANCH: every branch op is skipped.
+            if o.is_branch() {
+                continue;
+            }
+            if let Some(out) = o.get_out() {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                    continue;
+                }
+            }
+            printed += 1;
+            if printed > 1 {
+                return false;
+            }
+        }
+        if printed != 1 {
+            return false;
+        }
+        // A comment positioned in this block forces its own line; keep braces.
+        // (The probe re-positions the sorter window; emit_basic_block_ops sets
+        // it again for the real walk.)
+        let bb_index = fd.bblocks_ref().block(under).get_index();
+        self.commsorter.setup_block_list(bb_index);
+        // setup_block_list sets start/stop but NOT the has_next() bound
+        // (opstop); setup_op_list(None) widens it to the whole block window,
+        // exactly as the real statement walk does before its has_next loop.
+        self.commsorter.setup_op_list(None);
+        !self.commsorter.has_next()
     }
 
     /// (kuna) Is `blk` a two-arm assignment diamond that the S8 `iteregion` pass

@@ -244,6 +244,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "compareform",
     "arraynotation",
     "truthycond",
+    "braceelide",
     "thumbfuncptr",
     "inferfuncentry",
     "returnpair",

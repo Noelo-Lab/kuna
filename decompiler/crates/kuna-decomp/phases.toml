@@ -649,6 +649,16 @@ latent = false
 exposure = "(kuna DIV-36) option truthycond -> PrintC::opBinary CONDITION_CONTEXT consumption"
 
 [[subphase]]
+name = "brace-form"
+phase = "P9"
+decision = "single-statement if bodies: always braced vs braceless indented"
+assertion = "braceelide on|off"
+strength = "HARD"
+rewind = "P9"
+latent = false
+exposure = "(kuna DIV-37) option braceelide -> PrintC::emitBlockIf if_body_elides"
+
+[[subphase]]
 name = "external-refinement"
 phase = "P9"
 decision = "proposed renames/retypes/summaries: an assertion writer into P0 for the next run"
@@ -882,6 +892,12 @@ surface = "option truthycond"
 phase = "P9"
 subphase = "condition-form"
 note = "(kuna DIV-36)"
+
+[[surface]]
+surface = "option braceelide"
+phase = "P9"
+subphase = "brace-form"
+note = "(kuna DIV-37)"
 
 [[surface]]
 surface = "option returnpair"
@@ -1324,6 +1340,25 @@ inspiration = "user-reported readability issue on the angr fmt corpus binary (if
 change_kind = "presentation-default"
 tier = "core"
 symptoms = "if (x != 0) where idiomatic C reads if (x)|if (p == NULL) where if (!p) is wanted|explicit zero comparison in conditions unwanted|truthy condition rendering needs to match upstream ghidra for diffing"
+
+[[settable]]
+option = "braceelide"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "brace-form"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-cnorm-fmt"
+summary = "Render a single-statement if body braceless with the statement indented on the next line (on) vs always braced (off)."
+use_when = "On by default (DIV-37): idiomatic C for one-statement then-bodies. Flip off to reproduce upstream Ghidra's braced form or to diff against Ghidra output. Only plain single-statement bodies elide: labels, comments, and multi-statement bodies keep their braces; the if (cond) goto L; one-liner and else-if collapse are unaffected."
+example = "option braceelide off"
+source_decompiler = "kuna"
+inspiration = "user-reported readability issue on the angr fmt corpus binary (if (expr) { single-statement; })"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "if (x) { stmt; } where braceless if (x) stmt; is wanted|single-statement if body keeps braces|braced one-liner bodies unwanted|brace style needs to match upstream ghidra for diffing"
 
 [[settable]]
 option = "thumbfuncptr"

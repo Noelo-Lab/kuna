@@ -16,14 +16,15 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_41() {
-    // +1 for the P9 `condition-form` subphase (truthycond, DIV-36).
-    assert_eq!(kuna_num_subphases(), 41);
-    assert_eq!(SUBPHASE_TABLE.len(), 41);
+fn subphase_count_is_42() {
+    // +1 for the P9 `condition-form` subphase (truthycond, DIV-36),
+    // +1 for the P9 `brace-form` subphase (braceelide, DIV-37).
+    assert_eq!(kuna_num_subphases(), 42);
+    assert_eq!(SUBPHASE_TABLE.len(), 42);
 }
 
 #[test]
-fn surface_count_is_99() {
+fn surface_count_is_100() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -31,21 +32,22 @@ fn surface_count_is_99() {
     // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps),
     // +1 for the `option branchflip` surface row (angr SAILR condition polarity),
     // +1 for the `option noreturn_externmatch` surface row (angr incorrect-duplication-chcon, DIV-13),
-    // +1 for the `option truthycond` surface row (kuna C-surface normalization, DIV-36).
-    assert_eq!(kuna_num_surfaces(), 99);
-    assert_eq!(SURFACE_TABLE.len(), 99);
+    // +1 for the `option truthycond` surface row (kuna C-surface normalization, DIV-36),
+    // +1 for the `option braceelide` surface row (kuna C-surface normalization, DIV-37).
+    assert_eq!(kuna_num_surfaces(), 100);
+    assert_eq!(SURFACE_TABLE.len(), 100);
 }
 
 #[test]
-fn settable_count_is_78() {
+fn settable_count_is_79() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
-    assert_eq!(kuna_num_settables(), 78);
-    assert_eq!(SETTABLE_TABLE.len(), 78);
+    assert_eq!(kuna_num_settables(), 79);
+    assert_eq!(SETTABLE_TABLE.len(), 79);
 }
 
 #[test]
-fn tier_counts_are_17_core_37_transform_24_analysis() {
+fn tier_counts_are_18_core_37_transform_24_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -57,7 +59,7 @@ fn tier_counts_are_17_core_37_transform_24_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (17, 37, 24));
+    assert_eq!((core, transform, analysis), (18, 37, 24));
 }
 
 #[test]
@@ -356,6 +358,7 @@ fn option_values_live_value_present_for_28_suppressed_for_40() {
                             | "loopbreak_recovery"
                             | "relocobjects"
                             | "truthycond"
+                            | "braceelide"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -462,7 +465,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, and switchreturn's S8 row sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 77);
+    assert_eq!(json.matches("},\n").count(), 78);
 }
 
 #[test]

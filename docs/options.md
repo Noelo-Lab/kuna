@@ -182,6 +182,10 @@ Three tiers:
 | if (p == NULL) where if (!p) is wanted | [`truthycond`](#truthycond) |
 | explicit zero comparison in conditions unwanted | [`truthycond`](#truthycond) |
 | truthy condition rendering needs to match upstream ghidra for diffing | [`truthycond`](#truthycond) |
+| if (x) { stmt; } where braceless if (x) stmt; is wanted | [`braceelide`](#braceelide) |
+| single-statement if body keeps braces | [`braceelide`](#braceelide) |
+| braced one-liner bodies unwanted | [`braceelide`](#braceelide) |
+| brace style needs to match upstream ghidra for diffing | [`braceelide`](#braceelide) |
 | thumb function pointer renders as symbolic &fn[1] where the raw odd-address constant is wanted | [`thumbfuncptr`](#thumbfuncptr) |
 | callback constant on arm resolves to a function symbol plus one instead of a bare hex literal | [`thumbfuncptr`](#thumbfuncptr) |
 | a bare constant equal to a function entry renders as the named function pointer | [`inferfuncentry`](#inferfuncentry) |
@@ -737,6 +741,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-36): idiomatic C for if/while/for/ternary conditions and &&/||/! operands. Flip off to reproduce upstream Ghidra's explicit comparisons or to diff against Ghidra output. Float compares, enum-typed zeros, and equate-named zeros always keep the explicit form; value uses (v = (x != 0)) are never rewritten.
 - **Where / provenance:** P9/condition-form · kuna · presentation-default · kuna-cnorm-fmt
 - **Example:** `option truthycond off`
+
+### `braceelide` -- on | off, default `on`
+
+- **Symptoms:** if (x) { stmt; } where braceless if (x) stmt; is wanted; single-statement if body keeps braces; braced one-liner bodies unwanted; brace style needs to match upstream ghidra for diffing.
+- **What it does:** Render a single-statement if body braceless with the statement indented on the next line (on) vs always braced (off).
+- **When to flip:** On by default (DIV-37): idiomatic C for one-statement then-bodies. Flip off to reproduce upstream Ghidra's braced form or to diff against Ghidra output. Only plain single-statement bodies elide: labels, comments, and multi-statement bodies keep their braces; the if (cond) goto L; one-liner and else-if collapse are unaffected.
+- **Where / provenance:** P9/brace-form · kuna · presentation-default · kuna-cnorm-fmt
+- **Example:** `option braceelide off`
 
 ### `thumbfuncptr` -- on | off, default `on`
 

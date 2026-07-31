@@ -10,6 +10,8 @@ e5
 <symbol space="CODE" offset="0xa000" name="boolless"/>
 </binaryimage>
 <script>
+  <!-- kuna: braceelide default-on (DIV-37); this upstream test (and the w10 byte-parity oracles driving it) pins the braced single-statement if-body rendering -->
+  <com>option braceelide off</com>
   <com>option earlyreturn off</com>
   <com>option switchreturn off</com>
   <com>lo fu boolless</com>
