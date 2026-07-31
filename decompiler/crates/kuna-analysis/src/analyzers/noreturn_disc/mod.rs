@@ -183,15 +183,7 @@ fn skip_callee(listing: &Listing, callee: u64, terminal: &BTreeSet<u64>) -> bool
 fn last_act_is_terminal_call(listing: &Listing, entry: u64, terminal: &BTreeSet<u64>) -> bool {
     let next = listing.next_function_after(entry).map(|f| f.entry);
     let mut has_terminal_call = false;
-    for (&vma, insn) in listing.instructions() {
-        if vma < entry {
-            continue;
-        }
-        if let Some(n) = next {
-            if vma >= n {
-                break;
-            }
-        }
+    for (&vma, insn) in listing.instructions_in_range(entry, next) {
         // (b) Any returning path disqualifies the function from this rule.
         if insn.flow.is_terminal {
             return false;
