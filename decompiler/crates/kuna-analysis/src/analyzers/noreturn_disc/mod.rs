@@ -76,8 +76,8 @@ const EVIDENCE_THRESHOLD: usize = 3;
 
 /// The discovered-no-return consumer pass (the first Listing/xref consumer).
 ///
-/// Default-OFF (gate id `noreturn_disc`); short-circuits to an empty output when
-/// no Listing is built (`ctx.listing.is_none()`).
+/// Option-gated (gate id `noreturn_disc`, default on); short-circuits to an empty
+/// output when no Listing is built (`ctx.listing.is_none()`).
 #[derive(Default)]
 pub struct NoReturnDiscoveredPass;
 
@@ -93,8 +93,7 @@ impl AnalysisPass for NoReturnDiscoveredPass {
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         // Listing-dependent: a no-op when the Listing is absent (the `--option
-        // listing on` flag is off). This keeps the pass inert by default even if
-        // its own gate is flipped on without the Listing.
+        // listing on` flag is off).
         let Some(listing) = ctx.listing else {
             return out;
         };

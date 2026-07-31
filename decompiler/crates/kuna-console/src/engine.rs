@@ -691,9 +691,9 @@ impl ConsoleProgram {
     /// so the Listing — and any pass that reads it (e.g. discovered-no-return) —
     /// is built/run HERE (when the flag is finally in effect), not at load. When
     /// `arch.analysis_listing` is on, the stashed image bytes are re-parsed, the
-    /// Listing is built, and the Listing-consumer passes run; their (per-pass
-    /// gated) facts merge into the same `merged` output committed below. Default
-    /// (listing off) ⇒ this whole block is skipped ⇒ byte-identical to today.
+    /// Listing is built, and the enabled Listing-consumer passes run; their
+    /// defensively re-gated facts merge into the same `merged` output committed
+    /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
             // Drop the deferred-Listing stash too: nothing to commit against, and
