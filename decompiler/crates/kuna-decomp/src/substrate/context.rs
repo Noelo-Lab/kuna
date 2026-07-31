@@ -181,11 +181,87 @@ pub struct GlobalQuery {
     /// Every whole-and-piece mapped storage in the global scope, stably grouped
     /// by address-space index by [`GlobalQuery::new`].
     entries: Vec<GlobalEntry>,
+    /// Per-space offset indexes for mapped-storage containment queries.
+    space_indexes: Vec<GlobalSpaceIndex>,
     /// The global scope's owned data ranges (C++ `Scope::rangetree`), for the
     /// `inScope` discovery branch of `queryProperties`.
     pub owned: kuna_base::address::RangeList,
     /// The boolean-property map (C++ `Database::flagbase`), for `getProperty`.
     pub flagbase: kuna_base::partmap::PartMap<Address, uint4>,
+}
+
+#[derive(Debug, Clone)]
+struct GlobalSpaceIndex {
+    space_index: int4,
+    entry_start: usize,
+    entry_end: usize,
+    interval_order: Vec<usize>,
+    max_last: Vec<u64>,
+    leaf_base: usize,
+}
+
+impl GlobalSpaceIndex {
+    fn new(
+        space_index: int4,
+        entry_start: usize,
+        entry_end: usize,
+        entries: &[GlobalEntry],
+    ) -> Self {
+        let mut interval_order: Vec<usize> = (entry_start..entry_end).collect();
+        interval_order.sort_by_key(|&entry_index| entries[entry_index].first);
+
+        let leaf_base = interval_order.len().next_power_of_two();
+        let mut max_last = vec![0; leaf_base * 2];
+        for (position, &entry_index) in interval_order.iter().enumerate() {
+            max_last[leaf_base + position] = entries[entry_index].last;
+        }
+        for node in (1..leaf_base).rev() {
+            max_last[node] = max_last[node * 2].max(max_last[node * 2 + 1]);
+        }
+
+        Self {
+            space_index,
+            entry_start,
+            entry_end,
+            interval_order,
+            max_last,
+            leaf_base,
+        }
+    }
+
+    fn for_each_candidate(
+        &self,
+        entries: &[GlobalEntry],
+        start: u64,
+        end: u64,
+        visit: &mut impl FnMut(usize),
+    ) {
+        let limit = self
+            .interval_order
+            .partition_point(|&entry_index| entries[entry_index].first <= start);
+        self.visit_candidates(1, 0, self.leaf_base, limit, end, visit);
+    }
+
+    fn visit_candidates(
+        &self,
+        node: usize,
+        node_start: usize,
+        node_end: usize,
+        limit: usize,
+        end: u64,
+        visit: &mut impl FnMut(usize),
+    ) {
+        if node_start >= limit || self.max_last[node] < end {
+            return;
+        }
+        if node_end - node_start == 1 {
+            visit(self.interval_order[node_start]);
+            return;
+        }
+        let midpoint = node_start + (node_end - node_start) / 2;
+        self.visit_candidates(node * 2, node_start, midpoint, limit, end, visit);
+        self.visit_candidates(node * 2 + 1, midpoint, node_end, limit, end, visit);
+    }
 }
 
 impl GlobalQuery {
@@ -197,21 +273,44 @@ impl GlobalQuery {
         flagbase: kuna_base::partmap::PartMap<Address, uint4>,
     ) -> Self {
         entries.sort_by_key(|entry| entry.space_index);
+        let mut space_indexes = Vec::new();
+        let mut entry_start = 0;
+        while entry_start < entries.len() {
+            let space_index = entries[entry_start].space_index;
+            let entry_end = entry_start
+                + entries[entry_start..]
+                    .partition_point(|entry| entry.space_index == space_index);
+            space_indexes.push(GlobalSpaceIndex::new(
+                space_index,
+                entry_start,
+                entry_end,
+                &entries,
+            ));
+            entry_start = entry_end;
+        }
         Self {
             entries,
+            space_indexes,
             owned,
             flagbase,
         }
     }
 
+    fn index_for_space(&self, space_index: int4) -> Option<&GlobalSpaceIndex> {
+        let position = self
+            .space_indexes
+            .partition_point(|index| index.space_index < space_index);
+        self.space_indexes
+            .get(position)
+            .filter(|index| index.space_index == space_index)
+    }
+
     /// Return only entries belonging to one address space.
     fn entries_for_space(&self, space_index: int4) -> &[GlobalEntry] {
-        let first = self
-            .entries
-            .partition_point(|entry| entry.space_index < space_index);
-        let entries = &self.entries[first..];
-        let len = entries.partition_point(|entry| entry.space_index == space_index);
-        &entries[..len]
+        let Some(index) = self.index_for_space(space_index) else {
+            return &[];
+        };
+        &self.entries[index.entry_start..index.entry_end]
     }
 
     /// C++ `Database::getProperty(addr)` (`database.hh:949`): the boolean
@@ -224,44 +323,8 @@ impl GlobalQuery {
     /// global scope: the smallest mapped storage containing `[addr, addr+size-1]`
     /// that is in-use at `usepoint`.  Returns its `getAllFlags()`.
     fn find_container_flags(&self, addr: &Address, size: int4, usepoint: &Address) -> Option<uint4> {
-        let space = addr.get_space()?;
-        let space_index = space.get_index();
-        let start = addr.get_offset();
-        // end = addr + size - 1 (uintb wrap), as in find_container.
-        // cast: int4 -> u64, reproducing the C++ `uintb` widening of the
-        // (non-negative) byte count `size`; sign-extension is irrelevant since a
-        // storage size is never negative.
-        let end = start.wrapping_add(size as u64).wrapping_sub(1);
-        let mut best: Option<&GlobalEntry> = None;
-        let mut oldsize: int4 = -1;
-        for e in self.entries_for_space(space_index) {
-            // Containment: first <= addr (entries are storage at >= first) and
-            // last >= end.  The rangemap subsort walk already filters to
-            // first <= addr; here check both bounds explicitly.
-            if e.first > start || e.last < end {
-                continue;
-            }
-            if e.size < oldsize || oldsize == -1 {
-                // SymbolEntry::inUse(usepoint): addr-tied is valid throughout; an
-                // invalid usepoint never matches a use-limited entry; otherwise
-                // the usepoint must fall in the uselimit ranges.
-                let in_use = if e.addrtied {
-                    true
-                } else if usepoint.is_invalid() {
-                    false
-                } else {
-                    e.uselimit.in_range(usepoint, 1)
-                };
-                if in_use {
-                    best = Some(e);
-                    if e.size == size {
-                        break;
-                    }
-                    oldsize = e.size;
-                }
-            }
-        }
-        best.map(|e| e.all_flags)
+        self.find_container_entry(addr, size, usepoint)
+            .map(|entry| entry.all_flags)
     }
 
     /// C++ `Scope::findContainer` (`database.cc:2278-2310`) restricted to the
@@ -275,37 +338,60 @@ impl GlobalQuery {
         size: int4,
         usepoint: &Address,
     ) -> Option<&GlobalEntry> {
-        let space = addr.get_space()?;
-        let space_index = space.get_index();
+        let space_index = addr.get_space()?.get_index();
+        let index = self.index_for_space(space_index)?;
         let start = addr.get_offset();
         // end = addr + size - 1 (uintb wrap), as in find_container.
         // cast: int4 -> u64, the C++ `uintb` widening of the non-negative byte
         // count; a storage size is never negative so sign-extension is irrelevant.
         let end = start.wrapping_add(size as u64).wrapping_sub(1);
-        let mut best: Option<&GlobalEntry> = None;
-        let mut oldsize: int4 = -1;
-        for e in self.entries_for_space(space_index) {
-            if e.first > start || e.last < end {
-                continue;
+        let mut best: Option<usize> = None;
+        let mut earliest_exact: Option<usize> = None;
+        let mut earliest_smaller: Option<usize> = None;
+        index.for_each_candidate(&self.entries, start, end, &mut |entry_index| {
+            let entry = &self.entries[entry_index];
+            let in_use = if entry.addrtied {
+                true
+            } else if usepoint.is_invalid() {
+                false
+            } else {
+                entry.uselimit.in_range(usepoint, 1)
+            };
+            if !in_use {
+                return;
             }
-            if e.size < oldsize || oldsize == -1 {
-                let in_use = if e.addrtied {
-                    true
-                } else if usepoint.is_invalid() {
-                    false
-                } else {
-                    e.uselimit.in_range(usepoint, 1)
-                };
-                if in_use {
-                    best = Some(e);
-                    if e.size == size {
-                        break;
-                    }
-                    oldsize = e.size;
+
+            if entry.size == size
+                && earliest_exact.is_none_or(|exact_index| entry_index < exact_index)
+            {
+                earliest_exact = Some(entry_index);
+            } else if entry.size < size
+                && earliest_smaller.is_none_or(|smaller_index| entry_index < smaller_index)
+            {
+                earliest_smaller = Some(entry_index);
+            }
+
+            let is_better = match best {
+                Some(best_index) => {
+                    let best_entry = &self.entries[best_index];
+                    entry.size < best_entry.size
+                        || (entry.size == best_entry.size && entry_index < best_index)
                 }
+                None => true,
+            };
+            if is_better {
+                best = Some(entry_index);
             }
-        }
-        best
+        });
+        let selected = match earliest_exact {
+            Some(exact_index)
+                if earliest_smaller.is_none_or(|smaller_index| exact_index < smaller_index) =>
+            {
+                Some(exact_index)
+            }
+            _ => best,
+        };
+        selected.map(|entry_index| &self.entries[entry_index])
     }
 
     /// Resolve the global Symbol covering a Varnode for the naming pass — the C++
