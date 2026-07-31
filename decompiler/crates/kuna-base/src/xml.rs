@@ -1671,8 +1671,10 @@ mod tests {
         // ghangr-condfold-newbury / the guard-cascade shape, goto+label in the
         // off-pass and neither at `wide` (it folds through Rule A), and
         // ghangr-condfold-ruleb / Rule B ISOLATED, a guard whose two
-        // statement-root calls put it outside Rule A's call cap at every level)
-        assert_eq!(count, 167, "corpus file count drifted");
+        // statement-root calls put it outside Rule A's call cap at every level,
+        // and kuna-cnorm-protogap / the DIV-33 brace-placement default flip
+        // (no blank line between a prototype and `{`; braceformat restores)
+        assert_eq!(count, 168, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

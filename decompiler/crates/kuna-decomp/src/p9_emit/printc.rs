@@ -414,7 +414,10 @@ impl PrintCOptions {
     /// Construct with the `resetDefaultsPrintC` defaults (printc.cc:1649-1664).
     ///
     /// Note the kuna DIV-2 default-on `array_notation = true` (printc.cc:1658),
-    /// the `&base[index]` form for a standalone PTRADD (GH-558).
+    /// the `&base[index]` form for a standalone PTRADD (GH-558), and the kuna
+    /// DIV-33 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
+    /// line between the prototype and `{`; `option braceformat function skip`
+    /// restores it).
     pub fn new() -> PrintCOptions {
         PrintCOptions {
             convention: true,
@@ -424,7 +427,7 @@ impl PrintCOptions {
             null: false,
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
-            brace_func: BraceStyle::SkipLine,   // Emit::skip_line
+            brace_func: BraceStyle::NextLine,   // (kuna) DIV-33; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
             brace_switch: BraceStyle::SameLine, // Emit::same_line
