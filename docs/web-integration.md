@@ -19,8 +19,9 @@ The engine touches the outside world through an unusually thin surface:
 - the only subprocess calls are in the *CLI* layer (`kuna` spawning `decomp_dbg`) or are
   **test-only** (the hermetic `go build` in `kuna-analysis`'s no-return test) — none in
   the engine;
-- engine wall-clock (`Instant::now()`) is reached *only* when the per-function watchdog
-  budget is armed, which no in-process caller here does;
+- engine wall-clock (`Instant::now()`) is reached only when a per-function
+  watchdog is armed; fast whole-binary `decompile`/`project` commands arm the
+  shared 10-second budget and the browser WASI clock supplies it;
 - everything the decompiler loads — the target binary (via `LoadImage`) and the SLEIGH
   `.sla`/`.pspec`/`.cspec`/`.ldefs` (via `scan_language_database`) — arrives through plain
   `std::fs` **path reads**.
@@ -274,11 +275,14 @@ benign PE is committed because this environment has no PE linker.
 
 ## 7. Limitations & future work
 
-- The WASM project surface does not yet arm the native CLI's per-function
-  watchdog. Discovery correctness is shared, but a multi-thousand-function
-  browser export can still be delayed indefinitely by a pathological function
-  and can exceed a browser tab's memory budget; watchdog and worker/sharding
-  work are separate from DIV-41.
+- Fast WASM whole-binary decompile/project arms the same cooperative 10-second
+  per-function budget as the native fast batch policy. It isolates probed
+  decompile-pipeline stalls as function errors, but it is not a hard timer over
+  discovery, rendering, artifact construction, total wall time, or memory. The
+  current browser harness still runs WASM and ZIP/JSON work on the main thread,
+  so a multi-thousand-function export can freeze the page or exceed a tab's
+  memory budget; worker execution, hard cancellation, and lazy/sharded output
+  remain separate work.
 
 - **Supports whatever the CLI supports** — every format (ELF/PE/Mach-O/COFF) and every
   architecture kuna ships a `.sla` for, resolved by the engine with no per-format JS (§3).

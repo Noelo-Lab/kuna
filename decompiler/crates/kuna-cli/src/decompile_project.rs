@@ -105,6 +105,8 @@ fn usage() {
          \x20 <name>.asm  labeled disassembly (function labels, stack-var comments,\n\
          \x20             dat_<hex> data labels with raw bytes)\n\
          \x20 README.md   binary metadata (size, arch, entry, sections, counts)\n\
+         Unfiltered fast exports default to 10 seconds per function; other runs\n\
+         default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
          Individual function failures are recorded in the artifacts; the run still\n\
          exits 0 (load errors / an empty target set / I/O errors exit nonzero)."
     );
@@ -129,9 +131,9 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<(), String> {
     };
 
     let mut prog = load_program(args, /* default_listing= */ true)?;
-    // Per-function watchdog — same driver policy as `decompile-all` (default
-    // 120 s, 0 disables): a non-converging function becomes its own error
-    // record in the artifacts instead of hanging the export.
+    // Per-function watchdog — same driver policy as `decompile-all` (10 s for
+    // an unfiltered fast export, 120 s otherwise, 0 disables): a non-converging
+    // function becomes its own error record instead of hanging the export.
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));

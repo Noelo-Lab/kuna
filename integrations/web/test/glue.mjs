@@ -80,7 +80,7 @@ try {
   console.log(`\x1b[32mOK\x1b[0m   Mach-O x86-64  (${mres.count} funcs; engine resolved a non-ELF format)`);
 
   // 4. Whole-binary project export through the same handle (the zip's payload).
-  const proj = await kuna.project(elf, 'sample.elf');
+  const proj = await kuna.project(elf, 'sample.elf', { mode: 'fast' });
   const wantFiles = ['README.md', 'sample.elf.asm', 'sample.elf.c', 'sample.elf.h'];
   const gotFiles = Object.keys(proj.files || {}).sort();
   if (gotFiles.join(',') !== wantFiles.join(','))

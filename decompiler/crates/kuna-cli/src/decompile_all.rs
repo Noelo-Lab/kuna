@@ -44,7 +44,9 @@ use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, FunctionEntry};
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
-use kuna_console::project::{decompile_targets, render_c, FuncResult};
+use kuna_console::project::{
+    decompile_targets, default_fn_budget_seconds, render_c, FuncResult,
+};
 use object::Object; // `File::architecture()` (ARM-discovery default, decbench)
 use kuna_decomp::decompile_drive::VarInfo;
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
@@ -69,7 +71,8 @@ pub(crate) struct Args {
     /// decompile watchdog budget in seconds; `0` disables.  A function that
     /// exceeds it is recorded as that function's `error` (the batch continues)
     /// instead of hanging the whole run — the defensive cap for the known
-    /// stripped-ELF non-convergence hang (`tests/hang-repro/`).  Default 120.
+    /// stripped-ELF non-convergence hang (`tests/hang-repro/`). Defaults to 10
+    /// for an unfiltered fast whole-binary run and 120 otherwise.
     pub(crate) max_fn_seconds: u64,
     pub(crate) options: Vec<(String, String)>,
     pub(crate) slice: Option<String>,
@@ -164,11 +167,11 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
     let mut prog = load_program(args, /* default_listing= */ true)?;
     let targets = resolve_targets(&prog, args)?;
 
-    // Per-function watchdog (`--max-fn-seconds`, default 120, 0 disables):
-    // driver policy, not a stage-model option — the decompile drive arms a
-    // cooperative deadline from this budget for EACH function, so one
-    // pathological non-converging function becomes a per-function `error`
-    // record instead of hanging the whole batch (see `tests/hang-repro/`).
+    // Per-function watchdog (`--max-fn-seconds`, default 10 for an unfiltered
+    // fast batch and 120 otherwise, 0 disables): driver policy, not a
+    // stage-model option — the decompile drive arms a cooperative deadline
+    // from this budget for EACH function, so one pathological function becomes
+    // a per-function `error` record instead of hanging the whole batch.
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
@@ -581,6 +584,7 @@ pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> 
 
 /// Resolve an omitted or explicit `auto` mode from `binary_size`; explicit
 /// concrete modes ignore the size.
+#[cfg(test)]
 fn mode_override_pairs_for_size(
     mode: Option<&str>,
     binary_size: u64,
@@ -601,17 +605,39 @@ pub(crate) fn mode_options_for_binary(
     binary: &str,
     explicit: Vec<(String, String)>,
 ) -> Result<Vec<(String, String)>, String> {
+    Ok(mode_and_options_for_binary(mode, binary, explicit)?.1)
+}
+
+fn mode_and_options_for_binary(
+    mode: Option<&str>,
+    binary: &str,
+    explicit: Vec<(String, String)>,
+) -> Result<(&'static str, Vec<(String, String)>), String> {
+    let concrete = concrete_mode_for_binary(mode, binary)?;
+    let mut merged = mode_override_pairs(concrete)?;
+    merged.extend(explicit);
+    Ok((concrete, merged))
+}
+
+fn concrete_mode_for_binary(
+    mode: Option<&str>,
+    binary: &str,
+) -> Result<&'static str, String> {
     let requested = mode.unwrap_or("auto");
-    let mut merged = if kuna_decomp::modes::mode_is_automatic(requested) {
+    if kuna_decomp::modes::mode_is_automatic(requested) {
         let size = std::fs::metadata(binary)
             .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
             .len();
-        mode_override_pairs_for_size(Some(requested), size)?
+        kuna_decomp::modes::resolve_mode_for_size(Some(requested), size).ok_or_else(|| {
+            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
+            format!("unknown mode {requested:?} (known: {})", known.join(", "))
+        })
     } else {
-        mode_override_pairs(requested)?
-    };
-    merged.extend(explicit);
-    Ok(merged)
+        kuna_decomp::modes::resolve_mode_for_size(Some(requested), 0).ok_or_else(|| {
+            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
+            format!("unknown mode {requested:?} (known: {})", known.join(", "))
+        })
+    }
 }
 
 pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
@@ -620,7 +646,7 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let mut names: Option<Vec<String>> = None;
     let mut addrs: Vec<u64> = Vec::new();
     let mut no_vars = false;
-    let mut max_fn_seconds: u64 = 120;
+    let mut max_fn_seconds: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
@@ -643,10 +669,11 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
             }
             "--max-fn-seconds" if cmd == "decompile-all" || cmd == "decompile-project" => {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
-                max_fn_seconds = v
-                    .trim()
-                    .parse::<u64>()
-                    .map_err(|_| format!("invalid --max-fn-seconds value {v:?}"))?;
+                max_fn_seconds = Some(
+                    v.trim()
+                        .parse::<u64>()
+                        .map_err(|_| format!("invalid --max-fn-seconds value {v:?}"))?,
+                );
             }
             "--option" => {
                 if i + 2 >= argv.len() {
@@ -688,10 +715,17 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     // auto-inject skips, `apply_runtime_options`) reads `args.options`, so this
     // is the single wire point for decompile-all, decompile-project, and
     // functions.
-    options = mode_options_for_binary(mode.as_deref(), &binary, options)?;
+    let (concrete_mode, merged) =
+        mode_and_options_for_binary(mode.as_deref(), &binary, options)?;
+    options = merged;
     if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
+    let whole_binary = (cmd == "decompile-all" || cmd == "decompile-project")
+        && names.is_none()
+        && addrs.is_empty();
+    let max_fn_seconds = max_fn_seconds
+        .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
 
     Ok(Args { binary, json, names, addrs, no_vars, max_fn_seconds, options, slice, target, sleighpath })
 }
@@ -720,9 +754,9 @@ fn usage_decompile_all() {
          Decompile every CODE-backed function in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
          without it, concatenated C with `// Function:` headers.\n\
-         --max-fn-seconds N caps ONE function's decompile at N seconds (default 120,\n\
-         0 disables); a function over budget becomes its own `error` record and the\n\
-         batch continues (the stripped-ELF hang watchdog, see tests/hang-repro/).\n\
+         --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
+         for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
+         budget becomes its own `error` record and the batch continues.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
          2 MiB, and fast at 2 MiB or larger. Explicit --option values win."
     );
@@ -799,6 +833,97 @@ mod mode_tests {
                 .collect();
             assert_eq!(listing, vec!["off", "on"], "{cmd} precedence");
         }
+        std::fs::remove_file(path).expect("remove auto-mode fixture");
+    }
+
+    #[test]
+    fn unfiltered_fast_batches_default_to_ten_seconds_per_function() {
+        let path = sparse_binary(kuna_decomp::modes::AUTO_FAST_MIN_BYTES);
+        let binary = path.to_string_lossy().into_owned();
+        for cmd in ["decompile-all", "decompile-project"] {
+            let args = parse_args(std::slice::from_ref(&binary), cmd).unwrap();
+            assert_eq!(
+                args.max_fn_seconds,
+                kuna_console::project::FAST_WHOLE_BINARY_FN_BUDGET_SECONDS,
+                "{cmd}"
+            );
+
+            let selected = parse_args(
+                &[
+                    binary.clone(),
+                    "--addr".into(),
+                    "0x1234".into(),
+                    "--mode".into(),
+                    "fast".into(),
+                ],
+                cmd,
+            )
+            .unwrap();
+            assert_eq!(
+                selected.max_fn_seconds,
+                kuna_console::project::DEFAULT_FN_BUDGET_SECONDS,
+                "{cmd} selected"
+            );
+            let named = parse_args(
+                &[
+                    binary.clone(),
+                    "--functions".into(),
+                    "sub_1234".into(),
+                    "--mode".into(),
+                    "fast".into(),
+                ],
+                cmd,
+            )
+            .unwrap();
+            assert_eq!(
+                named.max_fn_seconds,
+                kuna_console::project::DEFAULT_FN_BUDGET_SECONDS,
+                "{cmd} named"
+            );
+
+            let disabled = parse_args(
+                &[
+                    binary.clone(),
+                    "--mode".into(),
+                    "fast".into(),
+                    "--max-fn-seconds".into(),
+                    "0".into(),
+                ],
+                cmd,
+            )
+            .unwrap();
+            assert_eq!(disabled.max_fn_seconds, 0, "{cmd} explicit override");
+            let explicit = parse_args(
+                &[
+                    binary.clone(),
+                    "--mode".into(),
+                    "fast".into(),
+                    "--max-fn-seconds".into(),
+                    "17".into(),
+                ],
+                cmd,
+            )
+            .unwrap();
+            assert_eq!(explicit.max_fn_seconds, 17, "{cmd} explicit budget");
+        }
+
+        for mode in ["reliable", "aggressive"] {
+            let args = parse_args(
+                &[binary.clone(), "--mode".into(), mode.into()],
+                "decompile-all",
+            )
+            .unwrap();
+            assert_eq!(
+                args.max_fn_seconds,
+                kuna_console::project::DEFAULT_FN_BUDGET_SECONDS,
+                "{mode}"
+            );
+        }
+        let functions = parse_args(&[binary], "functions").unwrap();
+        assert_eq!(
+            functions.max_fn_seconds,
+            kuna_console::project::DEFAULT_FN_BUDGET_SECONDS
+        );
         std::fs::remove_file(path).expect("remove auto-mode fixture");
     }
 
