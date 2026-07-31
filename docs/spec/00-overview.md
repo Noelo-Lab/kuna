@@ -319,7 +319,9 @@ and an agent writes:
   catalog or its count/tier gates). Three concrete presets ship:
   **`reliable`** (the shipped defaults, an empty-override alias),
   **`aggressive`** (every off-by-default recovery/analysis pass on, except
-  `v850indirectbranch` which would mis-decode register-indirect calls off-V850),
+  `v850indirectbranch`, which would mis-decode register-indirect calls off-V850,
+  and `dwarf_lines`, which annotates rather than recovers and would bury a `-g`
+  binary's body in `/* src.c:NNN */` comments),
   and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
   program-wide decode and speculative discovery). A fourth frontend policy,
   **`auto`**, resolves from the raw input length before the Architecture is
