@@ -106,13 +106,13 @@ writeup, not here.
 | `ghdec-whiledo-complex.xml` | decbench `O0-iproute2-ip-lookup_flag_data_by_name` (invalid C: statement inside `while(...)` parens) | S8 structure recovery (whileDo overflow-syntax decision; `FlowBlock::isComplex` virtual-dispatch parity, porting-divergence correctness fix, no option) | default (upstream `isComplex`: BlockList/BlockIf unconditionally complex) |
 
 C-surface normalization testcases (`kuna-cnorm-*.xml`, no GH issue; user-driven
-readability defaults measured on the angr `fmt` corpus binary, DIV-33+ in
+readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 `docs/history.md`):
 
 | File | Normalization | P0 assertion |
 |---|---|---|
-| `kuna-cnorm-protogap.xml` | no blank line between a function prototype and its `{` (DIV-33) | `option braceformat function skip\|next` (upstream option, kuna default flip) |
-| `kuna-cnorm-nullprint.xml` | zero pointer constants render as `NULL`, not `(type *)0x0` (DIV-34) | `option nullprinting on\|off` (upstream option, kuna default flip) |
+| `kuna-cnorm-protogap.xml` | no blank line between a function prototype and its `{` (DIV-34) | `option braceformat function skip\|next` (upstream option, kuna default flip) |
+| `kuna-cnorm-nullprint.xml` | zero pointer constants render as `NULL`, not `(type *)0x0` (DIV-35) | `option nullprinting on\|off` (upstream option, kuna default flip) |
 
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`

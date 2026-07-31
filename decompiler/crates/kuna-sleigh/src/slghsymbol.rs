@@ -78,7 +78,9 @@
 //! output goes to a `String` with names converted lossily (`.sla`
 //! identifiers are ASCII).
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -320,8 +322,8 @@ pub enum SymbolType {
 
 /// Lossy text rendering of a byte-string symbol name for error messages and
 /// printed output (`.sla` identifiers are ASCII in practice).
-fn name_text(name: &[u8]) -> String {
-    String::from_utf8_lossy(name).into_owned()
+fn name_text(name: &[u8]) -> Cow<'_, str> {
+    String::from_utf8_lossy(name)
 }
 
 /// (WS4b renumber) remap the `OperandValue` subtable-id inside a `PatternValue`,
@@ -337,12 +339,12 @@ fn remap_patval_table(pv: Option<&mut PatternValue>, map: &impl Fn(u32) -> u32) 
 /// by the `print` methods (ValueSymbol, ValueMapSymbol, OperandSymbol).
 fn push_hex_intb(s: &mut String, val: i64) {
     if val >= 0 {
-        s.push_str(&format!("0x{val:x}"));
+        write!(s, "0x{val:x}").expect("writing to a String cannot fail");
     } else {
         // C++ `-val`: UB on i64::MIN there, wrapping here; ostream then
         // prints the (possibly still negative) intb as its unsigned
         // representation, which is what {:x} on i64 produces.
-        s.push_str(&format!("-0x{:x}", val.wrapping_neg()));
+        write!(s, "-0x{:x}", val.wrapping_neg()).expect("writing to a String cannot fail");
     }
 }
 
@@ -350,7 +352,7 @@ fn push_hex_intb(s: &mut String, val: i64) {
 /// symbols (Start/End/Next2/FlowDest/FlowRef): ostream prints the signed
 /// value as its unsigned 64-bit representation, i.e. the raw offset.
 fn push_hex_offset(s: &mut String, offset: u64) {
-    s.push_str(&format!("0x{offset:x}"));
+    write!(s, "0x{offset:x}").expect("writing to a String cannot fail");
 }
 
 /// C++ `(PatternValue *)PatternExpression::decodeExpression(decoder,trans)`:
@@ -3321,7 +3323,7 @@ impl SleighSymbol {
             }
             SymbolKind::Varnode(_) => {
                 // C++ `s << getName()`
-                s.push_str(&name_text(&self.name));
+                s.push_str(name_text(&self.name).as_ref());
                 Ok(())
             }
             SymbolKind::Context(v) => {
@@ -3344,7 +3346,7 @@ impl SleighSymbol {
                 let vnid = v.varnode_table[ind as usize].ok_or_else(|| {
                     KunaError::sleigh("null varnode list entry (C++ dereferences unchecked)")
                 })?;
-                s.push_str(&name_text(table.symbol(vnid)?.get_name()));
+                s.push_str(name_text(table.symbol(vnid)?.get_name()).as_ref());
                 Ok(())
             }
             SymbolKind::Operand(op) => op.print(s, walker, table),
@@ -5946,6 +5948,22 @@ mod tests {
     }
 
     #[test]
+    fn print_helpers_append_exact_hex_and_lossy_text() {
+        assert!(matches!(name_text(b"eax"), Cow::Borrowed("eax")));
+        assert_eq!(name_text(b"r\xff\xc3\xa9"), "r\u{fffd}\u{e9}");
+
+        let mut s = String::from("values ");
+        push_hex_intb(&mut s, 0);
+        s.push(' ');
+        push_hex_intb(&mut s, -1);
+        s.push(' ');
+        push_hex_intb(&mut s, i64::MIN);
+        s.push(' ');
+        push_hex_offset(&mut s, u64::MAX);
+        assert_eq!(s, "values 0x0 -0x1 -0x8000000000000000 0xffffffffffffffff");
+    }
+
+    #[test]
     fn operand_print_recurses_through_subtable_and_varnode() {
         let manager = test_manager();
         let mut table = SymbolTable::new();
@@ -6389,8 +6407,6 @@ mod tests {
         }
     }
 }
-
-
 
 
 

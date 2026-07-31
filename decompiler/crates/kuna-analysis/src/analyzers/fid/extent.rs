@@ -12,7 +12,7 @@
 //! `DiscoveredFunction` model is keyed by entry VMA; there is no per-function
 //! body address set). So this generator reconstructs the body as the
 //! **address-contiguous clip** `[entry, next_function_after(entry))` over the
-//! flat, address-ordered `instructions()` map — the exact idiom
+//! flat, address-ordered instruction map — the exact idiom
 //! [`crate::noreturn_disc`] already uses for its call-site / fall-through
 //! reasoning.
 //!
@@ -38,8 +38,7 @@ use crate::listing::{Insn, Listing};
 /// instructions in `[entry, next_function_after(entry))`, in ascending address
 /// order.
 ///
-/// The flat `instructions()` map is already address-ordered (a `BTreeMap`), so we
-/// scan it once. Returns the instructions in body order — the input to
+/// Returns the instructions in body order — the input to
 /// [`crate::fid::hash::FidHasher`] (PR4 turns each `&Insn` + its SLEIGH mask
 /// into an [`crate::fid::hash::InsnFingerprint`]).
 ///
@@ -51,7 +50,7 @@ pub fn calculate_extent<'a>(listing: &'a Listing, entry: u64) -> Vec<&'a Insn> {
     // (`mod.rs::next_function_after`). `None` ⇒ the clip runs to the end of the
     // instruction map.
     let next = listing.next_function_after(entry).map(|f| f.entry);
-    clip_extent(listing.instructions(), entry, next)
+    clip_extent(listing.instructions_in_range(entry, next), entry, next)
 }
 
 /// The pure clip: given the address-ordered `(vma, insn)` stream, keep the
@@ -59,7 +58,7 @@ pub fn calculate_extent<'a>(listing: &'a Listing, entry: u64) -> Vec<&'a Insn> {
 ///
 /// Split out from [`calculate_extent`] so the clip rule is unit-testable without
 /// constructing a full [`Listing`] (which needs an `object::File` + the SLEIGH
-/// decoder). The production path feeds it `listing.instructions()`.
+/// decoder). The production path supplies the Listing's range-bounded iterator.
 fn clip_extent<'a, I>(instructions: I, entry: u64, next: Option<u64>) -> Vec<&'a Insn>
 where
     I: IntoIterator<Item = (&'a u64, &'a Insn)>,

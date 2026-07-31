@@ -1,6 +1,6 @@
 //! Aggressive Instruction Finder gap-walk — the kuna analog of Ghidra's
-//! `AggressiveInstructionFinderAnalyzer` ("Aggressive Instruction Finder"), the
-//! third Listing/xref consumer.
+//! `AggressiveInstructionFinderAnalyzer` ("Aggressive Instruction Finder"), a
+//! Listing/xref consumer.
 //!
 //! # What this is (the speculative gap-filler)
 //!
@@ -66,10 +66,10 @@
 //! the live SLEIGH decoder (the upstream constructs its own `PseudoDisassembler`).
 //! The decoder is not in `AnalysisCtx`, so AIF is driven by [`run_aif`], invoked
 //! from `passes::run_listing_consumers` with the same `translate`/`code_space` the
-//! Listing build held. It is still gated end-to-end by its own `aif`
-//! `--option` (and the `listing` flag), exactly like the other consumers
-//! (`engine.rs::analysis_pass_enabled`), and its output is the same additive
-//! `entries` fact stream.
+//! Listing build held. It is gated before invocation by its own `aif` `--option`
+//! (and the `listing` flag), exactly like the other consumers; the downstream
+//! `engine.rs::analysis_pass_enabled` check remains as a defensive commit gate.
+//! Its output is the same additive `entries` fact stream.
 //!
 //! # Faithful scope / LOSS
 //!
@@ -130,9 +130,9 @@ const MIN_SUBROUTINE_INSNS: usize = 3;
 /// walk so a pathological gap cannot loop unbounded.
 const MAX_FOLLOW_INSNS: usize = 4000;
 
-/// The Aggressive Instruction Finder gap-walk consumer pass (the third Listing/xref
-/// consumer) — used only for the `AnalysisPass` IDENTITY (the `aif` gate name + the
-/// `S1` stage). The real work is in [`run_aif`] (it needs the live decoder, not just
+/// The Aggressive Instruction Finder gap-walk consumer pass — used only for the
+/// `AnalysisPass` IDENTITY (the `aif` gate name + the `S1` stage). The real work is
+/// in [`run_aif`] (it needs the live decoder, not just
 /// `ctx.listing` — see the module docs). The pass's [`AnalysisPass::run`] is a
 /// deliberate no-op: it carries no decoder, so it cannot probe gaps; registering it
 /// only fixes the gate name/stage for the option machinery.

@@ -16,8 +16,10 @@
 //! panicked, producing zero output.
 //!
 //! This test lifts exactly that instruction against the built `ARM8_le.sla`
-//! (`ARM:LE:32:v8`) in Thumb mode and asserts it decodes cleanly (no panic,
-//! 4-byte instruction).  It is skipped when the `.sla` is absent (`make specs`).
+//! (`ARM:LE:32:v8`) in Thumb mode, decodes two shallow instructions, and
+//! repeats the deep assembly and lift. The repeated results gate complete
+//! resets when the expanded parser arena is reused. It is skipped when the
+//! `.sla` is absent (`make specs`).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -29,7 +31,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::globalcontext::ContextInternal;
 use kuna_sleigh::loadimage::LoadImage;
 use kuna_sleigh::sleigh::Sleigh;
-use kuna_sleigh::translate::{PcodeEmit, Translate};
+use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit, Translate};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -63,19 +65,29 @@ impl LoadImage for MemImg {
     fn adjust_vma(&mut self, _adjust: i64) {}
 }
 
-/// A p-code sink that only needs to prove the lift ran (counts emitted ops).
-struct CountEmit {
-    ops: usize,
+/// A p-code sink that records the lifted operation sequence.
+struct OpcodeEmit {
+    ops: Vec<OpCode>,
 }
-impl PcodeEmit for CountEmit {
+impl PcodeEmit for OpcodeEmit {
     fn dump(
         &mut self,
         _addr: &Address,
-        _opc: OpCode,
+        opc: OpCode,
         _outvar: Option<&VarnodeData>,
         _vars: &[VarnodeData],
     ) {
-        self.ops += 1;
+        self.ops.push(opc);
+    }
+}
+
+#[derive(Default)]
+struct TextEmit {
+    text: Option<(String, String)>,
+}
+impl AssemblyEmit for TextEmit {
+    fn dump(&mut self, _addr: &Address, mnemonic: &str, body: &str) {
+        self.text = Some((mnemonic.to_string(), body.to_string()));
     }
 }
 
@@ -124,12 +136,34 @@ fn arm_thumb_vldmia_upper_neon_regs_does_not_panic() {
     );
     let addr = Address::new(ram, base);
 
-    let mut emit = CountEmit { ops: 0 };
+    let mut text = TextEmit::default();
+    assert_eq!(sleigh.print_assembly(&mut text, &addr).unwrap(), 4);
+    let first_text = text.text.take().expect("assembly emitted");
+
+    let mut emit = OpcodeEmit { ops: Vec::new() };
     // Before the fix this panicked in ParserWalker::getOperand (depth == -1)
     // while resolving the operand tree after expandState front-inserted nodes.
     let len = sleigh
         .one_instruction(&mut emit, &addr)
         .expect("vldmia {d16-d31} must lift without error");
     assert_eq!(len, 4, "Thumb-2 vldmia is a 4-byte instruction (got len {len})");
-    assert!(emit.ops > 0, "the lift must emit at least one p-code op");
+    assert!(!emit.ops.is_empty(), "the lift must emit at least one p-code op");
+    let first_ops = emit.ops;
+
+    for (offset, expected_len) in [(4, 2), (6, 2)] {
+        let mut shallow = OpcodeEmit { ops: Vec::new() };
+        let shallow_addr = Address::new(Rc::clone(addr.get_space().unwrap()), base + offset);
+        assert_eq!(
+            sleigh.one_instruction(&mut shallow, &shallow_addr).unwrap(),
+            expected_len
+        );
+    }
+
+    let mut second_text = TextEmit::default();
+    assert_eq!(sleigh.print_assembly(&mut second_text, &addr).unwrap(), 4);
+    assert_eq!(second_text.text.as_ref(), Some(&first_text));
+
+    let mut second = OpcodeEmit { ops: Vec::new() };
+    assert_eq!(sleigh.one_instruction(&mut second, &addr).unwrap(), 4);
+    assert_eq!(second.ops, first_ops);
 }

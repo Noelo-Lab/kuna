@@ -51,7 +51,7 @@ use kuna_decomp::xml_arch::XmlArchitectureCapability;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
-use kuna_sleigh::loadimage::{LoadImage, LoadImageFunc, LoadImageSection};
+use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
@@ -84,28 +84,11 @@ pub struct FunctionEntry {
     pub aliases: Vec<String>,
 }
 
-/// (kuna) A one-shot [`AssemblyEmit`](kuna_sleigh::translate::AssemblyEmit)
-/// sink: `Translate::print_assembly` dumps exactly one instruction, whose
-/// mnemonic/body strings are captured here (the single-instruction form of the
-/// `IfcPrintdisasm` listing emitter in `ifacedecomp.rs`).
-#[derive(Default)]
-struct OneShotAssemblyEmit {
-    mnem: String,
-    body: String,
-}
-
-impl kuna_sleigh::translate::AssemblyEmit for OneShotAssemblyEmit {
-    fn dump(&mut self, _addr: &Address, mnem: &str, body: &str) {
-        self.mnem = mnem.to_string();
-        self.body = body.to_string();
-    }
-}
-
 /// (kuna) A one-shot [`PcodeEmit`](kuna_sleigh::translate::PcodeEmit) sink:
 /// `Translate::one_instruction` dumps exactly one instruction's p-code, each
 /// op captured here as opcode + first input (the single-instruction pcode
-/// analogue of [`OneShotAssemblyEmit`], mirroring `kuna_analysis`'s
-/// `listing/decode.rs::OpCapture` — `in0` is all
+/// analogue of [`ConsoleProgram::disassemble_at_into`], mirroring
+/// `kuna_analysis`'s `listing/decode.rs::OpCapture` — `in0` is all
 /// [`ConsoleProgram::lone_jump_target`]'s shape tests need).
 #[derive(Default)]
 struct OneShotPcodeEmit {
@@ -239,8 +222,7 @@ impl ConsoleProgram {
     }
 
     /// (kuna) Iterate every function symbol kuna knows for the loaded program as
-    /// `(name, entry Address)` — the enumeration a whole-binary driver
-    /// (`kuna decompile-all`) loops over.
+    /// `(name, entry Address)` — the full callable-symbol inventory.
     ///
     /// After [`Self::commit_pending_analysis`] (`read symbols`) this covers both
     /// the loader's function symbols (`.symtab`/`.dynsym`/PLT stubs, read at load
@@ -319,6 +301,28 @@ impl ConsoleProgram {
                 });
                 let name = names.remove(0);
                 FunctionEntry { name, addr, aliases: names }
+            })
+            .collect()
+    }
+
+    /// The canonical entries eligible for automatic whole-binary decompilation.
+    ///
+    /// Import pointer slots remain in the canonical inventory for call naming
+    /// and explicit address selection, but data addresses are not function bodies.
+    /// Loaders without section metadata retain the complete inventory.
+    pub fn function_entries_executable(&self) -> Vec<FunctionEntry> {
+        let sections = self.sections();
+        if sections.is_empty() {
+            return self.function_entries_canonical();
+        }
+
+        self.function_entries_canonical()
+            .into_iter()
+            .filter(|entry| {
+                let vma = entry.addr.get_offset();
+                sections.iter().any(|&(start, size, flags)| {
+                    flags & section_flags::CODE != 0 && vma >= start && vma - start < size
+                })
             })
             .collect()
     }
@@ -415,12 +419,31 @@ impl ConsoleProgram {
     /// of the `disassemble` console command (`IfcPrintdisasm`), for a caller
     /// that walks a range itself (advance by `length` per step).
     ///
-    /// Builds the `Address` in the engine's default code space (the
-    /// `function_named_at` idiom) and drives `Translate::print_assembly`
-    /// through a one-shot [`AssemblyEmit`](kuna_sleigh::translate::AssemblyEmit)
-    /// sink. An undecodable/unmapped address surfaces as the translator's
-    /// `Err` (C++ `BadDataError`/`DataUnavailError`).
+    /// This allocating convenience API is retained for callers decoding an
+    /// occasional instruction. Whole-image walks should use
+    /// [`Self::disassemble_at_into`] so the mnemonic and body allocations are
+    /// retained between instructions.
     pub fn disassemble_at(&self, vma: u64) -> KunaResult<(int4, String, String)> {
+        let mut mnem = String::new();
+        let mut body = String::new();
+        let length = self.disassemble_at_into(vma, &mut mnem, &mut body)?;
+        Ok((length, mnem, body))
+    }
+
+    /// (kuna) Disassemble one instruction into caller-owned mnemonic and body
+    /// buffers, retaining their allocations across calls.
+    ///
+    /// Both buffers are cleared before every decode, including failed decodes.
+    /// An undecodable or unmapped address surfaces as the translator's `Err`
+    /// (C++ `BadDataError`/`DataUnavailError`).
+    pub fn disassemble_at_into(
+        &self,
+        vma: u64,
+        mnem: &mut String,
+        body: &mut String,
+    ) -> KunaResult<int4> {
+        mnem.clear();
+        body.clear();
         let code_space = Rc::clone(
             self.arch()
                 .manage()
@@ -428,9 +451,7 @@ impl ConsoleProgram {
                 .ok_or_else(|| KunaError::lowlevel("no default code space"))?,
         );
         let addr = Address::new(code_space, vma);
-        let mut emit = OneShotAssemblyEmit::default();
-        let length = self.arch().translate().print_assembly(&mut emit, &addr)?;
-        Ok((length, emit.mnem, emit.body))
+        self.arch().translate().print_assembly_into(&addr, mnem, body)
     }
 
     /// (kuna) The `kuna_wasm` per-function `kind` classification probe: lift
@@ -500,20 +521,36 @@ impl ConsoleProgram {
         }
     }
 
-    /// (kuna) Read `size` raw image bytes at code-space VMA `vma` through the
-    /// engine's load image (`LoadImage::load`, the `loader_rc()` handle) —
-    /// `None` when the range is not backed by the image (e.g. `.bss`, an
-    /// unmapped address, or a `size` beyond the C++ `int4` read contract).
+    /// This allocating convenience API is retained for occasional reads.
+    /// Whole-image walks should use [`Self::read_bytes_into`] so the byte-buffer
+    /// allocation is retained between reads.
     pub fn read_bytes(&self, vma: u64, size: usize) -> Option<Vec<u8>> {
+        let mut bytes = Vec::new();
+        self.read_bytes_into(vma, size, &mut bytes).then_some(bytes)
+    }
+
+    /// (kuna) Read `size` raw image bytes at code-space VMA `vma` into a
+    /// caller-owned buffer, retaining its allocation across calls.
+    ///
+    /// Returns `false` and leaves `bytes` empty when the range is not backed by
+    /// the image (e.g. `.bss`, an unmapped address, or a `size` beyond the C++
+    /// `int4` read contract).
+    pub fn read_bytes_into(&self, vma: u64, size: usize, bytes: &mut Vec<u8>) -> bool {
+        bytes.clear();
         if size > i32::MAX as usize {
-            return None; // LoadImage::load reads at most int4 bytes (C++ contract).
+            return false;
         }
-        let code_space = Rc::clone(self.arch().manage().get_default_code_space()?);
+        let Some(code_space) = self.arch().manage().get_default_code_space().cloned() else {
+            return false;
+        };
         let addr = Address::new(code_space, vma);
+        bytes.resize(size, 0);
         let loader_rc = self.arch().translate().loader_rc();
-        // `load` is `&mut self` (it seeks/caches); the RefCell covers it.
-        let bytes = loader_rc.borrow_mut().load(size as i32, &addr);
-        bytes.ok()
+        let loaded = loader_rc.borrow_mut().load_fill(bytes, &addr).is_ok();
+        if !loaded {
+            bytes.clear();
+        }
+        loaded
     }
 
     /// (kuna) Every **named global data symbol** mapped into the engine's
@@ -691,9 +728,9 @@ impl ConsoleProgram {
     /// so the Listing — and any pass that reads it (e.g. discovered-no-return) —
     /// is built/run HERE (when the flag is finally in effect), not at load. When
     /// `arch.analysis_listing` is on, the stashed image bytes are re-parsed, the
-    /// Listing is built, and the Listing-consumer passes run; their (per-pass
-    /// gated) facts merge into the same `merged` output committed below. Default
-    /// (listing off) ⇒ this whole block is skipped ⇒ byte-identical to today.
+    /// Listing is built, and the enabled Listing-consumer passes run; their
+    /// defensively re-gated facts merge into the same `merged` output committed
+    /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         if self.pending_analysis.is_empty() && self.loader_data_objects.is_empty() {
             // Drop the deferred-Listing stash too: nothing to commit against, and

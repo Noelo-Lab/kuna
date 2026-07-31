@@ -415,9 +415,9 @@ impl PrintCOptions {
     ///
     /// Note the kuna DIV-2 default-on `array_notation = true` (printc.cc:1658),
     /// the `&base[index]` form for a standalone PTRADD (GH-558), the kuna
-    /// DIV-33 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
+    /// DIV-34 `brace_func = NextLine` (upstream `Emit::skip_line` leaves a blank
     /// line between the prototype and `{`; `option braceformat function skip`
-    /// restores it), and the kuna DIV-34 `null = true` (a zero pointer constant
+    /// restores it), and the kuna DIV-35 `null = true` (a zero pointer constant
     /// renders as `NULL`, not `(type *)0x0`; `option nullprinting off`
     /// restores the casted form).
     pub fn new() -> PrintCOptions {
@@ -426,10 +426,10 @@ impl PrintCOptions {
             hide_exts: true,
             inplace_ops: false,
             nocasts: false,
-            null: true, // (kuna) DIV-34; upstream option_NULL default off
+            null: true, // (kuna) DIV-35; upstream option_NULL default off
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
-            brace_func: BraceStyle::NextLine,   // (kuna) DIV-33; upstream Emit::skip_line
+            brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
             brace_switch: BraceStyle::SameLine, // Emit::same_line

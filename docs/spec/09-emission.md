@@ -28,7 +28,7 @@ knobs (`nocastprinting`, `integerformat`, `nullprinting`, `inplaceops`,
 `maxlinewidth`, `indentincrement`) are surfaceTable rows in `phases.toml`, set
 via the console `option` command, and are not part of the settable catalog.
 The intentional default divergences are DIV-1/2/5/6/7 and the C-surface
-normalization defaults (DIV-33 brace placement, DIV-34 NULL printing) in
+normalization defaults (DIV-34 brace placement, DIV-35 NULL printing) in
 `docs/history.md`.
 
 ## 9.1 Casts
@@ -229,7 +229,7 @@ columns (`option maxlinewidth`), indent step 2 (`option indentincrement`),
 comment indent 20; brace placement per construct via the four `braceformat`
 fields of `printc.rs (PrintCOptions)`: if/loop/switch braces sit on the same
 line as their construct, and a function's brace sits directly under its
-prototype (kuna DIV-33 — upstream's `skip_line` default leaves a blank line
+prototype (kuna DIV-34 — upstream's `skip_line` default leaves a blank line
 between the prototype and `{`; `option braceformat function skip` restores
 it, exercised by `tests/stages/kuna-cnorm-protogap.xml`).
 
@@ -247,7 +247,7 @@ p-code, and how statement groups map to addresses.
 constant/type-name chokepoints of this walk: `option integerformat`
 (hex/dec/best — "best" scores which base makes the constant's digit pattern
 most natural, `printlanguage.rs (most_natural_base)`), `option nullprinting`
-(the `NULL` token for pointer zeros — kuna DIV-34 flips it default-ON, so a
+(the `NULL` token for pointer zeros — kuna DIV-35 flips it default-ON, so a
 null pointer renders `NULL` where upstream renders `(type *)0x0`; `option
 nullprinting off` restores the casted form, exercised by
 `tests/stages/kuna-cnorm-nullprint.xml`), `option inplaceops` (`+=`-style

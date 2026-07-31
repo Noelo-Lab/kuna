@@ -1672,9 +1672,9 @@ mod tests {
         // off-pass and neither at `wide` (it folds through Rule A), and
         // ghangr-condfold-ruleb / Rule B ISOLATED, a guard whose two
         // statement-root calls put it outside Rule A's call cap at every level,
-        // and kuna-cnorm-protogap / the DIV-33 brace-placement default flip
+        // and kuna-cnorm-protogap / the DIV-34 brace-placement default flip
         // (no blank line between a prototype and `{`; braceformat restores),
-        // and kuna-cnorm-nullprint / the DIV-34 NULL-token default flip
+        // and kuna-cnorm-nullprint / the DIV-35 NULL-token default flip
         // (zero pointer constants render NULL; nullprinting off restores)
         assert_eq!(count, 169, "corpus file count drifted");
     }
