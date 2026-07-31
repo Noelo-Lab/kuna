@@ -44,12 +44,17 @@ The passes never touch the pipeline live, and the pipeline never calls an analyz
 the two meet exactly once, at a commit seam. `decompiler/crates/kuna-console/src/engine.rs
 (bootstrap_from_object)` runs every registered pass at `load file`
 (`decompiler/crates/kuna-analysis/src/passes.rs (run_default_analyses_per_pass)`) and
-**stashes** each pass's output keyed by its id. The commit happens later, at
-`read symbols` (`engine.rs (commit_pending_analysis)`) — after the CLI's `option`
-lines have been applied — so a disabled pass's already-computed facts are simply
-dropped at the gate (`engine.rs (analysis_pass_enabled)`; an id with no registered
-gate fails *open*, so a new pass runs by default). The stash is drained on commit, so
-a second `read symbols` cannot double-commit.
+**stashes** each load-time pass's output keyed by its id. The commit happens later,
+at `read symbols` (`engine.rs (commit_pending_analysis)`) — after the CLI's
+`option` lines have been applied — so a disabled load-time pass's already-computed
+facts are simply dropped at the gate (`engine.rs (analysis_pass_enabled)`; an id
+with no registered gate fails *open*, so a new pass runs by default). Deferred
+decoder-dependent work is dispatched after those options are known: a disabled
+Listing consumer, AIF gap walk, or operand-reference scan is not invoked at all,
+and its commit gate remains as a defensive check. This is semantically load-bearing
+for AIF: speculative SLEIGH decoding can paint processor context, so `aif off`
+means no speculative decode, not merely discarding its discovered-entry facts.
+The stash is drained on commit, so a second `read symbols` cannot double-commit.
 
 `engine.rs (commit_analysis_output)` then installs the merged facts into the engine
 once, each arm idempotent against the loader's own funcsym stream: a function fact
@@ -204,6 +209,17 @@ funcsym stream:
   `__la_symbol_ptr`/`__got` slots are named too for `-fno-plt`-style indirect
   calls. `INDIRECT_SYMBOL_LOCAL`/`ABS` entries are skipped; the C-ABI leading `_`
   is stripped.
+
+The import currency deliberately includes both executable linkage stubs and
+pointer slots in data sections: the latter must be function symbols so indirect
+calls resolve to a name and library prototype. They are not function bodies.
+The complete canonical inventory retains both, while automatic whole-binary
+decompilation selects only entries contained by a loader `CODE` section
+(`decompiler/crates/kuna-console/src/engine.rs
+(ConsoleProgram::function_entries_executable)`). Explicit address selection
+remains unrestricted; name selection keeps its normal first-match behavior when
+a stub and slot share a name. Loaders without section metadata keep the complete
+inventory.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
@@ -467,7 +483,8 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
-Its **consumers** run over the built Listing and are individually gated: the
+Its **consumers** run over the built Listing and are individually gated before
+invocation (with the commit gate retained defensively): the
 no-return consumers of §1.7 (`noreturn_disc`, and `noreturn_propagate` carrying
 the `noreturn_error`/`noreturn_reach` sub-rules), the FID matcher (§1.4), the AIF
 gap-walk, and (kuna) the recursive-descent promotion `funcdisc_recursive`, which

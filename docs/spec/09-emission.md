@@ -28,7 +28,7 @@ knobs (`nocastprinting`, `integerformat`, `nullprinting`, `inplaceops`,
 `maxlinewidth`, `indentincrement`) are surfaceTable rows in `phases.toml`, set
 via the console `option` command, and are not part of the settable catalog.
 The intentional default divergences are DIV-1/2/5/6/7 and the C-surface
-normalization defaults (DIV-33 brace placement) in `docs/history.md`.
+normalization defaults (DIV-34 brace placement) in `docs/history.md`.
 
 ## 9.1 Casts
 
@@ -228,7 +228,7 @@ columns (`option maxlinewidth`), indent step 2 (`option indentincrement`),
 comment indent 20; brace placement per construct via the four `braceformat`
 fields of `printc.rs (PrintCOptions)`: if/loop/switch braces sit on the same
 line as their construct, and a function's brace sits directly under its
-prototype (kuna DIV-33 — upstream's `skip_line` default leaves a blank line
+prototype (kuna DIV-34 — upstream's `skip_line` default leaves a blank line
 between the prototype and `{`; `option braceformat function skip` restores
 it, exercised by `tests/stages/kuna-cnorm-protogap.xml`).
 
@@ -499,3 +499,14 @@ bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::sections, disassemble_at, read_bytes, global_data_symbols)`,
 not in this folder.
+
+**Assembly sweep scratch storage.** The linear code-section walk reuses
+caller-owned mnemonic, operand-body, raw-byte, and line buffers across
+instructions (`decompiler/crates/kuna-console/src/project.rs (sweep_code)`).
+`decompiler/crates/kuna-sleigh/src/translate.rs
+(Translate::print_assembly_into)` lets the concrete translator render into the
+cleared strings directly, and the console engine fills the reusable byte
+buffer through `ConsoleProgram::read_bytes_into`. Failed reads and decodes
+leave their scratch outputs empty. This changes allocation only: section and
+label order, sequential context effects, decode attempts, text formatting, and
+the final bytes are identical, and no instruction result is cached.

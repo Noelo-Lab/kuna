@@ -74,8 +74,12 @@ bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + 
 Its `--json` is `kuna decompile-all --json`'s fields (`name`, `address`, `address_hex`,
 `aliases`, `size`, `code`, `error`, `variables[{name,type,kind,arg_index,stack_offset,size}]`)
 — including the one-record-per-entry contract and the `aliases` array documented in
-`docs/cli.md`, since both front-ends share `ConsoleProgram::function_entries_canonical` —
-plus one kuna-wasm-only per-function field: `"kind"` — `"func"` | `"plt"` | `"thunk"`
+`docs/cli.md`. Wasm `list` reports the full canonical callable-symbol inventory;
+unfiltered `decompile` and `project` use the shared CODE-backed target set, while
+explicit address selection can still reach any canonical symbol (name selection
+keeps its normal first-match behavior). This is the same split as the native
+front-end. The output adds one kuna-wasm-only per-function field: `"kind"` —
+`"func"` | `"plt"` | `"thunk"`
 (`kuna-wasm/src/classify.rs`: an `object`-crate re-parse marks entries inside import-stub
 sections — the `.plt` family, Mach-O symbol stubs — or named as imports as `"plt"`, and
 lone-jump entries (`ConsoleProgram::lone_jump_target`, direct-to-another-function or
@@ -255,7 +259,7 @@ benign PE is committed because this environment has no PE linker.
   Object files (`.o`/Mach-O `MH_OBJECT`) decompile to thin bodies — an engine-level
   relocation limit, not a demo one; linked executables are unaffected.
 - **Re-bootstraps per request** — a WASI *command* module runs `_start` and exits, so
-  "decompile all" (one run over every function) is the efficient path the UI uses. A
+  "decompile all" (one run over every CODE-backed function) is the efficient path the UI uses. A
   `wasm-bindgen` **reactor** front-end (bootstrap once, export `decompile(name)`) would let
   the page keep a warm `Architecture` across clicks; it can be added beside this crate
   without touching the WASI path or the engine.

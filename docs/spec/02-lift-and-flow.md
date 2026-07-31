@@ -53,6 +53,17 @@ ops beyond the deepest internal branch time are dead and deleted
 (`delete_remaining_ops`). The op-creation and classification order here is
 observable — it fixes the SeqNum allocation every later phase keys on.
 
+**Decode scratch storage.** Every SLEIGH translation checks out a parser
+context from the engine-local pool
+(`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::checkout_context)`).
+Checkout resets the parse state, addresses, context words, commit records, and
+root node; each child node is reset before it is allocated. The state arena and
+its allocation capacities are retained across instructions. Simultaneously
+live main-instruction, `inst_next2`, and delay-slot resolutions hold distinct
+contexts, and a guard returns each context after successful translation or an
+error. This is scratch reuse only: instruction results and addresses are not
+cached, and the bytes and painted context are resolved on every translation.
+
 **Decode-error policy** (`flow.rs (FlowInfo::handle_decode_error)`). An
 unimplemented instruction is, per the flags, treated as a NOP
 (`ignore_unimplemented`), re-thrown (`error_unimplemented`), or replaced by an

@@ -921,7 +921,7 @@ impl IfaceCommandAction for IfcKunaPipeline {
 // `mode <name>` — IfcKunaMode
 // ---------------------------------------------------------------------------
 
-/// (kuna) `mode <reliable|aggressive>`: apply a decompiler mode preset — a batch
+/// (kuna) `mode <reliable|aggressive|fast>`: apply a decompiler mode preset — a batch
 /// of option overrides fanned out through `Architecture::apply_mode` (see
 /// `kuna_decomp::modes`).  Mirrors `IfcOption`'s dcp/conf access; issue it
 /// before `read symbols` so an analysis-tier override (`listing`/`aif`/…) is
@@ -936,7 +936,7 @@ impl IfaceCommandAction for IfcKunaMode {
         s.skip_ws();
         if name.is_empty() {
             return Err(IfaceError::parse(
-                "Missing mode name (try `mode reliable` or `mode aggressive`)",
+                "Missing mode name (try `mode reliable`, `mode aggressive`, or `mode fast`)",
             ));
         }
         let dcp = dcp_mut(status)?;

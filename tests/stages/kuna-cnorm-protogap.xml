@@ -12,7 +12,7 @@
         <blank>
         {
 
-    kuna flips the default to next_line (DIV-33, docs/history.md): the brace
+    kuna flips the default to next_line (DIV-34, docs/history.md): the brace
     follows the prototype immediately.  The upstream form stays reachable via
     the ported braceformat option.
 
@@ -44,7 +44,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-33)" min="1" max="1">\)$
+<stringmatch name="CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-34)" min="1" max="1">\)$
 ^\{$</stringmatch>
 <stringmatch name="CNORM-PROTOGAP #2: braceformat function skip restores the upstream blank line" min="1" max="1">\)$
 ^$

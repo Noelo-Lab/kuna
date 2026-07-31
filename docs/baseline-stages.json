@@ -1,13 +1,13 @@
 {
   "data_footer": [
-    280,
-    280
+    281,
+    281
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
-    "data:CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-33)",
+    "data:CNORM-PROTOGAP #1: default has the brace directly under the prototype (DIV-34)",
     "data:CNORM-PROTOGAP #2: braceformat function skip restores the upstream blank line",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
@@ -227,6 +227,7 @@
     "data:iteregion #4: fix (on) -- the rewrite is logged",
     "data:iteregion #5: p-code untouched -- the merged variable still feeds the call in BOTH passes",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
+    "data:mode fast reaches the live engine and leaves Listing off",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
     "data:namestyle #3 default: unnamed call target renders as sub_<addr>",
