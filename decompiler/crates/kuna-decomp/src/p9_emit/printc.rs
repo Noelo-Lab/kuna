@@ -4479,13 +4479,23 @@ impl PrintC {
     ///   - Otherwise print `!` followed by our input.
     fn op_bool_negate_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
-        // (kuna truthycond, DIV-36) A `!` operand is a boolean context in every
-        // arm below; the mod-stack frame scopes the bit to the operand push.
+        // (kuna truthycond, DIV-36) Whether the operand may render truthy
+        // depends on the arm: when the `!` is PRINTED (arm 3), the printed
+        // operator re-booleanizes the value, so its operand is always a
+        // boolean context.  When the `!` is ABSORBED (arm 2's negate-token
+        // flip) or CANCELLED (arm 1's double negation), no boolean operator
+        // remains in the render — eliding a zero-compare there would change
+        // the VALUE (`v = !(x == 0)` must stay `v = x != 0`, never `v = x`) —
+        // so those arms only propagate a bit that a genuine boolean consumer
+        // (CBRANCH / `&&` / `||` / a printed `!`) already established.
+        let entry_cond = self.context.is_set(modifiers::CONDITION_CONTEXT);
         if self.context.is_set(modifiers::NEGATETOKEN) {
             // Negated by a previous BOOL_NEGATE: consume the mod, print input as-is.
             self.context.unset_mod(modifiers::NEGATETOKEN);
             self.context.push_mod();
-            self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            if entry_cond {
+                self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            }
             if let Some(vn) = in0 {
                 self.push_vn_ir(fd, arch, vn, op);
             }
@@ -4495,7 +4505,9 @@ impl PrintC {
             // active (C++ `pushVn(in0, op, mods|negatetoken)`).
             self.context.push_mod();
             self.context.set_mod(modifiers::NEGATETOKEN);
-            self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            if entry_cond {
+                self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            }
             if let Some(vn) = in0 {
                 self.push_vn_ir(fd, arch, vn, op);
             }
