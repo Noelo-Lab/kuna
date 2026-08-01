@@ -444,7 +444,7 @@ survive.
 The symbol step is what makes the collapse total for a *mapped* slot. The line
 step alone left one stack slot declared twice under one name with two types
 whenever two of its live ranges did not merge and recovered different types
-(DIV-51), which is not compilable C and which no rendered-line key can catch.
+(DIV-52), which is not compilable C and which no rendered-line key can catch.
 Neither step can remove the last declaration of a referenced name: the symbol
 step requires the identifier to match before it collapses anything, and the line
 step requires the whole line to match. `option dedupvardecls off` restores the

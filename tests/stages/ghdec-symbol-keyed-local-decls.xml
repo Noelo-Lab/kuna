@@ -38,7 +38,7 @@
 
     No option of its own: this is a correctness fix inside the existing
     default-on `dedupvardecls`, which already owns "collapse duplicate local
-    declarations" (DIV-51).
+    declarations" (DIV-52).
 
     Bytes: betaflight_STM32F405 (O2-noinline, stripped Cortex-M4 firmware) at
     0x804f5b4, a 72-byte leaf that builds a 5-byte protocol frame across two

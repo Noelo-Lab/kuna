@@ -129,7 +129,7 @@ struct type, so every decompiler reconstructs the field writes as
 CONCAT/SUBPIECE over one 4-byte slot. Ghidra: `local_24._0_3_ = CONCAT12(...)`.
 kuna: `v12 = CONCAT13(v18,v15)`. **This is the same rendering, not a kuna gap.**
 
-## Reported symptom — FIXED (DIV-51)
+## Reported symptom — FIXED (DIV-52)
 
 The duplicated declaration is gone: `applyLedFixedLayers` now opens with one
 `unsigned int v12; // stack - 0x24`, the same choice Ghidra makes with its single

@@ -19,7 +19,7 @@
 //! HighVariables where upstream walks ScopeLocal Symbols, so both directions are
 //! reachable from the same walk — an over-strict skip drops the only declaration of a
 //! referenced name, and an unmerged second live range of one mapped slot adds a second
-//! declaration of a name that already has one (DIV-51, whose end-to-end witness is
+//! declaration of a name that already has one (DIV-52, whose end-to-end witness is
 //! `tests/stages/ghdec-symbol-keyed-local-decls.xml`). Pinning both here keeps a fix
 //! for either from re-opening the other.
 //!
@@ -134,7 +134,7 @@ fn no_undeclared_local_variable_in_make_dir_clone() {
 
     let decl_list = declared_var_list(&c);
     // No name is declared twice: one ScopeLocal Symbol is one declaration, however
-    // many HighVariables of it the merge left behind (DIV-51).
+    // many HighVariables of it the merge left behind (DIV-52).
     let mut redeclared: Vec<&String> = Vec::new();
     for (i, name) in decl_list.iter().enumerate() {
         if decl_list[..i].contains(name) && !redeclared.contains(&name) {
