@@ -346,9 +346,22 @@ the spelled-out upstream form, so `for (...; i = i + 1)` is unchanged;
 `tests/stages/kuna-cnorm-compoundassign.xml`), and
 the (kuna, DIV-6) `realtypes` relabel: residual `TYPE_UNKNOWN` values render
 as size-correct real C types (`char`/`unsigned short`/`unsigned
-int`/`unsigned long`, pointer-to-unknown as `void *`) at the declarator/cast
-chokepoints, without touching the actual data-type lattice — `option
-realtypes off` restores `undefined<N>`. Per-symbol format assertions
+int`/`unsigned long`) at the declarator/cast chokepoints, without touching
+the actual data-type lattice — `option realtypes off` restores
+`undefined<N>`. The **same** size table applies to a `TYPE_UNKNOWN`
+*pointee*, so `undefined8 *` reads `unsigned long *` and `undefined4 *`
+reads `unsigned int *`: the relabel is presentation only, and the index and
+cast expressions the walk builds elsewhere are still scaled by the original
+pointee size, so a declaration that shrank its pointee would contradict its
+own body (`void *a3` alongside `a3[1]` meaning byte offset 8 — not
+compilable C, and a store cast down to `*(void *)` loses its width
+entirely). `void` is therefore only the **fallback** under a pointer, for
+the residual sizes with no natural single C type (0, 3, 5, 6, 7, …); as a
+scalar those sizes keep `undefined<N>` (DIV-48,
+`printc.rs (realtype_unknown_base)`, exercised by
+`tests/stages/ghdec-realtypes-pointee.xml`). A genuine `TYPE_VOID` pointee
+is not a residual unknown and never enters the relabel, so the opaque
+`void *` of `free`/`malloc`/`memcpy` is unaffected. Per-symbol format assertions
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
 

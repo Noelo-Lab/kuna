@@ -1,0 +1,102 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench campaign case O0-libopencm3-sdram-main (NOVEL pool: kuna already
+    scored best of all decompilers on that pane and still emitted the function
+    entry as unreachable dead code, so no other decompiler surfaced this fix).
+    The witness carried here is the second one the triage recorded, diffutils
+    lines_differ (x86-64 gcc -O2), because it reproduces from an isolated byte
+    chunk while the ARM Thumb original needs its whole binary.
+
+    P8 structuring, final component ordering.  Structuring does not always end
+    with a single top-level component; when it leaves several the printer walks
+    the root component list in order.  Ghidra sorts that list before printing
+    (BlockGraph::orderBlocks, block.hh:437, the first call of
+    ActionFinalStructure::apply, blockaction.cc:2192), keying on
+    FlowBlock::compareFinalOrder (block.cc:709): the entry component first,
+    RETURN-terminated components last, otherwise by ascending block index.
+    kuna had ported the producer of that key (BlockGraph::add_block keeps a
+    composite index at the minimum over its members) but not the sort, so the
+    list stayed in collapse order - whichever component the collapse happened
+    to append first printed first:
+
+        label_ee6c:                     [FUNCTION ENTRY LANDS HERE]
+          if ((char)v13 != ' ') { ... }
+          ...
+          goto label_ee6c;
+        label_efa0:
+          if (v16 != v19) return 1;
+          goto label_ed08;             [unconditional, no fallthrough]
+          v4 = dat_26558;              [REAL ENTRY, now UNREACHABLE]
+          v3 = dat_26552;
+          v2 = dat_26498;
+
+    Control enters lines_differ, falls into the whitespace-skipping tail, and
+    the three initializing reads can never execute.  Ghidra, IDA and angr all
+    open with the initializers.
+
+    Stage model: P8 structure recovery, final ordering (substrate/block.rs
+    BlockGraph::order_blocks driven by substrate/funcdata_block.rs
+    Funcdata::sblocks_order_blocks, called from p8_structure/blockaction.rs
+    ActionFinalStructure::apply).  Applies to both structuring engines: the
+    Ghidra CollapseStructure path and the default-on region structurer hand
+    ActionFinalStructure the same root component list.
+
+    No option: this is a correctness fix (emitting the function entry as
+    unreachable code is never desired), on by default.  Single pass asserts
+    the fixed output: the body opens with the first initializer instead of a
+    label, nothing is emitted immediately after an unconditional goto, and
+    every label the buggy order printed first is still present (the fix
+    reorders, it does not delete).
+-->
+<bytechunk space="ram" offset="0xec00">
+f30f1efa41574989ff488d7e0141564989f6415541544531e455534883ec388b05337901000f
+b6152679010048897c2428498d7f014c8b2d5c7801008944240c83e8028854241f48897c2420
+89442418410fb60f410fb61e498d7701498d6e0138d90f84d20000008b44240c83f8040f840b
+0200000f87f500000083f8010f846c010000837c241801777d884c241e4889742410e85762ff
+ff440fb65c241e488b742410488b004c89d942f6445801200f842a010000440fb6db42f64458
+01200f841a01000080f90a0f8459030000410fb657014989f380fa0a751ee9470300000f1f80
+00000000410fb653014983c30180fa0a0f842e030000f64450012075e70f1f8000000000807c
+241f007423884c241e4889742410e8c361ffff0fb64c241e488b742410488b000fb60c880fb6
+1c9838d90f856f02000080fb0a0f848d020000b80100000080fb09750e4c89e031d249f7f54c
+89e84829d04901c44989ee4989f7e9e7feffff0f1f8000000000837c240c057591884c241e48
+89742410e86b61ffff488b7424100fb64c241e488b00eb100f1f400080f90a74110fb60e4883
+c6010fb6d1f64450012075ea0fb6d3f644500120751ee94bffffff0f1f000fb655004883c501
+4889d3f6445001200f8432ffffff80fb0a75e5e928ffffff837c240c020f841dffffff0f1f44
+000080f920750580fb09741780f9090f8505ffffff80fb200f85fcfeffffb9090000004d89e1
+eb24662e0f1f84000000000080f90975474c89c831d24d01e949f7f54929d10fb60e4883c601
+80f92075e14983c101ebee0f1f0080fb090f854f0100004c89e031d24f8d44250049f7f54929
+d04d89c40fb65d004883c50180fb2075d74983c401ebed660f1f840000000000884c241e4889
+742410e86260ffff0fb6d3488b742410488b00440fb71c500fb654241e664181e30020f64450
+01204889d10f85a3000000664585db0f85ce00000080fb200f94c280f90a410f95c14420ca0f
+84e9000000483b7424200f8606010000440fb64efebb200000004c8d7eff4989ee42f6444801
+200f8551fdffff80f9200f8500feffff84d20f84f8fdffff483b6c24280f86dd0000000fb655
+fe4c8d75ff4989f7f6445001200f84d7fdffffe91afdffff662e0f1f840000000000440fb60e
+488d56014c89c942f6444801200f84c10000004889d680f90a75e1664585db752a38cb0f849b
+fdffffe94fffffff660f1f440000440fb64d00488d55014c89cb42f644480120747c4889d580
+fb0a75e4e96ffdffff0f1f80000000004d39e10f845ffdffff4883c438b8010000005b5d415c
+415d415e415fc30f1f0080fb0a0f95c2e934ffffff0f1f4400004883c43831c05b5d415c415d
+415e415fc30f1f8000000000bb20000000e90dffffff660f1f440000b920000000e906fdffff
+660f1f440000bb20000000e953ffffff660f1f440000b920000000e93dffffff660f1f440000
+80fb0a74a3410fb6560180fa0a74994989e9eb120f1f4000410fb651014983c10180fa0a7482
+f64450012075ebe9aefcffff660f1f440000
+</bytechunk>
+<symbol space="ram" offset="0xec00" name="lines_differ"/>
+</binaryimage>
+<script>
+  <com>lo fu lines_differ</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="finalorder #1: no statement is emitted after an unconditional goto" min="0" max="0">^ *goto \w+;$
+^ +[^ }].*[;{]$</stringmatch>
+<stringmatch name="finalorder #2: the body does not open with a label" min="0" max="0">^ *$
+^label_</stringmatch>
+<stringmatch name="finalorder #3: the body opens with an indented statement" min="1" max="1">^ *$
+^  [a-z].*;$</stringmatch>
+<stringmatch name="finalorder #4: the entry component prints first" min="1" max="1">^ *$
+^  v4 = dat_26558;$</stringmatch>
+<stringmatch name="finalorder #5: the mid-function label the buggy order hoisted is still emitted" min="1" max="1">^label_ee6c:$</stringmatch>
+<stringmatch name="finalorder #6: the entry falls through into the loop head label" min="1" max="1">^label_ec50:$</stringmatch>
+</decompilertest>

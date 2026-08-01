@@ -1127,9 +1127,16 @@ impl Action for ActionMarkImplied {
                     // All descendants traced -> classify vncur.
                     count += 1; // will be marked explicit or implied
                     if check_implied_cover(&mut *data, vncur) {
-                        // Merge::markImplied: set the implied flag (the cover-dirty
-                        // bookkeeping on inputs is merge state the printer ignores).
-                        data.vbank_mut().get_mut(vncur).expect("markimplied").set_implied();
+                        // Merge::markImplied — the input cover-dirtying is
+                        // load-bearing: Cover::rebuild walks forward through
+                        // implied consumers, so an operand's Cover only grows to
+                        // where the inlined expression is finally printed once it
+                        // is recomputed.  ActionMarkImplied runs before general
+                        // merging precisely so the later cover-intersection tests
+                        // see that regrown Cover.
+                        data.with_covermerge(|_merge, data| {
+                            crate::merge::Merge::mark_implied(data, vncur)
+                        });
                     } else {
                         data.vbank_mut().get_mut(vncur).expect("markimplied").set_explicit();
                     }

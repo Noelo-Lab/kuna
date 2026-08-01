@@ -1630,7 +1630,7 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 84 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
+        // 83 datatests + 93 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
         // ghangr-missing-function-call-1101b1, ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump,
         // branchflip-negated-guard / branchflip,
         // regionstructure-seq + regionstructure-loop + regionstructure-switch +
@@ -1689,10 +1689,18 @@ mod tests {
         // and ghdec-spacebase-unnamed / the symbol-less spacebase PTRSUB leaf
         // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in),
         // and ghdec-opcode-seam / the total opcode -> TypeOp seam
-        // (a rule-produced INT_SRIGHT used to panic the whole function away)
+        // (a rule-produced INT_SRIGHT used to panic the whole function away),
+        // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
+        // (no setISAMode statement survives into the emitted C),
+        // and ghdec-realtypes-pointee / the realtypes unknown-pointee size
+        // (void *a3 alongside a3[1] out, unsigned long *a3 in),
+        // and ghdec-stalejumptable / a JumpTable outliving its swept BRANCHIND
+        // (loweredswitch stranded a real jump table and the model walk panicked),
+        // and ghdec-finalorder-entryfirst / BlockGraph::orderBlocks (the entry
+        // component printed after an unconditional goto, i.e. as dead code)
         // and ghdec-callsitestackargs / stack-passed call argument recovery
         // (option off truncates a call at the six SysV register arguments)
-        assert_eq!(count, 177, "corpus file count drifted");
+        assert_eq!(count, 181, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

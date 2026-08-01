@@ -110,12 +110,21 @@ stays a call — with a per-cause warning (`"Could not inline here"` for
 recursion; distinct no-fallthrough / return-address messages from
 `test_hard_inline_restrictions`; a missing callee body refuses silently).
 
-**P-code injection.** Three substitution kinds run at the end of op generation
-(`flow.rs (FlowInfo::inject_pcode)`); the user-op and call-fixup kinds share one
-weave (`flow.rs (FlowInfo::do_injection)`), while inlining uses its own clone
-weave (above): emit the payload's p-code at the dead-list
+**P-code injection.** Three substitution kinds run from a queue drained during op
+generation (`flow.rs (FlowInfo::inject_pcode)`); the user-op and call-fixup kinds
+share one weave (`flow.rs (FlowInfo::do_injection)`), while inlining uses its own
+clone weave (above): emit the payload's p-code at the dead-list
 tail, classify its control flow, optionally mark it *incidental copy*, splice
 it after the original op, repoint the target map, and destroy the original op.
+
+Classification queues an op the moment it is decoded, so the drain must run once
+per flow-discovery round or the ops queued by a later round are dropped: the
+queue is drained after the initial fall-thru phase (`generate_ops`) and again
+after every jump-table round (§2.3), and a drain clears the queue. Which round
+found a block therefore has no bearing on whether its injections are applied —
+a spec-declared eraser such as ARM's `setISAMode` `<callotherfixup>` removes the
+op uniformly, whether the block was reached by fall-thru or only through a
+recovered switch table.
 
 - **Injection library.** `decompiler/crates/kuna-decomp/src/p2_lift/pcodeinject.rs
   (PcodeInjectLibraryBase)` holds the payloads — `<callfixup>`,
@@ -128,8 +137,12 @@ it after the original op, repoint the target map, and destroy the original op.
   (UserOpManage)` manages the CALLOTHER black-box ops (unspecialized, datatype,
   volatile, segment, jump-assist, injected). A CALLOTHER whose user op is
   *injected* is queued during classification and replaced by its
-  callother-fixup body (`flow.rs (FlowInfo::inject_user_op)`) — e.g. the MIPS
-  `setISAMode` no-op, which dead-code elimination then removes.
+  callother-fixup body (`flow.rs (FlowInfo::inject_user_op)`) — e.g. the ARM and
+  MIPS `setISAMode` no-op, which dead-code elimination then removes. A user op
+  with no declared fixup is not injected and survives as a black box the printer
+  renders as a call; that is the intended rendering for unimplemented semantics
+  (ARM `DataMemoryBarrier`, the coprocessor family), and only a *declared* fixup
+  makes disappearance the correct outcome.
 - **Call fixups.** A call spec carrying an inject id has its CALL/CALLIND
   replaced by the named call-fixup payload
   (`flow.rs (FlowInfo::inject_sub_function)`); the payload's parameter shift is
@@ -209,7 +222,10 @@ the switch (and any loop containing it) is destroyed.
 
 The BRANCHINDs parked on `tablelist` during op generation are recovered before
 block building, in a loop that re-fills flow from each new table's targets
-(`flow.rs (FlowInfo::generate_ops_with_jumptables)`). The address computation
+(`flow.rs (FlowInfo::generate_ops_with_jumptables)`). Each round of that loop
+ends by draining the pending p-code injections (§2.1) — the newly reached blocks
+queue their own, and an injected body can itself introduce indirect branches, so
+the loop re-runs while `tablelist` is non-empty. The address computation
 feeding a raw BRANCHIND is unusable as lifted — it must be simplified first, but
 the function has no blocks or SSA yet. So each attempt runs as a **reduced-tree
 sub-decompilation on a clone**
@@ -339,6 +355,19 @@ structuring, any table still without a default marks its most-targeted
 out-edge as the default (`decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
 (ActionBlockStructure)` via `funcdata_block.rs (Funcdata::install_switch_defaults)`).
 
+**Table lifetime.** A `JumpTable` is only as alive as the BRANCHIND it points
+at, so removing that op has to remove the table. `funcdata_block.rs
+(Funcdata::block_remove_internal)` looks up the table of a removed block's
+trailing BRANCHIND (`funcdata.rs (Funcdata::find_jump_table_index)`, matched by
+op address) and drops it (`funcdata_block.rs (Funcdata::remove_jump_table)`)
+before destroying the block's ops; a table that outlived its op would be
+re-recovered later against nulled inputs. `ActionSwitchNorm` carries the same
+guard `install_switch_defaults` already had and skips any table whose indirect
+op is missing, dead, or parentless, and the model walk
+`jumptable.rs (JumpBasic::find_determining_varnodes)` reports a stale op as an
+error rather than dereferencing it, so a table that slips through abandons its
+own recovery instead of the whole function.
+
 ### (angr) Lowered-cascade recovery — `option loweredswitch`, default on (DIV-4)
 
 GCC lowers a dense switch over a small variable into a balanced binary-search
@@ -377,6 +406,23 @@ strand phi state:
   carrying a `JumpModelTrivial`, and sweeps the orphaned compare spine via
   unreachable-block removal. Heritage then rebuilds SSA over the corrected CFG
   and the ordinary structurer/printer emit the switch.
+
+  Install declines whenever the rewiring would take a genuine switch with it.
+  Severing the head's out-edges makes everything reachable only through the
+  compare spine unreachable, and the trailing sweep deletes it; when one of
+  those blocks ends in a BRANCHIND that *already* owns a recovered `JumpTable`,
+  the cascade was a guard chain standing in front of a real jump table, not a
+  lowered switch of its own. `funcdata_block.rs
+  (Funcdata::kuna_lowered_switch_strands_table)` walks reachability from the
+  entry over the post-surgery successor relation before any edit and refuses the
+  install in that case, so the real table's cases survive instead of being
+  replaced by the (much narrower) cascade dispatch. The pre-existing guard —
+  a table already registered at the head's own branch address — never fires
+  here, because the cascade head and the real BRANCHIND are different
+  instructions. Both coreutils shapes are covered: `comm`/`join`/`uniq` `main`
+  (a getopt dispatch split between a compare cascade over the short options and
+  a PIC relative-offset table over the dense long-option range) declines, while
+  `mv`'s `main` — a cascade with no downstream table — still installs.
 
 One repair hook closes the loop: heritage may widen the synthetic BRANCHIND's
 storage read and null its input, so `funcdata_block.rs

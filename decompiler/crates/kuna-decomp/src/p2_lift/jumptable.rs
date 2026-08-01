@@ -1791,12 +1791,17 @@ impl JumpBasic {
     ///
     /// Paths terminating at `op` (at input `slot`) are enumerated into the given
     /// [`PathMeld`], computing the Varnodes common to all paths.
+    ///
+    /// The walk reads the input tree of `op` directly.  A destroyed op has nulled
+    /// inputs, so every dereference is an error rather than a panic: the caller
+    /// abandons that table instead of taking down the run.
     pub fn find_determining_varnodes(
         fd: &mut Funcdata,
         path_meld: &mut PathMeld,
         op: OpId,
         slot: int4,
-    ) {
+    ) -> KunaResult<()> {
+        let stale = || KunaError::lowlevel("findDeterminingVarnodes: stale switch op");
         let mut path: Vec<PcodeOpNode> = Vec::new();
         let mut firstpoint = false; // Have not seen likely switch variable yet
 
@@ -1807,8 +1812,13 @@ impl JumpBasic {
         // size 1, then continues only while size > 1. Modeled as a `loop` with a
         // bottom break when `path.len() <= 1`.
         loop {
-            let node = *path.last().unwrap();
-            let curvn = fd.obank().get(node.op).unwrap().get_in(node.slot).unwrap();
+            let node = *path.last().ok_or_else(stale)?;
+            let curvn = fd
+                .obank()
+                .get(node.op)
+                .ok_or_else(stale)?
+                .get_in(node.slot)
+                .ok_or_else(stale)?;
             if JumpBasic::isprune(fd, curvn) {
                 // Here is a node of the tree
                 if JumpBasic::ispoint(fd, curvn) {
@@ -1823,19 +1833,27 @@ impl JumpBasic {
                     }
                 }
 
-                path.last_mut().unwrap().slot += 1;
-                while path.last().unwrap().slot
-                    >= fd.obank().get(path.last().unwrap().op).unwrap().num_input()
-                {
+                path.last_mut().ok_or_else(stale)?.slot += 1;
+                loop {
+                    let last = *path.last().ok_or_else(stale)?;
+                    let ninput = fd.obank().get(last.op).ok_or_else(stale)?.num_input();
+                    if last.slot < ninput {
+                        break;
+                    }
                     path.pop();
                     if path.is_empty() {
                         break;
                     }
-                    path.last_mut().unwrap().slot += 1;
+                    path.last_mut().ok_or_else(stale)?.slot += 1;
                 }
             } else {
                 // This varnode is not pruned
-                let def = fd.vbank().get(curvn).unwrap().get_def().unwrap();
+                let def = fd
+                    .vbank()
+                    .get(curvn)
+                    .ok_or_else(stale)?
+                    .get_def()
+                    .ok_or_else(stale)?;
                 path.push(PcodeOpNode::new(def, 0));
             }
             if path.len() <= 1 {
@@ -1846,9 +1864,11 @@ impl JumpBasic {
             // Never found a likely point, which means that it looks like the
             // address is uniquely determined but the constants/readonlys haven't
             // been collapsed
-            let invn = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+            let invn =
+                fd.obank().get(op).ok_or_else(stale)?.get_in(slot).ok_or_else(stale)?;
             path_meld.set_single(op, invn);
         }
+        Ok(())
     }
 }
 
@@ -2528,8 +2548,12 @@ impl JumpBasicModel {
         maxtablesize: uint4,
     ) -> KunaResult<bool> {
         self.jrange = Some(Box::new(JumpValuesRange::new()));
-        JumpBasic::find_determining_varnodes(fd, &mut self.path_meld, indop, 0);
-        let parent = fd.obank().get(indop).unwrap().get_parent().unwrap();
+        JumpBasic::find_determining_varnodes(fd, &mut self.path_meld, indop, 0)?;
+        let parent = fd
+            .obank()
+            .get(indop)
+            .and_then(|o| o.get_parent())
+            .ok_or_else(|| KunaError::lowlevel("recoverModel: switch op has no parent block"))?;
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
         if self.jrange().get_size() > maxtablesize as uintb {
             // (kuna) GH-9191: the basic model could not bound the table.  When
@@ -4225,7 +4249,7 @@ impl JumpBasicModel {
         jdef.set_default_op(defop);
         self.jrange = Some(Box::new(jdef));
 
-        JumpBasic::find_determining_varnodes(fd, &mut self.path_meld, multiop, 1 - path);
+        JumpBasic::find_determining_varnodes(fd, &mut self.path_meld, multiop, 1 - path)?;
         self.find_normalized(fd, rootbl, pathout, matchsize, maxtablesize, _indop)?;
         if self.jrange().get_size() > maxtablesize as uintb {
             return Ok(false);
