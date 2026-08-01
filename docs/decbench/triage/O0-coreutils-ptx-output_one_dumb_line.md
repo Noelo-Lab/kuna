@@ -159,6 +159,16 @@ Same p-code shape: true arm into `u0x10000051`, else arm into `RAX`, joined by a
 unfolded same-variable diamonds across 10 of 259 functions while producing 0
 ternaries (11 with `iteexpr on`, none of them in this family).
 
+**Spin-off defect — FIXED (DIV-47).** The spin-off below is closed; the analysis in it
+is superseded. The two selects were *not* cover-legal to merge: `ActionMarkImplied`
+dropped `Merge::markImplied`'s operand cover-dirtying (`merge.cc:1595-1605`) and a
+Varnode `coverdirty` never reached its HighVariable (`Varnode::setFlags`,
+`varnode.cc:377-378`), so `Cover::rebuild`'s forward walk through implied consumers
+never re-ran and the first select's live range never reached the point where the
+inlined expression is printed. With both halves restored the function emits two
+variables and subtracts the right values. The *structural* gap in this record (six
+selects rendering as diamonds instead of `?:`) is untouched and still open.
+
 **Spin-off defect, different phase, NOT the same root cause.** The reproducer above
 also shows that kuna's C is *semantically wrong*: `v1` is written twice and both
 reads are folded into one expression printed after the second write, so with

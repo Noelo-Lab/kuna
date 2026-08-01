@@ -67,6 +67,32 @@ the normal copy chain). A whole-cover test walks both block maps in order and
 reports the strongest per-block verdict (`cover.rs (Cover::intersect)`,
 `(Cover::intersect_list)` at level 2 for the candidate blocks).
 
+A Cover is built from *two* kinds of point and is only correct when both are
+supplied. `cover.rs (Cover::add_def_point)` resets it to the single point where
+the Varnode is written; `cover.rs (Cover::add_ref_point_for)` then extends it
+back from each read through the predecessors until it meets that write
+(`cover.rs (Cover::add_ref_recurse)`). A cover built from the def point alone is
+a *point*, not a range, and every containment question asked of it answers "no" —
+so any caller that means to ask "is anything written between these two program
+points" must add the ref point. Two such ranges are built on the fly rather than
+from a Varnode's own reads: the single-read cover
+`funcdata.rs (Funcdata::build_single_read_cover)` that
+`merge.rs (Merge::eliminate_intersect)` uses to decide whether one read crosses
+an intervening write at the same address, and the dominance range
+`funcdata.rs (Funcdata::build_copy_pair_range)` used by the redundant-COPY test
+in the phalanx tail below.
+
+The reads a Cover walks are not only the Varnode's own: `cover.rs
+(Cover::rebuild)` follows every read whose output is *implied* and keeps walking
+that value's reads, transitively. An inlined expression is printed where its
+outermost explicit consumer is printed, so an operand of an implied expression is
+live all the way to that point, and its Cover must say so. This is why marking a
+Varnode implied invalidates its operands' Covers rather than only its own (§ the
+explicit/implied pass below), and why a Varnode `coverdirty` is forwarded to the
+owning HighVariable — a member whose Cover went stale makes the whole variable's
+cover stale, and `variable.rs (HighIntersectTest::update_high)` refuses to
+recompute a variable it believes is clean.
+
 **What makes two Varnodes mergeable.** The gate is a three-rung test ladder in
 `decompiler/crates/kuna-decomp/src/p6_variables/merge.rs`, and the rung used
 determines how aggressive the merge may be:
@@ -215,6 +241,17 @@ high would collide after inflating its cover to the candidate's
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
 
+Each accepted marking goes through `merge.rs (Merge::mark_implied)`, which sets
+the flag *and* dirties the Cover of every operand of the defining op. That
+second half is load-bearing, not bookkeeping: it is what makes the transitive
+walk of §6.1 re-run, stretching each operand's live range forward to wherever the
+inlined expression will actually be printed. The pass is deliberately scheduled
+ahead of the speculative merges for exactly this reason — the copy, adjacent and
+datatype merges all decide by cover intersection, and they must see the ranges
+that inlining created. Skipping the invalidation leaves two values that are both
+live at the printed expression looking disjoint, they merge into one variable,
+and the emitted C reads the later value where the binary reads the earlier one.
+
 **Phalanx tail.** `coreaction_cleanup.rs (ActionCopyMarker)` →
 `merge.rs (Merge::mark_internal_copies)`: COPYs whose input and output landed
 in the same high are marked non-printing, as are PIECE/SUBPIECE ops that
@@ -222,7 +259,18 @@ merely reassemble or extract pieces of one VariableGroup at their proper
 offsets (their operands forced explicit so the group renders through member
 notation); a fully-shadowed COPY output with no readers is silenced too, and
 highs with multiple surviving COPY-ins get the redundancy resolved
-(`process_high_redundant_copy`). Naming (`coreaction_cleanup.rs
+(`process_high_redundant_copy`). "Redundant" there means strictly dominated and
+*unshadowed*: `merge.rs (Merge::check_copy_pair)` accepts a later COPY only when
+its block is dominated by an earlier COPY from the same source Varnode **and**
+nothing writes the shared HighVariable between the two — the dominance range
+`funcdata.rs (Funcdata::build_copy_pair_range)` spans the dominant COPY's write
+through to the later COPY's read of that source, and any member write landing
+inside it vetoes. Getting that range wrong is directly a wrong-value bug: a
+`-O0` epilogue reached by several `return param;` paths puts several COPYs of one
+parameter in one variable, and if the reload that follows a call clobbering the
+same storage is called redundant and silenced, the emitted C returns the call's
+result on a path where the binary returns the parameter. Naming
+(`coreaction_cleanup.rs
 (ActionNameVars)`) and casts (`ActionSetCasts`) close the phalanx but are
 policy of chapter [09](09-emission.md). Three scheduled bodies are documented
 inert stubs in the live tree — `coreaction_cleanup.rs (ActionMarkIndirectOnly)`

@@ -135,10 +135,17 @@ fn no_undeclared_local_variable_in_make_dir_clone() {
          declared={:?}\n--- C ---\n{}",
         undeclared, declared, c
     );
-    // Sanity: the reduction really does exercise the phi-output local (`v5`),
-    // i.e. the fixture is still triggering the merge/decl path it was built for.
+    // Sanity: the reduction really does still materialise several merged `vN`
+    // locals, i.e. the fixture is exercising the merge/decl path it was built for.
+    //
+    // The threshold was 5 until the P6 Cover-dirty fix (`Merge::markImplied`
+    // dirties its operands' Covers, and a Varnode `coverdirty` now reaches the
+    // owning HighVariable as in `Varnode::setFlags`).  With Covers recomputed at
+    // the right points the size phi finally coalesces with the `strlen` result the
+    // way upstream Ghidra does, so the un-coalesced `v5` is gone and the reduction
+    // renders 4 locals.  The undeclared-variable gate above is unchanged.
     assert!(
-        used.len() >= 5,
+        used.len() >= 4,
         "expected the make_dir_clone reduction to still materialise several `vN` locals, got {:?}",
         used
     );
