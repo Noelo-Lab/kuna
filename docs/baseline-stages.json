@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    314,
-    314
+    318,
+    318
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -133,6 +133,10 @@
     "data:GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)",
     "data:GHANGR-NORETURN-ERROR #1: option noreturn_error off parses and round-trips, and is inert on the XML path (no Listing built): the source form x <= 8 renders identically in both passes (default-on + flag-off parity)",
+    "data:ISAMODE #1: no ISA-mode bookkeeping user-op survives into the emitted C",
+    "data:ISAMODE #2: the four table-reachable tail-call arms are intact",
+    "data:ISAMODE #3: the table-reachable f0 call sites survive the injection",
+    "data:ISAMODE #4: flow still reaches the last jump-table entry",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",

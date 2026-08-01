@@ -1689,8 +1689,10 @@ mod tests {
         // and ghdec-spacebase-unnamed / the symbol-less spacebase PTRSUB leaf
         // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in),
         // and ghdec-opcode-seam / the total opcode -> TypeOp seam
-        // (a rule-produced INT_SRIGHT used to panic the whole function away)
-        assert_eq!(count, 176, "corpus file count drifted");
+        // (a rule-produced INT_SRIGHT used to panic the whole function away),
+        // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
+        // (no setISAMode statement survives into the emitted C)
+        assert_eq!(count, 177, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
