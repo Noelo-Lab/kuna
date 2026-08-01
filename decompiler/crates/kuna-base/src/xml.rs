@@ -1692,9 +1692,13 @@ mod tests {
         // (a rule-produced INT_SRIGHT used to panic the whole function away),
         // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
         // (no setISAMode statement survives into the emitted C),
+        // and ghdec-realtypes-pointee / the realtypes unknown-pointee size
+        // (void *a3 alongside a3[1] out, unsigned long *a3 in),
+        // and ghdec-stalejumptable / a JumpTable outliving its swept BRANCHIND
+        // (loweredswitch stranded a real jump table and the model walk panicked),
         // and ghdec-finalorder-entryfirst / BlockGraph::orderBlocks (the entry
         // component printed after an unconditional goto, i.e. as dead code)
-        assert_eq!(count, 178, "corpus file count drifted");
+        assert_eq!(count, 180, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

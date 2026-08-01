@@ -26,8 +26,8 @@
 //!
 //!   3. **Need W4 subsystems** — the jump-table methods (`linkJumpTable`,
 //!      `findJumpTable`, `installJumpTable`, `recoverJumpTable`,
-//!      `stageJumpTable`, `earlyJumpTableFail`, `switchOverJumpTables`,
-//!      `removeJumpTable`) need the W4 `JumpTable`/`FlowInfo`/`ActionDatabase`.
+//!      `stageJumpTable`, `earlyJumpTableFail`, `switchOverJumpTables`)
+//!      need the W4 `JumpTable`/`FlowInfo`/`ActionDatabase`.
 //!      They are boundary-noted (`// STUB(W4)`); `clearJumpTables` and the dead-table
 //!      sweep that `structureReset` performs operate on the opaque
 //!      [`JumpTableId`](crate::funcdata::JumpTableId) handles and are carried.
@@ -1383,14 +1383,15 @@ impl Funcdata {
     /// `unreachable` selects the warning/`descend2Undef` arm used by
     /// `removeUnreachableBlocks`; `removeDoNothingBlock` passes `false`.
     pub fn block_remove_internal(&mut self, bb: BlockId, unreachable: bool) -> KunaResult<()> {
-        // BRANCHIND last op -> remove its jump table (W4: JumpTable registry not
-        // ported; a do-nothing block never ends in BRANCHIND so this is unreached
-        // from removeDoNothingBlock).
+        // BRANCHIND last op -> drop its jump table: the ops below are destroyed,
+        // so a surviving table would point at a dead BRANCHIND.
         if let Some(op) = self.bb_op_tail(bb) {
             if self.obank().get(op).expect("blockRemoveInternal: stale op").code()
                 == OpCode::CPUI_BRANCHIND
             {
-                // JumpTable *jt = findJumpTable(op); if (jt) removeJumpTable(jt); -- STUB(W4)
+                if let Some(idx) = self.find_jump_table_index(op) {
+                    self.remove_jump_table(idx);
+                }
             }
         }
         if !unreachable {
@@ -1708,6 +1709,15 @@ impl Funcdata {
         Some(idx)
     }
 
+    /// Drop the jump-table at `idx` from the registry (C++
+    /// `Funcdata::removeJumpTable`, `funcdata_block.cc:470`).  The C++ `clear()`
+    /// before `delete` is the Rust drop.
+    pub fn remove_jump_table(&mut self, idx: usize) {
+        if idx < self.jumpvec_ref().len() {
+            self.jumpvec_mut().remove(idx);
+        }
+    }
+
     /// Install a fresh (empty) jump-table for a BRANCHIND at `addr` (C++
     /// `Funcdata::installJumpTable`, `funcdata_block.cc:480`).  Must be called
     /// before flow is traced.
@@ -2002,6 +2012,14 @@ impl Funcdata {
             return Ok(None);
         }
 
+        // The rewiring severs the head's out-edges, so everything reachable only
+        // through the cascade spine is swept.  If an already-recovered jump table
+        // sits down there, the cascade was a guard chain in front of a genuine
+        // switch and installing would delete it — decline.
+        if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
+            return Ok(None);
+        }
+
         // The head's trailing op must be the recorded CBRANCH.
         let cbranch = match self.bb_op_tail(head) {
             Some(o) => o,
@@ -2138,6 +2156,71 @@ impl Funcdata {
         self.jumpvec_mut().push(jt);
         let idx = self.num_jump_tables() as usize - 1;
         Ok(Some(idx))
+    }
+
+    /// (kuna) Would installing the lowered switch at `head` strand a genuine jump
+    /// table?
+    ///
+    /// Walks reachability from the entry over the *post-surgery* successor
+    /// relation (`head`'s out-edges replaced by `out_blocks`) and reports whether
+    /// any block that drops out of the reachable set ends in a BRANCHIND with a
+    /// recovered [`JumpTable`](crate::jumptable::JumpTable).  The
+    /// `remove_unreachable_blocks` sweep at the end of
+    /// [`kuna_install_lowered_switch`](Self::kuna_install_lowered_switch) would
+    /// destroy that BRANCHIND and its table, replacing a real switch with the
+    /// synthetic cascade dispatch and losing every case the table dispatched.
+    fn kuna_lowered_switch_strands_table(&self, head: BlockId, out_blocks: &[BlockId]) -> bool {
+        let size = self.bblocks_get_size();
+        let mut entry: Option<BlockId> = None;
+        for i in 0..size {
+            let blk = self.bblocks_get_block(i);
+            if self.bblocks_ref().block(blk).is_entry_point() {
+                entry = Some(blk);
+                break;
+            }
+        }
+        let entry = match entry {
+            Some(e) => e,
+            None => return false,
+        };
+
+        let mut seen: std::collections::HashSet<BlockId> = std::collections::HashSet::new();
+        let mut stack: Vec<BlockId> = vec![entry];
+        seen.insert(entry);
+        while let Some(b) = stack.pop() {
+            if b == head {
+                for &t in out_blocks {
+                    if seen.insert(t) {
+                        stack.push(t);
+                    }
+                }
+                continue;
+            }
+            let nout = self.bblocks_ref().block(b).size_out();
+            for i in 0..nout {
+                let t = self.bblocks_ref().block(b).get_out(i);
+                if seen.insert(t) {
+                    stack.push(t);
+                }
+            }
+        }
+
+        for i in 0..size {
+            let blk = self.bblocks_get_block(i);
+            if seen.contains(&blk) {
+                continue;
+            }
+            let op = match self.bb_op_tail(blk) {
+                Some(o) => o,
+                None => continue,
+            };
+            if self.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_BRANCHIND)
+                && self.find_jump_table_index(op).is_some()
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// (kuna) Post-heritage repair of synthetic lowered-switch BRANCHIND inputs.
