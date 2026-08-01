@@ -1687,8 +1687,10 @@ mod tests {
         // and ghdec-fast-funcdisc / the bounded fast-project inventory
         // (old fast omits a direct callee; default fast emits its real body),
         // and ghdec-spacebase-unnamed / the symbol-less spacebase PTRSUB leaf
-        // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in)
-        assert_eq!(count, 175, "corpus file count drifted");
+        // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in),
+        // and ghdec-opcode-seam / the total opcode -> TypeOp seam
+        // (a rule-produced INT_SRIGHT used to panic the whole function away)
+        assert_eq!(count, 176, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

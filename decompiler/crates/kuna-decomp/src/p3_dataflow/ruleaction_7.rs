@@ -65,31 +65,13 @@ use crate::context::{BlockId, OpId, TypeOp, VarnodeId};
 /// Resolve an [`OpCode`] to the singleton `TypeOp` the architecture caches in
 /// its `inst` table (C++ `glb->inst[opc]`, consumed by `Funcdata::opSetOpcode`).
 ///
-/// The real resolver lives in W6 (`typeop`).  Until it lands, this carries the
-/// exact `opflags` from `typeop.cc` for the op-codes these rules produce, so the
-/// op's cached property bits (eval-type, `booloutput`) match what the C++ would
-/// install.  The `addlflags`/`OpBehavior` are *not* modelled (a rule that wrote
-/// e.g. INT_SDIV does not gain its `arithmetic_op` addlflag here).  // STUB(W6)
+/// Routes through the canonical port of that table
+/// ([`crate::typeop::seam_type_op_for`]): the exact `opflags` from `typeop.cc`
+/// for every op-code, so the op's cached property bits (eval-type,
+/// `booloutput`) match what the C++ would install even for an op-code these
+/// rules do not name literally.
 fn typeop_for(opc: OpCode) -> TypeOp {
-    use pcodeop_flags as f;
-    // opflags transcribed verbatim from typeop.cc constructors.
-    let (flags, name): (u32, &str) = match opc {
-        OpCode::CPUI_COPY => (f::unary | f::nocollapse, "copy"),
-        OpCode::CPUI_INT_SRIGHT => (f::binary, ">>"),
-        OpCode::CPUI_INT_SDIV => (f::binary, "/"),
-        OpCode::CPUI_INT_REM => (f::binary, "%"),
-        OpCode::CPUI_INT_SREM => (f::binary, "%"),
-        OpCode::CPUI_INT_MULT => (f::binary | f::commutative, "*"),
-        OpCode::CPUI_INT_ZEXT => (f::unary, "ZEXT"),
-        OpCode::CPUI_BOOL_NEGATE => (f::unary | f::booloutput, "!"),
-        OpCode::CPUI_BOOL_AND => (f::binary | f::commutative | f::booloutput, "&&"),
-        OpCode::CPUI_BOOL_OR => (f::binary | f::commutative | f::booloutput, "||"),
-        OpCode::CPUI_FLOAT_INT2FLOAT => (f::unary, "INT2FLOAT"),
-        // Any op-code not enumerated above is not produced by this batch; fall
-        // back to a flagless skeleton (the stub will be widened in W6).
-        _ => (0, "op"),
-    };
-    TypeOp::new(opc, flags, name)
+    crate::typeop::seam_type_op_for(opc)
 }
 
 // =============================================================================

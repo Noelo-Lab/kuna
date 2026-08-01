@@ -13,11 +13,13 @@ use super::*;
 use std::rc::Rc;
 
 use kuna_base::address::{Address, SeqNum};
+use kuna_base::types::uint4;
 use kuna_base::space::{
     addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
 };
 
 use crate::dtype::{type_metatype, Datatype};
+use crate::op::pcodeop_flags;
 use crate::context::{ArchContext, VarnodeId};
 use crate::varnode::DefOpInfo;
 

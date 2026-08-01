@@ -810,3 +810,54 @@ fn select_java_operators_toggle() {
 fn cpui_max_has_no_entry() {
     let _ = type_op_info(OpCode::CPUI_MAX);
 }
+
+/// The rule seam is **total**: every op-code value the enum defines resolves to
+/// a `TypeOp` carrying real property bits, and no op-code can make it panic.
+///
+/// This is the invariant the P3 rule files used to break with hand-maintained
+/// per-file whitelists (a missing INT_SRIGHT / FLOAT_INT2FLOAT / FLOAT_LESS /
+/// FLOAT_ADD panicked the whole function away mid-simplification).
+#[test]
+fn seam_type_op_for_answers_for_every_opcode() {
+    let mut seen = 0;
+    for raw in 1..(OpCode::CPUI_MAX as i32) {
+        let opc = match OpCode::from_i32(raw) {
+            Some(o) => o,
+            None => continue,
+        };
+        let t = seam_type_op_for(opc);
+        assert_eq!(t.get_opcode(), opc);
+        assert_eq!(t.get_flags(), type_op_info(opc).get_flags(), "{opc:?} seam vs inst[]");
+        assert_ne!(t.get_flags(), 0, "{opc:?}: no property bits (an eval-type is required)");
+        assert!(!t.get_name().is_empty(), "{opc:?}: no display name");
+        assert!(try_type_op_info(opc).is_some(), "{opc:?} must have an inst[] record");
+        seen += 1;
+    }
+    assert_eq!(seen, REGISTERED_OPCODES.len(), "every registered op-code must be reachable");
+}
+
+/// The `CPUI_MAX` sentinel is the one op-code with no `inst[]` entry: the seam
+/// degrades to a property-less skeleton instead of aborting the function.
+#[test]
+fn seam_type_op_for_degrades_on_the_sentinel() {
+    assert!(try_type_op_info(OpCode::CPUI_MAX).is_none());
+    let t = seam_type_op_for(OpCode::CPUI_MAX);
+    assert_eq!(t.get_opcode(), OpCode::CPUI_MAX);
+    assert_eq!(t.get_flags(), 0);
+}
+
+/// The op-codes that were missing from the hand-maintained P3 whitelists resolve
+/// with exactly the `typeop.cc` property words (the regression this seam fixes).
+#[test]
+fn seam_covers_the_opcodes_the_whitelists_missed() {
+    assert_eq!(seam_type_op_for(OpCode::CPUI_INT_SRIGHT).get_flags(), pf::binary);
+    assert_eq!(seam_type_op_for(OpCode::CPUI_FLOAT_INT2FLOAT).get_flags(), pf::unary);
+    assert_eq!(
+        seam_type_op_for(OpCode::CPUI_FLOAT_LESS).get_flags(),
+        pf::binary | pf::booloutput
+    );
+    assert_eq!(
+        seam_type_op_for(OpCode::CPUI_FLOAT_ADD).get_flags(),
+        pf::binary | pf::commutative
+    );
+}

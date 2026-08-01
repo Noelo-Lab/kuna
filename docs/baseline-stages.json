@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    311,
-    311
+    314,
+    314
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -261,6 +261,9 @@
     "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
+    "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
+    "data:opcode-seam #2: RuleBitUndistribute pulls the common INT_SRIGHT out of the AND",
+    "data:opcode-seam #3: no residual per-operand shift is left behind",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",

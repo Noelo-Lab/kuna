@@ -267,6 +267,31 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
 
+**Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
+its op-code, and the op-code is not just a tag: `set_opcode` caches the
+op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/
+… ) into the op's flags, and every later guard — `is_bool_output`,
+`is_commutative`, the pool's eval-type dispatch — reads it back off the op. The
+upstream `Funcdata::opSetOpcode` therefore takes a bare op-code and looks up the
+architecture's singleton property record (`glb->inst[opc]`); kuna's
+`Funcdata::op_set_opcode` takes the already-resolved record, so each rule file
+resolves it at the call site. Every one of those call sites goes through the
+single canonical port of that table,
+`decompiler/crates/kuna-decomp/src/p5_types/typeop.rs (seam_type_op_for)`, whose
+per-op-code rows are transcribed field-for-field from the upstream `typeop.cc`
+constructors. The seam is **total**: the table's `match` carries no wildcard arm
+(so a new op-code cannot enter the enum without the compiler demanding its row),
+every registered op-code answers with real property bits, and the one value with
+no upstream record — the `CPUI_MAX` sentinel, which is not an operation — yields
+a property-less skeleton rather than aborting. This totality is load-bearing
+rather than cosmetic: the rule files previously each kept their own partial
+whitelist of "op-codes this batch emits" with a `panic!` default arm, and the
+copies drifted apart, so a rule that legitimately produced an op-code its file
+had not enumerated (`INT_SRIGHT` out of `RuleBitUndistribute`, or a
+`FLOAT_INT2FLOAT`/`FLOAT_LESS`/`FLOAT_ADD` phi collapsing through
+`RuleMultiCollapse`) unwound the entire decompilation — the caller saw one error
+record and no C at all for that function.
+
 Rules registered in the pools but implemented elsewhere: the sub-variable
 triggers and split rules (§3.3, `subflow.rs`), `RuleOrPredicate` (§3.4,
 `condexe.rs`), the kuna gated rules (§3.5), the double-precision family

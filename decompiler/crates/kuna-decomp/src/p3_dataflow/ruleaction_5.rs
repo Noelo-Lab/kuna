@@ -22,15 +22,14 @@
 //!
 //! ## STUB notes (do NOT invent type behavior)
 //!
-//! `Funcdata::opSetOpcode(op, OpCode)` resolves `glb->inst[opc]` — the W6
-//! `TypeOp` table — to a [`TypeOp`] before handing it to the op bank.  That
-//! table is W6's.  The merged W3/W5 IR exposes only
+//! `Funcdata::opSetOpcode(op, OpCode)` resolves `glb->inst[opc]` — the `TypeOp`
+//! table — to a [`TypeOp`] before handing it to the op bank.  The merged W3/W5
+//! IR exposes only
 //! [`Funcdata::op_set_opcode`](crate::funcdata::Funcdata) taking an
-//! already-resolved [`TypeOp`].  The small [`type_op_lookup`] helper builds the
-//! `TypeOp` for the handful of op-codes these rules set, transcribing the exact
-//! `opflags` from `typeop.cc` (the same values `glb->inst[opc]` would cache).
-//! `op.cc`'s `set_opcode` ORs those flags into the op's flag word, so
-//! `isBoolOutput()` etc. stay correct.  STUB(W6): `glb->inst[opc]`.
+//! already-resolved [`TypeOp`], so [`type_op_lookup`] reads the canonical
+//! `inst[]` table ([`crate::typeop::seam_type_op_for`], the `opflags`
+//! transcribed from `typeop.cc`).  `op.cc`'s `set_opcode` ORs those flags into
+//! the op's flag word, so `isBoolOutput()` etc. stay correct.
 //!
 //! `RulePtrArith`/`RuleStructOffset0`/`RulePushPtr` (and the `AddTreeState`
 //! machinery and the static helpers they own) require *unported* surfaces:
@@ -52,84 +51,28 @@ use std::rc::Rc;
 
 use kuna_base::address::{calc_mask, uintb_negate, Address};
 use kuna_base::space::AddrSpace;
-use kuna_base::types::{int4, int8, uint4};
+use kuna_base::types::{int4, int8};
 use kuna_num::opcodes::{get_booleanflip, OpCode};
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::op::pcodeop_flags;
 use crate::context::{OpId, TypeOp, VarnodeId};
 
 // =============================================================================
-// STUB(W6): opcode -> TypeOp resolution (glb->inst[opc])
+// opcode -> TypeOp resolution (glb->inst[opc])
 // =============================================================================
 
-/// Build the [`TypeOp`] for `opc` the way `glb->inst[opc]` would (STUB(W6)).
+/// Build the [`TypeOp`] for `opc` the way `glb->inst[opc]` would.
 ///
 /// `Funcdata::opSetOpcode(op, OpCode)` in C++ is `obank.changeOpcode(op,
 /// glb->inst[opc])`: it looks up the singleton [`TypeOp`] in the architecture's
-/// instruction table.  That table is the W6 `TypeFactory`-backed structure and
-/// is not ported yet, so this helper resolves exactly the op-codes the rules in
-/// this file ever *set*, transcribing the `opflags` from `typeop.cc` verbatim
-/// (those are the bits `set_opcode` ORs into the op's flag word, on which
-/// `isBoolOutput`/`isCommutative`/etc. depend).  The `name` is the upstream
-/// display symbol.
-///
-/// The set of op-codes the rules in this file can set is: `CPUI_COPY` and
-/// `CPUI_INT_EQUAL`/`CPUI_INT_NOTEQUAL` (RuleEqual2Zero/RuleEqual2Constant), plus
-/// every op-code `get_booleanflip` can return for a boolean-output input op
-/// (RuleBoolNegate sets `flip_op`'s code to `get_booleanflip(flip_op->code())`).
-/// `get_booleanflip` (opcodes.cc:94-135) returns one of: `CPUI_COPY`,
-/// `CPUI_INT_EQUAL`, `CPUI_INT_NOTEQUAL`, `CPUI_INT_SLESS`, `CPUI_INT_SLESSEQUAL`,
-/// `CPUI_INT_LESS`, `CPUI_INT_LESSEQUAL`, `CPUI_FLOAT_EQUAL`,
-/// `CPUI_FLOAT_NOTEQUAL`, `CPUI_FLOAT_LESS`, `CPUI_FLOAT_LESSEQUAL`.  All of those
-/// are covered below with their `glb->inst[opc]` opflags so the flipped op keeps
-/// the right `binary`/`booloutput`/`commutative` bits.  Any other op-code is a
-/// porting bug (the rules below set only these), so the fallback uses the debug
-/// symbol with no flags.
+/// instruction table.  This resolves through the canonical port of that table
+/// ([`crate::typeop::seam_type_op_for`], the `opflags` transcribed from
+/// `typeop.cc` verbatim), which answers for every op-code -- including the ones
+/// `get_booleanflip` can hand back for a boolean-output op (RuleBoolNegate) that
+/// no rule in this file names literally.
 fn type_op_lookup(opc: OpCode) -> TypeOp {
-    // opflags transcribed verbatim from decompiler/cpp/typeop.cc.  STUB(W6).
-    let (flags, name): (uint4, &str) = match opc {
-        // TypeOpCopy: PcodeOp::unary | PcodeOp::nocollapse
-        OpCode::CPUI_COPY => (pcodeop_flags::unary | pcodeop_flags::nocollapse, "copy"),
-        // TypeOpEqual: PcodeOp::binary | PcodeOp::booloutput | PcodeOp::commutative
-        OpCode::CPUI_INT_EQUAL => (
-            pcodeop_flags::binary | pcodeop_flags::booloutput | pcodeop_flags::commutative,
-            "==",
-        ),
-        // TypeOpNotEqual: PcodeOp::binary | PcodeOp::booloutput | PcodeOp::commutative
-        OpCode::CPUI_INT_NOTEQUAL => (
-            pcodeop_flags::binary | pcodeop_flags::booloutput | pcodeop_flags::commutative,
-            "!=",
-        ),
-        // TypeOpIntSless: PcodeOp::binary | PcodeOp::booloutput
-        OpCode::CPUI_INT_SLESS => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<"),
-        // TypeOpIntSlessEqual: PcodeOp::binary | PcodeOp::booloutput
-        OpCode::CPUI_INT_SLESSEQUAL => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<="),
-        // TypeOpIntLess: PcodeOp::binary | PcodeOp::booloutput
-        OpCode::CPUI_INT_LESS => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<"),
-        // TypeOpIntLessEqual: PcodeOp::binary | PcodeOp::booloutput
-        OpCode::CPUI_INT_LESSEQUAL => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<="),
-        // TypeOpFloatEqual: PcodeOp::binary | PcodeOp::booloutput | PcodeOp::commutative
-        OpCode::CPUI_FLOAT_EQUAL => (
-            pcodeop_flags::binary | pcodeop_flags::booloutput | pcodeop_flags::commutative,
-            "==",
-        ),
-        // TypeOpFloatNotEqual: PcodeOp::binary | PcodeOp::booloutput | PcodeOp::commutative
-        OpCode::CPUI_FLOAT_NOTEQUAL => (
-            pcodeop_flags::binary | pcodeop_flags::booloutput | pcodeop_flags::commutative,
-            "!=",
-        ),
-        // TypeOpFloatLess: PcodeOp::binary | PcodeOp::booloutput
-        OpCode::CPUI_FLOAT_LESS => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<"),
-        // TypeOpFloatLessEqual: PcodeOp::binary | PcodeOp::booloutput
-        OpCode::CPUI_FLOAT_LESSEQUAL => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<="),
-        // TypeOpBoolNegate: PcodeOp::unary | PcodeOp::booloutput
-        OpCode::CPUI_BOOL_NEGATE => (pcodeop_flags::unary | pcodeop_flags::booloutput, "!"),
-        // Fallback: should not be reached by these rules.  No flags invented.
-        other => return TypeOp::new(other, 0, format!("{other:?}")),
-    };
-    TypeOp::new(opc, flags, name)
+    crate::typeop::seam_type_op_for(opc)
 }
 
 // =============================================================================
