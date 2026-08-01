@@ -212,7 +212,15 @@ header when the loop carries the recovered initialize/iterate statements
 (`printc.rs (PrintC::emit_for_loop)`); do-while and infinite loops, switches
 with their case labels (`printc.rs (PrintC::emit_block_switch)`), goto blocks,
 and — when the S8 `iteregion` pass marked an assignment diamond — the ternary
-render `dest = cond ? a : b` (`printc.rs (PrintC::emit_block_if_ite)`).
+render `dest = cond ? a : b` (`printc.rs (PrintC::emit_block_if_ite)`), or —
+when the S8 `iteboolean` pass marked a short-circuit `0`/`1` select — the
+boolean-assignment render `dest = ( cond );` / `dest = !( cond );`
+(`printc.rs (PrintC::emit_block_if_bool)`; checked first, so the more specific
+form wins when both marks are present). Both re-derive their S8 match from the
+addl-flag on the condition's `CBRANCH` and emit the condition through the same
+`ONLY_BRANCH` renderer the `if (...)` header uses, so the condition's
+parenthesization, short-circuiting and any comma-expression side effects are
+identical to the `if` form they replace.
 
 **The declined-structure shell.** If the structured tree is *absent* (S8
 produced no `sblocks`), the printer does not emit a flat op listing: it keeps

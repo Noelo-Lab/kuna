@@ -548,7 +548,7 @@ the schedule (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
   and are structured normally on the next iteration.
 - **Print-tree rewrites** after `ActionFinalStructure` (`gotoreduce`,
   `taildup`, `ifelseflatten`, `crossjumprevert`, `dedupitetail`,
-  `iteregion`, in that registration order): they edit only the structured
+  `iteregion`, `iteboolean`, in that registration order): they edit only the structured
   `sblocks` tree (fresh `BlockCopy` leaves referencing the *same* underlying
   basic blocks, or `list`/`parent` splices, or a print mark) — no p-code is
   cloned, SSA/def-use is untouched, and the printer re-emits the same ops in
@@ -678,6 +678,45 @@ choice**: an explicit source `if/else` compiles to the same bytes, so the
 rewrite matches the source only when the source used a ternary; DIV-17
 flipped it on (ablation net-positive) and documents flipping it off per
 function.
+
+### iteboolean — short-circuit `0`/`1` re-rolling (decbench)
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_iteboolean.rs
+(ActionIteBoolean)`. *Pattern:* the boolean **materialization** diamond a source
+`x = a && b;` compiles to at `-O0` — a 3-component `BlockIf` with no goto whose
+two arms are each a single `COPY` of the constants `1` and `0` (in either order)
+to the same integral storage, and whose condition component is either a clean
+`CBRANCH` leaf or the folded short-circuit `BlockCondition` chain. *Transform:*
+**print-only** — set the `kuna_iteboolean` addl-flag on the condition's terminal
+`CBRANCH`; the S9 printer (via `kuna_iteboolean.rs (match_ite_boolean)`)
+re-derives the match and emits the single statement `v = ( c );` — or
+`v = !( c );` when the `0` arm is the true arm — in place of the `if/else`.
+
+*Why it is a structuring decision and not a P3 one.* The rule that normally
+collapses this is P3 `RuleConditionalMove`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs
+(RuleConditionalMove)`), which folds a `MULTIEQUAL(0,1)` into `zext(cond)`. It
+fires on the one-test shape, but requires each MULTIEQUAL input block to be the
+CBRANCH root itself or a **single-predecessor** pass-through — upstream Ghidra's
+`if (inblock->sizeIn() != 1) return 0` (`ruleaction.cc:9427`), ported verbatim. A
+short-circuit `&&`/`||` chain gives the constant arm two or more predecessors, so
+it bails, and the bail is *right*: no single dominating CBRANCH boolean stands
+for the whole chain, and hoisting a guarded operand out of its branch (reading
+`p[1]` when `p` may be null) would evaluate it unconditionally. The re-roll is
+only expressible after structuring, where the chain has become one
+`BlockCondition` that C's own `&&`/`||` renders with short-circuit semantics —
+so the condition is emitted by the *same* `ONLY_BRANCH` renderer that produced
+the `if (...)` header, and evaluation order, short-circuiting and any
+comma-expression side effects riding the condition are preserved verbatim.
+
+*Failure:* declines a labelled or multi-statement arm, a computed (non-constant)
+arm, two arms writing different storage or the same constant, a pointer/float/
+aggregate destination (which would lose the constant's own rendering), an `if`
+carrying its own goto, and a condition component that is anything other than a
+`CBRANCH`-terminated leaf or a `BlockCondition` tree of such leaves (capped at
+`kuna_iteboolean.rs (MAX_CONDITION_DEPTH)` = 16). Like `iteregion` this is a
+**runtime choice** — a source that really wrote `if (c) x = 1; else x = 0;`
+compiles to the same bytes — flipped on by DIV-51.
 
 ### earlyreturn — per-edge const-guard peeling (angr `ReturnDuplicatorHigh`, narrowed)
 

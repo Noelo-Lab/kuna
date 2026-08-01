@@ -778,6 +778,12 @@ pub fn universal_sched(
             // it as a `?:` ternary (`v = c ? A : B;`).  Print-only mark; no p-code
             // is touched, so OFF is byte-identical.
             act!(crate::p8_structure::kuna_iteregion::ActionIteRegion::boxed("blockrecovery")),
+            // (kuna) iteboolean (option `iteboolean`, default-OFF - a runtime
+            // choice).  Mark a `0`/`1` select diamond whose condition is a folded
+            // short-circuit chain so the S9 printer emits `v = (a && b);` instead
+            // of the constant if/else P3 RuleConditionalMove cannot fold.
+            // Print-only mark; no p-code is touched, so OFF is byte-identical.
+            act!(crate::p8_structure::kuna_iteboolean::ActionIteBoolean::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    346,
-    346
+    350,
+    350
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -147,7 +147,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",
@@ -265,6 +265,10 @@
     "data:inputtile-overlap #6: the EINVAL retry probe is recovered",
     "data:inputtile-overlap #7: the errno save/restore around close is recovered",
     "data:inputtile-overlap #8: the failure path closes the descriptor",
+    "data:iteboolean #1: option off leaves the explicit 0/1 constant diamond (gap reproduced)",
+    "data:iteboolean #2: option off emits the else arm storing the 0 constant",
+    "data:iteboolean #3: option on re-rolls it into one boolean assignment, short-circuit condition intact",
+    "data:iteboolean #4: the re-roll is logged on the function header",
     "data:iteexpr on folds a computed-arm diamond to one ?: ternary (off = if/else)",
     "data:iteregion #1: bug (off) -- the assignment diamond renders as a literal if/else (else-arm only, off pass)",
     "data:iteregion #2: bug (off) -- the else-arm constant assignment is a separate statement (off pass only)",

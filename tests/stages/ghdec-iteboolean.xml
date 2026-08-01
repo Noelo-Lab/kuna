@@ -1,0 +1,69 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench: a short-circuit boolean assignment stays an explicit 0/1 diamond.
+      Case: O0-bash-bash-time_command  (docs/decbench/triage/)
+
+    Source (gcc -O0 -fno-pie -c), the exact idiom the triage case reduces to:
+
+        int f(int *p, int q)
+        {
+          int x = p && (p[1] & 0x100);
+          return x * 2 + q;
+        }
+
+    gcc materializes the boolean as a jump-based select whose `mov $0,%eax`
+    arm is the SHARED target of every short-circuit exit:
+
+        0:  endbr64 ; push %rbp ; mov %rsp,%rbp
+        8:  mov %rdi,-0x18(%rbp) ; mov %esi,-0x1c(%rbp)
+        f:  cmpq $0x0,-0x18(%rbp) ; je 30      <- false arm, edge 1
+       16:  mov -0x18(%rbp),%rax ; add $0x4,%rax ; mov (%rax),%eax
+       20:  and $0x100,%eax ; test %eax,%eax ; je 30   <- false arm, edge 2
+       29:  mov $0x1,%eax ; jmp 35
+       30:  mov $0x0,%eax                      <- TWO in-edges
+       35:  mov %eax,-0x4(%rbp)                <- the MULTIEQUAL
+
+    Root cause (P3, upstream-faithful).  RuleConditionalMove is the rule that
+    folds MULTIEQUAL(0,1) into zext(cond)/BOOL_AND/BOOL_OR, and it fires on the
+    one-test shape, but it requires each MULTIEQUAL input block to be the
+    CBRANCH root itself or a SINGLE-predecessor pass-through (upstream Ghidra
+    ruleaction.cc:9427, `if (inblock->sizeIn() != 1) return 0;`).  The short-circuit
+    chain gives the constant arm two predecessors, so it bails, and the bail is
+    correct at the IR level: no single dominating CBRANCH stands for the whole
+    chain, and hoisting `p[1]` out of its `p != 0` guard would evaluate it
+    unconditionally.  So the re-roll can only be done AFTER structuring, where the
+    chain is already one BlockCondition that C's own `&&` renders with
+    short-circuit semantics.
+
+    Stage model: P8 "goto-quality" (S8 structured-tree rewrite), rendered in P9.
+    The P0 assertion `option iteboolean on|off` selects it; the pass is
+    print-only (it marks the condition's terminal CBRANCH, mutates no p-code).
+
+    Pass 1 (option iteboolean off) reproduces the gap: the explicit two-arm
+    constant diamond `if (...) v1 = 1; else v1 = 0;`.
+    Pass 2 (option iteboolean on, the default) proves the fix: one boolean
+    assignment `v1 = ((a0) && (...));` with the short-circuit condition intact.
+-->
+<bytechunk space="ram" offset="0x101000">
+f30f1efa554889e548897de88975e448837de800741a488b45e84883c0048b00
+250001000085c07407b801000000eb05b8000000008945fc8b45fc8d14008b45
+e401d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x101000" name="f"/>
+</binaryimage>
+<script>
+  <com>option iteboolean off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option iteboolean on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="iteboolean #1: option off leaves the explicit 0/1 constant diamond (gap reproduced)" min="1" max="1">v1 = 1;</stringmatch>
+<stringmatch name="iteboolean #2: option off emits the else arm storing the 0 constant" min="1" max="1">v1 = 0;</stringmatch>
+<stringmatch name="iteboolean #3: option on re-rolls it into one boolean assignment, short-circuit condition intact" min="1" max="1">v1 = \(\(a0\) &amp;&amp; \(\*\(uint4 \*\)\(a0 \+ 4\) &amp; 0x100\)\);</stringmatch>
+<stringmatch name="iteboolean #4: the re-roll is logged on the function header" min="1" max="1">iteboolean: re-rolled 1 0/1 select diamond\(s\)</stringmatch>
+</decompilertest>

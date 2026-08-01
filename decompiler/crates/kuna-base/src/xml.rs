@@ -1702,7 +1702,9 @@ mod tests {
         // (option off truncates a call at the six SysV register arguments)
         // and ghdec-inputtile-overlap / renaming over guardInput's leftover
         // input pieces (gnulib rpl_fcntl at -O2 produced no body at all)
-        assert_eq!(count, 182, "corpus file count drifted");
+        // and ghdec-iteboolean / short-circuit 0/1 select re-rolling
+        // (option off leaves the explicit `if (a && b) v = 1; else v = 0;` diamond)
+        assert_eq!(count, 183, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
