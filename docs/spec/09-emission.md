@@ -242,6 +242,34 @@ walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
 
+**Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
+the storage the leaf falls through to the upstream `pushUnnamedLocation`
+naming, `printc.rs (kuna_unnamed_location_name)`: the register name covering
+`(address, size)` if the translator has one, else the angr-style `dat_<addr>`
+for a data space (§9.3), else the capitalized `Space<hex>` form —
+`Stack00000008`, `Unique00001a80`. These name the *storage*, not a variable,
+and are deliberately never declared: they are extern-like markers that a value
+lives somewhere the analysis never resolved to a variable, exactly as upstream's
+`stack0x00000008` is (kuna capitalizes the space and drops the `0x` so the
+token is at least a legal C identifier).
+
+The same leaf serves the **spacebase** arm of `printc.rs
+(PrintC::op_ptrsub_ir)`. A `PTRSUB(sp, off)` is a reference into the stack (or
+global) frame; P6 binds a Symbol to the offset constant whenever the recovered
+frame layout has one, and the arm then renders `&local_10` / `&myval.b`
+through the partial-symbol walk above. When P6 bound nothing — the frame's
+spacebase could not be tracked to a constant, so every reference stays relative
+to the *entry* stack pointer and the offsets land outside the mapped frame,
+which is what an `alloca`/`_chkstk` stack probe does — the reference still
+names real storage, and it renders `&Stack00000008` through the same
+unnamed-location leaf (`printc.rs (PrintC::push_spacebase_unnamed_ir)`, whose
+address comes from `printc.rs (spacebase_unnamed_address)`, the C++
+`TypeSpacebase::getAddress`). What that arm must not do is fall back to the
+*functional* render `PTRSUB(ESP, 8)`, kuna's behavior before this leaf existed:
+`PTRSUB` is an internal p-code operator and `ESP` a raw machine register, and
+emitting either makes the whole function something no C parser accepts
+(`tests/stages/ghdec-spacebase-unnamed.xml`, DIV-46).
+
 **Precedence without an AST.** Operators and leaves are not buffered into a
 tree; they stream through a reverse-polish stack. `printc.rs (PrintC::push_op)`
 pushes an operator's static token — the singleton table `printc.rs (tokens)`
