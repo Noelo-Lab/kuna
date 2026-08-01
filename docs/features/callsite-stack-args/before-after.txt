@@ -1,0 +1,414 @@
+callsite-stack-args — captured before/after
+===========================================
+
+All four pairs produced by ONE binary built from `main` with the candidate one-argument
+predicate correction compiled in behind an environment gate, so "before" and "after" differ by
+nothing except which address is handed to `FuncProto::get_local_range().in_range()`:
+
+    before:  KUNA_SPECS=… kuna decompile <bin> <sel>
+    after:   KSTACKFIX=1 KUNA_SPECS=… kuna decompile <bin> <sel>
+
+
+================================================================================
+1. MINIMAL WITNESS  (gcc -O2 -no-pie; `push`-form stack arguments)
+================================================================================
+
+    __attribute__((noinline)) long callee(long a,long b,long c,long d,long e,long f,long h,long i)
+    { return a+b+c+d+e+f+h*3+i*5; }
+    __attribute__((noinline)) long caller(long x,long y){ return callee(1,2,3,4,5,6,x,y); }
+    int main(int argc,char**argv){ return (int)caller(argc,(long)argv); }
+
+    0000000000401150 <caller>:
+      401154:  push   %rsi
+      401155:  mov    $0x6,%r9d
+      40115b:  mov    $0x5,%r8d
+      401161:  mov    $0x4,%ecx
+      401166:  push   %rdi
+      401167:  mov    $0x3,%edx
+      40116c:  mov    $0x2,%esi
+      401171:  mov    $0x1,%edi
+      401176:  call   401120 <callee>
+
+--- callee (UNCHANGED — the callee side was never broken) --------------------
+
+    int8 callee(int8 a0,int8 a1,int8 a2,int8 a3,int8 a4,int8 a5,int8 a6,int8 a7)
+    {
+      return a6 * 3 + a0 + a1 + a2 + a3 + a4 + a5 + a7 * 5;
+    }
+
+--- caller BEFORE ------------------------------------------------------------
+
+    void caller(void)
+    {
+      callee(1,2,3,4,5,6);
+      return;
+    }
+
+--- caller AFTER -------------------------------------------------------------
+
+    void caller(unsigned long a0,unsigned long a1)
+    {
+      callee(1,2,3,4,5,6,a0,a1);
+      return;
+    }
+
+--- p-code (`print raw`), proving the loss is in the IR, not the printer -----
+
+    BEFORE:  0x00401176:e:  call fcallee(free)(#0x1,#0x2,#0x3,#0x4,#0x5,#0x6)
+    AFTER:   0x00401176:e:  call fcallee(free)(#0x1,#0x2,#0x3,#0x4,#0x5,#0x6,RDI(i),RSI(i))
+
+
+================================================================================
+1b. SECOND WITNESS — the dead-code consequence in isolation (mydoom shape, minimised)
+    gcc -O0 -no-pie, stripped; `work2` @ 0x401136
+================================================================================
+
+    extern void fill7(int a,int b,int c,int d,int e,int f,int *out);
+    int work2(char *buf, int n) {
+        int len = 0, i = 0, total = 0;
+        for (;;) {
+            if (i >= len) { fill7(1,2,3,4,5,6,&len); if (len == 0) break; i = 0; }
+            buf[total++] = buf[i++];
+            if (total > n) break;
+        }
+        return total;
+    }
+
+--- BEFORE (stripped) — `&len` dropped; len folds to 0; the loop exit is deleted ---
+
+    int4 sub_401136(int8 a0,int4 a1)
+    {
+      int4 v1; int4 v2;
+      int4 v3; // stack - 0x18
+      int4 v4; // stack - 0x14
+
+      v3 = 0;
+      v4 = 0;
+      do {
+        if (0 <= v3) {
+          sub_401251(1,2,3,4,5,6);       <-- &len GONE
+          return v4;                     <-- the `if (len == 0) break` folded to always-taken
+        }
+        v1 = v3 + 1; v2 = v4 + 1;
+        *(void *)(v4 + a0) = *(void *)(v3 + a0);
+        v3 = v1; v4 = v2;
+      } while (v2 <= a1);
+      return v2;
+    }
+
+--- AFTER (stripped) ---------------------------------------------------------
+
+    int4 sub_401136(int8 a0,int4 a1)
+    {
+      int4 v1; int4 v2;
+      int4 v3; // stack - 0x1c
+      int8 v4; // fs_offset
+      int4 v5; // stack - 0x18
+      int4 v6; // stack - 0x14
+      unsigned long v7; // stack - 0x10
+
+      v7 = *(void *)(v4 + 0x28);
+      v3 = 0; v5 = 0; v6 = 0;
+      do {
+        if (v3 <= v5) {
+          sub_401251(1,2,3,4,5,6,&v3);
+          if (!v3)
+            return v6;
+          v5 = 0;
+        }
+        v1 = v5 + 1; v2 = v6 + 1;
+        *(void *)(v6 + a0) = *(void *)(v5 + a0);
+        v5 = v1; v6 = v2;
+      } while (v2 <= a1);
+      return v2;
+    }
+
+--- THE DWARF CONTROL (same source, `gcc -O0 -no-pie -g`, NOT stripped) -------
+
+    BEFORE and AFTER are BYTE-IDENTICAL, and both are correct:
+
+    int4 work2(char *buf,int4 n)
+    {
+      ...
+      do {
+        if (len <= i) {
+          fill7(1,2,3,4,5,6,&len);
+          if (!len) return total;
+          i = 0;
+        }
+        ...
+      } while (v2 <= n);
+      return v2;
+    }
+
+    This is the direct disproof of the mydoom triage's claim that "compiling the callee with a
+    full DWARF prototype does not change this - the stack argument is still dropped".  The
+    locked-prototype path (ActionFuncLink::func_link_input's `inputlocked` branch) never reaches
+    check_input_trial_use and is healthy.  The 8-argument witness of section 1 behaves the same
+    way when built -g.
+
+
+================================================================================
+2. O2-noinline/openssh-portable/stripped/ssh-add  --addr 0x9190
+   (parse_dest_constraint; x86-64 SysV; 16-argument sshlog call)
+================================================================================
+
+--- BEFORE (2 `if`s; IDA/Ghidra/angr/binja/phoenix all have 6 and score GED 0) ---
+
+    void sub_9190(unsigned long a0,int8 *a1,int8 *a2,unsigned long a3)
+    {
+      int8 v1;
+      int8 *v2; // rax
+      char *v3; // rax
+      char *v4; // rax
+      int8 v5; // rax
+
+      v2 = (int8 *)sub_2a9d0(1,0x50);
+      v3 = (char *)sub_2acd0(a0);
+      v4 = strchr(v3,0x3e);
+      if (v4) { // branch-flip
+        *v4 = '\0';
+        sub_8d80(v3,v2,a3);
+        sub_8d80(&v4[1],&v2[5],a3);
+        if (*v2)
+          sub_241c0("ssh-add.c","parse_dest_constraint",0x2ee,0,1,0); // no-return
+      }
+      else {
+        sub_8d80(v3,&v2[5],a3);
+      }
+      sub_28730("ssh-add.c","parse_dest_constraint",0x2f3,1,6,0);
+      v5 = sub_2abf0(*a1,*a2,*a2 + 1,8);
+      *a1 = v5;
+      v1 = *a2;
+      *a2 = v1 + 1;
+      *(int8 **)(v5 + v1 * 8) = v2;
+      free(v3); // tail-call
+      return;
+    }
+
+--- AFTER (6 `if`s; full 16-argument call; structurally == IDA and Ghidra) ----
+
+    void sub_9190(unsigned long a0,int8 *a1,int8 *a2,unsigned long a3)
+    {
+      int8 *v1; // rax
+      char *v2; // rax
+      char *v3;
+      char *v4;
+      int8 v5;
+      int8 v6;
+      unsigned long v7; // rdi
+      int8 v8;
+
+      v1 = (int8 *)sub_2a9d0(1,0x50);
+      v2 = (char *)sub_2acd0(a0);
+      v3 = strchr(v2,0x3e);
+      if (v3) { // branch-flip
+        *v3 = '\0';
+        sub_8d80(v2,v1,a3);
+        sub_8d80(&v3[1],&v1[5],a3);
+        v6 = 0;
+        if (*v1)
+          sub_241c0("ssh-add.c","parse_dest_constraint",0x2ee,0,1,0,"Invalid key constraint %s: cannot specify user on 'from' host",v2); // no-return
+      }
+      else {
+        sub_8d80(v2,&v1[5],a3);
+        v6 = *v1;
+      }
+      v3 = (char *)v1[6];
+      v5 = v1[5];
+      v7 = 0x51023;
+      if (!v3)
+        v3 = "(ANY)";
+      if (!v5) {
+        v7 = 0x51251;
+        v5 = 0x51251;
+      }
+      v4 = (char *)v1[1];
+      if (!v4)
+        v4 = "(ORIGIN)";
+      v8 = 0x51023;
+      if (!v6) {
+        v6 = 0x51251;
+        v8 = v6;
+      }
+      sub_28730("ssh-add.c","parse_dest_constraint",0x2f3,1,6,0,"constraint %zu: %s%s%s (%u keys) > %s%s%s (%u keys)",*a2,v6,v8,v4,*(void *)((int8)v1 + 0x14),v5,v7,v3,*(void *)((int8)v1 + 0x3c));
+      v5 = sub_2abf0(*a1,*a2,*a2 + 1,8);
+      *a1 = v5;
+      v6 = *a2;
+      *a2 = v6 + 1;
+      *(int8 **)(v5 + v6 * 8) = v1;
+      free(v2); // tail-call
+      return;
+    }
+
+    Source (ssh-add.c:735-760, macro expansion of debug2_f):
+      sshlog("ssh-add.c", __func__, 755, 1, SYSLOG_LEVEL_DEBUG2, ((void *)0),
+        "constraint %zu: %s%s%s (%u keys) > %s%s%s (%u keys)", *ndcp,
+        dc->from.user ? dc->from.user : "",      dc->from.user ? "@" : "",
+        dc->from.hostname ? dc->from.hostname : "(ORIGIN)", dc->from.nkeys,
+        dc->to.user ? dc->to.user : "",          dc->to.user ? "@" : "",
+        dc->to.hostname ? dc->to.hostname : "(ANY)", dc->to.nkeys);
+
+
+================================================================================
+3. O0/mydoom/stripped/mydoom.exe  --addr 0x4053c4
+   (msg_b64enc; i386 PE; the deleted for(;;) loop)
+================================================================================
+
+The relevant asm — `&inlen` is ReadFile's 4th (stack) argument and `inlen` is the loop's only
+exit condition:
+
+    0040543a: MOV  dword ptr [EBP + 0xfffffbd0],0x0   ; inlen = 0
+    00405465: LEA  EAX,[EBP + 0xfffffbd0]             ; &inlen
+    0040546b: MOV  dword ptr [ESP + 0xc],EAX          ; -> outgoing arg slot 4
+    0040548c: CALL EAX                                ; ReadFile (via IAT 0x411350)
+    00405491: MOV  EAX,dword ptr [EBP + 0xfffffbd0]   ; reload inlen
+    00405497: TEST EAX,EAX
+    00405499: JZ   0x405577                           ; the break
+
+--- BEFORE (3 basic blocks survive of a 22-node source CFG; the loop is GONE) ---
+
+    unsigned int sub_4053c4(int4 a0,unsigned int a1) // return-dupe
+    {
+      int4 v1;
+      char v2 [1030]; // stack - 0x42e
+      int4 v3; // stack - 0x28
+      unsigned int v4; // stack - 0x24
+      unsigned int v5; // stack - 0x20
+      uint4 v6; // stack - 0x1c
+      int4 v7; // stack - 0x18
+      unsigned int v8; // stack - 0x14
+      uint4 v9; // stack - 0x10
+
+      v4 = 0x4c;
+      v3 = (*dat_4112a0)();
+      if (v3 == -1)
+        return 1;
+      v9 = 0;
+      v8 = 0;
+      v7 = 0;
+      v5 = 0;
+      (*dat_411350)();                 <-- ReadFile with ZERO arguments
+      if (v9) {
+        sub_4052b4();
+        if (v9 <= 2) v2[3] = 0x3d;
+        if (v9 <= 1) v2[2] = 0x3d;
+        v6 = 0;
+        while (v6 <= 3) { v1 = v7 + 1; *(void *)(v7 + a0) = v2[v6]; v6 += 1; v7 = v1; }
+      }
+      *(void *)(v7 + a0) = 0;
+      (*dat_411298)();
+      return 0;
+    }
+
+--- AFTER (the whole read/encode loop is back; matches Ghidra's shape) --------
+
+    unsigned int sub_4053c4(int4 a0,int4 a1)
+    {
+      uint4 v1;
+      int4 v10; // stack - 0x28
+      uint4 v11; // stack - 0x24
+      uint4 v12; // stack - 0x20
+      uint4 v13; // stack - 0x1c
+      int4 v14; // stack - 0x18
+      uint4 v15; // stack - 0x14
+      uint4 v16; // stack - 0x10
+      uint4 v2;
+      int4 v3;
+      uint4 v4; // stack - 0x434
+      char v5 [1030]; // stack - 0x42e
+      void *v6;
+      unsigned int v7; // stack - 0x470
+      uint4 *v8;
+      unsigned int v9; // stack - 0x468
+
+      v11 = 0x4c;
+      v10 = (*dat_4112a0)(a1 + 0x2b7,0x80000000,3,0,3,0,0);
+      if (v10 == -1)
+        return 1;
+      v16 = 0; v15 = 0; v4 = 0; v14 = 0; v12 = 0;
+      do {
+        if (v4 <= v15) {
+          v9 = 0;
+          v8 = &v4;                     <-- &inlen ESCAPES THE FRAME
+          v7 = 0x400;
+          v6 = &v5[6];
+          (*dat_411350)(v10,v6,0x400,v8,0);
+          if (!v4) {
+            if (v16) {
+              v6 = v5;
+              sub_4052b4(&v5[3],v6);
+              if (v16 <= 2) v5[3] = 0x3d;
+              if (v16 <= 1) v5[2] = 0x3d;
+              v13 = 0;
+              while (v13 <= 3) { v3 = v14 + 1; *(void *)(v14 + a0) = v5[v13]; v13 += 1; v14 = v3; }
+            }
+            *(void *)(v14 + a0) = 0;
+            (*dat_411298)(v10,v6,v7,v8,v9);
+            return 0;
+          }
+          v15 = 0;
+        }
+        v1 = v15 + 1;
+        v2 = v16 + 1;
+        v5[v16 + 3] = v5[v15 + 6];
+        v15 = v1;
+        v16 = v2;
+        if (v2 == 3) {
+          sub_4052b4(&v5[3],v5);
+          for (v13 = 0; v13 <= 3; v13 = v13 + 1) {
+            *(void *)(v14 + a0) = v5[v13];
+            v12 += 1;
+            v3 = v14 + 1;
+            if (v11 <= v12) { ... }
+            ...
+          }
+        }
+      } while (true);
+    }
+
+    NOTE the one visible artifact: `(*dat_411298)(v10,v6,v7,v8,v9)` is CloseHandle, which takes
+    ONE argument.  The outgoing-argument slots from the preceding ReadFile call are still live
+    and unmodified at the CloseHandle site, and ancestor-realism accepts them.  Upstream Ghidra
+    behaves the same for a genuinely unprototyped __cdecl callee and escapes it by applying the
+    PE IAT import prototype (`CloseHandle(local_28)`).  Sequenced as increment 2 in proposal.md.
+
+
+================================================================================
+4. tests/stages/gh6882-sparcstructret.xml  (SPARC BE 32 — the one stage movement)
+================================================================================
+
+This is the ONLY assertion that moves anywhere in the datatest + stage corpora, and it moves
+because the output got MORE correct: `f` is a struct-return function and stock kuna dropped its
+hidden struct-return buffer pointer entirely.
+
+--- pass 1 (option sparcstructret off) BEFORE / AFTER -------------------------
+
+    BEFORE                                AFTER
+    void p(void)                          void p(void)
+    {                                     {
+      code *v1;                             code *v1;
+                                            char v2 [8];
+      f();                                  f(v2);            <-- struct-return buffer passed
+      v1 = (code *)IllegalInstructionTrap(8);  v1 = (code *)IllegalInstructionTrap(8);
+      (*v1)();                              (*v1)();
+      return;                               return;
+    }                                     }
+
+--- pass 2 (option sparcstructret on) BEFORE / AFTER --------------------------
+
+    BEFORE                                AFTER
+    int4 p(int4 a0)                       int4 p(int4 a0)
+    {                                     {
+      int4 v1; // stack - 0x8               int4 v1 [2]; // stack - 0x8
+                                            int4 *v2; // i0
+      f();                                  v2 = v1;
+      IllegalInstructionTrap(8);            f(v2);
+      f();                                  IllegalInstructionTrap(8);
+      return v1 + a0;                       f(v2);
+    }                                       return v1[0] + a0;
+                                          }
+
+    The assertion `return v1 \+ a0;` must become `return v1\[0\] \+ a0;`.  The XML's own
+    comment already documents one prior update of this same string for the same class of
+    reason (a second, unrelated bug changing how the tail rendered).

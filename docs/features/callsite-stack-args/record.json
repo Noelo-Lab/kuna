@@ -1,0 +1,138 @@
+{
+  "slug": "callsite-stack-args",
+  "opportunity": "decbench:O0-mydoom-mydoom-msg_b64enc::0x4053c4",
+  "test_name": "O2-noinline-openssh-portable-ssh-add-parse_dest_constraint",
+  "binary": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/openssh-portable/stripped/ssh-add",
+  "selector": "0x9190",
+  "func_addr": "0x9190",
+  "secondary_case": {
+    "test_name": "O0-mydoom-mydoom-msg_b64enc",
+    "binary": "/home/mahaloz/github/decbench/results/full_run/O0/mydoom/stripped/mydoom.exe",
+    "selector": "0x4053c4",
+    "func_addr": "0x4053c4",
+    "arch": "i386 PE"
+  },
+  "angr_version": null,
+  "option": "callsitestackargs",
+  "flag": "callsite_stack_args",
+  "element_id": 4118,
+  "phase": "P4",
+  "subphase": "active-input-trial-scoring",
+  "tier": "core",
+  "change_kind": "correctness-fix",
+  "source_decompiler": "ghidra-upstream",
+  "inspiration": "decbench:O0-mydoom-mydoom-msg_b64enc + O2-noinline-openssh-portable-ssh-add-parse_dest_constraint",
+  "scope": "proposal",
+  "proposal": true,
+  "default_on": true,
+  "default_on_recommended": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "root_cause_class": "mis-ported-predicate",
+  "owning_file": "decompiler/crates/kuna-decomp/src/p4_calls/funcdata_callsite.rs",
+  "owning_function": "check_input_trial_use",
+  "upstream_anchor": "fspec.cc:5618 (FuncCallSpecs::checkInputTrialUse)",
+  "spec_chapter": "docs/spec/04-calls-and-prototypes.md",
+  "introduced_in": "5cd4d518 rport/w10-callsite-args",
+  "decisions": [
+    "MIS-PORT, not unported and not a deliberate simplification: check_input_trial_use passes the trial's CALLEE-relative address to FuncProto::get_local_range().in_range(), where upstream fspec.cc:5618 passes the argument Varnode's CALLER-relative address. Everything else on the path (create_placeholder, resolve_spacebase_relative, guard_calls IPTR_SPACEBASE translation, build_input_from_trials) is line-for-line faithful and verified working by instrumentation.",
+    "The published triage hypothesis (guard_calls short-circuits via tryregister=false because stackoffset stays OFFSET_UNKNOWN) is FALSE. Instrumented on both x86-64 and i386: tryregister=true, stackoffset resolves, register_trial + op_insert_input both run. The trials exist and are then scored no-use.",
+    "kuna's own spec chapter already documents the correct behaviour ('outside the caller's local stack range'), and the port comment in the code documents the incorrect one ('the callee's local range') - the implementation contradicts its own normative chapter.",
+    "The fix is one argument. Verified on a scratch build behind an env gate: witness, ssh-add/parse_dest_constraint and mydoom/msg_b64enc all fully recovered.",
+    "Ablation measured on the scratch build: kuna test --datatests -> 675/675 PARITY OK (zero assertions move). Stage corpus 304/305: the single movement is gh6882-sparcstructret #2, which is ITSELF a correctness improvement (the SPARC hidden struct-return buffer pointer is now passed: f() -> f(v2)); only the pinned expression text needs updating.",
+    "Speed: no detectable delta (ssh-add decompile-all 10.80s -> 10.79s median of 3; mydoom 2.03s -> 1.98s min of 3).",
+    "Recommend shipping GATED (option callsitestackargs, tier core, change_kind correctness-fix) despite being a strict bug fix, because it changes emitted C at a large fraction of call sites in every stripped binary on every architecture and has a known artifact class (over-recovery on unprototyped __cdecl callees). Default-ON is earned by the ablation. No DIV row needed - this converges on upstream rather than diverging from it - but docs/history.md should record the mis-port and its correction.",
+    "Known artifact accepted for now: on i386, stale outgoing-argument slots from a previous call can be accepted as arguments of a later unprototyped call (mydoom CloseHandle renders with 5 arguments where it takes 1). Upstream Ghidra shares this behaviour and escapes it via PE IAT import prototypes; that is sequenced as increment 2.",
+    "Alternative B (suppress only the dataflow-freeing for spacebase trials, fixing the dead-code-elimination symptom without recovering arguments) was considered and rejected: it is MORE code than the real fix, produces strictly worse output, and increases divergence from upstream. There is no useful smaller first increment.",
+    "CORRECTION to docs/decbench/triage/O0-mydoom-mydoom-msg_b64enc.md: its claim that a full DWARF prototype does not help ('the locked path drops it too') is NOT reproducible on this build. Both witnesses compiled -g decompile correctly WITHOUT the fix and are byte-identical WITH it; the same sources stripped reproduce the bug.",
+    "REFINEMENT to the blast-radius claim in the parent task and both triage docs: the defect bites every call site whose callee prototype is UNLOCKED - that is all of them in a stripped binary, and measurably about half of them even with full DWARF (calls_ge7_args 37->73 on the six DWARF binaries), because DWARF locks only the prototypes it describes. 'Where DWARF is present, stack arguments are already recovered' is true of the short-call metrics (they move by exactly zero) but false of the >=7-argument count."
+  ],
+  "measured": {
+    "datatests_assertions_changed": 0,
+    "datatests_parity": "OK",
+    "stage_assertions_changed": 1,
+    "stage_assertion_changed_name": "GH6882 #2: sparcstructret on recovers the function tail (the real return expression)",
+    "workspace_suite": "green (one pre-existing worktree failure, w10_adv_r2_guard_is_not_a_skipped_false_green, reproduces identically without the fix - missing 8051 .sla)",
+    "corpus": {
+      "method": "kuna decompile-all --json, stock vs fixed on the same binary; count direct call sites of a callee kuna itself decompiled that render with fewer arguments than that callee's own recovered parameter count",
+      "ssh_add_x86_64": {
+        "functions": 988,
+        "calls_ge7_args_stock": 0,
+        "calls_ge7_args_fixed": 282,
+        "total_calls_stock": 4588,
+        "total_calls_fixed": 4596,
+        "short_calls_stock": 203,
+        "short_calls_fixed": 194,
+        "reference_counts_same_binary": {
+          "ghidra": 300,
+          "ida": 338,
+          "binja": 300,
+          "angr": 263,
+          "dewolf": 147
+        }
+      },
+      "sweep": {
+        "method": "803 candidate binaries enumerated across full_run/{O0,O2,O2-noinline}/*/stripped/ (818 files, 15 IDA sidecars filtered, file(1) confirmed all 803). Stratified sample of 30: the same 10 program identities at all three optimisation levels. 60 decompile-all runs, 300s timeout, nothing timed out or skipped, slowest run 26.3s.",
+        "sample_size": 30,
+        "candidates_total": 803,
+        "calls_ge7_args_stock": 7,
+        "calls_ge7_args_fixed": 250,
+        "empty_short_stock": 1131,
+        "empty_short_fixed": 648,
+        "short_calls_stock": 2229,
+        "short_calls_fixed": 1426,
+        "lost_args_stock": 5436,
+        "lost_args_fixed": 4204,
+        "total_calls_stock": 28440,
+        "total_calls_fixed": 28455,
+        "per_arch": {
+          "x86_64_n18": {"ge7": [7, 236], "empty_short": [414, 414], "short_calls": [1087, 966]},
+          "pe_i386_n6": {"ge7": [0, 8], "empty_short": [514, 31], "short_calls": [514, 40]},
+          "arm_cortexm_n6": {"ge7": [0, 6], "empty_short": [203, 203], "short_calls": [628, 420]}
+        },
+        "i386_empty_arglist_fraction": [0.4248, 0.0253],
+        "dwarf_split_n6": {
+          "note": "same 6 x86-64 identities, stripped vs non-stripped compiled/ counterpart with DWARF confirmed by readelf",
+          "calls_ge7_args_stripped": [1, 73],
+          "calls_ge7_args_dwarf": [37, 73],
+          "short_calls_stripped": [152, 124],
+          "short_calls_dwarf": [68, 68],
+          "lost_args_stripped": [335, 261],
+          "lost_args_dwarf": [81, 81],
+          "verdict": "HALF-supports 'DWARF already fixes it'. Short-call metrics move by exactly zero with DWARF present (68->68, 81->81) vs -28/-74 stripped. But calls_ge7_args still nearly doubles with DWARF (37->73), because DWARF locks only the prototypes it describes - internal statics, tail-called helpers and undocumented imports stay unlocked. Both endpoints converge on the identical 73 with or without debug info."
+        },
+        "kstackfix_only_failures": "NONE. All 72 runs exited 0; stderr byte-identical between stock and fixed on every pair. Five binaries re-run with full stderr + dump-level counters (function count, empty-body count, error markers): all deltas zero. Pre-existing panics (ruleaction_2.rs:96 CPUI_INT_SRIGHT, heritage.rs:2775, address.rs:180) appear identically on both sides.",
+        "caveats": [
+          "short_calls ROSE on bzip2 O2 (12->18) and bzip2 O2-noinline (36->40): the metric is self-referential, so lengthening a callee's own recovered prototype can make previously-complete call sites short. Net is still -803.",
+          "empty_short is unchanged for EVERY x86-64 and ARM binary (414->414, 203->203). The empty-argument-list win is exclusively an i386 phenomenon, as SysV's 6 register arguments predicts.",
+          "freertos/RTOSDemo.out is degenerate at all three opt levels (0-1 direct calls found) due to an ARM Cortex-M function-discovery limitation; the ARM column effectively rests on chibios/ch.elf alone.",
+          "Stock calls_ge7_args is 0 on 25/30 binaries, not all: the 7 corpus-wide stock sites come from the LOCKED-prototype path (libproto/DWARF), which never reaches the broken predicate."
+        ]
+      },
+      "mydoom_i386_pe": {
+        "functions": 156,
+        "total_calls_stock": 331,
+        "total_calls_fixed": 339,
+        "empty_short_stock": 192,
+        "empty_short_fixed": 6,
+        "short_calls_stock": 192,
+        "short_calls_fixed": 7,
+        "empty_arglist_fraction_stock": 0.58,
+        "empty_arglist_fraction_fixed": 0.018
+      }
+    },
+    "speed_prelim": {
+      "note": "scratch env-gated build, wall clock of `decompile-all --json`, 3 repetitions; NOT the scripts.pipeline.timeit block, which is spliced at implementation time",
+      "ssh_add_stock_s": [10.80, 10.70, 10.85],
+      "ssh_add_fixed_s": [10.79, 11.08, 10.68],
+      "mydoom_stock_s": [4.61, 2.03, 3.81],
+      "mydoom_fixed_s": [1.98, 2.06, 2.06]
+    }
+  },
+  "ged_before": null,
+  "ged_after": null,
+  "speed_off_median_s": null,
+  "speed_on_median_s": null,
+  "speed_delta_pct": null,
+  "speed_forced_off": false
+}
