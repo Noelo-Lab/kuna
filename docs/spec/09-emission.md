@@ -357,7 +357,7 @@ own body (`void *a3` alongside `a3[1]` meaning byte offset 8 — not
 compilable C, and a store cast down to `*(void *)` loses its width
 entirely). `void` is therefore only the **fallback** under a pointer, for
 the residual sizes with no natural single C type (0, 3, 5, 6, 7, …); as a
-scalar those sizes keep `undefined<N>` (DIV-47,
+scalar those sizes keep `undefined<N>` (DIV-48,
 `printc.rs (realtype_unknown_base)`, exercised by
 `tests/stages/ghdec-realtypes-pointee.xml`). A genuine `TYPE_VOID` pointee
 is not a residual unknown and never enters the relabel, so the opaque

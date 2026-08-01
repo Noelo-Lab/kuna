@@ -42,7 +42,7 @@
 
     No option: this is a correctness fix inside an existing default-on option
     (a declaration that contradicts its own expressions is never desired),
-    DIV-47.
+    DIV-48.
 
     Bytes are libacl.so.1.1.2301 set_acl_fd (0x56c0) and acl_calc_mask
     (0x2820), their PLT/internal callees stubbed as endbr64/ret at their real
