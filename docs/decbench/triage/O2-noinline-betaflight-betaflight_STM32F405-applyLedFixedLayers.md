@@ -129,6 +129,24 @@ struct type, so every decompiler reconstructs the field writes as
 CONCAT/SUBPIECE over one 4-byte slot. Ghidra: `local_24._0_3_ = CONCAT12(...)`.
 kuna: `v12 = CONCAT13(v18,v15)`. **This is the same rendering, not a kuna gap.**
 
+## Reported symptom — FIXED (DIV-51)
+
+The duplicated declaration is gone: `applyLedFixedLayers` now opens with one
+`unsigned int v12; // stack - 0x24`, the same choice Ghidra makes with its single
+`undefined4 local_24`. The fix is the Symbol-keyed scalar collapse proposed below,
+implemented inside `option dedupvardecls` with one change of arbitration: the
+survivor takes the Symbol's own type only when that type is at least as wide as
+every access the group covers, otherwise the widest member wins — kuna's ScopeLocal
+ranges are sometimes narrower than the accesses that reach them, and a 2-byte
+declaration for a slot the body writes 4 bytes into would be a new defect.
+
+Prevalence, measured before and after over 14 decbench binaries / 11,874 functions
+(the estimate in the analysis below was made on one binary): 18 functions emitted a
+duplicate local declaration, now 0. The blast radius is exactly those 18 functions —
+nothing else changes a byte, no function loses a declared name, none gains one.
+
+Every secondary observation in this record is untouched and still open.
+
 ## Analysis
 
 **Structural symptom (ONE).** Today's default build declares two different

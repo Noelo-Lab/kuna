@@ -893,8 +893,8 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 ### `dedupvardecls` -- on | off, default `on`
 
 - **Symptoms:** the same local declared once although many HighVariables share the stack slot; flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times).
-- **What it does:** Collapse local-variable declarations whose fully-rendered line (type + name + array adornment + storage comment) is identical, so a stack slot mapped onto many same-named scalar HighVariables is declared once instead of one line per high (the scalar analogue of the existing composite-symbol declaration collapse).
-- **When to flip:** On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x). Set OFF to restore the one-declaration-per-high rendering.
+- **What it does:** Collapse local-variable declarations onto one line per mapped ScopeLocal symbol (same containing symbol + same identifier, declaring the symbol's own type when the highs disagree about it) and then onto one line per fully-rendered signature (type + name + array adornment + storage comment), so a stack slot mapped onto many scalar HighVariables is declared once instead of one line per high (the scalar analogue of the existing composite-symbol declaration collapse).
+- **When to flip:** On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x), including when two live ranges of the slot recovered different types and so rendered two differently-typed declarations of one name -- invalid C (DIV-51). Set OFF to restore the one-declaration-per-high rendering.
 - **Where / provenance:** P9/naming-policy · angr · presentation-default · angr-duplicate-decls
 - **Example:** `option dedupvardecls off`
 

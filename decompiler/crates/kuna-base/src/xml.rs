@@ -1702,7 +1702,9 @@ mod tests {
         // (option off truncates a call at the six SysV register arguments)
         // and ghdec-inputtile-overlap / renaming over guardInput's leftover
         // input pieces (gnulib rpl_fcntl at -O2 produced no body at all)
-        assert_eq!(count, 182, "corpus file count drifted");
+        // and ghdec-symbol-keyed-local-decls / one declaration per ScopeLocal
+        // Symbol (one stack slot declared twice under one name, two types)
+        assert_eq!(count, 183, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,5 +1,5 @@
-//! End-to-end gate: the decompiler must never emit an **undeclared local variable**
-//! (invalid C).
+//! End-to-end gate: the decompiler must declare every local it references **exactly
+//! once** — neither an undeclared local nor a re-declared one is C.
 //!
 //! Fixture: `declmerge_x86_64` (`+.c`), a non-PIE x86-64 ELF whose `make_dir_clone`
 //! (a reduction of tar's `make_directory`) has a size phi `sz = (…) ? len : len + 1`
@@ -14,6 +14,14 @@
 //! This gate re-parses the emitted C and asserts every referenced `vN` local appears
 //! in the declaration block. Regression for the ghidra-beats-kuna merge/copy cluster's
 //! invalid-C sub-bug (`docs/decbench/ghidra-gap-analysis.md` §3).
+//!
+//! It also asserts the mirror image: no name is declared **twice**. The printer walks
+//! HighVariables where upstream walks ScopeLocal Symbols, so both directions are
+//! reachable from the same walk — an over-strict skip drops the only declaration of a
+//! referenced name, and an unmerged second live range of one mapped slot adds a second
+//! declaration of a name that already has one (DIV-51, whose end-to-end witness is
+//! `tests/stages/ghdec-symbol-keyed-local-decls.xml`). Pinning both here keeps a fix
+//! for either from re-opening the other.
 //!
 //! ## `.sla` precondition
 //!
@@ -69,9 +77,9 @@ fn decompile(func: &str) -> Option<String> {
 
 /// Every `vN` token that appears in the declaration block (the lines between the
 /// function's opening `{` and the first blank line — the C++ printer's local decl
-/// prelude).
-fn declared_vars(c: &str) -> std::collections::BTreeSet<String> {
-    let mut out = std::collections::BTreeSet::new();
+/// prelude), **in order and with repeats** so a re-declaration is visible.
+fn declared_var_list(c: &str) -> Vec<String> {
+    let mut out = Vec::new();
     let mut in_decls = false;
     for line in c.lines() {
         let t = line.trim();
@@ -85,7 +93,7 @@ fn declared_vars(c: &str) -> std::collections::BTreeSet<String> {
             }
             // A declaration line ends in `;` (possibly with a trailing `// comment`).
             for tok in tokens_vn(line) {
-                out.insert(tok);
+                out.push(tok);
             }
         }
     }
@@ -124,7 +132,23 @@ fn no_undeclared_local_variable_in_make_dir_clone() {
     };
     eprintln!("---- make_dir_clone ----\n{c}");
 
-    let declared = declared_vars(&c);
+    let decl_list = declared_var_list(&c);
+    // No name is declared twice: one ScopeLocal Symbol is one declaration, however
+    // many HighVariables of it the merge left behind (DIV-51).
+    let mut redeclared: Vec<&String> = Vec::new();
+    for (i, name) in decl_list.iter().enumerate() {
+        if decl_list[..i].contains(name) && !redeclared.contains(&name) {
+            redeclared.push(name);
+        }
+    }
+    assert!(
+        redeclared.is_empty(),
+        "emitted a RE-DECLARED local variable (invalid C): {:?}\n\
+         declaration block={:?}\n--- C ---\n{}",
+        redeclared, decl_list, c
+    );
+
+    let declared: std::collections::BTreeSet<String> = decl_list.into_iter().collect();
     // Every `vN` referenced anywhere in the body must be declared.
     let used: std::collections::BTreeSet<String> = tokens_vn(&c).into_iter().collect();
     let undeclared: Vec<&String> = used.iter().filter(|v| !declared.contains(*v)).collect();

@@ -1752,6 +1752,30 @@ impl ScopeLocal {
         self.db.public_make_name_unique(self.scope, nm)
     }
 
+    /// The identity and whole data-type of the Symbol a storage location belongs to
+    /// — the smallest SymbolEntry containing its **base byte** — or `None` when no
+    /// Symbol covers it (a register/unique temp that never reached the local scope).
+    ///
+    /// The base-byte query is C++ `Funcdata::linkSymbol`'s
+    /// `queryProperties(vn->getAddr(), 1, usepoint)` (`funcdata_varnode.cc:1190`),
+    /// i.e. the lookup that decides which Symbol a Varnode *is* — a sub-field read of
+    /// a 4-byte slot belongs to that slot's Symbol even though it does not span it.
+    /// The declaration-emission analogue of [`Self::containing_category_for_varnode`]:
+    /// C++ `emitScopeVarDecls` walks the ScopeLocal **Symbol** table (printc.cc:2667)
+    /// and `emitVarDecl` declares `sym->getType()` (printc.cc:1719), so the printer
+    /// needs the Symbol behind a storage location to emit one declaration for the
+    /// several HighVariables that share it.  The uselimit is ignored for the same
+    /// reason the category query ignores it: Symbol identity is a property of the
+    /// Symbol, not of a single use-point, and the declaration is shared by every use.
+    pub fn containing_symbol_for_storage(
+        &self,
+        addr: &Address,
+    ) -> Option<(crate::database::SymbolId, Option<Rc<Datatype>>)> {
+        let eref = self.db.find_container_ignore_usepoint(self.scope, addr, 1)?;
+        let sym = self.db.entry(self.scope, eref).symbol;
+        Some((sym, self.db.symbol(sym).dtype.clone()))
+    }
+
     /// The category of the Symbol that **contains** a storage location (C++
     /// `Scope::queryProperties`/`findContainer` semantics, `database.cc:2128`), or
     /// `None` when no Symbol entry covers the *whole* `[addr, addr+size)` range.

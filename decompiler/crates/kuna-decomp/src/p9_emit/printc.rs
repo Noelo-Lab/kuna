@@ -2610,6 +2610,17 @@ impl PrintC {
         if decls.is_empty() {
             return false;
         }
+        // (kuna) The scalar analogue of the composite collapse above, keyed on the
+        // ScopeLocal *Symbol* rather than on the interned type Rc: several highs of
+        // one mapped scalar Symbol yield ONE declaration, as C++ `emitScopeVarDecls`
+        // does by construction.  Shares `option dedupvardecls` with the rendered-line
+        // collapse it generalises.  Returns the `sym->getType()` override for a
+        // surviving declaration whose group disagreed on the type.
+        let symbol_decl_type = if arch.dedup_var_decls {
+            self.collapse_symbol_decls(fd, arch, &mut decls)
+        } else {
+            std::collections::HashMap::new()
+        };
         // (kuna) `option dedupvardecls`: collapse declarations whose fully-rendered
         // line is identical (the scalar analogue of the composite-symbol collapse
         // above).  Off (default) => no deduper => byte-identical output.  See
@@ -2636,54 +2647,14 @@ impl PrintC {
             markup.symref = decl_rep_varnode(fd, *high)
                 .and_then(|vn| fd.vbank().get(vn))
                 .map(|v| v.get_create_index() as uintb);
-            // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
-            let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, *high);
-            let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
-
-            // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
-            // `sym->getType()`), not the partial member Varnode's type.  When the
-            // high is a non-array partial cover of a composite Symbol (a struct/
-            // union member, `kuna_symbol_offset() >= 0`), the local storage
-            // representative carries only the truncated member type (e.g. the
-            // 1-byte `flagfield` read => `undefined1`); declare the composite Symbol
-            // type (`enumstruct`) so the member access `v1.flagfield` has a base of
-            // the right type.  (The array case is handled by `array_count` below, so
-            // it is excluded here.)
-            if let Some(st) = fd.high_bank().get(*high).and_then(|h| {
-                if h.kuna_symbol_offset() >= 0 {
-                    h.kuna_symbol_type()
-                } else {
-                    None
-                }
-            }) {
-                let mt = st.get_metatype();
-                if mt == crate::dtype::type_metatype::TYPE_STRUCT
-                    || mt == crate::dtype::type_metatype::TYPE_UNION
-                {
-                    type_name = type_name_for_decl(st, rt);
-                }
+            let (mut decl_type, mut array_count, comment) =
+                self.rendered_local_decl(fd, arch, *high);
+            // (kuna) The Symbol-keyed collapse arbitrated a type disagreement between
+            // the several highs of one Symbol.
+            if let Some((t, a)) = symbol_decl_type.get(high) {
+                decl_type = t.clone();
+                array_count = a.clone();
             }
-            // Array member: if the mapped Symbol is an array, declare the base
-            // type and an `[count]` adornment after the name (C++ `emitVarDecl`'s
-            // array branch).
-            let array_count = fd
-                .high_bank()
-                .get(*high)
-                .and_then(|h| {
-                    let st = h.kuna_symbol_type()?;
-                    array_decl_parts(&st, rt)
-                })
-                // No mapped-Symbol array: fall back to the declaration representative's
-                // own data-type.  An anonymous `undefined1 [N]` array (an oversize
-                // unknown - e.g. a 32-byte YMM FMA accumulator, GH-9184 - that
-                // `getBase` widened past `max_basetype_size`) lives on the Varnode
-                // itself, never a Symbol; declare it `<base> name [N]` instead of
-                // flattening it to a scalar `undefined<N>`.
-                .or_else(|| {
-                    let v = decl_rep_varnode(fd, *high).and_then(|vn| fd.vbank().get(vn))?;
-                    array_decl_parts(v.get_type(), rt)
-                });
-            let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
             // (kuna) dedupvardecls: skip a declaration whose fully-rendered signature
             // (final declarator type, name, array adornment, storage comment) was
             // already emitted — a duplicate line carries no information and is, strictly,
@@ -2736,6 +2707,205 @@ impl PrintC {
         // last decl; the body's first statement then starts on its own line).
         self.emit.tag_line();
         true
+    }
+
+    /// (kuna) The fully-rendered declaration of one local high: the final declarator
+    /// type, the `[count]` array adornment (when the mapped Symbol — or the
+    /// declaration representative itself — is an array), and the storage comment.
+    ///
+    /// Shared by [`Self::collapse_symbol_decls`] and the emit loop so the collapse
+    /// compares exactly the bytes the emit loop would write.
+    fn rendered_local_decl(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        high: crate::context::HighVariableId,
+    ) -> (String, Option<(String, int4)>, Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>)
+    {
+        // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
+        let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, high);
+        let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
+
+        // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
+        // `sym->getType()`), not the partial member Varnode's type.  When the
+        // high is a non-array partial cover of a composite Symbol (a struct/
+        // union member, `kuna_symbol_offset() >= 0`), the local storage
+        // representative carries only the truncated member type (e.g. the
+        // 1-byte `flagfield` read => `undefined1`); declare the composite Symbol
+        // type (`enumstruct`) so the member access `v1.flagfield` has a base of
+        // the right type.  (The array case is handled by `array_count` below, so
+        // it is excluded here.)
+        if let Some(st) = fd.high_bank().get(high).and_then(|h| {
+            if h.kuna_symbol_offset() >= 0 {
+                h.kuna_symbol_type()
+            } else {
+                None
+            }
+        }) {
+            let mt = st.get_metatype();
+            if mt == crate::dtype::type_metatype::TYPE_STRUCT
+                || mt == crate::dtype::type_metatype::TYPE_UNION
+            {
+                type_name = type_name_for_decl(st, rt);
+            }
+        }
+        // Array member: if the mapped Symbol is an array, declare the base
+        // type and an `[count]` adornment after the name (C++ `emitVarDecl`'s
+        // array branch).
+        let array_count = fd
+            .high_bank()
+            .get(high)
+            .and_then(|h| {
+                let st = h.kuna_symbol_type()?;
+                array_decl_parts(&st, rt)
+            })
+            // No mapped-Symbol array: fall back to the declaration representative's
+            // own data-type.  An anonymous `undefined1 [N]` array (an oversize
+            // unknown - e.g. a 32-byte YMM FMA accumulator, GH-9184 - that
+            // `getBase` widened past `max_basetype_size`) lives on the Varnode
+            // itself, never a Symbol; declare it `<base> name [N]` instead of
+            // flattening it to a scalar `undefined<N>`.
+            .or_else(|| {
+                let v = decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))?;
+                array_decl_parts(v.get_type(), rt)
+            });
+        let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
+        (decl_type, array_count, comment)
+    }
+
+    /// (kuna) Collapse the declarations of the several HighVariables that share one
+    /// ScopeLocal **Symbol** into a single declaration, and report the type the
+    /// survivor should carry.
+    ///
+    /// C++ `PrintC::emitScopeVarDecls` walks the Symbol table (printc.cc:2667/2696),
+    /// so one Symbol is one declaration by construction; the kuna printer walks
+    /// HighVariables, so a stack slot whose live ranges did not merge is declared once
+    /// per high — the same identifier declared twice with two recovered types, which
+    /// is invalid C.  Two declarations are the same Symbol when the storage of their
+    /// declaration representatives resolves to the same containing ScopeLocal Symbol
+    /// **and** they render the same identifier; requiring the name to match keeps the
+    /// collapse from ever removing the sole declaration of a referenced name (the
+    /// undeclared-variable failure mode of the `declmerge` gate).
+    ///
+    /// The survivor is the first in emission order.  A group that already agreed on a
+    /// rendered type keeps it — the highs recovered it, which is sharper information
+    /// than the (usually `undefined<N>`) Symbol type.  A group that did NOT agree is
+    /// arbitrated by the returned type override: the Symbol's own type, the direct
+    /// analogue of C++ `emitVarDecl`'s `sym->getType()` (printc.cc:1719), unless that
+    /// type is **narrower** than the widest storage the group covers, in which case
+    /// the widest member's rendering wins.  kuna's `ScopeLocal` ranges can be narrower
+    /// than the accesses that reach them (upstream `restructure` would have grown the
+    /// Symbol), and a declaration smaller than the object the body writes through is a
+    /// fresh correctness bug, not a faithful one.
+    fn collapse_symbol_decls(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        decls: &mut Vec<(crate::context::HighVariableId, String)>,
+    ) -> std::collections::HashMap<crate::context::HighVariableId, DeclTypeOverride> {
+        let mut overrides: std::collections::HashMap<
+            crate::context::HighVariableId,
+            DeclTypeOverride,
+        > = std::collections::HashMap::new();
+        let scope = match fd.get_scope_local() {
+            Some(s) => s,
+            None => return overrides,
+        };
+        // A collapse needs two declarations of one identifier, so nothing outside a
+        // repeated name can move.  `decls` is sorted by name, so the repeats are
+        // adjacent; when there are none (the overwhelming majority of functions) the
+        // Symbol lookups below are skipped entirely.
+        let repeated: std::collections::HashSet<&str> = decls
+            .windows(2)
+            .filter(|w| w[0].1 == w[1].1)
+            .map(|w| w[0].1.as_str())
+            .collect();
+        if repeated.is_empty() {
+            return overrides;
+        }
+        // The Symbol identity of each repeated-name declaration, plus the Symbol's own
+        // type.  A high with no containing Symbol (a register/unique temp that never
+        // reached the local scope) keeps the per-high behavior.
+        let keys: Vec<Option<(crate::database::SymbolId, Option<std::rc::Rc<crate::dtype::Datatype>>)>> =
+            decls
+                .iter()
+                .map(|(high, name)| {
+                    if !repeated.contains(name.as_str()) {
+                        return None;
+                    }
+                    let v = decl_rep_varnode(fd, *high).and_then(|vn| fd.vbank().get(vn))?;
+                    scope.containing_symbol_for_storage(v.get_addr())
+                })
+                .collect();
+        let mut groups: std::collections::HashMap<(crate::database::SymbolId, String), Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, key) in keys.iter().enumerate() {
+            if let Some((sym, _)) = key {
+                groups.entry((*sym, decls[i].1.clone())).or_default().push(i);
+            }
+        }
+        let mut dropped: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for idxs in groups.values() {
+            if idxs.len() < 2 {
+                continue;
+            }
+            let keep = idxs[0];
+            for &i in &idxs[1..] {
+                dropped.insert(i);
+            }
+            let rendered: Vec<DeclTypeOverride> = idxs
+                .iter()
+                .map(|&i| {
+                    let (t, a, _) = self.rendered_local_decl(fd, arch, decls[i].0);
+                    (t, a)
+                })
+                .collect();
+            if rendered.iter().all(|r| *r == rendered[0]) {
+                continue;
+            }
+            // The group disagrees about the slot's type.  The widest storage any
+            // member covers is the floor: the declared object must hold every access
+            // the body renders through this name.
+            let widths: Vec<int4> = idxs
+                .iter()
+                .map(|&i| {
+                    decl_rep_varnode(fd, decls[i].0)
+                        .and_then(|vn| fd.vbank().get(vn))
+                        .map(|v| v.get_size())
+                        .unwrap_or(0)
+                })
+                .collect();
+            let wmax = widths.iter().copied().max().unwrap_or(0);
+            // C++ declares the Symbol's own type.  A composite Symbol is already
+            // collapsed by the type-Rc retain and declares through the array/struct
+            // branches, so only a wide-enough scalar Symbol type arbitrates here.
+            let symbol_type = keys[keep].as_ref().and_then(|(_, t)| t.as_ref()).filter(|st| {
+                use crate::dtype::type_metatype::*;
+                !matches!(st.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION)
+                    && st.get_size() >= wmax
+            });
+            match symbol_type {
+                Some(st) => {
+                    overrides.insert(decls[keep].0, (type_name_for_decl(st, self.rt_ctx), None));
+                }
+                // No usable Symbol type: declare the widest member's own rendering.
+                None => {
+                    let pos = widths.iter().position(|&w| w == wmax).unwrap_or(0);
+                    if rendered[pos] != rendered[0] {
+                        overrides.insert(decls[keep].0, rendered[pos].clone());
+                    }
+                }
+            }
+        }
+        if !dropped.is_empty() {
+            let mut i = 0;
+            decls.retain(|_| {
+                let keep = !dropped.contains(&i);
+                i += 1;
+                keep
+            });
+        }
+        overrides
     }
 
     /// The declaration type name + storage comment for a named local high.  The
@@ -7551,6 +7721,11 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
         fd.sblocks_ref().block(bb).get_index()
     }
 }
+
+/// (kuna) The declarator a Symbol-keyed collapse imposes on the surviving
+/// declaration: the final type text plus the `(base-type, count)` array adornment
+/// (`None` for a scalar).  Same shape as `rendered_local_decl`'s first two returns.
+type DeclTypeOverride = (String, Option<(String, int4)>);
 
 /// (kuna) The declaration *representative* Varnode of a local high: the addr-tied
 /// (mapped, in-scope) storage member - the C++ symbol's `getFirstWholeMap()`

@@ -19,7 +19,7 @@
 //! `emit_local_var_decls` already reproduces this for **composite** (array/struct/
 //! union) mapped symbols (`printc.rs`, the `seen_sym` retain) but explicitly keeps
 //! the per-high behavior for scalars.  This module supplies the scalar collapse,
-//! gated by `option dedupvardecls` so default output stays byte-identical.
+//! gated by `option dedupvardecls`.
 //!
 //! # What is collapsed
 //!
@@ -28,7 +28,15 @@
 //! byte-identical to one already emitted.  This is provably lossless: the emitted
 //! C bytes would be character-for-character the same, so no information is removed.
 //! Two highs that render the same name but a *different* type or storage have
-//! different signatures and both survive (a genuine collision the reader must see).
+//! different signatures and both survive here.
+//!
+//! A same-name/different-type pair at ONE storage location is not a collision the
+//! reader can act on, though — it is one stack slot declared twice, which is not
+//! compilable C.  That case is caught before this deduper runs, by the Symbol-keyed
+//! collapse in `printc.rs` (`PrintC::collapse_symbol_decls`, gated by the same
+//! option): several highs of one mapped `ScopeLocal` Symbol emit one declaration
+//! carrying the Symbol's own type.  This module is the residual line-level pass for
+//! the highs that reach no Symbol at all.
 //!
 //! # Apply boundary
 //!

@@ -1,0 +1,92 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    decbench campaign case
+    O2-noinline-betaflight-betaflight_STM32F405-applyLedFixedLayers (NOVEL
+    pool: kuna's graph edit distance on that function already ties the best
+    reference decompiler, 25 vs ghidra 25 / angr 42 / ida 41, and the emitted
+    body still was not compilable C, so no rival decompiler surfaced this fix).
+
+    P9 emission, declaration emission.  Upstream `PrintC::emitScopeVarDecls`
+    walks the ScopeLocal *Symbol* table (printc.cc:2667/2696), so one symbol is
+    one declaration by construction.  kuna's printer walks HighVariables
+    instead, so a stack slot whose live ranges did not merge was declared once
+    per high.  The shared-storage naming gives every whole cover of the slot the
+    same name, and the highs recover different types, so the function opened
+    with the same identifier declared twice at two widths:
+
+        unsigned int v12; // stack - 0x24
+        uint4 v12;        // stack - 0x24
+
+    which is not compilable C and leaves the reader unable to tell which `v12`
+    any body occurrence means.  Ghidra emits one `undefined4 local_24;`, IDA one
+    `int v23;`.  `option dedupvardecls` (default on) was the only collapse and
+    it keys on the fully rendered LINE, so two spellings of one slot both
+    survived by construction.
+
+    The fix keys the scalar collapse on the ScopeLocal Symbol, as upstream does:
+    highs whose declaration representative resolves to the same containing
+    symbol (base-byte containment, the `Funcdata::linkSymbol` query) AND that
+    render the same identifier emit one declaration.  Requiring the identifier
+    to match is what keeps this from ever removing the last declaration of a
+    referenced name.  When the collapsing highs disagree about the type, the
+    survivor declares the symbol's own type (upstream `emitVarDecl` declares
+    `sym->getType()`, printc.cc:1719) unless that type is narrower than the
+    widest storage the group covers, in which case the widest member wins: a
+    declaration smaller than the object the body writes through would be a fresh
+    bug, not a faithful one.
+
+    No option of its own: this is a correctness fix inside the existing
+    default-on `dedupvardecls`, which already owns "collapse duplicate local
+    declarations" (DIV-51).
+
+    Bytes: betaflight_STM32F405 (O2-noinline, stripped Cortex-M4 firmware) at
+    0x804f5b4, a 72-byte leaf that builds a 5-byte protocol frame across two
+    adjacent stack slots and hands their address to a send routine.  It is the
+    smallest witness of the same defect in that firmware; the campaign case at
+    0x8052b04 is the same shape 20x larger.  Its two callees are stubbed `bx lr`
+    at their real addresses.  The firmware is stripped, so the three names here
+    are the test's own, read off the p-code: `slot_checksum(&slot,4)` computes a
+    byte over the 4-byte slot and `send_bytes(port,&slot,5)` sends the slot plus
+    the trailing byte at stack - 0x14.
+
+    The 4-byte slot at stack - 0x18 is exactly the defect: kuna maps only a
+    2-byte ScopeLocal symbol there while the body writes it 3 and 4 bytes wide,
+    so the two highs render `undefined3` and `unsigned int` and the symbol's own
+    type is too narrow to arbitrate.  The widest cover therefore wins.
+
+    Pass 1 (default) asserts the fix: the slot is declared exactly once, at the
+    width the body uses.  Pass 2 (`option dedupvardecls off`) pins the
+    un-collapsed one-line-per-high rendering, which is the bug.  Assertion
+    counts span both passes.
+-->
+<bytechunk space="ram" offset="0x804f5b4">
+036803b330b583b00446002300938df8043055238df8003001238df801308df8
+0210aa258df8035004216846fff7c3ff8df803008df80450052269462068d4f7
+14fb03b030bd7047
+</bytechunk>
+<!-- The two callees, stubbed `bx lr` at their real addresses. -->
+<bytechunk space="ram" offset="0x804f56a" readonly="true">7047</bytechunk>
+<bytechunk space="ram" offset="0x8023c1e" readonly="true">7047</bytechunk>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x8023c1e] [ram,0x804f5fc]</com>
+  <com>map function r0x804f56a slot_checksum</com>
+  <com>map function r0x8023c1e send_bytes</com>
+  <com>map function r0x804f5b4 build_frame</com>
+  <com>lo fu build_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupvardecls off</com>
+  <com>lo fu build_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="symbol-keyed-local-decls #1: the slot is declared three times over the two passes, so exactly once by default" min="3" max="3">v1; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #2: the surviving declaration is as wide as the widest access, in both passes" min="2" max="2">unsigned int v1; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #3: only the off path keeps the narrow shadow declaration" min="1" max="1">undefined3 v1; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #4: the adjacent slot is untouched in both passes" min="2" max="2">char v2; // stack - 0x14</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #5: the body still reads the collapsed name in both passes" min="2" max="2">send_bytes\(\*a0,&amp;v1,5\);</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #6: the 4-byte use that outgrows the 2-byte ScopeLocal symbol" min="2" max="2">CONCAT13\(slot_checksum\(&amp;v1,4\),v1\)</stringmatch>
+</decompilertest>
