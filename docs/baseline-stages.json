@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    314,
-    314
+    321,
+    321
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -264,6 +264,13 @@
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
     "data:opcode-seam #2: RuleBitUndistribute pulls the common INT_SRIGHT out of the AND",
     "data:opcode-seam #3: no residual per-operand shift is left behind",
+    "data:realtypes-pointee #1: the callback-struct parameter declares its 8-byte pointee, not void",
+    "data:realtypes-pointee #2: no unknown pointee collapses to void in either pass",
+    "data:realtypes-pointee #3: the 4-byte errno store keeps its access width",
+    "data:realtypes-pointee #4: the 4-byte field store keeps its access width",
+    "data:realtypes-pointee #5: the declared stride agrees with the index expression in both passes",
+    "data:realtypes-pointee #6: the untouched off path keeps the upstream placeholder spelling",
+    "data:realtypes-pointee #7: the off path shows the same width the relabel now preserves",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",

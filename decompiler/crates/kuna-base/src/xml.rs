@@ -1690,7 +1690,9 @@ mod tests {
         // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in),
         // and ghdec-opcode-seam / the total opcode -> TypeOp seam
         // (a rule-produced INT_SRIGHT used to panic the whole function away)
-        assert_eq!(count, 176, "corpus file count drifted");
+        // and ghdec-realtypes-pointee / the realtypes pointee-size relabel
+        // (void *a3 with a3[1] meaning offset 8, out; unsigned long *a3, in)
+        assert_eq!(count, 177, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -7633,8 +7633,9 @@ pub(crate) fn declarator_parts(
     // The base type's display name (anonymous → `undefined<N>` / `void`).
     let base = stack.last().expect("declarator: non-empty stack");
     // (kuna) realtypes: relabel a residual TYPE_UNKNOWN base as a real C type by
-    // size.  If the base sits under any pointer modifier the whole declarator reads
-    // `void *` (base `void`; the `*` chain is laid out by the modifier walk below).
+    // size.  Under a pointer modifier the same size table applies, so the pointee
+    // width survives into the declaration; only a residual size with no natural C
+    // type degrades to `void` there (the `*` chain is laid out by the walk below).
     let under_pointer = stack[..stack.len() - 1]
         .iter()
         .any(|m| matches!(m.get_metatype(), type_metatype::TYPE_PTR));
@@ -8040,7 +8041,8 @@ impl RealTypeCtx {
 /// (kuna) Real C name for a residual `TYPE_UNKNOWN` base, or `None` when the gate
 /// is off / the type is not unknown.  Conservative on sign (multi-byte unknowns
 /// are unsigned, since the real sign is genuinely unknown); a pointer-to-unknown
-/// base reads `void`.
+/// base relabels through the same size table as a scalar, so the pointee keeps its
+/// width and `void` is only the residual fallback.
 fn realtype_relabel(
     rt: &RealTypeCtx,
     dt: &std::rc::Rc<crate::dtype::Datatype>,
@@ -8053,12 +8055,12 @@ fn realtype_relabel(
 }
 
 /// (kuna) Size → standard-C name for an unknown value.  `None` for sizes with no
-/// natural single C type (3/5/6/7/10/16…), which keep the `undefined<N>` form.
+/// natural single C type (3/5/6/7/10/16…), which keep the `undefined<N>` form;
+/// under a pointer those residual sizes fall back to `void` (the modifier walk
+/// adds the `*` chain), since `void *` is the only spelling that carries no width
+/// claim.  A pointee whose size *does* have a natural type keeps it, so the
+/// declaration agrees with the stride the index/cast expressions were built from.
 fn realtype_unknown_base(size: int4, under_pointer: bool, long_is_8: bool) -> Option<&'static str> {
-    if under_pointer {
-        // pointer-to-unknown → `void *` (the modifier walk adds the `*` chain).
-        return Some("void");
-    }
     Some(match size {
         1 => "char",
         2 => "unsigned short",
@@ -8070,7 +8072,7 @@ fn realtype_unknown_base(size: int4, under_pointer: bool, long_is_8: bool) -> Op
                 "unsigned long long"
             }
         }
-        _ => return None,
+        _ => return if under_pointer { Some("void") } else { None },
     })
 }
 

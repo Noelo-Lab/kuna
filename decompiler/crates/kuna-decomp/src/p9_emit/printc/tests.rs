@@ -159,8 +159,10 @@ mod w10_input_prototype_declarator {
     }
 
     /// (kuna DIV-6) With the `realtypes` context ON, a residual TYPE_UNKNOWN base
-    /// is relabelled to a real C type by size, and a pointer-to-unknown reads
-    /// `void *`.  Sizes with no natural single C type keep `undefined<N>`.
+    /// is relabelled to a real C type by size, under a pointer as well as as a
+    /// scalar, so the declared pointee keeps the width the index/cast expressions
+    /// were built from.  Sizes with no natural single C type keep `undefined<N>`
+    /// (and degrade to `void` only under a pointer).
     #[test]
     fn realtypes_relabels_unknown_bases() {
         let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true };
@@ -175,16 +177,44 @@ mod w10_input_prototype_declarator {
         assert_eq!(declarator_parts(&unk(8), llp64).0, "unsigned long long");
         // Odd size keeps the placeholder.
         assert_eq!(declarator_parts(&unk(3), on).0, "undefined3");
-        // Pointer-to-unknown -> `void *`; pointer-to-pointer-to-unknown -> `void **`.
-        assert_eq!(declarator_parts(&ptr_to(unk(8)), on), ("void *".to_string(), String::new()));
+        // Pointer-to-unknown relabels the pointee through the same size table, so
+        // the declared stride matches the one `opLoad`/`opPtradd` index with.
+        assert_eq!(
+            declarator_parts(&ptr_to(unk(8)), on),
+            ("unsigned long *".to_string(), String::new())
+        );
+        assert_eq!(
+            declarator_parts(&ptr_to(unk(4)), on),
+            ("unsigned int *".to_string(), String::new())
+        );
         assert_eq!(
             declarator_parts(&ptr_to(ptr_to(unk(1))), on),
-            ("void **".to_string(), String::new())
+            ("char **".to_string(), String::new())
         );
+        // Only a residual size with no natural C type degrades to `void` under a
+        // pointer (as a scalar it still keeps the placeholder).
+        assert_eq!(declarator_parts(&ptr_to(unk(3)), on), ("void *".to_string(), String::new()));
         // Array of unknown -> `char [8]` (element relabelled, count preserved).
         assert_eq!(declarator_parts(&array_of(unk(1), 8), on), ("char".to_string(), "[8]".to_string()));
         // Gate OFF leaves the placeholder untouched.
         assert_eq!(declarator_parts(&unk(4), crate::printc::RealTypeCtx::OFF).0, "undefined4");
+    }
+
+    /// (kuna DIV-6) A genuine `TYPE_VOID` pointee is not a residual unknown, so the
+    /// relabel never sees it: `free(void *)` / `memcpy(void *, ...)` keep their
+    /// opaque `void *` with the gate ON exactly as with it OFF.
+    #[test]
+    fn realtypes_keeps_genuine_void_pointers() {
+        let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true };
+        let void = || Rc::new(Datatype::new_with_align(0, 1, type_metatype::TYPE_VOID));
+        for rt in [on, crate::printc::RealTypeCtx::OFF] {
+            assert_eq!(declarator_parts(&void(), rt), ("void".to_string(), String::new()));
+            assert_eq!(declarator_parts(&ptr_to(void()), rt), ("void *".to_string(), String::new()));
+            assert_eq!(
+                declarator_parts(&ptr_to(ptr_to(void())), rt),
+                ("void **".to_string(), String::new())
+            );
+        }
     }
 }
 

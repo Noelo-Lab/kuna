@@ -1,0 +1,123 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench campaign case O2-noinline-libacl-libacl.so.1.1-set_acl_fd (NOVEL
+    pool: kuna already tied or beat every rival decompiler on this function and
+    the emitted body still was not compilable C, so no other decompiler
+    surfaced this fix).
+
+    P9 emission, type rendering.  The `realtypes` relabel (DIV-6, default on)
+    rewrites a residual TYPE_UNKNOWN base into a real C type by size:
+    undefined1/2/4/8 read char / unsigned short / unsigned int / unsigned long.
+    Under a pointer modifier it used to short-circuit to `void` for EVERY size,
+    so undefined1 *, undefined4 * and undefined8 * all rendered `void *`.
+
+    Only the DECLARATION was relabelled.  opLoad / opPtradd keep building index
+    and cast expressions from the ORIGINAL pointee size, so the declaration and
+    the expressions disagreed about the stride:
+
+        int4 set_acl_fd(unsigned long a0,uint a1,uint a2,void *a3)
+              if ((code *)a3[1])              // byte offset 1 under GCC's
+                a0 = (*(code *)a3[1])(a3,a0); // void-arithmetic extension;
+                                              // the expression means offset 8
+
+    gcc -std=gnu11 -fsyntax-only on that body reports "dereferencing 'void *'
+    pointer" and "invalid use of void expression".  The source confirms stride
+    8: struct error_context is three function pointers at +0/+8/+16.
+
+    The same short-circuit dropped the access width from a store, rendering the
+    4-byte errno write in acl_calc_mask as `*(void *)__errno_location() = 0x16;`
+    and its 4-byte field write as `*(void *)(v3 + 0x20) = 0x10;`.
+
+    P5 never mis-typed anything: with `option realtypes off` the same parameter
+    declares the stride-consistent `xunknown8 *a3` alongside the same `a3[1]`,
+    and the stores keep their `xunknown4` width.  The defect was purely the P9
+    presentation policy, so the fix makes `void` the FALLBACK under a pointer
+    (residual sizes 0/3/5/6/7... with no natural C type) and otherwise relabels
+    the pointee through the same size table a scalar uses.
+
+    Stage model: P9 emission, type rendering sub-stage (printc.rs
+    realtype_unknown_base, reached from declarator_parts for both the
+    declaration front and the cast text).
+
+    No option: this is a correctness fix inside an existing default-on option
+    (a declaration that contradicts its own expressions is never desired),
+    DIV-47.
+
+    Bytes are libacl.so.1.1.2301 set_acl_fd (0x56c0) and acl_calc_mask
+    (0x2820), their PLT/internal callees stubbed as endbr64/ret at their real
+    addresses, plus the two .rodata strings set_acl_fd references.
+
+    Pass 1 (default) asserts the fix; pass 2 (`option realtypes off`) pins the
+    untouched off path, which shows the same stride with the `xunknownN`
+    spelling.  Assertion counts span both passes.
+-->
+<bytechunk space="ram" offset="0x2820">
+f30f1efa55534883ec084885ff744e488b3fbe2c710000e8542e00004885c07447488b501031
+db4839d0747431edbf0100000049b802000000010000008b4a2083f92077184889fe48d3e6f7
+c61401000075254c85c6752383f910743be85efbffffc700160000004883c408b8ffffffff5b
+5dc30f1f40000b5a40488b52104839d075b94885ed7417895d404883c40831c05b5dc30f1f00
+4889d5ebde0f1f004889c7e8680200004889c54885c074b8c74020100000004889c7e8b12000
+00ebc8
+</bytechunk>
+<bytechunk space="ram" offset="0x56c0">
+41574189f741564189d641554989fd89d74154554889cd534883ec08e82fcfffff4885c00f84
+100100004889c64489ff4889c3e828cdffff4189c485c0746be8dcccffff8b0083f85f747d83
+f82674784885ed744f488b45084885c0740b4c89ee4889efffd04989c54c8b65004d85e47421
+ba05000000488d35261b000031ffe85bcdffff4c89ea4889ef4889c631c041ffd4488b451048
+85c074084c89ee4889efffd041bcffffffff4889dfe87eceffff4883c4084489e05b5d415c41
+5d415e415fc30f1f40004889dfe860ceffff4489f64489ffe8f5ceffff4189c485c074d04885
+ed74cb488b45084885c0740b4c89ee4889efffd04989c5488b5d004885db7420ba0500000048
+8d35941a000031ffe8c9ccffff4c89ea4889ef4889c631c0ffd3488b45104885c074854c89ee
+4889efffd0e978ffffff41bcffffffff4885ed0f8469ffffff488b55004885d20f845cffffff
+488d35b61900004889ef31c0ffd2e949ffffff
+</bytechunk>
+<!-- Callees, stubbed as endbr64/ret at their real addresses. -->
+<bytechunk space="ram" offset="0x23e0" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x2420" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x24a0" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x25f0" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x2610" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x2690" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x2b30" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x4990" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x5690" readonly="true">f30f1efac3</bytechunk>
+<!-- .rodata strings set_acl_fd passes to dcgettext. -->
+<bytechunk space="ram" offset="0x71d3" readonly="true">00</bytechunk>
+<bytechunk space="ram" offset="0x7264" readonly="true">73657474696e67207065726d697373696f6e7320666f7220257300</bytechunk>
+<symbol space="ram" offset="0x2820" name="acl_calc_mask"/>
+<symbol space="ram" offset="0x56c0" name="set_acl_fd"/>
+<symbol space="ram" offset="0x23e0" name="__errno_location"/>
+<symbol space="ram" offset="0x2420" name="acl_set_fd"/>
+<symbol space="ram" offset="0x24a0" name="dcgettext"/>
+<symbol space="ram" offset="0x25f0" name="acl_free"/>
+<symbol space="ram" offset="0x2610" name="acl_from_mode"/>
+<symbol space="ram" offset="0x2690" name="fchmod"/>
+<symbol space="ram" offset="0x2b30" name="acl_alloc_entry"/>
+<symbol space="ram" offset="0x4990" name="acl_reorder_entry"/>
+<symbol space="ram" offset="0x5690" name="acl_check_entry"/>
+</binaryimage>
+<script>
+  <com>lo fu set_acl_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu acl_calc_mask</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option realtypes off</com>
+  <com>lo fu set_acl_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu acl_calc_mask</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="realtypes-pointee #1: the callback-struct parameter declares its 8-byte pointee, not void" min="1" max="1">unsigned long \*a3</stringmatch>
+<stringmatch name="realtypes-pointee #2: no unknown pointee collapses to void in either pass" min="0" max="0">void \*</stringmatch>
+<stringmatch name="realtypes-pointee #3: the 4-byte errno store keeps its access width" min="1" max="1">\*\(unsigned int \*\)__errno_location\(\) = 0x16;</stringmatch>
+<stringmatch name="realtypes-pointee #4: the 4-byte field store keeps its access width" min="1" max="1">\*\(unsigned int \*\)\(v3 \+ 0x20\) = 0x10;</stringmatch>
+<stringmatch name="realtypes-pointee #5: the declared stride agrees with the index expression in both passes" min="8" max="8">\(code \*\)a3\[1\]</stringmatch>
+<stringmatch name="realtypes-pointee #6: the untouched off path keeps the upstream placeholder spelling" min="1" max="1">xunknown8 \*a3</stringmatch>
+<stringmatch name="realtypes-pointee #7: the off path shows the same width the relabel now preserves" min="1" max="1">\*\(xunknown4 \*\)__errno_location\(\) = 0x16;</stringmatch>
+</decompilertest>
