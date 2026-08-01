@@ -1,7 +1,7 @@
 # Versioning & binary releases
 
 How kuna versions itself and how the binary release CI
-(`.github/workflows/release.yml`) turns every commit on `main` into a tagged
+(`.github/workflows/release.yml`) turns a day's work on `main` into a tagged
 GitHub Release.
 
 ## The version scheme: MAJOR.MINOR
@@ -18,8 +18,10 @@ Consequences worth knowing:
 
 - A commit that edits `VERSION` is itself version `MAJOR.0` — bumping the major
   resets the minor.
-- The minor number can skip values as seen in releases only if a release run is
-  ever skipped/failed; the numbering itself is gap-free per commit.
+- **Released minor numbers skip, by design.** The minor is gap-free *per commit*,
+  but releases are nightly and batch a whole day, so a night that merged eight
+  PRs jumps the published version by eight. `v1.89` following `v1.81` is the
+  system working, not a failed run.
 - Merge strategy matters: a squash-merge bumps the minor by 1 per PR; a merge
   or rebase of N commits bumps it by N.
 
@@ -42,11 +44,31 @@ version.
 
 ## The release workflow
 
-`.github/workflows/release.yml`, on every push to `main` (plus manual
-`workflow_dispatch`):
+### When it runs
+
+**One release a night, batching the day's merges** — not one per push. Three
+triggers:
+
+| Trigger | When | Why |
+|---|---|---|
+| `schedule` | 06:00 UTC daily (~02:00 America/New_York) | The normal path. Whatever landed that day ships together. |
+| `push` to `main`, `paths: [VERSION]` | A MAJOR bump lands | A major is an intentional milestone; it should not wait for the night. |
+| `workflow_dispatch` | On demand, Actions tab | Cut a release now, or re-run a failed one. |
+
+There is deliberately **no "has anything changed?" guard**, because the version
+scheme already is one: the minor *is* the commit count, so a nightly run on an
+unchanged `main` recomputes the same `MAJOR.MINOR`, the `version` job finds that
+tag already published, and every downstream job skips. A quiet day costs one
+~30-second job and publishes nothing.
+
+Before this, every push to `main` released: one busy day produced **18 releases
+and 18 tags**.
+
+### The jobs
 
 1. **version** — computes `MAJOR.MINOR` from a full-history checkout and skips
-   the whole run if tag `vMAJOR.MINOR` already exists (safe re-runs).
+   the whole run if tag `vMAJOR.MINOR` already exists (safe re-runs, and the
+   no-op guard above).
 2. **build** (matrix) — `cargo build --release` of `kuna-cli`, `kuna-console`,
    and `kuna-slacomp` for:
    - Linux `x86_64-unknown-linux-gnu`
