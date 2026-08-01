@@ -186,6 +186,14 @@ pub mod pcodeop_addlflags {
     /// `if`.  Print-only: never affects the p-code, so with the option off (the
     /// pass never runs) the bit is never set and output is byte-identical.
     pub const kuna_iteregion: uint4 = 0x2000;
+    /// (kuna) This `CBRANCH` terminates the condition of a `0`/`1` select diamond
+    /// that the `iteboolean` S8 pass selected for boolean-assignment rendering.
+    /// Set by [`crate::p8_structure::kuna_iteboolean`]'s `ActionIteBoolean`; read by
+    /// `PrintC::emit_block_if`, which emits `dest = ( cond );` (or `dest = !( cond );`)
+    /// for the marked `if`.  Print-only: never affects the p-code, so with the
+    /// option off (the pass never runs) the bit is never set and output is
+    /// byte-identical.
+    pub const kuna_iteboolean: uint4 = 0x4000;
 }
 
 // ---------------------------------------------------------------------------

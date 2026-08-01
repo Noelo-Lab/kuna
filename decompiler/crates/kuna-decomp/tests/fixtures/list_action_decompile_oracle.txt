@@ -266,5 +266,6 @@
 0259                  crossjumprevert
 0260                  dedupitetail
 0261                  iteregion
-0262        !         prototypewarnings
-0263                  stop
+0262                  iteboolean
+0263        !         prototypewarnings
+0264                  stop

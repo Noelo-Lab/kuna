@@ -192,15 +192,17 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // `returndup`, option-gated default-off, in the `returnsplit` group right after
     // `returnsplit` (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4); and
     // `switchreturn`, option-gated default-off, right after `earlyreturn` in the
-    // `returnsplit` group (the continuation of earlyreturn to the wide switch-phi).)
+    // `returnsplit` group (the continuation of earlyreturn to the wide switch-phi);
+    // and `iteboolean`, right after `iteregion` (short-circuit 0/1 select ->
+    // boolean assignment, DIV-51).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 269,
-        "full universal tree must render 252 C++ leaves + 10 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + earlyreturn + switchreturn) + 7 container headers"
+        nonblank, 270,
+        "full universal tree must render 252 C++ leaves + 11 kuna leaves (branchflip + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
@@ -219,15 +221,16 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // Tail: the S9 fixation/naming/cast suffix, ending at `stop`.
     // (kuna) ActionGotoReduce is registered after ActionFinalStructure, then
     // ActionTailDup, then ActionIfElseFlatten, then ActionCrossJumpReverter, then
-    // ActionDedupIteTail, then ActionIteRegion, so the S9-tail kuna leaves sit between
-    // finalstructure and prototypewarnings (finalstructure -> gotoreduce -> taildup ->
-    // ifelseflatten -> crossjumprevert -> dedupitetail -> iteregion; returndup is an
-    // earlier S8 leaf, mid-list). Only the last 8 are checked here.
+    // ActionDedupIteTail, then ActionIteRegion, then ActionIteBoolean, so the S9-tail
+    // kuna leaves sit between finalstructure and prototypewarnings (finalstructure ->
+    // gotoreduce -> taildup -> ifelseflatten -> crossjumprevert -> dedupitetail ->
+    // iteregion -> iteboolean; returndup is an earlier S8 leaf, mid-list). Only the
+    // last 9 are checked here.
     let tail: Vec<&str> =
-        lines.iter().rev().take(8).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
+        lines.iter().rev().take(9).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
     assert_eq!(
         tail,
-        vec!["gotoreduce", "taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "iteregion", "prototypewarnings", "stop"]
+        vec!["gotoreduce", "taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "iteregion", "iteboolean", "prototypewarnings", "stop"]
     );
 
     // `directwrite` (protorecovery_b) appears 3x total (protorecovery_a twice +

@@ -84,6 +84,9 @@ Three tiers:
 | if (c) v = <expr1>; else v = <expr2>; where a ternary v = c ? expr1 : expr2 is expected | [`iteexpr`](#iteexpr) |
 | kuna emits far fewer ?: ternaries than angr/ida on format/flag/size code | [`iteexpr`](#iteexpr) |
 | computed-arm assignment diamond (v = *p / v = b + k) not folded to a ternary | [`iteexpr`](#iteexpr) |
+| if (a && b) v = 1; else v = 0; where the source has a single boolean assignment v = a && b | [`iteboolean`](#iteboolean) |
+| -O0 boolean materialization printed as an explicit 0/1 constant diamond | [`iteboolean`](#iteboolean) |
+| extra CFG blocks/edges vs Hex-Rays around a short-circuit boolean assignment | [`iteboolean`](#iteboolean) |
 | giant short-circuit if with comma-expression side effects merging several source early-return guards | [`returndup`](#returndup) |
 | one trailing return shared by many guard paths where the source used per-guard early returns | [`returndup`](#returndup) |
 | merged guard condition containing v = f(...) assignments inline | [`returndup`](#returndup) |
@@ -433,6 +436,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Turn ON to recover `?:` over computed arms like angr/IDA do, when the source used ternaries (common in format/print/flag/size code). A RUNTIME CHOICE, default-off: it diverges when the source used an explicit if/else (the same object code is emitted either way). Requires `option iteregion on` (default) — it broadens iteregion's arm match. Print-only; on, each rewrite is logged (`iteregion:`).
 - **Where / provenance:** P8/goto-quality · angr · structure-recovery · angr-ITE-region-converter-expr
 - **Example:** `option iteexpr on`
+
+### `iteboolean` -- on | off, default `on`
+
+- **Symptoms:** if (a && b) v = 1; else v = 0; where the source has a single boolean assignment v = a && b; -O0 boolean materialization printed as an explicit 0/1 constant diamond; extra CFG blocks/edges vs Hex-Rays around a short-circuit boolean assignment.
+- **What it does:** After structuring, re-roll a SHORT-CIRCUIT 0/1 select diamond back into a single boolean assignment: a 3-component `if` whose condition is the folded `&&`/`||` chain and whose two arms are each a single `COPY` of the constants `1` and `0` to the SAME integral variable becomes `v = ( a && b );` (arms `0`/`1` -> `v = !( a && b );`) instead of `if (a && b) v = 1; else v = 0;`. This is the case P3 `RuleConditionalMove` cannot fold: it requires each `MULTIEQUAL` input block to be the CBRANCH root or a SINGLE-predecessor pass-through (upstream `ruleaction.cc:9427` `inblock->sizeIn() != 1` -> bail), and a short-circuit chain gives the constant arm 2+ predecessors. Upstream's bail is also correct at the IR level -- there is no single dominating CBRANCH standing for the whole chain, and hoisting a guarded operand out of its branch would evaluate it unconditionally -- so the re-roll is only safe AFTER structuring, where the chain is already one `BlockCondition` that C's own `&&`/`||` renders with short-circuit semantics. A **print-only** mark on the condition's terminal `CBRANCH` (no p-code cloned/mutated); the condition is emitted by the SAME renderer that produced the `if (...)` header, so evaluation order, short-circuiting and comma-expression side effects are preserved verbatim. Declines a pointer/float destination, a labelled arm, a computed arm and any second statement in an arm.
+- **When to flip:** Turn ON to recover the source shape of `-O0` boolean assignments (`x = a && b;`, `x = p && (p->flags & F);`), which gcc materializes as an explicit constant diamond that kuna otherwise prints as `if (...) v = 1; else v = 0;`. `-O0` C materializes booleans everywhere, so this is broad: it is the whole residual structural gap vs Hex-Rays on bash `time_command` (two diamonds = 6 CFG blocks / 8 edges of a 28-node function; GED 26 -> 6). On by default (DIV-51): the flip changes 0/675 datatest assertions and is inside the speed budget. Still a RUNTIME CHOICE an agent can flip OFF (`option iteboolean off`, byte-identical to the pre-DIV-51 render) for the same reason as `iteregion` (DIV-17): an explicit `if (c) x = 1; else x = 0;` in the source compiles to the SAME object code, so the re-roll diverges from a source that really did write the if/else. Print-only; on, each re-roll is logged (`iteboolean:`).
+- **Where / provenance:** P8/goto-quality · ida · structure-recovery · decbench-shortcircuit-boolean-materialization
+- **Example:** `option iteboolean on`
 
 ### `returndup` -- on | off, default `off`
 

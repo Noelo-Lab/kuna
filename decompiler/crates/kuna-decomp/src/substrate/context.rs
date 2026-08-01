@@ -716,6 +716,10 @@ pub struct ArchContext {
     /// (kuna) `iteexpr`: extend iteregion to computed-expression diamond arms (see
     /// `Architecture::iteexpr`).  Per-function snapshot copy.
     pub iteexpr: bool,
+    /// (kuna) `iteboolean`: re-roll a short-circuit `0`/`1` select diamond into a
+    /// single boolean assignment (`x = a && b;`) — see `Architecture::iteboolean`.
+    /// Read by [`crate::p8_structure::kuna_iteboolean`]'s `ActionIteBoolean`.
+    pub iteboolean: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block into each predecessor but one so a
     /// `if (c) { body; return X; } return Y;` guard shape structures as per-predecessor
@@ -974,6 +978,7 @@ impl ArchContext {
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
+            iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)
