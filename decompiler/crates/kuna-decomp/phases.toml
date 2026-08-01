@@ -1943,6 +1943,25 @@ tier = "transform"
 symptoms = "switch rendered as nested if/else-if compare tree over one variable|binary-search cascade of constant compares where source had a switch|flip off to keep the compiler's lowered compare-tree rendering"
 
 [[settable]]
+option = "callsitestackargs"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "active-input-trial-scoring"
+strength = "HARD"
+rewind = "P4"
+issue = "decbench-callsite-stack-args"
+summary = "Recover stack-passed call arguments at call sites whose callee prototype is unlocked, by testing the caller-relative argument Varnode address (not the callee-relative trial address) against the caller's local stack range when scoring an active input trial."
+use_when = "On by default: this restores upstream Ghidra behavior (fspec.cc:5618) that a mis-ported argument had disabled, so it is a correctness fix rather than a judgment call and needs no DIV row. With it OFF every stack trial is scored no-use, so calls truncate at the register budget (x86-64 six arguments, i386 none) and any computation whose only consumer was a dropped argument is dead-code eliminated - which deletes real basic blocks, including whole loops. Set OFF only to reproduce that pre-fix output for a bisect or an ablation."
+example = "option callsitestackargs off"
+source_decompiler = "ghidra-upstream"
+inspiration = "decbench:O0-mydoom-mydoom-msg_b64enc + O2-noinline-openssh-portable-ssh-add-parse_dest_constraint; upstream FuncCallSpecs::checkInputTrialUse (fspec.cc:5585)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "call rendered with exactly six arguments on x86-64|call rendered with an empty argument list on i386|a for loop whose exit variable is written through a pointer argument disappears|ternary guards feeding a logging call are dead-code eliminated|outgoing-argument stack slots render as locals commented stack - 0xNN"
+
+[[settable]]
 option = "regionstructure"
 values = "on|off"
 default = "on"

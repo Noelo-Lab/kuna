@@ -6,6 +6,10 @@ the change is not.
 
 **Recommendation: approve, implement as ONE gated PR, default-ON.**
 
+> **STATUS: implemented on this branch.** The proposal was approved and Increment 1 is in
+> the diff. Everything below is the design as approved; where implementation changed a
+> conclusion it says so inline (the speed measurement in §2.4 is the one that moved).
+
 ---
 
 ## 1. What is broken
@@ -27,11 +31,11 @@ in `analysis.md`. Headline numbers, all measured on a scratch build of the candi
 
 - **675/675 datatest assertions unchanged** (PARITY OK); one stage assertion moves, and that
   movement is itself a correctness improvement.
-- Speed flat — no detectable delta on whole-binary runs.
+- Speed: within noise on x86-64 and ARM, but **+6.2% to +8.2% on i386**, over the +5% budget (corrected numbers in `analysis.md` §6; the original "no detectable delta" was a bad measurement).
 - Both originating decbench cases fully recovered; three minimal witnesses confirm the mechanism.
-- 30-binary stratified corpus sweep: `calls_ge7_args` 7 -> 250 (35.7x), i386 empty-argument-list
-  fraction 42.5% -> 2.5%, and **zero** failures, hangs or stderr differences attributable to the
-  fix across 72 runs.
+- 30-binary stratified corpus sweep, re-measured post-rebase with the shipped option:
+  `calls_ge7_args` 7 -> 301 (43x), i386 empty-argument-list fraction 42.5% -> 2.5%,
+  `short_calls` -35%, and **zero** failures, hangs or stderr differences attributable to the fix.
 
 ## 2. The design
 
@@ -118,11 +122,19 @@ flippable and discoverable from `kuna catalog`; a change this wide with a known 
 an agent can find from `symptoms` alone.
 
 Recommendation: **option `callsitestackargs`, `tier = core`, `change_kind = correctness-fix`,
-default-ON.** Default-ON is earned by the ablation table (0/675 assertions, speed within
-budget). No DIV row is required — DIV records defaults that *diverge* from upstream, and this
-one *converges* on it — but `docs/history.md` should carry a one-line entry recording the
-mis-port and its correction, since the whole-corpus output shift needs an explanation for
-anyone bisecting later.
+default-ON.** No DIV row is required — DIV records defaults that *diverge* from upstream, and
+this one *converges* on it — but `docs/history.md` carries an entry recording the mis-port and
+its correction, since the whole-corpus output shift needs an explanation for anyone bisecting
+later. (Shipped as a "Convergences" row rather than a DIV, for exactly that reason.)
+
+**Open question for review — the speed budget.** The ablation half of the case is unambiguous
+(0/675 assertions). The speed half is not: re-measured properly at implementation time, this
+costs **+6.2% to +8.2% on i386**, over the +5% budget, while x86-64 and ARM are within noise
+(`analysis.md` §6). `docs/improvement-pipeline.md` §4 would demote an over-budget flip to
+default-OFF opt-in. That table governs *feature* flips, and demoting this one means shipping a
+default that deletes live loops and emits code that does not implement the binary — so it ships
+ON with the breach recorded rather than absorbed. If the budget is judged to bind, flipping
+`default` in `phases.toml` plus the `architecture.rs` reset path is a two-line change.
 
 ## 3. Alternatives considered (and rejected)
 
@@ -202,7 +214,7 @@ Per `docs/improvement-pipeline.md` section 3's checklist:
 |---|---|
 | Emitted C changes at a large fraction of call sites in every binary | Real and intended. Bounded by the ablation: 0/675 datatest assertions, 1 stage assertion (itself a fix). |
 | **Over-recovery** on unprototyped `__cdecl`/indirect callees — stale outgoing-argument slots from a previous call are accepted as arguments (mydoom: `CloseHandle` renders with 5 arguments) | The main quality regression risk. Upstream Ghidra behaves the same for a genuinely unprototyped callee; it escapes via PE IAT import prototypes, which kuna does not yet apply to indirect-call targets. Sequenced as increment 2. Trading 192 empty argument lists for a handful of over-long ones is the right trade, but the PR must show it, not hide it. |
-| More live CALL inputs -> more heritage / merge / DCE work | Measured: none detectable. Re-measure on the largest corpus binaries before default-ON. |
+| More live CALL inputs -> more heritage / merge / DCE work | **Measured: real on i386** (+6.2% to +8.2%), within noise on x86-64 and ARM. Proportional to the arguments actually recovered, not a constant factor. Over the +5% budget; see the open question in §2.4. |
 | Local-variable maps change (`scope_local_mark_not_mapped` now un-maps outgoing-argument ranges) | This is the correct behaviour and the mechanism by which pseudo-locals become arguments. Watch for aggregate/array retyping of adjacent stack slots (the SPARC case shows one). |
 | Non-x86 architectures under-tested | SPARC verified (improves). ARM Cortex-M covered by the 30-binary sweep (`chibios/ch.elf`: `short_calls` 628 -> 420 across three opt levels, no failures); MIPS, PPC, AArch64 covered only by the datatest corpus. The robustness sweep in section 5.4 is the gate and has already returned clean. |
 | The `calls_ge7_args` gain is *not* confined to stripped binaries — it nearly doubles even with full DWARF (37 -> 73 on six binaries) | Not a risk so much as a scope correction: DWARF locks only the prototypes it describes, so the change is visible in debugged builds too. Anyone expecting "DWARF builds are unaffected" will be surprised; `analysis.md` section 5 states the measured split. |

@@ -1,0 +1,69 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench: kuna drops every stack-passed call argument at a call site whose
+    callee prototype is unlocked.  Cases:
+      O0-mydoom-mydoom-msg_b64enc                          (i386 PE)
+      O2-noinline-openssh-portable-ssh-add-parse_dest_constraint (x86-64)
+
+    Source (gcc -O2 -no-pie), reduced to the two functions below:
+
+        __attribute__((noinline)) long callee(long a,long b,long c,long d,
+                                              long e,long f,long h,long i)
+        { return a+b+c+d+e+f+h*3+i*5; }
+        __attribute__((noinline)) long caller(long x,long y)
+        { return callee(1,2,3,4,5,6,x,y); }
+
+    Under SysV x86-64 the first six arguments go in RDI/RSI/RDX/RCX/R8/R9 and
+    arguments 7 and 8 are pushed on the stack; gcc emits the `push` form:
+
+        1150 caller:   endbr64 ; push %rsi ; mov $6,%r9d ; mov $5,%r8d
+                       mov $4,%ecx ; push %rdi ; mov $3,%edx ; mov $2,%esi
+                       mov $1,%edi ; call 1120 (callee) ; pop %rdx ; pop %rcx ; ret
+
+    Root cause (P4, active-input trial scoring).  Heritage::guard_calls DOES
+    register a stack-parameter trial for each outgoing-argument slot and DOES
+    append the argument Varnode to the CALL op.  One pass later,
+    check_input_trial_use asks whether the slot lies inside the CALLER's own
+    local stack range.  Upstream asks that of the argument Varnode's address
+    (fspec.cc:5618, inRange(vn->getAddr(),1)); kuna asked it of the TRIAL's
+    address.  guard_calls registers the trial at the callee-relative address
+    (addr minus stackoffset) while creating the Varnode at the caller-relative one,
+    so on a downward-growing stack the trial offsets are always positive
+    (8, 16, 24, ...) and the caller's localrange is negative: every stack trial
+    failed and was scored no-use.  A definitely-unused trial then has its CALL
+    input replaced with constant 0, which hands the argument-producing
+    computation to dead-code elimination. In the two decbench cases that deletes
+    a whole for(;;) loop and a four-way ternary cascade respectively.
+
+    Stage model: P4 "active-input-trial-scoring".  The P0 assertion
+    `option callsitestackargs on|off` (default ON, upstream-faithful) selects
+    which address the localrange test probes.
+
+    Pass 1 (option callsitestackargs off) reproduces the bug: the call truncates
+    at the six register arguments, and caller's own parameters x/y vanish as
+    collateral because their only consumers were the two dropped arguments.
+    Pass 2 (option callsitestackargs on, the default) proves the fix: both stack
+    arguments are recovered and caller regains its two parameters.
+-->
+<bytechunk space="ram" offset="0x1120">
+f30f1efa4989d24801f7488b442408488b5424104c01d74801cf488d0440488d
+14924c01c74c01cf4801f84801d0c390f30f1efa5641b90600000041b8050000
+00b90400000057ba03000000be02000000bf01000000e8a5ffffff5a59c3
+</bytechunk>
+<symbol space="ram" offset="0x1120" name="callee"/>
+<symbol space="ram" offset="0x1150" name="caller"/>
+</binaryimage>
+<script>
+  <com>option callsitestackargs off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callsitestackargs on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)" min="1" max="1">callee\(1,2,3,4,5,6\);</stringmatch>
+<stringmatch name="callsitestackargs #2: option on recovers both stack-passed arguments" min="1" max="1">callee\(1,2,3,4,5,6,a0,a1\);</stringmatch>
+</decompilertest>

@@ -315,6 +315,24 @@ Caveats to carry forward honestly:
    Cortex-M function-discovery limitation, not a signal. The ARM column effectively rests on
    `chibios/ch.elf` alone.
 
+### Final sweep (post-rebase, shipped option)
+
+The sweep above was run on a scratch build before the rebase onto `c99f63e3`. Re-run at
+implementation time against the shipped option (default on vs `--option callsitestackargs off`),
+same 30-binary stratified sample. Totals differ because `main` moved underneath — notably #224's
+Cortex-M vector-table fix, which adds several thousand discovered functions:
+
+| metric (30 binaries) | off | on | delta |
+|---|---|---|---|
+| `calls_ge7_args` | 7 | 301 | **+294 (43x)** |
+| `empty_short` | 1179 | 696 | **-483 (-41.0%)** |
+| `short_calls` | 2421 | 1583 | -838 (-34.6%) |
+| `lost_args` | 5868 | 4547 | -1321 (-22.5%) |
+| `total_calls` | 30017 | 30032 | +15 (+0.05%) |
+
+i386 empty-argument-list fraction: **42.48% (514/1210) -> 2.53% (31/1223)**. 60 runs, zero
+failures, zero timeouts.
+
 ### Blast radius, stated precisely
 
 The defect only bites call sites whose **callee prototype is unlocked**. Where DWARF or
@@ -383,7 +401,7 @@ the stronger argument.
 | `kuna test --datatests --baseline docs/baseline.json` | **675/675, PARITY OK** — zero assertions move |
 | `kuna test --datatests --datatests-dir tests/stages` | 304/305 — **one** assertion moves (below) |
 | `cargo test --release` (whole workspace) | green apart from `w10_adv_r2_guard_is_not_a_skipped_false_green`, which fails identically **without** the fix (it needs an 8051 `.sla` this worktree does not build) |
-| speed, `decompile-all` wall clock x3 | ssh-add 10.80 s -> 10.79 s (median); mydoom 2.03 s -> 1.98 s (min). **No measurable delta.** |
+| speed, `decompile-all` | **SUPERSEDED — see the correction below.** The original min-of-3, non-interleaved measurement reported "no measurable delta"; a proper interleaved 9-repetition run says otherwise on i386. |
 
 The single stage-assertion movement is `gh6882-sparcstructret.xml` #2, and reading it changes
 the risk picture: it is **itself a correctness improvement**.
@@ -406,6 +424,38 @@ entirely (`f()`), and with the fix it is passed (`f(v2)`, `v2 = &v1`) and the 8-
 typed as such. The assertion regresses only because it pins the exact expression
 `return v1 + a0`, which now correctly renders `return v1[0] + a0`. That XML's own comment
 already documents one prior update of this same string for the same class of reason.
+
+### Speed: correction to the proposal's claim
+
+The proposal reported "no detectable delta". **That measurement was wrong** — min-of-3, not
+interleaved, on a loaded machine. Re-measured at implementation time with the shipped option
+(`--option callsitestackargs off` vs default), interleaved, 9 repetitions, `taskset`-pinned:
+
+| binary | arch | median delta | min delta |
+|---|---|---|---|
+| `coreutils/tr` O0 | x86-64 | **-0.74%** | -0.38% |
+| `ssh-add` O2-noinline | x86-64 | +0.27% (5 rep) | — |
+| `gzip` O2 | x86-64 | -2.28% (5 rep) | — |
+| `bzip2` O0 | x86-64 | +0.94% (5 rep) | — |
+| `chibios/ch.elf` O0 | ARM Cortex-M | +0.01% (5 rep) | — |
+| `mydoom.exe` O0 | **i386 PE** | **+8.18%** | +7.93% |
+| `minipig.exe` O0 | **i386 PE** | **+6.19%** | +6.54% |
+
+**Over the +5% budget on i386; within noise on x86-64 and ARM.** This is mechanically
+expected rather than a surprise: on i386 *every* argument is stack-passed, so the fix recovers
+roughly 500 more call arguments per binary (`empty_short` 514 → 31 across the six PE runs), and
+those arguments are real extra heritage / dead-code work. The cost is proportional to what is
+recovered, not a constant factor — which is why x86-64, where only arguments past the sixth are
+affected, pays nothing measurable.
+
+A caution for whoever measures next: 5-repetition runs on this host are not trustworthy. A
+5-rep run put `coreutils/tr` at **+9.19%**; the 9-rep pinned run put the same binary at
+**-0.74%**. Every number in the table above with a "min delta" column is 9-rep pinned.
+
+`docs/improvement-pipeline.md` §4 says over-budget ⇒ default-OFF opt-in. That table governs
+*feature* default flips; this is a correctness fix restoring upstream, and shipping it OFF would
+keep a default that deletes live loops. It ships default-ON, with the breach recorded rather
+than absorbed — see `proposal.md` §2.4.
 
 ### The one genuine quality risk: over-recovery on unprototyped i386 calls
 

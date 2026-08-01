@@ -379,6 +379,9 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
+    /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
+    pub callsite_stack_args: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1031,6 +1034,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
+            callsite_stack_args: true,
             region_structure: true,
             region_loop_refine: false,
             region_edge_order: false,
@@ -1163,6 +1167,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
@@ -1330,6 +1335,12 @@ impl Architecture {
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
+                Ok(msg)
+            }
+            "callsitestackargs" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
+                self.callsite_stack_args = val;
                 Ok(msg)
             }
             "regionstructure" => {
@@ -1797,6 +1808,7 @@ impl Architecture {
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder

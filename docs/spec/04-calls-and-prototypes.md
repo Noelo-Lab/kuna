@@ -305,6 +305,23 @@ classified:
   slot, > 4), the popped byte range is *hard evidence*:
   trials below it are active, at-or-above it no-use. Otherwise fall through
   to ancestor analysis.
+
+  The local-range test probes **two different addresses for two different
+  questions**, and the distinction decides whether stack-passed arguments are
+  recovered at all. `guard_calls` registers the trial at the *callee*-relative
+  address (`addr - stackoffset`, the callee's parameter frame) while creating
+  the argument Varnode at the *caller*-relative one. `localrange` belongs to the
+  caller's prototype, so the range test takes the **argument Varnode's**
+  caller-relative address; only the `callee_pop` byte-range comparison, which
+  reasons in the callee's frame, takes the trial's. Probing the callee-relative
+  address against a caller-frame range rejects every outgoing-argument slot on a
+  downward-growing stack — the offsets are positive, the range negative — so
+  every call whose callee prototype is unlocked truncates at its register
+  budget, and because a definitely-unused trial has its CALL input replaced by
+  constant 0 (below), dead-code elimination then reaps whatever computed the
+  argument. That is visible as deleted basic blocks, not merely as a shorter
+  argument list. (kuna) `callsitestackargs` (default-on) selects which address
+  is probed; `off` restores the truncating behavior for bisection.
 - **Ancestor analysis** (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
   (AncestorRealistic, Funcdata::ancestor_op_use)`): the trial is *active* only
   if the value reaching the call has a realistic def chain (not an INDIRECT

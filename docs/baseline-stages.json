@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    314,
-    314
+    316,
+    316
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -221,6 +221,8 @@
     "data:angr-taildup #1 (bug, off): one residual goto to the shared free();return; tail",
     "data:angr-taildup #2 (bug, off): goto label reference + label definition present, none on",
     "data:angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)",
+    "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
+    "data:callsitestackargs #2: option on recovers both stack-passed arguments",
     "data:condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)",
     "data:condfold #2: OFF, the crossing goto needs a label on the shared continuation (pass 1 only)",
     "data:condfold #3: ON, the two conditions fold into one short-circuit OR whose right operand carries the sibling prefix as a comma expression (pass 2 only)",

@@ -41,15 +41,16 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_81() {
+fn settable_count_is_82() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
-    assert_eq!(kuna_num_settables(), 81);
-    assert_eq!(SETTABLE_TABLE.len(), 81);
+    // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
+    assert_eq!(kuna_num_settables(), 82);
+    assert_eq!(SETTABLE_TABLE.len(), 82);
 }
 
 #[test]
-fn tier_counts_are_19_core_37_transform_25_analysis() {
+fn tier_counts_are_20_core_37_transform_25_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -61,7 +62,8 @@ fn tier_counts_are_19_core_37_transform_25_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (19, 37, 25));
+    // core 19 -> 20: +1 for `callsitestackargs` (P4 stack-passed call arguments).
+    assert_eq!((core, transform, analysis), (20, 37, 25));
 }
 
 #[test]
@@ -251,7 +253,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_41() {
+fn option_values_live_value_present_for_28_suppressed_for_42() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -363,6 +365,7 @@ fn option_values_live_value_present_for_28_suppressed_for_41() {
                             | "truthycond"
                             | "braceelide"
                             | "warnstyle"
+                            | "callsitestackargs"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -458,7 +461,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 81 rows: 80 trailing commas (the last, macho-arm64e, has none;
+    // 82 rows: 81 trailing commas (the last, macho-arm64e, has none;
+    // callsitestackargs' P4 row sits mid-table, so it does not move the tail;
     // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
@@ -469,7 +473,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, and switchreturn's S8 row sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 80);
+    assert_eq!(json.matches("},\n").count(), 81);
 }
 
 #[test]

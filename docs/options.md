@@ -217,6 +217,11 @@ Three tiers:
 | spurious = 0 copy materialized inside a loop block | [`condexeplace`](#condexeplace) |
 | function aborts with 'Cannot properly adjust input varnodes' | [`inputvarnodeadjust`](#inputvarnodeadjust) |
 | overlapping stack parameters (mc68k link/unlk) kill the whole decompilation | [`inputvarnodeadjust`](#inputvarnodeadjust) |
+| call rendered with exactly six arguments on x86-64 | [`callsitestackargs`](#callsitestackargs) |
+| call rendered with an empty argument list on i386 | [`callsitestackargs`](#callsitestackargs) |
+| a for loop whose exit variable is written through a pointer argument disappears | [`callsitestackargs`](#callsitestackargs) |
+| ternary guards feeding a logging call are dead-code eliminated | [`callsitestackargs`](#callsitestackargs) |
+| outgoing-argument stack slots render as locals commented stack - 0xNN | [`callsitestackargs`](#callsitestackargs) |
 | iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra) | [`namestyle`](#namestyle) |
 | v-numbered locals and sub_/dat_/label_ names in the default output | [`namestyle`](#namestyle) |
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
@@ -860,6 +865,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** A frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk). On by default (DIV-3); flip off to preserve the upstream abort.
 - **Where / provenance:** P6/stack-frame-layout · ghidra-upstream · correctness-fix · GH-9218
 - **Example:** `option inputvarnodeadjust on`
+
+### `callsitestackargs` -- on | off, default `on`
+
+- **Symptoms:** call rendered with exactly six arguments on x86-64; call rendered with an empty argument list on i386; a for loop whose exit variable is written through a pointer argument disappears; ternary guards feeding a logging call are dead-code eliminated; outgoing-argument stack slots render as locals commented stack - 0xNN.
+- **What it does:** Recover stack-passed call arguments at call sites whose callee prototype is unlocked, by testing the caller-relative argument Varnode address (not the callee-relative trial address) against the caller's local stack range when scoring an active input trial.
+- **When to flip:** On by default: this restores upstream Ghidra behavior (fspec.cc:5618) that a mis-ported argument had disabled, so it is a correctness fix rather than a judgment call and needs no DIV row. With it OFF every stack trial is scored no-use, so calls truncate at the register budget (x86-64 six arguments, i386 none) and any computation whose only consumer was a dropped argument is dead-code eliminated - which deletes real basic blocks, including whole loops. Set OFF only to reproduce that pre-fix output for a bisect or an ablation.
+- **Where / provenance:** P4/active-input-trial-scoring · ghidra-upstream · correctness-fix · decbench-callsite-stack-args
+- **Example:** `option callsitestackargs off`
 
 ### `namestyle` -- angr | ghidra, default `angr`
 
