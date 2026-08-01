@@ -44,6 +44,28 @@ Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
 explicitly spelling `--option fast_funcdisc on` opts an address run back into
 that analysis.
 
+**Failure contract (DIV-45).** A function whose decompile pipeline aborts is
+*loud*:
+
+- **exit code `1`** — the same code as a run-level error (no such function, no
+  architecture, no C at all). Exit `0` means the pipeline completed.
+- **stderr** carries `error: decompilation failed for <fn> in <binary>:
+  <reason>`, followed by `note: decomp_dbg stderr:` and the console's own
+  stderr (the panic line and its source location), truncated at 2000 chars.
+- **stdout still carries the recovered shell**, whose body comment names the
+  same reason: `/* WARNING: decompilation failed: <reason> */`. A shell with
+  the generic `/* WARNING: structured blocks unavailable (structuring
+  declined) */` means the pipeline *ran* and produced no structured blocks —
+  a different failure.
+
+The abort itself is not fatal to the console session (`decomp_dbg` prints
+`Skipping <fn>: <reason>` and keeps going, so datatest `<stringmatch>` rules
+still evaluate); the CLI is what turns it into a non-zero exit.
+`decompile-all` / `decompile-project` / the WASM front-end are unaffected: a
+failed function stays a per-function `error` record and never aborts the batch
+(its text now carries the real panic message instead of `panic with non-string
+payload`).
+
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash

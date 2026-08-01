@@ -215,13 +215,21 @@ and — when the S8 `iteregion` pass marked an assignment diamond — the ternar
 render `dest = cond ? a : b` (`printc.rs (PrintC::emit_block_if_ite)`).
 
 **The declined-structure shell.** If the structured tree is *absent* (S8
-produced no `sblocks` — a structuring failure), the printer does not emit a
-flat op listing: it keeps the brace-matched prototype shell and plants the
-single comment `/* WARNING: structured blocks unavailable (structuring
-declined at a stub) */` in the body (`printc.rs
-(PrintC::emit_function_document)`). The failure mode is deliberately loud and
-syntactically valid, so batch consumers (`kuna decompile-all --json`) get a
-parseable function with an explicit tombstone rather than pseudo-C garbage.
+produced no `sblocks`), the printer does not emit a flat op listing: it keeps
+the brace-matched prototype shell and plants a single comment in the body
+(`printc.rs (PrintC::emit_function_document)`). The failure mode is
+deliberately loud and syntactically valid, so batch consumers (`kuna
+decompile-all --json`) get a parseable function with an explicit tombstone
+rather than pseudo-C garbage. The comment distinguishes the two ways a
+function can arrive here, because they call for different investigations: when
+the drive recorded *why* the pipeline aborted for this function
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::set_kuna_pipeline_failure)` — chapter [00](00-overview.md) §0.2), the tombstone is
+`/* WARNING: decompilation failed: <reason> */`, naming the recoverable error
+verbatim; otherwise the pipeline genuinely ran and structuring produced
+nothing, and the tombstone is `/* WARNING: structured blocks unavailable
+(structuring declined) */`. The reason text is flattened to one line and any
+`*/` neutralized, so it can never break out of the comment.
 
 **Expressions: the push/pop opcode walk.** A statement is one op tree:
 `printc.rs (PrintC::emit_statement)` opens a statement group, and `printc.rs
