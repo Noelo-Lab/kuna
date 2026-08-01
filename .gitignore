@@ -32,3 +32,9 @@ out.txt
 
 # pyjoern scratch (created when scripts/decbench rescore/triage run from repo root)
 workspace/
+
+# decbench mined pools: tens of MB of machine-generated rows, regenerable from the
+# results tree with `scripts.decbench.mine` / `.novel`. The ranked tables
+# (docs/decbench/*.md), the triage queues and the triage records ARE committed.
+docs/decbench/cases*.json
+docs/decbench/novel.json

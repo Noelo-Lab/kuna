@@ -8,26 +8,56 @@ option-gated, default-on when clean, measured.
 ## The signal
 
 [decbench](https://github.com/mahaloz/decbench) scores decompilers per function on a
-compiled-project corpus (full run: **110,992 functions / 806 binaries / 40 projects ×
-{O0, O2, O2-noinline}**, six decompilers including kuna). The campaign metric is
+compiled-project corpus (2026-07-27 run: **94,575 functions / 803 binaries / 39 projects ×
+{O0, O2, O2-noinline}**, eleven decompilers including kuna). The campaign metric is
 **GED** — CFG graph edit distance between the Joern-parsed original source and the
 Joern-parsed decompiled C. Lower is better; **0 = perfect structural recovery**.
 `decbench improvements` mines the per-function cases where a base decompiler beats a
-target; our pool is **angr GED = 0 while kuna GED > 0** (`--perfect-only`).
+target.
+
+Where kuna stands on that run (GED, share of functions scored perfect):
+**ida 36.67% · kuna 35.41% · angr 33.93% · ghidra 25.57% · binja 20.76%**. So the
+campaign mines **two** reference pools — `--base angr` (the original) and `--base ida`
+(the current leader) — plus the NOVEL pool below.
 
 Decisions baked in:
 
 - venv: `~/.virtualenvs/decbench` (angr 9.2.213 pinned, pyjoern, cfgutils, editable
-  decbench). Only `rescore` needs it; `mine`/`triage`/`status` run on plain python3.
+  decbench). Only `rescore`/`srcsizes` need it; `mine`/`novel`/`triage`/`status` run on
+  plain python3.
 - results tree: `~/github/decbench/results/full_run` (override `KUNA_DECBENCH_RESULTS`).
-  The benchmark ran kuna 0.1.0 (2026-06-29) on **stripped** copies of the binaries with
-  the function's own name relabeled post-hoc — so **verify-first is mandatory**
-  (a case may already be fixed on main) and fresh decompiles must use
-  `<opt>/<project>/stripped/<bin>` + self-relabel to stay comparable.
+  The benchmark ran on **stripped** copies with the function's own name relabeled
+  post-hoc, so fresh decompiles must use `<opt>/<project>/stripped/<bin>` + self-relabel
+  to stay comparable.
+- **Verify-first is mandatory, and it is not optional bookkeeping** — see the next
+  section for exactly how stale the stored output is.
 - GED quirks to respect in triage: graphs > 60 nodes are **approximated** as
-  |Δnodes| + |Δedges|; `inf` means missing/unparseable, not "bad"; a degenerate
-  source CFG (`source_nodes: 1`) makes the score meaningless — that is a decbench
-  bug, not a kuna gap (`bucket`/`artifact_suspect` in `cases.json` flag these).
+  |Δnodes| + |Δedges| (`approximated: true` on a case, taken from the run's own
+  `ged_large_graph_audit.json`); `inf` means missing/unparseable, not "bad"; a
+  degenerate source CFG (`source_nodes: 1`) means the source function is a single basic
+  block — either genuinely straight-line (then extra control flow in kuna's output IS a
+  real defect, usually a missed no-return) or a Joern parse failure (then the score is
+  meaningless). Read the source before deciding which.
+
+### The stored output is stale in two different ways
+
+1. **Print normalization.** PRs #202–#211 (DIV-34…DIV-39) changed how nearly every line
+   renders: `NULL` for zero pointers, compound assignment, truthy conditions, elided
+   braces, inline `// slug` warnings. Textual diffs between the stored and a fresh run
+   are expected and mean nothing. **Judge structure**: gotos, labels, loop shape, switch
+   vs if-cascade, function boundary, missing blocks, wrong types.
+2. **Mode presets did not exist when the benchmark ran.** It used shipped defaults plus
+   an injected `option listing on` — which is exactly today's `--mode reliable`. Today a
+   no-flag run is `--mode auto`: **`aggressive` below 500 KiB** (21 default-off options
+   ON), `reliable` below 2 MiB, `fast` at 2 MiB and above (Listing/funcstart/aif OFF,
+   10 s per function). So:
+   - a fresh no-flag run shows **today's product default**, which is what a user sees;
+   - `--mode reliable` shows **the benchmark's option surface**, which is what the score
+     measured.
+   Run both when they disagree, and say in the triage record which one closed the gap —
+   "a code fix landed" and "the default mode got stronger" are different outcomes.
+   `condfold` is default-off and is **not** in the aggressive preset, so sweep
+   `--option condfold on|wide` explicitly.
 
 ## Standing requirements
 
@@ -52,15 +82,22 @@ use `ghdec-<slug>.xml` for fixes with no angr analog.
 ## The loop
 
 ```bash
-# 1. MINE — snapshot the benchmark signal into the repo (commit the outputs)
-python3 -m scripts.decbench.mine --select 28
-#   -> docs/decbench/cases.json          the full pool, bucketed + deduped
-#   -> docs/decbench/cases-missing.json  kuna-failed pool (hang workstream owns it)
-#   -> docs/decbench/backlog.md          ranked human table (one row per group)
-#   -> docs/decbench/triage-queue.json   the stratified triage picks
+# 0. SOURCE SIZES — one-time per results tree; decides which scores are edit
+#    distances at all (needs the decbench venv; writes ~/.cache/decbench/)
+~/.virtualenvs/decbench/bin/python -m scripts.decbench.srcsizes
+
+# 1. MINE — snapshot the benchmark signal into the repo
+python3 -m scripts.decbench.mine --select 30              # base angr
+python3 -m scripts.decbench.mine --base ida --select 20   # base ida (current leader)
+python3 -m scripts.decbench.novel --select 16             # the NOVEL pool
+#   -> docs/decbench/cases[-<base>].json    the full pool, bucketed + deduped (gitignored)
+#   -> docs/decbench/cases-missing*.json    kuna-failed pool (recall workstream owns it)
+#   -> docs/decbench/backlog[-<base>].md    ranked human table (one row per group)
+#   -> docs/decbench/novel.{json,md}        kuna-is-best-and-still-bad, ranked by warts
+#   -> docs/decbench/triage-queue*.json     the stratified triage picks
 
 # 2. TRIAGE — one agent per queue case; verify-first, then root-cause
-python3 -m scripts.decbench.triage --case <case-id>          # the full dump
+python3 -m scripts.decbench.triage --case <case-id> --also ida,ghidra
 #   write docs/decbench/triage/<case-id>.md (front-matter schema below)
 
 # 3. CLUSTER — group feature-candidate records by root cause
@@ -81,46 +118,88 @@ python3 -m scripts.decbench.status
 | bucket | meaning | action |
 |---|---|---|
 | `kuna-specific` | kuna GED > ghidra + 2 — regression vs kuna's own ancestor | fix first, most tractable |
-| `inherited` | kuna ≈ ghidra — Ghidra-family-wide gap vs angr | SAILR-style structuring features |
-| `ahead` | kuna already beats ghidra, still behind angr | genuine remaining distance |
-| `artifact_suspect` | kuna ≤ best(ghidra, ida, binja) + 1 while only angr = 0 | verify angr truncation / degenerate source CFG; route to a decbench fix |
+| `inherited` | kuna ≈ ghidra — Ghidra-family-wide gap vs the base | SAILR-style structuring features |
+| `ahead` | kuna already beats ghidra, still behind the base | genuine remaining distance |
+| `artifact_suspect` | kuna ≤ best(ghidra, ida, binja) + 1 while only the base = 0, or the source CFG is degenerate | verify truncation / parse failure; route to a decbench fix |
+
+### The three pools
+
+| pool | question it answers | miner |
+|---|---|---|
+| `angr` | where does angr's structuring beat ours | `mine.py` (default base) |
+| `ida` | where does the current scoreboard leader beat ours | `mine.py --base ida` |
+| `novel` | where is kuna already the best and the output is **still bad** | `novel.py` |
+
+The NOVEL pool exists because a metric win says nothing about whether the pane reads
+well, and because no rival holds the answer there — the fix has to be invented. It
+ranks by warts in kuna's own emission (gotos, `(code *)` casts, raw register names,
+`CONCAT`/`SUBPIECE` soup, `halt_baddata`), not by GED, and excludes O2 by default
+because inlining detaches the decompiled CFG from the source function. **A fix that
+comes out of this pool is tagged `(NOVEL)` in its commit subject** so the provenance is
+unambiguous: no other decompiler showed us the answer.
+
+### The recall pool (`cases-missing*.json`) is not a triage pool — it is the biggest one
+
+Functions kuna produced **no output for at all** while a rival did. On the 2026-07-27
+run that is **6,540 functions (7.3% of the corpus)**, every one of them a guaranteed
+zero. Two named causes found so far: whole-project discovery failures (u-boot 100%,
+freertos 100%, betaflight 22% — embedded/ARM), and per-function pipeline failures on
+x86-64 (coreutils `main` in comm/join/timeout/uniq emits an empty body:
+`structured blocks unavailable (structuring declined at a stub)`, and the same function
+panics under `decompile-all`). Recall work outranks structuring work per function
+recovered — check this pool before mining another structuring case.
 
 ### Per-case procedure (the triage agent)
 
-1. `triage --case <id>` — read angr/stored-kuna/fresh-kuna side by side.
+1. `triage --case <id> --also ida,ghidra` — read every pane side by side.
 2. Gap gone on fresh kuna? → `status: already-fixed` (name the PR; rescore to confirm).
+   Say whether `--mode reliable` also closes it (a code fix) or only the no-flag run
+   does (the aggressive default closed it).
 3. Sweep relevant default-OFF options (`kuna catalog --json`, `use_when` match;
    `triage --case <id> --option <name> on`). One closes it? → `status: covered-by-option`
-   (a default-flip candidate, not a new feature).
+   (a default-flip candidate, not a new feature). `--mode aggressive` already carries 21
+   of the 24 default-off options; `condfold` is not one of them.
 4. Pin ONE dominant structural difference (gotos into shared tails, missing switch,
    loop shape, boundary overrun, …).
 5. Metric-artifact check: approximated large CFGs, Joern parse failures on kuna's
    emission style, degenerate source CFG, truncated angr output scoring 0.
    → `status: metric-artifact` (sub-reason) or a decbench-side bug note.
-6. Root-cause in angr: the venv site-packages (9.2.213 — the version that ran) is
-   ground truth; `~/github/angr-dev/angr` master for readability. Name the
-   pass/class.
-7. Owning kuna stage from `docs/phases.md`.
-8. Scope: small option-gated pass vs `[PROPOSAL]`.
-9. Check siblings reproduce the same symptom.
-10. Write `docs/decbench/triage/<case-id>.md`:
+6. Read the ORIGINAL SOURCE — it is what "correct structure" means, and it is in the
+   results tree: `grep -l '<fn>' ~/github/decbench/results/full_run/O0/<project>/compiled/*.i`.
+   Judge every pane against it, not against the reference's pane.
+7. Root-cause in the reference: for angr, the venv site-packages (9.2.213 — the version
+   that ran) is ground truth, `~/github/angr-dev/angr` master for readability; name the
+   pass/class. For the ida and novel pools there is no readable reference — root-cause
+   in kuna alone.
+8. Owning kuna phase from `docs/phases.md`.
+9. Scope: small option-gated pass vs `[PROPOSAL]`.
+10. Check siblings reproduce the same symptom.
+11. Write `docs/decbench/triage/<case-id>.md`:
 
 ```markdown
 ---
 case_id: <id>
+pool: angr | ida | novel
 group_id: <project>::<function>
 status: feature-candidate | covered-by-option | already-fixed | metric-artifact | needs-proposal | load-failure
-tier: L|M|S|A
+tier: L|M|S|A|N
 margin: <n>
-fresh_ged: <n or null>
+fresh_verdict: <one line: what today's build actually does>
 option_closing: <name or null>
 feature_slug: <proposed or null>
 scope: small | proposal
+confidence: high | medium | low
 ---
-## Side-by-side      (angr / stored kuna / fresh kuna, fenced)
-## Analysis          (symptom, root cause, why angr wins; angr class + kuna stage)
+## Side-by-side      (reference / stored kuna / fresh kuna, fenced)
+## Source            (the original function from the .i)
+## Analysis          (symptom, root cause, why the reference wins; kuna phase)
 ## Proposed fix      (mechanism, owning files, risks)
 ```
+
+A verdict of `feature-candidate` requires ALL of: reproduced on today's build, one
+named structural symptom, one named phase, and a mechanism that fits in one module.
+Without the mechanism the honest status is `needs-proposal`. A disproven case is worth
+more than an invented feature.
 
 ## Finding good kuna examples
 
@@ -193,11 +272,11 @@ the current build before anything ships.
 
 ## Refreshing the signal
 
-After a future benchmark re-run (e.g. post hang-fix): point `KUNA_DECBENCH_RESULTS`
-at the new tree and re-run `mine` — a new snapshot supersedes the old; existing
-triage records keep their case ids. The kuna-missing pool (`cases-missing.json`)
-is owned by the run-failure workstream (see `tests/hang-repro/`), never by case
-triage.
+After a future benchmark re-run: point `KUNA_DECBENCH_RESULTS` at the new tree, re-run
+`srcsizes` (it reads that tree's `ged_src/` + `ged_large_graph_audit.json`), then
+`mine`/`novel` — a new snapshot supersedes the old; existing triage records keep their
+case ids. The mined pool JSONs are gitignored (tens of MB, regenerable); the ranked
+tables, the triage queues and the triage records are committed.
 
 ## Caveats
 

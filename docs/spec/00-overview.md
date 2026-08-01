@@ -171,6 +171,34 @@ Four front-ends drive one engine assembly:
   GUI never desyncs; the lazy scope/type providers are the in-progress remainder
   (`decompiler/crates/kuna-ghidra/src/provider.rs`).
 
+(kuna) **Surfacing a failed function.** A per-function pipeline abort is
+*recoverable*: the drive catches the unwind and returns the reason as an error
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (panic_message)`
+recovers the panic payload's text — it must take the `catch_unwind` payload by
+value, since a `&Box<dyn Any + Send>` downcasts as the box and loses the
+message). Each front-end then decides how to report it, and every one of them
+must make the failure observable:
+
+- `decompile-all` / `decompile-project` / wasm record it as the function's
+  `error` field and continue the batch (above).
+- The console keeps the session alive — it prints `Skipping <fn>: <reason>` and
+  returns success, so a datatest's `<stringmatch>` rules still evaluate rather
+  than the whole file erroring
+  (`decompiler/crates/kuna-console/src/ifacedecomp.rs`, the `IfcDecompile`
+  error arm). Because the *previous*, un-decompiled `Funcdata` survives, a
+  following `print C` renders a shell with no structured blocks; the arm
+  therefore stamps the reason onto that `Funcdata`
+  (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+  (Funcdata::set_kuna_pipeline_failure)`) so the emitted comment names the
+  abort instead of blaming structuring (chapter
+  [09](09-emission.md) §9.2).
+- `kuna decompile` recognizes that notice in the subprocess transcript
+  (`decompiler/crates/kuna-cli/src/decompile.rs (find_pipeline_failure)`) and
+  reports it: the reason plus the forwarded `decomp_dbg` stderr on its own
+  stderr, and **exit 1** — the shell still goes to stdout. Without this the
+  command exits 0 with a plausible-looking empty function, because the rendered
+  shell is not empty (DIV-45; the contract is `docs/cli.md`).
+
 (kuna) **Surface defaults.** `decompile-all` injects two driver-level defaults
 before the option pass (`decompiler/crates/kuna-cli/src/decompile_all.rs
 (load_program)`): `option listing on` (DIV-15 — without the Listing the

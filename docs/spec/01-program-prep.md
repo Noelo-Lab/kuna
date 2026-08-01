@@ -385,10 +385,21 @@ set of three bare x86-64 gcc prologue byte patterns; and (6, kuna) the reset +
 handler pointers of an empirically-detected **ARM Cortex-M hardware vector table**
 (`cortexm_vector_entries`) — a stripped bare-metal firmware image has no symbols,
 no `.eh_frame`, no libc idiom and no `$t` markers, so the hardware vector table at
-the base of the code section is the only entry source. The table is confirmed when
+the base of the loaded image is the only entry source. The table is confirmed when
 `word[0]` is a plausible SRAM stack pointer (`0x2000_0000..=0x3FFF_FFFF`) and
 `word[1] == e_entry` (the reset vector); the odd (Thumb) handler pointers are then
-harvested, LSB-masked, up to the start of code. Everything is unioned,
+harvested, LSB-masked, up to the start of code. The table is looked for in every
+section the **program headers** load as executable, not only the `SHF_EXECINSTR`
+ones (`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs
+(phdr_executable_sections)`): a `PT_LOAD` carrying `PF_X` maps its sections as
+executable memory whatever their `sh_flags` say, and the table is DATA the CPU
+reads, so requiring an executable section header of the *table* was a category
+error — what must be executable is what the handler entries POINT AT, which the
+harvest still checks. Bare-metal link scripts routinely leave `.isr_vector`
+flagged `WA` at the base of the single `RWE` load segment. `SHF_EXECINSTR`
+sections are still tried first, so an image that already matched matches the same
+section, and an object with no program headers (a relocatable `.o`) has no widened
+candidate set at all. Everything is unioned,
 deduped, restricted to executable sections, and skipped where a real funcsym
 already exists. That funcsym set
 (`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (existing_function_addrs)`)

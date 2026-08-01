@@ -82,7 +82,7 @@
 //!   `ObjectLoadImage` loads at the file's native vmas and never rebases, so the
 //!   AbstractDwarfEHDecoder image-base adjustment is identically 0.
 
-use object::read::{Object, ObjectSection, ObjectSymbol};
+use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
 use object::{SectionKind, SymbolKind};
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase};
@@ -498,6 +498,67 @@ pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>
 /// True if `vma` lands inside any executable section's `[address, address+size)`.
 pub(crate) fn in_executable_section(execs: &[(u64, u64, Vec<u8>)], vma: u64) -> bool {
     execs.iter().any(|&(lo, hi, _)| vma >= lo && vma < hi)
+}
+
+/// (kuna) The *delta* between "the section header says executable" and "the loader
+/// maps it executable": `(address, address+size, data)` for every allocated ELF
+/// section that lies wholly inside a `PF_X` `PT_LOAD` segment yet does **not**
+/// carry `SHF_EXECINSTR` — the sections [`executable_sections`] misses.
+///
+/// The program header is what the loader obeys: a section inside an `RWE`
+/// `PT_LOAD` is executable memory whatever its `sh_flags` say. Bare-metal ARM
+/// link scripts routinely leave the hardware vector table (`.isr_vector`) flagged
+/// `WA` while placing it at the base of the single `RWE` load segment, which is
+/// exactly the case [`cortexm_vector_table`] must be able to see.
+///
+/// ELF-only by construction (a PE/Mach-O `SegmentFlags` never matches, so the
+/// result is empty), and empty for a relocatable object, which has no program
+/// headers at all — both leave every caller's behavior unchanged.
+pub(crate) fn phdr_executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
+    // ELF program header flag: PF_X (the segment is executable).
+    const PF_X: u32 = 0x1;
+    // ELF section header flags: SHF_ALLOC (occupies memory at run time) and
+    // SHF_EXECINSTR (already covered by `executable_sections`).
+    const SHF_ALLOC: u64 = 0x2;
+    const SHF_EXECINSTR: u64 = 0x4;
+
+    // `object`'s ELF segment iterator already yields only `PT_LOAD`.
+    let mut xsegs: Vec<(u64, u64)> = Vec::new();
+    for seg in file.segments() {
+        let object::SegmentFlags::Elf { p_flags } = seg.flags() else {
+            continue;
+        };
+        if p_flags & PF_X == 0 || seg.size() == 0 {
+            continue;
+        }
+        let addr = seg.address();
+        xsegs.push((addr, addr.saturating_add(seg.size())));
+    }
+    if xsegs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for sec in file.sections() {
+        let object::SectionFlags::Elf { sh_flags } = sec.flags() else {
+            continue;
+        };
+        if sh_flags & SHF_ALLOC == 0 || sh_flags & SHF_EXECINSTR != 0 {
+            continue;
+        }
+        let addr = sec.address();
+        let size = sec.size();
+        if size == 0 {
+            continue;
+        }
+        let end = addr.saturating_add(size);
+        if !xsegs.iter().any(|&(lo, hi)| addr >= lo && end <= hi) {
+            continue;
+        }
+        let data = sec.data().map(|d| d.to_vec()).unwrap_or_default();
+        out.push((addr, end, data));
+    }
+    out
 }
 
 /// (kuna, issue #197) Fold the ARM/Thumb mode bit out of a **symbol** address.
@@ -1021,21 +1082,31 @@ const CORTEXM_SRAM_HI: u64 = 0x3FFF_FFFF;
 const CORTEXM_MAX_VECTORS: usize = 1024;
 
 /// Detect an ARM Cortex-M hardware vector table *empirically* and return the
-/// executable section that carries it (`(sec_addr, sec_end, data)`).
+/// loaded section that carries it (`(sec_addr, sec_end, data)`).
 ///
 /// A stripped bare-metal Cortex-M image has no symbols, no `.eh_frame`, no libc
 /// idiom, and no `$t` mapping symbols — nothing paints the Thumb decode mode and
 /// nothing seeds the handlers. The one invariant the hardware guarantees is the
-/// **vector table** at the base of the code section: on reset the CPU loads word 0
+/// **vector table** at the base of the loaded image: on reset the CPU loads word 0
 /// into `SP` and word 1 (the reset vector) into `PC`. So the table is confirmed
-/// when, at the start of an executable section, `word[0]` is a plausible SRAM
-/// stack pointer (`0x2000_0000..=0x3FFF_FFFF`) AND `word[1] == e_entry` (the reset
+/// when, at the start of a loaded section, `word[0]` is a plausible SRAM stack
+/// pointer (`0x2000_0000..=0x3FFF_FFFF`) AND `word[1] == e_entry` (the reset
 /// vector the ELF header also records). That two-word signature is specific enough
 /// that a non-Cortex-M ARM object (or any non-firmware image) does not match, so
 /// every downstream use is a strict no-op there.
 ///
+/// (kuna) The candidate set is every section the *loader* maps as executable, not
+/// just the `SHF_EXECINSTR` ones: the table is DATA that the CPU reads, so
+/// demanding an executable section header of the table itself was a category
+/// error — what must be executable is what its handler entries POINT AT, which
+/// the harvest still checks. Bare-metal link scripts commonly leave `.isr_vector`
+/// flagged `WA` inside an `RWE` `PT_LOAD` (every FreeRTOS demo image does), and
+/// the flag gate made discovery miss the whole firmware. `SHF_EXECINSTR` sections
+/// are still tried first, so an image that already matched matches the same
+/// section. See [`phdr_executable_sections`].
+///
 /// ARM-gated (32-bit ARM ELF only); returns `None` on any other arch/format or
-/// when no executable section presents the signature.
+/// when no candidate section presents the signature.
 fn cortexm_vector_table(file: &object::File) -> Option<(u64, u64, Vec<u8>)> {
     if file.architecture() != object::Architecture::Arm {
         return None;
@@ -1045,20 +1116,22 @@ fn cortexm_vector_table(file: &object::File) -> Option<(u64, u64, Vec<u8>)> {
         return None;
     }
     let le = file.is_little_endian();
-    for (addr, hi, data) in executable_sections(file) {
-        if data.len() < 8 {
-            continue;
-        }
-        let sp = read_u32(&data[0..], le) as u64;
-        let reset = read_u32(&data[4..], le) as u64;
-        // word[0] = initial SP in SRAM; word[1] = reset vector == e_entry (both the
-        // Thumb-odd and even forms are accepted — `e_entry` carries the same LSB the
-        // reset word does, so a raw `==` matches).
-        if (CORTEXM_SRAM_LO..=CORTEXM_SRAM_HI).contains(&sp) && reset == entry {
-            return Some((addr, hi, data));
-        }
-    }
-    None
+    // word[0] = initial SP in SRAM; word[1] = reset vector == e_entry (both the
+    // Thumb-odd and even forms are accepted — `e_entry` carries the same LSB the
+    // reset word does, so a raw `==` matches).
+    let signature = |data: &Vec<u8>| {
+        data.len() >= 8
+            && (CORTEXM_SRAM_LO..=CORTEXM_SRAM_HI).contains(&(read_u32(&data[0..], le) as u64))
+            && read_u32(&data[4..], le) as u64 == entry
+    };
+    // `SHF_EXECINSTR` sections first; the program-header-executable delta is only
+    // collected when none of them carries the table.
+    executable_sections(file)
+        .into_iter()
+        .find(|(_, _, data)| signature(data))
+        .or_else(|| {
+            phdr_executable_sections(file).into_iter().find(|(_, _, data)| signature(data))
+        })
 }
 
 /// Oracle 6: harvest the reset + exception/IRQ handler pointers from a detected
@@ -2379,6 +2452,204 @@ mod tests {
             vec![0x0800_09a0, 0x0800_0a78, 0x0800_0a80],
             "harvest: masked, sorted, deduped handlers up to the first non-table word"
         );
+    }
+
+    // -- Oracle 6: the vector table's own section need not be SHF_EXECINSTR ----
+    //
+    // The FreeRTOS demo images (`decbench` freertos `RTOSDemo.out`, all three opt
+    // levels) place `.isr_vector` at VMA 0 flagged `WA` inside the single `RWE`
+    // `PT_LOAD` — the loader maps it executable, the section header does not say
+    // so. Scanning only `executable_sections` therefore never saw the table, and
+    // the whole firmware went undiscovered (8 functions instead of 146).
+    // `build_cortexm_elf32` reproduces exactly that shape.
+
+    /// Hand-assembled little-endian ELF32 ARM firmware image: a `.isr_vector`
+    /// vector table at VMA 0 (`isr_flags` as its `sh_flags`) followed by an
+    /// `AX` `.text` at 0x20, both inside one `PT_LOAD` whose `p_flags` are
+    /// `seg_flags`. With `phnum == false` the program headers are omitted
+    /// entirely (the relocatable-object shape). No external toolchain needed.
+    fn build_cortexm_elf32(isr_flags: u32, seg_flags: u32, phdrs: bool) -> Vec<u8> {
+        const EHDR: u32 = 52;
+        const PHDR: u32 = 32;
+        const SHDR: u32 = 40;
+        let phnum: u16 = if phdrs { 1 } else { 0 };
+        let seg_off = EHDR + PHDR * phnum as u32;
+
+        // The image: 8 vector words at VMA 0, then 0x20 bytes of `.text` at 0x20.
+        // word 1 (the reset vector) is `e_entry` = 0x21 (Thumb-odd → 0x20).
+        let mut seg: Vec<u8> = Vec::new();
+        for w in [
+            0x2000_4000u32, // word 0: initial SP in SRAM
+            0x0000_0021,    // word 1: reset vector == e_entry
+            0x0000_0031,    // handler → 0x30
+            0x0000_0000,    // reserved slot
+            0x0000_0039,    // handler → 0x38
+            0x0000_0031,    // duplicate handler
+            0x0000_0000,
+            0x0000_0000,
+        ] {
+            seg.extend_from_slice(&w.to_le_bytes());
+        }
+        seg.extend_from_slice(&[0u8; 0x20]); // `.text` body
+
+        // shstrtab: "\0.shstrtab\0.isr_vector\0.text\0"
+        let mut shstr = vec![0u8];
+        let mut name_off = |n: &str| {
+            let off = shstr.len() as u32;
+            shstr.extend_from_slice(n.as_bytes());
+            shstr.push(0);
+            off
+        };
+        let off_shstrtab = name_off(".shstrtab");
+        let off_isr = name_off(".isr_vector");
+        let off_text = name_off(".text");
+
+        let shstr_off = seg_off + seg.len() as u32;
+        let sh_off = shstr_off + shstr.len() as u32;
+
+        let mut buf: Vec<u8> = Vec::new();
+        // --- Ehdr (Elf32) --------------------------------------------------
+        buf.extend_from_slice(&[0x7f, b'E', b'L', b'F']);
+        buf.push(1); // EI_CLASS = ELFCLASS32
+        buf.push(1); // EI_DATA = ELFDATA2LSB
+        buf.push(1); // EI_VERSION
+        buf.extend_from_slice(&[0u8; 9]); // EI_OSABI + EI_PAD
+        buf.extend_from_slice(&2u16.to_le_bytes()); // e_type = ET_EXEC
+        buf.extend_from_slice(&40u16.to_le_bytes()); // e_machine = EM_ARM
+        buf.extend_from_slice(&1u32.to_le_bytes()); // e_version
+        buf.extend_from_slice(&0x21u32.to_le_bytes()); // e_entry (Thumb-odd)
+        buf.extend_from_slice(&(if phdrs { EHDR } else { 0 }).to_le_bytes()); // e_phoff
+        buf.extend_from_slice(&sh_off.to_le_bytes()); // e_shoff
+        buf.extend_from_slice(&0x0500_0200u32.to_le_bytes()); // e_flags: EABI5
+        buf.extend_from_slice(&(EHDR as u16).to_le_bytes()); // e_ehsize
+        buf.extend_from_slice(&(PHDR as u16).to_le_bytes()); // e_phentsize
+        buf.extend_from_slice(&phnum.to_le_bytes()); // e_phnum
+        buf.extend_from_slice(&(SHDR as u16).to_le_bytes()); // e_shentsize
+        buf.extend_from_slice(&4u16.to_le_bytes()); // e_shnum
+        buf.extend_from_slice(&3u16.to_le_bytes()); // e_shstrndx
+
+        // --- Phdr (Elf32: p_flags sits AFTER p_memsz) ----------------------
+        if phdrs {
+            buf.extend_from_slice(&1u32.to_le_bytes()); // p_type = PT_LOAD
+            buf.extend_from_slice(&seg_off.to_le_bytes()); // p_offset
+            buf.extend_from_slice(&0u32.to_le_bytes()); // p_vaddr
+            buf.extend_from_slice(&0u32.to_le_bytes()); // p_paddr
+            buf.extend_from_slice(&(seg.len() as u32).to_le_bytes()); // p_filesz
+            buf.extend_from_slice(&(seg.len() as u32).to_le_bytes()); // p_memsz
+            buf.extend_from_slice(&seg_flags.to_le_bytes()); // p_flags
+            buf.extend_from_slice(&1u32.to_le_bytes()); // p_align
+        }
+
+        assert_eq!(buf.len() as u32, seg_off);
+        buf.extend_from_slice(&seg);
+        buf.extend_from_slice(&shstr);
+
+        // --- section headers (Elf32_Shdr = 40 bytes each) ------------------
+        let push_shdr = |b: &mut Vec<u8>,
+                         name: u32,
+                         sh_type: u32,
+                         sh_flags: u32,
+                         addr: u32,
+                         offset: u32,
+                         size: u32| {
+            for v in [name, sh_type, sh_flags, addr, offset, size, 0, 0, 4, 0] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+        };
+        assert_eq!(buf.len() as u32, sh_off);
+        push_shdr(&mut buf, 0, 0, 0, 0, 0, 0); // 0: null
+        push_shdr(&mut buf, off_isr, 1, isr_flags, 0, seg_off, 0x20); // 1: .isr_vector
+        push_shdr(&mut buf, off_text, 1, 0x2 | 0x4, 0x20, seg_off + 0x20, 0x20); // 2: .text (AX)
+        push_shdr(&mut buf, off_shstrtab, 3, 0, 0, shstr_off, shstr.len() as u32); // 3
+        buf
+    }
+
+    /// The bug shape: `.isr_vector` is `WA`, so the table's section is invisible
+    /// to `executable_sections` — the set the oracle used to scan. Widened to the
+    /// sections a `PF_X` `PT_LOAD` actually loads, the table is found and its
+    /// handlers are harvested, exactly as if the section had been flagged `AX`.
+    #[test]
+    fn cortexm_vector_table_in_nonexec_section() {
+        // `WA` (ALLOC|WRITE) `.isr_vector` inside an `RWE` (PF_R|PF_W|PF_X) load.
+        let bytes = build_cortexm_elf32(0x1 | 0x2, 0x4 | 0x2 | 0x1, true);
+        let file = object::File::parse(bytes.as_slice()).expect("parse synthetic firmware");
+        assert_eq!(file.architecture(), object::Architecture::Arm);
+        assert_eq!(file.entry(), 0x21, "e_entry (Thumb-odd reset vector)");
+
+        // BUG SHAPE: the old candidate set (executable sections only) cannot see
+        // the table's section at all.
+        let execs = executable_sections(&file);
+        assert!(
+            !execs.iter().any(|&(lo, _, _)| lo == 0),
+            "`.isr_vector` must NOT be an SHF_EXECINSTR section (that is the bug's premise)"
+        );
+        // FIXED SHAPE: the program headers load it as executable, so it IS a
+        // candidate.
+        let phdr = phdr_executable_sections(&file);
+        assert!(
+            phdr.iter().any(|&(lo, hi, _)| lo == 0 && hi == 0x20),
+            "`.isr_vector` [0,0x20) lies in a PF_X PT_LOAD, got {:#x?}",
+            phdr.iter().map(|&(l, h, _)| (l, h)).collect::<Vec<_>>()
+        );
+
+        let table = cortexm_vector_table(&file);
+        assert!(table.is_some(), "vector table must be detected in the WA `.isr_vector`");
+        assert_eq!(table.unwrap().0, 0, "the table is the section at VMA 0");
+
+        // The reset + handler seeds are harvested (masked, sorted, deduped) and
+        // reach the fused discovery core.
+        assert_eq!(cortexm_vector_entries(&file), vec![0x20, 0x30, 0x38]);
+        let entries = collect_entries(&file, bytes.as_slice());
+        for want in [0x20u64, 0x30, 0x38] {
+            assert!(entries.contains(&want), "entry {want:#x} missing from {entries:#x?}");
+        }
+        // A confirmed table also unlocks the whole-image Thumb region paint.
+        assert_eq!(
+            cortexm_thumb_paints(&file),
+            vec![ContextPaint { addr: 0x20, end: Some(0x40), var: "TMode", value: 1 }],
+            "a confirmed table paints TMode=1 over the executable sections"
+        );
+    }
+
+    /// The widening is *containment in a `PF_X` `PT_LOAD`*, not "ignore the
+    /// section flags": the same `WA` `.isr_vector` in a non-executable (`RW`)
+    /// load stays invisible, and an image with no program headers at all (the
+    /// relocatable-object shape) is unchanged.
+    #[test]
+    fn cortexm_vector_table_requires_executable_load() {
+        for (label, seg_flags, phdrs) in
+            [("RW PT_LOAD", 0x4u32 | 0x2, true), ("no program headers", 0, false)]
+        {
+            let bytes = build_cortexm_elf32(0x1 | 0x2, seg_flags, phdrs);
+            let file = object::File::parse(bytes.as_slice()).expect("parse synthetic firmware");
+            assert!(
+                phdr_executable_sections(&file).is_empty(),
+                "{label}: nothing is loaded executable"
+            );
+            assert!(cortexm_vector_table(&file).is_none(), "{label}: no table candidate");
+            assert!(cortexm_vector_entries(&file).is_empty(), "{label}: no seeds");
+            assert!(cortexm_thumb_paints(&file).is_empty(), "{label}: no Thumb paint");
+        }
+    }
+
+    /// The pre-existing path is untouched: an `AX` `.isr_vector` (the shape that
+    /// already worked, e.g. libopencm3 `button.elf`) still matches through
+    /// `executable_sections`, and yields the same seeds.
+    #[test]
+    fn cortexm_vector_table_exec_section_unchanged() {
+        // `AX` (ALLOC|EXECINSTR) `.isr_vector`.
+        let bytes = build_cortexm_elf32(0x2 | 0x4, 0x4 | 0x1, true);
+        let file = object::File::parse(bytes.as_slice()).expect("parse synthetic firmware");
+        assert!(
+            executable_sections(&file).iter().any(|&(lo, _, _)| lo == 0),
+            "`.isr_vector` is SHF_EXECINSTR here"
+        );
+        assert!(
+            phdr_executable_sections(&file).is_empty(),
+            "the delta set excludes already-executable sections"
+        );
+        assert_eq!(cortexm_vector_table(&file).map(|t| t.0), Some(0));
+        assert_eq!(cortexm_vector_entries(&file), vec![0x20, 0x30, 0x38]);
     }
 
     /// RISC-V: `_start` (0x550) loads `main` (0x608) into `a0` via

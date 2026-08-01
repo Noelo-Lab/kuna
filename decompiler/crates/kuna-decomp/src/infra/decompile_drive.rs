@@ -574,7 +574,7 @@ fn run_jumptable_pipeline(
         }
         Err(payload) => Err(KunaError::lowlevel(format!(
             "jumptable pipeline reached an un-ported seam: {}",
-            panic_message(&payload)
+            panic_message(payload)
         ))),
     }
 }
@@ -874,7 +874,7 @@ pub fn decompile_func_full_with_override_dyn(
                 Ok(fd)
             }
             Err(payload) => {
-                let msg = panic_message(&payload);
+                let msg = panic_message(payload);
                 Err(kuna_base::error::KunaError::lowlevel(format!(
                     "decompile pipeline reached an un-ported seam (LOSS-131): {msg}"
                 )))
@@ -930,20 +930,25 @@ pub fn run_named_pipeline_variant(
         Ok(Err(e)) => Err(e),
         Err(payload) => Err(KunaError::lowlevel(format!(
             "{variant} pipeline reached an un-ported seam: {}",
-            panic_message(&payload)
+            panic_message(payload)
         ))),
     }
 }
 
 /// Best-effort extraction of a panic payload's message (the `panic!` string),
 /// for surfacing an un-ported-stub abort as a recoverable [`KunaError`].
-fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "panic with non-string payload".to_string()
+///
+/// Takes the `catch_unwind` payload **by value**: a `&Box<dyn Any + Send>`
+/// unsize-coerces to the *box itself* as the `Any`, so every `downcast` against
+/// the payload types silently fails and the message is lost (the bug this
+/// signature makes unwritable).
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    match payload.downcast::<&'static str>() {
+        Ok(s) => (*s).to_string(),
+        Err(payload) => match payload.downcast::<String>() {
+            Ok(s) => *s,
+            Err(_) => "panic with non-string payload".to_string(),
+        },
     }
 }
 
@@ -1207,3 +1212,6 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;
