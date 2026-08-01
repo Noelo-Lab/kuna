@@ -974,6 +974,31 @@ pub fn type_op_for(opc: OpCode) -> TypeOp {
     type_op_info(opc).to_type_op()
 }
 
+/// Total form of [`type_op_info`]: the canonical record for every registered
+/// op-code, `None` for the `CPUI_MAX` sentinel (the only op-code value with no
+/// `inst[]` entry, matching the trailing null `registerInstructions` inserts).
+pub fn try_type_op_info(opc: OpCode) -> Option<TypeOpInfo> {
+    if opc == OpCode::CPUI_MAX {
+        return None;
+    }
+    Some(type_op_info(opc))
+}
+
+/// `glb->inst[opc]` for the rule seams that retype an op mid-simplification:
+/// total over every [`OpCode`], never panicking.
+///
+/// A simplification rule can only ever install an op-code that exists, so this
+/// resolves through the canonical [`type_op_info`] table.  The `CPUI_MAX`
+/// sentinel has no `inst[]` entry (nor any meaning as an operation); rather than
+/// aborting the whole function it degrades to a property-less skeleton, which
+/// the pipeline handles as an ordinary (inert) op.
+pub fn seam_type_op_for(opc: OpCode) -> TypeOp {
+    match try_type_op_info(opc) {
+        Some(info) => info.to_type_op(),
+        None => TypeOp::new(opc, 0, format!("{opc:?}")),
+    }
+}
+
 /// Every op-code that `TypeOp::registerInstructions` assigns an `inst[]` entry,
 /// in the registration order of `typeop.cc:29-108`.  Excludes `CPUI_MAX` and the
 /// unused discriminant `45` (which stay `None` in the table).

@@ -83,7 +83,6 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
-use crate::op::pcodeop_flags;
 use crate::context::{OpId, TypeOp, VarnodeId};
 
 /// The stage group every rule in this batch registers against (the C++
@@ -96,47 +95,15 @@ const RULE_GROUP: &str = "analysis";
 // =============================================================================
 
 /// Resolve an [`OpCode`] to the [`TypeOp`] behavioral class the C++
-/// `opSetOpcode` would fetch from `glb->inst[opc]`.  // STUB(W6)
+/// `opSetOpcode` fetches from `glb->inst[opc]`.
 ///
 /// The property-flag word (which `PcodeOp::setOpcode` caches into the op's
 /// `flags`, and which then governs `code()`/`isBoolOutput()`/`isCommutative()`
-/// of the rewritten op) is reproduced **verbatim from `typeop.cc`** for exactly
-/// the op-codes these rules write.  An op-code outside that set is an internal
-/// invariant violation (a rule wrote an opcode it never names) and panics.
+/// of the rewritten op) comes from the canonical port of that table
+/// ([`crate::typeop::seam_type_op_for`], reproduced verbatim from `typeop.cc`),
+/// which answers for every op-code.
 pub(crate) fn resolve_typeop(opc: OpCode) -> TypeOp {
-    use OpCode::*;
-    let unary = pcodeop_flags::unary;
-    let binary = pcodeop_flags::binary;
-    let commutative = pcodeop_flags::commutative;
-    let booloutput = pcodeop_flags::booloutput;
-    let nocollapse = pcodeop_flags::nocollapse;
-    let (flags, name): (kuna_base::types::uint4, &str) = match opc {
-        CPUI_COPY => (unary | nocollapse, "copy"),
-        CPUI_INT_ZEXT => (unary, "zext"),
-        CPUI_INT_XOR => (binary | commutative, "^"),
-        CPUI_INT_EQUAL => (binary | booloutput | commutative, "=="),
-        CPUI_INT_NOTEQUAL => (binary | booloutput | commutative, "!="),
-        CPUI_INT_LESS => (binary | booloutput, "<"),
-        CPUI_INT_LESSEQUAL => (binary | booloutput, "<="),
-        CPUI_INT_SLESS => (binary | booloutput, "s<"),
-        CPUI_INT_SLESSEQUAL => (binary | booloutput, "s<="),
-        CPUI_BOOL_AND => (binary | commutative | booloutput, "&&"),
-        CPUI_BOOL_OR => (binary | commutative | booloutput, "||"),
-        CPUI_SUBPIECE => (binary, "SUB"),
-        CPUI_FLOAT_EQUAL => (binary | booloutput | commutative, "f=="),
-        CPUI_FLOAT_NOTEQUAL => (binary | booloutput | commutative, "f!="),
-        CPUI_FLOAT_LESS => (binary | booloutput, "f<"),
-        CPUI_FLOAT_LESSEQUAL => (binary | booloutput, "f<="),
-        CPUI_FLOAT_ADD => (binary | commutative, "f+"),
-        CPUI_FLOAT_NEG => (unary, "f-"),
-        CPUI_FLOAT_ABS => (unary, "ABS"),
-        CPUI_FLOAT_INT2FLOAT => (unary, "INT2FLOAT"),
-        _ => panic!(
-            "ruleaction_8 resolve_typeop: opcode {opc:?} is not written by any rule in this batch \
-             (STUB(W6) table is intentionally minimal)"
-        ),
-    };
-    TypeOp::new(opc, flags, name)
+    crate::typeop::seam_type_op_for(opc)
 }
 
 /// `data.opSetOpcode(op, opc)` — the C++ `Funcdata::opSetOpcode(PcodeOp*,OpCode)`
@@ -1864,6 +1831,7 @@ mod tests {
 
     use std::rc::Rc;
 
+    use crate::op::pcodeop_flags;
     use kuna_base::address::Address;
     use kuna_base::error::KunaResult;
     use kuna_base::space::{

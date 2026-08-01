@@ -176,36 +176,12 @@ fn new_extended_constant(
 }
 
 /// `data.opSetOpcode(op, opc)` op-flags resolution (`glb->inst[opc]`) folded in:
-/// builds the [`TypeOp`] with the exact `opflags` transcribed from `typeop.cc`
-/// for every op-code these div/mod rules produce, so the op's cached property
-/// bits match what the C++ would install.  The `addlflags`/`OpBehavior` are not
-/// modelled here (a rule that wrote INT_DIV does not gain its arithmetic-op
-/// addlflag); that wider table is the W6 stub.  // STUB(W6)
+/// builds the [`TypeOp`] from the canonical `inst[]` table
+/// ([`crate::typeop::seam_type_op_for`], the `opflags` transcribed verbatim from
+/// `typeop.cc`), so the op's cached property bits match what the C++ would
+/// install for *any* op-code a rule in this batch produces.
 fn typeop_for(opc: OpCode) -> TypeOp {
-    use crate::op::pcodeop_flags as f;
-    // opflags transcribed verbatim from typeop.cc constructors.
-    let (flags, name): (uint4, &str) = match opc {
-        // TypeOpIntZext / TypeOpIntSext: unary
-        OpCode::CPUI_INT_ZEXT => (f::unary, "ZEXT"),
-        OpCode::CPUI_INT_SEXT => (f::unary, "SEXT"),
-        // TypeOpIntAdd: binary | commutative
-        OpCode::CPUI_INT_ADD => (f::binary | f::commutative, "+"),
-        // TypeOpIntMult: binary | commutative
-        OpCode::CPUI_INT_MULT => (f::binary | f::commutative, "*"),
-        // TypeOpIntRight / TypeOpIntSright / TypeOpIntDiv / TypeOpIntSdiv /
-        // TypeOpPiece / TypeOpSubpiece: binary
-        OpCode::CPUI_INT_RIGHT => (f::binary, ">>"),
-        OpCode::CPUI_INT_SRIGHT => (f::binary, "s>>"),
-        OpCode::CPUI_INT_DIV => (f::binary, "/"),
-        OpCode::CPUI_INT_SDIV => (f::binary, "/"),
-        OpCode::CPUI_PIECE => (f::binary, "PIECE"),
-        OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
-        // Any other op-code these rules reach is a porting bug; fall back to a
-        // bare binary skeleton (worst case: a missing special-semantics flag,
-        // never an incorrect rewrite).  // STUB(W6)
-        _ => (f::binary, "op"),
-    };
-    TypeOp::new(opc, flags, name.to_string())
+    crate::typeop::seam_type_op_for(opc)
 }
 
 /// `Varnode::getTypeReadFacing(op)` — the read-facing data-type resolution

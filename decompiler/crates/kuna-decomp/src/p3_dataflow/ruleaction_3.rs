@@ -39,11 +39,11 @@
 //! Two infrastructure shims live in this file (not "type behavior" — the fixed
 //! pcode-op property bits and the unique-output factory):
 //!
-//! * [`set_opcode`] resolves an [`OpCode`] to the stub [`TypeOp`] with the
-//!   correct cached `opflags` (transcribed from `typeop.cc`'s `TypeOpXXX`
-//!   constructors) and calls `opSetOpcode`.  This is the `glb->inst[opc]`
-//!   resolution the W6 inst-table will own; the flag word is load-bearing
-//!   (downstream `isMarker`/`isCommutative`/... read the op's cached flags).
+//! * [`set_opcode`] resolves an [`OpCode`] to its [`TypeOp`] through the
+//!   canonical `inst[]` table ([`crate::typeop::seam_type_op_for`]) and calls
+//!   `opSetOpcode`.  This is the `glb->inst[opc]` resolution; the flag word is
+//!   load-bearing (downstream `isMarker`/`isCommutative`/... read the op's
+//!   cached flags), and the table answers for every op-code.
 //! * [`new_unique_out`] replicates `Funcdata::newUniqueOut`
 //!   (`funcdata_varnode.cc:131`): `vbank.createDefUnique` + `op->setOutput`.  The
 //!   `Funcdata`-level `newUniqueOut`/`opSetOutput` surface is blocked on a
@@ -65,77 +65,18 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::expression::AddExpression;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::context::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
-// W6 inst-table shim: OpCode -> cached opflags (transcribed from typeop.cc)
+// inst-table resolution: OpCode -> TypeOp (canonical typeop.cc table)
 // =============================================================================
 
-/// The cached `opflags` property word for an [`OpCode`], transcribed verbatim
-/// from the `TypeOpXXX` constructors in `decompiler/cpp/typeop.cc`.
-///
-/// STUB(W6): the real `glb->inst[opc]` (the `TypeFactory`-built `TypeOp` table)
-/// owns this.  Only the opcodes these 22 rules ever *produce* via `opSetOpcode`
-/// are listed; an unlisted opcode panics (it would mean a rule body produced an
-/// opcode not covered here — an internal-invariant violation).
-fn opflags_for(opc: OpCode) -> u32 {
-    use pcodeop_flags::*;
-    match opc {
-        // TypeOpCopy: unary | nocollapse
-        OpCode::CPUI_COPY => unary | nocollapse,
-        // TypeOpBoolNegate: unary | booloutput
-        OpCode::CPUI_BOOL_NEGATE => unary | booloutput,
-        // TypeOpBoolAnd / BoolOr / BoolXor: binary | commutative | booloutput
-        OpCode::CPUI_BOOL_AND | OpCode::CPUI_BOOL_OR | OpCode::CPUI_BOOL_XOR => {
-            binary | commutative | booloutput
-        }
-        // TypeOpIntSless / IntSlessEqual / IntLessEqual: binary | booloutput
-        OpCode::CPUI_INT_SLESS
-        | OpCode::CPUI_INT_SLESSEQUAL
-        | OpCode::CPUI_INT_LESSEQUAL => binary | booloutput,
-        // TypeOpIntAdd / IntMult: binary | commutative
-        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_MULT => binary | commutative,
-        // TypeOpIntSright / IntSub / Piece / Subpiece: binary
-        OpCode::CPUI_INT_SRIGHT
-        | OpCode::CPUI_INT_SUB
-        | OpCode::CPUI_PIECE
-        | OpCode::CPUI_SUBPIECE => binary,
-        // TypeOpIntZext / IntSext: unary
-        OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => unary,
-        // TypeOpIntXor / IntAnd / IntOr: binary | commutative (typeop.cc:1410/1443/1476)
-        OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR => {
-            binary | commutative
-        }
-        // TypeOpIntNegate / Int2Comp: unary (typeop.cc:1396/1382)
-        OpCode::CPUI_INT_NEGATE | OpCode::CPUI_INT_2COMP => unary,
-        // TypeOpIntLeft / IntRight: binary (typeop.cc:1504/1529)
-        OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_RIGHT => binary,
-        // TypeOpIntLess: binary | booloutput (typeop.cc:1069)
-        OpCode::CPUI_INT_LESS => binary | booloutput,
-        // TypeOpEqual / TypeOpNotEqual: binary | booloutput | commutative
-        // (typeop.cc:929/993).  Reachable since the `markLabelBumpUp` port (#150)
-        // hoists loop-head labels out of loop *conditions* (driving a rule to re-set an
-        // `==`/`!=` guard opcode through this shim), and likewise when `RuleMultiCollapse`
-        // rebuilds an equality guard re-flowing a recovered jump table
-        // (`generate_ops_with_jumptables` -> `stage_jump_table`) — without these the shim
-        // panicked (LOSS-131) on some fully-native switch functions (e.g. mv -O2 sub_12280,
-        // unmasked once the loweredswitch over-fire on that function is declined).
-        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => binary | booloutput | commutative,
-        other => panic!(
-            "ruleaction_3::opflags_for: no W6 opflags entry for {other:?} \
-             (a rule produced an opcode not covered by this seam shim)"
-        ),
-    }
-}
-
-/// `data.opSetOpcode(op, opc)` with the W6 inst-table resolution folded in.
-///
-/// STUB(W6): builds the [`TypeOp`] from [`opflags_for`] and the debug name (the
-/// `{opc:?}` rendering the merged production code uses), then routes through the
-/// real [`Funcdata::op_set_opcode`].
+/// `data.opSetOpcode(op, opc)` with the inst-table resolution folded in: builds
+/// the [`TypeOp`] from the canonical table, then routes through the real
+/// [`Funcdata::op_set_opcode`].
 fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
-    data.op_set_opcode(op, TypeOp::new(opc, opflags_for(opc), format!("{opc:?}")));
+    data.op_set_opcode(op, crate::typeop::seam_type_op_for(opc));
 }
 
 /// `data.newUniqueOut(s, op)` (C++ `Funcdata::newUniqueOut`,
@@ -2382,16 +2323,33 @@ mod tests {
     use super::*;
     use std::rc::Rc;
 
-    /// Regression: `opflags_for` must cover the equality comparisons (a
+    /// Regression: the opcode seam must cover the equality comparisons (a
     /// `markLabelBumpUp`-hoisted loop-head `==`/`!=` guard re-set its opcode
-    /// through this shim and panicked — #150 regression).  The flags match
+    /// through it and panicked — #150 regression).  The flags match
     /// Ghidra `TypeOpEqual`/`TypeOpNotEqual` (binary | booloutput | commutative).
     #[test]
-    fn opflags_for_covers_int_equality() {
+    fn opcode_seam_covers_int_equality() {
         use pcodeop_flags::*;
         let expect = binary | booloutput | commutative;
-        assert_eq!(opflags_for(OpCode::CPUI_INT_EQUAL), expect);
-        assert_eq!(opflags_for(OpCode::CPUI_INT_NOTEQUAL), expect);
+        assert_eq!(crate::typeop::seam_type_op_for(OpCode::CPUI_INT_EQUAL).get_flags(), expect);
+        assert_eq!(crate::typeop::seam_type_op_for(OpCode::CPUI_INT_NOTEQUAL).get_flags(), expect);
+    }
+
+    /// Durability: the seam every `set_opcode` in this batch routes through must
+    /// answer for *every* op-code.  The hand-maintained whitelist it replaced
+    /// was missing INT_SRIGHT / FLOAT_INT2FLOAT / FLOAT_LESS / FLOAT_ADD, and a
+    /// rule that produced one of those panicked the whole function away.
+    #[test]
+    fn opcode_seam_answers_for_every_opcode() {
+        for raw in 1..(OpCode::CPUI_MAX as i32) {
+            let opc = match OpCode::from_i32(raw) {
+                Some(o) => o,
+                None => continue,
+            };
+            let t = crate::typeop::seam_type_op_for(opc);
+            assert_eq!(t.get_opcode(), opc);
+            assert_ne!(t.get_flags(), 0, "{opc:?}: seam produced a property-less TypeOp");
+        }
     }
 
     use kuna_base::address::Address;
@@ -2399,6 +2357,8 @@ mod tests {
         addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, FspecSpace,
         IopSpace, UniqueSpace,
     };
+
+    use crate::context::TypeOp;
     use kuna_base::types::int4;
     use kuna_num::opcodes::OpCode;
 

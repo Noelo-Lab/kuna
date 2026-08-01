@@ -1686,7 +1686,9 @@ mod tests {
         // (usage(1); // no-return; warnstyle banner restores the WARNING lines)
         // and ghdec-fast-funcdisc / the bounded fast-project inventory
         // (old fast omits a direct callee; default fast emits its real body)
-        assert_eq!(count, 174, "corpus file count drifted");
+        // and ghdec-opcode-seam / the total opcode -> TypeOp seam
+        // (a rule-produced INT_SRIGHT used to panic the whole function away)
+        assert_eq!(count, 175, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

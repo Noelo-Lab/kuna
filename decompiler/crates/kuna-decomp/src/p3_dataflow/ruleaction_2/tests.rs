@@ -992,9 +992,27 @@ fn trivialarith_survives_the_real_grouplists_via_its_analysis_group() {
     );
 }
 
+/// Durability: `op_typeop` is the seam `RuleBitUndistribute` & co. retype ops
+/// through — it must answer for *every* op-code.  The whitelist it replaced was
+/// missing `CPUI_INT_SRIGHT`, so a shift-right undistribute panicked the whole
+/// function away (no output at all for e.g. coreutils timeout/split `main`).
+#[test]
+fn op_typeop_answers_for_every_opcode() {
+    for raw in 1..(OpCode::CPUI_MAX as i32) {
+        let opc = match OpCode::from_i32(raw) {
+            Some(o) => o,
+            None => continue,
+        };
+        let t = op_typeop(opc);
+        assert_eq!(t.get_opcode(), opc);
+        assert_ne!(t.get_flags(), 0, "{opc:?}: seam produced a property-less TypeOp");
+    }
+    assert_eq!(op_typeop(OpCode::CPUI_INT_SRIGHT).get_flags(), crate::op::pcodeop_flags::binary);
+}
+
 #[test]
 fn op_typeop_flags_match_typeop_cc() {
-    // Spot-check the W6 seam flag words against typeop.cc.
+    // Spot-check the seam flag words against typeop.cc.
     use crate::op::pcodeop_flags as f;
     assert_eq!(op_typeop(OpCode::CPUI_COPY).get_flags(), f::unary | f::nocollapse);
     assert_eq!(op_typeop(OpCode::CPUI_INT_AND).get_flags(), f::binary | f::commutative);
