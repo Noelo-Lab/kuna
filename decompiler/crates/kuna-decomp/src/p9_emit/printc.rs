@@ -2121,12 +2121,19 @@ impl PrintC {
         if fd.sblocks_get_size() != 0 {
             self.emit_function_body(fd, arch);
         } else {
-            // Structuring declined: keep the brace-matched shell.
+            // No structured tree: keep the brace-matched shell and name the real
+            // cause.  A caught pipeline abort discards the analyzed Funcdata, so
+            // what is being rendered is the previous, un-decompiled one — that is
+            // a pipeline failure (the driver stamped its reason), NOT structuring
+            // declining on analyzed IR.
             self.emit.tag_line();
-            self.emit.print(
-                "/* WARNING: structured blocks unavailable (structuring declined at a stub) */",
-                SyntaxHighlight::CommentColor,
-            );
+            let text = match fd.kuna_pipeline_failure() {
+                Some(reason) => format!("/* WARNING: decompilation failed: {reason} */"),
+                None => {
+                    "/* WARNING: structured blocks unavailable (structuring declined) */".to_string()
+                }
+            };
+            self.emit.print(&text, SyntaxHighlight::CommentColor);
         }
         // (kuna warnstyle, DIV-39) drain any slug still pending from a
         // construct with no closer flush point onto the last body line, so no

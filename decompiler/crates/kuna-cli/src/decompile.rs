@@ -139,6 +139,32 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
     None
 }
 
+/// The console's per-function abort notice: `IfcDecompile` catches a
+/// recoverable pipeline abort, prints `Skipping <name>: <reason>` and keeps
+/// going (so `print C` still renders a shell).  Without this the CLI would
+/// report success for a function that produced nothing.
+///
+/// Returns `(function name, reason)` for the first such notice.
+fn find_pipeline_failure(out: &str) -> Option<(String, String)> {
+    for line in out.lines() {
+        // The console prompt is written before the command echo, so an output
+        // line can carry it as a prefix.
+        let line = line.trim_start().strip_prefix("[decomp]>").unwrap_or(line).trim_start();
+        let Some(rest) = line.strip_prefix("Skipping ") else {
+            continue;
+        };
+        let rest = rest.trim();
+        if rest.is_empty() {
+            continue;
+        }
+        return Some(match rest.split_once(": ") {
+            Some((name, reason)) => (name.to_string(), reason.trim().to_string()),
+            None => (rest.to_string(), String::new()),
+        });
+    }
+    None
+}
+
 /// A unique temp path under the system temp dir (no external dep; mirrors
 /// `tempfile.NamedTemporaryFile(delete=False)`'s role — a private scratch file we
 /// delete in the `finally`).
@@ -153,8 +179,17 @@ fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
     dir
 }
 
-/// Run the decompile and return either the C (regions=false) or `(c, regions)`.
-fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
+/// One `kuna decompile` run: the rendered C, the optional `--regions` dump, and
+/// — when the pipeline aborted for the requested function — the failure report
+/// (`kuna decompile` exits non-zero on it; see `docs/cli.md`).
+struct DecompileOutcome {
+    c: String,
+    regions: Option<String>,
+    failure: Option<String>,
+}
+
+/// Run the decompile and return its [`DecompileOutcome`].
+fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
     let binary = binary.to_string_lossy().to_string();
@@ -266,11 +301,9 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
             })
             .map_err(|e| format!("failed to run decomp_dbg: {e}"))?;
 
-        let combined = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let stdout_text = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr_text = String::from_utf8_lossy(&output.stderr).into_owned();
+        let combined = format!("{stdout_text}\n{stderr_text}");
         if let Some(msg) = check_errors(&combined, &args.target, &binary, by_address) {
             return Err(msg);
         }
@@ -288,16 +321,29 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
                 combined.trim().chars().take(2000).collect::<String>()
             ));
         }
-        if regions_path.is_none() {
-            return Ok((c_text, None));
-        }
-        let mut regions_text = String::new();
-        if let Some(rp) = &regions_path {
-            if let Ok(mut fh) = std::fs::File::open(rp) {
-                let _ = fh.read_to_string(&mut regions_text);
+        // The pipeline aborted for this function: the console kept the session
+        // alive and `print C` rendered the un-decompiled shell above, so the C
+        // is non-empty and only this notice distinguishes the failure from a
+        // genuinely empty function.  Report it; `run` exits non-zero.
+        let failure = find_pipeline_failure(&stdout_text).map(|(func, reason)| {
+            let mut msg = format!("decompilation failed for {func} in {binary}: {reason}");
+            let note = stderr_text.trim();
+            if !note.is_empty() {
+                msg.push_str("\nnote: decomp_dbg stderr:\n");
+                msg.push_str(&note.chars().take(2000).collect::<String>());
             }
+            msg
+        });
+
+        let mut regions_text = None;
+        if let Some(rp) = &regions_path {
+            let mut buf = String::new();
+            if let Ok(mut fh) = std::fs::File::open(rp) {
+                let _ = fh.read_to_string(&mut buf);
+            }
+            regions_text = Some(trim_newlines(&buf));
         }
-        Ok((c_text, Some(trim_newlines(&regions_text))))
+        Ok(DecompileOutcome { c: c_text, regions: regions_text, failure })
     })();
 
     let _ = std::fs::remove_file(&out_path);
@@ -313,22 +359,76 @@ fn trim_newlines(s: &str) -> String {
 }
 
 /// Entry point for `kuna decompile`.
+///
+/// Exit codes: `0` on success, `1` on a run-level error (no such function, no
+/// architecture, no C at all) **and on a per-function pipeline abort** — the
+/// recovered shell still goes to stdout (its comment names the reason), the
+/// reason goes to stderr.  `docs/cli.md` documents the contract.
 pub fn run(args: &DecompileArgs) -> i32 {
     match decompile(args) {
-        Ok((c, regions)) => {
+        Ok(out) => {
             if args.regions {
-                println!("{c}");
+                println!("{}", out.c);
                 println!();
                 println!("// ==== kuna regions (S7) ====");
-                println!("{}", regions.unwrap_or_default());
+                println!("{}", out.regions.unwrap_or_default());
             } else {
-                println!("{c}");
+                println!("{}", out.c);
             }
-            0
+            match out.failure {
+                Some(msg) => {
+                    eprintln!("error: {msg}");
+                    1
+                }
+                None => 0,
+            }
         }
         Err(e) => {
             eprintln!("error: {e}");
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_pipeline_failure;
+
+    /// The real console transcript shape (`decomp_dbg` echoes the prompt, then
+    /// the command's output lines).
+    #[test]
+    fn finds_the_console_abort_notice() {
+        let out = "[decomp]> decompile\nClearing old decompilation\nDecompiling sub_3994\n\
+                   Skipping sub_3994: decompile pipeline reached an un-ported seam (LOSS-131): \
+                   called `Option::unwrap()` on a `None` value\n[decomp]> print C\n";
+        let (func, reason) = find_pipeline_failure(out).expect("the notice is recognized");
+        assert_eq!(func, "sub_3994");
+        assert!(reason.contains("LOSS-131"), "{reason}");
+        assert!(reason.contains("Option::unwrap()"), "the real panic text survives: {reason}");
+    }
+
+    /// A prompt sharing the line with the notice is still recognized.
+    #[test]
+    fn finds_a_prompt_prefixed_notice() {
+        let out = "[decomp]> Skipping main: boom\n";
+        assert_eq!(
+            find_pipeline_failure(out),
+            Some(("main".to_string(), "boom".to_string()))
+        );
+    }
+
+    /// A clean run reports no failure — the exit code stays 0.
+    #[test]
+    fn clean_transcript_has_no_failure() {
+        let out = "[decomp]> decompile\nDecompiling main\nDecompilation complete\n";
+        assert_eq!(find_pipeline_failure(out), None);
+    }
+
+    /// The C body mentioning the word must not be mistaken for the notice (only
+    /// a line that *starts* with it counts, and the C never reaches this text).
+    #[test]
+    fn body_text_is_not_a_failure() {
+        let out = "[decomp]> print C\n  /* Skipping is fine here */\n";
+        assert_eq!(find_pipeline_failure(out), None);
     }
 }
