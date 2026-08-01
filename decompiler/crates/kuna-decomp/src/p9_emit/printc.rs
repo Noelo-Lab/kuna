@@ -6682,28 +6682,9 @@ impl PrintC {
                 }
             }
         }
-        let spc = match loc.get_space() {
-            Some(s) => s,
+        let name = match kuna_unnamed_location_name(arch, &loc, size) {
+            Some(n) => n,
             None => return,
-        };
-        let regname = arch.translate().get_register_name(spc, loc.get_offset(), size);
-        let name = if !regname.is_empty() {
-            regname
-        } else if kuna_global_naming(spc) {
-            // (kuna) angr-style unnamed data annotation -> dat_<addr>.
-            kuna_global_data_name(spc, loc.get_offset())
-        } else {
-            // Space<hex> capitalized form (printc.cc:1964-1970).
-            let mut s = String::new();
-            let sn = spc.get_name();
-            let mut chars = sn.chars();
-            if let Some(c0) = chars.next() {
-                s.extend(c0.to_uppercase());
-                s.push_str(chars.as_str());
-            }
-            use std::fmt::Write;
-            let _ = write!(s, "{:0width$x}", loc.get_offset(), width = (2 * spc.get_addr_size()) as usize);
-            s
         };
         self.push_atom(&Atom::with_op_vn(
             name,
@@ -6734,6 +6715,46 @@ impl PrintC {
             keywords::TYPE_POINTER_REL_TOKEN.to_string(),
             TagType::OpToken,
             crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+    }
+
+    /// The `symbol == 0` arm of C++ `PrintC::opPtrsub` (printc.cc:1096-1101): a
+    /// spacebase `PTRSUB` whose offset no Symbol covers renders as the *storage*
+    /// it names — `TypeSpacebase::getAddress(in1const, ptrsize, op->getAddr())`
+    /// (type.cc:3542) pushed through `pushUnnamedLocation`, under the `&` the
+    /// caller's value modifiers ask for.
+    ///
+    /// `sb_type` is the `TYPE_SPACEBASE` data-type `in0` points to.  A spacebase
+    /// carrying no space (a hand-built fixture) is the one case with no storage to
+    /// name; it keeps the functional render.
+    fn push_spacebase_unnamed_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        sb_type: &std::rc::Rc<crate::dtype::Datatype>,
+        in1const: uintb,
+        ptr_size: int4,
+        valueon: bool,
+    ) {
+        let name = spacebase_unnamed_address(arch, fd, op, sb_type, in1const, ptr_size)
+            .and_then(|loc| kuna_unnamed_location_name(arch, &loc, ptr_size));
+        let name = match name {
+            Some(n) => n,
+            None => {
+                self.op_func_ir(fd, arch, op);
+                return;
+            }
+        };
+        if !valueon {
+            // EMIT  &name  (printc.cc:1091)
+            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+        }
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::VarToken,
+            crate::printlanguage::SyntaxHighlight::special_color,
             op_key(op),
         ));
     }
@@ -6972,20 +6993,21 @@ impl PrintC {
                 None => (None, -1, None),
             };
 
-            // C++ `opPtrsub` always reaches a Symbol here (`linkSpacebaseSymbol`
-            // attached one to every stack/global PTRSUB), branching on
-            // `symbol == 0` only for a never-linked spacebase.  In the kuna model
-            // `link_symbol_reference` deliberately attaches ONLY a defined-named
-            // Symbol (the mapped stack/global vars; an undefined-named auto-local is
-            // left unlinked — see `Funcdata::link_symbol_reference`).  So a missing
-            // `sym_name` here means "no reliable symbol surface for this reference":
-            // render the functional `PTRSUB(...)` form (the pre-render-finish state),
-            // NOT the C++ `pushUnnamedLocation` `&stackNN` leaf — which would expose
-            // an offset the kuna namerec layer has not yet resolved to a name.
+            // C++ `opPtrsub` reaches a Symbol here whenever `linkSpacebaseSymbol`
+            // attached one, and takes the `symbol == 0` arm otherwise.  In the kuna
+            // model `link_symbol_reference` deliberately attaches ONLY a
+            // defined-named Symbol (the mapped stack/global vars; an undefined-named
+            // auto-local, or a frame whose spacebase could not be tracked to a
+            // constant, is left unlinked — see `Funcdata::link_symbol_reference`),
+            // so the symbol-less arm is reached far more often than upstream.  It is
+            // the C++ `pushUnnamedLocation` leaf: the *storage* named by space and
+            // offset (`Stack00000008`), never the functional `PTRSUB(<reg>, off)`
+            // form — which is internal p-code leaking an undeclared operator and a
+            // raw register name into the emitted C.
             let name = match &sym_name {
                 Some(n) => n.clone(),
                 None => {
-                    self.op_func_ir(fd, arch, op);
+                    self.push_spacebase_unnamed_ir(fd, arch, op, &ct, in1const, ptr_size, valueon);
                     return;
                 }
             };
@@ -8114,6 +8136,59 @@ fn kuna_global_naming(spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
 /// (kuna) `kunaGlobalDataName(Address)` — `dat_<hex offset>`.
 fn kuna_global_data_name(_spc: &std::rc::Rc<kuna_base::space::AddrSpace>, off: u64) -> String {
     format!("dat_{off:x}")
+}
+
+/// C++ `TypeSpacebase::getAddress` (type.cc:3542): the storage a
+/// `PTRSUB(spacebase, in1const)` names.  A global spacebase (invalid localframe)
+/// must be a full pointer encoding, which the C++ signals by suppressing the
+/// size.
+fn spacebase_unnamed_address(
+    arch: &Architecture,
+    fd: &Funcdata,
+    op: OpId,
+    sb_type: &std::rc::Rc<crate::dtype::Datatype>,
+    in1const: uintb,
+    ptr_size: int4,
+) -> Option<kuna_base::address::Address> {
+    let (spaceid, localframe) = sb_type.spacebase_parts()?;
+    let spc = spaceid?;
+    let sz = if localframe.is_invalid() { -1 } else { ptr_size };
+    let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+    let mut full_encoding: uintb = 0;
+    arch.resolve_constant(&spc, in1const, sz, &point, &mut full_encoding).ok()
+}
+
+/// C++ `PrintC::pushUnnamedLocation` (printc.cc:1957-1974) reduced to its name:
+/// the register name covering `(loc, size)`, else the kuna angr-style
+/// `dat_<addr>` for a data space, else the capitalized `Space<hex>` leaf.
+///
+/// Shared by the Varnode leaf (`push_symbol_detail_ir`'s tail) and the
+/// symbol-less SPACEBASE arm of [`PrintC::op_ptrsub_ir`], which both need the
+/// same "no Symbol covers this storage" identifier.  `None` only for an
+/// address with no space.
+fn kuna_unnamed_location_name(
+    arch: &Architecture,
+    loc: &kuna_base::address::Address,
+    size: int4,
+) -> Option<String> {
+    let spc = loc.get_space()?;
+    let regname = arch.translate().get_register_name(spc, loc.get_offset(), size);
+    if !regname.is_empty() {
+        return Some(regname);
+    }
+    if kuna_global_naming(spc) {
+        return Some(kuna_global_data_name(spc, loc.get_offset()));
+    }
+    let mut s = String::new();
+    let sn = spc.get_name();
+    let mut chars = sn.chars();
+    if let Some(c0) = chars.next() {
+        s.extend(c0.to_uppercase());
+        s.push_str(chars.as_str());
+    }
+    use std::fmt::Write;
+    let _ = write!(s, "{:0width$x}", loc.get_offset(), width = (2 * spc.get_addr_size()) as usize);
+    Some(s)
 }
 
 /// A stable per-op key for the `Atom.op` / `ReversePolish.op` slot (the C++

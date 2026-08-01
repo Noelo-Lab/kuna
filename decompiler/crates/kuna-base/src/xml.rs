@@ -1685,8 +1685,10 @@ mod tests {
         // and kuna-cnorm-warnstyle / the DIV-39 terse end-of-line warning slugs
         // (usage(1); // no-return; warnstyle banner restores the WARNING lines)
         // and ghdec-fast-funcdisc / the bounded fast-project inventory
-        // (old fast omits a direct callee; default fast emits its real body)
-        assert_eq!(count, 174, "corpus file count drifted");
+        // (old fast omits a direct callee; default fast emits its real body),
+        // and ghdec-spacebase-unnamed / the symbol-less spacebase PTRSUB leaf
+        // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in)
+        assert_eq!(count, 175, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

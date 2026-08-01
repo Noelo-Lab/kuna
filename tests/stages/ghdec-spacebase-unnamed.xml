@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    decbench campaign case O2-noinline-mydoom-mydoom-scan_textfile (NOVEL pool:
+    kuna already scored best of all decompilers on this function and the output
+    was still not C, so no other decompiler surfaced this fix).
+
+    P9 emission, leaf naming.  A PTRSUB(spacebase, off) is a reference into the
+    stack frame.  P6 (link_symbol_reference) binds a Symbol to the offset
+    constant only when the recovered frame layout has one; here it never can.
+    The function declares a 64 KiB local buffer, so MSVC emits a stack probe
+    call (_alloca_probe / __chkstk) and adjusts esp by that call's non constant
+    result:
+
+        mov  eax, 0x1003c
+        call __chkstk
+        sub  esp, eax            ; esp is no longer a tracked constant offset
+        mov  [esp+0x18], 0       ; every frame reference stays relative to the
+        mov  [esp+0x14], 0x80    ; ENTRY esp, with a dynamic PTRADD on top, and
+        mov  [esp+0x10], 3       ; the offsets land outside the mapped frame
+
+    Ghidra flags the same case with "WARNING: Unable to track spacebase fully
+    for stack" and emits its unnamed stack location leaf, stack0x00000008.
+    kuna instead bailed out of the SPACEBASE arm to the FUNCTIONAL render and
+    emitted internal p-code into the C body:
+
+        *(void *)PTRSUB(ESP,8)[v2] = 0;
+        *(void *)PTRSUB(ESP,4)[v2] = 0x80;
+        *(void *)PTRSUB(ESP,-4)[v2] = 0;
+
+    Neither PTRSUB (an internal p-code operator) nor ESP (a raw machine
+    register) is declared anywhere in the function; the body is not C.
+
+    Stage model: P9 emission, leaf naming sub-stage (printc.rs
+    push_spacebase_unnamed_ir / kuna_unnamed_location_name, the C++
+    PrintC::pushUnnamedLocation leaf the SPACEBASE arm was declining to use).
+
+    No option: this is a correctness fix (emitting an undeclared p-code
+    operator and a raw register is never desired), on by default, DIV-46.
+    Single pass asserts the fixed output: no PTRSUB and no raw ESP survive,
+    and each of the 8 unresolvable frame references (spread over 7
+    statements) renders as the self describing stack location leaf
+    Stack[offset], an undeclared, extern like marker exactly like Ghidra's
+    stack0x00000008.
+-->
+<bytechunk space="ram" offset="0x405af0">
+55b83c000100575653e8d23d000029c48b842450000100c744241800000000c7442414800000
+00c744241003000000c744240c00000000c744240803000000c744240400000080890424ff15
+a01241008d50ff83ec1c83fafd0f879900000089c531f68d5c243131ff8db426000000008d44
+242cc744242c00000000c7442410000000008944240cc7442408fdff0000895c2404892c24ff
+155013410083ec148b54242c8d42ff3dfdff0000772a89d801d7c644143100e844fcffff8b44
+242c891c2489442404e884fdffff01c675a081ff00b004007698892c24ff159812410031c083
+ec0481c43c0001005b5e5f5dc38db4260000000081c43c000100b8010000005b5e5f5dc32e8d
+b42600000000
+</bytechunk>
+<!-- Zero fill for the .idata thunks the function calls indirectly. -->
+<bytechunk space="ram" offset="0x411290">
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x405af0" name="scan_textfile"/>
+</binaryimage>
+<script>
+  <com>lo fu scan_textfile</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="spacebase-unnamed #1: no internal PTRSUB operator reaches the C body" min="0" max="0">PTRSUB</stringmatch>
+<stringmatch name="spacebase-unnamed #2: no raw ESP register leaks into an expression" min="0" max="0">ESP</stringmatch>
+<stringmatch name="spacebase-unnamed #3: every statement touching the untracked frame renders a stack-location leaf" min="7" max="7">&amp;Stack</stringmatch>
+<stringmatch name="spacebase-unnamed #4: positive frame offset renders as its storage" min="1" max="1">\(&amp;Stack00000008\)\[</stringmatch>
+<stringmatch name="spacebase-unnamed #5: zero frame offset renders as its storage" min="1" max="1">\(&amp;Stack00000000\)\[</stringmatch>
+<stringmatch name="spacebase-unnamed #6: negative frame offset wraps in the space address size" min="1" max="1">\(&amp;Stackfffffffc\)\[</stringmatch>
+</decompilertest>
