@@ -80,6 +80,26 @@ tail-call get absorbed into the preceding function (`_usbd_standard_request_devi
 
 The remaining 35: 24 error records, 8 nearby-but-not-contained, 3 absent.
 
+> **Corrected 2026-08-01 by the follow-up investigation
+> ([`docs/features/arm-entry-granularity/`](../features/arm-entry-granularity/analysis.md)).**
+> The *count* holds — an independent address-based re-measurement on this build reproduces the
+> per-project distribution (libopencm3 136 and nuttx 87 exactly). The *mechanism* and the
+> *noise* claim above do not:
+>
+> - It is **not absorption**. Of 2,941 missed addresses, **1,896 sit past the end of the nearest
+>   kuna function and exactly 3 are strictly inside a kuna body**. The 24-byte median measures
+>   proximity, not containment. `devnull_read`/`devnull_write` and
+>   `_usbd_standard_request_device` are not merged into a neighbour — their bytes produce **no
+>   output at all**. This is missing decompilation, not a naming/boundary problem.
+> - The `NMI_Handler` / `PendSV_Handler` / `DebugMon_Handler` example is **not noise**: in
+>   cleanflight they are three *distinct* two-byte `bx lr` stubs at `0x803b060`/`0x803b062`/
+>   `0x803b064`, each with its own vector-table slot, and Ghidra, IDA, angr and Binary Ninja all
+>   recover all three. Real ground-truth noise is **3.4%** — 105 alias/ICF names on addresses
+>   already counted once.
+> - The dominant sub-class is not fall-through/tail-call but **code-pointer-referenced entries
+>   (57%, 1,402 of them decbench-measured)** that `aif::code_pointer_table_seeds` already finds
+>   and rejects on its frame-prologue and >2-instruction guards.
+
 ## Remaining error records
 
 240 pre-wave → **137** now, across the 191-binary sweep. The generic

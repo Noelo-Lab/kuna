@@ -195,6 +195,19 @@ need the disassembled Listing + ReferenceManager, neither of which exists at thi
 references never reach kuna's decompiler (it reads loadimage bytes + the symbol/type tables,
 not the ReferenceManager). Their products are already covered: strings → `s1-strings`
 (disabled, this section), address/switch tables → §7, function creation → §4 (`s1-entry-disc`).
+
+> **Correction (2026-08-01):** the "function creation → §4" half of that sentence is **wrong**,
+> and it is now the largest measured recall gap. `OperandReferenceAnalyzer`'s *Subroutine
+> References* option (default-on upstream) calls `createFunctions()` on the code targets it
+> resolves out of instruction operands (`OperandReferenceAnalyzer.java:508,614`); on ARM those
+> targets come from `ArmAnalyzer`'s constant propagation over `LDR Rx,[pc,#k]` literal-pool
+> loads. `s1-entry-disc` does **not** subsume this: it and the AIF stages require a canonical
+> frame prologue and a >2-instruction body, which 93% of the affected entries do not have.
+> Measured cost: **1,671 missed function entries on the ARM Cortex-M corpus, 1,402 of them
+> decbench-measured**. See [`features/arm-entry-granularity/`](features/arm-entry-granularity/analysis.md).
+> Note the precision guard Ghidra ships with it: its data-side sibling
+> `DataOperandReferenceAnalyzer` overrides `createFunctions` to a no-op — *"don't ever create a
+> function from a data pointer"*.
 `ScalarOperandAnalyzer` is even default-OFF for ELF upstream, and `ElfScalarOperandAnalyzer`
 only *removes* bad `.got`/`.plt` references (which `elf_plt.rs` already names correctly). The
 one relevant idea — typing a scalar that points at a `.rodata` string as `char*` — is blocked
