@@ -2836,15 +2836,24 @@ impl Funcdata {
         single
     }
 
-    /// C++ `Merge::checkCopyPair` cover range (`merge.cc:1120-1121`).  Reached by
-    /// `processCopyTrims` (not on the `mergeMarker` path) — see
-    /// [`build_single_read_cover`].
-    pub(crate) fn build_copy_pair_range(&self, dom_op: OpId, _sub_op: OpId) -> Cover {
+    /// C++ `Merge::checkCopyPair` cover range (`merge.cc:1120-1121`):
+    /// `range.addDefPoint(domOp->getOut()); range.addRefPoint(subOp,subOp->getIn(0))`.
+    ///
+    /// Both points are required.  With only the def point the range collapses to
+    /// the dominant COPY's write and no intervening write to the HighVariable is
+    /// ever found inside it, so `checkCopyPair` reports every dominated COPY
+    /// redundant and `markRedundantCopies` deletes a load-bearing restore from
+    /// the emitted C (the same omission `build_single_read_cover` records as
+    /// LOSS-229).
+    pub(crate) fn build_copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover {
         let mut range = Cover::new();
         let ctx = FuncdataCoverCtx { fd: self };
         if let Some(dom_out) = self.obank.get(dom_op).and_then(|o| o.get_out()) {
             let (def, is_input) = ctx.def_point(dom_out);
             range.add_def_point(def, is_input);
+        }
+        if let Some(sub_in) = self.obank.get(sub_op).and_then(|o| o.get_in(0)) {
+            range.add_ref_point_for(&ctx, sub_op, sub_in);
         }
         range
     }
