@@ -33,6 +33,7 @@ happily ship a decompiler that scores well and lies.
 | **symbol-keyed-local-decls** | P9 | `O2-noinline-betaflight-…-applyLedFixedLayers` | One declaration per HighVariable instead of one per ScopeLocal Symbol, so a single stack slot is declared **twice under the same name** with two different types. | 0 | queued |
 | **jumptable-callother-inject** | P2 | `O2-noinline-betaflight-…-accDetect`, `O0-libopencm3-sdram-main` | `<callotherfixup>` injects are drained once, before jump-table recovery; the CALLOTHERs queued by the post-recovery `fallthru()` re-drain are never injected, so `setISAMode(1);` survives into the C as a call to a function that does not exist. kuna erases it correctly for 3703/3798 functions in the same binary — internally inconsistent. | 0 | **PR in flight** |
 | **finalorder-entry-first** | P8 | `O0-libopencm3-sdram-main` | `BlockGraph::orderBlocks()` is an explicit STUB (`blockaction.rs:3792`), so `ActionFinalStructure` never orders the components. The function body is emitted starting at a mid-function label with the real entry after an unconditional `goto`, as unreachable code. The ordering key is already ported; only the sort is missing. | 0 | queued |
+| **rodata-phantom-store** | P3 | `O2-noinline-iproute2-ip-netns_add` | `SplitDatatype::build_in_subpieces` splits a 16-byte read-only copy into ram-addressed SUBPIECE outputs; heritage refinement then synthesises **write-backs into `.rodata`** — stores the binary never performs. 48 phantom stores + 42 `SUB81`s across 2 functions in `ip`. `--option readonly on` hides it by folding the load to a constant first, but that is a global semantic policy (default-off in upstream Ghidra for RELRO reasons) — the honest fix is to emit per-piece constants when the root is address-tied into a read-only range (`Varnode::is_read_only` is already available), plus declining write-back pieces for read-only addresses in `Heritage::refine_write`. | 0 | queued |
 
 ## Tier 2 — structure recovery (moves the metric)
 
@@ -48,9 +49,19 @@ happily ship a decompiler that scores well and lies.
 | case | verdict |
 |---|---|
 | `O0-coreutils-factor-factor` | **already-fixed** — today's default (`auto` → `aggressive`) emits the source's early-return shape; `returndup`, which `aggressive` turns on, closes the 12-point gap. |
-| `O2-noinline-iproute2-ip-netns_add` | **covered-by-option** — `readonly` stops the 16 phantom byte-stores into a `.rodata` string. Default-flip candidate. |
+| `O2-noinline-iproute2-ip-netns_add` | **RECLASSIFIED to Tier 1** (`rodata-phantom-store`). Filed as covered-by-option because `--option readonly on` closes it, but that option is a global semantic policy that upstream Ghidra keeps off by default, and it is not even in the 81-row catalog (registered in `p0_knowledge/options.rs:968` with no `settableTable` row). The record's own analysis names a narrow code fix; emitting stores into read-only memory is wrong output, not a taste setting. |
 | `O0-bash-bash-rl_vi_redo` | **covered-by-option** — `branchflip off` makes kuna's CFG isomorphic to the source (GED 40 → 0). `branchflip` is default-ON, so this is a default question worth measuring, not a new feature. |
 | `O2-openssh-portable-sshd-mm_answer_auth2_read_banner` | **metric-artifact** — the GED floor for any output that recovers the CMOV null-check is 8; angr's 0 comes from dropping the check entirely. |
+
+## Loose threads worth their own case
+
+- **`$$undef00000004` placeholder names leak into emitted C** — 92 occurrences in `ip` alone,
+  untouched by the `rodata-phantom-store` fix. Same family as `spacebase-unnamed-location`: an
+  internal placeholder reaching the printer. Found while triaging `netns_add`.
+- **One 16-byte buffer split across three symbols** (P6 variable merging), same case.
+- **`readonly` is registered without a `settableTable` row**, so it is invisible to
+  `kuna catalog` and therefore to any agent sweeping options by symptom. Check whether other
+  Ghidra-inherited options share that gap.
 
 ## What round 1 says about the campaign
 
