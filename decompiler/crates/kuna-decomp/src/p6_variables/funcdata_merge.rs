@@ -679,6 +679,14 @@ impl MergeContext for Funcdata {
         if let Some(v) = self.vbank_mut().get_mut(vn) {
             v.mark_cover_dirty();
         }
+        // C++ `Varnode::setFlags` (varnode.cc:371-380) forwards a `coverdirty` set
+        // to the owning HighVariable (`high->coverDirty()`).  `Varnode::set_flags`
+        // is a W7 stub that cannot reach the high bank, so the forward happens
+        // here: without it `HighIntersectTest::updateHigh` short-circuits on a
+        // clean high and the member Cover is never rebuilt.
+        if let Some(h) = self.vbank().get(vn).and_then(|v| v.get_high()) {
+            self.high_bank_mut().cover_dirty(h);
+        }
     }
     fn vn_clear_implied_set_explicit(&mut self, vn: VarnodeId) {
         if let Some(v) = self.vbank_mut().get_mut(vn) {

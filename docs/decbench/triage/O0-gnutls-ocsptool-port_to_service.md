@@ -94,6 +94,19 @@ Source CFG 7 nodes / 6 edges; `degenerate_source: false`, `approximated: false`,
 `artifact_suspect: false`. The metric is not lying here, and IDA is not truncating:
 its pane is the complete function.
 
+## Correctness bug found here — FIXED (DIV-47)
+
+Separate from (and more serious than) the structural symptom below: the merged exit
+this record describes was also **losing a value**. The `fprintf` arm reloads `sport`
+at `0x114e8`, and that COPY was marked non-printing, so the emitted C returned the
+NULL from the failed `getservbyport` instead of `sport` — proven by compiling the
+emitted C and running it (`"99999"` → `(null)` where the binary yields `99999`).
+Root cause: `Funcdata::build_copy_pair_range` omitted `Cover::addRefPoint`
+(`merge.cc:1121`), so `Merge::checkCopyPair`'s dominance range was a point and the
+intervening `getservbyport` write was never seen inside it. Fixed; the restore is
+emitted. The structural symptom analysed below (one merged exit vs four returns) is
+untouched and still open.
+
 ## Analysis
 
 **Structural symptom (one).** kuna renders a function whose source is four guard-clause
