@@ -110,12 +110,21 @@ stays a call — with a per-cause warning (`"Could not inline here"` for
 recursion; distinct no-fallthrough / return-address messages from
 `test_hard_inline_restrictions`; a missing callee body refuses silently).
 
-**P-code injection.** Three substitution kinds run at the end of op generation
-(`flow.rs (FlowInfo::inject_pcode)`); the user-op and call-fixup kinds share one
-weave (`flow.rs (FlowInfo::do_injection)`), while inlining uses its own clone
-weave (above): emit the payload's p-code at the dead-list
+**P-code injection.** Three substitution kinds run from a queue drained during op
+generation (`flow.rs (FlowInfo::inject_pcode)`); the user-op and call-fixup kinds
+share one weave (`flow.rs (FlowInfo::do_injection)`), while inlining uses its own
+clone weave (above): emit the payload's p-code at the dead-list
 tail, classify its control flow, optionally mark it *incidental copy*, splice
 it after the original op, repoint the target map, and destroy the original op.
+
+Classification queues an op the moment it is decoded, so the drain must run once
+per flow-discovery round or the ops queued by a later round are dropped: the
+queue is drained after the initial fall-thru phase (`generate_ops`) and again
+after every jump-table round (§2.3), and a drain clears the queue. Which round
+found a block therefore has no bearing on whether its injections are applied —
+a spec-declared eraser such as ARM's `setISAMode` `<callotherfixup>` removes the
+op uniformly, whether the block was reached by fall-thru or only through a
+recovered switch table.
 
 - **Injection library.** `decompiler/crates/kuna-decomp/src/p2_lift/pcodeinject.rs
   (PcodeInjectLibraryBase)` holds the payloads — `<callfixup>`,
@@ -128,8 +137,12 @@ it after the original op, repoint the target map, and destroy the original op.
   (UserOpManage)` manages the CALLOTHER black-box ops (unspecialized, datatype,
   volatile, segment, jump-assist, injected). A CALLOTHER whose user op is
   *injected* is queued during classification and replaced by its
-  callother-fixup body (`flow.rs (FlowInfo::inject_user_op)`) — e.g. the MIPS
-  `setISAMode` no-op, which dead-code elimination then removes.
+  callother-fixup body (`flow.rs (FlowInfo::inject_user_op)`) — e.g. the ARM and
+  MIPS `setISAMode` no-op, which dead-code elimination then removes. A user op
+  with no declared fixup is not injected and survives as a black box the printer
+  renders as a call; that is the intended rendering for unimplemented semantics
+  (ARM `DataMemoryBarrier`, the coprocessor family), and only a *declared* fixup
+  makes disappearance the correct outcome.
 - **Call fixups.** A call spec carrying an inject id has its CALL/CALLIND
   replaced by the named call-fixup payload
   (`flow.rs (FlowInfo::inject_sub_function)`); the payload's parameter shift is
@@ -209,7 +222,10 @@ the switch (and any loop containing it) is destroyed.
 
 The BRANCHINDs parked on `tablelist` during op generation are recovered before
 block building, in a loop that re-fills flow from each new table's targets
-(`flow.rs (FlowInfo::generate_ops_with_jumptables)`). The address computation
+(`flow.rs (FlowInfo::generate_ops_with_jumptables)`). Each round of that loop
+ends by draining the pending p-code injections (§2.1) — the newly reached blocks
+queue their own, and an injected body can itself introduce indirect branches, so
+the loop re-runs while `tablelist` is non-empty. The address computation
 feeding a raw BRANCHIND is unusable as lifted — it must be simplified first, but
 the function has no blocks or SSA yet. So each attempt runs as a **reduced-tree
 sub-decompilation on a clone**

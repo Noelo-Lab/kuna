@@ -1762,32 +1762,45 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// multistage outer loop) need the override table + FuncCallSpecs; the single
     /// recovery pass over the current `tablelist` is the load-bearing part for the
     /// corpus and runs fully.
+    ///
+    /// The outer `do/while` drains `injectlist` on every round (`flow.cc:819`), so a
+    /// registered `<callotherfixup>` is applied to table-discovered flow exactly as it
+    /// is to fall-thru flow; a round that injects may itself queue new indirect
+    /// branches, hence the loop.
     pub fn generate_ops_with_jumptables(
         &mut self,
         run_pipeline: &mut JtPipelineFn<'_>,
     ) -> KunaResult<()> {
         self.generate_ops()?;
-        while !self.tablelist.is_empty() {
-            let new_tables = self.recover_jump_tables(run_pipeline)?;
-            self.tablelist.clear();
-            for jt_idx in new_tables {
-                let indop = match self.data.get_jump_table(jt_idx as int4).get_indirect_op() {
-                    Some(op) => op,
-                    None => continue,
-                };
-                let num = self.data.get_jump_table(jt_idx as int4).num_entries();
-                for i in 0..num {
-                    let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
-                    self.new_address(indop, &addr)?;
-                }
-                while !self.addrlist.is_empty() {
-                    self.fallthru()?;
+        loop {
+            while !self.tablelist.is_empty() {
+                let new_tables = self.recover_jump_tables(run_pipeline)?;
+                self.tablelist.clear();
+                for jt_idx in new_tables {
+                    let indop = match self.data.get_jump_table(jt_idx as int4).get_indirect_op() {
+                        Some(op) => op,
+                        None => continue,
+                    };
+                    let num = self.data.get_jump_table(jt_idx as int4).num_entries();
+                    for i in 0..num {
+                        let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
+                        self.new_address(indop, &addr)?;
+                    }
+                    while !self.addrlist.is_empty() {
+                        self.fallthru()?;
+                    }
                 }
             }
             // STUB(W4): checkContainedCall + checkMultistageJumptables (outer
             // do/while) — the multistage/inline restart that could re-populate
             // tablelist is the W4 override table; the single pass suffices for the
             // corpus switches.
+            if self.has_inject() {
+                self.inject_pcode()?;
+            }
+            if self.tablelist.is_empty() {
+                break;
+            }
         }
         Ok(())
     }

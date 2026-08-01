@@ -1689,10 +1689,16 @@ mod tests {
         // and ghdec-spacebase-unnamed / the symbol-less spacebase PTRSUB leaf
         // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in),
         // and ghdec-opcode-seam / the total opcode -> TypeOp seam
-        // (a rule-produced INT_SRIGHT used to panic the whole function away)
-        // and ghdec-realtypes-pointee / the realtypes pointee-size relabel
-        // (void *a3 with a3[1] meaning offset 8, out; unsigned long *a3, in)
-        assert_eq!(count, 177, "corpus file count drifted");
+        // (old fast omits a direct callee; default fast emits its real body),
+        // and ghdec-spacebase-unnamed / the symbol-less spacebase PTRSUB leaf
+        // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in),
+        // and ghdec-opcode-seam / the total opcode -> TypeOp seam
+        // (a rule-produced INT_SRIGHT used to panic the whole function away),
+        // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
+        // (no setISAMode statement survives into the emitted C),
+        // and ghdec-realtypes-pointee / the realtypes unknown-pointee size
+        // (void *a3 alongside a3[1] out, unsigned long *a3 in)
+        assert_eq!(count, 178, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

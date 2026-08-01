@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench campaign cases O2-noinline-betaflight-betaflight_STM32F405-accDetect
+    and O0-libopencm3-sdram-main (NOVEL pool): kuna emitted the ARM ISA-mode
+    bookkeeping user-op as a real C statement,
+
+        case 4:
+          setISAMode(1);          /* names a function that does not exist */
+          f0(a1);
+
+    but only inside blocks that are reachable ONLY through a recovered jump
+    table.  ghidra and ida emit nothing there, and kuna itself emitted nothing
+    for the same instruction when the block was reached by ordinary fall-thru.
+
+    Thumb-2 `bl` and `tbb` both lower through SLEIGH `SetThumbMode(1)` ->
+    `setISAMode(TB)` (ARMTHUMBinstructions.sinc), which raises a CALLOTHER.
+    ARM.cspec declares the eraser for it:
+
+        <callotherfixup targetop="setISAMode">
+          <pcode incidentalcopy="true"><input name="newTB"/>
+            <body><![CDATA[ r0 = r0; ]]></body></pcode>
+        </callotherfixup>
+
+    kuna registers that fixup and `xref_control_flow` queues every injected-userop
+    CALLOTHER onto `injectlist`, but `inject_pcode` ran only ONCE, at the end of
+    `generate_ops`, i.e. BEFORE jump-table recovery.  `generate_ops_with_jumptables`
+    then discovered the table targets and re-drained `addrlist` through `fallthru`,
+    queueing the new blocks' CALLOTHERs, and nothing drained that second batch;
+    `inject_pcode` clears `injectlist` on exit, so they were discarded and the raw
+    CALLOTHER survived to P9.  Upstream Ghidra drains the inject list on every round
+    of the outer jump-table loop (decompiler/cpp/flow.cc:819).
+
+    Stage model: P2 lift/flow, the injection drain in
+    `p2_lift/flow.rs generate_ops_with_jumptables`.
+
+    No option: this is a strict bug fix.  The processor cspec declares the user-op
+    must be replaced by a NOP, kuna already honoured that for every fall-thru-
+    discovered block in the same function, and the emitted C named a function that
+    does not exist.  Restoring the upstream drain makes the behaviour uniform.
+
+    The XML wrapper only supplies the harness architecture; the pass clears it and
+    loads the real linked ARM Thumb fixture (built in the dev container, see
+    decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_switch_le32.c).  Its
+    `dispatch` compiles to `tbb [pc,r0]` with eight table-reachable case blocks,
+    four of them holding a pair of `bl`s, the exact shape of the decbench cases.
+    Before the fix its emitted C carried eight `setISAMode(1);` statements.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_switch_le32</com>
+  <com>read symbols</com>
+  <com>load function dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ISAMODE #1: no ISA-mode bookkeeping user-op survives into the emitted C" min="0" max="0">setISAMode</stringmatch>
+<stringmatch name="ISAMODE #2: the four table-reachable tail-call arms are intact" min="4" max="4">return f[0-9]\(a1,a1,a2,a3\); // tail-call</stringmatch>
+<stringmatch name="ISAMODE #3: the table-reachable f0 call sites survive the injection" min="2" max="2">^      f0\(a1\);</stringmatch>
+<stringmatch name="ISAMODE #4: flow still reaches the last jump-table entry" min="1" max="1">^    case 7:</stringmatch>
+</decompilertest>
