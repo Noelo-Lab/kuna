@@ -54,7 +54,7 @@
 //!
 //! The structuring [`Action`]s whose body is a single call into a `BlockGraph`
 //! method that `block.cc` defers to W7/W8 ([`ActionFinalStructure`] →
-//! `orderBlocks`/`finalizePrinting`/`scopeBreak`/`markUnstructured`/
+//! `finalizePrinting`/`scopeBreak`/`markUnstructured`/
 //! `markLabelBumpUp`; [`ActionPreferComplement`] → `preferComplement`;
 //! [`ActionStructureTransform`] → `finalTransform`; [`ActionNormalizeBranches`]
 //! → `flipInPlace`) reproduce the C++ control structure and surface the unported
@@ -3784,13 +3784,20 @@ impl Action for ActionFinalStructure {
         Some(Box::new(ActionFinalStructure { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // graph.orderBlocks(): put the residual top-level components in final
+        // printing order — the entry component first, RETURN-terminated components
+        // last, the rest by reverse-post-order index.  Without it a function whose
+        // structuring left more than one component prints from whichever component
+        // the collapse happened to append first, stranding the real entry behind an
+        // unconditional `goto` as dead code (port of blockaction.cc:2192).
+        data.sblocks_order_blocks();
         // `finalizePrinting` is ported for the switch case: assign + sort the case
         // labels from the recovered JumpTable so the printer can emit `case N:`,
         // and for the whiledo case: finalize the for-loop iterator/initializer
         // (BlockWhileDo::finalizePrinting) so the printer can emit
         // `for (init; cond; iter)`.
-        // STUB(W7/W8): `orderBlocks`/`scopeBreak` (the rest of the goto/break
-        // print-prep) remain unported in `block.rs`.  Recorded as losses.
+        // STUB(W7/W8): `scopeBreak` (the rest of the goto/break print-prep) remains
+        // unported in `block.rs`.  Recorded as losses.
         // (`markLabelBumpUp` is now ported — see the call below.)
         data.finalize_switch_printing();
         data.finalize_forloop_printing();

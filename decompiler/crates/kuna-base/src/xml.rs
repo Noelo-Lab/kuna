@@ -1630,7 +1630,7 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 84 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
+        // 83 datatests + 93 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
         // ghangr-missing-function-call-1101b1, ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump,
         // branchflip-negated-guard / branchflip,
         // regionstructure-seq + regionstructure-loop + regionstructure-switch +
@@ -1691,8 +1691,10 @@ mod tests {
         // and ghdec-opcode-seam / the total opcode -> TypeOp seam
         // (a rule-produced INT_SRIGHT used to panic the whole function away),
         // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
-        // (no setISAMode statement survives into the emitted C)
-        assert_eq!(count, 177, "corpus file count drifted");
+        // (no setISAMode statement survives into the emitted C),
+        // and ghdec-finalorder-entryfirst / BlockGraph::orderBlocks (the entry
+        // component printed after an unconditional goto, i.e. as dead code)
+        assert_eq!(count, 178, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1480,36 +1480,55 @@ impl BlockGraph {
     /// virtual per subtype, `block.cc`).  Resolves down the structure to the
     /// basic block carrying the block's final op:
     ///   * `t_basic` (`block.cc:2348`): `op.back()` (the basic block's tail op).
+    ///   * `t_copy` (`block.hh:546`): `copy->lastOp()` — the mirrored block lives
+    ///     in `copies` (the `bblocks` arena for an `sblocks` tree); `None` when no
+    ///     mirror arena is supplied.
+    ///   * `t_goto`/`t_multigoto` (`block.hh:576`/`604`): `getBlock(0)->lastOp()`.
     ///   * `t_ls` (BlockList, `block.cc:3008`): `getBlock(size-1)->lastOp()`.
     ///   * `t_condition` (`block.cc:3064`): `getBlock(1)->lastOp()`.
     ///   * `t_if` (`block.cc:3167`): only an `ifgoto` (size 1) has a last op —
     ///     `getBlock(0)->lastOp()`.
-    ///   * everything else (base default, `block.hh`): `None`.
-    pub fn struct_last_op(&self, this_id: BlockId) -> Option<crate::context::OpId> {
+    ///   * everything else (base default, `block.hh:243`): `None`.
+    pub fn struct_last_op_with(
+        &self,
+        copies: Option<&BlockGraph>,
+        this_id: BlockId,
+    ) -> Option<crate::context::OpId> {
         match &self.arena[this_id].kind {
             BlockKind::Basic(bd) => bd.op_tail,
+            BlockKind::Copy { copy } => copies?.struct_last_op_with(None, (*copy)?),
+            BlockKind::Goto { .. } | BlockKind::MultiGoto { .. } => {
+                let b0 = self.sub_block(this_id, 0)?;
+                self.struct_last_op_with(copies, b0)
+            }
             BlockKind::Ls => {
                 let n = self.arena[this_id].get_size();
                 if n == 0 {
                     return None;
                 }
                 let last = self.sub_block(this_id, n - 1)?;
-                self.struct_last_op(last)
+                self.struct_last_op_with(copies, last)
             }
             BlockKind::Condition { .. } => {
                 let b1 = self.sub_block(this_id, 1)?;
-                self.struct_last_op(b1)
+                self.struct_last_op_with(copies, b1)
             }
             BlockKind::If { .. } => {
                 if self.arena[this_id].get_size() == 1 {
                     let b0 = self.sub_block(this_id, 0)?;
-                    self.struct_last_op(b0)
+                    self.struct_last_op_with(copies, b0)
                 } else {
                     None
                 }
             }
             _ => None,
         }
+    }
+
+    /// [`struct_last_op_with`](Self::struct_last_op_with) confined to one arena —
+    /// a `t_copy` leaf has no arena to resolve into and yields `None`.
+    pub fn struct_last_op(&self, this_id: BlockId) -> Option<crate::context::OpId> {
+        self.struct_last_op_with(None, this_id)
     }
 
     /// Get the i-th component block (C++ `subBlock`, dispatched per type).
@@ -1859,6 +1878,41 @@ impl BlockGraph {
         if let Some(leaf) = self.get_front_leaf(bl) {
             self.arena[leaf].flags |= fl;
         }
+    }
+
+    /// Sort the components of a BlockGraph into their final printing order
+    /// (C++ `BlockGraph::orderBlocks`, `block.hh:437`, driving
+    /// `FlowBlock::compareFinalOrder`, `block.cc:709`): the entry component
+    /// (`index == 0`) first, RETURN-terminated components last, everything else by
+    /// ascending `index` (the reverse-post-order number `add_block` keeps at the
+    /// minimum over a composite's members).  Applies to `graph_id` only — upstream
+    /// does not recurse.
+    ///
+    /// `ret_terminated` carries the RETURN half of the comparison: a component's
+    /// `lastOp` opcode needs the op bank, which lives in `Funcdata` (see
+    /// `Funcdata::sblocks_order_blocks`).  The sort is stable, so the several
+    /// RETURN-terminated components the C++ comparator reports as equal keep their
+    /// incoming relative order instead of `std::sort`'s unspecified one.
+    pub fn order_blocks(
+        &mut self,
+        graph_id: BlockId,
+        ret_terminated: &std::collections::BTreeSet<BlockId>,
+    ) {
+        if self.arena[graph_id].list.len() == 1 {
+            return;
+        }
+        let mut list = std::mem::take(&mut self.arena[graph_id].list);
+        list.sort_by_key(|&bl| {
+            let index = self.arena[bl].get_index();
+            if index == 0 {
+                (0, 0)
+            } else if ret_terminated.contains(&bl) {
+                (2, 0)
+            } else {
+                (1, index)
+            }
+        });
+        self.arena[graph_id].list = list;
     }
 
     /// Mark the targets of unstructured (`goto`) edges so the printer can emit a

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    318,
-    318
+    324,
+    324
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -244,6 +244,12 @@
     "data:condfold-ruleb #6: the guarded body is untouched by the fold (off plus on = 2)",
     "data:earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)",
     "data:earlyreturn #2: ON logs the const-guard hoist exactly once",
+    "data:finalorder #1: no statement is emitted after an unconditional goto",
+    "data:finalorder #2: the body does not open with a label",
+    "data:finalorder #3: the body opens with an indented statement",
+    "data:finalorder #4: the entry component prints first",
+    "data:finalorder #5: the mid-function label the buggy order hoisted is still emitted",
+    "data:finalorder #6: the entry falls through into the loop head label",
     "data:foldcallret #1: spilled call return (only pass 1, off)",
     "data:foldcallret #2: call folded into condition (only pass 2, on)",
     "data:ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)",
