@@ -2721,6 +2721,12 @@ impl Heritage {
     /// empty), pushing writes, threading the INDIRECT "same time" special case,
     /// filling successor MULTIEQUAL inputs by `getOutRevIndex`, recursing into
     /// dom-children, then popping this block's writes.
+    ///
+    /// (kuna DIV-50) The three input-creation sites go through
+    /// [`kuna_inputtile::new_tiled_input`](crate::p3_dataflow::kuna_inputtile::new_tiled_input)
+    /// rather than `set_input_varnode` directly, so a request that lands on
+    /// `guard_input`'s leftover write-masked pieces is reconciled instead of
+    /// aborting the function.
     //
     // `mutable_key_type`: the [`VariableStack`] key is `Address`, exactly as the
     // C++ `map<Address,vector<Varnode*>>`.  `Address`'s only interior
@@ -2763,10 +2769,10 @@ impl Heritage {
                     let mut vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                         Some(top) => top,
                         None => {
-                            let nv = fd.new_varnode(in_size, &key, None);
-                            let nv = fd
-                                .set_input_varnode(nv)
-                                .expect("rename_recurse: set_input_varnode (empty stack)");
+                            let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
+                                fd, in_size, &key,
+                            )
+                            .expect("rename_recurse: set_input_varnode (empty stack)");
                             varstack.entry(key.clone()).or_default().push(nv);
                             nv
                         }
@@ -2793,10 +2799,10 @@ impl Heritage {
                         if from_op == Some(op) {
                             let stacklen = varstack.get(&key).map(|s| s.len()).unwrap_or(0);
                             if stacklen == 1 {
-                                let nv = fd.new_varnode(in_size, &key, None);
-                                let nv = fd
-                                    .set_input_varnode(nv)
-                                    .expect("rename_recurse: set_input_varnode (indirect same-time)");
+                                let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
+                                    fd, in_size, &key,
+                                )
+                                .expect("rename_recurse: set_input_varnode (indirect same-time)");
                                 varstack.entry(key.clone()).or_default().insert(0, nv);
                                 vnnew = nv;
                             } else {
@@ -2848,10 +2854,10 @@ impl Heritage {
                 let vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                     Some(top) => top,
                     None => {
-                        let nv = fd.new_varnode(in_size, &key, None);
-                        let nv = fd
-                            .set_input_varnode(nv)
-                            .expect("rename_recurse: set_input_varnode (multi empty stack)");
+                        let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
+                            fd, in_size, &key,
+                        )
+                        .expect("rename_recurse: set_input_varnode (multi empty stack)");
                         varstack.entry(key.clone()).or_default().push(nv);
                         nv
                     }

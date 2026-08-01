@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    338,
-    338
+    346,
+    346
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -257,6 +257,14 @@
     "data:ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)",
     "data:ifelseflatten #2: the else-arm constant body survives identically (no-op, not corrupted; off plus on = 2)",
     "data:ifelseflatten #3: enabling the option is byte-identical, the loop tail is unchanged (off plus on = 2)",
+    "data:inputtile-overlap #1: the function is no longer abandoned",
+    "data:inputtile-overlap #2: no overlapping-input error text survives",
+    "data:inputtile-overlap #3: the wrapper is not an empty shell",
+    "data:inputtile-overlap #4: every switch arm reaches its fcntl call",
+    "data:inputtile-overlap #5: the F_DUPFD_CLOEXEC command is recovered",
+    "data:inputtile-overlap #6: the EINVAL retry probe is recovered",
+    "data:inputtile-overlap #7: the errno save/restore around close is recovered",
+    "data:inputtile-overlap #8: the failure path closes the descriptor",
     "data:iteexpr on folds a computed-arm diamond to one ?: ternary (off = if/else)",
     "data:iteregion #1: bug (off) -- the assignment diamond renders as a literal if/else (else-arm only, off pass)",
     "data:iteregion #2: bug (off) -- the else-arm constant assignment is a separate statement (off pass only)",

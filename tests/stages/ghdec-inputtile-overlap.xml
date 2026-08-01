@@ -1,0 +1,138 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench cases-missing pool: gnulib rpl_fcntl compiled at -O2 was the single
+    hard per-function failure in 48 of 267 optimized x86-64 binaries (gzip,
+    gnutls-serv, grep, tar, findutils, diffutils, 39 coreutils).  kuna emitted no
+    body at all:
+
+      rename_recurse: set_input_varnode (empty stack):
+        Lowlevel { explain: "Overlapping input varnodes" }
+
+    Upstream Ghidra raises the same LowlevelError on the same function (verified
+    with Ghidra 12.1 headless on the gzip binary), so this is not a port defect;
+    the fix is a kuna divergence, DIV-50 in docs/history.md.
+
+    The bytes below are a reduced standalone build of the gnulib wrapper
+    (gcc -O2 -fstack-protector-strong, rpl_fcntl at 0x11d0):
+
+        int rpl_fcntl (int fd, int action, ...)
+        {
+          va_list arg; int result = -1;
+          va_start (arg, action);
+          switch (action) {
+            case 0:    { int t = va_arg (arg, int); result = fcntl (fd, 0, t); break; }
+            case 1030: { int t = va_arg (arg, int); ... F_DUPFD_CLOEXEC probe ... }
+            default:   switch (action) {
+                         case 1: case 3: ...:  result = fcntl (fd, action); break;
+                         case 2: case 4: ...:  { int x = va_arg (arg, int);
+                                                 result = fcntl (fd, action, x); break; }
+                         default:              { void *p = va_arg (arg, void *);
+                                                 result = fcntl (fd, action, p); break; }
+                       }
+          }
+          return result;
+        }
+
+    Root cause, P3 dataflow.  gcc -O2 spills the register arguments into a
+    va_list register-save area and reads the third argument back through an
+    indexed load:
+
+      11dd: mov %rdx,0x40(%rsp)          ; stack -0x38 = the third vararg
+      123d: mov 0x10(%rsp),%eax          ; gp_offset
+      124a: add 0x20(%rsp),%rax          ; + reg_save_area
+      124f: mov (%rax),%rdx              ; -> resolves to stack -0x38 later
+
+    The spill has no direct reader on the first stack heritage pass, so
+    ActionDeadCode removes it; the indexed load only folds to the constant stack
+    offset on a later pass.  From there heritage invents an input for the
+    now-undefined slot, SubvariableFlow narrows it to 4 bytes, and
+    Heritage::guardInput tiles the 8-byte range with two write-masked 4-byte
+    input pieces plus a concatenating PIECE.  The simplification pools then fold
+    that PIECE away.  On the next pass a fresh free 8-byte read of the same range
+    finds an empty variable stack, asks setInputVarnode for a full-size input,
+    and collides with the leftover pieces.
+
+    Stage model: P3 dataflow, SSA renaming (heritage.rs rename_recurse ->
+    kuna_inputtile::new_tiled_input).  The leftover write-masked pieces are the
+    value the read wants, so the collision is reconciled with the upstream
+    Funcdata::combineInputVarnodes primitive instead of aborting.
+
+    No option: the function produced no output at all before, and the new path
+    runs only where setInputVarnode was about to raise; any other overlap still
+    raises.  Single pass asserts the recovered body; pre-fix all 8 assertions
+    fail, because the emitted shell is a bare warning comment.
+
+    Both code chunks carry 256 trailing 0xc3 bytes so the flow follower stops at
+    a RET instead of running off the end of the mapped image.
+-->
+<!-- func 0x11d0 +865 -->
+<bytechunk space="ram" offset="0x11d0">
+f30f1efa41554154554883ec60488954244048894c24484c894424504c894c245864488b0425
+28000000488944242831c0488d842480000000c7442410100000004889442418488d44243048
+8944242085f60f84b000000081fe060400000f84dc00000083fe0b7f5785f67f2b8b44241083
+f82f0f87860100004803442420488b1031c0e837feffff4189c4e98b0000000f1f8000000000
+b80100000089f148d3e0a9140500007538a90a0a000074bd31c0e809feffff4189c4eb600f1f
+40008d8efffbffff83f90977a2b80100000048d3e0a98102000075d6a902010000748c8b4424
+1083f82f0f872201000048034424208b1031c0e8c4fdffff4189c4eb1b0f1f8000000000488b
+44242031f68b501031c0e8a7fdffff4189c4488b44242864482b0425280000000f852c010000
+4883c4604489e05d415c415dc30f1f00488b442420c744241018000000448b68108b05ed2c00
+004489ea85c0783231c0be06040000897c240ce852fdffff8b7c240c85c04189c40f88a30000
+00c705bd2c000001000000eb930f1f800000000031f631c0e827fdffff4189c485c00f8878ff
+ffff833d992c0000ff0f856bffffff31c0be010000004489e7e800fdffff85c0781d83c801be
+020000004489e789c231c0e8e8fcffff83f8ff0f853bffffffe8cafcffff4489e74183ccff8b
+28e8ecfcffffe8b7fcffff8928e91cffffff488b442418e975feffff660f1f440000488b4424
+18e9d9feffff660f1f440000897c240ce887fcffff8b7c240c8338160f8547ffffff4489ea31
+f631c0e87efcffff4189c485c00f88cffeffffc705ed2b0000ffffffffe955ffffffe86ffcff
+ff000000f30f1efa4883ec084883c408c3000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000
+</bytechunk>
+<!-- plt 0x1020 +416 -->
+<bytechunk space="ram" offset="0x1020">
+ff35822f0000f2ff25832f00000f1f00f30f1efa6800000000f2e9e1ffffff90f30f1efa6801
+000000f2e9d1ffffff90f30f1efa6802000000f2e9c1ffffff90f30f1efa6803000000f2e9b1
+ffffff90f30f1efaf2ff257d2f00000f1f440000f30f1efaf2ff252d2f00000f1f440000f30f
+1efaf2ff25252f00000f1f440000f30f1efaf2ff251d2f00000f1f440000f30f1efaf2ff2515
+2f00000f1f440000f30f1efaba03000000be0604000031ff31c0e9f9000000660f1f84000000
+0000f30f1efa31ed4989d15e4889e24883e4f050544531c031c9488d3dc1ffffffff15d32e00
+00f4662e0f1f840000000000488d3df92e0000488d05f22e00004839f87415488b05b62e0000
+4885c07409ffe00f1f8000000000c30f1f8000000000488d3dc92e0000488d35c22e00004829
+fe4889f048c1ee3f48c1f8034801c648d1fe7414488b05852e00004885c07408ffe0660f1f44
+0000c30f1f8000000000f30f1efa803d852e000000752b5548833d622e0000004889e5740c48
+8b3d662e0000e8c9feffffe864ffffffc6055d2e0000015dc30f1f00c30f1f8000000000
+</bytechunk>
+<!-- got 0x3fa0 +96 -->
+<bytechunk space="ram" offset="0x3fa0">
+b03d000000000000000000000000000000000000000000003010000000000000401000000000
+0000501000000000000060100000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000
+</bytechunk>
+<!-- bss 0x4010 +16 -->
+<bytechunk space="ram" offset="0x4010">
+00000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x11d0" name="rpl_fcntl"/>
+<symbol space="ram" offset="0x1080" name="__errno_location"/>
+<symbol space="ram" offset="0x1090" name="fcntl"/>
+<symbol space="ram" offset="0x10b0" name="close"/>
+</binaryimage>
+<script>
+  <com>lo fu rpl_fcntl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="inputtile-overlap #1: the function is no longer abandoned" min="0" max="0">decompilation failed</stringmatch>
+<stringmatch name="inputtile-overlap #2: no overlapping-input error text survives" min="0" max="0">Overlapping input varnodes</stringmatch>
+<stringmatch name="inputtile-overlap #3: the wrapper is not an empty shell" min="1" max="1">rpl_fcntl\(</stringmatch>
+<stringmatch name="inputtile-overlap #4: every switch arm reaches its fcntl call" min="8" max="14">fcntl\(</stringmatch>
+<stringmatch name="inputtile-overlap #5: the F_DUPFD_CLOEXEC command is recovered" min="1" max="4">0x406</stringmatch>
+<stringmatch name="inputtile-overlap #6: the EINVAL retry probe is recovered" min="1" max="2">0x16</stringmatch>
+<stringmatch name="inputtile-overlap #7: the errno save/restore around close is recovered" min="2" max="4">__errno_location\(\)</stringmatch>
+<stringmatch name="inputtile-overlap #8: the failure path closes the descriptor" min="1" max="2">close\(</stringmatch>
+</decompilertest>

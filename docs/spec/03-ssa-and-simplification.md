@@ -78,6 +78,25 @@ INDIRECT and the op it wraps happen "at the same time", so an op whose renamed
 read would resolve to its *own* INDIRECT output takes the next value down the
 stack (or a fresh input) instead (`heritage.rs (op_from_const)`).
 
+**Materializing an input over existing pieces (kuna, DIV-50).** The input a
+stack-empty read materializes may land on storage that already holds input
+varnodes. Upstream refuses that outright — `Funcdata::set_input_varnode` raises
+`Overlapping input varnodes` and the function is abandoned with no body at all.
+The reachable case is `guard_input`'s own residue: it tiles a partially-input
+range with input pieces, marks each piece *write-masked* so `collect` stops
+seeing them, and represents the range by the PIECE concatenation instead. When
+the rule pools later fold that PIECE away and a new free read of the full range
+arrives on a subsequent pass, the read is asking for exactly the value those
+pieces still hold. `kuna_inputtile.rs (new_tiled_input)` therefore
+completes the tiling (creating an input for any gap, as `guard_input` does) and
+folds it into one full-size input with
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (Funcdata::combine_input_varnodes)`, which
+destroys the pieces, rewrites each concatenating PIECE into a COPY, and repoints
+every other reader at a SUBPIECE of the new whole. Only write-masked pieces
+fully contained in the request are folded — a write-masked varnode is never
+pushed onto a `VariableStack`, so no stack can be left holding a destroyed id —
+and any other overlap still raises the upstream error.
+
 **Phi-range granularity (refinement).** When a range is bigger than 4 bytes and
 no single write covers it (`size > 4 && maxwritesize < size`), the range is
 split at every varnode boundary observed inside it before phis are placed

@@ -1700,7 +1700,9 @@ mod tests {
         // component printed after an unconditional goto, i.e. as dead code)
         // and ghdec-callsitestackargs / stack-passed call argument recovery
         // (option off truncates a call at the six SysV register arguments)
-        assert_eq!(count, 181, "corpus file count drifted");
+        // and ghdec-inputtile-overlap / renaming over guardInput's leftover
+        // input pieces (gnulib rpl_fcntl at -O2 produced no body at all)
+        assert_eq!(count, 182, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
