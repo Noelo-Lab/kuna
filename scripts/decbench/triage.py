@@ -28,14 +28,15 @@ MARKER = re.compile(r"^// Function: (\S+) @ 0x([0-9a-fA-F]+)\s*$", re.M)
 
 
 def load_case(case_id: str) -> dict:
-    for path in (config.queue_path(), config.cases_path()):
-        if not path.exists():
-            continue
+    """Resolve a case id against every mined pool under docs/decbench/."""
+    paths = config.pool_paths()
+    for path in paths:
         doc = json.loads(path.read_text())
         for c in doc.get("queue", doc.get("cases", [])):
             if c["case_id"] == case_id:
                 return c
-    sys.exit(f"case {case_id!r} not found in {config.queue_path()} or {config.cases_path()}")
+    sys.exit(f"case {case_id!r} not found in any pool under {config.campaign_dir()} "
+             f"({len(paths)} searched)")
 
 
 def split_blocks(c_path: Path) -> dict[str, str]:
@@ -95,24 +96,38 @@ def main(argv=None) -> None:
     ap.add_argument("--option", nargs=2, action="append", default=[],
                     metavar=("NAME", "VALUE"), help="kuna --option for the fresh run")
     ap.add_argument("--no-fresh", action="store_true", help="skip the fresh kuna run")
+    ap.add_argument("--also", default="", metavar="D1,D2",
+                    help="extra stored decompilers to print (e.g. ida,ghidra)")
     args = ap.parse_args(argv)
 
     case = load_case(args.case)
+    base = case.get("base") or "angr"
     print(f"# triage dump: {case['case_id']}")
     print()
     print(f"- group: {case['group_id']}  siblings: {case.get('siblings', [])}")
-    print(f"- recorded: angr GED={case['base_value']:g}*  kuna GED={case['target_value']:g}"
-          f"  margin Δ{case['margin']:g}")
+    if case.get("novel"):
+        print(f"- NOVEL pool: kuna GED={case['target_value']:g} is best of all; "
+              f"next best {base}={case['base_value']:g} (lead {case.get('lead', 0):g})")
+    else:
+        print(f"- recorded: {base} GED={case['base_value']:g}*  "
+              f"kuna GED={case['target_value']:g}  margin Δ{case['margin']:g}")
     print(f"- others: {case.get('others_ged', {})}  bucket: {case.get('bucket')}"
           f"{'  ARTIFACT-SUSPECT' if case.get('artifact_suspect') else ''}")
+    src_n = case.get("source_nodes")
+    if src_n is not None:
+        note = (" DEGENERATE — score is meaningless" if src_n <= 1
+                else "  (>60: GED is APPROXIMATED as |dnodes|+|dedges|)" if src_n > 60 else "")
+        print(f"- source CFG: {src_n} nodes / {case.get('source_edges')} edges{note}")
     print(f"- binary: {case['binary_path']}")
     print(f"- stripped: {case['stripped_path']}")
     print(f"- function: {case['function']} @ {case['address_hex']}  labels: {case.get('labels')}")
     print()
 
-    angr_b = stored_block(case, "angr")
+    extra = [d for d in args.also.split(",") if d.strip()]
+    stored = {d: stored_block(case, d) for d in dict.fromkeys([base] + extra)}
     kuna_b = stored_block(case, "kuna")
-    rows = {"angr(stored)": metrics(angr_b), "kuna(stored)": metrics(kuna_b)}
+    rows = {f"{d}(stored)": metrics(b) for d, b in stored.items()}
+    rows["kuna(stored)"] = metrics(kuna_b)
 
     fresh_b, fresh_err = ("", "skipped") if args.no_fresh else fresh_kuna(case, args.option)
     if fresh_b:
@@ -121,7 +136,8 @@ def main(argv=None) -> None:
     print("## structural metrics\n")
     print(fmt_metrics(rows))
     print()
-    print("## angr (stored)\n\n```c\n" + angr_b + "```\n")
+    for d, b in stored.items():
+        print(f"## {d} (stored)\n\n```c\n" + b + "```\n")
     print("## kuna (stored, run-time)\n\n```c\n" + kuna_b + "```\n")
     if fresh_b:
         print("## kuna (fresh, current build)\n\n```c\n" + fresh_b + "```\n")

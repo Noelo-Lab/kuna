@@ -51,16 +51,71 @@ def campaign_dir() -> Path:
     return repo_root() / "docs" / "decbench"
 
 
-def cases_path() -> Path:
-    return campaign_dir() / "cases.json"
+def _suffix(base: str) -> str:
+    """Pool file suffix: the angr pool keeps the original unsuffixed names."""
+    return "" if base == "angr" else f"-{base}"
 
 
-def missing_path() -> Path:
-    return campaign_dir() / "cases-missing.json"
+def cases_path(base: str = "angr") -> Path:
+    return campaign_dir() / f"cases{_suffix(base)}.json"
 
 
-def queue_path() -> Path:
-    return campaign_dir() / "triage-queue.json"
+def missing_path(base: str = "angr") -> Path:
+    return campaign_dir() / f"cases-missing{_suffix(base)}.json"
+
+
+def queue_path(base: str = "angr") -> Path:
+    return campaign_dir() / f"triage-queue{_suffix(base)}.json"
+
+
+def backlog_path(base: str = "angr") -> Path:
+    return campaign_dir() / f"backlog{_suffix(base)}.md"
+
+
+def novel_path() -> Path:
+    return campaign_dir() / "novel.json"
+
+
+def pool_paths() -> list[Path]:
+    """Every file a case id may live in (triage resolves a case against these)."""
+    if not campaign_dir().is_dir():
+        return []
+    return sorted(campaign_dir().glob("triage-queue*.json")) + \
+        sorted(campaign_dir().glob("cases*.json")) + \
+        sorted(campaign_dir().glob("novel*.json"))
+
+
+def src_sizes_path() -> Path:
+    """Cache of per-function SOURCE CFG sizes (see scripts/decbench/srcsizes.py)."""
+    return Path(os.environ.get(
+        "KUNA_DECBENCH_SRC_SIZES",
+        str(Path.home() / ".cache" / "decbench" / "kuna-src-sizes.json"),
+    ))
+
+
+def load_src_sizes() -> dict:
+    """{"by_function": {...}, "by_case": {...}} — see scripts/decbench/srcsizes.py."""
+    path = src_sizes_path()
+    if not path.is_file():
+        return {}
+    import json
+    doc = json.loads(path.read_text())
+    return doc if "by_function" in doc else {"by_function": doc, "by_case": {}}
+
+
+def source_cfg(sizes: dict, opt: str, project: str, binary: str, function: str) -> dict:
+    """Best available source-CFG facts for one case (see srcsizes.py for scope)."""
+    exact = sizes.get("by_case", {}).get(f"{opt}::{project}::{binary}::{function}")
+    if exact:
+        return {"source_nodes": exact[0], "source_edges": exact[1],
+                "source_exact": True, "approximated": bool(exact[2]),
+                "source_ambiguous": False}
+    bound = sizes.get("by_function", {}).get(f"{project}::{function}")
+    if not bound:
+        return {"source_nodes": None, "source_edges": None, "source_exact": False,
+                "approximated": False, "source_ambiguous": False}
+    return {"source_nodes": bound[0], "source_edges": bound[1], "source_exact": False,
+            "approximated": False, "source_ambiguous": bound[2] > 1}
 
 
 def triage_dir() -> Path:
