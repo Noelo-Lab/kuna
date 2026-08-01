@@ -1691,8 +1691,10 @@ mod tests {
         // and ghdec-opcode-seam / the total opcode -> TypeOp seam
         // (a rule-produced INT_SRIGHT used to panic the whole function away),
         // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
-        // (no setISAMode statement survives into the emitted C)
-        assert_eq!(count, 177, "corpus file count drifted");
+        // (no setISAMode statement survives into the emitted C),
+        // and ghdec-stalejumptable / a JumpTable outliving its swept BRANCHIND
+        // (loweredswitch stranded a real jump table and the model walk panicked)
+        assert_eq!(count, 178, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
