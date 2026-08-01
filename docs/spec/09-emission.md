@@ -215,13 +215,21 @@ and — when the S8 `iteregion` pass marked an assignment diamond — the ternar
 render `dest = cond ? a : b` (`printc.rs (PrintC::emit_block_if_ite)`).
 
 **The declined-structure shell.** If the structured tree is *absent* (S8
-produced no `sblocks` — a structuring failure), the printer does not emit a
-flat op listing: it keeps the brace-matched prototype shell and plants the
-single comment `/* WARNING: structured blocks unavailable (structuring
-declined at a stub) */` in the body (`printc.rs
-(PrintC::emit_function_document)`). The failure mode is deliberately loud and
-syntactically valid, so batch consumers (`kuna decompile-all --json`) get a
-parseable function with an explicit tombstone rather than pseudo-C garbage.
+produced no `sblocks`), the printer does not emit a flat op listing: it keeps
+the brace-matched prototype shell and plants a single comment in the body
+(`printc.rs (PrintC::emit_function_document)`). The failure mode is
+deliberately loud and syntactically valid, so batch consumers (`kuna
+decompile-all --json`) get a parseable function with an explicit tombstone
+rather than pseudo-C garbage. The comment distinguishes the two ways a
+function can arrive here, because they call for different investigations: when
+the drive recorded *why* the pipeline aborted for this function
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::set_kuna_pipeline_failure)` — chapter [00](00-overview.md) §0.2), the tombstone is
+`/* WARNING: decompilation failed: <reason> */`, naming the recoverable error
+verbatim; otherwise the pipeline genuinely ran and structuring produced
+nothing, and the tombstone is `/* WARNING: structured blocks unavailable
+(structuring declined) */`. The reason text is flattened to one line and any
+`*/` neutralized, so it can never break out of the comment.
 
 **Expressions: the push/pop opcode walk.** A statement is one op tree:
 `printc.rs (PrintC::emit_statement)` opens a statement group, and `printc.rs
@@ -241,6 +249,34 @@ signedness from the type), or a named variable, including the partial-cover
 walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
+
+**Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
+the storage the leaf falls through to the upstream `pushUnnamedLocation`
+naming, `printc.rs (kuna_unnamed_location_name)`: the register name covering
+`(address, size)` if the translator has one, else the angr-style `dat_<addr>`
+for a data space (§9.3), else the capitalized `Space<hex>` form —
+`Stack00000008`, `Unique00001a80`. These name the *storage*, not a variable,
+and are deliberately never declared: they are extern-like markers that a value
+lives somewhere the analysis never resolved to a variable, exactly as upstream's
+`stack0x00000008` is (kuna capitalizes the space and drops the `0x` so the
+token is at least a legal C identifier).
+
+The same leaf serves the **spacebase** arm of `printc.rs
+(PrintC::op_ptrsub_ir)`. A `PTRSUB(sp, off)` is a reference into the stack (or
+global) frame; P6 binds a Symbol to the offset constant whenever the recovered
+frame layout has one, and the arm then renders `&local_10` / `&myval.b`
+through the partial-symbol walk above. When P6 bound nothing — the frame's
+spacebase could not be tracked to a constant, so every reference stays relative
+to the *entry* stack pointer and the offsets land outside the mapped frame,
+which is what an `alloca`/`_chkstk` stack probe does — the reference still
+names real storage, and it renders `&Stack00000008` through the same
+unnamed-location leaf (`printc.rs (PrintC::push_spacebase_unnamed_ir)`, whose
+address comes from `printc.rs (spacebase_unnamed_address)`, the C++
+`TypeSpacebase::getAddress`). What that arm must not do is fall back to the
+*functional* render `PTRSUB(ESP, 8)`, kuna's behavior before this leaf existed:
+`PTRSUB` is an internal p-code operator and `ESP` a raw machine register, and
+emitting either makes the whole function something no C parser accepts
+(`tests/stages/ghdec-spacebase-unnamed.xml`, DIV-46).
 
 **Precedence without an AST.** Operators and leaves are not buffered into a
 tree; they stream through a reverse-polish stack. `printc.rs (PrintC::push_op)`

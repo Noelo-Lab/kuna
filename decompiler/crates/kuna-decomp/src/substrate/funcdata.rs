@@ -326,6 +326,15 @@ pub struct Funcdata {
     /// `(comment_type, placement_address, text)`; the function address is
     /// `baseaddr`.
     pending_comments: Vec<(kuna_base::types::uint4, Address, String)>,
+    /// (kuna) Why the decompile pipeline aborted for this function, when it did.
+    ///
+    /// A caught per-function abort (`LOSS-131`) unwinds and discards the
+    /// half-built `Funcdata`, so the console keeps rendering the *previous*,
+    /// un-decompiled one — which has no structured blocks.  The driver stamps
+    /// the recoverable error text here
+    /// ([`Self::set_kuna_pipeline_failure`]) so the printer says the pipeline
+    /// failed, and why, instead of blaming structuring (`PrintC::emit_function_document`).
+    kuna_pipeline_failure: Option<String>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -423,6 +432,7 @@ impl Funcdata {
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
             pending_comments: Vec::new(),
+            kuna_pipeline_failure: None,
         })
     }
 
@@ -528,6 +538,25 @@ impl Funcdata {
         txt: String,
     ) {
         self.pending_comments.push((tp, ad, txt));
+    }
+
+    /// (kuna) Record why the decompile pipeline aborted for this function.
+    ///
+    /// Called by a front-end that catches the drive's recoverable per-function
+    /// error and keeps the previous `Funcdata` around to render (the console
+    /// `decompile` command).  Newlines are folded and any comment terminator
+    /// neutralized so the text is safe to plant in the emitted C.
+    pub fn set_kuna_pipeline_failure(&mut self, reason: &str) {
+        let flat: String = reason
+            .chars()
+            .map(|c| if c == '\n' || c == '\r' || c == '\t' { ' ' } else { c })
+            .collect();
+        self.kuna_pipeline_failure = Some(flat.replace("*/", "* /").trim().to_string());
+    }
+
+    /// (kuna) Why the decompile pipeline aborted for this function, if it did.
+    pub fn kuna_pipeline_failure(&self) -> Option<&str> {
+        self.kuna_pipeline_failure.as_deref()
     }
 
     /// Get the entry point address (C++ `getAddress`).

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    309,
-    309
+    318,
+    318
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -265,6 +265,9 @@
     "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
+    "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
+    "data:opcode-seam #2: RuleBitUndistribute pulls the common INT_SRIGHT out of the AND",
+    "data:opcode-seam #3: no residual per-operand shift is left behind",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
@@ -292,6 +295,12 @@
     "data:regionstructure-switch #4: case 6 (last case), both passes",
     "data:regionstructure-switch #5: the default case is recovered, both passes",
     "data:regionstructure-switch #6: ZERO gotos  -  region structurer recovers the switch natively (parity with Ghidra)",
+    "data:spacebase-unnamed #1: no internal PTRSUB operator reaches the C body",
+    "data:spacebase-unnamed #2: no raw ESP register leaks into an expression",
+    "data:spacebase-unnamed #3: every statement touching the untracked frame renders a stack-location leaf",
+    "data:spacebase-unnamed #4: positive frame offset renders as its storage",
+    "data:spacebase-unnamed #5: zero frame offset renders as its storage",
+    "data:spacebase-unnamed #6: negative frame offset wraps in the space address size",
     "data:switchmultipred #1: multi-predecessor switch renders as a computed call (bug reproduced)",
     "data:switchmultipred #2: switchmultipred on bounds the table and recovers the switch",
     "data:switchmultipred #3: switchmultipred on recovers the first table case (index 0)",

@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench cases-missing pool (coreutils timeout/split main, bash 7 functions,
+    tar 3, grep, openssh scp/sftp/sftp-server, coreutils -O2 ls): kuna emitted
+    NO OUTPUT AT ALL for these functions - the whole decompilation died and the
+    user got an error record instead of C.
+
+    Root cause: P3 carried two hand-maintained copies of the OpCode -> TypeOp
+    mapping (`glb->inst[opc]`), one per rule-batch file, each a partial subset
+    with a `panic!` default arm.  When a simplification rule retyped an op to an
+    op-code its file's list did not name, the panic unwound the whole function.
+
+    The shape below is the minimized form of the most common failure (24
+    functions / 27 panic events in a 20,246-function sweep):
+
+        int f(int a, int b) { return (a >> 3) & (b >> 3); }
+
+    RuleBitUndistribute rewrites `(V s>> c) & (W s>> c)` to `(V & W) s>> c`,
+    which re-sets an op's code to CPUI_INT_SRIGHT - an op-code missing from
+    `ruleaction_2`'s whitelist, so `op_typeop` panicked
+    (`ruleaction_2.rs:96`).  `ruleaction_3`'s separate whitelist was missing
+    CPUI_FLOAT_INT2FLOAT / CPUI_FLOAT_LESS / CPUI_FLOAT_ADD and killed further
+    functions (coreutils -O2 ls, betaflight ARM) the same way.
+
+    Stage model: P3 dataflow, simplification-quiescence sub-stage.  Both seams
+    now resolve through the canonical `inst[]` table
+    (`p5_types/typeop.rs::seam_type_op_for`), which is total over every op-code
+    (its `match` has no wildcard arm, so the compiler enforces completeness) and
+    degrades instead of panicking on the CPUI_MAX sentinel.
+
+    No option: this is a strict correctness fix (a function that produced
+    nothing now produces C).  Measured on 12 desktop/embedded ELF binaries /
+    15,596 functions: error records 21 -> 2 (the 2 left are a jump-table panic
+    and a loader read, both owned elsewhere) and ZERO functions that already
+    decompiled changed their emitted text.
+
+    Single pass asserts the fixed pipeline: the function has a real body, and
+    the shifts are undistributed exactly as upstream Ghidra does it.
+-->
+<bytechunk space="ram" offset="0x1000">
+f30f1efa554889e5897dfc8975f88b45fcc1f80389c28b45f8c1f80321d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="shift_undistribute"/>
+</binaryimage>
+<script>
+  <com>lo fu shift_undistribute</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="opcode-seam #1: the function emits a real body (was: no output, seam panic)" min="1" max="1">int4 shift_undistribute\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="opcode-seam #2: RuleBitUndistribute pulls the common INT_SRIGHT out of the AND" min="1" max="1">return \(int4\)\(a1 &amp; a0\) &gt;&gt; 3;</stringmatch>
+<stringmatch name="opcode-seam #3: no residual per-operand shift is left behind" min="0" max="0">a0 &gt;&gt; 3</stringmatch>
+</decompilertest>

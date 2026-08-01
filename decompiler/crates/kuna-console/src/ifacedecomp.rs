@@ -1959,6 +1959,9 @@ decomp_command!(
             // discarded the same way (no per-Funcdata clearAnalysis surface yet).
         }
         status.out(&format!("Decompiling {name}\n"));
+        // The entry this drive targets, kept for the failure arm below (`entry`
+        // itself is consumed by the format-string re-decompile path).
+        let stamp_addr = entry.clone();
         // C++: allacts.getCurrent()->reset(*fd); res = perform(*fd); then the
         // "Decompilation complete"/"Break at .." reporting.  The kuna decompile
         // drive (decompile_drive::decompile_func) installs the `decompile` root,
@@ -2052,6 +2055,16 @@ decomp_command!(
                 // (675/675) is inert here: no datatest function aborts, so this arm
                 // is never reached for them.
                 if msg.contains("LOSS-131") {
+                    // Stamp the reason on the retained (un-decompiled) Funcdata:
+                    // it has no structured blocks, so a following `print C`
+                    // would otherwise emit the generic "structuring declined"
+                    // shell and hide the abort.  Guarded on the address so a
+                    // stale, unrelated function is never mislabeled.
+                    if let Some(fd) = dcp.fd.as_mut() {
+                        if fd.get_address() == &stamp_addr {
+                            fd.set_kuna_pipeline_failure(&msg);
+                        }
+                    }
                     status.out(&format!("Skipping {name}: {msg}\n"));
                     Ok(())
                 } else {

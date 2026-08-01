@@ -9,12 +9,12 @@
 //!
 //! # Cross-wave stubs used by this batch
 //!
-//! * **W6 opcode resolution** (`glb->inst[opc]`): the C++ `Funcdata::opSetOpcode`
+//! * **Opcode resolution** (`glb->inst[opc]`): the C++ `Funcdata::opSetOpcode`
 //!   takes an [`OpCode`] and looks up the singleton `TypeOp` in the
 //!   architecture's `inst` table; the Rust [`Funcdata::op_set_opcode`] takes the
-//!   already-resolved [`TypeOp`].  W6 is not ported, so [`op_typeop`] is a local
-//!   resolver that builds a `TypeOp` carrying the upstream `typeop.cc` flag word
-//!   for exactly the opcodes this batch emits.  // STUB(W6)
+//!   already-resolved [`TypeOp`].  [`op_typeop`] resolves it through the
+//!   canonical `inst[]` table ([`crate::typeop::seam_type_op_for`]), which
+//!   answers for every op-code.
 //! * **`newUniqueOut`/`newVarnodeOut`**: the C++ helpers create a free varnode
 //!   and make it the op's output via `opSetOutput`.  The Rust
 //!   [`Funcdata::op_set_output`] is blocked on a `banks_mut()` split-borrow the
@@ -42,7 +42,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::op::{is_cse_match, pcodeop_flags};
+use crate::op::is_cse_match;
 use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::DefOpInfo;
 
@@ -51,55 +51,18 @@ use crate::varnode::DefOpInfo;
 // =============================================================================
 
 /// Build the [`TypeOp`] singleton for an [`OpCode`] this batch emits
-/// (C++ `glb->inst[opc]`).  // STUB(W6)
+/// (C++ `glb->inst[opc]`).
 ///
-/// The flag word mirrors the corresponding `TypeOp*::TypeOp*` constructor in
-/// `decompiler/cpp/typeop.cc` (the bits `PcodeOp::setOpcode` caches into the
-/// op's `flags`).  Only the opcodes the rules in this file set are listed; an
-/// unlisted opcode panics (an internal invariant — a rule emitted an opcode the
-/// shim does not cover).
+/// Resolves through the canonical [`crate::typeop::seam_type_op_for`] table (the
+/// verbatim `typeop.cc` `opflags`/name for *every* op-code), so a rule that
+/// retypes an op to an op-code this file never names still gets the properties
+/// the C++ `inst[]` would install instead of killing the function.
 fn op_typeop(opc: OpCode) -> TypeOp {
-    use pcodeop_flags as f;
-    let (flags, name): (u32, &str) = match opc {
-        // TypeOpCopy: unary | nocollapse
-        OpCode::CPUI_COPY => (f::unary | f::nocollapse, "copy"),
-        // TypeOpIntZext / TypeOpIntSext: unary
-        OpCode::CPUI_INT_ZEXT => (f::unary, "zext"),
-        OpCode::CPUI_INT_SEXT => (f::unary, "sext"),
-        // TypeOpIntAnd / TypeOpIntOr / TypeOpIntXor: binary | commutative
-        OpCode::CPUI_INT_AND => (f::binary | f::commutative, "&"),
-        OpCode::CPUI_INT_OR => (f::binary | f::commutative, "|"),
-        OpCode::CPUI_INT_XOR => (f::binary | f::commutative, "^"),
-        // TypeOpIntLeft / TypeOpIntRight: binary
-        OpCode::CPUI_INT_LEFT => (f::binary, "<<"),
-        OpCode::CPUI_INT_RIGHT => (f::binary, ">>"),
-        // TypeOpEqual / TypeOpNotEqual: binary | booloutput | commutative
-        OpCode::CPUI_INT_EQUAL => (f::binary | f::booloutput | f::commutative, "=="),
-        OpCode::CPUI_INT_NOTEQUAL => (f::binary | f::booloutput | f::commutative, "!="),
-        // TypeOpIntLess / TypeOpIntLessEqual / TypeOpIntSless / TypeOpIntSlessEqual:
-        // binary | booloutput
-        OpCode::CPUI_INT_LESS => (f::binary | f::booloutput, "<"),
-        OpCode::CPUI_INT_LESSEQUAL => (f::binary | f::booloutput, "<="),
-        OpCode::CPUI_INT_SLESS => (f::binary | f::booloutput, "s<"),
-        OpCode::CPUI_INT_SLESSEQUAL => (f::binary | f::booloutput, "s<="),
-        // TypeOpFloatLess / TypeOpFloatLessEqual: binary | booloutput
-        OpCode::CPUI_FLOAT_LESS => (f::binary | f::booloutput, "f<"),
-        OpCode::CPUI_FLOAT_LESSEQUAL => (f::binary | f::booloutput, "f<="),
-        // TypeOpPiece / TypeOpSubpiece: binary
-        OpCode::CPUI_PIECE => (f::binary, "CONCAT"),
-        OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
-        // TypeOpBoolNegate: unary | booloutput
-        OpCode::CPUI_BOOL_NEGATE => (f::unary | f::booloutput, "!"),
-        // TypeOpBoolAnd / TypeOpBoolOr: binary | commutative | booloutput
-        OpCode::CPUI_BOOL_AND => (f::binary | f::commutative | f::booloutput, "&&"),
-        OpCode::CPUI_BOOL_OR => (f::binary | f::commutative | f::booloutput, "||"),
-        other => panic!("ruleaction_2 op_typeop: unhandled opcode {other:?} (W6 seam)"),
-    };
-    TypeOp::new(opc, flags, name)
+    crate::typeop::seam_type_op_for(opc)
 }
 
 /// `Funcdata::opSetOpcode(op, opc)` — resolve the [`OpCode`] to its [`TypeOp`]
-/// and hand it to the bank.  // STUB(W6): `glb->inst[opc]`.
+/// and hand it to the bank.
 fn op_set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
     data.op_set_opcode(op, op_typeop(opc));
 }
