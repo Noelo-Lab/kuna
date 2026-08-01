@@ -118,9 +118,21 @@ fn fmt_main_return_narrows_from_the_bogus_register_pair() {
         !code.contains("undefined16"),
         "the 16-byte RAX:RDX return join must be gone; got:\n{code}",
     );
+    // The local's INDEX is not the contract -- `namestyle angr` numbers locals in
+    // declaration order, so any change that declares one more local renumbers every
+    // later one.  `callsitestackargs` did exactly that (this function's
+    // `__libc_start_main` tail-call gained its real 7th, stack-passed argument), which
+    // moved this from `v13` to `v17` with the recovered C otherwise unchanged.  Assert
+    // the SHAPE the test is actually about -- a narrowed int return of `<local> ^ 1`.
+    let narrowed = code.lines().any(|l| {
+        let l = l.trim();
+        l.strip_prefix("return v")
+            .and_then(|r| r.strip_suffix(" ^ 1;"))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    });
     assert!(
-        code.contains("return v13 ^ 1;"),
-        "expected the narrowed int return (`return v13 ^ 1;`); got:\n{code}",
+        narrowed,
+        "expected the narrowed int return (`return v<N> ^ 1;`); got:\n{code}",
     );
     assert!(
         !code.contains("[16]"),

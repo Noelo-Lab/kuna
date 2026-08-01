@@ -43,13 +43,25 @@
     over the cumulative two-pass output: `(*pcVar1)()` appears exactly once
     (pass 1 only) and the recovered tail exactly once (pass 2 only).
 
-    NOTE on assertion #2's text: it used to look for `return CONCAT44`, because
-    the recovered tail arrived as a spurious o0:o1 join, the GH-6990 artifact:
-    `p` returns normally and has no struct return.  `kuna_returnuncomputed` now
-    drops that passive half by default, so the tail renders as the real
-    `return v1 + a0`.  The assertion names that expression directly: it tests the
-    thing the option is for (the tail exists at all) rather than a symptom of a
-    second, unrelated bug.
+    NOTE on assertion #2's text, revision 1: it used to look for `return CONCAT44`,
+    because the recovered tail arrived as a spurious o0:o1 join, the GH-6990
+    artifact: `p` returns normally and has no struct return.
+    `kuna_returnuncomputed` now drops that passive half by default, so the tail
+    rendered as `return v1 + a0`.  The assertion names the expression directly: it
+    tests the thing the option is for (the tail exists at all) rather than a
+    symptom of a second, unrelated bug.
+
+    NOTE on assertion #2's text, revision 2 (callsitestackargs): the expected text
+    is now `return v1[0] + a0`.  THE OLD TEXT WAS WRONG, and this is not a
+    re-record of a regression.  `f` is a struct-return function, so its caller
+    passes a hidden pointer to an 8-byte return buffer.  kuna was dropping that
+    pointer along with every other stack-passed call argument (the mis-ported
+    localrange probe in check_input_trial_use), so `p` rendered `f()` with no
+    arguments at all and the buffer degenerated to a scalar `int4 v1`.  With
+    `callsitestackargs` on (the default) the pointer is passed, `f(v2)` where
+    `v2 = v1`, the buffer types correctly as `int4 v1 [2]`, and the tail reads its
+    first word: `return v1[0] + a0`.  Both halves of the output got MORE correct;
+    only the pinned expression text had to follow.
 -->
 <bytechunk space="ram" offset="0x0">
 9de3bfa0f007a04081c7e00c81e800009de3bf98b007bff87ffffffaf023a04000000008f007bff87ffffff6f027bff4f007bff481c7e00891ee0008
@@ -79,5 +91,5 @@
   <com>quit</com>
 </script>
 <stringmatch name="GH6882 #1: post-call unimp renders as a computed call (bug reproduced)" min="1" max="1">\(\*v1\)\(\)</stringmatch>
-<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (the real return expression)" min="1" max="1">return v1 \+ a0;</stringmatch>
+<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (the real return expression)" min="1" max="1">return v1\[0\] \+ a0;</stringmatch>
 </decompilertest>

@@ -1698,7 +1698,9 @@ mod tests {
         // (loweredswitch stranded a real jump table and the model walk panicked),
         // and ghdec-finalorder-entryfirst / BlockGraph::orderBlocks (the entry
         // component printed after an unconditional goto, i.e. as dead code)
-        assert_eq!(count, 180, "corpus file count drifted");
+        // and ghdec-callsitestackargs / stack-passed call argument recovery
+        // (option off truncates a call at the six SysV register arguments)
+        assert_eq!(count, 181, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

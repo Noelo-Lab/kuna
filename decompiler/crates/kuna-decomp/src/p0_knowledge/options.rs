@@ -271,6 +271,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "unrolledguard",
     "noreturn_externmatch",
     "loweredswitch",
+    "callsitestackargs",
     "regionstructure",
     "regionlooprefine",
     "regionedgeorder",

@@ -108,12 +108,20 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             let trial_addr =
                 data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_address().clone();
             // C++ keeps these two no-use conditions as separate branches
-            // (fspec.cc:5623-5626): a stack alias, OR a stack location outside the
-            // callee's local range, both mean "not a parameter".
+            // (fspec.cc:5616-5619): a stack alias, OR a stack location outside the
+            // CALLER's local range, both mean "not a parameter".  The range test is
+            // on the argument Varnode's caller-relative address, not the trial's
+            // callee-relative one — (kuna) `callsitestackargs` owns that choice.
             #[allow(clippy::if_same_then_else)]
             if has_alias {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
-            } else if !data.get_func_proto().get_local_range().in_range(&trial_addr, 1) {
+            } else if crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range(
+                data.get_arch().callsite_stack_args,
+                data.get_func_proto().get_local_range(),
+                &vn_space,
+                vn_offset,
+                &trial_addr,
+            ) {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if callee_pop {
                 let off = trial_addr.get_offset();
