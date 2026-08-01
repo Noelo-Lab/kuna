@@ -1686,7 +1686,9 @@ mod tests {
         // (usage(1); // no-return; warnstyle banner restores the WARNING lines)
         // and ghdec-fast-funcdisc / the bounded fast-project inventory
         // (old fast omits a direct callee; default fast emits its real body)
-        assert_eq!(count, 174, "corpus file count drifted");
+        // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
+        // (no setISAMode statement survives into the emitted C)
+        assert_eq!(count, 175, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -104,6 +104,7 @@ writeup, not here.
 | `gh9218-inputvarnodeadjust.xml` | [GH-9218](https://github.com/NationalSecurityAgency/ghidra/issues/9218) | S6 storage reconciliation (`stack-frame-layout`, overlapping input varnodes) | `option inputvarnodeadjust on\|off` |
 | `ghangr-ite-region-converter-missing-5db28e.xml` | angr `test_ite_region_converter_missing_break_statement` (StackCanarySimplifier) | S7 region recovery (`edge-virtualization`, strip the -fstack-protector canary epilogue so the shared-return goto is eliminated) | `option stackguard on\|off` |
 | `ghdec-whiledo-complex.xml` | decbench `O0-iproute2-ip-lookup_flag_data_by_name` (invalid C: statement inside `while(...)` parens) | S8 structure recovery (whileDo overflow-syntax decision; `FlowBlock::isComplex` virtual-dispatch parity, porting-divergence correctness fix, no option) | default (upstream `isComplex`: BlockList/BlockIf unconditionally complex) |
+| `ghdec-isamode-inject.xml` | decbench `O2-noinline-betaflight-...-accDetect` + `O0-libopencm3-sdram-main` (ARM `setISAMode(1);` bookkeeping user-op emitted as a C statement inside jump-table-reachable blocks) | S2 lift/flow (`<callotherfixup>` injection drain in `generate_ops_with_jumptables`; porting-divergence correctness fix, no option) | default (upstream `flow.cc:819` drains `injectlist` on every jump-table round) |
 
 C-surface normalization testcases (`kuna-cnorm-*.xml`, no GH issue; user-driven
 readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
