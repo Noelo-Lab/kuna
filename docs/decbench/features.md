@@ -83,6 +83,11 @@ not rank by margin at all — the NOVEL pool (kuna is already best and the outpu
 and the recall pool. The angr/ida margin pools, which the campaign has mined for months,
 produced mostly small structuring gaps plus one metric artifact.
 
+Measured follow-up: `docs/decbench/recall-measurement.md`. The recall pool is 7,354 (not 6,540);
+the fix wave closed 63 of them in benchmark terms, 1,994 were already fixed and only looked open
+because the stored artifacts were 12 days old, 3,233 were never kuna's fault, and 98% of the
+2,061 live remainder is function-entry granularity on ARM Cortex-M.
+
 The reading: kuna's *structural* recovery is now competitive (2nd of 11 on GED, and it wins
 several of the panes where a case was mined against it), and the remaining defects are in what
 the metric cannot see — argument lists, declarations, types, and values. Rank by correctness,
