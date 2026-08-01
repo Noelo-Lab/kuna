@@ -361,6 +361,34 @@ loop-head label is hoisted above the loop rather than into its condition).
 `blockaction.rs (ActionNormalizeBranches)` is transcribed control-flow with
 its mutating half still stubbed (recorded in the retired losses ledger, see `docs/history.md`).
 
+**Final component ordering.** Structuring does not always end with a single
+top-level component: an irreducible knot, a multi-entry loop, or a switch whose
+arms could not be folded leaves the root `sblocks` graph holding several
+siblings, and the printer emits them in list order
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs`, a plain walk of the
+component list). Collapse order is not print order — the collapse appends each
+new composite at the end of the parent's list, so the component that happens to
+collapse last lands last no matter where its code lives in the function. The
+first step of `blockaction.rs (ActionFinalStructure)` therefore re-sorts the
+root's components into their final order
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::sblocks_order_blocks)` →
+`decompiler/crates/kuna-decomp/src/substrate/block.rs
+(BlockGraph::order_blocks)`): the component containing the function entry
+first, components that end in a RETURN last, everything else by ascending
+block index — the reverse-post-order number that `block.rs
+(BlockGraph::add_block)` keeps at the minimum over a composite's members, so a
+composite sorts by its earliest constituent block. The sort applies to the root
+graph only; nested components already carry their schema's own order. It is a
+printing decision, not a transform: the same statements are emitted, only the
+order of the top-level pieces changes, and both engines (§8.1 and §8.2) reach it
+because both hand the same root list to `ActionFinalStructure`. Without it, a
+function whose structuring left more than one component can open in the middle
+of its body and reach its real entry only after an unconditional `goto`, i.e.
+emit the entry as unreachable dead code. Ties are broken stably, so the
+several RETURN-terminated components the ordering rule treats as equal keep the
+relative order the collapse produced instead of an arbitrary one.
+
 **(angr) `ActionBranchFlip`** also lives here (`blockaction.rs
 (ActionBranchFlip)`), scheduled on the *final* structured tree right after
 the second `ActionPreferComplement` pass

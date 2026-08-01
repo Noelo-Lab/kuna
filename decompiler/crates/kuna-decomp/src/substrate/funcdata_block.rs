@@ -147,6 +147,30 @@ impl Funcdata {
         *self.sblocks_mut() = sb;
     }
 
+    /// Sort the top-level components of the structured graph into their final
+    /// printing order (C++ `BlockGraph::orderBlocks`, `block.hh:437`), the first
+    /// step of `ActionFinalStructure::apply` (`blockaction.cc:2192`).
+    ///
+    /// Resolves the RETURN half of `FlowBlock::compareFinalOrder` here — a
+    /// component's `lastOp` reaches through the `BlockCopy` leaves into `bblocks`
+    /// and its opcode needs the op bank — then hands the answer to
+    /// [`BlockGraph::order_blocks`](crate::block::BlockGraph::order_blocks).
+    pub fn sblocks_order_blocks(&mut self) {
+        let sroot = self.sblocks_root();
+        let comps: Vec<BlockId> = self.sblocks_ref().block(sroot).get_list().to_vec();
+        let mut ret_terminated: std::collections::BTreeSet<BlockId> =
+            std::collections::BTreeSet::new();
+        for bl in comps {
+            let last_op = self.sblocks_ref().struct_last_op_with(Some(self.bblocks_ref()), bl);
+            if let Some(op) = last_op {
+                if self.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_RETURN) {
+                    ret_terminated.insert(bl);
+                }
+            }
+        }
+        self.sblocks_mut().order_blocks(sroot, &ret_terminated);
+    }
+
     /// Recurse the structured-block graph and finalize each `BlockSwitch` for
     /// printing (C++ `BlockGraph::finalizePrinting` → `BlockSwitch::finalizePrinting`,
     /// `block.cc:3607`): assign each case its label from the recovered
