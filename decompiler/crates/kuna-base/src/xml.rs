@@ -1697,8 +1697,10 @@ mod tests {
         // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
         // (no setISAMode statement survives into the emitted C),
         // and ghdec-realtypes-pointee / the realtypes unknown-pointee size
-        // (void *a3 alongside a3[1] out, unsigned long *a3 in)
-        assert_eq!(count, 178, "corpus file count drifted");
+        // (void *a3 alongside a3[1] out, unsigned long *a3 in),
+        // and ghdec-stalejumptable / a JumpTable outliving its swept BRANCHIND
+        // (loweredswitch stranded a real jump table and the model walk panicked)
+        assert_eq!(count, 179, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

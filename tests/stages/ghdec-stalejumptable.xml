@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench cases-missing pool: coreutils 'comm' main (x86-64, GCC -O0, PIE,
+    stripped), entry 0x3994 in the original image.  The mapped code runs past
+    main's end and the second chunk is its .rodata jump table; both only bound
+    main's flow, exactly as read symbols does for the whole ELF.
+
+    Stage model: S2 lift/flow, switch-model sub-stage.  P0 assertion:
+    `option loweredswitch on|off` (DIV-4, default-on).
+
+    The bug.  main's getopt_long dispatch has TWO switch shapes: a comparison
+    cascade over the small option characters ('1'/'2'/'3' and the negative
+    help/version sentinels) AND a genuine GCC PIC relative-offset jump table at
+    0x3aed (`notrack jmp rax`, table at 0x9800) for the dense 0x7a..0x83 range.
+    `loweredswitch` fires on the cascade and rewires its head to a synthetic
+    BRANCHIND, which strands the real table's block; the trailing
+    `removeUnreachableBlocks` sweep then destroyed that block's ops WITHOUT
+    dropping its JumpTable (the ported `blockRemoveInternal` had the
+    `findJumpTable`/`removeJumpTable` arm stubbed out).  `ActionSwitchNorm` later
+    re-recovered the model of that stale table and walked the destroyed
+    BRANCHIND's nulled inputs, panicking in `findDeterminingVarnodes`, so the whole
+    function decompiled to nothing.  (Same failure on join and uniq main, at -O0
+    and -O2.)
+
+    The fix (no option, a strict bug fix on both counts):
+      * `blockRemoveInternal` now drops a removed BRANCHIND's jump table, and
+        `ActionSwitchNorm` skips a table whose indirect op is gone;
+      * `kunaInstallLoweredSwitch` DECLINES when its rewiring would strand a
+        block whose tail BRANCHIND already owns a recovered JumpTable, so the
+        genuine switch is kept instead of being replaced by the cascade dispatch.
+
+    Pass 1 runs the DEFAULT pipeline (`loweredswitch on`): before the fix it
+    panicked and emitted no body, so every count below was zero or half.
+    Pass 2 (`option loweredswitch off`) is the reference rendering: the real
+    jump-table switch over 0x7a/0x80..0x83 with the cascade left as if/else.
+    The two passes must now agree, because the install declines.
+-->
+<bytechunk space="ram" offset="0x3994">
+f30f1efa554889e5534883ec28897ddc488975d0488b45d0488b004889c7e8e90b0000488d057d5700004889c6bf06000000e835ecffff488d058a5d00004889c6488d053e5600004889c7e83ceaffff488d052f5600004889c7e80deaffffbf03000000e82e08000088050d970000488d05cd0300004889c7e82e4b0000c605f896000001c605f296000001c605ec96000001c605e696000000c605e1960000000fb605da9600008805d3960000c705cc96000000000000c605c496000000e9db010000817dec830000000f8fc4010000837dec7a7d53837dec330f8493000000837dec330f8faa010000837dec327477837dec320f8f9a010000837dec31745b837dec310f8f8a010000817dec7dffffff0f842f010000817dec7effffff0f8418010000e96b0100008b45ec83e87a83f8090f875c01000089c0488d148500000000488d05225d00008b04024898488d15165d00004801d03effe0c6051a96000000e937010000c6050f96000000e92b010000c6050496000000e91f010000c605f594000000e913010000c705ee95000002000000e904010000c705df95000001000000e9f5000000488b05db9500004885c07443488b158f950000488b05c09400004889d64889c7e8dde9ffff85c07426488d050a5c00004889c7e80ae9ffff4889c2be00000000bf01000000b800000000e883eaffff488b054c9500004889057d940000488b053e9500000fb60084c07411488b05309500004889c7e888e8ffffeb05b8010000004889055a950000eb6bc6054895000001eb62bf00000000e845eeffff488b153e940000488b05df9400004883ec086a004c8d0da75b00004c8d05b05b00004889d1488d15a9540000488d35ee5a00004889c7b800000000e8b13200004883c410bf00000000e827eaffffbf01000000e8ededffff488b75d08b45dc41b800000000488d15998e00004889d1488d15705b000089c7e808e8ffff8945ec837decff0f85f3fdffff488b05b49400004885c0750b48c705a4940000010000008b15569400008b45dc29d083f8010f8f880000008b05429400003945dc7f28488d05245b00004889c7e8d6e7ffff4889c2be00000000bf00000000b800000000e84fe9ffffeb4b8b45dc489848c1e003488d50f8488b45d04801d0488b004889c7e8ff2800004889c3488d05ea5a00004889c7e88ce7ffff4889d94889c2be00000000bf00000000b800000000e802e9ffffbf01000000e808edffff8b15ba9300008b45dc29d083f8027e5c8b05aa93000048984883c002488d14c500000000488b45d04801d0488b004889c7e8932800004889c3488d05975a00004889c7e820e7ffff4889d94889c2be00000000bf00000000b800000000e896e8ffffbf01000000e89cecffff8b054e9300004898488d14c500000000488b45d04801d04889c7e80cf1fffff30f1efa554889e548897df8488b45f84889056e930000905dc3f30f1efa554889e589f88845fc0fb645fc88055c930000905dc3f30f1efa554889e5534883ec18488b05dd9200004889c7e8723b000085c00f84ad0000000fb6052e93000083f00184c07510e882e5ffff8b0083f8200f848f000000488d050c5a00004889c7e858e6ffff488945e8488b05f59200004885c0743d488b05e99200004889c7e8942400004889c3e841e5ffff8b00488b55e84989d04889d9488d15d659000089c6bf00000000b800000000e89de7ffffeb26e816e5ffff8b00488b55e84889d1488d15b559000089c6bf00000000b800000000e875e7ffff8b058791000089c7e808e5ffff488b05519200004889c7e8ae3a000085c0740d8b056791000089c7e8e8e4ffff90488b5df8c9c3f30f1efa554889e54883ec30897dec488975e0488955d8894de88b4de8488b55d8488b75e08b45ec89c7e8f2e5ffff8945fc90c9c3f30f1efa554889e54883ec1048897df88975f448837df8007422488b45f84889c7e846e6ffff89c78b45f489c1ba00000000be00000000e88fffffff90c9c3f30f1efa554889e54883ec2048897de8c745f400000000c745f800000000488b45e84889c7e803e6ffff8945fc837dfc00790e488b45e84889c7e88ee4ffffeb76488b45e84889c7e830e6ffff85c07423488b45e84889c7e8d0e5ffffba01000000be0000000089c7e8ffe4ffff4883f8ff741a488b45e84889c7e87100000085c0740ae8c4e3ffff8b008945f4488b45e84889c7e833e4ffff8945f8837df4007411e8a5e3ffff8b55f48910c745f8ffffffff8b45f8c9c3f30f1efa
+</bytechunk>
+<bytechunk space="ram" offset="0x9800">
+14a3ffff29a4ffff29a4ffff29a4ffff29a4ffff29a4ffff2fa3ffff20a3ffff3ea3ffffc8a3ffff
+</bytechunk>
+<symbol space="ram" offset="0x3994" name="main"/>
+</binaryimage>
+<script>
+  <com>lo fu main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="stalejumptable #1: the real jump-table switch survives on BOTH passes (0 before the fix: pass 1 panicked)" min="2" max="2">switch\(</stringmatch>
+<stringmatch name="stalejumptable #2: case 0x7a ('z') on both passes" min="2" max="2">case 0x7a:</stringmatch>
+<stringmatch name="stalejumptable #3: case 0x80 (CHECK_ORDER) on both passes" min="2" max="2">case 0x80:</stringmatch>
+<stringmatch name="stalejumptable #4: case 0x83 (TOTAL) on both passes" min="2" max="2">case 0x83:</stringmatch>
+<stringmatch name="stalejumptable #5: no pipeline failure on either pass" min="0" max="0">decompilation failed</stringmatch>
+</decompilertest>

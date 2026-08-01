@@ -355,6 +355,19 @@ structuring, any table still without a default marks its most-targeted
 out-edge as the default (`decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
 (ActionBlockStructure)` via `funcdata_block.rs (Funcdata::install_switch_defaults)`).
 
+**Table lifetime.** A `JumpTable` is only as alive as the BRANCHIND it points
+at, so removing that op has to remove the table. `funcdata_block.rs
+(Funcdata::block_remove_internal)` looks up the table of a removed block's
+trailing BRANCHIND (`funcdata.rs (Funcdata::find_jump_table_index)`, matched by
+op address) and drops it (`funcdata_block.rs (Funcdata::remove_jump_table)`)
+before destroying the block's ops; a table that outlived its op would be
+re-recovered later against nulled inputs. `ActionSwitchNorm` carries the same
+guard `install_switch_defaults` already had and skips any table whose indirect
+op is missing, dead, or parentless, and the model walk
+`jumptable.rs (JumpBasic::find_determining_varnodes)` reports a stale op as an
+error rather than dereferencing it, so a table that slips through abandons its
+own recovery instead of the whole function.
+
 ### (angr) Lowered-cascade recovery — `option loweredswitch`, default on (DIV-4)
 
 GCC lowers a dense switch over a small variable into a balanced binary-search
@@ -393,6 +406,23 @@ strand phi state:
   carrying a `JumpModelTrivial`, and sweeps the orphaned compare spine via
   unreachable-block removal. Heritage then rebuilds SSA over the corrected CFG
   and the ordinary structurer/printer emit the switch.
+
+  Install declines whenever the rewiring would take a genuine switch with it.
+  Severing the head's out-edges makes everything reachable only through the
+  compare spine unreachable, and the trailing sweep deletes it; when one of
+  those blocks ends in a BRANCHIND that *already* owns a recovered `JumpTable`,
+  the cascade was a guard chain standing in front of a real jump table, not a
+  lowered switch of its own. `funcdata_block.rs
+  (Funcdata::kuna_lowered_switch_strands_table)` walks reachability from the
+  entry over the post-surgery successor relation before any edit and refuses the
+  install in that case, so the real table's cases survive instead of being
+  replaced by the (much narrower) cascade dispatch. The pre-existing guard —
+  a table already registered at the head's own branch address — never fires
+  here, because the cascade head and the real BRANCHIND are different
+  instructions. Both coreutils shapes are covered: `comm`/`join`/`uniq` `main`
+  (a getopt dispatch split between a compare cascade over the short options and
+  a PIC relative-offset table over the dense long-option range) declines, while
+  `mv`'s `main` — a cascade with no downstream table — still installs.
 
 One repair hook closes the loop: heritage may widen the synthetic BRANCHIND's
 storage read and null its input, so `funcdata_block.rs

@@ -2487,6 +2487,19 @@ impl Action for ActionSwitchNorm {
         // C++ coreaction.cc:4782 — ActionSwitchNorm::apply
         let n = data.num_jump_tables();
         for i in 0..n {
+            // Skip a table whose BRANCHIND is gone: model recovery walks the op's
+            // inputs, and a destroyed op has none (the `install_switch_defaults`
+            // guard, `funcdata_block.cc:706`).
+            let live = match data.get_jump_table(i).get_indirect_op() {
+                None => false,
+                Some(indop) => match data.obank().get(indop) {
+                    None => false,
+                    Some(o) => !o.is_dead() && o.get_parent().is_some(),
+                },
+            };
+            if !live {
+                continue;
+            }
             // Take the table out of the function so it can be mutated against
             // `&mut Funcdata` (the recover/fold helpers read/write the IR).
             let placeholder = crate::jumptable::JumpTable::new(
