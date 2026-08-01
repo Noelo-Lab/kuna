@@ -123,6 +123,19 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   name methods after their C++ originals).
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`).
 - Commit at milestones with descriptive messages.
+- **Never `git stash` when other agents may be working in sibling worktrees.** `refs/stash` is
+  a single stack shared by every worktree of the repo, so a concurrent `stash pop` can hand
+  your uncommitted work to another worktree — this has already happened. To A/B a pre-change
+  build, copy the file aside (`cp x.rs /tmp/…`) or build from a second checkout.
+- In a worktree, build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+  CARGO_PROFILE_TEST_DEBUG=0` and delete `decompiler/target/debug` when the workspace suite
+  finishes — the default debug profile costs ~20-30 GB per worktree and has filled this
+  machine's disk mid-run. Never `make specs` in a worktree; reuse the main tree's via
+  `KUNA_SPECS`/`SLEIGHHOME`.
+- Adding a `tests/stages/*.xml` also bumps a hard-coded corpus file count in
+  `decompiler/crates/kuna-base/src/xml.rs` and requires re-recording
+  `docs/baseline-stages.json`. Two such PRs in flight WILL conflict on both; resolve the count
+  to base + all merged, and re-record the baseline rather than hand-merging it.
 - Any time any public thing is created fully automatically, it should start with `[AUTOMATED]`. That goes for PRs, Issues (opening and responses). It should also be in the commit message, but can go outside of the tagline and more inside the extended part.
 
 ## Doc map (look up on demand — don't preload)
