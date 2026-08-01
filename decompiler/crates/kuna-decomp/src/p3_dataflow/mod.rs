@@ -23,3 +23,4 @@ pub mod kuna_flagcompare;
 pub mod kuna_arraystride;
 pub mod kuna_condexeplace;
 pub mod kuna_compareform;
+pub mod kuna_inputtile;
