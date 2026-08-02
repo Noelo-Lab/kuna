@@ -21,7 +21,8 @@
     returns emerge.
 
     Stage / sub-stage: S8 structure / goto-quality (return duplication), owned by the
-    P0 assertion `option returndup on|off` (default OFF).  The `returndup` pass
+    P0 assertion `option returndup on|off` (default ON since DIV-54, which supersedes
+    the DIV-18 revert).  The `returndup` pass
     (s8_structure/kuna_returndup.rs) reuses the EXISTING `return_split_is_splittable`
     bare-epilogue filter (only MULTIEQUAL/COPY/RETURN over constant/annotation/non-free
     inputs) and the EXISTING `node_split` machinery ActionReturnSplit already drives:
@@ -39,7 +40,7 @@
             .L2: mov eax,3
             .Lend: ret                          ; SHARED bare epilogue, 3 in-edges
 
-    Pass 1 (option returndup off, the DEFAULT): kuna keeps the merged form - one
+    Pass 1 (option returndup off, overriding the DIV-54 default): kuna keeps the merged form - one
     `return v1;` (the MULTIEQUAL of 1/2/3) reached through the nested if/else; NO
     constant early returns.
     Pass 2 (option returndup on): the shared epilogue is duplicated into 2 of its 3
@@ -66,8 +67,8 @@
        isolate the returndup transform under test. -->
   <com>option earlyreturn off</com>
   <com>option switchreturn off</com>
-  <!-- returndup is default-OFF; set it explicitly in pass 1 to guard against a future
-       default-on sweep, then flip it on for pass 2 (the only change between passes). -->
+  <!-- returndup is default-ON (DIV-54); pass 1 turns it explicitly OFF to pin the merged
+       upstream shape, then pass 2 restores it (the only change between passes). -->
   <com>option returndup off</com>
   <com>lo fu f</com>
   <com>decompile</com>

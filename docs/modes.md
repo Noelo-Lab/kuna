@@ -79,6 +79,12 @@ The options it enables:
   `operand_refs`, `formatstring`, `fid`, `rtti`, `aif`, `objc`, `pdb`,
   `macho-arm64e`
 
+`returndup` became a shipped default in DIV-54 and is deliberately kept on the
+list: the preset **owns** the option, so an earlier `--option returndup off` on
+the same command line is re-enabled by `--mode aggressive`, and the preset's
+contract ("every recovery pass on") does not silently change if a default drifts
+back.
+
 ### The two exclusions: `v850indirectbranch` and `dwarf_lines`
 
 Every other off-by-default option is safe to blanket-enable: the format-specific
@@ -115,9 +121,9 @@ shows net-positive-zero-regression (the DIV process).
 `returndup` used to be listed here as a known aggregate-GED regression (DIV-18).
 That is no longer true: since #137 gave it angr's const-return gate, an isolating
 ablation over the 52,862-function optimized decbench corpus puts it at **+417
-GED-perfect functions and −7,756 aggregate GED**, and it passes the datatest gate
-(675/675, PARITY OK) as a default. It stays default-off pending its own DIV, but
-`auto` already enables it below 500 KiB. See
+GED-perfect functions and −7,756 aggregate GED**. **DIV-54 promoted it to a
+shipped default**, so it is no longer an `aggressive`-only pass at all — the
+preset merely keeps naming it. See
 `docs/decbench/returndup-regression-triage.md`.
 
 ## `fast`

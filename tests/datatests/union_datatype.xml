@@ -98,6 +98,8 @@ ff90c9c3554889e548897df88975f489
 <symbol space="ram" offset="0x100b62" name="getvalue6"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup default-on (DIV-54); this upstream test pins the merged shared-epilogue return rendering -->
+  <com>option returndup off</com>
   <!-- kuna: inplaceops default-on (DIV-35); this upstream test pins the pre-inplace (out = out OP y) rendering -->
   <com>option inplaceops off</com>
   <com>option readonly on</com>

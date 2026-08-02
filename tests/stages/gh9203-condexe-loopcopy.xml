@@ -43,6 +43,9 @@
 <symbol space="ram" offset="0x0" name="FUN_0"/>
 </binaryimage>
 <script>
+  <!-- returndup (DIV-54 default-on) splits this function's shared epilogue, which moves
+       the loop-body COPY the two passes compare; off to isolate condexeplace. -->
+  <com>option returndup off</com>
   <com>option condexeplace off</com>
   <com>lo fu FUN_0</com>
   <com>decompile</com>

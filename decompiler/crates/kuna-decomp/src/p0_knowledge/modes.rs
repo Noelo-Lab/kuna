@@ -93,7 +93,10 @@ pub const MODE_TABLE: &[Mode] = &[
 const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 
 /// `aggressive` = every off-by-default option flipped ON, **except**
-/// `v850indirectbranch` and `dwarf_lines`.
+/// `v850indirectbranch` and `dwarf_lines`. `returndup` is listed even though
+/// DIV-54 made it a shipped default: the preset owns the option outright, so a
+/// user `--option returndup off` earlier on the command line is re-enabled by
+/// the preset and the contract survives any later default drift.
 ///
 /// The default-off options are safe to blanket-enable except those two. Unlike
 /// the format-gated no-ops (`rtti`/`pdb`=PE, `objc`/`macho-arm64e`=Mach-O,
@@ -119,7 +122,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("stackalias", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("regionedgeorder", "on"),
-    ("returndup", "on"),
+    ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).

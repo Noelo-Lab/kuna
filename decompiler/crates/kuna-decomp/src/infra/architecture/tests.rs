@@ -144,7 +144,6 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
     assert!(!arch.analysis_aif);
     assert!(!arch.analysis_fast_funcdisc);
     assert!(!arch.switch_guard_bound);
-    assert!(!arch.duplicate_shared_returns);
     assert!(!arch.sparc_struct_return);
     assert!(!arch.v850_indirect_branch);
     assert!(!arch.analysis_dwarf_lines);
@@ -156,6 +155,8 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
     assert!(arch.analysis_aif);
     assert!(arch.analysis_fast_funcdisc);
     assert!(arch.switch_guard_bound);
+    // Listed by the preset even though DIV-54 makes it a shipped default, so the
+    // preset re-enables it after an earlier `--option returndup off`.
     assert!(arch.duplicate_shared_returns);
     assert!(arch.sparc_struct_return); // SPARC-idiom-gated, safe to enable
     // Exclusion 1: reclassifies register-indirect calls on non-V850 targets.
@@ -169,10 +170,11 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
 fn apply_mode_reliable_is_a_no_op() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     arch.apply_mode("reliable").expect("reliable mode applies");
-    // reliable == shipped defaults: nothing off-default gets flipped.
+    // reliable == shipped defaults: nothing off-default gets flipped, and nothing
+    // on-default gets cleared.
     assert!(!arch.analysis_listing);
     assert!(!arch.analysis_aif);
-    assert!(!arch.duplicate_shared_returns);
+    assert!(arch.duplicate_shared_returns); // DIV-54 shipped default survives
 }
 
 #[test]

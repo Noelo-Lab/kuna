@@ -132,6 +132,12 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   finishes — the default debug profile costs ~20-30 GB per worktree and has filled this
   machine's disk mid-run. Never `make specs` in a worktree; reuse the main tree's via
   `KUNA_SPECS`/`SLEIGHHOME`.
+- **`KUNA_SPECS`/`SLEIGHHOME` do not reach the cargo workspace suite.** Those two env vars
+  cover `make test`/`make test-stages` and the CLI, but the `make rust-test` targets resolve
+  specs as `<repo>/specs` relative to their own crate, so in a worktree ~22 of them fail with
+  "Could not find .sla file" no matter what is exported. Symlink the main tree's built
+  `.sla` files into the worktree's `specs/` before running the suite (they are gitignored,
+  so the tree stays clean) — do not `make specs`.
 - Adding a `tests/stages/*.xml` also bumps a hard-coded corpus file count in
   `decompiler/crates/kuna-base/src/xml.rs` and requires re-recording
   `docs/baseline-stages.json`. Two such PRs in flight WILL conflict on both; resolve the count
