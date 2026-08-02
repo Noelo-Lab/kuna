@@ -206,7 +206,7 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 ```
 /                     index.html          landing page: hero, compare, goals
 /decompile/           decompile/index.html the decompiler application (loads the wasm)
-/assets/              css/site.css · fonts/ · img/ · js/highlight-c.js
+/assets/              css/site.css · fonts/ · img/ · js/highlight-c.js · js/fnfilter.js
 /compare-samples.js   the compare section's data (samples + rival outputs)
 /CNAME                kuna.noelo.org — the custom domain, copied into the bundle
 /kuna-web.js /kuna-worker.js /kuna-worker-client.js /zip.js
@@ -218,6 +218,21 @@ the Worker is a sibling of `kuna-web.js`/`zip.js`, the existing tests can import
 directly, and a project subpath still works. The RPC client resolves the wasm/spec URLs
 against the document before sending them to the Worker; resolving those `../` paths in
 the root-level Worker would otherwise escape a GitHub Pages project subpath.
+
+**The sidebar filter.** A whole-binary inventory is thousands of rows (the 1.1 MiB PE in
+DIV-53 indexes 3,158), and the sidebar is the only way to reach a function, so the list is
+filterable: `/` from anywhere focuses the box, typing narrows the list live, `Enter` opens
+the first match, `Escape` clears, and the arrow keys walk the visible rows. A query is
+either whitespace-separated terms — ALL of which must appear in a row's name, one of its
+aliases, or its address, case-insensitively, so `sub_4e6` and `4e68` and `_dws` all work on
+a stripped binary — or a `/regex/flags` literal (case-insensitive unless it names flags; an
+unparseable one flags the box and reports the error instead of silently emptying the list).
+The header and the `imports & thunks` divider switch to `matched of total` while a filter
+is live. The matcher and both count strings are `assets/js/fnfilter.js`, kept DOM-free so
+`test/fnfilter.mjs` can pin them under Node (§5); the page owns only row visibility and
+focus. Filtering is a single pass over precomputed per-row haystacks — 1.8–3.0 ms per
+keystroke over 3,158 rows in Chrome — and the inventory is built into one
+`DocumentFragment` so a multi-thousand-row list reflows the sidebar once, not per row.
 
 The design shares the Noelo Lab site's palette and typefaces (`noelo.org`, BSD-2-Clause;
 provenance note at the top of `assets/css/site.css`) but not its layout: kuna's pages are
@@ -282,6 +297,10 @@ architectures**:
    (**`test/zip.mjs`**, an independent gate needing no build, structurally validates the
    `zip.js` writer: it re-parses its own archive, recomputes every CRC-32 independently,
    and asserts byte-determinism.)
+   (**`test/fnfilter.mjs`**, likewise build-free, pins the sidebar filter's query
+   semantics — name/alias/address terms, `/regex/`, the `matched of total` counts and
+   the invalid-regex report — against `assets/js/fnfilter.js`, the DOM-free half of the
+   filter.)
 3. **`test/worker.mjs`** — hosts the shipped module Worker in a Node worker thread and
    drives the real RPC client over HTTP. It asserts the initial response has inventory but
    no eager C, a selected address produces one body, cancellation terminates/recreates the
@@ -291,6 +310,12 @@ architectures**:
    `decompile/index.html` in real Chrome: uploads an ELF then a Mach-O, waits for the code
    panel / status, asserts the rendered C and the detected format. Verified passing during
    development; kept out of the committed suite to avoid a browser/`puppeteer` dependency.
+   The filter's DOM half was verified the same way (raw CDP over Node's built-in
+   `WebSocket`, no `puppeteer`): 16 checks on `sample.elf` — row hiding is
+   `display:none` and not the `.fn` flex rule, header and stub-divider counts, the
+   invalid-regex report, `/`-to-focus, `Escape`, `Enter`-opens-first-match, arrow
+   walking — plus a scale run on a 1.1 MiB PE (3,158 rows: 8.4 s to inventory, 1.8–3.0 ms
+   per keystroke).
    (Headless Chrome alone can do the same without `puppeteer`: copy the page into `dist/`
    with an appended module script that sets `#file`'s `files` from a `DataTransfer` and
    dispatches `change`, then run `--headless --virtual-time-budget=… --dump-dom`.)

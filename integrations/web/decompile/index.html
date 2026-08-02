@@ -40,8 +40,15 @@
 
   <div class="work">
     <aside id="sidebar">
-      <p class="lhead label" id="fnhead">functions</p>
+      <div id="fntop">
+        <p class="lhead label" id="fnhead">functions</p>
+        <input class="fnq" id="fnfilter" type="search" disabled
+               placeholder="filter &mdash; name, address, /regex/" autocomplete="off"
+               autocapitalize="off" spellcheck="false"
+               aria-label="Filter functions by name or address" aria-controls="fnlist">
+      </div>
       <div id="fnlist"></div>
+      <p class="fnnone label" id="fnnone" hidden>no matches</p>
     </aside>
 
     <div class="view">
@@ -62,7 +69,9 @@
           </p>
           <p class="hint">
             The function inventory loads first; each body is decompiled when selected.
-            Stubs and import thunks are grouped at the bottom of the list;
+            Stubs and import thunks are grouped at the bottom of the list. Press
+            <code>/</code> to filter it by name or address &mdash; or by
+            <code>/regex/</code> &mdash; then <code>Enter</code> to open the first match.
             <code>Download binary source</code> exports the whole binary as a
             <code>.c</code>/<code>.h</code>/<code>.asm</code> project zip.
           </p>
@@ -84,6 +93,12 @@
     KunaWorkerClient,
   } from '../kuna-worker-client.js';
   import { highlightC, escapeHtml } from '../assets/js/highlight-c.js';
+  import {
+    headline,
+    searchKey,
+    stubDividerLabel,
+    summarize,
+  } from '../assets/js/fnfilter.js';
 
   const statusEl = document.getElementById('status');
   const pickEl = document.getElementById('pick');
@@ -97,6 +112,8 @@
   const vmetaEl = document.getElementById('vmeta');
   const dlEl = document.getElementById('dlbtn');
   const cancelEl = document.getElementById('cancelbtn');
+  const filterEl = document.getElementById('fnfilter');
+  const noneEl = document.getElementById('fnnone');
 
   const setStatus = (msg, cls = 'busy') => {
     statusEl.className = 'status ' + cls;
@@ -109,6 +126,8 @@
   let operationId = 0;
   let selectedRow = null;
   let bodies = new Map();
+  let rows = [];
+  let stubDivEl = null;
 
   const syncButtons = () => {
     cancelEl.disabled = !active;
@@ -128,6 +147,64 @@
   };
 
   const isCurrent = (operation) => active?.id === operation.id;
+
+  const resetList = () => {
+    listEl.innerHTML = '';
+    rows = [];
+    stubDivEl = null;
+    headEl.textContent = 'functions';
+    filterEl.value = '';
+    filterEl.disabled = true;
+    filterEl.classList.remove('bad');
+    filterEl.removeAttribute('title');
+    noneEl.hidden = true;
+  };
+
+  /** Re-run the sidebar filter: row visibility, both counts, the empty note. */
+  const applyFilter = () => {
+    const summary = summarize(rows, filterEl.value);
+    rows.forEach((entry, i) => { entry.row.hidden = !summary.matches[i]; });
+    headEl.textContent = headline(summary);
+    if (stubDivEl) {
+      stubDivEl.textContent = stubDividerLabel(summary);
+      stubDivEl.hidden = summary.stubs.matched === 0;
+    }
+    filterEl.classList.toggle('bad', !!summary.error);
+    if (summary.error) filterEl.title = summary.error;
+    else filterEl.removeAttribute('title');
+    noneEl.textContent = summary.error ? `invalid regex: ${summary.error}` : 'no matches';
+    noneEl.hidden = rows.length === 0 || summary.matches.some(Boolean);
+  };
+
+  const visibleRows = () => rows.filter((entry) => !entry.row.hidden);
+
+  const focusRow = (entry) => { if (entry) entry.row.focus(); };
+
+  filterEl.addEventListener('input', applyFilter);
+  filterEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (filterEl.value) { filterEl.value = ''; applyFilter(); } else filterEl.blur();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = visibleRows()[0];
+      if (first) first.row.click();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusRow(visibleRows()[0]);
+    }
+  });
+
+  // `/` jumps to the filter from anywhere on the page — the list is the only
+  // way to reach a function, and a whole-binary inventory runs to thousands.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || filterEl.disabled) return;
+    const on = document.activeElement;
+    if (on && (on.tagName === 'INPUT' || on.tagName === 'TEXTAREA' || on.isContentEditable)) return;
+    e.preventDefault();
+    filterEl.focus();
+    filterEl.select();
+  });
 
   const finishOperation = (operation) => {
     if (!isCurrent(operation)) return false;
@@ -154,12 +231,11 @@
     if (!f || !kuna) return;
     const operation = beginOperation('load', true);
     setStatus(`reading ${f.name}…`);
-    listEl.innerHTML = '';
+    resetList();
     codeEl.hidden = true; vheadEl.hidden = true; emptyEl.hidden = false;
     loaded = null;
     selectedRow = null;
     bodies = new Map();
-    headEl.textContent = 'functions';
 
     const t0 = performance.now();
     let result;
@@ -188,9 +264,10 @@
     const normal = result.functions.filter((fn) => !isStub(fn)).sort(byAddr);
     const stubs = result.functions.filter(isStub).sort(byAddr);
     setStatus(`${f.name} (${result.format}) — ${result.functions.length} functions indexed in ${dt} ms`, 'ok');
-    headEl.textContent = `${normal.length} functions · ${stubs.length} stubs`;
 
-    const rows = [];
+    // One fragment for the whole inventory: a whole-binary list runs to
+    // thousands of rows, and appending them live reflows the sidebar per row.
+    const frag = document.createDocumentFragment();
     const addRow = (fn) => {
       const row = document.createElement('div');
       row.className = 'fn' + (isStub(fn) ? ' stub' : '') + (fn.error ? ' bad' : '');
@@ -200,20 +277,28 @@
         `<span class="nm">${escapeHtml(fn.name)}</span><span class="ad">${fn.address_hex}</span>`;
       row.addEventListener('click', () => select(row, fn));
       row.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(row, fn); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(row, fn); return; }
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        e.preventDefault();
+        const shown = visibleRows();
+        const at = shown.findIndex((entry) => entry.row === row);
+        focusRow(shown[at + (e.key === 'ArrowDown' ? 1 : -1)]);
       });
-      listEl.appendChild(row);
-      rows.push({ row, fn });
+      frag.appendChild(row);
+      rows.push({ row, fn, key: searchKey(fn), stub: isStub(fn) });
     };
     normal.forEach(addRow);
     if (stubs.length) {
-      const div = document.createElement('div');
-      div.className = 'fndiv label';
-      div.textContent = `imports & thunks (${stubs.length})`;
-      listEl.appendChild(div);
+      stubDivEl = document.createElement('div');
+      stubDivEl.className = 'fndiv label';
+      frag.appendChild(stubDivEl);
       stubs.forEach(addRow);
     }
-    const first = rows.find((r) => !isStub(r.fn)) || rows[0];
+    listEl.appendChild(frag);
+    filterEl.disabled = false;
+    applyFilter();
+
+    const first = rows.find((r) => !r.stub) || rows[0];
     finishOperation(operation);
     if (first) first.row.click();
   });
@@ -252,8 +337,7 @@
     if (cancelled.kind === 'load') {
       kuna.clear('cancelled by user');
       loaded = null;
-      listEl.innerHTML = '';
-      headEl.textContent = 'functions';
+      resetList();
       codeEl.hidden = true; vheadEl.hidden = true; emptyEl.hidden = false;
     } else {
       kuna.cancel('cancelled by user');
