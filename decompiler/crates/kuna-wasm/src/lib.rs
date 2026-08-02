@@ -107,9 +107,7 @@ pub fn run_with_mode(
         0
     };
     let mode = resolve_mode(requested_mode, binary_size)?;
-    let want_decompile = !matches!(&command, Cmd::List);
-    let mut prog =
-        load_program(binary, spec_root, want_decompile, mode, want_fast_funcdisc)?;
+    let mut prog = load_program(binary, spec_root, mode, want_fast_funcdisc)?;
     if let Some(seconds) = command_fn_budget_seconds(&command, mode) {
         prog.arch_mut().kuna_fn_budget = Some(std::time::Duration::from_secs(seconds));
     }
@@ -212,13 +210,19 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
 }
 
 /// Bootstrap the architecture from the binary and run the analysis commit — the
-/// in-process `load file` + `read symbols`. `default_listing` injects the
-/// `decompile-all` surface's defaults unless the selected mode owns those
-/// options, matching the CLI's mode-then-explicit-default ordering.
+/// in-process `load file` + `read symbols`, then inject the `decompile-all`
+/// surface's discovery defaults unless the selected mode owns those options
+/// (matching the CLI's mode-then-explicit-default ordering).
+///
+/// EVERY command gets the injections, `list` included: in the browser the
+/// inventory is a *product surface* (the sidebar is the only way to reach a
+/// function), so an inventory that disagrees with the `project` export is a
+/// missing-function bug, not a saved analysis. `kuna functions` makes the
+/// opposite trade — cheap enumeration — because a native caller can always ask
+/// `decompile-all` for the full set (DIV-53, `docs/web-integration.md` §2).
 fn load_program(
     binary: &str,
     spec_root: &str,
-    default_listing: bool,
     mode: &str,
     want_fast_funcdisc: bool,
 ) -> Result<ConsoleProgram, String> {
@@ -259,32 +263,31 @@ fn load_program(
     }
     let mode_owns = |name: &str| overrides.iter().any(|(option, _)| *option == name);
 
-    if default_listing && !mode_owns("listing") {
+    if !mode_owns("listing") {
         prog.arch_mut()
             .set_kuna_option("listing", "on")
             .map_err(|e| format!("option listing: {}", e.explain()))?;
     }
 
     use object::Object;
-    let non_x86_64 =
-        if default_listing && (!mode_owns("funcstart_patterns") || !mode_owns("aif")) {
-            std::fs::read(binary)
-                .ok()
-                .and_then(|bytes| {
-                    object::File::parse(&*bytes)
-                        .ok()
-                        .map(|file| file.architecture() != object::Architecture::X86_64)
-                })
-                .unwrap_or(false)
-        } else {
-            false
-        };
-    if default_listing && non_x86_64 && !mode_owns("funcstart_patterns") {
+    let non_x86_64 = if !mode_owns("funcstart_patterns") || !mode_owns("aif") {
+        std::fs::read(binary)
+            .ok()
+            .and_then(|bytes| {
+                object::File::parse(&*bytes)
+                    .ok()
+                    .map(|file| file.architecture() != object::Architecture::X86_64)
+            })
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    if non_x86_64 && !mode_owns("funcstart_patterns") {
         prog.arch_mut()
             .set_kuna_option("funcstart_patterns", "on")
             .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
     }
-    if default_listing && non_x86_64 && !mode_owns("aif") {
+    if non_x86_64 && !mode_owns("aif") {
         prog.arch_mut()
             .set_kuna_option("aif", "on")
             .map_err(|e| format!("option aif: {}", e.explain()))?;
@@ -571,5 +574,66 @@ mod tests {
             json.contains("return a1 * 7 + a0 * 3;"),
             "hidden direct callee has no real body: {json}"
         );
+    }
+
+    /// The browser sidebar is built from `list`, so anything `project` exports
+    /// but `list` omits is unreachable in the UI. `list` used to skip the
+    /// discovery injections (`kuna functions`' cheap-enumeration trade), which
+    /// on a non-x86-64 target hid every prologue-scan/AIF-found function: a
+    /// 1.1 MiB i386 PE listed 308 entries while its own project export carried
+    /// 3015 functions.
+    #[test]
+    fn reliable_list_inventory_covers_the_project_export() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        // Non-x86-64: the funcstart-pattern and AIF injections are arch-gated,
+        // and this is the family the browser was losing functions on.
+        let binary = root.join("decompiler/crates/kuna-analysis/tests/fixtures/entrymain_arm");
+        let specs = root.join("specs");
+        let run = |cmd: &str, arg: Option<&str>| {
+            super::run_with_mode(
+                binary.to_str().unwrap(),
+                specs.to_str().unwrap(),
+                cmd,
+                arg,
+                Some("reliable"),
+            )
+        };
+        let skip = |error: &str| {
+            error.contains("could not build an architecture")
+                || error.contains("SLEIGH")
+                || error.contains("Could not discover")
+        };
+        let (list, project) = match (run("list", None), run("project", Some("entrymain_arm"))) {
+            (Ok(list), Ok(project)) => (list, project),
+            (Err(error), _) | (_, Err(error)) if skip(&error) => {
+                eprintln!("reliable_list_inventory_covers_the_project_export: skipping: {error}");
+                return;
+            }
+            (Err(error), _) | (_, Err(error)) => panic!("WASM reliable run failed: {error}"),
+        };
+
+        let listed: Vec<&str> = list.match_indices("\"address_hex\": \"").map(|(i, m)| {
+            let rest = &list[i + m.len()..];
+            &rest[..rest.find('"').unwrap()]
+        }).collect();
+        let exported: Vec<&str> = project.match_indices("@ 0x").map(|(i, _)| {
+            let rest = &project[i + 2..];
+            let end = rest.find(|c: char| !c.is_ascii_hexdigit() && c != 'x').unwrap();
+            &rest[..end]
+        }).collect();
+
+        assert!(!exported.is_empty(), "project exported no functions: {project}");
+        for addr in &exported {
+            assert!(
+                listed.contains(addr),
+                "{addr} is in the project export but not in the sidebar inventory \
+                 (listed {}, exported {})",
+                listed.len(),
+                exported.len()
+            );
+        }
     }
 }

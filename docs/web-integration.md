@@ -85,7 +85,20 @@ Its `--json` is `kuna decompile-all --json`'s fields (`name`, `address`, `addres
 `docs/cli.md`. Wasm `list` reports the full canonical callable-symbol inventory
 under the selected mode. In `fast`, that inventory includes the bounded Listing's
 direct-call closure and validated absolute pointer-table roots, not just loader
-metadata. Unfiltered `decompile` and `project` use the shared CODE-backed target set, while
+metadata.
+
+**Every command shares one discovery policy — `list` included** (DIV-53). All three
+commands apply the same `decompile-all` driver injections (`listing`, plus
+`funcstart_patterns` and `aif` on a non-x86-64 target, each skipped when the selected mode
+names that option), so the browser inventory is exactly the target set the `project`
+export decompiles. This is where the wasm front-end deliberately diverges from `kuna
+functions`, which keeps enumeration cheap: in the browser the sidebar is the *only* way to
+reach a function, so an entry the inventory omits is a function the UI cannot open at all
+— not a saved analysis. The window that matters is `reliable` (500 KiB–<2 MiB), the one
+mode with no discovery overrides of its own; `aggressive` already turns all three on and
+`fast` turns all three off, so those two were consistent before and after.
+
+Unfiltered `decompile` and `project` use the shared CODE-backed target set, while
 explicit address decompile suppresses that whole-image discovery pass and
 reaches the requested entry directly. Name selection keeps discovery active so
 a generated `sub_<addr>` name can resolve, then exports only the selected
@@ -298,7 +311,8 @@ benign PE is committed because this environment has no PE linker.
 - No wasm-only dependency or option: `kuna_wasm` and the native file front-ends
   resolve the same `auto` policy, use the same concrete mode presets, and share
   the core `fast_funcdisc` discovery implementation. The size-driven mode
-  default is recorded as DIV-40 and the corrected fast inventory as DIV-41 in
+  default is recorded as DIV-40, the corrected fast inventory as DIV-41, and the
+  single discovery policy shared by `list`/`decompile`/`project` as DIV-53, in
   `docs/history.md`.
 - The four gates (`make test`, `make test-stages`, `make rust-test`, `make
   check-spec`) remain mandatory. Native/WASI parity and browser-glue tests cover
