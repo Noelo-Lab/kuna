@@ -106,13 +106,19 @@ still wins over the preset by last-write precedence.
 
 `aggressive` is slower (the Listing build, `funcstart_patterns` discovery, and
 `formatstring`'s re-decompile loop) and can over-recover: `aif` is a speculative
-gap-walk ("may create bad code"), `addrtable` over-accepts pointer tables, and
-`returndup` is known to regress aggregate GED on the benchmark (DIV-18, reverted
-as a default) even though it recovers early returns some functions need. That is
-by design — `aggressive` is the recovery-ceiling / measurement envelope, not the
-faithful default. Use it to read maximally-recovered output or to A/B which
-options net-help; promote an option to a default only when its own ablation shows
-net-positive-zero-regression (the DIV process).
+gap-walk ("may create bad code") and `addrtable` over-accepts pointer tables.
+That is by design — `aggressive` is the recovery-ceiling / measurement envelope,
+not the faithful default. Use it to read maximally-recovered output or to A/B
+which options net-help; promote an option to a default only when its own ablation
+shows net-positive-zero-regression (the DIV process).
+
+`returndup` used to be listed here as a known aggregate-GED regression (DIV-18).
+That is no longer true: since #137 gave it angr's const-return gate, an isolating
+ablation over the 52,862-function optimized decbench corpus puts it at **+417
+GED-perfect functions and −7,756 aggregate GED**, and it passes the datatest gate
+(675/675, PARITY OK) as a default. It stays default-off pending its own DIV, but
+`auto` already enables it below 500 KiB. See
+`docs/decbench/returndup-regression-triage.md`.
 
 ## `fast`
 
