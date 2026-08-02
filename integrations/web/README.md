@@ -76,9 +76,9 @@ asset path is relative, so a project subpath just works.
 | Path | Role |
 |---|---|
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
-| `decompile/index.html` | The decompiler application (upload → inventory → lazy highlighted C, stubs grouped, cancellable project-zip download). Reaches the worker and shared assets at the bundle root with `../`. |
+| `decompile/index.html` | The decompiler application (upload → inventory → lazy highlighted C, stubs grouped, filterable list, cancellable project-zip download). Reaches the worker and shared assets at the bundle root with `../`. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
-| `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), and `js/highlight-c.js` — the one C highlighter both pages use. |
+| `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter both pages use — and `js/fnfilter.js`, the DOM-free matcher/counters behind the /decompile sidebar filter. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
 | `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), and runs the decompiler under the WASI shim with the automatic size-based mode policy; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
 | `kuna-worker.js` | The module Worker: owns the binary and WASI handle, lists first, decompiles one selected address, and builds whole-project ZIPs off the UI thread. |
@@ -118,6 +118,9 @@ node integrations/web/test/auto-mode.mjs
 # E. Worker boundary — real module Worker, lazy address decompile, hard
 #    cancellation/restart, and worker-side project ZIP.
 node integrations/web/test/worker.mjs
+
+# F. Sidebar filter query semantics — no build needed.
+node integrations/web/test/fnfilter.mjs
 ```
 
 - **`parity.mjs`** proves the decompiler *runs* under a WASI runtime and matches native
@@ -135,6 +138,11 @@ node integrations/web/test/worker.mjs
   threads, proving inventory-first/lazy-address behavior, terminate-and-recreate
   cancellation, session rehydration, and transfer of a complete project ZIP without its
   intermediate artifact object.
+- **`fnfilter.mjs`** pins the sidebar filter: name/alias/address terms are AND and
+  case-insensitive, `/regex/` runs case-insensitively unless it names flags, an
+  unparseable regex reports its error and matches nothing, and the header/divider counts
+  switch to `matched of total` while filtering. The DOM half (row hiding, `/` to focus,
+  `Enter`/`Escape`/arrows) needs a browser — see the optional Chrome check below.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
 
