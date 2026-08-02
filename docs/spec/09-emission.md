@@ -422,14 +422,41 @@ to one declaration per mapped symbol by an unconditional identity check in
 `printc.rs (PrintC::emit_local_var_decls)`; the scalar analogue is the option
 `dedupvardecls` (default on since DIV-7; row `source_decompiler = "angr"` —
 angr's variable recovery yields one variable per storage location, declared
-once): a declaration is suppressed **only** when its fully rendered signature —
-final declarator type, name, array adornment, and (under angr naming) the
-storage comment — is byte-identical to one already emitted
+once), which collapses in two steps.
+
+*By symbol.* Several HighVariables whose declaration representatives resolve to
+one containing `ScopeLocal` symbol, and that render the same identifier, are one
+variable and emit one declaration — the invariant upstream gets for free by
+walking the symbol table. The symbol behind a storage location is the
+smallest entry containing its base byte — upstream `Funcdata::linkSymbol`'s own
+query — ignoring the use-point exactly as the parameter-category query of §9.3
+does (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(ScopeLocal::containing_symbol_for_storage)`), and the survivor is the first in
+emission order. When the collapsing highs *agree* about the slot's type, that
+recovered type stands, being the sharper information. When they *disagree*, the
+survivor declares the symbol's own type — upstream `emitVarDecl` declares
+`sym->getType()` — unless the symbol's type is narrower than the widest storage
+the group covers, in which case the widest member wins. kuna's `ScopeLocal`
+ranges can be narrower than the accesses that reach them, and a declaration
+smaller than the object the body writes through would be a new defect rather
+than a faithful one.
+
+*By rendered line.* A declaration is then suppressed when its fully rendered
+signature — final declarator type, name, array adornment, and (under angr
+naming) the storage comment — is byte-identical to one already emitted
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_dedupvardecls.rs
-(DeclDedup)`). Keying on the rendered bytes makes the collapse provably
-lossless: two same-named locals at different slots or types differ in
-signature and both survive, so a genuine collision stays visible. `option
-dedupvardecls off` restores the one-line-per-HighVariable rendering.
+(DeclDedup)`). Keying on the rendered bytes makes this step provably lossless:
+two same-named locals at different slots or types differ in signature and both
+survive.
+
+The symbol step is what makes the collapse total for a *mapped* slot. The line
+step alone left one stack slot declared twice under one name with two types
+whenever two of its live ranges did not merge and recovered different types
+(DIV-52), which is not compilable C and which no rendered-line key can catch.
+Neither step can remove the last declaration of a referenced name: the symbol
+step requires the identifier to match before it collapses anything, and the line
+step requires the whole line to match. `option dedupvardecls off` restores the
+one-line-per-HighVariable rendering.
 
 ## 9.4 Strings & comments
 

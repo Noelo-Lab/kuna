@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    350,
-    350
+    356,
+    356
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -343,6 +343,12 @@
     "data:switchreturn #3: ON logs the const-case return hoist exactly once",
     "data:switchsharedcase #1: option off downgrades the dispatch to an indirect call (bug reproduced)",
     "data:switchsharedcase #2: option on bounds the table and recovers the switch (recovered exactly once, on-pass only)",
+    "data:symbol-keyed-local-decls #1: the slot is declared three times over the two passes, so exactly once by default",
+    "data:symbol-keyed-local-decls #2: the surviving declaration is as wide as the widest access, in both passes",
+    "data:symbol-keyed-local-decls #3: only the off path keeps the narrow shadow declaration",
+    "data:symbol-keyed-local-decls #4: the adjacent slot is untouched in both passes",
+    "data:symbol-keyed-local-decls #5: the body still reads the collapsed name in both passes",
+    "data:symbol-keyed-local-decls #6: the 4-byte use that outgrows the 2-byte ScopeLocal symbol",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",

@@ -1704,7 +1704,9 @@ mod tests {
         // input pieces (gnulib rpl_fcntl at -O2 produced no body at all)
         // and ghdec-iteboolean / short-circuit 0/1 select re-rolling
         // (option off leaves the explicit `if (a && b) v = 1; else v = 0;` diamond)
-        assert_eq!(count, 183, "corpus file count drifted");
+        // and ghdec-symbol-keyed-local-decls / one declaration per ScopeLocal
+        // Symbol (one stack slot declared twice under one name, two types)
+        assert_eq!(count, 184, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
