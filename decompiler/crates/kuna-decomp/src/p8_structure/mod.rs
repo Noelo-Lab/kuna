@@ -9,6 +9,7 @@ pub mod kuna_crossjumpreverter;
 pub mod kuna_dedupitetail;
 pub mod kuna_gotoreduce;
 pub mod kuna_ifelseflatten;
+pub mod kuna_iteboolean;
 pub mod kuna_iteregion;
 pub mod kuna_loopbreak_recovery;
 pub mod kuna_earlyreturn;

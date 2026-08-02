@@ -1,16 +1,30 @@
 name: Release binaries
 
 # Builds the user-facing binaries (kuna + its engine siblings decomp_dbg and
-# slacomp) for Linux, macOS, and Windows on every push to main, then tags the
-# commit vMAJOR.MINOR and publishes a GitHub Release with the archives plus a
-# platform-independent compiled SLEIGH spec tree (the engine needs .sla files
-# at runtime). The version scheme -- VERSION file = MAJOR, commits since it
-# last changed = MINOR -- lives in scripts/version.sh and docs/release.md.
+# slacomp) for Linux, macOS, and Windows, then tags the commit vMAJOR.MINOR and
+# publishes a GitHub Release with the archives plus a platform-independent
+# compiled SLEIGH spec tree (the engine needs .sla files at runtime). The
+# version scheme -- VERSION file = MAJOR, commits since it last changed = MINOR
+# -- lives in scripts/version.sh and docs/release.md.
+#
+# Cadence: ONE release a night, batching whatever landed that day, not one per
+# merge. A busy day used to publish ~18 releases and ~18 tags.
+#
+# No "did anything change?" guard is needed, because the minor version IS the
+# commit count: a nightly run on an unchanged main computes the same MAJOR.MINOR,
+# the `version` job sees that tag already exists, and build/specs/release all
+# skip. Quiet days cost one 30-second job and publish nothing.
 
 on:
+  # Nightly, 06:00 UTC (~02:00 America/New_York) -- after the day's merges.
+  schedule:
+    - cron: "0 6 * * *"
+  # A MAJOR bump is an intentional milestone, so release it the moment it lands
+  # instead of waiting for the night's run.
   push:
     branches: [main]
-  # Allow a manual (re-)release from the Actions tab.
+    paths: [VERSION]
+  # Cut a release on demand from the Actions tab (also re-runs a failed one).
   workflow_dispatch:
 
 # `gh release create` pushes the tag and the release.

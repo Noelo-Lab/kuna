@@ -41,16 +41,16 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_82() {
+fn settable_count_is_83() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
-    assert_eq!(kuna_num_settables(), 82);
-    assert_eq!(SETTABLE_TABLE.len(), 82);
+    assert_eq!(kuna_num_settables(), 83);
+    assert_eq!(SETTABLE_TABLE.len(), 83);
 }
 
 #[test]
-fn tier_counts_are_20_core_37_transform_25_analysis() {
+fn tier_counts_are_20_core_38_transform_25_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -63,7 +63,8 @@ fn tier_counts_are_20_core_37_transform_25_analysis() {
         }
     }
     // core 19 -> 20: +1 for `callsitestackargs` (P4 stack-passed call arguments).
-    assert_eq!((core, transform, analysis), (20, 37, 25));
+    // transform 37 -> 38: +1 for `iteboolean` (S8 short-circuit 0/1 re-roll, DIV-51).
+    assert_eq!((core, transform, analysis), (20, 38, 25));
 }
 
 #[test]
@@ -357,6 +358,7 @@ fn option_values_live_value_present_for_28_suppressed_for_42() {
                             | "dedupitetail"
                             | "iteregion"
                             | "iteexpr"
+                            | "iteboolean"
                             | "returndup"
                             | "earlyreturn"
                             | "switchreturn"
@@ -467,13 +469,14 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
     // ifelseflatten's,
-    // crossjumprevert's, taildup's, dedupitetail's, returndup's, and iteregion's S8 rows,
+    // crossjumprevert's, taildup's, dedupitetail's, returndup's, iteregion's and
+    // iteboolean's S8 rows,
     // noreturn_error's S1 analysis row, eh_frame_full's S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, and switchreturn's S8 row sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 81);
+    assert_eq!(json.matches("},\n").count(), 82);
 }
 
 #[test]

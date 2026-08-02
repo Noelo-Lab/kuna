@@ -3364,6 +3364,15 @@ impl PrintC {
         // renders as a single `dest = ( cond ) ? A : B;` ternary instead of the
         // if/else.  The mark is set only with `option iteregion on`, so when off
         // this is never taken and the if/else render is byte-identical.
+        // (kuna) iteboolean: a `0`/`1` select diamond whose condition is a folded
+        // short-circuit chain renders as the single boolean assignment
+        // `dest = ( cond );`.  Checked BEFORE the ternary so the more specific
+        // form wins when both match; the mark is set only with
+        // `option iteboolean on`.
+        if let Some(m) = self.ite_boolean_match(fd, blk) {
+            self.emit_block_if_bool(fd, arch, m);
+            return;
+        }
         if let Some(m) = self.ite_ternary_match(fd, blk) {
             self.emit_block_if_ite(fd, arch, m);
             return;
@@ -3631,6 +3640,102 @@ impl PrintC {
         } else {
             None
         }
+    }
+
+    /// (kuna) Is `blk` a `0`/`1` select diamond that the S8 `iteboolean` pass
+    /// selected for boolean-assignment rendering?  Returns the [`IteBoolMatch`] iff
+    /// both (a) the structure still matches the schema and (b) the condition's
+    /// terminal `CBRANCH` carries the
+    /// [`kuna_iteboolean`](crate::op::pcodeop_addlflags::kuna_iteboolean) mark (set
+    /// only under `option iteboolean on`).  The flag is the gate, so with the option
+    /// off this is always `None` and the if/else render is byte-identical.
+    fn ite_boolean_match(
+        &self,
+        fd: &Funcdata,
+        blk: BlockId,
+    ) -> Option<crate::p8_structure::kuna_iteboolean::IteBoolMatch> {
+        let m = crate::p8_structure::kuna_iteboolean::match_ite_boolean(fd, blk)?;
+        let marked = fd
+            .obank()
+            .get(m.cbranch)
+            .map(|o| (o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_iteboolean) != 0)
+            .unwrap_or(false);
+        if marked {
+            Some(m)
+        } else {
+            None
+        }
+    }
+
+    /// (kuna) Emit an `iteboolean`-selected `0`/`1` select diamond as the single
+    /// statement `dest = ( cond );` — or `dest = !( cond );` when the true arm is the
+    /// `0` one.  The condition goes through the *same* `ONLY_BRANCH` renderer that
+    /// produced the `if (...)` header (a `CBRANCH` leaf via `op_cbranch`, a folded
+    /// `&&`/`||` chain via `emit_block_condition`), so it is always parenthesized and
+    /// its evaluation order, short-circuiting and comma-expression side effects are
+    /// preserved verbatim.  Mirrors [`emit_block_if_ite`]'s pending-brace handling so
+    /// a diamond that is itself an `else` clause renders `else { dest = ...; }`.
+    fn emit_block_if_bool(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        m: crate::p8_structure::kuna_iteboolean::IteBoolMatch,
+    ) {
+        use crate::prettyprint::Emit;
+
+        let mut registered_pending = false;
+        let mut my_pending_gen = 0u64;
+        if self.context.is_set(modifiers::PENDING_BRACE) {
+            self.emit.set_pending_brace(to_emit_brace(self.options.brace_ifelse));
+            my_pending_gen = self.emit.pending_reg_gen();
+            registered_pending = true;
+        }
+        self.context.push_mod();
+        self.context.unset_mod(
+            modifiers::NO_BRANCH | modifiers::ONLY_BRANCH | modifiers::PENDING_BRACE,
+        );
+
+        // The condition block's leading statements, exactly as emit_block_if does.
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        self.emit_block(fd, arch, m.cond_block);
+        self.context.pop_mod();
+        self.emit_comment_block_tree(fd, m.cond_block);
+
+        self.emit.tag_line();
+        let mut my_pending_indent = -1;
+        if registered_pending {
+            my_pending_indent = self.emit.pending_fired_indent(my_pending_gen);
+        }
+
+        // dest = ( cond ) ;   /   dest = !( cond ) ;
+        let stmt_markup = self.op_markup(fd, m.assign_op);
+        let sid = self.emit.begin_statement(&stmt_markup);
+        self.push_vn_explicit_ir(fd, arch, m.dest, m.assign_op);
+        self.emit.spaces(1, 0);
+        self.emit.tag_op(tokens::ASSIGNMENT.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        if m.negate {
+            self.emit.tag_op(
+                tokens::BOOLEAN_NOT.print1,
+                SyntaxHighlight::NoColor,
+                &MarkupRef::none(),
+            );
+        }
+        self.context.push_mod();
+        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.emit_block(fd, arch, m.cond_block);
+        self.context.pop_mod();
+        self.emit.end_statement(sid);
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        // (kuna warnstyle, DIV-39) condition-attached warnings land at the end of
+        // the assignment line.
+        self.flush_eol_warnings();
+
+        if my_pending_indent >= 0 {
+            self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
+        }
+        self.context.pop_mod();
     }
 
     /// (kuna) Emit an `iteregion`-selected assignment diamond as a single ternary
