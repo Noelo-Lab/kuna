@@ -128,7 +128,7 @@ new default flips add a row here (full original entries with evidence: git histo
 | DIV-15 | `decompile-all`: `listing on` | whole-binary driver builds the Listing by default | fixes function swallowing; 0/675 |
 | DIV-16 | `noreturn_error` | `error(nonzero,…)` wrappers concluded no-return per call site | Listing-gated; 0/675 |
 | DIV-17 | `iteregion` | assignment diamonds render as `?:` ternaries (angr ITERegionConverter) | print-only; 0/675; −2.6% speed |
-| DIV-18 | `returndup` — **REVERTED** 2026-07-05 | early-return duplication was default-on; decbench measured −976 aggregate GED regression | opt-in runtime choice now |
+| DIV-18 | `returndup` — **REVERTED** 2026-07-05 | early-return duplication was default-on; decbench measured −976 aggregate GED regression | opt-in runtime choice now; **the −976 is superseded** — #137's const-return gate reversed it, and a 2026-08-02 isolating ablation over 52,862 optimized functions measures +417 GED-perfect / −7,756 aggregate GED with 675/675 PARITY OK as a default (`docs/decbench/returndup-regression-triage.md`); `auto` already enables it below 500 KiB via `aggressive` |
 | DIV-19 | `noreturn_reach` | CFG-reachability no-return discovery (+ 2026-07-08 hot/cold-split fix) | Listing-gated |
 | DIV-20 | `decompile-all`: `funcstart_patterns on` (non-x86-64) | prologue-pattern function discovery on stripped ARM/AArch64/MIPS/PPC/RISC-V | betaflight 469→1470 fns; x86-64 identical |
 | DIV-21 | no-return name list (data) | BSD `err`/`errx` family, `quick_exit`, glibc fatal internals added | 0/675 |
