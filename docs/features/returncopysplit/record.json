@@ -1,0 +1,190 @@
+{
+ "opportunity": "O2-noinline-iproute2-ip-netns_add",
+ "case_id": "O2-noinline-iproute2-ip-netns_add",
+ "test_name": "decbench round-2 triage, NOVEL pool (rodata-phantom-store, re-triage)",
+ "route": "B (decbench)",
+ "binary": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/iproute2/stripped/ip",
+ "selector": "0x20e10",
+ "func_addr": "0x20e10",
+ "source_decompiler": "kuna",
+ "inspiration": "docs/decbench/triage/rodata-phantom-store.md (symptom); mechanism re-derived by instrumenting SplitDatatype::test_copy_constraints -- the filed is_return_copy() predicate is refuted",
+ "phase": "P3 (simplification quiescence, cleanup pool)",
+ "module": "decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SplitDatatype::test_copy_constraints)",
+ "change_kind": "correctness-fix",
+ "option": null,
+ "flag": null,
+ "element_id": null,
+ "default_on": true,
+ "gated": false,
+ "gating_rationale": "Emitting a store the program never performs is wrong output, not a judgment call, so CLAUDE.md's flag rule exempts it; there is no honest use_when prose for a knob that re-enables a store into read-only memory. A bisector already has `option togglerule splitcopy off` (splitcopy is the rule's registered name in the action pool, infra/universalaction.rs:558). Recorded as DIV-55 in docs/history.md because the added test is a divergence from upstream subflow.cc:2390 -- not a Convergence: nothing was restored, and the precondition it guards against is created by another kuna divergence (stackguard, DIV-14).",
+ "history_entry": "DIV-55 (docs/history.md)",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "gates": {
+  "make test": "675/675 PARITY OK (docs/baseline.json NOT re-pinned)",
+  "make test-stages": "375/375 PARITY OK (baseline re-recorded: purely additive, 369 -> 375 keys, no existing assertion moved)",
+  "make rust-test": "green",
+  "make check-spec": "check-spec OK (lenient mode)",
+  "kuna catalog --check": "catalog OK (no option added; phases.toml, p0_knowledge/options.rs, the catalog counts and docs/options.md are untouched)"
+ },
+ "stage_test": {
+  "path": "tests/stages/ghdec-returncopysplit.xml",
+  "passes": "two-pass: pass 1 default (the fix), pass 2 `option togglerule splitcopy off` (the reference rendering, no split at all)",
+  "pre_fix": "3/6 assertions pass",
+  "post_fix": "6/6 assertions pass",
+  "note": "real iproute2 `ip` bytes: __get_hz at its real VMA 0x6cbf0 (433 bytes verbatim, plus one synthetic 0xc3 so the fall-through of the final `call __stack_chk_fail` terminates -- the PLT stub is outside the chunk so the engine cannot know it does not return), plus the 32-byte read-only literal at 0x92e50. `map addr r0x92e50 char s_92e50[32]` stands in for the strings analysis pass, which does not run on a bytechunk image."
+ },
+ "mechanism_verified": true,
+ "mechanism_note": "Instrumented `test_copy_constraints` on the witness function. The two ops that produce all 16 phantom statements are `0x00020fb0:119b` and `:119c`: rc=false, input at a unique (0x1000044a / 0x10000452, not addr-tied), output addr-tied at ram:0x822f0 / ram:0x822f8 with ro=true and persist=true. The genuine heritage return-copies at the same addresses (`:b56`, `:b97`) carry rc=true and are already declined by upstream's same-address gate. The real copy site (`0x00021160:b1f`, `:b20`) copies FROM the literal INTO the stack with ro=false on the output, and is still split after the fix.",
+ "regression_sweep": {
+  "method": "whole-binary `kuna decompile-all --json` with a before/after release build pair of this worktree, diffed per function address",
+  "binaries": 12,
+  "functions": 15386,
+  "functions_changed": 3,
+  "lines_removed": 116,
+  "lines_added": 2,
+  "changed": [
+   {
+    "binary": "O2-noinline iproute2 ip",
+    "addr": "0x20e10",
+    "name": "netns_add",
+    "diff": "-18 +1"
+   },
+   {
+    "binary": "O2-noinline iproute2 ip",
+    "addr": "0x6cbf0",
+    "name": "__get_hz",
+    "diff": "-34 +1"
+   },
+   {
+    "binary": "O2-noinline openssh-portable sshd",
+    "addr": "0x230a0",
+    "name": "sub_230a0",
+    "diff": "-64 +0"
+   }
+  ],
+  "phantom_rodata_stores": "112 -> 0",
+  "no_real_store_lost": "after the fix every surviving assignment whose LHS is an address-named global lands in a writable (WA) section -- bash 22 (.data/.bss), tar 6 (.bss), coreutils sort 4 (.data), dpkg 1 (.data), sshd 1 (.bss) -- and every one of those counts is identical before and after",
+  "unchanged_binaries": [
+   "O0 iproute2 ip (1962 fns)",
+   "bash (3077)",
+   "coreutils ls (639)",
+   "coreutils sort (495)",
+   "dpkg (986)",
+   "findutils find (931)",
+   "gnutls certtool (833)",
+   "gnutls gnutls-cli (439)",
+   "shadow useradd (485)",
+   "tar (1585)"
+  ]
+ },
+ "speed_method": "interleaved A/B on two release builds of this worktree (base vs patched), medians of N pairs; `scripts.pipeline.timeit` is inapplicable -- it measures an option flip and this fix has no option",
+ "speed_samples": [
+  {
+   "label": "ip netns_add @0x20e10 (changed)",
+   "before_ms": 1349.4,
+   "after_ms": 1334.9,
+   "delta_pct": -1.08,
+   "pairs": 15
+  },
+  {
+   "label": "ip __get_hz @0x6cbf0 (changed)",
+   "before_ms": 1002.1,
+   "after_ms": 1006.2,
+   "delta_pct": 0.41,
+   "pairs": 15
+  },
+  {
+   "label": "sshd sub_230a0 @0x230a0 (changed)",
+   "before_ms": 2371.1,
+   "after_ms": 2117.5,
+   "delta_pct": -10.69,
+   "pairs": 15
+  },
+  {
+   "label": "sshd sub_230a0 @0x230a0 (changed, shorter run)",
+   "before_ms": 2523.0,
+   "after_ms": 2655.5,
+   "delta_pct": 5.25,
+   "pairs": 9
+  },
+  {
+   "label": "coreutils sort decompile-all --mode reliable (output byte-identical)",
+   "before_ms": 5735.1,
+   "after_ms": 5816.3,
+   "delta_pct": 1.42,
+   "pairs": 11
+  },
+  {
+   "label": "coreutils sort decompile-all (shorter run)",
+   "before_ms": 8015.4,
+   "after_ms": 8750.5,
+   "delta_pct": 9.17,
+   "pairs": 5
+  },
+  {
+   "label": "coreutils ls decompile-all --mode reliable (output byte-identical)",
+   "before_ms": 9179.3,
+   "after_ms": 8802.5,
+   "delta_pct": -4.1,
+   "pairs": 5
+  },
+  {
+   "label": "ip @0x20780 control (output byte-identical) -- NOISE FLOOR",
+   "before_ms": 1220.4,
+   "after_ms": 973.6,
+   "delta_pct": -20.23,
+   "pairs": 15
+  },
+  {
+   "label": "ip @0x20780 control (shorter run) -- NOISE FLOOR",
+   "before_ms": 1384.0,
+   "after_ms": 1215.4,
+   "delta_pct": -12.18,
+   "pairs": 9
+  }
+ ],
+ "speed_off_ms": 1349.4,
+ "speed_on_ms": 1334.9,
+ "speed_delta_pct": -1.08,
+ "speed_samples_count": 15,
+ "speed_budget_pct": 5,
+ "speed_within_budget": true,
+ "speed_forced_off": false,
+ "speed_note": "There is no mechanism for a cost: the fix adds one varnode-flag test per COPY that RuleSplitCopy already considers, and a declined split does strictly less work than a taken one. The measurements say the same, with the honest caveat that the box runs concurrent agents: a byte-identical control function moved -12.18% and -20.23% across two runs, and a byte-identical whole binary (coreutils sort) moved +9.17% and +1.42%, so anything inside roughly +/-10% here is load, not signal. On the highest-pair-count run of every changed target the delta is -1.08%, +0.41% and -10.69%.",
+ "ged_case": "O2-noinline-iproute2-ip-netns_add",
+ "ged_note": "GED-neutral by construction: the fix deletes statements inside one basic block on one return path and creates/destroys no block and no edge, so the graph-edit-distance metric cannot see it. This case is ranked by correctness (a store the program never performs), not by GED.",
+ "decisions": [
+  {
+   "question": "Which predicate declines the split?",
+   "verdict": "the COPY's OUTPUT varnode is_read_only(), NOT is_return_copy()",
+   "rationale": "Instrumentation (see mechanism_note) shows is_return_copy() is dead on this path: the flag does not survive CloneBlockOps::build_op_clone, which is the op that produces the phantom, and the un-cloned form is already declined by upstream's same-address gate. Read-only-ness of the destination is the property that survives the clone AND the property that actually makes the statement wrong."
+  },
+  {
+   "question": "Ship behind a --option, or ungated?",
+   "verdict": "ungated",
+   "rationale": "CLAUDE.md gates features -- 'behavior that is a judgment call, not universally better' -- and exempts 'a strict bug fix that only corrects wrong output'. A store into a section the loader reports as non-writable is not a judgment call. The 15,386-function sweep shows the blast radius is exactly the 3 phantom functions and that no store into a writable global is touched. Precedent: DIV-46, DIV-49, DIV-50, DIV-52 and the funcptralign/subright Convergences all change emitted C ungated; a bisection switch already exists (`option togglerule splitcopy off`)."
+  },
+  {
+   "question": "DIV row or Convergences entry in docs/history.md?",
+   "verdict": "DIV row (DIV-55)",
+   "rationale": "docs/history.md defines a Convergence as 'a port defect whose fix moves kuna back onto upstream's default'. Nothing was restored here: the test does not exist in upstream subflow.cc:2390, and the CFG shape that exposes the hole is produced by kuna's own stackguard divergence (DIV-14), so upstream cannot reach the case at all. That makes it an intentional change to default behaviour vs upstream, which is exactly what the DIV registry records."
+  },
+  {
+   "question": "Also fix the clone fidelity in CloneBlockOps::build_op_clone (carry return_copy across the clone)?",
+   "verdict": "no, out of scope",
+   "rationale": "That mask is a verbatim transcription of upstream funcdata_block.cc:982-988 (its comment already documents one faithful upstream quirk), so changing it is a second, wider divergence affecting every node-split, not just this one. One fix, one PR. The read-only output test closes the emitted-C bug on its own, corpus-wide."
+  }
+ ],
+ "corpus_file_count": "decompiler/crates/kuna-base/src/xml.rs: 187 -> 188 (83 datatests + 105 stages)",
+ "ged_recorded": 8.0,
+ "ged_before": 8.0,
+ "ged_after": 8.0,
+ "ged_delta": 0.0,
+ "ged_perfect_after": false,
+ "ged_approximated": false,
+ "ged_options": [],
+ "ged_kuna_commit": "d1cf1250",
+ "ged_results_root": "/home/mahaloz/github/decbench/results/full_run",
+ "ged_siblings": {}
+}

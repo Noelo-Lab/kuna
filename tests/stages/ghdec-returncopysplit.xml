@@ -1,0 +1,93 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench campaign case O2-noinline-iproute2-ip-__get_hz (NOVEL pool: the
+    emitted C stores into a .rodata string literal on a path where the binary
+    performs no store at all).
+
+    P3 simplification quiescence, cleanup pool.  SplitDatatype::splitCopy
+    (upstream subflow.cc:2728, driven by RuleSplitCopy in the cleanup pool)
+    splits a COPY whose data-type has components into one COPY per element.
+    Its gate, SplitDatatype::testCopyConstraints (subflow.cc:2390), declines a
+    copy whose input and output are address-tied at the SAME address, which is
+    what a heritage return-copy is.
+
+    Heritage::guardReturns inserts, before every RETURN, a synthetic
+    `glob = glob` COPY for each persistent global so the global's final value
+    stays live past the end of the function.  It is address-tied at one address
+    on both sides, so the gate declines it and Merge::markInternalCopies then
+    hides it from the printer.
+
+    kuna's ActionStripStackGuard (option stackguard, DIV-14, default on) strips
+    the stack-protector epilogue, which leaves a bare-epilogue RETURN block
+    that ActionReturnSplit node-splits.  CloneBlockOps::cloneBlock rebuilds the
+    block's ops through buildOpClone (whose flag mask does not carry
+    return_copy) and patchInputs re-inputs the clone from a fresh COPY, so the
+    cloned return-copy is neither marked return_copy nor address-tied at its
+    own address, and the gate lets it through.  The split then produces one
+    one-byte COPY per array element, each landing in a different HighVariable,
+    so markInternalCopies can no longer hide them and P9 prints
+
+        s_92e50[0xf] = SUB81(s_92e50[8],7);
+
+    which is a store into .rodata.  The whole binary contains exactly ONE
+    instruction that references 0x92e50 and it is the `movdqa` load; .rodata
+    is flagged A, not W.
+
+    Fix: testCopyConstraints declines when the COPY's OUTPUT varnode is
+    read-only.  A store into a read-only range is never something the program
+    performs, so this is a correctness fix and needs no option (DIV-55 in
+    docs/history.md; it is a divergence from upstream subflow.cc:2390, whose
+    precondition here is kuna's own stackguard divergence).
+
+    Bytes: iproute2 `ip`, -O2 -fno-inline, function __get_hz at 0x6cbf0 (433
+    bytes, verbatim), plus the 32-byte read-only literal at 0x92e50 that the
+    16-byte `movdqa 0x260c8(%rip)` at 0x6cd8b loads.  The callees are PLT stubs
+    outside the chunk and render as unnamed sub functions, exactly as they do
+    in the full ELF.  `map addr` stands in for the strings analysis pass (which
+    does not run on a bytechunk image): it plants the same typelocked char[32]
+    the pass plants at a detected literal, and inherits the chunk's readonly
+    property.
+
+    Pass 1 is the default (the fix).  Pass 2 sets `option togglerule splitcopy
+    off`, the rule's own name in the action pool, to pin the reference
+    rendering in which no copy is split at all.
+-->
+<bytechunk space="ram" offset="0x6cbf0">
+f30f1efa415455488d2d455d02004889ef4881ec2804000064488b0425280000
+00488984241804000031c0e8001efaff4885c0747b4889efe8f31dfaff4889c7
+e84b26faff4189c485c07454488b84241804000064482b0425280000000f8549
+0100004881c4280400004489e05d415cc30f1f8000000000817c240840420f00
+0f859f000000448b64240c4889efe8cd1ffaff4585e475b40f1f840000000000
+41bc64000000eba40f1f840000000000488d2d9f5c02004889efe8711dfaff48
+85c0747c4889ef488d6c2410e85f1dfaff488d1541820100beff0300004889ef
+4889c131c0e86620faff4889ef488d35d4670200e8a722faff4889c54885c074
+9f4889c7488d4c240c488d54240831c0488d35675c0200e8241efaff83f8020f
+8453ffffff4889ef41bc64000000e82d1ffaffe914ffffff0f1f840000000000
+488d2d1f5c02004889efe8e11cfaff4885c0743c4889ef488d6c2410e8cf1cfa
+ff4c8d05085c0200b9000400004889ef4989c1ba01000000beff03000031c0e8
+cc1cfaffe961ffffff0f1f8000000000660f6f05c8600200c644242000488d6c
+24100f29442410e93effffffe81f1ffaffc3
+</bytechunk>
+<bytechunk space="ram" offset="0x92e50" readonly="true">
+2f70726f632f6e65742f70736368656420202020202020202020202020202020
+</bytechunk>
+<symbol space="ram" offset="0x6cbf0" name="get_hz"/>
+</binaryimage>
+<script>
+  <com>map addr r0x92e50 char s_92e50[32]</com>
+  <com>lo fu get_hz</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option togglerule splitcopy off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="returncopysplit #1: fix -- no per-element store into the read-only literal in either pass" min="0" max="0">s_92e50\[[0-9a-fx]+\] = </stringmatch>
+<stringmatch name="returncopysplit #2: fix -- no raw SUB81 truncation of the literal survives" min="0" max="0">SUB81\(s_92e50</stringmatch>
+<stringmatch name="returncopysplit #3: the real copy site still reads the literal's low half per byte" min="1" max="1">v2\[7\] = s_92e50\[7\];</stringmatch>
+<stringmatch name="returncopysplit #4: the real copy site still reads the literal's high half per byte" min="1" max="1">v6\[7\] = s_92e50\[0xf\];</stringmatch>
+<stringmatch name="returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering" min="1" max="1">v2\[0\] = \(char\[8\]\)s_92e50\[0\];</stringmatch>
+<stringmatch name="returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)" min="18" max="18">s_92e50\[</stringmatch>
+</decompilertest>

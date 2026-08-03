@@ -444,6 +444,29 @@ per-field transfers using recovered types — described with the type system in
 chapter 05, as is lane division (`ActionLaneDivide` in stackstall, over
 `subflow.rs (LaneDivide)` (built over `transform.rs (TransformManager)`)).
 
+**Which copies the split declines** (`subflow.rs
+(SplitDatatype::test_copy_constraints)`). Upstream refuses a COPY whose input is
+a function input, whose input and output are address-tied at the *same* address
+(the identity copy a heritage guard leaves behind), or whose input is the lone
+output of a LOAD (handled by the LOAD split instead). kuna adds one more (DIV-55):
+a COPY whose **output Varnode is read-only** — an address the load image reported
+inside a non-writable section — is never split. A store into a read-only range is
+not something the program performs, and the split is what makes such a copy
+*visible*: whole, its input and output share a HighVariable and
+`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs
+(Merge::mark_internal_copies)` marks it non-printing; split into one COPY per
+array element, the pieces land in different HighVariables and P9 prints a block of
+per-byte assignments into a `.rodata` string literal. The copies that reach the
+gate in that shape are the `return_copy` guards of §3.1 after a block clone has
+rewritten them: `substrate/funcdata_block.rs (CloneBlockOps::build_op_clone)`
+copies only the upstream flag subset, which does not carry `return_copy`, and
+`CloneBlockOps::patch_inputs` re-inputs the clone from a fresh COPY, so neither
+the same-address test nor the flag can recognize the clone for what it is. The
+read-only output test does, and it is the property that actually matters. The
+same invariant is what `substrate/funcdata_varnode.rs (Funcdata::fillin_read_only)`
+warns about (`Read-only address (ram,X) is written`) when `readonlypropagate` is
+on; declining the split does not depend on that option.
+
 ## 3.4 Conditional execution
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/condexe.rs

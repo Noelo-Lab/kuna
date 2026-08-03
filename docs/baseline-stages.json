@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    369,
-    369
+    375,
+    375
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -327,6 +327,12 @@
     "data:regionstructure-switch #4: case 6 (last case), both passes",
     "data:regionstructure-switch #5: the default case is recovered, both passes",
     "data:regionstructure-switch #6: ZERO gotos  -  region structurer recovers the switch natively (parity with Ghidra)",
+    "data:returncopysplit #1: fix -- no per-element store into the read-only literal in either pass",
+    "data:returncopysplit #2: fix -- no raw SUB81 truncation of the literal survives",
+    "data:returncopysplit #3: the real copy site still reads the literal's low half per byte",
+    "data:returncopysplit #4: the real copy site still reads the literal's high half per byte",
+    "data:returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering",
+    "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
     "data:spacebase-unnamed #1: no internal PTRSUB operator reaches the C body",
     "data:spacebase-unnamed #2: no raw ESP register leaks into an expression",
     "data:spacebase-unnamed #3: every statement touching the untracked frame renders a stack-location leaf",
