@@ -610,6 +610,54 @@ decoder-availability reason but does its own linear decode rather than reading t
 Listing, planting `char[N]` facts for immediate operands that point into read-only
 data.
 
+(kuna) Three ARM-only seed scans run between the walk's first pass and those
+consumers, each re-seeding the walk and rebuilding the Listing when it finds
+anything, all gated by the `funcstart_patterns` flag: the raw unpaired
+Thumb-prologue scan
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (raw_thumb_prologue_seeds)`,
+angr's `_func_addrs_from_prologues` mirror — every `PUSH {..,lr}` / `PUSH.W {..,lr}`
+in an undefined gap that passes the valid-subroutine probe), the code-pointer-table
+scan
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (code_pointer_table_seeds)`
+— every 4-byte-aligned odd word in any allocated section whose masked target lands
+in an undefined gap, *and* opens with a frame-establishing Thumb prologue, *and*
+passes the same probe), and the AIF gap walk above.
+
+**Pointer-referenced entries** (`ptrentry`, default-off; kuna;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_ptrentry.rs`) re-admits
+what the second of those throws away. Measurement over the ARM Cortex-M corpus
+found its two shape predicates — a frame prologue, and more than two instructions —
+reject the bulk of the pointer-referenced population: 93% of the missed entries
+establish no frame at all, and 41% are leaves of eight bytes or less, down to a
+bare `bx lr`, which is a perfectly valid Cortex-M exception handler. Deleting the
+two predicates is not an option on its own: it admits `ldr pc,[pc,r]` switch tables,
+whose slots point *into* the function that holds the table, so a fifth of the new
+entries split a real function body — a cost the per-ground-truth-function benchmark
+cannot see and a real user pays in full. With the option on, a target is instead
+admitted on **containment** evidence: no word referencing it may overlap a decoded
+instruction (such a word is an instruction's operand bytes read four-aligned, not a
+table slot), and none may lie in the same discovered function as the target itself
+(that pairing *is* the switch table). The length floor is replaced by a
+terminating-routine check — the same speculative walk, accepting when it reaches a
+clean `RET`/computed jump or a call into discovered code with no undecodable byte,
+no flow out of the image and no escape into another dark region, with no minimum
+instruction count. This is the kuna form of the line Ghidra draws between
+`OperandReferenceAnalyzer`, which creates functions from *instruction operands*, and
+its data-side sibling `DataOperandReferenceAnalyzer`, which overrides
+`createFunctions` to a no-op; kuna cannot use Ghidra's version directly because the
+Listing records only control-flow references, so the containment pair recovers the
+same discrimination from the code/data partition the walk leaves behind. Table-run
+corroboration — requiring a run of consecutive code-pointer words — was measured
+and is dominated: the switch tables it targets are runs themselves, so it removes
+almost no additional split while costing a fifth of the recovered entries. Unlike
+the three scans above, the accepted targets are emitted as an additive entry-fact
+stream and **never** re-seed the walk: measured, re-seeding drops hundreds of
+already-recovered entries through the same tail-call absorption that constrains
+`cortexmvectors` (§1.5), so keeping the pass purely additive makes "never removes
+an entry" a property of the wiring rather than of a heuristic. Output-changing
+(more functions), hence default-off; ARM-only and Listing-tier, so it is a strict
+no-op on every other architecture, with `listing off`, and on the XML datatest path.
+
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's

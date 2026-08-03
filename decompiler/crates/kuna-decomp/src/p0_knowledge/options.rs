@@ -324,6 +324,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // pointers instead of `word[1] == e_entry`). Default-OFF (output-changing:
     // discovers more functions on bare-metal ARM firmware).
     "cortexmvectors",
+    "ptrentry",
     "arm_markers",
     "mips_gp",
     // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A

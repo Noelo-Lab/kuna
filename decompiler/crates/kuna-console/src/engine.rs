@@ -854,6 +854,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // entries), so a default run never commits them and the discovery set is
         // byte-identical to the shipped (e_entry-matching) signature.
         "cortexmvectors" => arch.analysis_cortexmvectors,
+        "ptrentry" => arch.analysis_ptrentry,
         // (kuna) The full byte-pattern function-start pass — default-OFF
         // (output-changing). The `_ => true` fail-open below would otherwise run it
         // by default, so this explicit arm reading the (default-false)

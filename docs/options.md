@@ -153,6 +153,11 @@ Three tiers:
 | arm firmware body decodes as a32 garbage instead of thumb | [`cortexmvectors`](#cortexmvectors) |
 | nmi/hardfault/systick exception handlers never discovered as entries | [`cortexmvectors`](#cortexmvectors) |
 | isr_vector table present but no vector-derived function starts | [`cortexmvectors`](#cortexmvectors) |
+| a small arm callback or isr handler produces no decompiled output at all | [`ptrentry`](#ptrentry) |
+| kuna emits one function then the next with un-decompiled code in between | [`ptrentry`](#ptrentry) |
+| bare bx lr exception handlers never discovered as entries | [`ptrentry`](#ptrentry) |
+| vtable or fops-struct callbacks missing from a stripped arm binary | [`ptrentry`](#ptrentry) |
+| driver op-struct function pointers left undiscovered | [`ptrentry`](#ptrentry) |
 | thumb code misdecoded as arm garbage instructions | [`arm_markers`](#arm_markers) |
 | $t/$a mapping symbols ignored so the wrong decode mode applies | [`arm_markers`](#arm_markers) |
 | unresolved *(gp + offset) loads on mips | [`mips_gp`](#mips_gp) |
@@ -632,6 +637,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Flip on for a stripped bare-metal ARM Cortex-M firmware image (STM32/nRF/SAM/...) that decompiles to only a few functions, or whose code decodes as A32 garbage, because kuna never confirmed its vector table. The tell-tales: the .isr_vector section is flagged A (not AX) and sits in a read-only PT_LOAD, the first word is a 0x1000xxxx CCM/TCM stack pointer rather than 0x2000xxxx, or the second word does not match the ELF e_entry. Stands alone (it needs no other option), and composes with the listing + funcstart_patterns + aif set the decompile-all/functions drivers already inject on non-x86-64. Off (default) keeps the strict e_entry-matching signature, so any image that already worked is byte-identical either way.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-cortexmvectors
 - **Example:** `--option cortexmvectors on`
+
+### `ptrentry` -- on | off, default `off`
+
+- **Symptoms:** a small arm callback or isr handler produces no decompiled output at all; kuna emits one function then the next with un-decompiled code in between; bare bx lr exception handlers never discovered as entries; vtable or fops-struct callbacks missing from a stripped arm binary; driver op-struct function pointers left undiscovered.
+- **What it does:** Discover ARM function entries that are reachable ONLY through a code-pointer word (a vtable / fops struct / ISR table / literal-pool constant). The shipped Stage-3 code-pointer scan already collects every 4-byte-aligned Thumb pointer in every allocated section, then accepts the target only if it opens with a stack-frame prologue AND disassembles into more than two instructions. Those two shape predicates reject the bulk of the pointer-referenced population on bare-metal firmware: 93 percent of the missed entries establish no frame at all, and 41 percent are leaves of 8 bytes or less (movs r0,#0; bx lr, or a bare bx lr, which is a perfectly valid Cortex-M exception handler). With this on, a target is admitted on CONTAINMENT evidence instead of shape: no word that references it may be the bytes of a decoded instruction (that word is an operand, not a table slot), and none may lie in the same discovered function as the target itself (that is the ldr pc,[pc,r] switch-table shape, whose slots point into their own body); the length floor is replaced by a terminating-routine check, so a one-instruction routine that reaches a clean return is accepted while a data word that merely decodes is not. Measured on the 48-binary decbench Cortex-M corpus: +1613 recovered ground-truth entries, 95.2 percent of the new entries are DWARF function addresses, ZERO split a real function body and ZERO previously-recovered entries are lost. The accepted entries are emitted as an additive fact stream and never re-seed the recursive-descent walk, which is what makes never-removes-an-entry a property of the wiring. ARM-only and Listing-tier, so it is a strict no-op on every other architecture and without --option listing on. Output-changing (it discovers more functions) => default-OFF.
+- **When to flip:** Flip on for a stripped ARM firmware image whose callback / vtable / ISR-handler functions produce no output at all: the tell-tale is a hole in the decompilation, where kuna emits a function at one address and the next at a higher one with real code in between (a 4-byte movs r0,#0; bx lr driver stub, an exception handler that is a bare bx lr). Composes with the listing + funcstart_patterns + aif set the decompile-all/functions drivers already inject on non-x86-64, and with cortexmvectors; needs --option listing on to do anything. Off (default) keeps the prologue-plus-three-instruction shape test, so any binary that already worked is byte-identical either way.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-ptrentry
+- **Example:** `--option ptrentry on`
 
 ### `arm_markers` -- on | off, default `on`
 

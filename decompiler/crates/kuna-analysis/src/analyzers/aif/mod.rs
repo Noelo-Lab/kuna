@@ -107,6 +107,8 @@ use kuna_base::space::AddrSpace;
 use kuna_sleigh::translate::Translate;
 
 use crate::listing::{decode::decode_one, FlowKind, Listing};
+
+pub mod kuna_ptrentry;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 /// Ghidra's `MINIMUM_FUNCTION_COUNT`: AIF does nothing on a program with fewer

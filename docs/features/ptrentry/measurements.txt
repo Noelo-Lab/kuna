@@ -1,0 +1,176 @@
+ptrentry — raw entry-recall diff, `--option ptrentry off` vs `on`.
+
+Ground truth: DW_TAG_subprogram DW_AT_low_pc (Thumb-LSB-masked) of each stripped
+binary's matching `compiled/` counterpart in ~/github/decbench/results/full_run.
+Corpus: the six decbench Cortex-M projects plus freertos and riot-os — 16 binaries
+x 3 optimisation levels, 48 images, 41,378 ground-truth function addresses. Rows
+with no change on either side are omitted.
+
+Columns: e_b/e_a = entries recovered before/after; r_b/r_a = of those, ground-truth
+hits; new = entries present only in the `on` run; gt = of those, exact ground-truth
+low_pc; spl = falls strictly inside another ground-truth body; out = outside every
+ground-truth body; rm = entries present only in the `off` run; rmgt = of those,
+ground truth.
+
+BLOCK 1 — SHIPPED, the default decbench surface (`kuna functions`, which
+auto-injects listing + funcstart_patterns + aif on non-x86-64).
+binary                                                  e_b    e_a    r_b    r_a   new   gt  spl  out   rm  rmgt
+O0/betaflight/betaflight_STM32F405.elf                 5798   6024   3877   4102   226  225    0    1    0     0
+O0/chibios/ch.elf                                       770    772    765    765     2    0    0    2    0     0
+O0/cleanflight/cleanflight_DALRCF405.elf               2840   2948   2060   2166   108  106    0    2    0     0
+O0/crazyflie/cf2.elf                                   2790   2807   2474   2490    17   16    0    1    0     0
+O0/crazyflie/firmware.elf                              2790   2807   2474   2490    17   16    0    1    0     0
+O0/freertos/RTOSDemo.out                                146    150    134    137     4    3    0    1    0     0
+O0/libopencm3/adc-dac-printf.elf                        175    181    149    154     6    5    0    1    0     0
+O0/libopencm3/lcd-dma.elf                               199    205    172    177     6    5    0    1    0     0
+O0/libopencm3/usart-stdio.elf                           150    157    126    132     7    6    0    1    0     0
+O0/libopencm3/usart_irq_console.elf                      89     92     85     88     3    3    0    0    0     0
+O0/nuttx/nuttx                                          924    929    910    915     5    5    0    0    0     0
+O0/riot-os/hello-world.elf                              113    118    100    101     5    1    0    4    0     0
+O2-noinline/betaflight/betaflight_STM32F405.elf        6389   6581   4513   4704   192  191    0    1    0     0
+O2-noinline/chibios/ch.elf                              620    656    594    628    36   34    0    2    0     0
+O2-noinline/cleanflight/cleanflight_DALRCF405.elf      3118   3212   2386   2479    94   93    0    1    0     0
+O2-noinline/crazyflie/cf2.elf                          2914   3011   2243   2335    97   92    0    5    0     0
+O2-noinline/crazyflie/firmware.elf                     2914   3011   2243   2335    97   92    0    5    0     0
+O2-noinline/freertos/RTOSDemo.out                       147    154    129    135     7    6    0    1    0     0
+O2-noinline/libopencm3/adc-dac-printf.elf               206    211    148    151     5    3    0    2    0     0
+O2-noinline/libopencm3/cdcacm.elf                        91     97     68     74     6    6    0    0    0     0
+O2-noinline/libopencm3/lcd-dma.elf                      228    233    173    176     5    3    0    2    0     0
+O2-noinline/libopencm3/msc.elf                          108    115     78     85     7    7    0    0    0     0
+O2-noinline/libopencm3/usart-stdio.elf                  147    154    123    129     7    6    0    1    0     0
+O2-noinline/libopencm3/usart_irq_console.elf            118    121     84     87     3    3    0    0    0     0
+O2-noinline/nuttx/nuttx                                 890    934    822    866    44   44    0    0    0     0
+O2-noinline/riot-os/hello-world.elf                     151    156    138    139     5    1    0    4    0     0
+O2/betaflight/betaflight_STM32F405.elf                 5798   6024   3877   4102   226  225    0    1    0     0
+O2/chibios/ch.elf                                       347    394    306    340    47   34    0   13    0     0
+O2/cleanflight/cleanflight_DALRCF405.elf               2840   2948   2060   2166   108  106    0    2    0     0
+O2/crazyflie/cf2.elf                                   2093   2196   1461   1557   103   96    0    7    0     0
+O2/crazyflie/firmware.elf                              2093   2196   1461   1557   103   96    0    7    0     0
+O2/freertos/RTOSDemo.out                                118    126    104    111     8    7    0    1    0     0
+O2/libopencm3/adc-dac-printf.elf                        168    173    134    137     5    3    0    2    0     0
+O2/libopencm3/cdcacm.elf                                 51     58     49     55     7    6    0    1    0     0
+O2/libopencm3/lcd-dma.elf                               186    192    152    156     6    4    0    2    0     0
+O2/libopencm3/lcd-serial.elf                             92     93     83     84     1    1    0    0    0     0
+O2/libopencm3/msc.elf                                    59     67     56     63     8    7    0    1    0     0
+O2/libopencm3/usart-stdio.elf                           142    149    117    123     7    6    0    1    0     0
+O2/libopencm3/usart_irq_console.elf                      81     84     70     73     3    3    0    0    0     0
+O2/nuttx/nuttx                                          740    786    668    714    46   46    0    0    0     0
+O2/riot-os/hello-world.elf                              113    118    100    101     5    1    0    4    0     0
+
+TOTAL gt=41378 recall 38238 -> 39851 (+1613)
+  new entries 1694: ground-truth 1613 (95.2%), splits-a-real-body 0, outside-any-body 81
+  removed entries 0, of which ground truth 0
+
+
+BLOCK 2 — SHIPPED, `--option listing off`: the entry oracles alone (the surface
+used by `--mode fast`, the WASM and Ghidra front-ends, and single-function
+`kuna decompile`). `ptrentry` is a Listing consumer, so it is structurally inert
+here — zero new entries, zero lost, on every binary.
+binary                                                  e_b    e_a    r_b    r_a   new   gt  spl  out   rm  rmgt
+
+TOTAL gt=41378 recall 8885 -> 8885 (+0)
+  new entries 0: ground-truth 0 (0.0%), splits-a-real-body 0, outside-any-body 0
+  removed entries 0, of which ground truth 0
+
+
+BLOCK 3 — REJECTED WIRING A: re-seed the recursive-descent walk with the accepted
+targets and rebuild the Listing (what shipped Stages 2 and 3 do, and what proposal
+step 2 item 4 suggested). Gains 13 more ground-truth entries and destroys
+everything else.
+binary                                                  e_b    e_a    r_b    r_a   new   gt  spl  out   rm  rmgt
+O0/betaflight/betaflight_STM32F405.elf                 5798   6037   3877   4104   339  227  101   11  100     0
+O0/chibios/ch.elf                                       770    772    765    765     2    0    0    2    0     0
+O0/cleanflight/cleanflight_DALRCF405.elf               2840   2969   2060   2167   190  107   76    7   61     0
+O0/crazyflie/cf2.elf                                   2790   2805   2474   2490    17   16    0    1    2     0
+O0/crazyflie/firmware.elf                              2790   2805   2474   2490    17   16    0    1    2     0
+O0/freertos/RTOSDemo.out                                146    149    134    137     4    3    0    1    1     0
+O0/libopencm3/adc-dac-printf.elf                        175    207    149    156    35    7   26    2    3     0
+O0/libopencm3/lcd-dma.elf                               199    232    172    180    36    8   26    2    3     0
+O0/libopencm3/usart-stdio.elf                           150    161    126    134    13    8    4    1    2     0
+O0/libopencm3/usart_irq_console.elf                      89     92     85     88     3    3    0    0    0     0
+O0/nuttx/nuttx                                          924    929    910    915     5    5    0    0    0     0
+O0/riot-os/hello-world.elf                              113    118    100    101     5    1    0    4    0     0
+O2-noinline/betaflight/betaflight_STM32F405.elf        6389   6601   4513   4707   314  194  106   14  102     0
+O2-noinline/chibios/ch.elf                              620    654    594    630    38   36    0    2    4     0
+O2-noinline/cleanflight/cleanflight_DALRCF405.elf      3118   3265   2386   2479   197   93   98    6   50     0
+O2-noinline/crazyflie/cf2.elf                          2914   3061   2243   2334   195   94   94    7   48     3
+O2-noinline/crazyflie/firmware.elf                     2914   3061   2243   2334   195   94   94    7   48     3
+O2-noinline/freertos/RTOSDemo.out                       147    153    129    135     7    6    0    1    1     0
+O2-noinline/libopencm3/adc-dac-printf.elf               206    210    148    151     5    3    0    2    1     0
+O2-noinline/libopencm3/cdcacm.elf                        91     97     68     74     6    6    0    0    0     0
+O2-noinline/libopencm3/lcd-dma.elf                      228    233    173    176     5    3    0    2    0     0
+O2-noinline/libopencm3/msc.elf                          108    115     78     85     7    7    0    0    0     0
+O2-noinline/libopencm3/usart-stdio.elf                  147    158    123    131    13    8    4    1    2     0
+O2-noinline/libopencm3/usart_irq_console.elf            118    121     84     87     3    3    0    0    0     0
+O2-noinline/nuttx/nuttx                                 890    931    822    866    50   44    6    0    9     0
+O2-noinline/riot-os/hello-world.elf                     151    156    138    139     5    1    0    4    0     0
+O2/betaflight/betaflight_STM32F405.elf                 5798   6037   3877   4104   339  227  101   11  100     0
+O2/chibios/ch.elf                                       347    412    306    341    69   36   20   13    4     1
+O2/cleanflight/cleanflight_DALRCF405.elf               2840   2969   2060   2167   190  107   76    7   61     0
+O2/crazyflie/cf2.elf                                   2093   2209   1461   1553   175   96   68   11   59     4
+O2/crazyflie/firmware.elf                              2093   2209   1461   1553   175   96   68   11   59     4
+O2/freertos/RTOSDemo.out                                118    125    104    111     8    7    0    1    1     0
+O2/libopencm3/adc-dac-printf.elf                        168    173    134    137     5    3    0    2    0     0
+O2/libopencm3/cdcacm.elf                                 51     58     49     55     7    6    0    1    0     0
+O2/libopencm3/lcd-dma.elf                               186    192    152    156     6    4    0    2    0     0
+O2/libopencm3/lcd-serial.elf                             92     93     83     84     1    1    0    0    0     0
+O2/libopencm3/msc.elf                                    59     67     56     63     8    7    0    1    0     0
+O2/libopencm3/usart-stdio.elf                           142    153    117    125    13    8    4    1    2     0
+O2/libopencm3/usart_irq_console.elf                      81     84     70     73     3    3    0    0    0     0
+O2/nuttx/nuttx                                          740    779    668    714    48   46    2    0    9     0
+O2/riot-os/hello-world.elf                              113    118    100    101     5    1    0    4    0     0
+
+TOTAL gt=41378 recall 38238 -> 39864 (+1626)
+  new entries 2758: ground-truth 1641 (59.5%), splits-a-real-body 974, outside-any-body 143
+  removed entries 734, of which ground truth 15
+
+
+BLOCK 4 — REJECTED GUARD: the proposal's table-run corroboration (accept only a
+target with a frame prologue or a run of >= 2 consecutive stride-4 code-pointer
+words), on top of the shipped containment model. Zero splits either way, so the
+2.1pp precision it buys is entirely in the unverifiable "outside any DWARF body"
+bucket, and it costs 311 ground-truth functions.
+binary                                                  e_b    e_a    r_b    r_a   new   gt  spl  out   rm  rmgt
+O0/betaflight/betaflight_STM32F405.elf                 5798   5987   3877   4066   189  189    0    0    0     0
+O0/cleanflight/cleanflight_DALRCF405.elf               2840   2924   2060   2144    84   84    0    0    0     0
+O0/crazyflie/cf2.elf                                   2790   2806   2474   2489    16   15    0    1    0     0
+O0/crazyflie/firmware.elf                              2790   2806   2474   2489    16   15    0    1    0     0
+O0/freertos/RTOSDemo.out                                146    147    134    135     1    1    0    0    0     0
+O0/libopencm3/adc-dac-printf.elf                        175    178    149    152     3    3    0    0    0     0
+O0/libopencm3/lcd-dma.elf                               199    202    172    175     3    3    0    0    0     0
+O0/libopencm3/usart-stdio.elf                           150    153    126    129     3    3    0    0    0     0
+O0/libopencm3/usart_irq_console.elf                      89     92     85     88     3    3    0    0    0     0
+O0/nuttx/nuttx                                          924    929    910    915     5    5    0    0    0     0
+O0/riot-os/hello-world.elf                              113    115    100    100     2    0    0    2    0     0
+O2-noinline/betaflight/betaflight_STM32F405.elf        6389   6545   4513   4669   156  156    0    0    0     0
+O2-noinline/chibios/ch.elf                              620    640    594    614    20   20    0    0    0     0
+O2-noinline/cleanflight/cleanflight_DALRCF405.elf      3118   3192   2386   2460    74   74    0    0    0     0
+O2-noinline/crazyflie/cf2.elf                          2914   3002   2243   2326    88   83    0    5    0     0
+O2-noinline/crazyflie/firmware.elf                     2914   3002   2243   2326    88   83    0    5    0     0
+O2-noinline/freertos/RTOSDemo.out                       147    150    129    132     3    3    0    0    0     0
+O2-noinline/libopencm3/adc-dac-printf.elf               206    208    148    150     2    2    0    0    0     0
+O2-noinline/libopencm3/cdcacm.elf                        91     97     68     74     6    6    0    0    0     0
+O2-noinline/libopencm3/lcd-dma.elf                      228    230    173    175     2    2    0    0    0     0
+O2-noinline/libopencm3/msc.elf                          108    115     78     85     7    7    0    0    0     0
+O2-noinline/libopencm3/usart-stdio.elf                  147    150    123    126     3    3    0    0    0     0
+O2-noinline/libopencm3/usart_irq_console.elf            118    121     84     87     3    3    0    0    0     0
+O2-noinline/nuttx/nuttx                                 890    917    822    849    27   27    0    0    0     0
+O2-noinline/riot-os/hello-world.elf                     151    153    138    138     2    0    0    2    0     0
+O2/betaflight/betaflight_STM32F405.elf                 5798   5987   3877   4066   189  189    0    0    0     0
+O2/chibios/ch.elf                                       347    369    306    324    22   18    0    4    0     0
+O2/cleanflight/cleanflight_DALRCF405.elf               2840   2924   2060   2144    84   84    0    0    0     0
+O2/crazyflie/cf2.elf                                   2093   2182   1461   1544    89   83    0    6    0     0
+O2/crazyflie/firmware.elf                              2093   2182   1461   1544    89   83    0    6    0     0
+O2/freertos/RTOSDemo.out                                118    121    104    107     3    3    0    0    0     0
+O2/libopencm3/adc-dac-printf.elf                        168    170    134    136     2    2    0    0    0     0
+O2/libopencm3/cdcacm.elf                                 51     58     49     55     7    6    0    1    0     0
+O2/libopencm3/lcd-dma.elf                               186    188    152    154     2    2    0    0    0     0
+O2/libopencm3/msc.elf                                    59     67     56     63     8    7    0    1    0     0
+O2/libopencm3/usart-stdio.elf                           142    145    117    120     3    3    0    0    0     0
+O2/libopencm3/usart_irq_console.elf                      81     84     70     73     3    3    0    0    0     0
+O2/nuttx/nuttx                                          740    769    668    697    29   29    0    0    0     0
+O2/riot-os/hello-world.elf                              113    115    100    100     2    0    0    2    0     0
+
+TOTAL gt=41378 recall 38238 -> 39540 (+1302)
+  new entries 1338: ground-truth 1302 (97.3%), splits-a-real-body 0, outside-any-body 36
+  removed entries 0, of which ground truth 0
