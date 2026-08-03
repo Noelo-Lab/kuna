@@ -1,0 +1,59 @@
+cortexmvectors — raw entry-recall diff, `--option cortexmvectors off` vs `on`.
+
+Ground truth: DW_TAG_subprogram DW_AT_low_pc (Thumb-LSB-masked) of each stripped
+binary's matching `compiled/` counterpart in ~/github/decbench/results/full_run.
+Rows with no change on either side are omitted (chibios, the eight libopencm3
+binaries, freertos, riot-os — all detected by the shipped signature already).
+
+Columns: e_b/e_a = entries recovered before/after; r_b/r_a = of those, ground-truth
+hits; new = entries present only in the `on` run; gt = of those, exact ground-truth
+low_pc; spl = falls strictly inside another ground-truth body; out = outside every
+ground-truth body; rm = entries present only in the `off` run; rmgt = of those,
+ground truth.
+
+BLOCK 1 — the default decbench surface (`kuna functions`, which auto-injects
+listing + funcstart_patterns + aif on non-x86-64).
+
+BLOCK 2 — `--option listing off`: the entry oracles alone (the surface used by
+`--mode fast`, the WASM and Ghidra front-ends, and single-function `kuna decompile`).
+
+binary                                                  e_b    e_a    r_b    r_a   new   gt  spl  out   rm  rmgt
+O0/betaflight/betaflight_STM32F405.elf                 5798   5804   3877   3882     6    5    0    1    0     0
+O0/cleanflight/cleanflight_DALRCF405.elf               2840   2846   2060   2065     6    5    0    1    0     0
+O0/crazyflie/cf2.elf                                   2790   2796   2474   2478     6    4    0    2    0     0
+O0/crazyflie/firmware.elf                              2790   2796   2474   2478     6    4    0    2    0     0
+O0/nuttx/nuttx                                          924    926    910    912     2    2    0    0    0     0
+O2-noinline/betaflight/betaflight_STM32F405.elf        6389   6394   4513   4517     5    4    0    1    0     0
+O2-noinline/cleanflight/cleanflight_DALRCF405.elf      3118   3123   2386   2390     5    4    0    1    0     0
+O2-noinline/crazyflie/cf2.elf                          2914   2931   2243   2257    17   14    0    3    0     0
+O2-noinline/crazyflie/firmware.elf                     2914   2931   2243   2257    17   14    0    3    0     0
+O2-noinline/nuttx/nuttx                                 890    892    822    824     2    2    0    0    0     0
+O2/betaflight/betaflight_STM32F405.elf                 5798   5804   3877   3882     6    5    0    1    0     0
+O2/cleanflight/cleanflight_DALRCF405.elf               2840   2846   2060   2065     6    5    0    1    0     0
+O2/crazyflie/cf2.elf                                   2093   2109   1461   1474    16   13    0    3    0     0
+O2/crazyflie/firmware.elf                              2093   2109   1461   1474    16   13    0    3    0     0
+O2/nuttx/nuttx                                          740    742    668    670     2    2    0    0    0     0
+
+TOTAL gt=41378 recall 38238 -> 38334 (+96)
+  new entries 118: ground-truth 96 (81.4%), splits-a-real-body 0, outside-any-body 22
+  removed entries 0, of which ground truth 0
+binary                                                  e_b    e_a    r_b    r_a   new   gt  spl  out   rm  rmgt
+O0/betaflight/betaflight_STM32F405.elf                    1     57      1     56    56   55    0    1    0     0
+O0/cleanflight/cleanflight_DALRCF405.elf                491    538    464    510    47   46    0    1    0     0
+O0/crazyflie/cf2.elf                                    925    934    922    929     9    7    0    2    0     0
+O0/crazyflie/firmware.elf                               925    934    922    929     9    7    0    2    0     0
+O0/nuttx/nuttx                                          352    354    352    354     2    2    0    0    0     0
+O2-noinline/betaflight/betaflight_STM32F405.elf           1     57      1     56    56   55    0    1    0     0
+O2-noinline/cleanflight/cleanflight_DALRCF405.elf       488    537    464    512    49   48    0    1    0     0
+O2-noinline/crazyflie/cf2.elf                           496    516    465    482    20   17    0    3    0     0
+O2-noinline/crazyflie/firmware.elf                      496    516    465    482    20   17    0    3    0     0
+O2-noinline/nuttx/nuttx                                 207    210    202    205     3    3    0    0    0     0
+O2/betaflight/betaflight_STM32F405.elf                    1     57      1     56    56   55    0    1    0     0
+O2/cleanflight/cleanflight_DALRCF405.elf                491    538    464    510    47   46    0    1    0     0
+O2/crazyflie/cf2.elf                                    331    350    305    321    19   16    0    3    0     0
+O2/crazyflie/firmware.elf                               331    350    305    321    19   16    0    3    0     0
+O2/nuttx/nuttx                                          245    248    239    242     3    3    0    0    0     0
+
+TOTAL gt=41378 recall 8885 -> 9278 (+393)
+  new entries 415: ground-truth 393 (94.7%), splits-a-real-body 0, outside-any-body 22
+  removed entries 0, of which ground truth 0

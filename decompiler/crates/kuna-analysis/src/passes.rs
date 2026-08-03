@@ -98,6 +98,18 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
         Box::new(crate::entry::EhFrameLsdaPass),
+        // S1 widened ARM Cortex-M vector-table discovery (`cortexmvectors`): the
+        // reset/exception handler seeds and the whole-image Thumb region paint of a
+        // hardware vector table the always-on oracle 6 signature rejects (an A-only
+        // .isr_vector in a read-only PT_LOAD, a CCM/TCM stack word, or a reset word
+        // that is not `e_entry`). Registered always (the facts are computed +
+        // stashed at load), COMMIT gated by `--option cortexmvectors on`
+        // (default-OFF, output-changing: it ADDS entries) via
+        // `engine.rs::analysis_pass_enabled`. Emits nothing when the shipped
+        // signature already matched, on a non-ARM object, or when no widened table
+        // is present. After EntryDiscoveryPass (it is the widened arm of its
+        // oracle 6).
+        Box::new(crate::entry::kuna_cortexmvectors::CortexMVectorsPass),
         // S1 full byte-pattern function starts (FuncStartPatternPass): the faithful
         // port of Ghidra's `FunctionStartAnalyzer` over the ENTIRE vendored pattern
         // corpus (`entry/patterns/*.xml`: the `<patternpairs>` pre/post sequences

@@ -86,7 +86,7 @@ impl ContextPainter {
         // Thumb `BL` does not `globalset` the callee mode, so the region paint is
         // what lets `main` and the rest of the call tree decode as Thumb). Empty on
         // any non-Cortex-M ARM object and every non-ARM arch.
-        paints.extend(crate::analyzers::entry::cortexm_thumb_paints(file));
+        paints.extend(crate::analyzers::entry::cortexm_thumb_paints(file, false));
         // MIPS STT_FUNC-LSB / `STO_MIPS_MIPS16` `st_other` → `ISA_MODE` (MIPS16e /
         // microMIPS). The scan is MIPS-gated; empty on a non-MIPS object.
         paints.extend(scan_mips_isa_markers(file).context_paints);

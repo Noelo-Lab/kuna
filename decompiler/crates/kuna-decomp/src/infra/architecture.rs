@@ -634,6 +634,21 @@ pub struct Architecture {
     /// byte-identical. Real-ELF/PE/Mach-O path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_funcstart_patterns: bool,
+    /// (kuna) Widen the ARM Cortex-M hardware vector-table signature
+    /// (`cortexmvectors`); default **off** (output-changing: it discovers more
+    /// functions). The shipped signature confirms a table only when it starts a
+    /// section the loader maps executable, its stack word is in the architectural
+    /// SRAM block, and its reset word equals `e_entry` — which rejects the
+    /// `A`-only `.isr_vector` a bare-metal link script normally emits, a CCM/TCM
+    /// stack, and any image whose ELF entry symbol is not the reset vector. When
+    /// on, a table is confirmed by a run of at least three Thumb handler pointers
+    /// behind a plausible SRAM/CCM/TCM stack word, in any allocated section — so
+    /// the reset/exception handler seeds and the whole-image Thumb region paint
+    /// arm on firmware they silently skipped. The widened scan runs only where the
+    /// shipped signature found nothing, so it can add entries but never remove
+    /// one. ARM-only; a no-op on every other language and on any ARM object with
+    /// no vector table.
+    pub analysis_cortexmvectors: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
@@ -1080,6 +1095,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_funcstart_patterns: false,
+            analysis_cortexmvectors: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -1224,6 +1240,7 @@ impl Architecture {
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
+        self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -1470,6 +1487,9 @@ impl Architecture {
             }
             "funcstart_patterns" => {
                 on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
+            }
+            "cortexmvectors" => {
+                on_off!(analysis_cortexmvectors, "Widened ARM Cortex-M vector-table signature")
             }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),

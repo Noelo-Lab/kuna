@@ -137,6 +137,10 @@ Three tiers:
 | functions after nop padding missing in a stripped binary | [`funcstart_patterns`](#funcstart_patterns) |
 | a push rbx; mov rbx,rdi prologue never discovered as a function start | [`funcstart_patterns`](#funcstart_patterns) |
 | code-bearing gaps between discovered functions left undefined | [`funcstart_patterns`](#funcstart_patterns) |
+| stripped cortex-m firmware yields only a handful of functions | [`cortexmvectors`](#cortexmvectors) |
+| arm firmware body decodes as a32 garbage instead of thumb | [`cortexmvectors`](#cortexmvectors) |
+| nmi/hardfault/systick exception handlers never discovered as entries | [`cortexmvectors`](#cortexmvectors) |
+| isr_vector table present but no vector-derived function starts | [`cortexmvectors`](#cortexmvectors) |
 | thumb code misdecoded as arm garbage instructions | [`arm_markers`](#arm_markers) |
 | $t/$a mapping symbols ignored so the wrong decode mode applies | [`arm_markers`](#arm_markers) |
 | unresolved *(gp + offset) loads on mips | [`mips_gp`](#mips_gp) |
@@ -584,6 +588,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On discovers additional function starts in a stripped binary via the full Ghidra prologue pattern set (e.g. a `push rbx; mov rbx,rdi` function after NOP padding that the minimal oracle misses); off (default) keeps only the entry_disc + symbol-stream functions so the output is byte-identical to the baseline.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-funcstart-patterns
 - **Example:** `--option funcstart_patterns on`
+
+### `cortexmvectors` -- on | off, default `off`
+
+- **Symptoms:** stripped cortex-m firmware yields only a handful of functions; arm firmware body decodes as a32 garbage instead of thumb; nmi/hardfault/systick exception handlers never discovered as entries; isr_vector table present but no vector-derived function starts.
+- **What it does:** Widen the ARM Cortex-M hardware vector-table signature (entry discovery oracle 6). The shipped signature confirms a table only when (a) it starts a section the loader maps executable, (b) its word 0 is in the architectural SRAM block 0x20000000-0x3FFFFFFF, and (c) its word 1 equals e_entry. All three over-constrain real firmware: the table is DATA the CPU reads, so a bare-metal link script normally emits .isr_vector as an A-only section in a read-only PT_LOAD; STM32F4 and -M7 parts put the initial stack in CCM/TCM at 0x10000000; and e_entry is the ELF start symbol, which a link script is free to point somewhere other than the reset vector. With this on, a candidate is any allocated section whose word 0 lands in 0x10000000-0x3FFFFFFF and whose slots from word 1 yield at least three Thumb handler pointers (odd, inside an executable section) — the run of handlers replaces the e_entry equality, and three consecutive conforming slots is a shape a .data structure does not reach by accident. Confirming a table arms the reset/exception handler seeds AND the whole-image Thumb (TMode=1) region paint, so a stripped Cortex-M image goes from a handful of functions to the whole firmware. The widened scan runs ONLY where the shipped signature found nothing, so an image that resolved a table before resolves the same section with the same harvest: the option can add discovered entries, never remove one. ARM-only and real-object-path only, so every XML datatest is structurally untouched. Output-changing (it discovers more functions) => default-OFF.
+- **When to flip:** Flip on for a stripped bare-metal ARM Cortex-M firmware image (STM32/nRF/SAM/...) that decompiles to only a few functions, or whose code decodes as A32 garbage, because kuna never confirmed its vector table. The tell-tales: the .isr_vector section is flagged A (not AX) and sits in a read-only PT_LOAD, the first word is a 0x1000xxxx CCM/TCM stack pointer rather than 0x2000xxxx, or the second word does not match the ELF e_entry. Stands alone (it needs no other option), and composes with the listing + funcstart_patterns + aif set the decompile-all/functions drivers already inject on non-x86-64. Off (default) keeps the strict e_entry-matching signature, so any image that already worked is byte-identical either way.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-cortexmvectors
+- **Example:** `--option cortexmvectors on`
 
 ### `arm_markers` -- on | off, default `on`
 
