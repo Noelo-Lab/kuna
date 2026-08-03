@@ -1712,7 +1712,10 @@ mod tests {
         // parameter's trim COPY (option off sinks `v2 = a1;` below the first guard)
         // and ghdec-subright / non-least-significant truncation lowering
         // (the raw SUBnn p-code operator leaked into the C body)
-        assert_eq!(count, 187, "corpus file count drifted");
+        // and ghdec-returncopysplit / the read-only output gate on a datatype
+        // copy split (a cloned heritage return-copy printed per-element stores
+        // into a .rodata string literal)
+        assert_eq!(count, 188, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

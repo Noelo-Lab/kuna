@@ -3551,6 +3551,14 @@ impl SplitDatatype {
     /// Test specific constraints for splitting the given COPY into pieces (C++
     /// `SplitDatatype::testCopyConstraints`, subflow.cc:2390).
     fn test_copy_constraints(&self, data: &Funcdata, copy_op: OpId) -> bool {
+        // (kuna) A COPY whose output lands in a read-only address range is never a
+        // store the program performs; splitting it turns one invisible whole-range
+        // assignment into per-element assignments that survive
+        // `Merge::mark_internal_copies` and print as stores into `.rodata`.
+        let out_vn = data.obank().get(copy_op).expect("stale copy").get_out().expect("copy out");
+        if data.vbank().get(out_vn).expect("stale out").is_read_only() {
+            return false;
+        }
         let in_vn = data.obank().get(copy_op).expect("stale copy").get_in(0).expect("copy in0");
         if data.vbank().get(in_vn).expect("stale in").is_input() {
             return false;
