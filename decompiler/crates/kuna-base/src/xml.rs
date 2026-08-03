@@ -1715,7 +1715,9 @@ mod tests {
         // and ghdec-returncopysplit / the read-only output gate on a datatype
         // copy split (a cloned heritage return-copy printed per-element stores
         // into a .rodata string literal)
-        assert_eq!(count, 188, "corpus file count drifted");
+        // and ghdec-itecondlist / the ITE condition-list tolerance (option off
+        // re-rolls only ceil(N/2) of a run of N identical assignment diamonds)
+        assert_eq!(count, 189, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

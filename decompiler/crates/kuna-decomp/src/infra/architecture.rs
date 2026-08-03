@@ -528,6 +528,15 @@ pub struct Architecture {
     /// A runtime choice like [`iteregion`](Self::iteregion): the source may have
     /// written the explicit `if/else`, which compiles identically.  Print-only.
     pub iteboolean: bool,
+    /// (kuna) `itecondlist`: let [`iteregion`](Self::iteregion) and
+    /// [`iteboolean`](Self::iteboolean) descend a multi-component `BlockList` in the
+    /// diamond's **condition** position to its last component.  Without it a diamond
+    /// whose predecessor was concatenated onto its condition block declines, which is
+    /// why a run of N identical diamonds folds only `ceil(N/2)` of them.  Print-only
+    /// and sound because the printer already renders the leading components as
+    /// statements before the `if` header.  Read by
+    /// [`crate::p8_structure::kuna_itecondlist::cond_list_tail`].
+    pub itecondlist: bool,
     /// (kuna) `paramcopyhoist`: anchor the trim COPY of an **unmodified incoming
     /// parameter** in the function's entry block instead of at the tail of the
     /// MULTIEQUAL slot's predecessor, so a guarded parameter's copy-shadow
@@ -1078,6 +1087,7 @@ impl Architecture {
             iteregion: false,
             iteexpr: false,
             iteboolean: false,
+            itecondlist: false,
             param_copy_hoist: false,
             duplicate_shared_returns: false,
             early_return: false,
@@ -1213,6 +1223,7 @@ impl Architecture {
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
+        self.itecondlist = true; // (kuna) DIV-56 default-on (iteregion/iteboolean match through a concatenated condition BlockList: a run of N identical diamonds folds N, not ceil(N/2); 0/675 ablation).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
@@ -1433,6 +1444,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p8_structure::kuna_iteboolean::OptionIteBoolean.apply(p1)?;
                 self.iteboolean = val;
+                Ok(msg)
+            }
+            "itecondlist" => {
+                let (val, msg) =
+                    crate::p8_structure::kuna_itecondlist::OptionIteCondList.apply(p1)?;
+                self.itecondlist = val;
                 Ok(msg)
             }
             "paramcopyhoist" => {
@@ -1872,6 +1889,7 @@ impl Architecture {
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
         ctx.iteboolean = self.iteboolean; // iteboolean (0/1 select -> boolean assignment)
+        ctx.itecondlist = self.itecondlist; // itecondlist (condition-list tolerance for iteregion/iteboolean)
         ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.early_return = self.early_return; // earlyreturn

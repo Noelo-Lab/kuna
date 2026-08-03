@@ -1,0 +1,48 @@
+{
+  "opportunity": "O0-bash-bash-shell_initialize",
+  "test_name": "decbench:O0-bash-bash-shell_initialize",
+  "binary": "/home/mahaloz/github/decbench/results/full_run/O0/bash/stripped/bash",
+  "selector": "sub_34684",
+  "func_addr": "0x34684",
+  "angr_version": null,
+  "option": "itecondlist",
+  "flag": "itecondlist",
+  "element_id": 4121,
+  "change_kind": "structure-recovery",
+  "source_decompiler": "ida",
+  "inspiration": "decbench:O0-bash-bash-shell_initialize; widens angr ITERegionConverter (_find_ite_assignment_regions) + iteboolean condition matching over a concatenated BlockList",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "decisions": [
+    "New named option rather than an unflagged widening of iteregion/iteboolean: `iteexpr` is the standing precedent for shipping a broadening of the same matcher as its own option (it widens the ARM match; this widens the CONDITION match), and the standing rule is that anything that can change emitted C sits behind a named option. The new flag also buys the two-pass stage test that pins the exact ceil(N/2) defect, which a pre-existing flag cannot (turning `iteregion` off removes ALL ternaries, not the every-other ones).",
+    "Rebased onto #252 (DIV-55, returncopysplit) and renumbered to DIV-56: DIV numbers are claimed on merge. The xml.rs corpus count resolves to 189 (both PRs moved 187 -> 188), docs/baseline-stages.json was RE-RECORDED on the merged base rather than hand-merged (the auto-merge left a stale 375 data_footer), and both history rows are kept. Every measurement was re-taken on the rebased tree rather than carried forward: #252 moves the OFF arm of all four sweep binaries by 0 lines, so the breadth, changed-function and audit numbers reproduce exactly."
+  ],
+  "speed_off_ms": 356.33,
+  "speed_on_ms": 354.28,
+  "speed_delta_pct": -0.58,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "ged_case": "O0-bash-bash-shell_initialize",
+  "ged_recorded": 105.0,
+  "ged_before": 46.0,
+  "ged_after": 24.0,
+  "ged_delta": -22.0,
+  "ged_perfect_after": false,
+  "ged_approximated": false,
+  "ged_options": [],
+  "ged_kuna_commit": "9a7ffed9",
+  "ged_results_root": "/home/mahaloz/github/decbench/results/full_run",
+  "ged_siblings": {
+    "O2-noinline-bash-bash-shell_initialize": {
+      "before": 0.0,
+      "after": 0.0
+    }
+  },
+  "corpus_file_count": "decompiler/crates/kuna-base/src/xml.rs: 188 -> 189 (83 datatests + 106 stages)",
+  "stages_baseline_keys": "docs/baseline-stages.json: 375 -> 381 (re-recorded on top of #252)",
+  "div": "DIV-56",
+  "rebased_onto": "1b6d4db4 (#252, DIV-55) -- DIV renumbered 55 -> 56 on the merge collision"
+}

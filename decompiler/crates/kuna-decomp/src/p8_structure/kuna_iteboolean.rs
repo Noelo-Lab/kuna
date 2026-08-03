@@ -228,10 +228,19 @@ pub fn match_ite_boolean(data: &Funcdata, n: BlockId) -> Option<IteBoolMatch> {
     // `truthycond` (DIV-37) `if (x & 0x100)` renders as `(x & 0x100)`, whose value
     // is 0x100, so `v = (x & 0x100)` would store the wrong number.  (The bare-leaf
     // shape is also the one P3 `RuleConditionalMove` already folds.)
-    if data.sblocks_ref().block(cond_block).get_type() != BlockType::Condition {
+    //
+    // Under `option itecondlist on` the component may be a `BlockList` whose LAST
+    // element is that chain (the structurer concatenates a just-collapsed
+    // predecessor onto the condition block); the descent applies here, at the
+    // `BlockCondition` gate, and NOT inside `cond_terminal_cbranch`, whose leaf
+    // arm is only ever reached for the individual clauses of an already-found
+    // chain.  `m.cond_block` stays the outer list so the printer still emits the
+    // leading components as ordinary statements.
+    let cond_tail = crate::p8_structure::kuna_itecondlist::cond_list_tail(data, cond_block);
+    if data.sblocks_ref().block(cond_tail).get_type() != BlockType::Condition {
         return None;
     }
-    let cbranch = cond_terminal_cbranch(data, cond_block, 0)?;
+    let cbranch = cond_terminal_cbranch(data, cond_tail, 0)?;
 
     let (true_op, dest_true, val_true) = const_bool_arm(data, true_clause)?;
     let (_else_op, dest_else, val_else) = const_bool_arm(data, else_clause)?;

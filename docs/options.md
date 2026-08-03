@@ -87,6 +87,10 @@ Three tiers:
 | if (a && b) v = 1; else v = 0; where the source has a single boolean assignment v = a && b | [`iteboolean`](#iteboolean) |
 | -O0 boolean materialization printed as an explicit 0/1 constant diamond | [`iteboolean`](#iteboolean) |
 | extra CFG blocks/edges vs Hex-Rays around a short-circuit boolean assignment | [`iteboolean`](#iteboolean) |
+| only every other ternary in a chain of identical ?: assignments is recovered | [`itecondlist`](#itecondlist) |
+| a re-rolled v = c ? A : B; is immediately followed by an identical un-re-rolled if (c) v = A; else v = B; | [`itecondlist`](#itecondlist) |
+| iteboolean re-rolls 1 of 3 identical short-circuit boolean assignments | [`itecondlist`](#itecondlist) |
+| a diamond folds in isolation but declines when a structured if precedes it | [`itecondlist`](#itecondlist) |
 | giant short-circuit if with comma-expression side effects merging several source early-return guards | [`returndup`](#returndup) |
 | one trailing return shared by many guard paths where the source used per-guard early returns | [`returndup`](#returndup) |
 | merged guard condition containing v = f(...) assignments inline | [`returndup`](#returndup) |
@@ -452,6 +456,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Turn ON to recover the source shape of `-O0` boolean assignments (`x = a && b;`, `x = p && (p->flags & F);`), which gcc materializes as an explicit constant diamond that kuna otherwise prints as `if (...) v = 1; else v = 0;`. `-O0` C materializes booleans everywhere, so this is broad: it is the whole residual structural gap vs Hex-Rays on bash `time_command` (two diamonds = 6 CFG blocks / 8 edges of a 28-node function; GED 26 -> 6). On by default (DIV-51): the flip changes 0/675 datatest assertions and is inside the speed budget. Still a RUNTIME CHOICE an agent can flip OFF (`option iteboolean off`, byte-identical to the pre-DIV-51 render) for the same reason as `iteregion` (DIV-17): an explicit `if (c) x = 1; else x = 0;` in the source compiles to the SAME object code, so the re-roll diverges from a source that really did write the if/else. Print-only; on, each re-roll is logged (`iteboolean:`).
 - **Where / provenance:** P8/goto-quality · ida · structure-recovery · decbench-shortcircuit-boolean-materialization
 - **Example:** `option iteboolean on`
+
+### `itecondlist` -- on | off, default `on`
+
+- **Symptoms:** only every other ternary in a chain of identical ?: assignments is recovered; a re-rolled v = c ? A : B; is immediately followed by an identical un-re-rolled if (c) v = A; else v = B;; iteboolean re-rolls 1 of 3 identical short-circuit boolean assignments; a diamond folds in isolation but declines when a structured if precedes it.
+- **What it does:** Let the `iteregion` and `iteboolean` diamond matchers see through a multi-component `BlockList` in the diamond's CONDITION position, by descending it to its LAST component. Their shared `leaf_bblock` helper descends a one-component list but bails on a list of two or more, and the collapse structurer concatenates a just-collapsed predecessor onto the next diamond's condition block — so in a RUN of structurally identical diamonds every other one is declined, and kuna re-rolls exactly ceil(N/2) of N (measured N=1..8: 1 1 2 2 3 3 4 4). Sound because the rewrite is print-only and the printer already renders this shape: `emit_block_if` emits the condition component once under NO_BRANCH (its statements) and once under ONLY_BRANCH (its branch), and `emit_block_ls` emits every component under NO_BRANCH but only the LAST under ONLY_BRANCH — so the leading components print as ordinary statements before the `if` header either way, and the ternary/boolean emitters do the same two emissions on the same block. The arms keep the strict single-statement match and the labelled-goto-target guard still applies to the descended leaf. Restricted to `BlockList`: a `BlockGraph` is excluded because `emit_block_graph` ignores ONLY_BRANCH and would print the whole graph twice.
+- **When to flip:** kuna re-rolls only SOME of a run of structurally identical assignment/boolean diamonds -- one `v = c ? A : B;` (or `v = a || b;`) followed by an explicit `if (c) v = A; else { v = B; }` with the same condition and arms, alternating. The tell is that which diamonds are missed depends on the NEIGHBOURING structure, not on the diamond itself: an immediately preceding structured `if` suppresses the very next one. On by default (DIV-56): the flip changes 0/675 datatest assertions and is inside the speed budget. Flip OFF (`option itecondlist off`) to restore the pre-DIV-56 every-other rendering; it is a strictly narrower match, so OFF can only ever fold FEWER diamonds. Requires `option iteregion on` and/or `option iteboolean on` (both default) -- it widens their condition match only, and never fires on its own.
+- **Where / provenance:** P8/goto-quality · ida · structure-recovery · decbench-ite-every-other-diamond
+- **Example:** `option itecondlist on`
 
 ### `returndup` -- on | off, default `on`
 

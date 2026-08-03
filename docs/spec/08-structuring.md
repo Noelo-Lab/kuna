@@ -718,6 +718,57 @@ carrying its own goto, and a condition component that is anything other than a
 **runtime choice** — a source that really wrote `if (c) x = 1; else x = 0;`
 compiles to the same bytes — flipped on by DIV-51.
 
+### itecondlist — matching a diamond whose condition was concatenated (decbench)
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_itecondlist.rs
+(cond_list_tail)`. Not a pass of its own: a one-predicate widening of the two
+matchers above, shared by both because both bottom out in the same leaf helper.
+
+*The gap.* `kuna_iteregion.rs (leaf_bblock)` descends a `BlockList` of **one**
+component but returns `None` for a list of two or more, and both matchers reach
+the condition component through it. Meanwhile the collapse structurer
+concatenates a just-collapsed predecessor together with the following condition
+block into a two-component `BlockList`, and *that list* becomes component 0 of
+the next `BlockIf`. A run of structurally identical diamonds therefore alternates
+between the bare-leaf shape and the concatenated shape, and only the bare-leaf
+ones are re-rolled: over a chain of N diamonds kuna recovers exactly `ceil(N/2)`
+(measured for N = 1..8: 1 1 2 2 3 3 4 4). The tell is that *which* diamonds are
+missed depends on the **neighbouring** structure rather than on the diamond
+itself — an immediately preceding structured `if` suppresses the very next one.
+Three source-identical `x = a||b||c||d;` call arguments in bash
+`shell_initialize` came out as one re-rolled boolean assignment and two explicit
+diamonds.
+
+*Transform.* In the **condition position only**, descend a `BlockList` to its
+last component before applying the usual leaf test — `iteregion`'s
+`cond_cbranch`, and `iteboolean`'s `BlockCondition` gate (which is where the
+descent must sit: `cond_terminal_cbranch`'s leaf arm is only ever reached for the
+individual clauses of an already-identified chain). The arms keep the strict
+single-statement `leaf_bblock` test, the labelled-goto-target guard still applies
+to the descended leaf, and the match struct keeps the **outer** list as its
+`cond_block` so the printer still emits the leading components.
+
+*Why the tail is the right component, and why it is sound.* The rewrite is
+print-only and the printer already renders this exact shape.
+`PrintC::emit_block_if` emits the condition component twice — once under
+`NO_BRANCH` (its statements) and once under `ONLY_BRANCH` (its branch condition)
+— and `PrintC::emit_block_ls` emits every component in order under `NO_BRANCH`
+but **only the last** under `ONLY_BRANCH`. So the leading components already
+print exactly once, as ordinary statements ahead of the `if` header, and
+`emit_block_if_ite`/`emit_block_if_bool` perform the same two emissions on the
+same block. Folding only the tail therefore cannot disturb, duplicate or drop
+anything that precedes it: it is the tolerance `cond_cbranch` already documents
+for leading statements *inside* one basic block, spelled across a block
+boundary. The descent is deliberately restricted to `BlockList` and excludes
+`BlockGraph`, whose emitter (`PrintC::emit_block_graph`) ignores `ONLY_BRANCH`
+and emits every component — descending one would make the emitters print the
+whole graph twice.
+
+*Failure:* everything the two matchers already decline, unchanged. It is a
+strictly narrower match than `iteregion`/`iteboolean` themselves, so
+`option itecondlist off` can only ever fold **fewer** diamonds, never different
+ones. Flipped on by DIV-56.
+
 ### earlyreturn — per-edge const-guard peeling (angr `ReturnDuplicatorHigh`, narrowed)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_earlyreturn.rs
