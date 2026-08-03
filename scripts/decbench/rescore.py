@@ -36,7 +36,7 @@ import tempfile
 from pathlib import Path
 
 from . import config
-from .triage import MARKER, load_case, split_blocks
+from .triage import MARKER, case_addr, load_case, split_blocks
 
 SRC_CACHE = Path(os.environ.get(
     "KUNA_DECBENCH_SRC_CACHE",
@@ -109,8 +109,9 @@ def artifact_path(case: dict) -> Path:
 
 
 def fresh_block(case: dict, options: list[list[str]], kuna_bin: str) -> str:
+    addr = case_addr(case)
     cmd = [kuna_bin, "decompile-all", case["stripped_path"], "--json",
-           "--addr", case["address_hex"]]
+           "--addr", addr]
     for name, value in options:
         cmd += ["--option", name, value]
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -121,7 +122,7 @@ def fresh_block(case: dict, options: list[list[str]], kuna_bin: str) -> str:
         raise RuntimeError(f"no fresh code: {fns[0].get('error') if fns else 'no record'}")
     rec = fns[0]
     code = re.sub(rf"\b{re.escape(rec['name'])}\b", case["function"], rec["code"])
-    return f"// Function: {case['function']} @ {case['address_hex']}\n" + code
+    return f"// Function: {case['function']} @ {addr}\n" + code
 
 
 def spliced_cfgs(case: dict, new_block: str, extract, stable_hash) -> dict:

@@ -39,6 +39,12 @@ def load_case(case_id: str) -> dict:
              f"({len(paths)} searched)")
 
 
+def case_addr(case: dict) -> str | None:
+    """The address a mined case is decompiled at, in kuna's ``--addr`` (VA) form."""
+    return config.kuna_addr(case.get("stripped_path"),
+                            case.get("address_hex") or case.get("address"))
+
+
 def split_blocks(c_path: Path) -> dict[str, str]:
     """function name -> its block (marker line included) from a stored artifact."""
     if not c_path.exists():
@@ -60,8 +66,9 @@ def stored_block(case: dict, dec: str) -> str:
 
 def fresh_kuna(case: dict, options: list[list[str]]) -> tuple[str, str | None]:
     """Fresh decompile of the case function; returns (relabeled block, error)."""
+    addr = case_addr(case)
     cmd = [config.kuna_bin(), "decompile-all", case["stripped_path"], "--json",
-           "--addr", case["address_hex"] or hex(case["address"])]
+           "--addr", addr]
     for name, value in options:
         cmd += ["--option", name, value]
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -77,7 +84,7 @@ def fresh_kuna(case: dict, options: list[list[str]]) -> tuple[str, str | None]:
     code = rec.get("code") or ""
     # Self-relabel exactly like the benchmark run (own name only; callees stay sub_*).
     code = re.sub(rf"\b{re.escape(rec['name'])}\b", case["function"], code)
-    header = f"// Function: {case['function']} @ {case['address_hex']}\n"
+    header = f"// Function: {case['function']} @ {addr}\n"
     return header + code, None
 
 
@@ -120,7 +127,11 @@ def main(argv=None) -> None:
         print(f"- source CFG: {src_n} nodes / {case.get('source_edges')} edges{note}")
     print(f"- binary: {case['binary_path']}")
     print(f"- stripped: {case['stripped_path']}")
-    print(f"- function: {case['function']} @ {case['address_hex']}  labels: {case.get('labels')}")
+    va = case_addr(case)
+    shown = case.get("address_hex") or va
+    rebased = "" if va == shown else f" (PE RVA; kuna --addr {va})"
+    print(f"- function: {case['function']} @ {shown}{rebased}  "
+          f"labels: {case.get('labels')}")
     print()
 
     extra = [d for d in args.also.split(",") if d.strip()]

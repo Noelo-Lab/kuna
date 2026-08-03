@@ -46,6 +46,13 @@ Decisions baked in:
   to stay comparable.
 - **Verify-first is mandatory, and it is not optional bookkeeping** — see the next
   section for exactly how stale the stored output is.
+- **PE addresses: the pools carry RVAs, kuna wants VAs.** decbench records a PE
+  function's address as an RVA (`function_results.json`, and every rival's
+  `// Function: <fn> @ 0x..` marker — only kuna's own artifact writes VAs), so a mined
+  case may hold either form. `triage`/`rescore`/`showcase` rebase it off the binary's
+  own PE `ImageBase` before calling `kuna --addr` (`config.kuna_addr`), which differs
+  per binary — `mydoom.exe`/`x0r-usb.exe` 0x400000, `dexter.dll` 0x69940000. ELF
+  addresses are already VAs and pass through untouched.
 - GED quirks to respect in triage: graphs > 60 nodes are **approximated** as
   |Δnodes| + |Δedges| (`approximated: true` on a case, taken from the run's own
   `ged_large_graph_audit.json`); `inf` means missing/unparseable, not "bad"; a
