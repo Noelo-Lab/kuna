@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    386,
-    386
+    394,
+    394
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -383,6 +383,14 @@
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
     "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)",
+    "data:undefname #1: no buildUndefinedName placeholder survives the naming pass, in either pass",
+    "data:undefname #2: the va_arg slot is declared once per pass, at the width the body uses",
+    "data:undefname #3: the va_arg guard reads the name the loop actually writes",
+    "data:undefname #4: the gp_offset bump reads and writes one identifier",
+    "data:undefname #5: that identifier is the one the prologue initialises",
+    "data:undefname #6: the ifreq union slot no high covers wholly is named by the wired assignDefaultNames",
+    "data:undefname #7: and it takes the highest index in the function, after every other local",
+    "data:undefname #8: the body writes that slot through the same name",
     "data:unrolledguard #1: option off, the interleaved dispatches degrade to computed calls (bug reproduced); option on adds ZERO new ones (7 pass1 + 0 pass2)",
     "data:unrolledguard #2: option on recovers every interleaved table as a switch (1 off + 16 on = 17)",
     "data:whiledo-complex #1: compound while condition forces overflow syntax (valid C)",

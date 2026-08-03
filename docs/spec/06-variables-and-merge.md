@@ -280,6 +280,36 @@ multi-entry-symbol source (`funcdata_merge.rs
 (MergeContext::multi_entry_symbols)`) returns empty pending the symbol-scope
 layer.
 
+**Closing out the undefined names** (`kuna_undefname.rs
+(finish_undefined_names)`, the tail of `coreaction_cleanup.rs
+(name_local_highs_angr)`). A Symbol created with an empty name is given the
+placeholder `$$undef` plus eight hex digits (`p0_knowledge/database.rs
+(Database::build_undefined_name)`), and upstream that string is unobservable
+for two reasons kuna does not inherit: the naming pass renames every
+still-undefined Symbol before it returns, and the printer reads the Symbol's
+display name *live* at emit time. kuna instead caches the name on the
+HighVariable (chapter [09](09-emission.md), "where names bind vs. where they
+render"), and the cache is written by `varmap.rs
+(ScopeLocal::resolve_default_name_override)`, which only renames the covering
+Symbol for a *whole-symbol* cover — the C++ `namerec` gate — and otherwise
+returns whatever the Symbol is called at that moment. Location order visits a
+partial cover of a stack slot before its whole-cover sibling, so the partial
+froze the placeholder while the sibling went on to rename the shared Symbol to
+its `vN`: one slot, two identifiers, and a body that reads a name nothing ever
+writes. Separately, a Symbol that *no* high covers wholly was never renamed at
+all and kept the placeholder in the Symbol table, from where it leaked into the
+JSON `variables` array and the project export's stack-frame comments. The tail
+closes both: it runs the ported catch-all
+(`ScopeLocal::assign_default_names` → `Database::assign_default_names`, the
+final statement of upstream's naming pass) and then re-resolves every
+HighVariable still holding a placeholder through the same containment query
+that bound it, which is kuna's stand-in for the printer's live read. Both steps
+run after every `vN` has been handed out, so neither renumbers an existing
+local: a Symbol named here takes the highest index in the function, and the
+re-resolve consumes no index at all. No `$$undef` string reaches any surface
+(DIV-58); an identifier containing `$$` is not valid C under any naming policy,
+so this is unconditional rather than a settable.
+
 ## 6.2 The stack frame
 
 Stack locals do not exist until this phase builds them; before it, the frame
