@@ -191,6 +191,10 @@ Three tiers:
 | function reachable only through a rodata function-pointer table never discovered | [`aif`](#aif) |
 | undefined gap between functions that clearly holds code | [`aif`](#aif) |
 | call *reg targets missing from the function list | [`aif`](#aif) |
+| routine reached only by a tail B produces no decompiled output at all | [`tailcallentry`](#tailcallentry) |
+| a shared ISR handler is swallowed by the two-instruction stub that branches to it | [`tailcallentry`](#tailcallentry) |
+| function entry missing where the previous function ends in an unconditional branch | [`tailcallentry`](#tailcallentry) |
+| kuna emits one oversized function where the ground truth has two | [`tailcallentry`](#tailcallentry) |
 | stripped go binary renders sub_<addr> instead of main.main and runtime.* names | [`gopclntab`](#gopclntab) |
 | go package function names missing | [`gopclntab`](#gopclntab) |
 | objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
@@ -765,6 +769,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change, and a speculative gap-filler can create false-positive functions). Flip on (with option listing on) when a function is reachable ONLY through an indirect/data path (its address taken into a .rodata function-pointer table and called via call *reg with an opaque index) — so it is in no symbol table, has no .eh_frame FDE, and no static CALL edge points at it, leaving it an undefined gap that entry discovery cannot reach. AIF's fingerprint+validity gap-walk recovers it as a named sub_<addr>.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-aif
 - **Example:** `option listing on --option aif on`
+
+### `tailcallentry` -- on | off, default `off`
+
+- **Symptoms:** routine reached only by a tail B produces no decompiled output at all; a shared ISR handler is swallowed by the two-instruction stub that branches to it; function entry missing where the previous function ends in an unconditional branch; kuna emits one oversized function where the ground truth has two.
+- **What it does:** Recover the function entries the recursive-descent Listing walk absorbs at a tail call. walk.rs makes a new function only at a CALL target and treats every other flow target as a same-function successor, so a routine reached only by a tail `B` is swallowed by whichever function branched to it and never becomes a function of its own — 17.4% of the ARM Cortex-M entry-recall gap. This reads the COMPLETED walk (splitting at a tail call provably cannot change which instructions the walk decodes, because a function entry is walked and therefore decoded either way) and admits an unconditional-branch target as a NEW function entry when four containment guards hold: every predecessor of the target is an unconditional branch (no fall-through and no conditional-branch predecessor, which would make it ordinary intra-function flow); the branch leaves the caller's entry-ordered function region, so at least one other discovered entry lies between the branch and its target; the target's flow region reaches a RETURN or computed jump (terminating-routine validity, with no length floor, so a one-instruction `bx lr` handler qualifies); and the target does not open with a stack restore (a function does not begin by tearing down a frame it never built — that is the caller's shared epilogue). Emits the accepted targets as the existing entries fact and never rebuilds the Listing, so no already-discovered entry can be removed. ARM-only; requires the Listing (option listing on) — a no-op when the Listing is absent, so every parity gate is byte-identical.
+- **When to flip:** Off (default; it discovers more functions, so it changes emitted C by construction). Flip on (with option listing on) on stripped ARM firmware when a routine reached only by a tail `B` — a shared ISR stub's handler, a `pop {r4,lr} ; b helper` tail call, a jump-thunk target — produces no output at all because the walk absorbed it into an earlier function. Measured on 96 Cortex-M images: +561 ground-truth functions, 94.6% of the new entries are real function starts, zero real bodies split, zero entries lost.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-tailcallentry
+- **Example:** `option listing on --option tailcallentry on`
 
 ### `gopclntab` -- on | off, default `on`
 

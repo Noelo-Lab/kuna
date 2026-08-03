@@ -599,6 +599,23 @@ pub fn run_listing_consumers(
         }
     }
 
+    // (kuna, Listing-tier tail-call split) The recursive-descent walk has no notion of a
+    // tail call: `walk.rs` makes a new function only at a CALL target and treats every
+    // other flow target as a same-function successor, so a routine reached only by a
+    // tail `B` is absorbed into its caller and never becomes a function. This consumer
+    // reads the COMPLETED walk and admits such a target on a containment model. It is
+    // run after every re-walk stage so it sees the richest Listing, and its output is a
+    // pure `entries` fact — the Listing is never rebuilt, which is what makes "this
+    // option can never remove an entry" a property of the wiring (the walk's
+    // instruction closure is invariant under the split; see
+    // `listing/kuna_tailcallentry.rs`).
+    if arch.analysis_listing && arch.analysis_tailcallentry {
+        let mut tce_out = AnalysisOutput::default();
+        tce_out.entries =
+            crate::listing::kuna_tailcallentry::tail_call_entries(&file, &listing);
+        out.push(("tailcallentry", tce_out));
+    }
+
     // (kuna, recursive-descent discovery) Promote the walk's discovered functions — the
     // CALL targets it followed from the (prologue-seeded) roots — to committed function
     // entries. This is the commit step that turns the `walk.rs` two-level worklist

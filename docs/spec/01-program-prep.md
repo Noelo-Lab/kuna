@@ -658,6 +658,44 @@ an entry" a property of the wiring rather than of a heuristic. Output-changing
 (more functions), hence default-off; ARM-only and Listing-tier, so it is a strict
 no-op on every other architecture, with `listing off`, and on the XML datatest path.
 
+**Tail-call entries** (`tailcallentry`, default-off; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)
+closes the walk's other structural blind spot. The recursive-descent walk
+(`decompiler/crates/kuna-analysis/src/listing/walk.rs`) makes a new function entry
+at a CALL target and treats every other flow target as a same-function successor,
+so a routine reached only by a tail `B` is absorbed into whichever function
+branched to it and never becomes a function at all — the second largest class of
+the ARM entry-recall gap. Splitting at a tail call cannot change *which*
+instructions the walk decodes: a function entry is walked, hence decoded, either
+way, so moving a target from the instruction worklist to the function worklist
+leaves the walk's closure fixed and only grows the function set. The split is
+therefore computed **after** the walk, where complete predecessor and region
+information is available instead of whatever the worklist order happened to
+expose, and — like `ptrentry` — emitted as an additive entry-fact stream that
+never rebuilds the Listing. Recognising the tail call is easy; telling one from a
+rotated loop head is the whole problem, and the naive rule (split at every
+unconditional-branch target whose predecessor ends the flow) measures 39%
+precision, splitting a real function body more often than it finds one. Four
+guards, each measured on the corpus, take that to 94.6% with no split bodies:
+every predecessor of the target must be an unconditional branch (a fall-through or
+conditional-branch predecessor means the caller's straight-line code runs into it,
+which is ordinary intra-function flow); the branch must **leave the caller's
+entry-ordered function region**, so at least one other discovered entry lies
+between the branch and its target; the target's flow region must reach a `RETURN`
+or a computed jump, the same terminating-routine validity `ptrentry` uses and with
+the same absence of a length floor; and the target must not open with a stack
+restore, because a function does not begin by tearing down a frame it never built
+— that shape is the caller's shared epilogue. The region crossing is the
+load-bearing one: dropping it costs 43 points of precision and splits over five
+hundred real bodies, while a stack-discipline model (reject a branch taken with an
+unmatched `PUSH`/`SUB SP` still open) was implemented, measured, and dominated by
+it on both precision and recall. As with `ptrentry`, the region is the
+entry-ordered one — the nearest preceding discovered entry — which is the
+granularity the tier has and errs conservative on a sparsely discovered image.
+Output-changing (more functions), hence default-off; ARM-only and Listing-tier, so
+it is a strict no-op on every other architecture, with `listing off`, and on the
+XML datatest path.
+
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's

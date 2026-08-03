@@ -1,0 +1,336 @@
+tailcallentry — raw entry-recall diff, `--option tailcallentry off` vs `on`.
+
+Ground truth: DW_TAG_subprogram DW_AT_low_pc (Thumb-LSB-masked) of each stripped
+binary's matching `compiled/` counterpart in ~/github/decbench/results/full_run.
+Corpus: every ARM Cortex-M image the three optimisation trees carry — the eight
+projects (betaflight, chibios, cleanflight, crazyflie, freertos, libopencm3,
+nuttx, riot-os) x 3 levels = 96 images, 43,809 ground-truth function addresses.
+This is a strict superset of the 48-image subset steps 1 and 2 used; that
+subset's exact libopencm3 example selection is not recorded in either bundle, so
+it could not be reconstructed and the whole image set is used instead.
+
+Every run is `kuna functions <stripped> --json --mode aggressive`. The explicit
+mode matters: betaflight_STM32F405.elf is 533,396 bytes, so the default `auto`
+policy resolves it to `reliable`, which does not build the Listing at all (1
+entry, 0% recall). `aggressive` is the surface steps 1 and 2 measured (their
+betaflight e_b = 5798 reproduces exactly).
+
+Columns: e_b/e_a = entries recovered before/after; r_b/r_a = of those,
+ground-truth hits; new = entries present only in the `on` run; gt = of those,
+exact ground-truth low_pc; spl = falls strictly inside another ground-truth body;
+out = outside every ground-truth body; rm = entries present only in the `off`
+run; rmgt = of those, ground truth. Rows with no change on either side are
+omitted.
+
+
+BLOCK 1 — SHIPPED, the default decbench discovery surface
+(`kuna functions --mode aggressive`, which auto-injects listing +
+funcstart_patterns + aif on non-x86-64).
+binary                                                    e_b    e_a    r_b    r_a   new   gt  spl  out   rm rmgt
+O0/betaflight/betaflight_STM32F405.elf                   5798   5805   3877   3884     7    7    0    0    0    0
+O0/cleanflight/cleanflight_DALRCF405.elf                 2840   2845   2060   2065     5    5    0    0    0    0
+O0/crazyflie/CMSIS_DAP.axf                                267    283    182    196    16   14    0    2    0    0
+O0/crazyflie/cf2.elf                                     2790   2795   2474   2476     5    2    0    3    0    0
+O0/crazyflie/firmware.elf                                2790   2795   2474   2476     5    2    0    3    0    0
+O0/freertos/RTOSDemo.out                                  146    147    134    135     1    1    0    0    0    0
+O0/libopencm3/adc-dac-printf.elf                          175    178    149    152     3    3    0    0    0    0
+O0/libopencm3/lcd-dma.elf                                 199    203    172    176     4    4    0    0    0    0
+O0/libopencm3/usart-stdio.elf                             150    154    126    130     4    4    0    0    0    0
+O0/libopencm3/usart_irq_console.elf                        89     90     85     85     1    0    0    1    0    0
+O0/nuttx/nuttx                                            924    925    910    911     1    1    0    0    0    0
+O0/riot-os/hello-world.elf                                113    124    100    111    11   11    0    0    0    0
+O2-noinline/betaflight/betaflight_STM32F405.elf          6389   6396   4513   4520     7    7    0    0    0    0
+O2-noinline/chibios/ch.elf                                620    687    594    660    67   66    0    1    0    0
+O2-noinline/cleanflight/cleanflight_DALRCF405.elf        3118   3121   2386   2389     3    3    0    0    0    0
+O2-noinline/crazyflie/CMSIS_DAP.axf                       267    283    182    196    16   14    0    2    0    0
+O2-noinline/crazyflie/cf2.elf                            2914   3001   2243   2326    87   83    0    4    0    0
+O2-noinline/crazyflie/firmware.elf                       2914   3001   2243   2326    87   83    0    4    0    0
+O2-noinline/freertos/RTOSDemo.out                         147    148    129    130     1    1    0    0    0    0
+O2-noinline/libopencm3/adc-dac-printf.elf                 206    213    148    155     7    7    0    0    0    0
+O2-noinline/libopencm3/button.elf                          51     52     30     31     1    1    0    0    0    0
+O2-noinline/libopencm3/cdcacm.elf                          91     94     68     71     3    3    0    0    0    0
+O2-noinline/libopencm3/cryptobasic.elf                     26     27     26     27     1    1    0    0    0    0
+O2-noinline/libopencm3/dac-dma.elf                         87     92     62     67     5    5    0    0    0    0
+O2-noinline/libopencm3/lcd-dma.elf                        228    236    173    181     8    8    0    0    0    0
+O2-noinline/libopencm3/lcd-serial.elf                     135    137    105    107     2    2    0    0    0    0
+O2-noinline/libopencm3/mandel.elf                          61     62     40     41     1    1    0    0    0    0
+O2-noinline/libopencm3/msc.elf                            108    111     78     81     3    3    0    0    0    0
+O2-noinline/libopencm3/sdram.elf                           76     78     54     56     2    2    0    0    0    0
+O2-noinline/libopencm3/spi-mems.elf                        78     80     56     58     2    2    0    0    0    0
+O2-noinline/libopencm3/tick_blink.elf                      56     57     35     36     1    1    0    0    0    0
+O2-noinline/libopencm3/timer.elf                           61     65     40     44     4    4    0    0    0    0
+O2-noinline/libopencm3/usart-stdio.elf                    147    153    123    129     6    6    0    0    0    0
+O2-noinline/libopencm3/usart.elf                           20     21     20     21     1    1    0    0    0    0
+O2-noinline/libopencm3/usart_console.elf                   63     64     42     43     1    1    0    0    0    0
+O2-noinline/libopencm3/usart_irq.elf                       25     27     25     27     2    2    0    0    0    0
+O2-noinline/libopencm3/usart_irq_console.elf              118    120     84     85     2    1    0    1    0    0
+O2-noinline/libopencm3/usbmidi.elf                         95     98     72     75     3    3    0    0    0    0
+O2-noinline/nuttx/nuttx                                   890    922    822    854    32   32    0    0    0    0
+O2-noinline/riot-os/hello-world.elf                       151    166    138    153    15   15    0    0    0    0
+O2/betaflight/betaflight_STM32F405.elf                   5798   5805   3877   3884     7    7    0    0    0    0
+O2/chibios/ch.elf                                         347    357    306    316    10   10    0    0    0    0
+O2/cleanflight/cleanflight_DALRCF405.elf                 2840   2845   2060   2065     5    5    0    0    0    0
+O2/crazyflie/CMSIS_DAP.axf                                267    283    182    196    16   14    0    2    0    0
+O2/crazyflie/cf2.elf                                     2093   2121   1461   1485    28   24    0    4    0    0
+O2/crazyflie/firmware.elf                                2093   2121   1461   1485    28   24    0    4    0    0
+O2/freertos/RTOSDemo.out                                  118    119    104    105     1    1    0    0    0    0
+O2/libopencm3/adc-dac-printf.elf                          168    171    134    137     3    3    0    0    0    0
+O2/libopencm3/cdcacm.elf                                   51     54     49     52     3    3    0    0    0    0
+O2/libopencm3/dac-dma.elf                                  53     54     49     50     1    1    0    0    0    0
+O2/libopencm3/lcd-dma.elf                                 186    193    152    159     7    7    0    0    0    0
+O2/libopencm3/lcd-serial.elf                               92     94     83     85     2    2    0    0    0    0
+O2/libopencm3/msc.elf                                      59     62     56     59     3    3    0    0    0    0
+O2/libopencm3/sdram.elf                                    41     43     40     42     2    2    0    0    0    0
+O2/libopencm3/spi-mems.elf                                 45     47     44     46     2    2    0    0    0    0
+O2/libopencm3/timer.elf                                    28     29     28     29     1    1    0    0    0    0
+O2/libopencm3/usart-stdio.elf                             142    147    117    122     5    5    0    0    0    0
+O2/libopencm3/usart_console.elf                            28     29     28     29     1    1    0    0    0    0
+O2/libopencm3/usart_irq.elf                                22     23     22     23     1    1    0    0    0    0
+O2/libopencm3/usart_irq_console.elf                        81     83     70     71     2    1    0    1    0    0
+O2/libopencm3/usbmidi.elf                                  54     56     52     54     2    2    0    0    0    0
+O2/nuttx/nuttx                                            740    759    668    687    19   19    0    0    0    0
+O2/riot-os/hello-world.elf                                113    124    100    111    11   11    0    0    0    0
+
+TOTAL images=96 gt=43809  recall 40309 (92.0%) -> 40870 (93.3%)  (+561)
+  new entries 593: ground-truth 561 (94.6%), splits-a-real-body 0, outside-any-body 32
+  removed entries 0, of which ground truth 0
+
+
+BLOCK 2 — SHIPPED, stacked on `--option ptrentry on` (proposal step 2).
+
+`ptrentry` (proposal step 2, merged) and `tailcallentry` are exactly orthogonal:
+the delta is identical with it off and on, because `ptrentry` also emits an
+additive entry-fact stream and never enters `Listing::functions()`, which is what
+the region-containment guard reads. Stacked, corpus entry recall is 97.2%.
+binary                                                    e_b    e_a    r_b    r_a   new   gt  spl  out   rm rmgt
+O0/betaflight/betaflight_STM32F405.elf                   6024   6031   4102   4109     7    7    0    0    0    0
+O0/cleanflight/cleanflight_DALRCF405.elf                 2948   2953   2166   2171     5    5    0    0    0    0
+O0/crazyflie/CMSIS_DAP.axf                                299    315    214    228    16   14    0    2    0    0
+O0/crazyflie/cf2.elf                                     2807   2812   2490   2492     5    2    0    3    0    0
+O0/crazyflie/firmware.elf                                2807   2812   2490   2492     5    2    0    3    0    0
+O0/freertos/RTOSDemo.out                                  150    151    137    138     1    1    0    0    0    0
+O0/libopencm3/adc-dac-printf.elf                          181    184    154    157     3    3    0    0    0    0
+O0/libopencm3/lcd-dma.elf                                 205    209    177    181     4    4    0    0    0    0
+O0/libopencm3/usart-stdio.elf                             157    161    132    136     4    4    0    0    0    0
+O0/libopencm3/usart_irq_console.elf                        92     93     88     88     1    0    0    1    0    0
+O0/nuttx/nuttx                                            929    930    915    916     1    1    0    0    0    0
+O0/riot-os/hello-world.elf                                118    129    101    112    11   11    0    0    0    0
+O2-noinline/betaflight/betaflight_STM32F405.elf          6581   6588   4704   4711     7    7    0    0    0    0
+O2-noinline/chibios/ch.elf                                656    723    628    694    67   66    0    1    0    0
+O2-noinline/cleanflight/cleanflight_DALRCF405.elf        3212   3215   2479   2482     3    3    0    0    0    0
+O2-noinline/crazyflie/CMSIS_DAP.axf                       299    315    214    228    16   14    0    2    0    0
+O2-noinline/crazyflie/cf2.elf                            3011   3098   2335   2418    87   83    0    4    0    0
+O2-noinline/crazyflie/firmware.elf                       3011   3098   2335   2418    87   83    0    4    0    0
+O2-noinline/freertos/RTOSDemo.out                         154    155    135    136     1    1    0    0    0    0
+O2-noinline/libopencm3/adc-dac-printf.elf                 211    218    151    158     7    7    0    0    0    0
+O2-noinline/libopencm3/button.elf                          51     52     30     31     1    1    0    0    0    0
+O2-noinline/libopencm3/cdcacm.elf                          97    100     74     77     3    3    0    0    0    0
+O2-noinline/libopencm3/cryptobasic.elf                     26     27     26     27     1    1    0    0    0    0
+O2-noinline/libopencm3/dac-dma.elf                         87     92     62     67     5    5    0    0    0    0
+O2-noinline/libopencm3/lcd-dma.elf                        233    241    176    184     8    8    0    0    0    0
+O2-noinline/libopencm3/lcd-serial.elf                     135    137    105    107     2    2    0    0    0    0
+O2-noinline/libopencm3/mandel.elf                          61     62     40     41     1    1    0    0    0    0
+O2-noinline/libopencm3/msc.elf                            115    118     85     88     3    3    0    0    0    0
+O2-noinline/libopencm3/sdram.elf                           76     78     54     56     2    2    0    0    0    0
+O2-noinline/libopencm3/spi-mems.elf                        78     80     56     58     2    2    0    0    0    0
+O2-noinline/libopencm3/tick_blink.elf                      56     57     35     36     1    1    0    0    0    0
+O2-noinline/libopencm3/timer.elf                           61     65     40     44     4    4    0    0    0    0
+O2-noinline/libopencm3/usart-stdio.elf                    154    160    129    135     6    6    0    0    0    0
+O2-noinline/libopencm3/usart.elf                           20     21     20     21     1    1    0    0    0    0
+O2-noinline/libopencm3/usart_console.elf                   63     64     42     43     1    1    0    0    0    0
+O2-noinline/libopencm3/usart_irq.elf                       25     27     25     27     2    2    0    0    0    0
+O2-noinline/libopencm3/usart_irq_console.elf              121    123     87     88     2    1    0    1    0    0
+O2-noinline/libopencm3/usbmidi.elf                        100    103     77     80     3    3    0    0    0    0
+O2-noinline/nuttx/nuttx                                   934    966    866    898    32   32    0    0    0    0
+O2-noinline/riot-os/hello-world.elf                       156    171    139    154    15   15    0    0    0    0
+O2/betaflight/betaflight_STM32F405.elf                   6024   6031   4102   4109     7    7    0    0    0    0
+O2/chibios/ch.elf                                         394    404    340    350    10   10    0    0    0    0
+O2/cleanflight/cleanflight_DALRCF405.elf                 2948   2953   2166   2171     5    5    0    0    0    0
+O2/crazyflie/CMSIS_DAP.axf                                299    315    214    228    16   14    0    2    0    0
+O2/crazyflie/cf2.elf                                     2196   2224   1557   1581    28   24    0    4    0    0
+O2/crazyflie/firmware.elf                                2196   2224   1557   1581    28   24    0    4    0    0
+O2/freertos/RTOSDemo.out                                  126    127    111    112     1    1    0    0    0    0
+O2/libopencm3/adc-dac-printf.elf                          173    176    137    140     3    3    0    0    0    0
+O2/libopencm3/cdcacm.elf                                   58     61     55     58     3    3    0    0    0    0
+O2/libopencm3/dac-dma.elf                                  53     54     49     50     1    1    0    0    0    0
+O2/libopencm3/lcd-dma.elf                                 192    199    156    163     7    7    0    0    0    0
+O2/libopencm3/lcd-serial.elf                               93     95     84     86     2    2    0    0    0    0
+O2/libopencm3/msc.elf                                      67     70     63     66     3    3    0    0    0    0
+O2/libopencm3/sdram.elf                                    41     43     40     42     2    2    0    0    0    0
+O2/libopencm3/spi-mems.elf                                 45     47     44     46     2    2    0    0    0    0
+O2/libopencm3/timer.elf                                    28     29     28     29     1    1    0    0    0    0
+O2/libopencm3/usart-stdio.elf                             149    154    123    128     5    5    0    0    0    0
+O2/libopencm3/usart_console.elf                            28     29     28     29     1    1    0    0    0    0
+O2/libopencm3/usart_irq.elf                                22     23     22     23     1    1    0    0    0    0
+O2/libopencm3/usart_irq_console.elf                        84     86     73     74     2    1    0    1    0    0
+O2/libopencm3/usbmidi.elf                                  60     62     57     59     2    2    0    0    0    0
+O2/nuttx/nuttx                                            786    805    714    733    19   19    0    0    0    0
+O2/riot-os/hello-world.elf                                118    129    101    112    11   11    0    0    0    0
+
+TOTAL images=96 gt=43809  recall 42028 (95.9%) -> 42589 (97.2%)  (+561)
+  new entries 593: ground-truth 561 (94.6%), splits-a-real-body 0, outside-any-body 32
+  removed entries 0, of which ground truth 0
+
+
+BLOCK 3 — SHIPPED, `--option listing off`.
+
+`tailcallentry` is a Listing consumer, so with no Listing there is nothing to
+consume: zero new, zero lost, on all 96 images. This is the surface `--mode fast`,
+the WASM and Ghidra front-ends, and single-function `kuna decompile` use.
+binary                                                    e_b    e_a    r_b    r_a   new   gt  spl  out   rm rmgt
+
+TOTAL images=96 gt=43809  recall 13277 (30.3%) -> 13277 (30.3%)  (+0)
+  new entries 0: ground-truth 0 (0.0%), splits-a-real-body 0, outside-any-body 0
+  removed entries 0, of which ground truth 0
+
+
+================================================================================
+BLOCK 4 — THE PRECISION MODEL: rejected arms and the leave-one-out ablation.
+
+Same harness, same 96 images, same `--mode aggressive` surface. These arms were
+measured on an env-masked exploration build (each guard individually maskable via
+`KUNA_TCE_RULE`) taken at the commit immediately before the rebase onto merged
+`ptrentry`; the shipped rule scores identically on both builds (593 / 561 / 0 /
+32), which is what makes the two directly comparable. The env mask is not in the
+shipped module.
+
+arm                                       new     gt     gt%   splits   outside
+--------------------------------------------------------------------------------
+naive: every B target                   39128    664    1.7%    37667       797
+proposal's naive tail-call rule *        2679    663   24.7%     1849       167
+proposal's stricter rule (purepred) **   1392    663   47.6%      607       122
+stack-discipline model ***                636    572   89.9%       18        46
+SHIPPED (four containment guards)         593    561   94.6%        0        32
+shipped + inter-function padding ****     390    375   96.2%        0        15
+
+  *   "the target's address-predecessor does not fall through into it" — the
+      proposal measured this at 39% precision / 55% splits on 7 binaries; on the
+      full 96 it is 24.7% / 69%.
+  **  "and the predecessor must RETURN" — the proposal's 54% arm; 47.6% here.
+      This is the shipped `ImpurePredecessor` guard on its own.
+  *** reject a branch taken while an unmatched PUSH / SUB SP / VPUSH / STMDB SP!
+      is still open, computed as a forward may-analysis over the caller's region.
+      Principled, and dominated: the region-crossing model beats it on precision
+      (94.6% vs 89.9%) and on splits (0 vs 18), for 11 fewer ground-truth
+      entries and 43 fewer false ones. Adding frame discipline ON TOP of the
+      shipped rule removes 39 more entries and removes no split. Not shipped.
+  **** additionally require inter-function alignment padding immediately before
+      the target. Buys 1.6pp of precision for 186 ground-truth functions. Not
+      shipped, for the same reason step 2 declined table-run corroboration.
+
+Leave-one-out over the four shipped guards:
+
+drop                                      new     gt     gt%   splits   outside
+--------------------------------------------------------------------------------
+(none — shipped)                          593    561   94.6%        0        32
+drop the region crossing                 1274    656   51.5%      514       104
+drop the pure-predecessor test            790    562   71.1%      156        72
+drop the epilogue-start test              605    561   92.7%       12        32
+drop the terminating-region test          615    568   92.4%        0        47
+
+The region crossing is the load-bearing containment fact — dropping it costs 43
+points of precision and splits 514 real bodies. Every other guard earns its place
+too: the epilogue test is what takes the residual splits to exactly zero, and the
+terminating test trades 7 ground-truth entries for 15 fewer unverifiable ones.
+
+Split-half holdout (fit the best zero-split guard subset on
+{betaflight, crazyflie, nuttx, libopencm3}, score on {chibios, cleanflight,
+freertos, riot-os} and vice versa), to check the four guards are not curve-fitted:
+
+  fitted on half A -> purepred+epilogue+region: holdout n=152 gt=136 (89.5%) splits=0
+  fitted on half B -> purepred+region:          holdout n=475 gt=432 (90.9%) splits=12
+  SHIPPED rule on the fit half:                         n=463 gt=432 (93.3%) splits=0
+  SHIPPED rule on the holdout half:                     n=130 gt=129 (99.2%) splits=0
+
+Per-project and per-optimisation-level precision of the shipped rule:
+
+  betaflight   n= 21 gt= 21 (100.0%)    O0           n= 63 gt= 54 (85.7%)
+  chibios      n= 77 gt= 76 ( 98.7%)    O2           n=160 gt=149 (93.1%)
+  cleanflight  n= 13 gt= 13 (100.0%)    O2-noinline  n=370 gt=358 (96.8%)
+  crazyflie    n=288 gt=260 ( 90.3%)
+  freertos     n=  3 gt=  3 (100.0%)    every cell has zero split bodies
+  libopencm3   n=102 gt= 99 ( 97.1%)
+  nuttx        n= 52 gt= 52 (100.0%)
+  riot-os      n= 37 gt= 37 (100.0%)
+
+================================================================================
+BLOCK 5 — THE AIF GAP-START RE-WALK (proposal's "fold it into step 2 or 3").
+
+`passes.rs` emits `run_aif`'s accepted gap starts straight to the commit stream
+without the walk re-seed Stages 2 and 3 do. Step 2 predicted that closing it IS a
+walk re-seed and left it here. Measured on this branch, with a temporary re-seed
+after `run_aif` (reverted; not in this diff), over the same 96 images:
+
+  tailcallentry OFF: recall 40309 -> 40396 (+87); new 1355 (gt 174, splits 1013,
+                     outside 168); LOST 109 entries, 87 of them ground truth
+  tailcallentry ON:  recall 40870 -> 40956 (+86); new 1424 (gt 193, splits 1059,
+                     outside 172); LOST 135 entries, 107 of them ground truth
+
+NOT folded in, and the tail-call split does not make it safe — it makes it
+slightly worse. The structural reason is the same one that makes this PR additive:
+a tail-call split moves a target from the walk's instruction worklist to its
+function worklist, which leaves the decoded-instruction closure fixed. A re-seed
+ADDS instructions to that closure, which turns undefined gaps into code and makes
+other stages' candidates fail their `is_undefined` guard — so entries that were
+being emitted stop being emitted. Nothing about tail calls can defend against
+that. It needs its own investigation.
+
+================================================================================
+BLOCK 6 — NON-CORTEX-M CONTROLS.
+
+Whole-binary `kuna decompile-all --json --mode aggressive --max-fn-seconds 0`,
+sha256 of the output, option off vs on:
+
+  gzip (x86-64, O2)                     68014a5e0e206911 == 68014a5e0e206911  IDENTICAL
+  mydoom.exe (PE i386, O2)              414fa94a2da62f2b == 414fa94a2da62f2b  IDENTICAL
+  libopencm3 blink.elf (no candidate)   c609dddc94731325 == c609dddc94731325  IDENTICAL
+  libopencm3 miniblink.elf (no cand.)   2e59e06f6d057e11 == 2e59e06f6d057e11  IDENTICAL
+
+x86-64 and PE are structurally inert: the pass is ARM-gated, like the sibling
+Stage-2/3 seed scans. The two Cortex-M images with no admissible candidate are the
+in-population control.
+
+u-boot (ARM Linux, A32, O2) IS in scope — the gate is `Architecture::Arm`, the
+same one Stages 2 and 3 use — and it is NOT byte-identical with the option on.
+Measured against its own DWARF, `kuna functions`:
+
+  entries 1728 -> 1749: 21 new, 19 ground truth (90.5%), 2 split a real body,
+  0 removed.
+
+Disclosed rather than gated away. It clears the >= 80% ground-truth bar on a
+population the model was never fitted on (A32, not Thumb; Linux, not bare metal),
+but the two splits are outside the zero-split result the Cortex-M corpus shows,
+and both are three-instruction regions inside a sparsely-walked function. A
+length floor would remove them and cost ~60 Cortex-M ground-truth entries, which
+is the trade proposal step 2 explicitly rejected.
+
+================================================================================
+BLOCK 7 — SPEED. Median of 5 runs against a frozen release binary, off vs on.
+Off and on runs are INTERLEAVED and the minimum of N pairs is reported: this box
+is shared with other agents, and a blocked A-then-B median attributed swings of
++/-20% to a change that adds 7 entries to a 5-second run. The `gzip` row is a
+provable strict no-op (ARM-gated, byte-identical output), so its delta is the
+measurement floor.
+
+surface         binary                        off          on     delta   N pairs
+--------------------------------------------------------------------------------
+kuna functions  cleanflight               2470.2ms    2455.6ms    -0.59%    7
+kuna functions  betaflight                5050.0ms    5030.4ms    -0.39%    7
+kuna functions  nuttx                     1028.2ms    1042.4ms    +1.38%    9
+kuna functions  crazyflie cf2             4563.8ms    4571.7ms    +0.17%    7
+kuna functions  libopencm3 msc             140.0ms     139.9ms    -0.09%   15
+kuna functions  gzip (x86-64, no-op)       347.9ms     347.2ms    -0.21%   15
+decompile-all   nuttx                     9274.4ms    8949.8ms    -3.50%    5
+decompile-all   libopencm3 msc             531.1ms     499.4ms    -5.96%    9
+decompile-all   chibios ch                2277.6ms    2321.3ms    +1.92%    7
+
+On the discovery surface every delta is inside the +/-0.21% no-op floor plus
+run-to-run noise, on images from 140 ms to 5.0 s. The pass is one pass over the
+decoded instruction map (which is already in memory) plus, per surviving
+candidate, a forward closure bounded at 4000 instructions; there are 593
+accepted candidates across all 96 images.
+
+The `decompile-all` deltas are the extra decompile work for the extra functions
+and are sub-proportional to it — chibios gains 67 functions of 620 (+10.8% work)
+for +1.92% wall clock. The two negative rows are noise: the option only ever adds
+functions, so it cannot make a run faster.

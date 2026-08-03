@@ -838,6 +838,19 @@ pub struct Architecture {
     /// it); a no-op when the Listing is absent. Default-off ⇒ every parity gate is
     /// byte-identical.
     pub analysis_aif: bool,
+    /// (kuna) Gate tail-call function-entry recovery (`tailcallentry`); default
+    /// **off**. The recursive-descent Listing walk treats every non-CALL flow
+    /// target as a same-function successor, so a routine reached only by a tail
+    /// `B` is absorbed into its caller instead of becoming its own function. This
+    /// option reads the completed walk and admits such a target as a NEW function
+    /// entry when a containment model says the branch leaves the caller's region:
+    /// every predecessor is an unconditional branch, the caller's stack frame is
+    /// closed at the branch, and the target's flow region is disjoint from the
+    /// rest of the caller. Additive — it emits entries and never rebuilds the
+    /// Listing, so no already-discovered entry can be lost. Reads the Listing
+    /// (`--option listing on` builds it); a no-op when the Listing is absent, so
+    /// every parity gate is byte-identical.
+    pub analysis_tailcallentry: bool,
     /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
     /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
     /// **on**, but the pass is registered ONLY for a Go binary
@@ -1165,6 +1178,7 @@ impl Architecture {
             analysis_fid: false,
             analysis_rtti: false,
             analysis_aif: false,
+            analysis_tailcallentry: false,
             analysis_gopclntab: false,
             analysis_objc: false,
             analysis_pdb: false,
@@ -1312,6 +1326,7 @@ impl Architecture {
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
+        self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_pdb = false; // PE PDB metadata recovery default-off (PE-only, external-.pdb-gated pass)
@@ -1605,6 +1620,9 @@ impl Architecture {
             "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
             "aif" => {
                 on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
+            }
+            "tailcallentry" => {
+                on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
             }
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")

@@ -24,6 +24,7 @@
 pub mod classify;
 pub mod context;
 pub mod decode;
+pub mod kuna_tailcallentry;
 pub mod model;
 pub mod walk;
 

@@ -403,6 +403,16 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // entry discovery + funcsyms miss.  Default-off (a speculative gap-filler that
     // can create false positives; also requires `--option listing on`).
     "aif",
+    // (kuna) Tail-call function-entry recovery: the recursive-descent Listing walk
+    // treats every non-CALL flow target as a same-function successor, so a routine
+    // reached only by a tail `B` is absorbed into its caller.  Reads the completed
+    // walk and admits such a target as a NEW function entry when a containment model
+    // says the branch leaves the caller's region (every predecessor is an
+    // unconditional branch, the caller's frame is closed at the branch, and the
+    // target's flow region is disjoint from the rest of the caller).  Additive —
+    // never rebuilds the Listing, so no discovered entry can be lost.  Default-off;
+    // also requires `--option listing on`.
+    "tailcallentry",
     // (kuna) Go pclntab function-name recovery: parse the embedded pclntab of a Go
     // binary and name each Go function (`main.main`/`runtime.*` instead of
     // `sub_<addr>`).  The kuna analog of Ghidra's `GolangSymbolAnalyzer`
