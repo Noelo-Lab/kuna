@@ -1,0 +1,166 @@
+{
+  "opportunity": "decbench:arm-entry-granularity step 2 (PROPOSAL PR #239) \u2014 the pointer sub-class",
+  "test_name": "kuna-analysis entry recall, decbench ARM Cortex-M corpus (16 binaries x 3 opt levels, 48 images, 41378 DWARF entries)",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_ptrentry_le32",
+  "selector": "sub_8000048",
+  "func_addr": "0x8000048",
+  "angr_version": null,
+  "option": "ptrentry",
+  "flag": "analysis_ptrentry",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "decbench:O2-nuttx-nuttx, O2-betaflight-betaflight_STM32F405, O2-cleanflight-cleanflight_DALRCF405, O2-crazyflie-cf2, O2-libopencm3-cdcacm; kuna's own ARM entry-recall measurement (docs/features/ptrentry/analysis.md; step 2 of the arm-entry-granularity proposal). Precision model after Ghidra's OperandReferenceAnalyzer / DataOperandReferenceAnalyzer split.",
+  "default_on": false,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "recall": {
+    "surface_listing_on": {
+      "ground_truth": 41378,
+      "recovered_before": 38238,
+      "recovered_after": 39851,
+      "delta": 1613,
+      "new_entries": 1694,
+      "new_entries_ground_truth": 1613,
+      "precision_pct": 95.2,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 81,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0
+    },
+    "surface_listing_off": {
+      "ground_truth": 41378,
+      "recovered_before": 8885,
+      "recovered_after": 8885,
+      "delta": 0,
+      "new_entries": 0,
+      "new_entries_ground_truth": 0,
+      "precision_pct": null,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 0,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0,
+      "note": "ptrentry is a Listing consumer; with the Listing off there is nothing to consume, so the surface is structurally inert."
+    },
+    "rejected_wiring_walk_reseed": {
+      "delta": 1626,
+      "new_entries": 2758,
+      "new_entries_ground_truth": 1641,
+      "precision_pct": 59.5,
+      "new_entries_splitting_a_real_body": 974,
+      "new_entries_outside_any_dwarf_body": 143,
+      "entries_lost": 734,
+      "ground_truth_entries_lost": 15
+    },
+    "rejected_guard_table_run_corroboration": {
+      "delta": 1302,
+      "new_entries": 1338,
+      "new_entries_ground_truth": 1302,
+      "precision_pct": 97.3,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 36,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0,
+      "note": "2.1pp of precision, all of it in the unverifiable outside-any-DWARF-body bucket, for 311 ground-truth functions."
+    },
+    "candidate_level_guard_ablation": {
+      "validated_candidates": 3462,
+      "ground_truth": 2009,
+      "splits": 1261,
+      "plus_not_same_function": {
+        "n": 2184,
+        "ground_truth": 1997,
+        "splits": 8
+      },
+      "plus_no_site_is_instruction": {
+        "n": 2143,
+        "ground_truth": 1992,
+        "splits": 0
+      }
+    },
+    "byte_identical_off_vs_on": [
+      "O2/gzip (x86-64)",
+      "O2/u-boot (ARM Linux)",
+      "O2/libopencm3/blink.elf",
+      "O2/libopencm3/miniblink.elf",
+      "O2/libopencm3/tick_blink.elf"
+    ]
+  },
+  "speed": {
+    "samples": 5,
+    "units": "ms (median wall clock)",
+    "budget_pct": 5.0,
+    "rows": [
+      {
+        "surface": "kuna functions",
+        "binary": "cleanflight",
+        "off": 2417.8,
+        "on": 2435.4,
+        "delta_pct": 0.73
+      },
+      {
+        "surface": "kuna functions",
+        "binary": "nuttx",
+        "off": 1006.8,
+        "on": 1010.9,
+        "delta_pct": 0.4
+      },
+      {
+        "surface": "kuna functions",
+        "binary": "libopencm3 msc.elf",
+        "off": 144.3,
+        "on": 137.9,
+        "delta_pct": -4.41
+      },
+      {
+        "surface": "kuna functions",
+        "binary": "gzip (x86-64, strict no-op)",
+        "off": 341.9,
+        "on": 332.9,
+        "delta_pct": -2.62
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "nuttx",
+        "off": 9166.3,
+        "on": 9529.1,
+        "delta_pct": 3.96
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "libopencm3 msc.elf",
+        "off": 538.5,
+        "on": 590.9,
+        "delta_pct": 9.73
+      }
+    ],
+    "note": "The discovery surface is under 1%. The decompile-all deltas are sub-proportional to the extra functions discovered (nuttx +5.9% functions for +3.96% wall clock; msc.elf +11.9% for +9.73%), i.e. the cost of decompiling more code, not overhead."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 386/386",
+    "make rust-test": "green",
+    "make check-spec": "green (strict)",
+    "kuna catalog --check": "catalog OK"
+  },
+  "files": {
+    "pass": "decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_ptrentry.rs",
+    "wiring": "decompiler/crates/kuna-analysis/src/passes.rs",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_ptrentry_le32",
+    "fixture_generator": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_ptrentry_le32.py",
+    "e2e": "decompiler/crates/kuna-console/tests/verify_ptrentry.rs",
+    "spec": "docs/spec/01-program-prep.md"
+  },
+  "catalog_counts": {
+    "settables": "87 -> 88",
+    "analysis_tier": "26 -> 27",
+    "catalog_json_rows": "86 -> 87",
+    "bytecompat_fixture": "87 -> 88",
+    "live_value_count": "29 (unchanged: ptrentry declares no codegen live_field)",
+    "note": "Derived from a fresh `phase catalog` capture on the rebased tree (origin/main 208bb155), not by arithmetic; `kuna catalog --check`, the kuna_phases count tests and catalog_bytecompat confirm. peimportcall (#254) is transform-tier despite being P1, so this row is the only one that moved the analysis-tier counter."
+  },
+  "div_row": null,
+  "notes": "Default-OFF. No DIV row: default output is byte-identical. The precision numbers need a human read before any default flip \u2014 this is the step of the arm-entry-granularity sequence with a real precision/recall trade-off.",
+  "rebased_onto": "origin/main 208bb155 (after #252 returncopysplit, #253 itecondlist, #254 peimportcall); the acceptance table re-measured on the rebased build is byte-identical, and the per-binary entry sets differ in 0 of 48 images off and on."
+}

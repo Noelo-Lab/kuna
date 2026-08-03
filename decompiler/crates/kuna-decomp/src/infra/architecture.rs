@@ -677,6 +677,23 @@ pub struct Architecture {
     /// one. ARM-only; a no-op on every other language and on any ARM object with
     /// no vector table.
     pub analysis_cortexmvectors: bool,
+    /// (kuna) Discover ARM function entries that are reachable only through a
+    /// code-pointer word (`ptrentry`); default **off** (output-changing: it
+    /// discovers more functions). The shipped code-pointer scan already finds
+    /// every Thumb pointer word but accepts a target only if it opens with a
+    /// stack-frame prologue and disassembles into more than two instructions —
+    /// which rejects the frameless leaf callbacks and one-instruction `bx lr`
+    /// exception handlers that make up most of the pointer-referenced population
+    /// on bare-metal firmware. When on, a pointer target is admitted on
+    /// *containment* evidence instead: no word referencing it may be the bytes of
+    /// a decoded instruction or lie in the same discovered function as the target
+    /// (the `ldr pc,[pc,r]` switch-table shape), and its speculative decode must
+    /// reach a clean return with no length floor. The accepted entries are purely
+    /// additive — the pass never re-seeds the recursive-descent walk — so the
+    /// option can add discovered functions but never remove one. ARM-only and
+    /// Listing-tier: a no-op without `--option listing on` and on every other
+    /// architecture.
+    pub analysis_ptrentry: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
@@ -1127,6 +1144,7 @@ impl Architecture {
             analysis_eh_frame_full: false,
             analysis_funcstart_patterns: false,
             analysis_cortexmvectors: false,
+            analysis_ptrentry: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -1274,6 +1292,7 @@ impl Architecture {
         self.analysis_eh_frame_full = false;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
+        self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -1536,6 +1555,9 @@ impl Architecture {
             }
             "cortexmvectors" => {
                 on_off!(analysis_cortexmvectors, "Widened ARM Cortex-M vector-table signature")
+            }
+            "ptrentry" => {
+                on_off!(analysis_ptrentry, "Pointer-referenced ARM function entries")
             }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),

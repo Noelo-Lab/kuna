@@ -521,6 +521,35 @@ pub fn run_listing_consumers(
             }
         }
     }
+    // (kuna, ARM discovery Stage 3b) `ptrentry` — pointer-referenced entries. Stage
+    // 3 above already collects every Thumb code pointer and then rejects the target
+    // unless it opens with a stack-frame prologue AND is longer than two
+    // instructions; those two predicates drop 1,632 of the 1,671 pointer-class
+    // entry-recall misses the arm-entry-granularity proposal measured (93.3% of the
+    // missed entries have no frame prologue; 41% are <= 8-byte leaves). This pass
+    // re-admits them behind a *containment* precision model — no referencing word
+    // may be instruction bytes or share the target's discovered function, which is
+    // the `ldr pc,[pc,r]` switch-table shape — plus a terminating-routine validity
+    // check with no length floor. See `aif::kuna_ptrentry`.
+    //
+    // Its accepted targets are emitted as an additive `entries` fact and are
+    // deliberately NOT re-seeded into the walk (unlike Stages 2-3): measured, the
+    // re-seed drops 734 already-recovered entries through the walk's tail-call
+    // absorption. Being purely additive is what makes "never removes an entry" a
+    // property of the wiring. ARM-only inside `pointer_entry_seeds`, so every
+    // non-ARM object is a strict no-op.
+    let mut ptrentry_out: Vec<u64> = Vec::new();
+    if arch.analysis_listing && arch.analysis_ptrentry {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            ptrentry_out = crate::aif::kuna_ptrentry::pointer_entry_seeds(
+                &file,
+                &listing,
+                translate,
+                std::rc::Rc::clone(code_space),
+                listing.exec_ranges(),
+            );
+        }
+    }
     let mut fast_pointer_seeds = Vec::new();
     if arch.analysis_fast_funcdisc {
         if let Some(code_space) = arch.manage().get_default_code_space() {
@@ -581,6 +610,11 @@ pub fn run_listing_consumers(
         let mut rd_out = AnalysisOutput::default();
         rd_out.entries = listing.functions().map(|(&vma, _)| vma).collect();
         out.push(("funcdisc_recursive", rd_out));
+    }
+    if !ptrentry_out.is_empty() {
+        let mut pe_out = AnalysisOutput::default();
+        pe_out.entries = ptrentry_out;
+        out.push(("ptrentry", pe_out));
     }
     if arch.analysis_fast_funcdisc {
         let mut fast_out = AnalysisOutput::default();
