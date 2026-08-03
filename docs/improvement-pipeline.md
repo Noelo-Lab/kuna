@@ -189,6 +189,11 @@ The artifact checklist (every item, or the gates fail opaquely):
    `openfile write`/`phase catalog` recapture documented in that file's header), and the
    `tests/stages/kuna-catalog.xml` stringmatch counts (bump whichever bucket the new
    option's `source_decompiler`/`change_kind` lands in).
+   **After any rebase, re-derive these from a fresh capture and a green run — never from
+   arithmetic.** Two of them auto-merge *without a conflict* and are still wrong: an
+   identical `N → N+1` edit on both sides merges to `N+1` when the answer is `N+2`, and a
+   keep-both merge of `docs/baseline-stages.json` leaves a stale `data_footer`. Both were
+   hit for real; see `docs/decbench-loop.md` → *Shared counters in a busy queue*.
 5. **Two-pass stage test** `tests/stages/ghangr-<slug>.xml` (`ghdec-<slug>.xml` for
    decbench-derived fixes with no angr analog): pass 1 `option <slug> off` asserts the
    BUG, pass 2 `option <slug> on` asserts the FIX (as `ghangr-loweredswitch.xml` does —
@@ -285,6 +290,24 @@ re-queues violations.
    explicit human go/no-go before implementation.
 6. **The spec is live.** Any behavior change updates the owning `docs/spec/` chapter in
    the same PR; `make check-spec` must pass.
+7. **Sweep every changed function, not just the witness.** For any pass that moves,
+   deletes or re-anchors statements, the PR carries a whole-corpus before/after diff over
+   **all** functions the option changes, with each hunk classified. A design that is right
+   on its witness and wrong three functions later is the normal failure mode, not the
+   exotic one — measured, it costs one `decompile-all` pair per binary; unmeasured, it
+   ships deleted assignments. See `docs/decbench-loop.md` → *A symptom is evidence; a
+   diagnosis is a hypothesis* for the cases that established this.
+8. **Refute against wrongness, not just against no-op.** When a second agent is briefed to
+   refute a proposed mechanism, "it does reach the output" is only half the brief. It must
+   also answer **would this produce WRONG output?** — and answer it by building the change
+   and reading the diff, not by argument. A mechanism can fire, move the metric, and still
+   delete a statement the program performs.
+9. **Re-measure after every rebase; never carry a number forward.** Every count in the PR
+   body — shared counters, breadth totals, before/after occurrence counts, the DIV number —
+   is re-derived on the rebased tree from a green build and run. Sibling PRs move each
+   other's before-arm: #257's placeholder count moved 2,143 → **2,142** because #254 landed
+   underneath it, and that was caught only by re-measuring. Arithmetic on a merged counter
+   is how a clean auto-merge ships a wrong number (§3.4).
 
 ## The headless fleet (optional automation)
 

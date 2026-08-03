@@ -1,59 +1,8 @@
 {
  "schema": 1,
  "pool": "novel",
- "snapshot_date": "2026-08-01",
+ "snapshot_date": "2026-08-03",
  "queue": [
-  {
-   "tier": "N",
-   "group_id": "libacl::set_acl_fd",
-   "group_ged": 62.0,
-   "case_id": "O2-noinline-libacl-libacl.so.1.1-set_acl_fd",
-   "project": "libacl",
-   "opt_level": "O2-noinline",
-   "binary": "libacl.so.1.1",
-   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libacl/compiled/libacl.so.1.1.2301",
-   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libacl/stripped/libacl.so.1.1.2301",
-   "function": "set_acl_fd",
-   "address": 22208,
-   "address_hex": "0x56c0",
-   "base": "ghidra",
-   "base_value": 62.0,
-   "target_value": 62.0,
-   "margin": 0.0,
-   "lead": 0.0,
-   "others_ged": {
-    "angr": 68.0,
-    "ghidra": 62.0,
-    "ida": 70.0,
-    "binja": 89.0,
-    "phoenix": 70.0
-   },
-   "bucket": "novel",
-   "artifact_suspect": false,
-   "degenerate_source": false,
-   "source_nodes": 32,
-   "source_edges": 70,
-   "source_exact": false,
-   "approximated": false,
-   "source_ambiguous": false,
-   "defects": {
-    "code_ptr": 19
-   },
-   "defect_score": 152,
-   "lines": 61,
-   "size": 58,
-   "labels": [
-    "O2-noinline",
-    "optimized",
-    "noinline",
-    "sailr",
-    "library",
-    "security",
-    "filesystem"
-   ],
-   "novel": true,
-   "siblings": []
-  },
   {
    "tier": "N",
    "group_id": "x0r-usb::IRC_Login",
@@ -76,8 +25,7 @@
     "angr": 9.0,
     "ghidra": 6.0,
     "ida": 11.0,
-    "binja": 11.0,
-    "phoenix": 9.0
+    "binja": 11.0
    },
    "bucket": "novel",
    "artifact_suspect": false,
@@ -89,11 +37,11 @@
    "source_ambiguous": false,
    "defects": {
     "goto": 2,
-    "code_ptr": 9
+    "code_ptr": 11
    },
-   "defect_score": 78,
-   "lines": 64,
-   "size": 61,
+   "defect_score": 94,
+   "lines": 72,
+   "size": 69,
    "labels": [
     "O2-noinline",
     "optimized",
@@ -109,147 +57,93 @@
   },
   {
    "tier": "N",
-   "group_id": "libopencm3::msc_data_rx_cb",
-   "group_ged": 13.0,
-   "case_id": "O2-noinline-libopencm3-msc-msc_data_rx_cb",
-   "project": "libopencm3",
-   "opt_level": "O2-noinline",
-   "binary": "msc",
-   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libopencm3/compiled/msc.elf",
-   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/libopencm3/stripped/msc.elf",
-   "function": "msc_data_rx_cb",
-   "address": 134221824,
-   "address_hex": "0x8001000",
-   "base": "ghidra",
-   "base_value": 13.0,
-   "target_value": 13.0,
+   "group_id": "libacl::set_acl",
+   "group_ged": 58.0,
+   "case_id": "O0-libacl-libacl.so.1.1-set_acl",
+   "project": "libacl",
+   "opt_level": "O0",
+   "binary": "libacl.so.1.1",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/libacl/compiled/libacl.so.1.1.2301",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/libacl/stripped/libacl.so.1.1.2301",
+   "function": "set_acl",
+   "address": 28821,
+   "address_hex": "0x7095",
+   "base": "angr",
+   "base_value": 65.0,
+   "target_value": 58.0,
    "margin": 0.0,
-   "lead": 0.0,
+   "lead": 7.0,
    "others_ged": {
-    "angr": 60.0,
-    "ghidra": 13.0,
-    "ida": 66.0,
-    "binja": 15.0,
-    "phoenix": 63.0
+    "angr": 65.0,
+    "ghidra": 95.0,
+    "ida": 67.0,
+    "binja": 69.0,
+    "phoenix": 66.0
    },
    "bucket": "novel",
    "artifact_suspect": false,
    "degenerate_source": false,
-   "source_nodes": 44,
-   "source_edges": 64,
+   "source_nodes": 46,
+   "source_edges": 102,
    "source_exact": false,
    "approximated": false,
-   "source_ambiguous": false,
+   "source_ambiguous": true,
    "defects": {
-    "goto": 5,
-    "code_ptr": 6
+    "code_ptr": 10
    },
-   "defect_score": 63,
-   "lines": 115,
-   "size": 87,
+   "defect_score": 80,
+   "lines": 66,
+   "size": 63,
    "labels": [
-    "O2-noinline",
-    "optimized",
-    "noinline",
-    "cps",
-    "firmware-library",
-    "peripheral-library",
-    "bare-metal",
-    "cortex-m4",
-    "stm32f4"
-   ],
-   "novel": true,
-   "siblings": []
-  },
-  {
-   "tier": "N",
-   "group_id": "tar::verify_volume",
-   "group_ged": 24.0,
-   "case_id": "O2-noinline-tar-tar-verify_volume",
-   "project": "tar",
-   "opt_level": "O2-noinline",
-   "binary": "tar",
-   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/tar/compiled/tar",
-   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/tar/stripped/tar",
-   "function": "verify_volume",
-   "address": 71888,
-   "address_hex": "0x118d0",
-   "base": "ida",
-   "base_value": 26.0,
-   "target_value": 24.0,
-   "margin": 0.0,
-   "lead": 2.0,
-   "others_ged": {
-    "angr": 34.0,
-    "ghidra": 28.0,
-    "ida": 26.0,
-    "binja": 26.0,
-    "phoenix": 32.0
-   },
-   "bucket": "novel",
-   "artifact_suspect": false,
-   "degenerate_source": false,
-   "source_nodes": 48,
-   "source_edges": 81,
-   "source_exact": false,
-   "approximated": false,
-   "source_ambiguous": false,
-   "defects": {
-    "goto": 6,
-    "code_ptr": 5
-   },
-   "defect_score": 58,
-   "lines": 130,
-   "size": 154,
-   "labels": [
-    "O2-noinline",
-    "optimized",
-    "noinline",
+    "O0",
+    "unoptimized",
     "sailr",
-    "cli-tool",
-    "archiving",
-    "large"
+    "library",
+    "security",
+    "filesystem"
    ],
    "novel": true,
    "siblings": []
   },
   {
    "tier": "N",
-   "group_id": "betaflight::accDetect",
+   "group_id": "crazyflie::USBD_GetDescriptor",
    "group_ged": 10.0,
-   "case_id": "O2-noinline-betaflight-betaflight_STM32F405-accDetect",
-   "project": "betaflight",
+   "case_id": "O2-noinline-crazyflie-firmware-USBD_GetDescriptor",
+   "project": "crazyflie",
    "opt_level": "O2-noinline",
-   "binary": "betaflight_STM32F405",
-   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/betaflight/compiled/betaflight_STM32F405.elf",
-   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/betaflight/stripped/betaflight_STM32F405.elf",
-   "function": "accDetect",
-   "address": 134487524,
-   "address_hex": "0x8041de4",
-   "base": "ghidra",
+   "binary": "firmware",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/crazyflie/compiled/firmware.elf",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/crazyflie/stripped/firmware.elf",
+   "function": "USBD_GetDescriptor",
+   "address": 134340012,
+   "address_hex": "0x801ddac",
+   "base": "angr",
    "base_value": 11.0,
    "target_value": 10.0,
    "margin": 0.0,
    "lead": 1.0,
    "others_ged": {
-    "angr": 30.0,
-    "ghidra": 11.0,
-    "ida": 17.0
+    "angr": 11.0,
+    "ghidra": 18.0,
+    "ida": 11.0
    },
    "bucket": "novel",
    "artifact_suspect": false,
    "degenerate_source": false,
-   "source_nodes": 38,
-   "source_edges": 64,
+   "source_nodes": 20,
+   "source_edges": 28,
    "source_exact": false,
    "approximated": false,
    "source_ambiguous": false,
    "defects": {
-    "goto": 19
+    "goto": 3,
+    "code_ptr": 8,
+    "subpiece": 1
    },
-   "defect_score": 57,
-   "lines": 133,
-   "size": 130,
+   "defect_score": 76,
+   "lines": 62,
+   "size": 59,
    "labels": [
     "O2-noinline",
     "optimized",
@@ -260,12 +154,11 @@
     "avionics",
     "bare-metal",
     "cortex-m4",
-    "stm32f4",
-    "large"
+    "stm32f4"
    ],
    "novel": true,
    "siblings": [
-    "O0-betaflight-betaflight_STM32F405-accDetect"
+    "O2-noinline-crazyflie-cf2-USBD_GetDescriptor"
    ]
   },
   {
@@ -301,13 +194,13 @@
    "source_ambiguous": false,
    "defects": {
     "goto": 2,
-    "undefined": 2,
-    "concat": 8,
-    "subpiece": 7
+    "undefined": 3,
+    "concat": 9,
+    "subpiece": 9
    },
-   "defect_score": 55,
-   "lines": 165,
-   "size": 162,
+   "defect_score": 66,
+   "lines": 148,
+   "size": 145,
    "labels": [
     "O2-noinline",
     "optimized",
@@ -360,13 +253,13 @@
    "source_ambiguous": false,
    "defects": {
     "goto": 2,
-    "undefined": 2,
-    "concat": 8,
-    "subpiece": 7
+    "undefined": 3,
+    "concat": 9,
+    "subpiece": 9
    },
-   "defect_score": 55,
-   "lines": 164,
-   "size": 161,
+   "defect_score": 66,
+   "lines": 150,
+   "size": 147,
    "labels": [
     "O2-noinline",
     "optimized",
@@ -384,6 +277,111 @@
    "siblings": [
     "O0-cleanflight-cleanflight_DALRCF405-applyLedFixedLayers"
    ]
+  },
+  {
+   "tier": "N",
+   "group_id": "betaflight::accDetect",
+   "group_ged": 11.0,
+   "case_id": "O2-noinline-betaflight-betaflight_STM32F405-accDetect",
+   "project": "betaflight",
+   "opt_level": "O2-noinline",
+   "binary": "betaflight_STM32F405",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/betaflight/compiled/betaflight_STM32F405.elf",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/betaflight/stripped/betaflight_STM32F405.elf",
+   "function": "accDetect",
+   "address": 134487524,
+   "address_hex": "0x8041de4",
+   "base": "ghidra",
+   "base_value": 11.0,
+   "target_value": 11.0,
+   "margin": 0.0,
+   "lead": 0.0,
+   "others_ged": {
+    "angr": 30.0,
+    "ghidra": 11.0,
+    "ida": 17.0
+   },
+   "bucket": "novel",
+   "artifact_suspect": false,
+   "degenerate_source": false,
+   "source_nodes": 38,
+   "source_edges": 64,
+   "source_exact": false,
+   "approximated": false,
+   "source_ambiguous": false,
+   "defects": {
+    "goto": 19
+   },
+   "defect_score": 57,
+   "lines": 118,
+   "size": 115,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "cps",
+    "drone",
+    "flight-controller",
+    "avionics",
+    "bare-metal",
+    "cortex-m4",
+    "stm32f4",
+    "large"
+   ],
+   "novel": true,
+   "siblings": [
+    "O0-betaflight-betaflight_STM32F405-accDetect"
+   ]
+  },
+  {
+   "tier": "N",
+   "group_id": "libacl::set_acl_fd",
+   "group_ged": 45.0,
+   "case_id": "O0-libacl-libacl.so.1.1-set_acl_fd",
+   "project": "libacl",
+   "opt_level": "O0",
+   "binary": "libacl.so.1.1",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O0/libacl/compiled/libacl.so.1.1.2301",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O0/libacl/stripped/libacl.so.1.1.2301",
+   "function": "set_acl_fd",
+   "address": 27167,
+   "address_hex": "0x6a1f",
+   "base": "angr",
+   "base_value": 46.0,
+   "target_value": 45.0,
+   "margin": 0.0,
+   "lead": 1.0,
+   "others_ged": {
+    "angr": 46.0,
+    "ghidra": 67.0,
+    "ida": 48.0,
+    "binja": 50.0,
+    "phoenix": 49.0
+   },
+   "bucket": "novel",
+   "artifact_suspect": false,
+   "degenerate_source": false,
+   "source_nodes": 32,
+   "source_edges": 70,
+   "source_exact": false,
+   "approximated": false,
+   "source_ambiguous": false,
+   "defects": {
+    "code_ptr": 7
+   },
+   "defect_score": 56,
+   "lines": 50,
+   "size": 47,
+   "labels": [
+    "O0",
+    "unoptimized",
+    "sailr",
+    "library",
+    "security",
+    "filesystem"
+   ],
+   "novel": true,
+   "siblings": []
   },
   {
    "tier": "N",
@@ -421,7 +419,7 @@
     "subpiece": 14
    },
    "defect_score": 54,
-   "lines": 174,
+   "lines": 165,
    "size": 171,
    "labels": [
     "O2-noinline",
@@ -470,7 +468,7 @@
     "goto": 17
    },
    "defect_score": 51,
-   "lines": 217,
+   "lines": 216,
    "size": 231,
    "labels": [
     "O2-noinline",
@@ -507,7 +505,7 @@
   {
    "tier": "N",
    "group_id": "libopencm3::main",
-   "group_ged": 58.0,
+   "group_ged": 55.0,
    "case_id": "O0-libopencm3-sdram-main",
    "project": "libopencm3",
    "opt_level": "O0",
@@ -519,15 +517,14 @@
    "address_hex": "0x800072c",
    "base": "angr",
    "base_value": 77.0,
-   "target_value": 58.0,
+   "target_value": 55.0,
    "margin": 0.0,
-   "lead": 19.0,
+   "lead": 22.0,
    "others_ged": {
     "angr": 77.0,
     "ghidra": 85.0,
     "ida": 79.0,
-    "binja": 113.0,
-    "phoenix": 90.0
+    "binja": 113.0
    },
    "bucket": "novel",
    "artifact_suspect": false,
@@ -541,7 +538,7 @@
     "goto": 17
    },
    "defect_score": 51,
-   "lines": 151,
+   "lines": 127,
    "size": 142,
    "labels": [
     "O0",
@@ -556,6 +553,7 @@
    ],
    "novel": true,
    "siblings": [
+    "O0-libopencm3-usart-main",
     "O2-noinline-libopencm3-button-main",
     "O2-noinline-libopencm3-sdram-main",
     "O2-noinline-libopencm3-usart-stdio-main"
@@ -563,114 +561,8 @@
   },
   {
    "tier": "N",
-   "group_id": "crazyflie::dwHandleInterrupt",
-   "group_ged": 11.0,
-   "case_id": "O2-noinline-crazyflie-firmware-dwHandleInterrupt",
-   "project": "crazyflie",
-   "opt_level": "O2-noinline",
-   "binary": "firmware",
-   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/crazyflie/compiled/firmware.elf",
-   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/crazyflie/stripped/firmware.elf",
-   "function": "dwHandleInterrupt",
-   "address": 134479900,
-   "address_hex": "0x804001c",
-   "base": "ghidra",
-   "base_value": 11.0,
-   "target_value": 11.0,
-   "margin": 0.0,
-   "lead": 0.0,
-   "others_ged": {
-    "angr": 16.0,
-    "ghidra": 11.0,
-    "ida": 14.0
-   },
-   "bucket": "novel",
-   "artifact_suspect": false,
-   "degenerate_source": false,
-   "source_nodes": 25,
-   "source_edges": 31,
-   "source_exact": false,
-   "approximated": false,
-   "source_ambiguous": false,
-   "defects": {
-    "code_ptr": 6
-   },
-   "defect_score": 48,
-   "lines": 61,
-   "size": 58,
-   "labels": [
-    "O2-noinline",
-    "optimized",
-    "noinline",
-    "cps",
-    "drone",
-    "flight-controller",
-    "avionics",
-    "bare-metal",
-    "cortex-m4",
-    "stm32f4"
-   ],
-   "novel": true,
-   "siblings": [
-    "O2-noinline-crazyflie-cf2-dwHandleInterrupt"
-   ]
-  },
-  {
-   "tier": "N",
-   "group_id": "mydoom::scan_textfile",
-   "group_ged": 16.0,
-   "case_id": "O2-noinline-mydoom-mydoom-scan_textfile",
-   "project": "mydoom",
-   "opt_level": "O2-noinline",
-   "binary": "mydoom",
-   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/mydoom/compiled/mydoom.exe",
-   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/mydoom/stripped/mydoom.exe",
-   "function": "scan_textfile",
-   "address": 4217584,
-   "address_hex": "0x405af0",
-   "base": "ghidra",
-   "base_value": 16.0,
-   "target_value": 16.0,
-   "margin": 0.0,
-   "lead": 0.0,
-   "others_ged": {
-    "angr": 18.0,
-    "ghidra": 16.0,
-    "ida": 16.0,
-    "binja": 18.0,
-    "phoenix": 18.0
-   },
-   "bucket": "novel",
-   "artifact_suspect": false,
-   "degenerate_source": false,
-   "source_nodes": 12,
-   "source_edges": 16,
-   "source_exact": false,
-   "approximated": false,
-   "source_ambiguous": false,
-   "defects": {
-    "raw_reg": 8
-   },
-   "defect_score": 48,
-   "lines": 63,
-   "size": 36,
-   "labels": [
-    "O2-noinline",
-    "optimized",
-    "noinline",
-    "malware",
-    "do-not-execute",
-    "worm",
-    "windows",
-    "pe"
-   ],
-   "novel": true,
-   "siblings": []
-  },
-  {
-   "tier": "N",
    "group_id": "openssh-portable::parse_revoked_certs",
-   "group_ged": 8.0,
+   "group_ged": 7.0,
    "case_id": "O0-openssh-portable-sshd-parse_revoked_certs",
    "project": "openssh-portable",
    "opt_level": "O0",
@@ -682,9 +574,9 @@
    "address_hex": "0xd2c4f",
    "base": "ida",
    "base_value": 34.0,
-   "target_value": 8.0,
+   "target_value": 7.0,
    "margin": 0.0,
-   "lead": 26.0,
+   "lead": 27.0,
    "others_ged": {
     "angr": 42.0,
     "ghidra": 54.0,
@@ -702,7 +594,7 @@
     "goto": 14
    },
    "defect_score": 42,
-   "lines": 129,
+   "lines": 125,
    "size": 223,
    "labels": [
     "O0",
@@ -725,7 +617,7 @@
   {
    "tier": "N",
    "group_id": "bash::chk_arithsub",
-   "group_ged": 22.0,
+   "group_ged": 18.0,
    "case_id": "O2-noinline-bash-bash-chk_arithsub",
    "project": "bash",
    "opt_level": "O2-noinline",
@@ -737,9 +629,9 @@
    "address_hex": "0x694e0",
    "base": "ghidra",
    "base_value": 29.0,
-   "target_value": 22.0,
+   "target_value": 18.0,
    "margin": 0.0,
-   "lead": 7.0,
+   "lead": 11.0,
    "others_ged": {
     "angr": 33.0,
     "ghidra": 29.0,
@@ -758,7 +650,7 @@
     "goto": 14
    },
    "defect_score": 42,
-   "lines": 117,
+   "lines": 110,
    "size": 128,
    "labels": [
     "O2-noinline",
@@ -809,8 +701,8 @@
     "code_ptr": 4
    },
    "defect_score": 41,
-   "lines": 89,
-   "size": 86,
+   "lines": 80,
+   "size": 77,
    "labels": [
     "O0",
     "unoptimized",
@@ -827,7 +719,7 @@
   {
    "tier": "N",
    "group_id": "crazyflie::sensorsDeviceInit",
-   "group_ged": 41.0,
+   "group_ged": 39.0,
    "case_id": "O2-noinline-crazyflie-firmware-sensorsDeviceInit",
    "project": "crazyflie",
    "opt_level": "O2-noinline",
@@ -859,8 +751,8 @@
     "code_ptr": 5
    },
    "defect_score": 40,
-   "lines": 126,
-   "size": 123,
+   "lines": 127,
+   "size": 124,
    "labels": [
     "O2-noinline",
     "optimized",
@@ -880,6 +772,115 @@
     "O0-crazyflie-firmware-sensorsDeviceInit",
     "O2-noinline-crazyflie-cf2-sensorsDeviceInit"
    ]
+  },
+  {
+   "tier": "N",
+   "group_id": "cleanflight::ftoa",
+   "group_ged": 8.0,
+   "case_id": "O2-noinline-cleanflight-cleanflight_DALRCF405-ftoa",
+   "project": "cleanflight",
+   "opt_level": "O2-noinline",
+   "binary": "cleanflight_DALRCF405",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/cleanflight/compiled/cleanflight_DALRCF405.elf",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/cleanflight/stripped/cleanflight_DALRCF405.elf",
+   "function": "ftoa",
+   "address": 134279244,
+   "address_hex": "0x800f04c",
+   "base": "ghidra",
+   "base_value": 8.0,
+   "target_value": 8.0,
+   "margin": 0.0,
+   "lead": 0.0,
+   "others_ged": {
+    "angr": 19.0,
+    "ghidra": 8.0,
+    "ida": 8.0,
+    "binja": 19.0
+   },
+   "bucket": "novel",
+   "artifact_suspect": false,
+   "degenerate_source": false,
+   "source_nodes": 16,
+   "source_edges": 21,
+   "source_exact": false,
+   "approximated": false,
+   "source_ambiguous": false,
+   "defects": {
+    "undefined": 2,
+    "concat": 10,
+    "subpiece": 2
+   },
+   "defect_score": 40,
+   "lines": 64,
+   "size": 61,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "cps",
+    "drone",
+    "flight-controller",
+    "avionics",
+    "bare-metal",
+    "cortex-m4",
+    "stm32f4"
+   ],
+   "novel": true,
+   "siblings": [
+    "O0-cleanflight-cleanflight_DALRCF405-ftoa"
+   ]
+  },
+  {
+   "tier": "N",
+   "group_id": "nuttx::med3",
+   "group_ged": 14.0,
+   "case_id": "O2-noinline-nuttx-nuttx-med3",
+   "project": "nuttx",
+   "opt_level": "O2-noinline",
+   "binary": "nuttx",
+   "binary_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/nuttx/compiled/nuttx",
+   "stripped_path": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/nuttx/stripped/nuttx",
+   "function": "med3",
+   "address": 134300508,
+   "address_hex": "0x801435c",
+   "base": "ghidra",
+   "base_value": 14.0,
+   "target_value": 14.0,
+   "margin": 0.0,
+   "lead": 0.0,
+   "others_ged": {
+    "angr": 17.0,
+    "ghidra": 14.0,
+    "ida": 14.0,
+    "binja": 14.0
+   },
+   "bucket": "novel",
+   "artifact_suspect": false,
+   "degenerate_source": false,
+   "source_nodes": 8,
+   "source_edges": 10,
+   "source_exact": false,
+   "approximated": false,
+   "source_ambiguous": false,
+   "defects": {
+    "code_ptr": 5
+   },
+   "defect_score": 40,
+   "lines": 19,
+   "size": 16,
+   "labels": [
+    "O2-noinline",
+    "optimized",
+    "noinline",
+    "cps",
+    "rtos",
+    "real-time-kernel",
+    "bare-metal",
+    "cortex-m4",
+    "stm32f4discovery"
+   ],
+   "novel": true,
+   "siblings": []
   }
  ]
 }
