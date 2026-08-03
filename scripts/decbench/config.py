@@ -139,3 +139,61 @@ def group_id(project: str, function: str) -> str:
 def stripped_path(binary_path: str) -> str:
     """The stripped sibling of a results-tree compiled binary path."""
     return binary_path.replace("/compiled/", "/stripped/")
+
+
+_IMAGE_BASE: dict[str, int | None] = {}
+
+
+def image_base(binary_path: str | None) -> int | None:
+    """PE ImageBase of a corpus binary; None for anything that is not a PE.
+
+    Detected from the file's own headers (``MZ`` + ``PE\\0\\0`` at ``e_lfanew``),
+    never from the name — the corpus binaries are stripped and not all are named
+    ``.exe``. The base differs per binary (``mydoom.exe`` 0x400000,
+    ``dexter.dll`` 0x69940000), so it is always read, never assumed.
+    """
+    if not binary_path:
+        return None
+    if binary_path not in _IMAGE_BASE:
+        _IMAGE_BASE[binary_path] = _read_image_base(binary_path)
+    return _IMAGE_BASE[binary_path]
+
+
+def _read_image_base(binary_path: str) -> int | None:
+    try:
+        with open(binary_path, "rb") as fh:
+            if fh.read(2) != b"MZ":
+                return None
+            fh.seek(0x3C)
+            fh.seek(int.from_bytes(fh.read(4), "little"))
+            if fh.read(4) != b"PE\0\0":
+                return None
+            fh.seek(20, 1)  # past the COFF header, at the optional header
+            magic = int.from_bytes(fh.read(2), "little")
+            if magic == 0x10B:  # PE32: ImageBase at optional+28
+                fh.seek(26, 1)
+                return int.from_bytes(fh.read(4), "little")
+            if magic == 0x20B:  # PE32+: ImageBase at optional+24
+                fh.seek(22, 1)
+                return int.from_bytes(fh.read(8), "little")
+            return None
+    except (OSError, ValueError):
+        return None
+
+
+def kuna_addr(binary_path: str | None, address: int | str | None) -> str | None:
+    """The ``kuna --addr`` (VA) form of a mined case address.
+
+    decbench records PE addresses as RVAs — ``function_results.json`` and every
+    rival's ``// Function: <fn> @ 0x..`` marker do, while kuna's own artifacts
+    use VAs — so a mined pool carries either form depending on where the address
+    came from. kuna addresses a PE by VA, so an address below the image base can
+    only be an RVA and is rebased; ELF (no image base) and VAs pass through.
+    """
+    if address is None:
+        return None
+    addr = int(address, 16) if isinstance(address, str) else int(address)
+    base = image_base(binary_path)
+    if base is not None and addr < base:
+        addr += base
+    return f"0x{addr:x}"

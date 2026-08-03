@@ -281,7 +281,8 @@ def verify_bundle(d: Path, timeout: int = 900) -> dict:
     if not stripped or addr is None or not Path(stripped).is_file():
         return out | {"status": "no-binary", "identical": False}
 
-    cmd = [config.kuna_bin(), "decompile-all", stripped, "--addr", hex(addr)]
+    cmd = [config.kuna_bin(), "decompile-all", stripped,
+           "--addr", config.kuna_addr(stripped, addr)]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
