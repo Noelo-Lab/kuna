@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    decbench NOVEL pool, `(code *)` cluster (cluster record
+    docs/decbench/triage/novel-code-ptr-cluster.md; witness
+    O2-noinline-crazyflie-cf2-dwHandleInterrupt @ 0x804001c).
+
+    Every ARM/Thumb indirect call was emitted with an ISA-mode bit-clear the
+    source never performs, and the mask blocked the function-pointer type from
+    reaching the load:
+
+        (*(code *)(*(uint4 *)(a0 + 0x44) &amp; 0xfffffffe))(a0)   // kuna, before
+        (**(code **)(param_1 + 0x44))(param_1)                 // ghidra
+
+    SLEIGH lowers every Thumb indirect call through `BXWritePC`
+    (ARM.sinc:221), whose second line is `local tmp = addr &amp; 0xfffffffe`, so
+    an INT_AND feeds the CALLIND target.  Upstream erases that AND in
+    `RuleFuncPtrEncoding` (decompiler/cpp/ruleaction.cc:9928) whenever the
+    compiler spec declares `&lt;funcptr align="N"/&gt;`.  kuna's port of the rule was
+    complete but its only input was a hard-coded `funcptr_align() = 0` stub, so
+    the rule could never fire on any architecture.
+
+    Stage model: P3 dataflow, simplification quiescence: the rule pool entry
+    `funcptrencoding` in `p3_dataflow/ruleaction_8.rs`.
+
+    No option: this is a strict bug fix (finishing a stubbed port).  The
+    processor cspec, not kuna, declares the alignment; upstream honours it; the
+    emitted C stated an operation the program does not perform.
+
+    Pass 1 (ARM Thumb, `&lt;funcptr align="2"/&gt;` in ARM.cspec) is the FIX: the
+    dispatcher's `blx r3` renders with no mask and the field types as `code **`.
+    Pass 2 re-runs the same function with `option thumbfuncptr off`, the other
+    live reader of `funcptr_align` (GH-8471 / DIV-2, `p3_dataflow/ruleaction_6.rs`
+    `RulePtrsubUndo::preserve_thumb_funcptr`): the two features touch the same
+    low bit from opposite ends, and the mask must stay stripped either way.
+
+    Layout (hand-laid Thumb-2, the reduced crazyflie `dwHandleInterrupt` shape):
+       0x10100  dispatch:  push {r4,lr}; mov r4,r0; ldr r3,[r0,#4]
+                           cmp r3,#0; beq +1; mov r0,r4; blx r3
+                           pop {r4,pc}
+-->
+<bytechunk space="ram" offset="0x10100" readonly="true">
+10b504464368002b01d02046984710bd
+</bytechunk>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>set context TMode 1 [ram,0x10100] [ram,0x1010f]</com>
+  <com>map function r0x10100 dispatch</com>
+  <com>lo fu dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option thumbfuncptr off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C" min="0" max="0">0xfffffffe</stringmatch>
+<stringmatch name="FUNCPTRALIGN #2: the callee field recovers as code ** and the call needs no cast" min="2" max="2">\(\*\*\(code \*\*\)</stringmatch>
+</decompilertest>

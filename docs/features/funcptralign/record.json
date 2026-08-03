@@ -1,0 +1,186 @@
+{
+ "opportunity": "O2-noinline-crazyflie-cf2-dwHandleInterrupt::0x804001c",
+ "slug": "funcptralign",
+ "pool": "novel",
+ "cluster_record": "docs/decbench/triage/novel-code-ptr-cluster.md",
+ "test_name": "O2-noinline-crazyflie-cf2-dwHandleInterrupt",
+ "binary": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/crazyflie/stripped/cf2.elf",
+ "selector": "0x804001c",
+ "func_addr": "0x804001c",
+ "option": null,
+ "flag": null,
+ "element_id": null,
+ "phase": "P3",
+ "subphase": "simplification-quiescence (rule pool)",
+ "change_kind": "correctness-fix",
+ "source_decompiler": "ghidra",
+ "inspiration": "decbench:O2-noinline-crazyflie-cf2-dwHandleInterrupt; upstream RuleFuncPtrEncoding; cf2.elf@0x804001c",
+ "upstream_fidelity": "port-completion",
+ "upstream_anchor": "Ghidra/Features/Decompiler/src/decompile/cpp/ruleaction.cc RuleFuncPtrEncoding::applyOp:9928-9949",
+ "default_on": true,
+ "gated": false,
+ "gate_rationale": "Strict bug fix, no flag. The alignment width is declared by the processor cspec (<funcptr align=\"N\"/>), not by kuna; upstream Ghidra honours it unconditionally; the rule body was already a line-for-line port whose only input was a hard-coded 0 stub; and the pre-fix C stated a bit-clear the program never performs. Both parity gates stay green with the fix live, with no re-pin and no per-test opt-out. Recorded in docs/history.md under Convergences (upstream behavior restored), which is where the registry puts a port defect whose fix moves kuna back onto upstream's default.",
+ "div": null,
+ "convergence_row": "funcptrencoding (P3 rule pool)",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "decisions": [
+  "No option gate. CLAUDE.md carves out 'a strict bug fix that only corrects wrong output needs no flag'; this finishes a stubbed port (funcptr_align() returned a hard-coded 0), the width comes from the vendored cspec rather than from kuna, and the ablation is 0/675 with no re-pin.",
+  "Honour align=4 on AARCH64 exactly as align=2 on ARM. Upstream RuleFuncPtrEncoding::applyOp has a single code path (slide = ~0 << align) with no align special-case, and the comparison is exact, so a `& ~3` matches on AARCH64 and a `& ~1` does not. Confirmed empirically against stock Ghidra 12.1 headless on a purpose-built AArch64 probe: Ghidra strips the program's own `and x8, x8, #0xfffffffffffffffc` before `blr x8` and prints (**(code **)(param_1 + 2))(*param_1), byte-for-byte what kuna now prints.",
+  "AArch64's own lifting emits no mask (AARCH64base.sinc:887 `:blr Rn_GPR64 { pc = Rn_GPR64; ... call [pc]; }`), so the rule is inert on ordinary AArch64 code and only fires on a mask the program itself wrote.",
+  "No interaction with thumbfuncptr (GH-8471 / DIV-2), the other live funcptr_align reader: this rule only removes an INT_AND that a CALLIND consumes, and rewrites it to a transparent COPY, so any other reader keeps the value. Pinned by pass 2 of the stage test and by the unchanged gh8471-thumbfuncptr.xml."
+ ],
+ "breadth": {
+  "metric": "kuna decompile-all, whole binary, occurrences of `& 0xfffffffe` / `(code *)` / `(code **)`",
+  "arm": {
+   "crazyflie/cf2.elf": {
+    "masks": [
+     264,
+     15
+    ],
+    "code_ptr": [
+     255,
+     46
+    ],
+    "code_ptr_ptr": [
+     0,
+     205
+    ]
+   },
+   "nuttx/nuttx": {
+    "masks": [
+     459,
+     40
+    ],
+    "code_ptr": [
+     435,
+     42
+    ],
+    "code_ptr_ptr": [
+     0,
+     397
+    ]
+   },
+   "libopencm3/msc.elf": {
+    "masks": [
+     56,
+     6
+    ],
+    "code_ptr": [
+     50,
+     10
+    ],
+    "code_ptr_ptr": [
+     0,
+     41
+    ]
+   },
+   "chibios/ch.elf": {
+    "masks": [
+     38,
+     13
+    ],
+    "code_ptr": [
+     40,
+     30
+    ],
+    "code_ptr_ptr": [
+     0,
+     16
+    ]
+   }
+  },
+  "x86_controls_changed_lines": {
+   "zlib/minigzip": 0,
+   "gzip/gzip": 0,
+   "bash/bash": 0,
+   "x0r-usb/x0r-usb.exe (i386 PE)": 0,
+   "coreutils/head": 0
+  },
+  "corpus_estimate_from_triage": "4,027 Thumb-masked indirect calls in 2,496 function-instances across 97 binary-instances in 9 ARM projects"
+ },
+ "aarch64_verification": {
+  "cspec_align": 4,
+  "funcptr_align_bit_position": 2,
+  "upstream_special_cases_align": false,
+  "aarch64_blr_emits_mask": false,
+  "probe": "clang --target=aarch64-linux-gnu -O1 -ffreestanding -c (handle: plain `blr x8`; handle_masked: `and x8, x8, #0xfffffffffffffffc; blr x8`)",
+  "ghidra_12_1_headless": {
+   "handle": "(**(code **)(param_1 + 2))()",
+   "handle_masked": "(**(code **)(param_1 + 2))(*param_1)"
+  },
+  "kuna_before": {
+   "handle": "(**(code **)&a0[2])()",
+   "handle_masked": "(*(code *)(*(uint8 *)&a0[2] & 0xfffffffffffffffc))(*a0)"
+  },
+  "kuna_after": {
+   "handle": "(**(code **)&a0[2])()",
+   "handle_masked": "(**(code **)&a0[2])(*a0)"
+  },
+  "verdict": "kuna matches stock Ghidra 12.1 on both arms; the align=4 seam is upstream's declared contract, not a kuna choice, and is inert on ordinary AArch64 code"
+ },
+ "speed_metric": "kuna decompile-all, interleaved medians across two builds of this tree (pre-fix funcptr_align stub vs live read); box running three concurrent sibling agents",
+ "speed_libopencm3_msc_before_ms": 592,
+ "speed_libopencm3_msc_after_ms": 597,
+ "speed_libopencm3_msc_pct": 0.84,
+ "speed_coreutils_head_before_ms": 5368,
+ "speed_coreutils_head_after_ms": 5443,
+ "speed_coreutils_head_pct": 1.4,
+ "speed_coreutils_head_note": "that binary's emitted C is byte-identical before/after, so the delta is measurement noise rather than cost",
+ "speed_crazyflie_cf2_before_ms": 36838,
+ "speed_crazyflie_cf2_after_ms": 32052,
+ "speed_crazyflie_cf2_pct": -12.99,
+ "speed_samples": "5/5/3 interleaved pairs",
+ "speed_budget_pct": 5,
+ "speed_within_budget": true,
+ "speed_forced_off": false,
+ "stage_test": "tests/stages/ghdec-funcptralign.xml",
+ "stage_test_prefix_result": "0 of 2 assertions pass pre-fix, 2/2 post-fix",
+ "unit_tests": [
+  "funcptrencoding_noops_without_cspec_funcptr (align 0: x86/x86-64, rule inert)",
+  "funcptrencoding_strips_thumb_mode_bit (align 1: ARM/MIPS/Loongarch/8051, `& ~1` -> COPY)",
+  "funcptrencoding_strips_aarch64_word_alignment (align 2: AARCH64, `& ~3` -> COPY and `& ~1` declined)"
+ ],
+ "gates": {
+  "make test": "PARITY OK 675/675",
+  "make test-stages": "PARITY OK 358/358",
+  "make rust-test": "green",
+  "make check-spec": "OK (lenient + strict)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options"
+ },
+ "ged_case": "O2-noinline-libopencm3-msc-msc_data_rx_cb",
+ "ged_recorded": 13.0,
+ "ged_before": 18.0,
+ "ged_after": 18.0,
+ "ged_delta": 0.0,
+ "ged_perfect_after": false,
+ "ged_approximated": false,
+ "ged_options": [],
+ "ged_kuna_commit": "9623dc27",
+ "ged_results_root": "/home/mahaloz/github/decbench/results/full_run",
+ "ged_verdict": "ZERO GED value, as the cluster record predicted. GED is a CFG edit distance; this fix removes an INT_AND from an expression and retypes a LOAD, changing no basic block and no edge, so the metric cannot see it. Measured, not assumed.",
+ "ged_runs": {
+  "O2-noinline-libopencm3-msc-msc_data_rx_cb": {
+   "recorded": 13.0,
+   "before": 18.0,
+   "after": 18.0,
+   "delta": 0.0,
+   "source_nodes": 44,
+   "metric_drift": true,
+   "note": "the usable run: real source CFG (44 nodes). GED is flat at 18."
+  },
+  "O2-noinline-crazyflie-firmware-dwHandleInterrupt": {
+   "recorded": 11.0,
+   "before": null,
+   "after": null,
+   "delta": null,
+   "source_nodes": 1,
+   "metric_drift": true,
+   "note": "UNUSABLE - a scoring artifact, not a result. rescore resolved the source to crtp_localization_service.i (the function lives in libdw1000.i) and got a 1-node degenerate source CFG, so before and after both compute as inf and the delta is NaN. This is exactly the degenerate-source-CFG caveat in docs/decbench-loop.md and the Metric note in the cluster record. Recorded as null rather than inf/NaN, which are not valid JSON."
+  },
+  "O2-noinline-crazyflie-cf2-dwHandleInterrupt": {
+   "note": "the headline witness; its case_id exists only in the triage branch's pool, so `rescore` on main cannot resolve it (`--siblings` aborts on it). The firmware instance above is the same function in the same project."
+  }
+ },
+ "why_ship_without_a_ged_win": "The win is correctness and readability, and it is measured directly instead: kuna's post-fix C is byte-for-byte Ghidra's on both the ARM witness and the AArch64 probe, the invented bit-clear is gone (masks 264 -> 15 on cf2.elf, 459 -> 40 on nuttx), and the callee type is finally recovered (`(code **)` 0 -> 205 and 0 -> 397 on those two, where every ARM project in the corpus previously had zero)."
+}

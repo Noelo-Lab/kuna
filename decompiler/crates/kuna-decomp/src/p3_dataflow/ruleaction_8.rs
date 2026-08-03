@@ -68,10 +68,10 @@
 //! * **`FlowBlock::findCondition` (formerly STUB(W3-block)).**  Used only by
 //!   `RuleInt2FloatCollapse`; transcribed here as the local [`find_condition`]
 //!   helper (faithful to `block.cc:839`), so that rule now completes.
-//! * **STUB(W4) — `Architecture::funcptr_align` and `FuncCallSpecs`.**  The W4
-//!   `Architecture` skeleton has no `funcptr_align` (defaults to the "disabled"
-//!   value 0, so `RuleFuncPtrEncoding` no-ops) and no call-spec table (so
-//!   `RulePiecePathology` no-ops).
+//! * **STUB(W4) — `FuncCallSpecs`.**  The W4 `Architecture` skeleton has no
+//!   call-spec table, so `RulePiecePathology` no-ops.  (`funcptr_align` was the
+//!   other half of this note; it is now read live from the architecture, so
+//!   `RuleFuncPtrEncoding` completes on every cspec that declares `<funcptr>`.)
 
 use std::rc::Rc;
 
@@ -248,12 +248,10 @@ fn preferred_zext_size(in_size: int4) -> int4 {
     }
 }
 
-/// `data.getArch()->funcptr_align` (C++).  // STUB(W4)
-///
-/// The W4 `Architecture` skeleton does not carry `funcptr_align`; it defaults to
-/// 0 ("encoding disabled"), so `RuleFuncPtrEncoding` no-ops.  Recorded as a loss.
-fn funcptr_align(_data: &Funcdata) -> int4 {
-    0
+/// `data.getArch()->funcptr_align` (C++) — the bit position decoded from the
+/// compiler spec's `<funcptr align="N"/>`, 0 when the cspec declares none.
+fn funcptr_align(data: &Funcdata) -> int4 {
+    data.get_arch().funcptr_align
 }
 
 /// Helper: the LESSEQUAL op-code corresponding to a LESS op-code (C++
@@ -555,7 +553,6 @@ impl Rule for RuleFuncPtrEncoding {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        //   -- STUB(W4): funcptr_align defaults to 0, so the rule no-ops.
         let align: int4 = funcptr_align(data);
         if align == 0 {
             return 0;
@@ -1873,8 +1870,16 @@ mod tests {
     }
 
     fn build_fd() -> Funcdata {
+        build_fd_with_funcptr_align(0)
+    }
+
+    /// [`build_fd`] with the architecture's `funcptr_align` preset — the field a
+    /// real run gets from the cspec's `<funcptr align="N"/>`.
+    fn build_fd_with_funcptr_align(align: int4) -> Funcdata {
         let manage = build_manager();
-        let glb = Rc::new(ArchContext::new(manage));
+        let mut ctx = ArchContext::new(manage);
+        ctx.funcptr_align = align;
+        let glb = Rc::new(ctx);
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -2160,29 +2165,50 @@ mod tests {
     }
 
     // =====================================================================
-    // RuleFuncPtrEncoding  —  guards + the W4 funcptr_align STUB no-op
+    // RuleFuncPtrEncoding  —  guards + the live funcptr_align read
     // =====================================================================
 
-    #[test]
-    fn funcptrencoding_noops_under_w4_stub() {
-        // Even with a perfect AND-mask pattern feeding a CALLIND, the rule no-ops
-        // because funcptr_align() is the W4 stub (returns 0).
-        let mut fd = build_fd();
+    /// Build the canonical `CALLIND(AND(ptr, mask))` shape under a given
+    /// architecture `funcptr_align`, run the rule, and report (return value,
+    /// resulting AND-op opcode).
+    fn funcptrencoding_probe(align: int4, mask_val: u64) -> (int4, OpCode) {
+        let mut fd = build_fd_with_funcptr_align(align);
         let bl = mk_block(&mut fd);
         let ptr = {
             let v = mk_vn(&mut fd, 0x10, 8);
             fd.vbank_mut().set_input(v, &mut no_replace()).unwrap()
         };
-        let mask = mk_const(&mut fd, 8, !1u64); // ~1
+        let mask = mk_const(&mut fd, 8, mask_val);
         let andop = mk_op(&mut fd, bl, 2, 0x100, OpCode::CPUI_INT_AND);
         wire(&mut fd, ptr, andop, 0);
         wire(&mut fd, mask, andop, 1);
         let masked = set_output(&mut fd, andop, 0x20, unk(8));
         let callind = mk_op(&mut fd, bl, 1, 0x104, OpCode::CPUI_CALLIND);
         wire(&mut fd, masked, callind, 0);
-        // align == 0 (W4 stub) => no-op.
-        assert_eq!(RuleFuncPtrEncoding.apply_op(callind, &mut fd), 0);
-        assert_eq!(code(&fd, andop), OpCode::CPUI_INT_AND); // mask not stripped
+        let rc = RuleFuncPtrEncoding.apply_op(callind, &mut fd);
+        (rc, code(&fd, andop))
+    }
+
+    #[test]
+    fn funcptrencoding_noops_without_cspec_funcptr() {
+        // No `<funcptr>` in the cspec (x86/x86-64): align == 0 disables the rule
+        // even on a perfect AND-mask pattern.
+        assert_eq!(funcptrencoding_probe(0, !1u64), (0, OpCode::CPUI_INT_AND));
+    }
+
+    #[test]
+    fn funcptrencoding_strips_thumb_mode_bit() {
+        // ARM/MIPS/Loongarch/8051 cspecs: `<funcptr align="2"/>` => align 1, so
+        // the SLEIGH-emitted `& ~1` on a CALLIND target collapses to a COPY.
+        assert_eq!(funcptrencoding_probe(1, !1u64), (1, OpCode::CPUI_COPY));
+    }
+
+    #[test]
+    fn funcptrencoding_strips_aarch64_word_alignment() {
+        // AARCH64 cspecs: `<funcptr align="4"/>` => align 2, so `& ~3` collapses
+        // and `& ~1` does NOT (upstream compares the exact slide, not a subset).
+        assert_eq!(funcptrencoding_probe(2, !3u64), (1, OpCode::CPUI_COPY));
+        assert_eq!(funcptrencoding_probe(2, !1u64), (0, OpCode::CPUI_INT_AND));
     }
 
     #[test]
@@ -2507,10 +2533,8 @@ mod tests {
     }
 
     // =====================================================================
-    // RuleFuncPtrEncoding mask arithmetic (the (testmask & slide)==val core),
-    // exercised via resolve plumbing once funcptr_align is unblocked.  We test
-    // the slide computation matches the C++ (~0 << align) for align=1 here by
-    // directly checking the constant the rule would compare against.
+    // RuleFuncPtrEncoding mask arithmetic (the (testmask & slide)==val core):
+    // the slide computation matches the C++ (~0 << align) for align=1.
     // =====================================================================
 
     #[test]
