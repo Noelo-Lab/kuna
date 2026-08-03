@@ -786,7 +786,7 @@ here — loop construction already tags back-edge gotos). *Failure:* an edge
 whose target is not exactly the innermost loop successor is left a real
 goto. Flipped on by DIV-10.
 
-### returndup — shipped, then reverted (angr `ReturnDuplicatorHigh`; history)
+### returndup — the whole-block duplicator (angr `ReturnDuplicatorHigh`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_returndup.rs
 (ActionReturnDup)` is the whole-block gotoless return duplicator: every
@@ -797,17 +797,37 @@ phi-of-constants; never a free variable) is split into per-predecessor
 returns, capped at `kuna_returndup.rs (MAX_RETURNDUP_INEDGES)` = 16 /
 `(MAX_RETURNDUP_SPLITS)` = 64. It exists to break `rule_block_or`'s
 comma-folded guard merges (`if ((A||B) && (v=f(..), C)) …` with one trailing
-return) back into the source's early-return guards. **History (DIV-18):** it
-shipped default-on and was **reverted the same cycle** — the decbench re-run
-measured the then-unselective version (which also split `return <variable>`
+return) back into the source's early-return guards.
+
+**History — shipped, reverted, and re-shipped.** DIV-18 first made it a
+default and it was **reverted the same cycle**: the decbench re-run measured
+the then-*unselective* version (which also split `return <variable>`
 epilogues) firing 21,768 times across 550 binaries and regressing the
-aggregate GED-perfect count by ~976: on the majority of shared epilogues the
+aggregate GED-perfect count by ~976. On a majority of shared epilogues the
 *source* used the merged form, so broad duplication was churn, not recovery.
-The pass survives as an opt-in runtime choice with the const-return gate
-now in place; its durable descendants are the per-edge narrowings that
-target only what the source provably wrote as early returns — `earlyreturn`
-(DIV-23) and `switchreturn` (DIV-25). The lesson is recorded in each of
-their gates: never peel a variable-return share.
+The const-return gate (`returndup_is_const_ret`) was added afterwards and
+drops the over-eager variable-return splits, which is what the −976 figure
+had been measuring. Re-ablated with the gate in place over 536 decbench
+slices / 52,862 functions — the same binary in both arms, the 46,005
+functions the pass never touches scoring identically — the selective pass is
+**+417 GED-perfect and −7,756 aggregate GED** (608 perfects created against
+191 destroyed), net-positive in every one of nine partitions tested (split
+count, void versus value return, distinct return values, return count,
+presence of a `switch`, all-returns-identical, body size, project, opt
+level). **DIV-54 therefore makes it a default again, superseding the DIV-18
+revert.** One subpopulation is net-negative — a split that de-structures a
+loop, so a `for` header becomes `while( true )` plus an early return (321
+firings, −257 GED). A gate declining a shared RETURN whose predecessor sits
+on a CFG cycle was built and scored at **+2 GED-perfect / −209 aggregate
+GED** and was *not* kept: the predicate is far broader than the cell it
+targets and eats into the profitable loop firings that pay for it.
+
+The pass stays a per-run runtime choice (`option returndup off` restores the
+merged upstream shape byte for byte) precisely because the merged and
+split forms compile to the *same* object code, so nothing in the binary
+distinguishes them. Its per-edge narrowings — `earlyreturn` (DIV-23) and
+`switchreturn` (DIV-25) — remain separate options: they reach the mixed
+const/variable diamonds this whole-block gate rejects outright.
 
 ## 8.4 The quality signal
 

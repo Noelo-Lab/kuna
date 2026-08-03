@@ -12,6 +12,8 @@
 <symbol name="statuscmp" space="ram" offset="0x1001516"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup default-on (DIV-54); this upstream test pins the merged shared-epilogue return rendering -->
+  <com>option returndup off</com>
   <com>lo fu statuscmp</com>
   <com>map addr r0x10000 float4 val1</com>
   <com>map addr r0x20000 float4 val2</com>

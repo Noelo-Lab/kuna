@@ -36,6 +36,9 @@ f30f1efa554889e5897dfc8b45fc83e83083f8360f97c284d2752648baff037e0000007e0089c148
 <script>
   <com>option switchreturn off</com>
   <com>option iteboolean off</com>
+  <!-- returndup (DIV-54 default-on) is the WHOLE-BLOCK sibling and peels this same
+       shared epilogue, so turn it off throughout to isolate earlyreturn. -->
+  <com>option returndup off</com>
   <com>option earlyreturn off</com>
   <com>lo fu f</com>
   <com>decompile</com>

@@ -61,10 +61,12 @@
 //! epilogue is semantics-preserving: no side-effecting op is cloned, and each
 //! predecessor reaches a return with the same MULTIEQUAL-selected value it did before.
 //!
-//! It is gated by `option returndup on|off` (`duplicate_shared_returns`,
-//! default-OFF — the record flags broad output churn: any function with a shared bare
-//! epilogue gains early returns, so certain datatest renderings diff) — when off,
-//! [`ActionReturnDup::apply`] early-returns and output is byte-identical to upstream.
+//! It is gated by `option returndup on|off` (`duplicate_shared_returns`, DIV-54
+//! default-ON, superseding the DIV-18 revert — the const-return gate is what turned
+//! the aggregate decbench measurement positive) — when off, [`ActionReturnDup::apply`]
+//! early-returns and output is byte-identical to upstream.  It is broad: any function
+//! with a shared const bare epilogue gains early returns, so nine datatests pin the
+//! merged upstream rendering with an explicit `option returndup off`.
 
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;

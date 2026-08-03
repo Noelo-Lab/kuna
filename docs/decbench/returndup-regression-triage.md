@@ -253,16 +253,19 @@ compiler emits the same merged epilogue either way.
 2. **Correct the record.** `docs/modes.md` said `aggressive` enables an option "known to
    regress aggregate GED on the benchmark (DIV-18)". Measured on the current build that is
    false by 7,756 GED and 417 perfect functions; the caveat is updated and the DIV-18 row now
-   points here. The same superseded −976 figure still appears in the `returndup` `phases.toml`
-   `summary`/`use_when` prose (and therefore in `docs/options.md`); refreshing it requires
-   regenerating `tests/fixtures/phase_catalog.json` and `docs/options.md` together, so it is
-   left to whichever PR next touches that row.
-3. **`returndup` now clears the default-ON evidence bar.** Flipping
-   `Architecture::duplicate_shared_returns` to `true` and running the datatest gate gives
-   **`datatests: 675/675`, PARITY OK — zero assertion movement**, which is the standing
-   requirement, alongside the +417 / −7,756 decbench result. Promoting it is a separate change
-   with its own DIV row and speed budget, deliberately not made here; but the evidence for it
-   is on the table, and today `auto` already makes it the effective default below 500 KiB.
+   points here. The same superseded −976 figure still appeared in the `returndup`
+   `phases.toml` `summary`/`use_when` prose (and therefore in `docs/options.md`); **DIV-54
+   refreshed both**, together with `tests/fixtures/phase_catalog.json`.
+3. **`returndup` cleared the default-ON evidence bar — shipped as DIV-54.** *Corrected:* this
+   file originally claimed that flipping `Architecture::duplicate_shared_returns` to `true`
+   gave `datatests: 675/675` with **zero assertion movement**. Re-measured while preparing
+   DIV-54, the raw flip moves **16 assertions across 9 upstream datatest files** (`ccmp`,
+   `orcompare`, `condexesub`, `copytrim`, `condconst2`, `bitfields2`, `partialunion`,
+   `statuscmp`, `union_datatype`) — every one of them a shared-epilogue rendering the
+   upstream test pins, plus `condconst` for the w10 byte-parity oracle. 675/675 PARITY OK is
+   reached the way DIV-14/17/23/25/51 reached it: a per-test `option returndup off` on those
+   files, with `docs/baseline.json` untouched. The decbench result (+417 / −7,756) and the
+   speed budget (worst case +2.96% interleaved) are unchanged.
 4. **The loop cell is closed, not open.** Declining a split whose predecessor sits on a CFG
    cycle is the one measured net-negative subpopulation, and the gate for it was built and
    scored: +2 perfects / −209 GED, not worth the pass complexity. If it is ever revisited it

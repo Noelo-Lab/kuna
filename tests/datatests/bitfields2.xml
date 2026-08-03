@@ -78,6 +78,8 @@
 <symbol space="ram" offset="0x100700" name="increment"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup default-on (DIV-54); this upstream test pins the merged shared-epilogue return rendering -->
+  <com>option returndup off</com>
   <!-- kuna: truthycond default-on (DIV-36); this upstream test pins the explicit != 0 / == 0 comparison rendering -->
   <com>option truthycond off</com>
   <!-- kuna: branchflip default-on (DIV-13); this upstream test pins the pre-branchflip (Ghidra polarity) rendering -->

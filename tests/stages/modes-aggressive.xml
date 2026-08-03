@@ -9,11 +9,13 @@
     binary to decompile testcase; here the "flag" is the whole preset).
 
     `reliable` == the shipped defaults (an empty override list, a no op alias);
-    `aggressive` turns ON every off by default recovery/analysis pass, INCLUDING
-    `returndup` (default OFF, angr ReturnDuplicatorHigh, s8_structure/kuna_returndup.rs).
-    So `returndup`s emit only warning ("// return-dupe N shared bare
-    epilogue return(s)") is the clean discriminator between the two modes:
-    it can appear ONLY under `mode aggressive` and NEVER under `mode reliable`.
+    `aggressive` turns ON every recovery/analysis pass, INCLUDING `returndup`
+    (angr ReturnDuplicatorHigh, p8_structure/kuna_returndup.rs).  `returndup` is
+    a shipped default since DIV-54, but `aggressive` still names it, so the preset
+    OWNS the option: an explicit `option returndup off` earlier in the script is
+    re-enabled by `mode aggressive` and not by `mode reliable`.  That makes
+    `returndup`s emit only warning ("// return-dupe N") the clean discriminator
+    between the two modes even after the default flip.
 
     The reproducer is the sibling ghangr-returndup.xml witness: an if/else if guard
     chain over `a0` whose three paths each `mov eax, K; jmp .Lend` into a single
@@ -21,13 +23,16 @@
     {1,2,3}).  returndup duplicates that shared epilogue into 2 of its 3
     predecessors, logging the warning once.
 
-    Pass 1 (mode reliable): returndup is off, so the warning never appears.
-    Pass 2 (mode aggressive): returndup is on, so the warning appears exactly once.
+    Pass 1 (option returndup off, then mode reliable): the empty reliable override
+    list leaves the explicit off in place, so the warning never appears.
+    Pass 2 (mode aggressive): the preset re-enables returndup, so the warning
+    appears exactly once.
 
     The default on siblings earlyreturn (DIV-23) and switchreturn (DIV-25) are on
     in BOTH passes (they are shipped defaults, part of `reliable`), so they do not
     affect the returndup only warning count; they are left at their defaults here
-    precisely to show that `aggressive` adds returndup ON TOP of the default set.
+    precisely to show that `aggressive` restores returndup ON TOP of an otherwise
+    default set the user has locally overridden.
 -->
 <bytechunk space="ram" offset="0x100000">
 85ff7507b801000000eb1183ff017507b802000000eb05b803000000c3
@@ -35,7 +40,10 @@
 <symbol space="ram" offset="0x100000" name="f"/>
 </binaryimage>
 <script>
-  <!-- Pass 1: reliable == shipped defaults (returndup OFF). -->
+  <!-- Pass 1: returndup explicitly OFF, then reliable (an empty override list, so
+       the off survives).  DIV-54 made returndup a shipped default, so the explicit
+       off is what the mode has to overturn in pass 2. -->
+  <com>option returndup off</com>
   <com>mode reliable</com>
   <com>lo fu f</com>
   <com>decompile</com>
@@ -48,5 +56,7 @@
   <com>quit</com>
 </script>
 <!-- (DIV-39 warnstyle: warnings render as terse // slugs at end of line; asserts re-worded.) -->
+<!-- Assertion name kept verbatim so the stages baseline needs no re-record: it is still
+     exactly what the two passes show, now against an explicit pass-1 `returndup off`. -->
 <stringmatch name="mode aggressive enables returndup (warning appears once); mode reliable does not" min="1" max="1">return-dupe x2</stringmatch>
 </decompilertest>
