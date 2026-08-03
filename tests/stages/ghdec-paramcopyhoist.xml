@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench: the copy-shadow of an unmodified incoming parameter is emitted
+    OUTSIDE the function's entry basic block.
+      Case: O0-e2fsprogs-e2fsck-save_output  (docs/decbench/triage/)
+
+    Source (gcc -O0 -fno-pie -fcf-protection=none -c), the guard cascade the
+    triage case reduces to:
+
+        int f(char *a, char *b)
+        {
+          if (a) { if (*a == 0) a = 0; }
+          if (b) { if (*b == 0) b = 0; }
+          return (a != 0) + (b != 0);
+        }
+
+    gcc gives each parameter a stack home and writes NULL through the parameter
+    inside its guard, so the guard's join carries a MULTIEQUAL whose incoming
+    slots are the raw input register:
+
+        0:  push rbp ; mov rsp,rbp
+        4:  mov rdi,-0x8(rbp) ; mov rsi,-0x10(rbp)     both spills, entry block
+        c:  cmpq 0x0,-0x8(rbp) ; je 26
+       13:  mov -0x8(rbp),rax ; movzbl (rax),eax ; test al,al ; jne 26
+       1e:  movq 0x0,-0x8(rbp)
+       26:  cmpq 0x0,-0x10(rbp) ; je 40                join of a's guard
+       2d:  mov -0x10(rbp),rax ; movzbl (rax),eax ; test al,al ; jne 40
+       38:  movq 0x0,-0x10(rbp)
+       40:  the two setne reads of both slots
+
+    Root cause (P6, upstream-faithful).  Merge::mergeOp cannot merge the
+    input-register HighVariable with the address-tied stack-slot HighVariable, so
+    Merge::trimOpInput snips each offending MULTIEQUAL slot into a COPY and places
+    it with opInsertEnd(copyop, the slot's PREDECESSOR block).  That COPY is what
+    prints as "vN = aM;".  For the FIRST parameter the guard's join predecessors
+    intersect at the entry block, so Merge::buildDominantCopy's findCommonBlock
+    lands the copy there and it renders correctly; for every later parameter the
+    intersection is the previous guard's join, so the copy sinks below that guard
+    and splits the source's single entry block into two.  kuna is internally
+    inconsistent about the identical construct and upstream Ghidra sinks it the
+    same way, so this ships as an option rather than as a bug fix.
+
+    Stage model: P6 "merge-aggressiveness" (Merge / HighVariable formation).
+    The P0 assertion "option paramcopyhoist on|off" selects it; the hoist is
+    admitted only when the buildDominantCopy Cover test accepts the widened range.
+
+    Pass 1 (option paramcopyhoist off, the default) reproduces the gap: "v1 = a1;"
+    is emitted after the first guard, not with "v2 = a0;" at the top.
+    Pass 2 (option paramcopyhoist on) proves the fix: both copy-shadows sit in the
+    entry block, ahead of every guard.
+-->
+<bytechunk space="ram" offset="0x101000">
+554889e548897df8488975f048837df8007413488b45f80fb60084c0750848c7
+45f80000000048837df0007413488b45f00fb60084c0750848c745f000000000
+48837df8000f95c00fb6d048837df0000f95c00fb6c001d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x101000" name="f"/>
+</binaryimage>
+<script>
+  <com>option paramcopyhoist off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option paramcopyhoist on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="paramcopyhoist #1: option off sinks the second parameter's copy-shadow below the first guard (gap reproduced)" min="1" max="1">v2 = NULL;
+v1 = a1;</stringmatch>
+<stringmatch name="paramcopyhoist #2: option on anchors both copy-shadows in the entry block, ahead of every guard" min="1" max="1">v2 = a0;
+v1 = a1;
+if</stringmatch>
+<stringmatch name="paramcopyhoist #3: both passes keep the guard writing NULL through each parameter" min="2" max="2">v1 = NULL;</stringmatch>
+</decompilertest>

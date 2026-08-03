@@ -2944,6 +2944,27 @@ inspiration = "test_decompiling_ptx_fix_output_parameters; CLE ELF relocatable b
 change_kind = "structure-recovery"
 tier = "analysis"
 symptoms = "a .o relocatable object fails with 'Unable to load N bytes at ...'|ET_REL object maps zero bytes so nothing decompiles"
+# ---------------------------------------------------------------------------
+# paramcopyhoist: the P6 trim-COPY anchor for an unmodified incoming parameter.
+# ---------------------------------------------------------------------------
+[[settable]]
+option = "paramcopyhoist"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P6"
+subphase = "merge-aggressiveness"
+strength = "HARD"
+rewind = "P6"
+issue = "decbench-parameter-copy-shadow-placement"
+summary = "Anchor the copy-shadow of an UNMODIFIED INCOMING PARAMETER in the function's entry block instead of at the tail of the MULTIEQUAL slot's predecessor, so a guarded parameter's `vN = aM;` prints where the source's spill is -- with the other parameter spills -- rather than below an earlier guard. gcc -O0 gives every parameter a stack home, and the source idiom `if (p && !*p) p = NULL;` leaves a MULTIEQUAL at the guard's join whose incoming slots are the raw input register. `Merge::mergeOp` cannot merge the input-register HighVariable with the address-tied stack-slot HighVariable, so `Merge::trimOpInput` snips each offending slot into a COPY and places it with `opInsertEnd(copyop, op->getParent()->getIn(slot))` -- the tail of that slot's PREDECESSOR -- and that COPY is what prints as `vN = aM;`. For the FIRST parameter the guard's join predecessors intersect at the entry block, so `Merge::buildDominantCopy`'s `findCommonBlock` lands the copy there and it renders correctly; for every later parameter the intersection is the previous guard's join, so the copy sinks below that guard and splits the source's single entry block in two. Both producing sub-cases are covered: two-or-more trimmed slots (later collapsed by buildDominantCopy) and exactly one trimmed slot (no dominant-copy pass at all, so the single opInsertEnd is final). Implemented as ActionParamCopyHoist, the LAST action in universal_sched: taking the decision inside `Merge::trimOpInput` itself defeats the trim's own purpose (the widened Cover fails mergeOp's test, mergeOp falls through to trimOpOutput, and markInternalCopies then hides both resulting COPYs, so the assignment DISAPPEARS from the emitted C), and running the move any earlier than ActionFinalStructure perturbs the P8 duplication passes. Legality is buildDominantCopy's own Cover test re-run against the hypothetical hoisted placement and the FINAL HighVariable (b_cover over the high's other instances vs an a_cover whose def point is taken at the START of the entry block, rejecting on `intersect > 1`), which over-approximates and errs toward rejecting; only a formal parameter's storage is ever hoisted, only when a MULTIEQUAL reads the copy, and only when the target variable has exactly one candidate."
+use_when = "Turn ON when a parameter's copy-shadow assignment (`v6 = a1;`) is emitted below an earlier guard instead of with the other parameter spills at the top of the function, adding CFG nodes the source does not have. Measured on decbench O0 e2fsprogs/e2fsck save_output (0x4eeb6): 53 nodes/77 edges GED 29.0 -> 51 nodes/77 edges GED 17.0 (-12), which is GED-OPTIMAL for the construct (deleting the copies entirely and writing through the parameter, which is literally what the source does, also scores 17.0). Broad on -O0: over four O0 binaries (e2fsprogs/e2fsck, coreutils/ls, gzip/gzip, bzip2/bzip2; 3031 functions) 121 functions (4.0%) emit at least one top-level parameter copy-shadow outside the entry block -- 200 sunk copies against 318 correctly in the entry -- and turning it on moves 92 of them (200 -> 108 sunk, 318 -> 479 in the entry) across 116 changed functions with zero new decompile errors. Every one of those 116 was diffed: 99 are pure re-orderings of `vN = aM;`, 17 have a secondary rendering effect (mostly a comma side-effect inside a short-circuit condition becoming a plain statement, which is an improvement; 2 leave an empty `if (c) { }` then-branch). Default-OFF opt-in: it is a deliberate DIVERGENCE from upstream Ghidra, which sinks the copy to exactly the same place, and although the default-ON ablation is clean on the datatests (0/675, PARITY OK) it regresses one stage assertion (condfold #3) and the decbench aggregate has not been measured, so the flip is left to a follow-up."
+example = "option paramcopyhoist on"
+source_decompiler = "kuna"
+inspiration = "decbench:O0-e2fsprogs-e2fsck-save_output; O0-e2fsprogs-e2fsck-ea_refcount_free (single-trim sub-case); Merge::trimOpInput / Merge::buildDominantCopy (merge.cc)"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "parameter copy-shadow assignment (v6 = a1;) emitted below an earlier guard instead of at the top of the function|kuna places some parameter spill copies in the entry block and others after a guard in the same function|extra CFG nodes versus the source around a cascade of if (p && !*p) p = NULL; parameter guards|vN = aM; for an unmodified incoming parameter appearing in the middle of a guard cascade"
 
 # ---------------------------------------------------------------------------
 # (kuna) Loader-tier capability (1 row): arm64e Mach-O spec selection. Like

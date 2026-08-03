@@ -784,6 +784,14 @@ pub fn universal_sched(
             // of the constant if/else P3 RuleConditionalMove cannot fold.
             // Print-only mark; no p-code is touched, so OFF is byte-identical.
             act!(crate::p8_structure::kuna_iteboolean::ActionIteBoolean::boxed("blockrecovery")),
+            // (kuna) paramcopyhoist (option `paramcopyhoist`, default-OFF - a runtime
+            // choice).  Re-anchors an unmodified incoming parameter's trim COPY in the
+            // entry block so its copy-shadow prints with the other parameter spills.
+            // Runs LAST, after every HighVariable is final AND the structured tree is
+            // final: the Cover legality test sees the variable's complete live range,
+            // and no merge or structuring decision can be perturbed by the move --
+            // only which basic block's statement list holds the COPY changes.
+            act!(crate::p6_variables::kuna_paramcopyhoist::ActionParamCopyHoist::boxed("merge")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

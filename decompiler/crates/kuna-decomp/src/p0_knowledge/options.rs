@@ -284,6 +284,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "iteregion",
     "iteexpr",
     "iteboolean",
+    "paramcopyhoist",
     "returndup",
     "earlyreturn",
     "switchreturn",

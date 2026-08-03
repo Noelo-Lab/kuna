@@ -16,3 +16,4 @@ pub mod kuna_callretfold;
 pub mod dynamic;
 pub mod kuna_dynamichashmax;
 pub mod coreaction_stackptr;
+pub mod kuna_paramcopyhoist;

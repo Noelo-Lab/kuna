@@ -528,6 +528,14 @@ pub struct Architecture {
     /// A runtime choice like [`iteregion`](Self::iteregion): the source may have
     /// written the explicit `if/else`, which compiles identically.  Print-only.
     pub iteboolean: bool,
+    /// (kuna) `paramcopyhoist`: anchor the trim COPY of an **unmodified incoming
+    /// parameter** in the function's entry block instead of at the tail of the
+    /// MULTIEQUAL slot's predecessor, so a guarded parameter's copy-shadow
+    /// (`v6 = a1;`) prints in the entry block like the source's spill instead of
+    /// below an earlier guard.  Read by
+    /// [`crate::p6_variables::kuna_paramcopyhoist::hoist_target`] from
+    /// `Merge::trimOpInput`; guarded by the `buildDominantCopy` Cover test.
+    pub param_copy_hoist: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block (only MULTIEQUAL/COPY/RETURN, no side effects)
     /// into each predecessor but one, so the classic
@@ -1070,6 +1078,7 @@ impl Architecture {
             iteregion: false,
             iteexpr: false,
             iteboolean: false,
+            param_copy_hoist: false,
             duplicate_shared_returns: false,
             early_return: false,
             switch_return: false,
@@ -1424,6 +1433,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p8_structure::kuna_iteboolean::OptionIteBoolean.apply(p1)?;
                 self.iteboolean = val;
+                Ok(msg)
+            }
+            "paramcopyhoist" => {
+                let (val, msg) =
+                    crate::p6_variables::kuna_paramcopyhoist::OptionParamCopyHoist.apply(p1)?;
+                self.param_copy_hoist = val;
                 Ok(msg)
             }
             "iteregion" => {
@@ -1857,6 +1872,7 @@ impl Architecture {
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
         ctx.iteboolean = self.iteboolean; // iteboolean (0/1 select -> boolean assignment)
+        ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn

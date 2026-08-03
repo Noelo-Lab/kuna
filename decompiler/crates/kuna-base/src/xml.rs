@@ -1630,7 +1630,7 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 93 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
+        // 83 datatests + 103 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
         // ghangr-missing-function-call-1101b1, ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump,
         // branchflip-negated-guard / branchflip,
         // regionstructure-seq + regionstructure-loop + regionstructure-switch +
@@ -1708,7 +1708,9 @@ mod tests {
         // Symbol (one stack slot declared twice under one name, two types)
         // and ghdec-funcptralign / the cspec-declared function-pointer alignment
         // (every ARM/Thumb indirect call carried an invented & 0xfffffffe)
-        assert_eq!(count, 185, "corpus file count drifted");
+        // and ghdec-paramcopyhoist / the entry-block anchor for an unmodified
+        // parameter's trim COPY (option off sinks `v2 = a1;` below the first guard)
+        assert_eq!(count, 186, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
