@@ -889,6 +889,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // a default run / every non-PE binary commits nothing here.
         "rtti" => arch.analysis_rtti,
         "aif" => arch.analysis_aif,
+        // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
+        // functions, so it changes emitted C by construction). Listing consumer;
+        // the live gate is the pre-invocation check in `run_listing_consumers`.
+        "tailcallentry" => arch.analysis_tailcallentry,
         "gopclntab" => arch.analysis_gopclntab,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it

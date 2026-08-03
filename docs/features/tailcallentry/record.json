@@ -1,0 +1,182 @@
+{
+  "opportunity": "decbench:arm-entry-granularity step 3 (PROPOSAL PR #239) — the tailcall sub-class",
+  "test_name": "kuna-analysis entry recall, decbench ARM Cortex-M corpus (8 projects x 3 opt levels, 96 images, 43809 DWARF entries)",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_tailcall_le32",
+  "selector": "sub_8008020",
+  "func_addr": "0x8008020",
+  "angr_version": null,
+  "option": "tailcallentry",
+  "flag": "analysis_tailcallentry",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "decbench:O2-noinline-chibios-ch, O2-noinline-crazyflie-cf2, O2-nuttx-nuttx, O2-riot-os-hello-world, O0-crazyflie-CMSIS_DAP; kuna's own ARM entry-recall measurement (docs/features/arm-entry-granularity/, step 3). Recognition after angr CFGFast's job model, where a branch outside the current function's block set starts a new function; the precision model is kuna's own region containment, the mirror of ptrentry's same-function guard.",
+  "default_on": false,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "recall": {
+    "surface_listing_on": {
+      "ground_truth": 43809,
+      "recovered_before": 40309,
+      "recovered_after": 40870,
+      "delta": 561,
+      "new_entries": 593,
+      "new_entries_ground_truth": 561,
+      "precision_pct": 94.6,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 32,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0
+    },
+    "surface_listing_on_stacked_on_ptrentry": {
+      "ground_truth": 43809,
+      "recovered_before": 42028,
+      "recovered_after": 42589,
+      "delta": 561,
+      "new_entries": 593,
+      "new_entries_ground_truth": 561,
+      "precision_pct": 94.6,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 32,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0,
+      "note": "Exactly orthogonal to proposal step 2: identical delta with ptrentry off and on, because both emit additive entry facts and neither enters Listing::functions(), which is what the region-containment guard reads. Stacked corpus recall 97.2%."
+    },
+    "surface_listing_off": {
+      "ground_truth": 43809,
+      "recovered_before": 13277,
+      "recovered_after": 13277,
+      "delta": 0,
+      "new_entries": 0,
+      "new_entries_ground_truth": 0,
+      "precision_pct": null,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 0,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0,
+      "note": "tailcallentry is a Listing consumer; with the Listing off there is nothing to consume, so the surface is structurally inert on all 96 images."
+    },
+    "rejected_arm_naive_every_branch_target": {
+      "new_entries": 39128,
+      "new_entries_ground_truth": 664,
+      "precision_pct": 1.7,
+      "new_entries_splitting_a_real_body": 37667,
+      "new_entries_outside_any_dwarf_body": 797,
+      "entries_lost": 0
+    },
+    "rejected_arm_proposal_naive_tailcall_rule": {
+      "new_entries": 2679,
+      "new_entries_ground_truth": 663,
+      "precision_pct": 24.7,
+      "new_entries_splitting_a_real_body": 1849,
+      "new_entries_outside_any_dwarf_body": 167,
+      "note": "The proposal's 39%/55% arm, re-measured on the full 96 images."
+    },
+    "rejected_arm_proposal_stricter_rule": {
+      "new_entries": 1392,
+      "new_entries_ground_truth": 663,
+      "precision_pct": 47.6,
+      "new_entries_splitting_a_real_body": 607,
+      "new_entries_outside_any_dwarf_body": 122,
+      "note": "The proposal's 54%/38% arm; this is the shipped ImpurePredecessor guard on its own."
+    },
+    "rejected_model_stack_discipline": {
+      "new_entries": 636,
+      "new_entries_ground_truth": 572,
+      "precision_pct": 89.9,
+      "new_entries_splitting_a_real_body": 18,
+      "new_entries_outside_any_dwarf_body": 46,
+      "note": "Reject a branch taken with an unmatched PUSH/SUB SP/VPUSH/STMDB SP! still open (a forward may-analysis over the caller's region). Principled and dominated by region containment on precision AND on splits."
+    },
+    "rejected_guard_alignment_padding": {
+      "new_entries": 390,
+      "new_entries_ground_truth": 375,
+      "precision_pct": 96.2,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 15,
+      "note": "1.6pp of precision, almost all of it in the unverifiable outside-any-DWARF-body bucket, for 186 ground-truth functions."
+    },
+    "leave_one_out_guard_ablation": {
+      "shipped": {"new": 593, "ground_truth": 561, "precision_pct": 94.6, "splits": 0},
+      "drop_region_crossing": {"new": 1274, "ground_truth": 656, "precision_pct": 51.5, "splits": 514},
+      "drop_pure_predecessor": {"new": 790, "ground_truth": 562, "precision_pct": 71.1, "splits": 156},
+      "drop_epilogue_start": {"new": 605, "ground_truth": 561, "precision_pct": 92.7, "splits": 12},
+      "drop_terminating_region": {"new": 615, "ground_truth": 568, "precision_pct": 92.4, "splits": 0}
+    },
+    "split_half_holdout": {
+      "fit_half": ["betaflight", "crazyflie", "nuttx", "libopencm3"],
+      "shipped_on_fit_half": {"new": 463, "ground_truth": 432, "precision_pct": 93.3, "splits": 0},
+      "shipped_on_holdout_half": {"new": 130, "ground_truth": 129, "precision_pct": 99.2, "splits": 0},
+      "refit_on_fit_half": "purepred+epilogue+region -> holdout n=152 gt=136 (89.5%) splits=0",
+      "refit_on_holdout_half": "purepred+region -> fit-half n=475 gt=432 (90.9%) splits=12"
+    },
+    "aif_gap_start_rewalk": {
+      "folded_in": false,
+      "tailcallentry_off": {"delta": 87, "new": 1355, "ground_truth": 174, "splits": 1013, "entries_lost": 109, "ground_truth_entries_lost": 87},
+      "tailcallentry_on": {"delta": 86, "new": 1424, "ground_truth": 193, "splits": 1059, "entries_lost": 135, "ground_truth_entries_lost": 107},
+      "note": "Measured on this branch (reverted; not in this diff). The tail-call split does NOT make the re-seed safe — it makes it slightly worse. A split leaves the walk's decoded-instruction closure fixed; a re-seed adds to it, turning undefined gaps into code and making other stages' candidates fail their is_undefined guard. Needs its own investigation."
+    },
+    "byte_identical_off_vs_on": [
+      "O2/gzip (x86-64)",
+      "O2/mydoom.exe (PE i386)",
+      "O2/libopencm3/blink.elf",
+      "O2/libopencm3/miniblink.elf"
+    ],
+    "not_byte_identical_disclosed": {
+      "O2/u-boot (ARM Linux, A32)": {
+        "entries_before": 1728,
+        "entries_after": 1749,
+        "new_entries": 21,
+        "new_entries_ground_truth": 19,
+        "precision_pct": 90.5,
+        "new_entries_splitting_a_real_body": 2,
+        "entries_lost": 0,
+        "note": "In scope (the gate is Architecture::Arm, the same one Stages 2 and 3 use). Clears the >=80% bar on a population the model was never fitted on (A32, not Thumb; Linux, not bare metal), but the 2 splits are outside the zero-split Cortex-M result. Both are 3-instruction regions inside a sparsely walked function; a length floor removes them and costs ~60 Cortex-M ground-truth entries, the trade step 2 rejected. Disclosed rather than gated away."
+      }
+    }
+  },
+  "speed": {
+    "samples": "interleaved off/on pairs, minimum reported (shared box)",
+    "units": "ms (wall clock)",
+    "budget_pct": 5.0,
+    "rows": [
+      {"surface": "kuna functions", "binary": "cleanflight", "off": 2470.2, "on": 2455.6, "delta_pct": -0.59},
+      {"surface": "kuna functions", "binary": "betaflight", "off": 5050.0, "on": 5030.4, "delta_pct": -0.39},
+      {"surface": "kuna functions", "binary": "nuttx", "off": 1028.2, "on": 1042.4, "delta_pct": 1.38},
+      {"surface": "kuna functions", "binary": "crazyflie cf2", "off": 4563.8, "on": 4571.7, "delta_pct": 0.17},
+      {"surface": "kuna functions", "binary": "libopencm3 msc.elf", "off": 140.0, "on": 139.9, "delta_pct": -0.09},
+      {"surface": "kuna functions", "binary": "gzip (x86-64, strict no-op)", "off": 347.9, "on": 347.2, "delta_pct": -0.21},
+      {"surface": "kuna decompile-all", "binary": "nuttx", "off": 9274.4, "on": 8949.8, "delta_pct": -3.5},
+      {"surface": "kuna decompile-all", "binary": "libopencm3 msc.elf", "off": 531.1, "on": 499.4, "delta_pct": -5.96},
+      {"surface": "kuna decompile-all", "binary": "chibios ch.elf", "off": 2277.6, "on": 2321.3, "delta_pct": 1.92}
+    ],
+    "note": "The gzip row is a provable strict no-op (ARM-gated, byte-identical output), so -0.21% is the measurement floor. Every discovery-surface delta is inside it plus run-to-run noise. The decompile-all deltas are the extra decompile work for the extra functions and are sub-proportional to it (chibios +67 functions of 620 = +10.8% work for +1.92% wall clock); the negative rows are noise, since the option only ever adds functions."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 394/394",
+    "make rust-test": "green (60 test binaries, 0 failures)",
+    "make check-spec": "green (lenient and strict)",
+    "kuna catalog --check": "catalog OK"
+  },
+  "files": {
+    "pass": "decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs",
+    "wiring": "decompiler/crates/kuna-analysis/src/passes.rs",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_tailcall_le32",
+    "fixture_generator": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_tailcall_le32.py",
+    "e2e": "decompiler/crates/kuna-console/tests/verify_tailcallentry.rs",
+    "spec": "docs/spec/01-program-prep.md"
+  },
+  "catalog_counts": {
+    "settables": "88 -> 89",
+    "analysis_tier": "27 -> 28",
+    "catalog_json_rows": "87 -> 88",
+    "bytecompat_fixture": "88 -> 89",
+    "live_value_count": "29 (unchanged: tailcallentry declares no codegen live_field)",
+    "note": "Derived from a fresh `phase catalog` capture on the rebased tree (origin/main 4c2b59bb, after #255 ptrentry and #257 undefname), not by arithmetic. The rebase produced a textbook instance of the stale-count trap: ptrentry and this row made the SAME edit to the same two count comments, so the conflict was real rather than silent, and both were resolved to base + both. `kuna catalog --check`, the kuna_phases count tests and catalog_bytecompat confirm."
+  },
+  "div_row": null,
+  "notes": "Default-OFF. No DIV row: default output is byte-identical. This is the step of the arm-entry-granularity sequence the proposal flagged as carrying the real precision risk (its naive arm split 55% of the time), so the acceptance table needs a human read before merge. The u-boot A32 result (2 splits) is the one disclosed non-zero-split number.",
+  "rebased_onto": "origin/main 4c2b59bb (after #255 ptrentry, #257 undefname); the acceptance table re-measured on the rebased build is identical (593/561/0/32), and the per-binary entry sets differ in 0 of 96 images."
+}
