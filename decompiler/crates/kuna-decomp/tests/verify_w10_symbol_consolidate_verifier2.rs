@@ -79,6 +79,7 @@ fn entry(
         scope_path: Vec::new(),
         is_function: false,
         func_inject_id: -1,
+        func_no_return: false,
     }
 }
 

@@ -121,7 +121,7 @@ fn base_and_namespace(name: &str) -> (&str, Option<&str>) {
 /// reader, `NoReturnFunctionAnalyzer.java:220-245`): skip `#`/blank lines, strip
 /// leading `_`, a trailing `*` makes a prefix (wildcard) entry. The shipped ELF
 /// list has no wildcards (those are Rust/Golang only), but the parse is faithful.
-fn parse_list(text: &str) -> (Vec<String>, Vec<String>) {
+pub(crate) fn parse_list(text: &str) -> (Vec<String>, Vec<String>) {
     let mut exact = Vec::new();
     let mut wildcard = Vec::new();
     for line in text.lines() {
@@ -142,7 +142,7 @@ fn parse_list(text: &str) -> (Vec<String>, Vec<String>) {
 /// `true` if `name` (after stripping leading `_` from its base) matches the list,
 /// honoring the namespace guard (only global / `std` — never a C++ class method
 /// like `Menu::_exit`; faithful to `makeNoReturnFunction`, NoReturnFunctionAnalyzer.java:121-132).
-fn name_matches(name: &str, exact: &[String], wildcard: &[String]) -> bool {
+pub(crate) fn name_matches(name: &str, exact: &[String], wildcard: &[String]) -> bool {
     let (base, ns) = base_and_namespace(name);
     // Namespace guard: skip class methods. Global (no namespace) is allowed; the
     // sole allowed non-global namespace is exactly `std`.

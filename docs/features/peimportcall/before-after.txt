@@ -1,0 +1,120 @@
+==============================================================================
+ O0-mydoom-mydoom-mmsender_th  (mydoom.exe @ 0x4041e2)
+ kuna decompile --addr 0x4041e2 --option listing on [--option peimportcall on|off]
+==============================================================================
+
+--- BEFORE (option peimportcall off) -----------------------------------------
+void sub_4041e2(int4 a0)
+{
+  char *v1;
+  int4 *v2;
+  unsigned int *v3;
+  int4 v4;
+  uint4 v5; // eax
+  unsigned int v6;
+  unsigned int *v7; // ebx
+  bool v8; // zf
+  
+  v4 = a0;
+  LOCK();
+  UNLOCK();
+  if (a0) {
+    *(char *)(a0 + 8) = 1;
+    sub_4040eb(a0);
+    *(char *)(v4 + 8) = 2;
+  }
+  if (dat_4102e4) {
+    LOCK();
+    UNLOCK();
+  }
+  (*dat_4112c4)(0);
+  v7 = (unsigned int *)0x4102e0;
+  v3 = dat_4102e0;
+  while (v7 = v3, v8 = v7 != NULL, v8) {
+    v1 = (char *)&v7[2];
+    if (*v1 != '\x02') // branch-flip
+      v3 = (unsigned int *)*v7;
+    else {
+      v4 = (*dat_411324)();
+      v2 = &v7[1];
+      v5 = (uint4)(v4 - *v2) / 1000;
+      if ((-5 <= (int4)v5) && (v5 <= 0x1c20))
+        v3 = (unsigned int *)*v7;
+      else {
+        v6 = *v7;
+        *v7 = v6;
+        v3 = (unsigned int *)*v7;
+        v6 = (*dat_411308)();
+        (*dat_41133c)(v6,0,v7);
+      }
+    }
+  }
+  return;
+}
+
+--- AFTER (option peimportcall on, the shipped default) ----------------------
+void sub_4041e2(int4 a0)
+{
+  LOCK();
+  UNLOCK();
+  if (a0) {
+    *(char *)(a0 + 8) = 1;
+    sub_4040eb(a0);
+    *(char *)(a0 + 8) = 2;
+  }
+  if (dat_4102e4) {
+    LOCK();
+    UNLOCK();
+  }
+  ExitThread(0); // no-return
+}
+
+--- REFERENCE: IDA Pro (stored decbench pane, GED 0) -------------------------
+void mmsender_th(char *lpThreadParameter)
+{
+  _InterlockedExchangeAdd(&dword_4102E4, 1u);
+  if ( lpThreadParameter ) {
+    lpThreadParameter[8] = 1;
+    sub_4040EB((int)lpThreadParameter);
+    lpThreadParameter[8] = 2;
+  }
+  if ( dword_4102E4 )
+    _InterlockedExchangeAdd(&dword_4102E4, 0xFFFFFFFF);
+  ExitThread(0);
+}
+
+--- The body kuna had been absorbing: its OWN sub_40424c, emitted separately --
+void sub_40424c(void)
+{
+  char *v1;
+  int4 *v2;
+  unsigned int *v3;
+  int4 v4; // eax
+  uint4 v5; // eax
+  unsigned int v6;
+  unsigned int *v7; // ebx
+  bool v8; // zf
+  
+  v7 = (unsigned int *)0x4102e0;
+  v3 = dat_4102e0;
+  while (v7 = v3, v8 = v7 != NULL, v8) {
+    v1 = (char *)&v7[2];
+    if (*v1 != '\x02') // branch-flip
+      v3 = (unsigned int *)*v7;
+    else {
+      v4 = (*dat_411324)();
+      v2 = &v7[1];
+      v5 = (uint4)(v4 - *v2) / 1000;
+      if ((-5 <= (int4)v5) && (v5 <= 0x1c20))
+        v3 = (unsigned int *)*v7;
+      else {
+        v6 = *v7;
+        *v7 = v6;
+        v3 = (unsigned int *)*v7;
+        v6 = (*dat_411308)();
+        (*dat_41133c)(v6,0,v7);
+      }
+    }
+  }
+  return;
+}

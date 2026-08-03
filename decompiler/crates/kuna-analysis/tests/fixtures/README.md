@@ -390,6 +390,26 @@ exe is the only non-ELF binary in this tree large enough to statically link the
 MinGW CRT (≈0.5 MB), on par with the existing `mcount_x86_64` (0.9 MB).
 **Pin the VMAs as test consts** (`x86_64-w64-mingw32-objdump -d/-p`).
 
+`pe_noreturn_import.exe` (6173 B, PE32+/x86-64, source `pe_noreturn_import.c`) is the
+PE **import-call binding** fixture (`--option peimportcall`, `tests/stages/ghdec-peimportcall.xml`).
+Its point is the one call shape `pe_imports.exe` does not have: a *direct indirect*
+`call [__imp_ExitProcess]` through an Import Address Table slot, forced with
+`__declspec(dllimport)` (the shape MSVC emits for every Win32 call, and the shape kuna
+could not resolve — the CALLIND target is the contents of a global, so `ActionDeindirect`
+needs `Varnode::externref` on it). `bail`@`0x140001000` ends in that call; `tally`@`0x140001010`
+is deliberately the next function in `.text` and deliberately contains a loop, so an overrun
+past the unbound call is visible in one line of C; `entry`@`0x140001040` calls `bail` under a
+condition, so the dead fall-through after the bound no-return call is visible too. ImageBase
+`0x140000000`, IAT slot `0x140005038`, MinGW `FF 25` veneer `0x140001070`. Built with
+MinGW-w64 in the `kuna-dev` container (the same toolchain as `pe_imports.exe`):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'x86_64-w64-mingw32-gcc -O1 -nostdlib -Wl,-e,entry \
+     decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.c \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.exe -lkernel32'
+```
+
 `coff_obj.obj` (Intel amd64 COFF object, <1 KB) is a **pre-link COFF object** for
 the PR-5 object-loader gate (`kuna-console/tests/verify_coff_object.rs`,
 design §3.6). Built (no new packages — `clang` ships in `kuna-dev`):

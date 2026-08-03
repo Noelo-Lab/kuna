@@ -163,6 +163,15 @@ pub struct GlobalEntry {
     /// hands `ActionDeindirect` so the deindirect sees an inline (inject-bearing)
     /// callee and restarts — the restart re-flows and the now-direct CALL injects.
     pub func_inject_id: int4,
+    /// (kuna) The owning FunctionSymbol's no-return flag (C++
+    /// `FunctionSymbol::getFunction()->getFuncProto().isNoReturn()`, set by
+    /// `option noreturn <name>` or the no-return analysis pass).  `false` when not
+    /// a function.  The C++ `Scope::queryFunction` hands `ActionDeindirect` the
+    /// callee's live `Funcdata`, so its no-return flow effect comes for free; the
+    /// kuna snapshot has to carry the bit explicitly, and without it a deindirected
+    /// CALLIND to a no-return callee never schedules the restart that re-flows the
+    /// now-direct CALL with an artificial halt.
+    pub func_no_return: bool,
 }
 
 /// A read-only snapshot of the global [`Scope`](crate::database::Scope)
@@ -805,6 +814,13 @@ pub struct ArchContext {
     /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
     /// alignment) for hand-built fixtures.
     pub funcptr_align: int4,
+    /// (kuna) PE import-call binding (`option peimportcall`), shared from the real
+    /// architecture.  Read by [`Self::query_function`]: with the gate on, a resolved
+    /// callee's no-return flag rides the prototype handed to `ActionDeindirect`, so a
+    /// deindirected `call [IAT slot]` to `ExitThread` restarts and re-flows with the
+    /// artificial halt instead of falling through into the next function.  `false`
+    /// for hand-built fixtures.
+    pub peimportcall: bool,
     /// (kuna GH-8471) Keep a mode-bit-encoded (Thumb) function pointer symbolic
     /// (`PTRSUB(fn) + 1`) instead of letting `RulePtrsubUndo` collapse it back to
     /// raw hex (C++ `Architecture::preserve_thumb_funcptr`), shared from the real
@@ -1011,6 +1027,7 @@ impl ArchContext {
             max_jumptable_size: 0,
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
+            peimportcall: false, // (kuna) the real arch overwrites this in build_arch_handle
             // (kuna GH-8471) DIV-2 default-on; the real arch overwrites this in
             // build_arch_handle.  A hand-built fixture has funcptr_align == 0, so
             // the thumb guard never fires regardless of this flag.
@@ -1445,6 +1462,15 @@ impl ArchContext {
                             let mut p = crate::fspec::FuncProto::new();
                             p.copy(proto);
                             p.set_inject_id(e.func_inject_id);
+                            if e.func_no_return && self.peimportcall {
+                                p.set_no_return(true);
+                            }
+                            return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(p)));
+                        }
+                        if e.func_no_return && self.peimportcall && !proto.is_no_return() {
+                            let mut p = crate::fspec::FuncProto::new();
+                            p.copy(proto);
+                            p.set_no_return(true);
                             return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(p)));
                         }
                         return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::clone(proto)));
@@ -1469,6 +1495,12 @@ impl ArchContext {
             // call site.
             if e.func_inject_id >= 0 {
                 proto.set_inject_id(e.func_inject_id);
+            }
+            // (kuna) The callee's no-return flow effect, gated by `peimportcall`:
+            // `deindirect` skips its prototype merge for a no-return callee and
+            // schedules the restart whose re-flow truncates at the call.
+            if e.func_no_return && self.peimportcall {
+                proto.set_no_return(true);
             }
             return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));
         }

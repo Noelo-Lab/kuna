@@ -115,6 +115,10 @@ Three tiers:
 | dead code kept after calls to exit/abort/panic when off | [`noreturn_known`](#noreturn_known) |
 | call to a known no-return libc function still shows a fall-through path | [`noreturn_known`](#noreturn_known) |
 | unreachable epilogue after std::terminate or a rust panic call | [`noreturn_known`](#noreturn_known) |
+| windows api calls render as (*dat_411324)() with no name | [`peimportcall`](#peimportcall) |
+| a PE function runs past ExitProcess or ExitThread and absorbs the next function's body | [`peimportcall`](#peimportcall) |
+| the same loop is emitted twice, once inside a caller and once as its own sub_ function | [`peimportcall`](#peimportcall) |
+| no Win32 API names anywhere in a decompiled PE | [`peimportcall`](#peimportcall) |
 | heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
 | dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
 | caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
@@ -528,6 +532,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On (default) suppresses dead fall-through after a no-return call; off leaves the call rendering as if it returns (dead code reappears).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-noreturn
 - **Example:** `option noreturn_known off`
+
+### `peimportcall` -- on | off, default `on`
+
+- **Symptoms:** windows api calls render as (*dat_411324)() with no name; a PE function runs past ExitProcess or ExitThread and absorbs the next function's body; the same loop is emitted twice, once inside a caller and once as its own sub_ function; no Win32 API names anywhere in a decompiled PE.
+- **What it does:** Bind a Windows `call dword ptr [IAT slot]` to the import the loader already resolved at that slot. The PE loader names every Import Address Table slot, but the call lifts to a CALLIND through a global and the only pass that resolves such a target (ActionDeindirect) requires `Varnode::externref`, which upstream sets from an ExternRefSymbol kuna never creates - so every Windows API call stayed an unnamed `(*dat_4112c4)(0)` with no prototype and no no-return flow effect. On: paint `externref` over the IAT slot ranges so the call deindirects to the import FunctionSymbol, carry the callee's no-return flag onto the prototype ActionDeindirect merges, and match upstream's PE-only no-return API list (ExitProcess/ExitThread/FreeLibraryAndExitThread/KeBugCheck/longjmp/...) that kuna's merged PE/Mach-O list never named. PE/COFF only; a no-op on every other object format.
+- **When to flip:** On by default (DIV-57). On, a Windows PE/DLL renders its Win32 calls by name (`ExitThread(0)`, `HeapFree(...)`) instead of `(*dat_411324)()`, and a function ending in a no-return API stops there instead of running past it and swallowing the next function's whole body (mydoom.exe `mmsender_th` drops a `while` loop it never had: 50 lines/4 ifs/1 loop -> 13 lines/2 ifs/0 loops, matching IDA and Ghidra). Flip OFF to restore the unnamed indirect-call rendering byte for byte (every non-PE target is byte-identical either way).
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · decbench-O0-mydoom-mmsender_th
+- **Example:** `option peimportcall on`
 
 ### `noreturn_disc` -- on | off, default `on`
 

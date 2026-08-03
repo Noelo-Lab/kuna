@@ -3122,6 +3122,12 @@ impl Database {
                             SymbolKind::Function { inject_id, .. } => inject_id,
                             _ => -1,
                         },
+                        // (kuna) The callee's no-return flow effect; see
+                        // `GlobalEntry::func_no_return`.
+                        func_no_return: matches!(
+                            sym.kind,
+                            SymbolKind::Function { no_return: true, .. }
+                        ),
                     });
                 }
             }

@@ -1,0 +1,43 @@
+# PE (Windows) function names which do not return.
+# (names should not start with '_' since these are stripped during checking)
+#
+# Vendored verbatim (below the header) from upstream Ghidra
+# `Ghidra/Features/Base/data/PEFunctionsThatDoNotReturn` -- the
+# `<executable_format name="Portable Executable (PE)">` arm of
+# `noReturnFunctionConstraints.xml`.
+#
+# kuna merges the base PE/Mach-O no-return names into one shipped file
+# (`PeMacFunctionsThatDoNotReturn`), which carries only the shared CRT names.
+# The names below are Windows-only -- the Win32/NT API exits (`ExitProcess`,
+# `ExitThread`, `KeBugCheck`, `RpcRaiseException`), the MSVC CRT internals, and
+# the MSVC-mangled `std::_Xbad_alloc` throw family -- so they live HERE and are
+# matched ONLY against a PE/COFF object, never a Mach-O.  Selected by
+# `loader/kuna_peimportcall.rs` under `--option peimportcall`.
+abort
+CxxThrowException
+CxxThrowException@8
+CxxFrameHandler3
+crtExitProcess
+ExitProcess
+ExitThread
+exit
+ExRaiseAccessViolation
+ExRaiseDatatypeMisalignment
+ExRaiseStatus
+FreeLibraryAndExitThread
+invalid_parameter_noinfo_noreturn
+invoke_watson
+KeBugCheck
+KeBugCheckEx
+longjmp
+quick_exit
+RpcRaiseException
+terminate
+___raise_securityfailure
+___report_rangecheckfailure
+?_Xregex_error@std@@YAXW4error_type@regex_constant@1@@Z
+?_Xbad_alloc@std@@YAXXZ
+?_Xlength_error@std@@YAXPBD@Z
+?_Xout_of_range@std@@YAXPBD@Z
+?_Xbad_function_call@std@@YAXXZ
+?terminate@@YAXXZ

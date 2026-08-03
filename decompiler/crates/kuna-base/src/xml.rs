@@ -1717,7 +1717,9 @@ mod tests {
         // into a .rodata string literal)
         // and ghdec-itecondlist / the ITE condition-list tolerance (option off
         // re-rolls only ceil(N/2) of a run of N identical assignment diamonds)
-        assert_eq!(count, 189, "corpus file count drifted");
+        // and ghdec-peimportcall / PE import-call binding (option off leaves a
+        // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
+        assert_eq!(count, 190, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

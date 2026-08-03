@@ -82,6 +82,47 @@ pub(crate) fn resolve_pe_imports(file: &object::File, bytes: &[u8]) -> Vec<Impor
     }
 }
 
+/// The Import Address Table slot ranges of a PE, as `[slot, slot + ptr)` byte
+/// ranges in ascending order (empty for a non-PE / no-import / unparsable image).
+///
+/// The address half of [`resolve_pe_imports`]'s IAT arm, without the names: the
+/// `peimportcall` pass paints `Varnode::externref` over exactly these ranges so a
+/// `call dword ptr [slot]` resolves through `ActionDeindirect` to the import
+/// FunctionSymbol registered at the slot VA.  See
+/// [`crate::loader::kuna_peimportcall`].
+pub(crate) fn resolve_pe_import_slots(bytes: &[u8]) -> Vec<(u64, u64)> {
+    match FileKind::parse(bytes) {
+        Ok(FileKind::Pe64) => match PeFile64::parse(bytes) {
+            Ok(pe) => slot_ranges::<ImageNtHeaders64>(&pe, 8),
+            Err(_) => Vec::new(),
+        },
+        Ok(FileKind::Pe32) => match PeFile32::parse(bytes) {
+            Ok(pe) => slot_ranges::<ImageNtHeaders32>(&pe, 4),
+            Err(_) => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// [`resolve_pe_import_slots`] over a typed `PeFile`: reuse the INT/IAT lockstep
+/// walk purely for its slot-VA side table, then widen each slot to its pointer.
+fn slot_ranges<Pe: ImageNtHeaders>(pe: &PeFile<Pe>, ptr: u64) -> Vec<(u64, u64)> {
+    let mut slot_to_name: std::collections::HashMap<u64, Vec<u8>> = std::collections::HashMap::new();
+    let mut discard: Vec<ImportSym> = Vec::new();
+    if let Ok(Some(it)) = pe.import_table() {
+        walk_import_table::<Pe>(
+            &it,
+            pe.relative_address_base(),
+            ptr,
+            &mut discard,
+            &mut slot_to_name,
+        );
+    }
+    let mut slots: Vec<u64> = slot_to_name.into_keys().collect();
+    slots.sort_unstable();
+    slots.into_iter().map(|s| (s, s.wrapping_add(ptr))).collect()
+}
+
 /// Walk the Import Directory of a typed `PeFile`, pairing the INT (names) and IAT
 /// (slot addresses) in lockstep, then decode the `FF 25` thunk veneers and append
 /// the exports.  `ptr` is the IAT slot width (8 for PE32+, 4 for PE32).

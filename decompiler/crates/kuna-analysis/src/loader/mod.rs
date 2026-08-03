@@ -35,6 +35,9 @@ pub mod elf_plt;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod elf_reloc;
 pub mod format;
+// (kuna) PE import-call binding (`peimportcall`): `externref` over the IAT slots
+// + upstream's PE-only no-return API names.
+pub mod kuna_peimportcall;
 pub mod macho_fat;
 pub mod macho_stubs;
 pub mod mips_markers;

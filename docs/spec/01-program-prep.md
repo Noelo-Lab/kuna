@@ -221,6 +221,33 @@ remains unrestricted; name selection keeps its normal first-match behavior when
 a stub and slot share a name. Loaders without section metadata keep the complete
 inventory.
 
+Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
+PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name
+resolves at flow time; a PE Import Address Table slot is data, so `call dword ptr
+[slot]` lifts to a `CALLIND` whose target is the contents of a global. The only pass
+that resolves such a target is `ActionDeindirect`, and its external-reference arm
+requires the target Varnode to carry `Varnode::externref` — a flag Ghidra sets from
+an `ExternRefSymbol` (`Scope::addExternalRef`) that kuna's port never carried, so on
+a PE the flag was set nowhere and every Windows API call stayed an unnamed
+`(*dat_4112c4)(0)`: no name, no prototype, and no no-return flow effect.
+`decompiler/crates/kuna-analysis/src/loader/kuna_peimportcall.rs (PeImportCallPass)`
+(`peimportcall`, PE/COFF-only, default-on per DIV-57) closes that with the property
+map rather than a second symbol: it reports one `[slot, slot+ptr)` range per import
+descriptor entry and the commit ORs `Varnode::externref` over each, the same
+`Database::setPropertyRange` the loader's read-only section ranges use.
+`Scope::queryProperties` folds the property map into every global Varnode covering
+the range, so the slot read now carries `persist|externref` and `ActionDeindirect`
+resolves it against the `FunctionSymbol` the IAT walk already registered at that
+same slot VA — kuna's `Architecture::query_function` keys on the Varnode's own
+address, where upstream indirects through `ExternRefSymbol::refaddr`, so no extra
+symbol is needed. The flow half rides the same gate: `query_function` also carries
+the resolved callee's no-return flag onto the prototype it hands `ActionDeindirect`
+(the snapshot in
+`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (Database::build_global_query)`
+dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
+the deindirect schedule the restart whose re-flow plants the artificial halt. Off,
+a PE renders byte for byte as before; every non-PE target is unaffected either way.
+
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:

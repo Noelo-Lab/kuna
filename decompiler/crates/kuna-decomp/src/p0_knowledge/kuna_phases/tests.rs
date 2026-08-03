@@ -48,8 +48,9 @@ fn settable_count_is_84() {
     // +1 for `cortexmvectors` (P1 widened ARM Cortex-M vector-table signature).
     // +1 for `paramcopyhoist` (P6 parameter copy-shadow entry-block anchor).
     // +1 for `itecondlist` (S8 iteregion/iteboolean condition-list tolerance).
-    assert_eq!(kuna_num_settables(), 86);
-    assert_eq!(SETTABLE_TABLE.len(), 86);
+    // +1 for `peimportcall` (P1 PE import-call binding, DIV-57).
+    assert_eq!(kuna_num_settables(), 87);
+    assert_eq!(SETTABLE_TABLE.len(), 87);
 }
 
 #[test]
@@ -70,7 +71,8 @@ fn tier_counts_are_20_core_39_transform_26_analysis() {
     // analysis 25 -> 26: +1 for `cortexmvectors` (P1 widened Cortex-M vector table).
     // transform 38 -> 39: +1 for `paramcopyhoist` (P6 parameter copy-shadow anchor).
     // transform 39 -> 40: +1 for `itecondlist` (S8 ITE condition-list tolerance, DIV-56).
-    assert_eq!((core, transform, analysis), (20, 40, 26));
+    // transform 40 -> 41: +1 for `peimportcall` (P1 PE import-call binding, DIV-57).
+    assert_eq!((core, transform, analysis), (20, 41, 26));
 }
 
 #[test]
@@ -387,7 +389,9 @@ fn option_values_live_value_present_for_28_suppressed_for_42() {
             }
         }
     }
-    assert_eq!(with_live, 28);
+    // 28 -> 29: +1 for `peimportcall` (live_field = analysis_peimportcall);
+    // `itecondlist` declares no live_field, so it does not move this count.
+    assert_eq!(with_live, 29);
 }
 
 #[test]
@@ -487,9 +491,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // cortexmvectors' S1 row,
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
-    // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row and
-    // itecondlist's S8 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 85);
+    // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
+    // itecondlist's S8 row and peimportcall's S1 row sit mid-table, so they do not
+    // move the tail).
+    assert_eq!(json.matches("},\n").count(), 86);
 }
 
 #[test]

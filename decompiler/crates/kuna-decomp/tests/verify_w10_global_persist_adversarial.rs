@@ -71,6 +71,7 @@ fn tied_entry(space: &Rc<AddrSpace>, first: u64, last: u64, all_flags: u32) -> G
         scope_path: Vec::new(),
         is_function: false,
         func_inject_id: -1,
+        func_no_return: false,
     }
 }
 
@@ -237,6 +238,7 @@ fn av4_smallest_in_use_entry_wins() {
         scope_path: Vec::new(),
         is_function: false,
         func_inject_id: -1,
+        func_no_return: false,
     };
     let gq2 = GlobalQuery::new(
         vec![big.clone(), limited.clone()],

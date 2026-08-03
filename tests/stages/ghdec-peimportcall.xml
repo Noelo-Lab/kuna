@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    PE import-call binding (`option peimportcall on|off`).
+
+    Issue: decbench case O0-mydoom-mydoom-mmsender_th (IDA, Ghidra and angr all
+    score GED 0; kuna scored 37). A Windows `call dword ptr [IAT slot]` lifts to
+    a CALLIND whose target is the contents of a global. The only pass that
+    resolves such a target - ActionDeindirect - gates on `Varnode::externref`,
+    which upstream sets from an ExternRefSymbol (`Scope::addExternalRef`) that
+    kuna's port never carried, so the call kept no name, no prototype and, worst,
+    no no-return flow effect: a function ending in `ExitProcess`/`ExitThread`
+    ran straight on and absorbed the next function's whole body.
+
+    Stage / sub-stage: P1 external-refinement (`kuna-analysis`
+    `loader/kuna_peimportcall.rs` paints the slot ranges) feeding the P4/P9
+    deindirect seam (`Architecture::query_function` carries the callee's
+    no-return flag onto the prototype `ActionDeindirect` merges).
+
+    P0 assertion: `option peimportcall on|off`.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear it
+    and load the real PE fixture through the object bootstrap, exactly as
+    `ghdec-fast-funcdisc.xml` does. The fixture is built from
+    `pe_noreturn_import.c` (see the fixtures README): `bail` ends in a
+    `__declspec(dllimport) ExitProcess` call - the direct IAT-slot shape - and
+    `entry` calls it under a condition.
+
+    Pass 1 (`option peimportcall off`) reproduces the BUG: the call renders as
+    the unnamed `(*dat_140005038)(0xc)` and the code after it is still reachable.
+    Pass 2 (`option peimportcall on`) is the FIX: the same site renders
+    `ExitProcess(0xc)` and carries the no-return flow effect, so the dead
+    fall-through after it is gone.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.exe</com>
+  <com>option peimportcall off</com>
+  <com>read symbols</com>
+  <com>load function entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.exe</com>
+  <com>option peimportcall on</com>
+  <com>read symbols</com>
+  <com>load function entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PEIMPORTCALL #1: off leaves the IAT-slot call unnamed" min="1" max="1">\(\*dat_140005038\)\(0xc\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #2: on binds the slot call to the import name" min="1" max="1">ExitProcess\(0xc\); // no-return</stringmatch>
+<stringmatch name="PEIMPORTCALL #3: on gives the bound call its no-return flow effect" min="2" max="2">// no-return</stringmatch>
+<stringmatch name="PEIMPORTCALL #4: off leaves bail calling the raw slot pointer" min="1" max="1">\(\*dat_140005038\)\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #5: on ends bail at the bound no-return import" min="1" max="1">ExitProcess\(\); // no-return</stringmatch>
+</decompilertest>
