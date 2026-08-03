@@ -2190,6 +2190,25 @@ tier = "transform"
 symptoms = "if (a && b) v = 1; else v = 0; where the source has a single boolean assignment v = a && b|-O0 boolean materialization printed as an explicit 0/1 constant diamond|extra CFG blocks/edges vs Hex-Rays around a short-circuit boolean assignment"
 
 [[settable]]
+option = "itecondlist"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "decbench-ite-every-other-diamond"
+summary = "Let the `iteregion` and `iteboolean` diamond matchers see through a multi-component `BlockList` in the diamond's CONDITION position, by descending it to its LAST component. Their shared `leaf_bblock` helper descends a one-component list but bails on a list of two or more, and the collapse structurer concatenates a just-collapsed predecessor onto the next diamond's condition block — so in a RUN of structurally identical diamonds every other one is declined, and kuna re-rolls exactly ceil(N/2) of N (measured N=1..8: 1 1 2 2 3 3 4 4). Sound because the rewrite is print-only and the printer already renders this shape: `emit_block_if` emits the condition component once under NO_BRANCH (its statements) and once under ONLY_BRANCH (its branch), and `emit_block_ls` emits every component under NO_BRANCH but only the LAST under ONLY_BRANCH — so the leading components print as ordinary statements before the `if` header either way, and the ternary/boolean emitters do the same two emissions on the same block. The arms keep the strict single-statement match and the labelled-goto-target guard still applies to the descended leaf. Restricted to `BlockList`: a `BlockGraph` is excluded because `emit_block_graph` ignores ONLY_BRANCH and would print the whole graph twice."
+use_when = "kuna re-rolls only SOME of a run of structurally identical assignment/boolean diamonds -- one `v = c ? A : B;` (or `v = a || b;`) followed by an explicit `if (c) v = A; else { v = B; }` with the same condition and arms, alternating. The tell is that which diamonds are missed depends on the NEIGHBOURING structure, not on the diamond itself: an immediately preceding structured `if` suppresses the very next one. On by default (DIV-56): the flip changes 0/675 datatest assertions and is inside the speed budget. Flip OFF (`option itecondlist off`) to restore the pre-DIV-56 every-other rendering; it is a strictly narrower match, so OFF can only ever fold FEWER diamonds. Requires `option iteregion on` and/or `option iteboolean on` (both default) -- it widens their condition match only, and never fires on its own."
+example = "option itecondlist on"
+source_decompiler = "ida"
+inspiration = "decbench:O0-bash-bash-shell_initialize; widens angr ITERegionConverter (_find_ite_assignment_regions) + iteboolean condition matching over a concatenated BlockList"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "only every other ternary in a chain of identical ?: assignments is recovered|a re-rolled v = c ? A : B; is immediately followed by an identical un-re-rolled if (c) v = A; else v = B;|iteboolean re-rolls 1 of 3 identical short-circuit boolean assignments|a diamond folds in isolation but declines when a structured if precedes it"
+
+[[settable]]
 option = "returndup"
 values = "on|off"
 default = "on"

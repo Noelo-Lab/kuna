@@ -257,8 +257,14 @@ pub(crate) fn leaf_bblock(data: &Funcdata, id: BlockId) -> Option<BlockId> {
 /// front of each `_PF` diamond) are permitted — the printer re-emits them normally
 /// before the ternary, so nothing is dropped.  Declines a block that does not end
 /// in a `CBRANCH`.
+///
+/// Under `option itecondlist on` a multi-component condition `BlockList` is
+/// descended to its last component first
+/// ([`cond_list_tail`](crate::p8_structure::kuna_itecondlist::cond_list_tail)) — the
+/// same tolerance across a block boundary, and the reason a chain of diamonds no
+/// longer folds only every other one.
 fn cond_cbranch(data: &Funcdata, id: BlockId) -> Option<OpId> {
-    let bb = leaf_bblock(data, id)?;
+    let bb = leaf_bblock(data, crate::p8_structure::kuna_itecondlist::cond_list_tail(data, id))?;
     let ops = printed_ops(data, bb);
     let op = *ops.last()?;
     if data.obank().get(op)?.code() != OpCode::CPUI_CBRANCH {
