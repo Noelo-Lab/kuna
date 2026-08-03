@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    decbench campaign case novel-concat-subpiece-soup (NOVEL pool: kuna already
+    scored best of all decompilers on the panes that surfaced it and the output
+    was still not C, so no other decompiler showed us this fix).
+
+    P3 simplification quiescence, cleanup pool.  RuleSubRight (upstream
+    ruleaction.cc:7271, registered "subright" in the cleanup pool at
+    infra/universalaction.rs) rewrites a truncation that is NOT least
+    significant into a shift plus a least significant truncation:
+
+        sub(V,c)  =>  sub(V >> c*8, 0)
+
+    Only the special print half of that rule was ported; the ~45 line rewrite
+    tail was a stub returning 0.  So every SUBPIECE with a nonzero byte offset
+    survived to the printer, which renders a non zero offset SUBPIECE as the
+    raw p-code operator SUBnn.  SUB41 / SUB84 / SUB81 are undeclared
+    identifiers (kuna emits no header defining them), so the emitted
+    function is not compilable C:
+
+        *a0   = SUB41(a1,3);                          <- put_u32_be
+        return SUB84((uint8)a1 * (uint8)a0,4) >> 3;   <- mulhi_shift
+
+    Upstream Ghidra prints the shift form for both, and so does kuna's own
+    offset-0 SUBPIECE (a0[3] = (char)a1), which is what proves the printer was
+    never the problem.
+
+    Bytes: gcc -m32 -O1 -fno-stack-protector -fno-pic on
+
+        void put_u32_be(u8 *p, u32 v) { p[0] = (v >> 24) & 0xff; ... }
+        u32  mulhi_shift(u32 a, u32 b) { return (u32)(((u64)a * b) >> 32) >> 3; }
+
+    put_u32_be covers the plain rewrite (three truncations at byte offsets
+    3/2/1, plus the offset-0 one the c==0 bail must leave alone).  mulhi_shift
+    covers the lone-descendant lumping: the mull high half is SUBPIECE(prod,4)
+    whose only reader is a constant INT_RIGHT, so the rule folds the two into a
+    single shift by 32+3 == 0x23.  It is written with a variable multiplier so
+    that RuleDivOpt declines and the truncation reaches the printer.
+
+    No option: this is a correctness fix (an undeclared p-code operator in the
+    C body is never desired) restoring upstream's own behavior from a port
+    stub, so it is a Convergence, not a divergence (see docs/history.md).
+    Two-pass anyway, using the rule's existing name in the action pool:
+    pass 1 is the default (the fix), pass 2 sets `option togglerule subright
+    off` to pin the pre-fix rendering.
+-->
+<bytechunk space="ram" offset="0x100000">
+8b4424048b54240889d1c1e918880889d1c1e910884801887002885003c38b442408f7642404
+89d0c1e803c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="put_u32_be"/>
+<symbol space="ram" offset="0x10001e" name="mulhi_shift"/>
+</binaryimage>
+<script>
+  <com>lo fu put_u32_be</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mulhi_shift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option togglerule subright off</com>
+  <com>lo fu put_u32_be</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mulhi_shift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="subright #1: the top-byte truncation lowers to a shift and a cast" min="1" max="1">\*a0 = \(char\)\(\(uint4\)a1 &gt;&gt; 0x18\);</stringmatch>
+<stringmatch name="subright #2: the middle-byte truncation lowers to a shift and a cast" min="1" max="1">a0\[1\] = \(char\)\(\(uint4\)a1 &gt;&gt; 0x10\);</stringmatch>
+<stringmatch name="subright #3: the one-byte-offset truncation lowers to a shift and a cast" min="1" max="1">a0\[2\] = \(char\)\(\(uint4\)a1 &gt;&gt; 8\);</stringmatch>
+<stringmatch name="subright #4: the least significant truncation is untouched in both passes (the c==0 bail)" min="2" max="2">a0\[3\] = \(char\)a1;</stringmatch>
+<stringmatch name="subright #5: a lone constant right-shift reader is lumped into the synthesized shift (32+3)" min="1" max="1">return \(uint4\)\(\(uint8\)a1 \* \(uint8\)a0 &gt;&gt; 0x23\);</stringmatch>
+<stringmatch name="subright #6: every raw SUBnn operator in the transcript comes from the rule-off pass" min="4" max="4">SUB[0-9][0-9]\(</stringmatch>
+<stringmatch name="subright #7: the rule-off pass pins the pre-fix truncation rendering" min="1" max="1">\*a0 = SUB41\(a1,3\);</stringmatch>
+<stringmatch name="subright #8: the rule-off pass pins the pre-fix un-lumped rendering" min="1" max="1">return SUB84\(\(uint8\)a1 \* \(uint8\)a0,4\) &gt;&gt; 3;</stringmatch>
+</decompilertest>

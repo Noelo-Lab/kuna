@@ -1,0 +1,187 @@
+{
+  "opportunity": "novel-concat-subpiece-soup",
+  "case_id": "novel-concat-subpiece-soup",
+  "test_name": "decbench round-2 triage, NOVEL pool (SUBPIECE half; the CONCAT half is disproven)",
+  "route": "B (decbench)",
+  "binary": "/home/mahaloz/github/decbench/results/full_run/O2-noinline/openssh-portable/stripped/ssh",
+  "selector": "0x4cd60",
+  "func_addr": "0x4cd60",
+  "source_decompiler": "ghidra",
+  "inspiration": "upstream Ghidra RuleSubRight (ruleaction.cc:7271-7340, GHIDRA_REV=cef869af); openssh-portable ssh sshbuf_put_u64 @ 0x4cd60; corpus-wide 5,919 nonzero-offset SUBPIECEs in 2,394 functions vs ghidra's 18 in 13",
+  "phase": "P3 (simplification quiescence, cleanup pool)",
+  "module": "decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_6.rs (RuleSubRight)",
+  "change_kind": "correctness-fix",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "default_on": true,
+  "gated": false,
+  "gating_rationale": "SUBnn is an undeclared identifier, so the pre-fix output does not compile; the fix restores upstream Ghidra's own behavior from an explicitly-marked port stub rather than making a judgment call; the ablation moves 0/675 upstream assertions; and `option togglerule subright off` already gives a bisector the pre-fix rendering because `subright` is a registered rule-group name in the action pool. Recorded in docs/history.md as a Convergence (upstream behavior restored), not a DIV row.",
+  "history_entry": "Convergences table (docs/history.md) \u2014 no DIV row",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "gates": {
+    "make test": "675/675 PARITY OK (docs/baseline.json NOT re-pinned)",
+    "make test-stages": "369/369 PARITY OK (baseline re-recorded on the rebased base: purely additive, 361 -> 369 keys, no existing assertion moved)",
+    "make rust-test": "green -- see rust_test below",
+    "make check-spec": "OK (lenient mode) and OK (strict mode)",
+    "kuna catalog --check": "catalog OK (no option added; settable rows stay at #250's 85, and the diff vs main for phases.toml / p0_knowledge / tests / docs/options.md is empty)"
+  },
+  "stage_test": {
+    "path": "tests/stages/ghdec-subright.xml",
+    "passes": "two-pass: pass 1 default (the fix), pass 2 `option togglerule subright off` (the bug)",
+    "pre_fix": "1/8 assertions pass",
+    "post_fix": "8/8 assertions pass"
+  },
+  "speed_method": "interleaved A/B on two release builds of this worktree (stubbed vs ported), medians of N pairs, `decompile-all --mode reliable`; the box runs sibling agents and a decbench sweep, so blocked measurement would fold load drift into the delta",
+  "speed_samples": [
+    {
+      "label": "openssh ssh @0x4cd60 (witness function)",
+      "before_ms": 2307.2,
+      "after_ms": 2165.0,
+      "delta_pct": -6.16,
+      "pairs": 9
+    },
+    {
+      "label": "gzip -O0 decompile-all",
+      "before_ms": 3387.2,
+      "after_ms": 3325.0,
+      "delta_pct": -1.84,
+      "pairs": 7
+    },
+    {
+      "label": "bzip2 -O2 decompile-all",
+      "before_ms": 12016.1,
+      "after_ms": 11511.8,
+      "delta_pct": -4.2,
+      "pairs": 7
+    },
+    {
+      "label": "e2fsprogs e2fsck -O2 decompile-all",
+      "before_ms": 21378.4,
+      "after_ms": 21430.2,
+      "delta_pct": 0.24,
+      "pairs": 5
+    }
+  ],
+  "speed_off_ms": 2307.2,
+  "speed_on_ms": 2165.0,
+  "speed_delta_pct": -6.16,
+  "speed_budget_pct": 5,
+  "speed_within_budget": true,
+  "speed_worst_delta_pct": 0.24,
+  "speed_forced_off": false,
+  "ged_case": "O2-noinline-iproute2-ip-netns_add",
+  "ged_recorded": 8.0,
+  "ged_before": 8.0,
+  "ged_after": 8.0,
+  "ged_delta": 0.0,
+  "ged_perfect_after": false,
+  "ged_note": "GED-neutral by construction, exactly as the triage predicted: the rewrite changes expressions inside basic blocks and creates no block-count change, so the graph-edit-distance metric cannot see it. This case is ranked by correctness (undeclared identifier -> valid C), not by GED.",
+  "breadth": {
+    "method": "whole-binary `decompile-all --mode reliable` with a stubbed/ported build pair BOTH built from the rebased base (main @2406cdd8); nonzero-offset raw SUBnn counted with a nesting-aware balanced-argument scanner; totals taken over the function set common to both panes so the 120 s per-function watchdog cannot move them on a loaded box",
+    "binaries": 7,
+    "functions_common": 14720,
+    "raw_operators_before": 1912,
+    "raw_operators_after": 95,
+    "removed_pct": 95.0,
+    "functions_carrying_one_before": 733,
+    "functions_carrying_one_after": 20,
+    "functions_text_changed": 728,
+    "functions_text_changed_pct": 4.95,
+    "emitted_lines_before": 443737,
+    "emitted_lines_after": 443785,
+    "emitted_lines_delta_pct": 0.011,
+    "per_binary": [
+      {
+        "binary": "O2-noinline openssh-portable ssh",
+        "ops": "69 -> 0",
+        "fns": "29 -> 0",
+        "changed": "29 / 1853 (1.57%)"
+      },
+      {
+        "binary": "O2-noinline iproute2 ip",
+        "ops": "80 -> 43",
+        "fns": "34 -> 3",
+        "changed": "32 / 1912 (1.67%)"
+      },
+      {
+        "binary": "O2-noinline e2fsprogs e2fsck",
+        "ops": "48 -> 2",
+        "fns": "38 -> 2",
+        "changed": "37 / 1909 (1.94%)"
+      },
+      {
+        "binary": "O0 gzip",
+        "ops": "22 -> 0",
+        "fns": "6 -> 0",
+        "changed": "6 / 262 (2.29%)"
+      },
+      {
+        "binary": "O2-noinline bzip2",
+        "ops": "13 -> 0",
+        "fns": "9 -> 0",
+        "changed": "10 / 153 (6.54%)"
+      },
+      {
+        "binary": "O2-noinline betaflight STM32F405 (ARM)",
+        "ops": "1068 -> 31",
+        "fns": "409 -> 10",
+        "changed": "407 / 5795 (7.02%)"
+      },
+      {
+        "binary": "O2-noinline cleanflight DALRCF405 (ARM)",
+        "ops": "612 -> 19",
+        "fns": "208 -> 5",
+        "changed": "207 / 2836 (7.30%)"
+      }
+    ],
+    "residual_classification": {
+      "total": 95,
+      "address_tied_global_array_store": 42,
+      "address_tied_local_partial_symbol": 47,
+      "piece_structured_field_extraction": 6,
+      "note": "every residual is a case upstream's own guards decline: the addr-tied/overlap==c ActionCopyMarker bail (89) and the isPieceStructured special-print branch (6). The global-array family is round 1's separately-filed `rodata-phantom-store`; the local family is the P6 partial-symbol thread that renders `sym._2_2_` upstream. subright owns 1,817 of the 1,912 (95.0%)."
+    },
+    "measured_cost": "exactly two functions in 14,720 gain a dead partial-register shift statement -- `(undefined7)((uint8)a2 >> 8)` in bzip2 sub_da00 and one `(undefined3)((uint4)v11 >> 8)` on ARM. That is the SUB87/SUB43 form, which upstream lowers the same way. Corpus-wide count of that shape: 0 -> 2."
+  },
+  "decisions": [
+    {
+      "question": "Should the restored RuleSubRight tail ship behind a named --option, or ungated?",
+      "decider": "independent subagent, given CLAUDE.md's feature/bug-fix rule, improvement-pipeline standing requirement 3, the precedent commits, and docs/options.md",
+      "verdict": "ungated",
+      "verbatim": "VERDICT: ungated. CLAUDE.md's rule gates *features* -- 'behavior that is a judgment call, not universally better' -- and exempts 'a strict bug fix that only corrects wrong output.' SUB81 is an undeclared identifier, so the old output is not C; the new form is byte-identical in shape to upstream Ghidra's, which is the port's fidelity target. There is no honest `use_when` to write: no user ever wants the non-compiling spelling, and options.md's prose format demands a real 'flip it when...' case. Precedent is unanimous for exactly this shape. b0752b83 (DIV-49) is the closest analogue -- an unported upstream call (BlockGraph::orderBlocks) restored, blast radius 0.87% of functions, commit body: 'Strict bug fix restoring upstream behavior -- no option (the current output is unambiguously wrong C).' 694ab8ef/DIV-46 uses the identical 'neither PTRSUB nor ESP is declared anywhere, so the function is not C' reasoning; 36641d35/DIV-50 ('No option: the affected functions produced no output at all before'), 41c26929/DIV-48 and 36fe8d90/DIV-52 all change emitted C ungated. None of the five touches phases.toml, options.rs, or a catalog count. [Required artifacts:] docs/history.md row (Convergences table -- a fix that moves kuna back onto upstream's default earns no DIV row); spec prose in docs/spec/03-ssa-and-simplification.md; tests/stages/<slug>.xml two-pass end-to-end testcase -- pass 2 can pin the bug form with the existing `option togglerule subright off`, satisfying the two-pass convention with no new flag; tests/stages/README.md line, corpus file count in kuna-base/src/xml.rs, re-recorded docs/baseline-stages.json; commit body carrying corpus breadth and speed deltas. [Strongest counter, and why it loses:] The one Convergence row on the books, callsitestackargs, *did* add a default-ON option whose `off` 'reproduces the pre-fix output for bisection' -- and 3.1% of functions is a wider blast radius than any ungated precedent (0.87% for DIV-49). But that option existed to buy a bisection switch for an inline predicate inside check_input_trial_use with no rule-group name. Here the switch already exists: subright is a registered rule group (universalaction.rs:552) reachable via togglerule. The only thing a new settableTable row would add is catalog-count churn and a documented knob nobody should ever flip."
+    },
+    {
+      "question": "Where does the new logic live -- a new kuna_subright.rs module, or in place?",
+      "verdict": "in place, in ruleaction_6.rs",
+      "rationale": "The kuna_<slug>.rs convention is for NEW logic that is a judgment call. This is the completion of a ported rule that already exists in its 1:1-anchored port file (`ruleaction.cc:7271 / ruleaction.hh:1165`), is already registered in the cleanup pool, and already carries the first half of its own body. Splitting the tail into a separate module would break the file's port anchoring for no gain."
+    }
+  ],
+  "watchdog_note": "Two whole-binary panes lost a single function each to the 120 s per-function budget on the loaded box -- iproute2 print_rule @0x1f980 in the BEFORE pane and betaflight sub_800fa68 @0x800fa68 in the AFTER pane. Re-timed in isolation, print_rule completes in ~2.8 s under both builds, so these are load artifacts in both directions, not effects of the change; every headline number above is taken over the function set common to both panes.",
+  "ged_cases": [
+    {
+      "case": "O2-noinline-iproute2-ip-netns_add",
+      "recorded": 8.0,
+      "before": 8.0,
+      "after": 8.0,
+      "delta": 0.0
+    },
+    {
+      "case": "O2-noinline-betaflight-betaflight_STM32F405-applyLedFixedLayers",
+      "recorded": 25.0,
+      "before": 25.0,
+      "after": 25.0,
+      "delta": 0.0
+    }
+  ],
+  "rebased_onto": "main @d89a4d95 (after #248 cortexmvectors, #249 funcptralign and #250 paramcopyhoist). Breadth was re-measured from scratch against the #249 base with a fresh stubbed/ported build pair; #250 adds a default-OFF P6 pass that the interaction check below shows does not touch this rewrite, so those numbers carry forward.",
+  "corpus_file_count": "decompiler/crates/kuna-base/src/xml.rs: 186 -> 187 (base + #249 ghdec-funcptralign + #250 ghdec-paramcopyhoist + this PR's ghdec-subright; 83 datatests + 104 stages)",
+  "speed_note": "measured against the pre-rebase base; #248/#249 touch ARM discovery and ARM indirect-call masking, and every speed target here is x86-64/i386, so the deltas are unaffected. The witness output and the stage test were re-verified byte-for-byte on the rebased base.",
+  "interaction_check_250": {
+    "question": "Does #250's ActionParamCopyHoist (P6, default-OFF) interact with this P3 cleanup rule?",
+    "method": "whole-binary `decompile-all --mode reliable` on openssh ssh, gzip -O0 and bzip2 -O2, default (option off) vs `--option paramcopyhoist on`, counting both the residual nonzero-offset raw SUBnn and the subright output shape `(char)((uintN)...)`",
+    "result": "identical in every arm -- residual raw operators 0/0, 0/0, 0/0 and shift-form truncations 23->23, 12->12, 1->1; the witness function at 0x4cd60 is byte-identical with the option on and off. Both stage tests pass explicitly (ghdec-paramcopyhoist 3/3, ghdec-subright 8/8).",
+    "verdict": "no interaction"
+  }
+}

@@ -30,7 +30,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
 use crate::context::{ArchContext, OpId, TypeOp, VarnodeId};
-use crate::varnode::{DefOpInfo, VarnodeBank};
+use crate::varnode::{varnode_flags, DefOpInfo, VarnodeBank};
 
 // -----------------------------------------------------------------------------
 // fixtures
@@ -709,6 +709,50 @@ fn sub_right_special_printing_bails() {
         .unwrap()
         .set_additional_flag(crate::op::pcodeop_addlflags::special_print);
     assert_eq!(rule.apply_op(sub, &mut fd), 0);
+}
+
+#[test]
+fn sub_right_least_significant_bails() {
+    // c == 0: the SUBPIECE already truncates to the low bytes, so it prints as a
+    // cast and needs no shift.  The offset input must survive untouched.
+    let mut fd = build_fd();
+    let mut rule = RuleSubRight::new("g");
+    let sub = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_SUBPIECE);
+    let adef = mk_op(&mut fd, 0, 0x90, OpCode::CPUI_COPY);
+    let a = give_output(&mut fd, adef, 0x10, 8);
+    set_in(&mut fd, sub, a, 0);
+    let c = mk_const(&mut fd, 4, 0);
+    set_in(&mut fd, sub, c, 1);
+    let _o = give_output(&mut fd, sub, 0x20, 4);
+    assert_eq!(rule.apply_op(sub, &mut fd), 0);
+    assert_eq!(fd.obank().get(sub).unwrap().get_in(1), Some(c));
+}
+
+#[test]
+fn sub_right_addr_tied_marker_bails() {
+    // Output and input both address-tied and overlapping at exactly c: this
+    // SUBPIECE is the storage marker ActionCopyMarker converts, so the rewrite
+    // must decline and leave the op untouched (dropping this guard would turn
+    // stack-piece writes back into shift chains).
+    let mut fd = build_fd();
+    let mut rule = RuleSubRight::new("g");
+    let sub = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_SUBPIECE);
+    let adef = mk_op(&mut fd, 0, 0x90, OpCode::CPUI_COPY);
+    let a = give_output(&mut fd, adef, 0x10, 8);
+    set_in(&mut fd, sub, a, 0);
+    let c = mk_const(&mut fd, 4, 4);
+    set_in(&mut fd, sub, c, 1);
+    let o = give_output(&mut fd, sub, 0x14, 4); // ram 0x14 is byte 4 of ram 0x10
+    for vn in [a, o] {
+        fd.vbank_mut()
+            .get_mut(vn)
+            .unwrap()
+            .set_flags_pub(varnode_flags::mapped | varnode_flags::addrtied);
+    }
+    assert!(fd.vbank().get(o).unwrap().is_addr_tied());
+    assert!(fd.vbank().get(a).unwrap().is_addr_tied());
+    assert_eq!(rule.apply_op(sub, &mut fd), 0);
+    assert_eq!(fd.obank().get(sub).unwrap().get_in(1), Some(c));
 }
 
 // =============================================================================
