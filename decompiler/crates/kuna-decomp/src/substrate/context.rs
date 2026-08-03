@@ -720,6 +720,11 @@ pub struct ArchContext {
     /// single boolean assignment (`x = a && b;`) — see `Architecture::iteboolean`.
     /// Read by [`crate::p8_structure::kuna_iteboolean`]'s `ActionIteBoolean`.
     pub iteboolean: bool,
+    /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
+    /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
+    /// see `Architecture::param_copy_hoist`.  Read by
+    /// [`crate::p6_variables::kuna_paramcopyhoist`]'s `hoist_target`.
+    pub param_copy_hoist: bool,
     /// (kuna) angr SAILR gotoless `ReturnDuplicatorHigh`: duplicate a shared
     /// **bare-epilogue** RETURN block into each predecessor but one so a
     /// `if (c) { body; return X; } return Y;` guard shape structures as per-predecessor
@@ -979,6 +984,7 @@ impl ArchContext {
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
+            param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)

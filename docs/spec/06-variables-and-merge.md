@@ -513,6 +513,49 @@ the container over any input whose tail extends past the container end, so
 the adjustment always sees fully-contained inputs. `off` preserves the
 upstream refusal.
 
+**(kuna, decbench) `option paramcopyhoist` — the entry-block anchor for an
+unmodified parameter's copy-shadow** (default **off**, opt-in). `gcc -O0` gives
+every parameter a stack home, and the source idiom `if (p && !*p) p = NULL;`
+leaves a MULTIEQUAL at the guard's join whose incoming slots are the raw input
+register. `Merge::mergeOp` cannot merge an input-register HighVariable with the
+address-tied stack-slot HighVariable, so `Merge::trimOpInput` snips each
+offending slot into a COPY and places it at the *tail of that slot's predecessor
+block* — and that COPY is what prints as `vN = aM;`. For the **first** parameter
+the guard's join predecessors intersect at the entry block, so
+`Merge::buildDominantCopy`'s `findCommonBlock` lands the copy there and it
+renders with the other spills; for every later parameter the intersection is the
+previous guard's join, so the copy sinks below that guard and splits the
+source's single entry block in two. Upstream Ghidra sinks it identically, so the
+hoist is a divergence and ships behind an option, not as a fix. Two producing
+sub-cases both route here: two-or-more trimmed slots (later collapsed by
+`buildDominantCopy`) and exactly one trimmed slot (no dominant-copy pass at all,
+so the single `opInsertEnd` is final).
+
+When on, `decompiler/crates/kuna-decomp/src/p6_variables/kuna_paramcopyhoist.rs
+(ActionParamCopyHoist)` relocates the COPY to the end of the entry block. It is
+the **last** action in `universal_sched`, and that position is load-bearing:
+taking the decision inside `Merge::trimOpInput` defeats the trim's own purpose
+(the widened Cover fails `mergeOp`'s test, `mergeOp` falls through to
+`trimOpOutput`, and `markInternalCopies` then hides both resulting COPYs, so the
+assignment disappears from the emitted C), and running the move any earlier than
+`ActionFinalStructure` perturbs the P8 duplication/dedup passes. Running last,
+the only observable effect is which basic block's statement list holds the COPY.
+
+A candidate must be a printing COPY of a Varnode occupying a **formal
+parameter's** storage (`Varnode::isInput` alone also admits globals and
+read-before-written stack slots), at least one of whose reads is a MULTIEQUAL
+and all of whose reads are MULTIEQUALs or INDIRECTs — the INDIRECT-only case is
+`Merge::mergeIndirect`'s call-adjacent snip, a different Cover shape left alone.
+Legality is `buildDominantCopy`'s own Cover test re-run against the hypothetical
+hoisted placement and the **final** HighVariable: `b_cover` over the high's other
+instances (skipping copy-shadows of the same root) versus an `a_cover` whose def
+point is taken at the *start* of the entry block, rejecting on
+`Cover::intersect > 1`; the def-point choice over-approximates, so the test errs
+toward rejecting. Finally, a high with more than one candidate is skipped
+entirely — the Cover test compares each move against where the *other*
+definitions sit today, so two definitions of one variable can both be admitted
+even though, once both have moved, the second kills the first on every path.
+
 **(kuna) `option dynamichashmax`** — §6.3.
 
 ## 6.5 Cleanup

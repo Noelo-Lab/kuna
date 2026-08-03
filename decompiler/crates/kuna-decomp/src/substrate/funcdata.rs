@@ -3150,8 +3150,10 @@ impl Funcdata {
 
 /// Read-only graph view for the [`Cover`] def/use walk (the cross-arena reads
 /// `Cover::rebuild` makes off the held `Varnode *`/`PcodeOp *`/`FlowBlock *`).
-struct FuncdataCoverCtx<'a> {
-    fd: &'a Funcdata,
+pub(crate) struct FuncdataCoverCtx<'a> {
+    // (kuna) `pub(crate)` so `kuna_paramcopyhoist` can build the hypothetical
+    // hoisted Cover off the same view `buildDominantCopy` uses.
+    pub(crate) fd: &'a Funcdata,
 }
 
 impl<'a> FuncdataCoverCtx<'a> {
