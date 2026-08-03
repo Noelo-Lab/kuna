@@ -1,0 +1,167 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench campaign case, NOVEL pool: O2-tar-tar-xstrcat (filed as
+    O2-noinline-iproute2-ip).  58 of 101 sampled binaries and 283 functions
+    emitted an identifier containing `$$`, which is not a legal C identifier;
+    no other decompiler in the benchmark (angr, ghidra, ida, binja, phoenix,
+    dewolf, r2dec) ever emits one.
+
+    P6 variable and storage model, local naming.  `Scope::buildUndefinedName`
+    (database.cc:2854) names a Symbol created with an empty name `$$undef` plus
+    8 hex digits.  Upstream that string is unobservable: `ActionNameVars::apply`
+    renames every still-undefined Symbol before it returns, and `PrintC` reads
+    `sym->getDisplayName()` LIVE at emit time, so the render always sees the
+    final name.  kuna diverges on both counts.  The name is cached per
+    HighVariable (`HighVariable::kuna_name`), and the catch-all rename, though
+    ported as `Database::assign_default_names`, had zero call sites.  So the
+    placeholder reached the emitted C, the `variables` array of
+    `decompile-all` in JSON mode, and the `.asm` stack-frame comments of
+    `decompile-project`.
+
+    Both producers are closed at the tail of `name_local_highs_angr`
+    (`p6_variables/kuna_undefname.rs`), the same place the port already resolves
+    this class of ordering hazard for the spacebase pass:
+
+      * stale cache.  `resolve_default_name_override` renames the covering
+        Symbol only for a whole-symbol cover (the C++ `namerec` gate
+        `sym->isNameUndefined() && high->getSymbolOffset() < 0`) and otherwise
+        returns the Symbol's CURRENT display name.  A partial-cover high visited
+        before its whole-cover sibling therefore caches the placeholder, the
+        sibling then renames the shared Symbol to `vN`, and nothing back-fills
+        the first cache.  The tail re-reads the Symbol once, kuna's stand-in for
+        upstream's live `getDisplayName()`.
+      * never renamed.  A Symbol no high covers wholly keeps the placeholder in
+        the Symbol table itself.  The tail wires
+        `localmap->assignDefaultNames(base)`, the final statement of upstream's
+        `ActionNameVars::apply` (coreaction.cc:3079).
+
+    Neither step can renumber an existing local: both run after every `vN` has
+    been handed out, and the re-read consumes no name index at all.
+
+    No option: an identifier containing `$$` is not valid C under any policy,
+    and the split made the body read a name nothing writes.  DIV-58.
+
+    ==== witness 1: the stale cache (tar xstrcat) ====
+
+    Bytes are GNU tar 1.34 (O2, stripped) `xstrcat` at 0x611a0, a varargs string
+    concatenator; its five callees are stubbed `ret` at their real addresses.
+    The loop is the x86-64 `va_arg` expansion over the caller's `va_list`:
+
+        if (gp_offset >= 48) use overflow_arg_area else reg_save_area+gp_offset;
+        gp_offset += 8;
+
+    `gp_offset` is the low 4 bytes of the 8-byte stack slot at stack - 0x58, so
+    the slot carries a 4-byte partial high AND an 8-byte whole high.  The
+    partial sorts first in location order, so before the fix the guard and the
+    bump both read `$$undef00000000` while the induction update landed on `v12`.
+    That is a loop testing and incrementing a variable nothing ever writes:
+
+        uint4 $$undef00000000; // stack - 0x58
+        uint8 v12;             // stack - 0x58
+        ...
+          v5 = v12 & 0xffffffff;
+          if (0x30 <= (uint4)$$undef00000000) { ... }
+          else v12 = (uint8)((uint4)$$undef00000000 + 8);
+
+    The 4-byte high is a strict partial of the one scalar Symbol, so once the
+    two agree on the name the printer's existing whole-sibling guard folds the
+    duplicate declaration, in BOTH passes: that guard is not part of
+    `dedupvardecls`.
+
+    ==== witness 2: the unwired catch-all (iproute2 ip set_qlen) ====
+
+    Bytes are iproute2 6.1 (O2-noinline, stripped) `set_qlen` at 0x2b420 with
+    its five callees stubbed and the one string it passes to `perror`.  The
+    source builds a single `struct ifreq ifr`; kuna splits the frame into a
+    16-byte name buffer plus a 4-byte slot at stack - 0x38 for the union member,
+    and NO high covers that slot wholly, so `resolve_default_name_override` was
+    never reached for it and the Symbol kept its placeholder in the Symbol table
+    as well as in the render:
+
+        char $$undef00000001 [16]; // stack - 0x38
+        ...
+        $$undef00000001 = CONCAT124(v4[0],a1);
+
+    Wiring `assignDefaultNames` names it after every other local, so it becomes
+    `v7`, the highest index in the function, as the ordering guarantees.
+
+    Pass 1 is the default pipeline and asserts the fix.  Pass 2 sets
+    `option dedupvardecls off` to pin that neither witness depends on the P9
+    declaration collapse: this is a P6 naming fix, so the off path renders
+    identically.  Assertion counts span both passes.
+-->
+<bytechunk space="ram" offset="0x611a0">
+415741564155415455534883ec2864488b042528000000488944241831c0f30f
+6f060f1104244c8b7e104c897c24104885ff0f84c80000004989fd4989f44889
+fd31db49c7c6ffffffffeb240f1f400089c283c0088904244c01fa488b3ae87d
+8efaff4801c3490f42de4883ed0174208b042483f82f76d8488b542408488d42
+084889442408ebd30f1f8400000000004881fbffffff7f0f87a3000000488d7b
+01e87adafeff4989c64889c5eb35669089c283c0084903542410418904244c8b
+3a4c89ffe8178efaff4889ef4c89fe4889c34889c2e8a691faff4801dd4983ed
+01742d418b042483f82f76c4498b542408488d42084989442408ebc20f1f4000
+bf01000000e816dafeff4889c54989c6c6450000488b44241864482b04252800
+0000752c4883c4284c89f05b5d415c415d415e415fc3662e0f1f840000000000
+e84b8bfaff4531f6c7004b000000ebc4e8bb8dfaff
+</bytechunk>
+<!-- tar's callees, stubbed `ret` at their real addresses. -->
+<bytechunk space="ram" offset="0xa080" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0xa0b0" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0xa420" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0x9e30" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0x4ecc0" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0x2b420">
+4155660fefc041544989fc554883ec3064488b042528000000488944242831c0
+0f2944241048c744242000000000897424100f290424e895feffff85c0785149
+89e589c5ba100000004c89e64c89efe86c3bfeff31c04c89eabe4389000089ef
+e87b39feff85c0782e89efe89039feff31c0488b54242864482b142528000000
+752f4883c4305d415c415dc30f1f4000b8ffffffffebdb488d3d42960500e82d
+3dfeff89efe85639feffb8ffffffffebc1e8ea37feff
+</bytechunk>
+<!-- ip's callees, stubbed `ret`, plus the string it hands to perror. -->
+<bytechunk space="ram" offset="0x2b2f0" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0xecc0" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0xee00" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0xee20" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0xefe0" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0xf1f0" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0x84b00" readonly="true">53494f4353494658514c454e00</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0xa080 strlen</com>
+  <com>map function r0xa0b0 __stack_chk_fail</com>
+  <com>map function r0xa420 memcpy</com>
+  <com>map function r0x9e30 __errno_location</com>
+  <com>map function r0x4ecc0 xmalloc</com>
+  <com>map function r0x611a0 xstrcat</com>
+  <com>map function r0x2b2f0 get_ctl_fd</com>
+  <com>map function r0xecc0 __stack_chk_fail</com>
+  <com>map function r0xee00 ioctl</com>
+  <com>map function r0xee20 close</com>
+  <com>map function r0xefe0 strlcpy</com>
+  <com>map function r0xf1f0 perror</com>
+  <com>map function r0x2b420 set_qlen</com>
+  <com>lo fu xstrcat</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu set_qlen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupvardecls off</com>
+  <com>lo fu xstrcat</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu set_qlen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="undefname #1: no buildUndefinedName placeholder survives the naming pass, in either pass" min="0" max="0">\$\$undef</stringmatch>
+<stringmatch name="undefname #2: the va_arg slot is declared once per pass, at the width the body uses" min="2" max="2">uint8 v12; // stack - 0x58</stringmatch>
+<stringmatch name="undefname #3: the va_arg guard reads the name the loop actually writes" min="2" max="2">if \(0x30 &lt;= \(uint4\)v12\)</stringmatch>
+<stringmatch name="undefname #4: the gp_offset bump reads and writes one identifier" min="2" max="2">v12 = \(uint8\)\(\(uint4\)v12 \+ 8\);</stringmatch>
+<stringmatch name="undefname #5: that identifier is the one the prologue initialises" min="2" max="2">v12 = \*a1;</stringmatch>
+<stringmatch name="undefname #6: the ifreq union slot no high covers wholly is named by the wired assignDefaultNames" min="2" max="2">char v7 \[16\]; // stack - 0x38</stringmatch>
+<stringmatch name="undefname #7: and it takes the highest index in the function, after every other local" min="2" max="2">unsigned long v6; // stack - 0x20</stringmatch>
+<stringmatch name="undefname #8: the body writes that slot through the same name" min="2" max="2">v7 = CONCAT124\(v4\[0\],a1\);</stringmatch>
+</decompilertest>

@@ -1719,7 +1719,9 @@ mod tests {
         // re-rolls only ceil(N/2) of a run of N identical assignment diamonds)
         // and ghdec-peimportcall / PE import-call binding (option off leaves a
         // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
-        assert_eq!(count, 190, "corpus file count drifted");
+        // and ghdec-undefname / no `$$undef` placeholder survives the naming pass
+        // (an identifier containing `$$`, and one stack Symbol split across two names)
+        assert_eq!(count, 191, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

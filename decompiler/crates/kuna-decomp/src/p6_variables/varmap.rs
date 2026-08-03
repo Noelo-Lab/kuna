@@ -1063,6 +1063,18 @@ impl ScopeLocal {
         self.scope
     }
 
+    /// C++ `ScopeInternal::assignDefaultNames(base)` (`database.cc:2880`) on this
+    /// local scope — the catch-all rename `ActionNameVars::apply` runs as its final
+    /// statement (`coreaction.cc:3079`) so no `$$undef` placeholder survives the
+    /// pass.  See [`crate::kuna_undefname`].
+    pub fn assign_default_names(
+        &mut self,
+        base: &mut int4,
+        arch: &dyn crate::database::DatabaseArch,
+    ) -> KunaResult<()> {
+        self.db.assign_default_names(self.scope, base, arch)
+    }
+
     /// C++ `Scope::queryProperties` (`database.cc:1268`) on the local stack scope:
     /// the Varnode boolean properties (`mapped | addrtied | typelock | ...`) of a
     /// storage range covered by — or owned by — this scope.  Returns `0` when the

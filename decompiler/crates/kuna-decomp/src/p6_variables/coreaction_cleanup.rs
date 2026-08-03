@@ -2796,6 +2796,12 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             data.link_spacebase_symbol(*vn);
         }
     }
+
+    // C++ `localmap->assignDefaultNames(base)` (coreaction.cc:3079), plus the kuna
+    // counterpart of the printer's live `sym->getDisplayName()` read: no `$$undef`
+    // placeholder may outlive this pass, in the Symbol table or in a HighVariable's
+    // name cache.  See `crate::kuna_undefname`.
+    crate::kuna_undefname::finish_undefined_names(data, &mut base);
 }
 
 /// Choose a *name* for all high-level variables (C++ `ActionNameVars`,
