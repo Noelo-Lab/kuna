@@ -88,6 +88,7 @@ use object::{SectionKind, SymbolKind};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase};
 use crate::loader::format::FormatKind;
 
+pub mod kuna_cortexmvectors;
 mod macho_entry;
 pub mod patterns;
 mod pe_entry;
@@ -138,7 +139,7 @@ impl AnalysisPass for EntryDiscoveryPass {
         // reached only through the reset→main call tree would still decode as A32
         // without the region paint. Empty on any non-Cortex-M ARM object (and every
         // non-ARM arch); see `cortexm_thumb_paints`.
-        out.context_paints.extend(cortexm_thumb_paints(ctx.file));
+        out.context_paints.extend(cortexm_thumb_paints(ctx.file, false));
         // Ghidra-faithful names for the dynamic INIT/FINI entries (oracle 2 only),
         // restricted to the VMAs that actually survived into `out.entries` (a named
         // entry already covered by a funcsym is filtered out above, so its name is
@@ -373,7 +374,7 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
             // on any ARM object that does not present the exact table signature
             // (see `cortexm_vector_entries` / `cortexm_vector_table`).
             if file.architecture() == object::Architecture::Arm {
-                cand.extend(cortexm_vector_entries(file));
+                cand.extend(cortexm_vector_entries(file, false));
             }
         }
         // PE: entry (AddressOfEntryPoint+ImageBase), `.pdata` RUNTIME_FUNCTION
@@ -1107,7 +1108,11 @@ const CORTEXM_MAX_VECTORS: usize = 1024;
 ///
 /// ARM-gated (32-bit ARM ELF only); returns `None` on any other arch/format or
 /// when no candidate section presents the signature.
-fn cortexm_vector_table(file: &object::File) -> Option<(u64, u64, Vec<u8>)> {
+///
+/// (kuna) This is the *shipped* signature. [`cortexm_vector_table`] wraps it with
+/// the `cortexmvectors` widening (see [`kuna_cortexmvectors`]), which keeps this
+/// answer whenever it exists.
+fn cortexm_vector_table_shipped(file: &object::File) -> Option<(u64, u64, Vec<u8>)> {
     if file.architecture() != object::Architecture::Arm {
         return None;
     }
@@ -1134,6 +1139,15 @@ fn cortexm_vector_table(file: &object::File) -> Option<(u64, u64, Vec<u8>)> {
         })
 }
 
+/// The vector-table candidate, optionally widened by `--option cortexmvectors on`
+/// (`widen`). With `widen` clear this is exactly
+/// [`cortexm_vector_table_shipped`]; with it set the shipped answer still wins
+/// and the widened scan only runs when the shipped signature found nothing —
+/// see [`kuna_cortexmvectors`].
+fn cortexm_vector_table(file: &object::File, widen: bool) -> Option<(u64, u64, Vec<u8>)> {
+    kuna_cortexmvectors::vector_table(file, widen)
+}
+
 /// Oracle 6: harvest the reset + exception/IRQ handler pointers from a detected
 /// Cortex-M vector table as function-start seeds.
 ///
@@ -1150,13 +1164,13 @@ fn cortexm_vector_table(file: &object::File) -> Option<(u64, u64, Vec<u8>)> {
 /// harvested handlers usually collapse to a few unique addresses (bare-metal
 /// firmware points most vectors at a shared default handler), but they seed the
 /// recursive-descent walk (§1.6), which then follows their `BL`s to the rest.
-fn cortexm_vector_entries(file: &object::File) -> Vec<u64> {
-    let Some((sec_addr, _sec_end, data)) = cortexm_vector_table(file) else {
+fn cortexm_vector_entries(file: &object::File, widen: bool) -> Vec<u64> {
+    let Some((sec_addr, _sec_end, data)) = cortexm_vector_table(file, widen) else {
         return Vec::new();
     };
     let le = file.is_little_endian();
     let execs = executable_sections(file);
-    harvest_vector_words(sec_addr, &data, le, &|vma| in_executable_section(&execs, vma))
+    harvest_vector_words(sec_addr, &data, le, &|vma| in_executable_section(&execs, vma), widen)
 }
 
 /// The pure vector-table harvest loop (testable without a full ELF): walk the
@@ -1165,11 +1179,42 @@ fn cortexm_vector_entries(file: &object::File) -> Vec<u64> {
 /// the first slot that is neither `0` nor a valid handler (the end of the table)
 /// or once the scan reaches the lowest handler address (start of code). `in_exec`
 /// answers "is this masked VMA in an executable section?". Sorted/deduped.
+///
+/// (kuna) `relocated` is the `cortexmvectors` relaxation of the start-of-code
+/// stop: see [`harvest_vector_slots`].
 fn harvest_vector_words(
     sec_addr: u64,
     data: &[u8],
     le: bool,
     in_exec: &dyn Fn(u64) -> bool,
+    relocated: bool,
+) -> Vec<u64> {
+    let mut out = harvest_vector_slots(sec_addr, data, le, in_exec, relocated);
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// (kuna) The harvest loop's raw result: one entry per accepted table SLOT, in
+/// table order, neither sorted nor deduped. [`harvest_vector_words`] is this,
+/// sorted and deduped; the `cortexmvectors` signature counts these slots (a
+/// bare-metal table aims most of its vectors at one shared handler, so distinct
+/// addresses undercount the run badly).
+///
+/// `relocated` (set only on the `cortexmvectors` path) additionally requires the
+/// lowest handler to lie at or above the table's own base before the
+/// start-of-code stop can fire. The stop reads "the scan has walked far enough to
+/// reach real instructions", which is only true when the code follows the table
+/// in the same address region. betaflight links `.isr_vector` into RAM at
+/// `0x2000_0000` while its handlers live in flash at `0x0800_xxxx`, so the
+/// unconditional stop fires on the *second* slot and the table looks one word
+/// long. With `relocated` clear the stop is exactly as shipped.
+fn harvest_vector_slots(
+    sec_addr: u64,
+    data: &[u8],
+    le: bool,
+    in_exec: &dyn Fn(u64) -> bool,
+    relocated: bool,
 ) -> Vec<u64> {
     let mut out: Vec<u64> = Vec::new();
     let mut min_target = u64::MAX;
@@ -1182,7 +1227,7 @@ fn harvest_vector_words(
         let vma = sec_addr + off as u64;
         // Once the scan reaches the lowest handler address, the table has ended and
         // we would be reading real instructions — stop ("up to the start of code").
-        if vma >= min_target {
+        if vma >= min_target && (!relocated || min_target >= sec_addr) {
             break;
         }
         let word = read_u32(&data[off..], le) as u64;
@@ -1204,8 +1249,6 @@ fn harvest_vector_words(
         }
         out.push(target);
     }
-    out.sort_unstable();
-    out.dedup();
     out
 }
 
@@ -1223,8 +1266,8 @@ fn harvest_vector_words(
 ///
 /// Empty on any ARM object without the vector-table signature (and every non-ARM
 /// arch), so it is a strict no-op outside stripped Cortex-M firmware.
-pub(crate) fn cortexm_thumb_paints(file: &object::File) -> Vec<ContextPaint> {
-    if cortexm_vector_table(file).is_none() {
+pub(crate) fn cortexm_thumb_paints(file: &object::File, widen: bool) -> Vec<ContextPaint> {
+    if cortexm_vector_table(file, widen).is_none() {
         return Vec::new();
     }
     // Paint each executable section as its own `[addr, end)` region. On Cortex-M
@@ -2446,7 +2489,7 @@ mod tests {
         push(0x0800_0a81); // duplicate handler (deduped)
         push(0x4711_b580); // NON-conforming (even / out of exec) → table ends here
         push(0x0800_0123); // (unreached — after the break)
-        let out = harvest_vector_words(sec_addr, &buf, true, &in_exec);
+        let out = harvest_vector_words(sec_addr, &buf, true, &in_exec, false);
         assert_eq!(
             out,
             vec![0x0800_09a0, 0x0800_0a78, 0x0800_0a80],
@@ -2592,20 +2635,20 @@ mod tests {
             phdr.iter().map(|&(l, h, _)| (l, h)).collect::<Vec<_>>()
         );
 
-        let table = cortexm_vector_table(&file);
+        let table = cortexm_vector_table(&file, false);
         assert!(table.is_some(), "vector table must be detected in the WA `.isr_vector`");
         assert_eq!(table.unwrap().0, 0, "the table is the section at VMA 0");
 
         // The reset + handler seeds are harvested (masked, sorted, deduped) and
         // reach the fused discovery core.
-        assert_eq!(cortexm_vector_entries(&file), vec![0x20, 0x30, 0x38]);
+        assert_eq!(cortexm_vector_entries(&file, false), vec![0x20, 0x30, 0x38]);
         let entries = collect_entries(&file, bytes.as_slice());
         for want in [0x20u64, 0x30, 0x38] {
             assert!(entries.contains(&want), "entry {want:#x} missing from {entries:#x?}");
         }
         // A confirmed table also unlocks the whole-image Thumb region paint.
         assert_eq!(
-            cortexm_thumb_paints(&file),
+            cortexm_thumb_paints(&file, false),
             vec![ContextPaint { addr: 0x20, end: Some(0x40), var: "TMode", value: 1 }],
             "a confirmed table paints TMode=1 over the executable sections"
         );
@@ -2626,9 +2669,9 @@ mod tests {
                 phdr_executable_sections(&file).is_empty(),
                 "{label}: nothing is loaded executable"
             );
-            assert!(cortexm_vector_table(&file).is_none(), "{label}: no table candidate");
-            assert!(cortexm_vector_entries(&file).is_empty(), "{label}: no seeds");
-            assert!(cortexm_thumb_paints(&file).is_empty(), "{label}: no Thumb paint");
+            assert!(cortexm_vector_table(&file, false).is_none(), "{label}: no table candidate");
+            assert!(cortexm_vector_entries(&file, false).is_empty(), "{label}: no seeds");
+            assert!(cortexm_thumb_paints(&file, false).is_empty(), "{label}: no Thumb paint");
         }
     }
 
@@ -2648,8 +2691,8 @@ mod tests {
             phdr_executable_sections(&file).is_empty(),
             "the delta set excludes already-executable sections"
         );
-        assert_eq!(cortexm_vector_table(&file).map(|t| t.0), Some(0));
-        assert_eq!(cortexm_vector_entries(&file), vec![0x20, 0x30, 0x38]);
+        assert_eq!(cortexm_vector_table(&file, false).map(|t| t.0), Some(0));
+        assert_eq!(cortexm_vector_entries(&file, false), vec![0x20, 0x30, 0x38]);
     }
 
     /// RISC-V: `_start` (0x550) loads `main` (0x608) into `a0` via

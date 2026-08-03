@@ -428,6 +428,41 @@ signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
 
+**The widened vector-table signature** (`cortexmvectors`, default-off; kuna;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_cortexmvectors.rs`)
+relaxes all three of oracle 6's confirmation predicates, each of which measurement
+over the ARM Cortex-M corpus showed over-constrains real firmware. The table is
+data the CPU reads, so a bare-metal link script normally emits `.isr_vector` as an
+`A`-only section inside a *read-only* `PT_LOAD` — which is neither
+`SHF_EXECINSTR` nor inside a `PF_X` load, so even the program-header widening
+above cannot see it. STM32F4 and `-M7` parts put the initial stack in CCM/TCM at
+`0x1000_0000`, below the architectural SRAM block. And `e_entry` is the ELF's
+start symbol, which a link script is free to point somewhere other than the reset
+vector (nuttx points it at `__start`, crazyflie at the `.text` base). With the
+option on a candidate is therefore **any allocated section** whose `word[0]` lies
+anywhere in `0x1000_0000..=0x3FFF_FFFF` and whose slots from `word[1]` on yield at
+least three Thumb handler pointers — a run of handlers replaces the `e_entry`
+equality, because two conforming words can occur by chance inside a `.data`
+structure and three consecutive ones essentially cannot. The run is counted by the
+same harvest loop the oracle then seeds from, over accepted *slots* rather than
+distinct addresses (a bare-metal table aims most of its vectors at one shared
+`Default_Handler`). The harvest's "stop once the scan reaches the lowest handler,
+i.e. the start of code" rule is also conditioned on the lowest handler lying at or
+above the table's own base, since a table linked into RAM above the flash it
+points at (betaflight) otherwise looks one word long. The widened scan runs
+**only where the shipped signature found nothing**, so an image that already
+resolved a table resolves the same section with the same harvest: the option can
+add discovered entries, never remove one. It ships as its own `AnalysisPass`
+rather than as a flag inside `entry_disc`, because a load-time pass runs before
+`--option` is applied — the stash-at-load/gate-at-commit shape (§1.1) is what
+makes an output-changing discovery flag observable at all. The pass emits entry
+facts and the Thumb region paint and deliberately does **not** feed the Listing
+walk (§1.6): the walk treats an unconditional `B` as same-function flow, so
+seeding an ISR stub that tail-calls a shared handler makes the walk absorb that
+handler and drop its own entry, which measured as a net loss. Output-changing
+(more functions), hence default-off; ARM-only and real-object-path only, so every
+XML datatest is structurally untouched.
+
 **The full pattern corpus** (`funcstart_patterns`, default-off;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/patterns/mod.rs`) is the
 faithful `FunctionStartAnalyzer` port over the vendored per-arch pattern XML

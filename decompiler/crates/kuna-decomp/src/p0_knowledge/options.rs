@@ -313,6 +313,11 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // discovers more functions). A separate gate from `entry_disc` (whose always-on
     // oracle 5 ports only a minimal subset).
     "funcstart_patterns",
+    // (kuna) The widened ARM Cortex-M hardware vector-table signature (any
+    // allocated section, an SRAM/CCM/TCM stack word, and a run of Thumb handler
+    // pointers instead of `word[1] == e_entry`). Default-OFF (output-changing:
+    // discovers more functions on bare-metal ARM firmware).
+    "cortexmvectors",
     "arm_markers",
     "mips_gp",
     // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A

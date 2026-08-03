@@ -844,6 +844,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (output-changing: adds entries), so a default run never commits them and
         // the discovery set is byte-identical to FDE-pcBegin-only.
         "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) The widened Cortex-M vector-table oracle — a standalone stashed
+        // pass whose handler seeds + Thumb region paint are computed at LOAD but
+        // COMMITTED only when this gate is on. Default-off (output-changing: adds
+        // entries), so a default run never commits them and the discovery set is
+        // byte-identical to the shipped (e_entry-matching) signature.
+        "cortexmvectors" => arch.analysis_cortexmvectors,
         // (kuna) The full byte-pattern function-start pass — default-OFF
         // (output-changing). The `_ => true` fail-open below would otherwise run it
         // by default, so this explicit arm reading the (default-false)

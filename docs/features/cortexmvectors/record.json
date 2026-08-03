@@ -1,0 +1,91 @@
+{
+  "opportunity": "decbench:arm-entry-granularity step 1 (PROPOSAL PR #239)",
+  "test_name": "kuna-analysis entry recall, decbench ARM Cortex-M corpus (16 binaries x 3 opt levels, 41378 DWARF entries)",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_ccm_vectors_le32",
+  "selector": "sub_8008004",
+  "func_addr": "0x8008004",
+  "angr_version": null,
+  "option": "cortexmvectors",
+  "flag": "analysis_cortexmvectors",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "decbench:O2-cleanflight-cleanflight_DALRCF405, O2-betaflight-betaflight_STM32F405, O2-crazyflie-cf2, O2-nuttx-nuttx; kuna's own ARM entry-recall measurement (docs/features/cortexmvectors/analysis.md; step 1 of the arm-entry-granularity proposal)",
+  "default_on": false,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_off_ms": 92.41,
+  "speed_on_ms": 85.13,
+  "speed_delta_pct": -7.88,
+  "speed_samples": 7,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "recall": {
+    "surface_listing_on": {
+      "ground_truth": 41378,
+      "recovered_before": 38238,
+      "recovered_after": 38334,
+      "delta": 96,
+      "new_entries": 118,
+      "new_entries_ground_truth": 96,
+      "precision_pct": 81.4,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 22,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0
+    },
+    "surface_listing_off": {
+      "ground_truth": 41378,
+      "recovered_before": 8885,
+      "recovered_after": 9278,
+      "delta": 393,
+      "new_entries": 415,
+      "new_entries_ground_truth": 393,
+      "precision_pct": 94.7,
+      "new_entries_splitting_a_real_body": 0,
+      "new_entries_outside_any_dwarf_body": 22,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0
+    },
+    "byte_identical_off_vs_on": [
+      "O2/gzip (x86-64)",
+      "O2/u-boot (ARM Linux)",
+      "O2/libopencm3/msc.elf",
+      "O2/chibios/ch.elf",
+      "O2/freertos/RTOSDemo.out",
+      "O2/riot-os/hello-world.elf"
+    ]
+  },
+  "speed_whole_binary": {
+    "functions_cleanflight_pct": -3.33,
+    "functions_nuttx_pct": 2.88,
+    "functions_msc_pct": -1.81,
+    "decompile_all_cleanflight_pct": -6.91,
+    "decompile_all_nuttx_pct": 0.79,
+    "decompile_all_msc_pct": 8.87
+  },
+  "decisions": [
+    {
+      "question": "Does the widening need a named option, or is it a strict bug fix?",
+      "answer": "Option. It discovers more functions, so it changes emitted C by construction — it is not a case of wrong output being corrected. Gated per the repo rule; default-OFF."
+    },
+    {
+      "question": "Where does the flag get read?",
+      "answer": "A standalone CortexMVectorsPass (id `cortexmvectors`), stashed at load and gated at commit by engine.rs::analysis_pass_enabled — the eh_frame_full/funcstart_patterns shape. Reading arch.analysis_cortexmvectors inside EntryDiscoveryPass::run was tried and silently did nothing, because load-time passes run before `--option` is applied."
+    },
+    {
+      "question": "Should the widened handlers also seed the Listing walk and paint its ContextPainter?",
+      "answer": "No, measured. Entries+paints only: +96 GT, 81.4% precision, 0 lost. Plus the walk's region paint: +86, 73.8%, 10 GT lost. Plus walk seeds: +44, 74.2%, 54 GT lost. The walk treats an unconditional B as same-function flow, so an ISR stub that tail-calls a shared handler absorbs it and the handler's own entry fails code_pointer_table_seeds' is_undefined guard. That is proposal step 3's tail-call split; until it lands the conservative wiring wins on every axis."
+    },
+    {
+      "question": "What replaces `word[1] == e_entry` without inviting false positives?",
+      "answer": "A run of >= 3 Thumb handler pointers (odd, in an executable section), counted over accepted SLOTS not distinct addresses — a bare-metal table aims most vectors at one shared Default_Handler, so distinct addresses undercount badly. Measured: no allocated section in the 16-binary corpus reaches three except the real table, including cleanflight's .text whose first word accidentally lands in the SRAM window."
+    },
+    {
+      "question": "Why no tests/stages/*.xml two-pass case?",
+      "answer": "The oracle keys entirely on ELF structure (sh_flags, PT_LOAD flags, e_entry, section bytes at a section base). The datatest harness embeds raw bytechunks and never constructs an ObjectLoadImage, so the option is unobservable there. Replaced by kuna-console/tests/verify_cortexmvectors.rs, a two-pass cross-crate gate over a committed fixture — the same wiring every sibling analysis-tier discovery flag uses."
+    }
+  ]
+}
