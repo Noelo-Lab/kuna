@@ -325,6 +325,38 @@ port-wave `STUB(...)` inventory from the mid-port merge; the live registration
 and rule bodies are complete (the tree's action listing is byte-equal to the
 C++ oracle dump, §0.6) — trust the code, not the header prose.
 
+**Erasing the ISA-mode / alignment encoding on an indirect-call target.** On
+processors that steal the low bits of a function pointer, the *instruction*
+clears them before branching, so SLEIGH lifts the clear as a real p-code
+`INT_AND` feeding the `CALLIND` target: ARM/Thumb `blx` goes through
+`BXWritePC`, whose body is `local tmp = addr & 0xfffffffe`, and MIPS `jalr`
+through `JXWritePC`, whose body is `tmp = -2 & addr`. That AND is machine
+bookkeeping, not program semantics — the source performs no bit-clear — and
+leaving it in place costs twice: the emitted C asserts an operation the program
+never performs, and the mask stands between the `CALLIND` and its pointer
+operand, so the pointer-to-code data-type never back-propagates onto the LOAD
+that fetched the callee. A masked call renders as
+`(*(code *)(*(uint4 *)(p + 0x44) & 0xfffffffe))(p)` where the un-masked form is
+`(**(code **)(p + 0x44))(p)`.
+
+`RuleFuncPtrEncoding` erases it. The width of the encoding is **not** a kuna
+policy: it is declared per compiler spec by `<funcptr align="N"/>`, decoded into
+`Architecture::funcptr_align` as the bit position of `N`'s first set bit
+(chapter 00, the P0 knowledge plane), and read live by the rule. The rule fires
+only on an exact match — the constant mask must equal `calc_mask(size) & (~0 <<
+funcptr_align)`, i.e. all ones above the encoded bits — and rewrites the `INT_AND`
+to a `COPY`, which is transparent, so any other reader of the masked value keeps
+seeing it. A cspec that declares no `<funcptr>` leaves `funcptr_align == 0` and
+the rule is inert, which is why x86/x86-64 keep every `& 0xfffffffe` their
+programs really compute. The vendored specs declare `align="2"` (one mode bit)
+for the four ARM cspecs, the nine MIPS cspecs, the four Loongarch cspecs and
+8051, and `align="4"` (two word-alignment bits) for the five AARCH64 cspecs;
+AARCH64's own `blr` masks nothing, so there the rule only fires on a mask the
+program itself wrote. `funcptr_align` has two other live readers — the jump-table
+model (chapter 02) and the `thumbfuncptr` const-pointer preservation (chapter 05,
+§5) — and the three do not interact: this rule only ever removes an `INT_AND`
+that a `CALLIND` consumes.
+
 ## 3.3 Sub-variable flow
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SubvariableFlow)`

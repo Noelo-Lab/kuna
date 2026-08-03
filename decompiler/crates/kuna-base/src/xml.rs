@@ -1706,7 +1706,9 @@ mod tests {
         // (option off leaves the explicit `if (a && b) v = 1; else v = 0;` diamond)
         // and ghdec-symbol-keyed-local-decls / one declaration per ScopeLocal
         // Symbol (one stack slot declared twice under one name, two types)
-        assert_eq!(count, 184, "corpus file count drifted");
+        // and ghdec-funcptralign / the cspec-declared function-pointer alignment
+        // (every ARM/Thumb indirect call carried an invented & 0xfffffffe)
+        assert_eq!(count, 185, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
