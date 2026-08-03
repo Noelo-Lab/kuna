@@ -275,6 +275,13 @@ fn lone_descend(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
 fn is_addr_tied(data: &Funcdata, vn: VarnodeId) -> bool {
     data.vbank().get(vn).expect("ruleaction_6: stale vn").is_addr_tied()
 }
+/// `a->overlap(*b)`.
+#[inline]
+fn overlap(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> int4 {
+    let va = data.vbank().get(a).expect("ruleaction_6: stale vn");
+    let vb = data.vbank().get(b).expect("ruleaction_6: stale vn");
+    va.overlap(vb)
+}
 /// `vn->isProtoPartial()`.
 #[inline]
 fn is_proto_partial(data: &Funcdata, vn: VarnodeId) -> bool {
@@ -940,10 +947,77 @@ impl Rule for RuleSubRight {
             data.op_mark_special_print(op); // Print this as a field extraction
             return 0;
         }
-        // Remainder transcribed for the next wave; unreachable at this merge base:
-        //   PcodeOp *lone = outvn->loneDescend();  ... lump a lone right-shift ...
-        // W6
-        0
+
+        let c = offset(data, in_vn(data, op, 1)) as int4;
+        if c == 0 {
+            return 0; // SUBPIECE is not least sig
+        }
+        let outvn = out_vn(data, op);
+        if is_addr_tied(data, outvn) && is_addr_tied(data, a) && overlap(data, outvn, a) == c {
+            // This SUBPIECE should get converted to a marker by ActionCopyMarker,
+            // so don't convert it.
+            return 0;
+        }
+        // (kuna) The C++ reads `glb->types` only after it has already rewired the
+        // graph; a hand-built Funcdata with no type factory would leave a
+        // half-applied transform behind, so the availability check is hoisted here.
+        if data.get_arch().types().is_none() {
+            return 0;
+        }
+        let asize = size(data, a);
+        let mut op = op; // The C++ rebinds `op` to `lone` when the shift is lumped in
+        let mut opc = OpCode::CPUI_INT_RIGHT; // Default shift type
+        let mut d = c.wrapping_mul(8); // Convert to bit shift
+        if let Some(lone) = lone_descend(data, outvn) {
+            let opc2 = code(data, lone);
+            if opc2 == OpCode::CPUI_INT_RIGHT || opc2 == OpCode::CPUI_INT_SRIGHT {
+                let shiftamt = in_vn(data, lone, 1);
+                if is_const(data, shiftamt) && size(data, outvn) + c == asize {
+                    // If SUB is "hi" lump the SUB and shift together
+                    d = (d as uintb).wrapping_add(offset(data, shiftamt)) as int4;
+                    if d >= asize * 8 {
+                        if opc2 == OpCode::CPUI_INT_RIGHT {
+                            return 0; // Result should have been 0
+                        }
+                        d = asize * 8 - 1; // sign extraction
+                    }
+                    data.op_unlink(op);
+                    op = lone;
+                    if set_opcode_typed(data, op, OpCode::CPUI_SUBPIECE).is_err() {
+                        return 0;
+                    }
+                    opc = opc2;
+                }
+            }
+        }
+        // Create shift BEFORE the SUBPIECE happens
+        let meta = if opc == OpCode::CPUI_INT_RIGHT {
+            crate::dtype::type_metatype::TYPE_UINT
+        } else {
+            crate::dtype::type_metatype::TYPE_INT
+        };
+        let ct = data
+            .get_arch()
+            .types()
+            .expect("subright: types factory")
+            .get_base(asize, meta)
+            .expect("subright: getBase");
+        let shiftop = data.new_op(2, op_addr(data, op));
+        if set_opcode_typed(data, shiftop, opc).is_err() {
+            return 0;
+        }
+        let newout = data.new_unique(asize, Some(ct));
+        data.op_set_output(shiftop, newout).expect("subright: opSetOutput");
+        data.op_set_input(shiftop, a, 0).expect("subright: opSetInput");
+        let dvn = data.new_constant(4, d as uintb);
+        data.op_set_input(shiftop, dvn, 1).expect("subright: opSetInput");
+        data.op_insert_before(shiftop, op);
+
+        // Change SUBPIECE into a least sig SUBPIECE
+        data.op_set_input(op, newout, 0).expect("subright: opSetInput");
+        let zero = data.new_constant(4, 0);
+        data.op_set_input(op, zero, 1).expect("subright: opSetInput");
+        1
     }
 }
 

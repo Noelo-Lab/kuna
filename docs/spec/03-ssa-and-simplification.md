@@ -311,6 +311,35 @@ had not enumerated (`INT_SRIGHT` out of `RuleBitUndistribute`, or a
 `RuleMultiCollapse`) unwound the entire decompilation — the caller saw one error
 record and no C at all for that function.
 
+**Lowering a non-least-significant truncation.** A SUBPIECE carries a byte
+offset, and only the offset-0 form has a C spelling: it is a cast. Every other
+offset is a p-code-level slice with no operator in the language, so the printer
+falls back to rendering the operation itself — `SUB81(v,7)`, an identifier no
+emitted header declares. `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_6.rs
+(RuleSubRight)` (cleanup pool, registered `subright`) is what keeps that
+fallback unreachable in practice: it rewrites `sub(V,c)` into
+`sub(V >> c*8, 0)`, synthesizing an `INT_RIGHT` by `c*8` bits ahead of the
+SUBPIECE and zeroing the SUBPIECE's offset, so the result prints as the cast of
+a shift — the ordinary arithmetic the source wrote. The shift's temporary is
+typed `TYPE_UINT` at the input's width so the shift renders unsigned. Three
+cases decline. `c == 0` is already least-significant and needs nothing. A
+truncation whose input carries a composite (struct/union/array) read-facing
+type is marked for special printing instead and rendered as a field extraction
+(`sym._2_1_`), because there the slice *is* the source-level operation. And
+when output and input are both address-tied and overlap at exactly `c`, the
+SUBPIECE is a storage marker that
+`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
+(ActionCopyMarker)` will convert,
+so rewriting it would destroy the partial-symbol rendering. One refinement
+folds a level away: if the SUBPIECE takes the *high* end of its input
+(`outsize + c == insize`) and its **only** reader is an `INT_RIGHT`/`INT_SRIGHT`
+by a constant, the two shifts are lumped into one — the reader becomes the
+least-significant SUBPIECE and the synthesized shift carries `c*8` plus the
+reader's amount (so a 4-byte-offset SUBPIECE feeding `>> 5` becomes a single
+`>> 0x25`). A lumped `INT_RIGHT` whose combined amount reaches the input width
+would evaluate to zero and is declined outright; the arithmetic form clamps to
+the sign bit instead, since that is a sign extraction.
+
 Rules registered in the pools but implemented elsewhere: the sub-variable
 triggers and split rules (§3.3, `subflow.rs`), `RuleOrPredicate` (§3.4,
 `condexe.rs`), the kuna gated rules (§3.5), the double-precision family

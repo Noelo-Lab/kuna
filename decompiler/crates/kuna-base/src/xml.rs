@@ -1710,7 +1710,9 @@ mod tests {
         // (every ARM/Thumb indirect call carried an invented & 0xfffffffe)
         // and ghdec-paramcopyhoist / the entry-block anchor for an unmodified
         // parameter's trim COPY (option off sinks `v2 = a1;` below the first guard)
-        assert_eq!(count, 186, "corpus file count drifted");
+        // and ghdec-subright / non-least-significant truncation lowering
+        // (the raw SUBnn p-code operator leaked into the C body)
+        assert_eq!(count, 187, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
