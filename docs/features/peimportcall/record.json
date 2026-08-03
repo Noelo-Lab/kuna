@@ -1,0 +1,98 @@
+{
+  "opportunity": "O0-mydoom-mydoom-mmsender_th",
+  "test_name": "O0-mydoom-mydoom-mmsender_th",
+  "binary": "/home/mahaloz/github/decbench/results/full_run/O0/mydoom/stripped/mydoom.exe",
+  "selector": "sub_4041e2",
+  "func_addr": "0x4041e2",
+  "angr_version": "n/a (decbench route B; the reference panes are IDA + Ghidra + angr, all GED 0)",
+  "option": "peimportcall",
+  "flag": "analysis_peimportcall",
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "decbench O0-mydoom-mydoom-mmsender_th; Ghidra Scope::addExternalRef + ExternRefSymbol; Ghidra data/PEFunctionsThatDoNotReturn",
+  "default_on": true,
+  "demo_extra_options": [
+    [
+      "listing",
+      "on"
+    ]
+  ],
+  "ablation_changed": 0,
+  "parity": "OK",
+  "decisions": [
+    "Gate BOTH halves (externref paint + the query_function no-return carry) and the vendored Win32 name list behind one option: each half alone can change emitted C on some target, so one gate is what buys the reviewable 'option off => byte-identical everywhere' guarantee.",
+    "Carry externref in the symbol-table PROPERTY MAP rather than porting ExternRefSymbol: the import FunctionSymbol's map entry is 1 byte (min_funcsymbol_size), so a pointer-width slot read never finds it as a container and always takes queryProperties' property branch; externref is read in exactly one place in the workspace, so the blast radius is bounded. Mapping a second (ExternRef) symbol at the slot would change naming/typing there and would break query_function's `is_function` requirement.",
+    "Vendor upstream's PEFunctionsThatDoNotReturn as its OWN file matched on the PE/COFF arm instead of widening kuna's merged PeMacFunctionsThatDoNotReturn: upstream keeps the PE and Mach-O sets separate, and the added names are Windows-only, so merging further would match ExitProcess/KeBugCheck against a Mach-O. kuna's Mach-O list is still missing upstream's Mach-O names -- a separate, out-of-scope gap.",
+    "Default-ON: 0/675 datatest assertions change with the flip, speed is within budget (negative whole-binary), no function is gained or lost on either PE, gotos never increase, and every non-PE target is byte-identical. DIV-57.",
+    "The triage record's filed mechanism (a new P2 pass matching a CALLIND through a global) was REFUTED before any code was written: at the P2 flow seam the CALLIND target is a free unique temp and raw flow IR carries no def-use links, so the backward walk it needs is unavailable.",
+    "SECOND FINDING, not in the brief: Database::build_global_query copied a FunctionSymbol's inject_id but not its no_return into the GlobalEntry snapshot, so Architecture::query_function returned is_no_return()==false for every callee and FuncCallSpecs::deindirect always took its lateRestriction success path WITHOUT scheduling a restart - the CALLIND->CALL rewrite happened in place and the already-walked flow was never recomputed. Naming the call was necessary but not sufficient; this is the half that fixes the boundary. Proved by A/B (externref alone leaves the whole absorbed body, even under an explicit `option noreturn ExitThread`), not inferred."
+  ],
+  "speed_off_ms": 387.96,
+  "speed_on_ms": 380.58,
+  "speed_delta_pct": -1.9,
+  "speed_samples": 15,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "ged_case": "O0-mydoom-mydoom-mmsender_th",
+  "ged_recorded": 37.0,
+  "ged_before": 37.0,
+  "ged_after": 0.0,
+  "ged_delta": -37.0,
+  "ged_perfect_after": true,
+  "ged_approximated": false,
+  "ged_options": [],
+  "ged_kuna_commit": "6d160156",
+  "ged_results_root": "/home/mahaloz/github/decbench/results/full_run",
+  "div": "DIV-57",
+  "stage_test": "tests/stages/ghdec-peimportcall.xml",
+  "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.exe",
+  "speed_note": "An earlier 7-repeat timeit on a loaded box reported +49.02% and did not reproduce: three re-runs at repeat=11 gave +0.67%, -0.99%, -3.74%, and the recorded 15-repeat run gives -1.9%. Interleaved A/B medians (the form DIV-54 uses on this box): per-function 338.0 -> 340.7 ms (+0.79%, 11 pairs); whole-binary decompile-all mydoom 1820 -> 1689 ms (-7.23%, 7 pairs), dexter 1552 -> 1520 ms (-2.09%, 7 pairs), ELF control b2sum 5663 -> 5575 ms (-1.55%, 5 pairs).",
+  "regression_sweep": {
+    "pe_option_off_vs_prechange_binary": "byte-identical (mydoom md5 49a1873b..., dexter md5 8dc4bd5b...)",
+    "elf_option_on_vs_off": "byte-identical on coreutils b2sum, mirai, tar -O2",
+    "mydoom": {
+      "functions": "156 -> 156",
+      "lines": "5247 -> 4768",
+      "unnamed_indirect_calls": "501 -> 4",
+      "gotos": "23 -> 23",
+      "while_loops": "65 -> 60",
+      "no_return_marks": "9 -> 14",
+      "shrank": 48,
+      "grew": 2,
+      "grew_by_lines": 1,
+      "renamed_same_length": 64
+    },
+    "dexter": {
+      "functions": "109 -> 109",
+      "lines": "3422 -> 3115",
+      "unnamed_indirect_calls": "426 -> 4",
+      "gotos": "20 -> 19",
+      "while_loops": "24 -> 25",
+      "no_return_marks": "7 -> 10",
+      "shrank": 31,
+      "grew": 0,
+      "renamed_same_length": 28
+    },
+    "shipped_pe_fixtures": {
+      "pe_imports_stripped.exe": "79 -> 3 unnamed slot calls",
+      "pe_dwarf.exe": "50 -> 0",
+      "msvc_rtti_x64/x86.exe, pdb_min/pdb_prog.exe": "unchanged"
+    },
+    "grew_explained": "mydoom sub_4075d0 / sub_40755b each +1 declaration line because a named import now takes a typed argument through a temporary: `a1 = (*dat_411464)(*(unsigned short *)(a0+a1)); a1 &= 0x3fff;` becomes `v2 = *(unsigned short *)(a0+a1); a1 = ntohs(v2) & 0x3fff;`"
+  },
+  "ged_siblings": {
+    "O0-mydoom-mydoom-sync_visual_th": {
+      "recorded": 34.0,
+      "before": 39.0,
+      "after": 0.0,
+      "perfect_after": true,
+      "note": "un-triaged ida-pool row 34, closed by the same fix"
+    }
+  },
+  "ged_note": "FOLLOW-UP (campaign-wide, not this PR): the mined pools store a PE function's address as an RVA (0x41e2) where kuna uses the VA (0x4041e2), so scripts.decbench.rescore fails with 'no fresh code: Unable to load 512 bytes' on EVERY PE case before any comparison happens - it silently blocks GED rescoring for the whole PE half of the corpus. STILL PRESENT after the results-tree refresh and the pool re-mine (address_hex is still 0x41e2). Both GED numbers here were re-measured on the refreshed tree with a throwaway local address fix-up that was reverted; docs/decbench/triage-queue*.json are unmodified by this PR. The real fix (normalise the pool address to the loader's base, or add the PE ImageBase in rescore) belongs in the decbench tooling.",
+  "rebased_onto": "65543461 (after #252/DIV-55 and #253/DIV-56); this PR is DIV-57",
+  "stage_assertions": "386/386 PARITY OK (corpus file count 190, settables 87, transform tier 41, live-value 29)",
+  "ged_refreshed_tree": true
+}

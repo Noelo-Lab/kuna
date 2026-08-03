@@ -626,6 +626,17 @@ pub struct Architecture {
     // which Ghidra ships off (`AddressTableAnalyzer.setDefaultEnablement(false)`).
     /// (kuna) Gate the no-return-known pass (`noreturn_known`); default on.
     pub analysis_noreturn_known: bool,
+    /// (kuna) Gate PE import-call binding (`peimportcall`): paint
+    /// `Varnode::externref` over the Import Address Table slots — the one flag
+    /// `ActionDeindirect`'s external-reference arm requires — so a
+    /// `call dword ptr [IAT slot]` binds to the import symbol the loader already
+    /// resolved there (name, prototype and no-return flow effect), and match
+    /// upstream's PE-only no-return API list (`ExitProcess`/`ExitThread`/…) that
+    /// kuna's merged PE/Mach-O list never carried.  PE/COFF-only; a no-op on every
+    /// other object format.  Also read (through the ArchSeam) by
+    /// `Architecture::query_function`, whose no-return carry is the flow half of
+    /// the same binding.
+    pub analysis_peimportcall: bool,
     /// (kuna) Gate the library-prototype pass (`libproto`); default on.
     pub analysis_libproto: bool,
     /// (kuna) Gate the string-literal pass (`strings`); default on.
@@ -1109,6 +1120,7 @@ impl Architecture {
             // effective default (phases.toml's `default` column mirrors it;
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
+            analysis_peimportcall: false,
             analysis_libproto: false,
             analysis_strings: false,
             analysis_entry_disc: false,
@@ -1253,6 +1265,7 @@ impl Architecture {
         // analyzers), except addrtable which Ghidra ships off. Bound to the
         // real-ELF analysis tier; inert on the XML datatest path.
         self.analysis_noreturn_known = true;
+        self.analysis_peimportcall = true; // (kuna) DIV-57 PE import-call binding default-on
         self.analysis_libproto = true;
         self.analysis_strings = true;
         self.analysis_entry_disc = true;
@@ -1511,6 +1524,7 @@ impl Architecture {
             // matching flag and skips a disabled pass's facts. The option id IS
             // the pass's `AnalysisPass::id()` string. Real-ELF path only.
             "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
+            "peimportcall" => on_off!(analysis_peimportcall, "PE import-call binding"),
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
@@ -1921,6 +1935,10 @@ impl Architecture {
         ctx.max_jumptable_size = self.max_jumptable_size;
         ctx.alias_block_level = self.alias_block_level;
         ctx.funcptr_align = self.funcptr_align;
+        // (kuna) PE import-call binding: `query_function` carries a resolved
+        // callee's no-return flag onto the proto it hands `ActionDeindirect` only
+        // under this gate (the flow half of the binding).
+        ctx.peimportcall = self.analysis_peimportcall;
         // (kuna GH-8471) Carry the Thumb-funcptr preservation gate so
         // `RulePtrsubUndo`'s thumb guard reads `glb->preserve_thumb_funcptr`.
         ctx.preserve_thumb_funcptr = self.preserve_thumb_funcptr;

@@ -246,6 +246,19 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::pclntab::GoPclntabPass));
     }
 
+    // S1 PE import-call binding (PeImportCallPass): paint `Varnode::externref` over
+    // the Import Address Table slots so `ActionDeindirect` resolves a
+    // `call dword ptr [slot]` to the import FunctionSymbol `pe_iat` registered at
+    // that slot VA, and match upstream's PE-only no-return API list
+    // (`ExitProcess`/`ExitThread`/…) that kuna's merged PE/Mach-O list never named.
+    // PE/COFF-only: registered ONLY for those formats, so every other target's pass
+    // set is byte-identical (the pass ALSO self-gates on the format in `run`). Its
+    // facts are committed only when the `peimportcall` gate is on
+    // (`engine.rs::analysis_pass_enabled`).
+    if format == object::BinaryFormat::Pe || format == object::BinaryFormat::Coff {
+        passes.push(Box::new(crate::loader::kuna_peimportcall::PeImportCallPass));
+    }
+
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
     // CompleteObjectLocator → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data`, demangle
     // each `.?A…@@` class name, and emit `<Class>::vftable` / `<Class>::RTTI_*`
@@ -851,6 +864,27 @@ mod tests {
                 assert!(
                     !ids(&passes_for(c, fmt)).contains(&"rtti"),
                     "{c:?}/{fmt:?} must not carry rtti"
+                );
+            }
+        }
+    }
+
+    /// The PE import-call binding pass (`peimportcall`) is registered ONLY on a
+    /// PE/COFF image, so every other format's pass set is byte-identical to before
+    /// it existed (the parity-safety contract the rtti/objc/pdb passes also hold).
+    #[test]
+    fn peimportcall_pass_is_pe_coff_gated() {
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
+            for fmt in [object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
+                assert!(
+                    ids(&passes_for(c, fmt)).contains(&"peimportcall"),
+                    "{c:?}/{fmt:?} must carry peimportcall"
+                );
+            }
+            for fmt in [object::BinaryFormat::Elf, object::BinaryFormat::MachO] {
+                assert!(
+                    !ids(&passes_for(c, fmt)).contains(&"peimportcall"),
+                    "{c:?}/{fmt:?} must not carry peimportcall"
                 );
             }
         }

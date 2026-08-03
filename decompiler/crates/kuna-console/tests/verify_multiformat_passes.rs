@@ -149,18 +149,20 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
     let on = decompile_func(prog, &["load function __tmainCRTStartup", "decompile", "print C"]);
 
     let Some(prog_off) = boot("pe_imports.exe") else { return };
-    // OFF: the dead code after `exit(…)` reappears. (kuna DIV-13/DIV-14) ALL THREE
+    // OFF: the dead code after `exit(…)` reappears. (kuna DIV-13/DIV-14/DIV-57) ALL FOUR
     // name-based no-return gates must be disabled: `noreturn_known` (the address-keyed
-    // scan), `noreturn_externmatch` (the flow-seam name match, default-on DIV-13), AND
-    // `noreturn_extern` (the flow-seam name match, now default-on DIV-14) — all three
-    // independently mark `exit` no-return from the same vendored list, so any one left
-    // on keeps the fall-through dropped.
+    // scan), `noreturn_externmatch` (the flow-seam name match, default-on DIV-13),
+    // `noreturn_extern` (the flow-seam name match, now default-on DIV-14), AND
+    // `peimportcall` (the PE-only vendored Win32 list, default-on DIV-57, which also
+    // names `exit`) — each independently marks `exit` no-return from a vendored list,
+    // so any one left on keeps the fall-through dropped.
     let off = decompile_func(
         prog_off,
         &[
             "option noreturn_known off",
             "option noreturn_externmatch off",
             "option noreturn_extern off",
+            "option peimportcall off",
             "load function __tmainCRTStartup",
             "decompile",
             "print C",

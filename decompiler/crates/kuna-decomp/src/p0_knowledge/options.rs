@@ -303,6 +303,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // matching `analysis_*` enable flag the console's `commit_analysis_output`
     // reads. See `docs/missing-analyses.md` "Where these live".
     "noreturn_known",
+    // (kuna) PE import-call binding: `externref` over the IAT slots (so
+    // `ActionDeindirect` resolves `call [slot]` to the import symbol) + upstream's
+    // PE-only no-return API name list. PE/COFF-only; a no-op elsewhere.
+    "peimportcall",
     "libproto",
     "strings",
     "entry_disc",

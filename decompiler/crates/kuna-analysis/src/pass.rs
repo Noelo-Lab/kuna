@@ -315,6 +315,15 @@ pub struct AnalysisOutput {
     pub no_fallthru_calls: Vec<u64>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
+    /// (kuna) Address ranges holding an **external reference** — an import slot
+    /// whose contents the dynamic loader fills in with the address of a function
+    /// living in another image (a PE Import Address Table entry). Committed as
+    /// `Varnode::externref` in the symbol-table property map, which is the one
+    /// flag `ActionDeindirect` requires before it will resolve a `CALLIND` through
+    /// a global to the FunctionSymbol registered at that address. Produced by the
+    /// `peimportcall` pass; empty for every other format. See
+    /// [`crate::loader::kuna_peimportcall`].
+    pub externref: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
@@ -378,6 +387,7 @@ impl AnalysisOutput {
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.readonly.extend(other.readonly);
+        self.externref.extend(other.externref);
         self.strings.extend(other.strings);
         self.prototypes.extend(other.prototypes);
         self.context_paints.extend(other.context_paints);

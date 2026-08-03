@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    381,
-    381
+    386,
+    386
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -184,6 +184,11 @@
     "data:P3: TOTAL goto-label count across both passes is 1 (off: 1, on: 0)",
     "data:P3: off keeps ONE merged variable return (the transform is fully option-gated)",
     "data:P3: the convergence sink post() is untouched (one per pass = 2 total)",
+    "data:PEIMPORTCALL #1: off leaves the IAT-slot call unnamed",
+    "data:PEIMPORTCALL #2: on binds the slot call to the import name",
+    "data:PEIMPORTCALL #3: on gives the bound call its no-return flow effect",
+    "data:PEIMPORTCALL #4: off leaves bail calling the raw slot pointer",
+    "data:PEIMPORTCALL #5: on ends bail at the bound no-return import",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
     "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
