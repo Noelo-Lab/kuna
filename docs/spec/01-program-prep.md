@@ -590,9 +590,25 @@ every other binary's pass list is byte-identical to before the pass existed):
   override construction
   (`decompiler/crates/kuna-analysis/src/analyzers/formatstring/apply.rs
   (classify_variadic_call)`: name contains `printf`/`scanf`, scanf-family takes
-  input types). The console driver orchestrates the decompile → read constant →
+  input types). The **driver** orchestrates the decompile → read constant →
   install per-call-site prototype override → re-decompile loop; the pipeline itself
-  never calls back into the tier.
+  never calls back into the tier. That loop is the shared per-function decompile
+  step (`decompiler/crates/kuna-console/src/decompile_step.rs (decompile_one)`,
+  chapter [00](00-overview.md) §0.2), so it applies identically to the console
+  `decompile` command and to every whole-binary surface; when it ran only in the
+  console command the option was inert on `decompile-all` (DIV-66) — and once both
+  surfaces honoured it, the second decompile's cost (+43% to +75% on a
+  printf-heavy whole binary, all of it the re-decompile rather than the read-only
+  propagation) took the option out of the `aggressive` preset, so it is a per-run
+  opt-in everywhere. Reading a
+  format constant needs read-only propagation — on ARM the format address is
+  loaded PC-relatively from a literal pool, so the format-arg varnode is a memory
+  LOAD that only constant-folds through `Funcdata::fillin_read_only` — so the step
+  enables it for the duration of the decompile and restores the prior value.
+  That side effect is much broader than the varargs typing itself: with it on,
+  every literal-pool pointer in an ARM function resolves, which is why enabling
+  `formatstring` rewrites most of a Cortex-M firmware function's body and not
+  just its `printf` call sites.
 
 ## 1.5 Entry discovery
 

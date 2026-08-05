@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use kuna_decomp::decompile_drive::{
-    decompile_func_full_with_override_dyn, extract_variables, print_c, print_c_prototype, VarInfo,
+    extract_variables, print_c, print_c_prototype, VarInfo,
 };
 // `ConsoleProgram::sections` documents its `flags` word as exactly the
 // `kuna_sleigh::loadimage::section_flags` constant set (UNALLOC=1, NOLOAD=2,
@@ -109,19 +109,24 @@ pub fn decompile_targets(
                     .collect(),
                 _ => Vec::new(),
             };
-        match decompile_func_full_with_override_dyn(
+        // (kuna, DIV-66) The SHARED per-function decompile step — the same one
+        // `IfcDecompile` runs. Before it existed this loop called the drive
+        // directly and so skipped Ghidra's `FormatStringAnalyzer` half-B loop (and
+        // its scoped read-only propagation), which meant `--option formatstring on`
+        // — named by `--mode aggressive`, and therefore by `auto` under 500 KiB —
+        // was a silent no-op on every whole-binary surface. `discovered` is
+        // dropped: each function is decompiled exactly once here, so there is no
+        // later re-decompile to persist it for.
+        match crate::decompile_step::decompile_one(
             prog.arch_mut(),
             &name,
             entry,
             0, // UNBOUNDED: the function's natural flow extent
-            &mapped,
+            &crate::decompile_step::DecompileSeed::plain(&mapped, &flow_ovr),
             &[],
-            &[],
-            None,
-            &flow_ovr,
-            &[],
-            &[],
-        ) {
+        )
+        .result
+        {
             Ok(fd) => {
                 let size = fd.get_size() as i64;
                 // Render + extract under `catch_unwind`: the decompile drive only

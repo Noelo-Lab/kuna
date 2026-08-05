@@ -19,12 +19,14 @@
 //! to just the IR build + pipeline — the load-once shape benchmark harnesses
 //! (decbench) and an LLM driver need.
 //!
-//! The per-function decompile mirrors the console `decompile` command
-//! (`IfcDecompile`): it re-seeds the function's DWARF stack locals via
-//! [`ConsoleProgram::dwarf_locals_for`] (so a `-g` binary renders DWARF names),
-//! and a per-function pipeline abort (the decompile drive already catches panics
-//! / un-ported seams and returns `Err`) is recorded as that function's `error`
-//! rather than aborting the whole binary.
+//! The per-function decompile runs the *same* step as the console `decompile`
+//! command (`IfcDecompile`) — one shared
+//! `kuna_console::decompile_step::decompile_one`, so the two surfaces cannot
+//! drift again (DIV-66; they had, and this one was the weaker). It re-seeds the
+//! function's DWARF stack locals via [`ConsoleProgram::dwarf_locals_for`] (so a
+//! `-g` binary renders DWARF names), and a per-function pipeline abort (the
+//! decompile drive already catches panics / un-ported seams and returns `Err`) is
+//! recorded as that function's `error` rather than aborting the whole binary.
 //!
 //! `--json` emits a machine-readable object (the decbench / LLM surface); without
 //! it the command prints concatenated C with `// Function: <name> @ <addr>`

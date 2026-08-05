@@ -76,8 +76,7 @@ The options it enables:
 - **analysis tier**: `listing` (the master gate that enables the
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
-  `operand_refs`, `formatstring`, `fid`, `rtti`, `aif`, `objc`, `pdb`,
-  `macho-arm64e`
+  `operand_refs`, `fid`, `rtti`, `aif`, `objc`, `pdb`, `macho-arm64e`
 
 `returndup` became a shipped default in DIV-54 and is deliberately kept on the
 list: the preset **owns** the option, so an earlier `--option returndup off` on
@@ -104,15 +103,33 @@ SPARC). Two are not:
   here made that annotated form the *default* rendering for small debug
   binaries, which is a readability regression, not a recovery win (DIV-43).
 
-Both therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
-`--option dwarf_lines on`) even under `--mode aggressive`; a named `--option`
-still wins over the preset by last-write precedence.
+- **`formatstring`** — it recovers real signal (printf/scanf varargs typed from
+  the format string, and, through the read-only propagation it needs, every
+  literal-pool pointer on ARM), but it buys that with a **second full decompile**
+  of any caller whose call sites yield an override. Only ~5-15% of a binary's
+  functions re-decompile, but they are the expensive ones, so whole-binary
+  `decompile-all` measured **+77.5%** (cronie `crontab`), **+55.1%** (gnutls
+  `psktool`) and **+43.7%** (`gzip`) — an order of magnitude over the 5% speed
+  budget, which standing requirement 4 answers with a per-run opt-in. Until DIV-66
+  the preset entry was *also* inert on every whole-binary surface, so it was
+  charging `kuna decompile` for a feature `decompile-all` never delivered; now
+  both surfaces honour `--option formatstring on` identically, and neither pays
+  for it unless asked (DIV-66).
+
+All three therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
+`--option dwarf_lines on`, `--option formatstring on`) even under `--mode
+aggressive`; a named `--option` still wins over the preset by last-write
+precedence.
 
 ### Caveats
 
-`aggressive` is slower (the Listing build, `funcstart_patterns` discovery, and
-`formatstring`'s re-decompile loop) and can over-recover: `aif` is a speculative
-gap-walk ("may create bad code") and `addrtable` over-accepts pointer tables.
+`aggressive` is slower (the Listing build, `funcstart_patterns` discovery) and can
+over-recover: `aif` is a speculative gap-walk ("may create bad code") and
+`addrtable` over-accepts pointer tables. It no longer carries `formatstring`'s
+re-decompile loop: that loop used to run only on `kuna decompile`, where it cost
+up to +77% and on the whole-binary surfaces delivered nothing at all — DIV-66
+made both surfaces honour the option and, at that measured price, made it an
+opt-in on both.
 That is by design — `aggressive` is the recovery-ceiling / measurement envelope,
 not the faithful default. Use it to read maximally-recovered output or to A/B
 which options net-help; promote an option to a default only when its own ablation
