@@ -363,6 +363,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `off|proven|inferred`, default `proven`. Same deferred shape as `cppproto`
     // (the pass runs at `load file`, the gate applies at the analysis commit).
     "cppsig",
+    // (kuna) Full-depth DWARF type resolution: the mapper's recursion guard is
+    // upstream's per-DIE re-entry counter (`trackRecursion`) rather than a flat
+    // three-hop budget that counted the transparent `typedef`/`const` links, so
+    // an ordinary `const char **`/`char *const []` resolves instead of falling
+    // back to `void`. The mapping happens at `load file`, upstream of the
+    // `option` commands, so the live gate is an env var
+    // (`kuna_typedepth::TYPEDEPTH_ENV`) that the CLI exports before the load;
+    // this registration keeps the option catalog-visible. Default-ON.
+    "typedepth",
     "callfixup",
     "addrtable",
     "operand_refs",

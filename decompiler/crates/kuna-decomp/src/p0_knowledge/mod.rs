@@ -12,3 +12,5 @@ pub mod kuna_assert;
 pub mod kuna_restartlog;
 // (kuna) i386-PIE PLT-stub decode option gate (angr test_decompiling_nl_i386_pie).
 pub mod kuna_i386_pie_plt;
+// (kuna) DWARF full-depth type-resolution option gate (load-time, env-bridged).
+pub mod kuna_typedepth;

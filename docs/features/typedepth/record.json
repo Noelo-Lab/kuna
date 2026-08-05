@@ -1,0 +1,125 @@
+{
+  "opportunity": "kuna's DWARF type mapper truncates ordinary C declarations to void. MAX_TYPE_DEPTH = 3 counted every hop of the DW_AT_type chain, the transparent typedef/const/volatile/restrict links included, so const char *const *, const size_t *, char *const [] and char *** all ran out of budget and fell back to void: 294 truncated sites across six -g C binaries (238 stack locals/params, 55 globals, 1 prototype parameter).",
+  "test_name": "kuna-console verify_typedepth (6 two-pass e2e assertions on a new -g -O0 C fixture) + 6 hermetic guard/mapper unit tests incl. forged cyclic DWARF",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/typedepth_x86_64",
+  "selector": "count_authors",
+  "func_addr": null,
+  "angr_version": null,
+  "option": "typedepth",
+  "flag": "analysis_typedepth",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "Ghidra DWARFDataTypeImporter.trackRecursion (per-DIE-offset re-entry counter)",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "root_cause": "An unfaithful reduction of upstream's cycle guard, not a deliberate cap. Ghidra's DWARFDataTypeImporter.trackRecursion counts RE-ENTRIES of one DIE offset and refuses the third, which fires only on a cycle; kuna reduced it to a flat three-hop budget counted over every link, which conflates 'the same DIE again' with 'a deep but finite chain'. Raising the cap was not the fix: with no cycle detection under it, any cap is both too low for real C and unable to bound a self-referential chain.",
+  "truncation_census": {
+    "method": "simulate both live build_datatype variants against .debug_info: every defined subprogram's formal parameters, its DW_OP_fbreg locals, and every CU-top-level DW_OP_addr global",
+    "binaries": {
+      "coreutils/fmt O0": {
+        "locals": 10,
+        "globals": 4,
+        "proto_params": 0
+      },
+      "coreutils/fmt O2": {
+        "locals": 1,
+        "globals": 4,
+        "proto_params": 0
+      },
+      "grep O0": {
+        "locals": 96,
+        "globals": 20,
+        "proto_params": 0
+      },
+      "bzip2 O0": {
+        "locals": 6,
+        "globals": 3,
+        "proto_params": 0
+      },
+      "zlib/minigzip O0": {
+        "locals": 114,
+        "globals": 18,
+        "proto_params": 0
+      },
+      "gzip O0": {
+        "locals": 11,
+        "globals": 6,
+        "proto_params": 1
+      }
+    },
+    "total_truncated_before": 294,
+    "still_truncated_after": 0
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK (400/400)",
+    "make rust-test": "green",
+    "make check-spec": "OK (lenient + strict)",
+    "kuna catalog --check": "OK"
+  },
+  "catalog_counts": {
+    "settables": "92 -> 93",
+    "tiers": "core 20 / transform 41 / analysis 31 -> 32",
+    "catalog_json_rows": "91 -> 92",
+    "bytecompat_fixture": "regenerated from the fresh decomp_dbg build"
+  },
+  "files": [
+    "decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs (new)",
+    "decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppproto.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs (new)",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-cli/src/decompile.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "decompiler/crates/kuna-console/tests/verify_typedepth.rs (new)",
+    "decompiler/crates/kuna-analysis/tests/fixtures/typedepth_x86_64{,.c} (new)",
+    "docs/spec/01-program-prep.md",
+    "docs/history.md (DIV-63)"
+  ],
+  "div_row": "DIV-63",
+  "notes": "The brief's three plain-C witnesses (char **authors, idx_t *pn, mbstate_t *ps in coreutils fmt) are ALREADY correct on main: #264's strip_qualifiers reaches every prototype because cppproto is default-on and rebinds C prototypes by address. What remained, and what this PR fixes, is the cpp=false paths (stack locals, global sizing) plus purely structural depth (char *** truncates even with the qualifiers collapsed).",
+  "speed": {
+    "method": "interleaved off/on pairs, MINIMUM of 15 pairs, gate flipped through the live KUNA_TYPEDEPTH env bridge; the mapper runs once per binary inside `load file`, so the load-dominated surfaces are the honest ones",
+    "budget_pct": 5.0,
+    "rows": {
+      "kuna functions grep O0 (load+commit only)": "693.5 -> 695.9 ms (+0.35%)",
+      "kuna functions zlib/minigzip O0 (load+commit only)": "450.8 -> 451.5 ms (+0.16%)",
+      "kuna decompile coreutils/fmt O2 main": "304.3 -> 305.0 ms (+0.24%)",
+      "kuna decompile-all coreutils/fmt O0": "1835.6 -> 1836.0 ms (+0.02%)",
+      "kuna decompile-all typedepth_x86_64 fixture": "126.8 -> 126.6 ms (-0.14%)"
+    },
+    "worst_delta_pct": 0.35,
+    "within_budget": true,
+    "why_flat": "the guard replaces an integer compare with a BTreeMap entry per DIE hop on a walk that is a handful of hops deep and runs once per prototype/local/global at load; nothing in the decompile loop is touched"
+  },
+  "benchmark": {
+    "standard_corpus": {
+      "corpus": "decbench full_run (the scored tree): <opt>/<project>/stripped/*",
+      "result": "structurally ZERO \u2014 the scored copies are `strip`ped, so they carry no .debug_* at all and the DWARF pass emits nothing",
+      "verified": "decompile-all off vs on over the stripped zlib O0 minigzip: 0 lines differ",
+      "implication": "the C type_match standing (kuna 5.17% vs angr 7.29% / ida 5.55%) is measured with NO debug info, so it is an inference gap, not a DWARF-consumption gap; this change cannot and does not address it"
+    },
+    "unstripped_arm": {
+      "corpus": "the same projects' UNSTRIPPED compiled/ copies (zlib + bzip2, O0, 9 binaries)",
+      "scorer": "decbench main @325046f (cache_version 5), DECBENCH_NO_CACHE=1, metric type_match",
+      "gate": "KUNA_TYPEDEPTH=off vs on (the load-time env bridge), everything else at shipped defaults",
+      "scored_functions": 872,
+      "type_match_perfects_before": 458,
+      "type_match_perfects_after": 626,
+      "type_match_perfects_delta": 168,
+      "type_match_mean_before": 0.8438,
+      "type_match_mean_after": 0.9083,
+      "functions_improved": 193,
+      "functions_worse": 0,
+      "per_project": {
+        "zlib O0 (7 binaries, n=764)": "perfect 401 -> 561 (+160), mean 0.8452 -> 0.9130",
+        "bzip2 O0 (2 binaries, n=108)": "perfect 57 -> 65 (+8), mean 0.8343 -> 0.8755"
+      },
+      "note": "gzip was started in both arms but only the off arm's evaluation finished inside the wall-clock budget (the box was at load ~450 from sibling agents); it is excluded from BOTH arms rather than reported one-sided. grep was not run."
+    }
+  }
+}

@@ -79,6 +79,7 @@ use kuna_base::types::uint4;
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
 use kuna_decomp::fspec::PrototypePieces;
 
+use super::kuna_typedepth::TypeWalk;
 use super::{build_datatype, DieSnap};
 
 /// A subprogram definition fused with the declaration it points at — the reduced
@@ -234,7 +235,8 @@ pub(super) fn build_pieces(
     types: &dyn TypeFactory,
     word_size: uint4,
 ) -> Option<PrototypePieces> {
-    let outtype = build_datatype(res.type_ref, dies, types, word_size, 0, true);
+    let mut walk = TypeWalk::new();
+    let outtype = build_datatype(res.type_ref, dies, types, word_size, &mut walk, true);
 
     let mut intypes = Vec::with_capacity(res.params.len());
     let mut innames = Vec::with_capacity(res.params.len());
@@ -242,7 +244,7 @@ pub(super) fn build_pieces(
         let Some(p) = dies.get(&poff) else { continue };
         let origin = p.origin_ref.and_then(|o| dies.get(&o));
         let type_ref = p.type_ref.or_else(|| origin.and_then(|o| o.type_ref));
-        let ty = build_param_type(type_ref, dies, types, word_size)?;
+        let ty = build_param_type(type_ref, dies, types, word_size, &mut walk)?;
         let name = if p.name.is_empty() {
             origin.map(|o| o.name.clone()).unwrap_or_default()
         } else {
@@ -277,8 +279,9 @@ fn build_param_type(
     dies: &BTreeMap<usize, DieSnap>,
     types: &dyn TypeFactory,
     word_size: uint4,
+    walk: &mut TypeWalk,
 ) -> Option<Rc<Datatype>> {
-    match build_datatype(off, dies, types, word_size, 0, true) {
+    match build_datatype(off, dies, types, word_size, walk, true) {
         Some(t) if t.get_size() > 0 => Some(t),
         _ => degrade_datatype(off, dies, types),
     }
@@ -323,6 +326,7 @@ pub(super) fn collect_fbreg_locals(
     cfa: i64,
     out: &mut Vec<crate::pass::LocalFact>,
 ) {
+    let mut walk = TypeWalk::new();
     for &coff in &sub.children {
         let Some(child) = dies.get(&coff) else { continue };
         if !matches!(child.tag, gimli::DW_TAG_variable | gimli::DW_TAG_formal_parameter) {
@@ -341,7 +345,7 @@ pub(super) fn collect_fbreg_locals(
         let type_ref = child.type_ref.or_else(|| origin.and_then(|o| o.type_ref));
         // A zero-width type (the named-opaque aggregate) would map a zero-extent
         // stack symbol that covers no access; skip rather than shadow the slot.
-        let Some(ty) = build_datatype(type_ref, dies, types, word_size, 0, true)
+        let Some(ty) = build_datatype(type_ref, dies, types, word_size, &mut walk, true)
             .filter(|t| t.get_size() > 0)
         else {
             continue;

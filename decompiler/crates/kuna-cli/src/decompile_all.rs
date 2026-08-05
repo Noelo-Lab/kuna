@@ -203,7 +203,7 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
     // Load-time loader gates are read by `bootstrap_from_object` itself, so they
     // must be exported BEFORE it runs (the same gates `kuna decompile` threads to
     // the subprocess env). Keep the restoration guard alive through runtime
-    // option recording too: `relocobjects` and `i386_pie_plt` update their env
+    // option recording too: `relocobjects`, `i386_pie_plt` and `typedepth` update their env
     // bridges again inside `set_kuna_option` and must not leak into a later load.
     let _loadtime_env = apply_loadtime_env(&args.options, args.slice.as_deref());
 
@@ -372,7 +372,7 @@ pub(crate) fn resolve_targets(
 /// line is still applied afterward (for the catalog record), exactly as
 /// `kuna decompile` does.
 fn is_loadtime_gate(name: &str) -> bool {
-    matches!(name, "relocobjects" | "i386_pie_plt" | "macho-arm64e")
+    matches!(name, "relocobjects" | "i386_pie_plt" | "macho-arm64e" | "typedepth")
 }
 
 fn last_option_value<'a>(options: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -434,6 +434,13 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
             "off" | "0" | "false"
         );
         env.set("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
+    }
+    if let Some(value) = last_option_value(options, "typedepth") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(kuna_decomp::kuna_typedepth::TYPEDEPTH_ENV, if on { "on" } else { "off" });
     }
     if let Some(value) = last_option_value(options, "macho-arm64e") {
         if matches!(
