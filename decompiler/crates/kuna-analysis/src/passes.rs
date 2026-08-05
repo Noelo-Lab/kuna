@@ -110,6 +110,19 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // is present. After EntryDiscoveryPass (it is the widened arm of its
         // oracle 6).
         Box::new(crate::entry::kuna_cortexmvectors::CortexMVectorsPass),
+        // S1 `.eh_frame` FDE-interior entry suppression (`fdeinterior`): report the
+        // FDE bodies that describe exactly one function, so the commit boundary can
+        // reject a discovered entry that lands in the MIDDLE of one. kuna's function
+        // symbols carry no extent, so every discovery oracle is free to start a
+        // `sub_<addr>` inside a body it cannot see — `eh_frame_full`'s landing pads,
+        // `aif`'s gap starts and the prologue patterns all do it on ordinary C++
+        // output. Registered always (the facts are computed + stashed at load), the
+        // COMMIT gated by `--option fdeinterior on` (default-ON; `off` restores the
+        // previous discovery set exactly) via `engine.rs::analysis_pass_enabled`.
+        // Inert on any image without `.eh_frame` FDEs. LAST of the entry passes: it
+        // constrains what the others emit, and the suppression is applied to the
+        // fully merged entry set (the deferred Listing consumers included).
+        Box::new(crate::entry::kuna_fdeinterior::FdeInteriorPass),
         // S1 full byte-pattern function starts (FuncStartPatternPass): the faithful
         // port of Ghidra's `FunctionStartAnalyzer` over the ENTIRE vendored pattern
         // corpus (`entry/patterns/*.xml`: the `<patternpairs>` pre/post sequences

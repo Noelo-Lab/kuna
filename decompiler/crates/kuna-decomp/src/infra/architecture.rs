@@ -648,6 +648,20 @@ pub struct Architecture {
     /// `.gcc_except_table` markup); default **off** (output-changing: adds the
     /// discovered exception-handler landing pads as function entries).
     pub analysis_eh_frame_full: bool,
+    /// (kuna) Reject a discovered function entry that falls strictly inside a
+    /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
+    /// kuna's function symbols carry no extent, so every discovery oracle can
+    /// start a `sub_<addr>` in the middle of a body it cannot see — the
+    /// `eh_frame_full` landing pads, the `aif` gap starts and the prologue
+    /// patterns all do it on ordinary C++ output, and the resulting function
+    /// inherits its parent's live frame pointer, so every local is a garbage
+    /// dereference. An FDE is per-function by construction, so its interior is
+    /// the extent the symbol table never carried. Only ranges that hold no other
+    /// named function start, no other FDE start and no linker-stub section are
+    /// used (the whole-PLT FDE is excluded, so import stubs are never touched),
+    /// and an entry AT an FDE start is always kept. Off restores the previous
+    /// discovery set exactly; inert on any image with no `.eh_frame` FDEs.
+    pub analysis_fdeinterior: bool,
     /// (kuna) Gate the **full byte-pattern function-start** pass
     /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
     /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
@@ -1162,6 +1176,7 @@ impl Architecture {
             analysis_strings: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
+            analysis_fdeinterior: false,
             analysis_funcstart_patterns: false,
             analysis_cortexmvectors: false,
             analysis_ptrentry: false,
@@ -1312,6 +1327,8 @@ impl Architecture {
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
+        // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
+        self.analysis_fdeinterior = true;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
@@ -1573,6 +1590,9 @@ impl Architecture {
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "eh_frame_full" => {
                 on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
+            }
+            "fdeinterior" => {
+                on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
             }
             "funcstart_patterns" => {
                 on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")

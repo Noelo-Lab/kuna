@@ -41,7 +41,7 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_88() {
+fn settable_count_is_91() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -52,12 +52,13 @@ fn settable_count_is_88() {
     // +1 for `ptrentry` (P1 pointer-referenced ARM function entries).
     // +1 for `tailcallentry` (P1 tail-call function-entry recovery).
     // +1 for `cppproto` (P1 DWARF C++ prototype recovery arm).
-    assert_eq!(kuna_num_settables(), 90);
-    assert_eq!(SETTABLE_TABLE.len(), 90);
+    // +1 for `fdeinterior` (P1 `.eh_frame` FDE-interior entry suppression, DIV-61).
+    assert_eq!(kuna_num_settables(), 91);
+    assert_eq!(SETTABLE_TABLE.len(), 91);
 }
 
 #[test]
-fn tier_counts_are_20_core_41_transform_28_analysis() {
+fn tier_counts_are_20_core_41_transform_30_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -78,7 +79,8 @@ fn tier_counts_are_20_core_41_transform_28_analysis() {
     // analysis 26 -> 27: +1 for `ptrentry` (P1 pointer-referenced ARM entries).
     // analysis 27 -> 28: +1 for `tailcallentry` (P1 tail-call function-entry recovery).
     // analysis 28 -> 29: +1 for `cppproto` (P1 DWARF C++ prototype recovery).
-    assert_eq!((core, transform, analysis), (20, 41, 29));
+    // analysis 29 -> 30: +1 for `fdeinterior` (P1 FDE-interior entry suppression, DIV-61).
+    assert_eq!((core, transform, analysis), (20, 41, 30));
 }
 
 #[test]
@@ -293,6 +295,10 @@ fn option_values_live_value_present_for_28_suppressed_for_42() {
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.
         "eh_frame_full",
+        // (kuna) `.eh_frame` FDE-interior entry suppression — an analysis-pass gate
+        // with no codegen live reader (read console-side via kuna_live_value), same
+        // as the gates around it. Default-ON (DIV-61).
+        "fdeinterior",
         // (kuna) The full byte-pattern function-start pass — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-off.
@@ -510,9 +516,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
-    // itecondlist's S8 row and peimportcall's S1 row sit mid-table, so they do not
-    // move the tail).
-    assert_eq!(json.matches("},\n").count(), 89);
+    // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row and
+    // fdeinterior's S1 row sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 90);
 }
 
 #[test]
