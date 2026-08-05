@@ -80,6 +80,14 @@ impl TextRanges {
     pub fn contains(&self, vma: u64) -> bool {
         self.ranges.iter().any(|&(s, e)| vma >= s && vma < e)
     }
+
+    /// Build a `TextRanges` from explicit `(start, end)` ranges — the synthetic-image
+    /// constructor the sibling passes' unit tests use in place of a parsed object.
+    #[cfg(test)]
+    pub fn for_test(mut ranges: Vec<(u64, u64)>) -> Self {
+        ranges.sort_by_key(|&(s, _)| s);
+        TextRanges { ranges }
+    }
 }
 
 /// A recovered vftable: its base VMA and the per-slot virtual-method function VAs

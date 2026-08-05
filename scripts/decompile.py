@@ -168,6 +168,17 @@ _LOADTIME_GATE_ENV = {
     "typedepth": "KUNA_TYPEDEPTH",
 }
 
+# The distinction that decides membership above, because it is easy to get wrong:
+# an option needs an entry here only when the load-time work it gates is CONSUMED
+# during `load file`. The analysis-pass gates (`rtti`, `itaniumrtti`, `cppproto`,
+# `cppsig`, `fdeinterior`, `listing`, ...) also *compute* their facts at load, but
+# those facts are COMMITTED later, at `read symbols`
+# (`commit_pending_analysis` -> `engine.rs::analysis_pass_enabled`), and the loop
+# below emits every `option` line before `read symbols` -- so the console line does
+# reach them and an entry here would be redundant. Verified per option by checking
+# that a before/after demo renders two DIFFERENT bodies; two identical renderings
+# are the symptom that an entry is missing.
+
 
 def _apply_loadtime_gates(env, options):
     """Export the load-time gates named in ``options`` onto ``env``.

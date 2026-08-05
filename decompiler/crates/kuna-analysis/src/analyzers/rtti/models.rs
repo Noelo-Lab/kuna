@@ -170,6 +170,35 @@ impl<'a> ImageBytes<'a> {
         hits
     }
 
+    /// Find every aligned full-**pointer** slot whose value is in `targets`, as
+    /// `(slot VMA, value)`. The many-targets form of [`Self::find_ptrs`]: the
+    /// Itanium walk needs the slots pointing at *any* of the image's typeinfo
+    /// objects, and running `find_ptrs` per class is `O(classes × image)` — on a
+    /// C++ library with hundreds of polymorphic classes that is the whole pass's
+    /// cost. Scans on a `ptr_size` stride, once.
+    pub fn scan_ptr_slots(
+        &self,
+        rk: &RefKind,
+        targets: &std::collections::HashSet<u64>,
+    ) -> Vec<(u64, u64)> {
+        let mut hits = Vec::new();
+        if targets.is_empty() {
+            return hits;
+        }
+        let ps = rk.ptr_size();
+        for &(base, data) in &self.sections {
+            let mut off = 0usize;
+            while off + ps <= data.len() {
+                let v = rk.read_ptr(&data[off..off + ps]);
+                if v != 0 && targets.contains(&v) {
+                    hits.push((base + off as u64, v));
+                }
+                off += ps;
+            }
+        }
+        hits
+    }
+
     /// Is `vma` inside any loaded section? (A weak validity gate for a resolved ref.)
     pub fn contains(&self, vma: u64) -> bool {
         self.sections

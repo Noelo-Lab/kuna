@@ -907,6 +907,13 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // PE-only (the pass + its passes_for registration both self-gate on PE), so
         // a default run / every non-PE binary commits nothing here.
         "rtti" => arch.analysis_rtti,
+        // (kuna, NOVEL) Itanium (GCC/Clang) RTTI + vtable recovery — the class
+        // names, typeinfo/vtable labels and per-slot virtual-method names are
+        // computed at LOAD but COMMITTED only when this gate is on. Default-OFF
+        // (output-changing: adds named data + function symbols), ELF-only (the pass
+        // + its passes_for registration both self-gate on ELF), so a default run /
+        // every non-ELF binary commits nothing here.
+        "itaniumrtti" => arch.analysis_itaniumrtti,
         "aif" => arch.analysis_aif,
         // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
         // functions, so it changes emitted C by construction). Listing consumer;

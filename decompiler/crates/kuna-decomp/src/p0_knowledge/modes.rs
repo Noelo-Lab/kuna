@@ -99,8 +99,9 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 /// the preset and the contract survives any later default drift.
 ///
 /// The default-off options are safe to blanket-enable except those two. Unlike
-/// the format-gated no-ops (`rtti`/`pdb`=PE, `objc`/`macho-arm64e`=Mach-O,
-/// `sparcstructret`=SPARC `unimp`-trap idiom -- all inert off their target):
+/// the format-gated no-ops (`rtti`/`pdb`=PE, `itaniumrtti`=ELF-with-RTTI,
+/// `objc`/`macho-arm64e`=Mach-O, `sparcstructret`=SPARC `unimp`-trap idiom -- all
+/// inert off their target):
 ///
 ///   - `v850indirectbranch`'s predicate matches *any* register-indirect `CALLIND`
 ///     (`kuna_is_v850_indirect_jmp`, `p2_lift/kuna_v850indbranch.rs`), so on
@@ -135,6 +136,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("formatstring", "on"),
     ("fid", "on"),
     ("rtti", "on"),          // PE-only; no-op off-PE
+    ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
     ("aif", "on"),           // speculative gap-walk ("may create bad code")
     ("objc", "on"),          // Mach-O-only; no-op off-Mach-O
     ("pdb", "on"),           // PE-only; no-op off-PE
@@ -274,6 +276,87 @@ mod tests {
         }
         // Every aggressive override turns its option on.
         assert!(agg.iter().all(|(_, v)| *v == "on"));
+    }
+
+    /// The preset's headline contract, enforced rather than sampled: **every**
+    /// default-off option is in `aggressive` except the two documented exclusions.
+    ///
+    /// The sampled test above passes whether or not a newly added default-off
+    /// option was ever put in the list, and a default-off option outside the list
+    /// is *unreachable in practice* — `auto` selects `aggressive` for anything
+    /// under 500 KiB, which is the default path for essentially every invocation,
+    /// so such an option never runs for `decompile-all`, the web front-end, or the
+    /// benchmark. That is exactly how `itaniumrtti` was first shipped inert. This
+    /// test makes the omission a build failure instead of a silent no-feature.
+    #[test]
+    fn aggressive_carries_every_default_off_option() {
+        use crate::kuna_phases::{kuna_num_settables, kuna_settable_by_index};
+
+        /// The two DELIBERATE exclusions, each with its reason recorded on
+        /// `AGGRESSIVE_OVERRIDES`: `v850indirectbranch` corrupts non-V850 targets,
+        /// and `dwarf_lines` buries a `-g` binary's C under per-instruction
+        /// `/* src.c:N */` comments.
+        const EXCLUDED_ON_PURPOSE: &[&str] = &["v850indirectbranch", "dwarf_lines"];
+
+        /// Default-off options that predate this test and are **not** in the preset,
+        /// i.e. are currently unreachable on the default path. Each is a genuine open
+        /// question rather than a decision: preset membership changes emitted C on
+        /// the binaries the option fires for, so each needs its own sweep, speed
+        /// measurement and PR (`paramcopyhoist`'s own catalog row already records
+        /// that its flip regresses a stage assertion and was deferred). Listed here
+        /// so the invariant can be enforced for *new* options without silently
+        /// flipping four existing ones; shrinking this list is the follow-up.
+        const UNEVALUATED: &[&str] =
+            &["cortexmvectors", "ptrentry", "tailcallentry", "paramcopyhoist"];
+
+        let agg = mode_overrides("aggressive").unwrap();
+        let mut missing: Vec<&str> = Vec::new();
+        for i in 0..kuna_num_settables() {
+            let st = kuna_settable_by_index(i);
+            // Only ON/OFF options with a shipped default of `off` are in scope;
+            // a multi-valued option (e.g. `cppsig = off|proven|inferred`) has no
+            // single "on" the preset could pin.
+            if st.shipped != "off" || st.values != "on|off" {
+                continue;
+            }
+            if EXCLUDED_ON_PURPOSE.contains(&st.option) {
+                assert!(
+                    !agg.iter().any(|(o, _)| *o == st.option),
+                    "`{}` is a documented exclusion and must NOT be in aggressive",
+                    st.option
+                );
+                continue;
+            }
+            if UNEVALUATED.contains(&st.option) {
+                continue;
+            }
+            if !agg.iter().any(|(o, v)| *o == st.option && *v == "on") {
+                missing.push(st.option);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "these default-off options are absent from AGGRESSIVE_OVERRIDES and are \
+             therefore unreachable on the default path (`auto` picks `aggressive` \
+             under 500 KiB, so `decompile-all`, the web front-end and the benchmark \
+             never run them): {missing:?}. Either add each to the preset -- with a \
+             sweep and a speed measurement -- or list it in EXCLUDED_ON_PURPOSE / \
+             UNEVALUATED here with the reason."
+        );
+        // The bookkeeping lists must stay honest: an entry that IS in the preset,
+        // or that names no option at all, is stale.
+        for name in EXCLUDED_ON_PURPOSE.iter().chain(UNEVALUATED) {
+            assert!(
+                (0..kuna_num_settables()).any(|i| kuna_settable_by_index(i).option == *name),
+                "`{name}` is listed here but is not a registered option"
+            );
+        }
+        for name in UNEVALUATED {
+            assert!(
+                !agg.iter().any(|(o, _)| o == name),
+                "`{name}` is now IN the preset -- remove it from UNEVALUATED"
+            );
+        }
     }
 
     #[test]

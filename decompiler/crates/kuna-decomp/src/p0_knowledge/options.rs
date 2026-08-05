@@ -430,6 +430,18 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // PE-only, default-off (output-changing; real-PE path only, so every ELF/XML
     // parity gate is byte-identical).
     "rtti",
+    // (kuna, NOVEL) Itanium (GCC/Clang) RTTI + vtable recovery — the capability
+    // Ghidra does NOT have (its `RttiAnalyzer` is Microsoft-only; its GCC class
+    // recovery is script-tier and never auto-runs).  On an ELF, every `_ZTI…`
+    // typeinfo object is located from the dynamic relocation naming its
+    // `__cxxabiv1` typeinfo vtable — an anchor `strip --strip-all` cannot remove
+    // from a shared object — its `_ZTS…` name demangled to the class, its base
+    // list read for the inheritance displacements, and every `_ZTV…` sub-vtable
+    // pointing back at it walked.  Emits `<C>::typeinfo` / `<C>::typeinfo_name` /
+    // `<C>::vtable` / `<C>::vtable_for_<Base>` labels and a `<C>::vtable_<i>`
+    // function symbol per virtual slot.  ELF-only, default-off (output-changing;
+    // real-ELF path only, so every XML parity gate is byte-identical).
+    "itaniumrtti",
     // (kuna) Aggressive Instruction Finder gap-walk: the kuna analog of Ghidra's
     // `AggressiveInstructionFinderAnalyzer` (which ships off-by-default with the
     // warning "IT MAY CREATE A LOT OF BAD CODE!").  Over the undefined gaps between
