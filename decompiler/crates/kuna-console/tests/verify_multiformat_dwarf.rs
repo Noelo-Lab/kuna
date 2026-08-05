@@ -27,9 +27,16 @@
 //!   reads it. `dwarf` recovers the same DWARF-only names + `char *` type.
 //!
 //! That a name recovers BY its DWARF name (the symtab no longer carries it) is the
-//! DWARF-specific proof; the by-raw-address decompile (`load addr`) is the
-//! in-test no-DWARF-name baseline — it renders the engine's `sub_<addr>`
-//! placeholder for the same code.
+//! DWARF-specific proof; the in-test baseline is the same code decompiled with
+//! **`option dwarf off`**. On the PE nothing else names that address, so the
+//! baseline is the engine's `sub_<addr>` placeholder; on the Mach-O the
+//! `--redefine-sym`ed symtab entry `_l0` remains, which is the sharper statement of
+//! the same claim — `first_byte` exists only in the debug info.
+//!
+//! (The baseline used to be `load addr` with the pass left ON, which reported a
+//! placeholder only because `load addr` ignored the symbol table entirely; DIV-59
+//! fixed that, so the baseline now turns the pass off, which is what it always
+//! meant.)
 //!
 //! ## ELF unchanged
 //!
@@ -83,6 +90,15 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
     }
 }
 
+/// [`boot`] with the DWARF pass disabled before the deferred analysis commit (the
+/// live-CLI `option` < `read symbols` ordering) — the baseline arm: whatever names
+/// this binary without its debug info.
+fn boot_dwarf_off(name: &str) -> Option<ConsoleProgram> {
+    let mut prog = boot(name)?;
+    prog.arch_mut().set_kuna_option("dwarf", "off").expect("the dwarf gate flips off");
+    Some(prog)
+}
+
 /// Run a `load …`-driven `decompile` → `print C` and return the captured C.
 fn decompile(prog: ConsoleProgram, setup: &[&str]) -> String {
     let cmds: Vec<String> = setup.iter().map(|s| s.to_string()).collect();
@@ -112,9 +128,10 @@ fn pe_dwarf_recovers_name_and_typed_signature() {
     let elapsed = t0.elapsed();
     eprintln!("verify_multiformat_dwarf: PE first_byte decompile took {elapsed:?}");
 
-    // BEFORE (in-test baseline): the same code at its raw address has no
-    // DWARF/symtab name → the engine's `sub_<addr>` placeholder.
-    let Some(prog_b) = boot("pe_dwarf.exe") else { return };
+    // BEFORE (in-test baseline): with the DWARF pass off, nothing names this code
+    // — the COFF symtab FUNC entry was `--strip-symbol`-removed — so the same
+    // address renders the engine's `sub_<addr>` placeholder.
+    let Some(prog_b) = boot_dwarf_off("pe_dwarf.exe") else { return };
     let before = decompile(prog_b, &["load addr 0x140001550", "decompile", "print C"]);
 
     // The DWARF name resolved (and is NOT a placeholder for itself).
@@ -156,8 +173,9 @@ fn macho_dwarf_recovers_name_and_typed_signature() {
     let elapsed = t0.elapsed();
     eprintln!("verify_multiformat_dwarf: Mach-O first_byte decompile took {elapsed:?}");
 
-    // BEFORE: the same code by raw address → `sub_0` placeholder.
-    let Some(prog_b) = boot("macho_dwarf.o") else { return };
+    // BEFORE: with the DWARF pass off, the only name left at this address is the
+    // `--redefine-sym`ed symtab entry `_l0` — never the DWARF name.
+    let Some(prog_b) = boot_dwarf_off("macho_dwarf.o") else { return };
     let before = decompile(prog_b, &["load addr 0x0", "decompile", "print C"]);
 
     assert!(
@@ -173,8 +191,8 @@ fn macho_dwarf_recovers_name_and_typed_signature() {
         "Mach-O: expected the DWARF-typed `char *` parameter, got:\n{after}"
     );
     assert!(
-        before.contains("sub_0"),
-        "Mach-O: the no-DWARF-name baseline should render `sub_0`, got:\n{before}"
+        before.contains("_l0"),
+        "Mach-O: the no-DWARF baseline should render the symtab name `_l0`, got:\n{before}"
     );
     assert!(
         !before.contains("first_byte"),

@@ -1,0 +1,240 @@
+{
+  "slug": "cppcallnames",
+  "opportunity": "C++ symbol names must be rendered at call sites (and in the --addr function header)",
+  "test_name": "kuna vs IDA Pro 9.2 / Ghidra 12.1 on a purpose-built C++ probe (probe.cpp, g++ -O0/-O2) plus the vendored cpp_noreturn_x86_64 / cpp_mangled_x86_64 / eh_lsda_x86_64 fixtures",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/cpp_noreturn_x86_64",
+  "selector": "fail",
+  "func_addr": "0x4011b6",
+  "second_witness_binary": "probe_O0 (g++ -O0, purpose-built)",
+  "second_witness_selector": "probe_member_fields",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "tier": "driver (kuna-console)",
+  "module": "decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output), decompiler/crates/kuna-console/src/ifacedecomp.rs (IfcAddrrangeLoad)",
+  "phase": "P0 knowledge / driver seam",
+  "spec_chapter": "docs/spec/00-overview.md",
+  "div": "DIV-59",
+  "source_decompiler": "ida",
+  "inspiration": "IDA Pro 9.2 and Ghidra 12.1 both render `d = Account::deposit(a, amount);` on the same unstripped binary where kuna rendered `d = sub_271c(a,amount);`",
+  "default_on": true,
+  "upstream_anchor": "Scope::queryFunction (database.hh) -- resolves a FunctionSymbol through the scope tree, not one scope",
+  "upstream_fidelity": "restores the upstream resolution semantics the port narrowed to a single scope",
+  "root_cause": "Scope shadowing in the gated-commit seam. read_loader_symbols installs a demangled C++ funcsym in its NAMESPACE scope (std::terminate = base `terminate` in scope `std`). A discovery pass (fast_funcdisc / funcstart_patterns, both in AGGRESSIVE_OVERRIDES) re-reports the same VMA; commit_analysis_output's discovered-entry arm named it sub_<addr>, resolved that synthetic name to a scope (no `::` -> GLOBAL) and probed find_function(scope, addr) in that scope ONLY, so it missed the real symbol and installed a DUPLICATE generic FunctionSymbol in GLOBAL. find_function_across_scopes -- the resolver FlowInfo::queryCall uses -- searches global first, so the duplicate shadowed the real name at every call site.",
+  "ruled_out": [
+    "the name is stored only as an alias (false: it is the primary symbol; `aliases` in `kuna functions --json` comes from register_symbol, a different stream)",
+    "a validity/identifier filter rejects `::` or `<` (false: no such filter exists, and --mode reliable renders `::` names today)",
+    "the call-site path reads a different symbol table than `kuna functions` (false: same Database, same address key)",
+    "a demangler defect (false: a demangled name with no namespace, _Z8topleveli -> `toplevel`, renders fine)"
+  ],
+  "mode_dependence": {
+    "reliable": "correct (Account::deposit) -- no discovery pass runs",
+    "aggressive": "broken -- fast_funcdisc + funcstart_patterns both on",
+    "auto": "broken under 500 KiB (auto selects aggressive there)",
+    "fast": "broken at 2 MiB+ (fast_funcdisc on)",
+    "note": "turning off EITHER discovery pass alone did not restore the names; both report the same VMA, so either one is sufficient to install the duplicate"
+  },
+  "parity": "OK",
+  "ablation_changed": 0,
+  "gates": {
+    "make test": "PARITY OK 675/675, no re-pin",
+    "make test-stages": "PARITY OK, no re-pin",
+    "make rust-test": "green",
+    "make check-spec": "OK",
+    "kuna catalog --check": "catalog OK"
+  },
+  "baseline_repin": false,
+  "stage_test": null,
+  "stage_test_note": "structurally impossible for the primary defect: every tests/datatests and tests/stages file is an XML <binaryimage>, whose bootstrap never produces an AnalysisOutput, so commit_analysis_output is a no-op there. Gated instead by decompiler/crates/kuna-console/tests/verify_cppcallnames.rs, which drives the real engine over the vendored cpp_noreturn_x86_64 with the discovery passes enabled in the live-CLI order (option before read symbols).",
+  "tests_added": [
+    "kuna-console/tests/verify_cppcallnames.rs::namespaced_callee_renders_qualified_with_discovery_on",
+    "kuna-console/tests/verify_cppcallnames.rs::load_addr_header_uses_the_known_symbol_name",
+    "kuna-console/tests/verify_cppcallnames.rs::discovery_still_names_genuinely_unknown_entries"
+  ],
+  "sweep": {
+    "surface": "kuna decompile-all, before (main build) vs after (this build)",
+    "binaries": 13,
+    "c_binaries": 8,
+    "c_binaries_byte_identical": 8,
+    "c_largest": "/bin/grep 35,070 lines and /usr/bin/ls 14,788 lines, both byte-identical",
+    "cpp_binaries": 5,
+    "cpp_changed_lines": 184,
+    "classified_call_rename": 181,
+    "classified_addr_taken_rename": 3,
+    "classified_unexplained": 0,
+    "lines_added_or_removed": 0,
+    "note": "every C++ diff is exactly -N/+N: no line added or removed, no structural or signature change. The 3 address-taken lines (sub_2ca0 -> perimeter, sub_2d20 -> emit, sub_401120 -> ~runtime_error) render the symbol's BASE name because Funcdata::link_spacebase_symbol binds name_for_global_varnode (unscoped) where the sibling ActionNameVars path uses name_for_global_varnode_scoped + kuna_qualify_global_name. Pre-existing and unrelated: on main the same fixture already emits {virtual override thunk} in that position and void Account::~Account(void) as a function header. Recorded as follow-up 2."
+  },
+  "recompilability": {
+    "question": "does this worsen the `::`-in-a-C-header problem that blocks recompilation?",
+    "answer": "no -- the header is bit-identical, and C output is untouched on every axis",
+    "c_export_fmt_x86_64": {
+      "colons_c": 0,
+      "colons_h": 0,
+      "gcc_errors_before": 8,
+      "gcc_errors_after": 8
+    },
+    "cpp_export_probe_O0_header": {
+      "colons_before": 122,
+      "colons_after": 122,
+      "tilde_before": 22,
+      "tilde_after": 22,
+      "braces_before": 3,
+      "braces_after": 3
+    },
+    "cpp_export_probe_O0_body": {
+      "colons_before": 246,
+      "colons_after": 410,
+      "gcc_errors_before": 316,
+      "gcc_errors_after": 407
+    },
+    "note": "the C++ project export was already not C (316 gcc -fsyntax-only errors before), and the .h is produced from the canonical function names this change does not touch, so nothing recompilable regresses. The .c bodies gain `::` at call sites, which is what IDA 9.2 and Ghidra 12.1 print. A sanitized identifier spelling for the export path is follow-up 1 -- a project-export policy that must rewrite .h and .c consistently, including the pre-existing `void Account::~Account(void)` headers and `{virtual override thunk}` names."
+  },
+  "follow_ups": [
+    "project-export identifier sanitization (kuna-console/src/project.rs build_header/build_c)",
+    "address-taken function names render unqualified (Funcdata::link_spacebase_symbol uses the unscoped name_for_global_varnode; pre-existing, 3 lines in this sweep)",
+    "the sibling commit arms (out.symbols, read_loader_symbols) still use a scope-local probe; no witness implicated them, so they were left alone rather than changed on suspicion",
+    "a debug-info name does not displace a weaker loader name in the Database: on macho_dwarf.o the symtab _l0 is installed first, so the DWARF fact first_byte lives only in the register_symbol stream -- kuna functions reports first_byte (entry_name_rank prefers it) while --addr 0x0 reports _l0 (the Database). Pre-existing on both sides of this change; a naming-policy question, not a lookup fix."
+  ],
+  "speed": {
+    "method": "no option to flip, so scripts.pipeline.timeit (which times ONE binary off vs on) does not apply -- the same reason DIV-58 recorded its own measurement. The OFF arm is the pre-change `kuna` from the main tree, the ON arm is this build; runs are interleaved to cancel drift. MINIMUM reported: the box is shared with concurrent agents, so medians are contaminated (a first 5-pair pass reported +40.96% on probe_O0 that an 11-pair re-run resolved to -0.46% on the minimum).",
+    "units": "ms (wall clock, whole process incl. spawn + spec mmap + load)",
+    "budget_pct": 5.0,
+    "rows_5pair_min": [
+      {
+        "surface": "kuna decompile-all",
+        "binary": "probe_O0 (C++)",
+        "off": 367.8,
+        "on": 518.4,
+        "delta_pct": 40.96
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "cpp_noreturn (C++)",
+        "off": 156.4,
+        "on": 122.4,
+        "delta_pct": -21.74
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "fmt_x86_64 (C)",
+        "off": 148.5,
+        "on": 148.1,
+        "delta_pct": -0.27
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "/usr/bin/ls (C, stripped)",
+        "off": 31445.3,
+        "on": 31030.3,
+        "delta_pct": -1.32
+      },
+      {
+        "surface": "kuna functions",
+        "binary": "/bin/grep (C, stripped)",
+        "off": 617.2,
+        "on": 616.8,
+        "delta_pct": -0.06
+      },
+      {
+        "surface": "kuna decompile",
+        "binary": "probe_O0 probe_member_fields",
+        "off": 157.9,
+        "on": 152.5,
+        "delta_pct": -3.39
+      }
+    ],
+    "rows_11pair": [
+      {
+        "surface": "kuna functions",
+        "binary": "probe_O0 (C++, load+commit only)",
+        "off_min": 149.2,
+        "on_min": 142.8,
+        "off_median": 200.9,
+        "on_median": 206.3,
+        "delta_min_pct": -4.29,
+        "delta_median_pct": 2.71,
+        "n": 11
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "probe_O0 (C++)",
+        "off_min": 358.1,
+        "on_min": 356.5,
+        "off_median": 366.0,
+        "on_median": 358.9,
+        "delta_min_pct": -0.46,
+        "delta_median_pct": -1.93,
+        "n": 11
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "cpp_noreturn (C++)",
+        "off_min": 111.7,
+        "on_min": 110.4,
+        "off_median": 119.7,
+        "on_median": 155.2,
+        "delta_min_pct": -1.14,
+        "delta_median_pct": 29.63,
+        "n": 11
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "eh_lsda (C++)",
+        "off_min": 118.9,
+        "on_min": 117.6,
+        "off_median": 128.9,
+        "on_median": 126.6,
+        "delta_min_pct": -1.12,
+        "delta_median_pct": -1.75,
+        "n": 11
+      }
+    ],
+    "worst_delta_pct": -0.46,
+    "within_budget": true,
+    "note": "The changed code is one probe per discovered entry at commit time. find_function_across_scopes still hits the global scope first (the common case, and the only case on a C binary), and only walks the remaining scopes on a miss. The `kuna functions` row isolates load+commit with no decompilation and shows no cost. Every 11-pair minimum is between -4.29% and -0.46%."
+  },
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_worst_delta_pct": -0.46,
+  "speed_metric": "interleaved before/after wall clock, minimum of 11 pairs",
+  "ablation": {
+    "method": "pre-fix engine.rs/ifacedecomp.rs restored via git show HEAD:<path> (files copied aside; never git stash -- refs/stash is shared across worktrees)",
+    "verify_cppcallnames_against_pre_fix": "1 passed / 2 failed",
+    "failing": [
+      "namespaced_callee_renders_qualified_with_discovery_on",
+      "load_addr_header_uses_the_known_symbol_name"
+    ],
+    "passing": [
+      "discovery_still_names_genuinely_unknown_entries (the control -- passes both ways by design)"
+    ]
+  },
+  "existing_tests_changed": {
+    "verify_multiformat_dwarf": "the only test in the workspace that moved. It used load addr -- with the DWARF pass still ON -- as its no-DWARF-name baseline, asserting sub_140001550 / sub_0; that held only because load addr ignored the symbol table, i.e. it was pinning the bug. The baseline arm now turns the pass off (option dwarf off), which is what it always meant: on the PE nothing else names 0x140001550 (COFF FUNC entry --strip-symbol-removed) so the sub_140001550 assertion is unchanged and now truthful; on the Mach-O the --redefine-sym-ed symtab entry _l0 remains, so the baseline asserts _l0 -- a sharper statement of DWARF-only than a placeholder. Both DWARF-recovery assertions untouched."
+  },
+  "discovery_inventory_check": {
+    "surface": "kuna functions --json, before vs after, name + alias set per entry address",
+    "fixtures": 15,
+    "fixtures_identical": 15,
+    "covered": [
+      "arm_thumb_linked_le32",
+      "arm_thumb_switch_le32",
+      "entrymain_arm",
+      "entrymain_aarch64",
+      "entrymain_riscv64",
+      "cortexm_tailcall_le32",
+      "cortexm_ptrentry_le32",
+      "cortexm_ccm_vectors_le32",
+      "funcstart_patterns_x86_64",
+      "aif_gap_x86_64",
+      "macho_func_starts_stripped",
+      "fauxware",
+      "dwarf_stripped_x86_64",
+      "cet_pie_x86_64",
+      "i386_pie_nl"
+    ],
+    "note": "zero entries lost, gained, or renamed anywhere -- the fix changes naming only when a function already exists at the exact same address in a non-global scope."
+  }
+}
