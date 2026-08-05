@@ -179,6 +179,10 @@ Three tiers:
 | Foo *this renders as void * | [`cppproto`](#cppproto) |
 | a namespaced or templated function loses its dwarf prototype | [`cppproto`](#cppproto) |
 | one unmappable parameter type discards the whole dwarf signature | [`cppproto`](#cppproto) |
+| c++ member functions on a stripped binary decompile with a0/a1 parameters | [`cppsig`](#cppsig) |
+| this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig) |
+| a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig) |
+| no signature recovery on a stripped c++ shared library | [`cppsig`](#cppsig) |
 | mcount/__fentry__ profiling calls clutter every -pg function prologue | [`callfixup`](#callfixup) |
 | cspec call-fixup targets rendered as plain calls instead of dissolved | [`callfixup`](#callfixup) |
 | absolute function-pointer table in rodata never recognized | [`addrtable`](#addrtable) |
@@ -722,6 +726,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) gives a -g C++ binary its real signatures: Account::deposit(Account *this,int amount) instead of Account::deposit(int4 *a0,int4 a1). Flip off to restore the name-only DWARF walk (every out-of-line member function loses its parameter names, types and stack locals).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cppproto
 - **Example:** `option cppproto off`
+
+### `cppsig` -- off | proven | inferred, default `proven`
+
+- **Symptoms:** c++ member functions on a stripped binary decompile with a0/a1 parameters; this renders as int8 * or unsigned long instead of the class type; a mangled symbol names the function but not its parameter types; no signature recovery on a stripped c++ shared library.
+- **What it does:** Apply the DEMANGLED C++ signature - the class type for `this` plus the declared parameter types - to every function whose mangled symbol survives, which on a STRIPPED C++ shared library is the whole exported API in .dynsym and the only signature source left. Parses the full c++filt-style form (the same string the Ghidra GNU demangler parses), maps a class-shaped parameter to a named opaque structure reachable only as a pointee, refuses any by-value aggregate or overloaded operator, and parks the prototype by entry ADDRESS. The return type is deliberately NOT applied: Itanium encodes one only for a template function, so the function keeps whatever kuna's own recovery finds. Three-valued because Itanium mangling cannot tell a static member function from a non-static one and adding a `this` that is not there shifts every following parameter: `proven` applies only the shapes the mangling entails (constructors, destructors, cv-/ref-qualified members, unqualified globals, explicit MSVC access/static/convention), `inferred` also decides the ambiguous nested names from class evidence mined out of the binary's own symbols.
+- **When to flip:** proven (default) is precision 1.0000 / recall 0.7093 on google/leveldb: `void leveldb::Cache::~Cache(Cache *this)` instead of `void leveldb::Cache::~Cache(unsigned long a0)`. Raise to inferred for precision 0.9278 / recall 0.9978 - it additionally recovers plain (non-const, non-ctor) member functions like `leveldb::TableBuilder::WriteBlock(TableBuilder *this,BlockBuilder *a1,BlockHandle *a2)` and namespaced free functions like `leveldb::NewMemEnv(Env *a0)`, at the cost of a spurious `this` on a static member. Flip off to restore name-only demangling.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cppsig
+- **Example:** `option cppsig inferred`
 
 ### `callfixup` -- on | off, default `on`
 

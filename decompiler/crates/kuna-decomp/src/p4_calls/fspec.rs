@@ -5516,6 +5516,20 @@ impl FuncProto {
     /// `ActionPrototypeTypes` forces the input/output Varnodes and
     /// `ActionInputPrototype` leaves the locked input untouched.
     ///
+    /// (kuna `cppsig`) An `outtype` of `None` with no `output_storage` means "the
+    /// source declares the PARAMETERS but not the return type" — the shape a C++
+    /// mangled symbol has, since the Itanium ABI encodes a return type only for a
+    /// template function. Storage assignment needs *some* output to work with, so
+    /// `void` is seeded and the OUTPUT lock is released again, leaving the return
+    /// type to whatever recovery finds. This is upstream's behavior:
+    /// `DemangledFunction.resolveReturnType` returns null in exactly this case and
+    /// `ApplyFunctionSignatureCmd` keeps the function's existing return type;
+    /// inventing `void` would DELETE every recovered return value. Handled here
+    /// rather than at one call site so the caller-side rebuild
+    /// (`ActionDefaultParams`, which types a call's arguments from the callee's
+    /// parked pieces) sees the same contract. Distinct from the `map return`
+    /// output-only pieces, which carry `output_storage`.
+    ///
     /// [`attach_internal_store`]: FuncProto::attach_internal_store
     /// [`set_pieces`]: FuncProto::set_pieces
     pub fn seed_locked_from_pieces(
@@ -5528,7 +5542,14 @@ impl FuncProto {
     ) -> KunaResult<()> {
         // Seed the model + store the way setScope would, before update_all_types
         // (which needs both: it does setModel(model) and store->clearAllInputs()).
-        self.attach_internal_store(void_type);
+        self.attach_internal_store(Rc::clone(&void_type));
+        if pieces.outtype.is_none() && pieces.output_storage.is_none() {
+            let mut input_only = pieces.clone();
+            input_only.outtype = Some(void_type);
+            self.set_pieces(&input_only, Some(defaultfp), typefactory, manager)?;
+            self.set_output_lock(false);
+            return Ok(());
+        }
         self.set_pieces(pieces, Some(defaultfp), typefactory, manager)
     }
 

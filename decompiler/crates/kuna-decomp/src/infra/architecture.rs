@@ -762,6 +762,15 @@ pub struct Architecture {
     /// entry ADDRESS instead of by name. Off restores the name-only walk, which
     /// drops the signature of every out-of-line C++ member function.
     pub analysis_cppproto: bool,
+    /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
+    /// [`CppSigMode::Proven`]. Commits the prototypes read off a MANGLED SYMBOL —
+    /// the class type for `this` plus the declared parameter types — which is the
+    /// only signature source left on a STRIPPED C++ binary. Three-valued because
+    /// Itanium mangling cannot distinguish a static member function from a
+    /// non-static one: `proven` applies only the shapes the mangling entails,
+    /// `inferred` also decides the ambiguous ones from class evidence, `off`
+    /// restores name-only demangling. See [`crate::kuna_cppsig`].
+    pub analysis_cppsig: crate::kuna_cppsig::CppSigMode,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
     pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
@@ -1212,6 +1221,7 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_dwarf_lines: false,
             analysis_cppproto: false,
+            analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
@@ -1364,6 +1374,11 @@ impl Architecture {
         self.analysis_dwarf = true;
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
+        // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
+        // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
+        // unqualified global), measured at precision 1.0000 on google/leveldb.
+        // Real-object path only, so every parity gate is byte-identical.
+        self.analysis_cppsig = crate::kuna_cppsig::CppSigMode::Proven;
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
@@ -1650,6 +1665,11 @@ impl Architecture {
             }
             "cppproto" => {
                 on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
+            }
+            "cppsig" => {
+                let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;
+                self.analysis_cppsig = mode;
+                Ok(msg)
             }
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),

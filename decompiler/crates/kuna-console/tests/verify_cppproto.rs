@@ -59,6 +59,14 @@ fn decompile(func: &str, cppproto: bool) -> Option<String> {
     prog.arch_mut()
         .set_kuna_option("cppproto", if cppproto { "on" } else { "off" })
         .expect("cppproto is a registered option");
+    // (kuna `cppsig`) The SIBLING recovery is turned off in BOTH arms so this file
+    // measures the DWARF arm alone. `cppsig` reads the same shapes off the mangled
+    // symbol, so with it at its `proven` default the "gate off = the bug" baseline
+    // stopped reproducing: `Account::available` came back as `Account *this` (a
+    // `const` member is a proven `this`) and `probe_virtual_call` as `Shape *a0`
+    // (an unqualified global proves it has none). Their interaction — DWARF wins
+    // where both reach a function — is asserted in `verify_cppsig.rs`.
+    prog.arch_mut().set_kuna_option("cppsig", "off").expect("cppsig is a registered option");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> =
