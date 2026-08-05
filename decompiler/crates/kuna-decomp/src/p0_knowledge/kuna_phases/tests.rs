@@ -41,7 +41,7 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_94() {
+fn settable_count_is_95() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -57,12 +57,12 @@ fn settable_count_is_94() {
     // +1 for `typedepth` (P1 full-depth DWARF type resolution, DIV-63).
     // +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable recovery, DIV-64).
     // +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
-    assert_eq!(kuna_num_settables(), 94);
-    assert_eq!(SETTABLE_TABLE.len(), 94);
+    assert_eq!(kuna_num_settables(), 95);
+    assert_eq!(SETTABLE_TABLE.len(), 95);
 }
 
 #[test]
-fn tier_counts_are_20_core_41_transform_33_analysis() {
+fn tier_counts_are_20_core_41_transform_34_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -89,7 +89,7 @@ fn tier_counts_are_20_core_41_transform_33_analysis() {
     // analysis 32 -> 33: +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable
     // recovery, DIV-64).
     // analysis 33 -> 34: +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
-    assert_eq!((core, transform, analysis), (20, 41, 33));
+    assert_eq!((core, transform, analysis), (20, 41, 34));
 }
 
 #[test]
@@ -544,7 +544,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
     // row and libcsigs' S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 93);
+    assert_eq!(json.matches("},\n").count(), 94);
 }
 
 #[test]

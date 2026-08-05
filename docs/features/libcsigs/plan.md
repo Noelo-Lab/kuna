@@ -37,6 +37,42 @@ safe where 27 were safe by luck.
   `kuna_console::kuna_live_value`. No `live_field` in `phases.toml`, matching
   `libproto` and every other analysis-pass gate.
 
+## Preset membership: deliberately NOT in `AGGRESSIVE_OVERRIDES`
+
+`aggressive_carries_every_default_off_option` (added by #267) enforces that every
+**default-off** on/off option is either in the preset or on a named exclusion list,
+because `auto` resolves to `aggressive` under 500 KiB and an option that is
+default-off and absent from the preset ships inert on the default path — how
+`itaniumrtti` recovered 0 of 29 until it was caught. `libcsigs` ships **ON**, so it
+is out of that test's scope by construction, but the question still deserves an
+answer on evidence rather than on the test passing.
+
+**Measured** on `dircolors` (55,680 bytes, so `auto` → `aggressive`), default vs
+`--option libcsigs off`, whole-binary `decompile-all`:
+
+| mode | functions differing | cast-removal witness |
+|---|---:|---|
+| (no `--mode`, i.e. `auto`) | 57 of 184 | yes |
+| `--mode aggressive` | 57 of 184 | yes |
+| `--mode reliable` | 58 of 183 | yes |
+| `--mode fast` | 58 of 184 | yes |
+
+So the feature is already live on **every** mode and every driver surface, and the
+inertness failure mode cannot occur: no preset turns anything off except `fast`'s
+three discovery gates, and an option absent from a preset keeps its default.
+
+Adding `("libcsigs", "on")` would be worse than redundant. `AGGRESSIVE_OVERRIDES`'s
+own doc records that the preset **owns** an option outright — "a user
+`--option returndup off` earlier on the command line is re-enabled by the preset".
+Every benchmark and sweep number in this PR was produced by `--option libcsigs off`
+on binaries under 500 KiB, i.e. straight through the `auto` → `aggressive` path.
+Putting the option in the preset would silently re-enable it there and destroy the
+ablation hook that is half the reason the flag exists.
+
+Because the option is not joining the preset, this PR needs no second DIV row for
+preset membership (which is what #267's DIV-64 exists for); DIV-65 covers the
+default-ON decision alone.
+
 ## Testing
 
 `kuna-console/tests/verify_libcsigs.rs`, five two-pass assertions over the existing

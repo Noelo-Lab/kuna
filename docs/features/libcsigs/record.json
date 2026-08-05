@@ -174,11 +174,17 @@
     "docs/options.md"
   ],
   "catalog_counts": {
-    "settables": "93 -> 94",
-    "tiers": "(20 core, 41 transform, 32 analysis) -> (20, 41, 33)",
-    "catalog_json_rows": "92 -> 93",
-    "phase_catalog.json fixture": "93 -> 94 (recaptured from a fresh release build)"
+    "settables": "94 -> 95",
+    "tiers": "(20 core, 41 transform, 33 analysis) -> (20, 41, 34)",
+    "catalog_json_rows": "93 -> 94",
+    "phase_catalog.json fixture": "94 -> 95 (recaptured from a fresh release build)",
+    "derivation": "every value COUNTED out of the freshly captured phase_catalog.json, not computed from the previous number. The rebase onto #267 auto-merged catalog_bytecompat.rs to 94 with NO conflict -- #267 and this PR had made the identical 93 -> 94 edit -- so the committed value was short by one until the capture corrected it. docs/options.md independently reports 95 option headings."
   },
   "div_row": "DIV-65 (docs/history.md): libcsigs ships default-ON",
-  "notes": "No tests/stages/*.xml case: the XML datatest bootstrap builds its program from a <binaryimage> element and never runs the analyzer tier, the same reason verify_cppsig / verify_cppproto / verify_fdeinterior exist. VARIADIC_SUBSTRINGS is deliberately NOT touched -- formatstring/apply.rs matches by `contains`, so __printf_chk is already treated as a format-string callee with the format at slot 0 when it is at slot 1; that is a separate, pre-existing behaviour change and belongs in its own PR."
+  "notes": "No tests/stages/*.xml case: the XML datatest bootstrap builds its program from a <binaryimage> element and never runs the analyzer tier, the same reason verify_cppsig / verify_cppproto / verify_fdeinterior exist. VARIADIC_SUBSTRINGS is deliberately NOT touched -- formatstring/apply.rs matches by `contains`, so __printf_chk is already treated as a format-string callee with the format at slot 0 when it is at slot 1; that is a separate, pre-existing behaviour change and belongs in its own PR.",
+  "preset_decision": {
+    "in_aggressive_overrides": false,
+    "why": "libcsigs ships default-ON, so it is already live on every mode and every driver surface; the aggressive_carries_every_default_off_option invariant (#267) is scoped to default-OFF options and skips it. Measured on dircolors (55,680 bytes, so `auto` -> `aggressive`): default vs `--option libcsigs off` differs in 57/184 functions under auto, 57/184 under aggressive, 58/183 under reliable and 58/184 under fast, with the cast-removal witness present in all four. Adding it would be worse than redundant: AGGRESSIVE_OVERRIDES' own doc records that the preset OWNS an option ('a user --option returndup off earlier on the command line is re-enabled by the preset'), and every benchmark and sweep number here was produced by `--option libcsigs off` on sub-500 KiB binaries, i.e. straight through auto -> aggressive. Preset membership would silently re-enable it there and destroy the ablation hook.",
+    "second_div_row_needed": false
+  }
 }
