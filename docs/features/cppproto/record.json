@@ -1,0 +1,121 @@
+{
+  "opportunity": "kuna's DWARF pass applied parameter names/types only to functions whose name had no `::` or `<` \u2014 a perfect split measured on a purpose-built C++ probe binary",
+  "test_name": "kuna-console verify_cppproto (7 two-pass e2e assertions) + whole-binary decompile-all sweeps",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/cppproto_x86_64",
+  "selector": "Account::deposit",
+  "func_addr": "0x4011b2",
+  "angr_version": null,
+  "option": "cppproto",
+  "flag": "analysis_cppproto",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "Ghidra DWARFFunctionImporter / DIEAggregate (a definition DIE fused with its DW_AT_specification declaration), DWARFName (the namespace path), DWARFDataTypeImporter (DW_TAG_class_type mapped like a structure, a reference like a pointer)",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "root_cause": "NOT name-vs-address binding as first hypothesized. An out-of-line C++ member or namespace DEFINITION carries no DW_AT_name of its own \u2014 the name lives on the DW_AT_specification declaration \u2014 so `snap.name.is_empty()` dropped the DIE whole (name, prototype AND stack locals) before any binding was attempted. Name-keyed prototype binding is a SECOND, independent defect that the template cases expose: kuna files the demangled `maxof<int>` as `maxof`, and a qualified name lives in a nested scope the global by-name query never reaches.",
+  "speed": {
+    "witness": {
+      "binary": "decompiler/crates/kuna-analysis/tests/fixtures/cppproto_x86_64",
+      "selector": "Account::deposit",
+      "speed_off_ms": 147.43,
+      "speed_on_ms": 149.78,
+      "speed_delta_pct": 1.59,
+      "speed_samples": 9,
+      "speed_budget_pct": 5.0,
+      "speed_within_budget": true,
+      "speed_forced_off": false,
+      "interleaved_min_of_15_delta_pct": 1.72,
+      "interleaved_median_of_15_delta_pct": -62.51,
+      "measured_on": "rebased onto main @1cff8ecb (PR #262)"
+    },
+    "c_regression_guard": {
+      "binary": "decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64",
+      "selector": "fmt",
+      "speed_off_ms": 472.91,
+      "speed_on_ms": 414.47,
+      "speed_delta_pct": -12.36,
+      "speed_samples": 9,
+      "speed_budget_pct": 5.0,
+      "speed_within_budget": true,
+      "interleaved_min_of_15_delta_pct": -0.83,
+      "interleaved_median_of_15_delta_pct": -0.46,
+      "measured_on": "rebased onto main @1cff8ecb (PR #262)"
+    },
+    "note": "The DWARF walk itself runs identically with the gate on or off (the C++ facts are always computed, then dropped at commit when off), so the only marginal cost is committing them. The min-of-15 interleaved deltas are the trustworthy numbers on a box running concurrent agents: +1.72% on the witness and -0.83% on the C guard, both well inside the +5% budget. Single-shot medians swing wildly with load (an early fmt run reported +38.6% and did not reproduce in four re-runs), and where the on side is genuinely faster it is because a locked prototype skips output-trial recovery."
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK (394/394)",
+    "make rust-test": "green",
+    "make check-spec": "OK (lenient + strict)",
+    "kuna catalog --check": "catalog OK"
+  },
+  "sweeps": {
+    "regglobal_fmt_x86_64 (real C, coreutils fmt, -O2 -g)": {
+      "functions": 169,
+      "changed": 9,
+      "new_errors": 0,
+      "arity_drops": 0,
+      "classification": "all 9 are improvements: `void *` parameters resolved to their real pointee (`char **authors`, `int8 *pn`, `uint8 *val`, `__mbstate_t *ps`) once transparent qualifier hops stopped consuming the type-mapper depth budget, plus one DWARF parameter name (`bool same_paragraph`)"
+    },
+    "cpp probe -O0 (C++ with STL, g++ -O0 -g)": {
+      "functions": 190,
+      "changed": 83,
+      "new_errors": 0,
+      "arity_drops": 0,
+      "classification": "member/namespace/template functions recover `this` + parameter names + types; one mangled name (`_ZSt14__relocate_a_1I...`) is replaced by its DWARF qualified name"
+    },
+    "cpp probe -O2 (C++ with STL, g++ -O2 -g)": {
+      "functions": 72,
+      "changed": 7,
+      "new_errors": 0,
+      "arity_drops": 0,
+      "classification": "all improvements (`Shape *`/`Account *`/`Circle *this` parameters and their DWARF names)"
+    },
+    "dwarf_globals_x86_64 (small C -O0 -g)": {
+      "functions": 11,
+      "changed": 0
+    },
+    "measured_on": "rebased onto main @1cff8ecb (PR #262); BOTH arms re-captured on the rebased tree, so #262's C++ call-site renames are in the baseline and do not pollute the diff"
+  },
+  "regressions_found_and_fixed_by_the_sweep": [
+    "GCC IPA clone: `put_word.isra.1` (coreutils fmt, 0x23d0) is a nameless subprogram whose DW_AT_abstract_origin points at `put_word`, and whose TWO formal parameters both link to the SAME source parameter `Word *w` (IPA-SRA split the aggregate). Chasing that link produced `put_word(Word *w,Word *w)` and pushed the wrong callee signature into `put_line`. Fixed by following DW_AT_specification only for the subprogram link.",
+    "Variadic-template arity: `std::vector<int>::emplace_back<int>` keeps its expanded pack argument inside a `DW_TAG_GNU_formal_parameter_pack` grouping DIE, not as a direct child. Reading only direct children locked a one-parameter signature and dropped the argument at every call site. Fixed by flattening the pack.",
+    "Zero-width by-value aggregate: a `DW_TAG_class_type` maps to a named OPAQUE type of size 0 (fields are the sibling increment), and a zero-width by-value parameter failed `std::vector<int>::_M_realloc_insert` outright ('dereferencing a null/sentinel space pointer'). Fixed by degrading any non-positive-size parameter type to an `undefined<n>` at the DIE's own byte size.",
+    "Anonymous-aggregate name collision: naming every unnamed struct `anon_struct` fuses unrelated types under one interned name, which the qualifier-strip made reachable in many more places. Fixed by naming an anonymous aggregate after the typedef it was reached through (`__mbstate_t`, not `anon_struct`)."
+  ],
+  "files": [
+    "decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppproto.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs",
+    "decompiler/crates/kuna-analysis/src/pass.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/tests/verify_cppproto.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/cppproto_x86_64",
+    "decompiler/crates/kuna-analysis/tests/fixtures/cppproto_x86_64.cpp",
+    "docs/spec/01-program-prep.md"
+  ],
+  "catalog_counts": {
+    "settables": "89 -> 90",
+    "tiers": "(20 core, 41 transform, 28 analysis) -> (20, 41, 29)",
+    "catalog_json_rows": "88 -> 89",
+    "phase_catalog.json fixture": "89 -> 90 (recaptured)"
+  },
+  "div_row": "DIV-60 (docs/history.md): cppproto ships default-ON",
+  "notes": "Scope is function PROTOTYPES only. Struct/class FIELD population from DW_TAG_member/DW_AT_data_member_location is deliberately out of scope (a class stays a named opaque, so `this->balance` still prints as an offset); the seam for it is `build_datatype`'s struct/class arms, untouched by this change. `DW_AT_object_pointer` \u2014 the attribute Ghidra's ThisCallingConventionDWARFFunctionFixup uses to select `__thiscall` \u2014 is not acted on: kuna cannot register a `__thiscall` model yet (ProtoModel::decode is a stub), so the artificial `this` is passed as an ordinary first parameter, which is what the x86-64 SysV ABI does anyway.",
+  "rebased_onto": "main @1cff8ecb (PR #262, DIV-59) \u2014 this feature's DIV row renumbered to DIV-60",
+  "speed_off_ms": 147.43,
+  "speed_on_ms": 149.78,
+  "speed_delta_pct": 1.59,
+  "speed_samples": 9,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false
+}

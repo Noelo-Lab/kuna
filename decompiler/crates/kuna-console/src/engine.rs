@@ -1428,6 +1428,23 @@ fn commit_analysis_output(
 
     let num_spaces = prog.arch().manage().num_spaces();
 
+    // 0. (kuna `cppproto`) The DWARF C++ arm's facts. The producing pass runs at
+    //    `load file`, upstream of the `option` commands, so it stashes them apart
+    //    and the live gate is HERE: on, they fold into the normal symbol/local
+    //    streams below and their address-keyed prototypes are applied at step 5a;
+    //    off, they are dropped and the DWARF recovery is the name-only walk,
+    //    byte-identical to before this arm existed.
+    let mut out = out;
+    if prog.arch().analysis_cppproto {
+        let cpp = std::mem::take(&mut out.cpp_dwarf);
+        out.symbols.extend(cpp.symbols);
+        out.locals.extend(cpp.locals);
+        out.cpp_dwarf.prototypes = cpp.prototypes;
+    } else {
+        out.cpp_dwarf.prototypes.clear();
+    }
+    let out = out;
+
     // 1. Extra symbols a pass discovered. Function symbols install like the
     //    funcsym stream (idempotent); Data symbols (typed string/data objects)
     //    land via add_symbol_mapped. (No pass emits these yet in this increment;
@@ -1772,6 +1789,17 @@ fn commit_analysis_output(
     for pieces in out.prototypes {
         let name = pieces.name.clone();
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
+    }
+
+    // 5a. (kuna `cppproto`) The DWARF prototypes bound by ENTRY ADDRESS. Applied
+    //     AFTER the by-name pass so the address-resolved signature wins wherever
+    //     both reach the same function — address is the key the read side already
+    //     uses, and the only one that survives C++ (a demangled template name is
+    //     normalized to `maxof`; a qualified name lives in a nested scope the
+    //     global by-name query never reaches). Empty when the gate is off.
+    for (addr, pieces) in out.cpp_dwarf.prototypes {
+        let a = Address::new(Rc::clone(code_space), addr);
+        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's

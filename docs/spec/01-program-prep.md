@@ -314,6 +314,41 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/lines.rs (DwarfLinesPass)`)
   is the separate `.debug_line` pass: each row becomes a `file:line` instruction
   comment in the commentdb; default-off because it changes the output.
+- **DWARF C++ prototypes** (`cppproto`, default-on,
+  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppproto.rs`) is the
+  C++ arm of that same pass. Keying every recovery off a subprogram DIE's own
+  `DW_AT_name` is right for C and wrong for C++, where the compiler splits a
+  definition from its declaration: an out-of-line member or namespace definition
+  carries only `DW_AT_specification`, and a concrete out-of-line instance of an
+  inlined function only `DW_AT_abstract_origin`. Neither has a name of its own, so
+  the whole DIE — name, signature and stack locals — used to be dropped, and on a
+  `-g` C++ binary that is most of the program. This arm fuses the definition with
+  the declaration it points at (a **single hop**: what a definition points at is
+  always a declaration, never another indirection — the reduction of Ghidra's
+  `DIEAggregate`), takes the name, return type and parameter names from whichever
+  DIE carries them, and builds the source name by walking the DIE's
+  namespace/class ancestry (`DWARFName`), so the installed symbol carries
+  `Account::deposit` rather than the bare `deposit` the declaration DIE holds. Three type-mapper corrections ride
+  along: `DW_TAG_class_type` maps like a structure and a C++ reference like a
+  pointer (both are what Ghidra's importer does, and without the first every
+  `Foo *this` degraded to `void *`); transparent qualifier hops
+  (`typedef`/`const`/`volatile`/`restrict`) stop consuming the recursion budget,
+  because a `const` member function's `this` is `const Account *const` — four DIEs
+  deep, one more than the cap; and a parameter whose type the switch still cannot
+  map degrades to an `undefined<n>` of that DIE's own width instead of discarding
+  the entire signature, so one exotic member type costs one parameter's type
+  rather than the function's whole prototype. Finally the recovered prototype is
+  parked by **entry address** rather than by name. Address is the key the read
+  side already uses, and the only one that survives C++: kuna files the demangled
+  template name `maxof<int>` as `maxof`, and a qualified name lives in a nested
+  scope that a global by-name query cannot reach — so both the drive's own-prototype
+  lookup (04 §4.2) and the callee-prototype snapshot resolve across every scope,
+  not just the global one. The producing pass runs at `load file`, upstream of the
+  `option` commands, so its C++ facts are stashed apart from the always-on ones and
+  the gate is applied where they are committed; with `cppproto off` the DWARF
+  recovery is the name-only walk, byte for byte. Struct/class **fields** are still
+  not populated — a class remains a named opaque, so `this->balance` prints as an
+  offset — which is the next increment, not this one.
 - **Demangling** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/mod.rs
   (demangle_name)`, the `GnuDemanglerAnalyzer` analog) is not a registered pass but
   a loader hook: applied to every funcsym name after `@VERSION` stripping, before

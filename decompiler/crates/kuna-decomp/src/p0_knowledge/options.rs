@@ -335,6 +335,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "dwarf",
     // (kuna) DWARF `.debug_line` source-line comments; default-off (output-changing).
     "dwarf_lines",
+    // (kuna) The DWARF C++ prototype arm: resolve a subprogram definition through
+    // its `DW_AT_specification`/`DW_AT_abstract_origin` link (an out-of-line
+    // member definition carries no `DW_AT_name` of its own), qualify the name by
+    // its namespace/class ancestry, map `DW_TAG_class_type`/reference types, and
+    // bind the recovered prototype by entry ADDRESS rather than by name. The
+    // producing pass runs at `load file`, upstream of the `option` commands, so
+    // the facts are stashed apart and this flag gates their COMMIT
+    // (`engine.rs::commit_analysis_output`). Default-ON.
+    "cppproto",
     "callfixup",
     "addrtable",
     "operand_refs",

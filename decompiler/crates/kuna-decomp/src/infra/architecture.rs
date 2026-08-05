@@ -716,6 +716,13 @@ pub struct Architecture {
     /// default **off** — it changes the decompiled output (adds `/* file:line */`
     /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
     pub analysis_dwarf_lines: bool,
+    /// (kuna) Gate the DWARF C++ prototype arm (`cppproto`); default **on**.
+    /// Commits the DWARF facts recovered by resolving a subprogram definition
+    /// through its `DW_AT_specification`/`DW_AT_abstract_origin` link, qualifying
+    /// the name by its namespace/class ancestry, and binding the prototype by
+    /// entry ADDRESS instead of by name. Off restores the name-only walk, which
+    /// drops the signature of every out-of-line C++ member function.
+    pub analysis_cppproto: bool,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
     pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
@@ -1164,6 +1171,7 @@ impl Architecture {
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_dwarf_lines: false,
+            analysis_cppproto: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
@@ -1313,6 +1321,7 @@ impl Architecture {
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
+        self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
@@ -1594,6 +1603,9 @@ impl Architecture {
             "dwarf_lines" => {
                 on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
             }
+            "cppproto" => {
+                on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
+            }
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
             "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
@@ -1838,6 +1850,27 @@ impl Architecture {
         pieces: crate::fspec::PrototypePieces,
     ) {
         if let Ok(sid) = self.query_global_function(name) {
+            self.symboltab.set_function_proto_pieces(sid, pieces);
+        }
+    }
+
+    /// (kuna `cppproto`) Park a recovered prototype on the FunctionSymbol at
+    /// `addr`, in whatever scope it lives (`find_function_across_scopes`) — the
+    /// address-keyed companion of [`Self::set_function_prototype_pieces`].
+    ///
+    /// Address is the key the READ side already uses
+    /// ([`Database::function_proto_pieces`]), and the only key that survives C++:
+    /// a demangled template name is normalized (`maxof<int>` is filed as `maxof`)
+    /// and a qualified name lives in a nested scope, so the by-name park silently
+    /// misses both.  Faithful to Ghidra, whose `DWARFFunction` is keyed by
+    /// `getCodeAddress(dwarfBody.getFirstAddress())`.  A silent no-op when no
+    /// FunctionSymbol starts at `addr`.
+    pub fn set_function_prototype_pieces_at(
+        &mut self,
+        addr: &Address,
+        pieces: crate::fspec::PrototypePieces,
+    ) {
+        if let Some((sid, _)) = self.symboltab.find_function_across_scopes(addr) {
             self.symboltab.set_function_proto_pieces(sid, pieces);
         }
     }
