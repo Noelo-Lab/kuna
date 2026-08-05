@@ -139,6 +139,11 @@ Three tiers:
 | vN = aM; for an unmodified incoming parameter appearing in the middle of a guard cascade | [`paramcopyhoist`](#paramcopyhoist) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
+| a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
+| a libc call renders its string argument as a bare 0x... constant instead of a literal | [`libcsigs`](#libcsigs) |
+| a wrapper around a libc function loses its return value or return type | [`libcsigs`](#libcsigs) |
+| __printf_chk / __fprintf_chk arguments are shifted by the fortify flag | [`libcsigs`](#libcsigs) |
+| an exit or __stack_chk_fail call shows phantom arguments | [`libcsigs`](#libcsigs) |
 | string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings) |
 | no data symbols at ascii runs in rodata | [`strings`](#strings) |
 | a stripped binary yields almost no functions (symbol stream only) | [`entry_disc`](#entry_disc) |
@@ -622,6 +627,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) types call arguments so string literals render (puts("...")); off leaves the bare constant/untyped argument.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-libproto
 - **Example:** `option libproto off`
+
+### `libcsigs` -- on | off, default `on`
+
+- **Symptoms:** a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int; a libc call renders its string argument as a bare 0x... constant instead of a literal; a wrapper around a libc function loses its return value or return type; __printf_chk / __fprintf_chk arguments are shifted by the fortify flag; an exit or __stack_chk_fail call shows phantom arguments.
+- **What it does:** Seed the MEASURED extension of the built-in libc prototype table: the ~200 further signatures the 27-entry libproto table does not carry (exit, gettext, dcgettext, error, strerror, strdup, strcasecmp, close, open, read, write, stat, getenv, syslog, the FORTIFY __printf_chk/__fprintf_chk/__memcpy_chk family, __errno_location, __stack_chk_fail, ...), ranked by call-site frequency over the frozen decbench C corpus and reduced from the platform headers. Applied ONLY to names the image imports and does not itself define, so a program's own function that happens to share a libc spelling is never retyped.
+- **When to flip:** On (default) types the arguments of every common libc call, so a caller whose parameter only flows into one gets a concrete type (char *path) instead of the inferred unsigned long, and the callee's return type is known. Flip OFF when a binary links a private library that reuses libc spellings with different signatures and is NOT statically linked (the pass already skips any name the image defines), or to ablate this table's contribution to a type-recovery difference; off is byte-identical to the 27-entry base table alone.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-analysis-libcsigs
+- **Example:** `option libcsigs off`
 
 ### `strings` -- on | off, default `on`
 

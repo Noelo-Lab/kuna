@@ -851,6 +851,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // this gate is on. Off ⇒ a PE renders exactly as before.
         "peimportcall" => arch.analysis_peimportcall,
         "libproto" => arch.analysis_libproto,
+        // (kuna) The measured libc signature extension — the ~200 prototypes the
+        // 27-entry base table does not carry, seeded onto IMPORTED names only. The
+        // facts are computed at LOAD and COMMITTED only when this gate is on, so
+        // `off` renders exactly what the base table alone renders.
+        "libcsigs" => arch.analysis_libcsigs,
         "strings" => arch.analysis_strings,
         "entry_disc" => arch.analysis_entry_disc,
         // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a

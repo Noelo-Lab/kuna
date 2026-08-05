@@ -77,6 +77,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `char *` lets the printer's pointer-char-constant path read the readonly
         // bytes via the StringManager and emit `puts("Username: ")`.
         Box::new(crate::protos::LibProtoPass),
+        // S1 measured libc signature extension (`libcsigs`): the remaining ~200 libc
+        // prototypes the 27-entry base table does not carry, ranked out of the frozen
+        // decbench C corpus and reduced from the platform headers. Applied only to
+        // names the image IMPORTS (see the module docs — a defined `error` is the
+        // image's own function). Registered always; the COMMIT is gated by
+        // `--option libcsigs on|off` via `engine.rs::analysis_pass_enabled`, so `off`
+        // is byte-identical to the base table alone.
+        Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
         // S1 entry discovery: find function entry points for stripped targets —
         // ELF e_entry, DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables,
         // `.eh_frame` FDE pcBegin starts, the x86-64 `_start`→`main` libc-start

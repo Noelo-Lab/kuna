@@ -34,21 +34,36 @@ use kuna_decomp::fspec::PrototypePieces;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
+pub mod kuna_libcsigs;
+
 /// Port of `ApplyDataArchiveAnalyzer`: seed built-in libc prototypes onto matching
 /// FunctionSymbols so call arguments get typed.
 pub struct LibProtoPass;
 
 /// A primitive type slot in a built-in libc signature.
+///
+/// Every variant is **width-stable**: it is either `void`, exactly 4 bytes, or
+/// exactly pointer-width on every ILP32/LP64 target. A C type that is neither
+/// (`off_t`, `time_t`, `long long`, `char`/`short` parameters) has no spelling
+/// here on purpose — see [`kuna_libcsigs`].
 #[derive(Clone, Copy)]
 enum Ty {
     /// `void` (return only).
     Void,
     /// `int` (4-byte signed).
     Int,
-    /// `size_t` / `long` (pointer-width unsigned).
+    /// `unsigned int` / `mode_t` / `uid_t` / `wint_t` (4-byte unsigned).
+    UInt,
+    /// `size_t` (pointer-width unsigned).
     Size,
+    /// `ssize_t` / `long` / `ptrdiff_t` (pointer-width signed).
+    Long,
     /// `char *`.
     CharPtr,
+    /// `char **`.
+    CharPtrPtr,
+    /// `int *`.
+    IntPtr,
     /// `void *` (also used for `FILE *`, opaque handles).
     VoidPtr,
 }
@@ -108,10 +123,21 @@ fn build_ty(t: Ty, types: &dyn TypeFactory, word_size: uint4) -> KunaResult<Rc<D
     match t {
         Ty::Void => types.get_type_void(),
         Ty::Int => types.get_base(4, type_metatype::TYPE_INT),
+        Ty::UInt => types.get_base(4, type_metatype::TYPE_UINT),
         Ty::Size => types.get_base(ptr, type_metatype::TYPE_UINT),
+        Ty::Long => types.get_base(ptr, type_metatype::TYPE_INT),
         Ty::CharPtr => {
             let c = types.get_type_char(types.get_size_of_char())?;
             types.get_type_pointer(ptr, c, word_size)
+        }
+        Ty::CharPtrPtr => {
+            let c = types.get_type_char(types.get_size_of_char())?;
+            let cp = types.get_type_pointer(ptr, c, word_size)?;
+            types.get_type_pointer(ptr, cp, word_size)
+        }
+        Ty::IntPtr => {
+            let i = types.get_base(4, type_metatype::TYPE_INT)?;
+            types.get_type_pointer(ptr, i, word_size)
         }
         Ty::VoidPtr => {
             let v = types.get_type_void()?;

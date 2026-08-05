@@ -664,6 +664,8 @@ pub struct Architecture {
     pub analysis_peimportcall: bool,
     /// (kuna) Gate the library-prototype pass (`libproto`); default on.
     pub analysis_libproto: bool,
+    /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
+    pub analysis_libcsigs: bool,
     /// (kuna) Gate the string-literal pass (`strings`); default on.
     pub analysis_strings: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
@@ -1235,6 +1237,7 @@ impl Architecture {
             analysis_noreturn_known: false,
             analysis_peimportcall: false,
             analysis_libproto: false,
+            analysis_libcsigs: false,
             analysis_strings: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
@@ -1387,6 +1390,8 @@ impl Architecture {
         self.analysis_noreturn_known = true;
         self.analysis_peimportcall = true; // (kuna) DIV-57 PE import-call binding default-on
         self.analysis_libproto = true;
+        // (kuna) DIV-65 measured libc signature extension — default-ON.
+        self.analysis_libcsigs = true;
         self.analysis_strings = true;
         self.analysis_entry_disc = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
@@ -1658,6 +1663,7 @@ impl Architecture {
             "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
             "peimportcall" => on_off!(analysis_peimportcall, "PE import-call binding"),
             "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
+            "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "eh_frame_full" => {

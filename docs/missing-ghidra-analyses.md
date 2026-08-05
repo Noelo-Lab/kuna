@@ -226,14 +226,23 @@ inherited core):**
   `Override::queryMultistageJumptable` engine seam. It is an *engine* (S2-feedback) change,
   not a `kuna-analysis` pass; deferred as a separate future engine task.
 
-## 8. Library prototype seeding (signatures for `printf`, `malloc`, …) — ⛔ Gap
+## 8. Library prototype seeding (signatures for `printf`, `malloc`, …) — 🟡 Substituted
 
 **Ghidra:** ships parsed C headers / data-type archives (`.gdt`) and applies them
 so imports get correct prototypes and parameter types.
 
-**kuna:** infers calling convention and parameter storage from *usage* (S4/S5,
-🟡). Correct names now resolve, but an import's argument *types* are still
-inferred, not seeded from a known libc signature.
+**kuna:** the `.gdt` format is a binary archive kuna does not vendor, so the pass
+substitutes a **built-in signature table** — `libproto` (`LibProtoPass`, the
+original 27-entry minimal stand-in) plus `libcsigs` (`LibcSigsPass`, the measured
+~200-entry extension). Everything the table does not name still falls back to
+kuna's usage inference (S4/S5, 🟡). Residual LOSS vs a real header archive: no
+struct/enum/typedef definitions travel with a signature (a `struct stat *` is a
+`void *` here), the vocabulary carries only width-stable slots — a declaration
+using `off_t`/`time_t`/`long long` is rejected rather than approximated — and the
+table covers libc/POSIX only, not the third-party libraries a `.gdt` set would
+(OpenSSL, GnuTLS, …). Building a real header-derived type database is the open
+follow-up; the current table's derivation and rejected set are in
+`docs/features/libcsigs/`.
 
 ## 9. Engine capabilities kuna *does* inherit — 🟡
 

@@ -55,7 +55,8 @@ fn settable_count_is_94() {
     // +1 for `fdeinterior` (P1 `.eh_frame` FDE-interior entry suppression, DIV-61).
     // +1 for `cppsig` (P1 demangled C++ signature application).
     // +1 for `typedepth` (P1 full-depth DWARF type resolution, DIV-63).
-    // +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable recovery).
+    // +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable recovery, DIV-64).
+    // +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
     assert_eq!(kuna_num_settables(), 94);
     assert_eq!(SETTABLE_TABLE.len(), 94);
 }
@@ -86,7 +87,8 @@ fn tier_counts_are_20_core_41_transform_33_analysis() {
     // analysis 30 -> 31: +1 for `cppsig` (P1 demangled C++ signature application).
     // analysis 31 -> 32: +1 for `typedepth` (P1 full-depth DWARF types, DIV-63).
     // analysis 32 -> 33: +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable
-    // recovery).
+    // recovery, DIV-64).
+    // analysis 33 -> 34: +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
     assert_eq!((core, transform, analysis), (20, 41, 33));
 }
 
@@ -297,6 +299,10 @@ fn option_values_live_value_present_for_28_suppressed_for_42() {
     const PASS_GATES: &[&str] = &[
         "noreturn_known",
         "libproto",
+        // (kuna) The measured libc signature extension — an analysis-pass gate with
+        // no codegen live reader (read console-side via kuna_live_value), same as
+        // `libproto` above. Default-ON (DIV-65).
+        "libcsigs",
         "strings",
         "entry_disc",
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
@@ -536,9 +542,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
     // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
-    // fdeinterior's S1 row, cppsig's S1 row and typedepth's S1 row sit mid-table,
-    // fdeinterior's S1 row, cppsig's S1 row and itaniumrtti's S1 row sit mid-table,
-    // so they do not move the tail).
+    // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
+    // row and libcsigs' S1 row sit mid-table, so they do not move the tail).
     assert_eq!(json.matches("},\n").count(), 93);
 }
 
