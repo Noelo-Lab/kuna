@@ -170,6 +170,10 @@ Three tiers:
 | dwarf function/global names and typed signatures ignored | [`dwarf`](#dwarf) |
 | no /* file:line */ source-location comments in the output | [`dwarf_lines`](#dwarf_lines) |
 | want each instruction annotated with its dwarf source line | [`dwarf_lines`](#dwarf_lines) |
+| c++ member functions decompile with a0/a1 parameters despite -g debug info | [`cppproto`](#cppproto) |
+| Foo *this renders as void * | [`cppproto`](#cppproto) |
+| a namespaced or templated function loses its dwarf prototype | [`cppproto`](#cppproto) |
+| one unmappable parameter type discards the whole dwarf signature | [`cppproto`](#cppproto) |
 | mcount/__fentry__ profiling calls clutter every -pg function prologue | [`callfixup`](#callfixup) |
 | cspec call-fixup targets rendered as plain calls instead of dissolved | [`callfixup`](#callfixup) |
 | absolute function-pointer table in rodata never recognized | [`addrtable`](#addrtable) |
@@ -697,6 +701,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; byte-identical output). Flip on to annotate each decompiled instruction with its DWARF source file:line.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarf-lines
 - **Example:** `option dwarf_lines on`
+
+### `cppproto` -- on | off, default `on`
+
+- **Symptoms:** c++ member functions decompile with a0/a1 parameters despite -g debug info; Foo *this renders as void *; a namespaced or templated function loses its dwarf prototype; one unmappable parameter type discards the whole dwarf signature.
+- **What it does:** Recover C++ function prototypes from DWARF: resolve a subprogram DEFINITION through its one-hop DW_AT_specification/DW_AT_abstract_origin link (an out-of-line member definition carries no DW_AT_name of its own, so the name-only walk drops it whole), qualify the name by its namespace/class ancestry, map DW_TAG_class_type like a structure and a C++ reference like a pointer, degrade a single unmappable parameter type instead of discarding the whole signature, and bind the recovered prototype by entry ADDRESS rather than by name.
+- **When to flip:** On (default) gives a -g C++ binary its real signatures: Account::deposit(Account *this,int amount) instead of Account::deposit(int4 *a0,int4 a1). Flip off to restore the name-only DWARF walk (every out-of-line member function loses its parameter names, types and stack locals).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cppproto
+- **Example:** `option cppproto off`
 
 ### `callfixup` -- on | off, default `on`
 

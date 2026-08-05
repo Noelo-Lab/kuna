@@ -2691,6 +2691,26 @@ impl Database {
         }
     }
 
+    /// (kuna `cppproto`) The declared prototype parked on the FunctionSymbol at
+    /// `addr` in ANY scope, not just the global one.
+    ///
+    /// A demangled C++ name is filed in a nested scope
+    /// (`find_create_scope_from_symbol_name` puts `Account::deposit` under
+    /// `Account`), so the global-only lookup above never sees it.  Inert before
+    /// the DWARF C++ arm: the by-NAME park path resolves through the global
+    /// scope's `queryByName`, which cannot reach a nested-scope function, so
+    /// nothing outside the global scope ever carried parked pieces.
+    pub fn function_proto_pieces_across_scopes(
+        &self,
+        addr: &Address,
+    ) -> Option<&crate::fspec::PrototypePieces> {
+        let (sid, _) = self.find_function_across_scopes(addr)?;
+        match &self.symbols[sid].kind {
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Is the FunctionSymbol at `addr` (in `scope`) marked \e inline (C++
     /// `queryFunction(addr)->getFuncProto().isInline()`)?  `false` if no function
     /// symbol starts at `addr`.  Read at flow time by `FlowInfo::queryCall`.
@@ -3147,29 +3167,33 @@ impl Database {
     /// functions whose prototype was parked by `set_function_proto_pieces` (i.e.
     /// declared via `parse line extern`) appear; the rest recover with the default
     /// model.  Frozen at `build_arch_handle`, after every `parse line` has run.
+    ///
+    /// (kuna `cppproto`) Every scope is walked, not only the global one: a
+    /// demangled C++ callee is filed under its namespace/class scope, so a
+    /// global-only sweep would drop the DWARF-recovered signature of every member
+    /// function at every call site.  Inert before that arm — nothing outside the
+    /// global scope could carry parked pieces, because the by-NAME park path
+    /// resolves through the global scope only.
     pub fn build_callee_proto_pieces(
         &self,
     ) -> Vec<(int4, uintb, crate::fspec::PrototypePieces)> {
-        let gid = match self.globalscope {
-            Some(g) => g,
-            None => return Vec::new(),
-        };
-        let scope = &self.scopes[gid];
         let mut out: Vec<(int4, uintb, crate::fspec::PrototypePieces)> = Vec::new();
-        for (space_index, slot) in scope.maptable.iter().enumerate() {
-            let rangemap = match slot.as_ref() {
-                Some(rm) => rm,
-                None => continue,
-            };
-            for (_, rec) in rangemap.records() {
-                let entry = &rec.entry;
-                if entry.is_dynamic() {
-                    continue;
-                }
-                if let SymbolKind::Function { proto_pieces: Some(pieces), .. } =
-                    &self.symbols[entry.symbol].kind
-                {
-                    out.push((space_index as int4, entry.get_first(), (**pieces).clone()));
+        for (sid, _) in self.scopes.iter() {
+            for (space_index, slot) in self.scopes[sid].maptable.iter().enumerate() {
+                let rangemap = match slot.as_ref() {
+                    Some(rm) => rm,
+                    None => continue,
+                };
+                for (_, rec) in rangemap.records() {
+                    let entry = &rec.entry;
+                    if entry.is_dynamic() {
+                        continue;
+                    }
+                    if let SymbolKind::Function { proto_pieces: Some(pieces), .. } =
+                        &self.symbols[entry.symbol].kind
+                    {
+                        out.push((space_index as int4, entry.get_first(), (**pieces).clone()));
+                    }
                 }
             }
         }

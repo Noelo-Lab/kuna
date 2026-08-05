@@ -51,8 +51,9 @@ fn settable_count_is_88() {
     // +1 for `peimportcall` (P1 PE import-call binding, DIV-57).
     // +1 for `ptrentry` (P1 pointer-referenced ARM function entries).
     // +1 for `tailcallentry` (P1 tail-call function-entry recovery).
-    assert_eq!(kuna_num_settables(), 89);
-    assert_eq!(SETTABLE_TABLE.len(), 89);
+    // +1 for `cppproto` (P1 DWARF C++ prototype recovery arm).
+    assert_eq!(kuna_num_settables(), 90);
+    assert_eq!(SETTABLE_TABLE.len(), 90);
 }
 
 #[test]
@@ -76,7 +77,8 @@ fn tier_counts_are_20_core_41_transform_28_analysis() {
     // transform 40 -> 41: +1 for `peimportcall` (P1 PE import-call binding, DIV-57).
     // analysis 26 -> 27: +1 for `ptrentry` (P1 pointer-referenced ARM entries).
     // analysis 27 -> 28: +1 for `tailcallentry` (P1 tail-call function-entry recovery).
-    assert_eq!((core, transform, analysis), (20, 41, 28));
+    // analysis 28 -> 29: +1 for `cppproto` (P1 DWARF C++ prototype recovery).
+    assert_eq!((core, transform, analysis), (20, 41, 29));
 }
 
 #[test]
@@ -353,6 +355,10 @@ fn option_values_live_value_present_for_28_suppressed_for_42() {
         // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
+        // (kuna) DWARF C++ prototype recovery — an analysis-tier gate read at the
+        // analysis COMMIT boundary (console-side via kuna_live_value), like the
+        // analysis-pass gates above. Default-on.
+        "cppproto",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -506,7 +512,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
     // itecondlist's S8 row and peimportcall's S1 row sit mid-table, so they do not
     // move the tail).
-    assert_eq!(json.matches("},\n").count(), 88);
+    assert_eq!(json.matches("},\n").count(), 89);
 }
 
 #[test]

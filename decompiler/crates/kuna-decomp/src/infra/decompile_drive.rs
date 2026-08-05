@@ -826,11 +826,14 @@ pub fn decompile_func_full_with_override_dyn(
         // `PIECE(RDX,RAX)` and typed `undefined16`, with the never-written RDX half
         // picking up an uninitialized stack slot. A known `int` return skips that
         // machinery entirely.
+        //
+        // (kuna `cppproto`) Resolved across ALL scopes, not just the global one: a
+        // demangled C++ function is filed under its namespace/class scope, so a
+        // global-only lookup never finds the prototype the DWARF C++ arm parked on
+        // `Account::deposit`. Inert for every prototype parked by NAME (that path
+        // resolves through the global scope, so it can only reach global symbols).
         let recovered_proto = if pending_proto.is_none() {
-            arch.symboltab
-                .get_global_scope()
-                .and_then(|g| arch.symboltab.function_proto_pieces(g, &entry_addr))
-                .cloned()
+            arch.symboltab.function_proto_pieces_across_scopes(&entry_addr).cloned()
         } else {
             None
         };

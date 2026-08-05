@@ -375,6 +375,36 @@ pub struct AnalysisOutput {
     /// path only, and only when a `.fid` database is configured); empty otherwise.
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
+    /// (kuna `cppproto`) The DWARF recoveries that only the C++ arm of the DWARF
+    /// pass produces, held APART from the streams above so the commit boundary can
+    /// drop them wholesale under `--option cppproto off`. The producing pass runs
+    /// at load, upstream of the `option` commands, so the gate cannot live inside
+    /// it — this split is what makes the flag live. See [`CppDwarfFacts`].
+    pub cpp_dwarf: CppDwarfFacts,
+}
+
+/// (kuna `cppproto`) The DWARF facts recovered by resolving a subprogram DIE
+/// through its `DW_AT_specification`/`DW_AT_abstract_origin` link and qualifying
+/// it by its namespace/class ancestry — the C++ shapes the name-only walk drops.
+///
+/// Fields mirror the same-named [`AnalysisOutput`] streams; when the gate is on
+/// the commit folds `symbols`/`locals` into those streams and applies
+/// `prototypes` through the address-keyed binding below.
+#[derive(Default, Debug)]
+pub struct CppDwarfFacts {
+    /// Function symbols for definition DIEs whose name lives on the linked
+    /// declaration (an out-of-line member/namespace definition), carrying the
+    /// namespace-qualified name (`Account::deposit`).
+    pub symbols: Vec<SymFact>,
+    /// Named, typed `DW_OP_fbreg` stack locals of those same definitions.
+    pub locals: Vec<LocalFact>,
+    /// Prototypes keyed by the subprogram's ENTRY ADDRESS (`DW_AT_low_pc`) rather
+    /// than by name. Address is what the parked-prototype store is keyed by on the
+    /// read side, and it is the only key that survives C++: a demangled template
+    /// name (`maxof<int>`) is normalized to `maxof` in kuna's symbol table, and a
+    /// qualified name (`Account::deposit`) lives in a nested scope the global
+    /// by-name query never reaches.
+    pub prototypes: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
 }
 
 impl AnalysisOutput {
@@ -396,6 +426,9 @@ impl AnalysisOutput {
         self.locals.extend(other.locals);
         self.comments.extend(other.comments);
         self.fid_names.extend(other.fid_names);
+        self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
+        self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
+        self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
     }
 }
 
