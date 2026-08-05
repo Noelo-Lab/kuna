@@ -1,0 +1,478 @@
+{
+ "slug": "dallparity",
+ "opportunity": "`kuna decompile-all` and `kuna decompile` must produce the same C for the same binary, address and mode -- decompile-all was the weaker path, and it is the one decbench, the web front-end, decompile-project and every agent-facing whole-binary workflow use",
+ "test_name": "kuna decompile vs kuna decompile-all, same --addr and --mode, over 13 real binaries x 4 modes (182 records) + the 4 vendored fmt_<arch> fixtures",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64",
+ "selector": "main",
+ "second_witness_binary": "decbench full_run/O0/zlib/stripped/minigzip",
+ "second_witness_selector": "error @ 0x14c9",
+ "option": null,
+ "flag": null,
+ "element_id": null,
+ "change_kind": "correctness-fix (surface parity) + mode-preset change (`formatstring` leaves AGGRESSIVE_OVERRIDES on the speed gate)",
+ "tier": "driver (kuna-console)",
+ "module": "decompiler/crates/kuna-console/src/decompile_step.rs (new), decompiler/crates/kuna-console/src/ifacedecomp.rs (IfcDecompile), decompiler/crates/kuna-console/src/project.rs (decompile_targets), decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (AGGRESSIVE_OVERRIDES / EXCLUDED_ON_PURPOSE)",
+ "phase": "driver seam (P0 knowledge / per-function policy)",
+ "spec_chapter": "docs/spec/00-overview.md (+ docs/spec/01-program-prep.md 1.4)",
+ "div": "DIV-66",
+ "source_decompiler": "ida",
+ "inspiration": "IDA Pro 9.2 renders `void error(const char *a1)` where kuna decompile-all rendered `void error(unsigned long a0)` and kuna decompile rendered `void error(char *a0)` -- the same binary, the same address, the same mode",
+ "default_on": false,
+ "upstream_anchor": "Ghidra FormatStringAnalyzer (DecompilerDependent) -- one analyzer, applied by whatever drives the decompiler, not by one front-end",
+ "upstream_fidelity": "restores the analyzer's surface-independence; upstream has no notion of an analyzer that applies to one front-end only",
+ "root_cause": "Two call sites for one pipeline. IfcDecompile wrapped decompile_func_full_with_override_dyn in the FormatStringAnalyzer half-B override/re-decompile loop and enabled readonlypropagate for its duration; project::decompile_targets called the drive directly. So `--option formatstring on` -- which `--mode aggressive` names, and `auto` selects for anything under 500 KiB -- was a silent no-op on decompile-all, decompile-project and the WASM front-end. The scoped readonlypropagate flip is the larger of the two effects: it constant-folds every read-only load, so on ARM Cortex-M (literal pools) it rewrites most of a function body, not just its printf call sites.",
+ "ruled_out": [
+  "a --mode plumbing bug (both surfaces resolve the mode through the same decompile_all::mode_options_for_binary, and an explicit --option formatstring on was equally inert on decompile-all)",
+  "a load/analysis-tier difference (both surfaces inject `option listing on`; the divergent functions carried identical names, callee names and call graphs)",
+  "decompile-all never setting the option (analysis_formatstring IS true there; nothing read it)",
+  "the loop needing console state (it consumes only &Architecture and the first decompile's Funcdata)",
+  "the flow-extent bound (console re-drives with fd.get_size(), the loop with 0/unbounded) -- 0 residual differences in 182 records",
+  "function naming under --addr (function_display_name_across_scopes vs the canonical find_entry_at record) -- 0 name differences in 182 records"
+ ],
+ "divergence_classes": [
+  {
+   "n": 1,
+   "class": "format-string varargs typing loop never runs on the whole-binary surface",
+   "stronger": "decompile",
+   "verdict": "fixed here"
+  },
+  {
+   "n": 2,
+   "class": "the loop's scoped readonlypropagate never applies (dominant effect; ARM literal pools)",
+   "stronger": "decompile",
+   "verdict": "fixed here"
+  },
+  {
+   "n": 3,
+   "class": "funcstart_patterns on + aif on injected for non-x86-64 objects",
+   "stronger": "decompile-all",
+   "verdict": "intentional, documented (DIV-20); discovery-tier"
+  },
+  {
+   "n": 4,
+   "class": "per-function watchdog (--max-fn-seconds; 10 s in resolved fast, else 120 s)",
+   "stronger": "decompile (unbudgeted)",
+   "verdict": "intentional driver policy (spec 0.2)"
+  },
+  {
+   "n": 5,
+   "class": "flow-extent bound: fd.get_size() vs 0 (unbounded)",
+   "stronger": "-",
+   "verdict": "equivalent; 0 residual differences"
+  },
+  {
+   "n": 6,
+   "class": "function naming under --addr",
+   "stronger": "-",
+   "verdict": "0 name differences in 182 records"
+  },
+  {
+   "n": 7,
+   "class": "console-seeded facts (map addr / parse line extern / map hash / type varnode / override flow / override prototype / map param)",
+   "stronger": "decompile",
+   "verdict": "not reachable from either CLI; not a divergence for the same input"
+  },
+  {
+   "n": 8,
+   "class": "print raw / --regions exist only on kuna decompile",
+   "stronger": "-",
+   "verdict": "output-format surface, not a decompile difference"
+  }
+ ],
+ "parity_sweep": {
+  "surface": "kuna decompile --addr X --mode M vs kuna decompile-all --addr X --mode M, function name normalized",
+  "records": 182,
+  "base_commit": "d4a3fd2c (#268)",
+  "divergent_before": 13,
+  "divergent_after": 0,
+  "per_case_before": {
+   "minigzip|None": 2,
+   "init|None": 1,
+   "crontab|None": 1,
+   "psktool|None": 1,
+   "CMSIS_DAP.axf|None": 8
+  },
+  "per_case_after": {},
+  "note": "modes `reliable` and `fast` -- where formatstring is off -- were already 0/14 each before the fix, which is the confirmation that the whole divergence is this one feature.",
+  "with_formatstring_forced_on_both_surfaces": {
+   "records": 182,
+   "divergent": 0,
+   "note": "the load-bearing parity case now that the preset no longer sets the option"
+  }
+ },
+ "parity": "OK",
+ "gates": {
+  "make test": "PARITY OK 675/675, no re-pin",
+  "make test-stages": "PARITY OK 400/400, no re-pin",
+  "make rust-test": "green (4,535 passed / 0 failed / 37 ignored)",
+  "make check-spec": "OK (lenient + strict)",
+  "kuna catalog --check": "catalog OK"
+ },
+ "baseline_repin": false,
+ "stage_test": null,
+ "stage_test_note": "structurally impossible: every tests/datatests and tests/stages file is an XML <binaryimage> whose bootstrap never produces an AnalysisOutput, so an analysis-tier option (formatstring) cannot be reached from there at all. Gated instead by kuna-console/tests/verify_decompile_all_parity.rs.",
+ "tests_added": [
+  "kuna-console/tests/verify_decompile_all_parity.rs::whole_binary_leaves_varargs_untyped_with_formatstring_off",
+  "kuna-console/tests/verify_decompile_all_parity.rs::whole_binary_types_varargs_with_formatstring_on",
+  "kuna-console/tests/verify_decompile_all_parity.rs::whole_binary_matches_console_in_both_option_states"
+ ],
+ "sweep": {
+  "surface": "kuna decompile-all --json --no-vars, `--option formatstring off` (= the pre-fix behaviour) vs the shipped default, both from this build",
+  "refactor_inertness_check": {
+   "note": "measured BEFORE the rebase onto d4a3fd2c against the GENUINE pre-fix binary (main tree @4d111cf5), three arms A/B/C: A (pre-fix binary) vs B (this build, formatstring off) was byte-identical, which is what proves the refactor inert and licenses the two-arm form above.",
+   "cases": 33,
+   "functions": 15990,
+   "A_vs_B_differences": 0
+  },
+  "cases": 33,
+  "functions": 15990,
+  "A_vs_C_bodies_changed": 1824,
+  "A_vs_C_entries_added_or_removed": 0,
+  "tags": {
+   "signature": 112,
+   "body-only": 469,
+   "dat-count-change": 1278,
+   "sig:ulong->charp": 23,
+   "shorter": 447,
+   "longer": 74,
+   "new-string-literal": 398
+  },
+  "changed_per_case": {
+   "O0/zlib/stripped/minigzip [auto]": 7,
+   "O0/zlib/compiled/minigzip [auto]": 4,
+   "O0/zlib/stripped/libz.so.1.2.13 [auto]": 4,
+   "O0/coreutils/stripped/printenv [auto]": 2,
+   "O0/coreutils/stripped/b2sum [auto]": 4,
+   "O0/gzip/stripped/gzip [auto]": 19,
+   "O0/sysvinit/stripped/init [auto]": 8,
+   "O0/cronie/stripped/crontab [auto]": 23,
+   "O0/gnutls/stripped/psktool [auto]": 3,
+   "O0/bzip2/stripped/bzip2 [auto]": 22,
+   "O0/diffutils/stripped/cmp [auto]": 5,
+   "O2/zlib/stripped/minigzip [auto]": 2,
+   "O2/zlib/compiled/minigzip [auto]": 2,
+   "O2/zlib/stripped/libz.so.1.2.13 [auto]": 3,
+   "O2/sysvinit/stripped/init [auto]": 2,
+   "O2/bzip2/stripped/bzip2 [auto]": 1,
+   "O2/diffutils/stripped/cmp [auto]": 1,
+   "O0/zlib/stripped/minigzip [aggressive]": 7,
+   "O0/leveldb/stripped/leveldbutil [auto]": 1,
+   "O0/crazyflie/stripped/CMSIS_DAP.axf [auto]": 177,
+   "O0/crazyflie/stripped/cf2.elf [auto]": 1523,
+   "O0/mydoom/stripped/mydoom.exe [auto]": 2,
+   "O0/dexter/stripped/dexter.dll [auto]": 2
+  },
+  "byte_identical_cases": [
+   "O0/tar/stripped/tar [auto]",
+   "O2/coreutils/stripped/printenv [auto]",
+   "O2/coreutils/stripped/b2sum [auto]",
+   "O2/gzip/stripped/gzip [auto]",
+   "O2/cronie/stripped/crontab [auto]",
+   "O2/gnutls/stripped/psktool [auto]",
+   "O2/tar/stripped/tar [auto]",
+   "O0/zlib/stripped/minigzip [reliable]",
+   "O0/zlib/stripped/minigzip [fast]",
+   "O0/betaflight/stripped/betaflight_STM32F405.elf [auto]"
+  ],
+  "shipped_default_output_change": "NONE -- with `formatstring` out of the preset no surface runs the loop unless asked; the pre-rebase 3-arm sweep already measured the `formatstring off` arm byte-identical to the genuine pre-fix binary over 15,990 functions / 33 cases (0 differences)"
+ },
+ "speed": {
+  "metric": "whole-binary `kuna decompile-all --json --no-vars`, interleaved, MINIMUM of 13 pairs",
+  "budget_pct": 5.0,
+  "shipped_default": {
+   "arms": "explicit `--option formatstring off` vs the shipped default (both disable the loop, so this measures that the gate really is off)",
+   "rows": [
+    {
+     "case": "crontab-O0",
+     "off_ms": 1626.9374256953597,
+     "on_ms": 1625.1339209266007,
+     "delta_pct": -0.11085274333695944
+    },
+    {
+     "case": "psktool-O0",
+     "off_ms": 330.06295189261436,
+     "on_ms": 330.5888660252094,
+     "delta_pct": 0.15933752321471326
+    },
+    {
+     "case": "gzip-O0",
+     "off_ms": 2699.9740567989647,
+     "on_ms": 2699.5245669968426,
+     "delta_pct": -0.016647930412154486
+    },
+    {
+     "case": "minigzip-O0",
+     "off_ms": 4947.7201998233795,
+     "on_ms": 4955.568433739245,
+     "delta_pct": 0.15862323653923646
+    },
+    {
+     "case": "CMSIS_DAP.axf ARM",
+     "off_ms": 2503.0678678303957,
+     "on_ms": 2503.688402939588,
+     "delta_pct": 0.024790982184993617
+    },
+    {
+     "case": "tar-O0 (1570 fns, large)",
+     "off_ms": 24228.884594049305,
+     "on_ms": 24238.12285112217,
+     "delta_pct": 0.03812910593141754
+    },
+    {
+     "case": "b2sum-O0",
+     "off_ms": 5302.781511098146,
+     "on_ms": 5303.628387860954,
+     "delta_pct": 0.015970425351958174
+    }
+   ],
+   "worst_delta_pct": 0.15933752321471326,
+   "within_budget": true
+  },
+  "opt_in_price": {
+   "arms": "shipped default vs `--option formatstring on`",
+   "rows": [
+    {
+     "case": "crontab-O0",
+     "off_ms": 1632.127432152629,
+     "on_ms": 2863.6517440900207,
+     "delta_pct": 75.45515672836417
+    },
+    {
+     "case": "psktool-O0",
+     "off_ms": 331.5430339425802,
+     "on_ms": 505.7360529899597,
+     "delta_pct": 52.540093204777726
+    },
+    {
+     "case": "gzip-O0",
+     "off_ms": 2713.6268578469753,
+     "on_ms": 3884.1479211114347,
+     "delta_pct": 43.1349306511937
+    },
+    {
+     "case": "minigzip-O0",
+     "off_ms": 4986.901273019612,
+     "on_ms": 5081.158183049411,
+     "delta_pct": 1.8900897545285746
+    },
+    {
+     "case": "CMSIS_DAP.axf ARM",
+     "off_ms": 2513.8571886345744,
+     "on_ms": 2653.552747797221,
+     "delta_pct": 5.557020494013167
+    },
+    {
+     "case": "tar-O0 (1570 fns, large)",
+     "off_ms": 24352.190552279353,
+     "on_ms": 28066.976497881114,
+     "delta_pct": 15.25442213351135
+    },
+    {
+     "case": "b2sum-O0",
+     "off_ms": 5433.681488968432,
+     "on_ms": 5633.693876676261,
+     "delta_pct": 3.6809737212955635
+    }
+   ],
+   "worst_delta_pct": 75.45515672836417,
+   "within_budget": false,
+   "consequence": "standing requirement 4: over budget => default-OFF opt-in, so `formatstring` was removed from AGGRESSIVE_OVERRIDES and entered in modes.rs EXCLUDED_ON_PURPOSE with its reason (the invariant test makes an unlisted default-off option a build failure)"
+  },
+  "attribution": {
+   "method": "third arm `--option formatstring off --option readonly on` (upstream OptionReadOnly), minimum of 9",
+   "rows": [
+    {
+     "binary": "crontab",
+     "readonly_only_pct": 1.15,
+     "total_pct": 76.33
+    },
+    {
+     "binary": "psktool",
+     "readonly_only_pct": -0.14,
+     "total_pct": 52.7
+    },
+    {
+     "binary": "gzip",
+     "readonly_only_pct": 0.08,
+     "total_pct": 43.06
+    }
+   ],
+   "conclusion": "the scoped readonlypropagate flip is FREE; 100% of the cost is the second decompile"
+  },
+  "optimization_attempted_and_rejected": {
+   "idea": "decline an override whose format-derived types already equal the call's argument types, so the caller need not be decompiled twice",
+   "instrumented_rates": [
+    {
+     "binary": "crontab",
+     "functions": 160,
+     "redecompiled_without_skip": 25,
+     "redecompiled_with_skip": 24,
+     "redundant_overrides_dropped": 12
+    },
+    {
+     "binary": "psktool",
+     "functions": 57,
+     "redecompiled_without_skip": 5,
+     "redecompiled_with_skip": 3,
+     "redundant_overrides_dropped": 9
+    },
+    {
+     "binary": "gzip",
+     "functions": 248,
+     "redecompiled_without_skip": 25,
+     "redecompiled_with_skip": 25,
+     "redundant_overrides_dropped": 8
+    }
+   ],
+   "output_effect": "changed emitted C on 12 of 15,990 functions (7 of 33 cases) -- it breaks the parity this PR exists for",
+   "verdict": "REVERTED: buys ~nothing (the redundant overrides sit in the same functions as real ones, so the caller re-decompiles anyway) and is not output-preserving",
+   "why_the_cost_is_large_anyway": "only 15%/5%/10% of functions re-decompile on crontab/psktool/gzip; they carry most of the decompile time because a printf-heavy function is a big function"
+  }
+ },
+ "benchmark": {
+  "zlib": {
+   "ged": {
+    "n": 774,
+    "perfect_before": 315,
+    "perfect_after": 315,
+    "mean_before": 6.213178294573644,
+    "mean_after": 6.213178294573644,
+    "improved": 0,
+    "regressed": 0,
+    "regressed_fns": [],
+    "improved_fns": []
+   },
+   "type_match": {
+    "n": 764,
+    "perfect_before": 62,
+    "perfect_after": 65,
+    "mean_before": 0.34778889560090753,
+    "mean_after": 0.34975224638624786,
+    "improved": 3,
+    "regressed": 6,
+    "regressed_fns": [
+     "example64::test_dict_inflate",
+     "example::test_dict_inflate",
+     "examplesh::test_sync",
+     "example64::test_sync",
+     "example::test_sync",
+     "examplesh::test_dict_inflate"
+    ],
+    "improved_fns": [
+     "minigzipsh::error",
+     "minigzip64::error",
+     "minigzip::error"
+    ]
+   }
+  },
+  "cronie": {
+   "ged": {
+    "n": 199,
+    "perfect_before": 73,
+    "perfect_after": 73,
+    "mean_before": 9.884422110552764,
+    "mean_after": 7.824120603015075,
+    "improved": 4,
+    "regressed": 0,
+    "regressed_fns": [],
+    "improved_fns": [
+     "crond::main",
+     "crontab::load_env",
+     "crond::load_env",
+     "cronnext::load_env"
+    ]
+   },
+   "type_match": {
+    "n": 184,
+    "perfect_before": 11,
+    "perfect_after": 13,
+    "mean_before": 0.33154814886856476,
+    "mean_after": 0.36333435651724877,
+    "improved": 14,
+    "regressed": 0,
+    "regressed_fns": [],
+    "improved_fns": [
+     "cronnext::printentry",
+     "crond::child_process",
+     "crontab::check_error",
+     "crontab::log_it",
+     "crontab::usage",
+     "crond::log_it",
+     "crond::main",
+     "crond::allowed",
+     "crontab::load_env",
+     "cronnext::printflags",
+     "crontab::allowed",
+     "cronnext::log_it",
+     "crond::load_env",
+     "cronnext::load_env"
+    ]
+   }
+  },
+  "sysvinit": {
+   "ged": {
+    "n": 195,
+    "perfect_before": 70,
+    "perfect_after": 70,
+    "mean_before": 7.035897435897436,
+    "mean_after": 7.035897435897436,
+    "improved": 0,
+    "regressed": 0,
+    "regressed_fns": [],
+    "improved_fns": []
+   },
+   "type_match": {
+    "n": 185,
+    "perfect_before": 7,
+    "perfect_after": 10,
+    "mean_before": 0.365728125568533,
+    "mean_after": 0.3822214370618445,
+    "improved": 12,
+    "regressed": 4,
+    "regressed_fns": [
+     "runlevel::Write_Runlevel_Log",
+     "init::Write_Runlevel_Log",
+     "halt::Write_Runlevel_Log",
+     "runlevel::main"
+    ],
+    "improved_fns": [
+     "halt::flush_cache_ext",
+     "shutdown::wall",
+     "last::usage",
+     "init::main",
+     "wall::wall",
+     "init::telinit",
+     "logsave::usage",
+     "bootlogd::chdir_int",
+     "halt::do_standby_disk",
+     "bootlogd::writelog",
+     "logsave::main",
+     "init::usage"
+    ]
+   }
+  }
+ },
+ "follow_ups": [
+  "formatstring: make the second decompile cheap (100% of the measured cost). The naive redundant-override skip was built and rejected -- see speed.optimization_attempted_and_rejected. This is the precondition for putting the option back into AGGRESSIVE_OVERRIDES, which is where the decbench type_match win lives",
+  "SEPARATE ROOT CAUSE, filed in the PR body: kuna cannot LOAD an unstripped C++ binary containing an anonymous namespace. strip_bracket_groups (kuna-analysis analyzers/demangle/mod.rs) deletes `(anonymous namespace)` whole, leaving an empty `::` component, and Database::find_create_scope_from_symbol_name rejects it with \"Non-global scope has empty name\" -- aborting `load file` for the entire binary. Both surfaces fail identically (it is NOT a divergence). Reproduces on leveldb libleveldb.so.1.23.0 and leveldbutil; 8 of leveldbutil's FUNC symbols reduce to an empty component. Pre-existing (the demangler predates #262-#266); invisible until now because decbench scores the STRIPPED binaries.",
+  "the shared step is the natural home for any further per-function driver policy (the watchdog budget is still armed by the CLI on the architecture rather than passed in)",
+  "formatstring: a %c argument is typed uint1 where the C variadic promotion makes the parameter an int (sysvinit Write_Runlevel_Log); a format-derived width can narrow a recovered uLong (zlib test_sync). Both pre-exist on `kuna decompile`; they are the 10 type_match regressions in this PR's benchmark"
+ ],
+ "speed_budget_pct": 5.0,
+ "speed_within_budget": true,
+ "speed_worst_delta_pct": 0.15933752321471326,
+ "speed_forced_off": true,
+ "speed_metric": "interleaved whole-binary decompile-all, minimum of 13 pairs; the shipped default is the measured arm, the opt-in price is recorded separately",
+ "base_commit": "b96cc531 (#269)",
+ "shared_counters_rederived_from_build": {
+  "method": "read off the BUILT artifact and the tree, never by arithmetic",
+  "live_kuna_catalog_json": 95,
+  "catalog_bytecompat_rs": 95,
+  "kuna_phases_tests_rs": 95,
+  "phase_catalog_json": 95,
+  "docs_options_md_sections": 95,
+  "options_md_byte_current_vs_regeneration": true,
+  "note": "this PR adds no option, so 95 is main's number carried through the rebase unchanged; verified rather than assumed because this queue has auto-merged the identical off-by-one three times"
+ },
+ "benchmark_note": "0 by default; the type_match 80 -> 88 figure is what the OPT-IN buys"
+}

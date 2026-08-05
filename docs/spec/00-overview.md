@@ -221,6 +221,38 @@ must make the failure observable:
   command exits 0 with a plausible-looking empty function, because the rendered
   shell is not empty (DIV-45; the contract is `docs/cli.md`).
 
+(kuna) **One decompile step, two surfaces.** Every front-end turns a function
+into a `Funcdata` through the same driver-tier step
+(`decompiler/crates/kuna-console/src/decompile_step.rs (decompile_one)`), which
+wraps the engine drive
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
+(decompile_func_full_with_override_dyn)`) in the parts of the per-function
+contract that are policy rather than pipeline. Today that is the format-string
+varargs-typing loop: when the run enables `formatstring`, the step decompiles
+once, reads the constant format strings at the printf/scanf-family call sites it
+finds, installs the derived per-call-site prototype overrides, and decompiles a
+second time so the variadic arguments render typed (chapter
+[01](01-program-prep.md) §1.4); reading those constants also needs read-only
+propagation, so the step enables it for the duration and restores the prior
+value. The caller supplies only the facts it has — the console its `map addr` /
+`parse line` / `override` state, the whole-binary loop the function's DWARF
+locals and the no-return flow prunes — through one seed struct, and both the
+console `decompile` command
+(`decompiler/crates/kuna-console/src/ifacedecomp.rs`, `IfcDecompile`) and the
+whole-binary loop
+(`decompiler/crates/kuna-console/src/project.rs (decompile_targets)`, behind
+`decompile-all` / `decompile-project` / wasm) go through it. Duplicating the
+step is a defect, not a variation: while the loop lived only in the console
+command, `--option formatstring on` was a **silent no-op** on every whole-binary
+surface even though `--mode aggressive` — and therefore `auto` under 500 KiB —
+named it, so every benchmark number was measured on the weaker of the two. Making
+both surfaces honour it then exposed what it costs: a caller whose call sites
+yield an override is decompiled **twice**, which is +43% to +75% on a
+printf-heavy whole binary. `formatstring` is therefore no longer in the
+`aggressive` preset — it is a per-run opt-in on every surface, the speed gate's
+prescribed outcome — so the shipped default runs no second decompile and both
+surfaces deliver the same C when the option is given (DIV-66).
+
 (kuna) **Surface defaults.** `decompile-all` injects two driver-level defaults
 before the option pass (`decompiler/crates/kuna-cli/src/decompile_all.rs
 (load_program)`): `option listing on` (DIV-15 — without the Listing the
@@ -370,8 +402,12 @@ and an agent writes:
   **`reliable`** (the shipped defaults, an empty-override alias),
   **`aggressive`** (every off-by-default recovery/analysis pass on, except
   `v850indirectbranch`, which would mis-decode register-indirect calls off-V850,
-  and `dwarf_lines`, which annotates rather than recovers and would bury a `-g`
-  binary's body in `/* src.c:NNN */` comments),
+  `dwarf_lines`, which annotates rather than recovers and would bury a `-g`
+  binary's body in `/* src.c:NNN */` comments, and `formatstring`, whose
+  re-decompile loop misses the speed budget by an order of magnitude on a whole
+  binary — DIV-66; the exclusion list is enforced by an invariant test in
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs`, so a default-off
+  option is either in the preset or listed there with its reason),
   and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
   program-wide decode and speculative discovery). A fourth frontend policy,
   **`auto`**, resolves from the raw input length before the Architecture is

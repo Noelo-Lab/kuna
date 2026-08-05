@@ -76,9 +76,9 @@ use crate::engine::{bootstrap_from_file, ConsoleProgram, UNBOUNDED_SIZE};
 use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
-use kuna_base::types::{int4, uintb, uintm};
+use kuna_base::types::{int4, uintm};
 use kuna_decomp::decompile_drive::{
-    build_and_follow_flow, build_and_follow_flow_with_override, print_c, print_c_types,
+    build_and_follow_flow_with_override, print_c, print_c_types,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
@@ -1606,212 +1606,6 @@ decomp_command!(
     }
 );
 
-// --- format-string varargs typing (FormatStringAnalyzer half B) ------------
-//
-// The kuna analog of Ghidra's `FormatStringAnalyzer` (DecompilerDependent):
-// after the first decompile of a caller, walk its `CALL` ops, find calls to
-// printf/scanf-family variadic functions, read the format-string constant at the
-// call's format argument, parse its specifiers, and build a per-call-site
-// prototype override (fixed types ++ format-derived varargs, varargs closed).
-// Ghidra origins are cited inline; the parser + override-pieces builder live in
-// `kuna_analysis::formatstring` (halves A + B-logic).  Gated OFF by default
-// (`Architecture::analysis_formatstring`), so this is inert unless the user
-// passes `--option formatstring on`.
-
-/// Resolve a `CALL` argument varnode to the constant pointer it carries, if any
-/// (the kuna analog of reading `callOp.getInput(paramCount).getAddress()` in
-/// Ghidra's `PcodeFunctionParser.searchForVariadicCallData`, `:99`).
-///
-/// In kuna's IR the format-string pointer is rarely a bare constant varnode at
-/// the call site; it is typically a value produced by a `PTRSUB`/`PTRADD`/
-/// `COPY`/`CAST`/`INT_ADD` op whose constant input is the read-only data address
-/// (e.g. `u0x… = ->(#0x0,#0x402004)`).  So if the arg varnode is itself a
-/// constant we take its offset; otherwise we follow its single defining op and
-/// look for a constant input that is *not* the spacebase/zero base.  Returns the
-/// resolved code-space offset (the format-string VMA) or `None`.
-fn resolve_const_pointer(fd: &Funcdata, vn_id: kuna_decomp::context::VarnodeId) -> Option<uintb> {
-    let vn = fd.vbank().get(vn_id)?;
-    if vn.is_constant() {
-        return Some(vn.get_offset());
-    }
-    // Follow the defining op and harvest its constant input (skip a #0 base, the
-    // common `->(#0x0,#0xVMA)` PTRSUB shape).
-    let def = vn.get_def()?;
-    let op = fd.obank().get(def)?;
-    use kuna_num::opcodes::OpCode;
-    match op.code() {
-        OpCode::CPUI_PTRSUB
-        | OpCode::CPUI_PTRADD
-        | OpCode::CPUI_INT_ADD
-        | OpCode::CPUI_COPY
-        | OpCode::CPUI_CAST => {
-            let mut acc: Option<uintb> = None;
-            for slot in 0..op.num_input() {
-                if let Some(in_id) = op.get_in(slot) {
-                    if let Some(in_vn) = fd.vbank().get(in_id) {
-                        if in_vn.is_constant() {
-                            let off = in_vn.get_offset();
-                            // Skip a zero base; sum the rest (PTRADD/INT_ADD).
-                            if off != 0 {
-                                acc = Some(acc.unwrap_or(0).wrapping_add(off));
-                            }
-                        }
-                    }
-                }
-            }
-            acc
-        }
-        _ => None,
-    }
-}
-
-/// Read a NUL-terminated byte string out of the load image at `vma` (the kuna
-/// analog of Ghidra resolving the constant address to its defined string `Data`
-/// in `PcodeFunctionParser`).  Reads byte-by-byte via the architecture's
-/// `read_loadimage_value`; stops at the first NUL or after `MAX` bytes, and bails
-/// (returns `None`) on the first unreadable byte (out of any mapped section).
-fn read_cstring(arch: &kuna_decomp::architecture::Architecture, vma: uintb) -> Option<String> {
-    const MAX: u64 = 4096;
-    // The default code/data space (the loadimage's addressable space).
-    let space = std::rc::Rc::clone(arch.manage().get_default_code_space()?);
-    let mut bytes: Vec<u8> = Vec::new();
-    for i in 0..MAX {
-        let addr = kuna_base::address::Address::new(std::rc::Rc::clone(&space), vma.wrapping_add(i));
-        let b = arch.read_loadimage_value(&addr, 1).ok()? as u8;
-        if b == 0 {
-            // A non-empty, terminated string only.
-            return if bytes.is_empty() {
-                None
-            } else {
-                String::from_utf8(bytes).ok()
-            };
-        }
-        bytes.push(b);
-    }
-    None
-}
-
-/// Walk the decompiled `fd`'s `CALL` ops and produce per-call-site prototype
-/// overrides for printf/scanf-family variadic calls whose format string is a
-/// readable constant (the kuna analog of `FormatStringAnalyzer.decompile` +
-/// `PcodeFunctionParser.parseFunctionForCallData` + `overrideCallList`).
-///
-/// For each `CALL`:
-/// 1. find its `FuncCallSpecs` (callee name + recovered proto);
-/// 2. classify the callee name (`printf`/`scanf` family — Ghidra
-///    `VARIADIC_SUBSTRINGS`); a non-variadic callee is skipped;
-/// 3. require the recovered proto be varargs with a char-pointer last fixed param
-///    (Ghidra `usesVariadicFormatString`, `:229`) — using the recovered
-///    `num_params` as the format slot (`getInput(paramCount)`, `:99`);
-/// 4. resolve the format-arg varnode to its constant VMA and read the string;
-/// 5. parse it ([`parse_output_types`]/[`parse_input_types`]) and, on a non-empty
-///    spec list, build the override [`PrototypePieces`]
-///    ([`apply::build_override_pieces`]).
-///
-/// Returns the `(callpoint Address, PrototypePieces)` pairs to install.
-fn extract_format_string_overrides(
-    arch: &kuna_decomp::architecture::Architecture,
-    fd: &Funcdata,
-) -> Vec<(kuna_base::address::Address, kuna_decomp::fspec::PrototypePieces)> {
-    use kuna_analysis::formatstring::{self, apply};
-    use kuna_num::opcodes::OpCode;
-
-    let mut overrides = Vec::new();
-    let (_addr_size, word_size) = arch.data_org();
-    let types = arch.types();
-
-    // Iterate the call sites (the analog of Ghidra walking the HighFunction's
-    // CALL ops; FuncCallSpecs already pairs each CALL op with the recovered
-    // callee proto).
-    for i in 0..fd.num_calls() {
-        let spec = fd.get_call_specs(i);
-        let op_id = spec.get_op();
-        let Some(op) = fd.obank().get(op_id) else {
-            continue;
-        };
-        // Direct CALL only (CALLIND/CALLOTHER have no fixed callee here).
-        if op.code() != OpCode::CPUI_CALL {
-            continue;
-        }
-        let callpoint = op.get_addr().clone();
-        // (2) Classify the callee name (printf/scanf family).
-        let Some(is_output) = apply::classify_variadic_call(spec.get_name()) else {
-            continue;
-        };
-        // (3) usesVariadicFormatString: recovered proto must be varargs with a
-        // char-pointer last fixed param.  We require `is_dotdotdot()` and at
-        // least one fixed param; the format string is the *last* fixed param,
-        // at CALL input slot `num_params` (slot 0 is the call target — Ghidra
-        // `getInput(getParameterCount())`, `:99`).
-        let num_params = spec.proto().num_params();
-        if !spec.is_dotdotdot() || num_params <= 0 {
-            continue;
-        }
-        // The call must actually pass arguments beyond the fixed ones (Ghidra
-        // `callOp.getNumInputs() <= function.getParameterCount()` → skip, `:81`).
-        if op.num_input() <= num_params {
-            continue;
-        }
-        // (4) Read the format constant at the format-arg slot.
-        let Some(fmt_vn) = op.get_in(num_params) else {
-            continue;
-        };
-        let Some(vma) = resolve_const_pointer(fd, fmt_vn) else {
-            continue;
-        };
-        let Some(fmt) = read_cstring(arch, vma) else {
-            continue;
-        };
-        // A format string without specifiers is a no-op (Ghidra parses but the
-        // empty type list yields no override).
-        if !fmt.contains('%') {
-            continue;
-        }
-        // (5) Parse + build the override pieces.
-        let specs = if is_output {
-            formatstring::parse_output_types(&fmt)
-        } else {
-            formatstring::parse_input_types(&fmt)
-        };
-        if specs.is_empty() {
-            continue;
-        }
-        // Collect the callee's recovered *fixed* param types (the analog of
-        // Ghidra `namesToParameters.get(callFunctionName)` = the declared params
-        // minus the trailing "...").
-        let mut fixed: Vec<std::rc::Rc<kuna_decomp::dtype::Datatype>> =
-            Vec::with_capacity(num_params as usize);
-        let mut ok = true;
-        for p in 0..num_params {
-            match spec.proto().get_param(p).and_then(|pp| pp.get_type().cloned()) {
-                Some(ty) => fixed.push(ty),
-                None => {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        if !ok {
-            continue;
-        }
-        // The callee return type (Ghidra `namesToReturn.get(...)`).
-        let outtype = spec.proto().get_output().get_type().cloned();
-        match apply::build_override_pieces(
-            spec.get_name(),
-            outtype,
-            &fixed,
-            &specs,
-            types,
-            word_size,
-        ) {
-            Ok(Some(pieces)) => overrides.push((callpoint, pieces)),
-            Ok(None) => {}
-            Err(_) => {} // a spec→datatype build failure: skip this call site.
-        }
-    }
-    overrides
-}
-
 // --- decompile (ifacedecomp.cc:889) ----------------------------------------
 
 decomp_command!(
@@ -1914,47 +1708,15 @@ decomp_command!(
             .cloned()
             .unwrap_or_default();
         // The `override prototype` facts stashed for this function (re-seeded on the
-        // rebuilt IR), consumed at flow time as `Override::applyPrototype`.  `mut`
-        // because the format-string varargs-typing loop (below) may augment these
-        // with per-call-site printf/scanf overrides discovered from the first
-        // decompile, then re-decompile.
-        let mut proto_overrides = dcp_mut(status)?
+        // rebuilt IR), consumed at flow time as `Override::applyPrototype`.  The
+        // shared decompile step may discover further per-call-site printf/scanf
+        // overrides on top of these; those come back as `step.discovered`.
+        let proto_overrides = dcp_mut(status)?
             .pending_proto_overrides
             .get(&name)
             .cloned()
             .unwrap_or_default();
-        // (kuna) Is the format-string varargs-typing loop enabled for this run
-        // (`--option formatstring on`)?  Read once, up front; default-off ⇒ the
-        // whole loop below is skipped and the decompile is byte-identical.
-        let formatstring_enabled = prog.arch().analysis_formatstring;
-        // (kuna) Read-only propagation, scoped to the format-string decompile.
-        //
-        // To *type* a variadic format call we must first *read* its format-string
-        // constant at the call's format-arg slot.  On x86-64/AArch64/RISC-V the
-        // format address is materialized directly into a register (`lea` /
-        // `adrp+add` / `auipc+addi`), so the format-arg varnode is already a
-        // constant pointer and `resolve_const_pointer` resolves it as-is.  On ARM,
-        // however, the address is loaded *PC-relatively from a read-only literal
-        // pool* (`ldr r3,[pc,#k]; add r3,pc`): the format-arg varnode is then a
-        // memory LOAD that only constant-folds when `readonlypropagate` is on
-        // (`Funcdata::fillin_read_only`), so without it the format pointer renders
-        // as the unresolved `dat_… + pc` and no override is built.  Ghidra's
-        // `FormatStringAnalyzer` decompile likewise reads constant strings out of
-        // read-only memory.  So, *only when the format-string feature is enabled*
-        // (default off), enable read-only propagation for this function's
-        // decompile and restore the prior value afterward — keeping the feature
-        // self-contained on ARM without a separate `--option readonly on`.
-        // Gate-safe: this toggle is inert (the value is unchanged) unless
-        // `--option formatstring on`, so every parity gate — which never sets
-        // `formatstring` — is byte-identical.
-        let saved_readonlypropagate = prog.arch().readonlypropagate;
-        if formatstring_enabled {
-            prog.arch_mut().readonlypropagate = true;
-        }
         if has_no_code {
-            // Restore the scoped read-only-propagation flip and the program before
-            // the early return (no decompile ran, so the flip was a no-op here).
-            prog.arch_mut().readonlypropagate = saved_readonlypropagate;
             dcp_mut(status)?.conf = Some(prog);
             status.out(&format!("No code for {name}\n"));
             return Ok(());
@@ -1967,76 +1729,46 @@ decomp_command!(
         }
         status.out(&format!("Decompiling {name}\n"));
         // The entry this drive targets, kept for the failure arm below (`entry`
-        // itself is consumed by the format-string re-decompile path).
+        // itself is consumed by the shared decompile step).
         let stamp_addr = entry.clone();
         // C++: allacts.getCurrent()->reset(*fd); res = perform(*fd); then the
         // "Decompilation complete"/"Break at .." reporting.  The kuna decompile
         // drive (decompile_drive::decompile_func) installs the `decompile` root,
         // resets it, and runs the 252-pass perform loop to completion.
-        let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+        //
+        // (DIV-66) Routed through the SHARED step so this console command and the
+        // whole-binary loop (`project::decompile_targets`) run the identical
+        // pipeline — including the FormatStringAnalyzer half-B override /
+        // re-decompile loop, which used to live only here.
+        let step = crate::decompile_step::decompile_one(
             prog.arch_mut(),
             &name,
-            // Clone so `entry` survives for the conditional format-string
-            // re-decompile below (default-off ⇒ the clone is the only change and
-            // the second call never runs).
-            entry.clone(),
+            entry,
             size,
-            &mapped_symbols,
-            &usepoint_symbols,
-            &dynamic_symbols,
-            pending_proto.as_ref(),
-            &flow_overrides,
+            &crate::decompile_step::DecompileSeed {
+                mapped_symbols: &mapped_symbols,
+                usepoint_symbols: &usepoint_symbols,
+                dynamic_symbols: &dynamic_symbols,
+                pending_proto: pending_proto.as_ref(),
+                flow_overrides: &flow_overrides,
+                mapped_params: &mapped_params,
+            },
             &proto_overrides,
-            &mapped_params,
         );
-        // (kuna) FormatStringAnalyzer half B (DecompilerDependent), gated OFF by
-        // default.  If `--option formatstring on`, inspect the first decompile for
-        // printf/scanf-family calls, build per-call-site varargs overrides from
-        // their format-string constants, and — if any new ones were found —
-        // re-seed them onto `proto_overrides` and decompile a second time so the
-        // variadic args render typed.  Inert (this whole block is skipped) when
-        // the flag is off, so every parity gate is byte-identical.
-        if formatstring_enabled {
-            if let Ok(fd) = &result {
-                let discovered = extract_format_string_overrides(prog.arch(), fd);
-                // Only the call-site overrides not already installed (a
-                // hand-typed `override prototype` at the same callpoint wins).
-                let mut added = false;
-                for (callpoint, pieces) in discovered {
-                    if !proto_overrides.iter().any(|(a, _)| a == &callpoint) {
-                        // Persist for any later re-decompile of this function
-                        // (the `pending_proto_overrides` precedent).
-                        dcp_mut(status)?
-                            .pending_proto_overrides
-                            .entry(name.clone())
-                            .or_default()
-                            .push((callpoint.clone(), pieces.clone()));
-                        proto_overrides.push((callpoint, pieces));
-                        added = true;
-                    }
-                }
-                if added {
-                    status.out("Re-decompiling with format-string varargs typing\n");
-                    result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
-                        prog.arch_mut(),
-                        &name,
-                        entry,
-                        size,
-                        &mapped_symbols,
-                        &usepoint_symbols,
-                        &dynamic_symbols,
-                        pending_proto.as_ref(),
-                        &flow_overrides,
-                        &proto_overrides,
-                        &mapped_params,
-                    );
-                }
-            }
+        let result = step.result;
+        if !step.discovered.is_empty() {
+            status.out("Re-decompiling with format-string varargs typing\n");
         }
-        // Restore the scoped read-only-propagation flip (no-op unless the
-        // format-string feature was enabled above), then restore the program (and
-        // the fresh Funcdata on success) regardless.
-        prog.arch_mut().readonlypropagate = saved_readonlypropagate;
+        // Persist the discovered call-site overrides for any later re-decompile of
+        // this function (the `pending_proto_overrides` precedent).
+        for (callpoint, pieces) in step.discovered {
+            dcp_mut(status)?
+                .pending_proto_overrides
+                .entry(name.clone())
+                .or_default()
+                .push((callpoint, pieces));
+        }
+        // Restore the program (and the fresh Funcdata on success) regardless.
         let dcp = dcp_mut(status)?;
         dcp.conf = Some(prog);
         match result {

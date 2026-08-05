@@ -112,9 +112,19 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 ///     on any binary built with `-g` it buries the code under interleaved
 ///     `/* src.c:NNN */` lines (`auto` picks `aggressive` under 500 KiB, which
 ///     made that the *default* rendering for small debug binaries).
+///   - `formatstring` costs a **second full decompile** of any caller whose
+///     printf/scanf call sites yield a varargs override, and those are the
+///     expensive functions, so on a whole binary it is far over the 5% speed
+///     budget: `decompile-all` measured +77.5% (cronie `crontab`), +55.1%
+///     (gnutls `psktool`), +43.7% (`gzip`). Only ~5-15% of functions re-decompile;
+///     they simply carry most of the time. Held to a per-run opt-in by standing
+///     requirement 4 (DIV-66) -- the recovery it buys is real (decbench C
+///     `type_match` perfects 80 -> 88 of 1,133) and `--option formatstring on`
+///     still gets it, on every surface.
 ///
-/// Both stay manual per-run opt-ins (`--option v850indirectbranch on`, `--option
-/// dwarf_lines on`) even under `--mode aggressive`.
+/// All three stay manual per-run opt-ins (`--option v850indirectbranch on`,
+/// `--option dwarf_lines on`, `--option formatstring on`) even under
+/// `--mode aggressive`.
 const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // transform-tier default-off recovery/structuring passes.
     ("switchmodbound", "on"),
@@ -133,7 +143,6 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("funcstart_patterns", "on"),
     ("addrtable", "on"),
     ("operand_refs", "on"),
-    ("formatstring", "on"),
     ("fid", "on"),
     ("rtti", "on"),          // PE-only; no-op off-PE
     ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
@@ -292,11 +301,15 @@ mod tests {
     fn aggressive_carries_every_default_off_option() {
         use crate::kuna_phases::{kuna_num_settables, kuna_settable_by_index};
 
-        /// The two DELIBERATE exclusions, each with its reason recorded on
+        /// The three DELIBERATE exclusions, each with its reason recorded on
         /// `AGGRESSIVE_OVERRIDES`: `v850indirectbranch` corrupts non-V850 targets,
-        /// and `dwarf_lines` buries a `-g` binary's C under per-instruction
-        /// `/* src.c:N */` comments.
-        const EXCLUDED_ON_PURPOSE: &[&str] = &["v850indirectbranch", "dwarf_lines"];
+        /// `dwarf_lines` buries a `-g` binary's C under per-instruction
+        /// `/* src.c:N */` comments, and `formatstring` costs a second full
+        /// decompile of every caller that yields a varargs override -- measured
+        /// +43.7% to +77.5% on whole-binary `decompile-all`, far over the 5% speed
+        /// budget, so standing requirement 4 holds it to an opt-in (DIV-66).
+        const EXCLUDED_ON_PURPOSE: &[&str] =
+            &["v850indirectbranch", "dwarf_lines", "formatstring"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
