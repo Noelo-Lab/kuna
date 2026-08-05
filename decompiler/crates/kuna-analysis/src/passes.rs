@@ -27,9 +27,10 @@ use crate::sourcelang::Compiler;
 /// MSVC-RTTI pass). The real bootstrap path uses [`passes_for`] with the detected
 /// compiler + the parsed object's format.
 pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
-    // A neutral non-PE/non-Mach-O format (`Elf`): the back-compat entry never
-    // carries the PE-only `rtti` pass nor the Mach-O-only `objc` pass, so the
-    // default set is byte-identical to before those passes.
+    // A non-PE/non-Mach-O format (`Elf`): the back-compat entry never carries the
+    // PE-only `rtti` pass nor the Mach-O-only `objc` pass. It DOES carry the
+    // ELF-only `itaniumrtti` pass, which is default-off at the commit boundary, so
+    // the committed facts are still byte-identical to before that pass.
     passes_for(Compiler::Unknown, object::BinaryFormat::Elf)
 }
 
@@ -46,7 +47,11 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
 ///   pass set is byte-identical to before this pass existed, and
 /// - the Objective-C method-name pass (`objc`), registered ONLY on a Mach-O image
 ///   (the Objective-C runtime metadata is a Mach-O concern — `BinaryFormat::MachO`),
-///   so a non-Mach-O binary's pass set is byte-identical to before this pass existed.
+///   so a non-Mach-O binary's pass set is byte-identical to before this pass existed,
+///   and
+/// - the Itanium RTTI / vtable pass (`itaniumrtti`), registered ONLY on an ELF image
+///   (the GCC/Clang C++ ABI is an ELF concern — `BinaryFormat::Elf`), so a non-ELF
+///   binary's pass set is byte-identical to before this pass existed.
 pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<dyn AnalysisPass>> {
     let mut passes: Vec<Box<dyn AnalysisPass>> = vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
@@ -255,6 +260,25 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `aif/mod.rs` + docs/history/analysis-port-log.md.
     ];
 
+    // (kuna, NOVEL) S1 Itanium (GCC/Clang) RTTI + vtable recovery
+    // (ItaniumRttiPass): on an ELF, discover every `_ZTI…` typeinfo object from the
+    // dynamic relocations that name a `__cxxabiv1` typeinfo vtable (the anchor that
+    // survives `strip --strip-all` on a shared object), demangle each `_ZTS…` type
+    // name, read the inheritance graph, and walk the `_ZTV…` sub-vtables the
+    // typeinfo objects are pointed at from — emitting `<C>::typeinfo` /
+    // `<C>::typeinfo_name` / `<C>::vtable` / `<C>::vtable_for_<Base>` labels and one
+    // `<C>::vtable_<i>` function symbol per virtual slot. Ghidra has NO Itanium RTTI
+    // analyzer (its `RttiAnalyzer` is MSVC-only and its GCC class recovery is
+    // script-tier), so this is a kuna capability rather than a port. ELF-only:
+    // registered ONLY for `BinaryFormat::Elf`, so every other target's pass set is
+    // byte-identical (the pass ALSO self-gates on ELF in `run`). DEFAULT-OFF: its
+    // facts are computed at load but committed only when `--option itaniumrtti on`
+    // (`engine.rs::analysis_pass_enabled` reads `arch.analysis_itaniumrtti`, default
+    // false), so a default run is byte-identical.
+    if format == object::BinaryFormat::Elf {
+        passes.push(Box::new(crate::rtti::kuna_itaniumrtti::ItaniumRttiPass));
+    }
+
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
     // (`detect_compiler == Go`, via `.go.buildinfo`/`.note.go.buildid` — the same
     // gate the Go no-return list uses), parse the embedded `pclntab` and emit a
@@ -297,6 +321,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     if format == object::BinaryFormat::Pe {
         passes.push(Box::new(crate::rtti::RttiPass));
     }
+
 
     // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
     // is a Mach-O, walk the `__objc_*` metadata (classlist → class_t → class_ro_t
@@ -836,9 +861,11 @@ mod tests {
         passes.iter().map(|p| p.id()).collect()
     }
 
-    /// The neutral format every existing pass-set test uses: the `rtti` pass is
-    /// PE-gated and the `objc` pass is Mach-O-gated, so an ELF (neither) format
-    /// gives the byte-identical pre-rtti/pre-objc set.
+    /// The format every existing pass-set test uses as its base. It was chosen
+    /// because `rtti` is PE-gated and `objc` is Mach-O-gated, so an ELF carried
+    /// neither; since `itaniumrtti` it is no longer format-*neutral* — an ELF
+    /// carries exactly that one format-gated pass, which the tests below account
+    /// for explicitly.
     const NON_PE: object::BinaryFormat = object::BinaryFormat::Elf;
 
     #[test]
@@ -944,6 +971,32 @@ mod tests {
         }
     }
 
+    /// The Itanium RTTI pass (`itaniumrtti`) is registered ONLY on an ELF image —
+    /// the GCC/Clang C++ ABI is an ELF concern, exactly as the Microsoft ABI is a
+    /// PE one — so every non-ELF pass set is byte-identical to before it existed.
+    /// It precedes the Go `gopclntab` pass so that pass keeps its "appended last"
+    /// contract on a Go ELF.
+    #[test]
+    fn itaniumrtti_pass_is_elf_gated() {
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
+            let elf = ids(&passes_for(c, object::BinaryFormat::Elf));
+            assert!(elf.contains(&"itaniumrtti"), "{c:?}/Elf must carry itaniumrtti");
+            for fmt in [
+                object::BinaryFormat::Pe,
+                object::BinaryFormat::MachO,
+                object::BinaryFormat::Coff,
+            ] {
+                assert!(
+                    !ids(&passes_for(c, fmt)).contains(&"itaniumrtti"),
+                    "{c:?}/{fmt:?} must not carry itaniumrtti"
+                );
+            }
+        }
+        // It never displaces `gopclntab` from the end of a Go ELF's pass list.
+        let go = ids(&passes_for(Compiler::Go, object::BinaryFormat::Elf));
+        assert_eq!(go.last(), Some(&"gopclntab"));
+    }
+
     /// The PE import-call binding pass (`peimportcall`) is registered ONLY on a
     /// PE/COFF image, so every other format's pass set is byte-identical to before
     /// it existed (the parity-safety contract the rtti/objc/pdb passes also hold).
@@ -998,9 +1051,17 @@ mod tests {
         let macho = ids(&passes_for(Compiler::Clang, object::BinaryFormat::MachO));
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
-        // Mach-O adds exactly the one objc pass over the ELF set (the rtti pass is
-        // PE-only, so a Mach-O target adds only objc over the ELF base).
-        assert_eq!(macho.len(), elf.len() + 1, "Mach-O adds exactly the objc pass");
+        // Mach-O adds exactly the one objc pass over the FORMAT-NEUTRAL base. The
+        // ELF set is no longer that base: `itaniumrtti` is ELF-gated the way `objc`
+        // is Mach-O-gated, so the comparison drops it from the ELF side.
+        let elf_neutral: Vec<&str> =
+            elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
+        assert!(!elf_neutral.contains(&"itaniumrtti"));
+        assert_eq!(
+            macho.len(),
+            elf_neutral.len() + 1,
+            "Mach-O adds exactly the objc pass over the format-neutral base"
+        );
         assert_eq!(macho.last(), Some(&"objc"), "objc is appended last");
         // No non-Mach-O format carries it.
         for f in [object::BinaryFormat::Elf, object::BinaryFormat::Pe, object::BinaryFormat::Coff] {

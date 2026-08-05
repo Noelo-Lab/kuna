@@ -345,6 +345,58 @@ pub fn demangle_rtti_class_name(typeinfo: &str) -> Option<String> {
     }
 }
 
+/// Recover the **C++ class name** carried by an Itanium (GCC/Clang) `std::type_info`
+/// object's mangled type-name string, or `None` if `typeinfo_name` does not name a
+/// class.
+///
+/// The Itanium C++ ABI (§2.9.5) stores a polymorphic class's type name as the *bare
+/// `<mangled-name>` component* — `6Widget`, `N7leveldb3EnvE`, `4VecIiE` — pointed at
+/// by the second word of the `_ZTI…` typeinfo object, and separately symboled
+/// `_ZTS…`. That component is not a symbol and no demangler accepts it alone. The
+/// faithful recovery is the exact analog of the MSVC recipe
+/// ([`demangle_rtti_class_name`], which wraps the `.?A…@@` string in `??_R0…@8`):
+/// wrap the component back into the typeinfo-name symbol form `_ZTS<component>` and
+/// demangle *that*, which Itanium renders as `typeinfo name for <qualified-class>`.
+///
+/// Reuses the **same** [`cpp_demangle`] crate the Itanium arm of [`demangle_name`]
+/// already drives (no new demangler dependency).
+///
+/// Unlike [`demangle_name`] this returns the class name **verbatim**, template
+/// arguments and all (`Vec<int>`, `(anonymous namespace)::Hidden`) — it does NOT
+/// apply [`strip_bracket_groups`]. Reducing here would be lossy in a way that
+/// matters for the caller: `Vec<int>` and `Vec<double>` are two distinct classes
+/// with two distinct vtables, and collapsing both to `Vec` silently drops one
+/// class's recovery. The caller owns turning this into an identifier
+/// (`analyzers/rtti/kuna_itaniumrtti.rs::sanitize_class_name`), which is a labelling
+/// concern rather than a demangling one.
+///
+/// A **leading `*`** is stripped first. The Itanium ABI (§2.9.1) marks a type whose
+/// identity is local to one translation unit — an anonymous-namespace class, a class
+/// defined inside a function — by prefixing its type-name string with `*`, telling
+/// the runtime to compare `type_info`s by pointer rather than by string. The `*` is
+/// not part of the mangled name, and leaving it on makes every such class
+/// undemangleable; on a real C++ binary those are a large share of the concrete
+/// implementation classes (`(anonymous namespace)::Hidden`).
+///
+/// Returns `None` for any string that does not demangle to the
+/// `typeinfo name for …` shape — never panics.
+pub fn demangle_typeinfo_name(typeinfo_name: &str) -> Option<String> {
+    /// The prefix Itanium renders an `_ZTS…` symbol with.
+    const RENDERED: &str = "typeinfo name for ";
+    let typeinfo_name = typeinfo_name.strip_prefix('*').unwrap_or(typeinfo_name);
+    if typeinfo_name.is_empty() {
+        return None;
+    }
+    let sym = cpp_demangle::Symbol::new(format!("_ZTS{typeinfo_name}")).ok()?;
+    let d = sym.demangle().ok()?;
+    let class = d.strip_prefix(RENDERED)?.trim();
+    if class.is_empty() {
+        None
+    } else {
+        Some(class.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +417,25 @@ mod tests {
         assert_eq!(demangle_rtti_class_name("Shape"), None);
         assert_eq!(demangle_rtti_class_name(".?AB"), None);
         assert_eq!(demangle_rtti_class_name(""), None);
+    }
+
+    /// The Itanium `_ZTS…` type-name component recovers its class VERBATIM — template
+    /// arguments retained, so two instantiations stay two classes.
+    #[test]
+    fn typeinfo_name_itanium() {
+        assert_eq!(demangle_typeinfo_name("5Shape").as_deref(), Some("Shape"));
+        assert_eq!(demangle_typeinfo_name("N7leveldb3EnvE").as_deref(), Some("leveldb::Env"));
+        assert_eq!(demangle_typeinfo_name("3VecIiE").as_deref(), Some("Vec<int>"));
+        assert_eq!(demangle_typeinfo_name("3VecIdE").as_deref(), Some("Vec<double>"));
+        // ABI §2.9.1: a leading `*` marks a TU-local type; it is not part of the name.
+        assert_eq!(
+            demangle_typeinfo_name("*N12_GLOBAL__N_16HiddenE").as_deref(),
+            Some("(anonymous namespace)::Hidden")
+        );
+        // Non-type-name strings are rejected (no panic, no junk name).
+        assert_eq!(demangle_typeinfo_name(""), None);
+        assert_eq!(demangle_typeinfo_name("*"), None);
+        assert_eq!(demangle_typeinfo_name("not a mangled name"), None);
     }
 
     #[test]

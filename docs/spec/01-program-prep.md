@@ -463,6 +463,75 @@ every other binary's pass list is byte-identical to before the pass existed):
   chain (x86 raw-VA vs x64 image-base-relative refs behind a refkind dispatch), and
   label `<Class>::vftable` / `RTTI_*` with the class names demangled by the
   existing MSVC arm.
+- **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, default-off;
+  `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs`): the
+  GCC/Clang counterpart of the pass above, and a capability with **no Ghidra
+  equivalent at all** — upstream's `RttiAnalyzer` is a Microsoft-PE analyzer and its
+  GCC class recovery is script-tier, so on a stripped `g++` binary Ghidra leaves the
+  vtable as an unnamed `DAT_<addr>`.
+
+  Where the MSVC sibling has to *guess* which bytes are metadata (it byte-searches
+  for `.?A` strings and treats `ref − 12` as a candidate structure), the Itanium
+  graph offers an **exact anchor**. The three `__cxxabiv1` typeinfo vtables live in
+  libstdc++, so on any dynamically linked C++ image every `_ZTI…` typeinfo object's
+  leading `vptr` word is an undefined-symbol dynamic relocation naming
+  `__class_type_info`, `__si_class_type_info` or `__vmi_class_type_info` with addend
+  `2 × ptr` — and `.rela.dyn` is a loader input that `strip --strip-all` cannot
+  remove. The relocation's offset *is* the typeinfo address and its symbol *is* the
+  flavour, which fixes the object's layout past the `[vptr][name ptr]` prefix. A
+  defined `_ZTI…` symbol is a second discovery source for the unstripped or
+  statically linked case, its flavour sniffed from the object's shape.
+
+  Each typeinfo's `_ZTS…` type-name string — the bare mangled-name component, which
+  no demangler accepts alone — is recovered by wrapping it back into the `_ZTS`
+  symbol form and demangling that, the exact analog of the MSVC `??_R0…@8` wrap and
+  likewise adding no new demangler. Two details of that string are load-bearing and
+  each one silently costs whole classes when missed. A **leading `*`** marks a type
+  whose identity is local to one translation unit (ABI §2.9.1: compare `type_info`s
+  by pointer, not by string); it is not part of the mangled name, and leaving it on
+  makes every anonymous-namespace class — which is how most C++ spells a concrete
+  implementation of an exported interface — undemangleable. And the demangled result
+  is turned into an identifier by **folding** template arguments in
+  (`Vec<int>` → `Vec_int`) rather than by the module-wide `strip_bracket_groups`
+  reduction the rest of the demangler applies: two instantiations are two classes
+  with two vtables, and collapsing both to `Vec` makes the second lose the idempotent
+  symbol-commit race and keep `sub_<addr>` for every method. The `::` split is
+  depth-aware so a separator inside an argument list is not read as a scope boundary.
+
+  The `__si_`/`__vmi_` base lists then give the inheritance graph *with its byte
+  displacements*, the datum the MSVC path discards along with its `pmd` fields.
+
+  Vtables are reached **from** the typeinfo rather than guessed: every sub-vtable's
+  second header word points at its most-derived class's typeinfo, so one scan for
+  pointer slots holding a discovered typeinfo address yields them all, and two exact
+  ABI constraints reject the coincidental hits (chiefly the base-class pointers
+  inside other typeinfo objects, which also hold a typeinfo address) — `offset-to-top`
+  is always `≤ 0`, and a real sub-vtable has at least one slot pointing into an
+  executable section. A slot whose file word is zero but which carries a dynamic
+  relocation is an *imported* virtual method (`__cxa_pure_virtual`, a base method
+  defined in another image), so the walk steps over it instead of terminating and an
+  abstract interface keeps its true extent.
+
+  The pass emits `<C>_typeinfo`, `<C>_typeinfo_name`, `<C>_vtable` and `<C>_vptr`
+  data labels — the last being the value an object's vptr actually holds, two words
+  past the header, which is the constant a constructor stores — plus one
+  `<C>::vtable_<i>` function symbol per virtual slot, and marks the slot arrays
+  read-only. A secondary sub-vtable takes the name of the base subobject its
+  displacement identifies (`Widget_vtable_for_Drawable`), and its slot names are
+  prefixed accordingly, because a multiple-inheritance class has several sub-vtables
+  whose indices all restart at 0. An inherited slot claimed by several classes'
+  tables is attributed to the class that **defines** it, using the recovered base
+  graph, so `Shape::perimeter` — repeated verbatim in `Circle`'s and `Square`'s
+  tables — is named once, for `Shape`. Data labels join the class to the kind with
+  `_` rather than `::` because the C printer emits a global by its leaf name, which
+  would otherwise render every class's vptr as a bare, ambiguous `vptr`; function
+  symbols keep the `::` form, whose qualification *is* rendered at a call site
+  (§9, `cppcallnames`).
+
+  The pass is blind to a `-fno-rtti` build by construction: no typeinfo is emitted,
+  so no anchor exists and the output is empty. Independent code-pointer-run scanning
+  — which would find such vtables heuristically — is deliberately **not** part of
+  this pass.
 - **Objective-C** (`objc`, Mach-O-only, default-off;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and

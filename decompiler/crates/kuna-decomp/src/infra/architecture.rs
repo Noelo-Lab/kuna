@@ -889,6 +889,24 @@ pub struct Architecture {
     /// parity gate is byte-identical. Default-off (output-changing: it adds named
     /// data symbols); `--option rtti on` enables it.
     pub analysis_rtti: bool,
+    /// (kuna, NOVEL) Gate the Itanium (GCC/Clang) RTTI + vtable recovery pass
+    /// (`itaniumrtti`); default **off**. Ghidra has no Itanium RTTI analyzer at all
+    /// — its `RttiAnalyzer` is Microsoft-only and its GCC class recovery is
+    /// script-tier — so on a stripped `g++` binary a vtable stays `DAT_<addr>`.
+    /// This pass reads the Itanium C++ ABI graph directly: every `_ZTI…` typeinfo
+    /// object is located from the dynamic relocation that names its
+    /// `__cxxabiv1::__{,si_,vmi_}class_type_info` vtable (an anchor `strip
+    /// --strip-all` cannot remove from a shared object), its `_ZTS…` type-name
+    /// string is demangled to the class name, its base list gives the inheritance
+    /// displacements, and every `_ZTV…` sub-vtable pointing back at it is walked.
+    /// Emits `<C>::typeinfo` / `<C>::typeinfo_name` / `<C>::vtable` /
+    /// `<C>::vtable_for_<Base>` data labels plus one `<C>::vtable_<i>` function
+    /// symbol per virtual slot. ELF-only (registered in `passes_for` only for
+    /// `BinaryFormat::Elf`, and the pass also self-gates on ELF in `run`), real-ELF
+    /// path only ⇒ every XML parity gate is byte-identical. Default-off
+    /// (output-changing: it adds named data and function symbols);
+    /// `--option itaniumrtti on` enables it.
+    pub analysis_itaniumrtti: bool,
     /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
@@ -1246,6 +1264,7 @@ impl Architecture {
             error_noreturn_callsites: Vec::new(),
             analysis_fid: false,
             analysis_rtti: false,
+            analysis_itaniumrtti: false,
             analysis_aif: false,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
@@ -1403,6 +1422,7 @@ impl Architecture {
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
+        self.analysis_itaniumrtti = false; // (kuna, NOVEL) Itanium RTTI / vtable recovery default-off (ELF-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
@@ -1720,6 +1740,9 @@ impl Architecture {
             }
             "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
             "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
+            "itaniumrtti" => {
+                on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")
+            }
             "aif" => {
                 on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
             }
