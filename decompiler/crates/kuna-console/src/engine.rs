@@ -886,6 +886,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "mips_gp" => arch.analysis_mips_gp,
         "mips_isa" => arch.analysis_mips_isa,
         "dwarf" => arch.analysis_dwarf,
+        // (kuna `cppsig`) The whole-pass gate; WHICH certainty tier survives is a
+        // second decision, made on the mode in `commit_analysis_output`.
+        "cppsig" => arch.analysis_cppsig.enabled(),
         // Explicit (NOT the fail-open `_ => true` default): the source-line pass is
         // default-OFF (it changes the output), so it must be registered here to be
         // gated by the `analysis_dwarf_lines` flag rather than running by default.
@@ -1459,6 +1462,20 @@ fn commit_analysis_output(
     } else {
         out.cpp_dwarf.prototypes.clear();
     }
+    // 0a. (kuna `cppsig`) The demangled-signature arm's prototypes. Same deferred
+    //     shape as `cppproto` above, but the gate is three-valued, so the mode
+    //     selects WHICH certainty tiers survive: `proven` only the prototypes the
+    //     mangling entails, `inferred` those plus the class-evidence inferences,
+    //     `off` neither.
+    let cppsig_mode = prog.arch().analysis_cppsig;
+    let cppsig_protos = if cppsig_mode.enabled() {
+        kuna_analysis::demangle::kuna_cppsig::select(
+            std::mem::take(&mut out.cpp_sig),
+            cppsig_mode.inferred(),
+        )
+    } else {
+        Vec::new()
+    };
     let out = out;
 
     // 1. Extra symbols a pass discovered. Function symbols install like the
@@ -1805,6 +1822,17 @@ fn commit_analysis_output(
     for pieces in out.prototypes {
         let name = pieces.name.clone();
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
+    }
+
+    // 5b. (kuna `cppsig`) The DEMANGLED prototypes, bound by entry address like
+    //     the DWARF ones below. Applied BEFORE them on purpose: a mangled symbol
+    //     carries a DECLARATION (which can disagree with the code a compiler
+    //     actually emitted), DWARF carries ground truth, so wherever both reach a
+    //     function the DWARF signature must be the one that survives. Empty when
+    //     `--option cppsig off`.
+    for (addr, pieces) in cppsig_protos {
+        let a = Address::new(Rc::clone(code_space), addr);
+        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
 
     // 5a. (kuna `cppproto`) The DWARF prototypes bound by ENTRY ADDRESS. Applied

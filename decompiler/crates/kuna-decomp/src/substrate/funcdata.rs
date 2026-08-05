@@ -613,6 +613,10 @@ impl Funcdata {
     /// it did before this seed wired in (the prior unrecovered behavior), so a
     /// not-yet-supported declaration degrades gracefully rather than aborting the
     /// whole decompile.
+    ///
+    /// (kuna `cppsig`) A `pieces` with no `outtype` locks the INPUT half only —
+    /// see [`FuncProto::seed_locked_from_pieces`], which owns that contract so the
+    /// caller-side rebuild honors it identically.
     pub fn apply_locked_prototype(
         &mut self,
         pieces: &crate::fspec::PrototypePieces,

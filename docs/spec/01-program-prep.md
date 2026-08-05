@@ -357,6 +357,45 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   contract is **name-only** reduction: kuna's scope splitter nests on every `::`,
   so signature tails and template argument groups must be stripped or they become
   junk scopes.
+- **Demangled C++ signatures** (`cppsig`, `off|proven|inferred`, default `proven`;
+  `decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_cppsig.rs`, the
+  `DemangledFunction.applyTo` / "Apply Function Signatures" analog) is the
+  *signature* half of demangling, and the first consumer of the full c++filt form
+  the module has always been able to produce. Where the DWARF arm above needs
+  debug info, this one needs only the mangled symbol — which is what a **stripped**
+  C++ shared library still exports through `.dynsym` — so the two are
+  complementary, and where both reach a function the DWARF prototype (ground truth)
+  is applied last and wins over the demangled one (a declaration).
+  The declaration is parsed out of the demangled *string*, as upstream's
+  `GnuDemanglerParser` does: the last depth-0 parenthesis group is the parameter
+  list, the last depth-0 token before it is the qualified name, and a trailing
+  `const`/`volatile`/`&`/`&&` is the cv/ref qualifier. Each declared parameter maps
+  to a pointer of any depth, a primitive, or — as a POINTEE only — a named opaque
+  structure carrying the bare innermost class name (upstream's placeholder
+  structure). An aggregate passed **by value**, an array, a function pointer, a
+  pointer-to-member or an overloaded operator refuses the whole signature: the
+  mangling carries no layout, and a wrong width shifts every following parameter.
+  The **return type is deliberately not applied**. Itanium encodes one only for a
+  template function, so upstream returns null and keeps whatever the analysis
+  recovered; kuna expresses that as a prototype with no `outtype`, which the drive
+  reads as "lock the INPUT half only" and leaves return recovery running (04 §4.2).
+  What makes this a three-valued option rather than a flag is the **implicit object
+  parameter**: Itanium mangles a static member function exactly like a non-static
+  one and like a namespaced free function, and inventing a `this` that is not there
+  shifts every parameter rather than merely losing precision. `proven` therefore
+  applies only the shapes the mangling *entails* — a constructor, a destructor, a
+  cv-/ref-qualified member (all three take `this`), an unqualified global name, and
+  the MSVC forms, which state the access specifier, `static`, and the calling
+  convention outright. `inferred` additionally decides the ambiguous nested names
+  from class evidence mined out of the binary's own symbols: a scope that owns a
+  constructor, a destructor, a cv-qualified member or a `_ZTV`/`_ZTI`/`_ZTS` symbol
+  is a class, so its members take `this`; a scope with no such witness is a
+  namespace, so its functions do not. A 32-bit MSVC `__thiscall` member is refused
+  under every mode — that ABI passes `this` in ECX rather than as ordinary argument
+  0, and selecting the registered `__thiscall` prototype model (04 §4.1) is the
+  follow-up. Like the DWARF arm the pass runs at `load file`, so both certainty
+  tiers are computed there and stashed apart, and the mode selects which of them
+  the analysis commit applies.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,

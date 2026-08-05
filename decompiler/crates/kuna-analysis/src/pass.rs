@@ -388,6 +388,36 @@ pub struct AnalysisOutput {
     /// at load, upstream of the `option` commands, so the gate cannot live inside
     /// it — this split is what makes the flag live. See [`CppDwarfFacts`].
     pub cpp_dwarf: CppDwarfFacts,
+    /// (kuna `cppsig`) The prototypes recovered from the MANGLED SYMBOL, split by
+    /// how certain the pass is that argument 0 is an implicit `this`. Held apart
+    /// for the same reason as [`Self::cpp_dwarf`] — the producing pass runs at
+    /// load, upstream of the `option` commands — and additionally because the
+    /// gate is three-valued (`off|proven|inferred`), so the commit boundary picks
+    /// which tiers to apply. See [`CppSigFacts`].
+    pub cpp_sig: CppSigFacts,
+}
+
+/// (kuna `cppsig`) Prototypes read off a C++ mangled symbol, in two certainty
+/// tiers.
+///
+/// Itanium mangling does not distinguish a static member function from a
+/// non-static one, and adding a `this` that is not there shifts EVERY parameter
+/// by one position — strictly worse than leaving the function untouched. So the
+/// pass computes both tiers at load and the commit boundary selects with
+/// `--option cppsig`: `proven` applies only the first, `inferred` applies both.
+/// Both are keyed by ENTRY ADDRESS, like [`CppDwarfFacts::prototypes`] and for
+/// the same reason.
+#[derive(Default, Debug)]
+pub struct CppSigFacts {
+    /// The mangling ENTAILS the answer: a constructor, a destructor, a
+    /// cv-/ref-qualified member (all three take `this`), an unqualified global
+    /// name or an explicit MSVC `__cdecl` (none of which can).
+    pub proven: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// A nested name whose `this`-ness was decided from class evidence mined out
+    /// of the binary's own symbols (a scope owning a ctor/dtor/cv-member or a
+    /// `_ZTV`/`_ZTI`/`_ZTS` symbol is a class; one with no such witness is a
+    /// namespace).
+    pub inferred: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
 }
 
 /// (kuna `cppproto`) The DWARF facts recovered by resolving a subprogram DIE
@@ -437,6 +467,8 @@ impl AnalysisOutput {
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
+        self.cpp_sig.proven.extend(other.cpp_sig.proven);
+        self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
     }
 }
 

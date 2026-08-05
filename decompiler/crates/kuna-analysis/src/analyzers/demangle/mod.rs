@@ -58,13 +58,16 @@
 //! for callers that want it (and for the roadmap-documented `_Z3fooi` ->
 //! `foo(int)` shape).
 //!
-//! ## Scope (PARTIAL — names + namespaces only)
+//! ## Scope (names + namespaces here; the signature in [`kuna_cppsig`])
 //!
-//! This delivers Ghidra's **name + namespace** application — the same depth as
-//! the PLT pass ("correct names"). It does NOT apply the demangled
-//! **signature** (parameter / return types): kuna recovers parameter types from
-//! usage in S4/S5, so re-seeding libiberty's signature is out of scope here (a
-//! deferred follow-up, like the PLT external-location/thunk object model).
+//! This module delivers Ghidra's **name + namespace** application — the same
+//! depth as the PLT pass ("correct names"). Applying the demangled **signature**
+//! (the class type for `this` plus the declared parameter types) was the
+//! deferred follow-up, and it now lives beside it in [`kuna_cppsig`]
+//! (`--option cppsig`), which consumes [`demangle_raw`] and parks a prototype by
+//! entry address. The split is deliberate: the name reduction is mandatory and
+//! unconditional (the `::`-scope splitter depends on it), while the signature is
+//! a *declaration* that can disagree with the code and is therefore gated.
 //!
 //! ## Output spelling (minor divergence, not a parity break)
 //!
@@ -72,6 +75,12 @@
 //! (e.g. `cpp_demangle` renders `std::__cxx11::basic_string`, where some c++filt
 //! builds elide `__cxx11`). For the name-only path this only affects which
 //! intermediate `::` scopes are created, not correctness of the base name.
+
+/// (kuna `cppsig`) The signature arm — apply the demangled parameter types and
+/// the class type for `this` to a function whose mangled symbol survives. This
+/// is the "deferred follow-up" the Scope section above records, and the first
+/// production consumer of [`demangle_raw`].
+pub mod kuna_cppsig;
 
 /// `GnuDemangler.GLOBAL_PREFIX` (`GnuDemangler.java:35`).
 const GLOBAL_PREFIX: &str = "_GLOBAL_";

@@ -182,6 +182,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (real source) prototype wins (last-write in set_function_prototype_pieces).
         // Skips cleanly on a non-DWARF binary. Subtask-3 (DW_OP_fbreg stack-local
         // ScopeLocal map) is a deferred engine change — see dwarf docs.
+        // S1 demangled C++ signatures (`cppsig`): read the class type for `this`
+        // and the declared parameter types straight off a mangled symbol (the kuna
+        // analog of Ghidra's `DemangledFunction.applyTo` / the GNU demangler's
+        // "Apply Function Signatures"). Registered BEFORE `DwarfPass` so that
+        // wherever both reach a function the DWARF (ground truth) prototype
+        // overwrites the demangled (declaration) one — the two are complementary,
+        // DWARF on an unstripped binary and the mangled symbol on a stripped one.
+        // Registered always (the facts are computed + stashed at load, in two
+        // certainty tiers), the COMMIT gated by `--option cppsig proven|inferred`
+        // via `engine.rs::analysis_pass_enabled` + `commit_analysis_output`.
+        Box::new(crate::demangle::kuna_cppsig::CppSigPass),
         Box::new(crate::dwarf::DwarfPass),
         // S1 DWARF source lines: parse `.debug_line` and surface each
         // instruction's `file:line` as a `Comment::user2` on the decompiled

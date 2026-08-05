@@ -354,6 +354,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // the facts are stashed apart and this flag gates their COMMIT
     // (`engine.rs::commit_analysis_output`). Default-ON.
     "cppproto",
+    // (kuna) The demangled-C++-signature arm: read the class type for `this` and
+    // the declared parameter types straight off a MANGLED SYMBOL, which is the
+    // only signature source that survives `strip` on a C++ shared library. Not an
+    // on/off flag — Itanium mangling cannot tell a static member function from a
+    // non-static one, and adding a `this` that is not there shifts every following
+    // parameter, so the value picks how much certainty is required:
+    // `off|proven|inferred`, default `proven`. Same deferred shape as `cppproto`
+    // (the pass runs at `load file`, the gate applies at the analysis commit).
+    "cppsig",
     "callfixup",
     "addrtable",
     "operand_refs",
