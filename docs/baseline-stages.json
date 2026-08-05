@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    394,
-    394
+    400,
+    400
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -251,6 +251,12 @@
     "data:condfold-ruleb #4: OFF, the declined cascade nests the last two guards inside the first one's arm (pass 1 only)",
     "data:condfold-ruleb #5: the failure arm consumes the escaping call result in both renderings, which is what keeps that result non-implied and printed (off plus on = 2)",
     "data:condfold-ruleb #6: the guarded body is untouched by the fold (off plus on = 2)",
+    "data:cspecprotos #1: default model, the ECX this-pointer is not a parameter",
+    "data:cspecprotos #2: default model, the this-pointer degrades to an uninitialized local",
+    "data:cspecprotos #3: default model, only the stack argument becomes a parameter",
+    "data:cspecprotos #4: the registered __thiscall model resolves and recovers ECX as the first parameter",
+    "data:cspecprotos #5: the member access is now a parameter dereference",
+    "data:cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer",
     "data:earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)",
     "data:earlyreturn #2: ON logs the const-guard hoist exactly once",
     "data:finalorder #1: no statement is emitted after an unconditional goto",

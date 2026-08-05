@@ -1,0 +1,75 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    P4 calls / prototype-model registry (`cspecprotos`).
+
+    kuna's `__thiscall` machinery was fully ported and permanently dead:
+    ProtoModel::hasThisPointer, FuncProto::hasThisPointer/updateThisPointer/
+    getThisPointerStorage and ParameterPieces::isThisPointer all exist, are
+    driven from ActionInputPrototype and are consumed by P5 type inference,
+    but NOTHING could ever set hasThis, because the cspec reader
+    (Architecture::build_default_proto) parsed only the ONE model inside
+    <default_proto>.  The prototype-model registry held exactly one entry, so
+    `getModel("__thiscall")` never resolved and `option defaultprototype
+    __thiscall` failed with "Unknown prototype model :__thiscall", even though
+    x86win.cspec has DEFINED __thiscall all along.
+
+    This testcase registers the spec's NAMED models (<prototype>,
+    <resolveprototype>, <modelalias>) so more than one calling convention can
+    live in the registry at once.  Registration alone selects nothing: the
+    default pipeline is byte-identical (675/675 datatest assertions unmoved).
+
+    The bytes are two x86 member-function bodies as MSVC emits them, with the
+    `this` pointer in ECX:
+
+        getfield @ 0x401000   mov eax,[ecx+0xc]        ; return this->f
+                              ret
+        addfield @ 0x401004   mov eax,[ecx]            ; return this->g + x
+                              add eax,[esp+4]
+                              ret
+
+    Pass 1 (default, the __stdcall model the <default_proto> declares): ECX is
+    not in the model's <input> pentry list, so the `this` pointer is NOT a
+    parameter.  It is emitted as an uninitialized local read before assignment
+    (`int4 v1; // ecx`), which is not valid C and loses the member access.
+    Asserts #1/#2/#3 pin that bug.
+
+    Pass 2 (`option defaultprototype __thiscall`, the model this PR registers):
+    ECX is __thiscall's first <pentry>, so the `this` pointer is recovered as a
+    real parameter and the stack argument shifts to the second slot.  Asserts
+    #4/#5/#6 prove it.  Before this change pass 2 could not run at all: the
+    option aborted the script.
+
+    Assigning __thiscall to member functions automatically (from the demangler
+    or DWARF DW_AT_object_pointer) is the follow-up; this testcase drives the
+    model by hand, which is exactly what the registry now makes possible.
+-->
+<bytechunk space="ram" offset="0x401000">
+8b410cc38b0103442404c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="getfield"/>
+<symbol space="ram" offset="0x401004" name="addfield"/>
+</binaryimage>
+<script>
+  <com>lo fu getfield</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu addfield</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option defaultprototype __thiscall</com>
+  <com>lo fu getfield</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu addfield</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="cspecprotos #1: default model, the ECX this-pointer is not a parameter" min="1" max="1">unsigned int getfield\(void\)</stringmatch>
+<stringmatch name="cspecprotos #2: default model, the this-pointer degrades to an uninitialized local" min="2" max="2">// ecx</stringmatch>
+<stringmatch name="cspecprotos #3: default model, only the stack argument becomes a parameter" min="1" max="1">int4 addfield\(int4 a0\)</stringmatch>
+<stringmatch name="cspecprotos #4: the registered __thiscall model resolves and recovers ECX as the first parameter" min="1" max="1">unsigned int getfield\(int4 a0\)</stringmatch>
+<stringmatch name="cspecprotos #5: the member access is now a parameter dereference" min="1" max="1">return \*\(unsigned int \*\)\(a0 \+ 0xc\);</stringmatch>
+<stringmatch name="cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer" min="1" max="1">int4 addfield\(int4 \*a0,int4 a1\)</stringmatch>
+</decompilertest>
