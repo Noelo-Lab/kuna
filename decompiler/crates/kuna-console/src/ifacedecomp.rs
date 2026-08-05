@@ -968,11 +968,18 @@ decomp_command!(
         let (offset, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         s.skip_ws();
         let name = s.read_token(); // optional
-        // C++ nameFunction picks a default name if none was given.
-        let name = if name.is_empty() {
-            prog.arch().name_function(&offset)
-        } else {
+        // No explicit name: prefer the FunctionSymbol already installed here,
+        // resolved across scopes so a demangled C++ entry reports its qualified
+        // `Class::method` form.  Jumping straight to C++ `nameFunction` printed a
+        // `sub_<addr>` header for `--addr` on an UNSTRIPPED binary where the by-name
+        // path printed the real name (DIV-59); it stays the unknown-address fallback.
+        let name = if !name.is_empty() {
             name
+        } else {
+            prog.arch()
+                .symboltab
+                .function_display_name_across_scopes(&offset)
+                .unwrap_or_else(|| prog.arch().name_function(&offset))
         };
         // (kuna, Ghidra-gap) error(nonzero) no-return prune, mirroring decompile-all and
         // IfcFuncload: apply the analysis's `call error(nonzero,…)` facts as CALL_RETURN

@@ -52,8 +52,21 @@ the order is load-bearing:
    order, and installs them through
    `decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`. Every
    commit arm is additive and idempotent against the loader symbols already
-   installed *in the symbol table* (the `find_function` overlap check no-ops a
-   duplicate). Idempotence does **not** extend to the flat name→address stream
+   installed *in the symbol table*: the discovered-entry arm's overlap check
+   resolves **across scopes**
+   (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+   (Database::find_function_across_scopes)`, the port of C++ `Scope::queryFunction`,
+   which spans the scope tree), so a function already known under a *namespaced*
+   name is recognized as present and no placeholder is installed over it. Scoping
+   that check to the global scope alone was the DIV-59 defect: a demangled C++
+   funcsym lives in its namespace scope (`std::terminate` is base `terminate` in
+   scope `std`), the synthetic `sub_<addr>` the arm would name a rediscovered entry
+   carries no `::` and therefore resolves to GLOBAL, so the probe missed the real
+   symbol and installed a duplicate beside it — and since the cross-scope resolver
+   searches global first, that duplicate then shadowed the real name for
+   `FlowInfo::queryCall`, rendering `sub_<addr>` at every C++ call site on any
+   surface that enables a discovery pass. Idempotence does **not** extend to the
+   flat name→address stream
    `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::register_symbol)`
    maintains: that retains by NAME, so an entry the loader already named
    accumulates a second record whenever a pass supplies a different name for it —
@@ -101,7 +114,16 @@ Four front-ends drive one engine assembly:
   each request, so every invocation re-parses the SLEIGH spec and re-runs the
   whole-binary analysis. It injects `option listing on` by default (unless the
   caller names `listing`), so the no-return analyses fire even on the
-  single-function path.
+  single-function path. Its two selection forms resolve the printed function name
+  the same way: `load function <name>` carries the requested name through, and
+  `--addr <vma>` (`decompiler/crates/kuna-console/src/ifacedecomp.rs
+  (IfcAddrrangeLoad)`) first asks the symbol table what is installed at that
+  address — across scopes, so a demangled C++ entry reports its qualified
+  `Class::method` form — and only falls back to the generic
+  `Architecture::name_function` (`sub_<addr>`) for a genuinely unknown address. An
+  explicit `load addr <vma> <name>` still wins over both. Before DIV-59 the address
+  form skipped the lookup entirely, so an addressed function on an **unstripped**
+  binary printed a `sub_<addr>` header that the by-name form printed correctly.
 - (kuna) **`kuna decompile-all` / `kuna functions`**
   (`decompiler/crates/kuna-cli/src/decompile_all.rs (run, decompile_all)`) — the
   whole-binary, machine-readable surface: load and analyze **once** in-process

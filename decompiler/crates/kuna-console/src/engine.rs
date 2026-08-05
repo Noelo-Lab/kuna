@@ -1556,9 +1556,17 @@ fn commit_analysis_output(
     //    overlay (the dynamic INIT/FINI array elements — `_INIT_<i>` / `_FINI_<i>`,
     //    and the single `_DT_INIT`/`_DT_FINI`, per `ElfProgramBuilder`) is named
     //    with it; every other discovered VMA falls back to the generic
-    //    `name_function` (`sub_<addr>`), exactly as before. The idempotent
-    //    `find_function` no-op below still lets a real `.symtab`/`.dynsym` name win
-    //    on a non-stripped binary — only genuinely new starts take the overlay name.
+    //    `name_function` (`sub_<addr>`), exactly as before.
+    //
+    //    The idempotence probe resolves ACROSS SCOPES (C++ `Scope::queryFunction`
+    //    spans the scope tree), which is what lets a real `.symtab`/`.dynsym` name
+    //    win on a non-stripped binary. A scope-local probe only ever saw the GLOBAL
+    //    scope (the synthetic `sub_<addr>`/`_INIT_<i>` names carry no `::`), so a
+    //    demangled C++ callee living in a namespace scope — `Account::deposit` in
+    //    scope `Account` — looked absent and a duplicate generic FunctionSymbol was
+    //    installed in GLOBAL alongside it. `find_function_across_scopes` searches
+    //    global first, so that duplicate then shadowed the real name at every call
+    //    site and the printer rendered `sub_<addr>` (DIV-59).
     for &vma in &out.entries {
         let addr = Address::new(Rc::clone(code_space), vma);
         let name = out
@@ -1571,10 +1579,10 @@ fn commit_analysis_output(
         let min_size = prog.arch().min_funcsymbol_size;
         {
             let arch = prog.arch_mut();
-            let (scope, base) = arch
-                .symboltab
-                .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
-            if arch.symboltab.find_function(scope, &addr).is_none() {
+            if arch.symboltab.find_function_across_scopes(&addr).is_none() {
+                let (scope, base) = arch
+                    .symboltab
+                    .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
                 arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
             }
         }
