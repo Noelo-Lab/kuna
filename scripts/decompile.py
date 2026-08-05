@@ -107,6 +107,7 @@ def decompile(
         )
         env = dict(os.environ)
         env["SLEIGHHOME"] = specs
+        _apply_loadtime_gates(env, options)
 
         try:
             proc = subprocess.run(
@@ -155,6 +156,31 @@ def decompile(
                 os.unlink(regions_path)
             except OSError:
                 pass
+
+
+# Options whose effect is baked during `load file`, upstream of every `option`
+# command, so the console line below cannot reach them: the engine reads them from
+# the process environment instead (the same bridge `kuna decompile` puts on the
+# decomp_dbg subprocess). Keyed option name -> env var.
+_LOADTIME_GATE_ENV = {
+    # (kuna `typedepth`) The DWARF type mapper's recursion guard; the types are
+    # mapped inside `load file`, so `option typedepth off` alone is too late.
+    "typedepth": "KUNA_TYPEDEPTH",
+}
+
+
+def _apply_loadtime_gates(env, options):
+    """Export the load-time gates named in ``options`` onto ``env``.
+
+    Without this a before/after demo of a load-time option shows two identical
+    renderings: the console `option` line is applied after the image is loaded.
+    """
+    for name, value in (options or []):
+        var = _LOADTIME_GATE_ENV.get(name)
+        if var is None:
+            continue
+        off = str(value).strip().lower() in ("off", "0", "false", "no")
+        env[var] = "off" if off else "on"
 
 
 def _build_script(binary, target, by_address, bfd_target, raw, out_path,

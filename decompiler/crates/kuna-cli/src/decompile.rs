@@ -288,6 +288,16 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             );
             cmd.env("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
         }
+        // (kuna) Load-time `typedepth` gate: the DWARF type mapper runs inside
+        // `load file`, so an `--option typedepth off` must reach it via the env
+        // var (`kuna_typedepth::TYPEDEPTH_ENV`) set on the subprocess up front.
+        if let Some(value) = last_option_value(&args.options, "typedepth") {
+            let on = !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false"
+            );
+            cmd.env(kuna_decomp::kuna_typedepth::TYPEDEPTH_ENV, if on { "on" } else { "off" });
+        }
         let output = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

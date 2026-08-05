@@ -41,7 +41,7 @@
 //! - `DWARFDataTypeImporter.java` — `getDataType(DIEAggregate)`, the recursive
 //!   tag switch ([`build_datatype`] reproduces it): `makeDataTypeForPointer`,
 //!   base_type, struct/union/array/typedef/const/volatile, plus the
-//!   `trackRecursion` depth cap ([`MAX_TYPE_DEPTH`]) that survives type cycles.
+//!   `trackRecursion` cycle guard ([`kuna_typedepth`]) that survives type cycles.
 //!
 //! ## Dependency-substitution LOSS
 //!
@@ -111,6 +111,11 @@ pub use lines::DwarfLinesPass;
 /// binding. See [`kuna_cppproto`].
 mod kuna_cppproto;
 
+/// (kuna `typedepth`) The type mapper's recursion guard — upstream's per-DIE
+/// cycle counter in place of a fixed hop budget. See [`kuna_typedepth`].
+mod kuna_typedepth;
+use kuna_typedepth::TypeWalk;
+
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
 type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 
@@ -140,12 +145,6 @@ fn dwarf_section_data(file: &object::File, id: gimli::SectionId) -> Option<Vec<u
     }
     None
 }
-
-/// Recursion cap for the DIE -> [`Datatype`] mapper, the port of Ghidra's
-/// `DWARFDataTypeImporter` `trackRecursion` guard (`DWARFDataTypeImporter.java`).
-/// Struct -> pointer -> struct DWARF cycles would otherwise loop forever; at the
-/// cap we fall back to a void pointer / void so the prototype still builds.
-const MAX_TYPE_DEPTH: u32 = 3;
 
 /// The per-architecture **static `call_frame_cfa` offset** — the constant that
 /// turns a `DW_AT_frame_base = DW_OP_call_frame_cfa` expression into a concrete
@@ -449,39 +448,54 @@ fn read_sleb128(buf: &[u8]) -> Option<(i64, usize)> {
 /// Build the kuna [`Datatype`] for the type DIE at `off`, recursing through the
 /// DWARF type chain (faithful reduction of `DWARFDataTypeImporter.getDataType`'s
 /// tag switch). `None` for a missing/unbuildable type; the caller skips that one
-/// piece rather than failing the analysis. `depth` enforces [`MAX_TYPE_DEPTH`].
+/// piece rather than failing the analysis. `walk` is the recursion guard
+/// ([`kuna_typedepth::TypeWalk`]) and is the whole of the termination argument.
 ///
 /// `cpp` adds the C++-only tag arms (`--option cppproto`, see
 /// [`kuna_cppproto`]): a `DW_TAG_class_type` maps like a structure and a
 /// `DW_TAG_reference_type`/`DW_TAG_rvalue_reference_type` like a pointer. With
-/// `cpp` false the switch is byte-identical to the pre-`cppproto` mapper, so a
-/// gate-off run reproduces the old types exactly.
+/// `cpp` false and the guard in its budget mode (`--option typedepth off`) the
+/// switch is byte-identical to the pre-`cppproto` mapper.
 fn build_datatype(
     off: Option<usize>,
     dies: &BTreeMap<usize, DieSnap>,
     types: &dyn TypeFactory,
     word_size: uint4,
-    depth: u32,
+    walk: &mut TypeWalk,
     cpp: bool,
 ) -> Option<Rc<Datatype>> {
     // A null DW_AT_type means `void` (the C++ getDataTypeForVariable null case).
     let Some(off) = off else {
         return types.get_type_void().ok();
     };
-    if depth >= MAX_TYPE_DEPTH {
-        // Recursion cap (trackRecursion): a void pointer keeps a cyclic
-        // struct->ptr->struct chain finite while still rendering as a pointer.
+    if !walk.enter(off) {
+        // Refused (a type cycle, or a bound): void keeps the chain finite while a
+        // pointer to it still renders as a pointer.
         return types.get_type_void().ok();
     }
+    let built = build_datatype_at(off, dies, types, word_size, walk, cpp);
+    walk.leave(off);
+    built
+}
+
+/// The tag switch itself, entered with `off` already admitted by the guard.
+fn build_datatype_at(
+    off: usize,
+    dies: &BTreeMap<usize, DieSnap>,
+    types: &dyn TypeFactory,
+    word_size: uint4,
+    walk: &mut TypeWalk,
+    cpp: bool,
+) -> Option<Rc<Datatype>> {
     let die = dies.get(&off)?;
-    // (kuna `cppproto`) Collapse the transparent qualifier hops before recursing:
-    // they carry no structure, but each one used to consume a level of the depth-3
-    // budget, and a `const` member function's `this` is four DIEs deep
-    // (`const -> pointer -> const -> class`) — deep enough that `Account *this`
-    // degraded to `void *` on every const method. Stripping cannot loop (the hop
-    // count is bounded) and leaves the cycle guard where it belongs, on the
-    // pointer/array/struct arms that actually recurse.
-    let (die, alias) = if cpp { strip_qualifiers(die, dies) } else { (die, None) };
+    // Collapse the transparent qualifier hops before recursing: they carry no
+    // structure, and collapsing is what carries an anonymous aggregate's typedef
+    // name onto it (`mbstate_t`, not the shared `anon_struct`). Stripping cannot
+    // loop (the hop count is bounded) and leaves the cycle guard where it belongs,
+    // on the pointer/array/struct arms that actually recurse. (kuna `cppproto`
+    // introduced it for C++; `typedepth` extends it to the C callers.)
+    let (die, alias) =
+        if cpp || walk.collapse_qualifiers() { strip_qualifiers(die, dies) } else { (die, None) };
     let ptr = types.get_size_of_pointer();
     match die.tag {
         gimli::DW_TAG_base_type => {
@@ -504,13 +518,13 @@ fn build_datatype(
         // maps both through `makeDataTypeForPointer`), so it shares this arm.
         gimli::DW_TAG_pointer_type => {
             // makeDataTypeForPointer: pointer to the (possibly null=void) pointee.
-            let pointee = build_datatype(die.type_ref, dies, types, word_size, depth + 1, cpp)
+            let pointee = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)
                 .or_else(|| types.get_type_void().ok())?;
             let psize = die.byte_size.map(|b| b as i32).unwrap_or(ptr);
             types.get_type_pointer(psize, pointee, word_size).ok()
         }
         gimli::DW_TAG_reference_type | gimli::DW_TAG_rvalue_reference_type if cpp => {
-            let pointee = build_datatype(die.type_ref, dies, types, word_size, depth + 1, cpp)
+            let pointee = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)
                 .or_else(|| types.get_type_void().ok())?;
             let psize = die.byte_size.map(|b| b as i32).unwrap_or(ptr);
             types.get_type_pointer(psize, pointee, word_size).ok()
@@ -521,10 +535,10 @@ fn build_datatype(
         | gimli::DW_TAG_const_type
         | gimli::DW_TAG_volatile_type
         | gimli::DW_TAG_restrict_type => {
-            build_datatype(die.type_ref, dies, types, word_size, depth + 1, cpp)
+            build_datatype(die.type_ref, dies, types, word_size, walk, cpp)
         }
         gimli::DW_TAG_array_type => {
-            let elem = build_datatype(die.type_ref, dies, types, word_size, depth + 1, cpp)?;
+            let elem = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?;
             // The length lives on a DW_TAG_subrange_type child (DW_AT_count or
             // upper_bound+1); fall back to 1 for a flexible/unknown array.
             let count = die
@@ -542,16 +556,13 @@ fn build_datatype(
         // arm. Without it every `Foo *this` degraded to `void *`.
         gimli::DW_TAG_structure_type => {
             // A named opaque struct is enough for a pointer-to-struct to render.
-            let n = aggregate_name(die, alias, "anon_struct");
-            types.get_type_struct(n).ok()
+            intern_aggregate(types, die, alias, "anon_struct", walk, false)
         }
         gimli::DW_TAG_class_type if cpp => {
-            let n = aggregate_name(die, alias, "anon_class");
-            types.get_type_struct(n).ok()
+            intern_aggregate(types, die, alias, "anon_class", walk, false)
         }
         gimli::DW_TAG_union_type => {
-            let n = aggregate_name(die, alias, "anon_union");
-            types.get_type_union(n).ok()
+            intern_aggregate(types, die, alias, "anon_union", walk, true)
         }
         gimli::DW_TAG_enumeration_type => {
             let size = die.byte_size.map(|b| b as i32).unwrap_or(4).max(1);
@@ -564,6 +575,42 @@ fn build_datatype(
         // Any other tag (e.g. subroutine_type) -> give up on this type cleanly.
         _ => None,
     }
+}
+
+/// Intern the opaque aggregate for `die` under [`aggregate_name`], falling back
+/// to the anonymous `fallback` name when the BORROWED typedef name is not a name
+/// the type factory can hold an aggregate under.
+///
+/// The alias is a name from another namespace, and it can already be taken: kuna
+/// registers a core type called `code`, and zlib's `inftrees.h` typedefs an
+/// anonymous struct to exactly that. The factory then refuses the redefinition,
+/// the aggregate builds as `None`, and the pointer arm's `.or_else(get_type_void)`
+/// turns `code *next` into `void *next` — the very degradation this pass exists
+/// to remove. Only an aggregate that had no name of its own falls back: a
+/// genuinely named type keeps the pre-existing behavior (no new name is asserted
+/// on kuna's behalf).
+fn intern_aggregate(
+    types: &dyn TypeFactory,
+    die: &DieSnap,
+    alias: Option<&str>,
+    fallback: &str,
+    walk: &TypeWalk,
+    union: bool,
+) -> Option<Rc<Datatype>> {
+    let want =
+        if union { type_metatype::TYPE_UNION } else { type_metatype::TYPE_STRUCT };
+    let intern = |n: &str| {
+        let built = if union { types.get_type_union(n) } else { types.get_type_struct(n) };
+        built.ok().filter(|t| t.get_metatype() == want)
+    };
+    let name = aggregate_name(die, alias, fallback);
+    if let Some(t) = intern(name) {
+        return Some(t);
+    }
+    if walk.collapse_qualifiers() && die.name.is_empty() && name != fallback {
+        return intern(fallback);
+    }
+    None
 }
 
 /// (kuna `cppproto`) Follow the transparent qualifier chain
@@ -694,7 +741,8 @@ fn build_pieces(
     word_size: uint4,
 ) -> Option<PrototypePieces> {
     // Return type: a null DW_AT_type is `void` (build_datatype handles None).
-    let outtype = build_datatype(sub.type_ref, dies, types, word_size, 0, false);
+    let mut walk = TypeWalk::new();
+    let outtype = build_datatype(sub.type_ref, dies, types, word_size, &mut walk, false);
 
     let mut intypes = Vec::new();
     let mut innames = Vec::new();
@@ -704,7 +752,7 @@ fn build_pieces(
         let Some(child) = dies.get(&coff) else { continue };
         match child.tag {
             gimli::DW_TAG_formal_parameter => {
-                let ty = build_datatype(child.type_ref, dies, types, word_size, 0, false)?;
+                let ty = build_datatype(child.type_ref, dies, types, word_size, &mut walk, false)?;
                 intypes.push(ty);
                 innames.push(child.name.clone());
             }
@@ -751,6 +799,7 @@ fn collect_fbreg_locals(
     cfa: i64,
     out: &mut Vec<crate::pass::LocalFact>,
 ) {
+    let mut walk = TypeWalk::new();
     for &coff in &sub.children {
         let Some(child) = dies.get(&coff) else { continue };
         if !matches!(child.tag, gimli::DW_TAG_variable | gimli::DW_TAG_formal_parameter) {
@@ -760,7 +809,11 @@ fn collect_fbreg_locals(
             continue;
         }
         let Some(fbreg) = child.fbreg_location else { continue };
-        let Some(ty) = build_datatype(child.type_ref, dies, types, word_size, 0, false) else { continue };
+        let Some(ty) =
+            build_datatype(child.type_ref, dies, types, word_size, &mut walk, false)
+        else {
+            continue;
+        };
         out.push(crate::pass::LocalFact {
             func_addr,
             name: child.name.clone(),
@@ -917,7 +970,14 @@ impl AnalysisPass for DwarfPass {
                             // memory access and leave the global `dat_<addr>`). A
                             // type that cannot be sized falls back to 1 (the prior
                             // behavior for the 1-byte globals).
-                            let size = build_datatype(snap.type_ref, &dies, types, word_size, 0, false)
+                            let size = build_datatype(
+                                snap.type_ref,
+                                &dies,
+                                types,
+                                word_size,
+                                &mut TypeWalk::new(),
+                                false,
+                            )
                                 .map(|t| t.get_size())
                                 .filter(|&s| s >= 1)
                                 .unwrap_or(1) as u32;
@@ -939,6 +999,125 @@ impl AnalysisPass for DwarfPass {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kuna_decomp::dtype::TypeFactoryImpl;
+
+    /// A configured [`TypeFactory`] for the mapper unit tests (the dtype-test
+    /// recipe: default alignment map, max base size 8, 64-bit sizes, core-type
+    /// cache so `get_type_void`/`get_type_char`/`get_type_pointer` resolve).
+    fn factory() -> TypeFactoryImpl {
+        let f = TypeFactoryImpl::new();
+        f.set_default_alignment_map();
+        f.set_max_basetype_size(8);
+        f.setup_sizes(Some(8), 8, 4);
+        let _ = f.cache_core_types();
+        f
+    }
+
+    /// A FORGED `.debug_info` whose type chain closes on itself must terminate.
+    ///
+    /// This is what the recursion guard is for, and what the pre-fix depth budget
+    /// conflated with "deep": a `DW_TAG_pointer_type` pointing at itself, a
+    /// `typedef`/`const` pair pointing at each other, an array whose element type
+    /// is the array. None is reachable from a real compiler and all are reachable
+    /// from a corrupt or hostile file. The assertion is that the call RETURNS (a
+    /// hang or a stack overflow is the failure).
+    #[test]
+    fn forged_type_cycles_terminate() {
+        let types = factory();
+        let mut dies: BTreeMap<usize, DieSnap> = BTreeMap::new();
+
+        // 1: a pointer whose pointee is itself.
+        let mut selfptr = DieSnap::new(gimli::DW_TAG_pointer_type, 1);
+        selfptr.type_ref = Some(1);
+        selfptr.byte_size = Some(8);
+        dies.insert(1, selfptr);
+
+        // 2 <-> 3: a typedef and a const pointing at each other (the qualifier
+        // chain the collapse walks), reached through pointer 4.
+        let mut td = DieSnap::new(gimli::DW_TAG_typedef, 1);
+        td.name = "loop_t".into();
+        td.type_ref = Some(3);
+        dies.insert(2, td);
+        let mut cst = DieSnap::new(gimli::DW_TAG_const_type, 1);
+        cst.type_ref = Some(2);
+        dies.insert(3, cst);
+        let mut ptr = DieSnap::new(gimli::DW_TAG_pointer_type, 1);
+        ptr.type_ref = Some(2);
+        ptr.byte_size = Some(8);
+        dies.insert(4, ptr);
+
+        // 5: an array whose element type is the array itself.
+        let mut arr = DieSnap::new(gimli::DW_TAG_array_type, 1);
+        arr.type_ref = Some(5);
+        arr.array_count = Some(4);
+        dies.insert(5, arr);
+
+        for cpp in [false, true] {
+            for off in [1usize, 2, 4, 5] {
+                let mut walk = TypeWalk::with_gate(true);
+                let built = build_datatype(Some(off), &dies, &types, 1, &mut walk, cpp);
+                if off == 1 || off == 4 {
+                    assert!(built.is_some(), "a cyclic pointer should still build (off={off})");
+                }
+            }
+        }
+    }
+
+    /// The same forged input under the pre-fix budget (`--option typedepth off`)
+    /// also terminates — the off arm must stay safe, not just reproducible.
+    #[test]
+    fn forged_type_cycles_terminate_with_the_budget() {
+        let types = factory();
+        let mut dies: BTreeMap<usize, DieSnap> = BTreeMap::new();
+        let mut selfptr = DieSnap::new(gimli::DW_TAG_pointer_type, 1);
+        selfptr.type_ref = Some(1);
+        selfptr.byte_size = Some(8);
+        dies.insert(1, selfptr);
+        let mut walk = TypeWalk::with_gate(false);
+        assert!(build_datatype(Some(1), &dies, &types, 1, &mut walk, false).is_some());
+    }
+
+    /// An ordinary four-DIE C declaration (`const int *const *`) resolves under
+    /// the cycle guard and truncates under the budget — the defect in one test.
+    #[test]
+    fn ordinary_declaration_survives_only_the_cycle_guard() {
+        let types = factory();
+        let mut dies: BTreeMap<usize, DieSnap> = BTreeMap::new();
+        let mut leaf = DieSnap::new(gimli::DW_TAG_base_type, 1);
+        leaf.name = "int".into();
+        leaf.byte_size = Some(4);
+        leaf.encoding = Some(gimli::DW_ATE_signed);
+        dies.insert(10, leaf);
+        let mut c1 = DieSnap::new(gimli::DW_TAG_const_type, 1);
+        c1.type_ref = Some(10);
+        dies.insert(11, c1);
+        let mut p1 = DieSnap::new(gimli::DW_TAG_pointer_type, 1);
+        p1.type_ref = Some(11);
+        p1.byte_size = Some(8);
+        dies.insert(12, p1);
+        let mut c2 = DieSnap::new(gimli::DW_TAG_const_type, 1);
+        c2.type_ref = Some(12);
+        dies.insert(13, c2);
+        let mut p2 = DieSnap::new(gimli::DW_TAG_pointer_type, 1);
+        p2.type_ref = Some(13);
+        p2.byte_size = Some(8);
+        dies.insert(14, p2);
+
+        let mut budget = TypeWalk::with_gate(false);
+        let old = build_datatype(Some(14), &dies, &types, 1, &mut budget, false)
+            .expect("a pointer always builds");
+        let mut guard = TypeWalk::with_gate(true);
+        let new = build_datatype(Some(14), &dies, &types, 1, &mut guard, false)
+            .expect("a pointer always builds");
+        let inner = |t: &Rc<Datatype>| -> i32 {
+            let one = t.get_ptr_to().expect("pointer");
+            let two = one.get_ptr_to().expect("pointer to pointer");
+            two.get_size()
+        };
+        assert_eq!(inner(&old), 0, "the budget truncates the element type to void");
+        assert_eq!(inner(&new), 4, "the cycle guard keeps the 4-byte int");
+    }
+
 
     /// Parse the DWARF snapshot of a fixture and return the subprogram DIEs that
     /// are *defined* (low_pc + not a declaration), as (name, low_pc).

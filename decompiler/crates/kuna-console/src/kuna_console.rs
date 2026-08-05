@@ -205,6 +205,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
         "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
+        "typedepth" => on_off(conf.analysis_typedepth),
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.
         "cppsig" => conf.analysis_cppsig.as_str(),

@@ -762,6 +762,16 @@ pub struct Architecture {
     /// entry ADDRESS instead of by name. Off restores the name-only walk, which
     /// drops the signature of every out-of-line C++ member function.
     pub analysis_cppproto: bool,
+    /// (kuna) Gate full-depth DWARF type resolution (`typedepth`); default
+    /// **on**. The type mapper's recursion guard becomes upstream's per-DIE
+    /// re-entry counter (`DWARFDataTypeImporter.trackRecursion`) instead of a
+    /// flat three-hop budget that counted transparent `typedef`/`const` links, so
+    /// an ordinary `const char **` / `char *const []` / `char ***` resolves
+    /// instead of falling back to `void`. NOTE: the mapper reads this through the
+    /// [`crate::kuna_typedepth`] **env var** (the types are baked at `load file`,
+    /// upstream of `option`); this bool exists only for catalog visibility and
+    /// the `phase catalog` live `current` field.
+    pub analysis_typedepth: bool,
     /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
     /// [`CppSigMode::Proven`]. Commits the prototypes read off a MANGLED SYMBOL —
     /// the class type for `this` plus the declared parameter types — which is the
@@ -1221,6 +1231,7 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_dwarf_lines: false,
             analysis_cppproto: false,
+            analysis_typedepth: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             analysis_callfixup: false,
             analysis_addrtable: false,
@@ -1373,6 +1384,7 @@ impl Architecture {
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
+        self.analysis_typedepth = true; // (kuna) DIV: full-depth DWARF type resolution default-ON (the depth budget truncated ordinary C declarations to void; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
@@ -1665,6 +1677,19 @@ impl Architecture {
             }
             "cppproto" => {
                 on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
+            }
+            // (kuna) Load-time gate: also bridge to the env var the type mapper
+            // reads (the DWARF types are baked at `load file`, upstream of this
+            // `option`), so an `option typedepth off` *before* `load file` in the
+            // same process takes effect. The CLI sets the env directly too.
+            "typedepth" => {
+                let val = on_or_off(p1)?;
+                self.analysis_typedepth = val;
+                crate::kuna_typedepth::set_typedepth_env(val);
+                Ok(format!(
+                    "Full-depth DWARF type resolution turned {}",
+                    if val { "on" } else { "off" }
+                ))
             }
             "cppsig" => {
                 let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;

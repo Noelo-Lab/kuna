@@ -179,6 +179,11 @@ Three tiers:
 | Foo *this renders as void * | [`cppproto`](#cppproto) |
 | a namespaced or templated function loses its dwarf prototype | [`cppproto`](#cppproto) |
 | one unmappable parameter type discards the whole dwarf signature | [`cppproto`](#cppproto) |
+| a dwarf-typed local or parameter renders void * despite -g debug info | [`typedepth`](#typedepth) |
+| const char ** or char *const [] loses its element type | [`typedepth`](#typedepth) |
+| a typedef'd struct pointer degrades to void * | [`typedepth`](#typedepth) |
+| a global array of string pointers is marked one byte wide | [`typedepth`](#typedepth) |
+| deep pointer chains (char ***) truncate to void ** | [`typedepth`](#typedepth) |
 | c++ member functions on a stripped binary decompile with a0/a1 parameters | [`cppsig`](#cppsig) |
 | this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig) |
 | a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig) |
@@ -726,6 +731,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) gives a -g C++ binary its real signatures: Account::deposit(Account *this,int amount) instead of Account::deposit(int4 *a0,int4 a1). Flip off to restore the name-only DWARF walk (every out-of-line member function loses its parameter names, types and stack locals).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cppproto
 - **Example:** `option cppproto off`
+
+### `typedepth` -- on | off, default `on`
+
+- **Symptoms:** a dwarf-typed local or parameter renders void * despite -g debug info; const char ** or char *const [] loses its element type; a typedef'd struct pointer degrades to void *; a global array of string pointers is marked one byte wide; deep pointer chains (char ***) truncate to void **.
+- **What it does:** Resolve a DWARF type DIE chain to its full depth, guarded by upstream's per-DIE re-entry counter (DWARFDataTypeImporter.trackRecursion) instead of a flat three-hop budget that counted the transparent typedef/const/volatile/restrict links as well. The budget was an unfaithful reduction of the cycle guard: it fired on ordinary declarations (const char **, const size_t *, char *const [], char ***, a const member function's this), which then fell back to void, so a -g binary lost the concrete type of stack locals, globals and deep-pointer parameters. Also collapses the transparent qualifier hops on the C path so an anonymous aggregate is interned under its typedef name (mbstate_t) rather than the shared anon_struct.
+- **When to flip:** On (default) types a -g binary's locals/globals/parameters from the debug info: char **authors, const size_t *pn, mbstate_t *ps instead of void *. Flip off to restore the pre-fix three-hop budget (deep-enough DWARF types truncate to void).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-typedepth
+- **Example:** `option typedepth off`
 
 ### `cppsig` -- off | proven | inferred, default `proven`
 

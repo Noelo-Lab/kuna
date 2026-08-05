@@ -289,8 +289,9 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   BFD → `object`). Three recoveries: (1) names — each defined `DW_TAG_subprogram`
   emits a function symbol, each top-level `DW_TAG_variable` with a `DW_OP_addr`
   location a data symbol; (2) typed signatures — return + formal-parameter DIEs
-  mapped to kuna `Datatype`s (structs as named opaques, with a recursion-depth cap
-  against type cycles), registered *after* libproto so real source signatures win,
+  mapped to kuna `Datatype`s (structs as named opaques, with a cycle guard on the
+  DIE walk — see `typedepth` below), registered *after* libproto so real source
+  signatures win,
   and read back at *two* points: by a caller's `ActionDefaultParams` for the call
   site, and by the drive as the function's own locked prototype (04 §4.2 —
   `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
@@ -331,10 +332,11 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   `Account::deposit` rather than the bare `deposit` the declaration DIE holds. Three type-mapper corrections ride
   along: `DW_TAG_class_type` maps like a structure and a C++ reference like a
   pointer (both are what Ghidra's importer does, and without the first every
-  `Foo *this` degraded to `void *`); transparent qualifier hops
-  (`typedef`/`const`/`volatile`/`restrict`) stop consuming the recursion budget,
-  because a `const` member function's `this` is `const Account *const` — four DIEs
-  deep, one more than the cap; and a parameter whose type the switch still cannot
+  `Foo *this` degraded to `void *`); the transparent qualifier hops
+  (`typedef`/`const`/`volatile`/`restrict`) are collapsed before the type switch
+  runs, because a `const` member function's `this` is `const Account *const` —
+  four DIEs deep, and under the pre-`typedepth` budget one hop too many; and a
+  parameter whose type the switch still cannot
   map degrades to an `undefined<n>` of that DIE's own width instead of discarding
   the entire signature, so one exotic member type costs one parameter's type
   rather than the function's whole prototype. Finally the recovered prototype is
@@ -349,6 +351,39 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   recovery is the name-only walk, byte for byte. Struct/class **fields** are still
   not populated — a class remains a named opaque, so `this->balance` prints as an
   offset — which is the next increment, not this one.
+- **Full-depth DWARF types** (`typedepth`, default-on,
+  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
+  type mapper's recursion guard, and it exists because the DIE walk can be handed a
+  chain that closes on itself — a `DW_TAG_pointer_type` whose `DW_AT_type` is its
+  own offset, a `typedef`/`const` pair pointing at each other — which nothing in
+  the format forbids and a truncated or forged `.debug_info` supplies. Upstream
+  (`DWARFDataTypeImporter.trackRecursion`) guards it with a **per-DIE-offset
+  re-entry counter**: a DIE may be re-entered twice and the third entry is refused,
+  which fires only on a cycle because an acyclic chain visits each offset once.
+  kuna's port had reduced that to a flat three-hop budget counted over *every*
+  link, transparent qualifiers included — which conflates "the same DIE again" with
+  "a deep but finite chain". Four DIEs is ordinary C: `const char *const *`,
+  `const size_t *`, `char *const []`, `char ***`. All of them ran out of budget and
+  fell back to `void`, so a `-g` binary's stack locals, its globals (a truncated
+  element type sizes the global at one byte, and the extent is what the container
+  query needs — §1.4) and its deeper pointer parameters rendered `void *` while the
+  debug info named a concrete type. This restores upstream's counter, with a second
+  absolute nesting bound as a native-stack backstop that a Java port does not need;
+  termination no longer rests on a cap that also has to be small. Two consequences
+  ride along: the qualifier collapse the C++ arm introduced now runs for the C
+  callers too — that is what carries an anonymous aggregate's typedef name onto it
+  (a local `mbstate_t`, not the shared `anon_struct` every unnamed struct fuses
+  into) — and when the borrowed name is one the type factory already holds under
+  another kind (kuna registers a core type called `code`, which zlib's
+  `inftrees.h` really does typedef an anonymous struct to), the aggregate falls
+  back to the anonymous name rather than failing to build and letting the pointer
+  arm degrade it to `void *`. Like the other DWARF gates the mapping happens at
+  `load file`, upstream of the `option` commands — but unlike `cppproto` this one
+  changes how a single fact set is *built* rather than selecting between two, so
+  the live gate is the process env var
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs`) that the
+  CLI exports before the load, the same bridge `relocobjects` and `i386_pie_plt`
+  use. With `typedepth off` the mapper is the pre-fix budget, byte for byte.
 - **Demangling** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/mod.rs
   (demangle_name)`, the `GnuDemanglerAnalyzer` analog) is not a registered pass but
   a loader hook: applied to every funcsym name after `@VERSION` stripping, before
