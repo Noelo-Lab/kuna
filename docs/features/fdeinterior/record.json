@@ -1,0 +1,346 @@
+{
+  "opportunity": "C++ exception landing pads promoted to top-level functions (campaign probe: g++ -O0 probe_try_catch [0x2acf,0x2ba7) mints sub_2b0b / sub_2b1a / sub_2b8a, each decompiling with an uninitialised rbp)",
+  "test_name": "kuna functions / decompile-all entry sweep: 72 stripped decbench x86-64 ELF binaries (O0+O2) classified against their unstripped FUNC symbols, 4 C++ probes, a static glibc image, 2 PEs, one ET_REL .o, and all 98 decbench ARM Cortex-M images",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/eh_lsda_x86_64",
+  "selector": "sub_4012e2",
+  "func_addr": "0x4012e2",
+  "angr_version": null,
+  "option": "fdeinterior",
+  "flag": "analysis_fdeinterior",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "IDA Pro 9.2: get_func(0x2b0b).start_ea == 0x2acf, the landing pad taken from the .eh_frame FDE range. Ghidra 12.1 returns no containing function on the same probe (its GccExceptionAnalyzer errors on this PIE), so IDA is the model.",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "entry_sweep": {
+    "x86_64_c_corpus": {
+      "surface": "kuna functions <stripped> --json (mode auto)",
+      "binaries": 72,
+      "projects": [
+        "coreutils",
+        "bash",
+        "gzip",
+        "tar",
+        "grep",
+        "diffutils",
+        "openssh-portable",
+        "e2fsprogs",
+        "gnutls",
+        "dpkg",
+        "zlib",
+        "bzip2",
+        "findutils",
+        "kmod"
+      ],
+      "levels": [
+        "O0",
+        "O2"
+      ],
+      "entries_off": 36568,
+      "entries_on": 35538,
+      "dropped": 1030,
+      "added": 0,
+      "dropped_that_are_a_real_function_entry": 0,
+      "dropped_strictly_inside_a_real_function_body": 1030,
+      "dropped_not_an_instruction_boundary": 52,
+      "ground_truth": "defined FUNC symbols (address + size) of the matching compiled/ binary",
+      "dropped_that_carry_a_name": 0
+    },
+    "cpp_probes": [
+      {
+        "binary": "probe_O0.stripped",
+        "off": 189,
+        "on": 162,
+        "dropped": 27,
+        "landing_pads": 14,
+        "other_interior": 13,
+        "real_lost": 0,
+        "named_lost": 0
+      },
+      {
+        "binary": "probe_O2.stripped",
+        "off": 71,
+        "on": 64,
+        "dropped": 7,
+        "landing_pads": 4,
+        "other_interior": 3,
+        "real_lost": 0,
+        "named_lost": 0
+      },
+      {
+        "binary": "big_O0.stripped",
+        "off": 599,
+        "on": 449,
+        "dropped": 150,
+        "landing_pads": 98,
+        "other_interior": 52,
+        "real_lost": 0,
+        "named_lost": 0
+      },
+      {
+        "binary": "big_O2.stripped (--mode aggressive)",
+        "off": 161,
+        "on": 86,
+        "dropped": 75,
+        "landing_pads": 74,
+        "other_interior": 1,
+        "real_lost": 0,
+        "named_lost": 0
+      }
+    ],
+    "other_populations": [
+      {
+        "target": "static glibc st_O2.stripped, --mode aggressive",
+        "off": 1358,
+        "on": 1087,
+        "dropped": 271,
+        "real_lost": 0,
+        "named_lost": 0
+      },
+      {
+        "target": "mydoom.exe (PE)",
+        "off": 280,
+        "on": 280,
+        "dropped": 0,
+        "named_lost": 0
+      },
+      {
+        "target": "dexter.dll (PE)",
+        "off": 270,
+        "on": 270,
+        "dropped": 0,
+        "named_lost": 0
+      },
+      {
+        "target": "big.o (ET_REL, relocobjects)",
+        "off": 575,
+        "on": 575,
+        "dropped": 0,
+        "note": "every FDE pcBegin is section-relative 0, so the set overlaps and is dropped wholesale",
+        "named_lost": 0
+      }
+    ],
+    "emitted_c": [
+      {
+        "binary": "big_O0.stripped",
+        "off": 599,
+        "on": 449,
+        "removed": 150,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      },
+      {
+        "binary": "big_O0 (unstripped)",
+        "off": 600,
+        "on": 450,
+        "removed": 150,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      },
+      {
+        "binary": "probe_O0.stripped",
+        "off": 189,
+        "on": 162,
+        "removed": 27,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      },
+      {
+        "binary": "probe_O0 (unstripped)",
+        "off": 190,
+        "on": 163,
+        "removed": 27,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      },
+      {
+        "binary": "gzip (O0)",
+        "off": 263,
+        "on": 248,
+        "removed": 15,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      },
+      {
+        "binary": "b2sum (O0)",
+        "off": 228,
+        "on": 216,
+        "removed": 12,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      },
+      {
+        "binary": "fmt (O0) - the #264 MAX_TYPE_DEPTH target",
+        "off": 198,
+        "on": 191,
+        "removed": 7,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      },
+      {
+        "binary": "fmt (O2)",
+        "off": 151,
+        "on": 151,
+        "removed": 0,
+        "added": 0,
+        "surviving_bodies_changed": 0,
+        "surviving_names_changed": 0
+      }
+    ],
+    "unstripped_cpp_post_cppproto": {
+      "why": "#264 (cppproto) recovers out-of-line C++ member/namespace definitions from DWARF, so an unstripped C++ binary now carries far more named function symbols - the input to the eligibility rule. Re-confirmed against the new symbol set.",
+      "rows": [
+        {
+          "binary": "big_O0",
+          "off": 600,
+          "on": 450,
+          "dropped": 150,
+          "real_lost": 0,
+          "named_lost": 0,
+          "named_entries_after": 447,
+          "entries_after": 450
+        },
+        {
+          "binary": "big_O2",
+          "off": 87,
+          "on": 87,
+          "dropped": 0,
+          "real_lost": 0,
+          "named_lost": 0
+        },
+        {
+          "binary": "probe_O0",
+          "off": 190,
+          "on": 163,
+          "dropped": 27,
+          "real_lost": 0,
+          "named_lost": 0,
+          "named_entries_after": 161,
+          "entries_after": 163
+        },
+        {
+          "binary": "probe_O2",
+          "off": 72,
+          "on": 65,
+          "dropped": 7,
+          "real_lost": 0,
+          "named_lost": 0
+        }
+      ],
+      "stripped_unchanged": "big_O0.stripped 449 and probe_O0.stripped 162 entries, identical to the pre-#264 measurement (no DWARF to ingest)"
+    }
+  },
+  "tailcallentry_259_non_regression": {
+    "surface": "kuna functions --mode aggressive --option tailcallentry on",
+    "corpus": "every ARM image in the decbench O0/O2/O2-noinline trees",
+    "images": 98,
+    "failed": 0,
+    "entries_off": 57578,
+    "entries_on": 57578,
+    "images_with_any_change": 0,
+    "why": "bare-metal ARM unwinds through .ARM.exidx: only 3 of the 98 images carry any .eh_frame FDE (riot-os hello-world.elf, 2 FDEs), and those contain no discovered entry. The same argument covers draft PR #239."
+  },
+  "speed": {
+    "timeit_off_ms": 151.76,
+    "timeit_on_ms": 107.33,
+    "timeit_delta_pct": -29.28,
+    "timeit_samples": 15,
+    "timeit_target": "probe_O0 probe_try_catch",
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "interleaved_functions": [
+      {
+        "target": "gzip O0",
+        "off_ms": 450.9,
+        "on_ms": 449.3,
+        "delta_pct": -0.35,
+        "pairs": 15
+      },
+      {
+        "target": "tar O0",
+        "off_ms": 164.9,
+        "on_ms": 158.5,
+        "delta_pct": -3.87,
+        "pairs": 15
+      },
+      {
+        "target": "big_O0.stripped",
+        "off_ms": 343.9,
+        "on_ms": 269.3,
+        "delta_pct": -21.68,
+        "pairs": 15
+      },
+      {
+        "target": "st_O2.stripped (static glibc)",
+        "off_ms": 244.0,
+        "on_ms": 244.1,
+        "delta_pct": 0.06,
+        "pairs": 11
+      }
+    ],
+    "interleaved_decompile_all": [
+      {
+        "target": "gzip O0",
+        "off_ms": 2867.8,
+        "on_ms": 2746.7,
+        "delta_pct": -4.22,
+        "pairs": 9
+      },
+      {
+        "target": "b2sum O0",
+        "off_ms": 5719.1,
+        "on_ms": 5439.4,
+        "delta_pct": -4.89,
+        "pairs": 9
+      }
+    ],
+    "note": "the added work is one linear .eh_frame record walk (the same section the always-on FDE-pcBegin oracle already reads) plus one binary search per discovered entry; the savings are the suppressed entries never being decompiled, so every measurement is negative or neutral. A first 11-sample timeit run on a box under concurrent load reported +4.67% and did not reproduce."
+  },
+  "gates": {
+    "make_test": "PARITY OK 675/675 (no re-pin, no per-test opt-out)",
+    "make_test_stages": "PARITY OK 394/394",
+    "make_rust_test": "green, 4457 tests passed / 0 failed (re-run after the #264 rebase)",
+    "make_check_spec": "OK (lenient and --strict)",
+    "kuna_catalog_check": "OK"
+  },
+  "files": [
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_fdeinterior.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs",
+    "decompiler/crates/kuna-analysis/src/pass.rs",
+    "decompiler/crates/kuna-analysis/src/passes.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/tests/verify_fdeinterior.rs",
+    "decompiler/crates/kuna-console/tests/verify_eh_frame_full.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs",
+    "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+    "docs/options.md",
+    "docs/spec/01-program-prep.md",
+    "docs/history.md"
+  ],
+  "catalog_counts": {
+    "settables": 91,
+    "tier_core": 20,
+    "tier_transform": 41,
+    "tier_analysis": 30,
+    "catalog_json_rows": 90,
+    "fixture_option_rows": 91,
+    "derivation": "captured from a fresh post-rebase `phase catalog` and counted, not incremented; #264 and this PR made an identical off-by-one edit to the same three assertions"
+  },
+  "div_row": "DIV-61",
+  "notes": "Interaction disclosed: eh_frame_full's landing-pad product is now constrained by this gate, so verify_eh_frame_full's option-on arm flips fdeinterior off to keep testing what the LSDA decode produces. No tests/stages XML: the XML <binaryimage> datatest path never runs the analyzer tier, the same reason tailcallentry (#259) and cortexmvectors shipped cross-crate e2e tests.",
+  "rebased_onto": "890096b6 (#264 cppproto, DIV-60) on 1cff8ecb (#262 cppcallnames, DIV-59). Both re-measured, not carried forward."
+}

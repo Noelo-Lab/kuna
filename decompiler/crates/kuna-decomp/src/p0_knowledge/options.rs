@@ -314,6 +314,16 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
     // (output-changing: adds the discovered exception landing pads as entries).
     "eh_frame_full",
+    // (kuna) `.eh_frame` FDE-interior entry suppression: kuna's function symbols
+    // carry no extent, so a discovery oracle cannot tell that a candidate sits in
+    // the MIDDLE of an existing body — the landing pads `eh_frame_full` emits, the
+    // gap starts `aif` emits and the prologue-pattern hits all become top-level
+    // functions with their parent's live frame pointer.  Each FDE records one
+    // function's `[pcBegin, pcBegin+pcRange)`, so an entry strictly inside one is
+    // rejected.  Only single-function FDEs are used (never the linker's whole-PLT
+    // FDE), and an entry AT an FDE start is always kept.  Default-ON (DIV-61); off
+    // restores the previous discovery set exactly.
+    "fdeinterior",
     // (kuna) The full byte-pattern function-start pass (Ghidra FunctionStartAnalyzer
     // over the entire vendored pattern corpus), default-OFF (output-changing:
     // discovers more functions). A separate gate from `entry_disc` (whose always-on

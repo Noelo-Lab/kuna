@@ -547,6 +547,33 @@ an entry; a catch/cleanup block is reached only by the unwinder, so nothing else
 can see it. CFI itself (`DW_CFA_*`) is deliberately not recovered — kuna's own
 frame analysis rebuilds the stack frame from the code.
 
+**(kuna) FDE interiors are not function starts** (`fdeinterior`, default-**on**,
+DIV-61; `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_fdeinterior.rs`).
+A kuna `FunctionSymbol` is an entry address with no extent, so the commit boundary
+cannot answer *is this candidate already inside a known function?* — and every
+oracle above is free to plant a `sub_<addr>` in the middle of a body it cannot
+see. Three do it on ordinary compiler output: the landing pads `eh_frame_full`
+emits sit mid-frame by definition; the aggressive gap walk (§1.6) starts one at the
+first undecoded byte of an unwinder-only region, which is routinely *mid
+instruction*; and the prologue patterns match an aligned `push rbp; mov rbp,rsp`
+inside a larger body. Such a "function" inherits its parent's live frame pointer,
+so it decompiles with an uninitialised `rbp` and every local becomes a garbage
+dereference. `.eh_frame` supplies exactly the missing extent: each FDE records one
+function's `[pcBegin, pcBegin + pcRange)` by construction (one
+`.cfi_startproc`/`.cfi_endproc` pair), so an entry strictly inside one is not a
+function on the unwinder's own authority — the model IDA Pro uses, where
+`get_func()` of a landing pad returns the enclosing function taken from the FDE
+range. This pass reports those bodies and the commit filters the *fully merged*
+entry set against them (after the deferred Listing consumers, so the gap walk is
+covered too). Not every FDE describes one function — the linker gives the whole
+PLT a single FDE, and every stub inside it is real — so a range is used only when
+it holds no other named function start, no other FDE `pcBegin`, and no linker-stub
+section (`.plt`/`.plt.sec`/`.plt.got`/`.iplt`/`.MIPS.stubs`). An entry *at* an FDE
+start is always kept, so oracle 3's own product survives. ELF-only and inert
+without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
+population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
+compose with it unchanged.
+
 **Address tables** (`addrtable`,
 `decompiler/crates/kuna-analysis/src/analyzers/addrtable/mod.rs (AddrTablePass)`)
 scan `.rodata`/`.data` for runs of pointer-width values all landing in executable

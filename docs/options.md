@@ -146,6 +146,11 @@ Three tiers:
 | c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
 | exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full) |
 | gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full) |
+| spurious sub_<addr> functions inside a c++ function that uses try/catch | [`fdeinterior`](#fdeinterior) |
+| a decompiled function body dereferences an uninitialised frame pointer so every local is garbage | [`fdeinterior`](#fdeinterior) |
+| function count inflated by unwinder-only landing pads | [`fdeinterior`](#fdeinterior) |
+| a function entry lands in the middle of an instruction | [`fdeinterior`](#fdeinterior) |
+| extra entries between two real functions in a binary built with exceptions | [`fdeinterior`](#fdeinterior) |
 | functions after nop padding missing in a stripped binary | [`funcstart_patterns`](#funcstart_patterns) |
 | a push rbx; mov rbx,rdi prologue never discovered as a function start | [`funcstart_patterns`](#funcstart_patterns) |
 | code-bearing gaps between discovered functions left undefined | [`funcstart_patterns`](#funcstart_patterns) |
@@ -629,6 +634,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default) limits .eh_frame use to FDE pcBegin function starts. Flip on to also discover exception-handler landing pads (catch/cleanup blocks) from the .gcc_except_table LSDA in a C++ try/catch binary.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-ehframe-lsda
 - **Example:** `--option eh_frame_full on`
+
+### `fdeinterior` -- on | off, default `on`
+
+- **Symptoms:** spurious sub_<addr> functions inside a c++ function that uses try/catch; a decompiled function body dereferences an uninitialised frame pointer so every local is garbage; function count inflated by unwinder-only landing pads; a function entry lands in the middle of an instruction; extra entries between two real functions in a binary built with exceptions.
+- **What it does:** Reject a discovered function entry that falls strictly inside another function's .eh_frame FDE body. A kuna FunctionSymbol is an entry address with no extent, so the commit boundary cannot answer 'is this candidate already inside a known function?' and every discovery oracle plants a sub_<addr> in the middle of a body it cannot see: eh_frame_full promotes each .gcc_except_table landing pad to a top-level function, aif starts one at the first undecoded byte of an unwinder-only region (which is routinely mid-instruction), and the prologue patterns match a 16-byte-aligned push rbp; mov rbp,rsp inside a larger body. Such a function inherits its parent's live frame pointer, so it decompiles with an uninitialised rbp and every local is a garbage dereference. Each .eh_frame FDE records one function's [pcBegin, pcBegin+pcRange) by construction (one .cfi_startproc/.cfi_endproc pair), which is exactly the extent the symbol table never carried, so an entry strictly inside one is not a function on the unwinder's own authority - the model IDA Pro uses, where get_func of a landing pad returns the enclosing function taken from the FDE. Only ranges that describe a single function are used: no other named function start inside, no other FDE start inside, and no overlap with a linker stub section (.plt/.plt.sec/.plt.got/.iplt/.MIPS.stubs), so the linker's single whole-PLT FDE never suppresses an import stub. An entry AT an FDE pcBegin is always kept, so the .eh_frame FDE oracle's own product is preserved. ELF-only and inert on any image without .eh_frame FDEs, which includes 95 of the 98 decbench bare-metal ARM images (they unwind through .ARM.exidx).
+- **When to flip:** On (default) keeps mid-function artifacts out of the function list: the tell-tale is a sub_<addr> whose body dereferences an undefined frame pointer, or a run of sub_<addr> entries between two real functions in a C++ binary built with exceptions. Flip off to restore the previous discovery set exactly - e.g. to inspect a landing pad as its own function, or on a hand-written-assembly image whose .eh_frame deliberately covers several entry points with one FDE.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-fdeinterior
+- **Example:** `--option fdeinterior off`
 
 ### `funcstart_patterns` -- on | off, default `off`
 

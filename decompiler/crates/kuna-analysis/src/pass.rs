@@ -282,6 +282,13 @@ pub struct AnalysisOutput {
     pub data_objects: Vec<DataObjectFact>,
     /// Discovered function entry points (for stripped targets).
     pub entries: Vec<u64>,
+    /// (kuna) `.eh_frame` FDE bodies that describe exactly one function, as
+    /// `[pcBegin, pcBegin + pcRange)`. The commit boundary rejects any
+    /// [`Self::entries`] VMA strictly inside one of these — a discovered entry in
+    /// the middle of a frame is a landing pad / gap-walk artifact, not a function.
+    /// Produced only by [`crate::entry::kuna_fdeinterior`] (`fdeinterior`), so the
+    /// list is empty whenever that gate is off and the suppression is a no-op.
+    pub fde_bodies: Vec<(u64, u64)>,
     /// Optional Ghidra-faithful names for a *subset* of [`Self::entries`], keyed by
     /// VMA. An overlay the commit boundary consults: when a discovered entry VMA appears
     /// here, the commit names the function with the supplied name (e.g. `_INIT_0`,
@@ -413,6 +420,7 @@ impl AnalysisOutput {
         self.symbols.extend(other.symbols);
         self.data_objects.extend(other.data_objects);
         self.entries.extend(other.entries);
+        self.fde_bodies.extend(other.fde_bodies);
         self.entry_names.extend(other.entry_names);
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);

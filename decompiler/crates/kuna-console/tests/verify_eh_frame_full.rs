@@ -71,6 +71,13 @@ fn bootstrap_with_eh_frame_full(on: bool) -> Option<kuna_console::engine::Consol
         prog.arch_mut()
             .set_kuna_option("eh_frame_full", "on")
             .expect("eh_frame_full flips on");
+        // (kuna, DIV-61) A landing pad sits strictly inside its function's
+        // `.eh_frame` FDE, so the default-ON `fdeinterior` gate now rejects it at
+        // the commit. This test is about what the LSDA decode PRODUCES, so it opts
+        // out of the interior filter; `verify_fdeinterior` covers the composition.
+        prog.arch_mut()
+            .set_kuna_option("fdeinterior", "off")
+            .expect("fdeinterior flips off");
     }
     // Analysis facts commit at `read symbols` (gated by the per-pass flags), not
     // eagerly at bootstrap — trigger that commit after the option is applied.
