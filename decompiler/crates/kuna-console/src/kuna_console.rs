@@ -197,6 +197,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         // None), so the no-program catalog byte-compat fixture is untouched.
         "noreturn_known" => on_off(conf.analysis_noreturn_known),
         "libproto" => on_off(conf.analysis_libproto),
+        "libcsigs" => on_off(conf.analysis_libcsigs),
         "strings" => on_off(conf.analysis_strings),
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "eh_frame_full" => on_off(conf.analysis_eh_frame_full),

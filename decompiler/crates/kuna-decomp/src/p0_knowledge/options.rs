@@ -308,6 +308,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // PE-only no-return API name list. PE/COFF-only; a no-op elsewhere.
     "peimportcall",
     "libproto",
+    // (kuna) The measured libc signature extension: the ~200 prototypes the
+    // 27-entry `libproto` table does not carry, ranked out of the frozen decbench C
+    // corpus and reduced from the platform headers. Imported names only.
+    "libcsigs",
     "strings",
     "entry_disc",
     // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the

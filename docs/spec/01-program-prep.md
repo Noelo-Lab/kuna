@@ -282,7 +282,33 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   table of common libc signatures (`puts(char*)`, `printf(char*,...)`, …), parked
   on matching callees so `ActionDefaultParams` types the caller's argument
   constants — this typing, plus the read-only markup, is what turns `puts(0x400915)`
-  into `puts("Username: ")`.
+  into `puts("Username: ")`. LOSS: the built-in table is not a header archive, so
+  it covers only the names it lists; every other libc callee leaves its caller's
+  argument an inferred integer.
+- **(kuna) Measured libc signatures** (`libcsigs`,
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
+  the second, larger half of the same table, closing most of the LOSS above. Which
+  names it carries was *measured*, not guessed — a PLT call-site histogram over the
+  frozen decbench C corpus plus a per-callee ranking of the cases where a rival
+  decompiler recovers a perfect parameter typing and kuna does not; a name is in
+  the table when it clears 100 corpus call sites or 3 such cases. The signatures
+  themselves are reduced from the platform's own C declarations (`gcc -aux-info`
+  over the standard headers, GCC's builtin types for the FORTIFY `_chk` entry
+  points, the `<stdio.h>` `__REDIRECT` for the `__isoc99_*` aliases), never written
+  from memory, and any declaration with a slot whose width is not stable across
+  ILP32/LP64 — `off_t`, `time_t`, `long long`, a `char` parameter — is **rejected
+  rather than approximated**, because a wrong prototype is worse than a missing one:
+  it asserts a false type where the inferred integer was merely uninformative.
+  Two consequences follow from that same principle. A signature is applied only to
+  a name the image **imports** and does not itself define — a PLT/IAT import named
+  `error` is the platform's `error(int, int, const char *, …)`, but a *defined*
+  `error` is the program's own function that happens to share the spelling (zlib's
+  `minigzip` declares `void error(const char *)`), and the base table's
+  defined-or-imported matching is left untouched. And the FORTIFY entry points are
+  modeled as the distinct functions they are, not as aliases: `__printf_chk` takes
+  a leading `int flag` before the format string, `__fprintf_chk` a `FILE *` and a
+  flag, so treating either as its plain namesake would shift every argument of the
+  most frequent call in the corpus.
 - **DWARF** (`dwarf`, the `DWARFAnalyzer` port,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs (DwarfPass)`), the
   parser wholesale-substituted by `gimli` (the same dependency-substitution loss as

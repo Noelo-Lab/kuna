@@ -1,0 +1,190 @@
+{
+  "opportunity": "kuna's built-in libc prototype table has 27 entries -- a documented minimal stand-in for the Ghidra .gdt archives kuna cannot vendor. Every libc callee outside those 27 leaves its callers' arguments an inferred `unsigned long`. Of the 1587 cases where IDA scores a perfect C type_match and kuna does not, 568 (35.8%) sit in a function that calls a libc name the table did not know, against 395 (24.9%) that call one it did. type_match is kuna's weakest metric on plain C.",
+  "test_name": "kuna-console verify_libcsigs (5 two-pass e2e assertions on the vendored fauxware fixture) + 5 hermetic table-invariant unit tests",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+  "selector": "authenticate",
+  "func_addr": "0x4006b6",
+  "angr_version": null,
+  "option": "libcsigs",
+  "flag": "analysis_libcsigs",
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "Ghidra ApplyDataArchiveAnalyzer (.gdt library archives); IDA Pro's til type libraries",
+  "default_on": true,
+  "default_value": "on",
+  "values": "on|off",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "table": {
+    "entries": 206,
+    "base_table_entries_untouched": 27,
+    "zero_parameter": 16,
+    "variadic": 22,
+    "corpus_call_sites_covered": 196747,
+    "ida_perfect_cases_whose_function_calls_one": 568
+  },
+  "selection_rule": ">= 100 call sites over the 547 frozen-decbench C binaries that carry a scored case, OR >= 3 of the 1587 ida-perfect/kuna-imperfect type_match cases, plus a named-witness set (canonicalize_file_name, dirname, asprintf, the err/warn family)",
+  "signature_provenance": {
+    "gcc_aux_info": "193 entries reduced by a fixed rule from the 1520 NC-line prototypes `gcc -aux-info` emits over a TU including the platform headers with _GNU_SOURCE + _FORTIFY_SOURCE=2",
+    "header_redirect": "__isoc99_{scanf,sscanf,fscanf} -- /usr/include/stdio.h:434-441 declares them via __REDIRECT FROM scanf/sscanf/fscanf, which is the header proving ABI identity",
+    "gcc_builtin_types": "the FORTIFY mem/str _chk family (no header prototype exists -- they are GCC builtins) -- 9 _Static_assert(__builtin_types_compatible_p(...)) checks against GCC's builtin table, all compiling",
+    "glibc_source": "__stack_chk_fail -- glibc debug/stack_chk_fail.c, void(void)",
+    "hand_spot_check": "16 signatures re-read against their man(3) pages (error, gettext, dcgettext, strsep, getopt_long, mbrtowc, setsockopt, ioctl, getline, reallocarray, strtoul, nl_langinfo, openlog, syslog, strerror, strdup) -- all matched the mechanically derived model"
+  },
+  "rejected_rather_than_approximated": {
+    "rule": "every modelled slot must be void, exactly 4 bytes, or exactly pointer-width on every ILP32/LP64 target",
+    "names": [
+      "lseek (__off_t, 746 sites)",
+      "signal (__sighandler_t, 574)",
+      "time (time_t, 399)",
+      "qsort (__compar_fn_t, 323)",
+      "strtoll (long long int, 247)",
+      "fseeko (__off_t, 228)",
+      "mmap (__off_t, 167)",
+      "poll (nfds_t, 162)",
+      "iconv (iconv_t, 144)",
+      "connect (__CONST_SOCKADDR_ARG, 126)",
+      "pthread_once (void (*)(void), 70)"
+    ],
+    "note": "strtoll is the one that mattered: an earlier reducer classified `long long int` as 4 bytes and would have shipped `int strtoll(...)`. Caught by the width rule, not by review."
+  },
+  "wrongness_axis": {
+    "rule": "an entry applies ONLY to a name the image IMPORTS and does not itself define",
+    "why": "zlib's minigzip DEFINES `void error(const char *msg)`; glibc's is `void error(int,int,const char*,...)`. Typing that call error(0,0,...) is strictly worse than the unsigned long it replaces.",
+    "measured_collision_surface": "readelf over all 677 binaries in the frozen O0/O2/O2-noinline trees: the only non-NuttX definition of a new-table name is zlib minigzip's `error` (18 defs / 9 binaries). NuttX implements the genuine POSIX API, so its definitions would have been right anyway -- and the guard makes the statically linked nuttx image byte-identical (0 of 924 functions changed).",
+    "argument_count_restored": 75,
+    "argument_count_moved_away": 4,
+    "argument_count_moved_away_note": "all 4 sit in two functions (gzip-O2 sub_f900, coreutils-ls-O2ni sub_a550) that ALREADY render free(v43,v24[-8]), malloc(v10,v24[-8]), memcpy(...,v24[-8]) and strlen(v10,v4) -- BASE-table names with 1 parameter -- with this option OFF. A pre-existing frame-recovery defect in those functions, not one this table introduces.",
+    "parameter_slots_gained_specificity": 296,
+    "parameter_slots_lost_specificity": 2,
+    "parameter_slots_lost_note": "both are grep-O2ni Pexecute, `char *` -> `void *`, where the loss is the TRUTHFUL prototype: memchr/rawmemchr really do declare `const void *`."
+  },
+  "sweep": {
+    "surface": "kuna decompile-all off vs on, 11 stripped binaries / 5,589 functions, every changed function classified",
+    "binaries": "coreutils dircolors (O0), coreutils sort (O2), coreutils ls (O2-noinline), grep (O0), grep (O2-noinline), gzip (O2), zlib minigzip (O0), openssh scp (O0), nuttx (O0, statically linked), leveldb leveldbutil + libleveldb.so (O0, C++)",
+    "functions_off": 5589,
+    "functions_on": 5589,
+    "function_count_identical_everywhere": true,
+    "changed": 1141,
+    "classification": {
+      "PLT stub gains its own signature": 471,
+      "cast removed (callee return now typed)": 281,
+      "unsigned long replaced by a concrete type": 120,
+      "variable renumbering / decl churn only": 116,
+      "own signature retyped": 74,
+      "call arity restored to the declared signature": 74,
+      "structuring churn": 5
+    },
+    "structural": "gotos essentially flat; no-return annotations identical on every C binary (coreutils-sort abort 24->24 / exit 5->5 / __assert_fail 3->3, grep 28/7/8, openssh-scp error 10->10 exit 39->39); one C++ annotation lost (leveldb sub_77875's __assert_fail) with the emitted control flow unchanged; statically linked nuttx byte-identical."
+  },
+  "benchmark": {
+    "corpus": "frozen decbench C corpus (results/full_run), all three optimisation levels, scored with decbench origin/main @325046f, DECBENCH_NO_CACHE=1",
+    "metric": "type_match",
+    "projects": {
+      "grep": {
+        "n": 247,
+        "perfect_off": 33,
+        "perfect_on": 37,
+        "mean_off": 0.3105,
+        "mean_on": 0.3243,
+        "improved": 9,
+        "worse": 2
+      },
+      "diffutils": {
+        "n": 420,
+        "perfect_off": 24,
+        "perfect_on": 35,
+        "mean_off": 0.2522,
+        "mean_on": 0.2987,
+        "improved": 40,
+        "worse": 0
+      },
+      "gzip": {
+        "n": 368,
+        "perfect_off": 57,
+        "perfect_on": 62,
+        "mean_off": 0.374,
+        "mean_on": 0.4007,
+        "improved": 35,
+        "worse": 1
+      },
+      "bzip2": {
+        "n": 267,
+        "perfect_off": 8,
+        "perfect_on": 8,
+        "mean_off": 0.2617,
+        "mean_on": 0.2712,
+        "improved": 8,
+        "worse": 0
+      },
+      "findutils": {
+        "n": 790,
+        "perfect_off": 21,
+        "perfect_on": 23,
+        "mean_off": 0.1079,
+        "mean_on": 0.1237,
+        "improved": 45,
+        "worse": 0
+      }
+    },
+    "pooled": {
+      "n": 2092,
+      "perfect_off": 143,
+      "perfect_on": 165,
+      "mean_off": 0.2272,
+      "mean_on": 0.2501,
+      "improved": 137,
+      "worse": 3
+    },
+    "note": "dash carries no DWARF ground truth in the frozen tree, so it scores no functions. coreutils (327 binaries x 2 arms) was started and stopped -- at roughly a minute per whole-binary decompile it is an ~11h run on a box shared with concurrent agents. The five projects above are the measured delta."
+  },
+  "speed": {
+    "decompile": "scripts.pipeline.timeit --option libcsigs, grep/main, 15 samples: 1547.61 -> 1547.82 ms (+0.01%), budget 5%",
+    "load": "interleaved `kuna functions` (load + the whole analysis pass list + commit, no function body decompiled), min AND median of 21 pairs: coreutils-dircolors 293.6 -> 289.4 min (-1.45%) / 321.6 -> 320.7 median (-0.28%); openssh-scp 836.5 -> 835.4 (-0.12%) / 851.9 -> 846.0 (-0.69%); nuttx 1423.4 -> 1432.2 (+0.62%) / 1465.9 -> 1452.2 (-0.93%); grep 849.9 -> 695.4 (-18.18%) / 1012.6 -> 1014.9 (+0.23%) -- the grep MINIMUM is noise in both directions (an earlier 15-pair run of the same case reported +13.99%), the medians are the honest read",
+    "decompile_all": "interleaved min/median of 13: coreutils-dircolors 1832.4 -> 1827.1 (-0.29%) / 1852.6 -> 1848.6 (-0.22%); zlib minigzip 4973.3 -> 4981.3 (+0.16%) / 5034.3 -> 5047.5 (+0.26%)",
+    "worst_stable_delta_pct": 0.62,
+    "budget_pct": 5.0,
+    "within_budget": true
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK (400/400)",
+    "make rust-test": "green",
+    "make check-spec": "OK (lenient + strict)",
+    "kuna catalog --check": "catalog OK"
+  },
+  "files": [
+    "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs",
+    "decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs",
+    "decompiler/crates/kuna-analysis/src/passes.rs",
+    "decompiler/crates/kuna-console/src/engine.rs",
+    "decompiler/crates/kuna-console/src/kuna_console.rs",
+    "decompiler/crates/kuna-console/tests/verify_libcsigs.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs",
+    "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+    "docs/spec/01-program-prep.md",
+    "docs/missing-ghidra-analyses.md",
+    "docs/history.md",
+    "docs/options.md"
+  ],
+  "catalog_counts": {
+    "settables": "94 -> 95",
+    "tiers": "(20 core, 41 transform, 33 analysis) -> (20, 41, 34)",
+    "catalog_json_rows": "93 -> 94",
+    "phase_catalog.json fixture": "94 -> 95 (recaptured from a fresh release build)",
+    "derivation": "every value COUNTED out of the freshly captured phase_catalog.json, not computed from the previous number. The rebase onto #267 auto-merged catalog_bytecompat.rs to 94 with NO conflict -- #267 and this PR had made the identical 93 -> 94 edit -- so the committed value was short by one until the capture corrected it. docs/options.md independently reports 95 option headings."
+  },
+  "div_row": "DIV-65 (docs/history.md): libcsigs ships default-ON",
+  "notes": "No tests/stages/*.xml case: the XML datatest bootstrap builds its program from a <binaryimage> element and never runs the analyzer tier, the same reason verify_cppsig / verify_cppproto / verify_fdeinterior exist. VARIADIC_SUBSTRINGS is deliberately NOT touched -- formatstring/apply.rs matches by `contains`, so __printf_chk is already treated as a format-string callee with the format at slot 0 when it is at slot 1; that is a separate, pre-existing behaviour change and belongs in its own PR.",
+  "preset_decision": {
+    "in_aggressive_overrides": false,
+    "why": "libcsigs ships default-ON, so it is already live on every mode and every driver surface; the aggressive_carries_every_default_off_option invariant (#267) is scoped to default-OFF options and skips it. Measured on dircolors (55,680 bytes, so `auto` -> `aggressive`): default vs `--option libcsigs off` differs in 57/184 functions under auto, 57/184 under aggressive, 58/183 under reliable and 58/184 under fast, with the cast-removal witness present in all four. Adding it would be worse than redundant: AGGRESSIVE_OVERRIDES' own doc records that the preset OWNS an option ('a user --option returndup off earlier on the command line is re-enabled by the preset'), and every benchmark and sweep number here was produced by `--option libcsigs off` on sub-500 KiB binaries, i.e. straight through auto -> aggressive. Preset membership would silently re-enable it there and destroy the ablation hook.",
+    "second_div_row_needed": false
+  }
+}
