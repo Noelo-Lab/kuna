@@ -39,23 +39,54 @@ entries, `<rule>` model rules, a synthetic pointer-conversion rule when the
 list carries a `pointermax` attribute, and the
 `<unaffected>`/`<killedbycall>`/`<returnaddress>`/`<internal_storage>` effect
 blocks — and registers the result as the default model
-(`Architecture::register_model`). The live decode builds **only** the default
-prototype: secondary named models (`__thiscall`, …) and merged models have no
-producer yet, so the per-program model registry
-(`decompiler/crates/kuna-decomp/src/infra/architecture.rs (Architecture)`,
-`proto_models`) holds the default (plus a degenerate `"unknown"` fallback when
-the cspec decode fails), and `option defaultprototype` / `option protoeval`
-(`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (OptionDefaultPrototype,
-OptionProtoEval)`) select among what is registered — the ABI-trust knob of the
-`abi-trust` sub-phase row in `decompiler/crates/kuna-decomp/phases.toml`.
+(`Architecture::register_model`).
 
-Consequence of the single-model registry: the **merged-model machinery** — a
+The spec's **named** models are registered alongside it, in document order
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs (decode_named_protos,
+decode_resolve_proto)`, mirroring the `<prototype>`/`<resolveprototype>`/
+`<modelalias>` arms of the C++ `parseCompilerConfig` dispatch). A top-level
+`<prototype>` decodes through the same body as the default one, so a named
+model carries identical storage and effect fidelity; it additionally reads the
+`hasthis` and `constructor` attributes, and the name `__thiscall` forces
+`hasThisPointer` whatever the attribute said. A `<resolveprototype>` builds a
+`ProtoModelMerged` by folding in each `<model name=…>` constituent and
+finalizing the merged input list; a `<modelalias>` registers a named copy of an
+already-registered parent, which stays `isCompatible` with it. Unlike the C++,
+which aborts the whole spec on a malformed element, a named model that fails to
+decode (an unknown strategy, a `<pentry>` naming a register the language does
+not have) is skipped: the vendored cspec corpus spans every processor, and one
+undecodable named model must not cost the architecture its default one.
+
+Upstream's post-parse invariant is honored at the tail: **every language has a
+`__thiscall` model**. Most specs do not declare one (only the x86 family and a
+handful of others do), so when the pass ends without one it is cloned off the
+default under that name — and the name rule then gives the clone
+`hasThisPointer`. Aliasing a merged model, or an alias of an alias, is refused
+exactly as upstream refuses it.
+
+Registration selects nothing. Which model a function is evaluated with is
+unchanged by the presence of the named ones: nothing reads the registry except
+`option defaultprototype` / `option protoeval`
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (OptionDefaultPrototype,
+OptionProtoEval)`) — the ABI-trust knob of the `abi-trust` sub-phase row in
+`decompiler/crates/kuna-decomp/phases.toml`. Those options are what the registry
+now makes usable: on an x86 PE target `option defaultprototype __thiscall`
+resolves and recovers the ECX `this` pointer as the first parameter, where
+before it failed with "Unknown prototype model". The cspec's
+`<eval_current_prototype>`/`<eval_called_prototype>` elements are deliberately
+still ignored — honoring them changes which model *every* function is evaluated
+with, which is a default change and not part of registration. Automatic
+assignment of `__thiscall` to member functions (from the demangler or from DWARF
+`DW_AT_object_pointer`) is likewise not wired.
+
+With merged models now registered, the **merged-model machinery** — a
 `ProtoModelMerged` union whose `FuncProto::resolveModel` picks the constituent
 best fitting the observed trials via `ScoreProtoModel`
 (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (ProtoModel::select_model,
-ScoreProtoModel)`) — is ported and unit-tested but currently has no live
-producer. `resolve_model` short-circuits on a non-merged model, so the scoring
-never fires on the datatest or real-binary paths. The scorer itself is simple:
+ScoreProtoModel)`) — has a live producer for the first time, though it still
+only fires when a merged model is explicitly selected (`resolve_model`
+short-circuits on a non-merged model, and the default model is never merged).
+The scorer itself is simple:
 each trial is mapped to a resource slot; holes in slot coverage are penalized
 16/10/7/5 for the first four missing slots and 3 thereafter, a duplicated slot
 or an unmappable trial costs 20, lowest total wins, starting threshold 500

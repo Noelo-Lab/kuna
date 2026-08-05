@@ -1721,7 +1721,9 @@ mod tests {
         // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
         // and ghdec-undefname / no `$$undef` placeholder survives the naming pass
         // (an identifier containing `$$`, and one stack Symbol split across two names)
-        assert_eq!(count, 191, "corpus file count drifted");
+        // and ghdec-cspecprotos / the cspec's named prototype models are registered
+        // (`option defaultprototype __thiscall` recovers the ECX this-pointer)
+        assert_eq!(count, 192, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

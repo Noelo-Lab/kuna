@@ -84,6 +84,31 @@ fn attr_str(el: &Rc<kuna_base::xml::Element>, nm: &str) -> Option<String> {
     el.get_attribute_value(nm).ok().map(|b| String::from_utf8_lossy(b).into_owned())
 }
 
+/// Value of a boolean spec attribute (C++ `Decoder::readBool`, which accepts
+/// `true`/`yes`/`1` and treats everything else as false).
+fn decode_bool_attr(v: &str) -> bool {
+    matches!(v, "true" | "yes" | "1")
+}
+
+/// Build a named copy of an already-registered model (C++
+/// `Architecture::createModelAlias`, architecture.cc:1137).  A merged model and
+/// an alias-of-an-alias are both refused, exactly as upstream.
+fn create_model_alias(alias: &str, parent: &Rc<ProtoModel>) -> KunaResult<ProtoModel> {
+    if parent.is_merged() {
+        return Err(KunaError::lowlevel(format!(
+            "Cannot make alias of merged model: {}",
+            parent.get_name()
+        )));
+    }
+    if parent.get_alias_parent().is_some() {
+        return Err(KunaError::lowlevel(format!(
+            "Cannot make alias of an alias: {}",
+            parent.get_name()
+        )));
+    }
+    Ok(crate::fspec::ProtoModel::copy_named(alias, parent))
+}
+
 /// Parse a decimal or `0x`-hex integer offset (C++ `<addr offset>` is a hex
 /// string for register-space addresses, decimal otherwise).
 fn parse_int(s: &str) -> Option<uintb> {
@@ -2835,6 +2860,16 @@ impl Architecture {
         self.proto_models.contains_key(nm)
     }
 
+    /// Number of registered prototype models (C++ `protoModels.size()`).
+    pub fn num_proto_models(&self) -> usize {
+        self.proto_models.len()
+    }
+
+    /// Names of the registered prototype models, in registry (sorted) order.
+    pub fn proto_model_names(&self) -> impl Iterator<Item = &str> {
+        self.proto_models.keys().map(|s| s.as_str())
+    }
+
     /// The default prototype model (C++ `glb->defaultfp`).  `None` until a
     /// cspec is parsed / [`build_default_proto`](Architecture::build_default_proto).
     pub fn default_fp(&self) -> Option<&Rc<ProtoModel>> {
@@ -3047,32 +3082,39 @@ impl Architecture {
     /// the `<default_proto>` input/output parameter lists are decoded here (the
     /// general, spec-driven path — see [`decode_default_proto`](Architecture::decode_default_proto)),
     /// so the recovered model carries real return/parameter storage and the
-    /// proto-recovery actions can fire.  Otherwise a name-only default model is
-    /// registered so the engine still has a non-null `defaultfp`.
+    /// proto-recovery actions can fire, and the spec's named models
+    /// ([`decode_named_protos`](Architecture::decode_named_protos)) are registered
+    /// alongside it.  Otherwise a name-only default model is registered so the
+    /// engine still has a non-null `defaultfp`.
     pub fn build_default_proto(&mut self) {
-        // C++ `Architecture::decodeReturnAddress` (architecture.cc:902) decodes the
-        // cspec's top-level <returnaddress> into `defaultReturnAddr`.  Do it here
-        // before the `take()` below consumes the cspec; a missing/empty element
-        // leaves `default_return_addr` as `None` (== `space == 0`).
-        if let Some(xml) = self.cspec_xml.clone() {
-            self.default_return_addr = self.decode_default_return_addr(&xml);
-        }
+        // One parse of the cspec document feeds all three readers below: the
+        // top-level <returnaddress> (C++ `Architecture::decodeReturnAddress`,
+        // architecture.cc:902), the <default_proto> model, and the named models.
         if let Some(xml) = self.cspec_xml.take() {
-            match self.decode_default_proto(&xml) {
-                Ok(model) => {
-                    let name = model.get_name().to_string();
+            let root = {
+                let mut store = kuna_base::xml::DocumentStorage::new();
+                store.parse_document(&xml).map(|d| d.get_root().clone())
+            };
+            if let Ok(root) = root {
+                // A missing/empty <returnaddress> leaves `default_return_addr` as
+                // `None` (== the C++ `defaultReturnAddr.space == 0`).
+                self.default_return_addr = self.decode_default_return_addr(&root);
+                if let Ok(model) = self.decode_default_proto(&root) {
                     let rc = Rc::new(model);
                     self.register_model(Rc::clone(&rc));
-                    // Re-register under "unknown" too: the C++ leaves `getModel`
-                    // resolving the model name, but `defaultfp` is the object.
-                    let _ = name;
-                    self.defaultfp = Some(rc);
+                    self.defaultfp = Some(Rc::clone(&rc));
+                    // The spec's NAMED models (`<prototype>`/`<resolveprototype>`/
+                    // `<modelalias>`) join the registry too, so `getModel` resolves
+                    // more than the default one.  Registration only: nothing here
+                    // selects a model for any function.
+                    let named = self.decode_named_protos(&root, &rc);
+                    for m in named {
+                        self.register_model(m);
+                    }
                     return;
                 }
-                Err(_e) => {
-                    // Fall through to the name-only default on any decode failure
-                    // (faithful degradation; the recovery simply won't fire).
-                }
+                // Fall through to the name-only default on any decode failure
+                // (faithful degradation; the recovery simply won't fire).
             }
         }
         let mut model = ProtoModel::new(self.manage());
@@ -3404,12 +3446,6 @@ impl Architecture {
         Ok(())
     }
 
-    /// Decode the `<default_proto><prototype>` element from cspec XML into a
-    /// [`ProtoModel`] (the spec-driven subset of C++ `ProtoModel::decode`:
-    /// `name`/`extrapop`/`strategy` attributes + the `<input>`/`<output>`
-    /// `<pentry>` parameter lists).  General over any processor's cspec; the
-    /// register/`<addr>` storage of each `<pentry>` is resolved through the
-    /// engine `Translate`, exactly as `ParamEntry::decode` resolves `<addr>`.
     /// Decode the cspec's top-level `<returnaddress>` storage element into the
     /// `defaultReturnAddr` VarnodeData (C++ `Architecture::decodeReturnAddress`,
     /// architecture.cc:902 -> `VarnodeData::decode`).  The element wraps a single
@@ -3417,11 +3453,11 @@ impl Architecture {
     /// engine `Translate` exactly as the effect-block decode does.  Returns `None`
     /// when there is no `<returnaddress>` or it is empty (C++ leaves
     /// `defaultReturnAddr.space == 0`).
-    fn decode_default_return_addr(&self, xml: &[u8]) -> Option<kuna_num::pcoderaw::VarnodeData> {
-        use kuna_base::xml::DocumentStorage;
-        let mut store = DocumentStorage::new();
-        let root = store.parse_document(xml).ok()?.get_root().clone();
-        let ra = find_child(&root, "returnaddress")?;
+    fn decode_default_return_addr(
+        &self,
+        root: &Rc<kuna_base::xml::Element>,
+    ) -> Option<kuna_num::pcoderaw::VarnodeData> {
+        let ra = find_child(root, "returnaddress")?;
         for child in ra.get_children().iter() {
             match child.get_name() {
                 "register" => {
@@ -3447,28 +3483,57 @@ impl Architecture {
         None
     }
 
-    fn decode_default_proto(&self, xml: &[u8]) -> KunaResult<ProtoModel> {
-        use kuna_base::xml::DocumentStorage;
-        let mut store = DocumentStorage::new();
-        let root = store.parse_document(xml)?.get_root().clone();
+    /// Locate the cspec's `<default_proto><prototype>` and decode it (C++
+    /// `Architecture::decodeDefaultProto`, architecture.cc:793).
+    fn decode_default_proto(&self, root: &Rc<kuna_base::xml::Element>) -> KunaResult<ProtoModel> {
         // Find <default_proto><prototype>.
-        let dp = find_child(&root, "default_proto")
+        let dp = find_child(root, "default_proto")
             .ok_or_else(|| KunaError::lowlevel("cspec has no <default_proto>"))?;
         let proto = find_child(&dp, "prototype")
             .ok_or_else(|| KunaError::lowlevel("<default_proto> has no <prototype>"))?;
+        self.decode_proto_model(&proto, root)
+    }
 
+    /// Decode one `<prototype>` element into a [`ProtoModel`] (C++
+    /// `ProtoModel::decode`, fspec.cc:2563): the
+    /// `name`/`extrapop`/`strategy`/`hasthis`/`constructor` attributes, the
+    /// `<input>`/`<output>` `<pentry>` lists and the
+    /// `<unaffected>`/`<killedbycall>`/`<returnaddress>`/`<internal_storage>`
+    /// blocks.  `root` is the enclosing `<compiler_spec>`, consulted only for the
+    /// top-level `<returnaddress>` fallback.
+    ///
+    /// General over any processor's cspec and over any `<prototype>` position:
+    /// the one inside `<default_proto>` and every top-level named model
+    /// ([`decode_named_protos`](Architecture::decode_named_protos)) go through
+    /// this same body, so a named model carries the identical storage/effect
+    /// fidelity as the default one.
+    fn decode_proto_model(
+        &self,
+        proto: &Rc<kuna_base::xml::Element>,
+        root: &Rc<kuna_base::xml::Element>,
+    ) -> KunaResult<ProtoModel> {
         let mut model = ProtoModel::new(self.manage());
-        let name = attr_str(&proto, "name").unwrap_or_else(|| "__stdcall".to_string());
-        model.set_name(&name);
+        let name = attr_str(proto, "name").unwrap_or_else(|| "__stdcall".to_string());
         // extrapop="unknown" -> EXTRAPOP_UNKNOWN; numeric otherwise.
-        if let Some(ep) = attr_str(&proto, "extrapop") {
+        if let Some(ep) = attr_str(proto, "extrapop") {
             if ep == "unknown" {
                 model.set_extra_pop(crate::fspec::EXTRAPOP_UNKNOWN);
             } else if let Ok(v) = ep.parse::<int4>() {
                 model.set_extra_pop(v);
             }
         }
-        let strategy = attr_str(&proto, "strategy").unwrap_or_default();
+        // `hasthis`/`constructor` (ATTRIB_HASTHIS/ATTRIB_CONSTRUCTOR) mark a model
+        // for non-static class methods / constructors.  `set_name` runs LAST so the
+        // C++ `if (name == "__thiscall") hasThis = true` override (fspec.cc:2595)
+        // wins over an explicit `hasthis="false"`, exactly as upstream orders it.
+        if let Some(v) = attr_str(proto, "hasthis") {
+            model.set_has_this(decode_bool_attr(&v));
+        }
+        if let Some(v) = attr_str(proto, "constructor") {
+            model.set_constructor(decode_bool_attr(&v));
+        }
+        model.set_name(&name);
+        let strategy = attr_str(proto, "strategy").unwrap_or_default();
         model.build_param_list(&strategy)?;
 
         // Decode <input>/<output> pentry lists and the <unaffected>/
@@ -3513,7 +3578,7 @@ impl Architecture {
         // root element directly here so the per-call retaddr store is modeled even
         // when the <prototype> omits its own <returnaddress> (the x86-64-gcc case).
         if !saw_retaddr {
-            if let Some(ra_block) = find_child(&root, "returnaddress") {
+            if let Some(ra_block) = find_child(root, "returnaddress") {
                 self.decode_effect_block(
                     &ra_block,
                     &mut model,
@@ -3530,6 +3595,101 @@ impl Architecture {
         crate::kuna_dfunaffected::assert_direction_flag_unaffected(&mut model, |nm| {
             self.translate.get_register_varnode(nm)
         })?;
+        Ok(model)
+    }
+
+    /// Decode every *named* prototype model the compiler spec declares, in
+    /// document order (C++ `Architecture::parseCompilerConfig`'s
+    /// `ELEM_PROTOTYPE`/`ELEM_RESOLVEPROTOTYPE` -> `decodeProto`,
+    /// architecture.cc:1254/1280, plus the `ELEM_MODELALIAS` arm at
+    /// architecture.cc:1310).  `defaultfp` is the already-decoded
+    /// `<default_proto>` model, which the later elements may reference by name.
+    /// The C++ post-parse invariant "we must have a `__thiscall` calling
+    /// convention" (architecture.cc:1342) is honored at the tail.
+    ///
+    /// Returns the models to register, in registration order.  Unlike the C++,
+    /// which throws on any malformed element, a model that fails to decode (an
+    /// unknown strategy, a `<pentry>` naming a register this language does not
+    /// have, a `<resolveprototype>` whose constituents are not standard lists)
+    /// is skipped: the cspec corpus spans every vendored processor, and one
+    /// undecodable named model must not cost the architecture its default one.
+    ///
+    /// `<eval_current_prototype>`/`<eval_called_prototype>` are deliberately NOT
+    /// applied here — they change which model every function is evaluated with,
+    /// which is a behavior change this registration pass does not make.
+    fn decode_named_protos(
+        &self,
+        root: &Rc<kuna_base::xml::Element>,
+        defaultfp: &Rc<ProtoModel>,
+    ) -> Vec<Rc<ProtoModel>> {
+        let mut byname: std::collections::BTreeMap<String, Rc<ProtoModel>> =
+            std::collections::BTreeMap::new();
+        byname.insert(defaultfp.get_name().to_string(), Rc::clone(defaultfp));
+        let mut out: Vec<Rc<ProtoModel>> = Vec::new();
+
+        for child in root.get_children().iter() {
+            let decoded = match child.get_name() {
+                "prototype" => self.decode_proto_model(child, root).ok(),
+                "resolveprototype" => self.decode_resolve_proto(child, &byname).ok(),
+                "modelalias" => match (attr_str(child, "name"), attr_str(child, "parent")) {
+                    (Some(nm), Some(parent)) => {
+                        byname.get(&parent).and_then(|p| create_model_alias(&nm, p).ok())
+                    }
+                    _ => None,
+                },
+                _ => continue,
+            };
+            let Some(model) = decoded else { continue };
+            // C++ throws "Duplicate ProtoModel name"; keep the first, which is the
+            // default model when a spec re-declares it.
+            if byname.contains_key(model.get_name()) {
+                continue;
+            }
+            let rc = Rc::new(model);
+            byname.insert(rc.get_name().to_string(), Rc::clone(&rc));
+            out.push(rc);
+        }
+        // C++ `parseCompilerConfig` tail, architecture.cc:1342 — "We must have a
+        // __thiscall calling convention": when the spec declares none, clone it
+        // off the default so `getModel("__thiscall")` resolves on every language.
+        if !byname.contains_key("__thiscall") {
+            if let Ok(m) = create_model_alias("__thiscall", defaultfp) {
+                out.push(Rc::new(m));
+            }
+        }
+        out
+    }
+
+    /// Decode one `<resolveprototype>` element into a merged model (C++
+    /// `ProtoModelMerged::decode`, fspec.cc:2904): each `<model name=".."/>`
+    /// child names an already-registered constituent that is folded in, then the
+    /// merged input list is finalized.
+    fn decode_resolve_proto(
+        &self,
+        el: &Rc<kuna_base::xml::Element>,
+        byname: &std::collections::BTreeMap<String, Rc<ProtoModel>>,
+    ) -> KunaResult<ProtoModel> {
+        let name = attr_str(el, "name")
+            .ok_or_else(|| KunaError::lowlevel("<resolveprototype> has no name"))?;
+        let mut model = ProtoModel::new_merged(self.manage());
+        model.set_name(&name);
+        let mut count = 0;
+        for child in el.get_children().iter() {
+            if child.get_name() != "model" {
+                continue;
+            }
+            let sub = attr_str(child, "name")
+                .ok_or_else(|| KunaError::lowlevel("<model> has no name"))?;
+            let constituent = byname
+                .get(&sub)
+                .ok_or_else(|| KunaError::lowlevel(format!("Missing prototype model: {sub}")))?;
+            model.merged_push(Rc::clone(constituent))?;
+            count += 1;
+        }
+        if count == 0 {
+            return Err(KunaError::lowlevel("<resolveprototype> has no <model>"));
+        }
+        model.merged_finalize();
         Ok(model)
     }
 
