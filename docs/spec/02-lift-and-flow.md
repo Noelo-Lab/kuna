@@ -64,6 +64,21 @@ contexts, and a guard returns each context after successful translation or an
 error. This is scratch reuse only: instruction results and addresses are not
 cached, and the bytes and painted context are resolved on every translation.
 
+**Instruction-byte window.** A parser context buffers a fixed 16 bytes of the
+instruction stream, the longest encoding any supported processor admits. Reads
+out of that window are bounded by their *starting* byte: a read that begins at or
+past the window is the architecture's instruction-length limit and raises bad
+data, which the decode-error policy below turns into a truncating halt. A read
+that begins inside the window but runs off its end is not an error, because
+pattern matching walks a candidate pattern in fixed-width words however narrow
+the pattern really is: matching an instruction at the length limit issues a
+word-sized read straddling the end of the window. Those tail bytes are outside
+the matcher's mask and cannot affect the verdict, so kuna reads them as zero
+rather than rejecting the instruction (the C++ reads whatever memory follows the
+buffer). Without this an x86-64 15-byte alignment NOP — clang's `-O2` loop
+padding — failed to decode, truncating flow at the padding and dropping the loop
+it preceded from the emitted function.
+
 **Decode-error policy** (`flow.rs (FlowInfo::handle_decode_error)`). An
 unimplemented instruction is, per the flags, treated as a NOP
 (`ignore_unimplemented`), re-thrown (`error_unimplemented`), or replaced by an

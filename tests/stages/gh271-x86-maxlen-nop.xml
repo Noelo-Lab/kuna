@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna GH-271: "15-byte multi-prefix NOP fails SLEIGH decode: body dropped,
+    guard inverted"
+
+    clang emits a 15-byte NOP as loop-alignment padding at -O2: six 0x66
+    operand-size prefixes, a 0x2e CS segment override, then `0f 1f /4` with SIB
+    and disp32, the x86 encoding-length maximum.  That instruction failed to
+    decode.  `ParserContext` buffers MAX_INSTRUCTION_LEN (16) bytes and guards
+    only the *start* byte of a read, but C++ `PatternBlock::isInstructionMatch`
+    walks a pattern in 4-byte chunks whatever its real width, so matching a
+    15-byte instruction issues a 4-byte read at offset 13, one byte past the
+    buffer.  Upstream reads adjacent struct memory there (UB) and the caller's
+    mask discards it; kuna raised BadData, so `FlowInfo` planted an artificial
+    halt at the NOP address and truncated the rest of the function.  With the
+    padding sitting ahead of a loop head, everything after it (the loop, the
+    stores, and any parameter only the loop reads) vanished from the emitted C,
+    leaving a bare early-exit shell.
+
+    Fix (kuna GH-271): instruction bytes past the buffer read as 0, the
+    deterministic equivalent of the masked-off garbage C++ reads.  The start-byte
+    guard is untouched, so a genuinely over-length encoding still errors (pinned
+    by decompiler/crates/kuna-sleigh/tests/x86_maxlen_nop_regression.rs).
+
+    Bytes at 0x1000, a shrink-wrapped void f(...) matching the reported shape:
+        1000  48 39 0e              CMP  qword ptr [RSI],RCX   ; guard, before
+        1003  0f 83 1f 00 00 00     JNC  0x1028                ; the prologue
+        1009  53                    PUSH RBX
+        100a  48 8b 06              MOV  RAX,qword ptr [RSI]
+        100d  66 66 66 66 66 66 2e 0f 1f 84 00 00 00 00 00     ; THE TRIGGER
+        101c  48 8b 00              MOV  RAX,qword ptr [RAX]   ; loop head
+        101f  48 85 c0              TEST RAX,RAX
+        1022  75 f8                 JNZ  0x101c
+        1024  48 89 02              MOV  qword ptr [RDX],RAX   ; the dropped store
+        1027  5b                    POP  RBX
+        1028  c3                    RET                        ; shared return
+
+    Stage: S1 decode (porting-divergence correctness fix, no option).  This
+    testcase asserts the FIXED decode: the padding is one 15-byte instruction,
+    the stream realigns onto the loop head at 0x101c, and the emitted C keeps
+    both the loop and the store that live past the padding.
+-->
+<bytechunk space="ram" offset="0x1000">
+48390e0f831f00000053488b066666666666662e0f1f840000000000488b004885c075f84889025bc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="f"/>
+</binaryimage>
+<script>
+  <com>disassemble 0x1000 0x1029</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH271 #1: the 15-byte alignment NOP decodes at 0x100d" min="1" max="1">^0x0+100d: NOP</stringmatch>
+<stringmatch name="GH271 #2: the stream realigns onto the loop head at 0x101c (the NOP consumed exactly 15 bytes)" min="1" max="1">^0x0+101c: MOV +RAX,qword ptr \[RAX\]</stringmatch>
+<stringmatch name="GH271 #3: flow is not truncated at the NOP, so the loop past the padding survives" min="1" max="1">\} while \(a1\);</stringmatch>
+<stringmatch name="GH271 #4: the store past the padding survives (it went missing with the rest of the body)" min="1" max="1">\*a2 = 0;</stringmatch>
+<stringmatch name="GH271 #5: the early-exit guard keeps the JNC sense, not the inverted form the truncated CFG structured to" min="1" max="1">if \(a3 &lt;= \*a1\)</stringmatch>
+</decompilertest>

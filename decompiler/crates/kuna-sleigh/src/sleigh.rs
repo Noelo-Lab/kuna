@@ -309,6 +309,22 @@ impl ParserContext {
         self.context[idx] = (self.context[idx] & !mask) | (mask & val);
     }
 
+    /// Read one instruction byte, treating anything past the buffer as 0.
+    ///
+    /// Both `getInstructionBytes` and `getInstructionBits` guard only the *start*
+    /// byte against `MAX_INSTRUCTION_LEN` and then read a fixed-width run from
+    /// it, so a read can legitimately extend past the end of `buf`: C++
+    /// `PatternBlock::isInstructionMatch` walks a pattern in `sizeof(uintm)`
+    /// chunks whatever its real width, so matching a 15-byte instruction (the
+    /// x86 maximum — e.g. clang's `66 66 66 66 66 66 2e 0f 1f 84 00 00 00 00 00`
+    /// alignment NOP) reads a 4-byte chunk at offset 13. The tail bytes are
+    /// always masked off by the caller, so C++ gets away with reading adjacent
+    /// struct memory (UB); zero is the deterministic equivalent. Erroring here
+    /// instead aborts the decode of a perfectly valid instruction (GH-271).
+    fn read_buf(&self, idx: usize) -> u8 {
+        self.buf.get(idx).copied().unwrap_or(0)
+    }
+
     /// C++ `getInstructionBytes(int4 bytestart,int4 size,uint4 off)`.
     fn get_instruction_bytes(&self, bytestart: i32, size: i32, off: u32) -> KunaResult<u32> {
         // off += bytestart
@@ -322,13 +338,8 @@ impl ParserContext {
         let base = off as usize;
         let mut res: u32 = 0;
         for i in 0..size {
-            // C++ reads ptr[i] beyond the buffer if off+size > 16 (UB);
-            // the guard above only checks the start byte, matching C++.
-            let b = self.buf.get(base + i as usize).copied().ok_or_else(|| {
-                KunaError::bad_data("Instruction byte read past buffer (C++ UB)")
-            })?;
             res <<= 8; // uintm << 8
-            res |= u32::from(b);
+            res |= u32::from(self.read_buf(base + i as usize));
         }
         Ok(res)
     }
@@ -347,11 +358,8 @@ impl ParserContext {
         let bytesize = (startbit + size - 1) / 8 + 1;
         let mut res: u32 = 0;
         for i in 0..bytesize {
-            let b = self.buf.get(base + i as usize).copied().ok_or_else(|| {
-                KunaError::bad_data("Instruction bit read past buffer (C++ UB)")
-            })?;
             res <<= 8;
-            res |= u32::from(b);
+            res |= u32::from(self.read_buf(base + i as usize));
         }
         // res <<= 8*(sizeof(uintm)-bytesize)+startbit
         // res >>= 8*sizeof(uintm)-size
