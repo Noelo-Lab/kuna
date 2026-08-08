@@ -1,7 +1,7 @@
 name: Tests
 
 # Runs the repository's own gates -- the checks AGENTS.md requires green before
-# every commit -- on every pull request and every push to main:
+# every commit -- on pull requests and on every push to main:
 #
 #   make test              datatest corpus vs docs/baseline.json          (PARITY OK)
 #   make test-stages       stage corpus vs docs/baseline-stages.json      (PARITY OK)
@@ -17,9 +17,27 @@ name: Tests
 # The gates are split across two jobs that run in parallel: the parity gates
 # answer in minutes and catch the common regression, while the workspace suite
 # (a debug build of the whole workspace plus ~4300 tests) is the long pole.
+#
+# The parity gates run on EVERY event. The workspace suite is scoped -- see the
+# `if:` on that job: an internal PR (a branch in this repo, i.e. the automated
+# agent PRs, whose author runs `make rust-test` locally before pushing) skips it
+# and gets the answer at merge instead, on the push to main. A fork PR is the
+# case nobody ran locally, so it always runs. The reason is runner supply: one
+# push fans out ~10 concurrent jobs (2 here + CodeQL's 8 configured languages),
+# and on 2026-08-06 that exhausted the pool -- four jobs sat 98-101 minutes
+# without ever being assigned a runner and were swept, presenting as a red PR
+# that had executed no code at all.
 
 on:
   pull_request:
+    # `labeled` is here so the `full-ci` escape hatch works by labelling alone.
+    # Without it the hatch is a lie: the default set is opened/synchronize/
+    # reopened, and re-running a finished run REPLAYS ITS ORIGINAL PAYLOAD -- so
+    # a label added afterwards is invisible to the `if:` and you would have to
+    # push a commit to be believed. The cost is one extra run per label added to
+    # a PR, which is rare here; `unlabeled` is deliberately NOT included, so
+    # removing a label does not re-run anything.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -93,6 +111,21 @@ jobs:
       - name: kuna catalog --check
         run: ./decompiler/target/release/kuna catalog --check
 
+      # `catalog --check` above proves options.md documents the same option SET;
+      # this proves it is the generator's exact bytes. That is the assertion in
+      # kuna-decomp/tests/options_md_fresh.rs, which lives in the workspace suite
+      # -- skipped on an internal PR. Forgetting to regenerate options.md after
+      # touching option metadata is a routine miss (AGENTS.md calls it out), so
+      # the cheap job carries it rather than deferring it to the push to main.
+      # Free: it reuses the release binary this job already built.
+      - name: docs/options.md is the generator's bytes
+        run: |
+          ./decompiler/target/release/kuna catalog --markdown > /tmp/options.generated.md
+          if ! diff -u docs/options.md /tmp/options.generated.md; then
+            echo "::error file=docs/options.md::stale -- regenerate with 'decompiler/target/release/kuna catalog --markdown > docs/options.md'"
+            exit 1
+          fi
+
       - name: Assemble and test the browser Worker boundary
         run: |
           bash integrations/web/build.sh
@@ -100,6 +133,23 @@ jobs:
 
   rust-test:
     name: cargo workspace suite
+    # Runs on: every push to main, manual dispatch, any PR from a FORK, and any
+    # PR carrying the `full-ci` label. It is skipped only for a PR from a branch
+    # in this repo -- the automated agent PRs, where AGENTS.md already requires
+    # `make rust-test` green locally before the commit, so this job re-derives an
+    # answer we have. Skipping it halves this workflow's runner demand per PR
+    # and still leaves the parity gates (the cheap regression net) on every PR.
+    #
+    # The safety net for the skip is the `push: branches: [main]` trigger above:
+    # the suite always runs on the merge commit, so nothing reaches main without
+    # it -- the answer just arrives at merge rather than before it. To demand it
+    # BEFORE merging a particular internal PR, add the `full-ci` label: that is
+    # itself a trigger (see `types:` above), so the suite starts on the label
+    # alone -- no push, no re-run, no workflow edit.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.fork
+      || contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
