@@ -48,10 +48,11 @@ make specs      # compile all .slaspec → .sla with slacomp
 CI runs all four (plus `kuna catalog --check`) on every push to main —
 `.github/workflows/tests.yml`. On a **pull request from a branch in this repo** the
 workspace suite is skipped and only the parity gates run; **you are the gate for
-`make rust-test` on those PRs**, which is why it is on the list above. (It still runs
-pre-merge on a fork PR, on any PR labelled `full-ci`, and via *Run workflow*.) Run all
-four locally regardless: the workspace suite is the long pole in CI, so local failures
-are found far sooner.
+`make rust-test` on those PRs**, which is why it is on the list above. To demand it from
+CI on a particular PR, add the **`full-ci`** label — that label is itself a trigger, so
+the suite starts on the label alone. (It also always runs pre-merge on a fork PR, and via
+*Run workflow*.) Run all four locally regardless: the workspace suite is the long pole in
+CI, so local failures are found far sooner.
 
 - **Never re-pin `docs/baseline.json` to absorb a regression** — fix the code or make the
   change opt-in. The only sanctioned re-pins are an intentional upstream sync or a

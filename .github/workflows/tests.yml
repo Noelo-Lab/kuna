@@ -30,6 +30,14 @@ name: Tests
 
 on:
   pull_request:
+    # `labeled` is here so the `full-ci` escape hatch works by labelling alone.
+    # Without it the hatch is a lie: the default set is opened/synchronize/
+    # reopened, and re-running a finished run REPLAYS ITS ORIGINAL PAYLOAD -- so
+    # a label added afterwards is invisible to the `if:` and you would have to
+    # push a commit to be believed. The cost is one extra run per label added to
+    # a PR, which is rare here; `unlabeled` is deliberately NOT included, so
+    # removing a label does not re-run anything.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -135,8 +143,9 @@ jobs:
     # The safety net for the skip is the `push: branches: [main]` trigger above:
     # the suite always runs on the merge commit, so nothing reaches main without
     # it -- the answer just arrives at merge rather than before it. To demand it
-    # BEFORE merging a particular internal PR, label that PR `full-ci` and push
-    # (or re-run the workflow); no workflow edit needed.
+    # BEFORE merging a particular internal PR, add the `full-ci` label: that is
+    # itself a trigger (see `types:` above), so the suite starts on the label
+    # alone -- no push, no re-run, no workflow edit.
     if: >-
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.fork
