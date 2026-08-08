@@ -103,6 +103,21 @@ jobs:
       - name: kuna catalog --check
         run: ./decompiler/target/release/kuna catalog --check
 
+      # `catalog --check` above proves options.md documents the same option SET;
+      # this proves it is the generator's exact bytes. That is the assertion in
+      # kuna-decomp/tests/options_md_fresh.rs, which lives in the workspace suite
+      # -- skipped on an internal PR. Forgetting to regenerate options.md after
+      # touching option metadata is a routine miss (AGENTS.md calls it out), so
+      # the cheap job carries it rather than deferring it to the push to main.
+      # Free: it reuses the release binary this job already built.
+      - name: docs/options.md is the generator's bytes
+        run: |
+          ./decompiler/target/release/kuna catalog --markdown > /tmp/options.generated.md
+          if ! diff -u docs/options.md /tmp/options.generated.md; then
+            echo "::error file=docs/options.md::stale -- regenerate with 'decompiler/target/release/kuna catalog --markdown > docs/options.md'"
+            exit 1
+          fi
+
       - name: Assemble and test the browser Worker boundary
         run: |
           bash integrations/web/build.sh
