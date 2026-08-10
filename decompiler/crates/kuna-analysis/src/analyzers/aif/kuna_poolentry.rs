@@ -93,6 +93,43 @@ fn absolute_literal_target(operands: &str) -> Option<u64> {
     u64::from_str_radix(hex, 16).ok()
 }
 
+/// The `[pc,#imm]` literal form — what the ARM SLEIGH prints for `vldr`/`ldrd`
+/// (`ARMneon.sinc` `vldrRn`), which resolve the target in the semantic body rather
+/// than in the display. `pc_delta` is 4 in Thumb, 8 in A32; the base is the
+/// word-aligned PC.
+fn pcrel_literal_target(addr: u64, operands: &str, pc_delta: Option<u64>) -> Option<u64> {
+    let pc_delta = pc_delta?;
+    let open = operands.find("[pc")?;
+    let rest = &operands[open + 3..];
+    let close = rest.find(']')?;
+    let inner = &rest[..close];
+    let base = (addr + pc_delta) & !3u64;
+    if inner.is_empty() {
+        return Some(base);
+    }
+    // Only the immediate form is a literal reference. `tbb [pc,r3]` / `tbh
+    // [pc,r3,lsl #1]` also print `[pc`, and must not be read as one.
+    let mut num = inner.strip_prefix(",#")?;
+    let neg = num.starts_with('-');
+    if neg {
+        num = &num[1..];
+    }
+    if !num.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let imm = if let Some(h) = num.strip_prefix("0x") {
+        u64::from_str_radix(h, 16).ok()?
+    } else {
+        num.parse::<u64>().ok()?
+    };
+    if neg { base.checked_sub(imm) } else { base.checked_add(imm) }
+}
+
+/// One instruction's literal target under both display forms.
+fn literal_target(addr: u64, operands: &str, pc_delta: Option<u64>) -> Option<u64> {
+    absolute_literal_target(operands).or_else(|| pcrel_literal_target(addr, operands, pc_delta))
+}
+
 /// Where a known instruction ENDS, and whether it was a return-class terminal.
 /// Built over the Listing plus the speculatively-decoded gap routines; used by the
 /// "this pool follows a body" gates.
@@ -107,10 +144,12 @@ fn referenced_words(
     speculative: &[u64],
     ends: &mut CodeEnds,
     branch_targets: &mut BTreeSet<u64>,
+    pc_delta: Option<u64>,
 ) -> BTreeSet<u64> {
     let exec = listing.exec_ranges().to_vec();
     let in_exec = |vma: u64| exec.iter().any(|&(lo, hi)| vma >= lo && vma < hi);
     let mut out: BTreeSet<u64> = BTreeSet::new();
+    let dump = env_on("KUNA_POOL_DUMPPC");
 
     for (&vma, insn) in listing.instructions() {
         let e = ends.entry(vma + insn.len as u64).or_insert(false);
@@ -118,10 +157,11 @@ fn referenced_words(
         if !insn.flow.is_call {
             branch_targets.extend(insn.flows.iter().copied());
         }
-        if let Some(t) = absolute_literal_target(&insn.operands) {
-            if t % 4 == 0 && in_exec(t) && !listing.is_instruction_start(t) {
-                out.insert(t);
-            }
+        if dump && insn.operands.contains("[pc") {
+            eprintln!("PCOP 0x{:x} {} {}", vma, insn.mnemonic, insn.operands);
+        }
+        if let Some(t) = literal_target(vma, &insn.operands, pc_delta) {
+            insert_literal(&mut out, listing, &in_exec, t, wide(&insn.mnemonic));
         }
     }
     for &entry in speculative {
@@ -138,14 +178,34 @@ fn referenced_words(
             if !insn.is_call {
                 branch_targets.extend(insn.flows.iter().copied());
             }
-            if let Some(t) = absolute_literal_target(&insn.operands) {
-                if t % 4 == 0 && in_exec(t) && !listing.is_instruction_start(t) {
-                    out.insert(t);
-                }
+            if let Some(t) = literal_target(vma, &insn.operands, pc_delta) {
+                insert_literal(&mut out, listing, &in_exec, t, wide(&insn.mnemonic));
             }
         }
     }
     out
+}
+
+/// A 64-bit literal load covers TWO words; the second is loaded by nothing.
+fn wide(mnemonic: &str) -> bool {
+    let m = mnemonic.to_ascii_lowercase();
+    m.starts_with("vldr.64") || m.starts_with("ldrd")
+}
+
+fn insert_literal(
+    out: &mut BTreeSet<u64>,
+    listing: &Listing,
+    in_exec: &dyn Fn(u64) -> bool,
+    t: u64,
+    wide: bool,
+) {
+    let n = if wide { 2 } else { 1 };
+    for k in 0..n {
+        let w = t + k * 4;
+        if w % 4 == 0 && in_exec(w) && !listing.is_instruction_start(w) {
+            out.insert(w);
+        }
+    }
 }
 
 /// Does a body end at `lo` (allowing up to 2 bytes of Thumb alignment padding)?
@@ -212,7 +272,13 @@ pub fn run_pool_pass(
     spec.extend_from_slice(other_speculative);
     let mut ends: CodeEnds = CodeEnds::new();
     let mut branch_targets: BTreeSet<u64> = BTreeSet::new();
-    let words = referenced_words(listing, &mut decoder, &spec, &mut ends, &mut branch_targets);
+    // Decode mode decides the PC bias of a `[pc,#imm]` literal (Thumb +4, A32 +8).
+    // MEASUREMENT SHIM: derived from the presence of 16-bit instructions. Production
+    // must read the `TMode` context the entry tier already paints.
+    let pc_delta = env_on("KUNA_POOL_PCREL")
+        .then(|| if listing.instructions().any(|(_, i)| i.len == 2) { 4u64 } else { 8u64 });
+    let words =
+        referenced_words(listing, &mut decoder, &spec, &mut ends, &mut branch_targets, pc_delta);
     let mut pools = runs(listing, &words);
     let after_code = env_on("KUNA_POOL_AFTER_CODE");
     let after_ret = env_on("KUNA_POOL_AFTER_RET");
