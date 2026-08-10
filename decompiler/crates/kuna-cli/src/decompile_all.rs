@@ -38,6 +38,11 @@
 //! `noreturn_propagate` consumer fires and an unnamed internal exit/fatal
 //! wrapper cannot swallow following functions. `aggressive` names Listing on;
 //! `fast` names it off. A later explicit `--option` always wins.
+//!
+//! Both surfaces share ONE discovery policy ([`DriverDefaults`], DIV-68): the
+//! non-x86-64 `funcstart_patterns` + `aif` defaults (DIV-20) and the Listing that
+//! gates them are injected for `functions` exactly as for `decompile-all`, so the
+//! inventory can never omit an entry the whole-binary run decompiles.
 
 use std::ffi::{OsStr, OsString};
 use std::rc::Rc;
@@ -166,7 +171,7 @@ pub fn run_functions(argv: &[String]) -> i32 {
 
 /// Load + analyze the binary once, then decompile every selected function.
 fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
-    let mut prog = load_program(args, /* default_listing= */ true)?;
+    let mut prog = load_program(args, DriverDefaults::Decompile)?;
     let targets = resolve_targets(&prog, args)?;
 
     // Per-function watchdog (`--max-fn-seconds`, default 10 for an unfiltered
@@ -185,19 +190,41 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
 /// Enumerate the program's full callable-symbol inventory, one
 /// [`FunctionEntry`] per entry address (the `functions` command).
 fn list_functions(args: &Args) -> Result<Vec<FunctionEntry>, String> {
-    let prog = load_program(args, /* default_listing= */ false)?;
+    let prog = load_program(args, DriverDefaults::Inventory)?;
     // One record per entry address, address-ordered, alias names carried as data
     // (issue #197 — this used to dedup by (address, name), so a function the
     // loader and an analysis pass both named was listed twice).
     Ok(prog.function_entries_canonical())
 }
 
+/// Which bundle of driver defaults a surface takes in [`load_program`].
+///
+/// Both variants take the same DISCOVERY policy (DIV-20/DIV-68); they differ only
+/// in whether the Listing is built on an architecture where it discovers nothing.
+pub(crate) enum DriverDefaults {
+    /// `kuna functions` — enumeration only.
+    Inventory,
+    /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
+    Decompile,
+}
+
+impl DriverDefaults {
+    /// Does this surface decompile the entries it discovers (so the Listing's
+    /// no-return facts change its output, not just its inventory)?
+    fn decompiles(&self) -> bool {
+        matches!(self, DriverDefaults::Decompile)
+    }
+}
+
 /// Bootstrap the architecture from the binary and run the analysis commit (the
 /// in-process `load file` + `read symbols`), applying load-time env gates and
-/// `--option`s in the correct order.  `default_listing` injects the Listing
-/// default of the `decompile-all` surface (decbench F1, DIV-15) — `true` from
-/// [`decompile_all`], `false` from [`list_functions`] (enumeration stays cheap).
-pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<ConsoleProgram, String> {
+/// `--option`s in the correct order.  `defaults` selects the driver-default
+/// bundle (DIV-15/DIV-20/DIV-68): the discovery passes are shared by every
+/// surface, the Listing-for-no-return default is the decompiling surfaces'.
+pub(crate) fn load_program(
+    args: &Args,
+    defaults: DriverDefaults,
+) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
         .to_string_lossy()
@@ -214,25 +241,46 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
     let mut prog = bootstrap_from_object(&binary, target, &spec_roots)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
-    // (kuna, decbench F1) Default the program-wide Listing ON for the
-    // `decompile-all` surface, unless the caller set it explicitly
-    // (`--option listing on|off` still wins — the injection is skipped whenever
-    // the caller names `listing` at all).  The Listing feeds the default-on
-    // `noreturn_propagate` consumer (the angr-style call-graph no-return
-    // fixpoint, DIV-14): without it the pass is a structural no-op, so a call
-    // to an unnamed internal exit/fatal wrapper in a STRIPPED binary is treated
-    // as returning and the decompiler runs past it, swallowing every following
-    // function into the caller (the decbench `noreturn-propagation-stripped`
-    // family, e.g. coreutils `xalloc_die`: 118 LOC / 2 gotos swallowed vs the
-    // true 4-instruction body).  Only this driver changes: the engine default
-    // (`analysis_listing = false`) and the subprocess surfaces (`kuna
-    // decompile` → `decomp_dbg`, the datatest harness) are untouched. `kuna
-    // functions` does not add this driver fallback: no-return facts never add
-    // or remove entries, while the Listing build would turn cheap enumeration
-    // into a whole-program decode (measured 0.21 s → 5.7 s on a stripped tar).
-    // A selected mode can still name Listing explicitly. See DIV-15
-    // (`docs/divergences.md`).
-    if default_listing && !args.options.iter().any(|(name, _)| name == "listing") {
+    let named = |name: &str| args.options.iter().any(|(option, _)| option == name);
+    // A non-x86-64 image takes the DIV-20 discovery bundle below; read the file
+    // once for both of its gates (and for the Listing gate above them).
+    let non_x86_64 = std::fs::read(&binary)
+        .ok()
+        .and_then(|bytes| {
+            object::File::parse(&*bytes)
+                .ok()
+                .map(|file| file.architecture() != object::Architecture::X86_64)
+        })
+        .unwrap_or(false);
+
+    // (kuna, decbench F1) Default the program-wide Listing ON, unless the caller
+    // set it explicitly (`--option listing on|off` still wins — the injection is
+    // skipped whenever the caller names `listing` at all).  Two independent
+    // reasons, one per surface:
+    //
+    //   * A DECOMPILING surface needs it on every architecture.  The Listing
+    //     feeds the default-on `noreturn_propagate` consumer (the angr-style
+    //     call-graph no-return fixpoint, DIV-14): without it the pass is a
+    //     structural no-op, so a call to an unnamed internal exit/fatal wrapper
+    //     in a STRIPPED binary is treated as returning and the decompiler runs
+    //     past it, swallowing every following function into the caller (the
+    //     decbench `noreturn-propagation-stripped` family, e.g. coreutils
+    //     `xalloc_die`: 118 LOC / 2 gotos swallowed vs the true 4-instruction
+    //     body).  See DIV-15.
+    //   * On a NON-x86-64 image every surface needs it, `kuna functions`
+    //     included, because the Listing is the master gate of the DIV-20
+    //     discovery bundle below — `funcstart_patterns` and `aif` both walk the
+    //     Listing's code units and are inert without it, and those two passes
+    //     ARE the discovery on a stripped ARM/AArch64/MIPS/PPC/RISC-V binary.
+    //     See DIV-68.
+    //
+    // x86-64 enumeration keeps the cheap path: the Listing is measured
+    // entry-neutral there (identical entry sets on 40 sampled stripped x86-64
+    // ELFs), so building it would only make `kuna functions` slower.  Only this
+    // driver changes: the engine default (`analysis_listing = false`) and the
+    // subprocess surfaces (`kuna decompile` → `decomp_dbg`, the datatest
+    // harness) are untouched, and a selected mode can still name Listing.
+    if (defaults.decompiles() || non_x86_64) && !named("listing") {
         prog.arch_mut()
             .set_kuna_option("listing", "on")
             .map_err(|e| format!("option listing: {}", e.explain()))?;
@@ -244,24 +292,16 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
     // it has no recursive-descent Listing sweep at the analyzer tier).  The
     // `funcstart_patterns` pass IS the primary discovery source there — it applies the
     // full ARM/AArch64/MIPS/PPC/RISC-V `<patternpairs>` (pre/post) prologue matcher over
-    // the code — so default it ON for non-x86-64 on the `decompile-all` surface (the
-    // benchmark/LLM path), unless the caller named it explicitly.  x86-64 keeps it OFF
-    // (oracle 5 + the entry oracles suffice, and the aggressive scan can over-produce
-    // there); only this driver changes, the engine default
+    // the code — so default it ON for non-x86-64 on every whole-binary surface, the
+    // `functions` inventory included (DIV-68), unless the caller named it explicitly.
+    // x86-64 keeps it OFF (oracle 5 + the entry oracles suffice, and the aggressive scan
+    // can over-produce there); only this driver changes, the engine default
     // (`analysis_funcstart_patterns = false`) and the console/datatest surfaces are
     // untouched.  See DIV-20 (`docs/divergences.md`).
-    if default_listing && !args.options.iter().any(|(name, _)| name == "funcstart_patterns") {
-        let non_x86_64 = std::fs::read(&binary)
-            .ok()
-            .and_then(|b| {
-                object::File::parse(&*b).ok().map(|f| f.architecture() != object::Architecture::X86_64)
-            })
-            .unwrap_or(false);
-        if non_x86_64 {
-            prog.arch_mut()
-                .set_kuna_option("funcstart_patterns", "on")
-                .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
-        }
+    if non_x86_64 && !named("funcstart_patterns") {
+        prog.arch_mut()
+            .set_kuna_option("funcstart_patterns", "on")
+            .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
     }
 
     // (kuna, decbench ARM) `funcstart_patterns` above only seeds a candidate when a matching
@@ -274,26 +314,18 @@ pub(crate) fn load_program(args: &Args, default_listing: bool) -> Result<Console
     // Finder (`aif`, Ghidra `ArmAggressiveInstructionFinderAnalyzer`) gap-walks the UNDEFINED
     // regions the walk left uncovered, gating each candidate on a prologue-fingerprint
     // histogram learned from the already-discovered functions + `check_valid_subroutine`, so
-    // it bridges those disconnected components.  Default it ON for non-x86-64 on the
-    // `decompile-all` surface alongside `funcstart_patterns` (crazyflie cf2.elf 1430 -> 2700
+    // it bridges those disconnected components.  Default it ON for non-x86-64 on every
+    // whole-binary surface alongside `funcstart_patterns` (crazyflie cf2.elf 1430 -> 2700
     // functions, 45% -> 82% of angr's discovered set), unless the caller named it.  x86-64
     // keeps it OFF (the entry+prologue oracles suffice and the aggressive gap-walk can
     // over-produce there); only this driver changes — the engine default (`analysis_aif =
     // false`) and the console/datatest surfaces are untouched.  Extra non-ground-truth
     // functions are harmless to the GED benchmark (it scores per ground-truth function, matched
     // by name).  See DIV-20 (`docs/divergences.md`).
-    if default_listing && !args.options.iter().any(|(name, _)| name == "aif") {
-        let non_x86_64 = std::fs::read(&binary)
-            .ok()
-            .and_then(|b| {
-                object::File::parse(&*b).ok().map(|f| f.architecture() != object::Architecture::X86_64)
-            })
-            .unwrap_or(false);
-        if non_x86_64 {
-            prog.arch_mut()
-                .set_kuna_option("aif", "on")
-                .map_err(|e| format!("option aif: {}", e.explain()))?;
-        }
+    if non_x86_64 && !named("aif") {
+        prog.arch_mut()
+            .set_kuna_option("aif", "on")
+            .map_err(|e| format!("option aif: {}", e.explain()))?;
     }
 
     // Analysis-/printer-tier `--option`s must be applied to the architecture
@@ -776,7 +808,10 @@ fn usage_functions() {
         "usage: kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
-         --json: {{binary,count,functions:[{{name,address}}]}})."
+         --json: {{binary,count,functions:[{{name,address}}]}}).\n\
+         Shares decompile-all's discovery policy, so the inventory always contains\n\
+         every function a whole-binary run would decompile; on a non-x86-64 binary\n\
+         that means a full prologue-pattern + gap-walk discovery pass."
     );
 }
 

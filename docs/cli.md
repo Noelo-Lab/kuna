@@ -120,10 +120,18 @@ Behaviors specific to `decompile-all`:
   a stripped binary's unnamed exit/fatal wrappers no longer swallow the functions after
   them; on non-x86-64 binaries it likewise injects `funcstart_patterns on` and `aif on`
   unless the caller names them (see `docs/history.md`). `--option listing off` opts
-  out; single-function `kuna decompile` also injects Listing. Under explicit
-  `--mode reliable`, `kuna functions` and the interactive console keep the
-  engine default off; an auto-selected `aggressive` preset intentionally turns
-  Listing on even for inventory.
+  out; single-function `kuna decompile` also injects Listing.
+  `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
+  non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
+  `listing on` those two are gated behind, so the inventory always contains every
+  entry `decompile-all` would decompile (stripped betaflight STM32F405 under
+  `--mode reliable`: 1 entry listed before, 5,798 after, against the 5,797
+  `decompile-all` decompiles). That costs a whole-program decode there — 0.08 s to
+  5.27 s on that firmware — which is the price of a correct answer. On x86-64
+  `kuna functions` injects nothing and is unchanged: the Listing is measured
+  entry-neutral on that architecture, so it stays the decompiling surfaces'
+  default. The interactive console keeps the engine default off; an auto-selected
+  `aggressive` preset names all three itself, on either surface.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
   names and disables the three exhaustive program-wide decode/discovery options
   (`listing`, `funcstart_patterns`, `aif`), suppressing those injections, and
