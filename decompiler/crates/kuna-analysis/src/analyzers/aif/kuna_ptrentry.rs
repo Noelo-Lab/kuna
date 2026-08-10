@@ -202,7 +202,7 @@ fn probe_target(
 /// the pointer-root validator already uses, since an uncorroborated jump into
 /// another dark region is the signature of a misread data word. Returns the body
 /// VMAs so the caller can claim them.
-fn check_terminating_routine(
+pub(super) fn check_terminating_routine(
     decoder: &mut GapDecoder,
     listing: &Listing,
     entry: u64,

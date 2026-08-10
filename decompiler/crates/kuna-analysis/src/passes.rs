@@ -652,6 +652,48 @@ pub fn run_listing_consumers(
                 std::rc::Rc::clone(code_space),
                 listing.exec_ranges(),
             );
+            // (kuna, `poolentry`) Reference-driven literal-pool inference over the
+            // COMPLETED walk. Two independent consumers: the subtractive precision
+            // half drops an AIF accept that lies inside an inferred pool (the
+            // `pool_word + 2` phantom), and the additive recall half emits an entry
+            // at each pool end. See `aif::kuna_poolentry`.
+            let pool_add = std::env::var("KUNA_POOLENTRY").is_ok();
+            let pool_sup = std::env::var("KUNA_POOLSUPPRESS").is_ok();
+            if pool_add || pool_sup {
+                let res = crate::aif::kuna_poolentry::run_pool_pass(
+                    &listing,
+                    translate,
+                    std::rc::Rc::clone(code_space),
+                    listing.exec_ranges(),
+                    &aif_out.entries,
+                    &ptrentry_out,
+                    pool_add,
+                    pool_sup,
+                );
+                if std::env::var("KUNA_POOL_TRACE").is_ok() {
+                    eprintln!(
+                        "POOLSTAT pools={} added={} suppressed={}",
+                        res.pools.len(),
+                        res.added.len(),
+                        res.suppressed.len()
+                    );
+                    for p in &res.pools {
+                        eprintln!("POOL 0x{:x} 0x{:x}", p.lo, p.hi);
+                    }
+                    for a in &res.added {
+                        eprintln!("ADD 0x{a:x}");
+                    }
+                    for s in &res.suppressed {
+                        eprintln!("SUP 0x{s:x}");
+                    }
+                }
+                aif_out.entries = res.kept_aif;
+                if !res.added.is_empty() {
+                    let mut pe_out = AnalysisOutput::default();
+                    pe_out.entries = res.added;
+                    out.push(("aif", pe_out));
+                }
+            }
             out.push(("aif", aif_out));
         }
     }
