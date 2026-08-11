@@ -234,10 +234,11 @@
   },
   "gates": {
     "make test": "PARITY OK 675/675",
-    "make test-stages": "PARITY OK 405/405",
-    "make rust-test": "green - 307 result blocks, 4,546 tests passed, 0 failed, exit 0",
+    "make test-stages": "PARITY OK 407/407",
+    "make rust-test": "green - 307 result blocks, 4,549 tests passed, 0 failed, 37 ignored, exit 0",
     "make check-spec": "green (strict)",
-    "kuna catalog --check": "catalog OK"
+    "kuna catalog --check": "catalog OK",
+    "note": "Re-run in full on the rebased tree (base 11f40f46, funcboundflow). test-stages is 407 not 405 because #280 added tests/stages/funcboundflow.xml; the baseline it is checked against is main s, unchanged."
   },
   "files": {
     "pass": "decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_poolentry.rs",
@@ -248,12 +249,12 @@
     "spec": "docs/spec/01-program-prep.md"
   },
   "catalog_counts": {
-    "settables": "95 -> 96",
+    "settables": "96 -> 97",
     "analysis_tier": "34 -> 35",
-    "catalog_json_rows": "95 -> 96",
-    "bytecompat_fixture": "95 -> 96",
-    "note": "Derived from a fresh `phase catalog` capture on a green build, not by arithmetic. tests/stages/kuna-catalog.xml is untouched: its assertions are exact-name matches on other options, ranges, or counts of `source_decompiler: angr` / `structure-recovery` / `opt-in-tool`, none of which this row is. kuna-base/src/xml.rs is untouched (no stages XML added), and docs/baseline-stages.json is unchanged. Two count sites beyond the ones the plan listed were found by a green run and fixed: the `emit_catalog_json_static_form_brackets_and_commas` trailing-comma count (94 -> 95) and PASS_GATES in `option_values_live_value_present_for_28_suppressed_for_42`.",
-    "catalog_form_comma_count": "94 -> 95",
+    "catalog_json_rows": "96 -> 97",
+    "bytecompat_fixture": "96 -> 97",
+    "note": "Derived from a fresh `phase catalog` capture on a green build, not by arithmetic. REBASED onto funcboundflow (#280, DIV-67), which registered an option of its own, so every shared counter was re-derived from scratch on the rebased tree rather than carried over: the 97 settables and the (20 core, 42 transform, 35 analysis) tier split come from counting a live `kuna catalog --json`, and the bytecompat fixture was recaptured with the documented `decomp_dbg openfile write` recipe (it came out byte-identical to the merge result). Both sides of the rebase had made the SAME textual 95 -> 96 edit at four sites, so git auto-merged them silently to 96 with no conflict shown; the correct value is 97. tests/stages/kuna-catalog.xml is untouched: its assertions are exact-name matches on other options, ranges, or counts of `source_decompiler: angr` / `structure-recovery` / `opt-in-tool`, none of which this row is. kuna-base/src/xml.rs is untouched by poolentry (no stages XML added; its 194 is funcboundflow's), and docs/baseline-stages.json is unchanged.",
+    "catalog_form_comma_count": "95 -> 96",
     "pass_gates": "poolentry added to kuna_phases/tests.rs PASS_GATES (no codegen live_value reader, like tailcallentry)"
   },
   "div_row": null,
@@ -265,5 +266,17 @@
     "The merge class is untouched and is ~3x larger: 3,255 of 5,491 interior ground-truth misses corpus-wide have a containing entry that IS a real DWARF entry. Nothing here reaches it, and no claim that ARM entry recall is closed survives that factor.",
     "i386 PE has a separate, unreached defect: 55 AIF-only entries, 23 of them (41.8%) strictly inside a real body, with no fdeinterior protection because that pass is ELF-only. Not fixed, not broken, not covered."
   ],
-  "production_vs_measurement": "The shipping build reads the PC bias from the engine ContextDatabase instead of the image-wide 16-bit-instruction shim. The full 98-image sweep is set-identical to the measurement arm on 96 of 98 images; the two that differ are the byte-identical crazyflie O2-noinline pair, where the production reader is slightly more conservative and keeps 9 phantoms each. Whole delta: removals 4,238 -> 4,220 (and split_removed 4,236 -> 4,218); new/GT/lost/splits unchanged at 191/188/0/1."
+  "production_vs_measurement": "The shipping build reads the PC bias from the engine ContextDatabase instead of the image-wide 16-bit-instruction shim. The full 98-image sweep is set-identical to the measurement arm on 96 of 98 images; the two that differ are the byte-identical crazyflie O2-noinline pair, where the production reader is slightly more conservative and keeps 9 phantoms each. Whole delta: removals 4,238 -> 4,220 (and split_removed 4,236 -> 4,218); new/GT/lost/splits unchanged at 191/188/0/1.",
+  "rebase_reverification": {
+    "base": "11f40f46 (funcboundflow, #280) - a P2 default-ON pass that bounds fall-through at a known function entry, i.e. it changes function boundaries",
+    "question": "Does funcboundflow move the analysis-tier entry set that every poolentry number is measured on?",
+    "method": "Four arms per image with `kuna functions --json --mode aggressive --option cortexmvectors on --option ptrentry on --option tailcallentry on`: baseline and poolentry-on, each with funcboundflow at its default (on) and forced off; entry-address sets compared exactly.",
+    "result": "funcboundflow on vs off is entry-set IDENTICAL in all four arms on all three images, so it cannot have moved any figure in this record. betaflight O0 reproduces the recorded per-image delta EXACTLY: baseline 6,032 entries, +15 added / -786 removed (771 net).",
+    "images": {
+      "betaflight_STM32F405.elf O0": "base 6032 -> pool 5261; added 15, removed 786 (matches the recorded 786/15/771)",
+      "cf2.elf O0": "base 2813 -> pool 2745; added 0, removed 68",
+      "ch.elf O0 (chibios)": "base 772 -> pool 772; added 0, removed 0 (inert)"
+    },
+    "verdict": "No figure in this record moved. The corpus-wide 191 / 188 / 0 lost / 1 split and 4,220 retired stand as measured."
+  }
 }
