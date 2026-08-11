@@ -191,6 +191,12 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
+        // (kuna `calloverlap`) Three-valued, so it reports its own token.
+        "calloverlap" => match conf.call_overlap {
+            0 => "off",
+            1 => "in",
+            _ => "full",
+        },
         // (kuna) Analysis-pass gates: the live `current` field reflects each pass's
         // per-run enable flag (set by `--option <id> on|off`). Real-ELF path only;
         // with no program loaded these never reach (kuna_live_value's caller passes

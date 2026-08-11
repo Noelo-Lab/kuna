@@ -130,11 +130,43 @@ call has on the (callee-translated) range (`decompiler/crates/kuna-decomp/src/p4
   delayed CALL output and SUBPIECEs/PIECEs it into the range
   (`heritage.rs (Heritage::try_output_stack_guard)`).
 
-Two upstream sub-cases are deliberately not implemented (kuna): the
-partial-range output overlap (`tryOutputOverlapGuard`) and partial-range input
-overlap (`guardCallOverlappingInput`) branches do nothing — a sub-register
-slice of a return or argument register at a call simply gets no guard (the
-whole-register corpus never reaches them). `heritage.rs
+**Partial-range call overlap.** A heritaged range can be strictly *larger* than
+the ABI storage it contains — the characterization is `ContainedBy` rather than
+`ContainsJustified`, so none of the whole-range arms above apply. This is
+routine on x86-64: SLEIGH models `PXOR`, `POR`, `PAND`, `MOVDQA`, `MOVDQU`,
+`MOVQ`-to-xmm and `ORPD` as a single 128-bit write to the whole XMM register, so
+the range is never partitioned by refinement (whose gate is `size > 4 && maxw <
+size`) and the 8-byte parameter and return entries inside it are invisible.
+Under `option calloverlap` two dedicated guards recover them.
+
+On the input side (`heritage.rs (Heritage::guard_call_overlapping_input)`), the
+biggest input entry contained in the range is located, its address translated
+from the callee's to the caller's perspective, and a SUBPIECE inserted before
+the CALL that truncates a fresh whole-range varnode down to that entry; the
+truncated varnode is registered as an input trial and appended to the CALL.
+Chapter 04's trial machinery then judges it exactly as it judges a whole-register
+trial — the guard *proposes* storage, it does not assert an argument.
+
+On the output side (`heritage.rs (Heritage::try_output_overlap_guard)` and
+`Heritage::guard_output_overlap`), the biggest contained return entry becomes an
+INDIRECT *creation* at the call, and the bytes of the range on either side of it
+become further INDIRECT creations that are PIECEd back around it, so the range
+as a whole still has a definition at the call while the return entry alone
+carries the output trial. When that succeeds the range's effect is downgraded to
+*unaffected* so no second guard fires over the same bytes. Note this is not the
+same construction as the locked-stack-output case above: the register form makes
+every piece an indirect creation, where the stack form pulls the flanking pieces
+off a value that already existed before the call.
+
+The level selects how much of that runs: at `off` both branches are inert and a
+partial-range slice of an argument or return register at a call gets no guard,
+which is what kuna shipped before the option — the observable symptom is a call
+rendered with missing arguments and a return value read from a stale pre-call
+definition. At `in` only the input guard runs, which recovers the argument but
+leaves the return value stale; at `full` both run, which is upstream Ghidra's
+behavior.
+
+`heritage.rs
 (Heritage::guard_returns)` symmetrically appends output-trial varnodes to every
 live RETURN when the range overlaps the recovered return storage (truncating
 via SUBPIECE when the range is bigger, `guard_returns_overlapping`), and — for

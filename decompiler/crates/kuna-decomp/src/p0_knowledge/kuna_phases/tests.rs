@@ -42,7 +42,7 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_99() {
+fn settable_count_is_100() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -62,12 +62,13 @@ fn settable_count_is_99() {
     // +1 for `poolentry` (P1 ARM literal-pool inference).
     // +1 for `guardarm` (P8 ruleBlockIfNoExit arm tie-break).
     // +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
-    assert_eq!(kuna_num_settables(), 99);
-    assert_eq!(SETTABLE_TABLE.len(), 99);
+    // +1 for `calloverlap` (P3 partial-range call-overlap guards, GH-275).
+    assert_eq!(kuna_num_settables(), 100);
+    assert_eq!(SETTABLE_TABLE.len(), 100);
 }
 
 #[test]
-fn tier_counts_are_20_core_44_transform_35_analysis() {
+fn tier_counts_are_21_core_44_transform_35_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -98,7 +99,8 @@ fn tier_counts_are_20_core_44_transform_35_analysis() {
     // analysis 34 -> 35: +1 for `poolentry` (P1 ARM literal-pool inference).
     // transform 42 -> 43: +1 for `guardarm` (P8 ruleBlockIfNoExit arm tie-break).
     // transform 43 -> 44: +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
-    assert_eq!((core, transform, analysis), (20, 44, 35));
+    // core 20 -> 21: +1 for `calloverlap` (P3 partial-range call-overlap guards, GH-275).
+    assert_eq!((core, transform, analysis), (21, 44, 35));
 }
 
 #[test]
@@ -288,7 +290,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_45() {
+fn option_values_live_value_present_for_29_suppressed_for_46() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -443,6 +445,7 @@ fn option_values_live_value_present_for_28_suppressed_for_45() {
                             | "braceelide"
                             | "warnstyle"
                             | "callsitestackargs"
+                            | "calloverlap"
                             | "paramcopyhoist"
                             | "guardarm"
                             | "loopcondhoist"
@@ -559,10 +562,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
-    // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row and the
-    // two P8 ifNoExit rows sit
+    // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
+    // two P8 ifNoExit rows and calloverlap's P3 row sit
     // mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 98);
+    assert_eq!(json.matches("},\n").count(), 99);
 }
 
 #[test]
