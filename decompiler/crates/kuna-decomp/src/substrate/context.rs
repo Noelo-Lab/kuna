@@ -753,6 +753,12 @@ pub struct ArchContext {
     /// see `Architecture::itecondlist`.  Read by
     /// [`crate::p8_structure::kuna_itecondlist::cond_list_tail`].
     pub itecondlist: bool,
+    /// (kuna) `orchain`: decline a `returndup` split whose shared RETURN block is the
+    /// out-target two conditionals must keep in common for
+    /// `CollapseStructure::rule_block_or` to fuse them — see
+    /// `Architecture::returndup_orchain`.  Read by
+    /// [`crate::p8_structure::kuna_orchain::shortcircuit_shared_targets`].
+    pub returndup_orchain: bool,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
     /// see `Architecture::param_copy_hoist`.  Read by
@@ -1029,6 +1035,7 @@ impl ArchContext {
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             itecondlist: false,           // itecondlist (condition-list tolerance, default-off)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
+            returndup_orchain: false,     // orchain (short-circuit chain protection, default-off)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)

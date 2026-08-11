@@ -273,6 +273,63 @@ compiler emits the same merged epilogue either way.
    *header* edge specifically — because the broad version cuts into the loop firings that pay
    for it.
 
+## Addendum (2026-08-11): a discriminator does exist, and it is not on any axis tested above
+
+Two of this file's conclusions are true only of **aggregate GED at O2**, which is all the
+2026-08-02 ablation covered. Re-run over all three optimisation levels (795 slices,
+85,195 scored functions -- `docs/decbench/returndup-o0-measurement.md`), `returndup` is
++640 GED-perfect corpus-wide but **-192 at -O0**, and on perfect count at O0 **every one
+of the nine partitions above has a net-negative cell**. "Net-positive in every
+subpopulation examined" and "no discriminator exists" should be read as scoped to the
+data they were measured on.
+
+The discriminator the nine partitions could not find is a partition they did not test:
+whether the split **costs a short-circuit fold**. `returndup` gives every predecessor of
+a shared bare-epilogue RETURN its own private return; that is the source shape for a
+guard clause, but the operand blocks of a short-circuit expression are predecessors of
+that same block, and the shared out-target is `CollapseStructure::rule_block_or`'s entire
+precondition. `ActionReturnDup` runs in fullloop's `returnsplit` group and
+`collapse_conditions` runs later, so the fold is lost permanently:
+
+| a short-circuit was lost | n | dGED | perf+ | perf- | net perf |
+|---|---:|---:|---:|---:|---:|
+| O0 | 2,908 | -3,538 | 48 | 713 | **-665** |
+| O2 | 1,638 | +1,141 | 53 | 38 | +15 |
+| O2-noinline | 2,023 | +373 | 91 | 71 | +20 |
+
+Catastrophic at -O0, 4% of the optimized levels' net wins -- the shape of a genuine gate
+rather than an opt-level switch, and the opposite of the return-value axis this file
+tested (uniform / void / distinct-returns), which is +1,067 at O0 and -395 at the
+optimized levels, i.e. an opt-level trade dressed as a discriminator.
+
+**The gate was built and shipped** as `option orchain` (DIV-69), as a **pre-split CFG
+predicate** rather than the post-hoc signal above -- `p8_structure/kuna_orchain.rs
+(shortcircuit_shared_targets)` replays `collapse_conditions` read-only on the bblocks CFG
+and mirrors `ruleBlockOr`'s own admission test. Measured on the same corpus:
+
+| scope | n | dPerfect | dGED |
+|---|---:|---:|---:|
+| O0 | 32,339 | **+611** | -2,816 |
+| O2 | 22,546 | -13 | +1,232 |
+| O2-noinline | 30,310 | -15 | +617 |
+| **all three** | **85,195** | **+583** | **-967** |
+
+781 functions moved to an exact structural match against 198 moved off (3.94 : 1), 92% of
+the +630 the post-hoc signal prices as a ceiling, at a smaller optimized-level cost than
+the ceiling itself. Predicate fidelity to that signal: 2,933 of 2,951 O0 proxy positives
+recognised (99.4% recall) at 126 further firings (95.9% precision), and 94.2% of firings
+reproduce the `option returndup off` body byte for byte. Full bundle:
+`docs/features/orchain/`.
+
+**Two of this file's own findings are closed by it.** The loop cell of *Conclusion 4*
+(`cleanflight nextArg`: the split takes the loop-exit edge's private return and the `for`
+header becomes `while( true )`) is repaired as a side effect -- `nextArg` goes GED 14 to 0
+at **all three** levels -- and corpus-wide the gate removes 365 `while( true )` renderings
+against 53 it creates. The narrower predicate Conclusion 4 asked for turns out not to be a
+loop predicate at all. And the honest residual is unchanged: where the SOURCE wrote the
+guard cascade and the compiler merged it, declining the split is wrong and nothing in the
+binary says so -- `coreutils factor`, this file's flagship win, goes 0 to 12.
+
 ## Reproducing
 
 ```bash

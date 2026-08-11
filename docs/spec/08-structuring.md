@@ -949,6 +949,65 @@ distinguishes them. Its per-edge narrowings — `earlyreturn` (DIV-23) and
 `switchreturn` (DIV-25) — remain separate options: they reach the mixed
 const/variable diamonds this whole-block gate rejects outright.
 
+### orchain — the split that must not happen (decbench)
+
+`returndup` is right about a *guard clause* and wrong about the *operand chain
+of a short-circuit expression*, and the two are the same CFG up to one
+question: do the predecessors of the shared epilogue still need to share it?
+`rule_block_or` (§8.1) fuses `bl -> {orblock, clauseblock}` with
+`orblock -> {clauseblock, X}`, and the fold's entire precondition is that
+**shared out-target**. Give each predecessor a private return and there is
+nothing left to match — and because `ActionReturnDup` runs in fullloop's
+`returnsplit` group while `collapse_conditions` runs later, the fold is lost
+for good. One source `return a || (b && (c || d));` then prints as four
+constant-return guards plus a trailing return (`iproute2 ip::sci_complete`,
+GED 21 against 0 for the merged form), and `iteboolean` never sees the 0/1
+select diamond either.
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_orchain.rs
+(shortcircuit_shared_targets)` is the gate for exactly that shape, and it is a
+gate on the pass above rather than a pass of its own. It replays
+`collapse_conditions` read-only on the **bblocks** CFG before the first split,
+mirroring `ruleBlockOr`'s own admission test rather than approximating it: a
+condition node starts as one two-out basic block, and two nodes fuse when the
+sibling has exactly one in-edge, has two out-edges, is not a switch block, is
+not `BlockBasic::isComplex` (the same `funcdata_block.rs
+(Funcdata::bb_is_complex)` verdict the rule reads), and shares one out-target
+with the head, whose other target is not the head. Each fuse records the
+shared target and rewrites the head's out-targets, so a chain collapses
+inside-out as the real fixpoint does. Three upstream tests are omitted because
+they cannot hold at this point in the schedule: no goto has been elected yet
+(`select_goto` runs after `collapse_conditions`), and a back edge into a
+single-in-edge block would make that block unreachable from the entry. The
+predicate then also protects a block joining two or more **single-exit arms
+that are themselves recorded fold targets** — before the constants are
+propagated into the epilogue phi, a chain's arms are one bare `v = K` block
+each and the RETURN sits one edge further on, which is the graph the *first*
+`returndup` invocation of the fullloop sees. `returndup_apply` declines the
+whole function's splits when any of its own candidates is a recorded target,
+which is the counterfactual the corpus measurement priced.
+
+**Measurement.** DIV-54 flipped `returndup` on evidence from O2 and
+O2-noinline only. Extended to all three levels (795 slices, 85,195 scored
+functions) the pass is +640 GED-perfect corpus-wide but **-192 at -O0**, and
+one sub-shape — the split that costs a short-circuit fold — carries -665 of
+that O0 harm while costing +15 / +20 of the +832 the optimized levels gain.
+The gate implemented here reproduces the `returndup off` body byte for byte on
+94% of its firings and recognises 2,933 of the 2,951 functions the post-hoc
+"a short-circuit was lost" signal marks at O0, at 126 further firings the
+signal does not mark. Swept on the same corpus it is **+611 GED-perfect at O0
+for -13 at O2 and -15 at O2-noinline — +583 net and -967 aggregate GED**, 781
+functions moved to an exact structural match against 198 moved off, which is
+92% of the post-hoc ceiling at a *smaller* optimized-level cost than the
+ceiling itself. **DIV-69 makes it a default** (rather than a preset member:
+`returndup` is a shipped default in every mode, and 45% of the corpus sits over
+the 500 KiB `auto` threshold where a preset-only gate would never run). It stays
+a per-run choice — `option orchain off` restores the pre-DIV-69 cascade — because
+the merged and split forms compile to the same object code, and where the source
+did write the cascade the gate is wrong (`coreutils factor`, GED 0 → 12).
+`docs/decbench/returndup-o0-measurement.md` and
+`docs/decbench/returndup-regression-triage.md` hold the corpus tables.
+
 ## 8.4 The quality signal
 
 What kuna can *measure* about a structuring today is the goto census. The

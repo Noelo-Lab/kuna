@@ -1733,7 +1733,9 @@ mod tests {
         // and ghdec-loopcondhoist / the deferred ifNoExit scan passes over a loop head
         // and ghdec-calloverlap / the two partial-range call-overlap guards
         // (a whole-width PXOR write hides the SysV entry inside the XMM0 range)
-        assert_eq!(count, 198, "corpus file count drifted");
+        // and ghdec-orchain / returndup must not split the operand chain of a
+        // short-circuit (option off = the guard cascade, on = the folded condition)
+        assert_eq!(count, 199, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
