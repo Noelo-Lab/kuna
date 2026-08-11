@@ -1410,6 +1410,9 @@ impl Heritage {
         use kuna_base::space::spacetype;
 
         let holdind = (fl & varnode_flags::addrtied) != 0;
+        // (kuna) `option calloverlap off|in|full` — the two upstream partial-range
+        // overlap guards.  See [`crate::p3_dataflow::kuna_calloverlap`].
+        let overlap_level = fd.get_arch().call_overlap;
         // Lift the call specs out so each trial-registering mutation can also take
         // `&mut Funcdata` (the C++ mutates `fd` through the `FuncCallSpecs *`).
         let mut qlst = fd.take_call_specs();
@@ -1468,11 +1471,17 @@ impl Heritage {
                         effecttype = effect_type::KILLEDBYCALL;
                     }
                     if output_character == Containment::ContainedBy {
-                        // tryOutputOverlapGuard: a partial-range output (SUBPIECE off
-                        // the return register / stack-join overlap).  `getBiggestContainedOutput`
-                        // + `guardOutputOverlap` (heritage.cc:1249/1293) are the
-                        // multi-piece return stub, not reached by the whole-register
-                        // return datatests.  STUB(W4 output-overlap guard).
+                        // tryOutputOverlapGuard (heritage.cc:1249/1293): the heritaged
+                        // range properly contains the return storage, so the return
+                        // entry becomes an INDIRECT creation and the bytes around it
+                        // are PIECEd back on.  Gated by `option calloverlap full`.
+                        if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                            && self
+                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write)
+                        {
+                            // Range is handled, don't do additional guarding.
+                            effecttype = effect_type::UNAFFECTED;
+                        }
                     } else {
                         // active->whichTrial(transAddr,size)<0 ? registerTrial : possibleoutput
                         if fc.get_active_output().which_trial(&trans_addr, size) < 0 {
@@ -1508,21 +1517,25 @@ impl Heritage {
             // the `func(args)` rendering this wave targets.
             if fc.is_input_active() && tryregister {
                 let ic = fc.proto().characterize_as_input_param(&trans_addr, size);
-                if ic == Containment::ContainsJustified
-                    && fc.get_active_input().which_trial(&trans_addr, size) < 0
+                // Upstream's nesting, not a collapsed `&&`: the ContainedBy arm is an
+                // `else if` on the CHARACTERIZATION alone, so an existing trial on a
+                // ContainsJustified range must not fall through into the overlap guard.
+                if ic == Containment::ContainsJustified {
+                    if fc.get_active_input().which_trial(&trans_addr, size) < 0 {
+                        fc.get_active_input().register_trial(&trans_addr, size);
+                        let vn = fd.new_varnode(size, addr, None);
+                        fd.vbank_mut()
+                            .get_mut(vn)
+                            .expect("guardCalls: new arg vn")
+                            .set_active_heritage();
+                        let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                        let _ = fd.op_insert_input(op, vn, nin);
+                    }
+                } else if ic == Containment::ContainedBy
+                    && overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN
                 {
-                    fc.get_active_input().register_trial(&trans_addr, size);
-                    let vn = fd.new_varnode(size, addr, None);
-                    fd.vbank_mut()
-                        .get_mut(vn)
-                        .expect("guardCalls: new arg vn")
-                        .set_active_heritage();
-                    let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
-                    let _ = fd.op_insert_input(op, vn, nin);
+                    Self::guard_call_overlapping_input(fd, fc, addr, &trans_addr, size);
                 }
-                // ContainedBy → guardCallOverlappingInput (the partial-range
-                // sub-register argument): STUB(W4 guardCallOverlappingInput), not
-                // reached by the whole-register-argument datatests.
             }
 
             // The `unknown_effect`/`return_address` INDIRECT-*op* (heritage.cc:1512-
@@ -1573,6 +1586,182 @@ impl Heritage {
         fd.restore_call_specs(qlst);
     }
 
+    /// Append a truncated \e input Varnode for a call whose parameter storage is
+    /// strictly contained in the heritaged range (C++
+    /// `Heritage::guardCallOverlappingInput`, `heritage.cc:1210`).
+    ///
+    /// An associated function rather than a method so the caller can keep its
+    /// `&mut Funcdata` and `&mut FuncCallSpecs` borrows alive across the call.
+    /// Gated by `option calloverlap in|full`.
+    fn guard_call_overlapping_input(
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        use kuna_num::pcoderaw::VarnodeData;
+        let mut vdata = VarnodeData::default();
+        if !fc
+            .proto()
+            .get_biggest_contained_input_param(trans_addr, size, &mut vdata)
+        {
+            return;
+        }
+        // truncAddr (callee perspective) -> caller perspective, exactly as
+        // try_output_stack_guard converts the output side.
+        let diff = vdata.offset.wrapping_sub(trans_addr.get_offset());
+        let trunc_addr = addr + diff as i64;
+        // C++ dedupes with the WHOLE range `size` and then registers `vData.size`;
+        // the asymmetry is deliberately over-broad overlap, not a typo.
+        if fc.get_active_input().which_trial(&trunc_addr, size) >= 0 {
+            return;
+        }
+        let trunc_size = vdata.size as int4;
+        let truncate_amount = addr.justified_contain(size, &trunc_addr, trunc_size, false);
+        debug_assert!(
+            truncate_amount >= 0,
+            "guardCallOverlappingInput: entry not contained in the range"
+        );
+        let op = fc.get_op();
+        let call_addr = fd
+            .obank()
+            .get(op)
+            .expect("guardCallOverlappingInput: stale call")
+            .get_addr()
+            .clone();
+        let subpiece_op = fd.new_op(2, call_addr);
+        fd.op_set_opcode(subpiece_op, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+        let whole_vn = fd.new_varnode(size, addr, None);
+        fd.vbank_mut()
+            .get_mut(whole_vn)
+            .expect("guardCallOverlappingInput: wholeVn")
+            .set_active_heritage();
+        let _ = fd.op_set_input(subpiece_op, whole_vn, 0);
+        let c = fd.new_constant(4, truncate_amount as i64 as u64);
+        let _ = fd.op_set_input(subpiece_op, c, 1);
+        let vn = fd
+            .new_varnode_out(trunc_size, &trunc_addr, subpiece_op)
+            .expect("guardCallOverlappingInput: subpiece out");
+        fd.op_insert_before(subpiece_op, op);
+        fc.get_active_input().register_trial(&trunc_addr, trunc_size);
+        let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        let _ = fd.op_insert_input(op, vn, nin);
+    }
+
+    /// Guard a range that properly contains an active call's return storage (C++
+    /// `Heritage::tryOutputOverlapGuard`, `heritage.cc:1249`).
+    ///
+    /// Returns `true` when the INDIRECTs were created, in which case the caller
+    /// downgrades the range's effect to `unaffected`.  Gated by
+    /// `option calloverlap full`.
+    fn try_output_overlap_guard(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+        write: &mut Vec<crate::context::VarnodeId>,
+    ) -> bool {
+        use kuna_num::pcoderaw::VarnodeData;
+        let mut vdata = VarnodeData::default();
+        if !fc
+            .proto()
+            .get_biggest_contained_output(trans_addr, size, &mut vdata)
+        {
+            return false;
+        }
+        let diff = vdata.offset.wrapping_sub(trans_addr.get_offset());
+        let trunc_addr = addr + diff as i64;
+        // As on the input side, C++ dedupes with the whole range `size`.
+        if fc.get_active_output().which_trial(&trunc_addr, size) >= 0 {
+            return false; // Trial already exists
+        }
+        let call_op = fc.get_op();
+        let trunc_size = vdata.size as int4;
+        self.guard_output_overlap(fd, call_op, addr, size, &trunc_addr, trunc_size, write);
+        fc.get_active_output().register_trial(&trunc_addr, trunc_size);
+        true
+    }
+
+    /// Piece the recovered return storage back into the larger heritaged range
+    /// (C++ `Heritage::guardOutputOverlap`, `heritage.cc:1293`).
+    ///
+    /// NOT the same as [`Self::guard_output_overlap_stack`]: the register form makes
+    /// every piece an INDIRECT *creation*, where the stack form pulls the flanking
+    /// pieces off a pre-call value with `newIndirectOp` + SUBPIECE.
+    #[allow(clippy::too_many_arguments)]
+    fn guard_output_overlap(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        call_op: crate::context::OpId,
+        addr: &Address,
+        size: int4,
+        ret_addr: &Address,
+        ret_size: int4,
+        write: &mut Vec<crate::context::VarnodeId>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        let size_front = (ret_addr.get_offset().wrapping_sub(addr.get_offset())) as i64 as int4;
+        let size_back = size - ret_size - size_front;
+        let ind_op = fd.new_indirect_creation(call_op, ret_addr, ret_size, true);
+        let ind_addr = fd
+            .obank()
+            .get(ind_op)
+            .expect("guardOutputOverlap: stale indOp")
+            .get_addr()
+            .clone();
+        let mut vn_collect = fd
+            .obank()
+            .get(ind_op)
+            .and_then(|o| o.get_out())
+            .expect("guardOutputOverlap: vnCollect");
+        let mut insert_point = call_op;
+        if size_front != 0 {
+            // C++ passes indOp (not callOp) as the front piece's indirect effect.
+            let ind_front = fd.new_indirect_creation(ind_op, addr, size_front, false);
+            let new_front = fd
+                .obank()
+                .get(ind_front)
+                .and_then(|o| o.get_out())
+                .expect("guardOutputOverlap: front out");
+            let concat_front = fd.new_op(2, ind_addr.clone());
+            let slot_new: int4 = if ret_addr.is_big_endian() { 0 } else { 1 };
+            fd.op_set_opcode(concat_front, typeop_skeleton(OpCode::CPUI_PIECE));
+            let _ = fd.op_set_input(concat_front, new_front, slot_new);
+            let _ = fd.op_set_input(concat_front, vn_collect, 1 - slot_new);
+            vn_collect = fd
+                .new_varnode_out(size_front + ret_size, addr, concat_front)
+                .expect("guardOutputOverlap: front concat out");
+            fd.op_insert_after(concat_front, insert_point);
+            insert_point = concat_front;
+        }
+        if size_back != 0 {
+            let addr_back = ret_addr + ret_size as i64;
+            let ind_back = fd.new_indirect_creation(call_op, &addr_back, size_back, false);
+            let new_back = fd
+                .obank()
+                .get(ind_back)
+                .and_then(|o| o.get_out())
+                .expect("guardOutputOverlap: back out");
+            let concat_back = fd.new_op(2, ind_addr.clone());
+            let slot_new: int4 = if ret_addr.is_big_endian() { 1 } else { 0 };
+            fd.op_set_opcode(concat_back, typeop_skeleton(OpCode::CPUI_PIECE));
+            let _ = fd.op_set_input(concat_back, new_back, slot_new);
+            let _ = fd.op_set_input(concat_back, vn_collect, 1 - slot_new);
+            vn_collect = fd
+                .new_varnode_out(size, addr, concat_back)
+                .expect("guardOutputOverlap: back concat out");
+            fd.op_insert_after(concat_back, insert_point);
+        }
+        if let Some(v) = fd.vbank_mut().get_mut(vn_collect) {
+            v.set_active_heritage();
+        }
+        write.push(vn_collect);
+    }
+
     /// Attempt to guard a stack range against a call whose return value overlaps
     /// that range (C++ `Heritage::tryOutputStackGuard`, `heritage.cc:1392`).
     ///
@@ -1597,8 +1786,9 @@ impl Heritage {
         use kuna_num::pcoderaw::VarnodeData;
         let call_op = fc.get_op();
         if output_character == crate::fspec::Containment::ContainedBy {
-            // The return storage contains the heritage range: pull the smaller
-            // guard range out via a join of stack pieces.
+            // ContainedBy = the heritage range contains the return storage
+            // (`ParamEntry::contained_by`, fspec.hh:104): piece the smaller return
+            // storage back into the range through a join of stack pieces.
             let mut vdata = VarnodeData::default();
             if !fc.proto().get_biggest_contained_output(trans_addr, size, &mut vdata) {
                 return false;

@@ -654,6 +654,14 @@ pub struct ArchContext {
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
     pub callsite_stack_args: bool,
+    /// (kuna) completion level for the two upstream partial-range call-overlap
+    /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
+    /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
+    /// `Heritage::tryOutputOverlapGuard`, i.e. upstream Ghidra.  Read by
+    /// [`Heritage::guard_calls`](crate::p3_dataflow::heritage::Heritage) at both
+    /// `ContainedBy` arms; the level vocabulary lives in
+    /// [`crate::p3_dataflow::kuna_calloverlap`].
+    pub call_overlap: int4,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1004,6 +1012,7 @@ impl ArchContext {
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
+            call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)

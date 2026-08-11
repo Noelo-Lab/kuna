@@ -1,0 +1,84 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna GH-275: a whole-width write to a register that holds an ABI parameter
+    or return entry loses the argument and the return value at the call.
+
+    Heritage characterizes every heritaged range against each call site's
+    prototype.  When the range is strictly LARGER than the ABI storage inside
+    it, the characterization is ContainedBy, and upstream Ghidra runs two
+    dedicated guards: Heritage::guardCallOverlappingInput (heritage.cc:1210) on
+    the input side, and Heritage::tryOutputOverlapGuard with
+    Heritage::guardOutputOverlap (heritage.cc:1249 and :1293) on the output
+    side.  kuna shipped BOTH as comment-only stubs, so the parameter and return
+    entries inside such a range were invisible to trial recovery.
+
+    That range shape is routine on x86-64: the vendored ia.sinc models PXOR as
+    one 128-bit write to the whole XmmReg (XmmReg = XmmReg ^ m128), so the
+    refinement gate in Heritage::refinement (size above 4 bytes AND the widest
+    write narrower than the range) never fires, and the XMM0 range stays 16
+    bytes wide while the SysV entry inside it is 8.
+
+    The vector is gcc -O2 output from five lines of plain C, with no intrinsics,
+    no SIMD in the source and no libm, because the trigger is the compiler's
+    canonical long-to-double idiom rather than packed arithmetic:
+
+        double u(double a, double b);
+        double sink;
+        double f(long n, double b) { double r = u((double)n, b); sink = r; return r + 1.0; }
+
+    Bytes of f at 0x1140 (47 bytes, extracted from the built binary):
+        1140  f3 0f 1e fa               ENDBR64
+        1144  66 0f 28 c8               MOVAPD   XMM1,XMM0   ; 2 x 8-byte lanes, XMM1 refines
+        1148  66 0f ef c0               PXOR     XMM0,XMM0   ; ONE 16-byte write, XMM0 never refines
+        114c  48 83 ec 08               SUB      RSP,0x8
+        1150  f2 48 0f 2a c7            CVTSI2SD XMM0,RDI    ; the argument the call loses
+        1155  e8 16 00 00 00            CALL     0x1170
+        115a  f2 0f 11 05 b6 2e 00 00   MOVSD    [0x4018],XMM0   ; the return value the call loses
+        1162  f2 0f 58 05 9e 0e 00 00   ADDSD    XMM0,[0x2008]
+        116a  48 83 c4 08               ADD      RSP,0x8
+        116e  c3                        RET
+
+    0x1170 is a bare RET and carries no symbol on purpose: a locked callee
+    prototype makes FuncCallSpecs::isInputActive false and bypasses the whole
+    branch, which is why the defect is invisible on declared callees.  0x2008
+    holds 1.0 and 0x4018 is the global the source calls sink.
+
+    Stage: P3 heritage call guarding, option calloverlap off|in|full.  Pass 1
+    (off) pins the bug, pass 2 (full) pins the completed upstream guards.
+    Ghidra 11.4.3 on this binary emits
+        double f(long param_1) { sink = (double)u((double)param_1); return sink + _DAT_00102008; }
+    which pass 2 matches exactly, modulo the names this stripped bytechunk has
+    no symbols for.
+-->
+<bytechunk space="ram" offset="0x1140">
+f30f1efa660f28c8660fefc04883ec08f2480f2ac7e816000000f20f1105b62e0000f20f58059e0e00004883c408c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1170">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2008" readonly="true">
+000000000000f03f
+</bytechunk>
+<bytechunk space="ram" offset="0x4018">
+0000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1140" name="f"/>
+</binaryimage>
+<script>
+  <com>option calloverlap off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calloverlap full</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLOVERLAP #1: off, the call is emitted with no arguments at all (the CVTSI2SD result never reaches it)" min="1" max="1">sub_1170\(\);</stringmatch>
+<stringmatch name="CALLOVERLAP #2: off, f loses its own parameter list because the argument chain dies with the trial" min="1" max="1">float8 f\(void\)</stringmatch>
+<stringmatch name="CALLOVERLAP #3: off, the call result is read from a local that nothing ever assigns" min="1" max="1">dat_4018 = v1;</stringmatch>
+<stringmatch name="CALLOVERLAP #4: full, guardCallOverlappingInput recovers the truncated XMM0 argument and tryOutputOverlapGuard the return value" min="1" max="1">dat_4018 = \(float8\)sub_1170\(\(float8\)a0\);</stringmatch>
+<stringmatch name="CALLOVERLAP #5: full, f regains its own parameter" min="1" max="1">float8 f\(int8 a0\)</stringmatch>
+<stringmatch name="CALLOVERLAP #6: full, the epilogue adds 1.0 to the recovered call result, not to a stale pre-call read" min="1" max="1">return dat_4018 \+ dat_2008;</stringmatch>
+</decompilertest>

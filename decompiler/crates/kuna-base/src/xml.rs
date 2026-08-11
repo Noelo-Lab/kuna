@@ -1731,7 +1731,9 @@ mod tests {
         // (the else-if collapse hoisted the arm's tail statement out of the arm)
         // and ghdec-guardarm / the ruleBlockIfNoExit arm tie-break resolves by layout
         // and ghdec-loopcondhoist / the deferred ifNoExit scan passes over a loop head
-        assert_eq!(count, 197, "corpus file count drifted");
+        // and ghdec-calloverlap / the two partial-range call-overlap guards
+        // (a whole-width PXOR write hides the SysV entry inside the XMM0 range)
+        assert_eq!(count, 198, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -413,6 +413,12 @@ pub struct Architecture {
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
+    /// (kuna) Completion level for the two upstream partial-range call-overlap
+    /// guards `Heritage::guardCallOverlappingInput` and
+    /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
+    /// (option `calloverlap`).  `0` = off, `1` = input guard only, `2` = both
+    /// (upstream Ghidra's behavior).  See [`crate::p3_dataflow::kuna_calloverlap`].
+    pub call_overlap: int4,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1234,6 +1240,7 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             callsite_stack_args: true,
+            call_overlap: 0,
             region_structure: true,
             guard_arm: false,
             loop_cond_hoist: false,
@@ -1384,6 +1391,7 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
@@ -1577,6 +1585,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "calloverlap" => {
+                let (val, msg) =
+                    crate::p3_dataflow::kuna_calloverlap::OptionCallOverlap.apply(p1)?;
+                self.call_overlap = val;
                 Ok(msg)
             }
             "regionstructure" => {
@@ -2140,6 +2154,7 @@ impl Architecture {
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
+        ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
