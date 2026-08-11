@@ -54,6 +54,10 @@ f30f1efadb6c2408d9c0db3fdc059e01
 <script>
   <!-- kuna: tailcalljump default-on (DIV-13); this upstream test pins the pre-tailcalljump rendering -->
   <com>option tailcalljump off</com>
+  <!-- kuna: funcboundflow default-on (DIV-67); this test deliberately flows a tail `jmp` into
+       the callee and on across adjacent functions (pass -> writeLongDouble, and writeLongDouble
+       past the printf_chk symbol), so it pins the pre-funcboundflow flow-into-callee rendering -->
+  <com>option funcboundflow off</com>
   <com>option readonly on</com>
   <com>map addr r0x101000 float10 ldarr[16]</com>
   <com>map fun r0x10014b printldfirst</com>

@@ -362,6 +362,17 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `funcboundflow`) Is the fall-through bound at a known function entry
+    /// enabled (`option funcboundflow`, `Architecture::funcbound_flow`)?  When on,
+    /// `process_instruction` truncates a fall-through that reaches the entry of
+    /// another known function (via [`query_call`](FlowEnvironment::query_call))
+    /// instead of decoding the next function's body into this one.  The default
+    /// shell reports `false` (no bounding, upstream behavior).  See
+    /// [`kuna_funcboundflow`](crate::kuna_funcboundflow).
+    fn funcbound_flow_enabled(&self) -> bool {
+        false
+    }
+
     /// Is the function at the direct-call `entry` address marked \e inline? (C++
     /// `FlowInfo::queryCall` → `fspecs.copyFlowEffects(otherfunc->getFuncProto())`
     /// → `FuncProto::isInline()`).
@@ -1341,9 +1352,45 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
 
         if isfallthru {
-            self.addrlist.push(curaddr + step as i64);
+            let next = curaddr + step as i64;
+            if self.is_funcbound_fallthru(&next) {
+                // (kuna funcboundflow) Fall-through has reached the entry of the
+                // next function -- the callee just executed (an unnamed static
+                // `exit`/`abort`/`die()` wrapper kuna could not prove no-return)
+                // must be no-return.  Plant a no-return artificial RETURN and
+                // stop, instead of decoding the next function's body into this
+                // one (the cross-function merge bug).  Mirrors the noreturn-call
+                // halt in `check_for_flow_modification`; the halt is appended
+                // after the current instruction's ops by `artificial_halt`.
+                let _halt = self.artificial_halt(curaddr, pcodeop_flags::noreturn)?;
+                self.data.warning(
+                    "funcboundflow: fall-through reached the next function entry; truncating flow here",
+                    curaddr,
+                );
+                isfallthru = false;
+            } else {
+                self.addrlist.push(next);
+            }
         }
         Ok(isfallthru)
+    }
+
+    /// (kuna `funcboundflow`) Should a fall-through to `next` be truncated because
+    /// it is the entry of another known function (so the walk has run off the end
+    /// of the current function)?  Gated by `option funcboundflow`
+    /// (`funcbound_flow_enabled`); when on, resolves `next` against the symbol
+    /// table via [`query_call`](FlowEnvironment::query_call) and excludes the
+    /// current function's own entry.  See [`kuna_funcboundflow`].
+    fn is_funcbound_fallthru(&self, next: &Address) -> bool {
+        // Fast-path the default-off gate: no symbol-table lookup per instruction.
+        if !self.env.funcbound_flow_enabled() {
+            return false;
+        }
+        crate::kuna_funcboundflow::kuna_should_bound_at_entry(
+            true,
+            self.env.query_call(next).is_some(),
+            next == self.data.get_address(),
+        )
     }
 
     /// Apply the decode-error policy for an `oneInstruction` failure (C++

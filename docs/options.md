@@ -25,6 +25,10 @@ Three tiers:
 | leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump) |
 | jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump) |
 | plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump) |
+| a function's tail is really the body of the NEXT function | [`funcboundflow`](#funcboundflow) |
+| dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
+| two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
+| uninitialized reads in the tail after an unrecognized no-return call | [`funcboundflow`](#funcboundflow) |
 | garbage code after a call to __stack_chk_fail or abort in a relocatable .o | [`noreturn_extern`](#noreturn_extern) |
 | function balloons by swallowing the next function after an extern no-return call | [`noreturn_extern`](#noreturn_extern) |
 | dead fall-through after exit or assert-fail in an object file | [`noreturn_extern`](#noreturn_extern) |
@@ -319,6 +323,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A leaf function ends in `jmp <func>@plt` and kuna would emit `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`. On by default (DIV-14) = the named call plus a `tailcalljump: recovered tail call` WARNING; flip OFF to restore the upstream flow-into-callee rendering (the two affected datatests, Long double #1/#2, opt out per-test).
 - **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-tee-O2-tail-jumps
 - **Example:** `option tailcalljump on`
+
+### `funcboundflow` -- on | off, default `on`
+
+- **Symptoms:** a function's tail is really the body of the NEXT function; dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns; two adjacent functions merged into one, the second also decompiled on its own; uninitialized reads in the tail after an unrecognized no-return call.
+- **What it does:** REMOVES CODE: bound a function's fall-through at the entry of another known function. A kuna FunctionSymbol has no extent and CALL is fall-through, so a function whose last act is a `call` to a no-return routine kuna cannot prove no-return (in a stripped static binary: the unnamed `exit`/`abort`/`__stack_chk_fail` bodies and the app-level `die()`/`throw` wrappers built on them) runs its flow past the compiler's inter-function padding straight into the next function's entry and decodes THAT function's body into itself (the merge bug). When a fall-through reaches a known function entry (`query_call(next).is_some()`), plant a no-return artificial RETURN and stop, emitting a `funcboundflow` truncation WARNING. Excludes the function's own entry.
+- **When to flip:** A function shows a garbage tail that is really the body of the FOLLOWING function (dead code after a call to a die()/throw/exit wrapper, uninitialized reads, a second unrelated function inlined after an error call). On by default; flip OFF to restore the upstream flow-into-the-next-function behavior.
+- **Where / provenance:** P2/flow-classification · ida · correctness-fix · interp-bee-func-merge
+- **Example:** `option funcboundflow off`
 
 ### `noreturn_extern` -- on | off, default `on`
 

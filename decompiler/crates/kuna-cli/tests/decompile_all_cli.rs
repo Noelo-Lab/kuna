@@ -851,7 +851,11 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
         Some(stdout)
     };
     // OFF: err_fatal's flow walks past `call error(2)` into the following functions.
-    let Some(off) = code(&["--option", "noreturn_error", "off"]) else {
+    // `funcboundflow` (default-on, DIV-67) is a SECOND, name-independent bound that
+    // stops the same overrun at `compute`'s entry, so it must also be off to expose
+    // the pre-fix overrun this test isolates.
+    let Some(off) = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"])
+    else {
         return; // specs-less skip
     };
     // ON (default): the CALL_RETURN prune stops err_fatal at the no-return call.
@@ -892,8 +896,11 @@ fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
         Some(stdout)
     };
     // `err_warn` belongs to `compute_warn`, a DIFFERENT function — it appears in err_fatal's
-    // output ONLY if the flow overran past `call error(2)`.
-    let Some(off) = code(&["--option", "noreturn_error", "off"]) else {
+    // output ONLY if the flow overran past `call error(2)`.  `funcboundflow` (default-on,
+    // DIV-67) is a second, name-independent bound at `compute`'s entry, so it too must be
+    // off to expose the pre-fix overrun.
+    let Some(off) = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"])
+    else {
         return; // specs-less skip
     };
     let on = code(&[]).expect("second run succeeds if the first did");

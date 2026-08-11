@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    405,
-    405
+    407,
+    407
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -33,6 +33,8 @@
     "data:FAST-FUNCDISC #1: loader-known entry is present in both inventories",
     "data:FAST-FUNCDISC #2: direct callee is absent off and present on",
     "data:FAST-FUNCDISC #3: the newly inventoried callee has a real decompiled body",
+    "data:FUNCBOUNDFLOW #1: default does NOT merge neighbor; only the funcboundflow-off pass shows its body (exactly one occurrence across both passes)",
+    "data:FUNCBOUNDFLOW #2: both passes resolve the unnamed no-return call to fatal(), so the sole difference is the boundary truncation",
     "data:FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C",
     "data:FUNCPTRALIGN #2: the callee field recovers as code ** and the call needs no cast",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",

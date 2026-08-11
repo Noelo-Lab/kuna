@@ -135,6 +135,12 @@ impl FlowEnvironment for ArchFlowEnv {
         }
         false
     }
+    fn funcbound_flow_enabled(&self) -> bool {
+        // (kuna funcboundflow) the Architecture-owned gate (`option funcboundflow`).
+        // When on, `flow.rs` truncates a fall-through that reaches a known function
+        // entry (via `query_call`) so the next function is not decoded into this one.
+        self.arch().funcbound_flow
+    }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
         // flag is set by `option inline <name>` (OptionInline) on the resolved

@@ -48,6 +48,7 @@
 <symbol space="ram" offset="0x1050" name="neighbor_marker"/>
 </binaryimage>
 <script>
+  <com>option funcboundflow off</com>
   <com>option noreturn_externmatch off</com>
   <com>option noreturn_extern off</com>
   <com>lo fu victim</com>
@@ -66,7 +67,10 @@
        name-matches the SAME __stack_chk_fail at the SAME flow seam; it is disabled
        up-front (sticks across both passes) to isolate the noreturn_extern toggle this
        test exercises, otherwise pass 1 would already be bounded and `neighbor_marker(`
-       would not leak. -->
+       would not leak. funcboundflow (DIV-67, default-ON) is a third overlapping
+       companion: it bounds the SAME fall-through at neighbor_marker's function entry
+       regardless of the callee name, so it too is disabled up-front to keep the leak
+       visible in pass 1. -->
 
 </script>
 <stringmatch name="noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)" min="1" max="1">neighbor_marker\(</stringmatch>
