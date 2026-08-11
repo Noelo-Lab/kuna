@@ -274,6 +274,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "loweredswitch",
     "callsitestackargs",
     "regionstructure",
+    "guardarm",
     "regionlooprefine",
     "regionedgeorder",
     "condfold",

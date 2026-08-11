@@ -325,8 +325,19 @@ mod tests {
         /// `poolentry`'s corpus numbers is measured on top of the other three, and
         /// flipping any one alone re-measures nothing useful. Their preset
         /// membership is one joint evaluation, not four.
-        const UNEVALUATED: &[&str] =
-            &["cortexmvectors", "ptrentry", "tailcallentry", "paramcopyhoist", "poolentry"];
+        const UNEVALUATED: &[&str] = &[
+            "cortexmvectors",
+            "ptrentry",
+            "tailcallentry",
+            "paramcopyhoist",
+            "poolentry",
+            // `guardarm` lands as an opt-in with its whole-O0 bidirectional sweep
+            // already recorded in its catalog row; preset membership makes it the
+            // default output, which is a DIV-recorded default change and gets its
+            // own PR (the 0/675 ablation and the speed number are the two things
+            // that PR has to add).
+            "guardarm",
+        ];
 
         let agg = mode_overrides("aggressive").unwrap();
         let mut missing: Vec<&str> = Vec::new();

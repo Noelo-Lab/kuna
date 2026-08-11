@@ -82,6 +82,39 @@ run to a fixpoint *before* everything else by `blockaction.rs
 (CollapseStructure::collapse_conditions)`, so cascading guards fold into one
 compound condition before the if-rules can consume them separately.
 
+**`guardarm` — which arm becomes the `if` clause.** `rule_block_if_no_exit`
+folds the condition block and *one* terminal out-arm into a `BlockIf`; the
+other arm survives as that node's fall-through, so the choice decides which
+half of the function is nested inside the `if` and which is written flat
+after it. Upstream walks the two out-edges in index order and takes the first
+eligible one. Usually only one arm qualifies (in-degree 1, out-degree 0, a
+decision edge) and there is no choice to make — but when the condition guards
+a fatal call and the other side is the function's own `return`, **both** arms
+qualify and the index order decides. Index order carries no source
+information here: `negateCondition`'s `swapEdges` re-orients the block between
+the two `collapse_all` runs the action pool performs, so the orientation the
+rule sees is not the orientation the branch was assembled with, and the
+`i == 0` arm is as likely to be the `return` as the fatal call. When it is the
+`return`, kuna emits `if (ok) return v; fatal();` where the source, IDA and
+Ghidra all write `if (!ok) fatal(); return v;` — the condition negated, the
+body re-parented one level deeper, and the fatal call demoted to the
+function's trailing fall-through.
+
+`guardarm on` (default-off opt-in) breaks **only that tie**, and by code
+layout: of the two eligible arms, the one whose first leaf lies earlier in the
+address space becomes the clause. An unoptimized compiler emits the taken
+clause of `if (c) A; B;` in front of `B`, and emits the `then` side of an
+`if/else` in front of the `else` side, so the earlier arm is the source's
+`if` body in both shapes. A block with a single eligible arm is untouched, so
+the rule's behavior is unchanged everywhere the choice was already forced.
+The predicate deliberately does **not** consult the artificial-halt
+(`op_mark_halt`) flag: preferring the no-return arm gets `openssh scp
+xcalloc` and `dpkg-query control_list` right but inverts `coreutils
+make-prime-list xalloc`, whose source really is `if (p) return p;
+fprintf(...); exit(1);` — layout order gets all three right, because it is
+reading what the compiler recorded about the source rather than guessing from
+the callee.
+
 **(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
 of the prospective `&&`/`||`) to be *non-complex*: `substrate/funcdata_block.rs

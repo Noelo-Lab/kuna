@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option guardarm` (default-OFF opt-in), S8 goto-quality sub-stage:
+    the arm tie-break inside `CollapseStructure::ruleBlockIfNoExit`
+    (`p8_structure/blockaction.rs`).
+
+    The rule folds `bl` and one terminal out-arm into a `BlockIf`; the other arm
+    survives as the node's fall-through.  Upstream tries the arms in out-index
+    order and takes the first eligible one.  When only ONE arm is eligible that
+    is not a choice at all, and the great majority of guards are that shape.  But
+    when BOTH arms are terminal with in-degree 1 the pick is a coin flip, and it
+    decides whether the guard clause or the whole rest of the function ends up
+    inside the `if`  -  out-index order carries no source information, because
+    `negateCondition`'s `swapEdges` re-orients the block between the two
+    `collapse_all` runs the action pool performs.
+
+    `guardarm on` breaks that tie by code layout instead: the arm lying EARLIER
+    in the address space becomes the clause, because an unoptimized compiler
+    emits the taken clause of `if (c) A; B;` in front of `B`.  Ties only.
+
+    Witness (self-contained, 33 bytes at 0x1000): the `if (n == 0 || p == 0)
+    fatal(); *p = n; return n + 1;` shape  -  a compound short-circuit guard whose
+    clause is a call to a known-no-return libc name.  `abort` is placed as its own
+    symbol at 0x1020 so the default-on `noreturn_externmatch` name match plants the
+    artificial halt and the clause becomes terminal; the guard's other arm ends in
+    the function's only `ret`, so both arms are terminal and the tie is live.
+    Reproduces `dpkg-query control_list` and `openssh scp xcalloc` from the
+    decbench O0 corpus.
+
+    Pass 1 (default, guardarm off): the bug  -  the tie resolves to the wrong arm,
+    the condition is negated and the whole body is re-parented one level deeper
+    inside `if ((a0) && (a1)) { ... }`, with the fatal call demoted to the
+    function's trailing fall-through.  Assertion #1.
+    Pass 2 (option guardarm on): the fix  -  the guard is flat,
+    `if ((!a0) || (!a1)) abort();` followed by the body at top level, which is what
+    the source, IDA and Ghidra all write.  Assertion #2.
+    Assertion #3 pins that the no-return call itself is emitted in BOTH passes, so
+    #1/#2 are measuring the nesting and not the presence of the call.
+-->
+<bytechunk space="ram" offset="0x1000">
+85ff74054885f67505e812000000893e89f883c001c390909090909090909090c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="victim"/>
+<symbol space="ram" offset="0x1020" name="abort"/>
+</binaryimage>
+<script>
+  <com>lo fu victim</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option guardarm on</com>
+  <com>lo fu victim</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GUARDARM #1: OFF inverts the guard and nests the body one level deeper (pass 1 only)" min="1" max="1">if \(\(a0\) &amp;&amp; \(a1\)\) \{</stringmatch>
+<stringmatch name="GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)" min="1" max="1">if \(\(!a0\) \|\| \(!a1\)\)</stringmatch>
+<stringmatch name="GUARDARM #3: the no-return clause call is emitted in BOTH passes" min="2" max="2">abort\(\); // no-return</stringmatch>
+</decompilertest>
