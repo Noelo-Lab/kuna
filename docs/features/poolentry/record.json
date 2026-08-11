@@ -63,17 +63,78 @@
       }
     },
     "configuration_ablation": [
-      {"arm": "additive, no bridging, INCOMPLETE literal set", "new": 203, "gt_pct": 89.7, "lost": 0, "splits": 19},
-      {"arm": "additive, 1-word bridging, incomplete literal set", "new": 199, "gt_pct": 95.0, "lost": 0, "splits": 8},
-      {"arm": "additive, no bridging, complete literal set", "new": 191, "gt_pct": 98.4, "lost": 0, "splits": 1},
-      {"arm": "suppression, UNPAIRED", "new": 0, "lost": 0, "splits": 0, "removed": 5069, "removed_gt": 0, "bodies_unreachable": 531},
-      {"arm": "suppression, paired, 1-word bridging", "new": 0, "lost": 0, "splits": 0, "removed": 3674, "removed_gt": 0, "bodies_unreachable": 62},
-      {"arm": "suppression, paired, no bridging", "new": 0, "lost": 0, "splits": 0, "removed": 3865, "removed_gt": 0, "bodies_unreachable": 0},
-      {"arm": "SHIPPED: both, paired, no bridging, complete literal set", "new": 191, "gt_pct": 98.4, "lost": 0, "splits": 1, "removed": 4220, "removed_gt": 0, "bodies_unreachable": 0}
+      {
+        "arm": "additive, no bridging, INCOMPLETE literal set",
+        "new": 203,
+        "gt_pct": 89.7,
+        "lost": 0,
+        "splits": 19
+      },
+      {
+        "arm": "additive, 1-word bridging, incomplete literal set",
+        "new": 199,
+        "gt_pct": 95.0,
+        "lost": 0,
+        "splits": 8
+      },
+      {
+        "arm": "additive, no bridging, complete literal set",
+        "new": 191,
+        "gt_pct": 98.4,
+        "lost": 0,
+        "splits": 1
+      },
+      {
+        "arm": "suppression, UNPAIRED",
+        "new": 0,
+        "lost": 0,
+        "splits": 0,
+        "removed": 5069,
+        "removed_gt": 0,
+        "bodies_unreachable": 531
+      },
+      {
+        "arm": "suppression, paired, 1-word bridging",
+        "new": 0,
+        "lost": 0,
+        "splits": 0,
+        "removed": 3674,
+        "removed_gt": 0,
+        "bodies_unreachable": 62
+      },
+      {
+        "arm": "suppression, paired, no bridging",
+        "new": 0,
+        "lost": 0,
+        "splits": 0,
+        "removed": 3865,
+        "removed_gt": 0,
+        "bodies_unreachable": 0
+      },
+      {
+        "arm": "SHIPPED: both, paired, no bridging, complete literal set",
+        "new": 191,
+        "gt_pct": 98.4,
+        "lost": 0,
+        "splits": 1,
+        "removed": 4220,
+        "removed_gt": 0,
+        "bodies_unreachable": 0
+      }
     ],
     "off_target_inertness": {
-      "x86_64_elf": {"images": 20, "entries": 8171, "added": 0, "removed": 0},
-      "i386_pe": {"images": 8, "entries": 1405, "added": 0, "removed": 0},
+      "x86_64_elf": {
+        "images": 20,
+        "entries": 8171,
+        "added": 0,
+        "removed": 0
+      },
+      "i386_pe": {
+        "images": 8,
+        "entries": 1405,
+        "added": 0,
+        "removed": 0
+      },
       "note": "Re-measured on the shipping build with `--option listing on --option aif on` forced. x86-64 RIP-relative loads target .rodata rather than .text interstices, and i386 has no PC-relative addressing at all, so the predicate is vacuous by ISA."
     },
     "emitted_c": {
@@ -91,26 +152,90 @@
       "rejected_guard": "Refusing to emit at a known branch target removes it and costs 108 of 189 recovered ground-truth entries - dominated."
     },
     "fabrications_outside_any_body": [
-      {"image": "O2 crazyflie cf2.elf", "address": "0x8006a30", "what": "zero padding between rand's pool and strlen, in no DWARF body"},
-      {"image": "O2 crazyflie firmware.elf", "address": "0x8006a30", "what": "the same bytes; cf2.elf and firmware.elf are byte-identical"}
+      {
+        "image": "O2 crazyflie cf2.elf",
+        "address": "0x8006a30",
+        "what": "zero padding between rand's pool and strlen, in no DWARF body"
+      },
+      {
+        "image": "O2 crazyflie firmware.elf",
+        "address": "0x8006a30",
+        "what": "the same bytes; cf2.elf and firmware.elf are byte-identical"
+      }
     ]
   },
   "speed": {
     "samples": 3,
     "units": "s (min of 3, interleaved)",
     "budget_pct": 5.0,
+    "note": "Two runs: the env-gated measurement build and a re-run on the shipping build. The box carried two other agents' full workspace suites throughout (load average ~90-100), so only the A32 row reproduces cleanly. The cost is real - the pass re-decodes every gap-discovered body to harvest its literal references - and is net-positive only because the retired phantoms stop being decompiled. An ARM image with pools but no phantoms pays it with no benefit.",
     "rows": [
-      {"surface": "kuna functions (analysis tier)", "binary": "betaflight O0 (Thumb)", "off": 12.48, "on": 14.27, "delta_pct": 14.3},
-      {"surface": "kuna functions (analysis tier)", "binary": "u-boot O2 (A32)", "off": 4.72, "on": 6.25, "delta_pct": 32.4},
-      {"surface": "kuna functions (analysis tier)", "binary": "gzip O0 (x86-64)", "off": 0.65, "on": 0.66, "delta_pct": 1.5},
-      {"surface": "kuna decompile-all", "binary": "betaflight O0", "off": 262.8, "on": 220.7, "delta_pct": -16.0}
-    ],
-    "note": "The analysis-tier cost is real and OVER the 5% budget on ARM: the pass re-decodes every gap-discovered body to harvest its literal references. It is net-positive only because the retired phantoms stop being decompiled - an ARM image with pools but no phantoms pays the cost with no benefit. The decompile-all figure is a single shot on a contended box; the direction is structural (771 phantom functions on betaflight O0 at ~0.5 s each) but the magnitude is not a min-of-N."
+      {
+        "surface": "kuna functions (analysis tier)",
+        "binary": "betaflight O0 (Thumb)",
+        "build": "measurement",
+        "off": 12.48,
+        "on": 14.27,
+        "delta_pct": 14.3
+      },
+      {
+        "surface": "kuna functions (analysis tier)",
+        "binary": "betaflight O0 (Thumb)",
+        "build": "shipping",
+        "off": 11.74,
+        "on": 12.15,
+        "delta_pct": 3.5,
+        "note": "off spread 11.74-14.60, on spread 12.15-13.60; inside the noise floor"
+      },
+      {
+        "surface": "kuna functions (analysis tier)",
+        "binary": "u-boot O2 (A32)",
+        "build": "measurement",
+        "off": 4.72,
+        "on": 6.25,
+        "delta_pct": 32.4
+      },
+      {
+        "surface": "kuna functions (analysis tier)",
+        "binary": "u-boot O2 (A32)",
+        "build": "shipping",
+        "off": 4.54,
+        "on": 6.05,
+        "delta_pct": 33.3,
+        "note": "the only figure that reproduces cleanly; the honest headline"
+      },
+      {
+        "surface": "kuna functions (analysis tier)",
+        "binary": "gzip O0 (x86-64)",
+        "build": "measurement",
+        "off": 0.65,
+        "on": 0.66,
+        "delta_pct": 1.5
+      },
+      {
+        "surface": "kuna functions (analysis tier)",
+        "binary": "gzip O0 (x86-64)",
+        "build": "shipping",
+        "off": 0.66,
+        "on": 0.72,
+        "delta_pct": 9.1,
+        "note": "spread 0.66-0.81 in both arms; noise"
+      },
+      {
+        "surface": "kuna decompile-all",
+        "binary": "betaflight O0",
+        "build": "measurement",
+        "off": 262.8,
+        "on": 220.7,
+        "delta_pct": -16.0,
+        "note": "single shot on a contended box; the direction is structural (771 fewer functions decompiled at ~0.5 s each), the magnitude is not a min-of-N"
+      }
+    ]
   },
   "gates": {
     "make test": "PARITY OK 675/675",
     "make test-stages": "PARITY OK 405/405",
-    "make rust-test": "green",
+    "make rust-test": "green - 307 result blocks, 4,546 tests passed, 0 failed, exit 0",
     "make check-spec": "green (strict)",
     "kuna catalog --check": "catalog OK"
   },
@@ -127,7 +252,9 @@
     "analysis_tier": "34 -> 35",
     "catalog_json_rows": "95 -> 96",
     "bytecompat_fixture": "95 -> 96",
-    "note": "Derived from a fresh `phase catalog` capture on a green build, not by arithmetic. tests/stages/kuna-catalog.xml is untouched: its assertions are exact-name matches on other options, ranges, or counts of `source_decompiler: angr` / `structure-recovery` / `opt-in-tool`, none of which this row is. kuna-base/src/xml.rs is untouched (no stages XML added), and docs/baseline-stages.json is unchanged."
+    "note": "Derived from a fresh `phase catalog` capture on a green build, not by arithmetic. tests/stages/kuna-catalog.xml is untouched: its assertions are exact-name matches on other options, ranges, or counts of `source_decompiler: angr` / `structure-recovery` / `opt-in-tool`, none of which this row is. kuna-base/src/xml.rs is untouched (no stages XML added), and docs/baseline-stages.json is unchanged. Two count sites beyond the ones the plan listed were found by a green run and fixed: the `emit_catalog_json_static_form_brackets_and_commas` trailing-comma count (94 -> 95) and PASS_GATES in `option_values_live_value_present_for_28_suppressed_for_42`.",
+    "catalog_form_comma_count": "94 -> 95",
+    "pass_gates": "poolentry added to kuna_phases/tests.rs PASS_GATES (no codegen live_value reader, like tailcallentry)"
   },
   "div_row": null,
   "notes": "Default-OFF, so no DIV row (default output is byte-identical; make test / make test-stages PARITY OK). Parked in modes.rs UNEVALUATED next to its three sequence siblings: cortexmvectors, ptrentry, tailcallentry and poolentry COMPOSE, every number here is measured on top of the other three, and preset membership should be one joint evaluation rather than four.",
@@ -137,5 +264,6 @@
     "fdeinterior's warrant does not transfer: an FDE is an extent the compiler wrote into the binary, an inferred pool is a guess. The 0-of-4,220 figure is measured against DWARF from unstripped twins that the runtime predicate does not have.",
     "The merge class is untouched and is ~3x larger: 3,255 of 5,491 interior ground-truth misses corpus-wide have a containing entry that IS a real DWARF entry. Nothing here reaches it, and no claim that ARM entry recall is closed survives that factor.",
     "i386 PE has a separate, unreached defect: 55 AIF-only entries, 23 of them (41.8%) strictly inside a real body, with no fdeinterior protection because that pass is ELF-only. Not fixed, not broken, not covered."
-  ]
+  ],
+  "production_vs_measurement": "The shipping build reads the PC bias from the engine ContextDatabase instead of the image-wide 16-bit-instruction shim. The full 98-image sweep is set-identical to the measurement arm on 96 of 98 images; the two that differ are the byte-identical crazyflie O2-noinline pair, where the production reader is slightly more conservative and keeps 9 phantoms each. Whole delta: removals 4,238 -> 4,220 (and split_removed 4,236 -> 4,218); new/GT/lost/splits unchanged at 191/188/0/1."
 }
