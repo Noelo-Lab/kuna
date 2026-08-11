@@ -36,8 +36,9 @@ fn surface_count_is_101() {
     // +1 for the `option truthycond` surface row (kuna C-surface normalization, DIV-36),
     // +1 for the `option braceelide` surface row (kuna C-surface normalization, DIV-37),
     // +1 for the `option warnstyle` surface row (kuna C-surface normalization, DIV-38).
-    assert_eq!(kuna_num_surfaces(), 101);
-    assert_eq!(SURFACE_TABLE.len(), 101);
+    // +1 for the `option funcboundflow` surface row (kuna cross-function-merge fix).
+    assert_eq!(kuna_num_surfaces(), 102);
+    assert_eq!(SURFACE_TABLE.len(), 102);
 }
 
 #[test]
@@ -57,12 +58,13 @@ fn settable_count_is_95() {
     // +1 for `typedepth` (P1 full-depth DWARF type resolution, DIV-63).
     // +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable recovery, DIV-64).
     // +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
-    assert_eq!(kuna_num_settables(), 95);
-    assert_eq!(SETTABLE_TABLE.len(), 95);
+    // +1 for `funcboundflow` (P2 fall-through bound at function entries).
+    assert_eq!(kuna_num_settables(), 96);
+    assert_eq!(SETTABLE_TABLE.len(), 96);
 }
 
 #[test]
-fn tier_counts_are_20_core_41_transform_34_analysis() {
+fn tier_counts_are_20_core_42_transform_34_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -89,7 +91,8 @@ fn tier_counts_are_20_core_41_transform_34_analysis() {
     // analysis 32 -> 33: +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable
     // recovery, DIV-64).
     // analysis 33 -> 34: +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
-    assert_eq!((core, transform, analysis), (20, 41, 34));
+    // transform 41 -> 42: +1 for `funcboundflow` (P2 fall-through bound at function entries).
+    assert_eq!((core, transform, analysis), (20, 42, 34));
 }
 
 #[test]
@@ -440,7 +443,8 @@ fn option_values_live_value_present_for_28_suppressed_for_42() {
     }
     // 28 -> 29: +1 for `peimportcall` (live_field = analysis_peimportcall);
     // `itecondlist` declares no live_field, so it does not move this count.
-    assert_eq!(with_live, 29);
+    // 29 -> 30: +1 for `funcboundflow` (live_field = funcbound_flow).
+    assert_eq!(with_live, 30);
 }
 
 #[test]
@@ -543,8 +547,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
-    // row and libcsigs' S1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 94);
+    // row, libcsigs' S1 row and funcboundflow's S2 row sit mid-table, so they do
+    // not move the tail).
+    assert_eq!(json.matches("},\n").count(), 95);
 }
 
 #[test]

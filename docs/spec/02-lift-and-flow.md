@@ -201,6 +201,33 @@ an indirect GOT jump; jump-table recovery fails on it and the function renders
 a `(*dat_...)(...)` computed call with a `"Treating indirect jump as call"`
 warning. Two datatests (Long double #1/#2) opt out per-test.
 
+**(kuna) Fall-through function bound — `option funcboundflow`, default on
+(DIV-67), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs
+(kuna_should_bound_at_entry)`.** A kuna `FunctionSymbol` is an entry address with
+no extent, and CALL/CALLIND are fall-through, so flow stops only at a RETURN or a
+*known* no-return callee (`query_call_no_return`). A function whose last act is a
+`call` to a routine kuna cannot prove no-return — in a stripped, statically-linked
+binary the unnamed `exit`/`abort`/`__stack_chk_fail` bodies and the app-level
+`die()`/`throw` wrappers built on them — compiles with no trailing `ret`, just
+inter-function alignment padding, and kuna's follower runs the padding's
+fall-through straight into the next function's entry, decoding *that* function's
+body into the current one (the following function is then emitted twice: once
+correctly, once as a garbage tail of its predecessor). Decision rule: a
+fall-through whose target is the entry of another *known* function
+(`query_call(next).is_some()`), and is not the current function's own entry, has
+run off the end of the current function. The truncation lives at the fall-through
+push of `flow.rs (FlowInfo::process_instruction)`: instead of pushing the target,
+a no-return artificial RETURN is planted (mirroring the `check_for_flow_modification`
+no-return-call halt) and a `funcboundflow` warning makes the truncation
+attributable. This overlaps `noreturn_extern`/`noreturn_externmatch` (which stop
+the same leak by callee *name*) but is name-independent — it bounds at the function
+*boundary* whatever the callee. On real binaries ~36% of application functions in a
+measured static-pie build end in such a call and were corrupted this way; IDA and
+Ghidra both bound decompilation to the function body. The `longdouble` datatest
+(which deliberately flows a tail `jmp` into its callee and on across adjacent
+functions) and the `ghangr-noreturn_extern` test (which isolates the
+`noreturn_extern` toggle) opt out per-test.
+
 **(kuna) Stack-probe loops — `option stackprobeloop`, default on (DIV-3),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_stackprobeloop.rs
 (RuleStackProbeLoop)` (from Ghidra issues GH-8017/6858).** gcc's

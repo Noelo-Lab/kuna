@@ -964,6 +964,12 @@ subphase = "flow-classification"
 note = "(kuna tee-O2 tail-jumps) recover a direct jmp to another function's entry (e.g. jmp setlocale@plt) as a tail call (CALL + RETURN) instead of inlining the callee"
 
 [[surface]]
+surface = "option funcboundflow"
+phase = "P2"
+subphase = "flow-classification"
+note = "(kuna) bound fall-through at a known function entry so a function ending in an unnamed static no-return call does not decode the next function's body into itself"
+
+[[surface]]
 surface = "option sparcstructret"
 phase = "P2"
 subphase = "flow-classification"
@@ -1590,6 +1596,28 @@ change_kind = "structure-recovery"
 tier = "transform"
 symptoms = "leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning|jmp to a plt stub inlined into the caller instead of a named tail call|plt thunk body absorbed where func(...) is expected"
 live_field = "tail_call_jumps"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "funcboundflow"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "interp-bee-func-merge"
+summary = "REMOVES CODE: bound a function's fall-through at the entry of another known function. A kuna FunctionSymbol has no extent and CALL is fall-through, so a function whose last act is a `call` to a no-return routine kuna cannot prove no-return (in a stripped static binary: the unnamed `exit`/`abort`/`__stack_chk_fail` bodies and the app-level `die()`/`throw` wrappers built on them) runs its flow past the compiler's inter-function padding straight into the next function's entry and decodes THAT function's body into itself (the merge bug). When a fall-through reaches a known function entry (`query_call(next).is_some()`), plant a no-return artificial RETURN and stop, emitting a `funcboundflow` truncation WARNING. Excludes the function's own entry."
+use_when = "A function shows a garbage tail that is really the body of the FOLLOWING function (dead code after a call to a die()/throw/exit wrapper, uninitialized reads, a second unrelated function inlined after an error call). On by default; flip OFF to restore the upstream flow-into-the-next-function behavior."
+example = "option funcboundflow off"
+source_decompiler = "ida"
+inspiration = "interp-bee/jit-bee static-pie study: 70/195 app functions end in a call to an unnamed no-return and absorb the next function; IDA/Ghidra bound decompilation to the function body"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "a function's tail is really the body of the NEXT function|dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns|two adjacent functions merged into one, the second also decompiled on its own|uninitialized reads in the tail after an unrecognized no-return call"
+live_field = "funcbound_flow"
 live_true = "on"
 live_false = "off"
 

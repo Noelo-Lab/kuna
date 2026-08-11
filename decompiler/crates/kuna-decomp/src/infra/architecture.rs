@@ -314,6 +314,12 @@ pub struct Architecture {
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump`, default off).
     pub tail_call_jumps: bool,
+    /// (kuna `funcboundflow`) Bound fall-through at a known function entry: when a
+    /// fall-through reaches the entry of another known function (the callee just
+    /// executed being an unnamed static no-return the analysis could not prove
+    /// no-return), truncate flow with a no-return halt instead of decoding the
+    /// next function's body into the current one (`option funcboundflow`).
+    pub funcbound_flow: bool,
     /// (kuna) Treat a direct CALL whose resolved callee display name matches a
     /// known ELF no-return name (`__stack_chk_fail`, `abort`, `exit`, …) as
     /// no-return at flow time, even when the address-keyed no-return flag is unset
@@ -1182,6 +1188,7 @@ impl Architecture {
             add_carry_chain: false,
             v850_indirect_branch: false,
             tail_call_jumps: false,
+            funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
             ov_less_simplify: false,
@@ -1330,6 +1337,7 @@ impl Architecture {
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
+        self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
@@ -1506,6 +1514,7 @@ impl Architecture {
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
+            "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),

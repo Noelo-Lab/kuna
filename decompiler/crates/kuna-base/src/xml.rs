@@ -1725,7 +1725,9 @@ mod tests {
         // (`option defaultprototype __thiscall` recovers the ECX this-pointer)
         // and gh271-x86-maxlen-nop / a 15-byte instruction decodes (the parser's
         // masked-off tail read past the 16-byte buffer no longer aborts the decode)
-        assert_eq!(count, 193, "corpus file count drifted");
+        // and funcboundflow / a fall-through into a known function entry is truncated
+        // instead of decoding the next function's body into the current one
+        assert_eq!(count, 194, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

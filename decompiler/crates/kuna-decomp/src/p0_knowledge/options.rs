@@ -255,6 +255,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "flagcompare",
     "v850indirectbranch",
     "tailcalljump",
+    "funcboundflow",
     "noreturn_extern",
     "inputvarnodeadjust",
     "condexeplace",

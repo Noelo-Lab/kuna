@@ -1,0 +1,48 @@
+<decompilertest>
+<!--
+    funcboundflow: bound a function's fall-through at the entry of another known
+    function.  A kuna FunctionSymbol is an entry address with no extent and CALL is
+    fall-through, so a function whose last act is a `call` to a routine kuna cannot
+    prove no-return (here the local `fatal` spin-loop; in a stripped static binary
+    the unnamed `exit`/`abort`/`__stack_chk_fail` bodies and app `die()`/`throw`
+    wrappers) runs its flow through the compiler's inter-function alignment padding
+    straight into the NEXT function's entry and decodes THAT function's body into
+    itself.  Stage model: S2 flow classification (`process_instruction` fall-through).
+
+    Layout (linked flat):
+      caller   @ 0x100040 : if (a0) return a0 + 1; else fatal();   // last op is `call fatal`
+      neighbor @ 0x100060 : return a0 - 5;                          // distinctive body
+      fatal    @ 0x100070 : for(;;);                                // no-return spin (unproven)
+    caller's `call fatal` at 0x10004e has no trailing `ret`; the 0x100053..0x100060
+    alignment padding falls through into neighbor's entry (0x100060).
+
+    Pass 1 (default, funcboundflow on): caller is truncated at the `fatal()` call, so
+    neighbor's `a0 - 5` body is NOT decoded into caller.
+    Pass 2 (funcboundflow off, the bug): caller absorbs neighbor's body, so the
+    `(int4)a0 - 5` return appears inside caller.
+
+    Assert #1 pins the merged-body line to EXACTLY ONE occurrence across both print C
+    passes: present in the funcboundflow-off pass (the bug), absent in the default pass
+    (the fix). Were the default still merging, the line would appear twice.
+    Assert #2 pins `fatal()` to both passes, so the only difference is the truncation.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100040" readonly="true">f30f1efa4885ff7405488d4701c3e81d00000066662e0f1f8400000000006690</bytechunk>
+<bytechunk space="ram" offset="0x100060" readonly="true">f30f1efa8d47fbc30f1f840000000000</bytechunk>
+<bytechunk space="ram" offset="0x100070" readonly="true">f30f1efaebfe</bytechunk>
+<symbol space="ram" offset="0x100040" name="caller"/>
+<symbol space="ram" offset="0x100060" name="neighbor"/>
+<symbol space="ram" offset="0x100070" name="fatal"/>
+</binaryimage>
+<script>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option funcboundflow off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FUNCBOUNDFLOW #1: default does NOT merge neighbor; only the funcboundflow-off pass shows its body (exactly one occurrence across both passes)" min="1" max="1">\(int4\)a0 - 5</stringmatch>
+<stringmatch name="FUNCBOUNDFLOW #2: both passes resolve the unnamed no-return call to fatal(), so the sole difference is the boundary truncation" min="2" max="2">fatal\(\);</stringmatch>
+</decompilertest>
