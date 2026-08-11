@@ -72,7 +72,7 @@ pub fn trace_enabled() -> bool {
 }
 
 //===========================================================================
-// Option parse (`guardarm on|off`).
+// Option parse (`guardarm on|off`, `loopcondhoist on|off`).
 //===========================================================================
 
 /// The `guardarm on|off` ArchOption — source-layout tie-break for the
@@ -88,6 +88,22 @@ impl OptionGuardArm {
         let val = crate::options::on_or_off(p1)?;
         let prop = if val { "on" } else { "off" };
         Ok((val, format!("If-no-exit guard-arm layout tie-break turned {prop}")))
+    }
+}
+
+/// The `loopcondhoist on|off` ArchOption - defer a loop head in the
+/// `ruleBlockIfNoExit` scan so `ruleBlockWhileDo` keeps its head test.
+pub struct OptionLoopCondHoist;
+
+impl OptionLoopCondHoist {
+    /// The option name.
+    pub const NAME: &'static str = "loopcondhoist";
+
+    /// Parse `on`/`off`, returning the bool value + a confirmation message.
+    pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(bool, String)> {
+        let val = crate::options::on_or_off(p1)?;
+        let prop = if val { "on" } else { "off" };
+        Ok((val, format!("If-no-exit loop-head deferral turned {prop}")))
     }
 }
 

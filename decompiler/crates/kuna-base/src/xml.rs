@@ -1730,7 +1730,8 @@ mod tests {
         // and ghdec-branchflip-armswap / a swapped `if` arm keeps its whole body
         // (the else-if collapse hoisted the arm's tail statement out of the arm)
         // and ghdec-guardarm / the ruleBlockIfNoExit arm tie-break resolves by layout
-        assert_eq!(count, 196, "corpus file count drifted");
+        // and ghdec-loopcondhoist / the deferred ifNoExit scan passes over a loop head
+        assert_eq!(count, 197, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

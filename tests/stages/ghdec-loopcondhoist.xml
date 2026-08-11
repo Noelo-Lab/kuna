@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option loopcondhoist` (default-OFF opt-in), S8 goto-quality sub-stage:
+    the DEFERRED `ruleBlockIfNoExit` scan inside `CollapseStructure`
+    (`p8_structure/blockaction.rs (CollapseStructure::collapse_internal)`).
+
+    The deferred scan walks the live components in order and folds the FIRST one
+    whose terminal out-arm qualifies, then restarts the whole rule cascade.  A
+    head-tested loop whose exit arm is a `return`  -  after `ActionReturnSplit` /
+    `returndup` has given that return in-degree 1  -  is such a component, and it
+    sits AHEAD of its own body in that order.  So the head folds to
+    `if (!C) return X;`, drops to one out-edge, and `rule_block_while_do` can
+    never match it again: the loop is emitted as
+    `while( true ) { if (!C) return X; BODY; }`.
+
+    The body block carrying the loop's `break` is a candidate in the SAME scan,
+    and folding it first is strictly better  -  the break arm absorbs the loop's
+    follower (which the rule's own `size_in() == 1` test already requires be
+    reached from nowhere else), the body collapses to a single back-edge clause,
+    and the head test hoists into the `while`/`for` header on the next cascade
+    pass with no new machinery.  `loopcondhoist on` gives the non-heads one such
+    pass and only falls back to the unrestricted upstream pass when it finds
+    nothing, so a function with no loop-head candidate is byte-identical.
+
+    Witness (self-contained, 68 bytes at 0x1000, no calls and no relocations):
+    `for (; n > 0; n -= 1) if (a[n] == 42) return 1; return 0;` at gcc -O0 x86-64:
+    the form-C shape, a head-tested loop whose head exit arm and whose body exit
+    arm are two DISTINCT returns.  Same construct as coreutils od read_char and
+    libacl getfacl walk_tree_visited in the decbench O0 corpus.
+
+    Pass 1 (default, loopcondhoist off): the bug  -  `while( true ) {` with the
+    real loop condition inside it as a guarded exit and the match arm reached by
+    `break;`.  Assertions #1 and #3.
+    Pass 2 (option loopcondhoist on): the fix  -  the head test is in the header,
+    `for (v1 = a1; 0 < v1; v1 = v1 + -1) { if (...) return 1; }`, which is the
+    source.  Assertion #2.
+-->
+<bytechunk space="ram" offset="0x1000">
+f30f1efa554889e548897df88975f4eb268b45f44898488d148500000000488b45f84801d08b0083f82a7507b801000000eb0f836df401837df4007fd4b8000000005dc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="victim"/>
+</binaryimage>
+<script>
+  <com>lo fu victim</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loopcondhoist on</com>
+  <com>lo fu victim</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOOPCONDHOIST #1: OFF leaves the head test inside an infinite loop (pass 1 only)" min="1" max="1">while\( true \) \{</stringmatch>
+<stringmatch name="LOOPCONDHOIST #2: ON hoists the head test into the loop header (pass 2 only)" min="1" max="1">for \(</stringmatch>
+<stringmatch name="LOOPCONDHOIST #3: the OFF pass needs a break to reach the match arm; the ON pass does not (pass 1 only)" min="1" max="1">break;</stringmatch>
+</decompilertest>

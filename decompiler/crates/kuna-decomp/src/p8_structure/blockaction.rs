@@ -1514,6 +1514,9 @@ pub struct CollapseStructure<'a> {
     /// (kuna, `option guardarm`) break a two-eligible-arm `ruleBlockIfNoExit`
     /// tie by source layout instead of by out-index.
     guard_arm: bool,
+    /// (kuna, `option loopcondhoist`) defer a live loop head in the deferred
+    /// `ruleBlockIfNoExit` scan while a non-head candidate is available.
+    loop_cond_hoist: bool,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1540,13 +1543,15 @@ impl<'a> CollapseStructure<'a> {
             dbg_ifne: crate::p8_structure::kuna_ifnoexit::trace_enabled(),
             dbg_apply: 0,
             guard_arm: false,
+            loop_cond_hoist: false,
         }
     }
 
-    /// (kuna) Install the `guardarm` verdict.  Builder method; hand-built
-    /// unit-test graphs keep the upstream-identical default.
-    pub fn with_ifnoexit_options(mut self, guard_arm: bool) -> Self {
+    /// (kuna) Install the `guardarm` / `loopcondhoist` verdicts.  Builder
+    /// method; hand-built unit-test graphs keep the upstream-identical default.
+    pub fn with_ifnoexit_options(mut self, guard_arm: bool, loop_cond_hoist: bool) -> Self {
         self.guard_arm = guard_arm;
+        self.loop_cond_hoist = loop_cond_hoist;
         self
     }
 
@@ -2601,6 +2606,28 @@ impl<'a> CollapseStructure<'a> {
         }
     }
 
+    /// (kuna, `option loopcondhoist`) Is `bl` the *current* collapsed-graph node
+    /// of a live loop head?  Mirrors `LoopBody::update`'s head resolution (walk
+    /// the recorded head up to the top-level component) without mutating.
+    fn ifnoexit_is_loop_head(&self, bl: BlockId) -> bool {
+        for lb in self.loopbody.iter() {
+            let mut head = match lb.get_head() {
+                Some(h) => h,
+                None => continue,
+            };
+            while self.graph.block(head).get_parent() != Some(self.graph_id) {
+                head = match self.graph.block(head).get_parent() {
+                    Some(p) => p,
+                    None => break,
+                };
+            }
+            if head == bl {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Attempt to apply BlockIf where the body does not exit (C++
     /// `CollapseStructure::ruleBlockIfNoExit`, `blockaction.cc:1481`).
     fn rule_block_if_no_exit(&mut self, bl: BlockId) -> bool {
@@ -3087,7 +3114,26 @@ impl<'a> CollapseStructure<'a> {
                     order.join(" ")
                 );
             }
-            while index < self.size() {
+            // (kuna, `option loopcondhoist`) First-match in component order puts
+            // a loop head ahead of the blocks in its own body, and folding the
+            // head's terminal exit arm into a BlockIf drops the head to one
+            // out-edge, after which `rule_block_while_do` can never match it and
+            // the loop is emitted as `while(true) { if (!C) <leave>; BODY; }`.
+            // Give the non-heads a pass first: once a body block folds, the body
+            // collapses to a single back-edge clause and the head test hoists
+            // into the `while` header on its own.
+            if self.loop_cond_hoist {
+                while index < self.size() {
+                    let bl = self.block_at(index);
+                    if !self.ifnoexit_is_loop_head(bl) && self.rule_block_if_no_exit(bl) {
+                        fullchange = true;
+                        break;
+                    }
+                    index += 1;
+                }
+                index = 0;
+            }
+            while !fullchange && index < self.size() {
                 let bl = self.block_at(index);
                 if self.rule_block_if_no_exit(bl) {
                     fullchange = true;
@@ -3864,6 +3910,7 @@ impl Action for ActionBlockStructure {
         let mut exitleaf_facts = crate::p8_structure::kuna_ifnoexit::ExitLeafFacts::default();
         let dbg_ifne = crate::p8_structure::kuna_ifnoexit::trace_enabled();
         let guard_arm = data.get_arch().guard_arm;
+        let loop_cond_hoist = data.get_arch().loop_cond_hoist;
         let want_addr = dbg_ifne || guard_arm;
         let nbb = data.bblocks_get_size();
         for i in 0..nbb {
@@ -3930,7 +3977,7 @@ impl Action for ActionBlockStructure {
         let sroot = data.sblocks_root();
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_exitleaf_facts(exitleaf_facts, apply_index)
-            .with_ifnoexit_options(guard_arm)
+            .with_ifnoexit_options(guard_arm, loop_cond_hoist)
             .with_complex_blocks(complex_blocks)
             .with_condfold_sets(condfold_sets)
             .with_switch_blocks(switch_blocks)
