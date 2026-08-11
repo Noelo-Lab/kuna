@@ -667,6 +667,11 @@ pub struct ArchContext {
     /// clause instead of out-index 0.  Read by
     /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub guard_arm: bool,
+    /// (kuna) defer a live loop head in the deferred `ruleBlockIfNoExit` scan
+    /// (`loop_cond_hoist`, option `loopcondhoist`, opt-in default-off) so
+    /// `ruleBlockWhileDo` keeps the loop's head test.  Read by
+    /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
+    pub loop_cond_hoist: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -1001,6 +1006,7 @@ impl ArchContext {
             callsite_stack_args: true,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
+            loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)

@@ -42,7 +42,7 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_98() {
+fn settable_count_is_99() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -61,12 +61,13 @@ fn settable_count_is_98() {
     // +1 for `funcboundflow` (P2 fall-through bound at function entries).
     // +1 for `poolentry` (P1 ARM literal-pool inference).
     // +1 for `guardarm` (P8 ruleBlockIfNoExit arm tie-break).
-    assert_eq!(kuna_num_settables(), 98);
-    assert_eq!(SETTABLE_TABLE.len(), 98);
+    // +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
+    assert_eq!(kuna_num_settables(), 99);
+    assert_eq!(SETTABLE_TABLE.len(), 99);
 }
 
 #[test]
-fn tier_counts_are_20_core_43_transform_35_analysis() {
+fn tier_counts_are_20_core_44_transform_35_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -96,7 +97,8 @@ fn tier_counts_are_20_core_43_transform_35_analysis() {
     // transform 41 -> 42: +1 for `funcboundflow` (P2 fall-through bound at function entries).
     // analysis 34 -> 35: +1 for `poolentry` (P1 ARM literal-pool inference).
     // transform 42 -> 43: +1 for `guardarm` (P8 ruleBlockIfNoExit arm tie-break).
-    assert_eq!((core, transform, analysis), (20, 43, 35));
+    // transform 43 -> 44: +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
+    assert_eq!((core, transform, analysis), (20, 44, 35));
 }
 
 #[test]
@@ -286,7 +288,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_28_suppressed_for_44() {
+fn option_values_live_value_present_for_28_suppressed_for_45() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -443,6 +445,7 @@ fn option_values_live_value_present_for_28_suppressed_for_44() {
                             | "callsitestackargs"
                             | "paramcopyhoist"
                             | "guardarm"
+                            | "loopcondhoist"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -556,10 +559,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
-    // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row and
-    // guardarm's P8 row sit
+    // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row and the
+    // two P8 ifNoExit rows sit
     // mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 97);
+    assert_eq!(json.matches("},\n").count(), 98);
 }
 
 #[test]

@@ -331,12 +331,13 @@ mod tests {
             "tailcallentry",
             "paramcopyhoist",
             "poolentry",
-            // `guardarm` lands as an opt-in with its whole-O0 bidirectional sweep
-            // already recorded in its catalog row; preset membership makes it the
-            // default output, which is a DIV-recorded default change and gets its
-            // own PR (the 0/675 ablation and the speed number are the two things
-            // that PR has to add).
+            // `guardarm` / `loopcondhoist` land as opt-ins with their whole-O0
+            // bidirectional sweep already recorded in their catalog rows; preset
+            // membership makes them the default output, which is a DIV-recorded
+            // default change and gets its own PR (the 0/675 ablation and the speed
+            // number are the two things that PR has to add).
             "guardarm",
+            "loopcondhoist",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

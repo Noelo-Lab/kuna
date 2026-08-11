@@ -115,6 +115,32 @@ fprintf(...); exit(1);` — layout order gets all three right, because it is
 reading what the compiler recorded about the source rather than guessing from
 the callee.
 
+**`loopcondhoist` — which *block* the deferred scan folds first.** The deferred
+scan walks the live components in order and folds the first one whose terminal
+arm qualifies, then restarts the whole cascade from the top. A head-tested loop
+whose exit arm is a `return` is such a component — once `ActionReturnSplit` (or
+`returndup`) has given that return in-degree 1, `rule_block_if_no_exit` matches
+the loop head — and the head sits ahead of its own body in component order. So
+the head folds to `if (!C) return X;` and drops to one out-edge, at which point
+`rule_block_while_do` can never match it again: the loop is emitted as
+`while( true ) { if (!C) return X; BODY; }` where the source and IDA write
+`while (C) { BODY }`. Nothing later recovers it; the head test is now a
+statement, not a condition.
+
+The block carrying the loop's `break` is a candidate in the *same* scan, and
+folding it first is strictly better. Its clause is the loop's follower, which
+the rule already requires be reached from nowhere else (`size_in() == 1`), so
+absorbing it into the break arm is semantics-preserving by the rule's own
+precondition; the body then collapses to a single back-edge clause and the head
+test hoists into the `while`/`for` header on the next cascade pass with no new
+machinery and no relocated statement. `loopcondhoist on` (default-off opt-in)
+therefore gives the non-heads one pass of the scan to themselves — skipping
+components that are live loop heads, resolved through the collapsed graph the
+same way `LoopBody::update` resolves a recorded head — and falls back to the
+unrestricted upstream pass only when that finds nothing. A function with no
+loop-head candidate is byte-identical, and the scan still terminates on the same
+fixpoint because each fold strictly reduces the component count.
+
 **(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
 of the prospective `&&`/`||`) to be *non-complex*: `substrate/funcdata_block.rs

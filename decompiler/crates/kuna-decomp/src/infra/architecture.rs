@@ -424,6 +424,11 @@ pub struct Architecture {
     /// arms are eligible clauses; the earlier-addressed arm becomes the `if`
     /// clause instead of out-index 0.
     pub guard_arm: bool,
+    /// (kuna) Defer a live loop head in `CollapseStructure`'s deferred
+    /// `ruleBlockIfNoExit` scan while a non-head candidate remains (option
+    /// `loopcondhoist`, default-off opt-in), so `ruleBlockWhileDo` keeps the
+    /// loop's head test instead of emitting `while(true) { if (!C) ...; }`.
+    pub loop_cond_hoist: bool,
     /// (kuna) Region structurer cyclic loop-successor refinement: when
     /// `region_structure` is on, refine a multi-exit / multi-latch (or
     /// irreducible mid-entry) loop by virtualizing its *secondary* exits and
@@ -1231,6 +1236,7 @@ impl Architecture {
             callsite_stack_args: true,
             region_structure: true,
             guard_arm: false,
+            loop_cond_hoist: false,
             region_loop_refine: false,
             region_edge_order: false,
             cond_fold: 0,
@@ -1583,6 +1589,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p8_structure::kuna_ifnoexit::OptionGuardArm.apply(p1)?;
                 self.guard_arm = val;
+                Ok(msg)
+            }
+            "loopcondhoist" => {
+                let (val, msg) =
+                    crate::p8_structure::kuna_ifnoexit::OptionLoopCondHoist.apply(p1)?;
+                self.loop_cond_hoist = val;
                 Ok(msg)
             }
             "regionlooprefine" => on_off!(
@@ -2130,6 +2142,7 @@ impl Architecture {
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
+        ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
         ctx.cond_fold = self.cond_fold; // condfold
