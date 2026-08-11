@@ -70,6 +70,38 @@ fn json_count(stdout: &str) -> Option<usize> {
     stdout[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
 }
 
+/// Every entry address in a `functions` / `decompile-all` `--json` document, in
+/// document (address) order.  `"address_hex"` is a different key, so the `":"` in
+/// the pattern is what keeps it out.
+fn json_addresses(stdout: &str) -> Vec<u64> {
+    stdout
+        .match_indices("\"address\":")
+        .filter_map(|(i, m)| {
+            stdout[i + m.len()..]
+                .trim_start()
+                .split(|c: char| !c.is_ascii_digit())
+                .next()?
+                .parse()
+                .ok()
+        })
+        .collect()
+}
+
+/// Run `kuna <cmd> <bin> --mode reliable --json` and return its entry addresses,
+/// or `None` on a missing-`.sla` skip.
+fn run_json_addrs(cmd: &str, bin: &str, sp: &str, extra: &[&str]) -> Option<Vec<u64>> {
+    let mut args = vec![cmd, bin, "--json", "--sleighpath", sp, "--mode", "reliable"];
+    args.extend_from_slice(extra);
+    let (stdout, stderr, ok) = run_kuna(&args);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            return None;
+        }
+        panic!("kuna {cmd} failed on {bin}: {stderr}");
+    }
+    Some(json_addresses(&stdout))
+}
+
 /// The `error(nonzero,…)` boundary-overrun fixture (`noreturn_error_x86_64`):
 /// `err_fatal.constprop.0` @ 0x4011c0 ends in `call error(2,…)` and is immediately
 /// followed by `compute` @ 0x4011f0.
@@ -323,7 +355,9 @@ fn decompile_mode_requires_a_value() {
 /// `--option funcstart_patterns on` and beat `off`.
 ///
 /// Runs on `entrymain_arm`, where the pass finds three functions nothing else does
-/// (`0x3e0`, `0x410`, `0x3c520`): 10 entries `off` vs 13 by default. It used to run
+/// (`0x3e0`, `0x410`, `0x3c520`): 10 entries `off` vs 12 by default — 13 canonical,
+/// of which `0x3c520` falls outside every CODE section and so is listed by `kuna
+/// functions` but not decompiled. It used to run
 /// on the two-function `arm_thumb()` fixture, where the "extra" entries the
 /// assertion counted were in fact duplicate records for functions already found —
 /// so the fixture swap is what keeps this assertion meaningful once issue #197
@@ -463,6 +497,91 @@ fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
         default_cnt >= off_cnt,
         "raw Thumb-prologue seed must never discover FEWER than funcstart_patterns off \
          (default={default_cnt}, off={off_cnt})"
+    );
+}
+
+/// DIV-68: `kuna functions` takes the same discovery defaults as `kuna decompile-all`,
+/// so the inventory can never omit an entry the whole-binary run decompiles.
+///
+/// `decompile-all` reports the CODE-backed SUBSET of the canonical inventory
+/// `functions` prints, so every address the former decompiles must appear in the
+/// latter.  Under `--mode reliable` on a non-x86-64 binary that invariant used to be
+/// inverted: the DIV-20 `funcstart_patterns`/`aif` defaults (and the Listing that
+/// gates them) were bundled behind the same flag as the DIV-15 Listing default, which
+/// `functions` deliberately declined — so `entrymain_arm` listed 10 entries while
+/// `decompile-all` decompiled 12, `0x3e0` and `0x410` among them.  On real firmware
+/// the same hole read as `1` of `5,797` (stripped betaflight STM32F405).
+#[test]
+fn arm_functions_inventory_covers_every_decompile_all_entry() {
+    let bin = arm_entrymain();
+    let sp = specs();
+    let Some(inventory) = run_json_addrs("functions", &bin, &sp, &[]) else {
+        eprintln!("arm functions parity: skipping (no `.sla`; run `make specs`)");
+        return;
+    };
+    let decompiled =
+        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]).expect("second run");
+
+    let missing: Vec<u64> =
+        decompiled.iter().copied().filter(|a| !inventory.contains(a)).collect();
+    assert!(
+        missing.is_empty(),
+        "`kuna functions` must list every entry `decompile-all` decompiles; missing {:x?} \
+         (inventory={}, decompiled={})",
+        missing,
+        inventory.len(),
+        decompiled.len()
+    );
+    // The two entries only the prologue matcher finds — the concrete pre-fix miss.
+    for want in [0x3e0u64, 0x410] {
+        assert!(
+            inventory.contains(&want),
+            "the ARM inventory is missing the funcstart_patterns discovery 0x{want:x}: {:x?}",
+            inventory
+        );
+    }
+    // The injection fired: the default inventory equals the explicit bundle.
+    let explicit = run_json_addrs(
+        "functions",
+        &bin,
+        &sp,
+        &["--option", "listing", "on", "--option", "funcstart_patterns", "on", "--option",
+          "aif", "on"],
+    )
+    .expect("third run");
+    assert_eq!(
+        inventory, explicit,
+        "the non-x86-64 `functions` default must equal the explicit discovery bundle"
+    );
+}
+
+/// DIV-68, the other side: x86-64 enumeration is untouched.
+///
+/// The discovery bundle is non-x86-64-only and the Listing is measured entry-neutral
+/// on x86-64, so `kuna functions` there must still inject nothing — same inventory as
+/// an explicit `listing off`, and still a superset of what `decompile-all` decompiles.
+#[test]
+fn x86_64_functions_inventory_is_unchanged_and_covers_decompile_all() {
+    let bin = fauxware();
+    let sp = specs();
+    let Some(inventory) = run_json_addrs("functions", &bin, &sp, &[]) else {
+        eprintln!("x86-64 functions parity: skipping (no `.sla`; run `make specs`)");
+        return;
+    };
+    let no_listing =
+        run_json_addrs("functions", &bin, &sp, &["--option", "listing", "off"]).expect("second run");
+    assert_eq!(
+        inventory, no_listing,
+        "x86-64 `kuna functions` must not build the Listing — the DIV-15 default is the \
+         decompiling surfaces'"
+    );
+    let decompiled =
+        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]).expect("third run");
+    let missing: Vec<u64> =
+        decompiled.iter().copied().filter(|a| !inventory.contains(a)).collect();
+    assert!(
+        missing.is_empty(),
+        "`kuna functions` must list every entry `decompile-all` decompiles; missing {missing:x?}"
     );
 }
 

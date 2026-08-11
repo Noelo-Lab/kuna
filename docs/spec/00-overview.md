@@ -135,9 +135,15 @@ Four front-ends drive one engine assembly:
   pipeline drive catches un-ported-seam panics, and the render/variable
   extraction is wrapped in its own `catch_unwind` so a printer invariant cannot
   discard the functions already decompiled. `kuna functions` is enumeration
-  only; under concrete `reliable`/`fast` it keeps the Listing off, while an
-  auto-selected `aggressive` preset intentionally enables the broader analysis
-  even for inventory.
+  only, but it enumerates what `decompile-all` would decompile: both surfaces
+  take the same driver discovery defaults, so on a stripped non-x86-64 binary
+  the inventory is built with `funcstart_patterns`, `aif`, and the Listing that
+  gates them, exactly as a whole-binary run is (DIV-68). What the inventory
+  surface does not take is the Listing on an architecture where the Listing
+  discovers nothing: on x86-64 it is the decompiling surfaces' default alone,
+  because there it changes no-return facts and therefore emitted C, never the
+  entry set. An explicit `--option`, and any preset that names one of these
+  options, still wins on either surface.
 
   The full callable-symbol inventory these surfaces share is
   `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::function_entries_canonical)`,
@@ -253,15 +259,27 @@ printf-heavy whole binary. `formatstring` is therefore no longer in the
 prescribed outcome — so the shipped default runs no second decompile and both
 surfaces deliver the same C when the option is given (DIV-66).
 
-(kuna) **Surface defaults.** `decompile-all` injects two driver-level defaults
+(kuna) **Surface defaults.** The whole-binary drivers inject their defaults
 before the option pass (`decompiler/crates/kuna-cli/src/decompile_all.rs
-(load_program)`): `option listing on` (DIV-15 — without the Listing the
+(load_program)`), and which bundle a surface takes is named at its one call site
+rather than inferred: `option listing on` (DIV-15 — without the Listing the
 default-on no-return propagation is a structural no-op, and a stripped binary's
 unnamed exit wrapper swallows every following function into its caller), and
-`option funcstart_patterns on` for non-x86-64 objects only (DIV-20 — the
-prologue-pattern pass is the primary discovery source where the x86-64 scan
-oracle does not apply). Both yield to an explicit caller option; neither touches
-the engine default or the console/datatest surfaces.
+`option funcstart_patterns on` plus `option aif on` for non-x86-64 objects only
+(DIV-20 — the prologue-pattern pass and the aggressive gap-walk are the primary
+discovery sources where the x86-64 scan oracle does not apply).
+
+The discovery bundle belongs to every surface, `kuna functions` included
+(DIV-68). Discovery passes exist to add entries, so an inventory command that
+declined them reported an entry set the whole-binary command contradicted —
+`decompile-all` decompiled functions `functions` did not list. Because both
+non-x86-64 passes read the Listing's code units and are inert without it, the
+Listing is part of that bundle and not separable from it. The Listing-only
+default remains the decompiling surfaces': on x86-64 it is measured entry-neutral,
+so building it for enumeration would buy nothing and cost a whole-program decode.
+Every injection yields to an explicit caller option — the driver skips it whenever
+the caller (or the resolved preset) names that option at all — and none of them
+touches the engine default or the console/datatest surfaces.
 
 (kuna) **The watchdog.** `decompile-all --max-fn-seconds N` (`0` disables) is
 driver policy, not a phase-model option. An unfiltered whole-binary run in the

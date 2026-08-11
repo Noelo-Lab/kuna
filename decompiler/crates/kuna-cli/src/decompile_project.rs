@@ -42,7 +42,7 @@ use kuna_console::project::{
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
-use crate::decompile_all::{load_program, parse_args, resolve_targets, Args};
+use crate::decompile_all::{load_program, parse_args, resolve_targets, Args, DriverDefaults};
 
 /// `kuna decompile-project` entry point.
 pub fn run(argv: &[String]) -> i32 {
@@ -130,7 +130,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<(), String> {
             .join(format!("{file_name}.kuna")),
     };
 
-    let mut prog = load_program(args, /* default_listing= */ true)?;
+    let mut prog = load_program(args, DriverDefaults::Decompile)?;
     // Per-function watchdog — same driver policy as `decompile-all` (10 s for
     // an unfiltered fast export, 120 s otherwise, 0 disables): a non-converging
     // function becomes its own error record instead of hanging the export.
