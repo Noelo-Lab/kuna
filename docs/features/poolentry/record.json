@@ -1,0 +1,141 @@
+{
+  "opportunity": "decbench:arm-entry-granularity step 5 (PROPOSAL PR #239) - the literal-pool sub-class, measured as a PRECISION defect with a recall side-effect",
+  "test_name": "kuna-analysis entry recall + precision, 98 stripped ARM images (91 unique by md5) from the decbench full_run corpus, 48,553 DWARF ground-truth addresses with the Thumb bit masked off low_pc and high_pc",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_poolentry_le32",
+  "selector": "sub_800014c",
+  "func_addr": "0x800014c",
+  "angr_version": null,
+  "option": "poolentry",
+  "flag": "analysis_poolentry",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "Ghidra's reference analyzer defines pc-relative literal targets as DATA before AIF runs, so the pool is never an undefined gap there; decbench O0/O2 betaflight, cleanflight, crazyflie, u-boot; step 5 of the arm-entry-granularity sequence, PR #239",
+  "default_on": false,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "baseline": {
+    "command": "kuna functions <stripped> --json --mode aggressive --option cortexmvectors on --option ptrentry on --option tailcallentry on",
+    "entries": 59406,
+    "note": "Steps 1-3 of the sequence are all ON in the baseline. Measuring against bare `aggressive` re-banks merged work (betaflight O0 is 5,798 bare vs 6,032 with steps 1-3)."
+  },
+  "recall": {
+    "shipped_config": {
+      "images": 98,
+      "ground_truth": 48553,
+      "entries_before": 59406,
+      "entries_after": 55377,
+      "new_entries": 191,
+      "new_entries_ground_truth": 188,
+      "precision_pct": 98.4,
+      "new_entries_splitting_a_real_body": 1,
+      "new_entries_outside_any_dwarf_body": 2,
+      "entries_lost": 0,
+      "ground_truth_entries_lost": 0,
+      "entries_removed": 4220,
+      "ground_truth_entries_removed": 0,
+      "removed_strictly_inside_a_real_body": 4218,
+      "bodies_made_unreachable": 0,
+      "bodies_newly_reachable": 17,
+      "recall_before": 45372,
+      "recall_after": 45560
+    },
+    "by_isa": {
+      "cortex_m_thumb": {
+        "ground_truth": 43809,
+        "recall_before_pct": 97.25,
+        "recall_after_pct": 97.43,
+        "entries_before": 55250,
+        "entries_after": 51219,
+        "share_of_reported_that_are_real_before_pct": 77.1,
+        "share_of_reported_that_are_real_after_pct": 83.3
+      },
+      "a32_uboot": {
+        "ground_truth": 4744,
+        "recall_before_pct": 58.35,
+        "recall_after_pct": 60.65,
+        "new_entries": 109,
+        "new_entries_ground_truth": 109,
+        "precision_pct": 100.0,
+        "splits": 0,
+        "note": "The first thing in the whole #239 sequence to move u-boot at all; steps 1-3 move it by zero."
+      }
+    },
+    "configuration_ablation": [
+      {"arm": "additive, no bridging, INCOMPLETE literal set", "new": 203, "gt_pct": 89.7, "lost": 0, "splits": 19},
+      {"arm": "additive, 1-word bridging, incomplete literal set", "new": 199, "gt_pct": 95.0, "lost": 0, "splits": 8},
+      {"arm": "additive, no bridging, complete literal set", "new": 191, "gt_pct": 98.4, "lost": 0, "splits": 1},
+      {"arm": "suppression, UNPAIRED", "new": 0, "lost": 0, "splits": 0, "removed": 5069, "removed_gt": 0, "bodies_unreachable": 531},
+      {"arm": "suppression, paired, 1-word bridging", "new": 0, "lost": 0, "splits": 0, "removed": 3674, "removed_gt": 0, "bodies_unreachable": 62},
+      {"arm": "suppression, paired, no bridging", "new": 0, "lost": 0, "splits": 0, "removed": 3865, "removed_gt": 0, "bodies_unreachable": 0},
+      {"arm": "SHIPPED: both, paired, no bridging, complete literal set", "new": 191, "gt_pct": 98.4, "lost": 0, "splits": 1, "removed": 4220, "removed_gt": 0, "bodies_unreachable": 0}
+    ],
+    "off_target_inertness": {
+      "x86_64_elf": {"images": 20, "entries": 8171, "added": 0, "removed": 0},
+      "i386_pe": {"images": 8, "entries": 1405, "added": 0, "removed": 0},
+      "note": "Re-measured on the shipping build with `--option listing on --option aif on` forced. x86-64 RIP-relative loads target .rodata rather than .text interstices, and i386 has no PC-relative addressing at all, so the predicate is vacuous by ISA."
+    },
+    "emitted_c": {
+      "betaflight_bodies_byte_identical": "199 of 199",
+      "sample": "120 immediate successors of removed phantoms plus 80 random survivors, one `decompile-all --addr` load per arm"
+    }
+  },
+  "disclosed": {
+    "split": {
+      "image": "O2-noinline betaflight_STM32F405",
+      "address": "0x8069c20",
+      "containing_function": "SCSI_RequestSense @ 0x8069c1c",
+      "distance": 4,
+      "cause": "A literal reference resolves onto the function's own first word, which the Listing never decoded, so the inference reads those four bytes as a pool.",
+      "rejected_guard": "Refusing to emit at a known branch target removes it and costs 108 of 189 recovered ground-truth entries - dominated."
+    },
+    "fabrications_outside_any_body": [
+      {"image": "O2 crazyflie cf2.elf", "address": "0x8006a30", "what": "zero padding between rand's pool and strlen, in no DWARF body"},
+      {"image": "O2 crazyflie firmware.elf", "address": "0x8006a30", "what": "the same bytes; cf2.elf and firmware.elf are byte-identical"}
+    ]
+  },
+  "speed": {
+    "samples": 3,
+    "units": "s (min of 3, interleaved)",
+    "budget_pct": 5.0,
+    "rows": [
+      {"surface": "kuna functions (analysis tier)", "binary": "betaflight O0 (Thumb)", "off": 12.48, "on": 14.27, "delta_pct": 14.3},
+      {"surface": "kuna functions (analysis tier)", "binary": "u-boot O2 (A32)", "off": 4.72, "on": 6.25, "delta_pct": 32.4},
+      {"surface": "kuna functions (analysis tier)", "binary": "gzip O0 (x86-64)", "off": 0.65, "on": 0.66, "delta_pct": 1.5},
+      {"surface": "kuna decompile-all", "binary": "betaflight O0", "off": 262.8, "on": 220.7, "delta_pct": -16.0}
+    ],
+    "note": "The analysis-tier cost is real and OVER the 5% budget on ARM: the pass re-decodes every gap-discovered body to harvest its literal references. It is net-positive only because the retired phantoms stop being decompiled - an ARM image with pools but no phantoms pays the cost with no benefit. The decompile-all figure is a single shot on a contended box; the direction is structural (771 phantom functions on betaflight O0 at ~0.5 s each) but the magnitude is not a min-of-N."
+  },
+  "gates": {
+    "make test": "PARITY OK 675/675",
+    "make test-stages": "PARITY OK 405/405",
+    "make rust-test": "green",
+    "make check-spec": "green (strict)",
+    "kuna catalog --check": "catalog OK"
+  },
+  "files": {
+    "pass": "decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_poolentry.rs",
+    "wiring": "decompiler/crates/kuna-analysis/src/passes.rs",
+    "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_poolentry_le32",
+    "fixture_generator": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_poolentry_le32.py",
+    "e2e": "decompiler/crates/kuna-console/tests/verify_poolentry.rs",
+    "spec": "docs/spec/01-program-prep.md"
+  },
+  "catalog_counts": {
+    "settables": "95 -> 96",
+    "analysis_tier": "34 -> 35",
+    "catalog_json_rows": "95 -> 96",
+    "bytecompat_fixture": "95 -> 96",
+    "note": "Derived from a fresh `phase catalog` capture on a green build, not by arithmetic. tests/stages/kuna-catalog.xml is untouched: its assertions are exact-name matches on other options, ranges, or counts of `source_decompiler: angr` / `structure-recovery` / `opt-in-tool`, none of which this row is. kuna-base/src/xml.rs is untouched (no stages XML added), and docs/baseline-stages.json is unchanged."
+  },
+  "div_row": null,
+  "notes": "Default-OFF, so no DIV row (default output is byte-identical; make test / make test-stages PARITY OK). Parked in modes.rs UNEVALUATED next to its three sequence siblings: cortexmvectors, ptrentry, tailcallentry and poolentry COMPOSE, every number here is measured on top of the other three, and preset membership should be one joint evaluation rather than four.",
+  "residual_risks": [
+    "The corpus is 91 unique images from one benchmark, and there is exactly ONE A32 image (u-boot), so the whole A32 result rests on it. decbench has no aarch64/MIPS/PPC/RISC-V image at all; inertness there is reasoned (those targets route constants to .rodata/.sdata), not measured.",
+    "Suppression is applied to AIF's accept list, not to the fully merged entry set. The fdeinterior seam in kuna-console/src/engine.rs is the architecturally correct home and would let the pairing test see entries from ptrentry/tailcallentry/cortexmvectors; that variant is unmeasured and is a follow-up, not this PR.",
+    "fdeinterior's warrant does not transfer: an FDE is an extent the compiler wrote into the binary, an inferred pool is a guess. The 0-of-4,220 figure is measured against DWARF from unstripped twins that the runtime predicate does not have.",
+    "The merge class is untouched and is ~3x larger: 3,255 of 5,491 interior ground-truth misses corpus-wide have a containing entry that IS a real DWARF entry. Nothing here reaches it, and no claim that ARM entry recall is closed survives that factor.",
+    "i386 PE has a separate, unreached defect: 55 AIF-only entries, 23 of them (41.8%) strictly inside a real body, with no fdeinterior protection because that pass is ELF-only. Not fixed, not broken, not covered."
+  ]
+}

@@ -42,7 +42,7 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_95() {
+fn settable_count_is_97() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -59,12 +59,13 @@ fn settable_count_is_95() {
     // +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable recovery, DIV-64).
     // +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
     // +1 for `funcboundflow` (P2 fall-through bound at function entries).
-    assert_eq!(kuna_num_settables(), 96);
-    assert_eq!(SETTABLE_TABLE.len(), 96);
+    // +1 for `poolentry` (P1 ARM literal-pool inference).
+    assert_eq!(kuna_num_settables(), 97);
+    assert_eq!(SETTABLE_TABLE.len(), 97);
 }
 
 #[test]
-fn tier_counts_are_20_core_42_transform_34_analysis() {
+fn tier_counts_are_20_core_42_transform_35_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -92,7 +93,8 @@ fn tier_counts_are_20_core_42_transform_34_analysis() {
     // recovery, DIV-64).
     // analysis 33 -> 34: +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
     // transform 41 -> 42: +1 for `funcboundflow` (P2 fall-through bound at function entries).
-    assert_eq!((core, transform, analysis), (20, 42, 34));
+    // analysis 34 -> 35: +1 for `poolentry` (P1 ARM literal-pool inference).
+    assert_eq!((core, transform, analysis), (20, 42, 35));
 }
 
 #[test]
@@ -362,6 +364,10 @@ fn option_values_live_value_present_for_28_suppressed_for_42() {
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
         "tailcallentry",
+        // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
+        // live reader (read console-side via kuna_live_value), same as
+        // `tailcallentry` above. Default-off, ARM-only.
+        "poolentry",
         "gopclntab",
         // (kuna) Mach-O Objective-C metadata recovery — an analysis-pass gate with
         // no codegen live reader (read console-side via kuna_live_value), like the
@@ -547,9 +553,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
-    // row, libcsigs' S1 row and funcboundflow's S2 row sit mid-table, so they do
-    // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 95);
+    // row, libcsigs' S1 row, funcboundflow's S2 row and poolentry's S1 row sit
+    // mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 96);
 }
 
 #[test]

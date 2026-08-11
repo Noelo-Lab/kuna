@@ -741,6 +741,22 @@ pub struct Architecture {
     /// Listing-tier: a no-op without `--option listing on` and on every other
     /// architecture.
     pub analysis_ptrentry: bool,
+    /// (kuna) Reconstruct the ARM PC-relative literal pools the Listing never
+    /// defines as data, and use them to fix the two defects that follow
+    /// (`poolentry`); default **off** (output-changing: it both adds and relocates
+    /// discovered functions). The AIF gap walk slides its cursor one byte at a time
+    /// with no instruction-alignment filter, so a literal pool — data, hence an
+    /// undefined gap — is probed byte by byte; on STM32 Thumb the high halfword of
+    /// an `0x2000_xxxx` SRAM constant decodes as `movs r0,#0` and clears the
+    /// fingerprint gate, so the accepted entry lands one halfword before the real
+    /// function and the cursor then jumps past the body. When on, the pools are
+    /// recovered from the literal references that already exist and drive two
+    /// consumers: an additive entry fact at each pool end that abuts a return, and
+    /// suppression of an AIF accept inside a pool whose end carries a replacement
+    /// entry (a MOVE, never a delete). ARM-only in effect and Listing-tier: a no-op
+    /// without `--option listing on`, without `aif`, and on every architecture whose
+    /// constants live in `.rodata` rather than in `.text` interstices.
+    pub analysis_poolentry: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
@@ -1252,6 +1268,7 @@ impl Architecture {
             analysis_funcstart_patterns: false,
             analysis_cortexmvectors: false,
             analysis_ptrentry: false,
+            analysis_poolentry: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -1410,6 +1427,7 @@ impl Architecture {
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
+        self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -1689,6 +1707,12 @@ impl Architecture {
             }
             "ptrentry" => {
                 on_off!(analysis_ptrentry, "Pointer-referenced ARM function entries")
+            }
+            "poolentry" => {
+                on_off!(
+                    analysis_poolentry,
+                    "ARM literal-pool inference (entry recall + AIF phantom suppression)"
+                )
             }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
