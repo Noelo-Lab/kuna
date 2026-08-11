@@ -68,10 +68,19 @@ Decisions baked in:
    braces, inline `// slug` warnings. Textual diffs between the stored and a fresh run
    are expected and mean nothing. **Judge structure**: gotos, labels, loop shape, switch
    vs if-cascade, function boundary, missing blocks, wrong types.
-2. **Mode presets did not exist when the benchmark ran.** It used shipped defaults plus
-   an injected `option listing on` — which is exactly today's `--mode reliable`. Today a
-   no-flag run is `--mode auto`, which picks from the input's byte length: `aggressive`
-   below 500 KiB, `reliable` up to 2 MiB, `fast` at 2 MiB and above.
+2. **Mode presets did not exist when the benchmark ran — and the scored column is
+   `aggressive`, not `reliable`.** This file said the opposite until round 4 checked the
+   backend: `decbench/decompilers/raw/kuna_raw.py`'s `_build_command` builds
+   `kuna decompile-all <bin> --json --max-fn-seconds 120`, appends `--mode` **only** when
+   `DECBENCH_KUNA_MODE` is set (it is not), and appends `--option` only from
+   `config.extra_options`, which is empty. There is no injected `option listing on`
+   anywhere in it. So the benchmark ran `--mode auto`, which picks from the input's byte
+   length: `aggressive` below 500 KiB, `reliable` up to 2 MiB, `fast` at 2 MiB and above.
+   **Consequence: an aggressive-only regression is *inside* the published number**, and
+   any triage that assumes `reliable` mis-attributes it — round 4's Rank 5
+   (`regionedgeorder`, on only because `AGGRESSIVE_OVERRIDES` turns it on) is exactly that
+   case. Reproduce in `auto`/`aggressive` first; run `reliable` as the contrast, not the
+   baseline.
    **On this corpus `fast` never happens.** The largest stripped benchmark binary is O0
    `bash` at 1,513,904 bytes (1.44 MiB), so across all 803 binaries `auto` resolves to
    **768 aggressive / 35 reliable / 0 fast**. The 35 are every `bash`, `sshd`, `ssh`,
@@ -217,6 +226,34 @@ python3 -m scripts.decbench.triage --case <case-id> --also ida,ghidra
 # 6. STATUS — where the campaign stands
 python3 -m scripts.decbench.status
 ```
+
+### The bidirectional sweep is the campaign's default instrument
+
+`rescore` prices ONE mined case. That is the wrong unit for anything that changes a
+default, because the mining pipeline only ever produces one direction of evidence: it
+mines losses and never prices the wins the same change destroys. At O0 the net deficit
+against IDA is **129 functions** while every round-4 cluster is 300–430 functions wide,
+so a change that flips 400 each way moves the scoreboard by zero and nothing upstream of
+this tool would show it.
+
+```bash
+~/.virtualenvs/decbench/bin/python -m scripts.decbench.optsweep \
+    --option <name> <value> --opt O0 --opt O2 --opt O2-noinline \
+    --workers 16 --joern-workers 8 --out docs/features/<slug>/sweep
+#   -> report.md   headline + BOTH directions + per project/arch
+#   -> moved.csv   every function that moved, by name, both directions
+#   -> changed.txt the standing-requirement-8 diff set
+#   -> rows.json   per-function, for ad-hoc partitioning
+```
+
+It carries three harness controls, and a run that fails any of them is not a
+measurement: functions the pass never fires on must score identically in both arms,
+banner-only diffs must score identically, and the ON arm must reproduce the published
+column. Joern is JVM-heavy — cap `--joern-workers` at ~8 and watch `free -g`, especially
+alongside concurrent cargo builds.
+
+This is what standing requirement 8 looks like as a gate rather than as prose. Use it for
+every default flip and every gate on a default-ON pass.
 
 ### Triage buckets (in `cases.json`, computed from cross-decompiler consensus)
 
