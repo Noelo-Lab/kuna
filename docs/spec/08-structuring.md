@@ -408,7 +408,17 @@ warning at the guard's CBRANCH. Failure mode: anything that is not a clean
 is `preferComplement`'s job; result `2` cannot be flipped). Option
 `branchflip`, default flipped on by DIV-14 (which lists the datatest files
 that pin the pre-flip polarity via per-test opt-outs); registered at the
-`readability-rewrites` subphase in `phases.toml`.
+`readability-rewrites` subphase in `phases.toml`. Invariant: the flip is a
+*pure* arm swap, so the multiset of leaf components reachable under the
+`BlockIf` is identical before and after it — a debug-build assertion in
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::block_if_flip_negated_guard)` checks exactly that, and polices the
+whole arm-rearranging family against a dropped or re-parented component. What
+the swap *does* change is which arm the printer sees in the else slot; when
+that arm is an `if` whose condition component carries statements, the `else if`
+collapse governs the result, and its ownership rule is chapter 09's
+*pending-brace ownership* (a nested frame that steals the collapse hoists the
+arm's body onto the then-path).
 
 ## 8.2 The region structurer (angr)
 

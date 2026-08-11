@@ -1,0 +1,92 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench campaign case O0-cleanflight-cleanflight_DALRCF405-serialUART (8a):
+    kuna emitted SEMANTICALLY WRONG C - a statement escaped an `else` arm and
+    executed on the then-path too.
+
+    The source shape (cleanflight serial_uart_stm32f4xx.c:240, and again in
+    iproute2 ipnetns.c:829) is an if/else whose else arm holds two sibling
+    `if` statements:
+
+        if (opts &amp; 8) { p[0] = x; }
+        else            { if (mode &amp; 2) p[1] = x;
+                          if (mode &amp; 1) p[2] = y; }
+
+    S8 structuring collapses that arm into ONE BlockIf whose *condition block*
+    is a BlockList leading with the first `if` statement - the standard Ghidra
+    "condition block carries statements" shape.  The default-on `branchflip`
+    pass then swaps the arms (the guard is the equality-to-zero form), so that
+    statement-carrying BlockIf lands in the else slot and the printer takes the
+    `else if` collapse path.
+
+    The collapse is a lazy brace: emit_block_if registers a pending brace and
+    cancels it only if the clause's condition emitted nothing.  kuna's port
+    asked the emitter "is ANY brace pending" where C++ asks
+    `emit->hasPendingPrint(&amp;pendingBrace)` - pointer identity against the
+    frame's own brace (decompiler/cpp/printc.cc, emitBlockIf).  So the FIRST
+    nested `if` inside the arm's condition block grabbed the ancestor's brace,
+    cancelled it, and rendered itself as the `else if`; the arm's own `if`
+    header then printed on a fresh line at the PARENT's indent, hoisting its
+    body out of the `else`:
+
+        if (opts &amp; 8)      p[0] = x;
+        else if (mode &amp; 2) p[1] = x;
+        if (mode &amp; 1)      p[2] = y;     &lt;- escaped the else arm
+
+    On cleanflight serialUART that put IOInit(rxIO)/IOConfigGPIOAF(rxIO) on the
+    SERIAL_BIDIR path, which the Thumb code never takes (800bab6 branches to
+    the BIDIR body at 800bb06, which falls straight through to the join at
+    800bb22, never reaching the RX guard at 800bada).
+
+    Stage model: S8 structure recovery (`branchflip` arm swap,
+    substrate/funcdata_block.rs block_if_flip_negated_guard) with the
+    rendering consequence in S9 emission (p9_emit/printc.rs emit_block_if
+    pending-brace ownership).  The tree is NOT corrupted by the swap - a
+    debug-only leaf-multiset assertion in block_if_flip_negated_guard now
+    polices that - the defect was entirely in the printer.
+
+    No option: this is a strict correctness fix (emitting a statement on a path
+    the machine code never takes is never desired), so `branchflip` stays
+    default-ON and the fix is unconditional.
+
+    armswap (0x100000):
+      int armswap(int opts,int mode,int x,int y,int *p) {
+          if (opts &amp; 8) p[0] = x;
+          else { if (mode &amp; 2) p[1] = x; if (mode &amp; 1) p[2] = y; }
+          return x + y; }
+      gcc -O0 x86-64.
+
+    Pass 1 (default, branchflip ON): the arms are swapped to the positive
+    guard AND the whole else arm stays nested - `else {` opening a real block
+    that holds both sibling ifs (asserts #1/#2/#3).
+    Pass 2 (option branchflip off): the un-flipped reference shape, both
+    siblings nested under the negated guard (assert #4).
+    Asserts #5/#6 are the regression guards: the `else if` collapse must not
+    appear at all in this function, and no sibling `if` may sit at the outer
+    (2-space) statement indent in either pass.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+f30f1efa554889e5897dfc8975f88955f4894df04c8945e88b45fc83e00885c0740b488b45e8
+8b55f48910eb2e8b45f883e00285c0740d488b45e8488d50048b45f489028b45f883e00185c0
+740d488b45e8488d50088b45f089028b55f48b45f001d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="armswap"/>
+</binaryimage>
+<script>
+  <com>lo fu armswap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option branchflip off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="BRANCHFLIP-ARMSWAP #1: the swapped guard reads positively (the flip still happens)" min="1" max="1">if \(a0 &amp; 8\) // branch-flip</stringmatch>
+<stringmatch name="BRANCHFLIP-ARMSWAP #2: the else arm opens a real block, not an else-if collapse" min="1" max="1">  else \{$
+^ {4}if \(a1 &amp; 2\)$</stringmatch>
+<stringmatch name="BRANCHFLIP-ARMSWAP #3: the second sibling if stays inside the arm in both passes" min="2" max="2">^ {4}if \(a1 &amp; 1\)$</stringmatch>
+<stringmatch name="BRANCHFLIP-ARMSWAP #4: branchflip off is the un-flipped reference, both siblings nested" min="1" max="1">if \(!\(a0 &amp; 8\)\) \{</stringmatch>
+<stringmatch name="BRANCHFLIP-ARMSWAP #5: no else-if collapse of a statement-carrying arm" min="0" max="0">else if</stringmatch>
+<stringmatch name="BRANCHFLIP-ARMSWAP #6: no sibling if escapes to the outer statement indent" min="0" max="0">^ {2}if \(a1 &amp; 1\)$</stringmatch>
+</decompilertest>
