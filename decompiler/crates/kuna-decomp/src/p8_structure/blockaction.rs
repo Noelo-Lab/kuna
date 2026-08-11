@@ -1502,6 +1502,18 @@ pub struct CollapseStructure<'a> {
     /// would be swallowed into a `while(...)` header.  [`is_complex`](Self::is_complex)
     /// reports these as complex unconditionally.
     condfolded: std::collections::BTreeSet<BlockId>,
+    /// (kuna) Per-`bblocks`-block facts the `BlockCopy` mirror cannot read for
+    /// itself — the artificial-halt type of a block's trailing `RETURN` and its
+    /// start address.  Precomputed by `ActionBlockStructure::apply`; see
+    /// [`crate::p8_structure::kuna_ifnoexit`].
+    exitleaf_facts: crate::p8_structure::kuna_ifnoexit::ExitLeafFacts,
+    /// (kuna) `KUNA_RS_DEBUG` decision trace for `rule_block_if_no_exit`.
+    dbg_ifne: bool,
+    /// (kuna) `ActionBlockStructure::apply` invocation index, for the trace.
+    dbg_apply: u32,
+    /// (kuna, `option guardarm`) break a two-eligible-arm `ruleBlockIfNoExit`
+    /// tie by source layout instead of by out-index.
+    guard_arm: bool,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1524,7 +1536,31 @@ impl<'a> CollapseStructure<'a> {
             switch_case_edges: std::collections::BTreeMap::new(),
             condfold_sets: Default::default(),
             condfolded: std::collections::BTreeSet::new(),
+            exitleaf_facts: Default::default(),
+            dbg_ifne: crate::p8_structure::kuna_ifnoexit::trace_enabled(),
+            dbg_apply: 0,
+            guard_arm: false,
         }
+    }
+
+    /// (kuna) Install the `guardarm` verdict.  Builder method; hand-built
+    /// unit-test graphs keep the upstream-identical default.
+    pub fn with_ifnoexit_options(mut self, guard_arm: bool) -> Self {
+        self.guard_arm = guard_arm;
+        self
+    }
+
+    /// (kuna) Install the precomputed exit-leaf facts (artificial-halt type and
+    /// start address per `bblocks` block).  Builder method; hand-built unit-test
+    /// graphs keep the empty default.
+    pub fn with_exitleaf_facts(
+        mut self,
+        facts: crate::p8_structure::kuna_ifnoexit::ExitLeafFacts,
+        apply_index: u32,
+    ) -> Self {
+        self.exitleaf_facts = facts;
+        self.dbg_apply = apply_index;
+        self
     }
 
     /// (kuna, `option condfold`) install the precomputed admission-rule verdicts (see
@@ -2461,9 +2497,136 @@ impl<'a> CollapseStructure<'a> {
         Ok(false)
     }
 
+    /// (kuna, trace) One-line description of a structuring node: index, type,
+    /// the start address of its front leaf, and its in/out degree.
+    fn dbg_node(&self, bl: BlockId) -> String {
+        let b = self.graph.block(bl);
+        let ty = format!("{:?}", b.get_type());
+        let addr = self
+            .graph
+            .get_front_leaf(bl)
+            .and_then(|lf| self.graph.block(lf).get_copy())
+            .and_then(|bb| self.exitleaf_facts.addr.get(&bb).copied())
+            .map(|a| format!("0x{a:x}"))
+            .unwrap_or_else(|| "?".to_string());
+        format!("#{}@{}:{} in={} out={}", b.get_index(), addr, ty, b.size_in(), b.size_out())
+    }
+
+    /// (kuna, trace) The artificial-halt type of a structuring node's exit leaf.
+    fn dbg_exit_halt(&self, bl: BlockId) -> String {
+        match self.graph.get_exit_leaf(bl).and_then(|lf| self.graph.block(lf).get_copy()) {
+            Some(bb) => crate::p8_structure::kuna_ifnoexit::halt_str(
+                self.exitleaf_facts.halt_type(bb),
+            ),
+            None => "noleaf".to_string(),
+        }
+    }
+
+    /// (kuna, trace) Is `bl` still a live loop head in the `loopbody` list?
+    fn dbg_loop_head(&self, bl: BlockId) -> String {
+        for lb in self.loopbody.iter() {
+            if lb.get_head() == Some(bl) {
+                return format!("yes(depth={})", lb.depth);
+            }
+        }
+        "no".to_string()
+    }
+
+    /// (kuna, trace) Would [`rule_block_while_do`](Self::rule_block_while_do)
+    /// fire on `bl` right now?  Read-only mirror of its predicate.
+    fn dbg_whiledo_would(&self, bl: BlockId) -> String {
+        let b = self.graph.block(bl);
+        if b.size_out() != 2
+            || b.is_switch_out()
+            || b.get_out(0) == bl
+            || b.get_out(1) == bl
+            || b.is_interior_goto_target()
+            || b.is_goto_out(0)
+            || b.is_goto_out(1)
+        {
+            return "no".to_string();
+        }
+        for i in 0..2 {
+            let cb = self.graph.block(bl).get_out(i);
+            let c = self.graph.block(cb);
+            if c.size_in() == 1 && c.size_out() == 1 && !c.is_switch_out() && c.get_out(0) == bl {
+                return format!("yes(i={i})");
+            }
+        }
+        "no".to_string()
+    }
+
+    /// Does out-edge `i` of `bl` satisfy `ruleBlockIfNoExit`'s clause test?
+    fn ifnoexit_arm_eligible(&self, bl: BlockId, i: int4) -> bool {
+        let clauseblock = self.graph.block(bl).get_out(i);
+        let c = self.graph.block(clauseblock);
+        // Nothing else must hit the clause, there must be no way out of it, and
+        // the edge must be a genuine decision edge.
+        c.size_in() == 1
+            && c.size_out() == 0
+            && !c.is_switch_out()
+            && self.graph.block(bl).is_decision_out(i)
+    }
+
+    /// The start address of the first leaf that executes inside a structuring
+    /// node — the node's position in the original code layout.
+    fn ifnoexit_arm_addr(&self, bl: BlockId) -> Option<u64> {
+        let leaf = self.graph.get_front_leaf(bl)?;
+        let bb = self.graph.block(leaf).get_copy()?;
+        self.exitleaf_facts.addr.get(&bb).copied()
+    }
+
+    /// (kuna, `option guardarm`) The order in which `ruleBlockIfNoExit` tries
+    /// the two arms.  Upstream is out-index order, which is arbitrary once
+    /// `negateCondition`'s `swapEdges` has re-oriented the block — and when
+    /// BOTH arms are eligible (both terminal, both in-degree 1) the choice is a
+    /// pure coin flip that decides whether the guard clause or the rest of the
+    /// function ends up inside the `if`.  With the option on, such a tie is
+    /// broken by code layout: the arm that lies EARLIER in the address space is
+    /// the clause, because an un-optimized compiler lays the taken clause of
+    /// `if (c) A; B;` out in front of `B`.  Ties only; a single eligible arm is
+    /// unaffected, so the vast majority of guards are untouched.
+    fn ifnoexit_arm_order(&self, bl: BlockId) -> [int4; 2] {
+        if !self.guard_arm {
+            return [0, 1];
+        }
+        if !self.ifnoexit_arm_eligible(bl, 0) || !self.ifnoexit_arm_eligible(bl, 1) {
+            return [0, 1];
+        }
+        let a0 = self.ifnoexit_arm_addr(self.graph.block(bl).get_out(0));
+        let a1 = self.ifnoexit_arm_addr(self.graph.block(bl).get_out(1));
+        match (a0, a1) {
+            (Some(x), Some(y)) if y < x => [1, 0],
+            _ => [0, 1],
+        }
+    }
+
     /// Attempt to apply BlockIf where the body does not exit (C++
     /// `CollapseStructure::ruleBlockIfNoExit`, `blockaction.cc:1481`).
     fn rule_block_if_no_exit(&mut self, bl: BlockId) -> bool {
+        if self.dbg_ifne
+            && self.graph.block(bl).size_out() == 2
+            && !self.graph.block(bl).is_switch_out()
+        {
+            eprintln!(
+                "[ifne] cand bl={} loophead={} whiledo_would={} goto=({},{})",
+                self.dbg_node(bl),
+                self.dbg_loop_head(bl),
+                self.dbg_whiledo_would(bl),
+                self.graph.block(bl).is_goto_out(0),
+                self.graph.block(bl).is_goto_out(1),
+            );
+            for i in 0..2 {
+                let cb = self.graph.block(bl).get_out(i);
+                eprintln!(
+                    "[ifne]   arm{} {} dec={} halt={}",
+                    i,
+                    self.dbg_node(cb),
+                    self.graph.block(bl).is_decision_out(i),
+                    self.dbg_exit_halt(cb),
+                );
+            }
+        }
         if self.graph.block(bl).size_out() != 2 {
             return false; // Must be binary condition
         }
@@ -2482,21 +2645,20 @@ impl<'a> CollapseStructure<'a> {
         if self.graph.block(bl).is_goto_out(1) {
             return false;
         }
-        for i in 0..2 {
+        for i in self.ifnoexit_arm_order(bl) {
             let clauseblock = self.graph.block(bl).get_out(i);
-            if self.graph.block(clauseblock).size_in() != 1 {
-                continue; // Nothing else must hit clause
-            }
-            if self.graph.block(clauseblock).size_out() != 0 {
-                continue; // Must be no way out of clause
-            }
-            if self.graph.block(clauseblock).is_switch_out() {
-                continue;
-            }
-            if !self.graph.block(bl).is_decision_out(i) {
+            if !self.ifnoexit_arm_eligible(bl, i) {
                 continue;
             }
 
+            if self.dbg_ifne {
+                eprintln!(
+                    "[ifne]   CHOSE i={} clause={} negate={}",
+                    i,
+                    self.dbg_node(clauseblock),
+                    i == 0
+                );
+            }
             if i == 0 {
                 // clause must be true out of bl
                 if self.negate_condition_rec(bl, true) {
@@ -2915,6 +3077,16 @@ impl<'a> CollapseStructure<'a> {
             // Applying IfNoExit too early can cause other (preferable) rules to miss.
             fullchange = false;
             let mut index = 0;
+            if self.dbg_ifne {
+                let order: Vec<String> =
+                    (0..self.size()).map(|i| self.dbg_node(self.block_at(i))).collect();
+                eprintln!(
+                    "[ifne] --- deferred scan (apply#{}) size={} order=[{}]",
+                    self.dbg_apply,
+                    self.size(),
+                    order.join(" ")
+                );
+            }
             while index < self.size() {
                 let bl = self.block_at(index);
                 if self.rule_block_if_no_exit(bl) {
@@ -3685,9 +3857,29 @@ impl Action for ActionBlockStructure {
         // recovered JumpTable in `jumpvec`.
         let mut switch_blocks: std::collections::BTreeMap<BlockId, usize> =
             std::collections::BTreeMap::new();
+        // (kuna) Per-block exit-leaf facts the BlockCopy mirror cannot read: the
+        // artificial-halt type of a trailing RETURN (`op_mark_halt`), which tells
+        // a no-return-callee halt apart from a genuine source `return`, and the
+        // block start address (trace only).
+        let mut exitleaf_facts = crate::p8_structure::kuna_ifnoexit::ExitLeafFacts::default();
+        let dbg_ifne = crate::p8_structure::kuna_ifnoexit::trace_enabled();
+        let guard_arm = data.get_arch().guard_arm;
+        let want_addr = dbg_ifne || guard_arm;
         let nbb = data.bblocks_get_size();
         for i in 0..nbb {
             let bb = data.bblocks_get_block(i);
+            if let Some(tail) = data.bb_op_tail(bb) {
+                if let Some(op) = data.obank().get(tail) {
+                    let ht = op.get_halt_type();
+                    if ht != 0 {
+                        exitleaf_facts.halt.insert(bb, ht);
+                    }
+                }
+            }
+            if want_addr {
+                let a = crate::block::block_get_start(&data.bblocks_ref().arena, bb);
+                exitleaf_facts.addr.insert(bb, a.get_offset());
+            }
             if data.bb_is_complex(bb) {
                 complex_blocks.insert(bb);
             }
@@ -3726,8 +3918,19 @@ impl Action for ActionBlockStructure {
             data,
             data.get_arch().cond_fold,
         );
+        let apply_index = crate::p8_structure::kuna_ifnoexit::next_apply_index();
+        if dbg_ifne {
+            eprintln!(
+                "[ifne] === func={} entry=0x{:x} apply#{} ===",
+                data.get_name(),
+                data.get_address().get_offset(),
+                apply_index
+            );
+        }
         let sroot = data.sblocks_root();
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
+            .with_exitleaf_facts(exitleaf_facts, apply_index)
+            .with_ifnoexit_options(guard_arm)
             .with_complex_blocks(complex_blocks)
             .with_condfold_sets(condfold_sets)
             .with_switch_blocks(switch_blocks)

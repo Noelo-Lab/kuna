@@ -661,6 +661,12 @@ pub struct ArchContext {
     /// primary structuring path; falls back to `CollapseStructure` on irreducible code).
     /// Read by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub region_structure: bool,
+    /// (kuna) source-layout tie-break for `ruleBlockIfNoExit`'s clause arm
+    /// (`guard_arm`, option `guardarm`, opt-in default-off).  When set and BOTH
+    /// out-arms are eligible clauses, the earlier-addressed arm becomes the `if`
+    /// clause instead of out-index 0.  Read by
+    /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
+    pub guard_arm: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -994,6 +1000,7 @@ impl ArchContext {
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
             region_structure: false,     // regionstructure (opt-in default-off)
+            guard_arm: false,            // guardarm (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)

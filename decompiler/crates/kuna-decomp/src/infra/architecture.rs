@@ -419,6 +419,11 @@ pub struct Architecture {
     /// Ghidra's `CollapseStructure` (option `regionstructure`, DIV-12 default-on:
     /// the primary structuring path; falls back to `CollapseStructure` on irreducible code).
     pub region_structure: bool,
+    /// (kuna) Source-layout tie-break for `CollapseStructure::ruleBlockIfNoExit`'s
+    /// clause arm (option `guardarm`, default-off opt-in).  Only fires when BOTH
+    /// arms are eligible clauses; the earlier-addressed arm becomes the `if`
+    /// clause instead of out-index 0.
+    pub guard_arm: bool,
     /// (kuna) Region structurer cyclic loop-successor refinement: when
     /// `region_structure` is on, refine a multi-exit / multi-latch (or
     /// irreducible mid-entry) loop by virtualizing its *secondary* exits and
@@ -1225,6 +1230,7 @@ impl Architecture {
             recover_lowered_switch: false,
             callsite_stack_args: true,
             region_structure: true,
+            guard_arm: false,
             region_loop_refine: false,
             region_edge_order: false,
             cond_fold: 0,
@@ -1571,6 +1577,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
                 self.region_structure = val;
+                Ok(msg)
+            }
+            "guardarm" => {
+                let (val, msg) =
+                    crate::p8_structure::kuna_ifnoexit::OptionGuardArm.apply(p1)?;
+                self.guard_arm = val;
                 Ok(msg)
             }
             "regionlooprefine" => on_off!(
@@ -2117,6 +2129,7 @@ impl Architecture {
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.region_structure = self.region_structure; // regionstructure
+        ctx.guard_arm = self.guard_arm; // guardarm
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
         ctx.cond_fold = self.cond_fold; // condfold
