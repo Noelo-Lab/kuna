@@ -3715,11 +3715,47 @@ impl Funcdata {
                 &ad,
             );
         }
+        // The flip is a pure arm swap: the set of statements printed under this
+        // `if` must be exactly the same afterwards, only their arms exchanged.
+        // Snapshot the reachable leaf multiset so the debug assertion below can
+        // police that — any structural pass in this family that drops, duplicates
+        // or re-parents a component trips it (debug builds only).
+        #[cfg(debug_assertions)]
+        let leaves_before = self.kuna_flip_leaf_multiset(sif);
         self.split_flip_in_place_execute(split);
         self.op_flip_in_place_execute(&fliplist)?;
         // Swap the BlockIf's true/false children to match.
         self.sblocks_mut().swap_blocks(sif, 1, 2);
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(
+            self.kuna_flip_leaf_multiset(sif),
+            leaves_before,
+            "branchflip: arm swap changed the leaf set under the BlockIf"
+        );
         Ok(true)
+    }
+
+    /// The sorted multiset of leaf components reachable under the sblocks node
+    /// `sbl` — the guard-rail instrument for the arm-swapping structuring family
+    /// (debug builds only; see [`Self::block_if_flip_negated_guard`]).
+    #[cfg(debug_assertions)]
+    fn kuna_flip_leaf_multiset(&self, sbl: BlockId) -> Vec<BlockId> {
+        use crate::block::BlockType;
+        let mut leaves: Vec<BlockId> = Vec::new();
+        let mut stack: Vec<BlockId> = vec![sbl];
+        while let Some(cur) = stack.pop() {
+            let n = self.sblocks_ref().block(cur).get_size();
+            let ty = self.sblocks_ref().block(cur).get_type();
+            if n == 0 || ty == BlockType::Copy || ty == BlockType::Basic {
+                leaves.push(cur);
+                continue;
+            }
+            for i in 0..n {
+                stack.push(self.sblocks_ref().block(cur).get_block(i));
+            }
+        }
+        leaves.sort_unstable();
+        leaves
     }
 
     /// The address of a split point's guard op (the bblocks `BlockBasic`'s tail

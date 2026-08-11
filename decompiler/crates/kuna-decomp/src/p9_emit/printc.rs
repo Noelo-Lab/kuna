@@ -3415,10 +3415,22 @@ impl PrintC {
         // line.  When it *did* fire, snapshot the indent
         // id it opened into a local — the shared emitter slot can be overwritten
         // by a deeper BlockIf's own pending brace before we read it back.
+        //
+        // C++ asks `emit->hasPendingPrint(&pendingBrace)` — a *pointer-identity*
+        // test against this frame's own `PendingBrace`, not "is any brace
+        // pending".  Only the frame that registered the brace may collapse it into
+        // `else if`; a nested `BlockIf` reached while emitting this if's condition
+        // block (a condition list can lead with a whole `if` statement) must let
+        // the ancestor's brace fire instead, or the ancestor's own `if` header
+        // lands outside the `else` and its body escapes the arm.
         let mut my_pending_indent = -1;
-        if self.emit.has_pending_brace() {
+        let my_brace_pending =
+            registered_pending && self.emit.has_pending_brace() && self.emit.pending_reg_gen() == my_pending_gen;
+        let mut my_brace_canceled = false;
+        if my_brace_pending {
             self.emit.cancel_pending_brace();
             self.emit.spaces(1, 0);
+            my_brace_canceled = true;
         } else {
             if registered_pending {
                 // C++ `pendingBrace.getIndentId()`: close a lazy `else { … }`
@@ -3430,6 +3442,16 @@ impl PrintC {
             }
             self.emit.tag_line();
         }
+        // Guard rail for the whole pending-brace family (debug builds only): a
+        // frame that registers a lazy `else` brace must resolve its OWN
+        // registration — either it fired (a real `else { … }`) or the frame
+        // canceled it (the `else if` collapse).  Neither holding means some other
+        // frame consumed the brace and this if's header is about to print outside
+        // the `else` it belongs to.
+        debug_assert!(
+            !registered_pending || my_brace_canceled || my_pending_indent >= 0,
+            "emit_block_if: pending else-brace consumed by another frame"
+        );
 
         // ... then `if ` + the branch condition (only_branch).
         self.emit.tag_op(keywords::KEYWORD_IF, SyntaxHighlight::KeywordColor, &MarkupRef::none());

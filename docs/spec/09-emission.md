@@ -222,6 +222,29 @@ addl-flag on the condition's `CBRANCH` and emit the condition through the same
 parenthesization, short-circuiting and any comma-expression side effects are
 identical to the `if` form they replace.
 
+**Pending-brace ownership.** The `else if` collapse is a *lazy* brace. An
+if-node that is itself the else-clause of its parent registers a brace with the
+emitter (`printc.rs (PrintC::emit_block_if)`); the brace opens only if
+something forces a line break before that clause prints its own `if (` header —
+a statement in the clause's condition block, a goto label, or a comment. If
+nothing does, the frame cancels its own registration and the header prints on
+the `else` line, giving `else if`. The cancel decision belongs to the
+*registering frame*, not to whoever happens to be printing when the emitter's
+shared slot is non-empty: a clause's condition block can itself lead with a
+whole nested if-statement (S8 folds a run of sibling guards into one `BlockIf`
+whose condition component is a `BlockList` of the earlier guards), and that
+nested frame must let the ancestor's brace fire instead of consuming it. This
+mirrors upstream's pointer-identity test (`emit->hasPendingPrint(&pendingBrace)`
+against the frame's own object) and is not cosmetic: a nested frame that
+cancels the ancestor's brace renders *itself* as the `else if` and leaves the
+real clause's `if` header on a fresh line at the parent's indent, so that
+clause's body executes on the then-path too. It is reachable whenever a
+statement-carrying clause lands in the else slot — in practice after a
+§8.1 `branchflip` arm swap. A debug-build assertion in
+`printc.rs (PrintC::emit_block_if)` requires every registered brace to be
+resolved by its own frame, either fired or self-cancelled; the shape is pinned
+end-to-end by `tests/stages/ghdec-branchflip-armswap.xml`.
+
 **The declined-structure shell.** If the structured tree is *absent* (S8
 produced no `sblocks`), the printer does not emit a flat op listing: it keeps
 the brace-matched prototype shell and plants a single comment in the body

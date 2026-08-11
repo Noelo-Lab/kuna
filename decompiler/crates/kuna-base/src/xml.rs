@@ -1727,7 +1727,9 @@ mod tests {
         // masked-off tail read past the 16-byte buffer no longer aborts the decode)
         // and funcboundflow / a fall-through into a known function entry is truncated
         // instead of decoding the next function's body into the current one
-        assert_eq!(count, 194, "corpus file count drifted");
+        // and ghdec-branchflip-armswap / a swapped `if` arm keeps its whole body
+        // (the else-if collapse hoisted the arm's tail statement out of the arm)
+        assert_eq!(count, 195, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

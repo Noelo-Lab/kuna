@@ -1,12 +1,18 @@
 {
   "data_footer": [
-    407,
-    407
+    413,
+    413
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
+    "data:BRANCHFLIP-ARMSWAP #1: the swapped guard reads positively (the flip still happens)",
+    "data:BRANCHFLIP-ARMSWAP #2: the else arm opens a real block, not an else-if collapse",
+    "data:BRANCHFLIP-ARMSWAP #3: the second sibling if stays inside the arm in both passes",
+    "data:BRANCHFLIP-ARMSWAP #4: branchflip off is the un-flipped reference, both siblings nested",
+    "data:BRANCHFLIP-ARMSWAP #5: no else-if collapse of a statement-carrying arm",
+    "data:BRANCHFLIP-ARMSWAP #6: no sibling if escapes to the outer statement indent",
     "data:CNORM-BRACEELIDE #1: default renders the single-statement body braceless, indented (DIV-37)",
     "data:CNORM-BRACEELIDE #2: braceelide off restores the upstream braced body",
     "data:CNORM-INPLACE #1: default renders the self-add as += (DIV-35)",
