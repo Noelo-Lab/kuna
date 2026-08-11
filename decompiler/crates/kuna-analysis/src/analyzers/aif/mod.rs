@@ -108,6 +108,7 @@ use kuna_sleigh::translate::Translate;
 
 use crate::listing::{decode::decode_one, FlowKind, Listing};
 
+pub mod kuna_poolentry;
 pub mod kuna_ptrentry;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -196,6 +197,7 @@ struct ProbedInsn {
     fall_through: Option<u64>,
     flows: Vec<u64>,
     mnemonic: String,
+    operands: String,
 }
 
 impl<'a> GapDecoder<'a> {
@@ -239,6 +241,7 @@ impl<'a> GapDecoder<'a> {
             fall_through: c.fall_through,
             flows: c.flows,
             mnemonic: decoded.mnemonic,
+            operands: decoded.operands,
         })
     }
 

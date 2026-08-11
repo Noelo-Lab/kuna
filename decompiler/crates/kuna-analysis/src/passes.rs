@@ -652,6 +652,32 @@ pub fn run_listing_consumers(
                 std::rc::Rc::clone(code_space),
                 listing.exec_ranges(),
             );
+            // (kuna, `poolentry`) Reference-driven ARM literal-pool inference over
+            // the COMPLETED walk, driving two consumers: the additive recall half
+            // emits an entry at each pool end, and the subtractive precision half
+            // drops an AIF accept that lies inside an inferred pool (the
+            // `pool_word + 2` phantom) — but only when the pool end carries a
+            // replacement entry, which makes that removal a MOVE. Computed here,
+            // after `run_aif` and after `ptrentry`'s targets exist, so the additive
+            // fact never re-seeds the walk and the removal is a partition of a list
+            // rather than a Listing rebuild. See `aif::kuna_poolentry`.
+            if arch.analysis_poolentry {
+                let res = crate::aif::kuna_poolentry::run_pool_pass(
+                    arch,
+                    &listing,
+                    translate,
+                    std::rc::Rc::clone(code_space),
+                    listing.exec_ranges(),
+                    &aif_out.entries,
+                    &ptrentry_out,
+                );
+                aif_out.entries = res.kept_aif;
+                if !res.added.is_empty() {
+                    let mut pool_out = AnalysisOutput::default();
+                    pool_out.entries = res.added;
+                    out.push(("poolentry", pool_out));
+                }
+            }
             out.push(("aif", aif_out));
         }
     }

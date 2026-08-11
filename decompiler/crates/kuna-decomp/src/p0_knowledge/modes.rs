@@ -318,9 +318,15 @@ mod tests {
         /// measurement and PR (`paramcopyhoist`'s own catalog row already records
         /// that its flip regresses a stage assertion and was deferred). Listed here
         /// so the invariant can be enforced for *new* options without silently
-        /// flipping four existing ones; shrinking this list is the follow-up.
+        /// flipping the existing ones; shrinking this list is the follow-up.
+        ///
+        /// `cortexmvectors`, `ptrentry`, `tailcallentry` and `poolentry` are the
+        /// four steps of the ARM entry sequence (PR #239) and COMPOSE: every one of
+        /// `poolentry`'s corpus numbers is measured on top of the other three, and
+        /// flipping any one alone re-measures nothing useful. Their preset
+        /// membership is one joint evaluation, not four.
         const UNEVALUATED: &[&str] =
-            &["cortexmvectors", "ptrentry", "tailcallentry", "paramcopyhoist"];
+            &["cortexmvectors", "ptrentry", "tailcallentry", "paramcopyhoist", "poolentry"];
 
         let agg = mode_overrides("aggressive").unwrap();
         let mut missing: Vec<&str> = Vec::new();

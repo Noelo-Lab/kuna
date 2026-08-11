@@ -340,6 +340,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // discovers more functions on bare-metal ARM firmware).
     "cortexmvectors",
     "ptrentry",
+    // (kuna) ARM PC-relative literal-pool inference: the additive pool-end entry
+    // fact plus the paired suppression of the AIF accepts inside a pool.
+    // Default-OFF (output-changing: it adds and relocates discovered functions).
+    "poolentry",
     "arm_markers",
     "mips_gp",
     // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A

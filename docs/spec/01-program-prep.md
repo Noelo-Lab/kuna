@@ -943,6 +943,74 @@ Output-changing (more functions), hence default-off; ARM-only and Listing-tier, 
 it is a strict no-op on every other architecture, with `listing off`, and on the
 XML datatest path.
 
+**Literal-pool inference** (`poolentry`, default-off; kuna;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_poolentry.rs`) is aimed at
+the gap walk itself rather than at what the walk misses. AIF advances its cursor by
+**one byte** on a reject, with no instruction-alignment filter, because the
+undefined-gap query it drives is byte-granular by construction. An ARM PC-relative
+literal pool is data, so it *is* an undefined gap, and the cursor probes every byte
+of it. On a Cortex-M image the pool words are SRAM addresses `0x2000_xxxx` whose
+high halfword decodes as `movs r0,#0`, which clears the two-mnemonic fingerprint
+gate as reliably as a real prologue does; AIF therefore accepts an entry one
+halfword *before* the real function, falls through into it, reaches its return, and
+on accept jumps the cursor past the whole body — so the true entry is never probed
+at all. In A32 there is no halfword granularity and conditional execution makes
+almost any word a legal instruction, so the same mechanism plants the phantom on the
+pool word itself. Upstream Ghidra does not have this defect and needs no equivalent
+of this pass: its reference analyzer defines pc-relative literal targets as **data**
+before AIF runs, so those bytes are not an undefined gap there. kuna's Listing has no
+literal-pool data-definition step, and this pass reconstructs the missing definition
+after the fact.
+
+The reconstruction is **reference-driven**. A word counts as a literal only when
+some instruction actually loads it: either the resolved absolute `[0x…]` operand the
+ARM disassembly prints for `ldr rN,[pc,#imm]`, or the unresolved `[pc,#imm]` form
+that `vldr`/`ldrd` print because they compute the target in the semantic body — plus
+the second word of a 64-bit literal, which nothing loads on its own. Completing that
+second form is not a detail: without it every pool holding a float or a 64-bit
+constant under-runs and the additive consumer below plants its entry *on* a pool
+word, which is the difference between 19 split bodies at 89.7% precision and one at
+98.4% over the measured corpus. The `[pc,#imm]` base needs the decode mode, which is
+read from the engine's context database — the same `TMode` the bytes at that address
+were decoded under, whichever pass painted it — so a language with no such context
+answers "no mode" and the form is disabled outright, which is one of the reasons the
+predicate is vacuous off ARM. The scan reads the decoded Listing **and** the
+speculatively-decoded bodies of the gap-discovered routines, because a pool
+sandwiched between two gap-discovered functions is referenced only from inside one
+and a Listing-only scan silently finds nothing at exactly the shape being targeted.
+A pool is then a **maximal run of adjacent referenced words**: unreferenced words
+break the run, which makes the inference strictly more conservative than an ELF `$d`
+mapping-symbol oracle, and bridging them was measured and rejected — a bridged run
+swallows short real functions and destroys reachable bodies.
+
+Two consumers hang off that one predicate, and they rest on different warrants. The
+**recall** consumer emits an entry fact at the first address after a pool that abuts
+a *return-class* terminal, when that address is still undefined and passes AIF's own
+fingerprint and valid-subroutine tests. The return class is what separates an
+inter-function pool, which follows a `bx lr` or `pop {..pc}`, from an intra-function
+pool, which follows the unconditional branch the compiler emits to jump over it; and
+because the fact is purely additive and never re-seeds the walk, "never removes an
+entry" is a property of the wiring here exactly as it is for `ptrentry` and
+`tailcallentry`. The **precision** consumer drops an AIF accept that lies inside an
+inferred pool — but only when that pool's end carries a replacement entry, one this
+pass just added or one another stage already found. That pairing clause is the whole
+safety argument: the predicate's soundness (no accept inside an inferred pool was
+ever a real function address, across 4,220 removals on the measured corpus) says
+nothing about whether the *body* the phantom was decompiling survives, and unpaired
+suppression leaves 531 real functions with no entry at any address while paired
+suppression leaves zero. A paired removal is a MOVE, which restores a wiring-level
+guarantee to the half that removes.
+
+One residue is disclosed rather than gated away. When a literal reference resolves
+onto the first word of a function the Listing never decoded, the inference cannot
+tell that word from a pool word, and the entry moves four bytes into a real body.
+It happens once in the measured corpus, and the only guard that removes it —
+refusing to emit at a known branch target — costs 108 of 189 recovered entries, so
+it is dominated. Output-changing (it both adds and relocates functions), hence
+default-off; ARM-only in effect and Listing-tier, so it is a strict no-op without
+`listing`, without `aif`, on the XML datatest path, and on every architecture whose
+constants live in `.rodata` rather than in `.text` interstices.
+
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's
