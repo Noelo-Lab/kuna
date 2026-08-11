@@ -1,0 +1,80 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    decbench: `returndup` splits the shared epilogue of a source function that is
+    ONE short-circuit boolean return, and the split permanently blocks the fold.
+      Case: O0-iproute2-ip-sci_complete   (GED 21 with the split, 0 without)
+      Siblings: O0-cleanflight-cleanflight_DALRCF405-USBD_DataInStage (13 -> 0),
+                O0-crazyflie-cf2-DCD_HandleUSBSuspend_ISR             (12 -> 0)
+
+    Source of this testcase (gcc -O0 -fno-pie -fno-stack-protector -c), the
+    sci_complete shape reduced to its four operands and no calls, so the object
+    is relocation-free:
+
+        int t(int a, int b, int c, int d)
+        {
+          return a || (b && (c || d));
+        }
+
+    At -O0 that compiles to four `cmp/jcc` operand blocks, two constant
+    materialisation blocks (`mov $1,%eax` / `mov $0,%eax`) and ONE shared
+    `pop %rbp; ret` epilogue, which is the -O0 encoding of every source return in
+    the function, not evidence that the source wrote several.
+
+    Root cause (P8).  `Funcdata::returndup_apply` (option `returndup`, DIV-54
+    default-ON) gives every predecessor of the shared bare-epilogue RETURN block
+    its own private return.  For a guard clause that recovers the source shape,
+    but the operand blocks of a short-circuit expression are predecessors of that
+    same block, and the shared out-target is exactly what
+    `CollapseStructure::rule_block_or` matches on:
+
+        bl -> {orblock, clauseblock}, orblock -> {clauseblock, X}
+
+    Once each operand owns a private return the guards no longer share
+    `clauseblock`, `rule_block_or` declines, and `iteboolean` never sees the 0/1
+    select diamond either.  `ActionReturnDup` runs in the `returnsplit` group and
+    `collapse_conditions` runs later, so the loss is permanent.
+
+    The fix (`option orchain on`) replays `collapse_conditions` read-only on the
+    bblocks CFG before splitting (`kuna_orchain::shortcircuit_shared_targets`,
+    mirroring ruleBlockOr's own admission test: one in-edge, two out-edges, not a
+    switch, not BlockBasic::isComplex, and a shared out-target) and declines the
+    function's splits when one of its own candidates is a fold target.  It also
+    protects the block joining two single-exit arms that are themselves fold
+    targets, because the FIRST returndup invocation of the schedule's fullloop
+    still sees the constant-materialisation blocks in between.
+
+    Stage model: P8 "goto-quality" (S8 CFG rewrite before the final block
+    structuring), rendered in P9.  The P0 assertion `option orchain on|off`
+    selects it; default OFF, and inert with `option returndup off`.
+
+    Pass 1 (option orchain off) reproduces the gap: one source expression becomes
+    a five-return guard cascade, `return-dupe x3` on the header.
+    Pass 2 (option orchain on, the DIV-69 default) proves the fix: the whole chain
+    folds back into one short-circuit condition with a single guarded return.
+-->
+<bytechunk space="ram" offset="0x101000">
+f30f1efa554889e5897dfc8975f88955f4894df0837dfc007512837df8007413
+837df4007506837df0007407b801000000eb05b8000000005dc3
+</bytechunk>
+<symbol space="ram" offset="0x101000" name="t"/>
+</binaryimage>
+<script>
+  <com>option orchain off</com>
+  <com>lo fu t</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option orchain on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="orchain #1: option off opens the cascade with the first operand as its own guard (gap reproduced)" min="1" max="1">if \(a0\)</stringmatch>
+<stringmatch name="orchain #2: option off gives the second operand a private return too" min="1" max="1">if \(!a1\)</stringmatch>
+<stringmatch name="orchain #3: and the third" min="1" max="1">if \(a2\)</stringmatch>
+<stringmatch name="orchain #4: and the fourth, so one source expression is four guards plus a trailing return" min="1" max="1">if \(a3\)</stringmatch>
+<stringmatch name="orchain #5: the splits are returndup's (the header slug carries into pass 2)" min="2" max="2">return-dupe x3</stringmatch>
+<stringmatch name="orchain #6: option on (the default) folds the whole operand chain back into one short-circuit condition" min="1" max="1">if \(\(!a0\) &amp;&amp; \(\(!a1 \|\| \(\(!a2 &amp;&amp; \(!a3\)\)\)\)\)\)</stringmatch>
+<stringmatch name="orchain #7: three of the four `return 1;` are the cascade's, one is the folded form's" min="4" max="4">return 1;</stringmatch>
+<stringmatch name="orchain #8: two of the three `return 0;` are the cascade's, one is the folded form's guarded return" min="3" max="3">return 0;</stringmatch>
+</decompilertest>

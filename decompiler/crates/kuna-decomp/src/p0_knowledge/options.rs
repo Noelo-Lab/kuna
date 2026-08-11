@@ -291,6 +291,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "itecondlist",
     "paramcopyhoist",
     "returndup",
+    "orchain",
     "earlyreturn",
     "switchreturn",
     "foldcallret",

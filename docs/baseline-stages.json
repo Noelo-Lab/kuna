@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    425,
-    425
+    433,
+    433
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -171,7 +171,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",
@@ -332,6 +332,14 @@
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
     "data:opcode-seam #2: RuleBitUndistribute pulls the common INT_SRIGHT out of the AND",
     "data:opcode-seam #3: no residual per-operand shift is left behind",
+    "data:orchain #1: option off opens the cascade with the first operand as its own guard (gap reproduced)",
+    "data:orchain #2: option off gives the second operand a private return too",
+    "data:orchain #3: and the third",
+    "data:orchain #4: and the fourth, so one source expression is four guards plus a trailing return",
+    "data:orchain #5: the splits are returndup's (the header slug carries into pass 2)",
+    "data:orchain #6: option on (the default) folds the whole operand chain back into one short-circuit condition",
+    "data:orchain #7: three of the four `return 1;` are the cascade's, one is the folded form's",
+    "data:orchain #8: two of the three `return 0;` are the cascade's, one is the folded form's guarded return",
     "data:paramcopyhoist #1: option off sinks the second parameter's copy-shadow below the first guard (gap reproduced)",
     "data:paramcopyhoist #2: option on anchors both copy-shadows in the entry block, ahead of every guard",
     "data:paramcopyhoist #3: both passes keep the guard writing NULL through each parameter",

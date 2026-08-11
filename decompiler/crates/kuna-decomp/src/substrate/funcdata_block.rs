@@ -3120,6 +3120,17 @@ impl Funcdata {
             }
         }
 
+        // (kuna, `option orchain`) A shared return that is the out-target two guards
+        // must keep in common is the operand chain of a short-circuit expression:
+        // splitting it blocks `rule_block_or` permanently, and the source's
+        // `return a || (b && c);` becomes a cascade of constant-return guards.
+        if self.get_arch().returndup_orchain {
+            let shared = crate::p8_structure::kuna_orchain::shortcircuit_shared_targets(self);
+            if parents.iter().any(|p| shared.contains(p)) {
+                return 0;
+            }
+        }
+
         // For each candidate, split every in-edge but the first (leave edge 0 on the
         // original block — never split ALL edges).  Split the highest index each pass
         // so removing an edge does not shift the lower indices.

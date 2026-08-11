@@ -600,6 +600,12 @@ pub struct Architecture {
     /// complement to `ActionReturnSplit` (the goto-driven `ReturnDuplicatorLow`)
     /// (`duplicate_shared_returns`, DIV-54 default-on, superseding the DIV-18 revert).
     pub duplicate_shared_returns: bool,
+    /// (kuna) `orchain`: decline a `duplicate_shared_returns` split whose shared
+    /// RETURN block is the out-target two conditionals must keep in common for
+    /// `CollapseStructure::rule_block_or` to fuse them — the operand chain of a
+    /// short-circuit expression.  Read by
+    /// [`crate::p8_structure::kuna_orchain::shortcircuit_shared_targets`].
+    pub returndup_orchain: bool,
     /// (kuna) Hoist a leading const-guard into an early return (`if (c) return K;`) by
     /// peeling only the CONSTANT arm of a mixed return phi — the per-edge narrowing of
     /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
@@ -1258,6 +1264,7 @@ impl Architecture {
             itecondlist: false,
             param_copy_hoist: false,
             duplicate_shared_returns: false,
+            returndup_orchain: false,
             early_return: false,
             switch_return: false,
             recover_loop_break: false,
@@ -1405,6 +1412,7 @@ impl Architecture {
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.itecondlist = true; // (kuna) DIV-56 default-on (iteregion/iteboolean match through a concatenated condition BlockList: a run of N identical diamonds folds N, not ceil(N/2); 0/675 ablation).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
+        self.returndup_orchain = true; // (kuna) DIV-69 default-on: the returndup narrowing. `returndup` splits a shared epilogue whose predecessors are the operand blocks of a short-circuit chain, which permanently blocks `rule_block_or` and turns one source boolean expression into a cascade of constant-return guards. Measured over the whole decbench corpus (85,195 functions, three optimisation levels): +611 GED-perfect at O0 for -13 / -15 at O2 / O2-noinline, +583 net and -967 aggregate GED. Default-ON rather than preset-only because `returndup` is itself a shipped default: 45% of the corpus is over the 500 KiB `auto` threshold and runs `reliable`, where a preset-only gate would leave the split unnarrowed
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
@@ -1682,6 +1690,11 @@ impl Architecture {
                 let (val, msg) =
                     crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
                 self.duplicate_shared_returns = val;
+                Ok(msg)
+            }
+            "orchain" => {
+                let (val, msg) = crate::p8_structure::kuna_orchain::OptionOrChain.apply(p1)?;
+                self.returndup_orchain = val;
                 Ok(msg)
             }
             "earlyreturn" => {
@@ -2172,6 +2185,7 @@ impl Architecture {
         ctx.itecondlist = self.itecondlist; // itecondlist (condition-list tolerance for iteregion/iteboolean)
         ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
+        ctx.returndup_orchain = self.returndup_orchain; // orchain (short-circuit chain protection)
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery

@@ -2313,6 +2313,25 @@ tier = "transform"
 symptoms = "giant short-circuit if with comma-expression side effects merging several source early-return guards|one trailing return shared by many guard paths where the source used per-guard early returns|merged guard condition containing v = f(...) assignments inline"
 
 [[settable]]
+option = "orchain"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "decbench-returndup-o0-shortcircuit"
+summary = "Decline a `returndup` split whose shared bare-epilogue RETURN block is the out-target that two conditionals must keep in COMMON for `CollapseStructure::rule_block_or` to fuse them -- i.e. the block is an operand chain of a short-circuit expression, not a set of independent source early-return guards. `returndup` gives every predecessor of a shared return its own private return; for guard clauses that is the source shape, but for the operand blocks of `a || (b && c)` it removes the shared out-target `rule_block_or` matches on, and because `ActionReturnDup` runs in the `returnsplit` group while `rule_block_or` runs later in `collapse_conditions`, the fold can never be recovered -- one source boolean expression comes back as a cascade of constant-return guards. The gate is a read-only replay of `collapse_conditions` on the bblocks CFG (`kuna_orchain::shortcircuit_shared_targets`), mirroring `rule_block_or`'s own admission test rather than approximating it: two condition nodes fuse when the sibling has exactly one in-edge, has two out-edges, is not a switch block, is not `BlockBasic::isComplex`, and shares one out-target with the head; each fuse records that shared target and rewrites the head's out-targets, so a chain folds inside-out exactly as the structurer's fixpoint does. The three upstream tests it omits cannot hold at this point in the schedule (no goto has been elected yet, and a back edge into a single-in-edge block would make that block unreachable). When any of the function's own split candidates is a recorded shared target the whole function's splits are declined, which is exactly the counterfactual the corpus measurement priced. The predicate additionally protects a block joining two or more single-exit arms that are themselves recorded fold targets: before the constants are propagated into the epilogue phi a chain's arms are one bare `v = K` block each and the RETURN sits one edge further on, which is the graph the FIRST returndup invocation of the schedule's fullloop sees."
+use_when = "On by default (DIV-69). Flip OFF (`option orchain off`) to restore the pre-DIV-69 rendering, where one source `return a || (b && c);` (or a source `if (A && B && C)` guard) comes back as a cascade of `if (a) return 1;` / `if (b) return 0;` constant-return guards -- the shape `option returndup off` also removes, at the cost of every OTHER early-return recovery in the function. It is returndup-local and one-directional: it can only ever make `returndup` fire LESS, never more, and it is inert with `option returndup off`. Measured over the full decbench corpus (85,195 functions / 795 slices, three optimisation levels; `docs/decbench/returndup-o0-measurement.md` for the motivating ablation): +611 GED-perfect at O0 for -13 at O2 and -15 at O2-noinline, +583 net and -967 aggregate GED, 781 functions moved to a perfect structural match against 198 moved off (3.94 : 1), and every architecture net-positive. It is 92% of the +630 ceiling the post-hoc 'a short-circuit fold was lost' signal prices, at 94% byte-identity with the `returndup off` body on the 3,059 -O0 functions it fires for. The residual cost is real and is not observable from the binary: where the SOURCE wrote the guard cascade and the compiler merged it, declining the split is wrong (coreutils factor, GED 0 -> 12)."
+example = "option orchain on"
+source_decompiler = "kuna"
+inspiration = "decbench:O0-iproute2-ip-sci_complete; O0-cleanflight-cleanflight_DALRCF405-USBD_DataInStage; O0-crazyflie-cf2-DCD_HandleUSBSuspend_ISR; protects the precondition of Ghidra CollapseStructure::ruleBlockOr against the angr SAILR ReturnDuplicatorHigh port"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a source boolean return renders as a cascade of if (c) return 0; / if (c) return 1; guards|option returndup off collapses the whole function to one short-circuit expression|a source guard testing several conditions with and/or becomes that many identical constant-return guards|the return-dupe slug on a function whose source wrote one short-circuit condition"
+
+[[settable]]
 option = "earlyreturn"
 values = "on|off"
 default = "on"
