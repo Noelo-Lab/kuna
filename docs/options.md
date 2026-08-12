@@ -196,6 +196,9 @@ Three tiers:
 | got/.sdata references never fold to real addresses in a pic mips binary | [`mips_gp`](#mips_gp) |
 | i386 pie libc calls render as sub_<addr> instead of exit/dcgettext | [`i386_pie_plt`](#i386_pie_plt) |
 | spurious do{}while(true) or goto loop after an unnamed exit stub in a 32-bit pie binary | [`i386_pie_plt`](#i386_pie_plt) |
+| a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
+| an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
+| xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
 | mips16/micromips function body misdecoded as mips32 garbage | [`mips_isa`](#mips_isa) |
 | odd-address mips functions decode in the wrong isa mode | [`mips_isa`](#mips_isa) |
 | a -g binary still shows default names and inferred types | [`dwarf`](#dwarf) |
@@ -787,6 +790,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) names i386-PIE libc calls and lets exit be marked no-return (collapsing the spurious do{}while(true)/goto and restoring stack recovery); off leaves the GOT-relative stubs as sub_<addr> and the bogus fall-through loop (the pre-fix rendering).
 - **Where / provenance:** P1/external-refinement · angr · correctness-fix · kuna-analysis-i386pieplt
 - **Example:** `option i386_pie_plt off`
+
+### `ifuncfpret` -- on | off, default `off`
+
+- **Symptoms:** a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped; an x86-64 IFUNC .plt.sec stub is not a discovered function; xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper.
+- **What it does:** Name the x86-64 IFUNC (R_X86_64_IRELATIVE) .plt.sec/.iplt PLT stubs the symbol-keyed PLT pass leaves undiscovered (an IRELATIVE slot carries no symbol, only its resolver's address), so a tail `jmp` to one is recovered as a tail call (tailcalljump) to a discovered `ifunc_<resolver>` function instead of flowing into the stub and rendering `(*dat_...)(...)`. Loader-tier: read via the kuna_ifuncfpret env var (the PLT->name map is baked at load file). Stage A of the ifuncfpret chain; the FP-return-type recovery (a Ghidra-divergent indirect-tail-return change) is the documented follow-up.
+- **When to flip:** A glibc math/mem/str wrapper (e.g. sub_15620 / log) tail-jumps to an IFUNC stub and renders `(*dat_...)(...)` with the callee dropped; on names the stub `ifunc_<resolver>` and recovers the tail call. x86-64 only; default off (opt-in, synthetic stub names).
+- **Where / provenance:** P1/external-refinement · ida · correctness-fix · interp-bee-ifunc-fpret
+- **Example:** `option ifuncfpret on`
 
 ### `mips_isa` -- on | off, default `on`
 

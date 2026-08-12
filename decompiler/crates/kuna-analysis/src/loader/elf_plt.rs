@@ -1275,6 +1275,49 @@ mod tests {
     }
 
     #[test]
+    fn x86_64_ifunc_stub_naming() {
+        // A CET `.plt.sec` IFUNC stub: `endbr64` (F3 0F 1E FA) then a `bnd jmp
+        // *disp(%rip)` (F2 FF 25 <disp32>).  vma = 0x1000, so the FF 25 insn is at
+        // 0x1004, rip = 0x100a, and disp is chosen so the GOT slot = 0x2000.
+        let vma = 0x1000u64;
+        let got = 0x2000u64;
+        // Layout: endbr64 (4) + `bnd` prefix F2 (1), so the `FF 25` is at offset 5;
+        // rip = vma + 5 + 6.  Pick disp so the GOT slot = 0x2000.
+        let disp = (got as i64 - (vma as i64 + 5 + 6)) as i32;
+        let mut data: Vec<u8> = vec![0xF3, 0x0F, 0x1E, 0xFA, 0xF2, 0xFF, 0x25];
+        data.extend_from_slice(&disp.to_le_bytes());
+
+        // The GOT slot is an IRELATIVE ifunc slot resolving via 0x15c80; it carries
+        // no symbol, so the symbol-keyed `named` map does not contain it.
+        let mut ifunc: HashMap<u64, u64> = HashMap::new();
+        ifunc.insert(got, 0x15c80);
+        let named: HashMap<u64, Vec<u8>> = HashMap::new();
+
+        let mut out: Vec<PltSym> = Vec::new();
+        let mut named_got: HashSet<u64> = HashSet::new();
+        decode_x86_64_ifunc_stubs(vma, &data, &ifunc, &named, &mut out, &mut named_got);
+        assert_eq!(out.len(), 1, "the ifunc stub is named");
+        // The recorded address backs up over the `endbr64` to the stub entry.
+        assert_eq!(out[0].addr, vma);
+        assert_eq!(out[0].name, b"ifunc_15c80".to_vec());
+
+        // A GOT slot the symbol-keyed pass already named is NOT re-named as ifunc.
+        let mut named2: HashMap<u64, Vec<u8>> = HashMap::new();
+        named2.insert(got, b"already".to_vec());
+        let mut out2: Vec<PltSym> = Vec::new();
+        let mut named_got2: HashSet<u64> = HashSet::new();
+        decode_x86_64_ifunc_stubs(vma, &data, &ifunc, &named2, &mut out2, &mut named_got2);
+        assert!(out2.is_empty(), "an already-named slot is skipped");
+
+        // A non-ifunc slot (not in the ifunc map) yields nothing.
+        let empty: HashMap<u64, u64> = HashMap::new();
+        let mut out3: Vec<PltSym> = Vec::new();
+        let mut named_got3: HashSet<u64> = HashSet::new();
+        decode_x86_64_ifunc_stubs(vma, &data, &empty, &named, &mut out3, &mut named_got3);
+        assert!(out3.is_empty(), "no ifunc slot ⇒ no stub named");
+    }
+
+    #[test]
     fn sparc_plt_decode() {
         // Real `plt_sparc64` bytes: a 4-slot (0x80-byte) reserved PLT0 header,
         // then 32-byte import veneers each headed by `sethi %hi(...),%g1` (BE

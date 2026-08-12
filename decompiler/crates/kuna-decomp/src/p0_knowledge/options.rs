@@ -355,6 +355,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // loader-tier gate read via the `kuna_i386_pie_plt` env var (not committed
     // through `OptionDatabase`); routes to `Architecture::set_kuna_option`.
     "i386_pie_plt",
+    // (kuna) x86-64 IFUNC (IRELATIVE) PLT-stub naming; loader-tier gate read via
+    // the `kuna_ifuncfpret` env var. Default-off opt-in.
+    "ifuncfpret",
     "mips_isa",
     "dwarf",
     // (kuna) DWARF `.debug_line` source-line comments; default-off (output-changing).

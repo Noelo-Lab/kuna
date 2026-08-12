@@ -194,6 +194,12 @@ funcsym stream:
   and match the *decoded* GOT target against the map — self-correcting, since PLT0
   and IRELATIVE/IFUNC stubs jump to non-symbol-bearing slots and fall out
   automatically. `.plt.sec`/`.plt.got` outrank `.plt` so the CET call target wins.
+  `option ifuncfpret` (default off, x86-64) adds a second pass that DOES name those
+  IRELATIVE IFUNC stubs — `ifunc_<resolver>`, keyed off the `R_X86_64_IRELATIVE`
+  resolver-address map — so a tail `jmp` to a glibc math/mem/str dispatcher's stub
+  is recovered as a `tailcalljump` to a discovered function instead of flowing into
+  the stub and rendering `(*dat_...)(...)`; the FP-return-type recovery it unblocks
+  is a Ghidra-divergent follow-up (`docs/features/ifuncfpret/proposal.md`).
   Two ABIs need special handling: PowerPC (ELFv2 `.plt` is a NOBITS data table, not
   decodable code; PPC32 uses its own secure-PLT stub shape), and **MIPS**, which
   has no PLT and no jump-slot relocations at all — its resolver walks the
