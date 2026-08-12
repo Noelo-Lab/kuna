@@ -42,7 +42,7 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_101() {
+fn settable_count_is_102() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -64,12 +64,13 @@ fn settable_count_is_101() {
     // +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
     // +1 for `calloverlap` (P3 partial-range call-overlap guards, GH-275).
     // +1 for `orchain` (S8 returndup short-circuit operand-chain protection).
-    assert_eq!(kuna_num_settables(), 101);
-    assert_eq!(SETTABLE_TABLE.len(), 101);
+    // +1 for `evalcurrentproto` (P4 compiler-spec current-function prototype model).
+    assert_eq!(kuna_num_settables(), 102);
+    assert_eq!(SETTABLE_TABLE.len(), 102);
 }
 
 #[test]
-fn tier_counts_are_21_core_45_transform_35_analysis() {
+fn tier_counts_are_22_core_45_transform_35_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -102,7 +103,9 @@ fn tier_counts_are_21_core_45_transform_35_analysis() {
     // transform 43 -> 44: +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
     // core 20 -> 21: +1 for `calloverlap` (P3 partial-range call-overlap guards, GH-275).
     // transform 44 -> 45: +1 for `orchain` (S8 returndup short-circuit chain gate).
-    assert_eq!((core, transform, analysis), (21, 45, 35));
+    // core 21 -> 22: +1 for `evalcurrentproto` (P4 compiler-spec current-function
+    // prototype model, DIV-71).
+    assert_eq!((core, transform, analysis), (22, 45, 35));
 }
 
 #[test]
@@ -292,7 +295,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_29_suppressed_for_46() {
+fn option_values_live_value_present_for_31_suppressed_for_71() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -462,7 +465,8 @@ fn option_values_live_value_present_for_29_suppressed_for_46() {
     // 28 -> 29: +1 for `peimportcall` (live_field = analysis_peimportcall);
     // `itecondlist` declares no live_field, so it does not move this count.
     // 29 -> 30: +1 for `funcboundflow` (live_field = funcbound_flow).
-    assert_eq!(with_live, 30);
+    // 30 -> 31: +1 for `evalcurrentproto` (live_field = evalcurrentproto).
+    assert_eq!(with_live, 31);
 }
 
 #[test]
@@ -566,9 +570,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
-    // two P8 ifNoExit rows, calloverlap's P3 row and orchain's S8 row sit
-    // mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 100);
+    // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row and
+    // evalcurrentproto's P4 row sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 101);
 }
 
 #[test]

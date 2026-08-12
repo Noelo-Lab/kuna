@@ -70,22 +70,41 @@ unchanged by the presence of the named ones: nothing reads the registry except
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (OptionDefaultPrototype,
 OptionProtoEval)`) — the ABI-trust knob of the `abi-trust` sub-phase row in
 `decompiler/crates/kuna-decomp/phases.toml`. Those options are what the registry
-now makes usable: on an x86 PE target `option defaultprototype __thiscall`
+makes usable: on an x86 PE target `option defaultprototype __thiscall`
 resolves and recovers the ECX `this` pointer as the first parameter, where
-before it failed with "Unknown prototype model". The cspec's
-`<eval_current_prototype>`/`<eval_called_prototype>` elements are deliberately
-still ignored — honoring them changes which model *every* function is evaluated
-with, which is a default change and not part of registration. Automatic
+before it failed with "Unknown prototype model". Automatic
 assignment of `__thiscall` to member functions (from the demangler or from DWARF
-`DW_AT_object_pointer`) is likewise not wired.
+`DW_AT_object_pointer`) is not wired.
 
-With merged models now registered, the **merged-model machinery** — a
+Registration is not the whole story, because a spec can also **nominate** one of
+its registered models for evaluating a function's own unlocked prototype:
+`<eval_current_prototype name=…>` (`evalcurrentproto`, default-on;
+`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_evalcurrentproto.rs
+(eval_current_model_name)`). The nominated model is looked up at
+`<default_proto>` time and handed to each function through the arch handle, where
+`ActionPrototypeTypes` installs it on any prototype that is not model-locked —
+the C++ `evalfp_current` slot. Six vendored specs nominate one, always a merged
+model: `x86win` (`__fastcall/__thiscall/__stdcall`), `x86borland`, `x86gcc`
+(`__cdecl/__regparm`), `CR16`, `HCS12` and `HCS12X`; every other language leaves
+the slot empty and evaluates with `<default_proto>` as before. Nominating a model
+outranks `option defaultprototype` for an unlocked prototype (that option sets
+the *default* model, which the nomination replaces); an explicit
+`option protoeval` outranks the nomination in turn, since both write the same
+slot. Turning `evalcurrentproto` off restores `<default_proto>`-only evaluation.
+
+What the nomination buys is the **merged-model machinery** — a
 `ProtoModelMerged` union whose `FuncProto::resolveModel` picks the constituent
 best fitting the observed trials via `ScoreProtoModel`
 (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (ProtoModel::select_model,
-ScoreProtoModel)`) — has a live producer for the first time, though it still
-only fires when a merged model is explicitly selected (`resolve_model`
-short-circuits on a non-merged model, and the default model is never merged).
+ScoreProtoModel)`) — which was fully ported but had no live producer: `resolve_model`
+short-circuits on a non-merged model, and the default model is never merged, so
+before the nomination was read the union only ran when a merged model was named by
+hand. That is what left an x86 Windows `__fastcall`/`__thiscall` function rendering
+as `(void)` with its `ECX`/`EDX` arguments surviving as locals read before they are
+written: `__stdcall`, the `<default_proto>`, has stack-only `<input>` entries, so a
+register argument is not a *possible* parameter and never becomes a trial.
+Resolution is per function, so a function that touches neither register still comes
+out `__stdcall`.
 The scorer itself is simple:
 each trial is mapped to a resource slot; holes in slot coverage are penalized
 16/10/7/5 for the first four missing slots and 3 thereafter, a duplicated slot

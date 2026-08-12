@@ -1630,7 +1630,7 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 103 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
+        // 83 datatests + 104 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
         // ghangr-missing-function-call-1101b1, ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump,
         // branchflip-negated-guard / branchflip,
         // regionstructure-seq + regionstructure-loop + regionstructure-switch +
@@ -1735,7 +1735,9 @@ mod tests {
         // (a whole-width PXOR write hides the SysV entry inside the XMM0 range)
         // and ghdec-orchain / returndup must not split the operand chain of a
         // short-circuit (option off = the guard cascade, on = the folded condition)
-        assert_eq!(count, 199, "corpus file count drifted");
+        // and kuna-evalcurrentproto / the compiler spec's <eval_current_prototype>
+        // model recovers a __fastcall function's ECX/EDX arguments
+        assert_eq!(count, 200, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -294,6 +294,10 @@ Three tiers:
 | spurious = 0 copy materialized inside a loop block | [`condexeplace`](#condexeplace) |
 | function aborts with 'Cannot properly adjust input varnodes' | [`inputvarnodeadjust`](#inputvarnodeadjust) |
 | overlapping stack parameters (mc68k link/unlk) kill the whole decompilation | [`inputvarnodeadjust`](#inputvarnodeadjust) |
+| an x86 Windows function renders as (void) though it takes arguments | [`evalcurrentproto`](#evalcurrentproto) |
+| a local carrying a // ecx or // edx storage comment is read before it is ever written | [`evalcurrentproto`](#evalcurrentproto) |
+| __fastcall/__thiscall arguments missing from the signature | [`evalcurrentproto`](#evalcurrentproto) |
+| calls pass fewer arguments than the callee reads | [`evalcurrentproto`](#evalcurrentproto) |
 | call rendered with exactly six arguments on x86-64 | [`callsitestackargs`](#callsitestackargs) |
 | call rendered with an empty argument list on i386 | [`callsitestackargs`](#callsitestackargs) |
 | a for loop whose exit variable is written through a pointer argument disappears | [`callsitestackargs`](#callsitestackargs) |
@@ -1091,6 +1095,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** A frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk). On by default (DIV-3); flip off to preserve the upstream abort.
 - **Where / provenance:** P6/stack-frame-layout · ghidra-upstream · correctness-fix · GH-9218
 - **Example:** `option inputvarnodeadjust on`
+
+### `evalcurrentproto` -- on | off, default `on`
+
+- **Symptoms:** an x86 Windows function renders as (void) though it takes arguments; a local carrying a // ecx or // edx storage comment is read before it is ever written; __fastcall/__thiscall arguments missing from the signature; calls pass fewer arguments than the callee reads.
+- **What it does:** Evaluate a function's OWN unknown prototype with the model its compiler spec nominates in `<eval_current_prototype>` (a `<resolveprototype>` merged model), instead of with `<default_proto>`. The merged model then resolves per function against the trials that are actually active (`FuncProto::resolveModel` -> `ProtoModelMerged::selectModel`), so an x86 Windows binary recovers `__fastcall`/`__thiscall` ECX/EDX arguments while a function that touches neither still comes out `__stdcall`. Six vendored specs nominate a model (x86win, x86borland, x86gcc, CR16, HCS12, HCS12X); every other language is untouched either way.
+- **When to flip:** On by default: the spec's nomination is the compiler's own statement about how its functions are called, and without it a register-passed argument surfaces as a local READ BEFORE IT IS WRITTEN - not merely less informative, but not something a C function can do. Byte-identical on the 675-datatest corpus. Set off to restore the `<default_proto>`-only evaluation (stack-only inputs on x86 Windows). An explicit `option protoeval <model>` outranks both.
+- **Where / provenance:** P4/prototype-source · ghidra-upstream · correctness-fix · kuna-eval-current-prototype
+- **Example:** `option evalcurrentproto off`
 
 ### `callsitestackargs` -- on | off, default `on`
 

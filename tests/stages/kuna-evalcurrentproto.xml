@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    evalcurrentproto: evaluate a function's OWN unknown prototype with the model
+    the compiler spec nominates, so register-passed parameters are recovered.
+
+    x86win.cspec declares a merged model and nominates it for the current
+    function:
+
+        <resolveprototype name="__fastcall/__thiscall/__stdcall"> ... </resolveprototype>
+        <eval_current_prototype name="__fastcall/__thiscall/__stdcall"/>
+
+    kuna decoded the union and registered it by name, but never read the
+    <eval_current_prototype> element, so every function was evaluated with
+    <default_proto> = __stdcall, whose inputs are stack-only.  A __fastcall
+    function's ECX/EDX arguments are then not *possible* parameters and the reads
+    of them at entry survive as undefined locals - read before ever being
+    written, which no C function can do.
+
+    Source (MSVC/clang i386, __fastcall: a in ECX, b in EDX, c on the stack):
+
+        int __fastcall fc(int a, int b, int c) {
+            int r = a * 3 + b;
+            if (c > 0) r += c;
+            return r;
+        }
+
+    built `clang -target i386-pc-windows-msvc -O1 -c`, whose body is
+        push esi ; mov esi,[esp+8] ; lea ecx,[ecx+ecx*2] ; add ecx,edx
+        xor eax,eax ; test esi,esi ; cmovns eax,esi ; add eax,ecx ; pop esi ; ret 4
+
+    Pass 1 (`option evalcurrentproto off`, assert #1): only the stack argument is
+    a parameter; ECX and EDX come out as undefined locals carrying their storage
+    comment.
+
+    Pass 2 (default, asserts #2/#3): the merged model resolves per function
+    against the trials that are actually active, picks __fastcall, and the
+    function takes its three arguments.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+568b7424088d0c4901d131c085f60f49c601c85ec20400
+</bytechunk>
+<symbol name="fc" space="ram" offset="0x401000"/>
+</binaryimage>
+<script>
+  <com>lo fu fc</com>
+  <com>option evalcurrentproto off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option evalcurrentproto on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EVALCURRENTPROTO #1: off, the __stdcall default model sees only the stack argument" min="1" max="1">int4 fc\(int4 a0\)</stringmatch>
+<stringmatch name="EVALCURRENTPROTO #2: off, the ECX argument survives as an undefined local" min="1" max="1">// ecx</stringmatch>
+<stringmatch name="EVALCURRENTPROTO #3: default, the spec's merged model resolves to __fastcall and recovers all three arguments" min="1" max="1">int4 fc\(int4 a0,int4 a1,int4 a2\)</stringmatch>
+</decompilertest>
