@@ -37,6 +37,27 @@ math-function family.
    from the **caller's** use of `xmm0` after the call (call-site output recovery),
    but a `void` callee prototype pre-empts that inference in kuna.
 
+## Implementation status (2026-08-12)
+
+**Stage A is IMPLEMENTED** on this branch (`elf_plt.rs` + `kuna_ifuncfpret.rs`,
+gated `option ifuncfpret`, default-off). Verified: `0x7350`/`0x9220` are now
+discovered functions (`ifunc_<resolver>`), so `tailcalljump` fires and `sub_15620`
+renders `ifunc_15c80(); // tail-call` instead of the opaque `(*dat_def20)();
+return;`. Default-off is byte-identical.
+
+**Stages B–D are BLOCKED on a Ghidra-divergent change and are NOT implemented.**
+The chain still bottoms out at the stub: `ifunc_15c80 @ 0x7350` decompiles to
+`(*dat_def20)(); return;` and is typed **void**, so `sub_15620` stays void and
+`f64_log_base` still reads `xmm0` uninitialized. The stub is void because
+`flow.rs (FlowInfo::truncate_indirect_jump)` rewrites the indirect tail-`jmp *GOT`
+to a `CALLIND` + a **void `artificial_halt`** — it does not wire the `CALLIND`
+output to the RETURN. **That void halt is upstream-faithful** (Ghidra emits
+`(*ptr)(); return;` for an indirect tail-jmp too — confirmed with a minimal
+`return (*slot)(x)` reproducer). So recovering `return (*ptr)(...)` for an indirect
+tail-jmp (Stage B), the keystone that would let the unknown return propagate and
+call-site `xmm0` inference (Stage D) fire, is a deliberate divergence from the
+Ghidra port, not a bounded fix.
+
 ## Proposed fix (staged, each stage independently useful, all gated)
 
 New option `ifuncfpret` (P1, default-off opt-in; flip to default-on later per DIV
