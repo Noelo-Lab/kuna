@@ -14,3 +14,6 @@ pub mod kuna_restartlog;
 pub mod kuna_i386_pie_plt;
 // (kuna) DWARF full-depth type-resolution option gate (load-time, env-bridged).
 pub mod kuna_typedepth;
+// (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the
+// current function's own unknown prototype (register-parameter recovery).
+pub mod kuna_evalcurrentproto;

@@ -1971,6 +1971,28 @@ tier = "transform"
 symptoms = "switch rendered as nested if/else-if compare tree over one variable|binary-search cascade of constant compares where source had a switch|flip off to keep the compiler's lowered compare-tree rendering"
 
 [[settable]]
+option = "evalcurrentproto"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "prototype-source"
+strength = "HARD"
+rewind = "P4"
+issue = "kuna-eval-current-prototype"
+summary = "Evaluate a function's OWN unknown prototype with the model its compiler spec nominates in `<eval_current_prototype>` (a `<resolveprototype>` merged model), instead of with `<default_proto>`. The merged model then resolves per function against the trials that are actually active (`FuncProto::resolveModel` -> `ProtoModelMerged::selectModel`), so an x86 Windows binary recovers `__fastcall`/`__thiscall` ECX/EDX arguments while a function that touches neither still comes out `__stdcall`. Six vendored specs nominate a model (x86win, x86borland, x86gcc, CR16, HCS12, HCS12X); every other language is untouched either way."
+use_when = "On by default: the spec's nomination is the compiler's own statement about how its functions are called, and without it a register-passed argument surfaces as a local READ BEFORE IT IS WRITTEN - not merely less informative, but not something a C function can do. Byte-identical on the 675-datatest corpus. Set off to restore the `<default_proto>`-only evaluation (stack-only inputs on x86 Windows). An explicit `option protoeval <model>` outranks both."
+example = "option evalcurrentproto off"
+source_decompiler = "ghidra-upstream"
+inspiration = "upstream Architecture::parseCompilerConfig ELEM_EVAL_CURRENT_PROTOTYPE (architecture.cc:1321) + FuncProto::resolveModel (fspec.cc:3772); x86win.cspec <eval_current_prototype>"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "an x86 Windows function renders as (void) though it takes arguments|a local carrying a // ecx or // edx storage comment is read before it is ever written|__fastcall/__thiscall arguments missing from the signature|calls pass fewer arguments than the callee reads"
+live_field = "evalcurrentproto"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "callsitestackargs"
 values = "on|off"
 default = "on"

@@ -51,6 +51,14 @@
 <symbol space="ram" offset="0x401004" name="addfield"/>
 </binaryimage>
 <script>
+  <!-- kuna: `evalcurrentproto` default-on (DIV-71) makes the spec's own
+       <eval_current_prototype> merged model recover ECX with no model named by
+       hand, which is this testcase's pass-2 result reached automatically. Pin
+       the historical <default_proto>-only evaluation here so both passes keep
+       testing what they were written for: that the NAMED models are in the
+       registry and one can be selected. The automatic path is
+       tests/stages/kuna-evalcurrentproto.xml. -->
+  <com>option evalcurrentproto off</com>
   <com>lo fu getfield</com>
   <com>decompile</com>
   <com>print C</com>

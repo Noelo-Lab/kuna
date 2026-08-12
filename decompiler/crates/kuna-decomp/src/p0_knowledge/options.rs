@@ -287,6 +287,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "dedupitetail",
     "iteregion",
     "iteexpr",
+    "evalcurrentproto",
     "iteboolean",
     "itecondlist",
     "paramcopyhoist",

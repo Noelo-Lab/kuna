@@ -1081,8 +1081,22 @@ pub struct Architecture {
     /// parsed (or a default is seeded by [`build_default_proto`]).
     defaultfp: Option<Rc<ProtoModel>>,
     /// The current-evaluation prototype model (C++ `evalfp_current`); falls
-    /// back to `defaultfp` when unset.
+    /// back to `defaultfp` when unset.  Set only by an explicit
+    /// `option protoeval <model>`, which outranks the spec's own nomination.
     evalfp_current: Option<Rc<ProtoModel>>,
+    /// The model the compiler spec **nominates** for evaluating the current
+    /// function's prototype (its `<eval_current_prototype>`), decoded by
+    /// [`build_default_proto`].  Reaches a function only under
+    /// [`evalcurrentproto`](Self::evalcurrentproto); `None` for the many
+    /// languages whose spec declares no such element.  See
+    /// [`crate::kuna_evalcurrentproto`].
+    evalfp_current_spec: Option<Rc<ProtoModel>>,
+    /// (kuna) `evalcurrentproto`: honor the compiler spec's
+    /// `<eval_current_prototype>` nomination, so a function whose prototype is
+    /// unknown is evaluated with the spec's *merged* model and its
+    /// register-passed parameters (x86 `__fastcall`/`__thiscall` `ECX`/`EDX`)
+    /// are recovered instead of surfacing as reads of an undefined local.
+    pub evalcurrentproto: bool,
     /// Default storage location of a function's return address (C++
     /// `Architecture::defaultReturnAddr`), decoded from the cspec's top-level
     /// `<returnaddress>` element by [`build_default_proto`].  `None` when the
@@ -1342,6 +1356,8 @@ impl Architecture {
             proto_models: std::collections::BTreeMap::new(),
             defaultfp: None,
             evalfp_current: None,
+            evalfp_current_spec: None,
+            evalcurrentproto: false,
             default_return_addr: None,
             cspec_xml: None,
             pspec_xml: None,
@@ -1368,6 +1384,7 @@ impl Architecture {
     /// `architecture.cc:1420`).  The kuna defaults follow DIV-2/DIV-3
     /// (`docs/divergences.md`).
     pub fn reset_defaults_internal(&mut self) {
+        self.evalcurrentproto = true; // (kuna) DIV-71 default-on: honor the compiler spec's `<eval_current_prototype>` nomination, so an unknown prototype is evaluated with the spec's MERGED model and a `__fastcall`/`__thiscall` function's ECX/EDX arguments are recovered instead of being read as undefined locals. Byte-identical (0/675): only 6 vendored specs nominate a model, and the 3 datatests on an affected language are unchanged. Restore the `<default_proto>`-only evaluation with `option evalcurrentproto off`
         self.trim_recurse_max = 5;
         self.max_implied_ref = 2; // 2 is best, in specific cases a higher number might be good
         self.max_term_duplication = 2; // 2 and 3 (4) are reasonable
@@ -1663,6 +1680,12 @@ impl Architecture {
                 Ok(msg)
             }
             "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),
+            "evalcurrentproto" => {
+                let (val, msg) =
+                    crate::kuna_evalcurrentproto::OptionEvalCurrentProto.apply(p1)?;
+                self.evalcurrentproto = val;
+                Ok(msg)
+            }
             "iteboolean" => {
                 let (val, msg) =
                     crate::p8_structure::kuna_iteboolean::OptionIteBoolean.apply(p1)?;
@@ -2133,7 +2156,14 @@ impl Architecture {
         // `evalfp_current`) so the proto-recovery actions can set the function's
         // model and run output recovery against the real param lists.
         ctx.defaultfp = self.defaultfp.clone();
-        ctx.evalfp_current = self.evalfp_current.clone();
+        // An explicit `option protoeval <model>` outranks the spec's own
+        // `<eval_current_prototype>` nomination, which reaches the function only
+        // under `evalcurrentproto` (see `crate::kuna_evalcurrentproto`). With
+        // neither, the handle's own accessor falls back to `defaultfp`, exactly as
+        // before the option existed.
+        ctx.evalfp_current = self.evalfp_current.clone().or_else(|| {
+            self.evalcurrentproto.then(|| self.evalfp_current_spec.clone()).flatten()
+        });
         // Carry the cspec's return-address storage (C++ `glb->defaultReturnAddr`)
         // so the per-function `Funcdata::testForReturnAddress` can detect a
         // BRANCHIND that is really a tail return through the return-address
@@ -3273,6 +3303,18 @@ impl Architecture {
                     for m in named {
                         self.register_model(m);
                     }
+                    // (kuna `evalcurrentproto`) The spec's `<eval_current_prototype>`
+                    // nomination (C++ `parseCompilerConfig`'s
+                    // `ELEM_EVAL_CURRENT_PROTOTYPE` arm, architecture.cc:1321):
+                    // which registered model a function's OWN unlocked prototype is
+                    // evaluated with. Recorded here, applied per function in
+                    // `build_arch_handle` under the option; a name the registry does
+                    // not carry is ignored (the model failed to decode -- the
+                    // registration pass skips rather than throws), leaving the
+                    // `<default_proto>` evaluation.
+                    self.evalfp_current_spec =
+                        crate::kuna_evalcurrentproto::eval_current_model_name(&root)
+                            .and_then(|name| self.proto_models.get(&name).cloned());
                     return;
                 }
                 // Fall through to the name-only default on any decode failure
