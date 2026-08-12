@@ -302,15 +302,20 @@ mod tests {
     fn aggressive_carries_every_default_off_option() {
         use crate::kuna_phases::{kuna_num_settables, kuna_settable_by_index};
 
-        /// The three DELIBERATE exclusions, each with its reason recorded on
+        /// The DELIBERATE exclusions, each with its reason recorded on
         /// `AGGRESSIVE_OVERRIDES`: `v850indirectbranch` corrupts non-V850 targets,
         /// `dwarf_lines` buries a `-g` binary's C under per-instruction
         /// `/* src.c:N */` comments, and `formatstring` costs a second full
         /// decompile of every caller that yields a varargs override -- measured
         /// +43.7% to +77.5% on whole-binary `decompile-all`, far over the 5% speed
         /// budget, so standing requirement 4 holds it to an opt-in (DIV-66).
+        /// `ifuncfpret` is Stage A of the IFUNC FP-return chain: on its own it only
+        /// renames x86-64 IFUNC stubs to synthetic `ifunc_<resolver>` names and
+        /// recovers a tail call to them -- it does NOT yet fix the `xmm0`-return the
+        /// feature exists for (that needs the Ghidra-divergent Stage B), so it is an
+        /// explicit opt-in until the chain is complete rather than a rendering default.
         const EXCLUDED_ON_PURPOSE: &[&str] =
-            &["v850indirectbranch", "dwarf_lines", "formatstring"];
+            &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

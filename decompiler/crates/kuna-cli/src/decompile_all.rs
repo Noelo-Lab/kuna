@@ -406,7 +406,10 @@ pub(crate) fn resolve_targets(
 /// line is still applied afterward (for the catalog record), exactly as
 /// `kuna decompile` does.
 fn is_loadtime_gate(name: &str) -> bool {
-    matches!(name, "relocobjects" | "i386_pie_plt" | "macho-arm64e" | "typedepth")
+    matches!(
+        name,
+        "relocobjects" | "i386_pie_plt" | "macho-arm64e" | "typedepth" | "ifuncfpret"
+    )
 }
 
 fn last_option_value<'a>(options: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -468,6 +471,14 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
             "off" | "0" | "false"
         );
         env.set("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
+    }
+    if let Some(value) = last_option_value(options, "ifuncfpret") {
+        // default-off, opt-in: only an on-token enables it.
+        let on = matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "on" | "1" | "true" | ""
+        );
+        env.set("KUNA_IFUNCFPRET", if on { "on" } else { "off" });
     }
     if let Some(value) = last_option_value(options, "typedepth") {
         let on = !matches!(

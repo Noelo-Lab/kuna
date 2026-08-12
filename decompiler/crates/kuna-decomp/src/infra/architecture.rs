@@ -793,6 +793,13 @@ pub struct Architecture {
     /// file`, upstream of `option`); this bool exists only for catalog visibility
     /// and the `phase catalog` live `current` field.
     pub analysis_i386_pie_plt: bool,
+    /// (kuna) Gate the x86-64 IFUNC (`R_X86_64_IRELATIVE`) `.plt.sec`/`.iplt`
+    /// stub naming (`ifuncfpret`); default off. When on, the loader
+    /// (`kuna-analysis::loader::elf_plt::resolve_plt_imports`) names each ifunc
+    /// stub `ifunc_<resolver>` so a tail `jmp` to it is recovered as a tail call
+    /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
+    /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
+    pub analysis_ifuncfpret: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -1312,6 +1319,7 @@ impl Architecture {
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
+            analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_dwarf_lines: false,
@@ -1794,6 +1802,15 @@ impl Architecture {
             // (the PLT map is baked at `load file`, upstream of this `option`), so
             // an `option i386_pie_plt off` *before* `load file` in the same process
             // takes effect. The CLI sets the env directly on the subprocess too.
+            "ifuncfpret" => {
+                let val = on_or_off(p1)?;
+                self.analysis_ifuncfpret = val;
+                crate::kuna_ifuncfpret::set_ifuncfpret_env(val);
+                Ok(format!(
+                    "IFUNC PLT-stub naming turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
             "i386_pie_plt" => {
                 let val = on_or_off(p1)?;
                 self.analysis_i386_pie_plt = val;

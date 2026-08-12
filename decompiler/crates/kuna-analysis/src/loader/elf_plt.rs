@@ -67,7 +67,11 @@ pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
     }
 
     let got_to_name = build_got_name_map(file);
-    if got_to_name.is_empty() {
+    // (kuna ifuncfpret) A statically-linked binary can have NO symbol-named PLT
+    // imports yet still carry IFUNC (IRELATIVE) `.plt.sec` stubs to name, so the
+    // early-out must also account for the ifunc pass below.
+    let ifunc_enabled = kuna_decomp::kuna_ifuncfpret::ifuncfpret_enabled();
+    if got_to_name.is_empty() && !(ifunc_enabled && !build_got_ifunc_map(file).is_empty()) {
         return Vec::new();
     }
 
@@ -114,6 +118,35 @@ pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
 
     for (vma, data, _) in plt_secs {
         decode_plt_section(arch, vma, data, i386_got_base, &got_to_name, &mut out, &mut named_got);
+    }
+
+    // (kuna ifuncfpret) Name the x86-64 `.plt.sec`/`.iplt` IFUNC (IRELATIVE) stubs
+    // the symbol-keyed pass above leaves undiscovered, so a tail `jmp` to one is
+    // recovered as a tail call (`tailcalljump`) rather than flowing into the stub
+    // body and dropping the callee's return type.  Gated by `option ifuncfpret`.
+    if ifunc_enabled {
+        let ifunc = build_got_ifunc_map(file);
+        if !ifunc.is_empty() {
+            for sec in file.sections() {
+                let name = match sec.name() {
+                    Ok(n) => n,
+                    Err(_) => continue,
+                };
+                if !matches!(name, ".plt.sec" | ".plt" | ".iplt") {
+                    continue;
+                }
+                if let Ok(data) = sec.data() {
+                    decode_x86_64_ifunc_stubs(
+                        sec.address(),
+                        data,
+                        &ifunc,
+                        &got_to_name,
+                        &mut out,
+                        &mut named_got,
+                    );
+                }
+            }
+        }
     }
 
     // PowerPC ELFv2 (and the older `bss-plt` ABI) has no decodable `.plt` *code*
@@ -173,6 +206,70 @@ fn build_got_name_map(file: &object::File) -> HashMap<u64, Vec<u8>> {
         }
     }
     map
+}
+
+/// Build `got_slot_addr → ifunc_resolver_addr` from the `R_*_IRELATIVE`
+/// (IFUNC) dynamic relocations.  Unlike a `JUMP_SLOT`, an IRELATIVE slot carries
+/// **no symbol** — its addend is the address of the STT_GNU_IFUNC *resolver*, so
+/// [`build_got_name_map`] never names it and its `.plt.sec` stub is left
+/// undiscovered.  A function whose last act is a tail `jmp` to such a stub (a
+/// glibc math/mem/str wrapper: `sub_15620`/`log`) therefore flows INTO the stub,
+/// renders `(*dat_...)(...)`, and loses its return type.  Naming the stub (below)
+/// makes it a `FunctionSymbol`, so `tailcalljump` recovers the tail jump.
+/// x86-64 only (the `R_X86_64_IRELATIVE` = 37 relocation).
+fn build_got_ifunc_map(file: &object::File) -> HashMap<u64, u64> {
+    const R_X86_64_IRELATIVE: u32 = 37;
+    let mut map: HashMap<u64, u64> = HashMap::new();
+    if !matches!(
+        file.architecture(),
+        object::Architecture::X86_64 | object::Architecture::X86_64_X32
+    ) {
+        return map;
+    }
+    if let Some(relocs) = file.dynamic_relocations() {
+        for (got_off, reloc) in relocs {
+            if let object::RelocationFlags::Elf { r_type } = reloc.flags() {
+                if r_type == R_X86_64_IRELATIVE {
+                    // The resolver address is the reloc addend (no symbol).
+                    map.entry(got_off).or_insert(reloc.addend() as u64);
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Emit a `PltSym` for each x86-64 `.plt.sec`/`.plt`/`.iplt` stub whose GOT slot
+/// is an IFUNC (IRELATIVE) slot not otherwise named — the [`decode_x86_64`] scan
+/// restricted to the ifunc map, naming the stub `ifunc.<resolver_hex>` so it
+/// becomes a discovered `FunctionSymbol` and a tail `jmp` to it is recovered as a
+/// tail call (`tailcalljump`) instead of flowing into the stub body.
+fn decode_x86_64_ifunc_stubs(
+    vma: u64,
+    data: &[u8],
+    ifunc: &HashMap<u64, u64>,
+    named: &HashMap<u64, Vec<u8>>,
+    out: &mut Vec<PltSym>,
+    named_got: &mut HashSet<u64>,
+) {
+    let mut i = 0usize;
+    while i + 6 <= data.len() {
+        if data[i] == 0xFF && data[i + 1] == 0x25 {
+            let disp = i32::from_le_bytes([data[i + 2], data[i + 3], data[i + 4], data[i + 5]]);
+            let insn_addr = vma + i as u64;
+            let got = insn_addr.wrapping_add(6).wrapping_add(disp as i64 as u64);
+            if let Some(&resolver) = ifunc.get(&got) {
+                if !named.contains_key(&got) && named_got.insert(got) {
+                    let stub =
+                        vma + x86_stub_start(data, i, &[0xF3, 0x0F, 0x1E, 0xFA]) as u64;
+                    out.push(PltSym { addr: stub, name: format!("ifunc_{resolver:x}").into_bytes() });
+                }
+            }
+            i += 6;
+        } else {
+            i += 1;
+        }
+    }
 }
 
 /// Strip a glibc-style `@VERSION` / `@@VERSION` suffix from a symbol name.  The
@@ -1175,6 +1272,49 @@ mod tests {
         decode_i386(0x500, &data25, None, &map25, &mut out25, &mut named25);
         assert_eq!(out25.len(), 1);
         assert_eq!(out25[0].name, b"puts".to_vec());
+    }
+
+    #[test]
+    fn x86_64_ifunc_stub_naming() {
+        // A CET `.plt.sec` IFUNC stub: `endbr64` (F3 0F 1E FA) then a `bnd jmp
+        // *disp(%rip)` (F2 FF 25 <disp32>).  vma = 0x1000, so the FF 25 insn is at
+        // 0x1004, rip = 0x100a, and disp is chosen so the GOT slot = 0x2000.
+        let vma = 0x1000u64;
+        let got = 0x2000u64;
+        // Layout: endbr64 (4) + `bnd` prefix F2 (1), so the `FF 25` is at offset 5;
+        // rip = vma + 5 + 6.  Pick disp so the GOT slot = 0x2000.
+        let disp = (got as i64 - (vma as i64 + 5 + 6)) as i32;
+        let mut data: Vec<u8> = vec![0xF3, 0x0F, 0x1E, 0xFA, 0xF2, 0xFF, 0x25];
+        data.extend_from_slice(&disp.to_le_bytes());
+
+        // The GOT slot is an IRELATIVE ifunc slot resolving via 0x15c80; it carries
+        // no symbol, so the symbol-keyed `named` map does not contain it.
+        let mut ifunc: HashMap<u64, u64> = HashMap::new();
+        ifunc.insert(got, 0x15c80);
+        let named: HashMap<u64, Vec<u8>> = HashMap::new();
+
+        let mut out: Vec<PltSym> = Vec::new();
+        let mut named_got: HashSet<u64> = HashSet::new();
+        decode_x86_64_ifunc_stubs(vma, &data, &ifunc, &named, &mut out, &mut named_got);
+        assert_eq!(out.len(), 1, "the ifunc stub is named");
+        // The recorded address backs up over the `endbr64` to the stub entry.
+        assert_eq!(out[0].addr, vma);
+        assert_eq!(out[0].name, b"ifunc_15c80".to_vec());
+
+        // A GOT slot the symbol-keyed pass already named is NOT re-named as ifunc.
+        let mut named2: HashMap<u64, Vec<u8>> = HashMap::new();
+        named2.insert(got, b"already".to_vec());
+        let mut out2: Vec<PltSym> = Vec::new();
+        let mut named_got2: HashSet<u64> = HashSet::new();
+        decode_x86_64_ifunc_stubs(vma, &data, &ifunc, &named2, &mut out2, &mut named_got2);
+        assert!(out2.is_empty(), "an already-named slot is skipped");
+
+        // A non-ifunc slot (not in the ifunc map) yields nothing.
+        let empty: HashMap<u64, u64> = HashMap::new();
+        let mut out3: Vec<PltSym> = Vec::new();
+        let mut named_got3: HashSet<u64> = HashSet::new();
+        decode_x86_64_ifunc_stubs(vma, &data, &empty, &named, &mut out3, &mut named_got3);
+        assert!(out3.is_empty(), "no ifunc slot ⇒ no stub named");
     }
 
     #[test]

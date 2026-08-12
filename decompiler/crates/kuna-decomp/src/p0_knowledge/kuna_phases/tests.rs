@@ -42,7 +42,7 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_102() {
+fn settable_count_is_103() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -65,12 +65,13 @@ fn settable_count_is_102() {
     // +1 for `calloverlap` (P3 partial-range call-overlap guards, GH-275).
     // +1 for `orchain` (S8 returndup short-circuit operand-chain protection).
     // +1 for `evalcurrentproto` (P4 compiler-spec current-function prototype model).
-    assert_eq!(kuna_num_settables(), 102);
-    assert_eq!(SETTABLE_TABLE.len(), 102);
+    // +1 for `ifuncfpret` (P1 x86-64 IFUNC IRELATIVE PLT-stub naming).
+    assert_eq!(kuna_num_settables(), 103);
+    assert_eq!(SETTABLE_TABLE.len(), 103);
 }
 
 #[test]
-fn tier_counts_are_22_core_45_transform_35_analysis() {
+fn tier_counts_are_22_core_45_transform_36_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -105,7 +106,8 @@ fn tier_counts_are_22_core_45_transform_35_analysis() {
     // transform 44 -> 45: +1 for `orchain` (S8 returndup short-circuit chain gate).
     // core 21 -> 22: +1 for `evalcurrentproto` (P4 compiler-spec current-function
     // prototype model, DIV-71).
-    assert_eq!((core, transform, analysis), (22, 45, 35));
+    // analysis 35 -> 36: +1 for `ifuncfpret` (P1 x86-64 IFUNC PLT-stub naming).
+    assert_eq!((core, transform, analysis), (22, 45, 36));
 }
 
 #[test]
@@ -391,6 +393,9 @@ fn option_values_live_value_present_for_31_suppressed_for_71() {
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
         "i386_pie_plt",
+        // (kuna) x86-64 IFUNC PLT-stub naming: a load-time gate read via the
+        // `kuna_ifuncfpret` env var (no codegen live reader), like `i386_pie_plt`.
+        "ifuncfpret",
         // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
@@ -570,9 +575,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
-    // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row and
-    // evalcurrentproto's P4 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 101);
+    // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
+    // evalcurrentproto's P4 row and ifuncfpret's P1 row sit mid-table, so they do
+    // not move the tail).
+    assert_eq!(json.matches("},\n").count(), 102);
 }
 
 #[test]

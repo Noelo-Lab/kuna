@@ -210,6 +210,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "arm_markers" => on_off(conf.analysis_arm_markers),
         "mips_gp" => on_off(conf.analysis_mips_gp),
         "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
+        "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
         "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
         "typedepth" => on_off(conf.analysis_typedepth),
