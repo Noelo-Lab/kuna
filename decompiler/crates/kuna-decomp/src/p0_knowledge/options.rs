@@ -279,6 +279,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "loopcondhoist",
     "regionlooprefine",
     "regionedgeorder",
+    "almostregion",
     "condfold",
     "gotoreduce",
     "ifelseflatten",

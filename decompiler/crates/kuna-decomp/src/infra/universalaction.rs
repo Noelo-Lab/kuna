@@ -746,6 +746,20 @@ pub fn universal_sched(
             act!(ActionNameVars::boxed("merge")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
+            // (kuna) almostregion (option `almostregion`, default-OFF - report only).
+            // The SAILR goto premise turned into a query: a residual `goto` marks
+            // where the compiler restructured control flow, so delete each
+            // virtualized edge from a scratch region graph over `bblocks` and report
+            // the single-entry regions that appear only once it is gone, as
+            // candidate inlined-callee bodies.
+            // Runs IMMEDIATELY after the tree is final and BEFORE gotoreduce /
+            // taildup / ifelseflatten / crossjumprevert / returndup: those passes
+            // exist to *delete* gotos by duplication, and they consume ~19% of the
+            // raw virtualized-edge set (measured: 3,513 raw vs 2,863 surviving over
+            // 1,483 O2 functions).  Reading the residue instead of the raw set would
+            // silently drop the evidence this pass is built to read.
+            // Touches no p-code and no structured node, so OFF is byte-identical.
+            act!(crate::p8_structure::kuna_almostregion::ActionAlmostRegion::boxed("blockrecovery")),
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
             // default-OFF).  Runs after the tree is final + goto targets labelled.
             act!(crate::p8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),

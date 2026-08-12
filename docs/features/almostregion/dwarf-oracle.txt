@@ -1,0 +1,61 @@
+almostregion vs DWARF DW_TAG_inlined_subroutine ground truth
+======================================================================
+
+Binary  : decbench O2/coreutils/{stripped,compiled}/tr
+Function: parse_str @ 0x4260 (2257 bytes)
+kuna GED: 417.0 at O2, 0.0 at O2-noinline.  16 gotos at O2, 0 at -fno-inline.
+
+DWARF records 18 inlined callees in parse_str:
+   0x004289 - 0x004487    510B  ranges=3  unquote
+   0x00434d - 0x0049b7   1642B  ranges=4  build_spec_list
+   0x004370 - 0x00438f     31B  ranges=2  es_match
+   0x00437a - 0x0043d4     90B  ranges=3  append_normal_char
+   0x0043c6 - 0x0043df     25B  ranges=2  es_match
+   0x0043d0 - 0x0043e0     16B  ranges=2  es_match
+   0x0043f7 - 0x004417     32B  ranges=2  es_match
+   0x004408 - 0x004510    264B  ranges=5  find_bracketed_repeat
+   0x004408 - 0x00441f     23B  ranges=1  es_match
+   0x0044b1 - 0x0044fd     76B  ranges=5  append_repeated_char
+   0x004530 - 0x004561     49B  ranges=3  append_normal_char
+   0x00459b - 0x004653    184B  ranges=5  append_range
+   0x004607 - 0x004651     74B  ranges=1  find_closing_delim
+   0x00467a - 0x0046e8    110B  ranges=5  append_equiv_class
+   0x004749 - 0x004759     16B  ranges=1  es_free
+   0x004838 - 0x0048ea    178B  ranges=6  append_char_class
+   0x004838 - 0x00488b     83B  ranges=3  look_up_char_class
+   0x004b0d - 0x004b2c     31B  ranges=1  append_normal_char
+
+kuna --option almostregion report (today's build) reports these regions.
+Member blocks, checked against the records above:
+
+  head 0x48b4 exit 0x46dd  members 0x48b4 0x48e0
+      0x48b4 -> inside DWARF-inlined: append_char_class, build_spec_list
+      0x48e0 -> inside DWARF-inlined: append_char_class, build_spec_list
+  head 0x48e0 exit 0x4749  members 0x46dd 0x48e0
+      0x46dd -> inside DWARF-inlined: append_equiv_class, build_spec_list
+      0x48e0 -> inside DWARF-inlined: append_char_class, build_spec_list
+
+Verdict: every reported member block lies inside DWARF-confirmed inlined
+code.  Inlining here is NESTED - build_spec_list spans 0x434d-0x49b7, i.e.
+most of the function, and the others sit inside it - so the meaningful unit
+is the INNERMOST callee covering a block.  By that reading the first region
+is a clean single-callee hit (append_char_class) and the second spans two
+adjacent innermost callees (append_equiv_class and append_char_class), a
+real imprecision that is not claimed otherwise.
+
+Note also the high prior: build_spec_list alone covers most of parse_str, so
+"lands inside inlined code" is weak evidence on THIS function by itself.  The
+discriminating measurement is the corpus-level one in analysis.md, not this
+single pane.
+
+NOTE the members are a block SET, not an address interval: the exits sit at
+LOWER addresses than the heads.  An inlined callee is laid out in several
+disjoint pieces - DWARF records 3 to 6 ranges for these callees - so any
+consumer must take the member list and never head..exit.
+
+Counter-example, stated because it bounds the claim:
+  openssh-portable/ssh::sshkey_drop_cert @ O2 0x42c50 has three
+  DWARF-confirmed inlined callees (sshkey_type_is_cert, cert_free,
+  sshkey_type_plain) and ZERO gotos even with every goto-removal pass
+  disabled.  No goto means no virtualized edge means nothing to probe.
+  almostregion finds the messy half of inlining, by construction.

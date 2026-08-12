@@ -1044,3 +1044,81 @@ this chapter were each gated on a measured decbench GED ablation
 (net-positive for DIV-17/23/25; the DIV-18 revert is the same oracle saying
 no), so the accept/rollback decision is made per-default at the corpus
 level, not per-function at decompile time.
+
+## 8.5 Reading the goto census as evidence: latent regions (`almostregion`)
+
+§8.3 and §8.4 treat a `goto` as a defect to be driven down. `almostregion`
+treats the same census as *evidence*, and asks a different question of it:
+**which bytes of this function did not come from this function?**
+
+The premise is SAILR's. A residual `goto` marks a place where the compiler
+restructured control flow past what a source-level `if`/`while` nest can
+express, which is why §8.3's de-optimizations work at all. Inlining is one such
+restructuring, and it leaves a characteristic shape: a callee body that is a
+single-entry region *except* for one edge the compiler threaded into or out of
+its middle, which the structurer must then virtualize.
+
+Note carefully what the pass does **not** do. Virtualization is recorded on
+`sblocks` and never on `bblocks` — every `set_goto_branch` call site is on the
+structurer's own graph, and
+`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regionid.rs
+(KunaRegionIdentifier::build_from_block_graph)` rebuilds from `bblocks` with no
+edge-flag filter. P7 therefore already sees the fully un-virtualized CFG, so
+"un-virtualize the edge and re-run region identification" would return exactly
+the regions P7 already declined to find. The operation that carries the intended
+meaning is the inverse. For each virtualized edge `e = (s, t)` the pass builds a
+scratch region graph over `bblocks`, **deletes** `e`, and keeps a candidate
+`(head, exit)` only when it is a single-entry region in `G - e` and **not** one
+in `G`. Both directions are required, so a set that was already a region is
+never reported. The deleted edge must additionally be *incident* to the region
+it exposed — without that, deletions perturb dominance at a distance and the
+pass reports regions with no relationship to the goto.
+
+The single-entry predicate is transcribed from the private `check_region` in
+`kuna_regionid.rs` into
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_almostregion.rs
+(kuna_check_region)`, because the region identifier is a line-faithful port
+pinned by `docs/spec/07-regions.md` and is not modified to expose it; the
+scratch graph, the two dominator trees and the post-dominator climb all use the
+public `kuna_regiongraph` API. Head candidates are the goto target, then the
+dominator chain above the target (the edge entered the body below its head — the
+cross-jump shape), then the chain above the source (the edge gave the body a
+second exit).
+
+**Scheduling matters, and is load-bearing.** The pass runs immediately after
+`ActionFinalStructure` and *before* `ActionGotoReduce` and the rest of §8.3.
+Those passes exist to delete gotos by duplication, and they consume about 19% of
+the raw virtualized-edge set (measured: 3,513 raw versus 2,863 surviving across
+1,483 `-O2` functions of `coreutils/tr`, `coreutils/ls`, `bzip2`, `gzip` and
+`tar`). Reading the residue instead of the raw set silently discards the
+evidence the pass exists to read — the end-to-end witness
+`tests/stages/kuna-almostregion.xml` reports a region in a function whose final
+C contains no `goto` at all, because `returndup` duplicated the shared return
+tail away before printing.
+
+A reported region is a block **set**, never the address interval `head..exit`.
+An inlined callee is routinely laid out in several disjoint pieces (DWARF
+records three to six ranges for the callees inlined into `coreutils/tr::parse_str`),
+and in the stage witness the exit address is *below* the head. Consumers must
+take the member list.
+
+The option is `almostregion off|on|report`, default `off`: `on` emits the
+per-function `// inline-candidate xN` slug, `report` adds one warning line per
+region carrying its head, exit and members. Nothing else changes — no p-code and
+no structured node is touched, so `off` is byte-identical and `on` differs from
+`off` by comment lines alone. Cost is bounded before any graph is built
+(`MAX_PROBES`, `MAX_BLOCKS`), because each probe rebuilds two dominator trees
+and the per-function watchdog is a live constraint on `decompile-all`.
+
+**Honest scope.** This is one signal, and a narrow one. Measured against DWARF
+`DW_TAG_inlined_subroutine` ground truth over the same 1,483 paired
+`-O2`/`-O2 -fno-inline` functions, inlined bytes are only ~1.6x as goto-dense as
+ordinary bytes, and goto *density* does not separate inlined from non-inlined
+code at all (0.671 versus 0.699 per 100 bytes) — the function-level association
+is largely a size effect. Inlining that lands tidily leaves no goto whatsoever:
+`openssh-portable/ssh::sshkey_drop_cert` at `-O2` has three DWARF-confirmed
+inlined callees and zero gotos even with every §8.3 pass disabled. So
+`almostregion` finds the *messy* half of inlining by construction, and a
+complete inline-identification story needs the signals it cannot see — interface
+narrowness at a region boundary, stack-slot lifetime clustering, windowed
+function-identification matching, and repeated isomorphic regions.

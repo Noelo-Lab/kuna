@@ -260,13 +260,14 @@
 0253        !         namevars
 0254        !         setcasts
 0255                  finalstructure
-0256                  gotoreduce
-0257                  taildup
-0258                  ifelseflatten
-0259                  crossjumprevert
-0260                  dedupitetail
-0261                  iteregion
-0262                  iteboolean
-0263                  paramcopyhoist
-0264        !         prototypewarnings
-0265                  stop
+0256                  almostregion
+0257                  gotoreduce
+0258                  taildup
+0259                  ifelseflatten
+0260                  crossjumprevert
+0261                  dedupitetail
+0262                  iteregion
+0263                  iteboolean
+0264                  paramcopyhoist
+0265        !         prototypewarnings
+0266                  stop

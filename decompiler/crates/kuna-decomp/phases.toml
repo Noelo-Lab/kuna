@@ -3335,3 +3335,22 @@ inspiration = "Ghidra MachoLoader arm64e cpusubtype -> AARCH64:LE:64:AppleSilico
 change_kind = "analysis-enablement"
 tier = "analysis"
 symptoms = "arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled|pac instructions in an apple-silicon binary not modeled by the loaded spec"
+
+[[settable]]
+option = "almostregion"
+values = "off|on|report"
+default = "off"
+destructive = false
+phase = "P8"
+subphase = "goto-quality-acceptance"
+strength = "HARD"
+rewind = "P8"
+issue = "kuna-inline-identification"
+summary = "Report block sets that would have collapsed into a single-entry region if the structurer had not been forced to virtualize one edge into a goto, as candidate INLINED code. SAILR's premise is that a residual goto marks where the compiler restructured control flow past what a source-level if/while nest can express; gotoreduce, taildup and crossjumprevert already use that to undo three specific optimizations, and this option uses it to ask a different question - which bytes of this function did not come from this function. Virtualization is recorded on sblocks and never on bblocks, so P7 already sees the un-virtualized CFG and re-running region identification would be a no-op; instead the pass builds a scratch region graph over bblocks, DELETES each virtualized edge, and reports the single-entry regions that appear in G-e but are not regions in G, requiring the deleted edge to be incident to the region it exposed. Report-only: no p-code and no structured node is touched, so off is byte-identical and on differs by comment lines alone. off = inert. on = a per-function `// inline-candidate xN` slug. report = the slug plus one warning line per region carrying its head, exit and full member block list. Members are a block SET, never an address interval - an inlined callee is routinely laid out in several disjoint pieces."
+use_when = "Off (default). Flip on to count candidate inlined regions, or report to get the head/exit/member addresses for each - the input a human or an LLM needs to choose what to outline. Read the emitted list with `--option warnstyle banner` to see the full text rather than the short slug."
+example = "--option almostregion report"
+source_decompiler = "kuna"
+inspiration = "SAILR (Basque et al., USENIX Security 2024) - gotos mark where the compiler restructured control flow; the delete-the-edge probe and the DWARF-oracle validation are kuna's"
+change_kind = "opt-in-tool"
+tier = "analysis"
+symptoms = "want to know which parts of a function the compiler inlined|goto-heavy optimized function where some blocks look like a foreign callee body|choosing a region to outline by hand or with an llm and needing candidate head/exit/member addresses"

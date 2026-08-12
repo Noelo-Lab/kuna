@@ -710,6 +710,9 @@ pub struct ArchContext {
     /// precompute sites.  The value is the shared printed-width budget, which
     /// doubles as the option's on/off sentinel: `0` = off, `5` = `on` (angr
     /// parity), `9` = `wide`.
+    /// (kuna) `almostregion` reporting level (0 = off), option `almostregion`,
+    /// opt-in default-off.  Report-only.
+    pub almost_region: int4,
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
@@ -1024,6 +1027,7 @@ impl ArchContext {
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
+            almost_region: 0,            // almostregion (opt-in default-off; 0 = off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)

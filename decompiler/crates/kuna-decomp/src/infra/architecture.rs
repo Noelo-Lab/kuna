@@ -524,6 +524,10 @@ pub struct Architecture {
     /// = `wide` (absorbs kuna's finer printed-statement granularity).  The level moves
     /// the budget for BOTH rules and nothing else.  Default-OFF opt-in.  See
     /// [`crate::p8_structure::kuna_condfold`].
+    /// (kuna) `almostregion` reporting level: 0 = off, 1 = per-function slug,
+    /// 2 = one warning line per candidate region.  Report-only; see
+    /// [`crate::p8_structure::kuna_almostregion`].
+    pub almost_region: int4,
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
@@ -1273,6 +1277,7 @@ impl Architecture {
             loop_cond_hoist: false,
             region_loop_refine: false,
             region_edge_order: false,
+            almost_region: 0,
             cond_fold: 0,
             reduce_return_gotos: false,
             flatten_ifelse: false,
@@ -1427,6 +1432,7 @@ impl Architecture {
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
+        self.almost_region = 0; // (kuna) default-OFF opt-in (SAILR goto premise: report block sets that would be single-entry regions but for one virtualized edge, as candidate inlined code; report-only, so OFF is byte-identical)
         self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
         self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
@@ -1652,6 +1658,12 @@ impl Architecture {
                 region_edge_order,
                 "Region structurer H2 post-dominator + dominance-tiered edge-virtualization ordering"
             ),
+            "almostregion" => {
+                let (val, msg) =
+                    crate::p8_structure::kuna_almostregion::OptionAlmostRegion.apply(p1)?;
+                self.almost_region = val;
+                Ok(msg)
+            }
             "condfold" => {
                 let (val, msg) =
                     crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
@@ -2220,6 +2232,7 @@ impl Architecture {
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
+        ctx.almost_region = self.almost_region; // almostregion
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten

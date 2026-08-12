@@ -1,0 +1,67 @@
+{
+  "slug": "almostregion",
+  "option": "almostregion",
+  "values": "off|on|report",
+  "default": "off",
+  "phase": "P8",
+  "subphase": "goto-quality-acceptance",
+  "element_id": 4123,
+  "change_kind": "opt-in-tool",
+  "tier": "analysis",
+  "destructive": false,
+  "report_only": true,
+
+  "witness": {
+    "stage_test": "tests/stages/kuna-almostregion.xml",
+    "assertions": 7,
+    "shape": "three-block body entered from outside at its middle block"
+  },
+
+  "real_case": {
+    "binary": "decbench O2/coreutils/stripped/tr",
+    "function": "parse_str",
+    "addr": "0x4260",
+    "dwarf_inline_sites": 18,
+    "gotos_o2": 16,
+    "gotos_o2_noinline": 0,
+    "regions_reported": 3,
+    "oracle": "docs/features/almostregion/dwarf-oracle.txt"
+  },
+
+  "speed_off_ms": 649.4,
+  "speed_on_ms": 667.7,
+  "speed_delta_pct": 2.81,
+  "speed_delta_pct_median": 1.59,
+  "speed_samples": 13,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_method": "interleaved min-of-N, 13 samples per arm, alternating arm order, two discarded warmups. scripts.pipeline.timeit runs all OFF samples then all ON samples, which on this box reported -31.94% for a pass that cannot make anything faster - the first arm pays every cold cost. The number above is the ON arm on a goto-heavy function (8 probe edges); the shipped default is off, where the pass returns before building any graph.",
+
+  "premise_measurement": {
+    "corpus": "1483 paired O2 / O2-noinline functions (coreutils/tr, coreutils/ls, bzip2, gzip, tar)",
+    "raw_gotos_o2": 3513,
+    "raw_gotos_o2_noinline": 2151,
+    "gotos_consumed_by_kuna_cleanup_passes": 650,
+    "marginal_gotos_per_100_inlined_bytes": 0.826,
+    "baseline_goto_density_per_100_bytes": 0.514,
+    "inlined_vs_ordinary_goto_density": 1.61,
+    "goto_density_with_inlining": 0.671,
+    "goto_density_without_inlining": 0.699,
+    "note": "goto density does NOT separate inlined from non-inlined code; the function-level association is a size effect. This bounds the claim and is why the pass reports the structural fact under the goto rather than the goto."
+  },
+
+  "gates": {
+    "make_test": "PARITY OK 675/675",
+    "make_test_stages": "PARITY OK 443/443",
+    "make_rust_test": "4560 passed, 0 failed",
+    "check_spec": "OK lenient and strict",
+    "catalog_check": "catalog OK"
+  },
+
+  "sweep": {
+    "requirement": 7,
+    "applicable": false,
+    "reason": "report-only; no p-code and no structured node is touched, so off is byte-identical and the set of functions whose C changes with no option supplied is empty. Both parity gates confirm it (675/675 and 443/443 unchanged)."
+  }
+}

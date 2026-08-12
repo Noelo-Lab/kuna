@@ -257,6 +257,9 @@ Three tiers:
 | a COFF .obj lists only its first function (the rest collide at address 0) | [`relocobjects`](#relocobjects) |
 | arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled | [`macho-arm64e`](#macho-arm64e) |
 | pac instructions in an apple-silicon binary not modeled by the loaded spec | [`macho-arm64e`](#macho-arm64e) |
+| want to know which parts of a function the compiler inlined | [`almostregion`](#almostregion) |
+| goto-heavy optimized function where some blocks look like a foreign callee body | [`almostregion`](#almostregion) |
+| choosing a region to outline by hand or with an llm and needing candidate head/exit/member addresses | [`almostregion`](#almostregion) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
@@ -974,6 +977,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; an arm64e Mach-O loads with the generic v8A spec, exactly as any arm64). Flip on to decompile an arm64e (Apple-Silicon, pointer-auth) Mach-O with the AppleSilicon spec that models its extensions.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multiformat-macho-arm64e
 - **Example:** `--option macho-arm64e on`
+
+### `almostregion` -- off | on | report, default `off`
+
+- **Symptoms:** want to know which parts of a function the compiler inlined; goto-heavy optimized function where some blocks look like a foreign callee body; choosing a region to outline by hand or with an llm and needing candidate head/exit/member addresses.
+- **What it does:** Report block sets that would have collapsed into a single-entry region if the structurer had not been forced to virtualize one edge into a goto, as candidate INLINED code. SAILR's premise is that a residual goto marks where the compiler restructured control flow past what a source-level if/while nest can express; gotoreduce, taildup and crossjumprevert already use that to undo three specific optimizations, and this option uses it to ask a different question - which bytes of this function did not come from this function. Virtualization is recorded on sblocks and never on bblocks, so P7 already sees the un-virtualized CFG and re-running region identification would be a no-op; instead the pass builds a scratch region graph over bblocks, DELETES each virtualized edge, and reports the single-entry regions that appear in G-e but are not regions in G, requiring the deleted edge to be incident to the region it exposed. Report-only: no p-code and no structured node is touched, so off is byte-identical and on differs by comment lines alone. off = inert. on = a per-function `// inline-candidate xN` slug. report = the slug plus one warning line per region carrying its head, exit and full member block list. Members are a block SET, never an address interval - an inlined callee is routinely laid out in several disjoint pieces.
+- **When to flip:** Off (default). Flip on to count candidate inlined regions, or report to get the head/exit/member addresses for each - the input a human or an LLM needs to choose what to outline. Read the emitted list with `--option warnstyle banner` to see the full text rather than the short slug.
+- **Where / provenance:** P8/goto-quality-acceptance · kuna · opt-in-tool · kuna-inline-identification
+- **Example:** `--option almostregion report`
 
 ## Core rendering defaults
 

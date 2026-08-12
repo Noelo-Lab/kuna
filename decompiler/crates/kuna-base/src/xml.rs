@@ -1736,8 +1736,10 @@ mod tests {
         // and ghdec-orchain / returndup must not split the operand chain of a
         // short-circuit (option off = the guard cascade, on = the folded condition)
         // and kuna-evalcurrentproto / the compiler spec's <eval_current_prototype>
-        // model recovers a __fastcall function's ECX/EDX arguments
-        assert_eq!(count, 200, "corpus file count drifted");
+        // model recovers a __fastcall function's ECX/EDX arguments,
+        // and kuna-almostregion / the S8 almostregion option reports a latent
+        // single-entry region exposed by deleting one virtualized edge
+        assert_eq!(count, 201, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

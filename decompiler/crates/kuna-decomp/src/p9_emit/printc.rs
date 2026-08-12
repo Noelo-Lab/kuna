@@ -594,6 +594,8 @@ pub fn warning_slug(text: &str) -> String {
         "return-dupe".to_string()
     } else if body.starts_with("crossjumprevert:") {
         "crossjump-dupe".to_string()
+    } else if body.starts_with("almostregion:") {
+        xn("inline-candidate")
     } else if body.starts_with("returndup:") {
         xn("return-dupe")
     } else if body.starts_with("earlyreturn:") {

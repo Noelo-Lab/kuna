@@ -1,0 +1,80 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    S8 "goto-quality-acceptance" sub-stage: report block sets that would have
+    collapsed into a single-entry region if the structurer had not been forced
+    to virtualize one edge into a goto, as candidate INLINED code.
+    Option `almostregion off|on|report` (default OFF, ELEM 4123).
+
+    THE PREMISE.  SAILR (Basque et al., USENIX Security 2024) observes that a
+    residual goto marks where the *compiler* restructured control flow past what
+    a source-level if/while nest can express.  gotoreduce, taildup and
+    crossjumprevert already use that observation to undo three specific
+    optimizations; this option uses it to ask a different question - which bytes
+    of this function did not come from this function.
+
+    WHY THE EDGE IS DELETED, NOT UN-VIRTUALIZED.  Virtualization is recorded on
+    sblocks and never on bblocks, so P7 already sees the un-virtualized CFG and
+    re-running region identification would return exactly the regions it already
+    failed to find.  The pass instead builds a scratch region graph over
+    bblocks, DELETES the virtualized edge, and keeps only the single-entry
+    regions that appear in G-e and are NOT regions in G, requiring the deleted
+    edge to be incident to the region it exposed.
+
+    WHY IT RUNS BEFORE THE GOTO-REMOVAL PASSES.  gotoreduce / taildup /
+    ifelseflatten / crossjumprevert / returndup exist to DELETE gotos by
+    duplication, and they consume about 19% of the raw virtualized-edge set
+    (measured: 3,513 raw vs 2,863 surviving across 1,483 O2 functions of
+    coreutils/tr, coreutils/ls, bzip2, gzip and tar).  This witness is the
+    end-to-end proof: the emitted C below contains NO goto in either pass,
+    because returndup duplicated the shared `return v1 + 5;` tail away - and the
+    region is still reported, because the pass reads the structurer's raw output
+    rather than the printed residue.
+
+    THE WITNESS (self-contained, no relocations, no calls).
+
+        entry:  test edi,edi ; je OTHER
+        h:      mov eax,esi  ; test esi,esi ; je b3
+        b2:     add eax,3
+        b3:     add eax,5    ; jmp X
+        OTHER:  mov eax,7    ; jmp b2      <- crosses into the body's middle
+        X:      ret
+
+    OTHER jumps to b2 rather than to the body head, so the body has one exit but
+    two entries and the structurer must virtualize an edge.  Deleting it leaves
+    a textbook single-entry region, which is the report.  Note the reported
+    members are a block SET, not the address interval head..exit: here the exit
+    (0x40100e) sits at a LOWER address than the head (0x401004) and the members
+    are not contiguous, exactly as an inlined callee laid out in several pieces.
+
+    PASS 1 (`option almostregion off`, the default) = inert.
+    PASS 2 (`option almostregion report`) = byte-identical C plus the report.
+
+    Asserts are counted across BOTH passes, so a token that appears once per
+    pass asserts min=max=2 and a token unique to one pass asserts min=max=1.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa85ff740e89f085f6740383c00383c005eb07b807000000ebf1c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="ar"/>
+</binaryimage>
+<script>
+  <com>option warnstyle banner</com>
+  <com>option almostregion off</com>
+  <com>lo fu ar</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option almostregion report</com>
+  <com>lo fu ar</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="almostregion #1: OFF is inert - the per-function report appears in pass 2 only" min="1" max="1">almostregion: 1 latent single-entry region</stringmatch>
+<stringmatch name="almostregion #2: the report carries the head, the exit and the full member block SET, and the exit address is BELOW the head so the members are not an interval (pass 2 only)" min="1" max="1">latent region head 0x401004 exit 0x40100e, 3 blocks \[0x401004 0x401008 0x401016\]</stringmatch>
+<stringmatch name="almostregion #3: the report names the virtualized edge whose deletion exposed the region (pass 2 only)" min="1" max="1">exposed by deleting the goto 0x401008 - 0x401011</stringmatch>
+<stringmatch name="almostregion #4: the pass reads the structurer's RAW goto set - the emitted C has no goto at all in either pass, because returndup duplicated the shared return tail away before printing" min="0" max="0">goto label_</stringmatch>
+<stringmatch name="almostregion #5: report-only - the body statement is identical in both passes (off plus report = 2)" min="2" max="2">v1 = a1 \+ 3;</stringmatch>
+<stringmatch name="almostregion #6: report-only - the crossing-edge arm is identical in both passes (off plus report = 2)" min="2" max="2">a1 = 7;</stringmatch>
+<stringmatch name="almostregion #7: report-only - the duplicated return tail is untouched in both passes (2 per pass = 4)" min="4" max="4">return v1 \+ 5;</stringmatch>
+</decompilertest>
