@@ -25,7 +25,7 @@ fn subphase_count_is_43() {
 }
 
 #[test]
-fn surface_count_is_101() {
+fn surface_count_is_102() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
