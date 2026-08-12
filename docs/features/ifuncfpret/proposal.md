@@ -58,6 +58,28 @@ tail-jmp (Stage B), the keystone that would let the unknown return propagate and
 call-site `xmm0` inference (Stage D) fire, is a deliberate divergence from the
 Ghidra port, not a bounded fix.
 
+## Stage B seam (for the follow-up PR)
+
+Proven end-to-end: forcing `sub_15620`'s prototype to `float8` makes `f64_log_base`
+render **exactly** IDA's `v1 = fake_log(a1); return v1 / fake_log(a0);` — and an
+`int8`/`undefined8` (RAX) return does NOT work, so the recovered register must be
+**XMM0**, driven from the caller. The precise seam:
+
+- `flow.rs (FlowInfo::truncate_indirect_jump)` converts the stub's `jmp *GOT`
+  BRANCHIND to a `CALLIND` + a **void `artificial_halt`** (a RETURN whose input is
+  the constant `#1`, not a return register).
+- `p4_calls/coreaction_protos.rs (ActionReturnRecovery)` recovers a function's
+  output register from what its `CPUI_RETURN` ops read (`init_active_output` →
+  output trials). The void halt reads no register, so no output trial survives →
+  the stub is `void`.
+- An indirect call whose result **is used** already recovers its output
+  (verified: `user` → `v1 = (float8)(*dat)()`). So Stage B = make the stub's
+  terminal RETURN read the CALLIND's return-register output (RAX/XMM0), so
+  `ActionReturnRecovery` sees an active output trial; the register is then chosen
+  inter-procedurally from the callers' use (XMM0 for `log`). This is a change to
+  core call/return recovery for indirect tail-jmps — Ghidra-divergent, gated,
+  its own PR.
+
 ## Proposed fix (staged, each stage independently useful, all gated)
 
 New option `ifuncfpret` (P1, default-off opt-in; flip to default-on later per DIV
