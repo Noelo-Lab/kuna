@@ -14,6 +14,7 @@
 //! The existing ELF fixtures + the 675 datatests are the proof this is
 //! byte-identical (see the module doc on [`super`]).
 
+use object::read::Object;
 use object::{Architecture, SectionFlags, SectionKind};
 
 use kuna_sleigh::loadimage::section_flags;
@@ -93,6 +94,18 @@ impl ObjectFormat for ElfFormat {
 
     fn const_ranges(&self, file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
         crate::loader::elf_plt::mips_got_const_ranges(file)
+    }
+
+    /// An `ET_REL` object carries no program headers, so `file.segments()` is
+    /// empty and the mapped-image path would map zero bytes — the historical
+    /// gate, moved behind the boundary verbatim.
+    fn relocatable_layout(&self, file: &object::File) -> bool {
+        file.kind() == object::ObjectKind::Relocatable && file.segments().next().is_none()
+    }
+
+    fn is_alloc_section(&self, _kind: SectionKind, flags: SectionFlags) -> bool {
+        const SHF_ALLOC: u64 = 0x2;
+        matches!(flags, SectionFlags::Elf { sh_flags } if sh_flags & SHF_ALLOC != 0)
     }
 }
 

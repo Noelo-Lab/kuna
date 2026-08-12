@@ -130,7 +130,7 @@ impl AnalysisPass for FidPass {
         // text, so `NoRelocations` is correct — and it matches the build side, which
         // sees no relocations for a self-contained body (the full hash is identical
         // either way; see `hash.rs`'s relocation test). A future PIE/relocatable
-        // lookup path can supply an `elf_reloc`-backed oracle here.
+        // lookup path can supply an `reloc_object`-backed oracle here.
         let relocs = NoRelocations;
 
         for (&entry, _f) in listing.functions() {

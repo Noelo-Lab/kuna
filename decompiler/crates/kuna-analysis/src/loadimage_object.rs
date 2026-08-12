@@ -74,7 +74,7 @@ const BUFSIZE: usize = 512;
 /// by the [`RELOC_OBJECTS_ENV`](kuna_decomp::options::RELOC_OBJECTS_ENV) process
 /// env var that `Architecture::set_kuna_option("relocobjects", ...)` writes — any
 /// of `0`/`off`/`false`/`no` disables it; anything else (or unset) is ON.
-fn reloc_objects_enabled() -> bool {
+pub(crate) fn reloc_objects_enabled() -> bool {
     match std::env::var(kuna_decomp::options::RELOC_OBJECTS_ENV) {
         Ok(v) => !matches!(v.trim(), "0" | "off" | "false" | "no" | "OFF"),
         Err(_) => true,
@@ -286,18 +286,19 @@ impl ObjectLoadImage {
         // retries with this before erroring.
         let fallback_archtype = fallback_language_id(&file, &archtype);
 
-        // (kuna) ET_REL relocatable-object (`.o`) path: a relocatable object has
-        // no `PT_LOAD` program headers, so `file.segments()` is empty and the
-        // linked path below would map zero bytes (every function failing with
-        // "Unable to load N bytes").  Synthesize a section layout, apply the
-        // `.rela.*` relocations, and rebase symbols instead — the angr CLE `ELF`
-        // relocatable backend's job.  Gated on the file type (linked
-        // ET_EXEC/ET_DYN images are byte-identical) plus the `relocobjects`
-        // off-switch.  See [`crate::loader::elf_reloc`].
-        if reloc_objects_enabled()
-            && file.kind() == object::ObjectKind::Relocatable
-            && file.segments().next().is_none()
-        {
+        // (kuna) Relocatable-object (`.o` / `.obj`) path: a pre-link object does
+        // not say where its bytes live.  An ELF `ET_REL` has no `PT_LOAD` program
+        // headers, so `file.segments()` is empty and the linked path below would
+        // map zero bytes (every function failing with "Unable to load N bytes"); a
+        // COFF object *does* present segments, but stacks every one of them at VMA
+        // 0, so the linked path maps only whichever section sorts first and drops
+        // every function of the other twelve into a single address-0 collision.
+        // Both need the same answer: synthesize a section layout, apply the
+        // relocations, and rebase symbols — the angr CLE relocatable backend's job.
+        // Gated on the per-format predicate (a linked image of any format is
+        // byte-identical — it keeps the mapped path) plus the `relocobjects`
+        // off-switch.  See [`crate::loader::reloc_object`].
+        if reloc_objects_enabled() && fmt.relocatable_layout(&file) {
             return Self::from_relocatable(filename, &file, fmt.as_ref(), archtype);
         }
 
@@ -447,20 +448,20 @@ impl ObjectLoadImage {
     }
 
     /// (kuna) Build the image from a **relocatable object** (`ET_REL`): lay the
-    /// `SHF_ALLOC` sections out above [`elf_reloc::RELOC_BASE`], apply the
+    /// `SHF_ALLOC` sections out above [`reloc_object::RELOC_BASE`], apply the
     /// `.rela.*` relocations, and rebase / extern-bind the symbols — producing
     /// the same `(segments, sections, funcsyms)` triple the linked `PT_LOAD` path
     /// produces.  Funcsym names are demangled + deduped exactly as on the linked
-    /// path.  See [`crate::loader::elf_reloc`].
+    /// path.  See [`crate::loader::reloc_object`].
     fn from_relocatable(
         filename: &str,
         file: &object::File,
         fmt: &dyn crate::loader::format::ObjectFormat,
         archtype: Vec<u8>,
     ) -> KunaResult<ObjectLoadImage> {
-        use crate::loader::elf_reloc;
+        use crate::loader::reloc_object;
 
-        let layout = elf_reloc::layout_relocatable(file, fmt);
+        let layout = reloc_object::layout_relocatable(file, fmt);
 
         let mut segments: Vec<Segment> =
             layout.segments.into_iter().map(|(vma, data)| Segment { vma, data }).collect();
@@ -509,7 +510,7 @@ impl ObjectLoadImage {
             sections,
             funcsyms,
             // A relocatable object's symbol addresses are section-relative and are
-            // rebased by [`elf_reloc::layout_relocatable`], which resolves the
+            // rebased by [`reloc_object::layout_relocatable`], which resolves the
             // function half only (`RelocLayout::funcsyms`).  Data-symbol naming is
             // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
             datasyms: Vec::new(),
@@ -555,7 +556,7 @@ impl ObjectLoadImage {
     /// `getNextSymbol` yields, but already **rebased** to the load VMA (for an
     /// `ET_REL` `.o` the raw `object` symbol address is section-relative; the
     /// loader's layout pass rebases each `SHF_ALLOC` section above
-    /// [`RELOC_BASE`](crate::loader::elf_reloc::RELOC_BASE) and rebases the
+    /// [`RELOC_BASE`](crate::loader::reloc_object::RELOC_BASE) and rebases the
     /// symbols with it). Exposed for the FID generator
     /// ([`crate::fid::build`]), which needs the rebased `(addr, name)` to seed
     /// the Listing and label the hashed functions — the raw `object::File`

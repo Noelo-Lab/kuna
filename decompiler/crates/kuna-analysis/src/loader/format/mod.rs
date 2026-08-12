@@ -97,6 +97,30 @@ pub trait ObjectFormat {
     fn const_ranges(&self, _file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
         Vec::new()
     }
+
+    /// Whether this file is a **pre-link relocatable object** whose sections must
+    /// be laid out synthetically ([`crate::loader::reloc_object`]) instead of read
+    /// off the linked image's own mapping.
+    ///
+    /// The condition is per-format because "the image tells you where its bytes
+    /// live" fails differently in each: an `ET_REL` ELF simply has no `PT_LOAD`
+    /// program headers, while a COFF `.obj` *does* present its sections as
+    /// segments — every one of them at VMA 0, all overlapping (design §3.6). Only
+    /// a relocatable object ever answers `true`; a linked image of any format
+    /// keeps the faithful mapped-image path.
+    fn relocatable_layout(&self, _file: &object::File) -> bool {
+        false
+    }
+
+    /// Whether a section occupies memory at run time, and so takes a load VMA in
+    /// the synthetic layout ([`ObjectFormat::relocatable_layout`]).
+    ///
+    /// The ELF `SHF_ALLOC` bit and its COFF `Characteristics` analog. Only
+    /// consulted for a relocatable object, so the formats that never claim one
+    /// inherit the `false` default.
+    fn is_alloc_section(&self, _kind: SectionKind, _flags: SectionFlags) -> bool {
+        false
+    }
 }
 
 /// Select the [`ObjectFormat`] for a parsed object.

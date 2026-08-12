@@ -198,7 +198,7 @@ pub enum OpObject {
 
 /// A relocation oracle: does any relocation fall inside `[min_addr, max_addr]`
 /// (inclusive)? The pure hashing core consumes this as a trait so it is testable
-/// without a real relocation table; PR4 supplies the `elf_reloc.rs`-backed
+/// without a real relocation table; PR4 supplies the `reloc_object.rs`-backed
 /// adapter. A target with no relocations (a statically-linked or `.o`-without-
 /// `.rela` body) uses [`NoRelocations`].
 pub trait RelocationQuery {

@@ -128,7 +128,7 @@ keeps its `char[N]` typelock; the loader arm only fills addresses neither source
 reaches. That residue is the interesting one: a copy-relocated libc extern
 (`optind`, `stdin`, `stdout`, `optarg`) has a real `.bss` address and a `.dynsym`
 entry but no DIE in the program's own `.debug_info`, so nothing else could name
-it. Relocatable objects are excluded — `elf_reloc` rebases only the function half
+it. Relocatable objects are excluded — `reloc_object` rebases only the function half
 of the symbol table, so a `.o` keeps its previous behavior.
 
 Format dispatch is by magic (`engine.rs (is_object_binary)`): ELF, thin or fat
@@ -141,16 +141,30 @@ fallback retry to the arch default when the preferred model has no vendored spec
 the section-flag translation, import resolution (§1.3), and extra constant ranges
 (the MIPS GOT). Two format specifics live above the trait:
 
-- **ET_REL relocatables** (angr, `relocobjects`, default-on) — a `.o` has no
-  program headers, so the faithful loader maps zero bytes and every lift fails.
-  `decompiler/crates/kuna-analysis/src/loader/elf_reloc.rs (RelocLayout)` reproduces
-  angr CLE's relocatable backend: lay each `SHF_ALLOC` section out above `0x400000`
-  (`RELOC_BASE`, matching CLE so addresses line up with angr's), apply the
-  `.rela.*` relocations (`R_X86_64_PC32/PLT32/64/32/32S`; an unhandled kind warns
-  and skips, never miscompiles silently), rebase defined symbols, and bind each
-  undefined extern to a synthetic call target in an extern area above the sections
-  so calls render by name. The result feeds back into `ObjectLoadImage` as the same
-  segments/sections/funcsyms triple the linked path produces.
+- **Relocatable objects** (angr, `relocobjects`, default-on) — a pre-link object
+  does not say where its bytes live, and each format fails that differently. An
+  ELF `.o` has no program headers, so the faithful loader maps zero bytes and
+  every lift fails. A COFF `.obj` does present segments, but stacks every section
+  at VMA 0: the faithful loader maps whichever sorts first and every symbol
+  collapses onto address 0, so with MSVC function-level linking (`/Gy`, one COMDAT
+  `.text` per function — the default for real builds) all but one function
+  disappear. `decompiler/crates/kuna-analysis/src/loader/reloc_object.rs (RelocLayout)`
+  reproduces angr CLE's relocatable backend for both: lay each memory-resident,
+  non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
+  line up with angr's), apply the relocations (`R_X86_64_PC32/PLT32/64/32/32S`,
+  COFF `DIR32`/`REL32`; an unhandled kind warns and skips, never miscompiles
+  silently), rebase defined symbols, and bind each undefined extern to a synthetic
+  call target in an extern area above the sections so calls render by name. The
+  result feeds back into `ObjectLoadImage` as the same segments/sections/funcsyms
+  triple the linked path produces. Which sections are memory-resident is the one
+  question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
+  `Characteristics` content bits minus the link-time-only sections (`.drectve`,
+  `LNK_REMOVE`, the discardable `.debug$S`/`.debug$T`) — and it is asked through
+  `ObjectFormat::is_alloc_section`, alongside `ObjectFormat::relocatable_layout`,
+  which decides whether a given file needs this path at all.
+  A REL-style relocation table (COFF, 32-bit ELF) stores its addend in the field
+  being patched rather than in the entry, so the in-place value is read back and
+  added; a RELA entry carries the whole addend and reads back zero.
 - **Mach-O fat/arm64e** — a universal binary is peeled to one slice's bytes at a
   single canonical point before anything else parses it
   (`decompiler/crates/kuna-analysis/src/loader/macho_fat.rs (select_fat_slice)`;

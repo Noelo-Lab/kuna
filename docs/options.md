@@ -251,6 +251,7 @@ Three tiers:
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .o relocatable object fails with 'Unable to load N bytes at ...' | [`relocobjects`](#relocobjects) |
 | ET_REL object maps zero bytes so nothing decompiles | [`relocobjects`](#relocobjects) |
+| a COFF .obj lists only its first function (the rest collide at address 0) | [`relocobjects`](#relocobjects) |
 | arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled | [`macho-arm64e`](#macho-arm64e) |
 | pac instructions in an apple-silicon binary not modeled by the loaded spec | [`macho-arm64e`](#macho-arm64e) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
@@ -945,9 +946,9 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 
 ### `relocobjects` -- on | off, default `on`
 
-- **Symptoms:** a .o relocatable object fails with 'Unable to load N bytes at ...'; ET_REL object maps zero bytes so nothing decompiles.
-- **What it does:** Load ELF relocatable objects (ET_REL `.o` files, which have no PT_LOAD program headers and so map zero bytes under the upstream loader): synthesize a section layout above 0x400000, apply the `.rela.*` relocations (R_X86_64_PC32/PLT32/32/32S/64), rebase defined symbols, and bind undefined externs to synthetic call targets — so a `.o` decompiles instead of failing with 'Unable to load N bytes at ...'. The kuna analog of angr CLE's ELF relocatable backend.
-- **When to flip:** On by default (a pure capability: linked ET_EXEC/ET_DYN images are byte-identical — they keep the PT_LOAD path — and only a `.o`, which today produces ZERO output, takes the new path). Set off to restore the upstream PT_LOAD-only loader (a `.o` then errors). NB: this gates the loader, which runs at `load file` BEFORE per-function options, so flip it (or set env KUNA_RELOC_OBJECTS=0) before loading the `.o`.
+- **Symptoms:** a .o relocatable object fails with 'Unable to load N bytes at ...'; ET_REL object maps zero bytes so nothing decompiles; a COFF .obj lists only its first function (the rest collide at address 0).
+- **What it does:** Load relocatable objects — ELF `ET_REL` `.o` files (no PT_LOAD program headers, so they map zero bytes under the upstream loader) and COFF `.obj` files (every section at VMA 0, so they map one section on top of another): synthesize a section layout above 0x400000, apply the relocations (R_X86_64_PC32/PLT32/32/32S/64, COFF DIR32/REL32, with REL-style in-place addends), rebase defined symbols, and bind undefined externs to synthetic call targets — so an object decompiles fully instead of failing with 'Unable to load N bytes at ...' (ELF) or exposing only its first function (COFF).
+- **When to flip:** On by default (a pure capability: linked images of every format are byte-identical — they keep the mapped-image path — and only a pre-link object takes the new path, which is otherwise ZERO output on ELF and first-function-only on COFF). Set off to restore the upstream mapped-image-only loader (an ELF `.o` then errors; a COFF `.obj` falls back to its first section). NB: this gates the loader, which runs at `load file` BEFORE per-function options, so flip it (or set env KUNA_RELOC_OBJECTS=0) before loading the object.
 - **Where / provenance:** P1/code-data-partition · angr · structure-recovery · angr-CLE-ET_REL
 - **Example:** `option relocobjects off`
 
