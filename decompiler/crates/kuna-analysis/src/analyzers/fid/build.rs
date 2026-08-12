@@ -291,9 +291,9 @@ fn map_op_object(o: SleighOpObject) -> OpObject {
 }
 
 /// A [`RelocationQuery`] over a parsed object: holds the sorted load-VMA ranges
-/// covered by every relocation, rebased the same way [`crate::loader::elf_reloc`]
+/// covered by every relocation, rebased the same way [`crate::loader::reloc_object`]
 /// lays a relocatable object out (each `SHF_ALLOC` section at/above
-/// [`RELOC_BASE`](crate::loader::elf_reloc::RELOC_BASE)). A query is a range
+/// [`RELOC_BASE`](crate::loader::reloc_object::RELOC_BASE)). A query is a range
 /// overlap against that sorted set.
 ///
 /// For a `.o` whose `.text` carries no relocations (a fully self-contained body —
@@ -313,9 +313,9 @@ impl ObjectRelocations {
         use std::collections::HashMap;
 
         const SHF_ALLOC: u64 = 0x2;
-        const RELOC_BASE: u64 = crate::loader::elf_reloc::RELOC_BASE;
+        const RELOC_BASE: u64 = crate::loader::reloc_object::RELOC_BASE;
 
-        // Replicate the elf_reloc layout pass-1 section→VMA map so a section-
+        // Replicate the reloc_object layout pass-1 section→VMA map so a section-
         // relative reloc offset maps to the same load VMA the loader assigned.
         let mut vma_of: HashMap<SectionIndex, u64> = HashMap::new();
         let mut cursor = RELOC_BASE;
@@ -358,7 +358,7 @@ impl RelocationQuery for ObjectRelocations {
     }
 }
 
-/// `align_up(x, a)` for a power-of-two alignment (mirrors `elf_reloc`).
+/// `align_up(x, a)` for a power-of-two alignment (mirrors `reloc_object`).
 fn align_up(x: u64, align: u64) -> u64 {
     if align <= 1 {
         return x;

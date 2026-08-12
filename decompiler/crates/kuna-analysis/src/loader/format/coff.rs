@@ -39,6 +39,7 @@
 //! admitted by the engine dispatch unconditionally; the XML/datatest corpus never
 //! carries a COFF prefix, so the ELF/XML oracles are untouched.
 
+use object::read::Object;
 use object::{Architecture, SectionFlags, SectionKind};
 
 use super::{FormatKind, ImportSym, ObjectFormat};
@@ -70,6 +71,35 @@ impl ObjectFormat for CoffFormat {
         // (design §3.6). Defined symbols still flow through the format-neutral
         // `file.symbols()` source in `from_bytes`.
         Vec::new()
+    }
+
+    /// Every COFF *object* needs the synthetic layout — see the
+    /// "all sections at VMA 0" note in the module header. A COFF *image* (the
+    /// rare linked binary `object` classifies as COFF-flavored) reports a
+    /// non-relocatable kind and keeps the mapped-image path.
+    fn relocatable_layout(&self, file: &object::File) -> bool {
+        file.kind() == object::ObjectKind::Relocatable
+    }
+
+    /// The `Characteristics` analog of `SHF_ALLOC`: a section holds code or data
+    /// that occupies memory at run time. The link-time-only sections — the
+    /// `.drectve` linker-directive blob (`LNK_INFO`), anything marked
+    /// `LNK_REMOVE`, and the discardable MSVC CodeView sections (`.debug$S` /
+    /// `.debug$T`, which are `CNT_INITIALIZED_DATA` but never mapped) — are
+    /// excluded, so they neither consume load VMAs nor draw relocation work.
+    fn is_alloc_section(&self, _kind: SectionKind, flags: SectionFlags) -> bool {
+        use object::pe::{
+            IMAGE_SCN_CNT_CODE, IMAGE_SCN_CNT_INITIALIZED_DATA,
+            IMAGE_SCN_CNT_UNINITIALIZED_DATA, IMAGE_SCN_LNK_INFO, IMAGE_SCN_LNK_REMOVE,
+            IMAGE_SCN_MEM_DISCARDABLE,
+        };
+        let SectionFlags::Coff { characteristics } = flags else { return false };
+        let content = IMAGE_SCN_CNT_CODE
+            | IMAGE_SCN_CNT_INITIALIZED_DATA
+            | IMAGE_SCN_CNT_UNINITIALIZED_DATA;
+        let link_only =
+            IMAGE_SCN_LNK_INFO | IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_DISCARDABLE;
+        characteristics & content != 0 && characteristics & link_only == 0
     }
 }
 

@@ -3242,14 +3242,14 @@ subphase = "code-data-partition"
 strength = "HARD"
 rewind = "P1"
 issue = "angr-CLE-ET_REL"
-summary = "Load ELF relocatable objects (ET_REL `.o` files, which have no PT_LOAD program headers and so map zero bytes under the upstream loader): synthesize a section layout above 0x400000, apply the `.rela.*` relocations (R_X86_64_PC32/PLT32/32/32S/64), rebase defined symbols, and bind undefined externs to synthetic call targets — so a `.o` decompiles instead of failing with 'Unable to load N bytes at ...'. The kuna analog of angr CLE's ELF relocatable backend."
-use_when = "On by default (a pure capability: linked ET_EXEC/ET_DYN images are byte-identical — they keep the PT_LOAD path — and only a `.o`, which today produces ZERO output, takes the new path). Set off to restore the upstream PT_LOAD-only loader (a `.o` then errors). NB: this gates the loader, which runs at `load file` BEFORE per-function options, so flip it (or set env KUNA_RELOC_OBJECTS=0) before loading the `.o`."
+summary = "Load relocatable objects — ELF `ET_REL` `.o` files (no PT_LOAD program headers, so they map zero bytes under the upstream loader) and COFF `.obj` files (every section at VMA 0, so they map one section on top of another): synthesize a section layout above 0x400000, apply the relocations (R_X86_64_PC32/PLT32/32/32S/64, COFF DIR32/REL32, with REL-style in-place addends), rebase defined symbols, and bind undefined externs to synthetic call targets — so an object decompiles fully instead of failing with 'Unable to load N bytes at ...' (ELF) or exposing only its first function (COFF)."
+use_when = "On by default (a pure capability: linked images of every format are byte-identical — they keep the mapped-image path — and only a pre-link object takes the new path, which is otherwise ZERO output on ELF and first-function-only on COFF). Set off to restore the upstream mapped-image-only loader (an ELF `.o` then errors; a COFF `.obj` falls back to its first section). NB: this gates the loader, which runs at `load file` BEFORE per-function options, so flip it (or set env KUNA_RELOC_OBJECTS=0) before loading the object."
 example = "option relocobjects off"
 source_decompiler = "angr"
 inspiration = "test_decompiling_ptx_fix_output_parameters; CLE ELF relocatable backend; fix_output_parameters"
 change_kind = "structure-recovery"
 tier = "analysis"
-symptoms = "a .o relocatable object fails with 'Unable to load N bytes at ...'|ET_REL object maps zero bytes so nothing decompiles"
+symptoms = "a .o relocatable object fails with 'Unable to load N bytes at ...'|ET_REL object maps zero bytes so nothing decompiles|a COFF .obj lists only its first function (the rest collide at address 0)"
 # ---------------------------------------------------------------------------
 # paramcopyhoist: the P6 trim-COPY anchor for an unmodified incoming parameter.
 # ---------------------------------------------------------------------------

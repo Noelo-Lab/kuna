@@ -461,6 +461,18 @@ pub fn run_listing_consumers(
     let Ok(file) = object::File::parse(bytes) else {
         return Vec::new();
     };
+    // A relocatable object is laid out synthetically by the loader, so every
+    // address this raw `object` view reports is a *pre-link*, section-relative
+    // one — a different address space than the Listing decodes in. Seeding the
+    // walk with them invents a phantom entry beside each real function
+    // (`sub_60` for a symbol at `.text`+0x60, which the loader placed at
+    // `0x400060`). Declining costs nothing: this tier exists to find functions an
+    // image has no symbol for, and a pre-link object always carries the symbol
+    // table the linker is about to consume — which the loader already registers,
+    // rebased. See `reloc_object::is_synthetically_laid_out`.
+    if crate::loader::reloc_object::is_synthetically_laid_out(&file) {
+        return Vec::new();
+    }
     let mut seeds = listing_seeds(&file, bytes);
     // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
     // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),

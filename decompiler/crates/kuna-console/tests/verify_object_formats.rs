@@ -57,10 +57,16 @@ fn fixtures() -> PathBuf {
 // or stacks in the single unnamed segment (Mach-O), and the functions live at
 // these offsets inside `.text`/`__text`. The disassembly is taken from the
 // function entry.
+//
+// The COFF arm additionally goes through the synthetic relocatable layout
+// (`relocobjects`, which the `.obj`'s all-at-VMA-0 sections require to be told
+// apart), so its two functions load at `RELOC_BASE` + their section offset
+// rather than at the pre-link offset itself. Mach-O objects keep the
+// mapped-image path, so their offsets are unchanged.
 
 // pe_min.obj — Intel amd64 COFF object (`format=Coff`).
-const PE_TEXT_VMA: u64 = 0x0; // .text base (the_answer @ 0x0)
-const PE_HELPER_OFF: u64 = 0x60; // helper @ 0x60
+const PE_TEXT_VMA: u64 = kuna_analysis::loader::reloc_object::RELOC_BASE; // .text base (the_answer)
+const PE_HELPER_OFF: u64 = PE_TEXT_VMA + 0x60; // helper @ .text+0x60
 
 // macho_min.o — Mach-O 64-bit x86_64 object (`format=MachO`).
 const MACHO_TEXT_VMA: u64 = 0x0; // __text base (_the_answer @ 0x0)
@@ -171,7 +177,7 @@ fn pe_object_loads_maps_and_disassembles() {
         ],
     );
     assert!(
-        out.contains("0x00000000:"),
+        out.contains(&format!("0x{PE_TEXT_VMA:08x}:")),
         "PE: disassemble produced no listing at .text base:\n{out}"
     );
     // The `the_answer` prologue is a `SUB RSP, ...` (clang x86-64 windows ABI).

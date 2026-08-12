@@ -1,31 +1,42 @@
-//! (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine —
+//! (kuna) Relocatable-object (`.o` / `.obj`) load-layout + relocation engine —
 //! the loader-tier capability angr's CLE `ELF` backend has and kuna lacked.
 //!
 //! ## Why this exists
 //!
-//! A linked ELF (`ET_EXEC`/`ET_DYN`) carries `PT_LOAD` program headers, so the
+//! A linked image (`ET_EXEC`/`ET_DYN`, a PE) says where its bytes live, so the
 //! faithful [`crate::loadimage_object`] backend builds its byte map from
-//! `file.segments()`.  A **relocatable object** (`ET_REL`, the `.o` a compiler
-//! emits before link) has *no program headers* — `readelf -l ptx.o` →
-//! "There are no program headers in this file".  `file.segments()` is therefore
-//! empty, the byte map is empty, and **every** function fails to lift
-//! (`Unable to load N bytes at ...`).  angr's CLE loader instead lays the
-//! `SHF_ALLOC` sections out at a synthetic base, applies the `.rela.*`
-//! relocations, and binds the symbols, so a `.o` decompiles fully.  This module
-//! reproduces exactly that, for the x86-64 relocations the corpus uses.
+//! `file.segments()`.  A **relocatable object** — the `.o`/`.obj` a compiler
+//! emits before link — does not, and each format fails that differently:
 //!
-//! ## What it does (the angr CLE `ET_REL` path, distilled)
+//! - an ELF `ET_REL` has *no program headers* (`readelf -l ptx.o` → "There are no
+//!   program headers in this file"), so `file.segments()` is empty, the byte map
+//!   is empty, and **every** function fails to lift (`Unable to load N bytes`);
+//! - a COFF `.obj` *does* present its sections as segments, but every one of them
+//!   at VMA 0 — so the byte map is whichever section happens to sort first, and
+//!   with MSVC function-level linking (`/Gy`, one COMDAT `.text` per function)
+//!   all but one function collapse onto address 0 and vanish.
 //!
-//! 1. **Section layout.** Each `SHF_ALLOC` section (`.text`, `.text.startup`,
-//!    `.rodata*`, `.data*`, `.bss`, …) is assigned a non-overlapping load VMA
-//!    above [`RELOC_BASE`] (`0x400000`, matching angr's default so the testcase's
-//!    `0x400660` lines up), respecting each section's alignment.  `PROGBITS`
-//!    bytes are snapshotted; `NOBITS` (`.bss`) is zero-filled.
+//! angr's CLE loader instead lays the memory-resident sections out at a synthetic
+//! base, applies the relocations, and binds the symbols, so an object decompiles
+//! fully.  This module reproduces exactly that, format-neutrally: which sections
+//! are memory-resident is the [`ObjectFormat::is_alloc_section`] question, and
+//! everything below it is shared.
+//!
+//! ## What it does (the angr CLE relocatable path, distilled)
+//!
+//! 1. **Section layout.** Each memory-resident section (`.text`, `.text.startup`,
+//!    `.rodata*`, `.data*`, `.bss`, and every COFF COMDAT `.text$mn`) is assigned
+//!    a non-overlapping load VMA above [`RELOC_BASE`] (`0x400000`, matching angr's
+//!    default so the testcase's `0x400660` lines up), respecting each section's
+//!    alignment.  Initialized bytes are snapshotted; `NOBITS` (`.bss`) is
+//!    zero-filled.
 //! 2. **Relocations.** For each laid-out section, every relocation that applies
-//!    to it (`.rela.<sec>`) is resolved and patched into the snapshotted bytes:
-//!    `S + A - P` for PC-relative (`R_X86_64_PC32`/`PLT32`), `S + A` for absolute
-//!    (`R_X86_64_64`/`32`/`32S`).  An unhandled kind degrades with a warning and a
-//!    skip — never a panic or a silent miscompile.
+//!    to it is resolved and patched into the snapshotted bytes: `S + A - P` for
+//!    PC-relative (`R_X86_64_PC32`/`PLT32`, COFF `REL32`), `S + A` for absolute
+//!    (`R_X86_64_64`/`32`/`32S`, COFF `DIR32`).  `A` is the entry's addend for a
+//!    RELA table and the in-place field value for a REL-style one (COFF, 32-bit
+//!    ELF).  An unhandled kind degrades with a warning and a skip — never a panic
+//!    or a silent miscompile.
 //! 3. **Symbol rebasing + externs.** Each defined function symbol is shifted from
 //!    its section-relative `st_value` to `section_load_vma + st_value`; each
 //!    *undefined* referenced symbol (an external like `xmalloc`/`strlen`) is
@@ -51,10 +62,6 @@ use super::format::ObjectFormat;
 /// Synthetic load base for the first `SHF_ALLOC` section (angr's CLE default for
 /// a relocatable object, so a `.o` lifted by kuna and by angr share addresses).
 pub const RELOC_BASE: u64 = 0x40_0000;
-
-/// `SHF_ALLOC` — the section-header flag marking a section that occupies memory
-/// at run time (the ones we lay out).
-const SHF_ALLOC: u64 = 0x2;
 
 /// The laid-out image of a relocatable object: the same three streams the linked
 /// `PT_LOAD` path produces, ready to drop into `ObjectLoadImage`.
@@ -84,13 +91,15 @@ struct LaidSection {
     data: Vec<u8>,
 }
 
-/// Lay a relocatable object (`ET_REL`) out into a loadable image: synthesize the
-/// section layout, apply the `.rela.*` relocations, and rebase / extern-bind the
-/// symbols.  The kuna analog of angr CLE's `ELF` relocatable backend.
+/// Lay a relocatable object (an ELF `ET_REL` or a COFF `.obj`) out into a
+/// loadable image: synthesize the section layout, apply the relocations, and
+/// rebase / extern-bind the symbols.  The kuna analog of angr CLE's `ELF`
+/// relocatable backend.
 ///
-/// `fmt` supplies the per-format section-flag translation (`section_bits`),
-/// identical to the linked path, so `.rodata` lands read-only (string literals
-/// fold) and `.text` lands as code.
+/// `fmt` supplies the two per-format questions — which sections are memory-
+/// resident ([`ObjectFormat::is_alloc_section`]) and the section-flag translation
+/// (`section_bits`, identical to the linked path, so `.rodata` lands read-only
+/// (string literals fold) and `.text` lands as code).
 pub fn layout_relocatable(
     file: &object::File,
     fmt: &dyn ObjectFormat,
@@ -102,16 +111,18 @@ pub fn layout_relocatable(
     let mut vma_of: HashMap<SectionIndex, u64> = HashMap::new();
     let mut cursor = RELOC_BASE;
     for sec in file.sections() {
-        let sh_flags = match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags,
-            _ => 0,
-        };
-        if sh_flags & SHF_ALLOC == 0 {
+        if !fmt.is_alloc_section(sec.kind(), sec.flags()) {
             continue; // not mapped at run time (.rela.*, .symtab, .debug_*, …)
+        }
+        let size = sec.size();
+        if size == 0 {
+            // An empty section occupies no memory; laying it out would alias the
+            // next section's VMA (a COFF object carries empty `.text`/`.data`/`.bss`
+            // placeholders ahead of its per-function COMDATs) for no gain.
+            continue;
         }
         let align = sec.align().max(1);
         let vma = align_up(cursor, align);
-        let size = sec.size();
         // PROGBITS bytes verbatim; NOBITS (.bss) zero-filled to its RAM size.
         let data: Vec<u8> = if matches!(sec.kind(), SectionKind::UninitializedData) {
             vec![0u8; size as usize]
@@ -190,13 +201,34 @@ pub fn layout_relocatable(
                 ));
                 continue;
             };
-            let a = reloc.addend() as i128;
+            let nbytes = (size_bits / 8) as usize;
+            let off = offset as usize;
+            if off + nbytes > laid[li].data.len() {
+                warnings.push(format!(
+                    "reloc at {sec_vma:#x}+{offset:#x}: past section end (skipped)"
+                ));
+                continue;
+            }
+            // A REL-style format (COFF, and the 32-bit ELF `.rel.*` tables) stores
+            // the addend in the field being patched rather than in the relocation
+            // entry, so it must be read out and added; a RELA entry carries the
+            // whole addend and reads back 0 here.
+            let a = reloc.addend() as i128
+                + if reloc.has_implicit_addend() {
+                    implicit_addend(&laid[li].data[off..off + nbytes])
+                } else {
+                    0
+                };
             let p = sec_vma.wrapping_add(offset) as i128;
             // `XxxRelative` = S + A - P; `Absolute` = S + A (object's documented
             // semantics, read/common.rs).
             let value: i128 = match reloc.kind() {
                 RelocationKind::Absolute => s as i128 + a,
                 RelocationKind::Relative | RelocationKind::PltRelative => s as i128 + a - p,
+                // An RVA (COFF `ADDR32NB`, what `.pdata`/`.xdata` unwind tables
+                // are built from): the target relative to the image base, which
+                // for a synthetic layout is `RELOC_BASE`.
+                RelocationKind::ImageOffset => s as i128 + a - RELOC_BASE as i128,
                 other => {
                     warnings.push(format!(
                         "reloc at {sec_vma:#x}+{offset:#x}: unhandled kind {other:?} (skipped)"
@@ -204,17 +236,8 @@ pub fn layout_relocatable(
                     continue;
                 }
             };
-            let nbytes = (size_bits / 8) as usize;
-            let off = offset as usize;
-            let buf = &mut laid[li].data;
-            if off + nbytes > buf.len() {
-                warnings.push(format!(
-                    "reloc at {sec_vma:#x}+{offset:#x}: past section end (skipped)"
-                ));
-                continue;
-            }
             let le = (value as u64).to_le_bytes();
-            buf[off..off + nbytes].copy_from_slice(&le[..nbytes]);
+            laid[li].data[off..off + nbytes].copy_from_slice(&le[..nbytes]);
         }
     }
 
@@ -286,6 +309,37 @@ fn resolve_symbol(
         }
         SymbolSection::Absolute => Some(sym.address()),
         _ => None,
+    }
+}
+
+/// Whether this object is one the loader lays out synthetically — i.e. whether
+/// the addresses the raw [`object`] view reports are **pre-link** ones, in a
+/// different address space than every address the engine holds.
+///
+/// The analysis tier parses the object independently of the loader, so a pass
+/// that reads a raw section/symbol address and hands it to a tier that decodes
+/// through the *loaded* image is making a category error: on a relocatable object
+/// it seeds `.text`+0x60 rather than the rebased `0x400060`, inventing a phantom
+/// `sub_60` beside the real function. Passes that would do that ask here first.
+pub fn is_synthetically_laid_out(file: &object::File) -> bool {
+    crate::loadimage_object::reloc_objects_enabled()
+        && crate::loader::format::detect(file).is_ok_and(|f| f.relocatable_layout(file))
+}
+
+/// Read the in-place addend of a REL-style relocation: the signed little-endian
+/// value already sitting in the field about to be patched.  Signed because the
+/// field holds a displacement as often as an offset (a COFF `REL32` call carries
+/// its own `-4`-style bias there), and the sum is truncated back to `field.len()`
+/// bytes by the caller either way.
+fn implicit_addend(field: &[u8]) -> i128 {
+    match field.len() {
+        1 => field[0] as i8 as i128,
+        2 => i16::from_le_bytes([field[0], field[1]]) as i128,
+        4 => i32::from_le_bytes([field[0], field[1], field[2], field[3]]) as i128,
+        8 => i64::from_le_bytes([
+            field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7],
+        ]) as i128,
+        _ => 0,
     }
 }
 

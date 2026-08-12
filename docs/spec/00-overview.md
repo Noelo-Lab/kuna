@@ -315,7 +315,7 @@ variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
 
 | env var | option | read at |
 |---|---|---|
-| `KUNA_RELOC_OBJECTS` | `relocobjects` | ET_REL `.o` relocation resolution in the loader, `decompiler/crates/kuna-analysis/src/loadimage_object.rs (RELOC_OBJECTS_ENV)` |
+| `KUNA_RELOC_OBJECTS` | `relocobjects` | relocatable-object (`ET_REL` `.o`, COFF `.obj`) layout + relocation resolution in the loader, `decompiler/crates/kuna-analysis/src/loadimage_object.rs (RELOC_OBJECTS_ENV)` |
 | `KUNA_I386_PIE_PLT` | `i386_pie_plt` | i386 PIE PLT-stub decode, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_i386_pie_plt.rs (I386_PIE_PLT_ENV)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection, `decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)` |
