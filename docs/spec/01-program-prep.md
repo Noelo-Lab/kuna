@@ -94,7 +94,15 @@ real-binary `LoadImage` backend — the substitution for upstream's GPL-licensed
 BFD loader (`LoadImageBfd`), rebuilt on the permissive `object` crate with the C++
 interface semantics preserved exactly: the same 512-byte read buffer, the same
 containing-segment-else-closest-greater walk with gap zero-fill, and the same
-"initial address unmapped → `DataUnavailError`" contract in `loadFill`. The mapping
+"initial address unmapped → `DataUnavailError`" contract in `loadFill`. One
+deliberate correction inside that contract: the buffer's `bufoffset` is claimed
+at the top of a fill, *before* a byte is read, and a failed fill **releases it
+again** (upstream throws with it still claimed). Left claimed, the buffer's own
+fast path answers every later request within 512 bytes of the failed address out
+of a buffer that was never filled — stale bytes, reported as a successful read.
+Nothing upstream reads twice near a failure, which is why it never surfaced
+there; a caller that probes addresses in order (the extern-slot
+classification of §0.2) walks straight into it. The mapping
 unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header

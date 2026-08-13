@@ -708,6 +708,20 @@ impl LoadImage for ObjectLoadImage {
         }
         if cursize > 0 {
             // (offset==0 break path) Unable to load N bytes at <addr>.
+            //
+            // (kuna) Restore the "nothing buffered" sentinel first.  `bufoffset`
+            // was claimed at the top of the fill, before any byte was read, so
+            // leaving it set on the failure path makes the fast path above hand
+            // out the 512-byte window starting at an address that is NOT MAPPED —
+            // stale bytes, reported as a successful read, for every request
+            // within `BUFSIZE` of the one that just failed.  Upstream leaves it
+            // claimed (loadimage_bfd.cc throws with `bufoffset` already
+            // assigned), which is invisible there only because nothing reads
+            // again nearby; kuna's per-entry `entry_bytes_mapped` probe walks a
+            // relocatable object's extern slots in address order and so hits
+            // exactly that window — the first extern reported unmapped and the
+            // next forty "mapped", out of one poisoned buffer.
+            *bufoffset = !0u64;
             let mut errmsg =
                 format!("Unable to load {} bytes at {}", cursize, addr.get_shortcut());
             addr.print_raw(&mut errmsg)?;

@@ -82,6 +82,31 @@ pub fn decompile_targets(
     let mut out = Vec::with_capacity(targets.len());
     for FunctionEntry { name, addr: entry, aliases } in targets {
         let address = entry.get_offset();
+        // (kuna) An entry with no mapped bytes is an EXTERNAL, not a decompile
+        // failure: a relocatable object's undefined symbols (and a PE import
+        // slot) carry an address only so a call to one renders by name, and the
+        // definition lives in another module. The whole-binary surfaces never
+        // reach one (`function_entries_executable` drops them), but selecting one
+        // by name or address — clicking its row in the browser inventory — used to
+        // run the lifter against unmapped memory and report the resulting
+        // "Unable to load 512 bytes at ..." as if the function had failed to
+        // decompile. Say what it actually is instead. See
+        // `ConsoleProgram::entry_bytes_mapped`.
+        if !prog.entry_bytes_mapped(&entry) {
+            out.push(FuncResult {
+                code: Some(format!(
+                    "// {name}: external symbol -- no code at this address in this module\n"
+                )),
+                name,
+                address,
+                size: 0,
+                error: None,
+                proto: None,
+                variables: Vec::new(),
+                aliases,
+            });
+            continue;
+        }
         // Mirror IfcDecompile: re-seed this function's DWARF stack locals (so a
         // `-g` binary renders DWARF names/types) and decompile.  The drive itself
         // catches un-ported-seam panics and returns Err, so a single bad function

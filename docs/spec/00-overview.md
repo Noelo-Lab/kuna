@@ -183,6 +183,19 @@ Four front-ends drive one engine assembly:
   unrestricted explicit address selection; name selection keeps its normal
   first matching canonical-entry behavior when a stub and slot share a name. A
   loader that publishes no section metadata retains the complete canonical set.
+  Explicit selection of an entry with **no mapped bytes** — an import slot, or a
+  relocatable object's undefined symbol bound to a synthetic extern-area address
+  so that calls to it render by name — answers with the entry's nature rather
+  than with the lifter's byte-load failure: the shared decompile step probes
+  `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::entry_bytes_mapped)`
+  first and emits a one-line external-symbol body. The probe is a one-byte read
+  rather than a section-flag test, so an address that is mapped but outside any
+  `CODE` section (packed code in `.data`, a hand-picked `--addr`) decompiles
+  exactly as before. The browser inventory sorts the same entries into its
+  imports-and-thunks group off that predicate
+  (`decompiler/crates/kuna-wasm/src/classify.rs`), which a name test cannot do:
+  loader names are demangled (`CellClass::Cell_Coord`) and symbol-table names are
+  not.
 - **`kuna_ghidra`** (`decompiler/crates/kuna-ghidra/src/bin/kuna_ghidra.rs`) —
   the ghidra-mode process front-end: the stock Ghidra GUI spawns it as its
   decompiler core and talks the burst-framed stdin/stdout protocol
