@@ -1,0 +1,57 @@
+{
+  "slug": "outline",
+  "option": "outline",
+  "values": "off|<fn>:<head>-<exit>[;...]",
+  "default": "off",
+  "phase": "P8",
+  "subphase": "goto-quality",
+  "element_id": 4124,
+  "change_kind": "opt-in-tool",
+  "tier": "transform",
+  "destructive": true,
+  "report_only": false,
+  "depends_on": "almostregion (shares kuna_check_region and build_scratch)",
+
+  "witness": {
+    "stage_test": "tests/stages/kuna-outline.xml",
+    "assertions": 7,
+    "before": "if (a1) { v1 = a0 + 7; if (0x33 <= v1) v1 = a0 + 4; a0 = v1 * 3; } return a0 + 100;",
+    "after": "if (a1) a0 = outlined_0x40100a(a0); return a0 + 100;",
+    "report": "outline: excised 3 block(s) at 0x40100a into outlined_0x40100a() (1 argument(s), 1 result(s))"
+  },
+
+  "speed_samples": 11,
+  "speed_budget_pct": 5.0,
+  "speed_default_min_ms": 165.9,
+  "speed_off_min_ms": 166.0,
+  "speed_region_min_ms": 164.4,
+  "speed_delta_pct_off_min": 0.07,
+  "speed_delta_pct_region_min": -0.89,
+  "speed_delta_pct_region_median": 1.28,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_method": "interleaved min-of-N, 11 samples per arm, alternating arm order, 2 discarded warmup rounds. scripts.pipeline.timeit runs all OFF samples then all ON samples and on this box reported -31.94% for a pass that cannot make anything faster, so the arms are interleaved here. Three arms measured: no option at all, `off`, and a supplied region. The pass returns immediately unless a region names the current function, so the cost of it merely existing is +0.07% - indistinguishable from noise. The `region` arm's negative min and positive median bracket zero, which is what a sub-noise effect looks like on a 165 ms baseline.",
+
+  "gates": {
+    "make_test": "PARITY OK 675/675",
+    "make_test_stages": "PARITY OK 450/450",
+    "make_rust_test": "4565 passed, 0 failed",
+    "check_spec": "OK lenient and strict",
+    "catalog_check": "catalog OK (105 options)"
+  },
+
+  "sweep": {
+    "requirement": 7,
+    "applicable": false,
+    "reason": "the option is address-keyed and default-off: with no region supplied the pass returns before touching anything, and with a region supplied it no-ops on every function the spec does not name. The set of functions whose C changes under the shipped default is empty; both parity gates confirm it."
+  },
+
+  "bugs_found_building_it": [
+    "liveness direction: counting any outside read as live-out flagged the entry block's own flag test, which happens BEFORE the region, and rejected every candidate. Fixed by computing over the region's continuation (blocks reachable from the exit).",
+    "sub-register aliasing: an x86 32-bit write zero-extends, so SLEIGH writes both EAX and RAX at one offset and a (space,offset,size) key counted one register as two live-outs. Fixed by merging overlapping storage.",
+    "branch operands: slot 0 of a control-transfer op is its destination, a varnode in the code space; counting it made every conditional look like a memory read (ram+0x401015:1 appeared as a live-in).",
+    "node_split_block_edge is a DUPLICATION primitive, not an edge splitter: it copy_basic_range's the target's p-code and inherits its successors (it exists for tail duplication). Using it produced a clone of the region head whose out-edges pointed back into the region, and heritage failed with 'non-root block has no idom'. Replaced with new_block_basic + switch_edge + add_edge and no remove_branch/push_branch.",
+    "a hand-built FuncCallSpecs has no prototype store, so every later FuncProto::store query panics; decoder-produced specs get theirs from ActionDefaultParams. Fixed with proto_mut().attach_internal_store(void_ty).",
+    "the pass was first scheduled between varnodeprops and heritage, splitting a ported C++ adjacency (coreaction.cc:5751-5756) pinned by verify_w8x_allowlist.rs. Moved before varnodeprops; the pre-SSA self-gate makes the position equivalent."
+  ]
+}
