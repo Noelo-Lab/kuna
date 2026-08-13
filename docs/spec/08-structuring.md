@@ -1165,3 +1165,31 @@ It does not emit a pseudofunction **body**. There is no seam:
 `PrintC::doc_function_full` is one `Funcdata` per document. The call is emitted and
 named; the bytes remain in the binary and can be decompiled separately at the head
 address.
+
+### Measured coverage on real code
+
+An LLM-driven evaluation over 15 coreutils `-O2` functions — agents read the
+decompiled C plus the disassembly, chose a region, and applied the option — outlined
+**0 of 15**, on cases selected so that a DWARF-confirmed inlined callee spanning at
+least two whole basic blocks existed in every one. Two of those failures were the
+pass emitting wrong C (both fixed, and pinned by
+`tests/stages/kuna-outline-proto.xml`); the rest were correct declines against two
+classes v1 cannot take at all:
+
+* **Multi-exit inlines.** The compiler routinely fuses a callee's return-value
+  dispatch into the caller's control flow, so the inlined body has two exits reaching
+  two different places. No single join block exists, so no `exit` address bounds the
+  region and `kuna_check_region` can never accept it.
+  `__xargmatch_internal` — present in every coreutils binary — is this shape: the
+  inlined `argmatch_exact` scan exits both to the "not found" tail and to the
+  "return the index" tail.
+* **Regions containing a genuine external call** (`strcmp`, `error`, `dcgettext`).
+  Correctly refused; a function that is mostly I/O has no outlinable region at all.
+
+These sit on top of the 63.8% of inlined instances that span fewer than two whole
+basic blocks and are unaddressable by any block-set method. Taken together, the
+single-entry/single-exit/one-live-out model fits the stage witness and comparatively
+little real optimized code. Widening it — multi-exit regions returning a value through
+a caller-side branch, and a purity allowlist so compiler intrinsics such as
+`__addvsi3` under `-ftrapv` stop blocking otherwise-clean regions — is the work that
+would make the transform generally applicable.

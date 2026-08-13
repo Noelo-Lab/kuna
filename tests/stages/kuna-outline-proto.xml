@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Regression witness for two wrong-output defects in the S8 `outline` pass, both
+    found by an LLM-driven evaluation over coreutils O2 functions (an agent chose
+    regions from the decompiled C and applied the outline option).  Neither was
+    caught by tests/stages/kuna-outline.xml, because that witness has no call after
+    the region and does not return the region's value.
+
+    DEFECT 1 - the synthesized call had a STORE but no prototype MODEL.
+    `outline_one` called `FuncProto::attach_internal_store`, which installs a
+    ProtoStoreInternal and leaves `model = None` (p4_calls/fspec.rs:5081); the
+    sibling `set_internal` (:5000) installs the store AND the model, and that is
+    what ActionDefaultParams uses for an unknown callee.  With no model the
+    synthesized call has no known stack-pointer effect, and the damage lands in
+    code the region never touched: stack-pointer normalization fails for the calls
+    that FOLLOW the outlined one, raw RSP leaks into the C as Stack-address text, return
+    addresses are stored into locals, and on coreutils/factor::lbuf_putc a later
+    `memcpy` printed with FOUR arguments.  Fixed by calling `set_internal`.
+
+    DEFECT 2 - a live-out that is the function's RETURN VALUE was invisible.
+    Pre-SSA the RETURN op does not yet carry the return value as an input (return
+    storage is recovered later), so a region whose only live-out is the returned
+    value measured ZERO live-outs and was excised, silently dropping the result -
+    an UNDER-approximation, the one direction the liveness must never err in.
+    Two independent coreutils/du witnesses reported "0 result(s)" for regions
+    computing the return.  Fixed by folding the containing function's own output
+    storage into live-out when the continuation can reach a RETURN.
+
+    THE WITNESS.  A three-block region whose value flows on into BOTH a following
+    call and the return:
+
+        reg:    ebx = edi ; if (esi == 0) goto JOIN
+        BODY:   ebx += 7 ; if (ebx is at most 50) goto BODY2 ; ebx -= 3
+        BODY2:  ebx *= 3
+        JOIN:   edi = ebx ; call helper ; eax += ebx ; ret
+
+    The `call helper` after the join is what defect 1 corrupted.
+
+    PASS 1 (`option outline off`, the default) = the region inline.
+    PASS 2 (region supplied) = one call, and - critically - `helper` still takes
+    exactly one argument and no stack artefact appears anywhere.
+
+    Asserts are counted across BOTH passes, so a token appearing once per pass
+    asserts min=max=2 and a token unique to one pass asserts min=max=1.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa5389fb85f6740e83c30783fb327e0383eb036bdb0389dfe80400000001d85bc38d4701c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="reg"/>
+<symbol space="ram" offset="0x401024" name="helper"/>
+</binaryimage>
+<script>
+  <com>option warnstyle banner</com>
+  <com>option outline off</com>
+  <com>lo fu reg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outline 0x401000:0x40100b-0x401019</com>
+  <com>lo fu reg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="outline-proto #1: OFF is the bug - the region is inline (pass 1 only)" min="1" max="1">v1 = a0 \+ 7;</stringmatch>
+<stringmatch name="outline-proto #2: ON - the region becomes one call, and the RETURN VALUE is recovered as its result, not dropped (pass 2 only)" min="1" max="1">a0 = outlined_0x40100b\(a0\);</stringmatch>
+<stringmatch name="outline-proto #3: ON - the report shows one argument AND one result; a 0-result banner here is defect 2 (pass 2 only)" min="1" max="1">outline: excised 3 block\(s\) at 0x40100b into outlined_0x40100b\(\) \(1 argument\(s\), 1 result\(s\)\)</stringmatch>
+<stringmatch name="outline-proto #4: the call AFTER the region keeps exactly one argument in both passes - defect 1 gave it stack junk (off plus on = 2)" min="2" max="2">return helper\(a0\) \+ a0;</stringmatch>
+<stringmatch name="outline-proto #5: no raw stack pointer leaks into the C in either pass - defect 1 emitted `&amp;Stack...`" min="0" max="0">Stack[0-9a-f]{8}</stringmatch>
+<stringmatch name="outline-proto #6: no rsp-typed local is introduced in either pass - defect 1 emitted `// rsp`" min="0" max="0">// rsp</stringmatch>
+</decompilertest>

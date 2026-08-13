@@ -436,6 +436,55 @@ fn op_output(data: &Funcdata, op: OpId) -> Option<Store> {
     store_of(data, out)
 }
 
+
+/// Does any continuation block end in a `RETURN`?
+fn continuation_returns(data: &Funcdata, cont: &BTreeSet<BlockId>) -> bool {
+    cont.iter().any(|&bl| {
+        data.bb_ops(bl).iter().any(|&op| {
+            data.obank().get(op).map(|o| o.code() == OpCode::CPUI_RETURN).unwrap_or(false)
+        })
+    })
+}
+
+/// Storage the region wrote that the continuation never redefines and that is a
+/// plausible return value.
+///
+/// Restricted to the storage the *containing function's own prototype* names as its
+/// output, so this cannot invent a result for a void function. Returns `None` when
+/// the function has no output storage or the region did not write it.
+fn returned_storage(
+    data: &Funcdata,
+    members: &BTreeSet<BlockId>,
+    cont: &BTreeSet<BlockId>,
+) -> Option<Store> {
+    let out = data.get_func_proto().get_output();
+    let addr = out.get_address().clone();
+    let size = out.get_size();
+    if size <= 0 {
+        return None;
+    }
+    let space = addr.get_space()?.clone();
+    let key = (space.get_index(), addr.get_offset(), size);
+
+    let wrote = members.iter().any(|&bl| {
+        data.bb_ops(bl)
+            .iter()
+            .any(|&op| op_output(data, op).map(|st| st.key == key).unwrap_or(false))
+    });
+    if !wrote {
+        return None;
+    }
+    let redefined = cont.iter().any(|&bl| {
+        data.bb_ops(bl)
+            .iter()
+            .any(|&op| op_output(data, op).map(|st| st.key == key).unwrap_or(false))
+    });
+    if redefined {
+        return None;
+    }
+    Some(Store { key, space, offset: addr.get_offset(), size })
+}
+
 /// Does any member block hold a call or a store this pass will not reason about?
 fn has_unmodelled_side_effect(data: &Funcdata, members: &BTreeSet<BlockId>) -> bool {
     for &bl in members {
@@ -521,7 +570,24 @@ fn outline_one(data: &mut Funcdata, run: &OutlineRun) -> KunaResult<bool> {
     // re-entering the region.  A read BEFORE the region (the entry block's own
     // flag test, say) is not a live-out, and counting it rejected every region.
     let cont = reachable_from(data, exit_bl, &members);
-    let (live_in, live_out) = region_liveness(data, &members, &cont);
+    let (live_in, mut live_out) = region_liveness(data, &members, &cont);
+
+    // Pre-SSA the RETURN op does not yet carry the return VALUE as an input - return
+    // storage is recovered later - so a region whose only live-out is the value the
+    // function returns shows zero live-outs, and excising it silently drops the
+    // result.  That is an UNDER-approximation, the one direction the liveness is not
+    // allowed to err in.  Found by the coreutils LLM evaluation on two independent
+    // `du` witnesses, both reporting "0 result(s)" for a region computing the return.
+    //
+    // If the continuation can reach a RETURN, treat storage the region wrote and the
+    // continuation never redefines as potentially returned, and fold it in.  Pushing
+    // past one live-out simply declines, which is the safe outcome.
+    if !live_out.iter().any(|_| true) && continuation_returns(data, &cont) {
+        let maybe = returned_storage(data, &members, &cont);
+        if let Some(st) = maybe {
+            live_out.push(st);
+        }
+    }
     if live_out.len() > 1 {
         return Ok(false);
     }
@@ -555,15 +621,28 @@ fn outline_one(data: &mut Funcdata, run: &OutlineRun) -> KunaResult<bool> {
 
     let mut fc = FuncCallSpecs::new(callop, head_addr.clone());
     fc.set_funcdata(head_addr.clone(), &name)?;
-    // A hand-built FuncCallSpecs has no prototype store, and every later query
-    // (`FuncProto::store`) panics on the null.  The decoder-produced call specs get
-    // theirs from ActionDefaultParams; give this one the same no-symbol-scope
-    // internal store directly.
+    // A hand-built FuncCallSpecs has neither a prototype store nor a MODEL.
+    //
+    // `attach_internal_store` alone is not enough and the difference is not cosmetic:
+    // it installs the store and leaves `model = None` (`p4_calls/fspec.rs:5081`),
+    // whereas `set_internal` (`:5000`) installs the store *and* the model.  Without a
+    // model the call has no known stack-pointer effect, and `ActionDefaultParams`
+    // does not repair it because this spec already reports a known callee.  The
+    // observable damage is in the code the region never touched: stack-pointer
+    // normalization fails for the calls that FOLLOW the outlined one, raw `RSP` leaks
+    // into the C as `&Stack...`, and a later `memcpy` prints with four arguments.
+    // Found by the coreutils LLM evaluation on `factor::lbuf_putc`.
     let void_ty = match data.get_arch().types().map(|t| t.get_type_void()) {
         Some(Ok(t)) => t,
         _ => return Ok(false),
     };
-    fc.proto_mut().attach_internal_store(void_ty);
+    let model = match data.get_arch().eval_fp_called().cloned() {
+        Some(m) => m,
+        // No default model registered (hand-built fixture): decline rather than
+        // synthesize a call whose stack effect is unknown.
+        None => return Ok(false),
+    };
+    fc.proto_mut().set_internal(model, void_ty);
     let idx = data.push_call_specs(fc);
     let handle = crate::flow::next_fspec_handle();
     let angr = data.get_arch().name_style_angr;
