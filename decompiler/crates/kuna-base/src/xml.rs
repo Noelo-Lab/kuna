@@ -1737,7 +1737,7 @@ mod tests {
         // short-circuit (option off = the guard cascade, on = the folded condition)
         // and kuna-evalcurrentproto / the compiler spec's <eval_current_prototype>
         // model recovers a __fastcall function's ECX/EDX arguments
-        assert_eq!(count, 201, "corpus file count drifted");
+        assert_eq!(count, 202, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

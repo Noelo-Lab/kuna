@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    443,
-    443
+    449,
+    449
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -350,6 +350,12 @@
     "data:outline #5: ON - the excised body is gone, so its multiply appears in pass 1 only",
     "data:outline #6: the surrounding function is untouched in both passes (off plus on = 2)",
     "data:outline #7: the guard that reaches the region is untouched in both passes (off plus on = 2)",
+    "data:outline-proto #1: OFF is the bug - the region is inline (pass 1 only)",
+    "data:outline-proto #2: ON - the region becomes one call, and the RETURN VALUE is recovered as its result, not dropped (pass 2 only)",
+    "data:outline-proto #3: ON - the report shows one argument AND one result; a 0-result banner here is defect 2 (pass 2 only)",
+    "data:outline-proto #4: the call AFTER the region keeps exactly one argument in both passes - defect 1 gave it stack junk (off plus on = 2)",
+    "data:outline-proto #5: no raw stack pointer leaks into the C in either pass - defect 1 emitted `&Stack...`",
+    "data:outline-proto #6: no rsp-typed local is introduced in either pass - defect 1 emitted `// rsp`",
     "data:paramcopyhoist #1: option off sinks the second parameter's copy-shadow below the first guard (gap reproduced)",
     "data:paramcopyhoist #2: option on anchors both copy-shadows in the entry block, ahead of every guard",
     "data:paramcopyhoist #3: both passes keep the guard writing NULL through each parameter",
