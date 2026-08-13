@@ -1044,3 +1044,124 @@ this chapter were each gated on a measured decbench GED ablation
 (net-positive for DIV-17/23/25; the DIV-18 revert is the same oracle saying
 no), so the accept/rollback decision is made per-default at the corpus
 level, not per-function at decompile time.
+
+
+## 8.5 Outlining: excising a region into a synthesized pseudofunction (`outline`)
+
+Every pass in §8.3 rewrites control flow the compiler produced so it reads like the
+source. `outline` does something different in kind: it removes a block set from the
+function altogether and emits a **call** to a pseudofunction in its place, reversing
+compiler inlining.
+
+```c
+if (a1) {                          if (a1)
+  v1 = a0 + 7;                       a0 = outlined_0x40100a(a0);
+  if (0x33 <= v1)          -->     return a0 + 100;
+    v1 = a0 + 4;
+  a0 = v1 * 3;
+}
+return a0 + 100;
+```
+
+### Who chooses the region, and why it is not a detector
+
+The region is supplied as the option value, `<fn_entry>:<head>-<exit>`. A human
+reading the code, or an LLM agent, chooses it. That is a **measured** decision, not
+a missing feature. Two automated detectors were built and scored against DWARF
+`DW_TAG_inlined_subroutine` ground truth on the decbench corpus, and both failed:
+
+* The SAILR premise — that a residual `goto` marks where the compiler restructured
+  control flow, so block sets that become single-entry when a virtualized edge is
+  deleted are candidate inlined bodies — scored **1.03–1.09x enrichment over the
+  per-function base rate** at **4.5% recall** across 578 reported regions. That is
+  indistinguishable from choosing blocks at random inside the same function.
+* Structural enumeration plus scoring did no better. Measured within-function, every
+  candidate-indexed feature sat at chance: interface narrowness AUC 0.528, stack-slot
+  confinement 0.458 (anti-correlated), repetition refuted outright by the oracle. The
+  *ceiling* — the best IoU any candidate in the richest pool achieves, i.e. the bound
+  on a perfect scorer — is **0.507, 95% CI [0.474, 0.542]** over addressable instances
+  in goto-free functions, with a per-binary median of 0.475.
+
+And **63.8% of inlined instances cannot be addressed by a block-set method at all**:
+they span fewer than two whole basic blocks (median instance 33 bytes). Region
+enumeration is the wrong tool for most of the phenomenon. The one signal that beat
+chance was matching against a known function body (out-of-line twin, AUC 0.562), so a
+future detector should be content matching, not region enumeration.
+
+The function entry is part of the grammar because an option value is global to the
+run: it is applied once and every function is then decompiled under it.
+
+### The region is re-derived, never trusted
+
+The value names only a head and an exit. The member set is recomputed from the live
+`bblocks` with `kuna_check_region`, a transcription of the private `check_region` in
+`p7_regions/kuna_regionid.rs` (that file is a line-faithful port pinned by
+`docs/spec/07-regions.md` and is not modified to expose it). A region is a block
+**set**, never the interval `head..exit`: an inlined callee is routinely laid out in
+several disjoint pieces, 66% of instances span more than one range, and in the stage
+witness the exit address is below the head.
+
+### The seam
+
+Pre-SSA `bblocks` surgery, self-gated on `get_heritage_pass() == 0`. No `MULTIEQUAL`s
+exist yet, so moving edges needs no phi patching, and `ActionFuncLink` still
+materializes the call's argument and return varnodes afterwards. The pass is
+registered before `varnodeprops` rather than directly before `heritage`, because the
+`varnodeprops -> lowerswitchinstall -> heritage` run is a ported C++ adjacency
+(`coreaction.cc:5751-5756`) pinned by `verify_w8x_allowlist.rs`.
+
+The call is a real `CPUI_CALL` built from nothing — the first in the tree; every other
+site mutates an op the decoder produced. It installs the fspec annotation by hand
+exactly as `FlowInfo::build_call_specs` does, and `PrintC::call_callee_name`
+short-circuits on the supplied name, so no printer change is needed.
+`FuncCallSpecs::deindirect` is deliberately not used: it sets `restart_pending`, and
+the restart re-lifts from raw bytes, destroying the synthesis.
+
+### Liveness
+
+There is no pre-SSA liveness API, so the pass computes its own over `bblocks`. Three
+corrections matter more than the skeleton, each found by the transform declining:
+
+* it is computed over the region's **continuation** — the blocks reachable from the
+  exit without re-entering the region — because a read that happens *before* the
+  region (the entry block's own flag test) is not a live-out. Without this every
+  region is rejected;
+* overlapping storage in one space is merged: an x86 32-bit write zero-extends, so
+  SLEIGH writes both `EAX` and `RAX` at one offset and one register otherwise counts
+  as two live-outs;
+* slot 0 of a control-transfer op is its destination, a varnode in the code space. It
+  is an address, not a value, and counting it makes every conditional look like a
+  memory read.
+
+Liveness is an over-approximation in the safe direction: over-counting can only cause
+extra declines, never a wrong excision.
+
+### Two primitives that do not do what their names suggest
+
+* `Funcdata::node_split_block_edge` reads as "insert a block on this edge" and is not.
+  It `copy_basic_range`s the target's p-code into the new block and gives it the
+  target's successors, because it exists for tail duplication. Used for outlining it
+  produces a clone of the region head whose out-edges point back into the region, and
+  heritage then fails its dominator invariant. The correct sequence is that function
+  minus the copy: `new_block_basic`, `switch_edge` to move the single entry edge onto
+  it, `add_edge` to the join — after which the region is unreachable and
+  `remove_unreachable_blocks` collects it, with no `remove_branch`/`push_branch`.
+* A hand-built `FuncCallSpecs` has **no prototype store**, and every later
+  `FuncProto::store` query panics on the null. Decoder-produced specs get theirs from
+  `ActionDefaultParams`; a synthesized one must call
+  `proto_mut().attach_internal_store(void_ty)`.
+
+### v1 restrictions
+
+The pass declines, leaving the function untouched, unless the head and exit really
+bound a single-entry region over the live CFG, exactly one edge enters the head from
+outside, at most one value is live out, and the region contains no call and no
+`STORE`. Excising a region with a live-out that was not found silently produces C
+that computes the wrong value, so v1 refuses rather than guesses. The no-call rule is
+the most commonly hit: it declines regions containing compiler intrinsics such as
+`__addvsi3` under `-ftrapv`, which are semantically pure.
+
+It does not emit a pseudofunction **body**. There is no seam:
+`PrintC::doc_function_full` is one `Funcdata` per document. The call is emitted and
+named; the bytes remain in the binary and can be decompiled separately at the head
+address.

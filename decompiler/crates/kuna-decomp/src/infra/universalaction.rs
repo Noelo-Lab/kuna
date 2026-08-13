@@ -600,6 +600,17 @@ pub fn universal_sched(
         name: "mainloop",
         children: vec![
             act!(ActionUnreachable::boxed("base")),
+            // (kuna) outline (option `outline`, default-OFF - destructive, and inert
+            // with no region supplied).  Excise a SUPPLIED single-entry region and
+            // emit a call to a synthesized pseudofunction in its place.
+            //
+            // Placed BEFORE varnodeprops rather than directly before heritage: it
+            // only has to be inside the pre-SSA window (it self-gates on
+            // `get_heritage_pass() == 0`), and the
+            // varnodeprops -> lowerswitchinstall -> heritage run below is a ported
+            // C++ adjacency (coreaction.cc:5751-5756) pinned by
+            // verify_w8x_allowlist.rs.  A kuna-only pass does not get to split it.
+            act!(crate::p8_structure::kuna_outline::ActionOutline::boxed("blockrecovery")),
             act!(ActionVarnodeProps::boxed("base")),
             // (kuna) Install a previously-detected lowered switch BEFORE heritage
             // (coreaction.cc:5755).  `enabled` resolves the C++

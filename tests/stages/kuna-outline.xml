@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    S8 "goto-quality" sub-stage: excise a SUPPLIED single-entry region and emit a
+    call to a synthesized pseudofunction in its place.
+    Option `outline off|<fn>:<head>-<exit>[;...]` (default OFF, ELEM 4124).
+
+    Stage 2 of inline identification.  Stage 1 (`almostregion`,
+    tests/stages/kuna-almostregion.xml) FINDS candidate inlined regions; this
+    ACTS on one.  The region is supplied as the option value rather than taken
+    from stage 1, so a human reading the code - or an LLM agent reading stage
+    1's report - drives the transform directly.  The function entry is part of
+    the grammar because an option value is global to the run.
+
+    THE WITNESS (self-contained, no relocations, no calls).
+
+        entry:  eax = edi ; if (esi == 0) goto JOIN
+        BODY:   eax += 7                          <- head  0x40100a
+                if (eax <= 50) goto BODY2
+                eax -= 3
+        BODY2:  eax *= 3
+        JOIN:   eax += 100 ; ret                  <- exit  0x401018
+
+    BODY is a three-block single-entry region with one edge entering it (the
+    entry block's fall-through) and one value live out (EAX).  Outlining it
+    replaces the whole body with one call whose argument and result are that
+    same EAX.
+
+    WHAT THE LIVENESS HAS TO GET RIGHT, all three of which are in this witness:
+      - direction.  The entry block's own `test esi,esi` writes the flags that
+        its `je` reads.  Counting any outside read as a live-out flags that and
+        rejects the region, so liveness is computed over the region's
+        CONTINUATION (blocks reachable from the exit).
+      - sub-register aliasing.  The x86 32-bit writes zero-extend, so SLEIGH
+        writes both EAX and RAX at the same offset; unmerged, one register
+        counts as two live-outs and v1 declines.
+      - branch operands.  A CBRANCH carries its destination as a varnode in the
+        code space.  It is an address, not a value, and counting it makes the
+        `jle` look like a memory read.
+
+    PASS 1 (`option outline off`, the default) = the inlined body, verbatim.
+    PASS 2 (the region supplied) = one call, and the body is gone.
+
+    Asserts are counted across BOTH passes, so a token that appears once per
+    pass asserts min=max=2 and a token unique to one pass asserts min=max=1.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa89f885f6740e83c00783f8327e0383e8036bc00383c064c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="ol"/>
+</binaryimage>
+<script>
+  <com>option warnstyle banner</com>
+  <com>option outline off</com>
+  <com>lo fu ol</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outline 0x401000:0x40100a-0x401018</com>
+  <com>lo fu ol</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="outline #1: OFF is the bug - the inlined body is spliced into the caller (pass 1 only)" min="1" max="1">v1 = a0 \+ 7;</stringmatch>
+<stringmatch name="outline #2: OFF - the body's own branch is present too (pass 1 only)" min="1" max="1">if \(0x33 &lt;= v1\)</stringmatch>
+<stringmatch name="outline #3: ON - the whole region becomes one call named after the region head (pass 2 only)" min="1" max="1">a0 = outlined_0x40100a\(a0\);</stringmatch>
+<stringmatch name="outline #4: ON - the report names the block count and the recovered signature (pass 2 only)" min="1" max="1">outline: excised 3 block\(s\) at 0x40100a into outlined_0x40100a\(\) \(1 argument\(s\), 1 result\(s\)\)</stringmatch>
+<stringmatch name="outline #5: ON - the excised body is gone, so its multiply appears in pass 1 only" min="1" max="1">v1 \* 3;</stringmatch>
+<stringmatch name="outline #6: the surrounding function is untouched in both passes (off plus on = 2)" min="2" max="2">return a0 \+ 100;</stringmatch>
+<stringmatch name="outline #7: the guard that reaches the region is untouched in both passes (off plus on = 2)" min="2" max="2">if \(a1\)</stringmatch>
+</decompilertest>

@@ -15,6 +15,7 @@ pub mod kuna_itecondlist;
 pub mod kuna_iteregion;
 pub mod kuna_loopbreak_recovery;
 pub mod kuna_orchain;
+pub mod kuna_outline;
 pub mod kuna_earlyreturn;
 pub mod kuna_returndup;
 pub mod kuna_switchreturn;

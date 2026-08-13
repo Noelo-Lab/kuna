@@ -3335,3 +3335,22 @@ inspiration = "Ghidra MachoLoader arm64e cpusubtype -> AARCH64:LE:64:AppleSilico
 change_kind = "analysis-enablement"
 tier = "analysis"
 symptoms = "arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled|pac instructions in an apple-silicon binary not modeled by the loaded spec"
+
+[[settable]]
+option = "outline"
+values = "off|<fn>:<head>-<exit>[;...]"
+default = "off"
+destructive = true
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "kuna-inline-identification"
+summary = "Stage 2 of inline identification: excise a SUPPLIED single-entry region and emit a call to a synthesized pseudofunction in its place. Where almostregion finds candidate inlined regions, this acts on one - and the choice does not have to come from almostregion, so a human reading the code or an LLM agent reading almostregion's report can drive the transform directly. The value names the owning function entry as well as the region, because an option value is global to the run and every function is decompiled under it. The region is a block SET re-derived from the CFG with the same single-entry predicate almostregion uses; the value only names the head and the exit, and is re-verified against the live bblocks every time rather than trusted. Runs in the pre-SSA window immediately before heritage, so the edge surgery needs no MULTIEQUAL patching and ActionFuncLink still materializes the call's argument and return varnodes. v1 declines - leaving the function untouched - unless the head/exit really bound a single-entry region, exactly one edge enters the head from outside it, at most one value is live out, and the region contains no call and no STORE. Liveness is computed over the region's continuation (blocks reachable from the exit) with sub-register aliases merged, because an x86 32-bit write zero-extends and would otherwise count one register twice."
+use_when = "Off (default; inert, and inert also when a region is supplied for a different function). Supply a region to pull an inlined callee body back out into a named call - typically taking the head and exit from `--option almostregion report`."
+example = "--option outline 0x401000:0x40100a-0x401018"
+source_decompiler = "kuna"
+inspiration = "Procedural abstraction / outlining as the inverse of compiler inlining; the region model is the angr RegionIdentifier's single-entry region"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "an inlined callee body is spliced into the caller and should read as a call|want to pull a chosen region out of a function into a named pseudofunction|acting on an almostregion inline-candidate report by hand or with an llm"
