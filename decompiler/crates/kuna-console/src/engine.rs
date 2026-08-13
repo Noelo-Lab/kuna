@@ -414,6 +414,39 @@ impl ConsoleProgram {
         out
     }
 
+    /// (kuna) Whether the load image can actually read bytes at `addr` — i.e.
+    /// whether an entry there could have a body at all.
+    ///
+    /// A function entry does not imply mapped bytes. A relocatable object's
+    /// **undefined externals** (`puts`, `CellClass::Cell_Coord`) are bound to
+    /// synthetic addresses in an extern area above the laid-out sections
+    /// ([`kuna_analysis::loader::reloc_object`]) so that a call to one renders by
+    /// name; nothing is mapped there, and nothing ever will be, because the
+    /// definition lives in a different translation unit. The same is true of a
+    /// PE import pointer slot. Asking the lifter for such a function's body can
+    /// only produce "Unable to load N bytes", so the callers that would have
+    /// asked check here first and report the entry for what it is.
+    ///
+    /// Probes with a one-byte `load_fill` — the exact question, rather than a
+    /// section-flag approximation of it, so an address that *is* mapped but sits
+    /// outside any CODE section (packed code in `.data`, a hand-picked `--addr`)
+    /// still decompiles as it does today.
+    pub fn entry_bytes_mapped(&self, addr: &Address) -> bool {
+        let loader_rc = self.arch().translate().loader_rc();
+        let mut loader = loader_rc.borrow_mut();
+        let mut probe = [0u8; 1];
+        loader.load_fill(&mut probe, addr).is_ok()
+    }
+
+    /// [`Self::entry_bytes_mapped`] for a caller holding a bare code-space VMA.
+    /// `false` when the program has no code space to resolve the VMA against.
+    pub fn vma_bytes_mapped(&self, vma: u64) -> bool {
+        let Some(space) = self.arch().manage().get_default_code_space() else {
+            return false;
+        };
+        self.entry_bytes_mapped(&Address::new(Rc::clone(space), vma))
+    }
+
     /// (kuna) Disassemble the single machine instruction at code-space VMA
     /// `vma`, returning `(length, mnemonic, body)` — the one-instruction form
     /// of the `disassemble` console command (`IfcPrintdisasm`), for a caller

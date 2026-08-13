@@ -86,6 +86,15 @@ impl Classifier {
     /// Classify one function entry (see the module doc for the rules).
     pub fn kind(&self, prog: &ConsoleProgram, name: &str, vma: u64) -> &'static str {
         let norm = self.normalize(vma);
+        // An entry with no mapped bytes is an EXTERNAL — a relocatable object's
+        // undefined symbol, bound to a synthetic address purely so a call to it
+        // renders by name. It is a call that leaves this module and has no body
+        // to show, which is what the `plt` group means here; the name test below
+        // cannot catch it, since kuna's names are demangled
+        // (`CellClass::Cell_Coord`) while the symbol table's are not.
+        if !prog.vma_bytes_mapped(norm) {
+            return "plt";
+        }
         if self.stub_ranges.iter().any(|&(s, e)| norm >= s && norm < e)
             || self.imports.contains(name)
         {

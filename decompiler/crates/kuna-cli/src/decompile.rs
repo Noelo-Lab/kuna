@@ -139,6 +139,18 @@ fn check_errors(out: &str, target: &str, binary: &str, by_address: bool) -> Opti
     None
 }
 
+/// Whether the console transcript says the selected entry has no mapped bytes
+/// (`LoadImage::load_fill`'s "Unable to load N bytes at <addr>", raised the
+/// moment the flow-follower asks for the first instruction).
+///
+/// That is the signature of an **external**: an entry that carries an address
+/// for call naming but whose definition is in another module. It is not
+/// reachable for a real function — a mapped entry that fails mid-pipeline
+/// surfaces as the `Skipping <name>` notice below instead.
+fn is_unmapped_entry(out: &str) -> bool {
+    out.contains("Unable to load ") && out.contains(" bytes at ")
+}
+
 /// The console's per-function abort notice: `IfcDecompile` catches a
 /// recoverable pipeline abort, prints `Skipping <name>: <reason>` and keeps
 /// going (so `print C` still renders a shell).  Without this the CLI would
@@ -334,6 +346,25 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         }
         let c_text = trim_newlines(&c_text);
         if c_text.trim().is_empty() {
+            // An EXTERNAL, not a failure: the selected entry has no mapped bytes
+            // because its definition lives in another module (a relocatable
+            // object's undefined symbol, a PE import slot). Those carry an
+            // address only so a call to one renders by name. Say so, rather than
+            // dumping a console transcript whose "Unable to load N bytes" reads
+            // like a decompiler defect. The whole-binary surfaces answer the same
+            // way through `kuna_console::project::decompile_targets`, which asks
+            // the engine directly (`ConsoleProgram::entry_bytes_mapped`); this
+            // path drives `decomp_dbg` as a subprocess and so reads its report.
+            if is_unmapped_entry(&combined) {
+                return Ok(DecompileOutcome {
+                    c: format!(
+                        "// {}: external symbol -- no code at this address in this module",
+                        args.target
+                    ),
+                    regions: None,
+                    failure: None,
+                });
+            }
             return Err(format!(
                 "no C output for {:?} in {}; decompiler said:\n{}",
                 args.target,
