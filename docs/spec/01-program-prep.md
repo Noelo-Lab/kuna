@@ -445,7 +445,16 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   (Itanium), `rustc_demangle`, and `msvc_demangler` (`?…` names) crates. The hard
   contract is **name-only** reduction: kuna's scope splitter nests on every `::`,
   so signature tails and template argument groups must be stripped or they become
-  junk scopes.
+  junk scopes. **Operator names are exempt from that stripping**: `operator[]`,
+  `operator()`, `operator<<`, `operator->` and their siblings are spelled with the
+  very characters the reduction removes, so a bracket run directly after an
+  operator head is copied verbatim and only the parameter list that follows it is
+  dropped. Without the exemption every bracket-spelled overload of a class
+  collapsed onto one indistinguishable `Class::operator` — 65 distinct functions
+  in `libstdc++` shared the name `std::operator`, which is now split into its real
+  `std::operator<<` (33) and `std::operator>>` (32). A `<` followed by an
+  identifier character is left to the generic path, where it opens a template
+  argument list rather than spelling the operator.
 - **Demangled C++ signatures** (`cppsig`, `off|proven|inferred`, default `proven`;
   `decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_cppsig.rs`, the
   `DemangledFunction.applyTo` / "Apply Function Signatures" analog) is the

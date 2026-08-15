@@ -253,6 +253,30 @@ pub fn demangle_name(raw: &str) -> Option<String> {
     None
 }
 
+/// The C++ operator names spelled with bracket characters, longest first so a
+/// prefix never shadows a longer spelling (`<<=` before `<<` before `<`).
+///
+/// These are *part of the name* — `operator[]` and `operator()` are as much a
+/// function's identity as `push_back` — but they are made of the same
+/// characters [`strip_bracket_groups`] removes, so they need the exemption
+/// below.
+const BRACKET_OPERATORS: &[&str] =
+    &["<=>", "<<=", ">>=", "->*", "()", "[]", "<<", ">>", "<=", ">=", "->", "<", ">"];
+
+/// Whether `out` ends with the head of a C++ operator name, so a bracket run
+/// starting here spells the operator rather than opening a group. The three
+/// heads are `operator`, `operator new` and `operator delete` (the latter two
+/// take a `[]` of their own). Requires a word boundary, so an identifier that
+/// merely ends in "operator" (`my_operator`) is not treated as one.
+fn ends_with_operator_head(out: &str) -> bool {
+    let tail = out.trim_end();
+    ["operator new", "operator delete", "operator"].iter().any(|head| {
+        tail.strip_suffix(head).is_some_and(|before| {
+            before.chars().next_back().is_none_or(|c| !c.is_alphanumeric() && c != '_')
+        })
+    })
+}
+
 /// Remove every balanced bracketed group — `<...>` (template args), `(...)`
 /// (signature), `[...]` (array/attribute) — from a demangled name, keeping only
 /// the qualified-name text. Depth-tracked so nested groups
@@ -260,10 +284,36 @@ pub fn demangle_name(raw: &str) -> Option<String> {
 /// are tolerated. Leaves only the `::`-qualified name (e.g.
 /// `std::vector<int, std::allocator<int> >::push_back(int const&)` ->
 /// `std::vector::push_back`).
+///
+/// **Operator names are exempt.** `MapClass::operator[](Cell &)` reduces to
+/// `MapClass::operator[]`, not to `MapClass::operator`: the brackets after an
+/// operator head spell the operator, and eating them collapses every
+/// bracket-spelled overload a class has — `[]`, `()`, `<`, `<<`, `>`, `->` —
+/// onto one indistinguishable name. The exemption copies the operator's own
+/// spelling verbatim and then resumes stripping, so the parameter list that
+/// follows it still goes (`operator[](Cell &)` -> `operator[]`). A `<` or `>`
+/// immediately followed by an identifier character is left to the generic path,
+/// where it is the start of a template-argument list rather than the operator.
 fn strip_bracket_groups(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut depth: i32 = 0;
-    for c in s.chars() {
+    let mut i = 0usize;
+    while i < s.len() {
+        if depth == 0 && ends_with_operator_head(&out) {
+            if let Some(spelling) = BRACKET_OPERATORS.iter().find(|sp| s[i..].starts_with(**sp)) {
+                let rest = &s[i + spelling.len()..];
+                let opens_template =
+                    rest.chars().next().is_some_and(|c| c.is_alphanumeric() || c == '_');
+                if !opens_template {
+                    out.push_str(spelling);
+                    i += spelling.len();
+                    continue;
+                }
+            }
+        }
+        // cast: `i` indexes a char boundary by construction (the operator
+        // spellings are ASCII and the fallback advances by one whole char).
+        let c = s[i..].chars().next().expect("i is a char boundary");
         match c {
             '<' | '(' | '[' => depth += 1,
             '>' | ')' | ']' => {
@@ -277,6 +327,7 @@ fn strip_bracket_groups(s: &str) -> String {
                 }
             }
         }
+        i += c.len_utf8();
     }
     out.trim().to_string()
 }
@@ -595,5 +646,56 @@ mod tests {
         );
         // tolerate an unbalanced trailing bracket (defensive)
         assert_eq!(strip_bracket_groups("foo::bar<"), "foo::bar");
+    }
+
+    /// An operator's own brackets are part of its name and survive; the
+    /// parameter list that follows them does not. Without the exemption every
+    /// bracket-spelled overload of a class collapsed onto the same
+    /// `Class::operator`.
+    #[test]
+    fn strip_bracket_groups_keeps_operator_spellings() {
+        for (input, want) in [
+            ("MapClass::operator[](Cell &)", "MapClass::operator[]"),
+            ("Random2Class::operator()(int, int)", "Random2Class::operator()"),
+            ("Foo::operator<<(int)", "Foo::operator<<"),
+            ("Foo::operator<(Foo const&)", "Foo::operator<"),
+            ("Foo::operator>=(Foo const&)", "Foo::operator>="),
+            ("Foo::operator->()", "Foo::operator->"),
+            ("Foo::operator->*(int)", "Foo::operator->*"),
+            ("operator new[](unsigned int)", "operator new[]"),
+            ("operator delete[](void *)", "operator delete[]"),
+            // A `<` that opens a template argument list is NOT the operator,
+            // even directly after the keyword.
+            ("Foo::operator<int>", "Foo::operator"),
+            // An identifier merely ending in "operator" keeps the old behavior.
+            ("Foo::my_operator<int>(int)", "Foo::my_operator"),
+            // Non-bracket operators were never affected.
+            ("Foo::operator==(Foo const&)", "Foo::operator=="),
+        ] {
+            assert_eq!(strip_bracket_groups(input), want, "input {input:?}");
+        }
+    }
+
+    /// End-to-end through both manglings: the same overload set, mangled by
+    /// MSVC and by the Itanium ABI, reduces to distinct operator names.
+    #[test]
+    fn demangle_name_keeps_operator_spellings() {
+        for (raw, want) in [
+            // MSVC (`cl.exe`)
+            ("??AMapClass@@QBEAAVCellClass@@ABVCell@@@Z", "MapClass::operator[]"),
+            ("??RRandom2Class@@QAEHHH@Z", "Random2Class::operator()"),
+            ("??6Foo@@QAEAAV0@H@Z", "Foo::operator<<"),
+            ("??MFoo@@QBE_NABV0@@Z", "Foo::operator<"),
+            ("??_U@YAPAXI@Z", "operator new[]"),
+            ("??_V@YAXPAX@Z", "operator delete[]"),
+            // Itanium (gcc/clang)
+            ("_ZN3FooixEi", "Foo::operator[]"),
+            ("_ZN3FooclEv", "Foo::operator()"),
+            ("_ZN3FoolsEi", "Foo::operator<<"),
+            // A plain method is untouched by the exemption.
+            ("_ZN3Foo5plainEi", "Foo::plain"),
+        ] {
+            assert_eq!(demangle_name(raw).as_deref(), Some(want), "raw {raw:?}");
+        }
     }
 }
