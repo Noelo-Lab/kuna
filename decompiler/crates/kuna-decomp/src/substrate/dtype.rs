@@ -3799,6 +3799,29 @@ pub trait TypeFactory {
     fn get_size_of_pointer(&self) -> int4;
     /// Get size of alternate pointers, or 0 (C++ `getSizeOfAltPointer`).
     fn get_size_of_alt_pointer(&self) -> int4;
+    /// (kuna) Size of the core "short" (cspec `<short_size>`).  Defaulted so the
+    /// implementors that model no data organization need not restate the fleet's
+    /// near-universal widths; `TypeFactoryImpl` overrides with the decoded value.
+    fn get_size_of_short(&self) -> int4 {
+        2
+    }
+    /// (kuna) Size of the core "long long" (cspec `<long_long_size>`).
+    fn get_size_of_long_long(&self) -> int4 {
+        8
+    }
+    /// (kuna) Size of the core "float" (cspec `<float_size>`).
+    fn get_size_of_float(&self) -> int4 {
+        4
+    }
+    /// (kuna) Size of the core "double" (cspec `<double_size>`).
+    fn get_size_of_double(&self) -> int4 {
+        8
+    }
+    /// (kuna) Size of the core "long double" (cspec `<long_double_size>`) -- the
+    /// VALUE width, not `sizeof`.
+    fn get_size_of_long_double(&self) -> int4 {
+        8
+    }
     /// Get data-type alignment based on size (C++ `getAlignment`).
     fn get_alignment(&self, size: uint4) -> KunaResult<int4>;
     /// Get the aligned size of a primitive data-type (C++ `getPrimitiveAlignSize`).
@@ -4166,6 +4189,19 @@ pub struct TypeFactoryImpl {
     size_of_wchar: Cell<int4>,
     /// Size of pointers into the default data space (C++ `sizeOfPointer`).
     size_of_pointer: Cell<int4>,
+    /// (kuna) Size of the core "short" data-type (cspec `<short_size>`).
+    size_of_short: Cell<int4>,
+    /// (kuna) Size of the core "long long" data-type (cspec `<long_long_size>`).
+    size_of_long_long: Cell<int4>,
+    /// (kuna) Size of the core "float" data-type (cspec `<float_size>`).
+    size_of_float: Cell<int4>,
+    /// (kuna) Size of the core "double" data-type (cspec `<double_size>`).
+    size_of_double: Cell<int4>,
+    /// (kuna) Size of the core "long double" data-type (cspec `<long_double_size>`).
+    /// Note this is the VALUE width, not `sizeof`: the x86 cspecs record 10 for
+    /// the x87 extended format and annotate the storage width in a comment
+    /// (`<!-- aligned-length=16 -->`).
+    size_of_long_double: Cell<int4>,
     /// Size of alternate pointers, or 0 (C++ `sizeOfAltPointer`).
     size_of_alt_pointer: Cell<int4>,
     /// Size of an enumerated type (C++ `enumsize`).
@@ -4213,6 +4249,12 @@ impl TypeFactoryImpl {
             size_of_wchar: Cell::new(0),
             size_of_pointer: Cell::new(0),
             size_of_alt_pointer: Cell::new(0),
+            // (kuna) 0 == "the cspec has not spoken"; `setup_sizes` fills these.
+            size_of_short: Cell::new(0),
+            size_of_long_long: Cell::new(0),
+            size_of_float: Cell::new(0),
+            size_of_double: Cell::new(0),
+            size_of_long_double: Cell::new(0),
             enumsize: Cell::new(0),
             enumtype: Cell::new(type_metatype::TYPE_ENUM_UINT),
             align_map: RefCell::new(Vec::new()),
@@ -4344,6 +4386,30 @@ impl TypeFactoryImpl {
         if self.size_of_pointer.get() == 0 {
             self.size_of_pointer.set(default_data_addr_size);
         }
+        // (kuna) Fill the widths the cspec left unset.  37 of the 107 vendored
+        // cspecs carry no `<data_organization>` at all (every PowerPC 32-bit one
+        // among them) and several carry only a subset, so these defaults are the
+        // common case, not the exception.  The existing `size_of_long` fallback
+        // above is deliberately untouched: it is read by type inference, not just
+        // by rendering, so correcting it is a separate behavior change.
+        if self.size_of_short.get() == 0 {
+            self.size_of_short.set(2);
+        }
+        if self.size_of_long_long.get() == 0 {
+            self.size_of_long_long.set(8);
+        }
+        if self.size_of_float.get() == 0 {
+            self.size_of_float.set(4);
+        }
+        if self.size_of_double.get() == 0 {
+            self.size_of_double.set(8);
+        }
+        if self.size_of_long_double.get() == 0 {
+            // No `<long_double_size>` means the target has no wider floating type
+            // to name, so `long double` is `double` -- the C rule when a compiler
+            // aliases them (MSVC, ARM32 AAPCS).
+            self.size_of_long_double.set(self.size_of_double.get());
+        }
         // STUB(W4): the segmented far-pointer adjustment (glb->getSegmentOp) is a
         // W4 surface; without it sizeOfAltPointer stays 0, as for a flat space.
         if self.align_map.borrow().is_empty() {
@@ -4374,6 +4440,26 @@ impl TypeFactoryImpl {
     /// Set the default pointer size (C++ `decodeDataOrganization`'s `<pointer_size>`).
     pub fn set_size_of_pointer(&self, s: int4) {
         self.size_of_pointer.set(s);
+    }
+    /// (kuna) Set the default short size (cspec `<short_size>`).
+    pub fn set_size_of_short(&self, s: int4) {
+        self.size_of_short.set(s);
+    }
+    /// (kuna) Set the default long long size (cspec `<long_long_size>`).
+    pub fn set_size_of_long_long(&self, s: int4) {
+        self.size_of_long_long.set(s);
+    }
+    /// (kuna) Set the default float size (cspec `<float_size>`).
+    pub fn set_size_of_float(&self, s: int4) {
+        self.size_of_float.set(s);
+    }
+    /// (kuna) Set the default double size (cspec `<double_size>`).
+    pub fn set_size_of_double(&self, s: int4) {
+        self.size_of_double.set(s);
+    }
+    /// (kuna) Set the default long double size (cspec `<long_double_size>`).
+    pub fn set_size_of_long_double(&self, s: int4) {
+        self.size_of_long_double.set(s);
     }
 
     // -- Alignment queries (type.cc:3774-3798) -------------------------------
@@ -5812,6 +5898,21 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn get_size_of_alt_pointer(&self) -> int4 {
         self.size_of_alt_pointer.get()
+    }
+    fn get_size_of_short(&self) -> int4 {
+        self.size_of_short.get()
+    }
+    fn get_size_of_long_long(&self) -> int4 {
+        self.size_of_long_long.get()
+    }
+    fn get_size_of_float(&self) -> int4 {
+        self.size_of_float.get()
+    }
+    fn get_size_of_double(&self) -> int4 {
+        self.size_of_double.get()
+    }
+    fn get_size_of_long_double(&self) -> int4 {
+        self.size_of_long_double.get()
     }
     fn get_alignment(&self, size: uint4) -> KunaResult<int4> {
         self.alignment(size)
