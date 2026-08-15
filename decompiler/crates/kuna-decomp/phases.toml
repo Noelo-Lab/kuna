@@ -1578,6 +1578,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "msvcftol"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-msvcftol"
+summary = "Lower the MSVC x86-32 float-to-integer CRT helpers (`__ftol`, `__ftol2`, `__ftol2_sse`) to p-code via a synthesized `<callfixup>`, so the conversion prints as a C cast instead of an argument-less `__ftol()` call. MSVC passes the value in the x87 stack top ST0 and returns the __int64 in EDX:EAX, but no vendored x86 prototype model has an `<input>` pentry naming an x87 register (ST0 appears only as an `<output>` pentry), so the call characterizes ST0 as NoContainment, no argument trial is created, and the feeding FLD chain is dead-code eliminated together with every register it was based on -- including the ECX `this` pointer of a __thiscall method. The fixup body pops the CALL's pushed return address, truncates ST0 at the full 64-bit width into EDX:EAX, and pops the x87 stack."
+use_when = "An x86-32 MSVC binary shows bare `__ftol()` / `__ftol2()` calls with no arguments and the floating-point computation that fed them is missing (often together with a lost `this` pointer). On by default; flip OFF to restore the un-fixed call rendering."
+example = "option msvcftol off"
+source_decompiler = "ida"
+inspiration = "Hex-Rays ships a name-keyed compiler-helper table (ftol/ftol2/ftol2_sse/...) that lowers these to plain casts; upstream Ghidra ships the same mechanism for alloca_probe/mcount but no ftol entry"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "__ftol() / __ftol2() called with no arguments|the float computation feeding a float-to-int conversion is missing from an MSVC x86-32 binary|a __thiscall method lost its `this` pointer and reads its fields off a stack argument instead"
+live_field = "msvc_ftol"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "tailcalljump"
 values = "on|off"
 default = "on"

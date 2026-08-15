@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    MSVC __ftol-family call-fixup (`option msvcftol on|off`, default on).
+
+    MSVC compiles an x86-32 float-to-integer conversion as `fld <src>; call
+    __ftol`: the value arrives in the x87 stack top ST0 and the __int64 result
+    returns in EDX:EAX. No vendored x86 prototype model has an <input> pentry
+    naming an x87 register (ST0 appears only as an <output> pentry), so the call
+    characterizes ST0 as NoContainment, Heritage never creates an argument
+    trial, and with nothing reading ST0 the whole feeding FLD chain is
+    dead-code eliminated together with every register it was based on.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear it
+    and load the real i386 COFF fixture, whose `ftol_conv` performs exactly the
+    MSVC sequence twice against an UNDEFINED `__ftol` extern.
+
+    Pass 1 (`option msvcftol off`) reproduces the defect: two argument-less
+    `__ftol()` calls, with no trace of the float loads that fed them.
+
+    Pass 2 is the shipped default. The synthesized callfixup replaces each CALL
+    with the helper's p-code, so both conversions render as plain C casts of the
+    fields they actually read. The `(int4)(int8)` shape is deliberate: `_ftol`
+    returns an __int64, and modelling it at 32 bits would silently produce the
+    wrong high word for an `(__int64)d` conversion.
+
+    Assertions span the combined output of both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ftol_i386.obj</com>
+  <com>option msvcftol off</com>
+  <com>read symbols</com>
+  <com>load function ftol_conv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ftol_i386.obj</com>
+  <com>read symbols</com>
+  <com>load function ftol_conv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MSVCFTOL #1: off yields two argument-less helper calls, on yields none" min="2" max="2">__ftol\(\)</stringmatch>
+<stringmatch name="MSVCFTOL #2: on, the first conversion casts the field it actually reads" min="1" max="1">\(float4\)a0\[6\]</stringmatch>
+<stringmatch name="MSVCFTOL #3: on, the second conversion casts the field it actually reads" min="1" max="1">\(float4\)a0\[7\]</stringmatch>
+<stringmatch name="MSVCFTOL #4: on, both conversions truncate at the helper's real 64-bit width" min="2" max="2">\(int4\)\(int8\)</stringmatch>
+<stringmatch name="MSVCFTOL #5: on, the call is replaced by an injection" min="1" max="1">// injected</stringmatch>
+</decompilertest>

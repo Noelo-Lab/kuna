@@ -310,6 +310,12 @@ pub struct Architecture {
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
+    /// (kuna `msvcftol`) Install the synthesized MSVC `__ftol`-family call-fixup
+    /// (`p2_lift/kuna_msvcftol.rs`) so an x86-32 float-to-integer CRT helper call
+    /// lowers to a p-code truncation and its x87 (`ST0`) argument survives.
+    /// Default on; read by the analysis-tier call-fixup installer, which drops
+    /// this one fixup's targets from the install map when off.
+    pub msvc_ftol: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump`, default off).
@@ -1249,6 +1255,7 @@ impl Architecture {
             memset_recover: false,
             add_carry_chain: false,
             v850_indirect_branch: false,
+            msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
@@ -1408,6 +1415,7 @@ impl Architecture {
         self.return_single = false; // (kuna) default: upstream (join register pairs)
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
+        self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
@@ -1589,6 +1597,7 @@ impl Architecture {
             "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
+            "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
@@ -2800,6 +2809,47 @@ impl Architecture {
             )?;
         }
         Ok(())
+    }
+
+    /// (kuna `msvcftol`) Register the synthesized MSVC `__ftol`-family call-fixup
+    /// (`p2_lift::kuna_msvcftol`) alongside the cspec's own `<callfixup>`
+    /// elements, so `parse_inject_all` compiles it with the rest.
+    ///
+    /// Registration is unconditional on x86-32 rather than gated on the option:
+    /// the architecture is bootstrapped at `load file`, which the console script
+    /// runs *before* its `option` lines, so the flag is not yet readable here. A
+    /// registered payload is inert until something installs it, and the install
+    /// (the analysis-tier `callfixup` pass, which runs at `read symbols`, after
+    /// the options) is where `option msvcftol off` takes effect.
+    ///
+    /// Guarded to x86-32 because the body names `ST0..ST7`/`EAX`/`EDX`/`ESP`: on
+    /// a language without them the SLEIGH snippet compile would fail at
+    /// bootstrap, and `_ftol` exists on no other target.
+    fn decode_kuna_call_fixups(&mut self) -> KunaResult<()> {
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+
+        let code_addr_size = self
+            .manage()
+            .get_default_code_space()
+            .map(|s| s.get_addr_size() as int4)
+            .unwrap_or(0);
+        let resolve = |nm: &[u8]| self.translate.get_register_varnode(nm).is_ok();
+        if !crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size) {
+            return Ok(());
+        }
+        let manager = self.translate.manager_rc();
+        let mut registry = IdRegistry::with_base_ids();
+        crate::pcodeinject::register_ids(&mut registry);
+        crate::kuna_msvcftol::decode_payload(|root| {
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, root, 0);
+            self.pcodeinjectlib.decode_inject(
+                b" : kuna compiler helpers",
+                b"",
+                crate::pcodeinject::CALLFIXUP_TYPE,
+                &mut decoder,
+            )?;
+            Ok(())
+        })
     }
 
     /// Initialize the user-op table and decode the cspec `<callotherfixup>`
@@ -4469,6 +4519,10 @@ impl Architecture {
         // elements register their injections into pcodeinjectlib.  Run this BEFORE
         // build_default_proto, which `take()`s the cspec XML.
         self.decode_call_fixups()?;
+        // (kuna) The kuna-owned compiler-helper fixups, registered right after the
+        // cspec's own so `init_userops_and_fixups`'s `parse_inject_all` compiles
+        // them together.  Keeps the vendored spec tree byte-identical to upstream.
+        self.decode_kuna_call_fixups()?;
         // C++ restoreFromSpec: userops.initialize(this) (architecture.cc:641) +
         // the `<callotherfixup>` dispatch inside parseCompilerConfig
         // (architecture.cc:1294).  Run after the call-fixups are registered so

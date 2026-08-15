@@ -102,6 +102,15 @@ pub fn target_fixup_map(arch: &Architecture) -> Vec<(String, String)> {
         let Ok(fixup_name) = std::str::from_utf8(&cf.payload.core.name) else {
             continue;
         };
+        // (kuna `msvcftol`) The kuna-owned MSVC `__ftol`-family fixup is
+        // registered unconditionally at bootstrap (`load file` precedes the
+        // console's `option` lines, so the flag is not readable there). Its
+        // user-visible gate is here, on the install: dropping its targets from
+        // the map leaves the payload registered but never tagged onto a function,
+        // which restores the un-fixed `__ftol()` rendering.
+        if fixup_name == kuna_decomp::kuna_msvcftol::FIXUP_NAME && !arch.msvc_ftol {
+            continue;
+        }
         for target in &cf.target_symbol_names {
             if let Ok(target) = std::str::from_utf8(target) {
                 map.push((target.to_string(), fixup_name.to_string()));

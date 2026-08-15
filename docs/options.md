@@ -22,6 +22,9 @@ Three tiers:
 | return type twice the natural width built from a register concat | [`returnpair`](#returnpair) |
 | v850 jmp [reg] rendered as an indirect call instead of a recovered switch | [`v850indirectbranch`](#v850indirectbranch) |
 | jump table on v850 never recovered because the dispatch decodes as a computed call | [`v850indirectbranch`](#v850indirectbranch) |
+| __ftol() / __ftol2() called with no arguments | [`msvcftol`](#msvcftol) |
+| the float computation feeding a float-to-int conversion is missing from an MSVC x86-32 binary | [`msvcftol`](#msvcftol) |
+| a __thiscall method lost its `this` pointer and reads its fields off a stack argument instead | [`msvcftol`](#msvcftol) |
 | leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump) |
 | jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump) |
 | plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump) |
@@ -349,6 +352,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Set on PER V850 PROGRAM to recover jump-table switches; DESTRUCTIVE as a global default (matches register-indirect calls on other architectures).
 - **Where / provenance:** P2/flow-classification · ghidra-upstream · opt-in-tool · GH-8817
 - **Example:** `option v850indirectbranch on`
+
+### `msvcftol` -- on | off, default `on`
+
+- **Symptoms:** __ftol() / __ftol2() called with no arguments; the float computation feeding a float-to-int conversion is missing from an MSVC x86-32 binary; a __thiscall method lost its `this` pointer and reads its fields off a stack argument instead.
+- **What it does:** Lower the MSVC x86-32 float-to-integer CRT helpers (`__ftol`, `__ftol2`, `__ftol2_sse`) to p-code via a synthesized `<callfixup>`, so the conversion prints as a C cast instead of an argument-less `__ftol()` call. MSVC passes the value in the x87 stack top ST0 and returns the __int64 in EDX:EAX, but no vendored x86 prototype model has an `<input>` pentry naming an x87 register (ST0 appears only as an `<output>` pentry), so the call characterizes ST0 as NoContainment, no argument trial is created, and the feeding FLD chain is dead-code eliminated together with every register it was based on -- including the ECX `this` pointer of a __thiscall method. The fixup body pops the CALL's pushed return address, truncates ST0 at the full 64-bit width into EDX:EAX, and pops the x87 stack.
+- **When to flip:** An x86-32 MSVC binary shows bare `__ftol()` / `__ftol2()` calls with no arguments and the floating-point computation that fed them is missing (often together with a lost `this` pointer). On by default; flip OFF to restore the un-fixed call rendering.
+- **Where / provenance:** P2/flow-classification · ida · correctness-fix · kuna-msvcftol
+- **Example:** `option msvcftol off`
 
 ### `tailcalljump` -- on | off, default `on`
 

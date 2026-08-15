@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    449,
-    449
+    454,
+    454
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -202,6 +202,11 @@
     "data:LOOPCONDHOIST #1: OFF leaves the head test inside an infinite loop (pass 1 only)",
     "data:LOOPCONDHOIST #2: ON hoists the head test into the loop header (pass 2 only)",
     "data:LOOPCONDHOIST #3: the OFF pass needs a break to reach the match arm; the ON pass does not (pass 1 only)",
+    "data:MSVCFTOL #1: off yields two argument-less helper calls, on yields none",
+    "data:MSVCFTOL #2: on, the first conversion casts the field it actually reads",
+    "data:MSVCFTOL #3: on, the second conversion casts the field it actually reads",
+    "data:MSVCFTOL #4: on, both conversions truncate at the helper's real 64-bit width",
+    "data:MSVCFTOL #5: on, the call is replaced by an injection",
     "data:P1: TOTAL shared() epilogue count across both passes is 3 (off clones to 2, on dedups to 1)",
     "data:P1: default (crossjumprevert off) emits the condensed cross-jump goto",
     "data:P1: on recovers three constant early returns from the shared epilogue (off merges to none)",

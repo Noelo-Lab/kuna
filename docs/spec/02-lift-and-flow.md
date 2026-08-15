@@ -163,6 +163,34 @@ recovered switch table.
   (`flow.rs (FlowInfo::inject_sub_function)`); the payload's parameter shift is
   transferred to the call spec created inside the woven body, and a nested call
   to the same fixup entry is cycle-broken (it must not re-inject).
+- **kuna-owned call fixups.** Payloads are not required to come from a spec
+  file. `decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcftol.rs` synthesizes
+  a `<callfixup>` in Rust and registers it through the same
+  `PcodeInjectLibraryBase::decode_inject` path immediately after the cspec's own
+  (`architecture.rs (decode_kuna_call_fixups)`), so the vendored spec tree stays
+  byte-identical to upstream while `parse_inject_all` still compiles every body
+  together. Its subject is the MSVC x86-32 float-to-integer CRT helper family
+  (`__ftol`, `__ftol2`, `__ftol2_sse`). MSVC passes that helper's argument in the
+  x87 stack top `ST0` and returns the `__int64` in `EDX:EAX`, but no vendored
+  x86 prototype model has an `<input>` `<pentry>` naming an x87 register — `ST0`
+  appears only as an `<output>` pentry — so `FuncProto::characterize_as_input_param`
+  answers `NoContainment`, `Heritage`'s call guard never appends the argument,
+  nothing reads `ST0`, and the entire feeding `FLD` chain is dead-code eliminated
+  along with every register it was based on (on a `__thiscall` method, the `ECX`
+  `this` pointer). Widening a shared prototype model with an `ST0` input pentry
+  is *not* the alternative: it invents a phantom `float10` first argument on
+  every unrelated stack-passing callee. The fixup body pops the return address
+  the `CALL` pushed (mandatory — x86 `CALL rel32` lifts as
+  `push44(&:4 inst_next); call rel32`, so a replaced CALL otherwise leaks the
+  pushed address into the next call's arguments), truncates `ST0` at the helper's
+  real 64-bit width into `EDX:EAX`, and pops the x87 stack. Registration is
+  guarded to x86-32 (every register the body names must resolve, at a 4-byte
+  code space) because the body would not compile elsewhere and the helper exists
+  nowhere else; it is unconditional rather than option-gated because the
+  architecture bootstraps at `load file`, before the console's `option` lines.
+  The user-visible gate is on the *install* instead (`option msvcftol`, default
+  on), where the analysis-tier call-fixup installer drops this one payload's
+  targets from its match map.
 
 ## 2.2 CFG construction
 
