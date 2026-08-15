@@ -98,6 +98,17 @@ reach a function, so an entry the inventory omits is a function the UI cannot op
 mode with no discovery overrides of its own; `aggressive` already turns all three on and
 `fast` turns all three off, so those two were consistent before and after.
 
+That makes the mode a *product* decision in the browser, not just a speed dial, so the
+page exposes it: a **Mode** control beside the file picker (`auto` — the default — plus
+`fast` / `reliable` / `aggressive`), whose value is passed to `kuna.load` and carried by
+the Worker session to `list`, `decompile` and `project` alike. Changing it re-indexes the
+binary already loaded, because the mode changes the inventory itself and a sidebar that
+disagrees with the bodies below it would be worse than either. Without the control a
+binary at or above 2 MiB was pinned to `fast` with no way to ask for more: on a 3.4 MB
+i386 PE the browser listed **3,495** functions where `reliable` finds **14,014** (IDA Pro
+finds 14,576), and the page held the only copy of the uploaded bytes, so there was nowhere
+else to go.
+
 Unfiltered `decompile` and `project` use the shared CODE-backed target set, while
 explicit address decompile suppresses that whole-image discovery pass and
 reaches the requested entry directly. Name selection keeps discovery active so
