@@ -301,7 +301,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_31_suppressed_for_72() {
+fn option_values_live_value_present_for_32_suppressed_for_73() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -476,7 +476,8 @@ fn option_values_live_value_present_for_31_suppressed_for_72() {
     // `itecondlist` declares no live_field, so it does not move this count.
     // 29 -> 30: +1 for `funcboundflow` (live_field = funcbound_flow).
     // 30 -> 31: +1 for `evalcurrentproto` (live_field = evalcurrentproto).
-    assert_eq!(with_live, 31);
+    // 31 -> 32: +1 for `msvcftol` (live_field = msvc_ftol).
+    assert_eq!(with_live, 32);
 }
 
 #[test]
@@ -581,9 +582,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
-    // evalcurrentproto's P4 row and ifuncfpret's P1 row sit mid-table, so they do
-    // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 103);
+    // evalcurrentproto's P4 row, ifuncfpret's P1 row and msvcftol's P2 row sit
+    // mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 104);
 }
 
 #[test]
