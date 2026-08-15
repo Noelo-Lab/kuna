@@ -32,6 +32,15 @@
       <p class="status busy" id="status" role="status" aria-live="polite"><span class="dot"></span>loading decompiler&hellip;</p>
       <button class="tinybtn" id="cancelbtn" disabled>Cancel</button>
       <button class="tinybtn" id="dlbtn" disabled>Download binary source</button>
+      <label class="tinybtn modepick" id="modelabel" title="How hard the engine works: auto picks by binary size (fast above 2 MiB, which turns the discovery passes off)">
+        Mode
+        <select id="mode">
+          <option value="auto" selected>auto</option>
+          <option value="fast">fast</option>
+          <option value="reliable">reliable</option>
+          <option value="aggressive">aggressive</option>
+        </select>
+      </label>
       <label class="tinybtn primary" id="pick" aria-disabled="true">
         Load binary <input type="file" id="file">
       </label>
@@ -103,6 +112,7 @@
   const statusEl = document.getElementById('status');
   const pickEl = document.getElementById('pick');
   const fileEl = document.getElementById('file');
+  const modeEl = document.getElementById('mode');
   const listEl = document.getElementById('fnlist');
   const headEl = document.getElementById('fnhead');
   const codeEl = document.getElementById('code');
@@ -226,9 +236,13 @@
     console.error(e);
   }
 
-  fileEl.addEventListener('change', async () => {
-    const f = fileEl.files[0];
+  // The File the inventory was built from, so changing the mode can re-index the
+  // same binary without asking for it again. A File is a handle, not the bytes.
+  let loadedFile = null;
+
+  async function indexBinary(f) {
     if (!f || !kuna) return;
+    loadedFile = f;
     const operation = beginOperation('load', true);
     setStatus(`reading ${f.name}…`);
     resetList();
@@ -243,7 +257,7 @@
       const bytes = new Uint8Array(await f.arrayBuffer());
       if (!isCurrent(operation)) return;
       setStatus(`indexing ${f.name} (${bytes.length.toLocaleString()} bytes)…`);
-      result = await kuna.load(bytes, { fileName: f.name, mode: 'auto' });
+      result = await kuna.load(bytes, { fileName: f.name, mode: modeEl.value });
     } catch (e) {
       if (!isCurrent(operation)) return;
       setStatus('function inventory failed: ' + e.message, 'err');
@@ -301,6 +315,15 @@
     const first = rows.find((r) => !r.stub) || rows[0];
     finishOperation(operation);
     if (first) first.row.click();
+  }
+
+  fileEl.addEventListener('change', () => indexBinary(fileEl.files[0]));
+
+  // The mode decides how much discovery runs, so it changes the inventory
+  // itself, not just how hard each body is worked: re-index the binary already
+  // loaded rather than leave a sidebar that disagrees with the bodies below it.
+  modeEl.addEventListener('change', () => {
+    if (loadedFile) indexBinary(loadedFile);
   });
 
   dlEl.addEventListener('click', async () => {

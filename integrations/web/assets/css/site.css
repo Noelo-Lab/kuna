@@ -264,6 +264,12 @@ body.app main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
 .tinybtn.primary{background:var(--ink);border-color:var(--ink);color:var(--paper);}
 .tinybtn.primary:hover:not([aria-disabled=true]){background:var(--red);border-color:var(--red);}
 .tinybtn input[type=file]{display:none;}
+.tinybtn.modepick{display:inline-flex;align-items:center;gap:8px;cursor:default;}
+.tinybtn.modepick:hover{background:var(--paper);border-color:var(--rule-2);color:var(--ink);}
+.tinybtn.modepick select{
+  font:inherit;letter-spacing:inherit;text-transform:inherit;
+  border:0;background:transparent;color:inherit;cursor:pointer;padding:0;
+}
 
 /* the two-pane workspace */
 .work{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:290px minmax(0,1fr);}
