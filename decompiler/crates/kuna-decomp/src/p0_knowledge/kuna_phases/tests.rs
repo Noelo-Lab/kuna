@@ -42,7 +42,7 @@ fn surface_count_is_102() {
 }
 
 #[test]
-fn settable_count_is_104() {
+fn settable_count_is_105() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -67,12 +67,13 @@ fn settable_count_is_104() {
     // +1 for `evalcurrentproto` (P4 compiler-spec current-function prototype model).
     // +1 for `ifuncfpret` (P1 x86-64 IFUNC IRELATIVE PLT-stub naming).
     // +1 for `outline` (S8 region excision into a synthesized pseudofunction).
-    assert_eq!(kuna_num_settables(), 104);
-    assert_eq!(SETTABLE_TABLE.len(), 104);
+    // +1 for `msvcftol` (P2 MSVC __ftol-family call-fixup, DIV-74).
+    assert_eq!(kuna_num_settables(), 105);
+    assert_eq!(SETTABLE_TABLE.len(), 105);
 }
 
 #[test]
-fn tier_counts_are_22_core_46_transform_36_analysis() {
+fn tier_counts_are_22_core_47_transform_36_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -109,7 +110,8 @@ fn tier_counts_are_22_core_46_transform_36_analysis() {
     // prototype model, DIV-71).
     // analysis 35 -> 36: +1 for `ifuncfpret` (P1 x86-64 IFUNC PLT-stub naming).
     // transform 45 -> 46: +1 for `outline` (deletes blocks, synthesizes a call).
-    assert_eq!((core, transform, analysis), (22, 46, 36));
+    // transform 46 -> 47: +1 for `msvcftol` (P2 MSVC __ftol call-fixup, DIV-74).
+    assert_eq!((core, transform, analysis), (22, 47, 36));
 }
 
 #[test]

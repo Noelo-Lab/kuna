@@ -254,6 +254,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "booleanmask",
     "flagcompare",
     "v850indirectbranch",
+    "msvcftol",
     "tailcalljump",
     "funcboundflow",
     "noreturn_extern",
