@@ -126,6 +126,31 @@ back — and the two inline unit tests (`dependent_order_nested_struct`,
 `dependent_order_pointer_cycle`) pin both facts: the raw tree order really is
 container-first, and the DFS reorders it.
 
+**The data organization.** The factory also carries the target's C scalar
+widths, decoded from the compiler spec's `<data_organization>` by
+`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(decode_data_organization)` and completed by
+`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(TypeFactoryImpl::setup_sizes)` for whatever the spec left unset. kuna reads the
+full set — `char`, `short`, `int`, `long`, `long long`, pointer, `wchar_t`,
+`float`, `double`, `long double` — because knowing a value's *size* is not
+enough to name its C type: an 8-byte integer is `long` under LP64 and
+`long long` under ILP32 or LLP64, and the fleet disagrees on both (x86-64 gcc
+declares `long_size` 8, x86-64 Windows declares 4 with 8-byte pointers). These
+widths are a naming fact, not an inference input; the type tree interns by
+sub-metatype and size alone and never consults them.
+
+Two of them do not describe anything `sizeof` can measure. `<long_double_size>`
+records the *value* width, not the storage width — the x86 specs say 10 for the
+x87 extended format and annotate the storage in a comment
+(`<!-- aligned-length=16 -->`) — and a spec that declares no `long double` at
+all means the target aliases it to `double` (MSVC, ARM32), which is the fallback
+`setup_sizes` applies. Consumers must therefore treat a long-double width as an
+approximation to name, never as a layout guarantee. Thirty-seven of the 107
+vendored cspecs carry no `<data_organization>` element whatsoever — every
+PowerPC 32-bit one among them — so the fallbacks are the common case, not the
+exception.
+
 ## 5.2 Inference
 
 Type recovery is **off** for the entire first `fullloop` iteration — early

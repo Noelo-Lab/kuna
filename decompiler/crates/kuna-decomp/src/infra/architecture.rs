@@ -3267,6 +3267,38 @@ impl Architecture {
                         self.types.set_size_of_wchar(v);
                     }
                 }
+                // (kuna) The remaining scalar widths.  Upstream's
+                // `decodeDataOrganization` reads these too; kuna had only ever
+                // needed int/long/pointer/char/wchar, so the rest fell through the
+                // `_ => {}` arm and no consumer could ask for them.  `<float_size>`
+                // (60 cspecs), `<double_size>` (61), `<long_double_size>` (56),
+                // `<short_size>` (54) and `<long_long_size>` (51) are the five that
+                // a per-architecture C spelling needs.
+                "short_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_short(v);
+                    }
+                }
+                "long_long_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_long_long(v);
+                    }
+                }
+                "float_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_float(v);
+                    }
+                }
+                "double_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_double(v);
+                    }
+                }
+                "long_double_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_long_double(v);
+                    }
+                }
                 "size_alignment_map" => {
                     // C++ `TypeFactory::decodeAlignmentMap` (type.cc:5143): each
                     // `<entry size=N alignment=M/>` child contributes a pair; the
