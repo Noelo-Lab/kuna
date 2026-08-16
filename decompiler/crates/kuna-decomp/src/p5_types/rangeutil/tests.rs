@@ -705,9 +705,9 @@ fn valuesetsolver_topological_order_linear() {
     // A simple chain root -> 0 -> 1 -> 2 (no cycles).  Bourdoncle ordering puts
     // them in dependency order 0,1,2 with no components.
     let mut solver = ValueSetSolver::new();
-    let n0 = solver.new_value_set();
-    let n1 = solver.new_value_set();
-    let n2 = solver.new_value_set();
+    let n0 = solver.alloc_value_set();
+    let n1 = solver.alloc_value_set();
+    let n2 = solver.alloc_value_set();
     solver.push_root(n0);
 
     let graph = StaticGraph { succ: vec![vec![n1], vec![n2], vec![]], root_succ: vec![n0] };
@@ -724,9 +724,9 @@ fn valuesetsolver_topological_order_with_cycle() {
     // root -> 0 -> 1 -> 2, with a back-edge 2 -> 1 forming a loop {1,2}.
     // Bourdoncle: node 1 becomes a component head; order is 0,1,2.
     let mut solver = ValueSetSolver::new();
-    let n0 = solver.new_value_set();
-    let n1 = solver.new_value_set();
-    let n2 = solver.new_value_set();
+    let n0 = solver.alloc_value_set();
+    let n1 = solver.alloc_value_set();
+    let n2 = solver.alloc_value_set();
     solver.push_root(n0);
 
     let graph =

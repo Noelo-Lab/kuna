@@ -330,13 +330,37 @@ code: `WidenerFull` widens at iteration **2** (snapping the unstable bound to a
 up to full range at iteration **5**; `WidenerNone` freezes whatever has been
 reached by iteration **3**. The reason for the two-stage schedule: one cheap
 guess (the landmark) is usually exactly the loop bound, and if it is not, more
-iteration is wasted work. Honest port status: the ordering, widening, and
-range arithmetic are fully ported and self-tested, but the binding of value
-sets to live Varnodes (constraint generation, and the LoadGuard range
-refinement at `decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
-(LoadGuard)`) is a documented stub — guarded LOAD/STORE ranges stay at their
-conservative defaults, so the failure mode is over-wide alias guards (extra
-heritage conservatism), never a wrong range.
+iteration is wasted work.
+
+The solver is bound to the live IR. `decompiler/crates/kuna-decomp/src/p5_types/rangeutil.rs
+(ValueSetSolver::establish_value_sets)` seeds the system from a set of sink
+Varnodes (walking each sink's def chain and stopping at ops whose integer
+range is unknowable — calls, LOADs, floating point — which enter as
+full-range roots, with the stack-pointer input tracked as a *relative* set),
+lifts every dominating CBRANCH condition into per-read equations
+(`generate_constraints` / `apply_constraints`, using
+`circlerange_pull_back` to pull the branch range back to a system Varnode and
+`FlowBlock::restricted_by_conditional` to decide on which out-edge it holds),
+and computes the weak topological order; `(ValueSetSolver::solve)` then
+iterates per-opcode `push_forward_*` transfers over that order — looping each
+partition component until it stabilizes — under a chosen `Widener`. Where the
+C++ threads a `Varnode -> ValueSet` back-pointer and mark bits through the IR,
+the port keeps a `VarnodeId -> node` map plus side sets on the solver, which
+is observationally identical.
+
+The solver's one in-tree client is the LoadGuard range refinement at
+`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (LoadGuard)`,
+gated by `option loadguardrange` (default on): at the end of each heritage
+pass the pointer of every newly discovered indexed-stack LOAD/STORE guard is
+solved for its `[min,max,step]` window (chapter
+[03](03-ssa-and-simplification.md)), and the refined, range-locked guards are
+what let the P6 frame layout size an indexed stack array by its real index
+bound (chapter [06](06-variables-and-merge.md)). The refinement is
+load-bearing for correctness, not just precision: with it off, every guard
+keeps the conservative whole-space range, and the P6 fallback bound of 3
+splits any element past index 3 of an indexed array into a separate
+never-assigned scalar — an *under*-sized array with out-of-bounds subscripts
+in the printed C (GH-182), not merely extra heritage conservatism.
 
 **Non-zero masks.** `decompiler/crates/kuna-decomp/src/substrate/
 funcdata_varnode.rs (Funcdata::calc_nz_mask)`, driven once per `mainloop` pass

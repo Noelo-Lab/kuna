@@ -68,9 +68,11 @@
 //!     `guardLoads`/`guardReturns` and helpers) needs `FuncCallSpecs`,
 //!     `ParamActive`, `EffectRecord`, the `Architecture` stack/proto/join
 //!     surface, `Override`, and `PreferSplitManager`.
-//!   * `// STUB(W6)` — [`LoadGuard::establish_range`]/[`LoadGuard::finalize_range`]
-//!     and [`Heritage::analyze_new_load_guards`] need the value-set solver
-//!     (`ValueSetSolver`/`ValueSetRead`/`CircleRange`).
+//!   * `LoadGuard::establish_range`/`LoadGuard::finalize_range` and
+//!     `Heritage::analyze_new_load_guards`/`handle_new_load_copies` are live
+//!     against the IR-bound value-set solver
+//!     ([`crate::rangeutil::ValueSetSolver`]), gated by
+//!     `option loadguardrange` (default on).
 //!
 //! The [`Heritage::bump_deadcode_delay`] recorder anchor (the kuna restart
 //! observability hook) is realized against the merged [`Override`] and
@@ -660,15 +662,97 @@ impl LoadGuard {
         self.analysis_state == 2
     }
 
-    // establishRange / finalizeRange (heritage.cc:741 / 788)
-    //
-    // STUB(W6): both convert a `ValueSetRead` (value-set analysis result,
-    // `CircleRange`) into a guard range.  The value-set solver
-    // (`ValueSetSolver`/`ValueSetRead`/`CircleRange`) is not in the merged
-    // tree.  The arithmetic on `minimumOffset`/`maximumOffset`/`step` is fully
-    // determined by `range.{getMin,getEnd,getStep,getSize,getMask,isEmpty,
-    // isFull}` plus `valueSet.{isLeftStable,isRightStable}`; the wave that
-    // ports rangeutil can fill these verbatim from heritage.cc:741-814.
+    /// Return true if the record still describes an active LOAD/STORE
+    /// (C++ `isValid`, `heritage.hh:170`).
+    pub fn is_valid(&self, fd: &crate::funcdata::Funcdata, opc: kuna_num::opcodes::OpCode) -> bool {
+        fd.obank().get(self.op).map(|o| !o.is_dead() && o.code() == opc).unwrap_or(false)
+    }
+
+    /// Convert partial value set analysis into a guard range (C++
+    /// `establishRange`, `heritage.cc:741`).
+    ///
+    /// This can sometimes get `minimumOffset` (otherwise the original constant
+    /// pulled with the LOAD is used), `step` (if the partial analysis shows
+    /// step and direction), and in rare cases `maximumOffset`.
+    /// `analysis_state` is set to 1 if full range analysis is not needed.
+    pub fn establish_range(&mut self, value_set: &crate::rangeutil::ValueSetRead) {
+        let range = value_set.get_range();
+        let range_size = range.get_size();
+        let mut size: uintb;
+        if range.is_empty() {
+            self.minimum_offset = self.pointer_base;
+            size = 0x1000;
+        } else if range.is_full() || range_size > 0xffffff {
+            self.minimum_offset = self.pointer_base;
+            size = 0x1000;
+            self.analysis_state = 1; // Don't bother doing more analysis
+        } else {
+            // Check for consistent step.
+            self.step = if range_size == 3 { range.get_step() } else { 0 };
+            size = 0x1000;
+            if value_set.is_left_stable() {
+                self.minimum_offset = range.get_min();
+            } else if value_set.is_right_stable() {
+                if self.pointer_base < range.get_end() {
+                    self.minimum_offset = self.pointer_base;
+                    size = range.get_end() - self.pointer_base;
+                } else {
+                    self.minimum_offset = range.get_min();
+                    size = range_size.wrapping_mul(range.get_step() as uintb);
+                }
+            } else {
+                self.minimum_offset = self.pointer_base;
+            }
+        }
+        let max = self.spc.get_highest();
+        if self.minimum_offset > max {
+            self.minimum_offset = max;
+            self.maximum_offset = self.minimum_offset; // Something is seriously wrong
+        } else {
+            // The C++ lets this uintb arithmetic wrap (max = 2^64-1, min = 0).
+            let max_size = (max - self.minimum_offset).wrapping_add(1);
+            if size > max_size {
+                size = max_size;
+            }
+            self.maximum_offset = self.minimum_offset.wrapping_add(size).wrapping_sub(1);
+        }
+    }
+
+    /// Convert value set analysis to the final guard range (C++
+    /// `finalizeRange`, `heritage.cc:788`).
+    pub fn finalize_range(&mut self, value_set: &crate::rangeutil::ValueSetRead) {
+        self.analysis_state = 1; // In all cases the settings determined here are final
+        let range = value_set.get_range();
+        let mut range_size = range.get_size();
+        if range_size == 0x100 || range_size == 0x10000 {
+            // These sizes likely result from the storage size of the index.
+            if self.step == 0 {
+                // If we didn't see signs of iteration, don't use this range.
+                range_size = 0;
+            }
+        }
+        if range_size > 1 && range_size < 0xffffff {
+            // Did we converge to something reasonable?
+            self.analysis_state = 2; // Mark that we got a definitive result
+            if range_size > 2 {
+                self.step = range.get_step();
+            }
+            self.minimum_offset = range.get_min();
+            // NOTE: don't subtract a whole step.
+            self.maximum_offset = range.get_end().wrapping_sub(1) & range.get_mask();
+            if self.maximum_offset < self.minimum_offset {
+                // Values extend into what is usually stack parameters.
+                self.maximum_offset = self.spc.get_highest();
+                self.analysis_state = 1; // Remove the lock as we have likely overflowed
+            }
+        }
+        if self.minimum_offset > self.spc.get_highest() {
+            self.minimum_offset = self.spc.get_highest();
+        }
+        if self.maximum_offset > self.spc.get_highest() {
+            self.maximum_offset = self.spc.get_highest();
+        }
+    }
 }
 
 // =============================================================================
@@ -3973,6 +4057,311 @@ impl Heritage {
         }
     }
 
+    /// Make the final determination of what range new LoadGuards protect (C++
+    /// `Heritage::analyzeNewLoadGuards`, `heritage.cc:834`).
+    ///
+    /// Actual LOAD (and indexed STORE) operations are guarded with an initial
+    /// whole-space LoadGuard record.  Now that heritage has completed, a full
+    /// value-set analysis of each new guard's pointer is conducted to reach a
+    /// conclusion about what range of stack values the op might actually
+    /// alias.  All new LoadGuard records are updated with the analysis, which
+    /// then informs handling of LOAD COPYs, possible later heritage passes,
+    /// and the P6 `MapState::addGuard` array-extent hints.
+    fn analyze_new_load_guards(&mut self, fd: &crate::funcdata::Funcdata) {
+        use crate::rangeutil::{ValueSetSolver, WidenerFull, WidenerNone};
+
+        let mut nothing_to_do = true;
+        if let Some(g) = self.load_guard.last() {
+            if g.analysis_state == 0 {
+                nothing_to_do = false; // Check if unanalyzed
+            }
+        }
+        if let Some(g) = self.store_guard.last() {
+            if g.analysis_state == 0 {
+                nothing_to_do = false;
+            }
+        }
+        if nothing_to_do {
+            return;
+        }
+
+        let mut sinks: Vec<crate::context::VarnodeId> = Vec::new();
+        let mut reads: Vec<crate::context::OpId> = Vec::new();
+        // Walk each guard list from the end backward collecting the new
+        // (unanalyzed) records — the C++ `--loadIter` loops.
+        let mut load_start = self.load_guard.len();
+        while load_start > 0 && self.load_guard[load_start - 1].analysis_state == 0 {
+            load_start -= 1;
+            let g = &self.load_guard[load_start];
+            if let Some(ptr) = fd.obank().get(g.op).and_then(|o| o.get_in(1)) {
+                reads.push(g.op);
+                sinks.push(ptr); // The CPUI_LOAD pointer
+            }
+        }
+        let mut store_start = self.store_guard.len();
+        while store_start > 0 && self.store_guard[store_start - 1].analysis_state == 0 {
+            store_start -= 1;
+            let g = &self.store_guard[store_start];
+            if let Some(ptr) = fd.obank().get(g.op).and_then(|o| o.get_in(1)) {
+                reads.push(g.op);
+                sinks.push(ptr); // The CPUI_STORE pointer
+            }
+        }
+        let stack_reg = fd
+            .get_arch()
+            .manage()
+            .get_stack_space()
+            .filter(|s| s.num_spacebase() > 0)
+            .map(Rc::clone)
+            .and_then(|s| fd.find_spacebase_input(&s));
+        let mut vs_solver = ValueSetSolver::new();
+        vs_solver.establish_value_sets(fd, &sinks, &reads, stack_reg, false);
+        let widener = WidenerNone::new();
+        vs_solver.solve(fd, 10000, &widener);
+        // The C++ update loops run from the (post-break) `loadIter`/`storeIter`
+        // to the end, which can include one already-analyzed boundary record;
+        // that record has no read node in the solver (upstream dereferences a
+        // missing map entry there), so records without a read node are skipped.
+        let mut run_full_analysis = false;
+        for guard in self.load_guard[load_start..].iter_mut() {
+            if let Some(vs_read) = vs_solver.get_value_set_read(guard.op) {
+                guard.establish_range(vs_read);
+            }
+            if guard.analysis_state == 0 {
+                run_full_analysis = true;
+            }
+        }
+        for guard in self.store_guard[store_start..].iter_mut() {
+            if let Some(vs_read) = vs_solver.get_value_set_read(guard.op) {
+                guard.establish_range(vs_read);
+            }
+            if guard.analysis_state == 0 {
+                run_full_analysis = true;
+            }
+        }
+        if run_full_analysis {
+            let full_widener = WidenerFull::new();
+            vs_solver.solve(fd, 10000, &full_widener);
+            for guard in self.load_guard[load_start..].iter_mut() {
+                if let Some(vs_read) = vs_solver.get_value_set_read(guard.op) {
+                    guard.finalize_range(vs_read);
+                }
+            }
+            for guard in self.store_guard[store_start..].iter_mut() {
+                if let Some(vs_read) = vs_solver.get_value_set_read(guard.op) {
+                    guard.finalize_range(vs_read);
+                }
+            }
+        }
+    }
+
+    /// Find the last PcodeOps that write to specific addresses that flow to
+    /// specific sites (C++ `Heritage::findAddressForces`, `heritage.cc:618`).
+    ///
+    /// A COPY/MULTIEQUAL is *artificial* if all of its input and output
+    /// Varnodes have the same storage address.  The final set of ops that are
+    /// not artificial will all have an output Varnode matching the address of
+    /// a COPY sink and will need to be marked address forcing.  `copy_sinks`
+    /// is extended with every artificial COPY/MULTIEQUAL encountered; every
+    /// visited op is added to `marks` (the C++ PcodeOp mark bit).
+    fn find_address_forces(
+        &mut self,
+        fd: &crate::funcdata::Funcdata,
+        copy_sinks: &mut Vec<crate::context::OpId>,
+        forces: &mut Vec<crate::context::OpId>,
+        marks: &mut std::collections::HashSet<crate::context::OpId>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        // Mark the sinks.
+        for &op in copy_sinks.iter() {
+            marks.insert(op);
+        }
+        // Mark everything back-reachable from a sink, trimming at
+        // non-artificial ops.
+        let mut pos = 0usize;
+        while pos < copy_sinks.len() {
+            let op = copy_sinks[pos];
+            pos += 1;
+            // Address being flowed to.
+            let addr = match fd
+                .obank()
+                .get(op)
+                .and_then(|o| o.get_out())
+                .and_then(|v| fd.vbank().get(v))
+                .map(|v| v.get_addr().clone())
+            {
+                Some(a) => a,
+                None => continue,
+            };
+            let max_in = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+            for i in 0..max_in {
+                let vn = match fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let (is_written, is_addr_force, def) = match fd.vbank().get(vn) {
+                    Some(v) => (v.is_written(), v.is_addr_force(), v.get_def()),
+                    None => continue,
+                };
+                if !is_written {
+                    continue;
+                }
+                if is_addr_force {
+                    continue; // Already marked address forced
+                }
+                let new_op = match def {
+                    Some(d) => d,
+                    None => continue,
+                };
+                if marks.contains(&new_op) {
+                    continue; // Already visited this op
+                }
+                marks.insert(new_op);
+                let opc = match fd.obank().get(new_op) {
+                    Some(o) => o.code(),
+                    None => continue,
+                };
+                let mut is_artificial = false;
+                if opc == OpCode::CPUI_COPY || opc == OpCode::CPUI_MULTIEQUAL {
+                    is_artificial = true;
+                    let max_in_new = fd.obank().get(new_op).map(|o| o.num_input()).unwrap_or(0);
+                    for j in 0..max_in_new {
+                        let in_addr = fd
+                            .obank()
+                            .get(new_op)
+                            .and_then(|o| o.get_in(j))
+                            .and_then(|v| fd.vbank().get(v))
+                            .map(|v| v.get_addr().clone());
+                        if in_addr.as_ref() != Some(&addr) {
+                            is_artificial = false;
+                            break;
+                        }
+                    }
+                } else if opc == OpCode::CPUI_INDIRECT
+                    && fd.obank().get(new_op).map(|o| o.is_indirect_store()).unwrap_or(false)
+                {
+                    // An INDIRECT can be considered artificial if it is caused
+                    // by a STORE.
+                    let in_addr = fd
+                        .obank()
+                        .get(new_op)
+                        .and_then(|o| o.get_in(0))
+                        .and_then(|v| fd.vbank().get(v))
+                        .map(|v| v.get_addr().clone());
+                    if in_addr.as_ref() == Some(&addr) {
+                        is_artificial = true;
+                    }
+                }
+                if is_artificial {
+                    copy_sinks.push(new_op);
+                } else {
+                    forces.push(new_op);
+                }
+            }
+        }
+    }
+
+    /// Eliminate a COPY sink, preserving its data-flow (C++
+    /// `Heritage::propagateCopyAway`, `heritage.cc:674`).
+    ///
+    /// Given a COPY from a storage location to itself, propagate the input
+    /// Varnode version of the storage location to all the ops reading the
+    /// output, then eliminate the COPY.
+    fn propagate_copy_away(&mut self, fd: &mut crate::funcdata::Funcdata, op: crate::context::OpId) {
+        use kuna_num::opcodes::OpCode;
+        let mut in_vn = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return,
+        };
+        // Follow any COPY chain to the earliest input.
+        loop {
+            let (is_written, def, in_addr) = match fd.vbank().get(in_vn) {
+                Some(v) => (v.is_written(), v.get_def(), v.get_addr().clone()),
+                None => break,
+            };
+            if !is_written {
+                break;
+            }
+            let next_op = match def {
+                Some(d) => d,
+                None => break,
+            };
+            if fd.obank().get(next_op).map(|o| o.code()) != Some(OpCode::CPUI_COPY) {
+                break;
+            }
+            let next_in = match fd.obank().get(next_op).and_then(|o| o.get_in(0)) {
+                Some(v) => v,
+                None => break,
+            };
+            let next_addr = fd.vbank().get(next_in).map(|v| v.get_addr().clone());
+            if next_addr.as_ref() != Some(&in_addr) {
+                break;
+            }
+            in_vn = next_in;
+        }
+        if let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) {
+            let _ = fd.total_replace(out, in_vn);
+        }
+        fd.op_destroy(op);
+    }
+
+    /// Mark the boundary of artificial ops introduced by load guards (C++
+    /// `Heritage::handleNewLoadCopies`, `heritage.cc:695`).
+    ///
+    /// Having just completed renaming, run through all new COPY sinks from
+    /// load guards and mark boundary Varnodes as address-forced, so dead code
+    /// removal can run forward from the boundary while still preserving the
+    /// address force on the load guard.  (The COPY sinks themselves are
+    /// produced by `guardLoads`; while that guard-insertion path is stubbed
+    /// the sink list is empty and this is the faithful early return.)
+    fn handle_new_load_copies(&mut self, fd: &mut crate::funcdata::Funcdata) {
+        if self.load_copy_ops.is_empty() {
+            return;
+        }
+        let mut copy_sinks = std::mem::take(&mut self.load_copy_ops);
+        let copy_sink_size = copy_sinks.len();
+        let mut forces: Vec<crate::context::OpId> = Vec::new();
+        let mut marks: std::collections::HashSet<crate::context::OpId> =
+            std::collections::HashSet::new();
+        self.find_address_forces(fd, &mut copy_sinks, &mut forces, &mut marks);
+
+        if !forces.is_empty() {
+            let mut load_ranges = kuna_base::address::RangeList::new();
+            for guard in &self.load_guard {
+                load_ranges.insert_range(
+                    Rc::clone(&guard.spc),
+                    guard.minimum_offset,
+                    guard.maximum_offset,
+                );
+            }
+            // Mark everything on the boundary as address forced to prevent
+            // dead-code removal.
+            for &op in &forces {
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_out()) {
+                    let addr = fd.vbank().get(vn).map(|v| v.get_addr().clone());
+                    if let Some(a) = addr {
+                        // If we are within one of the guarded ranges, consider
+                        // the output address forced.
+                        if load_ranges.in_range(&a, 1) {
+                            if let Some(v) = fd.vbank_mut().get_mut(vn) {
+                                v.set_addr_force();
+                            }
+                        }
+                    }
+                }
+                marks.remove(&op);
+            }
+        }
+
+        // Eliminate or propagate away the original COPY sinks.
+        for &op in copy_sinks.iter().take(copy_sink_size) {
+            // Make sure load guard COPYs no longer exist.
+            self.propagate_copy_away(fd, op);
+        }
+        // (marks on the remaining artificial COPYs die with the local set.)
+        // We have handled all the load guard COPY ops (list stays cleared).
+    }
+
     /// Perform one pass of heritage (C++ `Heritage::heritage`,
     /// `heritage.cc:2667`).
     ///
@@ -4053,10 +4442,9 @@ impl Heritage {
                 // walks the stack-pointer input's descendants and records guard
                 // records for STOREs/LOADs reached through a non-constant ADD or
                 // a MULTIEQUAL.  The store-guard set is the W7 `StackAffectingOps`
-                // cross-call test source.  ValueSet-based range refinement
-                // (`analyzeNewLoadGuards`) is still a stub; the initial guard
-                // covers the whole space (`LoadGuard::set`), which is faithful and
-                // is exactly what `Merge::testUntiedCallIntersection` consults.
+                // cross-call test source.  The initial guard covers the whole
+                // space (`LoadGuard::set`); `analyze_new_load_guards` (option
+                // `loadguardrange`) refines it after renaming completes.
                 if self.discover_indexed_stack_pointers(fd, &space, &mut free_stores, true) {
                     reprocess_stack_count += 1;
                     stack_space = Some(space.clone());
@@ -4140,9 +4528,15 @@ impl Heritage {
             let spc = stack_space.expect("heritage: reprocess set without a stack space");
             self.reprocess_free_stores(fd, &spc, &mut free_stores);
         }
-        // analyzeNewLoadGuards / handleNewLoadCopies: STUB(W6) — ValueSet range
-        // refinement + LOAD-COPY handling; the initial whole-space store guard
-        // already serves the merge cross-call test.
+        // (kuna) `option loadguardrange` — the upstream ValueSet range
+        // refinement of new LOAD/STORE guards (heritage.cc:2753-2754).  Off
+        // reproduces the pre-port behavior: every guard keeps the whole-space
+        // range and `step == 0`, so `MapState::addGuard` never sees an
+        // index bound.
+        if fd.get_arch().load_guard_range {
+            self.analyze_new_load_guards(fd);
+            self.handle_new_load_copies(fd);
+        }
         // splitmanage.splitAdditional() on pass 0: STUB(W6) PreferSplitManager.
         self.pass += 1;
     }

@@ -417,9 +417,9 @@ impl ValueSetGraph for AdjGraph {
 #[test]
 fn w6_s5_wto_orders_cycle_as_nested_component() {
     let mut solver = ValueSetSolver::new();
-    let n0 = solver.new_value_set();
-    let n1 = solver.new_value_set();
-    let n2 = solver.new_value_set();
+    let n0 = solver.alloc_value_set();
+    let n1 = solver.alloc_value_set();
+    let n2 = solver.alloc_value_set();
     solver.push_root(n0);
 
     // The transient root is appended at value_nodes.len() == 3 during
@@ -456,9 +456,9 @@ fn w6_s5_wto_orders_cycle_as_nested_component() {
 #[test]
 fn w6_s5_wto_linear_chain_has_no_components() {
     let mut solver = ValueSetSolver::new();
-    let n0 = solver.new_value_set();
-    let n1 = solver.new_value_set();
-    let n2 = solver.new_value_set();
+    let n0 = solver.alloc_value_set();
+    let n1 = solver.alloc_value_set();
+    let n2 = solver.alloc_value_set();
     solver.push_root(n0);
     let graph = AdjGraph {
         successors: vec![vec![n1], vec![n2], vec![]],

@@ -188,16 +188,38 @@ whose pointer is still a free varnode cannot be classified yet: it is
 conservatively marked and queued (`heritage.rs (Heritage::protect_free_stores)`),
 and after the pass completes the discovery re-runs and strips the spurious
 INDIRECTs from any STORE that turned out not to need a guard
-(`heritage.rs (Heritage::reprocess_free_stores)`). Two upstream refinements are
-not ported (kuna): the value-set analysis that narrows a guard to a
-`[min,max,step]` window (`analyzeNewLoadGuards` /
-`LoadGuard::establish_range` / `finalize_range`) — so kuna guards are never
-range-locked and every consumer sees the maximally conservative whole-space
-range — and the `highPtrPossible` alias path inside
-`heritage.rs (Heritage::guard)` is structurally disabled (its condition is
-constant false; the `guard_stores` body behind it is an explicit unreached
-stub, and `guard_loads` a second, silent no-op behind the same constant). The guards' main consumer is the merge tier's untied-call intersection
-test (chapter 06); `RuleIndirectCollapse`'s store-guard branch reads them too.
+(`heritage.rs (Heritage::reprocess_free_stores)`).
+
+After renaming completes each pass, the value-set analysis narrows every newly
+discovered guard to a real `[min,max,step]` window
+(`heritage.rs (Heritage::analyze_new_load_guards)`, gated by
+`option loadguardrange`, default on): the guards' pointer Varnodes become the
+sinks of a `ValueSetSolver` system (the solver itself — constraint
+generation, weak topological ordering, widening — is chapter
+[05](05-types.md)'s machinery in
+`decompiler/crates/kuna-decomp/src/p5_types/rangeutil.rs (ValueSetSolver)`),
+one cheap `WidenerNone` solve seeds each guard
+(`heritage.rs (LoadGuard::establish_range)`: minimum from the stable range
+bound or the pointer base, step recorded only when the partial analysis shows
+consistent iteration), and if any guard is still unresolved a full
+`WidenerFull` solve finalizes it (`heritage.rs (LoadGuard::finalize_range)`:
+a converged range of size in `(1, 0xffffff)` locks the guard —
+`analysis_state == 2` — with `highind`-grade min/max/step; a range that wraps
+past the stack parameters falls back to the whole space). A range-locked
+store guard is what chapter [06](06-variables-and-merge.md)'s
+`MapState::addGuard` loops turn into a real array index bound, and the
+narrowed windows also shrink the merge tier's untied-call intersection test
+to the addresses the op can actually touch. With the option off, guards keep
+the maximally conservative whole-space window and are never range-locked —
+the pre-port behavior. One upstream path remains unported: the
+`highPtrPossible` alias path inside `heritage.rs (Heritage::guard)` is
+structurally disabled (its condition is constant false; the `guard_stores`
+body behind it is an explicit unreached stub, and `guard_loads` a second,
+silent no-op behind the same constant — so the load-guard COPY sinks that
+`Heritage::handle_new_load_copies` would mark address-forced are never
+created, and it takes its faithful empty early return). The guards' main
+consumer is the merge tier's untied-call intersection test (chapter 06);
+`RuleIndirectCollapse`'s store-guard branch reads them too.
 
 **The dead-code delay machinery and the dead-definition gate.** Dead-code
 removal is only *allowed* in a space once heritage there is past the space's

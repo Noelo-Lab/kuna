@@ -360,7 +360,18 @@ current Varnodes) and fills a `varmap.rs (MapState)` with typed hints — one
 - `funcdata_spacebase.rs (Funcdata::gather_open)` — an *open* (array-like)
   hint per pointer into the stack found by the alias checker; if the pointer
   arithmetic had an index Varnode, at least indices [0,3] are assumed
-  (`min_items` 3);
+  (`min_items` 3). The same routine then walks the heritage LOAD/STORE
+  guards (chapter [03](03-ssa-and-simplification.md)):
+  `funcdata_spacebase.rs (Funcdata::add_guard)` turns each guard whose range
+  the value-set refinement locked (`option loadguardrange`) into an open hint
+  at the guard's minimum with the **real** index bound,
+  `highind = ((max - min) + 1) / step - 1` — the only hint source that can
+  push an indexed array's extent past the [0,3] fallback (an unrefined or
+  step-less guard contributes nothing, and an unlocked-but-stepped one
+  contributes the same [0,3] floor). This is what keeps element 4+ of an
+  indexed stack array inside the array instead of splitting off as a
+  separate, never-assigned scalar when `RangeHint::attempt_join` compares
+  distance against `highind`;
 - `varmap.rs (MapState::gather_symbols)` — a hint per already-mapped Symbol
   (locked ones carry the `TYPELOCK` flag).
 
