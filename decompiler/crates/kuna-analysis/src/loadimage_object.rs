@@ -1469,6 +1469,44 @@ mod tests {
     }
 
     #[test]
+    fn faillog_data_symbols_carry_the_copy_reloc_externs() {
+        // (GH-184) The stripped shadow `faillog` (identical bytes to
+        // `tests/bug-repro/faillog`, md5 3bab801d856c5fdb175fecf069c2b4f5) defines
+        // exactly four `STT_OBJECT` entries in `.dynsym` — the copy-relocated
+        // (`R_X86_64_COPY`) libc externs. Before the data half of the symbol
+        // walks was read, all four rendered `dat_<addr>`
+        // (`__fprintf_chk(dat_61a0,...)` where every other decompiler prints
+        // `stderr`). The `st_size` is load-bearing: an 8-byte load's
+        // `queryContainer(addr, 8)` misses a size-1 install.
+        let path =
+            format!("{}/tests/fixtures/datasyms_faillog_x86_64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let syms = img.data_symbols();
+        let by_addr: std::collections::HashMap<u64, (String, u64)> =
+            syms.iter().map(|(a, n, s)| (*a, (n.clone(), *s))).collect();
+        for (addr, name, size) in [
+            (0x6160u64, "stdout", 8u64),
+            (0x61a0, "stderr", 8),
+            (0x6168, "optind", 4),
+            (0x6180, "optarg", 8),
+        ] {
+            assert_eq!(
+                by_addr.get(&addr),
+                Some(&(name.to_string(), size)),
+                "expected {name} @ {addr:#x} size {size}; got {syms:?}"
+            );
+        }
+        // Exactly the four defined OBJECT entries — no zero-size linker markers
+        // (`__bss_start`, `_edata`, `_end` are sizeless and must be dropped), no
+        // UND import placeholders, no `@VERSION` leakage (`stderr@GLIBC_2.2.5`
+        // strips to `stderr`).
+        assert_eq!(syms.len(), 4, "exactly the four copy-reloc externs: {syms:?}");
+        assert!(syms.iter().all(|(_, n, _)| !n.contains('@')), "no @VERSION in names");
+        assert!(syms.iter().all(|(_, _, s)| *s > 0), "no zero-size entries");
+    }
+
+    #[test]
     fn cpp_mangled_symbol_is_demangled_name_only() {
         // The kuna `GnuDemanglerAnalyzer` analog (`demangle`): a defined C++
         // method `_ZN3foo3Bar3bazEi` must surface in the funcsym stream as the

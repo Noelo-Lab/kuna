@@ -123,9 +123,16 @@ sizeless symbol would plant a name on the first byte of whatever object follows
 it. Each surviving entry becomes a named `undefined<size>` global — the same
 shape §1.4's DWARF data globals use, and for the same reason: a size-1 entry does
 not contain a 4- or 8-byte access, so the printer's covering-symbol query would
-miss and fall back to `dat_<addr>`. Naming what the symbol table names is not
-optional and carries no flag, matching IDA Pro and Ghidra, which both name data
-objects from the symbol table independently of any debug info.
+miss and fall back to `dat_<addr>`. The behavior matches IDA Pro and Ghidra,
+which both name data objects from the symbol table independently of any debug
+info, and it is what makes `fprintf(stderr, ...)` read as an error path instead
+of `fprintf(dat_61a0, ...)` on a stripped binary (GH-184). Per the standing
+options contract it is gated by **`datasyms`** (`--option datasyms on|off`,
+default ON, DIV-26/DIV-76): the stream is collected at `load file` but committed
+at `read symbols`, after the option lines are applied, so the gate is the plain
+`Architecture` flag the commit consults — no env bridge is needed on either CLI
+path. Off drops the stream at the commit and restores the raw `dat_<addr>`
+rendering exactly.
 
 Precedence is what makes this safe to add underneath the existing sources. The
 loader's data symbols commit **last** (`engine.rs (commit_analysis_output)`),

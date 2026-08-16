@@ -363,6 +363,13 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ifuncfpret",
     "mips_isa",
     "dwarf",
+    // (kuna) ELF data-symbol (`STT_OBJECT`) naming — the data half of the
+    // `.symtab`/`.dynsym` walks, installed as named `undefined<size>` globals so a
+    // copy-relocated libc extern (`stderr`, `optind`) renders by name instead of
+    // `dat_<addr>` (DIV-26/DIV-76). The stream is collected at `load file` and
+    // committed at `read symbols`, so this gate is consulted at the commit
+    // (`commit_analysis_output`), like the analysis-pass gates. Default-ON.
+    "datasyms",
     // (kuna) DWARF `.debug_line` source-line comments; default-off (output-changing).
     "dwarf_lines",
     // (kuna) The DWARF C++ prototype arm: resolve a subprogram definition through

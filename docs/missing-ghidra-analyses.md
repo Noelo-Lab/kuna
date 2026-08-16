@@ -135,6 +135,21 @@ address `0x0`. The fix skips `st_value == 0`, strips `@VERSION` suffixes, and
 also reads `.dynsym` *defined* functions so stripped-but-dynamic binaries still
 get their exported names. (`loadimage_object.rs::from_bytes`.)
 
+The **data half** of the same two tables is covered as well (GH-184): every
+defined, named `STT_OBJECT` entry with a non-zero `st_size` — `@VERSION`
+stripped, deduplicated by address, `.symtab` before `.dynsym` — is collected at
+load (`loadimage_object.rs::data_symbols`) and installed at the analysis commit
+as a named `undefined<size>` global with `namelock` only, after the DWARF
+globals and the detected string literals have claimed their addresses. This is
+what names a copy-relocated (`R_X86_64_COPY`) libc extern — `stderr`, `stdout`,
+`stdin`, `optind`, `optarg`, `__progname` — which has a real `.bss` address and
+a `.dynsym` entry but no DIE in the program's own `.debug_info`, and a
+stripped/DWARF-less binary's own statics. The Ghidra analog is the ELF symbol
+importer's data-symbol path (`ElfSymbolTable` → data address markup), which
+names data objects independently of debug info. Gated by `--option datasyms
+on|off`, default ON (DIV-26/DIV-76); the commit is in
+`kuna-console/src/engine.rs::commit_analysis_output`.
+
 ## 3. DWARF debug-info recovery — ⛔ Gap
 
 **Ghidra:** the DWARF analyzer parses `.debug_info`/`.debug_line` to recover

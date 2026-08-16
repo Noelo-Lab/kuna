@@ -172,14 +172,17 @@ pub struct ConsoleProgram {
     /// [`commit_analysis_output`].
     ///
     /// This is **loader markup**, not an analysis pass: it is the data twin of the
-    /// funcsym stream `read_loader_symbols` already installs, so it carries no
-    /// `--option` gate — kuna has never made "name what the symbol table names"
-    /// optional. It is installed at the analysis commit rather than eagerly at
-    /// bootstrap purely for *precedence*: a DWARF-described global and a detected
-    /// string literal both claim their address first, and this arm only fills the
-    /// addresses neither covered (which is where the imported libc objects —
-    /// `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML datatest
-    /// path and for a relocatable object.
+    /// funcsym stream `read_loader_symbols` already installs. Per the standing
+    /// options contract it is gated by `--option datasyms on|off` (default ON,
+    /// DIV-76), consulted at the commit via `Architecture::analysis_datasyms` —
+    /// the stream is collected at `load file` but committed at `read symbols`,
+    /// after the option lines are applied, so both CLI paths honor the flag with
+    /// no env bridge. It is installed at the analysis commit rather than eagerly
+    /// at bootstrap purely for *precedence*: a DWARF-described global and a
+    /// detected string literal both claim their address first, and this arm only
+    /// fills the addresses neither covered (which is where the imported libc
+    /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
+    /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
 }
 
@@ -1831,7 +1834,15 @@ fn commit_analysis_output(
     //     `.bss` address and a `.dynsym` entry but no `.debug_info` DIE, so before
     //     this arm it rendered `dat_20a098`. IDA Pro and Ghidra both name data
     //     objects from the symbol table independently of debug info.
-    let loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
+    //     Gated by `--option datasyms on|off` (default ON, DIV-76): the stream is
+    //     collected at `load file` but committed HERE at `read symbols`, after the
+    //     option lines are applied, so the flag needs no env bridge on either CLI
+    //     path. The stash is drained either way (a second `read symbols` must not
+    //     re-commit); off simply drops it and the rendering is exactly pre-DIV-26.
+    let mut loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
+    if !prog.arch().analysis_datasyms {
+        loader_data_objects.clear();
+    }
     for (sym_addr, name, size) in &loader_data_objects {
         let addr = Address::new(Rc::clone(code_space), *sym_addr);
         let occupied = {

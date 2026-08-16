@@ -209,6 +209,11 @@ Three tiers:
 | odd-address mips functions decode in the wrong isa mode | [`mips_isa`](#mips_isa) |
 | a -g binary still shows default names and inferred types | [`dwarf`](#dwarf) |
 | dwarf function/global names and typed signatures ignored | [`dwarf`](#dwarf) |
+| libc globals render as dat_<addr> where every other decompiler prints stderr/stdout/optind | [`datasyms`](#datasyms) |
+| fprintf stream argument shows a raw dat_ address so error paths are indistinguishable from output paths | [`datasyms`](#datasyms) |
+| a stripped binary's copy-relocated externs unnamed | [`datasyms`](#datasyms) |
+| an unstripped dwarf-less binary's own statics render dat_<addr> | [`datasyms`](#datasyms) |
+| decompile-project exports reference undeclared dat_<addr> identifiers where a stdio global belongs | [`datasyms`](#datasyms) |
 | no /* file:line */ source-location comments in the output | [`dwarf_lines`](#dwarf_lines) |
 | want each instruction annotated with its dwarf source line | [`dwarf_lines`](#dwarf_lines) |
 | c++ member functions decompile with a0/a1 parameters despite -g debug info | [`cppproto`](#cppproto) |
@@ -840,6 +845,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) applies DWARF names/types; off ignores debug info (names/types come from symbols + inference only).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarf
 - **Example:** `option dwarf off`
+
+### `datasyms` -- on | off, default `on`
+
+- **Symptoms:** libc globals render as dat_<addr> where every other decompiler prints stderr/stdout/optind; fprintf stream argument shows a raw dat_ address so error paths are indistinguishable from output paths; a stripped binary's copy-relocated externs unnamed; an unstripped dwarf-less binary's own statics render dat_<addr>; decompile-project exports reference undeclared dat_<addr> identifiers where a stdio global belongs.
+- **What it does:** Name data globals from the ELF symbol table: the loader reads the data half of the same .symtab/.dynsym walks that have always named functions -- every defined, named STT_OBJECT entry with a non-zero st_size, @VERSION stripped, deduplicated by address (.symtab before .dynsym) -- and the engine installs each as a named undefined<size> global with namelock only. The arm commits LAST, after the DWARF globals and the detected string literals, and skips any address a richer source already claimed, so what it fills is exactly the set neither reaches: a copy-relocated libc extern (stderr, stdout, stdin, optind, optarg, __progname) has a real .bss address and a .dynsym entry but no DIE in the program's own .debug_info, and a stripped or DWARF-less binary's own statics have only .symtab. Zero-size entries are dropped (the linker's section-boundary markers __bss_start/_edata/_end are exactly the sizeless ones). The st_size extent is what makes the covering-symbol query match at the real access width, so an 8-byte load of stderr finds the symbol instead of falling back to dat_<addr>.
+- **When to flip:** On (default) renders symbol-table-named data globals by name, matching IDA Pro and Ghidra -- fprintf(stderr, ...) reads as an error path instead of fprintf(dat_61a0, ...). Flip off to restore raw dat_<addr> rendering for every global the DWARF pass does not name -- e.g. to see exactly which names came from the symbol table rather than from debug info, or if a hostile/corrupt symbol table plants misleading names.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · GH-184
+- **Example:** `--option datasyms off`
 
 ### `dwarf_lines` -- on | off, default `off`
 
