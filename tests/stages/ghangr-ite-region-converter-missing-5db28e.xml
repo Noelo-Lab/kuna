@@ -42,6 +42,14 @@
     __stack_chk_fail call (sub_10e0) is rendered AND a goto/label is emitted.
     Pass 2 (option stackguard on): assertions prove the fix - no
     __stack_chk_fail call, no goto, and the deep match path returns directly.
+
+    GH-183 (entry-side canary init): stripping the check must also remove the
+    entry-side canary init store (canary_slot = *(fs:0x28)) and its TLS-base
+    residue - angr's StackCanarySimplifier pops exactly that statement.
+    Assertions 5 and 6 span BOTH passes' concatenated output: the two fs+0x28
+    accesses (entry init + epilogue reload) and the one fs_offset declaration
+    all belong to the option-off pass; the option-on pass renders no canary
+    residue at all (before GH-183 the counts were 3 and 2).
 -->
 <bytechunk space="ram" offset="0x22e5">
 f30f1efa554889e54883ec4048897dc8488975c064488b042528000000488945f831c0488b45c8ba07000000488d0d340e00004889ce4889c7e8ededffff85c0740ab800000000e9e6000000488b4dc0488d45e0ba640000004889ce4889c7e8c3feffffc745dc00000000e98d0000008b45dc489848c1e0044889c2488d05b80c0000488d0c02488b45c0ba100000004889ce4889c7e80fffffff8b45dc489848c1e0044889c2488d058d0c0000488d0c02488d45e0ba100000004889c64889cfe865edffff85c0752f488d059d0d00004889c7e812edffffbf01000000e888edffff488d05960d00004889c7e8f9ecffffb801000000eb398345dc01837ddc0f0f8e69ffffff488b45c0ba10000000488d0d240d00004889ce4889c7e809edffff85c07507b801000000eb05b800000000488b55f864482b1425280000007405e8b5ecffffc9c3
@@ -65,4 +73,6 @@ f30f1efa554889e54883ec4048897dc8488975c064488b042528000000488945f831c0488b45c8ba
 <stringmatch name="angr-StackGuard #2: bug -- a goto is emitted only with option off" min="1" max="1">goto </stringmatch>
 <stringmatch name="angr-StackGuard #3: bug -- label (goto target + definition) emitted only with option off" min="2" max="2">label_</stringmatch>
 <stringmatch name="angr-StackGuard #4: fix -- only the option-on pass inlines the deep match path as a direct return 1" min="1" max="1">return 1;</stringmatch>
+<stringmatch name="angr-StackGuard #5: fix (GH-183) -- the fs+0x28 canary accesses (entry init + reload) survive only in the option-off pass" min="2" max="2">\+ 0x28\)</stringmatch>
+<stringmatch name="angr-StackGuard #6: fix (GH-183) -- the TLS-base fs_offset declaration survives only in the option-off pass" min="1" max="1">fs_offset</stringmatch>
 </decompilertest>

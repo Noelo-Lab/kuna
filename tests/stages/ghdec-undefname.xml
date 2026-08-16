@@ -156,12 +156,16 @@ e87b39feff85c0782e89efe89039feff31c0488b54242864482b142528000000
   <com>print C</com>
   <com>quit</com>
 </script>
+<!-- undefname #6-#8 pins re-recorded for GH-183: stackguard (default on) now also
+     removes set_qlen's entry-side canary init, so the fs_offset/canary-slot locals
+     are gone and the remaining locals renumber (v7->v5, v4->v3); the highest-index
+     anchor of #7 is now the 0x28 slot. The naming property under test is unchanged. -->
 <stringmatch name="undefname #1: no buildUndefinedName placeholder survives the naming pass, in either pass" min="0" max="0">\$\$undef</stringmatch>
 <stringmatch name="undefname #2: the va_arg slot is declared once per pass, at the width the body uses" min="2" max="2">uint8 v12; // stack - 0x58</stringmatch>
 <stringmatch name="undefname #3: the va_arg guard reads the name the loop actually writes" min="2" max="2">if \(0x30 &lt;= \(uint4\)v12\)</stringmatch>
 <stringmatch name="undefname #4: the gp_offset bump reads and writes one identifier" min="2" max="2">v12 = \(uint8\)\(\(uint4\)v12 \+ 8\);</stringmatch>
 <stringmatch name="undefname #5: that identifier is the one the prologue initialises" min="2" max="2">v12 = \*a1;</stringmatch>
-<stringmatch name="undefname #6: the ifreq union slot no high covers wholly is named by the wired assignDefaultNames" min="2" max="2">char v7 \[16\]; // stack - 0x38</stringmatch>
-<stringmatch name="undefname #7: and it takes the highest index in the function, after every other local" min="2" max="2">unsigned long v6; // stack - 0x20</stringmatch>
-<stringmatch name="undefname #8: the body writes that slot through the same name" min="2" max="2">v7 = CONCAT124\(v4\[0\],a1\);</stringmatch>
+<stringmatch name="undefname #6: the ifreq union slot no high covers wholly is named by the wired assignDefaultNames" min="2" max="2">char v5 \[16\]; // stack - 0x38</stringmatch>
+<stringmatch name="undefname #7: and it takes the highest index in the function, after every other local" min="2" max="2">unsigned long v4; // stack - 0x28</stringmatch>
+<stringmatch name="undefname #8: the body writes that slot through the same name" min="2" max="2">v5 = CONCAT124\(v3\[0\],a1\);</stringmatch>
 </decompilertest>

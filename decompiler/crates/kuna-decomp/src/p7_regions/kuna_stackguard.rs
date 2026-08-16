@@ -20,6 +20,18 @@
 //! duplicates into each predecessor, eliminating the goto and the
 //! `__stack_chk_fail` noise.
 //!
+//! The ENTRY-side canary init (`slot = *(fs:0x28)`) goes with the check
+//! (GH-183): angr pops exactly that statement
+//! (`first_block_copy.statements.pop(stmt_idx)`).  kuna realizes the pop as a
+//! liveness release ([`collect_canary_slots`]/[`release_canary_slots`]) — the
+//! init writes an addrtied stack varnode whose directwrite-preserved
+//! `addrforce` is what kept `ActionDeadCode` from collecting it; clearing it
+//! (plus `ScopeLocal::markNotMapped` on the slot so no adjacent local absorbs
+//! the freed bytes) lets the following dead-code pass delete the store, the
+//! `fs:0x28` LOAD and the TLS-base input through its ordinary consume
+//! fixpoint.  A slot version still feeding a live reader (a second,
+//! not-yet-stripped check) is therefore never removed.
+//!
 //! ## Detection is purely structural
 //!
 //! kuna's BFD console loader does not resolve a PLT stub to its imported name,
@@ -50,7 +62,9 @@
 //! group) duplicates into each predecessor, eliminating the goto/label.
 
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
+use kuna_base::address::Address;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
@@ -161,6 +175,138 @@ fn derives_from_canary_load(
         return false;
     }
     false
+}
+
+/// Collect the storage of every addrtied canary-slot version on a proven
+/// canary derivation feeding the compare (the walk of
+/// [`derives_from_canary_load`], with the slot addresses as output).
+///
+/// Mirrors the detector's peel set and bounds exactly, but walks *every*
+/// MULTIEQUAL input (each proven subchain contributes) and records
+/// `(address, size)` for each addrtied varnode whose value provably derives
+/// from a LOAD of the canary slot — i.e. the saved-canary stack slot the pass
+/// resolved.  Returns whether `vn` itself derives.
+fn collect_canary_slots(
+    vn: VarnodeId,
+    depth: int4,
+    seen: &mut BTreeSet<VarnodeId>,
+    data: &Funcdata,
+    slots: &mut Vec<(Address, int4)>,
+) -> bool {
+    if depth <= 0 {
+        return false;
+    }
+    if seen.contains(&vn) {
+        return false;
+    }
+    seen.insert(vn);
+    let (written, def) = match data.vbank().get(vn) {
+        Some(v) => (v.is_written(), v.get_def()),
+        None => return false,
+    };
+    if !written {
+        return false;
+    }
+    let def = def.expect("collectCanarySlots: written vn def");
+    let (oc, in0, in1, nin) = {
+        let dop = data.obank().get(def).expect("collectCanarySlots: def");
+        (dop.code(), dop.get_in(0), dop.get_in(1), dop.num_input())
+    };
+    let derived = match oc {
+        OpCode::CPUI_LOAD => {
+            ptr_is_canary_slot(in1.expect("collectCanarySlots: load ptr"), data)
+        }
+        OpCode::CPUI_COPY
+        | OpCode::CPUI_CAST
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_INT_SEXT
+        | OpCode::CPUI_INDIRECT => collect_canary_slots(
+            in0.expect("collectCanarySlots: peel in0"),
+            depth - 1,
+            seen,
+            data,
+            slots,
+        ),
+        OpCode::CPUI_SUBPIECE => {
+            let in1 = in1.expect("collectCanarySlots: subpiece in1");
+            let zero = data
+                .vbank()
+                .get(in1)
+                .map(|v| v.is_constant() && v.get_offset() == 0)
+                .unwrap_or(false);
+            zero && collect_canary_slots(
+                in0.expect("collectCanarySlots: subpiece in0"),
+                depth - 1,
+                seen,
+                data,
+                slots,
+            )
+        }
+        OpCode::CPUI_MULTIEQUAL => {
+            let mut any = false;
+            for i in 0..nin {
+                let ini = data
+                    .obank()
+                    .get(def)
+                    .expect("collectCanarySlots: multiequal")
+                    .get_in(i)
+                    .expect("collectCanarySlots: multiequal in");
+                if collect_canary_slots(ini, depth - 1, seen, data, slots) {
+                    any = true;
+                }
+            }
+            any
+        }
+        _ => false,
+    };
+    if derived {
+        let v = data.vbank().get(vn).expect("collectCanarySlots: vn");
+        if v.is_addr_tied() {
+            let key = (v.get_addr().clone(), v.get_size());
+            if !slots.contains(&key) {
+                slots.push(key);
+            }
+        }
+    }
+    derived
+}
+
+/// Release the address-forced liveness on every version of the resolved
+/// canary slot(s) — the kuna realization of angr `StackCanarySimplifier`'s
+/// `first_block_copy.statements.pop(stmt_idx)`, which pops the entry-side
+/// `canary_slot = *(fs:0x28)` init store (GH-183).
+///
+/// The init store writes an addrtied stack varnode; because it is a real
+/// (non-marker) write — or an INDIRECT carrying the value across a call under
+/// a different input storage — `ActionDirectWrite` marks it direct-write, so
+/// `ActionDeadCode` preserves its `addrforce` and the store survives the strip
+/// as a dead first statement (`v = *(fs+0x28)`), pinning the `fs:0x28` LOAD
+/// and the TLS-base input with it.  After a successful strip this clears
+/// `addrforce` on each addrtied varnode at the resolved slot storage.  It is
+/// purely a liveness release: the following `ActionDeadCode` still keeps any
+/// version with a live reader (e.g. a second, not-yet-stripped check), so a
+/// store that cannot be tied to a stripped check is never removed; once the
+/// last check is stripped the init store, the LOAD and the TLS-base residue
+/// all die through the stock consume fixpoint.
+fn release_canary_slots(data: &mut Funcdata, slots: &[(Address, int4)]) {
+    for (addr, size) in slots {
+        let ids: Vec<VarnodeId> = data.vbank().iter_loc_size_addr(*size, addr).collect();
+        for vn in ids {
+            let v = data.vbank_mut().get_mut(vn).expect("releaseCanarySlots: stale vn");
+            if v.is_addr_tied() && v.is_addr_force() {
+                v.clear_addr_force();
+            }
+        }
+        // Excise the slot from the local scope (`ScopeLocal::markNotMapped`,
+        // the `checkUnaliasedReturn` idiom for a stack slot that must not
+        // become a local): the slot's auto symbol goes away with its ops, and
+        // the range boundary keeps `restructureVarnode` from growing an
+        // adjacent open local (a char buf[], a piece-written struct) over the
+        // freed bytes.
+        if let Some(space) = addr.get_space().map(Rc::clone) {
+            data.scope_local_mark_not_mapped(&space, addr.get_offset(), *size, false);
+        }
+    }
 }
 
 /// Is the boolean feeding `cbranch` a stack-canary compare?
@@ -314,6 +460,23 @@ impl Action for ActionStripStackGuard {
             if idx < 0 {
                 continue;
             }
+            // Capture the compare operands before the CBRANCH dies: they root
+            // the entry-side canary-init release below (GH-183).
+            let (cmp_in0, cmp_in1) = {
+                let cbop = data.obank().get(cb).expect("stackguard: cb ins");
+                let boolvn = cbop.get_in(1).expect("stackguard: cb in1");
+                let cmp = data
+                    .vbank()
+                    .get(boolvn)
+                    .expect("stackguard: boolvn")
+                    .get_def()
+                    .expect("stackguard: cmp def");
+                let cmpop = data.obank().get(cmp).expect("stackguard: cmp");
+                (
+                    cmpop.get_in(0).expect("stackguard: cmp in0"),
+                    cmpop.get_in(1).expect("stackguard: cmp in1"),
+                )
+            };
             // The in-place CFG surgery (the W4/W8 funcdata_block primitives are
             // now in the merged tree).
             // `removeBranch` severs the corrupted-canary edge (dropping the
@@ -323,9 +486,20 @@ impl Action for ActionStripStackGuard {
             // duplicated into each predecessor by the immediately-following
             // `ActionReturnSplit`, eliminating the goto/label and inlining the deep
             // match path as a direct `return 1`.
+            // Resolve the saved-canary slot storage from the compare's own
+            // derivation chains before the CBRANCH dies (GH-183).
+            let mut slots: Vec<(Address, int4)> = Vec::new();
+            let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
+            collect_canary_slots(cmp_in0, 32, &mut seen, data, &mut slots);
+            let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
+            collect_canary_slots(cmp_in1, 32, &mut seen, data, &mut slots);
             data.remove_branch(h, idx).expect("ActionStripStackGuard: removeBranch");
             data.remove_unreachable_blocks(false, true)
                 .expect("ActionStripStackGuard: removeUnreachableBlocks");
+            // The check is stripped; release the entry-side canary init (the
+            // angr `statements.pop(stmt_idx)` step) so the following
+            // ActionDeadCode collects it with the compare/reload residue.
+            release_canary_slots(data, &slots);
             self.base.count += 1;
             // One canary per apply; the fullloop re-invokes and self-gates (the
             // compare/handler are gone on the next pass).

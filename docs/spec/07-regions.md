@@ -252,6 +252,25 @@ patched) and collects the now-orphaned handler block with
 canary reload are collected by the following dead-code pass; one canary per
 apply (the
 fullloop re-invokes it and it self-gates once the compare is gone). The
+entry-side canary **init store** (`slot = *(fs:0x28)`) goes with the check —
+angr's simplifier pops exactly that statement (`statements.pop(stmt_idx)`),
+and kuna realizes the pop as a liveness release: the init writes an addrtied
+stack varnode that `directwrite` marking makes address-forced, which is what
+kept dead-code from ever collecting it. Before the strip the pass re-walks
+the compare's own derivation chains (`kuna_stackguard.rs
+(collect_canary_slots)`, the same peel set and bounds as the detector) and
+records the storage of every addrtied slot version proven to derive from the
+canary LOAD — the saved-canary stack slot itself; after the strip it clears
+`addrforce` on every version at that storage and excises the slot range from
+the local scope (`kuna_stackguard.rs (release_canary_slots)`, using
+`ScopeLocal::markNotMapped` — the `checkUnaliasedReturn` idiom — so the freed
+bytes cannot be absorbed into an adjacent open local's extent). Nothing is
+deleted by the pass itself: the following dead-code pass collects the store,
+the `fs:0x28` LOAD and the TLS-base residue through its ordinary consume
+fixpoint — so an init store still feeding a live reader (a second,
+not-yet-stripped check in a multi-check function, or a partial match the pass
+declined) is provably never removed, and the `fs_offset` input declaration
+disappears only when truly unreferenced. The
 second-order win is why it sits where it does: the canary check is the single
 shared return point that forces every deep `return` through a `goto`; once
 stripped, the tail is a bare `return v` that the immediately-following
