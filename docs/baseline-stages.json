@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    460,
-    460
+    468,
+    468
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -67,6 +67,14 @@
     "data:GH1282 #2: default pipeline folds (b<<7)s>>7 (fix is DIV-2 default)",
     "data:GH1537 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH1537 #2: default pipeline reconstructs the single memset (fix is DIV-2 default; routing via the GH-9230 sub-phase)",
+    "data:GH180 #1: the signed guard reads the PRE-add operands and the sum is a separate later expression",
+    "data:GH180 #2: exactly one SCARRY8 in the transcript (the jo guard)",
+    "data:GH180 #3: the collapsed self-update-then-test rendering does not appear (compound form)",
+    "data:GH180 #4: the collapsed self-update-then-test rendering does not appear (the issue's literal shape)",
+    "data:GH180 #5: the unsigned guard reads the PRE-add operands and the sum is a separate later expression",
+    "data:GH180 #6: exactly one standalone CARRY8 in the transcript (the jb guard)",
+    "data:GH180 #7: the unsigned collapse does not appear (compound form)",
+    "data:GH180 #8: the unsigned collapse does not appear (plain form)",
     "data:GH1951 #1: rcall disassembles to the in-range 4KiW-wrapped target 0x100e",
     "data:GH1951 #2: lifted call targets the masked in-range word 0x0807",
     "data:GH1951 #3: the unmasked out-of-range word 0xf807 must NOT appear",

@@ -1741,7 +1741,10 @@ mod tests {
         // argument an argument-less `__ftol()` call had dropped
         // and kuna-ctypes / valid per-architecture C spelling of the core types
         // (option off = the Ghidra vocabulary, on = the target's own C names)
-        assert_eq!(count, 204, "corpus file count drifted");
+        // and gh180-implied-cover-scarry / overflow guards read the PRE-add
+        // operands (implied-marking dirties the operand Covers, so the
+        // pre-add/post-add merge is illegal and the guard keeps its own value)
+        assert_eq!(count, 205, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
