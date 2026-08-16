@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    454,
-    454
+    460,
+    460
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -42,6 +42,12 @@
     "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
     "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
     "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
+    "data:CTYPES #1: off, the return type is the Ghidra core-type name",
+    "data:CTYPES #2: on, the same type spells as C",
+    "data:CTYPES #3: off, an 8-byte unsigned cast is uint8",
+    "data:CTYPES #4: on, LP64 spells an 8-byte unsigned `unsigned long`, not `unsigned long long`",
+    "data:CTYPES #5: on, the 4-byte parameter is `unsigned int`",
+    "data:CTYPES #6: off, that parameter carries the core-type name",
     "data:EVALCURRENTPROTO #1: off, the __stdcall default model sees only the stack argument",
     "data:EVALCURRENTPROTO #2: off, the ECX argument survives as an undefined local",
     "data:EVALCURRENTPROTO #3: default, the spec's merged model resolves to __fastcall and recovers all three arguments",

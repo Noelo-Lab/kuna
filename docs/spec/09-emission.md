@@ -396,6 +396,53 @@ is not a residual unknown and never enters the relabel, so the opaque
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
 
+**Valid C type names** (kuna, DIV-75, `option ctypes`). `realtypes` covers only
+residual `TYPE_UNKNOWN`, and the *named* core types beside it are not C at all:
+kuna interns them as `uint1`/`int4`/`float8`/`float10`/`code`, a verbatim port of
+upstream's no-`<coretypes>` fallback branch, which the real Ghidra application
+never takes because its Java side supplies its own names over the wire. That
+split is directly observable — one function declares `unsigned int v3;` (relabelled)
+next to `int4 v1;` (not) — and it is why the emitted C does not compile.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_ctypes.rs (core_type_spelling)`
+extends the same one chokepoint to every core type: the type's *size* is matched
+against the target's own declared widths, in declaration order, first hit wins
+(the port of Ghidra's `DataOrganizationImpl.getIntegerCTypeApproximation`).
+Declaration order is what makes it per-architecture rather than a guess: under
+LP64 both `long` and `long long` are 8 bytes and an 8-byte integer must read
+`long`, while under ILP32 and LLP64 `long` is 4 and the same size lands on
+`long long`. The widths come from the compiler spec (chapter
+[05](05-types.md) §5.1); the same size therefore renders `unsigned long` on
+x86-64 System V and `unsigned long long` on i386, from one table.
+
+Three cases resist an exact answer, and each is decided rather than left to fall
+out of the table. A 1-byte integer is `signed char`/`unsigned char`, never bare
+`char` — its signedness is implementation-defined, and kuna reserves the `char`
+core type for text. `code` is Ghidra's pseudo-type for a function body and only
+ever reaches the output as `code *`, which becomes `void *`. And floating point
+is the one place an approximation is unavoidable: an exact width match wins, but
+a width above `double` with no exact match spells `long double`, which is how the
+x87 `float10` is reached. No target has a 10-byte `sizeof` — the x86 cspecs
+record 10 as the *value* width and annotate the storage in a comment — so that
+spelling is an approximation of storage, deliberately the same one the recompile
+prelude already makes, since the emitted `.c` and `.h` must not disagree.
+
+Integer widths with no C type at all (3, 5, 6, 7, and 16-byte integers) keep
+their `undefined<N>` form. They are **not** widened: `(undefined3)x` is a 24-bit
+truncation and `(unsigned int)x` is not, so rounding up would change what the
+emitted code means.
+
+The rename is presentation only — the interned core types keep their names,
+because a core type's id is `hash_name(name)`, Ghidra-style identifiers are
+derived from the first character of the type's name (`float8` is what makes
+`fVar1`), and the console's C-type parser resolves base types solely through
+`TypeFactory::find_by_name`, which the corpus feeds `int4`/`float8` from 269
+script lines. The shipped catalog default is `off`, which is what the XML
+parity corpora run at (42 datatest assertions pin the Ghidra spellings); the
+`aggressive` preset turns it on, and `auto` selects `aggressive` under 500 KiB,
+so valid C is the rendering every real-binary surface gets. Exercised by
+`tests/stages/kuna-ctypes.xml` and the per-architecture CLI gate
+`ctypes_per_arch`.
+
 ## 9.3 Naming
 
 **(angr) namestyle — the policy.** The master toggle `option namestyle

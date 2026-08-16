@@ -8328,17 +8328,33 @@ fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>, rt: RealTypeCtx) 
 pub(crate) struct RealTypeCtx {
     enabled: bool,
     long_is_8: bool,
+    /// (kuna `ctypes`) Spell the NAMED core types (`int4`/`uint1`/`float8`/`code`)
+    /// as the target's own C type names too, not just the residual unknowns.
+    ctypes: bool,
+    /// (kuna `ctypes`) The target's declared C scalar widths, which is what makes
+    /// the spelling per-architecture rather than a guess.
+    model: crate::kuna_ctypes::CDataModel,
 }
 
 impl RealTypeCtx {
     /// The disabled context — never relabels (preserves the upstream
     /// `xunknownN`/`undefined<N>` rendering).
-    pub(crate) const OFF: RealTypeCtx = RealTypeCtx { enabled: false, long_is_8: true };
+    pub(crate) const OFF: RealTypeCtx = RealTypeCtx {
+        enabled: false,
+        long_is_8: true,
+        ctypes: false,
+        model: crate::kuna_ctypes::CDataModel::LP64,
+    };
 
-    /// Resolve the context from the live architecture: the `realtypes` gate and
-    /// the target's `long` size (from the type factory's data organization).
+    /// Resolve the context from the live architecture: the `realtypes` /`ctypes`
+    /// gates and the target's decoded data organization.
     fn from_arch(arch: &Architecture) -> RealTypeCtx {
-        RealTypeCtx { enabled: arch.realtypes, long_is_8: arch.types().get_size_of_long() == 8 }
+        RealTypeCtx {
+            enabled: arch.realtypes,
+            long_is_8: arch.types().get_size_of_long() == 8,
+            ctypes: arch.ctypes,
+            model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
+        }
     }
 }
 
@@ -8352,10 +8368,25 @@ fn realtype_relabel(
     dt: &std::rc::Rc<crate::dtype::Datatype>,
     under_pointer: bool,
 ) -> Option<&'static str> {
-    if !rt.enabled || dt.get_metatype() != crate::dtype::type_metatype::TYPE_UNKNOWN {
+    if dt.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
+        if !rt.enabled {
+            return None;
+        }
+        return realtype_unknown_base(dt.get_size(), under_pointer, rt.long_is_8);
+    }
+    // (kuna `ctypes`) Every OTHER core type — the named `int4`/`uint1`/`float8`/
+    // `code` vocabulary — spells as the target's own C type.  Restricted to core
+    // types so a user-defined or DWARF-recovered type keeps the name it was
+    // declared with; that name is already C.
+    if !rt.ctypes || !dt.is_core_type() {
         return None;
     }
-    realtype_unknown_base(dt.get_size(), under_pointer, rt.long_is_8)
+    crate::kuna_ctypes::core_type_spelling(
+        &rt.model,
+        dt.get_metatype(),
+        dt.get_size(),
+        dt.is_char_print(),
+    )
 }
 
 /// (kuna) Size → standard-C name for an unknown value.  `None` for sizes with no

@@ -42,7 +42,7 @@ fn surface_count_is_102() {
 }
 
 #[test]
-fn settable_count_is_105() {
+fn settable_count_is_106() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -68,12 +68,13 @@ fn settable_count_is_105() {
     // +1 for `ifuncfpret` (P1 x86-64 IFUNC IRELATIVE PLT-stub naming).
     // +1 for `outline` (S8 region excision into a synthesized pseudofunction).
     // +1 for `msvcftol` (P2 MSVC __ftol-family call-fixup, DIV-74).
-    assert_eq!(kuna_num_settables(), 105);
-    assert_eq!(SETTABLE_TABLE.len(), 105);
+    // +1 for `ctypes` (P9 valid per-architecture C type spelling, DIV-75).
+    assert_eq!(kuna_num_settables(), 106);
+    assert_eq!(SETTABLE_TABLE.len(), 106);
 }
 
 #[test]
-fn tier_counts_are_22_core_47_transform_36_analysis() {
+fn tier_counts_are_23_core_47_transform_36_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -111,7 +112,8 @@ fn tier_counts_are_22_core_47_transform_36_analysis() {
     // analysis 35 -> 36: +1 for `ifuncfpret` (P1 x86-64 IFUNC PLT-stub naming).
     // transform 45 -> 46: +1 for `outline` (deletes blocks, synthesizes a call).
     // transform 46 -> 47: +1 for `msvcftol` (P2 MSVC __ftol call-fixup, DIV-74).
-    assert_eq!((core, transform, analysis), (22, 47, 36));
+    // core 22 -> 23: +1 for `ctypes` (P9 valid C type spelling, DIV-75).
+    assert_eq!((core, transform, analysis), (23, 47, 36));
 }
 
 #[test]
@@ -301,7 +303,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_32_suppressed_for_73() {
+fn option_values_live_value_present_for_33_suppressed_for_73() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -477,7 +479,8 @@ fn option_values_live_value_present_for_32_suppressed_for_73() {
     // 29 -> 30: +1 for `funcboundflow` (live_field = funcbound_flow).
     // 30 -> 31: +1 for `evalcurrentproto` (live_field = evalcurrentproto).
     // 31 -> 32: +1 for `msvcftol` (live_field = msvc_ftol).
-    assert_eq!(with_live, 32);
+    // 32 -> 33: +1 for `ctypes` (live_field = ctypes).
+    assert_eq!(with_live, 33);
 }
 
 #[test]
@@ -584,7 +587,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row and msvcftol's P2 row sit
     // mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 104);
+    assert_eq!(json.matches("},\n").count(), 105);
 }
 
 #[test]

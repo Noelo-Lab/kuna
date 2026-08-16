@@ -165,7 +165,7 @@ mod w10_input_prototype_declarator {
     /// (and degrade to `void` only under a pointer).
     #[test]
     fn realtypes_relabels_unknown_bases() {
-        let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true };
+        let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true, ..crate::printc::RealTypeCtx::OFF };
         let unk = |sz: i32| Rc::new(Datatype::new_with_align(sz, -1, type_metatype::TYPE_UNKNOWN));
         // Scalars: 1->char, 2->unsigned short, 4->unsigned int, 8->unsigned long.
         assert_eq!(declarator_parts(&unk(1), on).0, "char");
@@ -173,7 +173,7 @@ mod w10_input_prototype_declarator {
         assert_eq!(declarator_parts(&unk(4), on).0, "unsigned int");
         assert_eq!(declarator_parts(&unk(8), on).0, "unsigned long");
         // LLP64: 8-byte unknown reads `unsigned long long` when long is 4 bytes.
-        let llp64 = crate::printc::RealTypeCtx { enabled: true, long_is_8: false };
+        let llp64 = crate::printc::RealTypeCtx { enabled: true, long_is_8: false, ..crate::printc::RealTypeCtx::OFF };
         assert_eq!(declarator_parts(&unk(8), llp64).0, "unsigned long long");
         // Odd size keeps the placeholder.
         assert_eq!(declarator_parts(&unk(3), on).0, "undefined3");
@@ -205,7 +205,7 @@ mod w10_input_prototype_declarator {
     /// opaque `void *` with the gate ON exactly as with it OFF.
     #[test]
     fn realtypes_keeps_genuine_void_pointers() {
-        let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true };
+        let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true, ..crate::printc::RealTypeCtx::OFF };
         let void = || Rc::new(Datatype::new_with_align(0, 1, type_metatype::TYPE_VOID));
         for rt in [on, crate::printc::RealTypeCtx::OFF] {
             assert_eq!(declarator_parts(&void(), rt), ("void".to_string(), String::new()));

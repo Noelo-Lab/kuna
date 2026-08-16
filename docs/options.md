@@ -322,6 +322,10 @@ Three tiers:
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
 | undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
 | size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
+| int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
+| the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
+| `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
+| the emitted C does not compile because its type names are not C | [`ctypes`](#ctypes) |
 | the same local declared once although many HighVariables share the stack slot | [`dedupvardecls`](#dedupvardecls) |
 | flip off to see one declaration line per high (e.g. int4 option_index repeated hundreds of times) | [`dedupvardecls`](#dedupvardecls) |
 
@@ -1168,6 +1172,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On (default) emits real C types for un-inferred values; off restores the upstream xunknownN/undefined<N> rendering for byte-for-byte comparison.
 - **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-realtypes
 - **Example:** `option realtypes off`
+
+### `ctypes` -- on | off, default `off`
+
+- **Symptoms:** int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names; the same function mixes `unsigned int` with `int4`; `code *` appears as a function-pointer type; the emitted C does not compile because its type names are not C.
+- **What it does:** Spell the NAMED core types as the target's own C type names -- int4 -> int, uint1 -> unsigned char, float8 -> double, float10 -> long double, code * -> void * -- resolved against the compiler spec's decoded <data_organization>, so an 8-byte integer reads `long` on LP64 and `long long` on ILP32/LLP64. Extends `realtypes`, which relabels only residual TYPE_UNKNOWN; that split is why one function can declare `unsigned int v3;` and `int4 v1;` in the same block. Sizes no C type has (3/5/6/7, 16-byte integers) keep their undefined<N> form rather than being widened, because widening a truncating cast changes its meaning.
+- **When to flip:** The emitted C uses Ghidra's internal type vocabulary (int4/uint1/float8/code) instead of C type names, or mixes the two within one function. ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB -- so this is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end. The shipped catalog default is OFF, which is what the XML datatest corpus runs at: 42 of its assertions pin the Ghidra spellings.
+- **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-ctypes
+- **Example:** `option ctypes on`
 
 ### `dedupvardecls` -- on | off, default `on`
 
