@@ -1,0 +1,95 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna GH-180: "Overflow guards read the post-add value:
+    v3 = v3 + v1; if (SCARRY8(v3,v1))"
+
+    GNU grep -O2 nlscan (the in-repo witness tests/bug-repro/grep @ 0x7c90)
+    guards a signed add against overflow:
+
+        7ce0  4c 01 eb   add rbx,r13     ; OF := SCARRY8(rbx_pre, r13)
+        7ce3  49 89 dd   mov r13,rbx
+        7ce6  70 19      jo  7d01        ; tests OF from 7ce0
+
+    kuna's IR keeps the SCARRY input (pre-add RBX) and the ADD output as two
+    distinct Varnodes, but the two were merged into one HighVariable, so the
+    emitted C read the guard AFTER the add on the same variable:
+
+        v3 = v3 + v1;
+        if (SCARRY8(v3,v1)) {            <- tests the post-add value
+
+    a predicate the binary does not compute (Ghidra/IDA/Binja/angr all keep
+    the operands pre-add).  Root cause: ActionMarkImplied set the implied flag
+    directly instead of calling Merge::markImplied (upstream merge.cc:1595),
+    which also marks every operand of the defining op coverdirty; and the
+    Varnode coverdirty was not forwarded to the owning HighVariable the way
+    upstream Varnode::setFlags does (varnode.cc:377-378).  With both halves
+    missing, Cover::rebuild never re-ran after implied-marking, the operand
+    Cover never grew to the CBRANCH where the implied SCARRY prints, and the
+    cover-intersection test saw no conflict in the pre-add/post-add merge.
+
+    Stage: P6 variable and storage model, explicit/implied marking + merge
+    legality (docs/spec/06-variables-and-merge.md).  Correctness fix restoring
+    upstream behavior, no option: single pass asserting the fixed shape.
+
+    Function 1, `nlscan`: the verbatim witness bytes 0x7c90..0x7d05 with the
+    trailing padding replaced by RET; `memchr` and the no-return error stub
+    `die` are single-RET stand-ins at the real call targets.  Function 2,
+    `grow`: the minimal unsigned form of the same idiom (the xalloc-style
+    size-growth guard, grep @ 0x1f0d0 / gzip @ 0xf320):
+
+        8000  48 8b 07     mov rax,[rdi]
+        8003  48 89 c2     mov rdx,rax
+        8006  48 d1 ea     shr rdx,1
+        8009  48 83 c2 01  add rdx,0x1
+        800d  48 01 d0     add rax,rdx   ; CF := CARRY8(rax_pre, rdx)
+        8010  72 06        jb  8018      ; tests CF from 800d
+        8012  48 89 07     mov [rdi],rax
+        8015  31 c0        xor eax,eax
+        8017  c3           ret
+        8018  e8 43 fc ff ff  call die
+        801d  c3           ret
+
+    The asserts pin that each guard's operands are the PRE-add values: the
+    intrinsic call must name the same tokens the sum expression adds, and the
+    collapsed self-update-then-test rendering must not appear.
+-->
+<bytechunk space="ram" offset="0x4b70">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x7c60">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x7c90">
+41554154554889fd534883ec08488b3d1c3b02004c8b2d6d3b02004839ef7338440fbe25cc39020031dbeb110f1f4000488d78014883c3014839fd76134889ea4489e64829fae895ceffff4885c075e04c01eb4989dd70194c892d293b020048892dca3a02004883c4085b5d415c415dc3e85affffffc3
+</bytechunk>
+<bytechunk space="ram" offset="0x8000">
+488b074889c248d1ea4883c2014801d07206488907
+31c0c3e843fcffffc3
+</bytechunk>
+<symbol space="ram" offset="0x4b70" name="memchr"/>
+<symbol space="ram" offset="0x7c60" name="die"/>
+<symbol space="ram" offset="0x7c90" name="nlscan"/>
+<symbol space="ram" offset="0x8000" name="grow"/>
+</binaryimage>
+<script>
+  <com>lo fu nlscan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu grow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH180 #1: the signed guard reads the PRE-add operands and the sum is a separate later expression" min="1" max="1">if \(!SCARRY8\(v3,v1\)\) \{
+dat_2b7c0 = a0;
+dat_2b818 = v3 \+ v1;</stringmatch>
+<stringmatch name="GH180 #2: exactly one SCARRY8 in the transcript (the jo guard)" min="1" max="1">SCARRY8\(</stringmatch>
+<stringmatch name="GH180 #3: the collapsed self-update-then-test rendering does not appear (compound form)" min="0" max="0">v3 \+= v1;</stringmatch>
+<stringmatch name="GH180 #4: the collapsed self-update-then-test rendering does not appear (the issue's literal shape)" min="0" max="0">v3 = v3 \+ v1;</stringmatch>
+<stringmatch name="GH180 #5: the unsigned guard reads the PRE-add operands and the sum is a separate later expression" min="1" max="1">if \(!CARRY8\(v1,v2\)\) \{
+\*a0 = v1 \+ v2;</stringmatch>
+<stringmatch name="GH180 #6: exactly one standalone CARRY8 in the transcript (the jb guard)" min="1" max="1">\bCARRY8\(</stringmatch>
+<stringmatch name="GH180 #7: the unsigned collapse does not appear (compound form)" min="0" max="0">v1 \+= v2;</stringmatch>
+<stringmatch name="GH180 #8: the unsigned collapse does not appear (plain form)" min="0" max="0">v1 = v1 \+ v2;</stringmatch>
+</decompilertest>
