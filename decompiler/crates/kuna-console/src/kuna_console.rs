@@ -213,6 +213,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
         "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
+        // (kuna) ELF data-symbol naming (DIV-76): committed at `read symbols`
+        // like the analysis-pass gates, so the live flag is authoritative.
+        "datasyms" => on_off(conf.analysis_datasyms),
         "typedepth" => on_off(conf.analysis_typedepth),
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.

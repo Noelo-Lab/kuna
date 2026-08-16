@@ -826,6 +826,15 @@ pub struct Architecture {
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
     pub analysis_dwarf: bool,
+    /// (kuna) Gate the ELF data-symbol (`STT_OBJECT`) naming arm (`datasyms`);
+    /// default **on** (DIV-76). The loader collects the data half of the
+    /// `.symtab`/`.dynsym` walks (`ObjectLoadImage::data_symbols`) at `load
+    /// file`; the console's `commit_analysis_output` (run at `read symbols`,
+    /// after this option is applied) consults this flag and installs each entry
+    /// as a named `undefined<size>` global — so a copy-relocated libc extern
+    /// (`stderr`, `optind`) renders by name instead of `dat_<addr>`. Off drops
+    /// the stream at the commit and restores the previous rendering exactly.
+    pub analysis_datasyms: bool,
     /// (kuna) Gate the DWARF `.debug_line` source-line comment pass (`dwarf_lines`);
     /// default **off** — it changes the decompiled output (adds `/* file:line */`
     /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
@@ -1347,6 +1356,7 @@ impl Architecture {
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
             analysis_mips_isa: false,
             analysis_dwarf: false,
+            analysis_datasyms: false,
             analysis_dwarf_lines: false,
             analysis_cppproto: false,
             analysis_typedepth: false,
@@ -1514,6 +1524,7 @@ impl Architecture {
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
+        self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_typedepth = true; // (kuna) DIV: full-depth DWARF type resolution default-ON (the depth budget truncated ordinary C declarations to void; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
@@ -1858,6 +1869,9 @@ impl Architecture {
             }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
+            "datasyms" => {
+                on_off!(analysis_datasyms, "ELF data-symbol (STT_OBJECT) naming")
+            }
             "dwarf_lines" => {
                 on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
             }
