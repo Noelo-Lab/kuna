@@ -156,9 +156,21 @@ forbids a forced merge, the machinery edits the data flow until it doesn't:
 1. `merge.rs (Merge::merge_addr_tied)` — every maximal window of overlapping
    address-tied storage: Varnodes at the same (address, size) are force-merged
    into one high (`merge_range_must`), after `unify_address` /
-   `eliminate_intersect` snip genuinely conflicting SSA versions apart;
-   windows spanning several addresses become VariableGroup pieces
-   (`bank_group_with`). *(kuna divergence, documented at
+   `eliminate_intersect` snip genuinely conflicting SSA versions apart.
+   The snip (`merge.rs (Merge::snip_reads)`) reroutes the conflicting reads
+   through a fresh COPY placed at the value's birth: at the start of the entry
+   block for an input Varnode, otherwise directly after the defining op — with
+   one carve-out: a value defined by an INDIRECT gets its COPY after the op
+   *causing* the effect (the call or store iop-encoded in the INDIRECT's
+   input 1; `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+   (Funcdata::do_snip_reads_insert_point)`), never at the INDIRECT marker
+   itself, which sits *before* that op in block order. Without the carve-out
+   an out-parameter's post-call copy lands textually above the call that
+   fills the slot (upstream `merge.cc:461` "snip must come after OP CAUSING
+   EFFECT"; kuna GH-181, where `freecon` then frees the pre-call NULL).
+   `Merge::trim_op_output` applies the same INDIRECT rule to its own
+   insert-after point. Windows spanning several addresses become
+   VariableGroup pieces (`bank_group_with`). *(kuna divergence, documented at
    `merge.rs (Merge::merge_addr_tied)`)*: a forced merge that still intersects
    — a heavily-reused stack slot from compiler stack-coloring — is *skipped*,
    not fatal; upstream's `eliminateIntersect` never fails there, and aborting
@@ -499,10 +511,16 @@ into its consumer. The kuna port
 is provably order-safe — marking a call output implied *moves the call's
 evaluation* to the use site, so the predicate demands: exactly one descendant
 and it is not a phi (no single textual evaluation point); use in the *same
-block*, strictly after the call; and no op between them that is a call or
+block*, strictly after the call; no op between them that is a call or
 touches memory (LOAD/STORE/CALLOTHER — LOAD included because the call may
-STORE what the intervening LOAD reads). Anything else stays explicit: false
-negatives over reordering bugs. When the predicate passes, the output falls
+STORE what the intervening LOAD reads); and no non-marker op between them
+that *reads a value the call indirectly writes* — an input defined by an
+INDIRECT whose iop input names this call (kuna GH-181: the snipped
+out-parameter COPY `Merge::snip_reads` places right after the call would
+otherwise have the call text sunk past it, handing it the pre-call value;
+marker ops are skipped since a later call's own INDIRECTs chain the earlier
+call's versions without any textual evaluation point). Anything else stays
+explicit: false negatives over reordering bugs. When the predicate passes, the output falls
 through to the ordinary implied machinery of §6.1 — the fold itself is just
 `if (timespec_cmp(...) <= -1)` emerging from the printer's normal recursion.
 `off` restores the upstream always-spill form byte-for-byte; four datatest

@@ -74,5 +74,5 @@ f30f1efa554889e5534883ec6848897da8488975a04889559848894d90488b4598488b4010488d35
 </script>
 <stringmatch name="angr-taildup #1 (bug, off): one residual goto to the shared free();return; tail" min="1" max="1">goto label_</stringmatch>
 <stringmatch name="angr-taildup #2 (bug, off): goto label reference + label definition present, none on" min="2" max="2">label_4041d6</stringmatch>
-<stringmatch name="angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)" min="3" max="3">free\(v6\)</stringmatch>
+<stringmatch name="angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)" min="3" max="3">free\(v[0-9]+\)</stringmatch>
 </decompilertest>

@@ -48,7 +48,12 @@
 //!      move would cross merge/branch edges and conditional execution), and is
 //!      ordered **after** the call in that block;
 //!   3. **no** op strictly between the call and its use (in block op order) is a
-//!      call (`is_call`) or a memory op (`CPUI_LOAD`/`CPUI_STORE`/`CPUI_CALLOTHER`).
+//!      call (`is_call`) or a memory op (`CPUI_LOAD`/`CPUI_STORE`/`CPUI_CALLOTHER`),
+//!      and none **reads a value the call indirectly writes** — an input defined
+//!      by a `CPUI_INDIRECT` whose effect op (the iop encoding in input 1) is
+//!      this call.  Sinking the call past such a read (e.g. the out-parameter
+//!      copy `Merge::snipReads` places right after the call, GH-181) would hand
+//!      the read the *pre*-call value.
 //!
 //! Keeping `LOAD` in the forbidden set is necessary, not redundant: the call may
 //! `STORE` memory that an intervening `LOAD` reads, so sinking the call past that
@@ -111,13 +116,55 @@ pub fn call_output_foldable(data: &Funcdata, vn: VarnodeId) -> bool {
         return false; // use must come strictly after the call in this block
     }
 
-    // (3) no side-effecting / memory op strictly between the call and its use.
+    // (3) no side-effecting / memory op strictly between the call and its use,
+    // and none reading a value this call indirectly writes.
     for &mid in &ops[def_idx + 1..use_idx] {
-        if op_is_barrier(data, mid) {
+        if op_is_barrier(data, mid) || op_reads_indirect_output_of(data, mid, def) {
             return false;
         }
     }
     true
+}
+
+/// Does `op` read a varnode defined by a `CPUI_INDIRECT` attached to `call`
+/// (its input 1 iop-encodes `call`)?  Such a read observes the call's indirect
+/// effect, so the call expression must not be sunk past it (GH-181).  Marker
+/// ops (a later call's own INDIRECTs chain the earlier call's versions as
+/// inputs) have no textual evaluation point and are skipped.
+fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
+    let o = match data.obank().get(op) {
+        Some(o) => o,
+        None => return true, // stale: be conservative
+    };
+    if o.is_marker() {
+        return false;
+    }
+    for slot in 0..o.num_input() {
+        let def = o
+            .get_in(slot)
+            .and_then(|vn| data.vbank().get(vn))
+            .filter(|v| !v.is_annotation())
+            .and_then(|v| v.get_def());
+        let ind = match def {
+            Some(d) => d,
+            None => continue,
+        };
+        let indop = match data.obank().get(ind) {
+            Some(io) => io,
+            None => continue,
+        };
+        if indop.code() != OpCode::CPUI_INDIRECT {
+            continue;
+        }
+        let effect = indop
+            .get_in(1)
+            .and_then(|iv| data.vbank().get(iv))
+            .map(|iv| crate::funcdata_varnode::op_iop_decode(iv.get_addr().get_offset()));
+        if effect == Some(call) {
+            return true;
+        }
+    }
+    false
 }
 
 /// An op whose relative order with the moved call is observable: any call, or a
