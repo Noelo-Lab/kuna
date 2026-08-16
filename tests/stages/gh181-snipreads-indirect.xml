@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna GH-181: an out-parameter copy hoisted ABOVE the call that fills it.
+
+    The function is libselinux lsetfilecon_raw (x86-64 gcc -O2, stripped;
+    tests/bug-repro/libselinux.so.1 at 0x17370).  The source idiom:
+
+        char *ccontext = NULL;
+        if ((lgetfilecon_raw(path, &amp;ccontext) >= 0) &amp;&amp;
+            (strcmp(context, ccontext) == 0)) { rc = 0; } else { errno = err; }
+        freecon(ccontext);
+
+    The binary loads the stack slot ONCE, after the call returns, and both
+    strcmp and freecon consume that post-call value.  kuna instead emitted
+
+        v4 = NULL;
+        v1 = v4;                                  (copy BEFORE the call)
+        if ((0 &lt;= (int4)lgetfilecon_raw(a0,&amp;v4)) ...
+        freecon(v1);                              (frees the pre-call NULL)
+
+    which as C frees NULL and leaks the buffer the call allocated.
+
+    Two stacked defects, both correctness fixes with no option:
+
+    1. Stage S6 variable merge, cover-trim insertion (p6_variables/merge.rs
+       Merge::snip_reads via substrate/funcdata.rs do_snip_reads_insert_point).
+       Upstream Merge::snipReads (decompiler/cpp/merge.cc:461) has an explicit
+       carve-out: when the trimmed Varnode is defined by a CPUI_INDIRECT, the
+       trim COPY is inserted after the op CAUSING the effect (the iop encoding
+       in the INDIRECT's input 1), not at the INDIRECT itself, which precedes
+       the call in block order.  The kuna port lacked the INDIRECT arm, so the
+       COPY feeding freecon landed before the CALL in the p-code.
+
+    2. The kuna-only foldcallret fold (p6_variables/kuna_callretfold.rs,
+       default-on per DIV-14) sank the call expression into the if condition
+       across that COPY: an op reading a value the call indirectly writes (an
+       input defined by a CPUI_INDIRECT attached to the call) is now a fold
+       barrier, since moving the call text past it hands it the pre-call value.
+
+    Two passes: pass 1 default (foldcallret on) proves both fixes together;
+    pass 2 (option foldcallret off, the upstream-faithful rendering) proves the
+    p-code level snip_reads fix alone.  Both passes must show the corrected
+    ordering: the call statement first, the out-parameter copy directly after
+    it, never a slot copy immediately preceding the call text.
+-->
+<bytechunk space="ram" offset="0x17370">
+f30f1efa41554989fd4889f74154554889f5534883ec1864488b042528000000488944240831
+c0e8d40fffff4531c04889ea4c89ef488d4801488d35d5c30000e8ab15ffff4189c485c07824
+488b44240864482b04252800000075644883c4184489e05b5d415c415dc3660f1f440000e83b
+0dffff83385f4889c375cf4c89ef4889e648c7042400000000e8d016ffff4c8b2c2485c07818
+4c89ee4889efe8ad12ffff85c075094531e4eb0a0f1f4000c7035f0000004c89efe8c218ffff
+eb8ce86b0fffff
+</bytechunk>
+<bytechunk space="ram" offset="0x23785">
+73656375726974792e73656c696e757800
+</bytechunk>
+<symbol space="ram" offset="0x17370" name="lsetfilecon_raw"/>
+<symbol space="ram" offset="0x8370" name="strlen"/>
+<symbol space="ram" offset="0x8960" name="lsetxattr"/>
+<symbol space="ram" offset="0x8120" name="__errno_location"/>
+<symbol space="ram" offset="0x8ad0" name="lgetfilecon_raw"/>
+<symbol space="ram" offset="0x86c0" name="strcmp"/>
+<symbol space="ram" offset="0x8cf0" name="freecon"/>
+<symbol space="ram" offset="0x83a0" name="__stack_chk_fail"/>
+</binaryimage>
+<script>
+  <com>lo fu lsetfilecon_raw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option foldcallret off</com>
+  <com>lo fu lsetfilecon_raw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="snipreads-indirect #1: the out-parameter copy directly follows the call statement in both passes" min="2" max="2">v[0-9]+ = lgetfilecon_raw\(a0,&amp;v[0-9]+\);
+v[0-9]+ = v[0-9]+;</stringmatch>
+<stringmatch name="snipreads-indirect #2: no slot copy immediately precedes the call text (the hoisted shape is gone)" min="0" max="0">= v[0-9]+;
+lgetfilecon_raw</stringmatch>
+<stringmatch name="snipreads-indirect #3: freecon consumes the copied post-call value in both passes" min="2" max="2">freecon\(v[0-9]+\);</stringmatch>
+</decompilertest>

@@ -59,6 +59,11 @@
     width the body uses.  Pass 2 (`option dedupvardecls off`) pins the
     un-collapsed one-line-per-high rendering, which is the bug.  Assertion
     counts span both passes.
+
+    (kuna GH-181: foldcallret no longer sinks a call past a read of its own
+    INDIRECT output, so the checksum call is an explicit statement sequenced
+    before the CONCAT13 that reads the slot it may write; its r0 return became
+    v1 and renumbered the slot locals to v2/v3.)
 -->
 <bytechunk space="ram" offset="0x804f5b4">
 036803b330b583b00446002300938df8043055238df8003001238df801308df8
@@ -83,10 +88,11 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="symbol-keyed-local-decls #1: the slot is declared three times over the two passes, so exactly once by default" min="3" max="3">v1; // stack - 0x18</stringmatch>
-<stringmatch name="symbol-keyed-local-decls #2: the surviving declaration is as wide as the widest access, in both passes" min="2" max="2">unsigned int v1; // stack - 0x18</stringmatch>
-<stringmatch name="symbol-keyed-local-decls #3: only the off path keeps the narrow shadow declaration" min="1" max="1">undefined3 v1; // stack - 0x18</stringmatch>
-<stringmatch name="symbol-keyed-local-decls #4: the adjacent slot is untouched in both passes" min="2" max="2">char v2; // stack - 0x14</stringmatch>
-<stringmatch name="symbol-keyed-local-decls #5: the body still reads the collapsed name in both passes" min="2" max="2">send_bytes\(\*a0,&amp;v1,5\);</stringmatch>
-<stringmatch name="symbol-keyed-local-decls #6: the 4-byte use that outgrows the 2-byte ScopeLocal symbol" min="2" max="2">CONCAT13\(slot_checksum\(&amp;v1,4\),v1\)</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #1: the slot is declared three times over the two passes, so exactly once by default" min="3" max="3">v2; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #2: the surviving declaration is as wide as the widest access, in both passes" min="2" max="2">unsigned int v2; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #3: only the off path keeps the narrow shadow declaration" min="1" max="1">undefined3 v2; // stack - 0x18</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #4: the adjacent slot is untouched in both passes" min="2" max="2">char v3; // stack - 0x14</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #5: the body still reads the collapsed name in both passes" min="2" max="2">send_bytes\(\*a0,&amp;v2,5\);</stringmatch>
+<stringmatch name="symbol-keyed-local-decls #6: the 4-byte use that outgrows the 2-byte ScopeLocal symbol, checksum call sequenced before it (GH-181)" min="2" max="2">v1 = slot_checksum\(&amp;v2,4\);
+v2 = CONCAT13\(v1,v2\);</stringmatch>
 </decompilertest>

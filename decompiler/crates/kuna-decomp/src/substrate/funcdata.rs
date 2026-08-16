@@ -2931,9 +2931,22 @@ impl Funcdata {
             (bl, self.bblocks_block_start(bl), None)
         } else {
             let def = v.get_def().expect("snip_reads_insert_point: non-input has no def");
-            let bl = self.obank.get(def).and_then(|o| o.get_parent()).expect("snip: def no parent");
-            let pc = self.obank.get(def).map(|o| o.get_addr().clone()).unwrap_or_else(Address::new_invalid);
-            (bl, pc, Some(def))
+            let o = self.obank.get(def).expect("snip: stale def");
+            let bl = o.get_parent().expect("snip: def no parent");
+            let pc = o.get_addr().clone();
+            // C++ merge.cc:461-464: an INDIRECT def places the COPY after the op
+            // CAUSING the effect (in(1)'s iop encoding), not the INDIRECT itself.
+            let afterop = if o.code() == OpCode::CPUI_INDIRECT {
+                let off = o
+                    .get_in(1)
+                    .and_then(|in1| self.vbank.get(in1))
+                    .map(|iv| iv.get_addr().get_offset())
+                    .expect("snip: INDIRECT without iop input");
+                crate::funcdata_varnode::op_iop_decode(off)
+            } else {
+                def
+            };
+            (bl, pc, Some(afterop))
         }
     }
 

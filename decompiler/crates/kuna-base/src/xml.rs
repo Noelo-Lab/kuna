@@ -1744,7 +1744,10 @@ mod tests {
         // and gh180-implied-cover-scarry / overflow guards read the PRE-add
         // operands (implied-marking dirties the operand Covers, so the
         // pre-add/post-add merge is illegal and the guard keeps its own value)
-        assert_eq!(count, 205, "corpus file count drifted");
+        // and gh181-snipreads-indirect / the snipReads INDIRECT carve-out plus
+        // the foldcallret indirect-read barrier (an out-parameter copy printed
+        // above the call that fills it, so freecon consumed the pre-call NULL)
+        assert_eq!(count, 206, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

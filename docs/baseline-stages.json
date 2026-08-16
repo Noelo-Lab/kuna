@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    470,
-    470
+    473,
+    473
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -257,7 +257,7 @@
     "data:angr-StackGuard #4: fix -- only the option-on pass inlines the deep match path as a direct return 1",
     "data:angr-StackGuard #5: fix (GH-183) -- the fs+0x28 canary accesses (entry init + reload) survive only in the option-off pass",
     "data:angr-StackGuard #6: fix (GH-183) -- the TLS-base fs_offset declaration survives only in the option-off pass",
-    "data:angr-dedupvardecls #1: slot 0x58 declared 4x (off, the bug) + 1x (on, the fix) = 5 total",
+    "data:angr-dedupvardecls #1: slot 0x58 declared 1x (off, now merge-coalesced per GH-181) + 1x (on) = 2 total",
     "data:angr-dedupvardecls #2: slot 0x3c declared 1x (off, now merge-coalesced) + 1x (on) = 2 total",
     "data:angr-gotoreduce #1 (bug, off): one residual goto to the shared return tail",
     "data:angr-gotoreduce #2 (bug, off): goto label reference + label definition present, none on",
@@ -420,6 +420,9 @@
     "data:returncopysplit #4: the real copy site still reads the literal's high half per byte",
     "data:returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering",
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
+    "data:snipreads-indirect #1: the out-parameter copy directly follows the call statement in both passes",
+    "data:snipreads-indirect #2: no slot copy immediately precedes the call text (the hoisted shape is gone)",
+    "data:snipreads-indirect #3: freecon consumes the copied post-call value in both passes",
     "data:spacebase-unnamed #1: no internal PTRSUB operator reaches the C body",
     "data:spacebase-unnamed #2: no raw ESP register leaks into an expression",
     "data:spacebase-unnamed #3: every statement touching the untracked frame renders a stack-location leaf",
@@ -454,7 +457,7 @@
     "data:symbol-keyed-local-decls #3: only the off path keeps the narrow shadow declaration",
     "data:symbol-keyed-local-decls #4: the adjacent slot is untouched in both passes",
     "data:symbol-keyed-local-decls #5: the body still reads the collapsed name in both passes",
-    "data:symbol-keyed-local-decls #6: the 4-byte use that outgrows the 2-byte ScopeLocal symbol",
+    "data:symbol-keyed-local-decls #6: the 4-byte use that outgrows the 2-byte ScopeLocal symbol, checksum call sequenced before it (GH-181)",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",

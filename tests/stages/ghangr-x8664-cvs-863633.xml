@@ -39,6 +39,11 @@
     (kuna: since the addr-tied merge coalescing fix (VariablePiece grouping no longer
     aborts on a reused stack slot), the OFF pass already coalesces 0x3c to 1x, so its
     total dropped from 3 to 2; dedupvardecls is still exercised by the 0x58 case.)
+    (kuna GH-181: the snipReads INDIRECT carve-out places cover-trim COPYs after
+    the effect-causing call, so the S6 merge now coalesces the reused 0x58 slot
+    too: both slots are 1x in the OFF pass and each totals 1 + 1 = 2.  The
+    collapse feature itself is exercised by ghdec-symbol-keyed-local-decls,
+    whose OFF pass still produces a genuine duplicate declaration.)
 
     Chunks: cvs main's .text bytes from 0x404df0 (plus slack so the jump-table
     over-read decodes), and the getopt-dispatch table in .rodata at 0x49b8f0.
@@ -65,6 +70,6 @@ f30f1efa41564155415455534883ec30897c240c488d3dfc6709004889342464488b042528000000
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="angr-dedupvardecls #1: slot 0x58 declared 4x (off, the bug) + 1x (on, the fix) = 5 total" min="5" max="5">; // stack - 0x58</stringmatch>
+<stringmatch name="angr-dedupvardecls #1: slot 0x58 declared 1x (off, now merge-coalesced per GH-181) + 1x (on) = 2 total" min="2" max="2">; // stack - 0x58</stringmatch>
 <stringmatch name="angr-dedupvardecls #2: slot 0x3c declared 1x (off, now merge-coalesced) + 1x (on) = 2 total" min="2" max="2">; // stack - 0x3c</stringmatch>
 </decompilertest>
