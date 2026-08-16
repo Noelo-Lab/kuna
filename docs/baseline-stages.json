@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    468,
-    468
+    470,
+    470
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -255,6 +255,8 @@
     "data:angr-StackGuard #2: bug -- a goto is emitted only with option off",
     "data:angr-StackGuard #3: bug -- label (goto target + definition) emitted only with option off",
     "data:angr-StackGuard #4: fix -- only the option-on pass inlines the deep match path as a direct return 1",
+    "data:angr-StackGuard #5: fix (GH-183) -- the fs+0x28 canary accesses (entry init + reload) survive only in the option-off pass",
+    "data:angr-StackGuard #6: fix (GH-183) -- the TLS-base fs_offset declaration survives only in the option-off pass",
     "data:angr-dedupvardecls #1: slot 0x58 declared 4x (off, the bug) + 1x (on, the fix) = 5 total",
     "data:angr-dedupvardecls #2: slot 0x3c declared 1x (off, now merge-coalesced) + 1x (on) = 2 total",
     "data:angr-gotoreduce #1 (bug, off): one residual goto to the shared return tail",
