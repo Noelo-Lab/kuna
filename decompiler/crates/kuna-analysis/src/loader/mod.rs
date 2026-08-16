@@ -37,6 +37,7 @@ pub mod reloc_object;
 pub mod format;
 // (kuna) PE import-call binding (`peimportcall`): `externref` over the IAT slots
 // + upstream's PE-only no-return API names.
+pub mod kuna_msvcfpconst; // (kuna) MSVC __real@ FP-constant COMDATs: value from the mangled name
 pub mod kuna_peimportcall;
 pub mod macho_fat;
 pub mod macho_stubs;
