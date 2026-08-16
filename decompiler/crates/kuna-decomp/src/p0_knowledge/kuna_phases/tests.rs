@@ -70,8 +70,9 @@ fn settable_count_is_107() {
     // +1 for `msvcftol` (P2 MSVC __ftol-family call-fixup, DIV-74).
     // +1 for `ctypes` (P9 valid per-architecture C type spelling, DIV-75).
     // +1 for `datasyms` (P1 ELF data-symbol naming gate, DIV-76, GH-184).
-    assert_eq!(kuna_num_settables(), 107);
-    assert_eq!(SETTABLE_TABLE.len(), 107);
+    // +1 for `loadguardrange` (P3 indexed-stack guard ValueSet range refinement, GH-182).
+    assert_eq!(kuna_num_settables(), 108);
+    assert_eq!(SETTABLE_TABLE.len(), 108);
 }
 
 #[test]
@@ -115,7 +116,8 @@ fn tier_counts_are_23_core_47_transform_37_analysis() {
     // transform 46 -> 47: +1 for `msvcftol` (P2 MSVC __ftol call-fixup, DIV-74).
     // core 22 -> 23: +1 for `ctypes` (P9 valid C type spelling, DIV-75).
     // analysis 36 -> 37: +1 for `datasyms` (P1 ELF data-symbol naming, DIV-76).
-    assert_eq!((core, transform, analysis), (23, 47, 37));
+    // core 23 -> 24: +1 for `loadguardrange` (P3 guard ValueSet range refinement, GH-182).
+    assert_eq!((core, transform, analysis), (24, 47, 37));
 }
 
 #[test]
@@ -305,7 +307,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_33_suppressed_for_74() {
+fn option_values_live_value_present_for_34_suppressed_for_74() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -487,7 +489,8 @@ fn option_values_live_value_present_for_33_suppressed_for_74() {
     // 30 -> 31: +1 for `evalcurrentproto` (live_field = evalcurrentproto).
     // 31 -> 32: +1 for `msvcftol` (live_field = msvc_ftol).
     // 32 -> 33: +1 for `ctypes` (live_field = ctypes).
-    assert_eq!(with_live, 33);
+    // 33 -> 34: +1 for `loadguardrange` (live_field = load_guard_range).
+    assert_eq!(with_live, 34);
 }
 
 #[test]
@@ -593,8 +596,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
-    // datasyms' P1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 106);
+    // datasyms' P1 row and loadguardrange's P3 row sit
+    // mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 107);
 }
 
 #[test]

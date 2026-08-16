@@ -662,6 +662,15 @@ pub struct ArchContext {
     /// `ContainedBy` arms; the level vocabulary lives in
     /// [`crate::p3_dataflow::kuna_calloverlap`].
     pub call_overlap: int4,
+    /// (kuna) `option loadguardrange`: run the upstream ValueSet solver over
+    /// new indexed-stack LOAD/STORE guard pointers at the end of each heritage
+    /// pass (`Heritage::analyzeNewLoadGuards`, heritage.cc:834), refining each
+    /// [`LoadGuard`](crate::p3_dataflow::heritage::LoadGuard)'s
+    /// min/max/step so `MapState::addGuard` can supply real array extents in
+    /// P6.  Off keeps every guard at the whole-space range with `step == 0`
+    /// (the pre-port behavior).  Read by
+    /// [`Heritage::heritage`](crate::p3_dataflow::heritage::Heritage::heritage).
+    pub load_guard_range: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1021,6 +1030,7 @@ impl ArchContext {
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
+            load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)

@@ -961,6 +961,12 @@ impl Funcdata {
         self.heritage.get_pass()
     }
 
+    /// Get the list of guarded LOADs (C++ `Funcdata::getLoadGuards`,
+    /// `funcdata.hh:276` — `heritage.getLoadGuards()`).
+    pub fn get_load_guards(&self) -> &[crate::heritage::LoadGuard] {
+        self.heritage.get_load_guards()
+    }
+
     /// Get the list of guarded STOREs (C++ `Funcdata::getStoreGuards`,
     /// `funcdata.hh:277` — `heritage.getStoreGuards()`).
     pub fn get_store_guards(&self) -> &[crate::heritage::LoadGuard] {

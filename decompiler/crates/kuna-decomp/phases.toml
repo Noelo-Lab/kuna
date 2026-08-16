@@ -2053,6 +2053,28 @@ tier = "core"
 symptoms = "call emitted with no arguments or fewer arguments than the disassembly passes|call result read from a local that is never assigned|enclosing function loses its own parameter list and return type (void f(void))|argument register written whole-width by pxor movdqa movdqu por pand orpd or movq before the call|second call binds a stale pre-call value where the first call should have defined it"
 
 [[settable]]
+option = "loadguardrange"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "load-guard-range"
+strength = "HARD"
+rewind = "P3"
+issue = "GH-182"
+summary = "Complete the upstream LoadGuard/StoreGuard range-refinement machinery kuna shipped as stubs: at the end of each heritage pass, run the ValueSet solver (ValueSetSolver::establishValueSets/solve, rangeutil.cc:2416/2524) over the pointer of every newly discovered indexed-stack LOAD/STORE guard and record the real minimum/maximum/step of the addresses the op can touch (LoadGuard::establishRange/finalizeRange, heritage.cc:741/788, driven by Heritage::analyzeNewLoadGuards, heritage.cc:834). The refined guards feed two consumers. (1) P6 variable mapping: MapState::gatherOpen's addGuard loops (varmap.cc:1241-1248) turn a range-locked guard into an open RangeHint with highind = ((max-min)+1)/step - 1 (varmap.cc:1033) -- the ONLY source of a real index bound for a stack array written through a computed index. Without it the only hint is the fallback min_items = 3, so RangeHint::attempt_join rejects any element past index 3 (diffsz > highind) and splits it off as a separate never-assigned scalar while the array prints with a wrong extent and out-of-bounds subscripts. (2) Merge's StackAffectingOps: a refined store guard's isGuarded test now covers only the addresses the STORE can actually hit, so unrelated stack locals stop being treated as clobbered across the indexed STORE. OFF reproduces the pre-port behavior exactly: every guard keeps the whole-space range with step = 0, addGuard bails at its step == 0 gate, and no bound is ever produced."
+use_when = "ON by default (upstream Ghidra's stock behavior; 0/675 datatest ablation). The OFF symptom is self-contradictory C: a stack array declared with a too-small extent (int2 v5 [4]) subscripted by an index the enclosing guard proves reaches past it (if (5 < v2) ... v5[v2] = ...), with the tail elements split off as separate stack scalars that are read (range-checked, stored into structs) but never assigned -- a fake buffer overflow plus fake uninitialized reads, which also break the decompile-project recompile path. Flip OFF only to reproduce kuna's pre-GH-182 output or to bisect whether a stack-frame layout change came from guard refinement."
+example = "option loadguardrange off"
+source_decompiler = "ghidra-upstream"
+inspiration = "GH-182 (betaflight cliServo int16 arguments[6] split into int2 v5[4] + unassigned v6/v7; diffutils diff3 main rev_mapping); upstream Heritage::analyzeNewLoadGuards (heritage.cc:834), LoadGuard::establishRange/finalizeRange (heritage.cc:741/788), ValueSetSolver (rangeutil.cc:1910-2585), MapState::addGuard (varmap.cc:1003)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "stack array subscripted past its own declared bound under a guard that proves the larger index|stack scalar at the end of an array read but never assigned and never address-taken|array written through a computed index capped at 4 elements regardless of the real extent|decompile-project output recompiles into a stack overflow the binary does not have|servo/config fields validated and stored from uninitialized stack locals"
+live_field = "load_guard_range"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "regionstructure"
 values = "on|off"
 default = "on"

@@ -1039,9 +1039,124 @@ impl Funcdata {
             let min_items = if index.is_some() { 3 } else { -1 };
             state.add_range_pub(offset, ct, 0, crate::varmap::RangeType::Open, min_items);
         }
-        // LoadGuard/StoreGuard handling (CPUI_LOAD/STORE array steps) is a
-        // heritage-driven refinement; the merged tree carries no load guards yet,
-        // so the guard loops add nothing (faithful empty-list behavior).
+        // The LoadGuard/StoreGuard hint loops (C++ varmap.cc:1241-1248): each
+        // heritage-recorded indexed LOAD/STORE guard contributes an open hint.
+        // A guard only carries a bound once `option loadguardrange` has run the
+        // ValueSet refinement (`addGuard` bails on `step == 0`), so with the
+        // option off these loops add nothing.
+        let load_guards: Vec<crate::heritage::LoadGuard> = self.get_load_guards().to_vec();
+        for guard in &load_guards {
+            self.add_guard(state, guard, OpCode::CPUI_LOAD);
+        }
+        let store_guards: Vec<crate::heritage::LoadGuard> = self.get_store_guards().to_vec();
+        for guard in &store_guards {
+            self.add_guard(state, guard, OpCode::CPUI_STORE);
+        }
+    }
+
+    /// Convert a LoadGuard into an open RangeHint, attempting to make use of
+    /// any data-type or index information (C++ `MapState::addGuard`,
+    /// `varmap.cc:1003`).  `opc` is the expected op-code (CPUI_LOAD or
+    /// CPUI_STORE); the guard is ignored if its op died or its range was never
+    /// refined (`step == 0`).
+    fn add_guard(
+        &self,
+        state: &mut crate::varmap::MapState,
+        guard: &crate::heritage::LoadGuard,
+        opc: OpCode,
+    ) {
+        if !guard.is_valid(self, opc) {
+            return;
+        }
+        let mut step = guard.get_step();
+        if step == 0 {
+            return; // No definitive sign of array access
+        }
+        let op = guard.op;
+        let in1 = match self.obank().get(op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return,
+        };
+        let mut ct: Rc<crate::dtype::Datatype> = match self.vbank().get(in1) {
+            Some(v) => Rc::clone(v.get_type_read_facing(op)),
+            None => return,
+        };
+        if ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR {
+            let mut inner = match ct.get_ptr_to() {
+                Some(i) => i,
+                None => return,
+            };
+            while inner.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                inner = match inner.get_array_base() {
+                    Some(b) => b,
+                    None => break,
+                };
+            }
+            ct = inner;
+        }
+        let out_size = if opc == OpCode::CPUI_STORE {
+            // The Varnode being stored.
+            match self
+                .obank()
+                .get(op)
+                .and_then(|o| o.get_in(2))
+                .and_then(|v| self.vbank().get(v))
+                .map(|v| v.get_size())
+            {
+                Some(s) => s,
+                None => return,
+            }
+        } else {
+            // The Varnode being loaded.
+            match self
+                .obank()
+                .get(op)
+                .and_then(|o| o.get_out())
+                .and_then(|v| self.vbank().get(v))
+                .map(|v| v.get_size())
+            {
+                Some(s) => s,
+                None => return,
+            }
+        };
+        if out_size != step {
+            // LOAD size doesn't match step: a field in an array of structures
+            // or something more unusual.
+            if out_size > step || (step % out_size) != 0 {
+                return;
+            }
+            // Since the LOAD size divides the step and we want to preserve the
+            // arrayness, we pretend we have an array of the LOAD's size.
+            step = out_size;
+        }
+        if ct.get_align_size() != step {
+            // Make sure the data-type matches our step size.
+            if step > 8 {
+                return; // Don't manufacture primitives bigger than 8-bytes
+            }
+            let types = match self.get_arch().types() {
+                Some(t) => t,
+                None => return,
+            };
+            ct = match types.get_base(step, crate::dtype::type_metatype::TYPE_UNKNOWN) {
+                Ok(t) => t,
+                Err(_) => return,
+            };
+        }
+        if guard.is_range_locked() {
+            // C++ uintb arithmetic (wraps); a locked range keeps max >= min.
+            let min_items = ((guard.get_maximum().wrapping_sub(guard.get_minimum()).wrapping_add(1))
+                / (step as uintb)) as int4;
+            state.add_range_pub(
+                guard.get_minimum(),
+                Some(ct),
+                0,
+                crate::varmap::RangeType::Open,
+                min_items - 1,
+            );
+        } else {
+            state.add_range_pub(guard.get_minimum(), Some(ct), 0, crate::varmap::RangeType::Open, 3);
+        }
     }
 
     /// Update Varnode flags and data-types from the local symbol map (C++

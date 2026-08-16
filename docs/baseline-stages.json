@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    473,
-    473
+    481,
+    481
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -213,6 +213,14 @@
     "data:KUNA-REGIONS #7: the loop's enclosing acyclic region pairs the cyclic self-loop with its 0x40a exit block",
     "data:KUNA-REGIONS #8: the cyclic self-loop region wraps exactly the single 0x3e0 block",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none",
+    "data:LOADGUARDRANGE #1: by default the guard bound sizes the array over all six real elements (filled to the next mapped local, like Ghidra)",
+    "data:LOADGUARDRANGE #2: only the off pass caps the array at the min_items fallback, two short of the real extent",
+    "data:LOADGUARDRANGE #3: only the off pass splits element 4 off as a separate never-assigned scalar",
+    "data:LOADGUARDRANGE #4: only the off pass splits element 5 off as a separate never-assigned scalar",
+    "data:LOADGUARDRANGE #5: the single indexed store writes the array in both passes (in bounds only under the default declaration)",
+    "data:LOADGUARDRANGE #6: by default element 4 is read through the array, in bounds",
+    "data:LOADGUARDRANGE #7: by default element 5 is read through the array, in bounds",
+    "data:LOADGUARDRANGE #8: only the off pass stores the config bytes from the unassigned scalars",
     "data:LOOPCONDHOIST #1: OFF leaves the head test inside an infinite loop (pass 1 only)",
     "data:LOOPCONDHOIST #2: ON hoists the head test into the loop header (pass 2 only)",
     "data:LOOPCONDHOIST #3: the OFF pass needs a break to reach the match arm; the ON pass does not (pass 1 only)",

@@ -166,11 +166,11 @@ impl ValueSetGraph for AdjGraph {
 fn r3_wto_two_sibling_loops_deterministic_and_nested() {
     let build = || {
         let mut solver = ValueSetSolver::new();
-        let n0 = solver.new_value_set();
-        let n1 = solver.new_value_set();
-        let n2 = solver.new_value_set();
-        let n3 = solver.new_value_set();
-        let n4 = solver.new_value_set();
+        let n0 = solver.alloc_value_set();
+        let n1 = solver.alloc_value_set();
+        let n2 = solver.alloc_value_set();
+        let n3 = solver.alloc_value_set();
+        let n4 = solver.alloc_value_set();
         solver.push_root(n0);
         // transient root appended at value_nodes.len() == 5.
         let graph = AdjGraph {

@@ -1747,7 +1747,10 @@ mod tests {
         // and gh181-snipreads-indirect / the snipReads INDIRECT carve-out plus
         // the foldcallret indirect-read barrier (an out-parameter copy printed
         // above the call that fills it, so freecon consumed the pre-call NULL)
-        assert_eq!(count, 206, "corpus file count drifted");
+        // and gh182-loadguardrange / the ValueSet refinement of indexed-stack
+        // guards sizes a stack array by its real index bound (option off = the
+        // 4-element cap with split-off never-assigned tail scalars)
+        assert_eq!(count, 207, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

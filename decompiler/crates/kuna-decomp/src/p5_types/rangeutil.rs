@@ -23,7 +23,7 @@
 //! the [`Wrap`] ops (`wadd`/`wsub`/`wmul`/`wshl`/`wshr`), and mixed-sign
 //! comparisons are replicated with comments.
 //!
-//! # The value-set solver layer (IR-coupled; STUB)
+//! # The value-set solver layer
 //!
 //! `ValueSet` / `ValueSetRead` / `Widener` / `WidenerFull` / `WidenerNone` /
 //! `Partition` / `ValueSetSolver` are the lattice-iteration layer on top of
@@ -37,28 +37,29 @@
 //!
 //!   * The **graph machinery** (`ValueSet::setVarnode`/`iterate`/
 //!     `computeTypeCode`, the whole `ValueSetSolver` — topological ordering,
-//!     constraint generation, `establishValueSets`, `solve`) requires a
-//!     `Varnode -> ValueSet` back-pointer field on `Varnode` plus `FlowBlock`
-//!     dominance / `restrictedByConditional` / `getImmedDom` and the
-//!     `OpBehavior` emulation surface.  None of those are exposed by the W3–W5
-//!     IR surface yet (and `Varnode` is not a file this item owns, so the
-//!     back-pointer cannot be added here).  The faithful **Bourdoncle
-//!     weak-topological-ordering** walk (`visit`/`component`/
-//!     `establishTopologicalOrder`/`solve`) is therefore ported against an
-//!     injected edge abstraction ([`ValueSetGraph`]) so the iteration *order*
-//!     and partition structure are exact and self-tested, while the methods
-//!     that bind a `ValueSet` to a live `Varnode`/`PcodeOp` (`set_varnode`,
-//!     `iterate`'s push-forward, all constraint generation,
-//!     `establish_value_sets`) are `// STUB(W5/W7-IR)` `Err` shells recorded as
-//!     losses.
+//!     constraint generation, `establishValueSets`, `solve`) is bound to the
+//!     live IR: where the C++ threads a `Varnode -> ValueSet` back-pointer
+//!     (`Varnode::setValueSet`) and per-object mark bits, this port keeps an
+//!     explicit `VarnodeId -> node index` map on the solver (insertion and
+//!     membership coincide exactly with upstream's `setValueSet` +
+//!     `setMark`, which are always performed together) and side sets for the
+//!     PcodeOp/FlowBlock marks, leaving the IR's own mark bits untouched.
+//!     The **Bourdoncle weak-topological-ordering** walk (`visit`/`component`/
+//!     `establishTopologicalOrder`) runs against the [`ValueSetGraph`] edge
+//!     abstraction; the live system supplies the IR-backed
+//!     `IrValueSetGraph` (descendant-op edges plus the simulated root), and
+//!     the self-contained ordering tests keep exercising the walk directly.
 
 use kuna_base::address::{
     bit_transitions, calc_mask, count_leading_zeros, leastsigbit_set, mostsigbit_set, sign_extend,
     sign_extend_sized,
 };
-use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, intb, uint4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
+use std::collections::{HashMap, HashSet};
+
+use crate::context::{BlockId, OpId, VarnodeId};
+use crate::funcdata::Funcdata;
 
 // ===========================================================================
 // CircleRange (rangeutil.hh:50, rangeutil.cc) — fully faithful
@@ -1781,12 +1782,11 @@ impl Widener for WidenerNone {
 // ===========================================================================
 // ValueSet / Partition / ValueSetSolver (rangeutil.hh:113-327)
 //
-// The graph machinery is IR-coupled (Varnode<->ValueSet back-pointer, FlowBlock
-// dominance, OpBehavior emulation), none of which the W3-W5 IR surface exposes
-// and none of which lives in a file this item owns.  The structures below carry
-// the lattice state faithfully (so the Widener trait above operates on a real
-// ValueSet), and the methods that bind a ValueSet to a live Varnode/PcodeOp or
-// run constraint generation are STUB(W5/W7-IR) shells (recorded as losses).
+// The graph machinery is IR-coupled.  Where the C++ threads raw pointers
+// (`ValueSet::vn`, `Varnode::setValueSet`, `partHead`, `next`) this port keeps
+// arena indices on the solver plus a `VarnodeId -> node` map that plays the
+// role of both the back-pointer and the Varnode mark bit (upstream always sets
+// the two together and clears the marks when the map would die).
 // ===========================================================================
 
 /// An equation attached to a [`ValueSet`] (C++ `ValueSet::Equation`,
@@ -1811,14 +1811,10 @@ impl Equation {
 /// A range of values attached to a Varnode within a data-flow subsystem
 /// (C++ `ValueSet`, `rangeutil.hh:113`).
 ///
-/// The graph fields (`vn`, `next`, `partHead`) that the C++ uses as raw
-/// pointers into the IR / partition list are not modeled here; this struct
-/// holds the lattice state (`type_code`, `count`, stability flags, `range`,
-/// `equations`) that the [`Widener`] strategy reads.  Binding to a live Varnode
-/// is a STUB (see module docs).
-// `op_code` is set faithfully by the seamed `set_varnode`/`iterate` (which read
-// it to dispatch the per-opcode push-forward); dead until that IR binding lands.
-#[allow(dead_code)]
+/// The linked-list graph fields (`next`, `partHead`) that the C++ threads as
+/// raw pointers live as parallel index vectors on the [`ValueSetSolver`]; the
+/// bound Varnode (`vn`) is carried here as an arena id (`None` for the
+/// solver's simulated root and for the graph-test nodes).
 #[derive(Debug, Clone)]
 pub struct ValueSet {
     /// 0=pure constant, 1=stack relative.
@@ -1833,6 +1829,8 @@ pub struct ValueSet {
     left_is_stable: bool,
     /// `true` if right boundary of range didn't change (last iteration).
     right_is_stable: bool,
+    /// The Varnode this set is attached to (C++ `vn`; `None` = simulated root).
+    vn: Option<VarnodeId>,
     /// Range of values or offsets in this set.
     range: CircleRange,
     /// Any equations associated with this value set.
@@ -1852,6 +1850,7 @@ impl Default for ValueSet {
             op_code: OpCode::CPUI_MAX,
             left_is_stable: false,
             right_is_stable: false,
+            vn: None,
             range: CircleRange::new_empty(),
             equations: Vec::new(),
         }
@@ -1900,10 +1899,15 @@ impl ValueSet {
         self.right_is_stable
     }
 
+    /// The Varnode attached to this value set (C++ `getVarnode`).
+    pub fn get_varnode(&self) -> Option<VarnodeId> {
+        self.vn
+    }
+
     /// Mark value set as possibly containing any value (C++ `setFull`).
     ///
-    /// STUB(W5/W7-IR): upstream reads `vn->getSize()` for the range size; with
-    /// no bound Varnode the caller must supply the size.
+    /// Upstream reads `vn->getSize()` for the range size; the caller supplies
+    /// the bound Varnode's size explicitly.
     pub fn set_full(&mut self, size: int4) {
         self.range.set_full(size);
         self.type_code = 0;
@@ -1979,12 +1983,13 @@ impl Partition {
 /// A special ValueSet for the *read point* of a Varnode (C++ `ValueSetRead`,
 /// `rangeutil.hh:178`).
 ///
-/// Holds the value set at a specific read (PcodeOp + slot).  The `op`/`slot`
-/// binding and `compute()` (which reads `vn->getValueSet()`) are STUB; the
-/// `addEquation`/range storage is faithful.
+/// Holds the value set at a specific read (PcodeOp + slot), possibly modified
+/// from the Varnode's own set by control-flow constraints at the read.
 #[derive(Debug, Clone)]
 pub struct ValueSetRead {
     type_code: int4,
+    /// The PcodeOp at the point of the value set read (C++ `op`).
+    op: Option<OpId>,
     slot: int4,
     range: CircleRange,
     equation_constraint: CircleRange,
@@ -1997,6 +2002,7 @@ impl Default for ValueSetRead {
     fn default() -> Self {
         ValueSetRead {
             type_code: 0,
+            op: None,
             slot: 0,
             range: CircleRange::new_empty(),
             equation_constraint: CircleRange::new_empty(),
@@ -2015,8 +2021,9 @@ impl ValueSetRead {
 
     /// Establish that this value set corresponds to read `(o, slt)`
     /// (C++ `setPcodeOp`, `rangeutil.cc:1781`).
-    pub fn set_pcode_op(&mut self, slt: int4) {
+    pub fn set_pcode_op(&mut self, o: OpId, slt: int4) {
         self.type_code = 0;
+        self.op = Some(o);
         self.slot = slt;
         self.equation_type_code = -1;
     }
@@ -2050,22 +2057,10 @@ impl ValueSetRead {
         self.right_is_stable
     }
 
-    /// Compute this value set from the bound Varnode's value set
-    /// (C++ `compute`, `rangeutil.cc:1804`).
-    ///
-    /// STUB(W5/W7-IR): the upstream method reads `op->getIn(slot)->getValueSet()`
-    /// — the Varnode->ValueSet back-pointer that the IR surface does not expose.
-    /// The constraint-application arithmetic is transcribed in
-    /// [`ValueSetRead::compute_from`].
-    pub fn compute(&mut self) -> KunaResult<()> {
-        Err(KunaError::lowlevel(
-            "ValueSetRead::compute: needs Varnode->ValueSet back-pointer (W5/W7 IR seam)",
-        ))
-    }
-
-    /// The IR-independent core of [`ValueSetRead::compute`]: given the bound
-    /// Varnode's value set fields, apply the equation constraint.  Transcribed
-    /// faithfully so the solver can call it once a back-pointer exists.
+    /// The IR-independent core of C++ `ValueSetRead::compute`
+    /// (`rangeutil.cc:1804`): given the bound Varnode's value set fields, apply
+    /// the equation constraint.  The solver resolves `op->getIn(slot)` to that
+    /// value set and calls this (see [`ValueSetSolver::solve`]).
     pub fn compute_from(&mut self, value_set: &ValueSet) {
         self.type_code = value_set.get_type_code();
         self.range = value_set.get_range().clone();
@@ -2098,15 +2093,13 @@ pub trait ValueSetGraph {
 /// Determines a ValueSet for each Varnode in a data-flow system
 /// (C++ `ValueSetSolver`, `rangeutil.hh:274`).
 ///
-/// The full establish/solve pipeline is IR-coupled (see module docs); what is
-/// ported faithfully here is the **Bourdoncle weak-topological-ordering** walk
-/// (`visit`/`component`/`establish_topological_order`) over an injected
-/// [`ValueSetGraph`], plus the partition-prepend/surround bookkeeping and the
-/// `solve` driving loop's *structure*.  `establish_value_sets`, constraint
-/// generation, and the push-forward `iterate` are STUB shells (losses).
-// `root_nodes`/`max_iterations` are consumed by the seamed
-// `establish_value_sets`/`solve` (which need IR binding); dead until then.
-#[allow(dead_code)]
+/// The system is formed by providing a set of sink Varnodes via
+/// [`establish_value_sets`](ValueSetSolver::establish_value_sets); running
+/// [`solve`](ValueSetSolver::solve) iterates the sets to a fixed point in the
+/// **Bourdoncle weak-topological-ordering** established by
+/// `establish_topological_order`, and results are read back through
+/// [`get_value_set_read`](ValueSetSolver::get_value_set_read) or the node
+/// arena.
 pub struct ValueSetSolver {
     /// Storage for all the current value sets (C++ `valueNodes`).
     value_nodes: Vec<ValueSet>,
@@ -2116,6 +2109,9 @@ pub struct ValueSetSolver {
     /// Partition head index of each node, or `None` (C++ `ValueSet::partHead`,
     /// here indexing into `record_storage`).
     part_head: Vec<Option<usize>>,
+    /// Additional, after iteration, add-on value sets at specific reads
+    /// (C++ `readNodes`, keyed by the read op instead of its SeqNum).
+    read_nodes: HashMap<OpId, ValueSetRead>,
     /// Value sets in iteration order (C++ `orderPartition`).
     order_partition: Partition,
     /// Storage for the Partitions establishing components (C++ `recordStorage`).
@@ -2124,6 +2120,10 @@ pub struct ValueSetSolver {
     root_nodes: Vec<usize>,
     /// Stack used to generate the topological ordering (C++ `nodeStack`).
     node_stack: Vec<usize>,
+    /// The Varnode -> node-index binding (C++ `Varnode::setValueSet` back-
+    /// pointer).  Membership doubles as upstream's Varnode mark bit: the two
+    /// are always established together and the marks die with the solver.
+    value_set_map: HashMap<VarnodeId, usize>,
     /// (Global) depth-first numbering for topological ordering.
     depth_first_index: int4,
     /// Count of individual ValueSet iterations.
@@ -2138,10 +2138,12 @@ impl Default for ValueSetSolver {
             value_nodes: Vec::new(),
             next: Vec::new(),
             part_head: Vec::new(),
+            read_nodes: HashMap::new(),
             order_partition: Partition::new(),
             record_storage: Vec::new(),
             root_nodes: Vec::new(),
             node_stack: Vec::new(),
+            value_set_map: HashMap::new(),
             depth_first_index: 0,
             num_iterations: 0,
             max_iterations: 0,
@@ -2165,14 +2167,74 @@ impl ValueSetSolver {
         &self.value_nodes
     }
 
-    /// Allocate storage for a new ValueSet, returning its arena index
-    /// (mirrors C++ `newValueSet`, sans the IR `setVarnode` binding which is a
-    /// seam).  Used by the topological-ordering tests to build a graph.
-    pub fn new_value_set(&mut self) -> usize {
+    /// Allocate storage for a new (unbound) ValueSet, returning its arena
+    /// index.  The IR-bound [`new_value_set`](ValueSetSolver::new_value_set)
+    /// builds on this; the topological-ordering tests use it directly to build
+    /// a synthetic graph.
+    pub fn alloc_value_set(&mut self) -> usize {
         self.value_nodes.push(ValueSet::new());
         self.next.push(None);
         self.part_head.push(None);
         self.value_nodes.len() - 1
+    }
+
+    /// Allocate a new ValueSet attached to the given Varnode and record the
+    /// back-pointer (C++ `newValueSet`, `rangeutil.cc:1953`, plus
+    /// `ValueSet::setVarnode`, `rangeutil.cc:1503`).
+    ///
+    /// The initial values are set based on the type of Varnode: a constant gets
+    /// the single value, an input gets all possible values, other written
+    /// Varnodes start with an empty set.
+    fn new_value_set(&mut self, fd: &Funcdata, vn: VarnodeId, t_code: int4) {
+        let idx = self.alloc_value_set();
+        let (size, is_written, is_constant, offset, def) = {
+            let v = fd.vbank().get(vn).expect("newValueSet: stale varnode");
+            (v.get_size(), v.is_written(), v.is_constant(), v.get_offset(), v.get_def())
+        };
+        let (op_code, num_params) = match def {
+            Some(d) if is_written => {
+                let o = fd.obank().get(d).expect("newValueSet: stale def op");
+                (o.code(), o.num_input())
+            }
+            _ => (OpCode::CPUI_MAX, 0),
+        };
+        let node = &mut self.value_nodes[idx];
+        node.vn = Some(vn);
+        node.type_code = t_code;
+        if t_code != 0 {
+            node.op_code = OpCode::CPUI_MAX;
+            node.num_params = 0;
+            // Treat as offset of 0 relative to the special value.
+            node.range.set_range_value(0, size);
+            node.left_is_stable = true;
+            node.right_is_stable = true;
+        } else if is_written {
+            node.op_code = op_code;
+            if node.op_code == OpCode::CPUI_INDIRECT {
+                // Treat CPUI_INDIRECT as CPUI_COPY.
+                node.num_params = 1;
+                node.op_code = OpCode::CPUI_COPY;
+            } else {
+                node.num_params = num_params;
+            }
+            node.left_is_stable = false;
+            node.right_is_stable = false;
+        } else if is_constant {
+            node.op_code = OpCode::CPUI_MAX;
+            node.num_params = 0;
+            node.range.set_range_value(offset, size);
+            node.left_is_stable = true;
+            node.right_is_stable = true;
+        } else {
+            // Some other form of input.
+            node.op_code = OpCode::CPUI_MAX;
+            node.num_params = 0;
+            node.type_code = 0;
+            node.range.set_full(size);
+            node.left_is_stable = false;
+            node.right_is_stable = false;
+        }
+        self.value_set_map.insert(vn, idx);
     }
 
     /// Register a node index as a root (C++ `rootNodes.push_back`).
@@ -2328,32 +2390,1071 @@ impl ValueSetSolver {
         self.part_head.pop();
     }
 
-    // --- IR-coupled pipeline (STUB) --------------------------------------
+    // --- IR-coupled pipeline ----------------------------------------------
+
+    /// Look up the ValueSet bound to a Varnode (C++ `Varnode::getValueSet`).
+    pub fn get_value_set(&self, vn: VarnodeId) -> Option<&ValueSet> {
+        self.value_set_map.get(&vn).map(|&i| &self.value_nodes[i])
+    }
+
+    /// Get the ValueSetRead calculated for the given read op (C++
+    /// `getValueSetRead`, `rangeutil.hh:325` — keyed by op instead of SeqNum).
+    pub fn get_value_set_read(&self, op: OpId) -> Option<&ValueSetRead> {
+        self.read_nodes.get(&op)
+    }
 
     /// Build value sets for a data-flow system (C++ `establishValueSets`,
     /// `rangeutil.cc:2416`).
     ///
-    /// STUB(W5/W7-IR): needs the Varnode->ValueSet back-pointer, descendant-op
-    /// walking, `FlowBlock` dominance, and the constraint-generation pipeline.
-    pub fn establish_value_sets(&mut self) -> KunaResult<()> {
-        Err(KunaError::lowlevel(
-            "ValueSetSolver::establishValueSets: needs IR Varnode/PcodeOp/FlowBlock binding (W5/W7 seam)",
-        ))
+    /// Given a set of sinks, find all the Varnodes that flow directly into them
+    /// and set up their initial ValueSet objects.  `reads` are add-on PcodeOps
+    /// where the input ValueSet at the point of read is wanted; `stack_reg`
+    /// (if given) is the stack-pointer input Varnode (tracked as a relative
+    /// offset); `indirect_as_copy` treats CPUI_INDIRECT as a COPY.
+    pub fn establish_value_sets(
+        &mut self,
+        fd: &Funcdata,
+        sinks: &[VarnodeId],
+        reads: &[OpId],
+        stack_reg: Option<VarnodeId>,
+        indirect_as_copy: bool,
+    ) {
+        let mut worklist: Vec<VarnodeId> = Vec::new();
+        let mut work_pos = 0usize;
+        if let Some(sr) = stack_reg {
+            self.new_value_set(fd, sr, 1); // Establish stack pointer as special
+            worklist.push(sr);
+            work_pos += 1;
+            let idx = self.value_set_map[&sr];
+            self.root_nodes.push(idx);
+        }
+        for &vn in sinks {
+            self.new_value_set(fd, vn, 0);
+            worklist.push(vn);
+        }
+        while work_pos < worklist.len() {
+            let vn = worklist[work_pos];
+            work_pos += 1;
+            let (is_written, is_constant, is_spacebase, def, vn_size) = {
+                let v = match fd.vbank().get(vn) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                (v.is_written(), v.is_constant(), v.is_spacebase(), v.get_def(), v.get_size())
+            };
+            if !is_written {
+                if is_constant {
+                    // Constant inputs to binary ops should not be treated as
+                    // root nodes as they get picked up during iteration by the
+                    // other input, except in the case of a PTRSUB from a
+                    // spacebase constant.
+                    let lone_inputs = fd
+                        .lone_descend(vn)
+                        .and_then(|op| fd.obank().get(op))
+                        .map(|o| o.num_input());
+                    if is_spacebase || lone_inputs == Some(1) {
+                        let idx = self.value_set_map[&vn];
+                        self.root_nodes.push(idx);
+                    }
+                } else {
+                    let idx = self.value_set_map[&vn];
+                    self.root_nodes.push(idx);
+                }
+                continue;
+            }
+            let op = match def {
+                Some(d) => d,
+                None => continue,
+            };
+            let opc = match fd.obank().get(op) {
+                Some(o) => o.code(),
+                None => continue,
+            };
+            // Distinguish ops where we can never predict an integer range.
+            match opc {
+                OpCode::CPUI_INDIRECT => {
+                    let ind_store =
+                        fd.obank().get(op).map(|o| o.is_indirect_store()).unwrap_or(false);
+                    if indirect_as_copy || ind_store {
+                        if let Some(in_vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                            if !self.value_set_map.contains_key(&in_vn) {
+                                self.new_value_set(fd, in_vn, 0);
+                                worklist.push(in_vn);
+                            }
+                        }
+                    } else {
+                        let idx = self.value_set_map[&vn];
+                        self.value_nodes[idx].set_full(vn_size);
+                        self.root_nodes.push(idx);
+                    }
+                }
+                OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_CALLOTHER
+                | OpCode::CPUI_LOAD
+                | OpCode::CPUI_NEW
+                | OpCode::CPUI_SEGMENTOP
+                | OpCode::CPUI_CPOOLREF
+                | OpCode::CPUI_FLOAT_ADD
+                | OpCode::CPUI_FLOAT_DIV
+                | OpCode::CPUI_FLOAT_MULT
+                | OpCode::CPUI_FLOAT_SUB
+                | OpCode::CPUI_FLOAT_NEG
+                | OpCode::CPUI_FLOAT_ABS
+                | OpCode::CPUI_FLOAT_SQRT
+                | OpCode::CPUI_FLOAT_INT2FLOAT
+                | OpCode::CPUI_FLOAT_FLOAT2FLOAT
+                | OpCode::CPUI_FLOAT_TRUNC
+                | OpCode::CPUI_FLOAT_CEIL
+                | OpCode::CPUI_FLOAT_FLOOR
+                | OpCode::CPUI_FLOAT_ROUND => {
+                    let idx = self.value_set_map[&vn];
+                    self.value_nodes[idx].set_full(vn_size);
+                    self.root_nodes.push(idx);
+                }
+                _ => {
+                    let num = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                    for i in 0..num {
+                        let in_vn = match fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        let is_annotation =
+                            fd.vbank().get(in_vn).map(|v| v.is_annotation()).unwrap_or(true);
+                        if self.value_set_map.contains_key(&in_vn) || is_annotation {
+                            continue;
+                        }
+                        self.new_value_set(fd, in_vn, 0);
+                        worklist.push(in_vn);
+                    }
+                }
+            }
+        }
+        // Set up read sites (the C++ marks the read ops for the equation
+        // generation stage; the mark set lives here and dies after it).
+        let mut read_marked: HashSet<OpId> = HashSet::new();
+        for &op in reads {
+            let num = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+            for slot in 0..num {
+                let vn = match fd.obank().get(op).and_then(|o| o.get_in(slot)) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                if self.value_set_map.contains_key(&vn) {
+                    let mut read = ValueSetRead::new();
+                    read.set_pcode_op(op, slot);
+                    self.read_nodes.insert(op, read);
+                    read_marked.insert(op);
+                    break; // Only 1 read allowed
+                }
+            }
+        }
+        self.generate_constraints(fd, &worklist, reads, &read_marked);
+        // (read-op marks are cleared by dropping `read_marked`)
+
+        let graph = IrValueSetGraph {
+            fd,
+            vn_of: self.value_nodes.iter().map(|n| n.vn).collect(),
+            map: self.value_set_map.clone(),
+            roots: self.root_nodes.clone(),
+        };
+        self.establish_topological_order(&graph);
+        // (worklist Varnode marks die with the solver; the ValueSet
+        //  back-pointers — the map — stay live for solve, as upstream.)
+    }
+
+    /// Generate an equation given a `true` constraint and the (output-node,
+    /// read-op) it affects (C++ `generateTrueEquation`, `rangeutil.cc:2066`).
+    fn generate_true_equation(
+        &mut self,
+        node: Option<usize>,
+        op: OpId,
+        slot: int4,
+        type_code: int4,
+        range: &CircleRange,
+    ) {
+        match node {
+            Some(i) => self.value_nodes[i].add_equation(slot, type_code, range.clone()),
+            // Special read site.
+            None => self.read_nodes.entry(op).or_default().add_equation(
+                slot,
+                type_code,
+                range.clone(),
+            ),
+        }
+    }
+
+    /// Generate the complementary equation given a `true` constraint (C++
+    /// `generateFalseEquation`, `rangeutil.cc:2084`).
+    fn generate_false_equation(
+        &mut self,
+        node: Option<usize>,
+        op: OpId,
+        slot: int4,
+        type_code: int4,
+        range: &CircleRange,
+    ) {
+        let mut false_range = range.clone();
+        false_range.invert();
+        match node {
+            Some(i) => self.value_nodes[i].add_equation(slot, type_code, false_range),
+            // Special read site.
+            None => self.read_nodes.entry(op).or_default().add_equation(
+                slot,
+                type_code,
+                false_range,
+            ),
+        }
+    }
+
+    /// Look for PcodeOps where the given constraint range applies and
+    /// instantiate an equation (C++ `applyConstraints`, `rangeutil.cc:2105`).
+    fn apply_constraints(
+        &mut self,
+        fd: &Funcdata,
+        vn: VarnodeId,
+        type_code: int4,
+        range: &CircleRange,
+        cbranch: OpId,
+        read_marked: &HashSet<OpId>,
+    ) {
+        let split_point = match fd.obank().get(cbranch).and_then(|o| o.get_parent()) {
+            Some(b) => b,
+            None => return,
+        };
+        let bb = fd.bblocks_ref();
+        if bb.block(split_point).size_out() != 2 {
+            return; // defensive: C++ guarantees a CBRANCH block has 2 out-edges
+        }
+        let flip = fd.obank().get(cbranch).map(|o| o.is_boolean_flip()).unwrap_or(false);
+        let (true_block, false_block) = if flip {
+            (bb.block(split_point).get_false_out(), bb.block(split_point).get_true_out())
+        } else {
+            (bb.block(split_point).get_true_out(), bb.block(split_point).get_false_out())
+        };
+        // Check if the only path to trueBlock or falseBlock is via a splitPoint
+        // out-edge induced by the condition.
+        let true_is_restricted = bb.restricted_by_conditional(true_block, split_point);
+        let false_is_restricted = bb.restricted_by_conditional(false_block, split_point);
+
+        if fd.vbank().get(vn).map(|v| v.is_written()).unwrap_or(false) {
+            if let Some(&vidx) = self.value_set_map.get(&vn) {
+                if self.value_nodes[vidx].op_code == OpCode::CPUI_MULTIEQUAL {
+                    // Leave landmark for widening.
+                    self.value_nodes[vidx].add_landmark(type_code, range.clone());
+                }
+            }
+        }
+        let descend: Vec<OpId> =
+            fd.vbank().get(vn).map(|v| v.descend_iter().collect()).unwrap_or_default();
+        for op in descend {
+            // The output node in the system, or None for a special read site.
+            let mut out_node: Option<usize> = None;
+            if !read_marked.contains(&op) {
+                // Not a special read site: make sure there is a Varnode in the system.
+                let out_vn = match fd.obank().get(op).and_then(|o| o.get_out()) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                match self.value_set_map.get(&out_vn) {
+                    Some(&i) => out_node = Some(i),
+                    None => continue,
+                }
+            }
+            let mut cur_block = match fd.obank().get(op).and_then(|o| o.get_parent()) {
+                Some(b) => b,
+                None => continue,
+            };
+            let slot = match fd.obank().get(op) {
+                Some(o) => o.get_slot(vn),
+                None => continue,
+            };
+            if slot < 0 {
+                continue; // defensive: C++ getSlot assumes membership
+            }
+            let opc = fd.obank().get(op).map(|o| o.code());
+            if opc == Some(OpCode::CPUI_MULTIEQUAL) {
+                if cur_block == true_block {
+                    // If it's possible that both the true and false edges reach
+                    // trueBlock then the only input we can restrict is a
+                    // MULTIEQUAL input along the exact true edge.
+                    if true_is_restricted || bb.block(true_block).get_in(slot) == split_point {
+                        self.generate_true_equation(out_node, op, slot, type_code, range);
+                    }
+                    continue;
+                } else if cur_block == false_block {
+                    if false_is_restricted || bb.block(false_block).get_in(slot) == split_point {
+                        self.generate_false_equation(out_node, op, slot, type_code, range);
+                    }
+                    continue;
+                } else {
+                    // A MULTIEQUAL input is really only from one in-block.
+                    cur_block = bb.block(cur_block).get_in(slot);
+                }
+            }
+            loop {
+                if cur_block == true_block {
+                    if true_is_restricted {
+                        self.generate_true_equation(out_node, op, slot, type_code, range);
+                    }
+                    break;
+                } else if cur_block == false_block {
+                    if false_is_restricted {
+                        self.generate_false_equation(out_node, op, slot, type_code, range);
+                    }
+                    break;
+                } else if cur_block == split_point {
+                    break;
+                }
+                match bb.block(cur_block).get_immed_dom() {
+                    Some(d) => cur_block = d,
+                    None => break,
+                }
+            }
+        }
+    }
+
+    /// Lift a range along a known path to a system Varnode and apply it at
+    /// reads (C++ `constraintsFromPath`, `rangeutil.cc:2185`).
+    #[allow(clippy::too_many_arguments)]
+    fn constraints_from_path(
+        &mut self,
+        fd: &Funcdata,
+        type_code: int4,
+        mut lift: CircleRange,
+        mut start_vn: VarnodeId,
+        end_vn: VarnodeId,
+        cbranch: OpId,
+        read_marked: &HashSet<OpId>,
+    ) {
+        while start_vn != end_vn {
+            let def = match fd.vbank().get(start_vn).and_then(|v| v.get_def()) {
+                Some(d) => d,
+                None => return,
+            };
+            match crate::jumptable::circlerange_pull_back(fd, &mut lift, def, false) {
+                Some(v) => start_vn = v,
+                None => return, // Couldn't pull all the way back to our value set
+            }
+        }
+        let mut end_vn = end_vn;
+        loop {
+            self.apply_constraints(fd, end_vn, type_code, &lift, cbranch, read_marked);
+            let (is_written, def) = match fd.vbank().get(end_vn) {
+                Some(v) => (v.is_written(), v.get_def()),
+                None => break,
+            };
+            if !is_written {
+                break;
+            }
+            let op = match def {
+                Some(d) => d,
+                None => break,
+            };
+            let stop = fd.obank().get(op).map(|o| o.is_call() || o.is_marker()).unwrap_or(true);
+            if stop {
+                break;
+            }
+            match crate::jumptable::circlerange_pull_back(fd, &mut lift, op, false) {
+                Some(v) => end_vn = v,
+                None => break,
+            }
+            if !self.value_set_map.contains_key(&end_vn) {
+                break;
+            }
+        }
+    }
+
+    /// Generate constraints from a conditional branch (C++
+    /// `constraintsFromCBranch`, `rangeutil.cc:2210`).
+    fn constraints_from_cbranch(
+        &mut self,
+        fd: &Funcdata,
+        cbranch: OpId,
+        read_marked: &HashSet<OpId>,
+    ) {
+        // Get the Varnode deciding the condition.
+        let mut vn = match fd.obank().get(cbranch).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return,
+        };
+        while !self.value_set_map.contains_key(&vn) {
+            let (is_written, def) = match fd.vbank().get(vn) {
+                Some(v) => (v.is_written(), v.get_def()),
+                None => return,
+            };
+            if !is_written {
+                break;
+            }
+            let op = match def {
+                Some(d) => d,
+                None => break,
+            };
+            let (is_call, is_marker, num) = match fd.obank().get(op) {
+                Some(o) => (o.is_call(), o.is_marker(), o.num_input()),
+                None => break,
+            };
+            if is_call || is_marker {
+                break;
+            }
+            if num == 0 || num > 2 {
+                break;
+            }
+            vn = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                Some(v) => v,
+                None => return,
+            };
+            if num == 2 {
+                let vn_const = fd.vbank().get(vn).map(|v| v.is_constant()).unwrap_or(false);
+                if vn_const {
+                    vn = match fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                        Some(v) => v,
+                        None => return,
+                    };
+                } else {
+                    let other_const = fd
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_in(1))
+                        .and_then(|v| fd.vbank().get(v))
+                        .map(|v| v.is_constant())
+                        .unwrap_or(false);
+                    if !other_const {
+                        // Both inputs are non-constant.
+                        self.generate_relative_constraint(fd, op, cbranch, read_marked);
+                        return;
+                    }
+                    // vn is non-constant, other input is constant.
+                }
+            }
+        }
+        if self.value_set_map.contains_key(&vn) {
+            let lift = CircleRange::new_bool(true);
+            let start_vn = match fd.obank().get(cbranch).and_then(|o| o.get_in(1)) {
+                Some(v) => v,
+                None => return,
+            };
+            self.constraints_from_path(fd, 0, lift, start_vn, vn, cbranch, read_marked);
+        }
+    }
+
+    /// Look for constraints on Varnodes in the system arising from branch
+    /// conditions (C++ `generateConstraints`, `rangeutil.cc:2248`).
+    fn generate_constraints(
+        &mut self,
+        fd: &Funcdata,
+        worklist: &[VarnodeId],
+        reads: &[OpId],
+        read_marked: &HashSet<OpId>,
+    ) {
+        let mut block_list: Vec<BlockId> = Vec::new();
+        let mut block_marks: HashSet<BlockId> = HashSet::new();
+        // Collect all blocks that contain a system op (input) or dominate a
+        // container.
+        for &vn in worklist {
+            let op = match fd.vbank().get(vn).and_then(|v| v.get_def()) {
+                Some(o) => o,
+                None => continue,
+            };
+            let bl = match fd.obank().get(op).and_then(|o| o.get_parent()) {
+                Some(b) => b,
+                None => continue,
+            };
+            let is_multi = fd.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_MULTIEQUAL);
+            if is_multi {
+                let size_in = fd.bblocks_ref().block(bl).size_in();
+                for j in 0..size_in {
+                    let mut cur = Some(fd.bblocks_ref().block(bl).get_in(j));
+                    while let Some(c) = cur {
+                        if block_marks.contains(&c) {
+                            break;
+                        }
+                        block_marks.insert(c);
+                        block_list.push(c);
+                        cur = fd.bblocks_ref().block(c).get_immed_dom();
+                    }
+                }
+            } else {
+                let mut cur = Some(bl);
+                while let Some(c) = cur {
+                    if block_marks.contains(&c) {
+                        break;
+                    }
+                    block_marks.insert(c);
+                    block_list.push(c);
+                    cur = fd.bblocks_ref().block(c).get_immed_dom();
+                }
+            }
+        }
+        for &rop in reads {
+            let mut cur = fd.obank().get(rop).and_then(|o| o.get_parent());
+            while let Some(c) = cur {
+                if block_marks.contains(&c) {
+                    break;
+                }
+                block_marks.insert(c);
+                block_list.push(c);
+                cur = fd.bblocks_ref().block(c).get_immed_dom();
+            }
+        }
+        // (C++ clears the block marks here; the fresh set below replaces them.)
+        let mut final_marks: HashSet<BlockId> = HashSet::new();
+        // Now go through input blocks to the previously calculated blocks.
+        for &bl in &block_list {
+            let size_in = fd.bblocks_ref().block(bl).size_in();
+            for j in 0..size_in {
+                let split_point = fd.bblocks_ref().block(bl).get_in(j);
+                if final_marks.contains(&split_point) {
+                    continue;
+                }
+                if fd.bblocks_ref().block(split_point).size_out() != 2 {
+                    continue;
+                }
+                let last_op = match fd.bblocks_ref().block(split_point).kind() {
+                    crate::block::BlockKind::Basic(bd) => bd.op_tail,
+                    _ => None,
+                };
+                if let Some(lo) = last_op {
+                    if fd.obank().get(lo).map(|o| o.code()) == Some(OpCode::CPUI_CBRANCH) {
+                        final_marks.insert(split_point);
+                        // Try to generate constraints from this splitPoint.
+                        self.constraints_from_cbranch(fd, lo, read_marked);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if the given Varnode is a *relative* constant — produced from the
+    /// system's base register by a straight line of COPYs / constant INT_ADDs
+    /// (C++ `checkRelativeConstant`, `rangeutil.cc:2316`).  Returns the base
+    /// register's type code and the additive value.
+    fn check_relative_constant(&self, fd: &Funcdata, mut vn: VarnodeId) -> Option<(int4, uintb)> {
+        let mut value: uintb = 0;
+        loop {
+            if let Some(&idx) = self.value_set_map.get(&vn) {
+                let tc = self.value_nodes[idx].type_code;
+                if tc != 0 {
+                    return Some((tc, value));
+                }
+            }
+            let v = fd.vbank().get(vn)?;
+            if !v.is_written() {
+                return None;
+            }
+            let op = v.get_def()?;
+            let o = fd.obank().get(op)?;
+            let opc = o.code();
+            if opc == OpCode::CPUI_COPY || opc == OpCode::CPUI_INDIRECT {
+                vn = o.get_in(0)?;
+            } else if opc == OpCode::CPUI_INT_ADD || opc == OpCode::CPUI_PTRSUB {
+                let const_vn = o.get_in(1)?;
+                let cv = fd.vbank().get(const_vn)?;
+                if !cv.is_constant() {
+                    return None;
+                }
+                value = value.wadd(cv.get_offset()) & calc_mask(cv.get_size());
+                vn = o.get_in(0)?;
+            } else {
+                return None;
+            }
+        }
+    }
+
+    /// Try to generate a constraint relative to the system's base register
+    /// from a two-non-constant comparison (C++ `generateRelativeConstraint`,
+    /// `rangeutil.cc:2351`).
+    fn generate_relative_constraint(
+        &mut self,
+        fd: &Funcdata,
+        comp_op: OpId,
+        cbranch: OpId,
+        read_marked: &HashSet<OpId>,
+    ) {
+        let mut opc = match fd.obank().get(comp_op) {
+            Some(o) => o.code(),
+            None => return,
+        };
+        match opc {
+            // Treat unsigned pointer comparisons as signed relative to the base
+            // register.
+            OpCode::CPUI_INT_LESS => opc = OpCode::CPUI_INT_SLESS,
+            OpCode::CPUI_INT_LESSEQUAL => opc = OpCode::CPUI_INT_SLESSEQUAL,
+            OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL
+            | OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL => {}
+            _ => return,
+        }
+        let in_vn0 = match fd.obank().get(comp_op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return,
+        };
+        let in_vn1 = match fd.obank().get(comp_op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return,
+        };
+        let mut lift = CircleRange::new_bool(true);
+        let type_code: int4;
+        let vn: VarnodeId;
+        if let Some((tc, value)) = self.check_relative_constant(fd, in_vn0) {
+            vn = in_vn1;
+            let size = fd.vbank().get(vn).map(|v| v.get_size()).unwrap_or(0);
+            if !lift.pull_back_binary(opc, value, 1, size, 1) {
+                return;
+            }
+            type_code = tc;
+        } else if let Some((tc, value)) = self.check_relative_constant(fd, in_vn1) {
+            vn = in_vn0;
+            let size = fd.vbank().get(vn).map(|v| v.get_size()).unwrap_or(0);
+            if !lift.pull_back_binary(opc, value, 0, size, 1) {
+                return;
+            }
+            type_code = tc;
+        } else {
+            return; // Neither side looks like a relative constant
+        }
+
+        let mut end_vn = vn;
+        while !self.value_set_map.contains_key(&end_vn) {
+            let (is_written, def) = match fd.vbank().get(end_vn) {
+                Some(v) => (v.is_written(), v.get_def()),
+                None => return,
+            };
+            if !is_written {
+                return;
+            }
+            let op = match def {
+                Some(d) => d,
+                None => return,
+            };
+            let o = match fd.obank().get(op) {
+                Some(o) => o,
+                None => return,
+            };
+            let opc2 = o.code();
+            if opc2 == OpCode::CPUI_COPY || opc2 == OpCode::CPUI_PTRSUB {
+                end_vn = match o.get_in(0) {
+                    Some(v) => v,
+                    None => return,
+                };
+            } else if opc2 == OpCode::CPUI_INT_ADD {
+                // Can pull-back through INT_ADD if second param is constant.
+                let second_const = o
+                    .get_in(1)
+                    .and_then(|v| fd.vbank().get(v))
+                    .map(|v| v.is_constant())
+                    .unwrap_or(false);
+                if !second_const {
+                    return;
+                }
+                end_vn = match o.get_in(0) {
+                    Some(v) => v,
+                    None => return,
+                };
+            } else {
+                return;
+            }
+        }
+        self.constraints_from_path(fd, type_code, lift, vn, end_vn, cbranch, read_marked);
+    }
+
+    /// Examine the input value sets and decide if this node's set is relative
+    /// (C++ `ValueSet::computeTypeCode`, `rangeutil.cc:1567`).  Returns `true`
+    /// on an indeterminate combination.
+    fn compute_type_code(&mut self, fd: &Funcdata, node: usize) -> bool {
+        let mut rel_count = 0;
+        let mut last_type_code = 0;
+        let vn = match self.value_nodes[node].vn {
+            Some(v) => v,
+            None => return true,
+        };
+        let op = match fd.vbank().get(vn).and_then(|v| v.get_def()) {
+            Some(o) => o,
+            None => return true,
+        };
+        let num_params = self.value_nodes[node].num_params;
+        for i in 0..num_params {
+            let in_vn = match fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                Some(v) => v,
+                None => return true, // defensive: input missing => indeterminate
+            };
+            match self.value_set_map.get(&in_vn) {
+                Some(&idx) => {
+                    let tc = self.value_nodes[idx].type_code;
+                    if tc != 0 {
+                        rel_count += 1;
+                        last_type_code = tc;
+                    }
+                }
+                // defensive: an input outside the system (upstream would deref a
+                // null back-pointer, which its establish invariants preclude).
+                None => return true,
+            }
+        }
+        if rel_count == 0 {
+            self.value_nodes[node].type_code = 0;
+            return false;
+        }
+        // Only certain operations can propagate a relative value set.
+        match self.value_nodes[node].op_code {
+            OpCode::CPUI_PTRSUB
+            | OpCode::CPUI_PTRADD
+            | OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB => {
+                if rel_count == 1 {
+                    self.value_nodes[node].type_code = last_type_code;
+                } else {
+                    return true;
+                }
+            }
+            OpCode::CPUI_CAST
+            | OpCode::CPUI_COPY
+            | OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_MULTIEQUAL => {
+                self.value_nodes[node].type_code = last_type_code;
+            }
+            _ => return true,
+        }
+        false
+    }
+
+    /// Recalculate one node by pushing its inputs' value sets forward through
+    /// the defining operator (C++ `ValueSet::iterate`, `rangeutil.cc:1611`).
+    /// Returns `true` if the node's value set changed.
+    fn iterate_node(&mut self, fd: &Funcdata, node: usize, widener: &dyn Widener) -> bool {
+        let vn = match self.value_nodes[node].vn {
+            Some(v) => v,
+            None => return false,
+        };
+        let (is_written, def, vn_size) = match fd.vbank().get(vn) {
+            Some(v) => (v.is_written(), v.get_def(), v.get_size()),
+            None => return false,
+        };
+        if !is_written {
+            return false;
+        }
+        if widener.check_freeze(&self.value_nodes[node]) {
+            return false;
+        }
+        if self.value_nodes[node].count == 0 && self.compute_type_code(fd, node) {
+            self.value_nodes[node].set_full(vn_size);
+            return true;
+        }
+        self.value_nodes[node].count += 1; // Count this iteration
+        let op = match def {
+            Some(d) => d,
+            None => return false,
+        };
+        let op_code = self.value_nodes[node].op_code;
+        let num_params = self.value_nodes[node].num_params;
+
+        // Snapshot the input value sets (range, stability, size) up front; the
+        // C++ reads them through live pointers, but nothing below mutates any
+        // input node, so the snapshot is equivalent.
+        let mut inputs: Vec<(CircleRange, bool, bool, int4)> = Vec::new();
+        for i in 0..num_params {
+            let in_vn = match fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                Some(v) => v,
+                None => return false,
+            };
+            let idx = match self.value_set_map.get(&in_vn) {
+                Some(&idx) => idx,
+                None => {
+                    // defensive: input outside the system (see compute_type_code)
+                    self.value_nodes[node].set_full(vn_size);
+                    return true;
+                }
+            };
+            let size = fd.vbank().get(in_vn).map(|v| v.get_size()).unwrap_or(0);
+            let n = &self.value_nodes[idx];
+            inputs.push((n.range.clone(), n.left_is_stable, n.right_is_stable, size));
+        }
+
+        let mut res = CircleRange::new_empty();
+        let mut eq_pos: usize = 0;
+        if op_code == OpCode::CPUI_MULTIEQUAL {
+            let mut pieces;
+            for i in 0..num_params {
+                let in_range = &inputs[i as usize].0;
+                if self.value_nodes[node].does_equation_apply(eq_pos as int4, i) {
+                    let mut range_copy = in_range.clone();
+                    let eq_range = self.value_nodes[node].equations[eq_pos].range.clone();
+                    if 0 != range_copy.intersect(&eq_range) {
+                        range_copy = eq_range;
+                    }
+                    pieces = res.circle_union(&range_copy);
+                    eq_pos += 1; // Equation was used
+                } else {
+                    pieces = res.circle_union(in_range);
+                }
+                if pieces == 2 {
+                    // Could not get clean union, force it.
+                    if res.minimal_container(in_range, VALUESET_MAX_STEP) {
+                        break;
+                    }
+                }
+            }
+            let prev_range = self.value_nodes[node].range.clone();
+            // Union with the previous iteration's set.
+            if 0 != res.circle_union(&prev_range) {
+                res.minimal_container(&prev_range, VALUESET_MAX_STEP);
+            }
+            if !prev_range.is_empty() && !res.is_empty() {
+                self.value_nodes[node].left_is_stable = prev_range.get_min() == res.get_min();
+                self.value_nodes[node].right_is_stable = prev_range.get_end() == res.get_end();
+            }
+        } else if num_params == 1 {
+            let (in1_range, in1_left, in1_right, in1_size) = inputs[0].clone();
+            if self.value_nodes[node].does_equation_apply(eq_pos as int4, 0) {
+                let mut range_copy = in1_range.clone();
+                let eq_range = self.value_nodes[node].equations[eq_pos].range.clone();
+                if 0 != range_copy.intersect(&eq_range) {
+                    range_copy = eq_range;
+                }
+                if !res.push_forward_unary(op_code, &range_copy, in1_size, vn_size) {
+                    self.value_nodes[node].set_full(vn_size);
+                    return true;
+                }
+                // (eq_pos += 1 would follow upstream; it is dead past this point)
+            } else if !res.push_forward_unary(op_code, &in1_range, in1_size, vn_size) {
+                self.value_nodes[node].set_full(vn_size);
+                return true;
+            }
+            self.value_nodes[node].left_is_stable = in1_left;
+            self.value_nodes[node].right_is_stable = in1_right;
+        } else if num_params == 2 {
+            let (in1_range, in1_left, in1_right, in1_size) = inputs[0].clone();
+            let (in2_range, in2_left, in2_right, _in2_size) = inputs[1].clone();
+            if self.value_nodes[node].equations.is_empty() {
+                if !res.push_forward_binary(
+                    op_code,
+                    &in1_range,
+                    &in2_range,
+                    in1_size,
+                    vn_size,
+                    VALUESET_MAX_STEP,
+                ) {
+                    self.value_nodes[node].set_full(vn_size);
+                    return true;
+                }
+            } else {
+                let mut range1 = in1_range;
+                let mut range2 = in2_range;
+                if self.value_nodes[node].does_equation_apply(eq_pos as int4, 0) {
+                    let eq_range = self.value_nodes[node].equations[eq_pos].range.clone();
+                    if 0 != range1.intersect(&eq_range) {
+                        range1 = eq_range;
+                    }
+                    eq_pos += 1;
+                }
+                if self.value_nodes[node].does_equation_apply(eq_pos as int4, 1) {
+                    let eq_range = self.value_nodes[node].equations[eq_pos].range.clone();
+                    if 0 != range2.intersect(&eq_range) {
+                        range2 = eq_range;
+                    }
+                }
+                if !res.push_forward_binary(
+                    op_code,
+                    &range1,
+                    &range2,
+                    in1_size,
+                    vn_size,
+                    VALUESET_MAX_STEP,
+                ) {
+                    self.value_nodes[node].set_full(vn_size);
+                    return true;
+                }
+            }
+            self.value_nodes[node].left_is_stable = in1_left && in2_left;
+            self.value_nodes[node].right_is_stable = in1_right && in2_right;
+        } else if num_params == 3 {
+            let (in1_range, in1_left, in1_right, in1_size) = inputs[0].clone();
+            let (in2_range, in2_left, in2_right, _in2_size) = inputs[1].clone();
+            let (in3_range, _, _, _) = inputs[2].clone();
+            let mut range1 = in1_range;
+            let mut range2 = in2_range;
+            if self.value_nodes[node].does_equation_apply(eq_pos as int4, 0) {
+                let eq_range = self.value_nodes[node].equations[eq_pos].range.clone();
+                if 0 != range1.intersect(&eq_range) {
+                    range1 = eq_range;
+                }
+                eq_pos += 1;
+            }
+            if self.value_nodes[node].does_equation_apply(eq_pos as int4, 1) {
+                let eq_range = self.value_nodes[node].equations[eq_pos].range.clone();
+                if 0 != range2.intersect(&eq_range) {
+                    range2 = eq_range;
+                }
+            }
+            if !res.push_forward_trinary(
+                op_code,
+                &range1,
+                &range2,
+                &in3_range,
+                in1_size,
+                vn_size,
+                VALUESET_MAX_STEP,
+            ) {
+                self.value_nodes[node].set_full(vn_size);
+                return true;
+            }
+            self.value_nodes[node].left_is_stable = in1_left && in2_left;
+            self.value_nodes[node].right_is_stable = in1_right && in2_right;
+        } else {
+            return false; // No way to change this value set
+        }
+
+        if res.equals(&self.value_nodes[node].range) {
+            return false;
+        }
+        if self.part_head[node].is_some() {
+            let snapshot = self.value_nodes[node].clone();
+            let mut cur_range = snapshot.range.clone();
+            if !widener.do_widening(&snapshot, &mut cur_range, &res) {
+                self.value_nodes[node].set_full(vn_size);
+            } else {
+                self.value_nodes[node].range = cur_range;
+            }
+        } else {
+            self.value_nodes[node].range = res;
+        }
+        true
     }
 
     /// Iterate the ValueSet system until it stabilizes (C++ `solve`,
     /// `rangeutil.cc:2524`).
     ///
-    /// STUB(W5/W7-IR): the per-node `iterate()` push-forward reads input
-    /// Varnodes' value sets through the IR back-pointer.  The partition-walk
-    /// ordering that `solve` drives is ported faithfully in
-    /// [`ValueSetSolver::establish_topological_order`] (exercised by the
-    /// in-module ordering tests); the public `solve` remains a seam until
-    /// `iterate` can run against live ops.
-    pub fn solve(&mut self, _max: int4, _widener: &dyn Widener) -> KunaResult<()> {
-        Err(KunaError::lowlevel(
-            "ValueSetSolver::solve: per-node iterate() needs IR push-forward (W5/W7 seam)",
-        ))
+    /// The ValueSets are recalculated in the established topological ordering,
+    /// with looping at various levels until a fixed point is reached.  `max`
+    /// bounds the total number of node iterations; `widener` selects the
+    /// strategy for accelerating stabilization.
+    pub fn solve(&mut self, fd: &Funcdata, max: int4, widener: &dyn Widener) {
+        self.max_iterations = max;
+        self.num_iterations = 0;
+        for n in self.value_nodes.iter_mut() {
+            n.count = 0;
+        }
+
+        let mut component_stack: Vec<usize> = Vec::new(); // record_storage indices
+        let mut cur_component: Option<usize> = None;
+        let mut cur_set: Option<usize> = self.order_partition.start_node;
+
+        while let Some(cur) = cur_set {
+            self.num_iterations += 1;
+            if self.num_iterations > self.max_iterations {
+                break; // Quit if max iterations exceeded
+            }
+            if let Some(ph) = self.part_head[cur] {
+                if Some(ph) != cur_component {
+                    component_stack.push(ph);
+                    cur_component = Some(ph);
+                    self.record_storage[ph].is_dirty = false;
+                    // Reset component counter upon entry.
+                    if let Some(start) = self.record_storage[ph].start_node {
+                        self.value_nodes[start].count =
+                            widener.determine_iteration_reset(&self.value_nodes[start]);
+                    }
+                }
+            }
+            if let Some(comp) = cur_component {
+                if self.iterate_node(fd, cur, widener) {
+                    self.record_storage[comp].is_dirty = true;
+                }
+                if self.record_storage[comp].stop_node != Some(cur) {
+                    cur_set = self.next[cur];
+                } else {
+                    loop {
+                        let top = *component_stack.last().expect("solve: component stack head");
+                        if self.record_storage[top].is_dirty {
+                            self.record_storage[top].is_dirty = false;
+                            cur_set = self.record_storage[top].start_node;
+                            if component_stack.len() > 1 {
+                                // Mark parent as dirty if we are restarting a
+                                // dirty child.
+                                let parent = component_stack[component_stack.len() - 2];
+                                self.record_storage[parent].is_dirty = true;
+                            }
+                            break;
+                        }
+
+                        component_stack.pop();
+                        if component_stack.is_empty() {
+                            cur_component = None;
+                            cur_set = self.next[cur];
+                            break;
+                        }
+                        let new_top = *component_stack.last().expect("solve: new stack head");
+                        cur_component = Some(new_top);
+                        if self.record_storage[new_top].stop_node != Some(cur) {
+                            cur_set = self.next[cur];
+                            break;
+                        }
+                    }
+                }
+            } else {
+                self.iterate_node(fd, cur, widener);
+                cur_set = self.next[cur];
+            }
+        }
+        // Calculate any follow-on value sets (C++ `ValueSetRead::compute`).
+        let read_ops: Vec<OpId> = self.read_nodes.keys().copied().collect();
+        for rop in read_ops {
+            let slot = self.read_nodes[&rop].slot;
+            let in_vn = fd.obank().get(rop).and_then(|o| o.get_in(slot));
+            if let Some(vn) = in_vn {
+                if let Some(&idx) = self.value_set_map.get(&vn) {
+                    let node = self.value_nodes[idx].clone();
+                    if let Some(read) = self.read_nodes.get_mut(&rop) {
+                        read.compute_from(&node);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The live-IR edge source for the topological-ordering walk (C++
+/// `ValueSetSolver::ValueSetEdge`, `rangeutil.cc:1910`).
+///
+/// Successors of a node are the ValueSets attached to the outputs of the
+/// descendant ops of the node's Varnode — outputs outside the system are
+/// skipped, matching the C++ `outVn->isMark()` test — and the simulated root
+/// node (the index one past the arena) yields the root nodes.
+struct IrValueSetGraph<'a> {
+    fd: &'a Funcdata,
+    /// Node index -> bound Varnode (snapshot of the arena's `vn` fields).
+    vn_of: Vec<Option<VarnodeId>>,
+    /// The Varnode -> node-index binding (snapshot of `value_set_map`).
+    map: HashMap<VarnodeId, usize>,
+    /// Root node indices, yielded by the simulated root.
+    roots: Vec<usize>,
+}
+
+impl ValueSetGraph for IrValueSetGraph<'_> {
+    fn successors(&self, node: usize) -> Vec<usize> {
+        if node >= self.vn_of.len() {
+            return self.roots.clone(); // The simulated root
+        }
+        let vn = match self.vn_of[node] {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let mut out = Vec::new();
+        let descend: Vec<OpId> = match self.fd.vbank().get(vn) {
+            Some(v) => v.descend_iter().collect(),
+            None => return out,
+        };
+        for op in descend {
+            if let Some(o) = self.fd.obank().get(op) {
+                if let Some(out_vn) = o.get_out() {
+                    if let Some(&idx) = self.map.get(&out_vn) {
+                        out.push(idx);
+                    }
+                }
+            }
+        }
+        out
     }
 }
 
