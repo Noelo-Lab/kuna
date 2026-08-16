@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Valid per-architecture C type spelling (`option ctypes on|off`).
+
+    kuna's core types are literally NAMED uint1/int4/float8/float10/code, a
+    verbatim port of upstream's no-<coretypes> fallback branch, which the real
+    Ghidra application never takes because its Java side ships its own names over
+    the wire. The printer prints those names, so none of them is valid C. The
+    existing `realtypes` relabel (DIV-6) covers only residual TYPE_UNKNOWN, which
+    is why one function can render `unsigned int` beside `int4`.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear it
+    and load the same real x86-64 ELF fixture, so the spelling is resolved
+    against that target's decoded <data_organization> rather than the harness's.
+
+    Pass 1 (`option ctypes off`, the shipped catalog default, which is what this
+    corpus runs at: since 42 datatest assertions pin the Ghidra spellings)
+    reproduces the vocabulary: `int4 printf(...)` and a `(uint8)` cast.
+
+    Pass 2 (`option ctypes on`, which the `aggressive` preset selects, and
+    `auto` selects that for anything under 500 KiB) spells the same types as the
+    target's own C compiler would: `int` and `unsigned long`. `unsigned long` and
+    not `unsigned long long` is the load-bearing part: x86-64 System V is LP64,
+    where `long` is 8 bytes. The ILP32 counterpart (the same core type spelling
+    `long long` because `long` is 4 there) is pinned by the companion Rust gate
+    `ctypes_per_arch`, which needs two architectures in one process.
+
+    Assertions span the combined output of both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option ctypes off</com>
+  <com>read symbols</com>
+  <com>load function printf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option ctypes on</com>
+  <com>read symbols</com>
+  <com>load function printf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CTYPES #1: off, the return type is the Ghidra core-type name" min="1" max="1">int4 printf\(</stringmatch>
+<stringmatch name="CTYPES #2: on, the same type spells as C" min="1" max="1">int printf\(</stringmatch>
+<stringmatch name="CTYPES #3: off, an 8-byte unsigned cast is uint8" min="1" max="1">\(uint8\)</stringmatch>
+<stringmatch name="CTYPES #4: on, LP64 spells an 8-byte unsigned `unsigned long`, not `unsigned long long`" min="1" max="1">\(unsigned long\)a0</stringmatch>
+<stringmatch name="CTYPES #5: on, the 4-byte parameter is `unsigned int`" min="1" max="1">main\(unsigned int a0</stringmatch>
+<stringmatch name="CTYPES #6: off, that parameter carries the core-type name" min="1" max="1">main\(uint4 a0</stringmatch>
+</decompilertest>

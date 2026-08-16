@@ -136,6 +136,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
     ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
+    // (kuna) Valid per-architecture C type spelling. The shipped catalog default
+    // is OFF because 42 XML datatest assertions pin the Ghidra spellings, and the
+    // parity harness applies no mode -- so preset membership is what makes valid C
+    // the default RENDERING for every real binary without touching the corpus.
+    ("ctypes", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),

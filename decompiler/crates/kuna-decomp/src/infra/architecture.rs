@@ -656,6 +656,19 @@ pub struct Architecture {
     /// instead of the `xunknownN`/`undefined<N>` placeholder.  Default-on; read by
     /// the printc declarator chokepoints (`RealTypeCtx`).
     pub realtypes: bool,
+    /// (kuna `ctypes`) Spell the NAMED core types as the target's own C type
+    /// names -- `int4` -> `int`, `uint1` -> `unsigned char`, `float8` -> `double`,
+    /// `code *` -> `void *` -- resolved against the compiler spec's decoded
+    /// `<data_organization>`, so an 8-byte integer reads `long` on LP64 and
+    /// `long long` on ILP32/LLP64.  Extends [`realtypes`](Self::realtypes), which
+    /// covers only residual `TYPE_UNKNOWN`; that split is why one function can
+    /// today declare `unsigned int v3;` and `int4 v1;` in the same block.
+    /// Default OFF in the catalog (the datatest corpus pins the Ghidra spellings
+    /// in 42 assertions) but ON in the `aggressive` preset, which `auto` selects
+    /// for anything under 500 KiB -- i.e. the default rendering of the CLI, the
+    /// web front-end and the benchmark.  Read by the printc declarator
+    /// chokepoints (`RealTypeCtx`).
+    pub ctypes: bool,
     /// (kuna GH-558) Restore canonicalized comparisons to LESSEQUAL form for
     /// presentation (C++ `present_lessequal`).
     pub present_lessequal: bool,
@@ -1306,6 +1319,7 @@ impl Architecture {
             name_style_angr: false,
             dedup_var_decls: false,
             realtypes: false,
+            ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             present_lessequal: false,
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
@@ -1461,6 +1475,7 @@ impl Architecture {
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
+        self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
@@ -1779,6 +1794,7 @@ impl Architecture {
                 Ok(msg)
             }
             "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
+            "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
             "dedupvardecls" => {
                 let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
                 self.dedup_var_decls = val;
