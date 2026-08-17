@@ -8,6 +8,11 @@
 #   ./build.sh                              # build + stage the binary only
 #   GHIDRA_INSTALL_DIR=/path ./build.sh     # also build the installable zip
 #
+# This script builds a HOST-ONLY zip from source. Release CI (the ghidra-ext job
+# in .github/workflows/release.yml) builds the multi-platform zip with prebuilt
+# binaries for all platforms -- grab that from the GitHub releases tab if you
+# just want to install (works airgapped, and it is the only Windows path).
+#
 # See README.md ("Run the kuna backend in a real Ghidra instance") for the full
 # runbook, including the dev-checkout (`-Dghidra.external.modules`) path.
 set -euo pipefail
@@ -25,9 +30,12 @@ case "$os/$arch" in
 	Darwin/x86_64)        PLATFORM=mac_x86_64;   EXE=kuna_ghidra ;;
 	Darwin/arm64)         PLATFORM=mac_arm_64;   EXE=kuna_ghidra ;;
 	*)
-		echo "error: unsupported host '$os/$arch'. Build kuna_ghidra manually" >&2
-		echo "       (cd decompiler && cargo build --release -p kuna-ghidra) and copy it" >&2
-		echo "       into os/<ghidra-platform-dir>/ yourself." >&2
+		echo "error: unsupported host '$os/$arch' (Windows and anything else non-Linux/mac)." >&2
+		echo "       Use the prebuilt extension zip from the kuna GitHub releases tab instead:" >&2
+		echo "       kuna-v<ver>-KunaDecompiler-ghidra_<version>.zip ships ready-to-install" >&2
+		echo "       binaries for all platforms (including win_x86_64/kuna_ghidra.exe)." >&2
+		echo "       Or build manually: (cd decompiler && cargo build --release -p kuna-ghidra)" >&2
+		echo "       and copy the binary into os/<ghidra-platform-dir>/ yourself." >&2
 		exit 1 ;;
 esac
 

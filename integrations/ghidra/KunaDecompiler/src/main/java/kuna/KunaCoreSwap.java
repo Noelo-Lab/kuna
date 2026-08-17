@@ -139,7 +139,15 @@ public final class KunaCoreSwap {
 		}
 	}
 
+	/**
+	 * Verifies the binary is executable, first attempting to set the exec bit itself
+	 * (self-heal for zips unpacked by tools that drop unix modes); throws only if the
+	 * bit still cannot be gained.
+	 */
 	private static File checkExecutable(File file) throws FileNotFoundException {
+		if (!file.canExecute()) {
+			file.setExecutable(true, false);
+		}
 		if (!file.canExecute()) {
 			throw new FileNotFoundException("The kuna decompiler binary exists but is not " +
 				"executable: " + file.getAbsolutePath() + " (chmod +x it).");
@@ -274,8 +282,9 @@ public final class KunaCoreSwap {
 	private static void showReflectionError(Object originator, Exception e) {
 		Msg.showError(originator, null, "Kuna Core Swap Failed",
 			"Could not access ghidra.app.decompiler.DecompileProcessFactory." + EXEPATH_FIELD +
-				" by reflection. This Ghidra version may have changed the factory's " +
-				"field layout; the " + MODULE_NAME + " extension targets Ghidra 12.2.",
+				" by reflection. This Ghidra version (" + Application.getApplicationVersion() +
+				") may have changed the factory's field layout the " + MODULE_NAME +
+				" extension relies on.",
 			e);
 	}
 }
