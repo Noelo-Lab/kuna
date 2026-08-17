@@ -30,6 +30,15 @@ kuna-sleigh.workspace = true
 # cycle: the ghidra translator is the downstream implementor of the trait.
 kuna-decomp.workspace = true
 
+[dev-dependencies]
+# The ghidra-sim test harness (tests/ghidra_sim/) answers the wire queries from
+# kuna's OWN analysis of real vendored ELFs: kuna-console provides the
+# in-process bootstrap/decompile drive (the CLI path — also the differential
+# ground truth), kuna-analysis rides in through it.  Dev-only and cycle-free:
+# nothing depends on kuna-ghidra, and dev-deps do not propagate.
+kuna-console.workspace = true
+kuna-analysis.workspace = true
+
 [lints]
 workspace = true
 
