@@ -153,6 +153,12 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("rtti", "on"),          // PE-only; no-op off-PE
     ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
     ("aif", "on"),           // speculative gap-walk ("may create bad code")
+    // (kuna, GH-299) The aligned gap cursor. Every number in its catalog row was
+    // measured under this preset, and it is a net win in BOTH directions there
+    // (mid-body entries -38.9%, recall +344 over 110 stripped non-x86-64 binaries),
+    // but it misses the acceptance bar pre-registered for becoming the shipped
+    // default, so preset membership is how it reaches the default path.
+    ("aifstrict", "on"),
     ("objc", "on"),          // Mach-O-only; no-op off-Mach-O
     ("pdb", "on"),           // PE-only; no-op off-PE
     ("macho-arm64e", "on"),  // Mach-O arm64e-only; no-op elsewhere

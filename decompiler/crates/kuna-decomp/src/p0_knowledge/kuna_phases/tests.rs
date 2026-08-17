@@ -42,7 +42,7 @@ fn surface_count_is_102() {
 }
 
 #[test]
-fn settable_count_is_107() {
+fn settable_count_is_110() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -72,12 +72,13 @@ fn settable_count_is_107() {
     // +1 for `datasyms` (P1 ELF data-symbol naming gate, DIV-76, GH-184).
     // +1 for `loadguardrange` (P3 indexed-stack guard ValueSet range refinement, GH-182).
     // +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79, GH-289).
-    assert_eq!(kuna_num_settables(), 109);
-    assert_eq!(SETTABLE_TABLE.len(), 109);
+    // +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
+    assert_eq!(kuna_num_settables(), 110);
+    assert_eq!(SETTABLE_TABLE.len(), 110);
 }
 
 #[test]
-fn tier_counts_are_23_core_47_transform_37_analysis() {
+fn tier_counts_are_24_core_47_transform_39_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -119,7 +120,8 @@ fn tier_counts_are_23_core_47_transform_37_analysis() {
     // analysis 36 -> 37: +1 for `datasyms` (P1 ELF data-symbol naming, DIV-76).
     // core 23 -> 24: +1 for `loadguardrange` (P3 guard ValueSet range refinement, GH-182).
     // analysis 37 -> 38: +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79).
-    assert_eq!((core, transform, analysis), (24, 47, 38));
+    // analysis 38 -> 39: +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
+    assert_eq!((core, transform, analysis), (24, 47, 39));
 }
 
 #[test]
@@ -309,7 +311,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_34_suppressed_for_74() {
+fn option_values_live_value_present_for_34_suppressed_for_76() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -390,6 +392,10 @@ fn option_values_live_value_present_for_34_suppressed_for_74() {
         // kuna_live_value, like the analysis-pass gates around it. Default-off.
         "rtti",
         "aif",
+        // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // `aif` above. Default-OFF, carried by the `aggressive` preset.
+        "aifstrict",
         // (kuna) Tail-call function-entry recovery — an analysis-pass gate with no
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
@@ -602,9 +608,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
-    // datasyms' P1 row, loadguardrange's P3 row and relocrebase's P1 row sit
-    // mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 108);
+    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
+    // aifstrict's P1 row sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 109);
 }
 
 #[test]

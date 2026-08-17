@@ -484,6 +484,12 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // entry discovery + funcsyms miss.  Default-off (a speculative gap-filler that
     // can create false positives; also requires `--option listing on`).
     "aif",
+    // (kuna, GH-299) The aligned slide for the AIF gap cursor: it advances to the
+    // next 4-byte boundary instead of the next byte, so only an aligned address or a
+    // hole's first byte is a candidate function start.  Removes the mid-body phantom
+    // entries the byte-slide plants, and recovers the real entries those accepts
+    // consumed.  Default-OFF, carried by the `aggressive` preset; inert without `aif`.
+    "aifstrict",
     // (kuna) Tail-call function-entry recovery: the recursive-descent Listing walk
     // treats every non-CALL flow target as a same-function successor, so a routine
     // reached only by a tail `B` is absorbed into its caller.  Reads the completed

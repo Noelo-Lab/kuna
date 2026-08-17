@@ -115,6 +115,14 @@ fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
         .set_kuna_option("funcstart_patterns", "on")
         .expect("funcstart_patterns flips on");
     prog.arch_mut().set_kuna_option("aif", "on").expect("aif flips on");
+    // (kuna, GH-299) `aifstrict`'s aligned slide suppresses both phantoms this file
+    // exists to pin — it never probes `POOL+2`, which is 2-mod-4 and not a hole
+    // start. It is default-off so this is currently redundant, but these five
+    // assertions are about `poolentry`'s own contract (pool inference, the paired
+    // MOVE, the unpaired KEEP, the disclosed split), so the byte-granular cursor they
+    // were written against is pinned here rather than left to a default that may
+    // move. `verify_aifstrict.rs` is the two-pass gate for the suppression itself.
+    prog.arch_mut().set_kuna_option("aifstrict", "off").expect("aifstrict flips off");
     if on {
         prog.arch_mut().set_kuna_option("poolentry", "on").expect("poolentry flips on");
     }
