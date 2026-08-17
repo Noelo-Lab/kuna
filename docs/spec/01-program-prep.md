@@ -1127,11 +1127,13 @@ appears on a shipped list, under upstream's namespace guard (global names and
 exactly `std::`, never a class method like `Menu::_exit`). Which list applies is
 format- and language-selected, the `noReturnFunctionConstraints.xml` model: the
 vendored ELF list (`decompiler/crates/kuna-analysis/data/ElfFunctionsThatDoNotReturn`
-— `exit`, `abort`, `__assert_fail`, `pthread_exit`, the C++ terminate/throw family,
-and (kuna, DIV-21) the genuinely-unconditional additions upstream omits: the BSD
-`err`/`errx`/`verr`/`verrx`/`errc`/`verrc` family, `quick_exit`,
-`__assert_perror_fail`, `__chk_fail`, `__libc_fatal`; `warn`/`warnx` return and
-stay out), widened by a Rust wildcard list (`core::panicking::panic*`,
+— `exit`, `abort`, `__assert_fail`, `pthread_exit`, `__cxa_throw` and the C++
+terminate family, and two kuna divergence blocks appended in place, each fenced by
+its own `# (kuna divergence, DIV-nn)` comment: (DIV-21) the genuinely-unconditional
+libc additions upstream omits — the BSD `err`/`errx`/`verr`/`verrx`/`errc`/`verrc`
+family, `quick_exit`, `__assert_perror_fail`, `__chk_fail`, `__libc_fatal`;
+`warn`/`warnx` return and stay out — and (DIV-78) the libstdc++ `std::__throw_*`
+family, below), widened by a Rust wildcard list (`core::panicking::panic*`,
 `handle_alloc_error`, `rust_begin_unwind`) or a Go exact list (`runtime.gopanic`,
 `runtime.throw`, `runtime.goexit`, …) when source-language detection fires (§1.4),
 or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, plus the shared
@@ -1212,11 +1214,37 @@ alignment padding decoded as garbage `add [rax],al` statements.
 the same vendored name list and namespace guard *at the flow query seam*
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
 (query_call_no_return)`); its sibling `noreturn_extern` applies an equivalent
-name match in the same query, differing only in gate flag and name-resolution
-path. On a
+name match in the same query, differing in gate flag, name-resolution path, and
+name set — `noreturn_extern` carries a frozen hard-coded copy of upstream's 21
+names rather than reading the shipped list, so neither kuna divergence block
+reaches it; it is queried only after `noreturn_externmatch` (which does read the
+list, and is default-on) has already declined. On a
 normally-linked ELF the proto flag is already set, so both are no-ops there. These
 two run inside the engine, not the analysis tier — chapter 02 owns the halt
 mechanics they feed.
+
+**The libstdc++ throw family (kuna, DIV-78).** Every `std::__throw_*` helper in
+`<bits/functexcept.h>` (and `__throw_regex_error` in `<bits/regex_error.h>`) is
+declared `__attribute__((__noreturn__))` and every body ends in
+`_GLIBCXX_THROW_OR_ABORT` — a `throw`, or `abort()` when the library is built
+`-fno-exceptions` — so none of them can return. Upstream Ghidra's list names
+`__cxa_throw` and the terminate entry points but omits this whole family, and the
+attribute is a compile-time fact that survives into no binary artifact: at the
+decompiler's boundary `std::__throw_length_error` is an ordinary undefined
+`.dynsym` import reached through a PLT stub. Nothing but the shipped list can prove
+the call cannot return, so without the entries the fall-through is followed and the
+code after every such call — most often clang's `call __stack_chk_fail`
+unreachable-trap, or the next function's entry — is emitted as if it ran. The
+family is on the list twice over, because the two matchers see two different
+spellings of the same symbol: the analysis-tier scan matches the **mangled**
+`.dynsym` name *before* demangling, written as a trailing-`*` wildcard over the
+Itanium `ZSt<len>__throw_<name>` prefix so a signature change (`__throw_ios_failure`
+gained a `const char*, int` overload in GCC 7) cannot age the entry out; the
+flow-time matcher sees the **demangled** display name, which the `std`-only
+namespace guard admits and the leading-underscore strip reduces to
+`throw_length_error`. A same-named method on a user class stays out by the
+namespace guard, and the mangled prefixes are exact ABI encodings of
+`std::__throw_*`, so neither spelling can reach an unrelated symbol.
 
 ## 1.8 In-engine image binding
 

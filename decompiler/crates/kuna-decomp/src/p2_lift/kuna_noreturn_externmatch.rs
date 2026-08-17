@@ -148,6 +148,30 @@ mod tests {
         assert!(is_known_noreturn_name("std::exit"));
     }
 
+    /// (kuna DIV-78, GH-273) The libstdc++ `std::__throw_*` family reaches this
+    /// matcher in its DEMANGLED form (`query_call` resolves the display name), so
+    /// the plain half of the list entry is what fires here; the mangled half is
+    /// what the analysis-tier scan matches pre-demangle.
+    #[test]
+    fn matches_cxx_throw_family_demangled_and_mangled() {
+        for want in [
+            "std::__throw_length_error",
+            "std::__throw_out_of_range",
+            "std::__throw_bad_alloc",
+            "std::__throw_bad_function_call",
+            "__throw_logic_error",
+            "_ZSt20__throw_length_errorPKc",
+            "_ZSt24__throw_out_of_range_fmtPKcz",
+        ] {
+            assert!(is_known_noreturn_name(want), "{want} must be no-return");
+        }
+        // The namespace guard still rejects a same-named user class method.
+        assert!(!is_known_noreturn_name("Buf::__throw_length_error"));
+        // A user function that merely mentions `throw` is untouched.
+        assert!(!is_known_noreturn_name("throw_it"));
+        assert!(!is_known_noreturn_name("rethrow"));
+    }
+
     #[test]
     fn rejects_ordinary_returning_names() {
         assert!(!is_known_noreturn_name("process_files"));
