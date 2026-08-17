@@ -55,7 +55,7 @@ use kuna_console::project::{
     decompile_targets, default_fn_budget_seconds, render_c, FuncResult,
 };
 use object::Object; // `File::architecture()` (ARM-discovery default, decbench)
-use kuna_decomp::decompile_drive::VarInfo;
+use kuna_decomp::decompile_drive::{LineMapping, VarInfo};
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
 
 use crate::jsonfmt::{dumps_indent2, Json};
@@ -184,7 +184,13 @@ fn decompile_all(args: &Args) -> Result<Vec<FuncResult>, String> {
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
 
-    Ok(decompile_targets(&mut prog, targets, args.no_vars, /* want_proto= */ false))
+    Ok(decompile_targets(
+        &mut prog,
+        targets,
+        args.no_vars,
+        /* want_proto= */ false,
+        /* want_provenance= */ args.json,
+    ))
 }
 
 /// Enumerate the program's full callable-symbol inventory, one
@@ -576,6 +582,8 @@ fn result_json(binary: &str, funcs: &[FuncResult]) -> Json {
             .iter()
             .map(|f| {
                 let vars = Json::Array(f.variables.iter().map(var_json).collect());
+                let line_mappings =
+                    Json::Array(f.line_mappings.iter().map(line_mapping_json).collect());
                 Json::Object(vec![
                     ("name".into(), Json::Str(f.name.clone())),
                     ("address".into(), Json::Number(f.address.to_string())),
@@ -590,6 +598,7 @@ fn result_json(binary: &str, funcs: &[FuncResult]) -> Json {
                         "error".into(),
                         f.error.clone().map(Json::Str).unwrap_or(Json::Null),
                     ),
+                    ("line_mappings".into(), line_mappings),
                     ("variables".into(), vars),
                 ])
             })
@@ -599,6 +608,22 @@ fn result_json(binary: &str, funcs: &[FuncResult]) -> Json {
         ("binary".into(), Json::Str(binary.to_string())),
         ("count".into(), Json::Number(funcs.len().to_string())),
         ("functions".into(), functions),
+    ])
+}
+
+fn line_mapping_json(mapping: &LineMapping) -> Json {
+    Json::Object(vec![
+        ("line_number".into(), Json::Number(mapping.line_number.to_string())),
+        (
+            "addresses".into(),
+            Json::Array(
+                mapping
+                    .addresses
+                    .iter()
+                    .map(|address| Json::Number(address.to_string()))
+                    .collect(),
+            ),
+        ),
     ])
 }
 
@@ -630,7 +655,65 @@ fn var_json(v: &VarInfo) -> Json {
             v.stack_offset.map(|o| Json::Number(o.to_string())).unwrap_or(Json::Null),
         ),
         ("size".into(), Json::Number(v.size.to_string())),
+        (
+            "line_numbers".into(),
+            Json::Array(
+                v.line_numbers
+                    .iter()
+                    .map(|line| Json::Number(line.to_string()))
+                    .collect(),
+            ),
+        ),
+        (
+            "addresses".into(),
+            Json::Array(
+                v.addresses
+                    .iter()
+                    .map(|address| Json::Number(address.to_string()))
+                    .collect(),
+            ),
+        ),
     ])
+}
+
+#[cfg(test)]
+mod provenance_json_tests {
+    use super::*;
+
+    #[test]
+    fn result_schema_adds_line_and_variable_provenance() {
+        let function = FuncResult {
+            name: "f".into(),
+            address: 0x401000,
+            size: 12,
+            code: Some("int f(int x)\n{\n  return x;\n}".into()),
+            error: None,
+            proto: None,
+            variables: vec![VarInfo {
+                name: "x".into(),
+                type_name: "int".into(),
+                stack_offset: None,
+                size: 4,
+                is_param: true,
+                arg_index: Some(0),
+                line_numbers: vec![3],
+                addresses: vec![0x401004],
+            }],
+            line_mappings: vec![LineMapping {
+                line_number: 3,
+                addresses: vec![0x401004, 0x401008],
+            }],
+            aliases: Vec::new(),
+        };
+
+        let rendered = dumps_indent2(&result_json("fixture", &[function]));
+        assert!(rendered.contains("\"address\": 4198400"));
+        assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
+        assert!(rendered.contains("\"line_mappings\": ["));
+        assert!(rendered.contains("\"line_number\": 3"));
+        assert!(rendered.contains("\"line_numbers\": [\n            3"));
+        assert!(rendered.contains("\"addresses\": [\n            4198404"));
+    }
 }
 
 // --- argument parsing --------------------------------------------------------

@@ -86,11 +86,33 @@ fn whole_binary_main(arch: &str, formatstring_on: bool) -> Option<String> {
         .into_iter()
         .find(|e| e.name == "main")
         .expect("the fixture exports main");
-    let out = decompile_targets(&mut prog, vec![entry], /* no_vars= */ true, false);
+    let out = decompile_targets(
+        &mut prog,
+        vec![entry],
+        /* no_vars= */ true,
+        false,
+        false,
+    );
     assert_eq!(out.len(), 1, "[{arch}] one target in, one result out");
     Some(out[0].code.clone().unwrap_or_else(|| {
         panic!("[{arch}] main failed to decompile: {:?}", out[0].error)
     }))
+}
+
+#[test]
+fn provenance_collection_preserves_the_plain_code_bytes() {
+    let Some(plain) = whole_binary_main("x86_64", false) else { return };
+    let mut prog = load("x86_64", false).expect("the first load found x86 specs");
+    let entry = prog
+        .function_entries_canonical()
+        .into_iter()
+        .find(|e| e.name == "main")
+        .expect("the fixture exports main");
+    let out = decompile_targets(&mut prog, vec![entry], true, false, true);
+    let result = &out[0];
+
+    assert_eq!(result.code.as_deref(), Some(plain.as_str()));
+    assert!(!result.line_mappings.is_empty(), "the control fixture must carry oprefs");
 }
 
 /// `main` through the CONSOLE command (`load function` / `decompile` / `print C`

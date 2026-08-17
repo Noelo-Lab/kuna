@@ -211,6 +211,22 @@ pub struct MarkupRef {
     pub type_name: Option<String>,
 }
 
+/// One source-line association captured while [`EmitMarkup`] serializes a
+/// function. Line numbers are 1-based after the leading newline emitted by
+/// `PrintC::docFunction` is removed from the plain-text result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MarkupAssociation {
+    pub line_number: usize,
+    pub opref: Option<uintb>,
+    pub varref: Option<uintb>,
+}
+
+/// Structured `opref`/`varref` evidence emitted alongside packed markup.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MarkupProvenance {
+    pub associations: Vec<MarkupAssociation>,
+}
+
 impl MarkupRef {
     /// An association with no resolved members (all C++ pointers were null).
     #[inline]
@@ -780,6 +796,8 @@ pub struct EmitMarkup {
     /// Recorded by `setPackedOutput`; see the type-level doc for why only the
     /// packed encoder is wired here.
     packed: bool,
+    line_number: usize,
+    provenance: MarkupProvenance,
 }
 
 impl Default for EmitMarkup {
@@ -792,7 +810,13 @@ impl EmitMarkup {
     /// C++ `EmitMarkup::EmitMarkup()`.  The upstream default encoder is
     /// `PackedEncode` (`setOutputStream`).
     pub fn new() -> Self {
-        EmitMarkup { base: EmitBase::new(), out: Vec::new(), packed: true }
+        EmitMarkup {
+            base: EmitBase::new(),
+            out: Vec::new(),
+            packed: true,
+            line_number: 0,
+            provenance: MarkupProvenance::default(),
+        }
     }
 
     /// Borrow the accumulated encoded bytes.
@@ -803,12 +827,29 @@ impl EmitMarkup {
     pub fn take_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.out)
     }
+    /// Take the structured associations accumulated with the packed document.
+    pub fn take_provenance(&mut self) -> MarkupProvenance {
+        std::mem::take(&mut self.provenance)
+    }
     /// Reset the output buffer (C++ `EmitMarkup::setOutputStream`, prettyprint.cc:
     /// which rebinds the encoder to a fresh stream).  Mirrors
     /// [`EmitNoMarkup::set_output_stream`]; used by `PrintC::set_output_stream`
     /// through the [`crate::printc::PrintEmit`] delegator.
     pub fn set_output_stream(&mut self) {
         self.out.clear();
+        self.line_number = 0;
+        self.provenance.associations.clear();
+    }
+
+    fn record_association(&mut self, markup: &MarkupRef) {
+        if markup.opref.is_none() && markup.varref.is_none() {
+            return;
+        }
+        self.provenance.associations.push(MarkupAssociation {
+            line_number: self.line_number,
+            opref: markup.opref,
+            varref: markup.varref,
+        });
     }
 
     /// Run `f` with a fresh [`PackedEncode`] over the output buffer.
@@ -866,6 +907,7 @@ impl Emit for EmitMarkup {
             e.write_signed_integer(&ids::ATTRIB_INDENT, indent as i64);
             e.close_element(&ids::ELEM_BREAK);
         });
+        self.line_number += 1;
     }
     fn tag_line_indent(&mut self, indent: int4) {
         self.emit_pending();
@@ -874,6 +916,7 @@ impl Emit for EmitMarkup {
             e.write_signed_integer(&ids::ATTRIB_INDENT, indent as i64);
             e.close_element(&ids::ELEM_BREAK);
         });
+        self.line_number += 1;
     }
 
     fn begin_return_type(&mut self, markup: &MarkupRef) -> int4 {
@@ -903,6 +946,7 @@ impl Emit for EmitMarkup {
         self.with_encoder(|e| e.close_element(&ids::ELEM_VARDECL));
     }
     fn begin_statement(&mut self, markup: &MarkupRef) -> int4 {
+        self.record_association(markup);
         let op = markup.opref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_STATEMENT);
@@ -924,6 +968,7 @@ impl Emit for EmitMarkup {
     }
 
     fn tag_variable(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
+        self.record_association(markup);
         let (vr, op) = (markup.varref, markup.opref);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_VARIABLE);
@@ -941,6 +986,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_op(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
+        self.record_association(markup);
         let op = markup.opref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_OP);
@@ -955,6 +1001,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_func_name(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
+        self.record_association(markup);
         let op = markup.opref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_FUNCNAME);
@@ -985,6 +1032,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_field(&mut self, name: &str, hl: SyntaxHighlight, off: int4, markup: &MarkupRef) {
+        self.record_association(markup);
         let (tname, tid, op) = (markup.type_name.clone(), markup.type_id, markup.opref);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_FIELD);
@@ -1008,6 +1056,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_bit_field(&mut self, name: &str, hl: SyntaxHighlight, id: int4, markup: &MarkupRef) {
+        self.record_association(markup);
         let (tname, tid, op) = (markup.type_name.clone(), markup.type_id, markup.opref);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_BITFIELD);
@@ -1055,6 +1104,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_case_label(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef, value: uintb) {
+        self.record_association(markup);
         let op = markup.opref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_VALUE);
