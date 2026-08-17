@@ -309,14 +309,14 @@ fn placeholder_total(c: &str) -> usize {
 const FAILLOG_TARGETS: &[&str] = &["sub_2620", "sub_3320", "sub_3ad0"];
 
 // ---- TODAY's measured Phase-2 pins (see "Pin discipline" above) -----------
-// Measured 2026-08-17 on main + this harness (empty getMappedSymbols, no
+// Measured 2026-08-17 on main @ 813ee131 (#316) + this harness (empty getMappedSymbols, no
 // options in ghidra mode).  These ARE the GUI-path quality gap, numerically.
 //
 // Raw-register identifier occurrences in the markup C, per target
 // (AL/EAX/RBP/R12/… rendered as C variables — r3 §8 defect c/d/e).
-const PIN_FAILLOG_REGISTER_LEAKS: [usize; 3] = [106, 64, 60];
+const PIN_FAILLOG_REGISTER_LEAKS: [usize; 3] = [108, 58, 60];
 // Unique<hex>/Stack<hex> token occurrences, per target (defect e).
-const PIN_FAILLOG_UNIQUE_TOKENS: [usize; 3] = [32, 2, 8];
+const PIN_FAILLOG_UNIQUE_TOKENS: [usize; 3] = [34, 4, 8];
 // Distinct placeholder addresses (sub_/FUN_/dat_/DAT_), per target
 // (defects a/b).
 const PIN_FAILLOG_PLACEHOLDERS: [usize; 3] = [49, 25, 17];
@@ -324,8 +324,8 @@ const PIN_FAILLOG_PLACEHOLDERS: [usize; 3] = [49, 25, 17];
 // getopt_long, dcgettext, …) that render as sub_ADDR only because
 // getMappedSymbols is unanswered.  Phase 3 drives these to 0.
 const PIN_FAILLOG_RESOLVABLE: [usize; 3] = [24, 18, 14];
-// The normalized line-diff ratio vs the CLI path, per target (measured 0.643 /
-// 0.898 / 0.811), banded from BOTH sides a few points off the measurement:
+// The normalized line-diff ratio vs the CLI path, per target (measured 0.646 /
+// 0.867 / 0.811), banded from BOTH sides a few points off the measurement:
 // the floor so a real Phase-3 improvement must flip the band downward
 // deliberately, the ceiling so a markup regression that makes the GUI text
 // even MORE alien (lost tokens, collapsed structure) fails instead of
@@ -345,13 +345,13 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.70, 0.95, 0.90];
 // structural size of what the GUI renders.  A `<break>`-token regression would
 // collapse this to ~1 while leaving every ratio-floor assertion green — this
 // pin is what catches it.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [241, 174, 89];
+const PIN_FAILLOG_C_LINES: [usize; 3] = [243, 128, 89];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`): kuna
 // emits whole rendered declarators (`"unsigned long *"`) as single `<type>`
 // tokens, which scripts/exports receive as `unsigned_long__` — the type-
 // spelling mangling of the live repro.  PR-C splits the declarator into
 // base-type + syntax tokens and drives these to 0.
-const PIN_FAILLOG_MANGLED_TOKENS: [usize; 3] = [21, 13, 7];
+const PIN_FAILLOG_MANGLED_TOKENS: [usize; 3] = [21, 6, 7];
 // Whole-session query traffic: total getPcode asks (repeat decompiles re-ask
 // everything — no p-code cache, faithful to upstream GhidraTranslate) vs
 // distinct instruction addresses actually decoded (the flow overruns
