@@ -126,6 +126,29 @@ jobs:
             exit 1
           fi
 
+      # The ghidra-mode differential harness (docs/ghidra-integration.md §11):
+      # drives the full decompile-process wire protocol in-process against real
+      # vendored ELFs, with the mock-Java end answered from kuna's own analysis,
+      # and pins the GUI-path quality numbers (placeholder rate, register/Unique
+      # leaks, ghidra-vs-CLI diff ratio, query traffic). Lives in the workspace
+      # suite too, but that job is skipped on internal PRs -- and a regression in
+      # the GUI path is exactly what these pins exist to catch pre-merge. Cheap:
+      # release profile over the deps `make binaries` already built (~2 min
+      # compile, seconds of runtime). `--include-ignored` picks up the heavier
+      # sort/grep breadth test that the dev-profile workspace run skips.
+      # The grep guards against the visible-skip trap: with specs missing these
+      # tests print a skip notice and pass vacuously (same canary pattern as the
+      # rust-test job).
+      - name: ghidra-sim differential harness (kuna-ghidra, release)
+        run: |
+          cd decompiler
+          out=$(cargo test -p kuna-ghidra --release -- --include-ignored --nocapture 2>&1)
+          echo "$out"
+          if grep -qE 'skipping \(.*(\.sla|make specs|specs tree)' <<<"$out"; then
+            echo "::error::ghidra-sim tests skipped for missing/unusable SLEIGH specs -- the harness would be a false green"
+            exit 1
+          fi
+
       - name: Assemble and test the browser Worker boundary
         run: |
           bash integrations/web/build.sh

@@ -14,7 +14,7 @@ BINDIR  := $(ENGINE)/target/$(PROFILE)
 SLACOMP := $(BINDIR)/slacomp
 PYTHON  ?= python3
 
-.PHONY: all binaries specs test test-stages rust rust-test clean check-spec version
+.PHONY: all binaries specs test test-stages test-ghidra rust rust-test clean check-spec version
 
 all: binaries specs
 
@@ -53,6 +53,15 @@ test-stages: $(BINDIR)/kuna
 
 $(BINDIR)/kuna:
 	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-cli
+
+# The ghidra-mode differential harness (kuna-ghidra's ghidra-sim tests,
+# docs/ghidra-integration.md §11): drives the decompile-process wire protocol
+# in-process against real vendored ELFs and pins the GUI-path quality numbers.
+# Release profile (the dev profile costs minutes for the same answer);
+# --include-ignored picks up the heavier sort/grep breadth test.
+test-ghidra:
+	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
+	cd $(ENGINE) && cargo test --$(PROFILE) -p kuna-ghidra -- --include-ignored
 
 # Spec honesty gate: docs/spec/ anchors resolve, every phase folder is owned by
 # exactly one chapter, and (strict) every settable option is mentioned.
