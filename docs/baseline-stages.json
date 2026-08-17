@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    481,
-    481
+    484,
+    484
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -84,6 +84,9 @@
     "data:GH271 #3: flow is not truncated at the NOP, so the loop past the padding survives",
     "data:GH271 #4: the store past the padding survives (it went missing with the rest of the body)",
     "data:GH271 #5: the early-exit guard keeps the JNC sense, not the inverted form the truncated CFG structured to",
+    "data:GH275 #1: default (spillargtrial off) drops the first call's second argument to the caller-save spill",
+    "data:GH275 #2: spillargtrial reload recovers the first call's second argument",
+    "data:GH275 #3: spillargtrial reload binds the second call's argument to the register, not a spurious stack local",
     "data:GH2786 #1: nested float negation parenthesized (default-flip fix)",
     "data:GH2786 #2: the mis-parsing predecrement token is gone",
     "data:GH4788 #1: disp17 Bcond decodes as bnc to 0x1963d8 (not ld.hu)",
@@ -189,7 +192,7 @@
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain)",
-    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline)",
+    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",
     "data:KUNA-CONSOLE #2: phase list includes the P3 dead-definition gate sub-phase",

@@ -11,3 +11,4 @@ pub mod kuna_callsitestackargs;
 pub mod kuna_dfunaffected;
 pub mod kuna_returnpair;
 pub mod kuna_returnuncomputed;
+pub mod kuna_spillargtrial;

@@ -1750,7 +1750,10 @@ mod tests {
         // and gh182-loadguardrange / the ValueSet refinement of indexed-stack
         // guards sizes a stack array by its real index bound (option off = the
         // 4-element cap with split-off never-assigned tail scalars)
-        assert_eq!(count, 207, "corpus file count drifted");
+        // and gh275-spillargtrial / caller-save spill tolerance in input-trial
+        // scoring (option off drops the first atan2 call's second argument to
+        // the `movapd [rsp+0x20],xmm1` spill, on recovers it)
+        assert_eq!(count, 208, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

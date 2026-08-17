@@ -388,6 +388,49 @@ classified:
   datatest-neutral divergence in that function's comments). Register trials
   that fail realism but are function inputs stay *inactive* (maybe a
   pass-through parameter); everything else is no-use.
+
+  "Only role" is judged by `funcdata_varnode.rs (Funcdata::only_op_use)`, which
+  walks every descendant of the value and classifies each use. A branch, a LOAD,
+  a STORE, a non-matching call or a persistent output all mean *not exclusively
+  a parameter*, and the trial goes inactive — permanently, because
+  `mark_inactive` also sets CHECKED, so no later pass re-scores it and the
+  argument's producer is reaped.
+
+  The blanket STORE rejection exists to stop a value the caller writes to its
+  own frame before a call from being mistaken for an argument. It also rejects
+  the mirror-image idiom. On x86-64 SysV **no** xmm register is callee-saved, so
+  a floating-point value that is both an argument and live across the call has
+  to be spilled by the caller — and that spill is a second descendant of exactly
+  the Varnode the trial is scoring. The argument is then dropped, and the
+  producer with it. (kuna) `spillargtrial` (default-off,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_spillargtrial.rs`) narrows
+  the STORE arm: at `reload` a store stops rejecting when it writes the walked
+  Varnode's own value — operand 2, never the pointer — into a caller-frame slot
+  *and* a later LOAD reads that slot back at the same width, which is a genuine
+  caller-save spill/reload pair; at `spill` the reload requirement is dropped and
+  any caller-frame store of the value is tolerated.
+
+  Two constraints shape how the frame slot is recognised. `ActionActiveParam`
+  runs before `ActionStackPtrFlow`, so `RuleStoreVarnode` has not yet folded the
+  frame STORE into a direct stack-space write and the pointer is still the raw
+  `INT_ADD(<stack pointer register>, #const)`; and a caller-save reload by
+  construction straddles the call, which re-defines the stack pointer, so the
+  reload's constant is not directly comparable to the store's. The search
+  therefore walks *forward* from the store's own base Varnode over the
+  value-preserving and constant-displacing ops (INDIRECT, COPY, INT_ADD,
+  INT_SUB), carrying the running offset delta; a pointer whose delta equals the
+  store's offset addresses the same slot. MULTIEQUAL is not followed, since a
+  phi's other arm may carry a different frame.
+
+  This is a deliberate **divergence from upstream**, not a port repair:
+  `only_op_use` is faithful to `funcdata_varnode.cc:1891`, and relaxing its
+  STORE arm admits non-arguments. The failure mode is a *spurious trailing
+  argument*, which no gate observes — the datatest corpus is prototype-declared
+  and GED scores topology, not arity — which is why the option ships off by
+  default and why `reload` is the recommended level over `spill`: on a clang
+  `-O2` inlined 64-byte `memcpy`, the four `movaps` stores that fill the local
+  buffer are never read back, so `reload` declines them while `spill` turns them
+  into four invented leading arguments.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.

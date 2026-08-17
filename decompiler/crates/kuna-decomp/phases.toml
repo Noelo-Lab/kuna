@@ -2053,6 +2053,25 @@ tier = "core"
 symptoms = "call emitted with no arguments or fewer arguments than the disassembly passes|call result read from a local that is never assigned|enclosing function loses its own parameter list and return type (void f(void))|argument register written whole-width by pxor movdqa movdqu por pand orpd or movq before the call|second call binds a stale pre-call value where the first call should have defined it"
 
 [[settable]]
+option = "spillargtrial"
+values = "off|reload|spill"
+default = "off"
+destructive = false
+phase = "P4"
+subphase = "active-input-trial-scoring"
+strength = "HARD"
+rewind = "P4"
+issue = "GH-275"
+summary = "Tolerate the caller's own caller-save spill of an argument when scoring an active input trial. Funcdata::onlyOpUse (funcdata_varnode.cc:1891) answers whether the Varnode reaching a CALL in a candidate parameter register is used ONLY as that call's argument, and it rejects on ANY CPUI_STORE among the Varnode's descendants; checkInputTrialUse then calls markInactive, which also sets CHECKED, so the trial is never re-scored and the argument-producing chain dies to dead-code elimination. That blanket rejection also rejects the opposite idiom: on x86-64 SysV NO xmm register is callee-saved, so a floating-point value that is both an argument and live across the call MUST be spilled by the caller, and the spill is a second descendant of the very Varnode the trial is scoring. At `reload` the STORE stops rejecting only when it writes the walked Varnode's own value (operand 2, never the pointer) into a caller-frame slot AND a later LOAD reads that slot back at the same width, i.e. a genuine caller-save spill/reload pair. Since ActionActiveParam runs before ActionStackPtrFlow, the frame reference is still the raw INT_ADD(stack pointer, #const) and the reload straddles the call that re-defines the stack pointer, so the search walks forward from the store's own base Varnode carrying the running offset delta rather than matching raw constants. At `spill` the reload requirement is dropped and any caller-frame store of the value is tolerated. This is a deliberate DIVERGENCE from upstream, not a port fix: the rule it relaxes exists precisely to stop a value the caller writes to its frame before a call from becoming a bogus extra argument."
+use_when = "Turn ON (`reload`) when a call is rendered with FEWER arguments than the disassembly passes and the missing argument's register is spilled to the frame just before the call -- the canonical rendering is `atan2(SUB168(v1,0));` from clang -O2 packed-double code that calls atan2 more than once, where `movapd XMMWORD PTR [rsp+0x20],xmm1` is the caller-save spill and `movaps xmm1,XMMWORD PTR [rsp+0x20]` after the call is its reload. The dropped argument often leaves a spurious 4-byte stack local in its place (`unsigned int v5; // stack - 0x18`). PREFER `reload` OVER `spill`: `spill` admits any frame store of the value, which fabricates arguments out of ordinary local writes -- measured on a clang -O2 inlined 64-byte memcpy, `spill` turns `sptr2(&v1,a0)` into `sptr2(v1,v5,v9,v13,&v1,a0)`, four arguments invented from the four `movaps` stores that fill the local buffer, while `reload` correctly declines because nothing reads those slots back. Use `spill` only to bisect whether the reload requirement is what is blocking a recovery. DEFAULT OFF: the failure mode of relaxing upstream's rule is a SPURIOUS TRAILING ARGUMENT, and no gate can see one -- the datatest corpus is prototype-declared and GED is blind to arity -- so the option ships as an opt-in with its evidence rather than as a default. Flip back off if a call gains an argument the disassembly does not pass, or if an argument appears whose value is a stale pre-call definition (that second shape is calloverlap's territory: the two options compose, and on the GH-275 copysign variant only `calloverlap full` plus `spillargtrial reload` gives both the right arity and the right values)."
+example = "option spillargtrial reload"
+source_decompiler = "kuna"
+inspiration = "GH-275 (packed-double atan2 call arguments) defect (A), scoped in PR #284; upstream Funcdata::onlyOpUse (funcdata_varnode.cc:1891) and FuncCallSpecs::checkInputTrialUse (fspec.cc:5592)"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "call rendered with fewer arguments than the disassembly passes when the missing argument register is spilled to the frame before the call|floating-point argument dropped at the FIRST of several calls that reuse the same value|a spurious 4-byte stack local appears where a call argument should be|clang -O2 packed-double code calls atan2 with one argument instead of two|argument register stored to a caller-frame slot and reloaded after the call is not recognized as an argument"
+
+[[settable]]
 option = "loadguardrange"
 values = "on|off"
 default = "on"
