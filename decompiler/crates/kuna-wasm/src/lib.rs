@@ -136,8 +136,13 @@ pub fn run_with_mode(
                 binary,
                 prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()),
             );
-            let out = decompile_targets(&mut prog, targets, /* no_vars= */ false,
-                /* want_proto= */ false);
+            let out = decompile_targets(
+                &mut prog,
+                targets,
+                /* no_vars= */ false,
+                /* want_proto= */ false,
+                /* want_provenance= */ false,
+            );
             let kinds: Vec<&'static str> =
                 out.iter().map(|f| classifier.kind(&prog, &f.name, f.address)).collect();
             Ok(result_json(binary, &out, &kinds))
@@ -177,7 +182,13 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
     }
 
     let mut results =
-        decompile_targets(prog, targets, /* no_vars= */ false, /* want_proto= */ true);
+        decompile_targets(
+            prog,
+            targets,
+            /* no_vars= */ false,
+            /* want_proto= */ true,
+            /* want_provenance= */ false,
+        );
     // Every artifact is address-ordered (the CLI's convention).
     results.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));
 

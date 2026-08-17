@@ -513,6 +513,41 @@ mod markup {
     }
 
     #[test]
+    fn provenance_tracks_markup_references_by_rendered_line() {
+        let mut e = EmitMarkup::new();
+        e.tag_line();
+        let statement = MarkupRef::op(Some(7));
+        e.begin_statement(&statement);
+        let variable = MarkupRef { opref: Some(7), varref: Some(42), ..MarkupRef::none() };
+        e.tag_variable("local_8", SyntaxHighlight::VarColor, &variable);
+        e.tag_line();
+        e.tag_op("+", SyntaxHighlight::NoColor, &MarkupRef::op(Some(9)));
+
+        assert_eq!(
+            e.take_provenance().associations,
+            vec![
+                MarkupAssociation {
+                    line_number: 1,
+                    opref: Some(7),
+                    varref: None,
+                },
+                MarkupAssociation {
+                    line_number: 1,
+                    opref: Some(7),
+                    varref: Some(42),
+                },
+                MarkupAssociation {
+                    line_number: 2,
+                    opref: Some(9),
+                    varref: None,
+                },
+            ]
+        );
+        e.set_output_stream();
+        assert!(e.take_provenance().associations.is_empty());
+    }
+
+    #[test]
     fn begin_end_block_bracket_with_start_then_end_markers() {
         // A begin/end pair appends an ELEMENT_START then a later ELEMENT_END
         // marker — the stateless-PackedEncode property the port relies on.

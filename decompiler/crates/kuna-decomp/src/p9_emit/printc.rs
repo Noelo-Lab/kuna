@@ -78,8 +78,8 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 use crate::dtype::type_metatype;
 use crate::options::{BraceStyle, NamespaceStrategy};
 use crate::prettyprint::{
-    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, MarkupRef,
-    SyntaxHighlight,
+    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, MarkupProvenance,
+    MarkupRef, SyntaxHighlight,
 };
 use crate::printlanguage::{
     format_binary, modifiers, most_natural_base, parentheses, unicode_needs_escape, Atom, OpToken,
@@ -1162,6 +1162,13 @@ impl PrintEmit {
             PrintEmit::Markup(e) => e.take_output(),
         }
     }
+    /// Take the structured associations captured by the markup leaf.
+    pub fn take_markup_provenance(&mut self) -> MarkupProvenance {
+        match self {
+            PrintEmit::NoMarkup(_) => MarkupProvenance::default(),
+            PrintEmit::Markup(e) => e.take_provenance(),
+        }
+    }
 }
 
 // The FULL `Emit` surface (prettyprint.rs:235-492), each method static-delegated
@@ -1994,14 +2001,33 @@ impl PrintC {
     /// so a token resolves against the AST by construction).  Returns the packed
     /// bytes; the back-end is restored to plain text so the printer stays reusable.
     pub fn doc_function_markup(&mut self, fd: &Funcdata, arch: &Architecture) -> Vec<u8> {
+        self.doc_function_markup_data(fd, arch).0
+    }
+
+    /// Capture the source-line `opref`/`varref` associations produced by the
+    /// same token stream as [`Self::doc_function_full`].
+    pub fn doc_function_provenance(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+    ) -> MarkupProvenance {
+        self.doc_function_markup_data(fd, arch).1
+    }
+
+    fn doc_function_markup_data(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+    ) -> (Vec<u8>, MarkupProvenance) {
         self.set_markup(true);
         self.emit_function_document(fd, arch);
         // C++ docFunction ends in emit->flush(); EmitMarkup's flush is a no-op
         // (packed elements are self-delimiting), so the byte stream is complete.
         let _ = self.emit.flush();
         let bytes = self.emit.take_markup_bytes();
+        let provenance = self.emit.take_markup_provenance();
         self.set_markup(false);
-        bytes
+        (bytes, provenance)
     }
 
     /// (kuna) Render ONLY the function's prototype declaration —
@@ -7385,12 +7411,22 @@ impl PrintC {
             // entry) is also a bare-name render, so `off <= 0` covers both.
             if sym_off <= 0 {
                 // off == 0: pushSymbol(symbol, 0, op) — the bare name.
-                self.push_atom(&Atom::with_op(
-                    name.clone(),
-                    TagType::VarToken,
-                    crate::printlanguage::SyntaxHighlight::var_color,
-                    op_key(op),
-                ));
+                let atom = match in1 {
+                    Some(vn) => Atom::with_op_vn(
+                        name.clone(),
+                        TagType::VarToken,
+                        crate::printlanguage::SyntaxHighlight::var_color,
+                        op_key(op),
+                        vn_key(vn),
+                    ),
+                    None => Atom::with_op(
+                        name.clone(),
+                        TagType::VarToken,
+                        crate::printlanguage::SyntaxHighlight::var_color,
+                        op_key(op),
+                    ),
+                };
+                self.push_atom(&atom);
             } else {
                 // off != 0: pushPartialSymbol(symbol, off, 0, 0, op, -1, false) —
                 // `name.field` (printc.cc:1116).
@@ -7415,12 +7451,22 @@ impl PrintC {
                     // The partial walk produced no member token (a whole-symbol
                     // cover): render the bare name, matching `pushPartialSymbol`'s
                     // degenerate base case.
-                    self.push_atom(&Atom::with_op(
-                        name.clone(),
-                        TagType::VarToken,
-                        crate::printlanguage::SyntaxHighlight::var_color,
-                        op_key(op),
-                    ));
+                    let atom = match in1 {
+                        Some(vn) => Atom::with_op_vn(
+                            name.clone(),
+                            TagType::VarToken,
+                            crate::printlanguage::SyntaxHighlight::var_color,
+                            op_key(op),
+                            vn_key(vn),
+                        ),
+                        None => Atom::with_op(
+                            name.clone(),
+                            TagType::VarToken,
+                            crate::printlanguage::SyntaxHighlight::var_color,
+                            op_key(op),
+                        ),
+                    };
+                    self.push_atom(&atom);
                 }
             }
 

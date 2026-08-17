@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use kuna_decomp::decompile_drive::{
-    extract_variables, print_c, print_c_prototype, VarInfo,
+    extract_variables, print_c, print_c_prototype, print_c_with_provenance, LineMapping, VarInfo,
 };
 // `ConsoleProgram::sections` documents its `flags` word as exactly the
 // `kuna_sleigh::loadimage::section_flags` constant set (UNALLOC=1, NOLOAD=2,
@@ -54,9 +54,10 @@ pub struct FuncResult {
     /// The `.h` prototype line (`<ret> <name>(<params>);`), captured only when
     /// the caller asked for it (`decompile_targets(want_proto=true)` — the
     /// `decompile-project` surface).  Always `None` on the `decompile-all`
-    /// path, whose JSON must stay byte-identical.
+    /// path, which does not serialize prototypes.
     pub proto: Option<String>,
     pub variables: Vec<VarInfo>,
+    pub line_mappings: Vec<LineMapping>,
     /// (kuna, issue #197) Every OTHER name this entry carries — a generic
     /// `sub_<addr>` placeholder, an ELF weak/strong twin, a PE
     /// decorated/undecorated pair.  Carried through from
@@ -71,13 +72,14 @@ pub struct FuncResult {
 /// `error` — a bad function never aborts the batch).  `want_proto`
 /// additionally captures the function's prototype line
 /// ([`print_c_prototype`]) inside the same panic guard as the C render — the
-/// `decompile-project` `.h` surface; `decompile-all` passes `false`, keeping
-/// its JSON byte-identical.
+/// `decompile-project` `.h` surface. `want_provenance` runs the markup emitter
+/// after the plain render and resolves its token references against the IR.
 pub fn decompile_targets(
     prog: &mut ConsoleProgram,
     targets: Vec<FunctionEntry>,
     no_vars: bool,
     want_proto: bool,
+    want_provenance: bool,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
     for FunctionEntry { name, addr: entry, aliases } in targets {
@@ -103,6 +105,7 @@ pub fn decompile_targets(
                 error: None,
                 proto: None,
                 variables: Vec::new(),
+                line_mappings: Vec::new(),
                 aliases,
             });
             continue;
@@ -164,9 +167,15 @@ pub fn decompile_targets(
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
                     // `code` is byte-identical to the single-shot path.
-                    let code = print_c(prog.arch_mut(), &fd).trim_matches('\n').to_string();
-                    let variables =
+                    let (untrimmed, provenance) = if want_provenance {
+                        print_c_with_provenance(prog.arch_mut(), &fd)
+                    } else {
+                        (print_c(prog.arch_mut(), &fd), Default::default())
+                    };
+                    let code = untrimmed.trim_matches('\n').to_string();
+                    let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
+                    provenance.apply_to_variables(&fd, &mut variables);
                     // The prototype must be captured HERE (fd is dropped at the
                     // end of the iteration) and inside the same guard (the
                     // declarator walk shares the printer's fail-fast invariants).
@@ -175,10 +184,10 @@ pub fn decompile_targets(
                     } else {
                         None
                     };
-                    (code, variables, proto)
+                    (code, variables, proto, provenance.line_mappings)
                 }));
                 match rendered {
-                    Ok((code, variables, proto)) => out.push(FuncResult {
+                    Ok((code, variables, proto, line_mappings)) => out.push(FuncResult {
                         name,
                         address,
                         size,
@@ -186,6 +195,7 @@ pub fn decompile_targets(
                         error: None,
                         proto,
                         variables,
+                        line_mappings,
                         aliases,
                     }),
                     Err(_) => out.push(FuncResult {
@@ -196,6 +206,7 @@ pub fn decompile_targets(
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
                         variables: Vec::new(),
+                        line_mappings: Vec::new(),
                         aliases,
                     }),
                 }
@@ -208,6 +219,7 @@ pub fn decompile_targets(
                 error: Some(e.explain().to_string()),
                 proto: None,
                 variables: Vec::new(),
+                line_mappings: Vec::new(),
                 aliases,
             }),
         }

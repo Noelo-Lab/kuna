@@ -79,12 +79,25 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 `decompile_func` + `print_c`), loading + analyzing the binary **once** instead of
 `kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
 
-`--json` emits `{binary,count,functions:[{name,address,address_hex,aliases,size,code,error,
-variables:[{name,type,kind,arg_index,stack_offset,size}]}]}` (`kuna functions --json`
-emits `name`/`address`/`address_hex`/`aliases` per function) — per-function `code` matches
-`kuna decompile ... --option listing on` byte-for-byte on x86-64 (elsewhere, see the
-injected defaults below), `error` isolates a single failed function, and `variables`
-(params in ABI order + DWARF/stack locals) feed type-recovery scoring.
+`--json` emits
+`{binary,count,functions:[{name,address,address_hex,aliases,size,code,error,
+line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
+stack_offset,size,line_numbers,addresses}]}]}` (`kuna functions --json` emits
+`name`/`address`/`address_hex`/`aliases` per function). `line_mappings` maps 1-based
+lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
+come from the printer's `varref` tokens; variable `addresses` are the union of the
+mapped instruction addresses on those lines. Both are empty when no backed use is
+emitted. The references are captured from Kuna's markup emitter and resolved against
+the live p-code IR, rather than inferred from the rendered text. The ordinary
+plain-text renderer still produces `code`, so its bytes are unchanged.
+Reported variables are joined to native varrefs by ABI or stack storage and recovered
+high-variable identity. Multiple high-variable fragments are combined only when they
+name the same exact stack location and size; ambiguous name-only matches stay empty.
+
+Per-function `code` matches `kuna decompile ... --option listing on` byte-for-byte on
+x86-64 (elsewhere, see the injected defaults below), `error` isolates a single failed
+function, and `variables` (params in ABI order + DWARF/stack locals) feed type-recovery
+scoring. `--no-vars` leaves `variables` empty but still emits function line mappings.
 
 Behaviors specific to `decompile-all`:
 

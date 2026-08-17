@@ -144,7 +144,13 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<(), String> {
     }
 
     let mut results =
-        decompile_targets(&mut prog, targets, /* no_vars= */ false, /* want_proto= */ true);
+        decompile_targets(
+            &mut prog,
+            targets,
+            /* no_vars= */ false,
+            /* want_proto= */ true,
+            /* want_provenance= */ false,
+        );
     // Every artifact is address-ordered (resolve_targets only guarantees that
     // for the no-filter default; --addr/--functions arrive in user order).
     results.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));

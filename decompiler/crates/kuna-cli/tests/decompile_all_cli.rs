@@ -202,6 +202,34 @@ fn decompile_all_emits_json_for_main() {
     assert!(stdout.contains("\"name\": \"main\""), "missing function `main`:\n{stdout}");
     assert!(stdout.contains("\"name\": \"authenticate\""), "missing `authenticate`:\n{stdout}");
     assert!(stdout.contains("\"variables\""), "missing variables array:\n{stdout}");
+    assert!(stdout.contains("\"line_mappings\""), "missing line mappings:\n{stdout}");
+    assert!(stdout.contains("\"line_number\":"), "line mappings are empty:\n{stdout}");
+    assert!(stdout.contains("\"line_numbers\""), "missing variable line evidence:\n{stdout}");
+    assert!(stdout.contains("\"addresses\""), "missing provenance addresses:\n{stdout}");
+    let has_variable_lines = stdout.match_indices("\"line_numbers\": [").any(|(i, key)| {
+        stdout[i + key.len()..]
+            .trim_start()
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+    });
+    assert!(has_variable_lines, "all variable-use mappings are empty:\n{stdout}");
+    let authenticate = stdout
+        .split("\"name\": \"authenticate\"")
+        .nth(1)
+        .expect("authenticate result must be present");
+    let array_local = authenticate
+        .split("\"name\": \"v2\"")
+        .nth(1)
+        .expect("authenticate must report its recovered array local");
+    let array_lines = array_local
+        .split("\"line_numbers\":")
+        .nth(1)
+        .expect("the array local must carry the additive provenance field");
+    assert!(
+        !array_lines.trim_start().starts_with("[]"),
+        "the fragmented array-local varrefs must retain use evidence:\n{stdout}"
+    );
     // `authenticate(const char *, const char *)` ⇒ a parameter with arg_index 0.
     assert!(
         stdout.contains("\"kind\": \"arg\"") && stdout.contains("\"arg_index\": 0"),

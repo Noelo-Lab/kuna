@@ -90,7 +90,7 @@ fn selecting_an_external_reports_an_external_not_an_error() {
     let target = externs[0].clone();
     let name = target.name.clone();
 
-    let out = decompile_targets(&mut prog, vec![target], true, false);
+    let out = decompile_targets(&mut prog, vec![target], true, false, false);
     assert_eq!(out.len(), 1);
     let r = &out[0];
     assert!(

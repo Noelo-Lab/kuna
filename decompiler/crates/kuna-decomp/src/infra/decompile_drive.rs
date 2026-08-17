@@ -38,6 +38,7 @@
 //! This proves the full path RUNS and emits plausible C — not byte-parity (the
 //! W10 grind), which the e2e gate (`tests/decompile_e2e.rs`) asserts.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -50,7 +51,7 @@ use crate::action::ActionContext;
 use crate::architecture::Architecture;
 use crate::flow::{FlowEnvironment, FlowInfo};
 use crate::funcdata::{funcdata_flags, Funcdata};
-use crate::context::TypeOp;
+use crate::context::{HighVariableId, TypeOp};
 
 use kuna_sleigh::translate::Translate;
 
@@ -1005,6 +1006,19 @@ pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
     out
 }
 
+/// Render the ordinary C text and independently collect the markup references
+/// needed to map its lines back to machine instructions.
+pub fn print_c_with_provenance(
+    arch: &mut Architecture,
+    fd: &Funcdata,
+) -> (String, CodeProvenance) {
+    let mut printer = arch.take_print();
+    let out = printer.doc_function_full(fd, arch);
+    let markup = printer.doc_function_provenance(fd, arch);
+    arch.put_print(printer);
+    (out, resolve_markup_provenance(fd, &markup))
+}
+
 /// (kuna) Render every user-defined data-type in the architecture's type
 /// factory as C definitions (the `PrintC::docTypeDefinitions` port,
 /// [`crate::printc::PrintC::doc_type_definitions`]) — the type-definition
@@ -1130,6 +1144,274 @@ pub struct VarInfo {
     pub is_param: bool,
     /// ABI parameter index (dense, source order) for parameters; `None` for locals.
     pub arg_index: Option<usize>,
+    /// 1-based pseudocode lines containing markup-backed references to this variable.
+    pub line_numbers: Vec<usize>,
+    /// Machine instruction addresses associated with those pseudocode lines.
+    pub addresses: Vec<u64>,
+}
+
+/// One 1-based pseudocode line and its associated machine instruction addresses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineMapping {
+    pub line_number: usize,
+    pub addresses: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct VariableUseEvidence {
+    line_numbers: Vec<usize>,
+    addresses: Vec<u64>,
+}
+
+/// Provenance resolved from printer markup against a decompiled function's IR.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CodeProvenance {
+    pub line_mappings: Vec<LineMapping>,
+    variable_uses: BTreeMap<u64, VariableUseEvidence>,
+}
+
+impl CodeProvenance {
+    /// Attach markup-backed use evidence to the corresponding reported variables.
+    pub fn apply_to_variables(&self, fd: &Funcdata, variables: &mut [VarInfo]) {
+        for variable in variables {
+            let storage_refs = variable_storage_varrefs(fd, variable);
+            let mut evidence = self.evidence_for_refs(&storage_refs);
+            if evidence.line_numbers.is_empty() {
+                let named_refs = named_high_varrefs(fd, variable);
+                evidence = self.evidence_for_refs(&named_refs);
+            }
+            variable.line_numbers = evidence.line_numbers;
+            variable.addresses = evidence.addresses;
+        }
+    }
+
+    fn evidence_for_refs(&self, varrefs: &BTreeSet<u64>) -> VariableUseEvidence {
+        let mut line_numbers = BTreeSet::new();
+        let mut addresses = BTreeSet::new();
+        for evidence in varrefs.iter().filter_map(|varref| self.variable_uses.get(varref)) {
+            line_numbers.extend(evidence.line_numbers.iter().copied());
+            addresses.extend(evidence.addresses.iter().copied());
+        }
+        VariableUseEvidence {
+            line_numbers: line_numbers.into_iter().collect(),
+            addresses: addresses.into_iter().collect(),
+        }
+    }
+}
+
+fn extend_high_varrefs(fd: &Funcdata, high_id: HighVariableId, varrefs: &mut BTreeSet<u64>) {
+    let Some(high) = fd.high_bank().get(high_id) else { return };
+    for index in 0..high.num_instances() {
+        let Some(varnode) = fd.vbank().get(high.get_instance(index)) else { continue };
+        varrefs.insert(varnode.get_create_index() as u64);
+    }
+}
+
+fn select_storage_varrefs(
+    fd: &Funcdata,
+    matches: &[(u64, Option<HighVariableId>)],
+    variable_name: &str,
+) -> BTreeSet<u64> {
+    let highs: BTreeSet<HighVariableId> = matches.iter().filter_map(|(_, high)| *high).collect();
+    let selected_high = if highs.len() == 1 {
+        highs.iter().next().copied()
+    } else {
+        let named: Vec<HighVariableId> = highs
+            .iter()
+            .copied()
+            .filter(|high_id| {
+                fd.high_bank()
+                    .get(*high_id)
+                    .and_then(|high| high.kuna_name())
+                    == Some(variable_name)
+            })
+            .collect();
+        (named.len() == 1).then(|| named[0])
+    };
+
+    let mut varrefs = BTreeSet::new();
+    if let Some(high_id) = selected_high {
+        extend_high_varrefs(fd, high_id, &mut varrefs);
+    } else if highs.is_empty() {
+        varrefs.extend(matches.iter().map(|(varref, _)| *varref));
+    }
+    varrefs
+}
+
+fn parameter_storage(fd: &Funcdata, arg_index: usize) -> Option<(Address, i64)> {
+    let proto = fd.get_func_proto();
+    let mut source_index = 0usize;
+    for index in 0..proto.num_params() {
+        let parameter = proto.get_param(index)?;
+        if parameter.is_hidden_return() {
+            continue;
+        }
+        if source_index == arg_index {
+            return Some((parameter.get_address(), parameter.get_size() as i64));
+        }
+        source_index += 1;
+    }
+    None
+}
+
+fn variable_storage_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
+    let mut matches = Vec::new();
+    if variable.is_param {
+        let Some(arg_index) = variable.arg_index else { return BTreeSet::new() };
+        let Some((address, size)) = parameter_storage(fd, arg_index) else {
+            return BTreeSet::new();
+        };
+        for varnode_id in fd.vbank().iter_loc() {
+            let Some(varnode) = fd.vbank().get(varnode_id) else { continue };
+            if varnode.get_addr() == &address && varnode.get_size() as i64 == size {
+                matches.push((
+                    varnode.get_create_index() as u64,
+                    varnode.get_high(),
+                    varnode.is_input(),
+                ));
+            }
+        }
+        if matches.iter().any(|(_, _, is_input)| *is_input) {
+            matches.retain(|(_, _, is_input)| *is_input);
+        }
+    } else if let (Some(stack_offset), Some(scope)) =
+        (variable.stack_offset, fd.get_scope_local())
+    {
+        let stack_space = scope.get_space_id();
+        for varnode_id in fd.vbank().iter_loc() {
+            let Some(varnode) = fd.vbank().get(varnode_id) else { continue };
+            let in_stack_space = varnode
+                .get_addr()
+                .get_space()
+                .is_some_and(|space| space.get_index() == stack_space.get_index());
+            if in_stack_space
+                && signed_space_offset(stack_space, varnode.get_offset()) == stack_offset
+                && varnode.get_size() as i64 == variable.size
+            {
+                matches.push((
+                    varnode.get_create_index() as u64,
+                    varnode.get_high(),
+                    false,
+                ));
+            }
+        }
+    }
+
+    let matches: Vec<(u64, Option<HighVariableId>)> = matches
+        .into_iter()
+        .map(|(varref, high, _)| (varref, high))
+        .collect();
+    select_storage_varrefs(fd, &matches, &variable.name)
+}
+
+fn high_matches_stack_variable(
+    fd: &Funcdata,
+    high_id: HighVariableId,
+    variable: &VarInfo,
+) -> bool {
+    let (Some(stack_offset), Some(scope), Some(high)) = (
+        variable.stack_offset,
+        fd.get_scope_local(),
+        fd.high_bank().get(high_id),
+    ) else {
+        return false;
+    };
+    let stack_space = scope.get_space_id();
+    (0..high.num_instances()).any(|index| {
+        let Some(varnode) = fd.vbank().get(high.get_instance(index)) else { return false };
+        let Some(space) = varnode.get_addr().get_space() else { return false };
+        let is_stack_reference = space.get_index() == stack_space.get_index()
+            || space.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT;
+        is_stack_reference
+            && signed_space_offset(stack_space, varnode.get_offset()) == stack_offset
+            && varnode.get_size() as i64 == variable.size
+    })
+}
+
+fn named_high_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
+    let named: Vec<HighVariableId> = fd
+        .high_bank()
+        .iter()
+        .filter_map(|(high_id, high)| {
+            (high.kuna_name() == Some(variable.name.as_str())).then_some(high_id)
+        })
+        .collect();
+    let selected: Vec<HighVariableId> = if named.len() <= 1 {
+        named
+    } else {
+        named
+            .into_iter()
+            .filter(|high_id| high_matches_stack_variable(fd, *high_id, variable))
+            .collect()
+    };
+    let mut varrefs = BTreeSet::new();
+    for high_id in selected {
+        extend_high_varrefs(fd, high_id, &mut varrefs);
+    }
+    varrefs
+}
+
+fn resolve_markup_provenance(
+    fd: &Funcdata,
+    markup: &crate::prettyprint::MarkupProvenance,
+) -> CodeProvenance {
+    let op_addresses: BTreeMap<u64, u64> = fd
+        .obank()
+        .iter_all()
+        .filter_map(|(_, op_id)| {
+            let op = fd.obank().get(op_id)?;
+            op.get_addr().get_space()?;
+            Some((op.get_time() as u64, op.get_addr().get_offset()))
+        })
+        .collect();
+    resolve_markup_provenance_with_addresses(markup, &op_addresses)
+}
+
+fn resolve_markup_provenance_with_addresses(
+    markup: &crate::prettyprint::MarkupProvenance,
+    op_addresses: &BTreeMap<u64, u64>,
+) -> CodeProvenance {
+    let mut line_addresses: BTreeMap<usize, BTreeSet<u64>> = BTreeMap::new();
+    let mut variable_lines: BTreeMap<u64, BTreeSet<usize>> = BTreeMap::new();
+
+    for association in &markup.associations {
+        if association.line_number == 0 {
+            continue;
+        }
+        if let Some(address) = association.opref.and_then(|opref| op_addresses.get(&opref)) {
+            line_addresses.entry(association.line_number).or_default().insert(*address);
+        }
+        if let Some(varref) = association.varref {
+            variable_lines.entry(varref).or_default().insert(association.line_number);
+        }
+    }
+
+    let line_mappings: Vec<LineMapping> = line_addresses
+        .iter()
+        .map(|(&line_number, addresses)| LineMapping {
+            line_number,
+            addresses: addresses.iter().copied().collect(),
+        })
+        .collect();
+    let variable_uses = variable_lines
+        .into_iter()
+        .map(|(varref, lines)| {
+            let addresses = lines
+                .iter()
+                .flat_map(|line| line_addresses.get(line).into_iter().flatten().copied())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            (
+                varref,
+                VariableUseEvidence {
+                    line_numbers: lines.into_iter().collect(),
+                    addresses,
+                },
+            )
+        })
+        .collect();
+    CodeProvenance { line_mappings, variable_uses }
 }
 
 /// Interpret a raw spacebase `off` as a signed frame offset for `space`
@@ -1195,6 +1477,8 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             size,
             is_param: true,
             arg_index: Some(arg_pos),
+            line_numbers: Vec::new(),
+            addresses: Vec::new(),
         });
         arg_pos += 1;
     }
@@ -1216,6 +1500,8 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
                 size: ct.get_size() as i64,
                 is_param: false,
                 arg_index: None,
+                line_numbers: Vec::new(),
+                addresses: Vec::new(),
             });
         }
     }
