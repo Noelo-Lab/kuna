@@ -1023,6 +1023,24 @@ pub struct Architecture {
     /// it); a no-op when the Listing is absent. Default-off ⇒ every parity gate is
     /// byte-identical.
     pub analysis_aif: bool,
+    /// (kuna, GH-299) Gate the aligned slide for the AIF gap cursor (`aifstrict`);
+    /// default **off**, carried by the `aggressive` preset. `run_aif` probes the
+    /// undefined partition one BYTE at a time, so every byte of every hole is a
+    /// candidate function start and the two local acceptance tests (a 2-mnemonic
+    /// prologue fingerprint, a valid-subroutine decode) are applied to addresses that
+    /// cannot be instruction boundaries. On a large stripped i386 PE that plants
+    /// ~2,100 entries in the middle of a function body, 35% of them inside a function
+    /// kuna already has an entry for. With this on the cursor advances to the next
+    /// 4-byte boundary instead: only an aligned address or a hole's FIRST byte is a
+    /// candidate, because a hole boundary is evidence (the walk decoded up to exactly
+    /// there and stopped) while an interior byte the cursor slid onto is a guess.
+    /// Measured over 110 stripped non-x86-64 binaries it removes 4,282 of 11,010
+    /// mid-body entries and *raises* recall by 344, since a phantom accept consumes
+    /// the real entry behind it. It does not reach the pre-registered acceptance bar
+    /// for becoming the default, so it ships opt-in (the `aggressive` preset carries
+    /// it, which is where every one of those numbers was measured) and GH-299 stays
+    /// open. Inert without `aif`, so every parity gate is byte-identical.
+    pub analysis_aifstrict: bool,
     /// (kuna) Gate tail-call function-entry recovery (`tailcallentry`); default
     /// **off**. The recursive-descent Listing walk treats every non-CALL flow
     /// target as a same-function successor, so a routine reached only by a tail
@@ -1396,6 +1414,7 @@ impl Architecture {
             analysis_rtti: false,
             analysis_itaniumrtti: false,
             analysis_aif: false,
+            analysis_aifstrict: false,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
             analysis_objc: false,
@@ -1569,6 +1588,9 @@ impl Architecture {
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
         self.analysis_itaniumrtti = false; // (kuna, NOVEL) Itanium RTTI / vtable recovery default-off (ELF-only, output-changing)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
+        // (kuna, GH-299) AIF gap-cursor aligned slide — default-OFF (it REMOVES
+        // entries), carried by the `aggressive` preset.
+        self.analysis_aifstrict = false;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
@@ -1959,6 +1981,9 @@ impl Architecture {
             }
             "aif" => {
                 on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
+            }
+            "aifstrict" => {
+                on_off!(analysis_aifstrict, "AIF gap-cursor aligned slide (GH-299)")
             }
             "tailcallentry" => {
                 on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")

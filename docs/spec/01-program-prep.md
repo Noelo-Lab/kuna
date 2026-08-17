@@ -934,7 +934,39 @@ only when it both disassembles into a valid subroutine (a clean flow to RET, mor
 than 2 instructions, no bad byte or out-of-range flow) *and* its prologue matches a
 start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
-static or accepted pointer-table root. `operand_refs` (default-off, matching
+static or accepted pointer-table root.
+
+(kuna, GH-299) That gap walk slides its cursor **one byte at a time**, because the
+undefined partition is byte-granular by construction, so every byte of every hole is
+a candidate function start and both acceptance tests are applied to addresses that
+cannot be instruction boundaries — a candidate starting mid-instruction reads the
+tail of one encoding plus the head of the next, and that synthetic pair matches a
+common prologue about as often as a real one. On a large stripped i386 PE the walk
+plants roughly 2,100 entries in the middle of a function body, a third of them inside
+a function the discovery set already has an entry for. `aifstrict` (default-off,
+carried by the `aggressive` preset;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifstrict.rs`) narrows the
+cursor: it advances to the next 4-byte boundary rather than the next byte, and a
+candidate is probed only when it is 4-byte aligned **or** it is the first byte of its
+hole. The hole-start exemption is the whole distinction the option draws — a hole
+boundary is evidence, since the recursive-descent walk decoded up to exactly there
+and stopped, while an interior byte the cursor slid onto is a guess. The stride is 4
+on every architecture deliberately: 16-byte alignment kills nine tenths of the bad
+Cortex-M entries but takes four fifths of the real ones with it. Declining a probe
+also *recovers* entries rather than only removing them, because an accept advances
+the cursor past the accepted body — a phantom accepted one halfword inside a literal
+pool consumes the real function behind it. Off restores the byte-granular cursor
+exactly.
+
+The complementary reject the issue asks for — refuse a candidate bracketed by a known
+function — is deliberately absent. The Listing's function model is entry-ordered and
+carries no extents, so "this hole lies inside one body" can only be approximated by
+the interval between known entries, and on a sparsely discovered image that
+approximation swallows whole unexplored regions rather than one body's interior. It
+is the `fdeinterior` question (§1.5) asked of an image that has no unwind extents to
+answer it with, and the answer needs real per-instruction walk ownership.
+
+`operand_refs` (default-off, matching
 upstream's ELF-off default) shares the deferred slot for the same
 decoder-availability reason but does its own linear decode rather than reading the
 Listing, planting `char[N]` facts for immediate operands that point into read-only

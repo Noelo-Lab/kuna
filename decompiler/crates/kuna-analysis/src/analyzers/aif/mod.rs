@@ -108,6 +108,7 @@ use kuna_sleigh::translate::Translate;
 
 use crate::listing::{decode::decode_one, FlowKind, Listing};
 
+pub mod kuna_aifstrict;
 pub mod kuna_poolentry;
 pub mod kuna_ptrentry;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
@@ -440,11 +441,15 @@ fn check_valid_subroutine_with_policy(
 /// Bails (returns empty) unless there are ≥ [`MINIMUM_FUNCTION_COUNT`] discovered
 /// functions AND ≥ 1 decoded instruction (Ghidra's `funcCount` /
 /// `getNumInstructions()` gate), or if no fingerprint reaches the threshold.
+/// `aifstrict` (GH-299) adds the structural rejects in [`kuna_aifstrict`]: the gap
+/// cursor slides to the next 4-byte boundary instead of the next byte, probing only
+/// an aligned address or a hole's first byte.
 pub fn run_aif(
     listing: &Listing,
     translate: &dyn Translate,
     code_space: Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
+    aifstrict: bool,
 ) -> Vec<u64> {
     if listing.function_count() < MINIMUM_FUNCTION_COUNT || listing.num_instructions() == 0 {
         return Vec::new();
@@ -468,10 +473,20 @@ pub fn run_aif(
         // next decoded instruction start (or, if none, an open upper bound). Only
         // this interior is "must-decode-here"; flows past it into discovered code
         // are legitimate.
-        let gap_hi = listing.next_instruction_start_after(gap_start).unwrap_or(u64::MAX);
+        let next_code = listing.next_instruction_start_after(gap_start);
+        let gap_hi = next_code.unwrap_or(u64::MAX);
 
-        let mut advanced = gap_start.saturating_add(1);
-        if !claimed.contains(&gap_start) {
+        // (kuna, `aifstrict`) The cursor slides to the next instruction-alignment
+        // boundary rather than the next byte, and only an aligned address or a
+        // hole's first byte is a candidate at all.
+        let mut advanced = if aifstrict {
+            kuna_aifstrict::next_probe_after(gap_start, gap_hi)
+        } else {
+            gap_start.saturating_add(1)
+        };
+        let probe_here =
+            !aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start);
+        if probe_here && !claimed.contains(&gap_start) {
             if let Some(body) = probe_gap_start(&mut decoder, listing, &hist, gap_start, gap_hi) {
                 accepted.insert(gap_start);
                 let body_max = body.iter().copied().max().unwrap_or(gap_start);
