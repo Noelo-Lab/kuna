@@ -274,9 +274,14 @@ mod tests {
     }
 
     #[test]
-    fn list_parses_to_exact_names_no_wildcards() {
+    fn list_parses_to_exact_names_and_cxx_throw_wildcards() {
         let (exact, wildcard) = sets();
-        assert!(wildcard.is_empty(), "ELF list ships no wildcards");
+        // Upstream's ELF list ships no wildcards; the only ones are the kuna
+        // DIV-78 mangled `_ZSt<len>__throw_<name>*` prefixes.
+        assert!(
+            wildcard.iter().all(|w| w.starts_with("ZSt") && w.contains("__throw_")),
+            "the only ELF-list wildcards are the DIV-78 std::__throw_* mangled prefixes: {wildcard:?}"
+        );
         for want in ["exit", "abort", "stack_chk_fail", "assert_fail", "pthread_exit"] {
             assert!(exact.iter().any(|e| e == want), "missing {want}");
         }
@@ -302,6 +307,81 @@ mod tests {
         // the warn family RETURNS — a false positive here would drop live caller code.
         for nope in ["warn", "warnx", "vwarn", "vwarnx"] {
             assert!(!name_matches(nope, &exact, &wildcard), "{nope} RETURNS; must NOT be no-return");
+        }
+    }
+
+    /// (kuna DIV-78, GH-273) The libstdc++ `std::__throw_*` family, in both the
+    /// spellings the two matchers see: the mangled `.dynsym` form the analysis-tier
+    /// scan matches pre-demangle, and the demangled `std::__throw_x` form the
+    /// flow-time matcher sees. Every one is `__attribute__((__noreturn__))`
+    /// upstream; upstream Ghidra's list omits the whole family, so C++ binaries
+    /// emitted the dead code after the call.
+    #[test]
+    fn div78_cxx_throw_family_present_both_spellings() {
+        let (exact, wildcard) = sets();
+        // Mangled, exactly as they appear in a `.dynsym` of a clang/g++ binary
+        // (the wildcard also absorbs a signature change, e.g. the `PKci`
+        // `__throw_ios_failure` overload GCC 7 added).
+        for want in [
+            "_ZSt20__throw_length_errorPKc",
+            "_ZSt20__throw_out_of_rangePKc",
+            "_ZSt24__throw_out_of_range_fmtPKcz",
+            "_ZSt17__throw_bad_allocv",
+            "_ZSt19__throw_logic_errorPKc",
+            "_ZSt16__throw_bad_castv",
+            "_ZSt24__throw_invalid_argumentPKc",
+            "_ZSt25__throw_bad_function_callv",
+            "_ZSt28__throw_bad_array_new_lengthv",
+            "_ZSt20__throw_system_errori",
+            "_ZSt19__throw_ios_failurePKc",
+            "_ZSt19__throw_ios_failurePKci",
+            "_ZSt19__throw_regex_errorNSt15regex_constants10error_typeE",
+        ] {
+            assert!(name_matches(want, &exact, &wildcard), "DIV-78: {want} must be no-return");
+        }
+        // Demangled: `std` is the sole allowed non-global namespace, and the
+        // leading-`_` strip reduces the base to the listed name.
+        for want in [
+            "std::__throw_length_error",
+            "std::__throw_out_of_range",
+            "std::__throw_bad_alloc",
+            "std::__throw_logic_error",
+            "std::__throw_runtime_error",
+            "std::__throw_overflow_error",
+            "std::__throw_underflow_error",
+            "std::__throw_domain_error",
+            "std::__throw_range_error",
+            "std::__throw_bad_typeid",
+            "std::__throw_bad_exception",
+            "std::__throw_future_error",
+            "__throw_length_error",
+        ] {
+            assert!(name_matches(want, &exact, &wildcard), "DIV-78: {want} must be no-return");
+        }
+        // The namespace guard still applies: a same-named method on a user class
+        // is NOT the libstdc++ helper and must never be truncated.
+        assert!(!name_matches("Buf::__throw_length_error", &exact, &wildcard));
+        // The mangled wildcards are anchored on the Itanium `ZSt<len>` encoding of
+        // `std::__throw_*`, so no other std symbol can be swept up.
+        for nope in [
+            "_ZSt4cerr",
+            "_ZSt20__throw_length_error_notreally",
+            "_ZNSt6thread6_StateD1Ev",
+            "_ZSt9terminatev_extra",
+        ] {
+            let hit = name_matches(nope, &exact, &wildcard);
+            // `_ZSt20__throw_length_error_notreally` legitimately shares the
+            // wildcard prefix (it can only be a std::__throw_length_error
+            // overload); the rest must miss.
+            if nope == "_ZSt20__throw_length_error_notreally" {
+                assert!(hit);
+            } else {
+                assert!(!hit, "{nope} must not be flagged");
+            }
+        }
+        // A user function whose name merely contains `throw` is untouched.
+        for nope in ["throw_it", "rethrow", "throwing_helper", "do_throw"] {
+            assert!(!name_matches(nope, &exact, &wildcard), "{nope} must not be flagged");
         }
     }
 
@@ -416,6 +496,40 @@ mod tests {
         }
     }
 
+    /// (kuna DIV-78, GH-273) The libstdc++ throw family on a real clang-built ELF:
+    /// `_ZSt20__throw_length_errorPKc` / `_ZSt20__throw_out_of_rangePKc` are UND
+    /// `.dynsym` imports (address 0), so — like `_ZSt9terminatev` — the fact must
+    /// be emitted at the PLT-stub install address under the raw mangled name. The
+    /// end-to-end consequence (the dead code after the call disappearing) is
+    /// covered by `kuna-console/tests/verify_cxx_throw_noreturn.rs`.
+    #[test]
+    fn cxx_throw_family_emits_plt_stub_address() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cxxthrow_noreturn_x86_64");
+        let bytes = std::fs::read(path).expect("read cxxthrow fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse cxxthrow fixture");
+        let out = scan_noreturn(&file, &bytes, Compiler::Clang);
+
+        // PINNED: the `@plt` stubs at 0x401030 / 0x401040 (objdump -d -j .plt.sec).
+        for (name, stub) in [
+            ("_ZSt20__throw_length_errorPKc", 0x401030u64),
+            ("_ZSt20__throw_out_of_rangePKc", 0x401040u64),
+        ] {
+            let fact = out
+                .noreturn
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap_or_else(|| panic!("{name} must be flagged no-return"));
+            assert_eq!(fact.addr, stub, "{name} must carry its PLT-stub address");
+        }
+        // The fixture's own functions are never flagged.
+        for spurious in ["append_bound", "at_bound", "main"] {
+            assert!(
+                !out.noreturn.iter().any(|f| f.name == spurious),
+                "{spurious} must not be flagged"
+            );
+        }
+    }
+
     /// The Rust wildcard list must match a Rust panic symbol ONLY when the pass
     /// is in Rust mode (compiler detected as `rustc`) — never for a C ELF. This
     /// is the gated-list contract the sourcelang task delivers.
@@ -423,7 +537,8 @@ mod tests {
     fn rust_list_gated_on_rust_detection() {
         let panic = "ZN4core9panicking5panic17h0123456789abcdefE";
 
-        // Base ELF list: no wildcards, so the Rust panic symbol is NOT flagged.
+        // Base ELF list: its only wildcards are the C++ `_ZSt*__throw_*` prefixes,
+        // so the Rust panic symbol is NOT flagged.
         let (e_elf, w_elf) = parse_list(ELF_NORETURN_LIST);
         assert!(!name_matches(panic, &e_elf, &w_elf), "C ELF must not flag a Rust panic");
 

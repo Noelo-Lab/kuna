@@ -43,3 +43,62 @@ quick_exit
 assert_perror_fail
 chk_fail
 libc_fatal
+#
+# (kuna divergence, DIV-78) The libstdc++ std::__throw_* exception-throw helpers
+# (<bits/functexcept.h>, plus __throw_regex_error from <bits/regex_error.h>).
+# Every one is declared __attribute__((__noreturn__)) upstream and every body ends
+# in _GLIBCXX_THROW_OR_ABORT -- a throw, or abort() when built -fno-exceptions -- so
+# none of them can return. Upstream Ghidra's list omits the whole family, so on any
+# C++ binary that uses std::string / std::vector / std::function the code after such
+# a call is emitted as if it were reachable (GH-273).
+#
+# Two spellings per helper, because two different matchers consume this list:
+#   * the mangled .dynsym/.symtab form, which the analysis-tier scan
+#     (noreturn_known) matches BEFORE demangling. Written as a trailing-`*` wildcard
+#     so a signature change cannot age the entry out -- these helpers do gain
+#     overloads (__throw_ios_failure gained a `PKci` form in GCC 7). The
+#     `ZSt<len>__throw_<name>` prefix is an exact Itanium-ABI encoding of
+#     `std::__throw_<name>`, so the wildcard cannot reach any other symbol.
+#   * the demangled base name, which is what the flow-time name matcher
+#     (noreturn_externmatch) sees; `std::__throw_length_error` reduces to
+#     `throw_length_error` under the namespace guard + leading-underscore strip.
+ZSt16__throw_bad_cast*
+ZSt17__throw_bad_alloc*
+ZSt18__throw_bad_typeid*
+ZSt19__throw_ios_failure*
+ZSt19__throw_logic_error*
+ZSt19__throw_range_error*
+ZSt19__throw_regex_error*
+ZSt20__throw_domain_error*
+ZSt20__throw_future_error*
+ZSt20__throw_length_error*
+ZSt20__throw_out_of_range*
+ZSt20__throw_system_error*
+ZSt21__throw_bad_exception*
+ZSt21__throw_runtime_error*
+ZSt22__throw_overflow_error*
+ZSt23__throw_underflow_error*
+ZSt24__throw_invalid_argument*
+ZSt24__throw_out_of_range_fmt*
+ZSt25__throw_bad_function_call*
+ZSt28__throw_bad_array_new_length*
+throw_bad_cast
+throw_bad_alloc
+throw_bad_typeid
+throw_ios_failure
+throw_logic_error
+throw_range_error
+throw_regex_error
+throw_domain_error
+throw_future_error
+throw_length_error
+throw_out_of_range
+throw_system_error
+throw_bad_exception
+throw_runtime_error
+throw_overflow_error
+throw_underflow_error
+throw_invalid_argument
+throw_out_of_range_fmt
+throw_bad_function_call
+throw_bad_array_new_length
