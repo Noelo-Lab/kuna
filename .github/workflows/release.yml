@@ -7,6 +7,10 @@ name: Release binaries
 # version scheme -- VERSION file = MAJOR, commits since it last changed = MINOR
 # -- lives in scripts/version.sh and docs/release.md.
 #
+# The release also ships a ready-to-install KunaDecompiler Ghidra extension
+# zip with prebuilt kuna_ghidra backends for every platform (the ghidra-ext
+# job), so airgapped users can install without cargo or network access.
+#
 # Cadence: ONE release a night, batching whatever landed that day, not one per
 # merge. A busy day used to publish ~18 releases and ~18 tags.
 #
@@ -35,6 +39,14 @@ permissions:
 concurrency:
   group: release
   cancel-in-progress: false
+
+# The Ghidra release the extension zip is built against (and version-locked to;
+# other 12.x installs need "Install Anyway" at the version-mismatch dialog).
+# The asset filename embeds a build date not derivable from the version, so the
+# full URL is pinned alongside it -- bump both together to retarget.
+env:
+  GHIDRA_VERSION: "12.1.2"
+  GHIDRA_ZIP_URL: "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.2_build/ghidra_12.1.2_PUBLIC_20260605.zip"
 
 jobs:
   # Compute MAJOR.MINOR once; everything downstream consumes it.
@@ -70,6 +82,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            name: linux-arm64
           - target: aarch64-apple-darwin
             os: macos-latest
             name: macos-arm64
@@ -104,7 +119,7 @@ jobs:
       - name: Build release binaries
         working-directory: decompiler
         shell: bash
-        run: cargo build --release --target ${{ matrix.target }} -p kuna-cli -p kuna-console -p kuna-slacomp
+        run: cargo build --release --target ${{ matrix.target }} -p kuna-cli -p kuna-console -p kuna-slacomp -p kuna-ghidra
 
       # x86_64-apple-darwin is cross-compiled on the arm64 runner; skip running it.
       - name: Smoke test (kuna --version reports the release version)
@@ -142,6 +157,24 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+      # The kuna_ghidra backend for the Ghidra extension zip (ghidra-ext job).
+      # Not named kuna-* on purpose: the release job downloads pattern kuna-*
+      # and must not attach these raw binaries as assets. Artifact uploads drop
+      # unix permissions; ghidra-ext restores the exec bits when staging.
+      - name: Stage kuna_ghidra for the extension job
+        shell: bash
+        run: |
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          mkdir -p ghidra-bin
+          cp "decompiler/target/${{ matrix.target }}/release/kuna_ghidra$ext" ghidra-bin/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ghidra-bin-${{ matrix.name }}
+          path: ghidra-bin/*
+          if-no-files-found: error
+
   # The compiled SLEIGH tree the binaries need at runtime -- .sla files are
   # platform-independent, so build once and ship one asset for all OSes.
   specs:
@@ -175,14 +208,99 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  release:
-    needs: [version, build, specs]
+  # The ready-to-install KunaDecompiler Ghidra extension: one fat zip carrying
+  # prebuilt kuna_ghidra backends for all five platforms, built with Ghidra's
+  # own support/buildExtension.gradle against the pinned Ghidra release (which
+  # stamps the extension version so the installer's version gate matches).
+  # The zip must carry unix modes with 0755 on the four unix binaries --
+  # Ghidra's extension installer re-applies them at install time. Gradle 9
+  # normalizes archive modes (reproducible archives), so the extension's
+  # build.gradle pins 0755 on the kuna_ghidra entries; the zipinfo step below
+  # is the gate. kuna_ghidra needs no .sla files at runtime (all specs arrive
+  # over the wire), so the zip is fully self-contained -- it installs
+  # airgapped.
+  ghidra-ext:
+    needs: [version, build]
+    if: needs.version.outputs.exists == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: ghidra-bin-*
+          path: ghidra-bins
+
+      - name: Cache the Ghidra release zip
+        id: ghidra-cache
+        uses: actions/cache@v4
+        with:
+          path: ghidra-dist
+          key: ghidra-${{ env.GHIDRA_VERSION }}
+
+      - name: Download Ghidra ${{ env.GHIDRA_VERSION }}
+        if: steps.ghidra-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ghidra-dist
+          curl -fL --retry 3 -o ghidra-dist/ghidra.zip "$GHIDRA_ZIP_URL"
+
+      - name: Unzip Ghidra
+        run: unzip -q ghidra-dist/ghidra.zip -d ghidra-install
+
+      - name: Stage the per-platform kuna_ghidra binaries
+        run: |
+          ext=integrations/ghidra/KunaDecompiler
+          install -D -m 755 ghidra-bins/ghidra-bin-linux-x86_64/kuna_ghidra "$ext/os/linux_x86_64/kuna_ghidra"
+          install -D -m 755 ghidra-bins/ghidra-bin-linux-arm64/kuna_ghidra "$ext/os/linux_arm_64/kuna_ghidra"
+          install -D -m 755 ghidra-bins/ghidra-bin-macos-x86_64/kuna_ghidra "$ext/os/mac_x86_64/kuna_ghidra"
+          install -D -m 755 ghidra-bins/ghidra-bin-macos-arm64/kuna_ghidra "$ext/os/mac_arm_64/kuna_ghidra"
+          install -D -m 644 ghidra-bins/ghidra-bin-windows-x86_64/kuna_ghidra.exe "$ext/os/win_x86_64/kuna_ghidra.exe"
+
+      # Ghidra 12.x needs Java 21 (runner default is 17); Gradle >= 8.5 is
+      # required and the runner's preinstalled Gradle satisfies it (verified
+      # against 9.7.0 and 8.5). GHIDRA_INSTALL_DIR is passed as an env var
+      # because build.gradle gives it precedence over the -P property.
+      - name: Build the extension zip
+        working-directory: integrations/ghidra/KunaDecompiler
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export GHIDRA_INSTALL_DIR="$GITHUB_WORKSPACE/ghidra-install/ghidra_${GHIDRA_VERSION}_PUBLIC"
+          gradle buildExtension
+
+      # Install-correctness gate: all five os/ binaries present, the four unix
+      # ones mode 0755 (Ghidra's installer re-applies exactly these bits), the
+      # version gate satisfied. Then rename so the asset states both versions.
+      - name: Verify the zip and stage it for release
+        run: |
+          zip="$(ls integrations/ghidra/KunaDecompiler/dist/ghidra_*_KunaDecompiler.zip)"
+          zipinfo "$zip"
+          listing="$(zipinfo "$zip")"
+          for p in linux_x86_64 linux_arm_64 mac_x86_64 mac_arm_64; do
+            echo "$listing" | grep -E "^-rwxr-xr-x .* KunaDecompiler/os/$p/kuna_ghidra$"
+          done
+          echo "$listing" | grep -E " KunaDecompiler/os/win_x86_64/kuna_ghidra\.exe$"
+          [ "$(zipinfo -1 "$zip" | cut -d/ -f1 | sort -u)" = "KunaDecompiler" ]
+          unzip -p "$zip" KunaDecompiler/extension.properties | grep -qx "version=$GHIDRA_VERSION"
+          mkdir -p dist
+          cp "$zip" "dist/kuna-v${{ needs.version.outputs.version }}-KunaDecompiler-ghidra_${GHIDRA_VERSION}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuna-ghidra-extension
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [version, build, specs, ghidra-ext]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # kuna-* only: the ghidra-bin-* artifacts are job-to-job plumbing for
+      # ghidra-ext, not release assets.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kuna-*
           path: dist
           merge-multiple: true
 
@@ -196,5 +314,5 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "kuna v$ver" \
             --generate-notes \
-            --notes "$(printf 'Each archive ships `kuna` (the CLI), `decomp_dbg` (the decompiler console), and `slacomp` (the SLEIGH compiler).\n\nThe engine needs compiled SLEIGH specs at runtime: extract `kuna-v%s-specs.tar.gz` and point `KUNA_SPECS` at the extracted `specs/` directory. See docs/release.md.' "$ver")" \
+            --notes "$(printf 'Each archive ships `kuna` (the CLI), `decomp_dbg` (the decompiler console), and `slacomp` (the SLEIGH compiler).\n\nThe engine needs compiled SLEIGH specs at runtime: extract `kuna-v%s-specs.tar.gz` and point `KUNA_SPECS` at the extracted `specs/` directory. See docs/release.md.\n\n`kuna-v%s-KunaDecompiler-ghidra_%s.zip` is the ready-to-install KunaDecompiler extension for **Ghidra %s** (in Ghidra: File -> Install Extensions... -> `+` -> pick the zip -> restart -> enable KunaDecompilerPlugin). It bundles prebuilt `kuna_ghidra` backends for Linux x86_64/arm64, macOS x86_64/arm64, and Windows x86_64, so it installs fully airgapped: the Ghidra release zip plus this zip are the only two files needed -- no network, no Rust toolchain. The zip is version-locked to Ghidra %s; other Ghidra 12.x versions can choose "Install Anyway" at the version-mismatch dialog (compatibility unverified).' "$ver" "$ver" "$GHIDRA_VERSION" "$GHIDRA_VERSION" "$GHIDRA_VERSION")" \
             dist/*

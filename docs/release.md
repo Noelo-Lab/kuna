@@ -70,21 +70,44 @@ and 18 tags**.
    the whole run if tag `vMAJOR.MINOR` already exists (safe re-runs, and the
    no-op guard above).
 2. **build** (matrix) — `cargo build --release` of `kuna-cli`, `kuna-console`,
-   and `kuna-slacomp` for:
-   - Linux `x86_64-unknown-linux-gnu`
+   `kuna-slacomp`, and `kuna-ghidra` for:
+   - Linux `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (native,
+     on the `ubuntu-24.04-arm` runner)
    - macOS `aarch64-apple-darwin` and `x86_64-apple-darwin` (the latter
      cross-compiled on the arm64 runner)
    - Windows `x86_64-pc-windows-msvc`
    Each archive (`kuna-v<ver>-<os-arch>.tar.gz`, `.zip` on Windows) contains
    `kuna`, `decomp_dbg`, `slacomp`, `LICENSE`, `NOTICE`. A smoke test asserts
    `kuna --version` prints the release version. (`decomp_test_dbg` is not
-   shipped — the datatest harness only makes sense inside the repo.)
+   shipped — the datatest harness only makes sense inside the repo.) The
+   `kuna_ghidra` binaries are not in the archives: each row uploads its binary
+   as a `ghidra-bin-<platform>` workflow artifact for the **ghidra-ext** job.
 3. **specs** — compiles every `.slaspec` → `.sla` once on Linux and packages
    the whole `specs/` tree as `kuna-v<ver>-specs.tar.gz`. `.sla` files are
    platform-independent, so one asset serves every OS.
-4. **release** — `gh release create v<ver>` with all assets, tagging the built
+4. **ghidra-ext** — packages the ready-to-install KunaDecompiler Ghidra
+   extension, `kuna-v<ver>-KunaDecompiler-ghidra_<ghidra-version>.zip`. It
+   downloads the pinned Ghidra release (version *and* full asset URL are
+   pinned in the workflow's `env`, since the asset filename embeds a build
+   date; the zip is cached with `actions/cache`), stages the five
+   `ghidra-bin-*` binaries into the extension's `os/<platform>/` dirs
+   (restoring the exec bits that artifact upload drops), and runs Ghidra's own
+   `support/buildExtension.gradle` via the runner's preinstalled Gradle under
+   Java 21. The job asserts with `zipinfo` that all five `os/` binaries are in
+   the zip and the four unix ones carry mode 0755 — Ghidra's extension
+   installer re-applies exactly those bits at install time. (Gradle 9
+   normalizes archive entry modes for reproducibility, which would strip the
+   exec bits; the extension's `build.gradle` pins 0755 on the `kuna_ghidra`
+   entries explicitly, so the zip is correct under both Gradle 8 and 9.)
+   The zip is fully self-contained (`kuna_ghidra` needs no `.sla` files —
+   specs arrive over the wire), so it installs airgapped; it is version-locked
+   to the pinned Ghidra release, other 12.x installs go through the
+   installer's "Install Anyway" dialog. See
+   `integrations/ghidra/KunaDecompiler/README.md` for the install steps.
+5. **release** — `gh release create v<ver>` with all assets, tagging the built
    commit. This is what creates the git tag; no tags are pushed from anywhere
-   else.
+   else. (It downloads only `kuna-*` artifacts — the `ghidra-bin-*` binaries
+   are inter-job plumbing, not assets.)
 
 ## Using a released binary
 
@@ -102,3 +125,7 @@ export KUNA_SPECS=$PWD/specs
 
 (Inside a repo checkout none of this applies — binaries live in
 `decompiler/target/release/` and specs are found from the repo root.)
+
+The `kuna-v<ver>-KunaDecompiler-ghidra_<ghidra-version>.zip` asset is not an
+archive to extract — install it from inside Ghidra (**File → Install
+Extensions… → `+`**); see `integrations/ghidra/KunaDecompiler/README.md`.
