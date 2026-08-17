@@ -372,25 +372,54 @@ What breaks when a partial core omits pieces — all failure modes are clean:
 
 ## 11. Testing strategy
 
-- **Phase 1 (now): in-crate mock-Java e2e.** A `MockJava` test double owns the other
-  end of the pipe: sends command bursts, answers queries from canned tables, asserts
-  the byte-exact response framing (including the response-open-before-params ordering,
-  the always-present 16/17 frame, and the self-alignment/exception paths). This is the
-  same differential discipline as the port — the upstream implementation
+- **In-crate mock-Java e2e (Phase 1, shipped).** A `MockJava` test double owns the
+  other end of the pipe: sends command bursts, answers queries from canned tables,
+  asserts the byte-exact response framing (including the response-open-before-params
+  ordering, the always-present 16/17 frame, and the self-alignment/exception paths) —
+  `kuna-ghidra/tests/protocol_e2e.rs` (canned streams) and `tests/decompile_at_e2e.rs`
+  (the interactive loopback, one canned RETURN function). This is the same
+  differential discipline as the port — the upstream implementation
   (`DecompileProcess.java`, `ghidra_arch.cc`) is the oracle.
-- **Phase 2+: DecompileDebug captures as fixtures.** Ghidra's "Debug Function
+- **ghidra-sim: the real-program differential harness (shipped with Phase 2).**
+  `kuna-ghidra/tests/ghidra_sim_e2e.rs` + the shared machinery in
+  `tests/ghidra_sim/` drive the FULL wire lifecycle in-process (registerProgram →
+  setAction → decompileAt×N → flushNative → deregister) against vendored ELFs
+  (`tests/bug-repro/faillog` fast; `sort`/`grep` breadth), with the mock-Java end
+  answered from **kuna's own analysis** (`ghidra_sim/oracle.rs`:
+  `bootstrap_from_object` for bytes/labels, the real Sleigh re-encoded as wire
+  `<inst>` documents for getPcode, a tspec *generated* from the Sleigh's space
+  manager so packed space indices agree by construction; getMappedSymbols answers
+  empty — the Phase-2 reality). It asserts the §6 response contracts (dual
+  `<function>` decode, name/entry echo, markup opref/varref ⊆ ast, the 19-query
+  legality and query-legal-command placement), flattens the Clang markup to C with
+  Java's `getC()` token cleaning applied (`IllegalCharCppTransformer` — the reason
+  over-wide type tokens read back as `unsigned_long__a1`), and **pins today's
+  GUI-path quality numbers**: raw-register identifier leaks, `Unique<hex>` tokens,
+  `sub_`/`dat_` placeholder rate vs what the loader knows, `getC()`-mangled token
+  counts, query traffic (getPcode totals, getMappedSymbols == 0), and the
+  normalized line-diff ratio against the SAME functions through the in-process CLI
+  path. The pins are inline consts in `ghidra_sim_e2e.rs`; they move only with the
+  provider/emitter change that earns the move — Phase 3/4 land by flipping them
+  downward. Run: `make test-ghidra` (release; also part of the CI `gates` job on
+  every PR, which matters because the workspace suite is skipped on internal PRs).
+- **Phase 3+: DecompileDebug captures as fixtures.** Ghidra's "Debug Function
   Decompilation" action (`DecompInterface.enableDebug`, `DebugDecompilerAction.java:38-73`)
   records every callback answer into an `<xml_savefile>` — exactly the document kuna's
   datatest corpus already consumes. Captures give us *recorded Java-side query answers*
-  to replay against `kuna-ghidra` without a live Ghidra, and `DecompileDebugXmlLoader`
-  (Features/Base) can import them as Programs for the reverse direction.
-- **Live smoke procedure** (manual, per phase): build the extension, install into a
-  Ghidra 12.2 release (or `-Dghidra.external.modules=` in a dev checkout), enable the
-  plugin, open a known binary, decompile; verify the spawned PID is `kuna_ghidra` and —
-  from Phase 2 — that the C, click-to-address, and rename round-trip behave.
-- **Regression floors**: the three standing gates (`make test`, `make test-stages`,
-  `make rust-test`) must stay green — `kuna-ghidra` is additive and must not perturb
-  the standalone engine.
+  to replay against `kuna-ghidra` without a live Ghidra (de-risking the sim's
+  synthesized `<mapsym>` shapes), and `DecompileDebugXmlLoader` (Features/Base) can
+  import them as Programs for the reverse direction.
+- **Live smoke** (manual, per phase): `integrations/ghidra/live-smoke/` — a
+  pyghidra rig that swaps `DecompileProcessFactory.exepath` to `kuna_ghidra` inside
+  a real Ghidra, decompiles the same functions with both cores, and writes a
+  side-by-side report with the same scanner counts the sim pins (see its README
+  for the offline-pyghidra setup). For the full extension path: build the
+  extension, install into a Ghidra 12.2 release (or `-Dghidra.external.modules=`
+  in a dev checkout), enable the plugin, verify the spawned PID is `kuna_ghidra`
+  and that the C, click-to-address, and rename round-trip behave.
+- **Regression floors**: the standing gates (`make test`, `make test-stages`,
+  `make rust-test`, now plus the `gates`-job ghidra-sim step) must stay green —
+  `kuna-ghidra` is additive and must not perturb the standalone engine.
 
 ## 12. Phase breakdown
 
