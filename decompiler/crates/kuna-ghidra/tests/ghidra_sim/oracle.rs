@@ -48,7 +48,7 @@ use kuna_sleigh::translate::{PcodeEmit, Translate, ATTRIB_CODE, ELEM_OP};
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_decomp::comment::ELEM_COMMENTDB;
-use kuna_decomp::decompile_drive::{decompile_func_full_with_override_dyn, print_c};
+use kuna_decomp::decompile_drive::print_c;
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES};
 use kuna_ghidra::ids::{
     ATTRIB_MAXSIZE, ELEM_COMMAND_GETBYTES, ELEM_COMMAND_GETCODELABEL, ELEM_COMMAND_GETCOMMENTS,
@@ -173,8 +173,11 @@ impl SimOracle {
     }
 
     /// The primary label the "Java side" knows at an address (a function name
-    /// from the committed symbol set; the override map wins).
-    fn code_label(&self, offset: u64) -> Option<String> {
+    /// from the committed symbol set; the override map wins).  Public so the
+    /// harness asserts the name echo against exactly what the sim SERVED —
+    /// including a test-injected `label_overrides` entry — rather than against
+    /// the underlying program lookup.
+    pub fn code_label(&self, offset: u64) -> Option<String> {
         if let Some(over) = self.label_overrides.get(&offset) {
             return Some(over.clone());
         }
@@ -514,24 +517,38 @@ pub fn apply_cli_default_options(prog: &mut ConsoleProgram, size_bytes: u64) {
     }
 }
 
-/// Decompile `name`@`addr` through the in-process CLI path — the same drive
-/// `kuna decompile` uses (`decompile_func_full_with_override_dyn` with the
-/// DWARF-local re-seed + `print_c`).  This is the differential ground truth.
+/// Decompile `name`@`addr` through the in-process CLI path — the SAME shared
+/// per-function step the whole-binary surfaces run (`decompile_step::
+/// decompile_one`, DIV-66), seeded exactly as `kuna_console::project` seeds it:
+/// the DWARF stack-local re-seed plus the analysis's `call error(nonzero,…)`
+/// CALL_RETURN flow prunes (project.rs builds the same list from
+/// `arch.error_noreturn_callsites`; empty unless Listing + `noreturn_error`
+/// found such sites).  Then `print_c`.  This is the differential ground truth.
 pub fn decompile_cli(prog: &mut ConsoleProgram, name: &str, addr: &Address) -> String {
     let mapped = prog.dwarf_locals_for(addr.get_offset());
-    let fd = decompile_func_full_with_override_dyn(
+    let flow_ovr: Vec<(Address, u32)> = match addr.get_space() {
+        Some(space) if !prog.arch().error_noreturn_callsites.is_empty() => prog
+            .arch()
+            .error_noreturn_callsites
+            .iter()
+            .map(|&off| {
+                (
+                    Address::new(Rc::clone(space), off),
+                    kuna_decomp::overrides::flow_type::CALL_RETURN,
+                )
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    let fd = kuna_console::decompile_step::decompile_one(
         prog.arch_mut(),
         name,
         addr.clone(),
         0,
-        &mapped,
-        &[],
-        &[],
-        None,
-        &[],
-        &[],
+        &kuna_console::decompile_step::DecompileSeed::plain(&mapped, &flow_ovr),
         &[],
     )
+    .result
     .unwrap_or_else(|e| panic!("CLI-path decompile of {name} failed: {}", e.explain()));
     print_c(prog.arch_mut(), &fd)
 }

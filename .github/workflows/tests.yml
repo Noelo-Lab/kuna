@@ -139,12 +139,17 @@ jobs:
       # The grep guards against the visible-skip trap: with specs missing these
       # tests print a skip notice and pass vacuously (same canary pattern as the
       # rust-test job).
+      # `tee` (not `out=$(…)`) so a FAILING run still prints its diagnostics:
+      # under `bash -e` a command substitution aborts the step before any
+      # `echo "$out"`, which would leave a red step with zero output exactly
+      # when the pins fire. pipefail (set by the explicit bash shell above)
+      # preserves cargo's exit code through the pipe.
       - name: ghidra-sim differential harness (kuna-ghidra, release)
         run: |
           cd decompiler
-          out=$(cargo test -p kuna-ghidra --release -- --include-ignored --nocapture 2>&1)
-          echo "$out"
-          if grep -qE 'skipping \(.*(\.sla|make specs|specs tree)' <<<"$out"; then
+          cargo test -p kuna-ghidra --release -- --include-ignored --nocapture 2>&1 \
+            | tee "$RUNNER_TEMP/ghidra-sim.log"
+          if grep -qE 'skipping \(.*(\.sla|make specs|specs tree)' "$RUNNER_TEMP/ghidra-sim.log"; then
             echo "::error::ghidra-sim tests skipped for missing/unusable SLEIGH specs -- the harness would be a false green"
             exit 1
           fi

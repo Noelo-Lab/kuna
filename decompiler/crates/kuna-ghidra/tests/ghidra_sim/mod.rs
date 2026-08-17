@@ -61,6 +61,10 @@ pub const ATTRIB_INDENT_ID: u32 = 38;
 pub const ATTRIB_COLOR_ID: u32 = 37;
 /// `<function>` (funcdata_encode.rs).
 pub const ELEM_FUNCTION_ID: u32 = 116;
+/// `<ast>` (funcdata_encode.rs).
+pub const ELEM_AST_ID: u32 = 115;
+/// `<varnodes>` — the mandatory first child of `<ast>` (funcdata_encode.rs).
+pub const ELEM_VARNODES_ID: u32 = 119;
 /// `<break>` — the markup line break (prettyprint.rs).
 pub const ELEM_BREAK_ID: u32 = 17;
 /// `<funcname>` (prettyprint.rs) → Java ClangFuncNameToken.
@@ -417,6 +421,16 @@ pub fn query_doc_id(doc: &[u8], manager: &AddrSpaceManager) -> u32 {
 // <doc> decoding: attribute walk, dual-<function> parse, markup flatten
 // ---------------------------------------------------------------------------
 
+/// Consume (skip) all attributes of the current open element, leaving the
+/// decoder positioned at its first child.
+pub fn skip_attributes(dec: &mut PackedDecode) -> Result<(), KunaError> {
+    loop {
+        if dec.get_next_attribute_id()? == 0 {
+            return Ok(());
+        }
+    }
+}
+
 /// Recursively walk the current (already-opened) element, collecting the values
 /// of the `target` attribute ids into `out`, then recursing into children.
 pub fn walk(
@@ -458,7 +472,11 @@ pub struct ParsedDoc {
     pub entry_offset: Option<u64>,
     /// `<ast>` op times (`<seqnum uniq=…>`).
     pub ast_op_times: BTreeSet<u64>,
-    /// `<ast>` varnode create-indices (`<addr ref=…>`).
+    /// `<ast>` varnode create-indices — collected from the `<varnodes>` child
+    /// ONLY, because that is all Java's `PcodeSyntaxTree.buildVarnodeRefs`
+    /// keys: an `<op>` operand `ref` that is not declared in `<varnodes>`
+    /// would silently resolve to null in the GUI, so it must not launder the
+    /// subset assertion.
     pub ast_var_refs: BTreeSet<u64>,
     /// Markup `opref` values (must be ⊆ `ast_op_times`).
     pub markup_oprefs: BTreeSet<u64>,
@@ -502,11 +520,45 @@ pub fn parse_decompile_doc(doc: &[u8], manager: &AddrSpaceManager) -> ParsedDoc 
         let addr = Address::decode(&mut dec).expect("<function> base <addr>");
         parsed.entry_offset = Some(addr.get_offset());
     }
-    let mut ast = BTreeMap::new();
-    walk(&mut dec, &[ATTRIB_REF_ID, ATTRIB_UNIQ_ID], &mut ast).expect("walk <function>");
+    // Walk the remaining children selectively: inside `<ast>`, varnode
+    // create-indices come from the `<varnodes>` declarations only (see the
+    // `ast_var_refs` field doc) while op times come from the `<block>` bodies.
+    loop {
+        let c = dec.peek_element().expect("peek <function> child");
+        if c == 0 {
+            break;
+        }
+        let cid = dec.open_element().expect("open <function> child");
+        if cid == ELEM_AST_ID {
+            skip_attributes(&mut dec).expect("<ast> attributes");
+            loop {
+                let a = dec.peek_element().expect("peek <ast> child");
+                if a == 0 {
+                    break;
+                }
+                let aid = dec.open_element().expect("open <ast> child");
+                let mut got = BTreeMap::new();
+                if aid == ELEM_VARNODES_ID {
+                    walk(&mut dec, &[ATTRIB_REF_ID], &mut got).expect("walk <varnodes>");
+                    parsed
+                        .ast_var_refs
+                        .extend(got.get(&ATTRIB_REF_ID).cloned().unwrap_or_default());
+                } else {
+                    walk(&mut dec, &[ATTRIB_UNIQ_ID], &mut got).expect("walk <ast> child");
+                    parsed
+                        .ast_op_times
+                        .extend(got.get(&ATTRIB_UNIQ_ID).cloned().unwrap_or_default());
+                }
+                dec.close_element(aid).expect("close <ast> child");
+            }
+        } else {
+            // Some other (future: localdb/prototype/…) child: skip through.
+            let mut sink = BTreeMap::new();
+            walk(&mut dec, &[], &mut sink).expect("walk <function> child");
+        }
+        dec.close_element(cid).expect("close <function> child");
+    }
     dec.close_element(fid).expect("close <function>");
-    parsed.ast_op_times = ast.get(&ATTRIB_UNIQ_ID).cloned().unwrap_or_default();
-    parsed.ast_var_refs = ast.get(&ATTRIB_REF_ID).cloned().unwrap_or_default();
 
     // --- the second <function>: the Clang token markup ---
     if dec.peek_element().expect("peek after <function>") == ELEM_FUNCTION_ID {

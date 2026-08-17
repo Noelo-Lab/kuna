@@ -54,9 +54,9 @@ use ghidra_sim::oracle::{
 };
 use ghidra_sim::{
     cmd_decompile_at, cmd_deregister_program, cmd_flush_native, cmd_register_program,
-    cmd_set_action, line_diff_ratio, parse_decompile_doc, placeholder_addrs, query_doc_id,
-    register_leaks, trace_session, unique_leaks, MockReader, MockState, MockWriter, ParsedDoc,
-    SessionTrace, QUERY_COMMAND_IDS,
+    cmd_set_action, line_diff_ratio, normalized_lines, parse_decompile_doc, placeholder_addrs,
+    query_doc_id, register_leaks, trace_session, unique_leaks, MockReader, MockState, MockWriter,
+    ParsedDoc, SessionTrace, QUERY_COMMAND_IDS,
 };
 
 /// One driven ghidra-mode session over a vendored ELF.
@@ -145,12 +145,13 @@ fn run_session(binary: &Path, targets: &[&str]) -> Option<SessionRun> {
         "one command response span per command"
     );
 
-    // registerProgram answered archid 0 with an empty warnings frame.
+    // registerProgram answered archid 0 with an EMPTY warnings frame (any text
+    // here — construction failure, marshaling error — is a defect).
     let reg = &trace.responses[0];
     assert_eq!(reg.payload.as_deref(), Some(b"0".as_slice()), "archid echo");
     assert!(
-        !reg.warnings.contains("could not build the decompiler engine"),
-        "engine construction failed: {}",
+        reg.warnings.trim().is_empty(),
+        "registerProgram shipped a non-empty warnings frame: {}",
         reg.warnings
     );
     // setAction / flushNative / deregister accepted.
@@ -172,8 +173,8 @@ fn run_session(binary: &Path, targets: &[&str]) -> Option<SessionRun> {
     for (i, a) in addrs.iter().enumerate() {
         let resp = &trace.responses[2 + i];
         assert!(
-            !resp.warnings.contains("could not decompile the function"),
-            "decompileAt #{i} degraded: {}",
+            resp.warnings.trim().is_empty(),
+            "decompileAt #{i} shipped a non-empty warnings frame (degradation): {}",
             resp.warnings
         );
         let payload = resp.payload.clone().expect("decompileAt payload present");
@@ -184,9 +185,11 @@ fn run_session(binary: &Path, targets: &[&str]) -> Option<SessionRun> {
         );
         let parsed = parse_decompile_doc(&payload, &oracle.manager);
         // Name + entry-address echo — the HighFunction.decode hard-throw traps.
+        // Compared against what the sim actually SERVED (`code_label` consults
+        // `label_overrides`), not the raw program lookup.
         assert_eq!(
             Some(parsed.name.as_str()),
-            oracle.prog.function_named_at(a.get_offset()).as_deref(),
+            oracle.code_label(a.get_offset()).as_deref(),
             "decompileAt #{i}: <function name> must echo the getCodeLabel answer"
         );
         assert_eq!(
@@ -221,9 +224,16 @@ fn assert_structure(run: &SessionRun) {
             parsed.markup_varrefs.is_subset(&parsed.ast_var_refs),
             "target #{i}: markup varrefs not a subset of ast varnode refs"
         );
+        // Both ref classes must be present PER CLASS (both are non-empty on
+        // every real function today): an either-or here would let one whole
+        // class of click-to-address links silently vanish.
         assert!(
-            !parsed.markup_oprefs.is_empty() || !parsed.markup_varrefs.is_empty(),
-            "target #{i}: markup not cross-linked to the ast"
+            !parsed.markup_oprefs.is_empty(),
+            "target #{i}: markup carries no oprefs — op tokens lost their ast links"
+        );
+        assert!(
+            !parsed.markup_varrefs.is_empty(),
+            "target #{i}: markup carries no varrefs — variable tokens lost their ast links"
         );
         assert!(
             !parsed.c_text.trim().is_empty(),
@@ -315,11 +325,27 @@ const PIN_FAILLOG_PLACEHOLDERS: [usize; 3] = [49, 25, 17];
 // getMappedSymbols is unanswered.  Phase 3 drives these to 0.
 const PIN_FAILLOG_RESOLVABLE: [usize; 3] = [24, 18, 14];
 // The normalized line-diff ratio vs the CLI path, per target (measured 0.643 /
-// 0.898 / 0.811): today's gap must stay at least this bad — the floor is set a
-// few points under the measurement so unrelated CLI-side drift cannot trip it,
-// while any real Phase-3 improvement (target ≈ 0.1) MUST flip the assertion to
-// a ceiling.
+// 0.898 / 0.811), banded from BOTH sides a few points off the measurement:
+// the floor so a real Phase-3 improvement must flip the band downward
+// deliberately, the ceiling so a markup regression that makes the GUI text
+// even MORE alien (lost tokens, collapsed structure) fails instead of
+// saturating unnoticed.  Unrelated CLI-side drift moves the ratio only a few
+// points, which the band absorbs.
+//
+// What the ratio is made of — so nobody chases an unreachable ≈0 with symbol
+// work alone: part is the Phase-3 symbol/type gap (sub_/dat_/register/Unique
+// rendering), and part is OPTION-PRESET SKEW — the CLI side runs the
+// aggressive-mode presets (`ctypes`, `stackalias`, `iteexpr`, …, applied by
+// `apply_cli_default_options`) that the ghidra-mode engine cannot receive
+// until setOptions is wired (Phase 3/4).  Expect Phase 3 to land in the
+// ~0.1–0.3 range, not 0; the residue is the setOptions work.
 const PIN_FAILLOG_DIFF_FLOOR: [f64; 3] = [0.55, 0.80, 0.70];
+const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.70, 0.95, 0.90];
+// Normalized non-empty line count of the flattened markup C, per target: the
+// structural size of what the GUI renders.  A `<break>`-token regression would
+// collapse this to ~1 while leaving every ratio-floor assertion green — this
+// pin is what catches it.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [241, 174, 89];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`): kuna
 // emits whole rendered declarators (`"unsigned long *"`) as single `<type>`
 // tokens, which scripts/exports receive as `unsigned_long__` — the type-
@@ -349,6 +375,7 @@ fn ghidra_sim_faillog_pins() {
     let mut ph_totals = Vec::new();
     let mut ph_resolvables = Vec::new();
     let mut mangled_counts = Vec::new();
+    let mut c_line_counts = Vec::new();
     for parsed in &run.docs {
         let c = &parsed.c_text;
         let (reg_count, reg_names) = register_leaks(c, &run.oracle.register_names);
@@ -358,6 +385,7 @@ fn ghidra_sim_faillog_pins() {
         ph_totals.push(placeholder_total(c));
         ph_resolvables.push(resolvable_placeholders(&run.oracle, c));
         mangled_counts.push(parsed.mangled_tokens);
+        c_line_counts.push(normalized_lines(c).len());
     }
 
     // The differential-C gap vs the in-process CLI path.
@@ -385,9 +413,9 @@ fn ghidra_sim_faillog_pins() {
     for (i, t) in FAILLOG_TARGETS.iter().enumerate() {
         summary.push_str(&format!(
             "{t}: registers={} {:?} unique={} placeholders={} resolvable={} mangled={} \
-             diff_ratio={:.3}\n",
+             c_lines={} diff_ratio={:.3}\n",
             reg_counts[i], reg_names_seen[i], uniq_counts[i], ph_totals[i], ph_resolvables[i],
-            mangled_counts[i], ratios[i]
+            mangled_counts[i], c_line_counts[i], ratios[i]
         ));
     }
     summary.push_str(&format!(
@@ -428,7 +456,17 @@ fn ghidra_sim_faillog_pins() {
              (and celebrate); otherwise investigate.",
             ratios[i], PIN_FAILLOG_DIFF_FLOOR[i]
         );
-        assert!(ratios[i] <= 1.0, "{t}: diff ratio out of range: {}", ratios[i]);
+        assert!(
+            ratios[i] <= PIN_FAILLOG_DIFF_CEILING[i],
+            "{t}: ghidra-vs-CLI diff ratio {:.3} rose above the pinned ceiling {} — \
+             the GUI path got WORSE (a markup/flatten regression?).",
+            ratios[i], PIN_FAILLOG_DIFF_CEILING[i]
+        );
+        assert_eq!(
+            c_line_counts[i], PIN_FAILLOG_C_LINES[i],
+            "{t}: flattened-C line count moved — the rendered structure changed \
+             (a <break>/token regression collapses this while ratios stay in band)"
+        );
     }
 
     // ---- query-traffic fingerprints ----

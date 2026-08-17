@@ -27,8 +27,13 @@ the native process. No extension install is needed for the smoke.
        "$GHIDRA_INSTALL_DIR/Ghidra/Features/PyGhidra/pypkg/dist" pyghidra
    ```
 
-3. The kuna binaries: `make binaries` at the repo root (produces
-   `decompiler/target/release/kuna_ghidra`).
+3. The `kuna_ghidra` binary — NOT part of `make binaries`; build it directly:
+
+   ```bash
+   cd decompiler && cargo build --release -p kuna-ghidra
+   ```
+
+   (produces `decompiler/target/release/kuna_ghidra`).
 
 ## Run
 

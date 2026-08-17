@@ -159,7 +159,8 @@ def main():
               "python3 kuna_vs_stock.py")
         sys.exit(1)
     if not os.path.exists(KUNA_GHIDRA):
-        print(f"FATAL: kuna_ghidra not built at {KUNA_GHIDRA} (make binaries)")
+        print(f"FATAL: kuna_ghidra not built at {KUNA_GHIDRA} "
+              "(cd decompiler && cargo build --release -p kuna-ghidra)")
         sys.exit(1)
     os.makedirs(OUT, exist_ok=True)
 
