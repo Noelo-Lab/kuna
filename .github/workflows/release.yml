@@ -231,12 +231,19 @@ jobs:
           pattern: ghidra-bin-*
           path: ghidra-bins
 
+      # The key derives from the URL's basename (version + build date), so a
+      # re-spun same-version asset -- only GHIDRA_ZIP_URL bumped -- can never
+      # be shadowed by a stale cached zip.
+      - name: Compute the Ghidra cache key
+        id: ghidra-key
+        run: echo "key=ghidra-zip-$(basename "$GHIDRA_ZIP_URL" .zip)" >> "$GITHUB_OUTPUT"
+
       - name: Cache the Ghidra release zip
         id: ghidra-cache
         uses: actions/cache@v4
         with:
           path: ghidra-dist
-          key: ghidra-${{ env.GHIDRA_VERSION }}
+          key: ${{ steps.ghidra-key.outputs.key }}
 
       - name: Download Ghidra ${{ env.GHIDRA_VERSION }}
         if: steps.ghidra-cache.outputs.cache-hit != 'true'

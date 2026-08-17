@@ -282,8 +282,9 @@ public final class KunaCoreSwap {
 	private static void showReflectionError(Object originator, Exception e) {
 		Msg.showError(originator, null, "Kuna Core Swap Failed",
 			"Could not access ghidra.app.decompiler.DecompileProcessFactory." + EXEPATH_FIELD +
-				" by reflection. This Ghidra version may have changed the factory's " +
-				"field layout; the " + MODULE_NAME + " extension targets Ghidra 12.2.",
+				" by reflection. This Ghidra version (" + Application.getApplicationVersion() +
+				") may have changed the factory's field layout the " + MODULE_NAME +
+				" extension relies on.",
 			e);
 	}
 }

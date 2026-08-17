@@ -89,7 +89,8 @@ and 18 tags**.
    extension, `kuna-v<ver>-KunaDecompiler-ghidra_<ghidra-version>.zip`. It
    downloads the pinned Ghidra release (version *and* full asset URL are
    pinned in the workflow's `env`, since the asset filename embeds a build
-   date; the zip is cached with `actions/cache`), stages the five
+   date; the zip is cached with `actions/cache` under a key derived from the
+   asset filename, so bumping the URL always invalidates it), stages the five
    `ghidra-bin-*` binaries into the extension's `os/<platform>/` dirs
    (restoring the exec bits that artifact upload drops), and runs Ghidra's own
    `support/buildExtension.gradle` via the runner's preinstalled Gradle under

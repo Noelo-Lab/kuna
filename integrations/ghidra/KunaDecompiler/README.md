@@ -13,8 +13,9 @@ self-contained functions decompile cleanly; a function that references globals/t
 engine can't yet resolve shows placeholder names (`sub_…`/`DAT_…`) and default types —
 correct names/types at scale is Phase 3 (the lazy symbol scope). See
 [`docs/ghidra-integration.md`](../../../docs/ghidra-integration.md) for the design and
-phase plan. Target Ghidra version: **12.2** (the swap relies on the exact shape of
-`DecompileProcessFactory`; see *How it works* below).
+phase plan. Developed against Ghidra **12.2-DEV**; release zips are built against the
+latest stable release (currently **12.1.2**). The swap relies on the exact shape of
+`DecompileProcessFactory`, which is identical across both (see *How it works* below).
 
 ## Install from a GitHub Release (recommended; works airgapped)
 
