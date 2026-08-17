@@ -71,8 +71,9 @@ fn settable_count_is_107() {
     // +1 for `ctypes` (P9 valid per-architecture C type spelling, DIV-75).
     // +1 for `datasyms` (P1 ELF data-symbol naming gate, DIV-76, GH-184).
     // +1 for `loadguardrange` (P3 indexed-stack guard ValueSet range refinement, GH-182).
-    assert_eq!(kuna_num_settables(), 108);
-    assert_eq!(SETTABLE_TABLE.len(), 108);
+    // +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79, GH-289).
+    assert_eq!(kuna_num_settables(), 109);
+    assert_eq!(SETTABLE_TABLE.len(), 109);
 }
 
 #[test]
@@ -117,7 +118,8 @@ fn tier_counts_are_23_core_47_transform_37_analysis() {
     // core 22 -> 23: +1 for `ctypes` (P9 valid C type spelling, DIV-75).
     // analysis 36 -> 37: +1 for `datasyms` (P1 ELF data-symbol naming, DIV-76).
     // core 23 -> 24: +1 for `loadguardrange` (P3 guard ValueSet range refinement, GH-182).
-    assert_eq!((core, transform, analysis), (24, 47, 37));
+    // analysis 37 -> 38: +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79).
+    assert_eq!((core, transform, analysis), (24, 47, 38));
 }
 
 #[test]
@@ -411,6 +413,10 @@ fn option_values_live_value_present_for_34_suppressed_for_74() {
         // (kuna) x86-64 IFUNC PLT-stub naming: a load-time gate read via the
         // `kuna_ifuncfpret` env var (no codegen live reader), like `i386_pie_plt`.
         "ifuncfpret",
+        // (kuna) Relocatable-object analysis rebase (GH-289): a load-time gate read
+        // via the `kuna_relocrebase` env var (the analyzer tier runs inside `load
+        // file`), like `i386_pie_plt`. Default-ON (DIV-79).
+        "relocrebase",
         // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
@@ -596,9 +602,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
-    // datasyms' P1 row and loadguardrange's P3 row sit
+    // datasyms' P1 row, loadguardrange's P3 row and relocrebase's P1 row sit
     // mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 107);
+    assert_eq!(json.matches("},\n").count(), 108);
 }
 
 #[test]

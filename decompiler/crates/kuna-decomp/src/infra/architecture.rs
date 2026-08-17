@@ -828,6 +828,18 @@ pub struct Architecture {
     /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
     /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
     pub analysis_ifuncfpret: bool,
+    /// (kuna) Gate the relocatable-object analysis rebase (`relocrebase`); default
+    /// **on** (DIV-79, GH-289). The loader lays an ELF `ET_REL` `.o` / COFF `.obj`
+    /// out synthetically above `RELOC_BASE`, but the LOAD-TIME analysis passes
+    /// re-parse the same file and compute pre-link, section-relative addresses —
+    /// mixing two address spaces in one inventory (phantom `sub_<off>` entries
+    /// beside the real ones, strings and DWARF globals that never attach). When on,
+    /// `kuna-analysis::loader::kuna_relocrebase` re-presents the object in the
+    /// loaded image's address space before any pass reads it. Read through the
+    /// [`crate::kuna_relocrebase`] **env var** (the analyzer tier runs inside `load
+    /// file`, upstream of `option`); this bool exists only for catalog visibility
+    /// and the `phase catalog` live `current` field.
+    pub analysis_relocrebase: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -1361,6 +1373,7 @@ impl Architecture {
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
+            analysis_relocrebase: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_datasyms: false,
@@ -1530,6 +1543,7 @@ impl Architecture {
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
+        self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
@@ -1873,6 +1887,17 @@ impl Architecture {
                 crate::kuna_i386_pie_plt::set_i386_pie_plt_env(val);
                 Ok(format!(
                     "i386-PIE PLT-stub decode turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            // (kuna) Load-time gate: the analyzer tier runs inside `load file`, so
+            // bridge to the env var it reads (the CLI sets it on the subprocess too).
+            "relocrebase" => {
+                let val = on_or_off(p1)?;
+                self.analysis_relocrebase = val;
+                crate::kuna_relocrebase::set_relocrebase_env(val);
+                Ok(format!(
+                    "relocatable-object analysis rebase turned {}",
                     if val { "on" } else { "off" }
                 ))
             }

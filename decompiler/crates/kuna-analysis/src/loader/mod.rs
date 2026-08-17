@@ -34,6 +34,9 @@ pub mod arm_markers;
 pub mod elf_plt;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod reloc_object;
+// (kuna) `relocrebase`: rebase the load-time analysis facts of a relocatable
+// object into the loaded image's address space (GH-289).
+pub mod kuna_relocrebase;
 pub mod format;
 // (kuna) PE import-call binding (`peimportcall`): `externref` over the IAT slots
 // + upstream's PE-only no-return API names.

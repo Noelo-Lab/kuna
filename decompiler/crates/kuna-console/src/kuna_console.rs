@@ -211,6 +211,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "mips_gp" => on_off(conf.analysis_mips_gp),
         "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
+        "relocrebase" => on_off(conf.analysis_relocrebase),
         "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
         // (kuna) ELF data-symbol naming (DIV-76): committed at `read symbols`
