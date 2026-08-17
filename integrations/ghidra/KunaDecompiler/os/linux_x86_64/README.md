@@ -36,4 +36,7 @@ binary, with the same name, into the matching directory before zipping:
 
 Directory names are Ghidra's `Platform` enum names (`Ghidra/Framework/Generic/src/main/java/ghidra/framework/Platform.java`) — note the underscore before `64` on the arm variants (`linux_arm_64`, `mac_arm_64`).
 
-Phase 1 only targets `linux_x86_64`; the other directories may simply not exist.
+A local `build.sh` run only stages the host's platform; the other directories may
+simply not exist. Release CI (the `ghidra-ext` job in
+`.github/workflows/release.yml`) stages all five before zipping, so the published
+extension zip works on every platform.

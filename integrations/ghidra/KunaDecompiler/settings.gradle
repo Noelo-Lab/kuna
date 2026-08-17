@@ -1,0 +1,4 @@
+// Pin the Gradle project name: buildExtension.gradle derives the zip's top-level
+// directory, the jar name, and the @extname@ substitution from project.name, which
+// otherwise falls back to the checkout directory's name (CI checkouts vary).
+rootProject.name = 'KunaDecompiler'

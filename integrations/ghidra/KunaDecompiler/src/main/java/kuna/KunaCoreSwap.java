@@ -139,7 +139,15 @@ public final class KunaCoreSwap {
 		}
 	}
 
+	/**
+	 * Verifies the binary is executable, first attempting to set the exec bit itself
+	 * (self-heal for zips unpacked by tools that drop unix modes); throws only if the
+	 * bit still cannot be gained.
+	 */
 	private static File checkExecutable(File file) throws FileNotFoundException {
+		if (!file.canExecute()) {
+			file.setExecutable(true, false);
+		}
 		if (!file.canExecute()) {
 			throw new FileNotFoundException("The kuna decompiler binary exists but is not " +
 				"executable: " + file.getAbsolutePath() + " (chmod +x it).");

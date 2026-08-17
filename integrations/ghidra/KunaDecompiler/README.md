@@ -16,6 +16,33 @@ correct names/types at scale is Phase 3 (the lazy symbol scope). See
 phase plan. Target Ghidra version: **12.2** (the swap relies on the exact shape of
 `DecompileProcessFactory`; see *How it works* below).
 
+## Install from a GitHub Release (recommended; works airgapped)
+
+Every kuna release ships a ready-to-install extension zip —
+`kuna-v<ver>-KunaDecompiler-ghidra_<ghidra-version>.zip` on the
+[releases tab](https://github.com/Noelo-Lab/kuna/releases) — with prebuilt `kuna_ghidra`
+backends for **all platforms** already inside: Linux x86_64 and arm64, macOS x86_64 and
+arm64, Windows x86_64 (`kuna_ghidra.exe`). Ghidra picks the right one at runtime, and
+its built-in arm→x86 fallbacks cover the rest (Windows-on-ARM runs the x86_64 binary
+under emulation; an Apple-Silicon install missing `mac_arm_64` would fall back to
+`mac_x86_64` under Rosetta). No cargo, no network, no separate specs download —
+`kuna_ghidra` receives everything over the wire, so the zip plus a Ghidra release
+install are the only two files an airgapped machine needs.
+
+1. Download the `…KunaDecompiler-ghidra_<version>.zip` asset from the kuna releases tab.
+2. In Ghidra's project window: **File → Install Extensions… → `+` → select the zip**,
+   then restart Ghidra when prompted.
+3. Enable the plugin: open a program in the CodeBrowser, then **File → Configure →
+   Miscellaneous** and check **KunaDecompilerPlugin**.
+
+The zip is built against — and version-locked to — the Ghidra version in its filename
+(the extension installer compares versions). On another Ghidra 12.x, the installer shows
+an **Extension Version Mismatch** dialog; **Install Anyway** generally works because the
+factory seam the plugin relies on is stable across 12.x, but those pairings are
+unverified.
+
+The sections below are the from-source paths: building the backend and the zip yourself.
+
 ## How it works
 
 Every decompiler consumer in Ghidra funnels process creation through one static
