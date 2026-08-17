@@ -232,8 +232,9 @@ pub(crate) fn load_program(
     // Load-time loader gates are read by `bootstrap_from_object` itself, so they
     // must be exported BEFORE it runs (the same gates `kuna decompile` threads to
     // the subprocess env). Keep the restoration guard alive through runtime
-    // option recording too: `relocobjects`, `i386_pie_plt` and `typedepth` update their env
-    // bridges again inside `set_kuna_option` and must not leak into a later load.
+    // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase` and
+    // `typedepth` update their env bridges again inside `set_kuna_option` and must
+    // not leak into a later load.
     let _loadtime_env = apply_loadtime_env(&args.options, args.slice.as_deref());
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
@@ -408,7 +409,12 @@ pub(crate) fn resolve_targets(
 fn is_loadtime_gate(name: &str) -> bool {
     matches!(
         name,
-        "relocobjects" | "i386_pie_plt" | "macho-arm64e" | "typedepth" | "ifuncfpret"
+        "relocobjects"
+            | "i386_pie_plt"
+            | "relocrebase"
+            | "macho-arm64e"
+            | "typedepth"
+            | "ifuncfpret"
     )
 }
 
@@ -471,6 +477,19 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
             "off" | "0" | "false"
         );
         env.set("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
+    }
+    // (kuna, GH-289) The relocatable-object analysis rebase runs inside `load
+    // file` (the whole analyzer tier does), so the gate must be exported before
+    // `bootstrap_from_object`. Default-on: only an off-token disables it.
+    if let Some(value) = last_option_value(options, "relocrebase") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_relocrebase::RELOCREBASE_ENV,
+            if on { "on" } else { "off" },
+        );
     }
     if let Some(value) = last_option_value(options, "ifuncfpret") {
         // default-off, opt-in: only an on-token enables it.

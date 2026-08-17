@@ -362,6 +362,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (kuna) x86-64 IFUNC (IRELATIVE) PLT-stub naming; loader-tier gate read via
     // the `kuna_ifuncfpret` env var. Default-off opt-in.
     "ifuncfpret",
+    // (kuna) Relocatable-object analysis-fact rebase (GH-289): a load-time gate
+    // read via the `kuna_relocrebase` env var (the analyzer tier runs inside
+    // `load file`). Default-ON (DIV-79).
+    "relocrebase",
     "mips_isa",
     "dwarf",
     // (kuna) ELF data-symbol (`STT_OBJECT`) naming — the data half of the

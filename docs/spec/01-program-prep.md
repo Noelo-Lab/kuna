@@ -73,7 +73,8 @@ Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are
 bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
-`KUNA_MACHO_ARM64E` (`macho-arm64e`), `KUNA_MACHO_SLICE` (`--slice`). For those,
+`KUNA_RELOCREBASE` (`relocrebase`), `KUNA_MACHO_ARM64E` (`macho-arm64e`),
+`KUNA_MACHO_SLICE` (`--slice`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
 *locate* the artifact — the `fid`/`pdb` passes stay flag-gated at the deferred
@@ -180,6 +181,44 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   A REL-style relocation table (COFF, 32-bit ELF) stores its addend in the field
   being patched rather than in the entry, so the in-place value is read back and
   added; a RELA entry carries the whole addend and reads back zero.
+
+  Laying the object out synthetically splits the address space in two, and every
+  pass in this chapter reads the *other* half: each one re-parses the file through
+  its own `object::File`, which reports the **pre-link, section-relative**
+  addresses the linker has not yet assigned. Mixing the two in one inventory is
+  what produced a phantom `sub_<section-offset>` beside every real function, a
+  single DWARF function at address 0, and string literals that never attached to
+  the loaded image at all. `relocrebase` (kuna, default-on) closes that by
+  rebasing the analyzer tier's **input** rather than each output fact — necessarily
+  so, because a fact is a bare address by the time it reaches `AnalysisOutput`, and
+  in a relocatable object every section sits at address 0, which makes `.text`+0x20
+  and `.rodata`+0x20 the same number. Worse, the fields that matter are not offsets
+  at all until their relocation is applied: an unrelocated `.eh_frame`
+  `initial_location` reads back as its own section offset, and an unrelocated
+  `DW_AT_low_pc` reads 0 for every subprogram (as does every `DW_FORM_strp`, so the
+  whole object's DWARF collapses onto one function named after whatever string sits
+  at `.debug_str`+0).
+  `decompiler/crates/kuna-analysis/src/loader/kuna_relocrebase.rs (rebased_view)`
+  therefore re-presents the object to the tier: each laid-out section carries the
+  loader's own relocated bytes and its load VMA (ELF `sh_addr`, COFF
+  `VirtualAddress`); each section the layout skipped — every `.debug_*` table — has
+  its relocations applied here, resolving a target in a laid-out section to that
+  section's load VMA and a debug-to-debug target to its own section-relative offset,
+  which is what a single-object link leaves in place; and each ELF symbol defined in
+  a laid-out section has its `st_value` shifted by **its own section's** delta,
+  since the layout is non-contiguous and there is no single global offset (a COFF
+  symbol needs no shift — it is reported as `VirtualAddress + value`, so the section
+  write already moved it). Every pass then produces an already-rebased fact with no
+  source change of its own.
+  A field with no relocation still yields an address in no laid-out section, so
+  `kuna_relocrebase (retain_in_image)` **drops** exactly those rather than letting a
+  pre-link address through — that is the phantom class. The single exception is a
+  no-return fact, which the commit resolves by name when its address does not
+  resolve (an undefined `exit` in a `.o` has never had one); it is kept with its
+  address zeroed. The Listing/xref tier takes the other answer and declines outright
+  for a synthetically laid-out object (§1.6): it exists to find functions an image
+  has no symbol for, and a pre-link object always carries the symbol table the
+  linker is about to consume.
 - **Mach-O fat/arm64e** — a universal binary is peeled to one slice's bytes at a
   single canonical point before anything else parses it
   (`decompiler/crates/kuna-analysis/src/loader/macho_fat.rs (select_fat_slice)`;

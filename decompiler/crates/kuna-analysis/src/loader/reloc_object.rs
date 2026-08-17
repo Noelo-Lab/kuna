@@ -79,6 +79,21 @@ pub struct RelocLayout {
     /// Non-fatal diagnostics (an unhandled relocation kind, an unresolved
     /// symbol).  The caller logs these; the load still succeeds.
     pub warnings: Vec<String>,
+    /// The section -> load-VMA map the layout assigned, keyed by the parsed
+    /// object's own [`SectionIndex`].  A section absent from this map was NOT
+    /// laid out (a `.debug_*`/`.rela.*` table, or an empty `SHF_ALLOC`
+    /// placeholder) and has no address in the loaded image.  Exposed so the
+    /// analysis tier can rebase a pre-link fact through its OWN section's delta
+    /// (see [`crate::loader::kuna_relocrebase`]) — sections are laid out
+    /// non-contiguously, so there is no single global offset.
+    pub section_vma: HashMap<SectionIndex, u64>,
+    /// The undefined-symbol -> synthetic extern-slot map, keyed by the parsed
+    /// object's own [`SymbolIndex`].  Same purpose as [`Self::section_vma`], for
+    /// the externs.
+    pub extern_addr: HashMap<SymbolIndex, u64>,
+    /// The half-open `[lo, hi)` extent of the synthetic extern area, `None` when
+    /// the object referenced no undefined symbol.
+    pub extern_range: Option<(u64, u64)>,
 }
 
 /// One laid-out `SHF_ALLOC` section: its load VMA and a *mutable* byte buffer the
@@ -276,7 +291,20 @@ pub fn layout_relocatable(
 
     let segments = laid.iter().map(|l| (l.vma, l.data.clone())).collect();
     let sections = laid.iter().map(|l| (l.vma, l.size, l.flags)).collect();
-    RelocLayout { segments, sections, funcsyms, warnings }
+    let extern_range = extern_order
+        .iter()
+        .map(|(_, a)| *a)
+        .min()
+        .map(|lo| (lo, extern_cursor));
+    RelocLayout {
+        segments,
+        sections,
+        funcsyms,
+        warnings,
+        section_vma: vma_of,
+        extern_addr: extern_of,
+        extern_range,
+    }
 }
 
 /// Resolve a relocation's target symbol to a load address.  A defined symbol maps

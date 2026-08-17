@@ -202,6 +202,10 @@ Three tiers:
 | got/.sdata references never fold to real addresses in a pic mips binary | [`mips_gp`](#mips_gp) |
 | i386 pie libc calls render as sub_<addr> instead of exit/dcgettext | [`i386_pie_plt`](#i386_pie_plt) |
 | spurious do{}while(true) or goto loop after an unnamed exit stub in a 32-bit pie binary | [`i386_pie_plt`](#i386_pie_plt) |
+| kuna functions on a .o or .obj lists phantom sub_<addr> entries below 0x400000 beside the real ones | [`relocrebase`](#relocrebase) |
+| functions and decompile-all disagree on how many functions a relocatable object has | [`relocrebase`](#relocrebase) |
+| a -g .o names one function at address 0 and leaves the rest sub_<addr> | [`relocrebase`](#relocrebase) |
+| string literals and dwarf-named globals in a .o never attach to the loaded image | [`relocrebase`](#relocrebase) |
 | a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
 | an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
 | xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
@@ -826,6 +830,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) names i386-PIE libc calls and lets exit be marked no-return (collapsing the spurious do{}while(true)/goto and restoring stack recovery); off leaves the GOT-relative stubs as sub_<addr> and the bogus fall-through loop (the pre-fix rendering).
 - **Where / provenance:** P1/external-refinement · angr · correctness-fix · kuna-analysis-i386pieplt
 - **Example:** `option i386_pie_plt off`
+
+### `relocrebase` -- on | off, default `on`
+
+- **Symptoms:** kuna functions on a .o or .obj lists phantom sub_<addr> entries below 0x400000 beside the real ones; functions and decompile-all disagree on how many functions a relocatable object has; a -g .o names one function at address 0 and leaves the rest sub_<addr>; string literals and dwarf-named globals in a .o never attach to the loaded image.
+- **What it does:** Rebase the load-time analysis facts of a relocatable object (ELF ET_REL .o, COFF .obj) into the loaded image's address space. The loader lays such an object out synthetically above RELOC_BASE (relocobjects), but the analysis passes re-parse the same file and compute PRE-LINK, section-relative addresses, so two address spaces mix in one inventory. This re-presents the object to the analyzer tier before any pass reads it: each laid-out section carries the loader's relocated bytes and its load VMA, each unlaid .debug_* section has its relocations applied, and every ELF symbol is shifted by its own section's delta (sections are laid out non-contiguously, so there is no single global offset). A fact that still lands in no laid-out section is dropped rather than passed through unrebased. Loader-tier: read via the kuna_relocrebase env var (the analyzer tier runs inside load file).
+- **When to flip:** On (default) makes kuna functions and kuna decompile-all agree on a .o/.obj, and attaches that object's DWARF names, string literals and named globals to the loaded image. Flip off to restore the pre-fix behavior -- phantom sub_<section-offset> entries beside every real function, one DWARF function at address 0, and no string/data attachment.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-289
+- **Example:** `option relocrebase off`
 
 ### `ifuncfpret` -- on | off, default `off`
 

@@ -765,11 +765,21 @@ pub fn run_operand_refs(
     image: &ObjectLoadImage,
     arch: &Architecture,
 ) -> AnalysisOutput {
-    let Ok(file) = object::File::parse(bytes) else {
+    let Ok(raw) = object::File::parse(bytes) else {
         return AnalysisOutput::default();
     };
+    // (kuna `relocrebase`, GH-289) This pass scans section bytes and emits
+    // address-keyed string/readonly facts, so it takes the same rebased view the
+    // load-time list does — otherwise turning it on for a `.o` would reintroduce
+    // pre-link addresses at the deferred commit.
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: None };
-    crate::operand_refs::OperandRefsPass.run(&ctx)
+    let mut out = crate::operand_refs::OperandRefsPass.run(&ctx);
+    if let Some(view) = &view {
+        crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+    }
+    out
 }
 
 /// Extract `(addr, name)` for every text/function symbol in the object — the name
@@ -811,9 +821,15 @@ pub fn run_default_analyses(
     arch: &Architecture,
     translate: &dyn Translate,
 ) -> AnalysisOutput {
-    let Ok(file) = object::File::parse(bytes) else {
+    let Ok(raw) = object::File::parse(bytes) else {
         return AnalysisOutput::default();
     };
+    // (kuna `relocrebase`, GH-289) A relocatable object is laid out synthetically
+    // by the loader, so the raw view's addresses are pre-link ones. Re-present it
+    // in the loaded image's address space before any pass reads it; `None` (a
+    // linked image, or the gate off) keeps the raw view byte for byte.
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
     // Source-language detection runs once, before pass selection, and shapes the
     // pass list (the kuna analog of `SourceLanguageAnalyzer` running early and
     // gating the language-specific analyzers).
@@ -828,7 +844,11 @@ pub fn run_default_analyses(
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
     let format = file.format();
-    run_analyses(&ctx, &passes_for(compiler, format))
+    let mut out = run_analyses(&ctx, &passes_for(compiler, format));
+    if let Some(view) = &view {
+        crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+    }
+    out
 }
 
 /// Like [`run_default_analyses`], but keep each pass's output keyed by its
@@ -846,9 +866,14 @@ pub fn run_default_analyses_per_pass(
     arch: &Architecture,
     translate: &dyn Translate,
 ) -> Vec<(&'static str, AnalysisOutput)> {
-    let Ok(file) = object::File::parse(bytes) else {
+    let Ok(raw) = object::File::parse(bytes) else {
         return Vec::new();
     };
+    // (kuna `relocrebase`, GH-289) See `run_default_analyses`: a relocatable
+    // object is re-presented in the loaded image's address space so every pass
+    // below produces an already-rebased fact. `None` ⇒ the raw pre-link view.
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
     let compiler = crate::sourcelang::detect_compiler(&file, bytes);
     // Listing/xref tier (design §1.3): built once, before the pass loop, only
     // when `arch.analysis_listing` (i.e. `--option listing on`). Default-off ⇒
@@ -864,7 +889,13 @@ pub fn run_default_analyses_per_pass(
     let format = file.format();
     passes_for(compiler, format)
         .iter()
-        .map(|pass| (pass.id(), pass.run(&ctx)))
+        .map(|pass| {
+            let mut out = pass.run(&ctx);
+            if let Some(view) = &view {
+                crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+            }
+            (pass.id(), out)
+        })
         .collect()
 }
 

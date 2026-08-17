@@ -45,6 +45,17 @@ on|off`** — implemented as of the analysis-port "option-gating" Increment. The
 passes are **default-on** (faithful to Ghidra's default-on analyzers), except
 `addrtable`, which ships **off** (Ghidra `AddressTableAnalyzer` parity).
 
+Every fact a pass emits is keyed by an address in the **loaded image's** address
+space. That is not free on a relocatable object (an ELF `ET_REL` `.o`, a COFF
+`.obj`): the loader lays such a file out synthetically above `RELOC_BASE`
+(`relocobjects`), while a pass re-parsing it through `object::File` sees the
+pre-link, section-relative addresses. `relocrebase` (default-on, GH-289) holds the
+contract up by rebasing the tier's **input** — `loader/kuna_relocrebase.rs`
+re-presents the object with each laid-out section's relocated bytes and load VMA,
+each unlaid `.debug_*` section's relocations applied, and each ELF symbol shifted
+by its own section's delta — so a pass never has to know it is reading a `.o`. A
+fact that still lands in no laid-out section is dropped, not passed through.
+
 The gating's commit timing: `bootstrap_from_elf` runs
 `run_default_analyses_per_pass` and **stashes** the per-pass `AnalysisOutput` on
 the `ConsoleProgram` at load (it does NOT commit eagerly). The commit is deferred
