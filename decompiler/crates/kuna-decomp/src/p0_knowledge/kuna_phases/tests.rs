@@ -73,8 +73,9 @@ fn settable_count_is_110() {
     // +1 for `loadguardrange` (P3 indexed-stack guard ValueSet range refinement, GH-182).
     // +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79, GH-289).
     // +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
-    assert_eq!(kuna_num_settables(), 110);
-    assert_eq!(SETTABLE_TABLE.len(), 110);
+    // +1 for `spillargtrial` (P4 caller-save spill tolerance in input-trial scoring, GH-275).
+    assert_eq!(kuna_num_settables(), 111);
+    assert_eq!(SETTABLE_TABLE.len(), 111);
 }
 
 #[test]
@@ -121,7 +122,10 @@ fn tier_counts_are_24_core_47_transform_39_analysis() {
     // core 23 -> 24: +1 for `loadguardrange` (P3 guard ValueSet range refinement, GH-182).
     // analysis 37 -> 38: +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79).
     // analysis 38 -> 39: +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
-    assert_eq!((core, transform, analysis), (24, 47, 39));
+    // transform 47 -> 48: +1 for `spillargtrial` (P4 caller-save spill tolerance, GH-275)
+    // -- transform, not core: it INSERTS a call argument, and is right on the spill/reload
+    // shape and wrong on an ordinary frame store, which is the transform tier's definition.
+    assert_eq!((core, transform, analysis), (24, 48, 39));
 }
 
 #[test]
@@ -485,6 +489,7 @@ fn option_values_live_value_present_for_34_suppressed_for_76() {
                             | "warnstyle"
                             | "callsitestackargs"
                             | "calloverlap"
+                            | "spillargtrial"
                             | "paramcopyhoist"
                             | "guardarm"
                             | "loopcondhoist"
@@ -609,8 +614,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
-    // aifstrict's P1 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 109);
+    // aifstrict's P1 row and spillargtrial's P4 row sit mid-table, so they do not
+    // move the tail).
+    assert_eq!(json.matches("},\n").count(), 110);
 }
 
 #[test]

@@ -425,6 +425,13 @@ pub struct Architecture {
     /// (option `calloverlap`).  `0` = off, `1` = input guard only, `2` = both
     /// (upstream Ghidra's behavior).  See [`crate::p3_dataflow::kuna_calloverlap`].
     pub call_overlap: int4,
+    /// (kuna) Predicate strength for tolerating the caller's own caller-save
+    /// spill among a trial Varnode's descendants in `Funcdata::onlyOpUse`
+    /// (option `spillargtrial`).  `0` = off (upstream-faithful: every
+    /// `CPUI_STORE` makes the trial inactive), `1` = spill/reload pairs only,
+    /// `2` = any caller-frame store of the value.  See
+    /// [`crate::p4_calls::kuna_spillargtrial`].
+    pub spill_arg_trial: int4,
     /// (kuna) Refine indexed-stack LOAD/STORE guard ranges with the upstream
     /// ValueSet solver at the end of each heritage pass (upstream
     /// `Heritage::analyzeNewLoadGuards`, heritage.cc:834), so
@@ -1336,6 +1343,7 @@ impl Architecture {
             recover_lowered_switch: false,
             callsite_stack_args: true,
             call_overlap: 0,
+            spill_arg_trial: 0,
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: false,
@@ -1499,6 +1507,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
+        self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
@@ -1708,6 +1717,12 @@ impl Architecture {
                 let (val, msg) =
                     crate::p3_dataflow::kuna_calloverlap::OptionCallOverlap.apply(p1)?;
                 self.call_overlap = val;
+                Ok(msg)
+            }
+            "spillargtrial" => {
+                let (val, msg) =
+                    crate::p4_calls::kuna_spillargtrial::OptionSpillArgTrial.apply(p1)?;
+                self.spill_arg_trial = val;
                 Ok(msg)
             }
             "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
@@ -2324,6 +2339,7 @@ impl Architecture {
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.call_overlap = self.call_overlap; // calloverlap
+        ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm

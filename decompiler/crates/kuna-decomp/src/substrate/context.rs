@@ -662,6 +662,13 @@ pub struct ArchContext {
     /// `ContainedBy` arms; the level vocabulary lives in
     /// [`crate::p3_dataflow::kuna_calloverlap`].
     pub call_overlap: int4,
+    /// (kuna) predicate strength for tolerating a caller-save spill among a
+    /// trial Varnode's descendants (`spillargtrial`): `0` = upstream, every
+    /// `CPUI_STORE` rejects, `1` = tolerate a store that is one half of a
+    /// spill/reload pair, `2` = tolerate any caller-frame store of the value.
+    /// Read by [`Funcdata::only_op_use`](crate::funcdata::Funcdata) through
+    /// [`crate::p4_calls::kuna_spillargtrial::store_is_caller_save_spill`].
+    pub spill_arg_trial: int4,
     /// (kuna) `option loadguardrange`: run the upstream ValueSet solver over
     /// new indexed-stack LOAD/STORE guard pointers at the end of each heritage
     /// pass (`Heritage::analyzeNewLoadGuards`, heritage.cc:834), refining each
@@ -1030,6 +1037,7 @@ impl ArchContext {
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
+            spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)

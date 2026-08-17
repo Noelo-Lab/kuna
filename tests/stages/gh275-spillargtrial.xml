@@ -1,0 +1,78 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-275 (kuna): "packed-double producers plus more than one atan2 call drop
+    the call arguments"
+    https://github.com/Noelo-Lab/kuna/issues/275
+
+    Source:
+      double packed_two_atan2(double range, double y, double z) {
+        __m128d g = _mm_div_pd(_mm_set_pd(z, y), _mm_set1_pd(range));
+        double gY = _mm_cvtsd_f64(g);
+        double gZ = _mm_cvtsd_f64(_mm_unpackhi_pd(g, g));
+        return atan2(gY, gZ) + atan2(-gY, gZ);
+      }
+
+    Bytes are the real clang 14 -O2 x86-64 encoding of that function, taken from
+    the binary the issue was filed on and relocated to 0x100000 (the two call
+    rel32 fields and the xorpd RIP-relative displacement are recomputed for this
+    layout; nothing else is touched).  The callee stub at 0x100100 stands in for
+    the atan2 PLT thunk, and 0x101000 carries the 16-byte sign mask the xorpd
+    negation reads.
+
+    Stage model: P4 call recovery, active-input-trial scoring.  clang keeps the
+    packed pair live across the FIRST call, and on x86-64 SysV NO xmm register
+    is callee-saved, so the register allocator must spill the very value it is
+    also passing:
+
+        movapd XMMWORD PTR [rsp+0x20],xmm1   ; caller-save spill of argument 1
+        movapd xmm0,xmm3
+        call   atan2
+        ...
+        movaps xmm1,XMMWORD PTR [rsp+0x20]   ; reload for the second call
+
+    That spill is a second descendant of the trial Varnode, so
+    `Funcdata::onlyOpUse` takes its blanket CPUI_STORE rejection,
+    `checkInputTrialUse` marks the trial inactive, `markInactive` also sets
+    CHECKED so it is never re-scored, and the argument dies to dead-code
+    elimination.  `option spillargtrial` narrows that STORE arm.
+
+    Pass 1 (default, `spillargtrial off`): assertion #1 reproduces the bug - the
+    first call keeps only its first argument, and the second call's argument is
+    parked in a spurious 4-byte stack local.
+    Pass 2 (`option spillargtrial reload`): assertions #2 and #3 prove both call
+    sites recover their second argument, and that the spurious stack local is
+    gone.  `reload` is the conservative level: it fires only because the slot is
+    genuinely read back.
+-->
+<bytechunk space="ram" offset="0x100000">
+4883ec38660f28d9660f14da660f14c0
+660f5ed8660f295c2410660f28cb660f
+15cb660f294c2420660f28c3e8cf0000
+00f20f11442408660f28442410660f57
+05bb0f00000f284c2420e8b1000000f2
+0f584424084883c438c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x101000">
+00000000000000800000000000000080
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="packed_two_atan2"/>
+<symbol space="ram" offset="0x100100" name="atan2"/>
+</binaryimage>
+<script>
+  <com>lo fu packed_two_atan2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option spillargtrial reload</com>
+  <com>lo fu packed_two_atan2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH275 #1: default (spillargtrial off) drops the first call's second argument to the caller-save spill" min="1" max="1">atan2\(SUB168\(v[0-9]+,0\)\);</stringmatch>
+<stringmatch name="GH275 #2: spillargtrial reload recovers the first call's second argument" min="1" max="1">atan2\(SUB168\(v[0-9]+,0\),SUB164\(v[0-9]+,8\)\);</stringmatch>
+<stringmatch name="GH275 #3: spillargtrial reload binds the second call's argument to the register, not a spurious stack local" min="1" max="1">atan2\(v[0-9]+,SUB164\(v[0-9]+,8\)\)</stringmatch>
+</decompilertest>

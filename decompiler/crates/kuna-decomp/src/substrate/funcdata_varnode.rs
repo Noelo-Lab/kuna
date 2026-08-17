@@ -2259,9 +2259,19 @@ impl Funcdata {
                     OpCode::CPUI_BRANCH
                     | OpCode::CPUI_CBRANCH
                     | OpCode::CPUI_BRANCHIND
-                    | OpCode::CPUI_LOAD
-                    | OpCode::CPUI_STORE => {
+                    | OpCode::CPUI_LOAD => {
                         res = false;
+                    }
+                    OpCode::CPUI_STORE => {
+                        // (kuna) `spillargtrial off|reload|spill` — upstream rejects
+                        // on every STORE (`off`); the other levels tolerate the
+                        // caller's own caller-save spill of the argument value.  See
+                        // [`crate::p4_calls::kuna_spillargtrial`].
+                        if !crate::p4_calls::kuna_spillargtrial::store_is_caller_save_spill(
+                            self, op, vn,
+                        ) {
+                            res = false;
+                        }
                     }
                     OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                         if self.check_call_double_use(opmatch, op, vn, cur_flags, trial) {
