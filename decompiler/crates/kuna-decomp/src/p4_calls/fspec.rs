@@ -6734,8 +6734,8 @@ impl FuncCallSpecs {
         // raw-pointer-cast equivalent), exactly as flow.rs `build_call_specs` does
         // for a direct call.
         let handle = crate::flow::next_fspec_handle();
-        let angr = data.get_arch().name_style_angr;
-        self.register_in_fspec_space(handle, angr);
+        let style = data.get_arch().kuna_name_style();
+        self.register_in_fspec_space(handle, style);
         let fspecvn = data.new_varnode_call_specs(handle);
         data.op_set_input(self.op, fspecvn, 0)?;
         data.op_set_opcode_code(self.op, OpCode::CPUI_CALL);
@@ -6821,23 +6821,31 @@ impl FuncCallSpecs {
     /// Resolve the display name this call spec prints inside the \e fspec space
     /// (C++ `FspecSpace::printRaw` name/`func_`/`sub_` branch, `fspec.cc:2160`).
     ///
-    /// `angr_naming` is the result of the kuna `kunaAngrNaming(glb)` check (the
-    /// `Architecture::name_style_angr` flag); the `Architecture` is visible at
-    /// the call site that drives the annotation, so the policy is decided here
-    /// (kuna-base, which holds the `FspecSpace` arms, cannot see it).
-    pub fn fspec_printed_name(&self, angr_naming: bool) -> String {
+    /// `style` is the architecture's fallback-naming vocabulary
+    /// ([`Architecture::kuna_name_style`]; the `Architecture` is visible at the
+    /// call site that drives the annotation, so the policy is decided here —
+    /// kuna-base, which holds the `FspecSpace` arms, cannot see it).
+    pub fn fspec_printed_name(&self, style: crate::database::KunaNameStyle) -> String {
         if !self.name.is_empty() {
             return self.name.clone();
         }
-        if angr_naming {
+        match style {
             // (kuna) angr-style: sub_<addr>
-            return crate::database::kuna_function_name(&self.entryaddress);
+            crate::database::KunaNameStyle::Angr => {
+                crate::database::kuna_function_name(&self.entryaddress)
+            }
+            // (kuna, Phase 3) ghidra-mode: FUN_%08x (the Java dynamic shape)
+            crate::database::KunaNameStyle::Ghidra => {
+                crate::database::ghidra_function_name(&self.entryaddress)
+            }
+            crate::database::KunaNameStyle::Func => {
+                let mut s = String::from("func_");
+                // printRaw on a real (processor) entry address cannot fail; on the
+                // (unreachable) error path leave the prefix only.
+                let _ = self.entryaddress.print_raw(&mut s);
+                s
+            }
         }
-        let mut s = String::from("func_");
-        // printRaw on a real (processor) entry address cannot fail; on the
-        // (unreachable) error path leave the prefix only.
-        let _ = self.entryaddress.print_raw(&mut s);
-        s
     }
 
     /// Register this call spec's printed name + entry address under the given
@@ -6845,11 +6853,11 @@ impl FuncCallSpecs {
     /// them (the faithful equivalent of the C++ `(FuncCallSpecs *)offset` cast;
     /// `handle` is the offset of the \e fspec address, the same value
     /// `Funcdata::newVarnodeCallSpecs` takes).
-    pub fn register_in_fspec_space(&self, handle: uintb, angr_naming: bool) {
+    pub fn register_in_fspec_space(&self, handle: uintb, style: crate::database::KunaNameStyle) {
         kuna_base::space::fspec_register(
             handle,
             kuna_base::space::FspecCallInfo {
-                printed_name: self.fspec_printed_name(angr_naming),
+                printed_name: self.fspec_printed_name(style),
                 entry: self.entryaddress.clone(),
             },
         );

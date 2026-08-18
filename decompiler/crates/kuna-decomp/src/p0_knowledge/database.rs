@@ -137,6 +137,37 @@ fn kuna_bare_addr(addr: &Address) -> String {
     format!("{off:x}")
 }
 
+/// (kuna, Phase 3) The fallback naming vocabulary for entities no Symbol
+/// covers.  `Angr` is the shipped kuna default (`name_style_angr` on); `Func`
+/// is the upstream C++ spelling (`name_style_angr` off); `Ghidra` is the
+/// ghidra-mode GUI convention — `FUN_`/`DAT_`/`LAB_` with zero-padded
+/// lowercase hex, the shapes Java's `isDynamicSymbolName` /
+/// `GlobalSymbolMap` recognize as dynamic (ghidra_arch.cc:928-947).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KunaNameStyle {
+    /// Upstream C++ default naming (`func_<raw-addr>`).
+    Func,
+    /// angr-style naming (`sub_`/`dat_`/`label_` + bare hex) — kuna default.
+    Angr,
+    /// Ghidra GUI naming (`FUN_`/`DAT_`/`LAB_` + `%08x`) — ghidra mode.
+    Ghidra,
+}
+
+/// (kuna, Phase 3) Ghidra-convention dynamic function name: `FUN_%08x`.
+pub fn ghidra_function_name(addr: &Address) -> String {
+    format!("FUN_{:08x}", addr.get_offset())
+}
+
+/// (kuna, Phase 3) Ghidra-convention dynamic data name: `DAT_%08x`.
+pub fn ghidra_global_data_name(addr: &Address) -> String {
+    format!("DAT_{:08x}", addr.get_offset())
+}
+
+/// (kuna, Phase 3) Ghidra-convention code label: `LAB_%08x`.
+pub fn ghidra_label_name(addr: &Address) -> String {
+    format!("LAB_{:08x}", addr.get_offset())
+}
+
 /// C++ `kunaGlobalDataName`: `dat_<addr>`.
 pub fn kuna_global_data_name(addr: &Address) -> String {
     format!("dat_{}", kuna_bare_addr(addr))

@@ -2149,7 +2149,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             // process-unique counter; the printed name + entry are registered in
             // the fspec-space side table (the C++ pointer-cast equivalent).
             let handle = next_fspec_handle();
-            let angr = self.data.get_arch().name_style_angr;
+            let angr = self.data.get_arch().kuna_name_style();
             // Register the call spec's printed name under the handle.
             self.data
                 .get_call_specs(self.data.num_calls() - 1)

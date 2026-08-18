@@ -645,7 +645,7 @@ fn outline_one(data: &mut Funcdata, run: &OutlineRun) -> KunaResult<bool> {
     fc.proto_mut().set_internal(model, void_ty);
     let idx = data.push_call_specs(fc);
     let handle = crate::flow::next_fspec_handle();
-    let angr = data.get_arch().name_style_angr;
+    let angr = data.get_arch().kuna_name_style();
     data.get_call_specs(idx).register_in_fspec_space(handle, angr);
     let fspecvn = data.new_varnode_call_specs(handle);
     data.op_set_input(callop, fspecvn, 0)?;

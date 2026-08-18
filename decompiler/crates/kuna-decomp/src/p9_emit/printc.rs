@@ -3128,6 +3128,9 @@ impl PrintC {
         if addr.is_invalid() {
             let idx = fd.sblocks_ref().block(bl).get_index();
             format!("LAB_{idx:08x}")
+        } else if fd.get_arch().kuna_name_style() == crate::database::KunaNameStyle::Ghidra {
+            // (kuna, Phase 3) ghidra-mode: the GUI label convention LAB_%08x.
+            crate::database::ghidra_label_name(&addr)
         } else {
             crate::database::kuna_label_name(&addr)
         }
@@ -5676,7 +5679,7 @@ impl PrintC {
             }
             // genericFunctionName(entryaddress): angr-style `sub_<addr>` or
             // `func_<addr>` (the architecture's name style).
-            return fc.fspec_printed_name(fd.get_arch().name_style_angr);
+            return fc.fspec_printed_name(fd.get_arch().kuna_name_style());
         }
         // No call spec (should not happen for a live CALL): print the in0 address.
         crate::printc::generic_function_name(
@@ -6570,7 +6573,7 @@ impl PrintC {
         let name = if !regname.is_empty() {
             regname
         } else if kuna_global_naming(spc) {
-            kuna_global_data_name(spc, vaddr.get_offset())
+            kuna_global_data_name(arch.kuna_name_style(), vaddr.get_offset())
         } else {
             let mut s = String::new();
             let sn = spc.get_name();
@@ -8516,8 +8519,13 @@ fn kuna_global_naming(spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
     matches!(spc.get_type(), spacetype::IPTR_PROCESSOR)
 }
 
-/// (kuna) `kunaGlobalDataName(Address)` — `dat_<hex offset>`.
-fn kuna_global_data_name(_spc: &std::rc::Rc<kuna_base::space::AddrSpace>, off: u64) -> String {
+/// (kuna) `kunaGlobalDataName(Address)` — `dat_<hex offset>`; ghidra-mode
+/// (`name_style_ghidra`) prints the Ghidra GUI convention `DAT_%08x` instead
+/// (what Java's `isDynamicSymbolName` recognizes as dynamic).
+fn kuna_global_data_name(style: crate::database::KunaNameStyle, off: u64) -> String {
+    if style == crate::database::KunaNameStyle::Ghidra {
+        return format!("DAT_{off:08x}");
+    }
     format!("dat_{off:x}")
 }
 
@@ -8560,7 +8568,7 @@ fn kuna_unnamed_location_name(
         return Some(regname);
     }
     if kuna_global_naming(spc) {
-        return Some(kuna_global_data_name(spc, loc.get_offset()));
+        return Some(kuna_global_data_name(arch.kuna_name_style(), loc.get_offset()));
     }
     let mut s = String::new();
     let sn = spc.get_name();

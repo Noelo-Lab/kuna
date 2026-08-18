@@ -406,7 +406,7 @@ impl Action for ActionDefaultParams {
                 let has_funcdata = data.get_call_specs(i).has_funcdata();
                 let callee_pieces = if has_funcdata {
                     let entry = data.get_call_specs(i).get_entry_address().clone();
-                    arch.callee_proto_pieces(&entry).cloned()
+                    arch.callee_proto_pieces(&entry)
                 } else {
                     None
                 };

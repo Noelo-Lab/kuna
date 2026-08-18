@@ -305,6 +305,14 @@ impl GlobalQuery {
         }
     }
 
+    /// Clone out the flattened entry records (the remote-provider merge input:
+    /// the ghidra-mode [`RemoteScope`](crate::remote_provider::RemoteScope)
+    /// rebuilds its merged snapshot from the base Database snapshot's entries
+    /// plus its decoded ones).
+    pub(crate) fn entries_cloned(&self) -> Vec<GlobalEntry> {
+        self.entries.clone()
+    }
+
     fn index_for_space(&self, space_index: int4) -> Option<&GlobalSpaceIndex> {
         let position = self
             .space_indexes
@@ -608,6 +616,11 @@ pub struct ArchContext {
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
     /// printed-name resolution ([`FuncCallSpecs::fspec_printed_name`]).
     pub name_style_angr: bool,
+    /// (kuna, Phase 3) Ghidra-convention fallback naming (`FUN_`/`DAT_`/`LAB_`),
+    /// set only by the ghidra-mode registerProgram — see
+    /// `Architecture::name_style_ghidra`.  Wins over `name_style_angr` in
+    /// [`Self::kuna_name_style`].
+    pub name_style_ghidra: bool,
     /// (kuna) Collapse local-variable declarations whose fully-rendered line is
     /// identical (the scalar analogue of the composite-symbol decl collapse).  Read
     /// by [`PrintC::emit_local_var_decls`](crate::printc); `option dedupvardecls`,
@@ -942,6 +955,13 @@ pub struct ArchContext {
     /// global-mapped varnodes so their stores survive `ActionDeadCode`.  `None`
     /// for hand-built fixtures (no symbol table).
     pub global_query: Option<Rc<GlobalQuery>>,
+    /// (kuna, Phase 3) The ghidra-mode lazy symbol provider
+    /// ([`RemoteScope`](crate::remote_provider::RemoteScope)); when installed,
+    /// every global-scope read below queries through it (fetching unresolved
+    /// addresses from the host) instead of the frozen `global_query`/
+    /// `callee_protos` snapshots.  `None` on the standalone path, which stays
+    /// byte-identical.
+    pub remote_scope: Option<Rc<crate::remote_provider::RemoteScope>>,
     /// Infer pointers from likely-address constants (C++ `glb->infer_pointers`),
     /// shared from the real [`crate::architecture::Architecture`] through
     /// `build_arch_handle`.  Read by [`ActionConstantPtr`](crate::coreaction_render::
@@ -1016,6 +1036,8 @@ impl ArchContext {
             input_varnode_adjust: true,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
+            // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.
+            name_style_ghidra: false,
             // (kuna) default-off opt-in; the real value is copied from the engine
             // Architecture in `build_arch_handle` (`option dedupvardecls`).
             dedup_var_decls: false,
@@ -1099,6 +1121,7 @@ impl ArchContext {
                 | crate::options::split_datatype::OPTION_ARRAY
                 | crate::options::split_datatype::OPTION_POINTER,
             global_query: None,
+            remote_scope: None,
             // C++ Architecture default: infer_pointers = true (resetDefaults);
             // a hand-built fixture never exercises constant-pointer recovery, but
             // the real lift+analyze path overwrites this from the real arch.
@@ -1112,6 +1135,19 @@ impl ArchContext {
             callee_protos: Vec::new(),
             // No tracked registers until build_arch_handle snapshots the context DB.
             tracked_sets: kuna_base::partmap::PartMap::default(),
+        }
+    }
+
+    /// (kuna, Phase 3) The active fallback naming vocabulary (see
+    /// [`KunaNameStyle`](crate::database::KunaNameStyle)): `Ghidra` wins over
+    /// `Angr` wins over the upstream `Func` default.
+    pub fn kuna_name_style(&self) -> crate::database::KunaNameStyle {
+        if self.name_style_ghidra {
+            crate::database::KunaNameStyle::Ghidra
+        } else if self.name_style_angr {
+            crate::database::KunaNameStyle::Angr
+        } else {
+            crate::database::KunaNameStyle::Func
         }
     }
 
@@ -1217,13 +1253,18 @@ impl ArchContext {
     /// to copy the locked callee prototype into the call site.  Matched by
     /// `(space_index, offset)` — the ArchContext carries no `Rc<AddrSpace>` identities for
     /// the global scope, only the snapshotted indices.
-    pub fn callee_proto_pieces(&self, addr: &Address) -> Option<&crate::fspec::PrototypePieces> {
+    pub fn callee_proto_pieces(&self, addr: &Address) -> Option<crate::fspec::PrototypePieces> {
+        if let Some(remote) = &self.remote_scope {
+            // (kuna, Phase 3) ghidra-mode: the locked callee signatures decoded
+            // from getMappedSymbols answers (query-through).
+            return remote.callee_pieces_at(addr);
+        }
         let space_index = addr.get_space()?.get_index();
         let offset = addr.get_offset();
         self.callee_protos
             .iter()
             .find(|(si, off, _)| *si == space_index && *off == offset)
-            .map(|(_, _, pieces)| pieces)
+            .map(|(_, _, pieces)| pieces.clone())
     }
 
     /// The current-evaluation model (C++ `glb->evalfp_current`), falling back to
@@ -1269,10 +1310,23 @@ impl ArchContext {
     /// `readonly`/`volatile` on the range) here, so `ActionDeadCode` keeps its
     /// store alive.
     pub fn query_global_properties(&self, addr: &Address, size: int4, usepoint: &Address) -> uint4 {
-        match &self.global_query {
+        match self.effective_global_query(addr) {
             Some(gq) => gq.query_properties(addr, size, usepoint),
             None => 0,
         }
+    }
+
+    /// The global-scope read source for one address: the ghidra-mode
+    /// [`RemoteScope`](crate::remote_provider::RemoteScope) (query-through +
+    /// merged snapshot) when installed, else the frozen per-function
+    /// [`GlobalQuery`] snapshot.  Every global read below resolves through
+    /// this, so the remote seam is exactly the C++ `ScopeGhidra` overriding of
+    /// the base `Scope` lookups.
+    fn effective_global_query(&self, addr: &Address) -> Option<Rc<GlobalQuery>> {
+        if let Some(remote) = &self.remote_scope {
+            return Some(remote.query_snapshot(addr));
+        }
+        self.global_query.clone()
     }
 
     /// Resolve the global Symbol covering a storage range for the naming pass (C++
@@ -1286,8 +1340,7 @@ impl ArchContext {
         size: int4,
         usepoint: &Address,
     ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
-        self.global_query
-            .as_ref()
+        self.effective_global_query(addr)
             .and_then(|gq| gq.name_for_varnode(addr, size, usepoint))
     }
 
@@ -1300,8 +1353,7 @@ impl ArchContext {
         size: int4,
         usepoint: &Address,
     ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>, Vec<String>)> {
-        self.global_query
-            .as_ref()
+        self.effective_global_query(addr)
             .and_then(|gq| gq.name_for_varnode_scoped(addr, size, usepoint))
     }
 
@@ -1321,8 +1373,7 @@ impl ArchContext {
         size: int4,
         usepoint: &Address,
     ) -> Option<(std::rc::Rc<crate::dtype::Datatype>, int4)> {
-        self.global_query
-            .as_ref()
+        self.effective_global_query(addr)
             .and_then(|gq| gq.sized_type_geometry(addr, size, usepoint))
     }
 
@@ -1420,7 +1471,7 @@ impl ArchContext {
         size: int4,
         usepoint: &Address,
     ) -> Option<GlobalContainer> {
-        let gq = self.global_query.as_ref()?;
+        let gq = self.effective_global_query(addr)?;
         let e = gq.find_container_entry(addr, size, usepoint)?;
         let space = addr.get_space()?;
         Some(GlobalContainer {
@@ -1448,7 +1499,7 @@ impl ArchContext {
         &self,
         entry: &Address,
     ) -> Option<std::rc::Rc<crate::fspec::FuncProto>> {
-        let gq = self.global_query.as_ref()?;
+        let gq = self.effective_global_query(entry)?;
         let space_index = entry.get_space()?.get_index();
         let start = entry.get_offset();
         for e in gq.entries_for_space(space_index) {
@@ -1479,7 +1530,7 @@ impl ArchContext {
         &self,
         entry: &Address,
     ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {
-        let gq = self.global_query.as_ref()?;
+        let gq = self.effective_global_query(entry)?;
         let space = entry.get_space()?;
         let space_index = space.get_index();
         let start = entry.get_offset();

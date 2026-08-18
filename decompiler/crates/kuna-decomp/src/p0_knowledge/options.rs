@@ -2287,6 +2287,102 @@ impl OptionDatabase {
         decoder.close_element(elem_id)?;
         Ok(())
     }
+
+    /// (kuna, ghidra-mode) Parse an `<optionslist>` like [`decode`](Self::decode),
+    /// but skip any option element that cannot be parsed or applied instead of
+    /// failing the list — the documented ghidra-mode divergence
+    /// (`docs/ghidra-integration.md` §8): upstream throws on the first unknown
+    /// element, `setOptions` answers `f`, and Java fails the whole program open
+    /// ("Did not accept decompiler options"), so one option from a newer Java
+    /// vocabulary (e.g. 12.2's `baddatacount`, element 290) bricks the decompiler
+    /// view.  kuna applies what it knows and reports each skipped element as a
+    /// returned warning line (each begins with "Warning", which Java's
+    /// `isErrorMessage` treats as non-fatal).
+    ///
+    /// Structurally hardened: every child of an option element is consumed with
+    /// `close_element_skipping`, so an unknown parameter shape leaves the stream
+    /// element-aligned and the remaining options still apply.
+    pub fn decode_lenient(
+        &self,
+        decoder: &mut dyn Decoder,
+        glb: &mut dyn ArchOptionContext,
+    ) -> KunaResult<Vec<String>> {
+        let elem_id = decoder.open_element_id(&ELEM_OPTIONSLIST)?;
+        let mut warnings = Vec::new();
+        while decoder.peek_element()? != 0 {
+            let opt_id = decoder.open_element()?;
+            if let Err(e) = self.decode_one_lenient(decoder, glb, opt_id) {
+                let name = option_element_name(opt_id)
+                    .map(|n| format!("<{n}>"))
+                    .unwrap_or_else(|| format!("element {opt_id}"));
+                warnings.push(format!(
+                    "Warning: decompiler option {name} not applied: {}",
+                    e.explain()
+                ));
+            }
+        }
+        decoder.close_element(elem_id)?;
+        Ok(warnings)
+    }
+
+    /// One already-opened option element of the lenient list: parse the
+    /// `<param1>`/`<param2>`/`<param3>` children (any other child is skipped
+    /// whole), close the element, and dispatch to [`set`](Self::set).  The
+    /// element is fully consumed on ANY return, error included.
+    fn decode_one_lenient(
+        &self,
+        decoder: &mut dyn Decoder,
+        glb: &mut dyn ArchOptionContext,
+        opt_id: uint4,
+    ) -> KunaResult<String> {
+        let mut p1 = String::new();
+        let mut p2 = String::new();
+        let mut p3 = String::new();
+        let mut saw_child = false;
+        let mut content_err: Option<KunaError> = None;
+        loop {
+            let sub_id = decoder.open_element()?;
+            if sub_id == 0 {
+                break;
+            }
+            saw_child = true;
+            let target = if sub_id == ELEM_PARAM1 {
+                Some(&mut p1)
+            } else if sub_id == ELEM_PARAM2 {
+                Some(&mut p2)
+            } else if sub_id == ELEM_PARAM3 {
+                Some(&mut p3)
+            } else {
+                None
+            };
+            if let Some(slot) = target {
+                match read_content_string(decoder) {
+                    Ok(v) => *slot = v,
+                    Err(e) => content_err = Some(e),
+                }
+            }
+            decoder.close_element_skipping(sub_id)?;
+        }
+        if !saw_child {
+            match read_content_string(decoder) {
+                Ok(v) => p1 = v,
+                Err(e) => content_err = Some(e),
+            }
+        }
+        decoder.close_element(opt_id)?;
+        if let Some(e) = content_err {
+            return Err(e);
+        }
+        self.set(glb, opt_id, &p1, &p2, &p3)
+    }
+}
+
+/// The upstream name of an option element id, for lenient-decode warnings.
+fn option_element_name(id: uint4) -> Option<&'static str> {
+    UPSTREAM_OPTION_ELEMENTS
+        .iter()
+        .find(|e| e.get_id() == id)
+        .map(|e| e.get_name())
 }
 
 /// `decoder.readString(ATTRIB_CONTENT)` as a (lossily) UTF-8 `String`.

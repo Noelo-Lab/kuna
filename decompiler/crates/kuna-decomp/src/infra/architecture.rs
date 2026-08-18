@@ -659,6 +659,13 @@ pub struct Architecture {
     /// (kuna) Use angr-style default naming (vN/aN/dat_/sub_/label_ + comments)
     /// (C++ `name_style_angr`).
     pub name_style_angr: bool,
+    /// (kuna, Phase 3) Ghidra-convention default naming (`FUN_`/`DAT_`/`LAB_` +
+    /// `%08x`) for entities no Symbol covers — set (with `name_style_angr` off)
+    /// by the ghidra-mode registerProgram so kuna's fallback names match what
+    /// Java's `isDynamicSymbolName`/`GlobalSymbolMap` expect
+    /// (ghidra_arch.cc:928-947).  Never set on the standalone path.  Takes
+    /// precedence over `name_style_angr` in [`Self::kuna_name_style`].
+    pub name_style_ghidra: bool,
     /// (kuna) Collapse local-variable declarations whose fully-rendered line is
     /// identical (the scalar analogue of the composite-symbol decl collapse), so a
     /// stack slot mapped onto many same-named HighVariables is declared once
@@ -1117,6 +1124,13 @@ pub struct Architecture {
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
     pub symboltab: Database,
+    /// (kuna, Phase 3) The ghidra-mode lazy symbol provider (the `ScopeGhidra`
+    /// port, [`crate::remote_provider::RemoteScope`]), installed by the
+    /// ghidra-mode registerProgram via [`Self::install_remote_provider`];
+    /// `None` on the standalone path.  Threaded into every per-function
+    /// `ArchContext` by `build_arch_handle` and consulted by the flow
+    /// environment's callee-name/no-return queries.
+    pub remote_scope: Option<Rc<crate::remote_provider::RemoteScope>>,
     /// Options that can be configured (C++ `options`).
     pub options: OptionDatabase,
     /// Actions that can be applied in this architecture (C++ `allacts`).
@@ -1203,6 +1217,13 @@ pub struct Architecture {
     /// real mode.  `None` when the frontend did not supply it (then the engine
     /// keeps the `.sla`-default zero context).
     pspec_xml: Option<Vec<u8>>,
+    /// (kuna, Phase 3) Raw `<coretypes>` XML (the fourth ghidra-mode
+    /// registerProgram spec document), set by [`Self::set_coretypes_xml`]
+    /// before [`init_post_engine`](Architecture::init_post_engine) so
+    /// [`build_core_types`](Architecture::build_core_types) decodes the host's
+    /// core-type set (with the HOST ids) instead of the defaults.  `None` on
+    /// the standalone path.
+    coretypes_xml: Option<Vec<u8>>,
     /// Vector registers that have preferred lane sizes (C++
     /// `Architecture::lanerecords`), built by [`decode_register_data`] from the
     /// pspec `<register_data>` `vector_lane_sizes` attributes during
@@ -1371,6 +1392,7 @@ impl Architecture {
             strip_stack_guard: false,
             branch_flip: false,
             name_style_angr: false,
+            name_style_ghidra: false,
             dedup_var_decls: false,
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
@@ -1430,6 +1452,7 @@ impl Architecture {
             macho_arm64e: false,
 
             symboltab,
+            remote_scope: None,
             options: OptionDatabase::new(),
             allacts: ActionDatabase::new(),
             restart_log: crate::kuna_restartlog::RestartLog::new(),
@@ -1451,6 +1474,7 @@ impl Architecture {
             default_return_addr: None,
             cspec_xml: None,
             pspec_xml: None,
+            coretypes_xml: None,
             lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
@@ -2161,6 +2185,73 @@ impl Architecture {
         &self.archid
     }
 
+    /// (kuna, Phase 3) Install the ghidra-mode lazy providers over the wire
+    /// fetch seams (the `buildDatabase`/`buildTypegrp` `ScopeGhidra`/
+    /// `TypeFactoryGhidra` analog, ghidra_arch.cc:301-314).  Must run AFTER
+    /// `init_post_engine` (the cspec `<global>` ranges and pspec property
+    /// paints must be in the Database — the C++ `lockDefaultProperties` at
+    /// `postSpecFile`) and BEFORE the first decompile.
+    pub fn install_remote_provider(
+        &mut self,
+        fetch: Rc<dyn crate::remote_provider::RemoteProviderFetch>,
+        type_fetch: Option<Rc<dyn crate::dtype::RemoteTypeFetch>>,
+    ) {
+        let mut models = std::collections::BTreeMap::new();
+        for (name, model) in &self.proto_models {
+            models.insert(name.clone(), Rc::clone(model));
+        }
+        let base = self.symboltab.build_global_query();
+        let scope = crate::remote_provider::RemoteScope::new(
+            fetch,
+            self.translate.manager_rc(),
+            self.types_rc(),
+            models,
+            self.defaultfp.clone(),
+            base,
+        );
+        self.remote_scope = Some(Rc::new(scope));
+        self.types.set_remote_type_fetch(type_fetch);
+    }
+
+    /// (kuna, Phase 3) The printer's active comment filter — the union of the
+    /// header and per-instruction comment-type masks (C++
+    /// `CommentDatabaseGhidra::fillCache`'s `ghidra->print->getHeaderComment()
+    /// | getInstructionComment()`, comment_ghidra.cc:38).  The getComments
+    /// query is filtered by this; `0` means no comment types display and no
+    /// query fires.
+    pub fn printer_comment_filter(&self) -> u32 {
+        let ctx = &self.print.context;
+        ctx.header_comment() | ctx.instruction_comment()
+    }
+
+    /// (kuna, Phase 3) The ghidra-mode flushNative reset, in the upstream order
+    /// (`FlushNative::rawAction`, ghidra_process.cc:262-273): the lazy symbol
+    /// cache (+ its property-map rollback), the non-core data-types, the
+    /// comment database, and the decoded-string cache.  kuna has no live
+    /// sub-scopes to delete (namespaces are cached path strings inside the
+    /// RemoteScope, cleared with it) and no wired constant pool yet.
+    pub fn flush_remote_caches(&mut self) {
+        if let Some(remote) = &self.remote_scope {
+            remote.clear();
+        }
+        self.types.clear_noncore();
+        self.commentdb.clear();
+        self.string_manager.borrow_mut().base.clear();
+    }
+
+    /// (kuna, Phase 3) The active fallback naming vocabulary (see
+    /// [`KunaNameStyle`](crate::database::KunaNameStyle)): `Ghidra` wins over
+    /// `Angr` wins over the upstream `Func` default.
+    pub fn kuna_name_style(&self) -> crate::database::KunaNameStyle {
+        if self.name_style_ghidra {
+            crate::database::KunaNameStyle::Ghidra
+        } else if self.name_style_angr {
+            crate::database::KunaNameStyle::Angr
+        } else {
+            crate::database::KunaNameStyle::Func
+        }
+    }
+
     // -----------------------------------------------------------------------
     // nameFunction (architecture.cc:539)
     // -----------------------------------------------------------------------
@@ -2172,6 +2263,10 @@ impl Architecture {
     /// `sub_<addr>` (C++ `kunaFunctionName`, transcribed in [`Database`]); the
     /// upstream policy is `func_<raw-addr>`.
     pub fn name_function(&self, addr: &Address) -> String {
+        if self.name_style_ghidra {
+            // (kuna, Phase 3) ghidra-mode: FUN_%08x (the Java-side dynamic shape)
+            return crate::database::ghidra_function_name(addr);
+        }
         if self.name_style_angr {
             // (kuna) angr-style: sub_<addr>
             return crate::database::kuna_function_name(addr);
@@ -2318,6 +2413,7 @@ impl Architecture {
         // `ActionUnjustifiedParams` reaches it via `glb`.
         ctx.input_varnode_adjust = self.input_varnode_adjust;
         ctx.name_style_angr = self.name_style_angr;
+        ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
         // (which reads the ArchContext `arch`) sees `option dedupvardecls`.
         ctx.dedup_var_decls = self.dedup_var_decls;
@@ -2426,6 +2522,9 @@ impl Architecture {
         // `map addr`).  Global-mapped varnodes then pick up `persist`/`addrtied`
         // and their stores survive `ActionDeadCode`.
         ctx.global_query = Some(Rc::new(self.symboltab.build_global_query()));
+        // (kuna, Phase 3) the ghidra-mode lazy provider rides the handle so the
+        // global reads above query through it; None on the standalone path.
+        ctx.remote_scope = self.remote_scope.clone();
         // Snapshot every source-declared callee prototype (parked on the global
         // FunctionSymbols by `set_function_prototype_pieces`) so the per-function
         // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
@@ -3284,11 +3383,25 @@ impl Architecture {
         self.types.set_max_basetype_size(self.max_basetype_size);
     }
 
-    /// Seed the core data-types (C++ `SleighArchitecture::buildCoreTypes`,
-    /// sleigh_arch.cc:204, the no-`<coretypes>` default branch — the verbatim
-    /// `setCoreType` sequence + `cacheCoreTypes`).
+    /// Seed the core data-types (C++ `ArchitectureGhidra::buildCoreTypes` /
+    /// `SleighArchitecture::buildCoreTypes`, ghidra_arch.cc:316-349): when a
+    /// wire `<coretypes>` document was installed ([`Self::set_coretypes_xml`] —
+    /// the ghidra-mode registerProgram spec, the C++ `store.getTag("coretypes")`
+    /// branch) decode it, so the core-type IDS match the host's and every later
+    /// `<typeref>`/getDataType exchange resolves; else the verbatim default
+    /// `setCoreType` sequence + `cacheCoreTypes`.
     pub fn build_core_types(&mut self) -> KunaResult<()> {
         use type_metatype::*;
+        if let Some(xml) = self.coretypes_xml.clone() {
+            use kuna_base::marshal::{IdRegistry, XmlDecode};
+            let manager = self.translate.manager_rc();
+            let mut registry = IdRegistry::with_base_ids();
+            crate::dtype::register_type_wire_ids(&mut registry);
+            let store = kuna_base::xml::xml_tree(&xml)?;
+            let root = store.get_root().clone();
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, &root, 0);
+            return self.types.decode_core_types(&mut decoder);
+        }
         let t = &self.types;
         t.set_core_type("void", 1, TYPE_VOID, false)?;
         t.set_core_type("bool", 1, TYPE_BOOL, false)?;
@@ -3560,6 +3673,13 @@ impl Architecture {
         self.cspec_xml = Some(xml);
     }
 
+    /// (kuna, Phase 3) Record the wire `<coretypes>` XML for the ghidra-mode
+    /// [`build_core_types`](Architecture::build_core_types) decode.  Must be
+    /// set before [`init_post_engine`](Architecture::init_post_engine).
+    pub fn set_coretypes_xml(&mut self, xml: Vec<u8>) {
+        self.coretypes_xml = Some(xml);
+    }
+
     /// Record the processor-spec (`.pspec`) XML content for the
     /// `<context_data>` decode in
     /// [`parse_processor_config`](Architecture::parse_processor_config).  The
@@ -3642,7 +3762,7 @@ impl Architecture {
             return Ok(());
         };
 
-        // Ghidra-mode: skip the <context_data> paints (C++
+        // Ghidra-mode: skip the <context_set> paints (C++
         // `ContextGhidra::decode`/`decodeFromSpec`, ghidra_context.cc, are both a
         // bare `decoder.skipElement()` — "Ignore details handled by ghidra").  In
         // ghidra mode the Java host owns disassembly context and returns
@@ -3655,7 +3775,20 @@ impl Architecture {
         // `Sleigh` path returns `Some` and still applies the paints, exactly as
         // the 675 x86 datatests (which need `addrsize`/`opsize` for 64-bit
         // disassembly) require.
+        //
+        // (kuna, Phase 3) The `<tracked_set>` children are DIFFERENT: they name
+        // whole registers with pinned values (x86-64: `DF = 0`), feed only the
+        // engine-side `trackbase` (no context variables involved), and are what
+        // `ActionConstbase` reads to plant `DF = COPY 0` — without which every
+        // string op renders the `(uint8)DF * -2 + 1` direction garbage.  Upstream
+        // ghidra-mode recovers the same facts via the getTrackedRegisters query
+        // (`ContextGhidra::getTrackedSet`); kuna decodes them straight from the
+        // wire pspec it was already handed, resolving register names through the
+        // query-backed translator (a getRegister query, legal during
+        // registerProgram).  A register the host cannot resolve is skipped, never
+        // fatal — upstream ghidra-mode never decodes this block at all.
         if self.translate.as_sleigh().is_none() {
+            self.decode_ghidra_tracked_sets(&context_data)?;
             return Ok(());
         }
 
@@ -3668,6 +3801,65 @@ impl Architecture {
         register_globalcontext_ids(&mut registry);
         let mut decoder = XmlDecode::new_with_root(&manager, &registry, &context_data, 0);
         self.with_context_db_mut(|db| db.decode_from_spec(&mut decoder))?;
+        Ok(())
+    }
+
+    /// (kuna, Phase 3) Decode ONLY the `<tracked_set>` children of the pspec
+    /// `<context_data>` into the engine context database's trackbase — the
+    /// ghidra-mode arm of [`parse_processor_config`](Self::parse_processor_config).
+    ///
+    /// Register names (`<set name="DF" val="0"/>`) resolve through the
+    /// query-backed translator's `get_register_varnode` (a getRegister query on
+    /// the host); a name the host cannot resolve skips that `<set>` (upstream
+    /// ghidra-mode skips the whole block, so nothing here may be fatal).
+    fn decode_ghidra_tracked_sets(
+        &mut self,
+        context_data: &Rc<kuna_base::xml::Element>,
+    ) -> KunaResult<()> {
+        use kuna_base::address::Range;
+        use kuna_base::marshal::{Decoder, IdRegistry, XmlDecode, ATTRIB_NAME, ATTRIB_VAL};
+        use kuna_sleigh::globalcontext::{register_globalcontext_ids, TrackedContext, TrackedSet};
+        let manager = self.translate.manager_rc();
+        let mut registry = IdRegistry::with_base_ids();
+        register_globalcontext_ids(&mut registry);
+        for child in context_data.get_children() {
+            if child.get_name() != "tracked_set" {
+                continue;
+            }
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, child, 0);
+            let sub_id = decoder.open_element()?;
+            let range = Range::decode_from_attributes(&mut decoder)?;
+            let addr1 = range.get_first_addr();
+            let addr2 = range.get_last_addr_open(decoder.get_addr_space_manager());
+            let mut set: TrackedSet = Vec::new();
+            while decoder.peek_element()? != 0 {
+                let set_id = decoder.open_element()?;
+                // <set name=… val=…> — resolve the register via the translator
+                // (VarnodeData::decode_from_attributes' name path needs a
+                // manager-installed RegisterLookup, which ghidra mode has none of).
+                let mut loc = None;
+                loop {
+                    let aid = decoder.get_next_attribute_id()?;
+                    if aid == 0 {
+                        break;
+                    }
+                    if aid == ATTRIB_NAME.get_id() {
+                        let nm = decoder.read_string()?;
+                        loc = self.translate.get_register_varnode(&nm).ok();
+                        break;
+                    }
+                }
+                if let Some(loc) = loc {
+                    let val = decoder.read_unsigned_integer_id(&ATTRIB_VAL)?;
+                    set.push(TrackedContext { loc, val });
+                }
+                decoder.close_element(set_id)?;
+            }
+            decoder.close_element(sub_id)?;
+            if !set.is_empty() {
+                self.with_context_db_mut(|db| *db.create_set(&addr1, &addr2) = set);
+            }
+        }
         Ok(())
     }
 
