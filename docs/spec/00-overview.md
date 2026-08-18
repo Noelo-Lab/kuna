@@ -295,6 +295,73 @@ Four front-ends drive one engine assembly:
   None of this touches the standalone path: no provider installed means every
   seam takes its frozen-snapshot branch, byte-identically.
 
+  (kuna) **The Phase-4 full response encode** makes the `decompileAt` answer
+  carry everything the native GUI features consume, in the upstream child
+  order (`Funcdata::encode`,
+  `decompiler/crates/kuna-decomp/src/substrate/funcdata_encode.rs`): the base
+  `<addr>`, the `<localdb>` symbol scope, the `<ast>` (savetree), the
+  `<highlist>` (savetree + high-level on), the `<jumptablelist>`, and the
+  `<prototype>`.  `<localdb>` is `ScopeLocal::encode`
+  (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs`) over the
+  function's private symbol database
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (Database::encode_scope, Symbol::encode_header, SymbolEntry::encode)`):
+  every `<symbol>` carries its NONZERO id (internal `SYMBOL_ID_BASE`-range for
+  kuna-invented symbols; Java's `HighSymbol.decodeHeader` throws on 0), every
+  `<mapsym>` at least one storage entry (`<addr>`/`<hash>` + its uselimit
+  `<rangelist>`), parameters their `cat=0` + slot `index` + exact storage (the
+  Java rename path re-commits the whole signature when these disagree with the
+  database), and the `<scope>` opens positionally with `<parent>` +
+  `<rangelist>` because `LocalSymbolMap.decodeScope` skips both blind.
+  Because kuna's naming pass binds plain strings (`kuna_name`) instead of the
+  C++ `ActionNameVars::linkSymbols` Symbol objects, the encode runs an
+  encode-time link pass (`Funcdata::kuna_link_high_symbols`): a named,
+  non-persist, non-constant high resolves its name-representative storage to a
+  covering localmap entry (parameters from `link_proto_params`, restructured
+  stack locals) or materializes a fresh mapped Symbol there, and the SymbolId
+  lands on the high — so the `<highlist>` (`Funcdata::encode_high`, the
+  `HighVariable::encode` port: `repref` = name-representative create-index,
+  the five-way `class` rule, `symref` + partial `offset`, the type reference,
+  one instance `<addr ref>` per member) points at ids the just-encoded
+  `<localdb>` resolves.  Globals echo the REAL host database id delivered by
+  getMappedSymbols (`GlobalEntry::symbol_id`,
+  `decompiler/crates/kuna-decomp/src/substrate/context.rs`) and NEVER a
+  fabricated one — an unknown id omits `symref` (Java warns and falls back to
+  address-keyed rename) rather than silently renaming the wrong symbol.  Type
+  references marshal through the `Datatype::encode_ref` port (chapter
+  [05](05-types.md)); the prototype through `FuncProto::encode` (chapter
+  [04](04-calls-and-prototypes.md)).  The `<jumptablelist>` re-uses the ported
+  `JumpTable::encode` and is emitted INDEPENDENTLY of savetree — the switch
+  analyzer asks `noc`+`notree`+`jumpload` and consumes only this list; the
+  session's jumpload toggle reaches recovery as the upstream
+  `FlowInfo::record_jumploads` flowoptions bit, applied per-decompile in
+  `decompiler/crates/kuna-ghidra/src/process.rs` so the setOptions baseline
+  reset can never strand it.  Under action `paramid` with parammeasures on,
+  the doc contains ONLY `<parammeasures>`
+  (`decompiler/crates/kuna-decomp/src/infra/paramid.rs
+  (ParamIDAnalysis::encode)`, the `<rank>` child always on — Java throws
+  without it); otherwise an optional `<parammeasures>` precedes the function
+  pair.  The markup `<function>` is rendered BEFORE `fd.encode` runs (the
+  link pass must not perturb the printed C) and spliced after the syntax tree,
+  keeping the upstream document order.
+  The rename/retype PERSISTENCE loop closes the circle: a GUI edit is a DB
+  write (`HighFunctionDBUtil.updateDBVariable`) followed by an event-driven
+  re-decompile whose getMappedSymbols answer now carries the edited local in
+  the function's `<localdb>` (Java `LocalSymbolMap.grabFromFunction`).  kuna
+  decodes those non-parameter locals
+  (`decompiler/crates/kuna-decomp/src/infra/remote_provider.rs
+  (RemoteLocalVar)`) and seeds them into the fresh `Funcdata`: a TYPELOCKED
+  local (a retype — Java sends `typelock=false` only for `Undefined` types)
+  seeds as a real mapped/usepoint symbol (`Funcdata::seed_mapped_symbols` /
+  `Funcdata::seed_usepoint_symbols`, surviving restructure's typelock-keep
+  rule), while a namelocked-but-NOT-typelocked local (a plain rename) — which
+  C++ itself never keeps as a Symbol — stages as a NAME RECOMMENDATION
+  (`Architecture::kuna_pending_name_recs` →
+  `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+  (Funcdata::seed_name_recommendations)`), the
+  `ScopeLocal::nameRecommend` mechanism of chapter
+  [06](06-variables-and-merge.md) §6.4.
+
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (panic_message)`

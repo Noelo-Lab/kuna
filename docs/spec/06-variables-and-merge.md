@@ -443,6 +443,49 @@ stack pointer gets a `PTRSUB(sp, #0)` spliced in so the type system renders
 `&local` instead of the bare register (`funcdata_spacebase.rs
 (Funcdata::annotate_raw_stack_ptr)`).
 
+**Name recommendations.** A namelocked-but-NOT-typelocked local never
+survives restructure — `clearUnlockedCategory(-1)` removes every non-typelocked
+category-less symbol at the pass head — so its *name* survives separately: C++
+harvests such symbols into `ScopeLocal::nameRecommend` records and re-applies
+them at naming time (`recoverNameRecommendationsForSymbols`, varmap.cc:1050 —
+run at the top of `ActionNameVars::apply`).  The kuna port carries the record
+type (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(NameRecommend)`) with a list on the scope
+(`ScopeLocal::add_recommend_name`/`ScopeLocal::name_recommendations`) and
+applies it in the `ActionNameVars` port
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
+(recommended_name_for)`): a high whose name representative matches a record's
+storage + size wins the recommended name — the use-address selects the arm
+(invalid = address-tied whole, `entry-1` = a function input, else the defining
+write's address) — before both the container bind and the `vN` allocator.
+The list's only producer today is ghidra-mode's host-`<localdb>` seeding (the
+GUI rename persistence loop, chapter [00](00-overview.md)); the standalone
+pipeline never adds a record, so the pass is structurally inert there.  The
+C++ `collectNameRecs` harvest (standalone symbols → records) and the
+dynamic-hash record list remain unported follow-ups.
+
+**The scope wire encode.** The whole local scope marshals out for the
+ghidra-mode `decompileAt` response as the `<localdb>` element
+(`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(ScopeLocal::encode)`, the varmap.cc:462 port): the `main=` stack space and
+`lock=` attributes, then the `<scope>` document
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+(Database::encode_scope)`) — the positional `<parent>` + `<rangelist>` pair
+(Java's `LocalSymbolMap.decodeScope` skips its first two scope children
+blind, so both are always written; the parentless private database writes its
+own id), then the `<symbollist>` of `<mapsym>`s in nametree order.  Each
+mapsym is `Symbol::encode` (header: name, the UNCONDITIONAL nonzero id, the
+lock/storage flag attributes, `cat` and — for a parameter — the slot `index`;
+body: the data-type reference) followed by its storage entries
+(`SymbolEntry::encode`: a `<hash>` for a dynamic entry, a plain `<addr>`
+otherwise, each with its uselimit `<rangelist>`; piece entries are skipped).
+Category-0 symbols with exact parameter storage are what the Java rename path
+compares against the database (`checkFullCommit`) — a mismatch would turn
+every rename into a whole-signature rewrite.  Symbols with no entry, no id,
+or a zero-sized type are skipped defensively (each is a Java-side hard throw
+that would discard the entire decompile result); none arises through the kuna
+creation paths.
+
 ## 6.3 Dynamic hashes
 
 A stack local is addressed by its offset, a register by its storage — but a

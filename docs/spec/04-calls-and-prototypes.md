@@ -629,6 +629,22 @@ the CALLIND after type recovery starts) is not wired; such a site today keeps
 its model-recovered argument list. Restarts triggered here are refused during
 jump-table sub-decompilation like every other feedback edge (00 §0.7).
 
+**The prototype wire encode.** The recovered prototype marshals out for the
+ghidra-mode `decompileAt` response through the `FuncProto::encode` port
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (FuncProto::encode)`):
+the model name (a model-less fixture degrades to the `"default"` spelling
+Java maps onto the program default), the extrapop (the reserved
+`EXTRAPOP_UNKNOWN` spells the string `"unknown"`), the eight boolean flag
+attributes, and the REQUIRED `<returnsym>` — the output parameter's sized
+storage `<addr>` (blank for void) followed by its type reference.  Effect and
+likely-trash overrides encode as model-diffs only
+(`encode_effect`/`encode_likely_trash` + `EffectRecord::encode`, the
+fspec.cc:3589/3631 ports); Java's `FunctionPrototype.decodePrototype` skips
+them, so they matter only to a native decoder.  Input parameters are
+deliberately NOT here: on the wire they travel as `<localdb>` category-0
+symbols (chapter [06](06-variables-and-merge.md) §6.2), matching upstream's
+symbol-backed `ProtoStoreSymbol::encode`, which writes nothing.
+
 ## 4.4 kuna extensions
 
 ### (kuna) `returnpair` — the register-pair return split

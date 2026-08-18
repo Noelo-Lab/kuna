@@ -388,14 +388,15 @@ The engine-seam inventory, with honest difficulty:
 | `LoadImage` | trait ready | **trivial** — `GhidraLoadImage::load_fill` = `getBytes` | 2 |
 | `ContextDatabase` | trait ready | **trivial** — `ContextGhidra` implements `getTrackedSet` only (upstream throws on the rest, `ghidra_context.hh:36-47`) | 2 |
 | `Translate` | trait exists; `Architecture.translate: Sleigh` concrete (`architecture.rs:836`) | **enum seam** `{Sleigh, GhidraTranslate}` + the Sleigh-only call surface audit | 2 |
-| `Funcdata::encode` | **missing** (no encode on `substrate/funcdata*.rs`) | port from upstream `funcdata.cc` — minimal `<function>` first | 2 |
+| `Funcdata::encode` | **DONE (Phase 4)** — the FULL `<function>` in upstream child order: `<addr>` + `<localdb>` + `<ast>` + `<highlist>` + `<jumptablelist>` + `<prototype>` (`substrate/funcdata_encode.rs`), over the `Datatype::encodeRef` / `FuncProto::encode` / `Symbol`/`SymbolEntry`/scope encode ports and the encode-time symbol-link pass | `<override>`/child-`<scope>` statics deferred (Java skips both) | 4 ✔ |
 | PrintC → `EmitMarkup` | back-end ported, front-end hardwired (`printc.rs:1015`) | generalize PrintC's `emit` field; wire `doc_function` (`printc.rs:1102`) to the markup path | 2 |
-| Scope / symbol table | **DONE (Phase 3)** — `RemoteScope` (`infra/remote_provider.rs`): query-through + `<hole>` negatives + property paints + namespace paths, at the GlobalQuery/flow seams | — | 3 ✔ |
-| `TypeFactory` | **DONE (Phase 3)** — wire `<coretypes>` decode + `decode_type`/`<typeref>` + `find_by_id_or_remote` getDataType miss-hook + `clear_noncore` (`substrate/dtype.rs`) | function-definition `<prototype>` bodies inside `<type metatype="code">` are skipped (FuncProto::decode unported) | 3 ✔ |
+| Scope / symbol table | **DONE (Phase 3)** — `RemoteScope` (`infra/remote_provider.rs`): query-through + `<hole>` negatives + property paints + namespace paths, at the GlobalQuery/flow seams; **Phase 4** echoes the delivered DB symbol ids back (`GlobalEntry::symbol_id` → `<high symref>`) | — | 3 ✔ / 4 ✔ |
+| `TypeFactory` | **DONE (Phase 3)** — wire `<coretypes>` decode + `decode_type`/`<typeref>` + `find_by_id_or_remote` getDataType miss-hook + `clear_noncore` (`substrate/dtype.rs`); **Phase 4** adds the marshal-OUT (`Datatype::encode_ref`/`encode`) | function-definition `<prototype>` bodies inside `<type metatype="code">` are skipped (FuncProto::decode unported) | 3 ✔ / 4 ✔ |
 | `CommentDatabase` | **DONE (Phase 3)** — `RemoteScope::fill_comments` (getComments, printer-filtered, fill-once-per-flush) into the `Architecture.commentdb` sink | the printer renders PRE/warning + header comments; EOL/POST placement is a printer gap, not a wire gap | 3 ✔ |
-| `StringManager` | concrete, no trait (`stringmanage.rs:83`); cleared by flushNative | one-method extraction for Java-side charset-faithful decode | 4 |
-| Inject library | traits exist; owner concrete; SLEIGH inject engine compiles the **wire-fed cspec** snippets (shipped in Phase 2) | dynamic getPcodeInject query fallback | 4 |
-| `ConstantPool` | trait ready (`infra/cpool.rs:470`) but **unwired** into `Architecture` | wiring + `CPOOLREF` path; JVM/Dalvik only | 4 |
+| `ParamIDAnalysis` | **DONE (Phase 4)** — `<parammeasures>` encode + the paramid-action doc shape (`infra/paramid.rs`; the justproto constructor reads the real recovered `FuncProto`) | — | 4 ✔ |
+| `StringManager` | concrete, no trait (`stringmanage.rs:83`); cleared by flushNative | one-method extraction for Java-side charset-faithful decode | deferred |
+| Inject library | traits exist; owner concrete; SLEIGH inject engine compiles the **wire-fed cspec** snippets (shipped in Phase 2) | dynamic getPcodeInject query fallback | deferred |
+| `ConstantPool` | trait ready (`infra/cpool.rs:470`) but **unwired** into `Architecture` | wiring + `CPOOLREF` path; JVM/Dalvik only | deferred |
 | ArchSeam snapshot | **DONE (Phase 3)** — the three frozen tables read through live seams when a `RemoteScope` is installed (`ArchContext::effective_global_query`/`callee_proto_pieces`; tracked sets decode from the wire pspec `<tracked_set>`) | — | 3 ✔ |
 
 ## 10. Graceful degradation
@@ -530,10 +531,57 @@ pins now hold the Phase-3 level.
       `FUN_`/`DAT_`/`LAB_` fallback naming (DIV-77); `setOptions` decodes and applies
       for real with per-element skip-unknown (DIV-76).
 
-**Phase 4 — parity.**
-- [ ] `<highlist>`/`<jumptablelist>` fidelity incl. DB symbol-id echo for
-      rename/retype; `structureGraph`; `<parammeasures>`.
+**Phase 4 — the full response encode (branch `feat/ghidra-phase4-encode`).**
+- [x] `Datatype::encodeRef` port (`substrate/dtype.rs` `encode_ref`/`encode`/
+      `encode_basic`/`encode_typedef` + `TypeField`/`TypeBitField` encode) —
+      the cross-cutting type marshal-out every other element needed.
+- [x] `<prototype>` (`FuncProto::encode`, `p4_calls/fspec.rs`): model +
+      extrapop (+"unknown"), the boolean flags, `<returnsym>` (sized storage +
+      type), effect/likely-trash model-diffs.  Input params travel as localdb
+      cat-0 symbols (the upstream symbol-backed store shape).
+- [x] `<localdb>` (`ScopeLocal::encode`, `varmap.rs` →
+      `Database::encode_scope`/`Symbol::encode`/`SymbolEntry::encode`,
+      `p0_knowledge/database.rs`): nonzero ids everywhere, ≥1 entry per
+      mapsym, positional `<parent>`+`<rangelist>`, params cat=0+index+exact
+      storage.
+- [x] `<highlist>` (`Funcdata::encode_high`, `substrate/funcdata_encode.rs`)
+      + the encode-time symbol-link pass (`kuna_link_high_symbols` — the
+      C++ `ActionNameVars::linkSymbols` stand-in) attaching/creating localmap
+      symbols for named highs so `<high symref>` resolves in the just-encoded
+      `<localdb>`; global `<high>`s echo the REAL host DB id
+      (`GlobalEntry::symbol_id` from the getMappedSymbols record) and omit
+      `symref` rather than fabricate one.
+- [x] `<jumptablelist>` (the ported `JumpTable::encode` wired into
+      `Funcdata::encode`, emitted independently of savetree) + the jumpload
+      toggle plumbed to `FlowInfo::record_jumploads` per decompile — the
+      switch-analyzer contract (noc+notree+jumpload), loadtables included.
+- [x] `<parammeasures>` (`ParamIDAnalysis::encode`, `infra/paramid.rs`,
+      `<rank>` always on) + the `paramid`-action doc shape (parammeasures is
+      the ONLY doc child) — the param-ID / convention analyzers.
+- [x] Markup type-token fidelity: `EmitMarkup::tag_type` splits a rendered
+      declarator into base-word `<type>` tokens + `<syntax>` separators, so
+      Java's `getC()` (`IllegalCharCppTransformer`) no longer mangles
+      `unsigned long *` to `unsigned_long__` (ghidra-sim mangled pins → 0).
+- [x] The rename/retype PERSISTENCE loop: the function `<localdb>` answer's
+      non-parameter locals (what Java sends after
+      `HighFunctionDBUtil.updateDBVariable` committed a user edit) seed the
+      fresh Funcdata — typelocked locals as mapped/usepoint symbols, plain
+      renames (typelock=false) as `ScopeLocal::nameRecommend` records (the
+      C++ mechanism; applied by the `ActionNameVars` port) — so a GUI
+      rename/retype SURVIVES the event-driven re-decompile.
+- [x] Harness: the ghidra-sim decode now validates every Java hard-throw trap
+      (r5 §3 — nonzero symbol ids, entry pairs, positional scope children,
+      localdb/ast-before-highlist order, symref/repref resolution, prototype
+      completeness, `<rank>` presence) plus switch-analyzer- and
+      paramid-shaped configuration tests.
+
+**Phase-4 deferred (follow-ups, graceful degradation per §10):**
+- [ ] `structureGraph` (FunctionGraph nested layout only).
 - [ ] The four signature commands (engine already ported) for BSim.
 - [ ] Overlay spaces (Java swaps in overlay codecs transparently —
       `DecompInterface.java:84-127,896-909`); `getStringData` charset fidelity
       (Java-side decode instead of `GhidraLoadImage` bytes).
+- [ ] `<hash>` dynamic-storage symbols for unique-space locals in the link
+      pass (rename of a unique-storage temp falls back to Java's
+      address-keyed `DynamicEntry.build` path meanwhile); `<override>` /
+      child-`<scope>` statics (Java skips both).
