@@ -261,6 +261,9 @@ pub struct RemoteFunction {
     pub inline: bool,
     /// The decoded `<prototype>` (+ `<localdb>` cat-0 params), when present.
     pub proto: Option<RemoteProto>,
+    /// Non-parameter `<localdb>` symbols (host-committed locals; see
+    /// [`RemoteLocalVar`]).
+    pub locals: Vec<RemoteLocalVar>,
 }
 
 /// A decoded `<prototype>` plus the `<localdb>` category-0 parameters.
@@ -295,6 +298,31 @@ pub struct RemoteParam {
     pub dtype: Option<Rc<Datatype>>,
     /// The symbol's typelock bit.
     pub typelock: bool,
+}
+
+/// One non-parameter local symbol delivered in the current function's
+/// `<localdb>` (a user-named/typed variable committed to the host database —
+/// e.g. by a prior GUI rename/retype through `HighFunctionDBUtil`).  The
+/// upstream native core decodes these straight into the function's `ScopeLocal`
+/// (`Funcdata::decode` → localmap restore), which is what makes a GUI rename
+/// SURVIVE the event-driven re-decompile; kuna seeds them through the same
+/// per-function seeding path the console's `map addr`/`type varnode` symbols
+/// use ([`crate::funcdata::Funcdata::seed_mapped_symbols`] /
+/// [`crate::funcdata::Funcdata::seed_usepoint_symbols`]).
+#[derive(Clone)]
+pub struct RemoteLocalVar {
+    /// Symbol name.
+    pub name: String,
+    /// Symbol data-type.
+    pub dtype: Rc<Datatype>,
+    /// Storage address of the first mapped entry.
+    pub addr: Address,
+    /// The symbol's flag bits (namelock/typelock/readonly/volatile — the
+    /// subset `decode_symbol_header` reads).
+    pub flags: kuna_base::types::uint4,
+    /// The first-use address (the first `<rangelist>` range start); invalid =
+    /// an empty uselimit = an address-tied (whole-function) local.
+    pub usepoint: Address,
 }
 
 impl RemoteProto {
@@ -573,6 +601,7 @@ fn decode_wire_function(
         no_return: false,
         inline: false,
         proto: None,
+        locals: Vec::new(),
     };
     loop {
         let aid = decoder.get_next_attribute_id()?;
@@ -606,7 +635,13 @@ fn decode_wire_function(
     while decoder.peek_element()? != 0 {
         let sub = decoder.peek_element()?;
         if sub == ELEM_LOCALDB.get_id() {
-            decode_localdb_params(decoder, types, &mut params, &mut params_locked)?;
+            decode_localdb_params(
+                decoder,
+                types,
+                &mut params,
+                &mut params_locked,
+                &mut func.locals,
+            )?;
         } else if sub == ELEM_PROTOTYPE.get_id() {
             proto = Some(decode_prototype(decoder, types)?);
         } else {
@@ -626,13 +661,14 @@ fn decode_wire_function(
 
 /// Walk `<localdb><scope>…<symbollist>` collecting the category-0 (parameter)
 /// symbols (Java `LocalSymbolMap.encodeLocalDb`; C++ params come from the
-/// scope's category vector, database.cc:1831-1840).  Non-parameter locals are
-/// structurally consumed and dropped (Phase-4 seeds them).
+/// scope's category vector, database.cc:1831-1840) plus the non-parameter
+/// locals ([`RemoteLocalVar`] — the Phase-4 rename/retype persistence seed).
 fn decode_localdb_params(
     decoder: &mut dyn Decoder,
     types: &TypeFactoryImpl,
     params: &mut Vec<RemoteParam>,
     params_locked: &mut bool,
+    locals: &mut Vec<RemoteLocalVar>,
 ) -> KunaResult<()> {
     let localdb_id = decoder.open_element_id(&ELEM_LOCALDB)?;
     // lock/main attributes: not consumed.
@@ -665,6 +701,28 @@ fn decode_localdb_params(
                             dtype: rec.dtype,
                             typelock: (rec.flags & varnode_flags::typelock) != 0,
                         });
+                    } else if rec.category < 0 {
+                        // A plain local committed to the host database: keep
+                        // its first mapped entry + first-use address so the
+                        // decompile can seed it (rename/retype persistence).
+                        let entry = rec.entries.iter().find(|e| !e.addr.is_invalid());
+                        if let (Some(e), Some(dt)) = (entry, rec.dtype.clone()) {
+                            if dt.get_size() > 0 && !rec.display_name.is_empty() {
+                                let usepoint = e
+                                    .uselimit
+                                    .iter()
+                                    .next()
+                                    .map(|r| Address::new(r.get_space().clone(), r.get_first()))
+                                    .unwrap_or_else(Address::new_invalid);
+                                locals.push(RemoteLocalVar {
+                                    name: rec.display_name,
+                                    dtype: dt,
+                                    addr: e.addr.clone(),
+                                    flags: rec.flags,
+                                    usepoint,
+                                });
+                            }
+                        }
                     }
                 }
                 decoder.close_element(list_el)?;
@@ -835,6 +893,10 @@ pub struct RemoteFunctionFacts {
     pub no_return: bool,
     /// The locked prototype pieces, when the host signature was locked.
     pub pieces: Option<PrototypePieces>,
+    /// Host-committed non-parameter locals from the function's `<localdb>`
+    /// (see [`RemoteLocalVar`]) — seeded into the fresh `Funcdata`'s local
+    /// scope so GUI renames/retypes survive the event-driven re-decompile.
+    pub locals: Vec<RemoteLocalVar>,
 }
 
 /// The ghidra-mode lazy symbol provider (see the module docs).  Installed on
@@ -1256,6 +1318,7 @@ impl RemoteScope {
                             display_name: fname,
                             no_return: func_no_return,
                             pieces,
+                            locals: func.locals.clone(),
                         },
                     );
                 }
@@ -1286,6 +1349,7 @@ impl RemoteScope {
                 symbol_name: display.clone(),
                 symbol_offset: 0,
                 symbol_type: symbol_type.clone(),
+                symbol_id: rec.symbol_id,
                 scope_path: scope_path.clone(),
                 is_function,
                 func_inject_id: -1,

@@ -914,6 +914,14 @@ pub struct ScopeLocal {
     /// Storage-address -> data-type recommendations for input Varnodes (C++
     /// `list<TypeRecommend> typeRecommend`, `varmap.hh:218`).
     type_recommend: Vec<TypeRecommend>,
+    /// Storage-location -> name recommendations (C++ `list<NameRecommend>
+    /// nameRecommend`, `varmap.hh:216`): the names of namelocked-but-NOT-
+    /// typelocked Symbols, which do not survive `clearUnlockedCategory(-1)` at
+    /// restructure — C++ collects them (`collectNameRecs`) and re-applies at
+    /// naming time (`recoverNameRecommendationsForSymbols`, the mechanism that
+    /// makes a GUI rename of an untyped local persist).  kuna's ghidra-mode
+    /// seeds these directly from the host `<localdb>` answer.
+    name_recommend: Vec<NameRecommend>,
 }
 
 impl ScopeLocal {
@@ -940,6 +948,7 @@ impl ScopeLocal {
             stack_grows_negative: true,
             overlap_problems: false,
             type_recommend: Vec::new(),
+            name_recommend: Vec::new(),
         })
     }
 
@@ -1041,6 +1050,33 @@ impl ScopeLocal {
         !self.type_recommend.is_empty()
     }
 
+    /// C++ `ScopeLocal::addRecommendName` (`varmap.cc:1583`): record a name
+    /// recommendation for a storage location.  ghidra-mode seeds these from
+    /// the host `<localdb>`'s namelocked-but-not-typelocked locals (the shape
+    /// a GUI rename produces), the same identities C++ `collectNameRecs`
+    /// would harvest before restructure clears the unlocked symbols.
+    pub fn add_recommend_name(
+        &mut self,
+        addr: Address,
+        usepoint: Address,
+        size: int4,
+        name: &str,
+    ) {
+        self.name_recommend.push(NameRecommend::new(
+            addr,
+            usepoint,
+            size,
+            name.to_string(),
+            0,
+        ));
+    }
+
+    /// The pending name recommendations (C++ `nameRecommend` list), applied by
+    /// the `ActionNameVars` port (`recoverNameRecommendationsForSymbols`).
+    pub fn name_recommendations(&self) -> &[NameRecommend] {
+        &self.name_recommend
+    }
+
     /// The pending `(address, type)` recommendations (C++ `typeRecommend` list),
     /// consumed by [`Funcdata::apply_type_recommendations`] (which owns
     /// `findVarnodeInput`).
@@ -1061,6 +1097,21 @@ impl ScopeLocal {
     /// The local scope id within the owned database.
     pub fn scope_id(&self) -> crate::database::ScopeId {
         self.scope
+    }
+
+    /// Encode this scope as a `<localdb>` element (C++ `ScopeLocal::encode`,
+    /// varmap.cc:462-470): the `main=` space + `lock=` attributes, then the
+    /// inner `<scope>` document.  Also stands in for the C++
+    /// `encodeRecursive(encoder,false)` call site (`Funcdata::encode`) — a
+    /// `ScopeLocal`'s private database has no child scopes to recurse into.
+    pub fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use crate::remote_provider::{ATTRIB_LOCK, ATTRIB_MAIN, ELEM_LOCALDB};
+        encoder.open_element(&ELEM_LOCALDB);
+        encoder.write_space(&ATTRIB_MAIN, &self.space);
+        encoder.write_bool(&ATTRIB_LOCK, self.range_locked);
+        self.db.encode_scope(self.scope, encoder)?;
+        encoder.close_element(&ELEM_LOCALDB);
+        Ok(())
     }
 
     /// C++ `ScopeInternal::assignDefaultNames(base)` (`database.cc:2880`) on this
@@ -1692,6 +1743,28 @@ impl ScopeLocal {
         self.db.symbol(sym).is_isolated()
     }
 
+    /// The identity of the smallest containing SymbolEntry for the Phase-4
+    /// encode-time symbol link (the same `findContainer` query as
+    /// [`Self::query_container_for_link`], but returning the [`SymbolId`] plus
+    /// the entry geometry the `HighVariable::setSymbol` offset rule needs):
+    /// `(symbol, entry_addr, entry_size, entry_offset)`.
+    pub fn container_symbol_link(
+        &self,
+        addr: &Address,
+        usepoint: &Address,
+    ) -> Option<(crate::database::SymbolId, Address, int4, int4)> {
+        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
+        let entry = self.db.entry(self.scope, eref);
+        Some((entry.symbol, entry.get_addr().clone(), entry.get_size(), entry.get_offset()))
+    }
+
+    /// Read a symbol's `(id, category)` pair for the `<high>` encode (C++
+    /// `symbol->getId()` / `symbol->getCategory()`).
+    pub fn symbol_id_and_category(&self, sym: crate::database::SymbolId) -> (u64, int4) {
+        let s = self.db.symbol(sym);
+        (s.get_id(), s.get_category())
+    }
+
     /// C++ `Funcdata::linkSymbol(nameRep)` (`funcdata_varnode.cc:1177`) for the
     /// on-demand naming of a CONCAT-tree ROOT in `linkProtoPartial`
     /// (`funcdata_varnode.cc:1164-1166`).  The root's name representative is an
@@ -2217,6 +2290,7 @@ impl TypeRecommend {
         TypeRecommend { addr, data_type }
     }
 }
+
 
 // ===========================================================================
 // MapState (varmap.hh:174-203, varmap.cc:864-1249)

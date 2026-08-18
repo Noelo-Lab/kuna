@@ -172,6 +172,13 @@ pub struct GlobalEntry {
     /// CALLIND to a no-return callee never schedules the restart that re-flows the
     /// now-direct CALL with an artificial halt.
     pub func_no_return: bool,
+    /// The owning Symbol's id (C++ `SymbolEntry::getSymbol()->getId()`), for the
+    /// Phase-4 `<high symref>` echo: ghidra-mode carries the REAL host database
+    /// id delivered by getMappedSymbols (0 when the host sent none — the encode
+    /// then omits `symref` rather than fabricate an id); the standalone console
+    /// snapshot carries the internal `SYMBOL_ID_BASE`-range id, which is legal
+    /// on the wire in the native-to-Java direction.
+    pub symbol_id: u64,
 }
 
 /// A read-only snapshot of the global [`Scope`](crate::database::Scope)
@@ -1491,6 +1498,7 @@ impl ArchContext {
             entry_addr: Address::new(Rc::clone(space), e.first),
             all_flags: e.all_flags,
             symbol_offset: e.symbol_offset,
+            symbol_id: e.symbol_id,
         })
     }
 
@@ -1642,6 +1650,8 @@ pub struct GlobalContainer {
     /// owning Symbol, for the `TypeSpacebase::getSubType` residual-offset
     /// computation (`funcdata.cc` / `type.cc:3431`).
     pub symbol_offset: int4,
+    /// `entry->getSymbol()->getId()` — see [`GlobalEntry::symbol_id`].
+    pub symbol_id: u64,
 }
 
 impl GlobalContainer {

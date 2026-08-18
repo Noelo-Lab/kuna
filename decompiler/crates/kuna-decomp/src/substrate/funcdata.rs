@@ -1200,6 +1200,20 @@ impl Funcdata {
         }
     }
 
+    /// Seed name recommendations into the local scope (the ghidra-mode
+    /// carrier for C++ `ScopeLocal::collectNameRecs` results: the host
+    /// `<localdb>`'s namelocked-but-not-typelocked locals, i.e. GUI renames of
+    /// untyped variables).  `(name, storage addr, usepoint, size)`; an invalid
+    /// usepoint = address-tied.  Applied by the `ActionNameVars` port
+    /// (`recoverNameRecommendationsForSymbols`).
+    pub fn seed_name_recommendations(&mut self, specs: &[(String, Address, Address, int4)]) {
+        if let Some(lm) = self.localmap.as_mut() {
+            for (name, addr, usepoint, size) in specs {
+                lm.add_recommend_name(addr.clone(), usepoint.clone(), *size, name);
+            }
+        }
+    }
+
     /// C++ `localmap->resetLocalWindow()` — reset the local-variable discovery
     /// window from the function prototype's stack ranges.  Faithful to the C++
     /// `Funcdata` constructor / `clear()` call cadence, but deferred until a

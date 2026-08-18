@@ -682,3 +682,106 @@ fn tracked_caches_and_failures_negative_cache() {
     let warnings = scope.drain_warnings();
     assert_eq!(warnings.len(), 1, "post-clear re-query fired again");
 }
+
+/// Phase-4 differential: the `ScopeLocal::encode` `<localdb>` document decodes
+/// through the SAME decoder Java shapes decode through (`decode_localdb_params`
+/// / `decode_mapsym`): the cat-0 parameter round-trips with its slot index and
+/// typelock, the plain local does not become a parameter, and every `<symbol>`
+/// carries a NONZERO internal-range id (`HighSymbol.decodeHeader` throws
+/// "missing unique symbol id" on 0 — the r5 §3 trap).
+#[test]
+fn phase4_localdb_encode_decodes_as_params() {
+    let m = manager();
+    let types = types_with_core();
+    let int4_t = crate::dtype::TypeFactory::find_by_name(types.as_ref(), "int4")
+        .unwrap()
+        .unwrap();
+    let mut lm =
+        crate::varmap::ScopeLocal::new(0x1234, ram(&m), "testfn", m.num_spaces()).unwrap();
+    // A register-style cat-0 parameter (exact storage + slot index 0).
+    let param_addr = Address::new(ram(&m), 0x38);
+    let usepoint = Address::new(ram(&m), 0x100f);
+    let sid = lm
+        .add_param_symbol(0, "argc", Rc::clone(&int4_t), &param_addr, &usepoint)
+        .unwrap()
+        .expect("param created");
+    // Lock it (the Java write path needs cat/index/storage; locks ride along).
+    let _ = sid;
+    // A plain mapped local (no category).
+    lm.add_symbol("local_10", Rc::clone(&int4_t), &Address::new(ram(&m), 0x2000), &Address::new_invalid())
+        .unwrap();
+
+    let mut doc = Vec::new();
+    {
+        let mut e = PackedEncode::new(&mut doc);
+        lm.encode(&mut e).unwrap();
+    }
+
+    // Decode through the wire-shape consumer.
+    let mut dec = kuna_base::marshal::PackedDecode::new(&m);
+    kuna_base::marshal::Decoder::ingest_stream(&mut dec, &doc).unwrap();
+    let mut params: Vec<RemoteParam> = Vec::new();
+    let mut locals: Vec<RemoteLocalVar> = Vec::new();
+    let mut locked = true;
+    decode_localdb_params(&mut dec, types.as_ref(), &mut params, &mut locked, &mut locals)
+        .unwrap();
+    assert_eq!(params.len(), 1, "exactly the cat-0 symbol is a parameter");
+    assert_eq!(params[0].index, 0);
+    assert_eq!(params[0].name, "argc");
+    assert!(params[0].dtype.as_ref().is_some_and(|t| t.get_size() == 4));
+    // The non-parameter local rides the Phase-4 seeding channel: name + first
+    // mapped entry + (empty uselimit ⇒ invalid) usepoint.
+    assert_eq!(locals.len(), 1, "the plain local is captured for seeding");
+    assert_eq!(locals[0].name, "local_10");
+    assert_eq!(locals[0].addr.get_offset(), 0x2000);
+    assert!(locals[0].usepoint.is_invalid(), "empty uselimit ⇒ addr-tied seed");
+
+    // Structural walk: every <symbol> has a nonzero internal-range id, and every
+    // <mapsym> carries at least one entry (addr|hash) + rangelist pair.
+    let mut dec = kuna_base::marshal::PackedDecode::new(&m);
+    kuna_base::marshal::Decoder::ingest_stream(&mut dec, &doc).unwrap();
+    let localdb = dec.open_element().unwrap();
+    assert_eq!(localdb, ELEM_LOCALDB.get_id());
+    let scope_el = dec.open_element().unwrap();
+    assert_eq!(scope_el, ELEM_SCOPE.get_id());
+    // Positional contract: <parent> then <rangelist> BEFORE <symbollist>
+    // (LocalSymbolMap.decodeScope skips the first two children blind).
+    let parent_el = dec.open_element().unwrap();
+    assert_eq!(parent_el, ELEM_PARENT.get_id(), "first scope child must be <parent>");
+    dec.close_element_skipping(parent_el).unwrap();
+    let rl_el = dec.open_element().unwrap();
+    assert_eq!(rl_el, ELEM_RANGELIST.get_id(), "second scope child must be <rangelist>");
+    dec.close_element_skipping(rl_el).unwrap();
+    let list_el = dec.open_element().unwrap();
+    assert_eq!(list_el, ELEM_SYMBOLLIST.get_id());
+    let mut mapsym_count = 0;
+    while dec.peek_element().unwrap() != 0 {
+        let ms = dec.open_element().unwrap();
+        assert_eq!(ms, ELEM_MAPSYM.get_id());
+        mapsym_count += 1;
+        // <symbol id=NONZERO ...>
+        let sym_el = dec.open_element().unwrap();
+        assert_eq!(sym_el, ELEM_SYMBOL.get_id());
+        let id = kuna_base::marshal::Decoder::read_unsigned_integer_id(&mut dec, &ATTRIB_ID)
+            .unwrap();
+        assert_ne!(id, 0, "symbol id must be nonzero (Java hard-throw)");
+        assert_eq!(id >> 56, 0x40, "invented symbols carry internal-range ids");
+        dec.close_element_skipping(sym_el).unwrap();
+        // >=1 SymbolEntry: (addr|hash) + rangelist.
+        let entry_el = dec.open_element().unwrap();
+        assert!(
+            entry_el == kuna_base::address::ELEM_ADDR.get_id()
+                || entry_el == ELEM_HASH.get_id(),
+            "mapsym entry must open with <addr> or <hash>"
+        );
+        dec.close_element_skipping(entry_el).unwrap();
+        let ul_el = dec.open_element().unwrap();
+        assert_eq!(ul_el, ELEM_RANGELIST.get_id(), "entry uselimit rangelist required");
+        dec.close_element_skipping(ul_el).unwrap();
+        dec.close_element_skipping(ms).unwrap();
+    }
+    assert_eq!(mapsym_count, 2);
+    dec.close_element(list_el).unwrap();
+    dec.close_element(scope_el).unwrap();
+    dec.close_element(localdb).unwrap();
+}

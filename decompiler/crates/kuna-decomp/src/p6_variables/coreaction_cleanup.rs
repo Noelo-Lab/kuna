@@ -2342,6 +2342,50 @@ fn kuna_default_local_name(
     }
 }
 
+/// The stored-name recommendation matching a high's name representative (C++
+/// `ScopeLocal::recoverNameRecommendationsForSymbols`, varmap.cc:1050-1090):
+/// storage address + size must match, and the recommendation's use address
+/// selects the arm — invalid = an address-tied whole-function location,
+/// `entry - 1` = a function input, anything else = the representative's
+/// defining-write address.
+fn recommended_name_for(
+    data: &Funcdata,
+    name_rep: crate::context::VarnodeId,
+    v_addr: &kuna_base::address::Address,
+    v_size: i32,
+    v_input: bool,
+    v_addrtied: bool,
+) -> Option<String> {
+    let lm = data.get_scope_local()?;
+    if lm.name_recommendations().is_empty() {
+        return None;
+    }
+    let param_usepoint = &data.get_address().clone() + -1;
+    let def_addr = data
+        .vbank()
+        .get(name_rep)
+        .filter(|v| v.is_written())
+        .and_then(|v| v.get_def())
+        .and_then(|op| data.obank().get(op))
+        .map(|o| o.get_addr().clone());
+    for rec in lm.name_recommendations() {
+        if rec.size != v_size || rec.addr != *v_addr {
+            continue;
+        }
+        let hit = if rec.useaddr.is_invalid() {
+            v_addrtied
+        } else if rec.useaddr == param_usepoint {
+            v_input
+        } else {
+            def_addr.as_ref() == Some(&rec.useaddr)
+        };
+        if hit {
+            return Some(rec.name.clone());
+        }
+    }
+    None
+}
+
 /// The callee-parameter name recommendation for `high`, if the
 /// `ActionNameVars::lookForFuncParamNames` apply-gates (coreaction.cc:2981-2993)
 /// admit it: the representative is not free / not an input, the high has a single
@@ -2485,6 +2529,33 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 ),
                 None => continue,
             };
+        // C++ `ScopeLocal::recoverNameRecommendationsForSymbols` (varmap.cc:
+        // 1050-1090, run at the top of `ActionNameVars::apply`,
+        // coreaction.cc:3065): a name recommendation — the surviving identity
+        // of a namelocked-but-NOT-typelocked Symbol (a GUI rename of an
+        // untyped local; such Symbols never survive restructure's
+        // `clearUnlockedCategory(-1)`) — wins over both the container bind and
+        // the `vN` allocator for the variable at its recorded storage.  The
+        // three matching arms mirror the C++: invalid usepoint = an
+        // address-tied whole; entry-1 = a function input; otherwise the
+        // defining-write address.  Empty outside ghidra mode.
+        if let Some(rec_name) = recommended_name_for(
+            data,
+            name_rep.unwrap(),
+            &v_addr,
+            v_size,
+            v_input,
+            v_addrtied,
+        ) {
+            let unique = data
+                .get_scope_local()
+                .map(|lm| lm.make_local_name_unique(&rec_name))
+                .unwrap_or(rec_name);
+            if let Some(h) = data.high_bank_mut().get_mut(high) {
+                h.set_kuna_name(unique);
+            }
+            continue;
+        }
         // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1177`): query the local
         // map for the SMALLEST CONTAINING SymbolEntry of the representative's BASE
         // BYTE (`queryProperties(vn->getAddr(), 1, usepoint)` — size 1, the

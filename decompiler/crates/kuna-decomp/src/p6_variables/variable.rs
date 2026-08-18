@@ -54,6 +54,25 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::context::{HighVariableId, VarnodeId};
 
 // =============================================================================
+// Wire marshaling ids owned by variable.cc (upstream numbers, variable.cc:23-27;
+// DECOMPILER scope — written by numeric id, never registered on the SLEIGH
+// registry; see the note in `substrate/funcdata_encode.rs`).
+// =============================================================================
+
+/// Marshaling attribute "class" (C++ `ATTRIB_CLASS`, variable.cc:23, id 66).
+pub const ATTRIB_CLASS: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("class", 66);
+/// Marshaling attribute "repref" (C++ `ATTRIB_REPREF`, variable.cc:24, id 67).
+pub const ATTRIB_REPREF: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("repref", 67);
+/// Marshaling attribute "symref" (C++ `ATTRIB_SYMREF`, variable.cc:25, id 68).
+pub const ATTRIB_SYMREF: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("symref", 68);
+/// Marshaling element `<high>` (C++ `ELEM_HIGH`, variable.cc:27, id 82).
+pub const ELEM_HIGH: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("high", 82);
+
+// =============================================================================
 // Arena keys for the VariableGroup / VariablePiece overlap model
 // =============================================================================
 

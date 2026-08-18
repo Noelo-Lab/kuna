@@ -1135,15 +1135,12 @@ impl Datatype {
     /// Get the type id, without variable length size adjustment (C++
     /// `getUnsizedId`, the inline at type.hh:968).
     ///
-    /// STUB(W6): the variable-length branch needs `Datatype::hashSize`
-    /// (reversible size hashing in type.cc); the non-variable-length case is
-    /// implemented (returns the plain id).
+    /// For a variable-length type the stored id is the size-specific instance
+    /// id; feeding it back through the reversible [`Datatype::hash_size`]
+    /// recovers the size-independent base id.
     pub fn get_unsized_id(&self) -> KunaResult<uint8> {
         if (self.flags & flags::variable_length) != 0 {
-            // C++: return hashSize(id, size);  // STUB(W6)
-            Err(KunaError::lowlevel(
-                "STUB(W6): Datatype::getUnsizedId hashSize not yet ported",
-            ))
+            Ok(Datatype::hash_size(self.id, self.size))
         } else {
             Ok(self.id)
         }
@@ -1191,11 +1188,9 @@ impl Datatype {
 
     // -- Variable-length identity (type.cc:127-135) -------------------------
 
-    /// Are these the same variable length data-type (C++ `hasSameVariableBase`).
-    ///
-    /// STUB(W6): the non-trivial path needs `Datatype::hashSize`; the
-    /// short-circuits (`!isVariableLength()`) are implemented and cover the
-    /// common case (returns `false`).
+    /// Are these the same variable length data-type (C++ `hasSameVariableBase`,
+    /// type.cc:127-135): both variable-length and the size-independent
+    /// [`Datatype::hash_size`] base ids agree.
     pub fn has_same_variable_base(&self, ct: &Datatype) -> KunaResult<bool> {
         if !self.is_variable_length() {
             return Ok(false);
@@ -1203,10 +1198,9 @@ impl Datatype {
         if !ct.is_variable_length() {
             return Ok(false);
         }
-        // C++: uint8 thisId = hashSize(id, size); ... return thisId == themId;
-        Err(KunaError::lowlevel(
-            "STUB(W6): Datatype::hasSameVariableBase hashSize not yet ported",
-        ))
+        let this_id = Datatype::hash_size(self.id, self.size);
+        let them_id = Datatype::hash_size(ct.id, ct.size);
+        Ok(this_id == them_id)
     }
 
     // -- Component / pointer structure (type.hh:252-300) --------------------
@@ -4176,6 +4170,330 @@ pub fn register_type_wire_ids(reg: &mut kuna_base::marshal::IdRegistry) {
     reg.register_attribute(&ATTRIB_OPAQUESTRING);
     reg.register_attribute(&ATTRIB_UTF);
     reg.register_attribute(&ATTRIB_VARLENGTH);
+}
+
+// ===========================================================================
+// Wire <type>/<typeref>/<def> encode — Datatype::encodeRef and the per-subclass
+// encode overrides (type.cc:462-560 + the subclass sites), the W8 type
+// marshal-out.  The consumer is Java's PcodeDataTypeManager.decodeDataType,
+// which resolves a <typeref>/named <type> by (name,id) via findBaseType — for
+// wire-delivered types the (name,id) pair originally came from Java, so the
+// echo is sufficient; only kuna-invented types need the full <type> body.
+// ===========================================================================
+
+impl Datatype {
+    /// Decode a display-format code into its attribute string (C++
+    /// `Datatype::decodeIntegerFormat`, type.cc:773-787): 1-5 map to
+    /// "hex"/"dec"/"oct"/"bin"/"char".
+    pub fn decode_integer_format(val: uint4) -> KunaResult<&'static str> {
+        match val {
+            1 => Ok("hex"),
+            2 => Ok("dec"),
+            3 => Ok("oct"),
+            4 => Ok("bin"),
+            5 => Ok("char"),
+            _ => Err(KunaError::lowlevel("Unrecognized integer format encoding")),
+        }
+    }
+
+    /// Encode basic data-type properties (name/id/size/metatype/…) as
+    /// attributes (C++ `Datatype::encodeBasic`, type.cc:474-498).  Presumes the
+    /// element is already open.  `meta` is the metatype attribute to write
+    /// (subclasses override it), `align` the alignment (`-1` = do not encode).
+    fn encode_basic(
+        &self,
+        meta: type_metatype,
+        align: int4,
+        encoder: &mut dyn kuna_base::marshal::Encoder,
+    ) -> KunaResult<()> {
+        use kuna_base::marshal::{ATTRIB_ID, ATTRIB_METATYPE, ATTRIB_NAME, ATTRIB_SIZE};
+        encoder.write_string(&ATTRIB_NAME, self.name.as_bytes());
+        let save_id = self.get_unsized_id()?;
+        if save_id != 0 {
+            encoder.write_unsigned_integer(&ATTRIB_ID, save_id);
+        }
+        encoder.write_signed_integer(&ATTRIB_SIZE, self.size as i64);
+        let metastring = metatype2string(meta)?;
+        encoder.write_string(&ATTRIB_METATYPE, metastring.as_bytes());
+        if align > 0 {
+            encoder.write_signed_integer(&ATTRIB_ALIGNMENT, align as i64);
+        }
+        if (self.flags & flags::coretype) != 0 {
+            encoder.write_bool(&ATTRIB_CORE, true);
+        }
+        if self.is_variable_length() {
+            encoder.write_bool(&ATTRIB_VARLENGTH, true);
+        }
+        if (self.flags & flags::opaque_string) != 0 {
+            encoder.write_bool(&ATTRIB_OPAQUESTRING, true);
+        }
+        let format = self.get_display_format();
+        if format != 0 {
+            encoder.write_string(
+                &kuna_base::marshal::ATTRIB_FORMAT,
+                Datatype::decode_integer_format(format)?.as_bytes(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Encode this data-type to the stream as a simple `<def>` typedef element
+    /// (C++ `Datatype::encodeTypedef`, type.cc:543-556).  Called only when
+    /// `typedef_imm` is set.
+    fn encode_typedef(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use kuna_base::marshal::{ATTRIB_ID, ATTRIB_NAME};
+        let imm = self
+            .typedef_imm
+            .as_ref()
+            .expect("encode_typedef called without typedefImm");
+        encoder.open_element(&ELEM_DEF);
+        encoder.write_string(&ATTRIB_NAME, self.name.as_bytes());
+        encoder.write_unsigned_integer(&ATTRIB_ID, self.id);
+        let format = self.get_display_format();
+        if format != 0 {
+            encoder.write_string(
+                &kuna_base::marshal::ATTRIB_FORMAT,
+                Datatype::decode_integer_format(format)?.as_bytes(),
+            );
+        }
+        imm.encode_ref(encoder)?;
+        encoder.close_element(&ELEM_DEF);
+        Ok(())
+    }
+
+    /// Encode a simple reference to this data-type as a `<typeref>` element
+    /// including only name and id (C++ `Datatype::encodeRef`, type.cc:503-521).
+    /// Falls back to the full [`Datatype::encode`] for id-less or void types.
+    pub fn encode_ref(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use kuna_base::marshal::{ATTRIB_ID, ATTRIB_NAME, ATTRIB_SIZE};
+        if self.id != 0 && self.metatype != type_metatype::TYPE_VOID {
+            encoder.open_element(&ELEM_TYPEREF);
+            encoder.write_string(&ATTRIB_NAME, self.name.as_bytes());
+            if self.is_variable_length() {
+                // For a variable-length base: the size-independent id plus the
+                // size of this instance.
+                encoder
+                    .write_unsigned_integer(&ATTRIB_ID, Datatype::hash_size(self.id, self.size));
+                encoder.write_signed_integer(&ATTRIB_SIZE, self.size as i64);
+            } else {
+                encoder.write_unsigned_integer(&ATTRIB_ID, self.id);
+            }
+            encoder.close_element(&ELEM_TYPEREF);
+            Ok(())
+        } else {
+            self.encode(encoder)
+        }
+    }
+
+    /// Encode a formal description of this data-type as a `<type>` element
+    /// (C++ `Datatype::encode` + every subclass override, type.cc).  Composite
+    /// data-types descend one level, describing components by reference.
+    pub fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use kuna_base::marshal::{
+            ATTRIB_CONTENT, ATTRIB_NAME, ATTRIB_SPACE, ATTRIB_VALUE, ATTRIB_WORDSIZE, ELEM_OFF,
+            ELEM_VAL, ELEM_VOID,
+        };
+        use kuna_base::marshal::ATTRIB_OFFSET;
+        let elem_type = &crate::prettyprint::ids::ELEM_TYPE;
+        // The typedef indirection (every C++ subclass override's first check,
+        // except the partial/relative kinds which never typedef).
+        if self.typedef_imm.is_some()
+            && !matches!(
+                self.kind,
+                DatatypeKind::PartialStruct { .. }
+                    | DatatypeKind::PartialUnion { .. }
+                    | DatatypeKind::PartialEnum { .. }
+                    | DatatypeKind::PointerRel { .. }
+            )
+        {
+            return self.encode_typedef(encoder);
+        }
+        match &self.kind {
+            // TypeVoid::encode (type.cc:1060): the bare <void/> element.
+            DatatypeKind::Void => {
+                encoder.open_element(&ELEM_VOID);
+                encoder.close_element(&ELEM_VOID);
+            }
+            // TypeBase / TypeUnknown / TypeChar / TypeUnicode (type.cc:462,983,
+            // 1030): the basic form; the char/unicode subclasses are flag bits
+            // in kuna and add their marker attribute.
+            DatatypeKind::Base | DatatypeKind::Unknown => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, -1, encoder)?;
+                if self.is_ascii() {
+                    encoder.write_bool(&ATTRIB_CHAR, true);
+                } else if self.is_utf16() || self.is_utf32() {
+                    encoder.write_bool(&ATTRIB_UTF, true);
+                }
+                encoder.close_element(elem_type);
+            }
+            // TypeEnum::encode (type.cc:1639): metatype re-spelled as
+            // enum_int/enum_uint, one <val> child per name.
+            DatatypeKind::Enum { namemap } => {
+                encoder.open_element(elem_type);
+                let meta = if self.metatype == type_metatype::TYPE_INT {
+                    type_metatype::TYPE_ENUM_INT
+                } else {
+                    type_metatype::TYPE_ENUM_UINT
+                };
+                self.encode_basic(meta, -1, encoder)?;
+                for (val, nm) in namemap.iter() {
+                    encoder.open_element(&ELEM_VAL);
+                    encoder.write_string(&ATTRIB_NAME, nm.as_bytes());
+                    encoder.write_unsigned_integer(&ATTRIB_VALUE, *val);
+                    encoder.close_element(&ELEM_VAL);
+                }
+                encoder.close_element(elem_type);
+            }
+            // TypePointer::encode (type.cc:1130).
+            DatatypeKind::Pointer { ptrto, spaceid, wordsize, .. } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, -1, encoder)?;
+                if *wordsize != 1 {
+                    encoder.write_unsigned_integer(&ATTRIB_WORDSIZE, *wordsize as u64);
+                }
+                if let Some(spc) = spaceid {
+                    encoder.write_space(&ATTRIB_SPACE, spc);
+                }
+                ptrto.encode_ref(encoder)?;
+                encoder.close_element(elem_type);
+            }
+            // TypeArray::encode (type.cc:1461).
+            DatatypeKind::Array { arrayof, arraysize } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, -1, encoder)?;
+                encoder.write_signed_integer(&ATTRIB_ARRAYSIZE, *arraysize as i64);
+                arrayof.encode_ref(encoder)?;
+                encoder.close_element(elem_type);
+            }
+            // TypeStruct::encode (type.cc:2085): fields and bitfields
+            // interleaved by byte offset.
+            DatatypeKind::Struct { field, bitfield } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, self.alignment, encoder)?;
+                let mut i1 = field.iter().peekable();
+                let mut i2 = bitfield.iter().peekable();
+                while let (Some(f), Some(b)) = (i1.peek(), i2.peek()) {
+                    if f.offset < b.byte_offset {
+                        i1.next().unwrap().encode(encoder)?;
+                    } else {
+                        i2.next().unwrap().encode(encoder)?;
+                    }
+                }
+                for f in i1 {
+                    f.encode(encoder)?;
+                }
+                for b in i2 {
+                    b.encode(encoder)?;
+                }
+                encoder.close_element(elem_type);
+            }
+            // TypeUnion::encode (type.cc:2545).
+            DatatypeKind::Union { field } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, self.alignment, encoder)?;
+                for f in field {
+                    f.encode(encoder)?;
+                }
+                encoder.close_element(elem_type);
+            }
+            // TypeCode::encode (type.cc:3372): the prototype child when known.
+            DatatypeKind::Code { proto } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, -1, encoder)?;
+                if let Some(p) = proto {
+                    p.encode(encoder)?;
+                }
+                encoder.close_element(elem_type);
+            }
+            // TypeSpacebase::encode (type.cc:3552).
+            DatatypeKind::Spacebase { spaceid, localframe } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, -1, encoder)?;
+                if let Some(spc) = spaceid {
+                    encoder.write_space(&ATTRIB_SPACE, spc);
+                }
+                localframe.encode(encoder)?;
+                encoder.close_element(elem_type);
+            }
+            // TypePartialStruct: no C++ override — the base Datatype::encode
+            // basic form (type.cc:462).
+            DatatypeKind::PartialStruct { .. } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, -1, encoder)?;
+                encoder.close_element(elem_type);
+            }
+            // TypePartialUnion::encode (type.cc:2948).
+            DatatypeKind::PartialUnion { container, offset, .. } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(self.metatype, -1, encoder)?;
+                encoder.write_signed_integer(&ATTRIB_OFFSET, *offset as i64);
+                container.encode_ref(encoder)?;
+                encoder.close_element(elem_type);
+            }
+            // TypePartialEnum::encode (type.cc:2761).
+            DatatypeKind::PartialEnum { parent, offset, .. } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(type_metatype::TYPE_PARTIALENUM, -1, encoder)?;
+                encoder.write_signed_integer(&ATTRIB_OFFSET, *offset as i64);
+                parent.encode_ref(encoder)?;
+                encoder.close_element(elem_type);
+            }
+            // TypePointerRel::encode (type.cc:3125): metatype re-spelled as
+            // ptrrel, the pointed-to type in FULL form, the parent by ref, and
+            // the byte offset as an <off> child.
+            DatatypeKind::PointerRel { ptrto, wordsize, parent, offset, .. } => {
+                encoder.open_element(elem_type);
+                self.encode_basic(type_metatype::TYPE_PTRREL, -1, encoder)?;
+                if *wordsize != 1 {
+                    encoder.write_unsigned_integer(&ATTRIB_WORDSIZE, *wordsize as u64);
+                }
+                ptrto.encode(encoder)?;
+                parent.encode_ref(encoder)?;
+                encoder.open_element(&ELEM_OFF);
+                encoder.write_signed_integer(&ATTRIB_CONTENT, *offset as i64);
+                encoder.close_element(&ELEM_OFF);
+                encoder.close_element(elem_type);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl TypeField {
+    /// Encode a formal description of this field as a `<field>` element (C++
+    /// `TypeField::encode`, type.cc:852-862).
+    pub fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use kuna_base::marshal::{ATTRIB_ID, ATTRIB_NAME, ATTRIB_OFFSET};
+        let elem_field = &crate::prettyprint::ids::ELEM_FIELD;
+        encoder.open_element(elem_field);
+        encoder.write_string(&ATTRIB_NAME, self.name.as_bytes());
+        encoder.write_signed_integer(&ATTRIB_OFFSET, self.offset as i64);
+        if self.ident != self.offset {
+            encoder.write_signed_integer(&ATTRIB_ID, self.ident as i64);
+        }
+        self.field_type.encode_ref(encoder)?;
+        encoder.close_element(elem_field);
+        Ok(())
+    }
+}
+
+impl TypeBitField {
+    /// Encode a formal description of this bit-field as a `<bitfield>` element
+    /// (C++ `TypeBitField::encode`, type.cc:940-950).
+    pub fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use kuna_base::marshal::{ATTRIB_NAME, ATTRIB_OFFSET, ATTRIB_SIZE};
+        let elem_bitfield = &crate::prettyprint::ids::ELEM_BITFIELD;
+        encoder.open_element(elem_bitfield);
+        encoder.write_string(&ATTRIB_NAME, self.name.as_bytes());
+        encoder.write_signed_integer(&ATTRIB_OFFSET, self.byte_offset as i64);
+        encoder.write_signed_integer(&ATTRIB_SIZE, self.num_bits as i64);
+        encoder
+            .write_signed_integer(&kuna_base::address::ATTRIB_FIRST, self.least_sig_bit as i64);
+        self.field_type.encode_ref(encoder)?;
+        encoder.close_element(elem_bitfield);
+        Ok(())
+    }
 }
 
 /// The ghidra-mode remote type source (C++ `TypeFactoryGhidra`'s `glb`
@@ -7511,6 +7829,66 @@ mod tests {
         assert!(pr.is_ptrsub_matching(0, 12, 1).unwrap()); // 16 in [0,16]
         assert!(!pr.is_ptrsub_matching(0, 13, 1).unwrap()); // 17 > 16
         assert!(!pr.is_ptrsub_matching(-5, 0, 1).unwrap()); // -1 < 0
+    }
+
+    // ----------------------------------------------------------------------
+    // Wire encode (Datatype::encodeRef / encode) — differential against the
+    // already-shipped decode side: what `encode_ref` writes, `decode_type`
+    // must resolve back to the SAME interned object.
+    // ----------------------------------------------------------------------
+
+    /// encode_ref of a named (id-carrying) core type emits `<typeref name id>`
+    /// and the wire decoder resolves it to the identical interned Rc; an
+    /// id-less derived type (pointer/array) emits the full `<type>` form with
+    /// a one-level `<typeref>` descent, and decode re-interns to the same Rc.
+    #[test]
+    fn wire_encode_roundtrips_through_decode_type() {
+        use kuna_base::marshal::{Decoder, PackedDecode, PackedEncode};
+        let f = factory();
+        f.set_core_type("int", 4, type_metatype::TYPE_INT, false).unwrap();
+        f.set_core_type("undefined", 1, type_metatype::TYPE_UNKNOWN, false).unwrap();
+        f.cache_core_types().unwrap();
+        let m = kuna_base::space::AddrSpaceManager::new();
+        let roundtrip = |t: &Rc<Datatype>, full: bool| -> Rc<Datatype> {
+            let mut bytes: Vec<u8> = Vec::new();
+            {
+                let mut e = PackedEncode::new(&mut bytes);
+                if full {
+                    t.encode(&mut e).unwrap();
+                } else {
+                    t.encode_ref(&mut e).unwrap();
+                }
+            }
+            let mut d = PackedDecode::new(&m);
+            d.ingest_stream(&bytes).unwrap();
+            f.decode_type(&mut d).unwrap()
+        };
+
+        let i4 = crate::dtype::TypeFactory::find_by_name(&f, "int").unwrap().unwrap();
+        assert_ne!(i4.get_id(), 0, "core types carry hashed ids");
+        let back = roundtrip(&i4, false);
+        assert!(Rc::ptr_eq(&back, &i4), "<typeref> resolves to the same interned type");
+
+        let p = crate::dtype::TypeFactory::get_type_pointer(&f, 8, Rc::clone(&i4), 1).unwrap();
+        assert_eq!(p.get_id(), 0, "derived pointer has no id -> full <type> form");
+        let back = roundtrip(&p, false);
+        assert!(Rc::ptr_eq(&back, &p), "full <type ptr> re-interns to the same object");
+
+        let a = crate::dtype::TypeFactory::get_type_array(&f, 5, Rc::clone(&i4)).unwrap();
+        let back = roundtrip(&a, true);
+        assert!(Rc::ptr_eq(&back, &a), "full <type array> re-interns to the same object");
+    }
+
+    /// `decode_integer_format` is the inverse of the wire format vocabulary
+    /// (`wire_integer_format`), and errors on out-of-range codes.
+    #[test]
+    fn decode_integer_format_vocabulary() {
+        for (code, s) in [(1u32, "hex"), (2, "dec"), (3, "oct"), (4, "bin"), (5, "char")] {
+            assert_eq!(Datatype::decode_integer_format(code).unwrap(), s);
+            assert_eq!(wire_integer_format(s), code);
+        }
+        assert!(Datatype::decode_integer_format(0).is_err());
+        assert!(Datatype::decode_integer_format(6).is_err());
     }
 
     // ----------------------------------------------------------------------

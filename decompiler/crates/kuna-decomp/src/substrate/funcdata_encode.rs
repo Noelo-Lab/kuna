@@ -65,6 +65,11 @@ use crate::context::{OpId, VarnodeId};
 pub const ELEM_IOP: ElementId = ElementId::new("iop", 113);
 /// Marshaling element `<ast>` (C++ `ELEM_AST`, `funcdata.cc`, id 115).
 pub const ELEM_AST: ElementId = ElementId::new("ast", 115);
+/// Marshaling element `<highlist>` (C++ `ELEM_HIGHLIST`, `funcdata.cc`, id 117).
+pub const ELEM_HIGHLIST: ElementId = ElementId::new("highlist", 117);
+/// Marshaling element `<jumptablelist>` (C++ `ELEM_JUMPTABLELIST`,
+/// `funcdata.cc`, id 118).
+pub const ELEM_JUMPTABLELIST: ElementId = ElementId::new("jumptablelist", 118);
 /// Marshaling element `<function>` (C++ `ELEM_FUNCTION`, `funcdata.cc`, id 116).
 ///
 /// Re-exported by `p9_emit/prettyprint.rs`'s `ids` module (the markup
@@ -92,10 +97,16 @@ pub const ATTRIB_NOCODE: AttributeId = AttributeId::new("nocode", 84);
 impl Funcdata {
     /// C++ `Funcdata::encode(Encoder&,uint8 id,bool savetree)` (`funcdata.cc:734`).
     ///
-    /// Emits the `<function>` document consumed by Ghidra's `HighFunction.decode`.
-    /// v1 covers `<function>` + baseaddr `<addr>` + (when `savetree`) the `<ast>`;
-    /// the secondary encoders are deferred (see the `// v1.1:` skip sites).
-    pub fn encode(&self, enc: &mut dyn Encoder, id: u64, savetree: bool) -> KunaResult<()> {
+    /// Emits the `<function>` document consumed by Ghidra's `HighFunction.decode`,
+    /// in the upstream child order: baseaddr `<addr>` → `<localdb>` → (savetree)
+    /// `<ast>` → (savetree + high-level on) `<highlist>` → `<jumptablelist>` →
+    /// `<prototype>`.  `<override>` (Java-skipped) stays deferred.
+    ///
+    /// Takes `&mut self` (the C++ method is const): the Phase-4 encode runs the
+    /// [`Funcdata::kuna_link_high_symbols`] linking pass — the encode-time
+    /// stand-in for C++ `ActionNameVars::linkSymbols`, which upstream ran during
+    /// analysis — and the HighVariable reads re-derive dirty state.
+    pub fn encode(&mut self, enc: &mut dyn Encoder, id: u64, savetree: bool) -> KunaResult<()> {
         enc.open_element(&ELEM_FUNCTION);
         if id != 0 {
             enc.write_unsigned_integer(&ATTRIB_ID, id);
@@ -106,19 +117,342 @@ impl Funcdata {
             enc.write_bool(&ATTRIB_NOCODE, true);
         }
         self.get_address().encode(enc)?;
-        // v1.1: localmap->encodeRecursive(encoder,false)  (<localdb>) — deferred.
+        // The symbol-link pass must run BEFORE <localdb> so linked-in symbols
+        // are part of the encoded scope (the ids <highlist> symrefs resolve
+        // against — Java throws "HighLocal is missing symbol" otherwise).
+        let offsets = if savetree && self.is_high_on() {
+            self.kuna_link_high_symbols()
+        } else {
+            std::collections::BTreeMap::new()
+        };
+        // localmap->encodeRecursive(encoder,false): the <localdb> scope.  The
+        // kuna ScopeLocal owns a private single-scope database — no child
+        // scopes to recurse into.
+        if !self.has_no_code() {
+            if let Some(lm) = self.get_scope_local() {
+                lm.encode(enc)?;
+            }
+        }
         if savetree {
             self.encode_tree(enc)?;
-            // v1.1 (Phase 4): encodeHigh(encoder)  (<highlist>) — deferred.
+            self.encode_high(enc, &offsets)?;
         }
-        // v1.1 (Phase 4): encodeJumpTable(encoder)  (<jumptablelist>) — deferred.
-        // v1.1: funcp.encode(encoder)  (<prototype>, FuncProto::encode) — deferred.
-        //       A large independent encoder (ProtoStore/ProtoParameter/
-        //       Datatype::encodeRef/effect lists); `HighFunction.decode` treats
-        //       `<prototype>` as optional, so it does not block v1.
-        // v1.1: localoverride.encode(encoder,name)  (<override>) — deferred.
+        self.encode_jump_table(enc)?;
+        // funcp.encode: "Must be saved after database" (funcdata.cc:758).  A
+        // store-less proto (a partial/jump-table-recovery clone) has nothing
+        // encodable; `<prototype>` is optional to HighFunction.decode.
+        if self.get_func_proto().has_store() {
+            self.get_func_proto().encode(enc)?;
+        }
+        // v1.1: localoverride.encode(encoder,name)  (<override>) — Java skips it.
         enc.close_element(&ELEM_FUNCTION);
         Ok(())
+    }
+
+    /// C++ `Funcdata::encodeJumpTable(Encoder&)` (`funcdata.cc:625-635`): the
+    /// `<jumptablelist>` of recovered `JumpTable`s, omitted when there are none.
+    /// Emitted independently of `savetree` — the switch analyzer requests
+    /// `notree`+`noc`+`jumpload` and consumes ONLY this list.
+    fn encode_jump_table(&self, enc: &mut dyn Encoder) -> KunaResult<()> {
+        let tables = self.jumpvec_slice();
+        if tables.is_empty() {
+            return Ok(());
+        }
+        enc.open_element(&ELEM_JUMPTABLELIST);
+        for jt in tables {
+            // C++ JumpTable::encode throws on an unrecovered table; a table
+            // that survived to the encode without recovery must not kill the
+            // whole response (kuna divergence: skip it — Java drops empty
+            // tables anyway via isEmpty()).
+            if !jt.is_recovered() {
+                continue;
+            }
+            jt.encode(enc)?;
+        }
+        enc.close_element(&ELEM_JUMPTABLELIST);
+        Ok(())
+    }
+
+    /// C++ `Funcdata::encodeHigh(Encoder&)` (`funcdata.cc:658-683`): one
+    /// `<high>` per distinct HighVariable of any non-annotation Varnode, in
+    /// varnode-loc first-appearance order.  Emitted only when the high-level
+    /// (HighVariable) analysis ran.  `offsets` is the per-high wire
+    /// `offset` attribute computed by [`Funcdata::kuna_link_high_symbols`]
+    /// (C++ `HighVariable::symboloffset`; absent = -1 = whole symbol).
+    fn encode_high(
+        &mut self,
+        enc: &mut dyn Encoder,
+        offsets: &std::collections::BTreeMap<crate::context::HighVariableId, i32>,
+    ) -> KunaResult<()> {
+        use crate::variable::{ATTRIB_CLASS, ATTRIB_REPREF, ATTRIB_SYMREF, ELEM_HIGH};
+        if !self.is_high_on() {
+            return Ok(());
+        }
+        // Distinct highs in first-appearance loc order (the C++ mark/clearMark
+        // dedup, realized as an ordered set — no second clearing pass needed).
+        let vns: Vec<VarnodeId> = self.vbank().iter_loc().collect();
+        let mut seen: std::collections::BTreeSet<crate::context::HighVariableId> =
+            std::collections::BTreeSet::new();
+        let mut order: Vec<crate::context::HighVariableId> = Vec::new();
+        for vn in &vns {
+            let v = self.vbank().get(*vn).expect("encode_high: stale vn");
+            if v.is_annotation() {
+                continue;
+            }
+            if let Some(h) = v.get_high() {
+                if seen.insert(h) {
+                    order.push(h);
+                }
+            }
+        }
+        enc.open_element(&ELEM_HIGHLIST);
+        for high in order {
+            // Phase 1: the &mut HighVariable reads (predicates / type / name
+            // representative / instances) under the field-split borrow.
+            let (rep, spacebase, implied, persist, addrtied, constant, typelock, dtype, insts) =
+                self.with_high_split(|hb, ctx| {
+                    let h = hb.get_mut(high).expect("encode_high: stale high");
+                    let rep = h.get_name_representative(ctx);
+                    let spacebase = h.is_spacebase(ctx);
+                    let implied = h.is_implied(ctx);
+                    let persist = h.is_persist(ctx);
+                    let addrtied = h.is_addr_tied(ctx);
+                    let constant = h.is_constant(ctx);
+                    let typelock = h.is_type_lock(ctx, None);
+                    let dtype = h.get_type(ctx, None);
+                    let n = h.num_instances();
+                    let insts: Vec<VarnodeId> = (0..n).map(|i| h.get_instance(i)).collect();
+                    (rep, spacebase, implied, persist, addrtied, constant, typelock, dtype, insts)
+                });
+            let rep_index = self
+                .vbank()
+                .get(rep)
+                .expect("encode_high: stale representative")
+                .get_create_index() as u64;
+            // Phase 2: the symbol linkage (the C++ `symbol`/`symboloffset`
+            // members).  Locals/params resolve through the attached local
+            // SymbolId; globals resolve their REAL id through the global-scope
+            // snapshot (ghidra-mode: the host DB id delivered with the mapped
+            // symbol; 0 = unknown ⇒ symref is omitted, never fabricated).
+            let attached = self
+                .high_bank()
+                .get(high)
+                .and_then(|h| h.kuna_dynamic_symbol().or_else(|| h.kuna_equate_symbol()));
+            let (local_symref, category) = match (attached, self.get_scope_local()) {
+                (Some(sid), Some(lm)) => {
+                    let (id, cat) = lm.symbol_id_and_category(sid);
+                    (Some(id), cat)
+                }
+                _ => (None, crate::database::symbol_category::NO_CATEGORY),
+            };
+            let is_global_class = persist && addrtied;
+            // class per variable.cc:839-855 (order load-bearing).
+            let class: &str = if spacebase || implied {
+                "other"
+            } else if is_global_class {
+                "global"
+            } else if constant {
+                "constant"
+            } else if !persist && local_symref.is_some() {
+                if category == crate::database::symbol_category::FUNCTION_PARAMETER {
+                    "param"
+                } else {
+                    "local"
+                }
+            } else {
+                "other"
+            };
+            enc.open_element(&ELEM_HIGH);
+            enc.write_unsigned_integer(&ATTRIB_REPREF, rep_index);
+            enc.write_string(&ATTRIB_CLASS, class.as_bytes());
+            if typelock {
+                enc.write_bool(&kuna_base::marshal::ATTRIB_TYPELOCK, true);
+            }
+            let mut symbol_offset: i64 = -1;
+            let symref: Option<u64> = if is_global_class {
+                // The global-scope symbol id + partial-offset resolution.
+                let rep_vn = self.vbank().get(rep).expect("encode_high: stale rep");
+                let rep_addr = rep_vn.get_addr().clone();
+                let rep_size = rep_vn.get_size();
+                match self.get_arch().query_container_global(
+                    &rep_addr,
+                    1,
+                    &kuna_base::address::Address::new_invalid(),
+                ) {
+                    Some(gc) if gc.symbol_id != 0 => {
+                        let delta = rep_addr.get_offset().wrapping_sub(
+                            gc.entry_addr.get_offset(),
+                        ) as i64;
+                        if delta != 0 || gc.symbol_offset != 0 {
+                            symbol_offset = delta + gc.symbol_offset as i64;
+                        }
+                        let _ = rep_size;
+                        Some(gc.symbol_id)
+                    }
+                    _ => None,
+                }
+            } else {
+                if let Some(&off) = offsets.get(&high) {
+                    symbol_offset = off as i64;
+                }
+                local_symref
+            };
+            if let Some(id) = symref {
+                enc.write_unsigned_integer(&ATTRIB_SYMREF, id);
+                if symbol_offset >= 0 {
+                    enc.write_signed_integer(&kuna_base::marshal::ATTRIB_OFFSET, symbol_offset);
+                }
+            }
+            dtype.encode_ref(enc)?;
+            for ivn in insts {
+                let create = self
+                    .vbank()
+                    .get(ivn)
+                    .expect("encode_high: stale instance")
+                    .get_create_index();
+                self.encode_bare_ref(enc, create);
+            }
+            enc.close_element(&ELEM_HIGH);
+        }
+        enc.close_element(&ELEM_HIGHLIST);
+        Ok(())
+    }
+
+    /// The Phase-4 encode-time symbol-link pass: the kuna stand-in for C++
+    /// `ActionNameVars::linkSymbols` → `Funcdata::linkSymbol`
+    /// (`funcdata_varnode.cc:1189-1216`), which upstream runs during analysis so
+    /// every named HighVariable carries a localmap `Symbol` by encode time.
+    /// kuna's naming pass binds plain name strings (`kuna_name`) instead, so the
+    /// `Symbol` objects the `<localdb>`/`<highlist>` wire contract needs are
+    /// materialized here, on demand, just before encoding:
+    ///
+    ///   * a named, non-persist, non-constant high whose name-representative
+    ///     storage is covered by an existing localmap entry (a parameter from
+    ///     `link_proto_params`, a restructured stack local) is ATTACHED to that
+    ///     entry's Symbol;
+    ///   * a named high with no covering entry gets a fresh mapped Symbol at its
+    ///     representative storage (the C++ `localmap->addSymbol("",...)` branch,
+    ///     with the high's name instead of a `$$undef` placeholder);
+    ///   * equate/dynamic symbols attached during analysis are kept.
+    ///
+    /// Returns the per-high wire `offset` attribute (C++
+    /// `HighVariable::symboloffset`; the map carries only offsets >= 0).  The
+    /// pass never touches `HighVariable::symbol_offset` (a printer input) — the
+    /// encode is not allowed to perturb the rendered C.
+    pub(crate) fn kuna_link_high_symbols(
+        &mut self,
+    ) -> std::collections::BTreeMap<crate::context::HighVariableId, i32> {
+        use kuna_base::address::Address;
+        let mut offsets: std::collections::BTreeMap<crate::context::HighVariableId, i32> =
+            std::collections::BTreeMap::new();
+        if !self.is_high_on() || self.get_scope_local().is_none() {
+            return offsets;
+        }
+        let vns: Vec<VarnodeId> = self.vbank().iter_loc().collect();
+        let mut seen: std::collections::BTreeSet<crate::context::HighVariableId> =
+            std::collections::BTreeSet::new();
+        for vn in vns {
+            let v = match self.vbank().get(vn) {
+                Some(v) => v,
+                None => continue,
+            };
+            if v.is_annotation() {
+                continue;
+            }
+            let high = match v.get_high() {
+                Some(h) => h,
+                None => continue,
+            };
+            if !seen.insert(high) {
+                continue;
+            }
+            // Symbol already attached during analysis (equate / dynamic).
+            let (has_symbol, named) = match self.high_bank().get(high) {
+                Some(h) => (
+                    h.kuna_dynamic_symbol().or_else(|| h.kuna_equate_symbol()).is_some(),
+                    h.kuna_name().is_some(),
+                ),
+                None => continue,
+            };
+            if has_symbol || !named {
+                continue;
+            }
+            let (rep, spacebase, implied, persist, constant, dtype) =
+                self.with_high_split(|hb, ctx| {
+                    let h = hb.get_mut(high).expect("link_high_symbols: stale high");
+                    let rep = h.get_name_representative(ctx);
+                    (
+                        rep,
+                        h.is_spacebase(ctx),
+                        h.is_implied(ctx),
+                        h.is_persist(ctx),
+                        h.is_constant(ctx),
+                        h.get_type(ctx, None),
+                    )
+                });
+            // Only local (non-persist) nameable storage acquires a Symbol —
+            // the C++ `if (!vn->isPersist())` create guard; constants take the
+            // equate path, spacebase/implied never carry symbols.
+            if persist || constant || spacebase || implied {
+                continue;
+            }
+            let rep_vn = match self.vbank().get(rep) {
+                Some(v) => v,
+                None => continue,
+            };
+            if rep_vn.get_space().get_type() == spacetype::IPTR_CONSTANT
+                || rep_vn.get_space().get_type() == spacetype::IPTR_IOP
+            {
+                continue;
+            }
+            let rep_addr = rep_vn.get_addr().clone();
+            let rep_size = rep_vn.get_size();
+            let rep_addrtied = rep_vn.is_addr_tied();
+            let usepoint = self.vn_use_point(rep);
+            // Find any entry overlapping the base address (linkSymbol's
+            // queryProperties → findContainer).
+            let found = self
+                .get_scope_local()
+                .and_then(|lm| lm.container_symbol_link(&rep_addr, &usepoint));
+            match found {
+                Some((sid, entry_addr, entry_size, entry_off)) => {
+                    if entry_size != rep_size || entry_addr != rep_addr {
+                        // Partial match: the wire offset (HighVariable::setSymbol).
+                        let off = (rep_addr
+                            .get_offset()
+                            .wrapping_sub(entry_addr.get_offset())
+                            as i32)
+                            .wrapping_add(entry_off);
+                        offsets.insert(high, off);
+                    }
+                    if let Some(h) = self.high_bank_mut().get_mut(high) {
+                        h.set_kuna_dynamic_symbol(sid);
+                    }
+                }
+                None => {
+                    // Create the local symbol (linkSymbol's addSymbol branch);
+                    // an addr-tied storage maps usepoint-free.
+                    let name = self
+                        .high_bank()
+                        .get(high)
+                        .and_then(|h| h.kuna_name())
+                        .expect("named checked above")
+                        .to_string();
+                    let create_usepoint =
+                        if rep_addrtied { Address::new_invalid() } else { usepoint };
+                    let res = self
+                        .get_scope_local_mut()
+                        .expect("scope checked above")
+                        .add_symbol(&name, dtype, &rep_addr, &create_usepoint);
+                    if let Ok(sid) = res {
+                        if let Some(h) = self.high_bank_mut().get_mut(high) {
+                            h.set_kuna_dynamic_symbol(sid);
+                        }
+                    }
+                }
+            }
+        }
+        offsets
     }
 
     /// C++ `Funcdata::encodeTree(Encoder&)` (`funcdata.cc:686`).

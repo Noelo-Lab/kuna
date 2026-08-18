@@ -146,6 +146,35 @@ pub struct SimOracle {
     /// served by the getTrackedRegisters answer — lets a test prove a
     /// host-side context fact changes the output.
     pub tracked_overrides: Vec<kuna_sleigh::globalcontext::TrackedContext>,
+    /// PHASE-4 SEAM (rename/retype persistence): host-committed non-parameter
+    /// locals served in the function's `<localdb>` (keyed by entry offset) —
+    /// the shape Java's `LocalSymbolMap.grabFromFunction` produces after
+    /// `HighFunctionDBUtil.updateDBVariable` wrote a user rename/retype to
+    /// the database.  Lets a test prove the GUI rename SURVIVES the
+    /// event-driven re-decompile.
+    pub local_var_overrides: BTreeMap<u64, Vec<HostLocalVar>>,
+}
+
+/// One host-committed local for [`SimOracle::local_var_overrides`].
+#[derive(Clone)]
+pub struct HostLocalVar {
+    /// The (user-chosen) name; served namelocked.
+    pub name: String,
+    /// Storage space name.
+    pub space: String,
+    /// Storage offset.
+    pub offset: u64,
+    /// Storage size in bytes.
+    pub size: i64,
+    /// First-use code offset (the uselimit rangelist start); `None` = an
+    /// address-tied (whole-function) local, served with an empty rangelist.
+    pub first_use: Option<u64>,
+    /// Served typelocked?  Java's `grabFromFunction` sends `typelock=false`
+    /// for an `Undefined`-typed DB local — the shape a plain GUI RENAME
+    /// produces (`updateDBVariable(name, null)`), which kuna must keep as a
+    /// name RECOMMENDATION; `true` is the retype shape (a real type), which
+    /// survives as a seeded Symbol.
+    pub typelock: bool,
 }
 
 impl SimOracle {
@@ -222,6 +251,7 @@ impl SimOracle {
             callee_pieces,
             readonly_ranges,
             tracked_overrides: Vec::new(),
+            local_var_overrides: BTreeMap::new(),
         })
     }
 
@@ -381,8 +411,15 @@ impl SimOracle {
                 e.write_bool(&ATTRIB_NORETURN, true);
             }
             entry.encode(&mut e).expect("entry addr encodes");
+            let locals = self
+                .local_var_overrides
+                .get(&entry.get_offset())
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            if pieces.is_some() || !locals.is_empty() {
+                self.encode_localdb(&mut e, name, pieces, locals);
+            }
             if let Some(p) = pieces {
-                self.encode_localdb(&mut e, name, p);
                 self.encode_prototype(&mut e, p);
             }
             e.close_element(&ELEM_FUNCTION);
@@ -398,8 +435,15 @@ impl SimOracle {
 
     /// `<localdb lock main><scope><parent id=0/><rangelist/><symbollist>` with
     /// one cat-0 `<mapsym><symbol>` per declared parameter (Java
-    /// `LocalSymbolMap.encodeLocalDb`).
-    fn encode_localdb(&self, e: &mut PackedEncode, fname: &str, pieces: &PrototypePieces) {
+    /// `LocalSymbolMap.encodeLocalDb`) plus one plain `<mapsym>` per
+    /// host-committed local override ([`HostLocalVar`]).
+    fn encode_localdb(
+        &self,
+        e: &mut PackedEncode,
+        fname: &str,
+        pieces: Option<&PrototypePieces>,
+        locals: &[HostLocalVar],
+    ) {
         let ram = self
             .manager
             .get_default_code_space()
@@ -416,6 +460,50 @@ impl SimOracle {
         e.open_element(&ELEM_RANGELIST);
         e.close_element(&ELEM_RANGELIST);
         e.open_element(&ELEM_SYMBOLLIST);
+        for l in locals {
+            let spc = self
+                .manager
+                .get_space_by_name(&l.space)
+                .unwrap_or_else(|| panic!("override space {}", l.space))
+                .clone();
+            e.open_element(&ELEM_MAPSYM);
+            e.open_element(&ELEM_SYMBOL);
+            // A stable fake host-database id (never internal-range).
+            e.write_unsigned_integer(&ATTRIB_ID, l.offset | 0x2_0000_0000);
+            e.write_string(&ATTRIB_NAME, l.name.as_bytes());
+            e.write_bool(&ATTRIB_TYPELOCK, l.typelock);
+            e.write_bool(&ATTRIB_NAMELOCK, true);
+            e.write_signed_integer(&ATTRIB_CAT, -1);
+            // A sized base type (metatype uint) — what grabFromFunction sends
+            // for a typed DB local.
+            e.open_element(&kuna_decomp::prettyprint::ids::ELEM_TYPE);
+            e.write_string(&ATTRIB_NAME, b"");
+            e.write_string(&kuna_base::marshal::ATTRIB_METATYPE, b"uint");
+            e.write_signed_integer(&ATTRIB_SIZE, l.size);
+            e.close_element(&kuna_decomp::prettyprint::ids::ELEM_TYPE);
+            e.close_element(&ELEM_SYMBOL);
+            // Storage entry: <addr space offset size/> + the uselimit.
+            e.open_element(&kuna_base::address::ELEM_ADDR);
+            spc.encode_attributes_sized(e, l.offset, l.size as i32)
+                .expect("override storage encodes");
+            e.close_element(&kuna_base::address::ELEM_ADDR);
+            e.open_element(&ELEM_RANGELIST);
+            if let Some(first) = l.first_use {
+                e.open_element(&kuna_base::address::ELEM_RANGE);
+                e.write_space(&kuna_base::marshal::ATTRIB_SPACE, &ram);
+                e.write_unsigned_integer(&kuna_base::address::ATTRIB_FIRST, first);
+                e.write_unsigned_integer(&kuna_base::address::ATTRIB_LAST, first);
+                e.close_element(&kuna_base::address::ELEM_RANGE);
+            }
+            e.close_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_MAPSYM);
+        }
+        let Some(pieces) = pieces else {
+            e.close_element(&ELEM_SYMBOLLIST);
+            e.close_element(&ELEM_SCOPE);
+            e.close_element(&ELEM_LOCALDB);
+            return;
+        };
         for (i, ct) in pieces.intypes.iter().enumerate() {
             e.open_element(&ELEM_MAPSYM);
             e.open_element(&ELEM_SYMBOL);

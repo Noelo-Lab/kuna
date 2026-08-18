@@ -709,6 +709,15 @@ pub struct Architecture {
     /// ([`ActionContext::deadline`](crate::action::ActionContext)).  Always
     /// `None` when no budget is set.
     pub kuna_fn_deadline: Option<std::time::Instant>,
+    /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
+    /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
+    /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
+    /// fresh `Funcdata`'s local scope.  The carrier for the host `<localdb>`'s
+    /// namelocked-but-not-typelocked locals (GUI renames of untyped
+    /// variables), which C++ keeps as `ScopeLocal::nameRecommend` entries
+    /// rather than Symbols.  Always empty outside ghidra mode, so the
+    /// standalone pipeline is structurally unaffected.
+    pub kuna_pending_name_recs: Vec<(String, Address, Address, int4)>,
 
     // --- kuna analysis-pass gates (per-run `--option <id> on|off`) ----------
     // One boolean per `kuna_analysis::passes` pass id; the console's
@@ -1400,6 +1409,7 @@ impl Architecture {
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
+            kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
 
             // Analysis-pass gates: placeholder values -- `Architecture::new` calls
             // `reset_defaults_internal()` below, the SINGLE source of every
