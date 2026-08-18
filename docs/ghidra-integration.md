@@ -228,13 +228,33 @@ inferior: there is nothing to enumerate. kuna needs the upstream lazy model:
   (`ghidra_process.cc:262-273`): global scope, sub-scopes, non-core types, comments,
   string decodings, cpool.
 
-This is what forces the Phase-3 seam work on kuna's concrete types: the C++ virtuals
-these classes override were deliberately collapsed in the port (the `Scope`/
-`ScopeInternal` merge, `kuna-decomp/src/p0_knowledge/database.rs:904-922`), and the
-per-function `ArchSeam` snapshot (`substrate/seams.rs:411`, built by
-`build_arch_handle`, `architecture.rs:1529`) assumes all facts are known before the
-decompile starts — mid-decompile discovery must either rebuild those snapshots or route
-queries through them. See the seam inventory (§9) and the Phase 3 checklist (§11).
+The C++ virtuals these classes override were deliberately collapsed in the port (the
+`Scope`/`ScopeInternal` merge, `kuna-decomp/src/p0_knowledge/database.rs`), so Phase 3
+relocated the lazy model to the seams the kuna pipeline actually reads
+(**shipped** — `kuna-decomp/src/infra/remote_provider.rs`):
+
+- **`RemoteScope`** (the `ScopeGhidra` port at the GlobalQuery boundary): installed on
+  `Architecture` at registerProgram and threaded into every per-function `ArchContext`
+  by `build_arch_handle`; every global-scope read (`query_global_properties`,
+  `name_for_global_varnode*`, `query_container_global`, `query_callee_proto`,
+  `query_function`, `callee_proto_pieces`) and the flow environment's callee
+  name/no-return queries resolve through `effective_global_query`/`function_at` —
+  query-through with `<hole>` negative caching, decoded-entry positive caching,
+  readonly/volatile property paints over a `lockDefaultProperties` snapshot, and
+  namespace paths via getNamespacePath.  The wire is reached through the
+  `RemoteProviderFetch` trait (implemented in `kuna-ghidra/src/provider.rs` over the
+  shared client); the standalone path installs nothing and stays byte-identical.
+- **`TypeFactoryGhidra`**: the wire `<coretypes>` decode replaces the default core
+  types at registerProgram (so kuna's type ids match the host's), and
+  `TypeFactoryImpl::find_by_id_or_remote` fetches unknown types with getDataType
+  through the `RemoteTypeFetch` trait (`substrate/dtype.rs` `decode_type`/
+  `decode_type_no_ref`/`decode_core_types`); `clear_noncore` evicts on flush.
+- **`CommentDatabaseGhidra`**: `RemoteScope::fill_comments` fills the comment
+  database once per flush cycle from getComments, filtered by the printer's comment
+  settings (empty filter ⇒ no query).
+- **flushNative** clears everything in the upstream order
+  (`Architecture::flush_remote_caches`): the lazy symbol cache + property rollback,
+  the non-core types, the comment database, the decoded strings.
 
 ## 6. Response contracts that make the GUI work
 
@@ -305,9 +325,9 @@ element throws `ParseError` → `setOptions` answers `f` → Java fails the whol
 program-open with "Did not accept decompiler options" (`DecompInterface.java:301-303`).
 kuna therefore **deliberately diverges from upstream: unknown option elements are
 skipped with a warning instead of failing the command** — one stale option must not
-brick the decompiler view. This is output-invariant for known options; it gets a DIV
-row in `docs/history.md` when the behavior ships (Phase 2, when `setOptions`
-stops being a stub).
+brick the decompiler view. This is output-invariant for known options; it shipped
+with Phase 3 (`OptionDatabase::decode_lenient` behind the real `setOptions`) and is
+recorded as **DIV-76** in `docs/history.md`.
 
 A second, smaller **deliberate divergence** hardens the process against a malformed
 archid. Upstream reads the id with `sin >> dec >> id` (`ghidra_process.cc:89-96`); on a
@@ -349,13 +369,13 @@ The engine-seam inventory, with honest difficulty:
 | `Translate` | trait exists; `Architecture.translate: Sleigh` concrete (`architecture.rs:836`) | **enum seam** `{Sleigh, GhidraTranslate}` + the Sleigh-only call surface audit | 2 |
 | `Funcdata::encode` | **missing** (no encode on `substrate/funcdata*.rs`) | port from upstream `funcdata.cc` — minimal `<function>` first | 2 |
 | PrintC → `EmitMarkup` | back-end ported, front-end hardwired (`printc.rs:1015`) | generalize PrintC's `emit` field; wire `doc_function` (`printc.rs:1102`) to the markup path | 2 |
-| Scope / symbol table | polymorphism deliberately collapsed (`database.rs:904-922`) | **redesign** — lazy query-through cache + `<hole>` negatives + namespace path resolution (the `ScopeGhidra` model) | 3 |
-| `TypeFactory` | trait exists; owners name `TypeFactoryImpl` (`architecture.rs:765`, `seams.rs:630`) | trait-plumbing for lazy `findById` | 3 |
-| `CommentDatabase` | full trait ported (`s9_emit/comment.rs:280`) but `Architecture.commentdb` is a minimal stand-in (`architecture.rs:143`) | rewiring, small | 3 |
-| `StringManager` | concrete, no trait (`stringmanage.rs:83`) | one-method extraction for Java-side charset-faithful decode | 3→4 |
-| Inject library | traits exist; owner concrete; SLEIGH inject engine compiles cspec snippets | reuse the SLEIGH engine over the **wire-fed cspec** (the snippets travel inside it) | 3 |
+| Scope / symbol table | **DONE (Phase 3)** — `RemoteScope` (`infra/remote_provider.rs`): query-through + `<hole>` negatives + property paints + namespace paths, at the GlobalQuery/flow seams | — | 3 ✔ |
+| `TypeFactory` | **DONE (Phase 3)** — wire `<coretypes>` decode + `decode_type`/`<typeref>` + `find_by_id_or_remote` getDataType miss-hook + `clear_noncore` (`substrate/dtype.rs`) | function-definition `<prototype>` bodies inside `<type metatype="code">` are skipped (FuncProto::decode unported) | 3 ✔ |
+| `CommentDatabase` | **DONE (Phase 3)** — `RemoteScope::fill_comments` (getComments, printer-filtered, fill-once-per-flush) into the `Architecture.commentdb` sink | the printer renders PRE/warning + header comments; EOL/POST placement is a printer gap, not a wire gap | 3 ✔ |
+| `StringManager` | concrete, no trait (`stringmanage.rs:83`); cleared by flushNative | one-method extraction for Java-side charset-faithful decode | 4 |
+| Inject library | traits exist; owner concrete; SLEIGH inject engine compiles the **wire-fed cspec** snippets (shipped in Phase 2) | dynamic getPcodeInject query fallback | 4 |
 | `ConstantPool` | trait ready (`infra/cpool.rs:470`) but **unwired** into `Architecture` | wiring + `CPOOLREF` path; JVM/Dalvik only | 4 |
-| ArchSeam snapshot | per-function plain-data snapshot (`seams.rs:411`, `build_arch_handle` `architecture.rs:1529`) | rework so mid-decompile discovery (new symbols/types from queries) reaches the pipeline | 3 |
+| ArchSeam snapshot | **DONE (Phase 3)** — the three frozen tables read through live seams when a `RemoteScope` is installed (`ArchContext::effective_global_query`/`callee_proto_pieces`; tracked sets decode from the wire pspec `<tracked_set>`) | — | 3 ✔ |
 
 ## 10. Graceful degradation
 
@@ -460,20 +480,34 @@ dependency cycle; a trait object owned in `kuna-decomp` is not.
       (`kuna-ghidra/tests/decompile_at_e2e.rs`: the response decodes to a `<function>`
       + a markup `<function>` whose refs resolve against the `<ast>`).
 
-**Phase-2 scope boundary (important):** `decompileAt` runs against an *empty*
-`ScopeInternal` global scope, so unresolved symbol/type references degrade to
-placeholders (`sub_ADDR`/`DAT_ADDR`/default types) and no `getMappedSymbols` query
-fires. Simple, self-contained functions decompile cleanly; correct names/types on
-global-heavy functions is exactly what Phase 3 (the lazy `ScopeGhidra`/
-`TypeFactoryGhidra`) adds. This is the intended Phase-2/Phase-3 line.
+**Phase-2 scope boundary (historical):** Phase 2's `decompileAt` ran against an
+*empty* `ScopeInternal` global scope — placeholders (`sub_ADDR`/`DAT_ADDR`/default
+types) everywhere, no `getMappedSymbols` traffic. Phase 3 (below) replaced that with
+the lazy providers; the ghidra-sim harness pinned the Phase-2 gap numerically and its
+pins now hold the Phase-3 level.
 
-**Phase 3 — lazy providers (correct symbols/types at scale).**
-- [ ] `ScopeGhidra`-equivalent lazy symbol cache: query-through + `<hole>` negatives +
-      property-range side effects + namespace resolution + DB symbol-id fidelity.
-- [ ] `TypeFactory` lazy `findById` trait-plumbing; comments rewiring
-      (`CommentDatabaseGhidra`); injects via the wire-fed cspec snippets.
-- [ ] ArchSeam snapshot rework for mid-decompile discovery; `flushNative` clearing
-      semantics end-to-end.
+**Phase 3 — lazy providers (correct symbols/types at scale). DONE** (branch
+`feat/ghidra-phase3-providers`; DIV-76/DIV-77 in `docs/history.md`).
+- [x] `ScopeGhidra`-equivalent lazy symbol cache (`RemoteScope`,
+      `kuna-decomp/src/infra/remote_provider.rs`): getMappedSymbols query-through at
+      the GlobalQuery + flow seams, the `<mapsym>`/`<hole>`/symbol-family decoder,
+      `<hole>` negative caching, readonly/volatile property paints over the
+      `lockDefaultProperties` snapshot, namespace paths via getNamespacePath, and
+      wire symbol-id capture (`RemoteSymbolRecord::symbol_id`, the Phase-4 echo seed).
+      decompileAt resolves the current function's identity (name + locked prototype
+      pieces) through it, getCodeLabel demoted to fallback.
+- [x] `TypeFactory` wire decode + lazy `findById`
+      (`decode_core_types`/`decode_type`/`find_by_id_or_remote` + `RemoteTypeFetch`,
+      `clear_noncore`); comments rewiring (`fill_comments`, printer-filtered);
+      tracked registers from the wire pspec `<tracked_set>` (the `DF = 0` seed).
+      Injects via the wire-fed cspec snippets shipped with Phase 2.
+- [x] ArchSeam snapshot rework (the frozen tables read through the live provider
+      when installed); `flushNative` clearing end-to-end in the upstream order
+      (`Architecture::flush_remote_caches`), proven by the ghidra-sim
+      label-override cache-clearing test.
+- [x] ghidra-mode defaults: the `aggressive` engine-tier preset at registerProgram +
+      `FUN_`/`DAT_`/`LAB_` fallback naming (DIV-77); `setOptions` decodes and applies
+      for real with per-element skip-unknown (DIV-76).
 
 **Phase 4 — parity.**
 - [ ] `<highlist>`/`<jumptablelist>` fidelity incl. DB symbol-id echo for
