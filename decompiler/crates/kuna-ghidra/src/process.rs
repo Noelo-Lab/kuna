@@ -55,10 +55,12 @@ use kuna_base::marshal::{Decoder, Encoder, PackedDecode, PackedEncode};
 use kuna_base::space::AddrSpaceManager;
 
 use kuna_decomp::architecture::Architecture;
-use kuna_decomp::decompile_drive::decompile_func;
+use kuna_decomp::decompile_drive::decompile_func_full;
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::options::OptionDatabase;
 
 use crate::client::GhidraClient;
+use crate::provider::GhidraRemoteFetch;
 use crate::ids::ELEM_DOC;
 use crate::protocol::{
     pass_java_exception, read_string_stream, read_string_stream_optional, read_to_any_burst,
@@ -168,6 +170,8 @@ struct CommandState {
     addr: Option<Address>,
     /// decompileAt param: the rendered form of `addr` for warning messages.
     addr_text: Option<String>,
+    /// setOptions param: the raw packed `<optionslist>` (applied in rawAction).
+    optionslist: Option<Vec<u8>>,
 }
 
 impl CommandState {
@@ -184,6 +188,7 @@ impl CommandState {
             printstring: Vec::new(),
             addr: None,
             addr_text: None,
+            optionslist: None,
         }
     }
 }
@@ -466,10 +471,8 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
             CommandKind::SetOptions => {
                 let slot = self.bind_session("Expecting arch id start", "Expecting arch id end")?;
                 cmd.slot = Some(slot);
-                // Consume the packed <optionslist> for protocol alignment; the
-                // engine has no option database yet, so the list is accepted but
-                // not applied (see SetOptions::rawAction).
-                let _ = read_string_stream_optional(self.client.borrow_mut().sin_mut())?;
+                cmd.optionslist =
+                    read_string_stream_optional(self.client.borrow_mut().sin_mut())?;
                 Ok(())
             }
         }
@@ -547,11 +550,19 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                 }
                 Ok(())
             }
-            // FlushNative::rawAction (ghidra_process.cc:262-273): phase 2
-            // step 3 has no per-function engine caches to clear yet (the
-            // ScopeGhidra lazy symbol cache is phase 3).
-            // TODO(phase-3): clear the provider caches here.
+            // FlushNative::rawAction (ghidra_process.cc:262-273), Phase 3: clear
+            // the per-function provider caches in the upstream order — the lazy
+            // symbol cache (holes + entries + property-map rollback), the
+            // non-core types, the comment database, the decoded strings
+            // (`Architecture::flush_remote_caches`).
             CommandKind::FlushNative => {
+                if let Some(slot) = cmd.slot {
+                    if let Some(session) = self.archlist[slot].as_mut() {
+                        if let Some(arch) = session.architecture.as_mut() {
+                            arch.flush_remote_caches();
+                        }
+                    }
+                }
                 cmd.res = 0;
                 Ok(())
             }
@@ -586,19 +597,45 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                     }
                 };
 
-                // (2) Establish the display name.  C++ `queryFunction` resolves
-                // it from the mapped symbol; the v1 milestone (no `<mapsym>`
-                // decoder yet — Phase 3) uses the plain-string `getCodeLabel`,
-                // falling back to a synthesized `FUN_<addr>` on an empty label or
-                // a query failure.  Short-lived client borrow, dropped before the
-                // decompile re-borrows the client through the engine providers
-                // (the no-borrow-across-decompile invariant).
-                let name = match self.client.borrow_mut().get_code_label(&addr) {
-                    Ok(label) if !label.is_empty() => {
-                        String::from_utf8_lossy(&label).into_owned()
+                // (2) Establish the current-function identity.  Phase 3: query
+                // getMappedSymbols FIRST through the lazy provider — the
+                // `<mapsym><function>` answer carries Java's `Function.getName()`
+                // (namespaced), which is what `HighFunction.decode`'s name-echo
+                // check compares against, plus the locked prototype pieces that
+                // seed the Funcdata.  `getCodeLabel` stays as the fallback for an
+                // address the host answers nothing at, then the synthesized
+                // `FUN_<addr>`.  All query borrows are short-lived (the
+                // no-borrow-across-decompile invariant).
+                let remote = self.archlist[slot]
+                    .as_ref()
+                    .and_then(|s| s.architecture.as_ref())
+                    .and_then(|a| a.remote_scope.clone());
+                let facts = remote.as_ref().and_then(|r| r.function_at(&addr));
+                let (name, pending_pieces) = match facts {
+                    Some(f) => (f.name, f.pieces),
+                    None => {
+                        let label = self.client.borrow_mut().get_code_label(&addr);
+                        match label {
+                            Ok(l) if !l.is_empty() => {
+                                (String::from_utf8_lossy(&l).into_owned(), None)
+                            }
+                            _ => (format!("FUN_{:08x}", addr.get_offset()), None),
+                        }
                     }
-                    _ => format!("FUN_{:08x}", addr.get_offset()),
                 };
+
+                // (2b) Fill the per-function comment cache from the host
+                // (CommentDatabaseGhidra::fillCache semantics: once per flush
+                // cycle, filtered by the printer's comment settings; an empty
+                // filter issues no query).
+                if let Some(remote) = &remote {
+                    let session = self.archlist[slot].as_mut().expect("bound session");
+                    if let Some(arch) = session.architecture.as_mut() {
+                        let filter = arch.printer_comment_filter();
+                        let sink = &mut arch.commentdb;
+                        let _ = remote.fill_comments(&addr, filter, sink);
+                    }
+                }
 
                 // Snapshot the render flags before taking `&mut Architecture`.
                 let (send_syntax_tree, send_c_code, current_action) = {
@@ -623,7 +660,20 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         .architecture
                         .as_mut()
                         .expect("addr decoded ⇒ engine present");
-                    match decompile_func(arch, &name, addr.clone(), 0) {
+                    // Phase 3: a LOCKED host signature (typelocked params /
+                    // locked-void input) seeds the fresh Funcdata's prototype —
+                    // the C++ queryFunction handing DecompileAt the decoded
+                    // `<prototype>`+`<localdb>`.  An unlocked signature stays
+                    // None and kuna recovers parameters itself (the CLI-path
+                    // behavior for undeclared functions).
+                    match decompile_func_full(
+                        arch,
+                        &name,
+                        addr.clone(),
+                        0,
+                        &[],
+                        pending_pieces.as_ref(),
+                    ) {
                         Ok(fd) => build_decompile_at_doc(
                             arch,
                             &fd,
@@ -716,24 +766,43 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                 cmd.ok = true;
                 Ok(())
             }
-            // SetOptions::rawAction (ghidra_process.cc:435-445).
-            // DELIBERATE DIVERGENCE (docs/ghidra-integration.md): upstream
-            // decodes the <optionslist> and throws on any unknown option
-            // (OptionDatabase::set -> ParseError -> response 'f' -> Java
-            // IOException "Did not accept decompiler options", killing the
-            // program open).  kuna's phase-2 engine has no option database wired
-            // yet, so for drop-in robustness it TOLERATES the whole list (the
-            // packed stream is consumed in loadParameters) and answers 't' —
-            // SILENTLY, with an empty 16/17 frame, exactly as upstream does on
-            // success.  It must emit NO message here: DecompInterface init stores
-            // the native message returned by setOptions, and
-            // openProgram/isErrorMessage (DecompInterface.java) flags any
-            // non-empty text lacking the word "warning" as a FATAL error — so a
-            // stray "recorded but not applied" note made the GUI report
-            // "Unable to initialize the DecompilerInterface" even though the
-            // options were accepted and the function would decompile.
+            // SetOptions::rawAction (ghidra_process.cc:435-445), Phase 3: the
+            // <optionslist> is DECODED AND APPLIED through the ported
+            // OptionDatabase.  DELIBERATE DIVERGENCE (docs/ghidra-integration.md
+            // §8, DIV row in docs/history.md): upstream throws on the first
+            // unknown option element (-> response 'f' -> Java "Did not accept
+            // decompiler options", killing the whole program open), so one
+            // option from a newer Java vocabulary (12.2's `baddatacount`)
+            // bricks the decompiler view.  kuna applies every option it knows,
+            // skips the rest per-element, and always answers 't'.  Skipped
+            // elements are reported on the 16/17 frame with messages beginning
+            // "Warning" — DecompInterface.isErrorMessage treats text containing
+            // "warning" as non-fatal, so the note surfaces without failing the
+            // program open.
             CommandKind::SetOptions => {
-                let _ = cmd.slot.expect("bound session");
+                let slot = cmd.slot.expect("bound session");
+                let mut warnings: Vec<String> = Vec::new();
+                if let (Some(bytes), Some(session)) =
+                    (cmd.optionslist.take(), self.archlist[slot].as_mut())
+                {
+                    if let Some(arch) = session.architecture.as_mut() {
+                        let manager = arch.translate().manager_rc();
+                        let mut decoder = PackedDecode::new(&manager);
+                        let outcome = decoder
+                            .ingest_stream(&bytes)
+                            .and_then(|_| OptionDatabase::new().decode_lenient(&mut decoder, arch));
+                        match outcome {
+                            Ok(w) => warnings = w,
+                            Err(e) => warnings.push(format!(
+                                "Warning: decompiler options not applied: {}",
+                                e.explain()
+                            )),
+                        }
+                    }
+                }
+                for w in &warnings {
+                    self.print_message(cmd.slot, w);
+                }
                 cmd.ok = true;
                 Ok(())
             }
@@ -767,7 +836,7 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
         pspec: &[u8],
         cspec: &[u8],
         tspec: &[u8],
-        _corespec: &[u8],
+        corespec: &[u8],
     ) -> KunaResult<Architecture> {
         let registry = build_registry();
         let translate = GhidraTranslate::new(tspec, &registry, Rc::clone(&self.client))?;
@@ -775,7 +844,46 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
             Architecture::from_engine_translate(&archid.to_string(), Box::new(translate));
         arch.set_cspec_xml(cspec.to_vec());
         arch.set_pspec_xml(pspec.to_vec());
+        // Phase 3: decode the wire <coretypes> inside buildCoreTypes (the C++
+        // `store.getTag("coretypes")` branch) so kuna's core-type IDS match the
+        // host's and every later <typeref>/getDataType exchange resolves.
+        arch.set_coretypes_xml(corespec.to_vec());
         arch.init_post_engine()?;
+        // Phase 3 (DIV: ghidra-mode defaults): Ghidra-convention fallback
+        // naming (FUN_/DAT_/LAB_ for address-derived placeholder names — what
+        // Java's isDynamicSymbolName expects, ghidra_arch.cc:928-947) plus the
+        // CLI `aggressive` ENGINE-TIER preset, applied BEFORE Java's setOptions
+        // replay lands on top.  The GUI has no --mode surface, and the CLI
+        // resolves `auto` to `aggressive` for every binary under 500 KiB —
+        // without the preset the GUI would show the one rendering no other kuna
+        // surface defaults to.  `name_style_angr` stays ON (the shipped
+        // default): it also gates kuna's LOCAL variable naming (`v2`/`a0` +
+        // storage comments), the only ported local-naming pass — turning it off
+        // leaves unnamed register highs rendering as raw `EAX`/`RBX`.
+        // `kuna_name_style()` gives `Ghidra` precedence exactly at the
+        // fallback-name sites.  Analysis/loader-tier preset members (listing,
+        // fid, aif, ...) run over a real file in kuna-analysis and have no seam
+        // here: their PRODUCTS are what the Phase-3 providers pull over the
+        // wire instead.
+        arch.name_style_ghidra = true;
+        if let Some(overrides) = kuna_decomp::modes::mode_overrides("aggressive") {
+            for (name, value) in overrides {
+                if kuna_decomp::options::KUNA_OPTION_NAMES.contains(name) {
+                    // Engine-tier knob: apply.  Unknown/analysis-tier names have
+                    // no engine seam in ghidra mode and are skipped.
+                    let _ = arch.set_kuna_option(name, value);
+                }
+            }
+        }
+        // Phase 3: install the lazy wire-backed providers (ScopeGhidra /
+        // TypeFactoryGhidra) — after init (cspec <global> ranges + pspec
+        // property paints are in, the lockDefaultProperties point), before the
+        // first decompile.
+        let fetch = Rc::new(GhidraRemoteFetch::new(Rc::clone(&self.client)));
+        arch.install_remote_provider(
+            Rc::clone(&fetch) as Rc<dyn kuna_decomp::remote_provider::RemoteProviderFetch>,
+            Some(fetch as Rc<dyn kuna_decomp::dtype::RemoteTypeFetch>),
+        );
         Ok(arch)
     }
 

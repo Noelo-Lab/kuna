@@ -72,8 +72,32 @@ const TSPEC: &[u8] = b"<sleigh bigendian=\"false\" uniqbase=\"0x10000000\">\
 </spaces></sleigh>";
 const PSPEC: &[u8] = b"<processor_spec><programcounter register=\"PC\"/></processor_spec>";
 const CSPEC: &[u8] = b"<compiler_spec><default_proto/></compiler_spec>";
-const CORETYPES: &[u8] =
-    b"<coretypes><type name=\"int\" size=\"4\" metatype=\"int\" id=\"-1\"/></coretypes>";
+// Phase 3 decodes the wire corespec for real (build_core_types): mirror the
+// standalone default core-type set so engine init still finds char/bool/void.
+const CORETYPES: &[u8] = b"<coretypes>\
+<type name=\"void\" size=\"1\" metatype=\"void\"/>\
+<type name=\"bool\" size=\"1\" metatype=\"bool\"/>\
+<type name=\"uint1\" size=\"1\" metatype=\"uint\"/>\
+<type name=\"uint2\" size=\"2\" metatype=\"uint\"/>\
+<type name=\"uint4\" size=\"4\" metatype=\"uint\"/>\
+<type name=\"uint8\" size=\"8\" metatype=\"uint\"/>\
+<type name=\"int1\" size=\"1\" metatype=\"int\"/>\
+<type name=\"int2\" size=\"2\" metatype=\"int\"/>\
+<type name=\"int4\" size=\"4\" metatype=\"int\"/>\
+<type name=\"int8\" size=\"8\" metatype=\"int\"/>\
+<type name=\"float4\" size=\"4\" metatype=\"float\"/>\
+<type name=\"float8\" size=\"8\" metatype=\"float\"/>\
+<type name=\"float10\" size=\"10\" metatype=\"float\"/>\
+<type name=\"float16\" size=\"16\" metatype=\"float\"/>\
+<type name=\"xunknown1\" size=\"1\" metatype=\"unknown\"/>\
+<type name=\"xunknown2\" size=\"2\" metatype=\"unknown\"/>\
+<type name=\"xunknown4\" size=\"4\" metatype=\"unknown\"/>\
+<type name=\"xunknown8\" size=\"8\" metatype=\"unknown\"/>\
+<type name=\"code\" size=\"1\" metatype=\"code\"/>\
+<type name=\"char\" size=\"1\" metatype=\"int\" char=\"true\"/>\
+<type name=\"wchar2\" size=\"2\" metatype=\"int\" utf=\"true\"/>\
+<type name=\"wchar4\" size=\"4\" metatype=\"int\" utf=\"true\"/>\
+</coretypes>";
 
 const ENTRY: u64 = 0x1000;
 const FUNC_NAME: &[u8] = b"myfunc";
