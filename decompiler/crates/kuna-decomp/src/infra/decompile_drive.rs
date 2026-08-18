@@ -92,6 +92,17 @@ impl FlowEnvironment for ArchFlowEnv {
     }
     fn query_call(&self, entry: &Address) -> Option<String> {
         let arch = self.arch();
+        // (kuna, Phase 3) ghidra-mode: the callee name comes from the host's
+        // getMappedSymbols answer through the lazy RemoteScope (query-through);
+        // the live symboltab is empty in that mode.  Standalone: no provider
+        // installed, fall through to the symbol table unchanged.
+        if let Some(remote) = &arch.remote_scope {
+            if let Some(facts) = remote.function_at(entry) {
+                // The DISPLAY form: callee tokens print the label when the host
+                // sent one (the raw name is the Java-side identity only).
+                return Some(facts.display_name);
+            }
+        }
         // C++ FlowInfo::queryCall -> getScopeLocal()->getParent()->queryFunction(entry):
         // resolve the callee's display name from the symbol table (populated by
         // readLoaderSymbols + the analysis passes at load).  Resolved across scopes
@@ -105,6 +116,16 @@ impl FlowEnvironment for ArchFlowEnv {
         // the flag is set by `option noreturn <name>` (OptionNoReturn) or the
         // no-return analysis pass on the resolved FunctionSymbol.
         let arch = self.arch();
+        // (kuna, Phase 3) ghidra-mode: `Function.hasNoReturn()` rides the
+        // `<function noreturn>` attribute of the getMappedSymbols answer —
+        // upstream carries it on the queried callee's FuncProto the same way.
+        if let Some(remote) = &arch.remote_scope {
+            if let Some(facts) = remote.function_at(entry) {
+                if facts.no_return {
+                    return true;
+                }
+            }
+        }
         if arch.symboltab.function_is_no_return_across_scopes(entry) {
             return true;
         }

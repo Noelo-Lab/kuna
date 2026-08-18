@@ -83,6 +83,39 @@ pub const CONST_COLOR: u64 = 5;
 /// The 19 legal callback-query command element ids (ids.rs 239..=257).
 pub const QUERY_COMMAND_IDS: std::ops::RangeInclusive<u32> = 239..=257;
 
+/// A `<coretypes>` registerProgram document mirroring the standalone default
+/// core-type set (`Architecture::build_core_types`) EXACTLY: same names, same
+/// sizes, same metatypes, and — because no `id` attribute is given — the same
+/// `hash_name` ids `set_core_type` assigns.  Phase 3 decodes the wire
+/// coretypes for real, so the sim must send a complete set (the old one-entry
+/// stub left the engine without char/bool/void core types and broke init);
+/// mirroring the default keeps the ghidra-mode factory identical to the
+/// oracle's, which is what makes `<typeref>` name+id resolution agree.
+pub const DEFAULT_CORETYPES_XML: &[u8] = b"<coretypes>\
+<type name=\"void\" size=\"1\" metatype=\"void\"/>\
+<type name=\"bool\" size=\"1\" metatype=\"bool\"/>\
+<type name=\"uint1\" size=\"1\" metatype=\"uint\"/>\
+<type name=\"uint2\" size=\"2\" metatype=\"uint\"/>\
+<type name=\"uint4\" size=\"4\" metatype=\"uint\"/>\
+<type name=\"uint8\" size=\"8\" metatype=\"uint\"/>\
+<type name=\"int1\" size=\"1\" metatype=\"int\"/>\
+<type name=\"int2\" size=\"2\" metatype=\"int\"/>\
+<type name=\"int4\" size=\"4\" metatype=\"int\"/>\
+<type name=\"int8\" size=\"8\" metatype=\"int\"/>\
+<type name=\"float4\" size=\"4\" metatype=\"float\"/>\
+<type name=\"float8\" size=\"8\" metatype=\"float\"/>\
+<type name=\"float10\" size=\"10\" metatype=\"float\"/>\
+<type name=\"float16\" size=\"16\" metatype=\"float\"/>\
+<type name=\"xunknown1\" size=\"1\" metatype=\"unknown\"/>\
+<type name=\"xunknown2\" size=\"2\" metatype=\"unknown\"/>\
+<type name=\"xunknown4\" size=\"4\" metatype=\"unknown\"/>\
+<type name=\"xunknown8\" size=\"8\" metatype=\"unknown\"/>\
+<type name=\"code\" size=\"1\" metatype=\"code\"/>\
+<type name=\"char\" size=\"1\" metatype=\"int\" char=\"true\"/>\
+<type name=\"wchar2\" size=\"2\" metatype=\"int\" utf=\"true\"/>\
+<type name=\"wchar4\" size=\"4\" metatype=\"int\" utf=\"true\"/>\
+</coretypes>";
+
 // ---------------------------------------------------------------------------
 // Interactive loopback MockJava
 // ---------------------------------------------------------------------------

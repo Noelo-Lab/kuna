@@ -1580,6 +1580,24 @@ impl PrintC {
         }
     }
     /// C++ `PrintC::setCommentStyle` (options.cc:570).
+    /// (kuna, Phase 3) Reset the PrintC-proper state the wire options mutate
+    /// to the construction defaults — the PrintC share of the upstream
+    /// `PrintLanguage::resetDefaults`/`resetDefaultsPrintC` chain the
+    /// ghidra-mode `setOptions` reset needs (`Architecture::
+    /// reset_wire_defaults`): the [`PrintCOptions`] block (nullprinting,
+    /// inplaceops, conventionprinting, nocastprinting, hideimpliedexts, the
+    /// four brace formats — plus the kuna rendering toggles, whose
+    /// construction defaults ARE the shipped defaults) and the emitter's
+    /// indent increment (Java default 2).  `max_line_size` and
+    /// `comment_style` are recorded-no-op stubs with no state to reset;
+    /// everything context-held (integer format, comment indent/flags,
+    /// namespace strategy, language) is reset by the caller's fresh
+    /// [`PrintContext`](crate::printlanguage::PrintContext).
+    pub fn reset_wire_option_defaults(&mut self) {
+        self.options = PrintCOptions::new();
+        self.emit.set_indent_increment(2);
+    }
+
     pub fn set_comment_style(&mut self, _style: &str) {
         // STUB(comment): the slash-star vs slash-slash comment delimiters live
         // with the comment item; recorded as a no-op so the option succeeds.
@@ -2244,7 +2262,36 @@ impl PrintC {
     fn emit_comment_func_header(&mut self, fd: &Funcdata, arch: &Architecture) {
         use crate::architecture::comment_type;
         let func_addr = fd.get_address();
-        // Collect the matching header comments first (the commentdb borrow is
+        let space = match func_addr.get_space() {
+            Some(s) => std::rc::Rc::clone(s),
+            None => return,
+        };
+        let off = func_addr.get_offset();
+        // (kuna, Phase 3) Plain HEADER (plate) comments render first — the C++
+        // emitCommentFuncHeader handles `Comment::header` through the same
+        // sorter.  These come from the ghidra-mode getComments fill (Java PLATE
+        // comments) and the ghidra-mode `Kuna v…` banner; the standalone
+        // pipeline never inserts HEADER-typed comments, so this arm is inert
+        // there.  Header comments are informational, never inline-slugged.
+        let plates: Vec<String> = arch
+            .commentdb
+            .comments()
+            .iter()
+            .filter(|c| {
+                c.tp == crate::comment::comment_type::HEADER && &c.func_addr == func_addr
+            })
+            .map(|c| c.text.clone())
+            .collect();
+        for text in plates {
+            self.emit.tag_line();
+            self.emit.tag_comment(
+                &format!("/* {text} */"),
+                SyntaxHighlight::CommentColor,
+                &space,
+                off,
+            );
+        }
+        // Collect the matching header WARNING comments (the commentdb borrow is
         // released before the `&mut self.emit` writes).
         let headers: Vec<String> = arch
             .commentdb
@@ -2255,11 +2302,6 @@ impl PrintC {
             })
             .map(|c| c.text.clone())
             .collect();
-        let space = match func_addr.get_space() {
-            Some(s) => std::rc::Rc::clone(s),
-            None => return,
-        };
-        let off = func_addr.get_offset();
         for text in headers {
             // (kuna warnstyle, DIV-39) Inline mode: header warnings collect as
             // slugs and flush at the end of the prototype line.
@@ -3128,6 +3170,9 @@ impl PrintC {
         if addr.is_invalid() {
             let idx = fd.sblocks_ref().block(bl).get_index();
             format!("LAB_{idx:08x}")
+        } else if fd.get_arch().kuna_name_style() == crate::database::KunaNameStyle::Ghidra {
+            // (kuna, Phase 3) ghidra-mode: the GUI label convention LAB_%08x.
+            crate::database::ghidra_label_name(&addr)
         } else {
             crate::database::kuna_label_name(&addr)
         }
@@ -5676,7 +5721,7 @@ impl PrintC {
             }
             // genericFunctionName(entryaddress): angr-style `sub_<addr>` or
             // `func_<addr>` (the architecture's name style).
-            return fc.fspec_printed_name(fd.get_arch().name_style_angr);
+            return fc.fspec_printed_name(fd.get_arch().kuna_name_style());
         }
         // No call spec (should not happen for a live CALL): print the in0 address.
         crate::printc::generic_function_name(
@@ -6570,7 +6615,7 @@ impl PrintC {
         let name = if !regname.is_empty() {
             regname
         } else if kuna_global_naming(spc) {
-            kuna_global_data_name(spc, vaddr.get_offset())
+            kuna_global_data_name(arch.kuna_name_style(), vaddr.get_offset())
         } else {
             let mut s = String::new();
             let sn = spc.get_name();
@@ -8516,8 +8561,13 @@ fn kuna_global_naming(spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
     matches!(spc.get_type(), spacetype::IPTR_PROCESSOR)
 }
 
-/// (kuna) `kunaGlobalDataName(Address)` — `dat_<hex offset>`.
-fn kuna_global_data_name(_spc: &std::rc::Rc<kuna_base::space::AddrSpace>, off: u64) -> String {
+/// (kuna) `kunaGlobalDataName(Address)` — `dat_<hex offset>`; ghidra-mode
+/// (`name_style_ghidra`) prints the Ghidra GUI convention `DAT_%08x` instead
+/// (what Java's `isDynamicSymbolName` recognizes as dynamic).
+fn kuna_global_data_name(style: crate::database::KunaNameStyle, off: u64) -> String {
+    if style == crate::database::KunaNameStyle::Ghidra {
+        return format!("DAT_{off:08x}");
+    }
     format!("dat_{off:x}")
 }
 
@@ -8560,7 +8610,7 @@ fn kuna_unnamed_location_name(
         return Some(regname);
     }
     if kuna_global_naming(spc) {
-        return Some(kuna_global_data_name(spc, loc.get_offset()));
+        return Some(kuna_global_data_name(arch.kuna_name_style(), loc.get_offset()));
     }
     let mut s = String::new();
     let sn = spc.get_name();

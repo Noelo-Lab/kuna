@@ -466,6 +466,21 @@ returns: `param_N`, type-prefixed `iVar1`/`uVar2`-style locals
 recognized as "generated" by `kuna_naming.rs (kuna_is_generated_name)` so
 cross-function name recommendation never propagates a default name.
 
+(kuna) **The ghidra-mode third style (Phase 3, DIV-77).** The ghidra-mode
+process sets a separate `name_style_ghidra` flag alongside (not instead of)
+the angr default; the resolver `Architecture::kuna_name_style` /
+`ArchContext::kuna_name_style` gives it precedence at exactly the
+ADDRESS-DERIVED fallback sites — an unresolved callee prints `FUN_%08x`
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (fspec_printed_name)`),
+an unnamed global `DAT_%08x` (`printc.rs (kuna_global_data_name)`), a goto
+target `LAB_%08x` (`printc.rs (PrintC::block_label_name)`), the renderers in
+`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+(ghidra_function_name, ghidra_global_data_name, ghidra_label_name)` — because
+the Java side's dynamic-name heuristics key on those spellings
+(`isDynamicSymbolName`). Local/parameter naming keeps the angr scheme (the
+only ported local-naming pass). Never set on the standalone path, so both
+existing styles are byte-identical.
+
 **Where names bind vs. where they render.** The *assignment* is a P6 pass —
 `decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
 (ActionNameVars)` binds one name per HighVariable (symbol-derived where a

@@ -26,7 +26,11 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::marshal::Decoder;
 use kuna_sleigh::loadimage::LoadImage;
+
+use kuna_decomp::dtype::RemoteTypeFetch;
+use kuna_decomp::remote_provider::RemoteProviderFetch;
 
 use crate::client::GhidraClient;
 use crate::protocol::WireError;
@@ -89,6 +93,87 @@ impl<R: Read, W: Write> LoadImage for GhidraLoadImage<R, W> {
     /// TODO(phase-2): if a caller ever reaches it, surface a fatal error
     /// through the process loop rather than silently doing nothing.
     fn adjust_vma(&mut self, _adjust: i64) {}
+}
+
+/// The Phase-3 wire-fetch adapter: `kuna-decomp`'s [`RemoteProviderFetch`] +
+/// [`RemoteTypeFetch`] seams implemented over the [`SharedClient`] — the same
+/// re-entrant pattern as [`GhidraLoadImage`].  The `RemoteScope` /
+/// `TypeFactoryImpl` hold `Rc`s of one instance; every miss becomes a
+/// getMappedSymbols / getNamespacePath / getComments / getDataType query
+/// nested inside the still-open command response.
+pub struct GhidraRemoteFetch<R: Read, W: Write> {
+    client: SharedClient<R, W>,
+}
+
+impl<R: Read, W: Write> GhidraRemoteFetch<R, W> {
+    /// Construct over the shared query client.
+    pub fn new(client: SharedClient<R, W>) -> Self {
+        GhidraRemoteFetch { client }
+    }
+}
+
+impl<R: Read, W: Write> RemoteProviderFetch for GhidraRemoteFetch<R, W> {
+    fn fetch_mapped_symbols(
+        &self,
+        addr: &Address,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_mapped_symbols_xml(addr, decoder)
+            .map_err(wire_to_kuna)
+    }
+
+    fn fetch_namespace_path(&self, id: u64, decoder: &mut dyn Decoder) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_namespace_path(id, decoder)
+            .map_err(wire_to_kuna)
+    }
+
+    fn fetch_external_ref(&self, addr: &Address, decoder: &mut dyn Decoder) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_external_ref(addr, decoder)
+            .map_err(wire_to_kuna)
+    }
+
+    fn fetch_tracked_registers(
+        &self,
+        addr: &Address,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_tracked_registers(addr, decoder)
+            .map_err(wire_to_kuna)
+    }
+
+    fn fetch_comments(
+        &self,
+        fad: &Address,
+        flags: u32,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_comments(fad, flags, decoder)
+            .map_err(wire_to_kuna)
+    }
+}
+
+impl<R: Read, W: Write> RemoteTypeFetch for GhidraRemoteFetch<R, W> {
+    fn fetch_data_type(
+        &self,
+        name: &str,
+        id: u64,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_data_type(name, id, decoder)
+            .map_err(wire_to_kuna)
+    }
 }
 
 /// Map a query [`WireError`] onto the [`KunaError`] a [`LoadImage`] method

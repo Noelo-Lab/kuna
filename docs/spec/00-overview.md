@@ -209,8 +209,91 @@ Four front-ends drive one engine assembly:
   queries on the still-open command response
   (`decompiler/crates/kuna-ghidra/src/provider.rs (SharedClient, GhidraLoadImage)`).
   A decompile failure degrades to the incomplete-function response shape so the
-  GUI never desyncs; the lazy scope/type providers are the in-progress remainder
-  (`decompiler/crates/kuna-ghidra/src/provider.rs`).
+  GUI never desyncs.
+
+  (kuna) **The Phase-3 lazy providers** make ghidra-mode consume the program
+  facts the host already has. The wire has no enumerate-the-program query, so
+  eager pre-population (what the console's analysis commit does) is impossible;
+  kuna instead ports upstream's lazy `ScopeGhidra` model to the seams its own
+  pipeline reads. `RemoteScope`
+  (`decompiler/crates/kuna-decomp/src/infra/remote_provider.rs`) is installed on
+  the `Architecture` at registerProgram (after the cspec `<global>` ranges and
+  pspec property paints are in — the `lockDefaultProperties` point) and rides
+  every per-function `ArchContext`; when present, every global-scope read
+  (`decompiler/crates/kuna-decomp/src/substrate/context.rs
+  (ArchContext::effective_global_query)`: properties, global names/types,
+  containers, callee prototypes, deindirect resolution) and the flow
+  environment's callee name / no-return queries
+  (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`)
+  resolve through it. A miss inside a cspec `<global>`-ranged space fires ONE
+  getMappedSymbols query; the `<doc><mapsym>` answer decodes through the
+  symbol-family decoder (`decode_mapped_answer`: `<symbol>`, `<function>` with
+  its `<prototype>` and `<localdb>` category-0 parameters, `<functionshell>`,
+  `<labelsym>`, `<externrefsymbol>`, `<equatesymbol>`, `<facetsymbol>`) into
+  `GlobalEntry` records merged over the Database snapshot; a `<hole>` answer
+  lands in a negative-cache range list (never re-queried) and its
+  readonly/volatile bits paint a local property map that `clear()` rolls back
+  to the locked default. Namespace ids resolve once through getNamespacePath.
+  A decoded LOCKED signature (typelocked params or a locked-void input) parks a
+  `TypeCode` prototype for `query_callee_proto` plus `PrototypePieces` for
+  `ActionDefaultParams` and — for the current function — seeds the fresh
+  `Funcdata`'s prototype at `decompileAt`, whose display name now comes from
+  the mapsym answer (the Java `Function.getName()` echo), getCodeLabel demoted
+  to fallback. The decoded `<function noreturn>` fact truncates flow at
+  no-return call sites, exactly as the console's analysis facts do.
+  Types: registerProgram decodes the wire `<coretypes>` (so kuna's core-type
+  ids equal the host's), and a `find_by_id` miss fetches the definition with
+  getDataType (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+  (decode_type, decode_core_types, find_by_id_or_remote)`); composites intern
+  an incomplete stub before their fields decode so a self-referential struct
+  cannot re-query forever. Comments fill once per flush cycle from getComments,
+  filtered by the printer's comment settings (an empty filter issues no query).
+  Registers resolve through a query-backed lookup installed on the ghidra-mode
+  space manager (`decompiler/crates/kuna-ghidra/src/translate.rs
+  (GhidraRegisterLookup)`) — the mirror of the Sleigh's own installed lookup,
+  without which the naming pass misclassifies every register-storage high as
+  global data and the output leaks raw `EAX`-style tokens. The pspec
+  `<tracked_set>` (e.g. x86-64's `DF = 0`) decodes into the engine trackbase in
+  ghidra mode too (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+  (decode_ghidra_tracked_sets)`), resolving register names through the
+  query-backed translator, so `ActionConstbase` plants the direction seed.
+  External references resolve through the upstream two-step
+  (`ScopeGhidra::resolveExternalRefFunction`): the `<externrefsymbol>` answer
+  keeps its resolve address, getExternalRef fires at the POINTER address, the
+  returned function materializes at its own entry, and the pointer symbol
+  types as pointer-to-code.  A function answer's RAW name and its `label` stay
+  SPLIT (the upstream `Funcdata` name/displayName pair): the raw name is the
+  Funcdata identity `HighFunction.decode`'s name echo compares against, the
+  label only ever prints (`Funcdata::set_display_name`).  The host's
+  per-address tracked registers arrive for real: decompileAt issues
+  getTrackedRegisters at the entry (`RemoteScope::tracked_at`, cached until
+  flush) and merges the answer OVER the pspec `<tracked_set>` defaults —
+  wire values win per register.  A wire/decoder failure inside a lazy query
+  negative-caches the address as a one-byte hole for the flush epoch and
+  surfaces ONE "Warning:"-prefixed 16/17 line (`RemoteScope::drain_warnings`)
+  instead of re-querying unboundedly.  setOptions follows the upstream
+  reset-then-apply contract (`Architecture::reset_wire_defaults` + the DIV-77
+  preset layer before every decode) because Java delta-encodes the list.
+  ghidra-mode also prints a `Kuna v…` plate comment (the release
+  `KUNA_VERSION` bake, `kuna_banner_text`) at the top of every function —
+  cache-only, HEADER-typed, rendered by the printer's plate arm
+  (`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+  (emit_comment_func_header)`), which also renders the host's PLATE comments;
+  the standalone pipeline never inserts HEADER comments, so that arm is inert
+  there.  `flushNative` clears it all in the upstream order
+  (`Architecture::flush_remote_caches`): symbol cache + property rollback +
+  the tracked cache, non-core types (`TypeFactoryImpl::clear_noncore`),
+  comments, decoded strings.
+  `setOptions` decodes the `<optionslist>` for real through
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (decode_lenient)`
+  — every known option applies, unknown elements are skipped whole with a
+  "Warning:"-prefixed 16/17 line (DIV-76), and the command always answers `t`.
+  registerProgram also applies the CLI `aggressive` ENGINE-TIER preset (the
+  GUI has no `--mode` surface) and flips address-derived fallback naming to the
+  Ghidra GUI convention `FUN_`/`DAT_`/`LAB_` (DIV-77) via
+  `Architecture::kuna_name_style` — kuna's angr-style local naming stays on.
+  None of this touches the standalone path: no provider installed means every
+  seam takes its frozen-snapshot branch, byte-identically.
 
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error

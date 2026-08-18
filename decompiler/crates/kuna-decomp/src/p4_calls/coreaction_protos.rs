@@ -404,11 +404,17 @@ impl Action for ActionDefaultParams {
                 // `Architecture::set_function_prototype_pieces` (the kuna stand-in for
                 // the C++ callee `Funcdata`'s lazily-built `FuncProto`).
                 let has_funcdata = data.get_call_specs(i).has_funcdata();
-                let callee_pieces = if has_funcdata {
+                let (callee_pieces, callee_model) = if has_funcdata {
                     let entry = data.get_call_specs(i).get_entry_address().clone();
-                    arch.callee_proto_pieces(&entry).cloned()
+                    // (kuna, Phase 3) A host-declared prototype model rides the
+                    // locked pieces (ghidra-mode `<prototype model=…>`); `None`
+                    // on the standalone path, keeping the default-model seed.
+                    (
+                        arch.callee_proto_pieces(&entry),
+                        arch.callee_proto_model(&entry),
+                    )
                 } else {
-                    None
+                    (None, None)
                 };
                 // (kuna) An *output-only* callee pieces (no declared inputs / void
                 // outtype, but a custom locked output) is what the console
@@ -432,9 +438,12 @@ impl Action for ActionDefaultParams {
                     match (callee_pieces, default_fp.clone(), arch.types()) {
                         (Some(pieces), Some(dfp), Some(types)) => {
                             let mut fp = crate::fspec::FuncProto::new();
+                            // The host-declared model wins over defaultfp when
+                            // present (Phase 3); standalone always defaultfp.
+                            let seed_model = callee_model.unwrap_or(dfp);
                             match fp.seed_locked_from_pieces(
                                 &pieces,
-                                dfp,
+                                seed_model,
                                 void_ty.clone(),
                                 types,
                                 arch.manage(),

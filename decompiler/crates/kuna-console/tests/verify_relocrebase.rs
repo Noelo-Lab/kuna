@@ -108,6 +108,7 @@ fn dwarf_types_apply_to_the_rebased_functions() {
         vec![entry],
         /* no_vars= */ true,
         /* want_proto= */ false,
+        /* want_provenance= */ false,
     );
     let code = out.first().and_then(|f| f.code.clone()).unwrap_or_default();
     assert!(

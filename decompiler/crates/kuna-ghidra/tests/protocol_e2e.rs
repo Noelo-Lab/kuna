@@ -74,7 +74,31 @@ const TSPEC: &[u8] = b"<sleigh bigendian=\"false\" uniqbase=\"0x10000000\">\
 </spaces></sleigh>";
 const PSPEC: &[u8] = b"<processor_spec><programcounter register=\"PC\"/></processor_spec>";
 const CSPEC: &[u8] = b"<compiler_spec><default_proto/></compiler_spec>";
-const CORETYPES: &[u8] = b"<coretypes><type name=\"int\" size=\"4\" metatype=\"int\" id=\"-1\"/>\
+// Phase 3 decodes the wire corespec for real (build_core_types): mirror the
+// standalone default core-type set so engine init still finds char/bool/void.
+const CORETYPES: &[u8] = b"<coretypes>\
+<type name=\"void\" size=\"1\" metatype=\"void\"/>\
+<type name=\"bool\" size=\"1\" metatype=\"bool\"/>\
+<type name=\"uint1\" size=\"1\" metatype=\"uint\"/>\
+<type name=\"uint2\" size=\"2\" metatype=\"uint\"/>\
+<type name=\"uint4\" size=\"4\" metatype=\"uint\"/>\
+<type name=\"uint8\" size=\"8\" metatype=\"uint\"/>\
+<type name=\"int1\" size=\"1\" metatype=\"int\"/>\
+<type name=\"int2\" size=\"2\" metatype=\"int\"/>\
+<type name=\"int4\" size=\"4\" metatype=\"int\"/>\
+<type name=\"int8\" size=\"8\" metatype=\"int\"/>\
+<type name=\"float4\" size=\"4\" metatype=\"float\"/>\
+<type name=\"float8\" size=\"8\" metatype=\"float\"/>\
+<type name=\"float10\" size=\"10\" metatype=\"float\"/>\
+<type name=\"float16\" size=\"16\" metatype=\"float\"/>\
+<type name=\"xunknown1\" size=\"1\" metatype=\"unknown\"/>\
+<type name=\"xunknown2\" size=\"2\" metatype=\"unknown\"/>\
+<type name=\"xunknown4\" size=\"4\" metatype=\"unknown\"/>\
+<type name=\"xunknown8\" size=\"8\" metatype=\"unknown\"/>\
+<type name=\"code\" size=\"1\" metatype=\"code\"/>\
+<type name=\"char\" size=\"1\" metatype=\"int\" char=\"true\"/>\
+<type name=\"wchar2\" size=\"2\" metatype=\"int\" utf=\"true\"/>\
+<type name=\"wchar4\" size=\"4\" metatype=\"int\" utf=\"true\"/>\
 </coretypes>";
 
 /// The tspec-derived translate the mock shares with the process under test.
@@ -84,12 +108,14 @@ fn test_translate() -> TspecModel {
 }
 
 /// A packed `<optionslist>` with two single-param option children
-/// (DecompileOptions.encode / appendOption shape; the ids only need to be
-/// self-consistent for the count).
+/// (DecompileOptions.encode / appendOption shape).  Phase 3 DECODES this list
+/// for real, so the ids must be the true upstream option element ids — an
+/// unknown id is skipped with a "Warning:" line on the 16/17 frame, which
+/// would break this test's byte-exact silent-success expectation.
 fn packed_optionslist() -> Vec<u8> {
     let optionslist = ElementId::new("optionslist", 201);
-    let readonly = ElementId::new("readonly", 217);
-    let maxinstruction = ElementId::new("maxinstruction", 217 + 1);
+    let readonly = kuna_decomp::options::ELEM_READONLY;
+    let maxinstruction = kuna_decomp::options::ELEM_MAXINSTRUCTION;
     let mut packed = Vec::new();
     {
         let mut enc = PackedEncode::new(&mut packed);

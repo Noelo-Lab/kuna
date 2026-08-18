@@ -37,9 +37,11 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaError;
+use kuna_base::address::{ATTRIB_FIRST, ATTRIB_LAST, ELEM_RANGELIST};
 use kuna_base::marshal::{
-    Decoder, ElementId, Encoder, PackedDecode, PackedEncode, ATTRIB_ID, ATTRIB_INDEX, ATTRIB_NAME,
-    ATTRIB_OFFSET, ATTRIB_SIZE, ATTRIB_TYPE, ELEM_VOID,
+    Decoder, ElementId, Encoder, PackedDecode, PackedEncode, ATTRIB_ID, ATTRIB_INDEX,
+    ATTRIB_METATYPE, ATTRIB_MODEL, ATTRIB_NAME, ATTRIB_NAMELOCK, ATTRIB_OFFSET, ATTRIB_READONLY,
+    ATTRIB_SIZE, ATTRIB_TYPE, ATTRIB_TYPELOCK, ATTRIB_VAL, ELEM_SYMBOL, ELEM_VOID,
 };
 use kuna_base::space::{spacetype, AddrSpaceManager, RegisterLookup};
 use kuna_num::opcodes::{OpCode, OpcodeEncoder};
@@ -49,7 +51,16 @@ use kuna_sleigh::translate::{PcodeEmit, Translate, ATTRIB_CODE, ELEM_OP};
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_decomp::comment::ELEM_COMMENTDB;
 use kuna_decomp::decompile_drive::print_c;
+use kuna_decomp::dtype::{type_metatype, Datatype, DatatypeKind, ELEM_TYPEREF};
+use kuna_decomp::fspec::PrototypePieces;
+use kuna_decomp::funcdata_encode::ELEM_FUNCTION;
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES};
+use kuna_decomp::prettyprint::ids::{ELEM_FIELD, ELEM_TYPE};
+use kuna_decomp::remote_provider::{
+    ATTRIB_CAT, ATTRIB_DOTDOTDOT, ATTRIB_EXTRAPOP, ATTRIB_LOCK, ATTRIB_MAIN, ATTRIB_NORETURN,
+    ATTRIB_VOIDLOCK, ELEM_HASH, ELEM_HOLE, ELEM_LOCALDB, ELEM_MAPSYM, ELEM_PARENT,
+    ELEM_PROTOTYPE, ELEM_RETURNSYM, ELEM_SCOPE, ELEM_SYMBOLLIST,
+};
 use kuna_ghidra::ids::{
     ATTRIB_MAXSIZE, ELEM_COMMAND_GETBYTES, ELEM_COMMAND_GETCODELABEL, ELEM_COMMAND_GETCOMMENTS,
     ELEM_COMMAND_GETCPOOLREF, ELEM_COMMAND_GETDATATYPE, ELEM_COMMAND_GETEXTERNALREF,
@@ -120,6 +131,21 @@ pub struct SimOracle {
     /// the program lookup, letting a test change a "Java-side" symbol answer
     /// between decompiles to prove cache clearing.
     pub label_overrides: BTreeMap<u64, String>,
+    /// Committed global data symbols keyed by start VMA: `(name, byte size)`.
+    /// The `<mapsym><symbol>` answer source.
+    pub data_symbols: BTreeMap<u64, (String, i64)>,
+    /// Declared (locked) callee prototypes keyed by entry offset — the
+    /// analysis-committed libproto/DWARF signatures the CLI path consumes; the
+    /// `<mapsym><function><prototype>` answer source.
+    pub callee_pieces: BTreeMap<u64, PrototypePieces>,
+    /// Read-only image ranges (READONLY|CODE sections) — the `<hole>`
+    /// mutability source (the CLI paints the same const-ness from ELF flags).
+    pub readonly_ranges: Vec<(u64, u64)>,
+    /// PHASE-3 SEAM (host context): tracked-register values the "Java side"
+    /// reports on TOP of the pspec defaults (a user 'Set Register Value'),
+    /// served by the getTrackedRegisters answer — lets a test prove a
+    /// host-side context fact changes the output.
+    pub tracked_overrides: Vec<kuna_sleigh::globalcontext::TrackedContext>,
 }
 
 impl SimOracle {
@@ -160,6 +186,29 @@ impl SimOracle {
         sleigh.get_all_registers(&mut reglist);
         let register_names: BTreeSet<String> = reglist.into_values().collect();
 
+        let data_symbols: BTreeMap<u64, (String, i64)> = prog
+            .global_data_symbols()
+            .into_iter()
+            .map(|(name, vma, size)| (vma, (name, size.max(1))))
+            .collect();
+        let callee_pieces: BTreeMap<u64, PrototypePieces> = prog
+            .arch()
+            .symboltab
+            .build_callee_proto_pieces()
+            .into_iter()
+            .map(|(_, off, pieces)| (off, pieces))
+            .collect();
+        use kuna_sleigh::loadimage::section_flags;
+        let readonly_ranges: Vec<(u64, u64)> = prog
+            .sections()
+            .into_iter()
+            .filter(|(_, _, flags)| {
+                (flags & (section_flags::READONLY | section_flags::CODE)) != 0
+                    && (flags & (section_flags::UNALLOC | section_flags::NOLOAD)) == 0
+            })
+            .map(|(vma, size, _)| (vma, vma + size.saturating_sub(1)))
+            .collect();
+
         Some(SimOracle {
             prog,
             manager,
@@ -169,6 +218,10 @@ impl SimOracle {
             register_names,
             log: QueryLog::default(),
             label_overrides: BTreeMap::new(),
+            data_symbols,
+            callee_pieces,
+            readonly_ranges,
+            tracked_overrides: Vec::new(),
         })
     }
 
@@ -263,6 +316,357 @@ impl SimOracle {
                 resp_string(&doc)
             }
             Err(_) => resp_empty(),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase-3 answers: <doc><mapsym> / <hole> (the DecompileCallback shapes)
+    // ------------------------------------------------------------------
+
+    /// getMappedSymbols/getExternalRef: the Java `DecompileCallback.
+    /// getMappedSymbols` dispatch over the oracle's committed program facts —
+    /// a `<function>` answer at a function entry, a `<symbol>` answer inside a
+    /// committed data symbol, else a one-byte `<hole>` whose mutability comes
+    /// from the section flags (exactly the facts the CLI path consumes).
+    fn answer_mapped_symbols(&mut self, dec: &mut PackedDecode) -> Vec<u8> {
+        let addr = Address::decode(dec).expect("getMappedSymbols <addr>");
+        let offset = addr.get_offset();
+        if let Some(name) = self.code_label(offset) {
+            let noreturn = self
+                .prog
+                .arch()
+                .symboltab
+                .function_is_no_return_across_scopes(&addr);
+            let pieces = self.callee_pieces.get(&offset).cloned();
+            return resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref()));
+        }
+        if let Some((start, (name, size))) = self
+            .data_symbols
+            .range(..=offset)
+            .next_back()
+            .map(|(s, v)| (*s, v.clone()))
+        {
+            if offset < start.wrapping_add(size as u64) {
+                let sym_addr = Address::new(
+                    Rc::clone(addr.get_space().expect("ram address has a space")),
+                    start,
+                );
+                return resp_string(&self.symbol_doc(&sym_addr, &name, size as i32));
+            }
+        }
+        resp_string(&self.hole_doc(&addr))
+    }
+
+    /// `<doc id=0><mapsym><function …>…</function><addr/><rangelist/></mapsym></doc>`
+    /// (Java `HighFunctionSymbol.encode` → `HighFunction.encode`).
+    fn function_doc(
+        &self,
+        entry: &Address,
+        name: &str,
+        noreturn: bool,
+        pieces: Option<&PrototypePieces>,
+    ) -> Vec<u8> {
+        let mut doc = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut doc);
+            e.open_element(&kuna_ghidra::ids::ELEM_DOC);
+            e.write_unsigned_integer(&ATTRIB_ID, 0); // global namespace
+            e.open_element(&ELEM_MAPSYM);
+            e.open_element(&ELEM_FUNCTION);
+            // A stable fake host-database id (never in the internal 0x40… range).
+            e.write_unsigned_integer(&ATTRIB_ID, entry.get_offset() | 0x1_0000_0000);
+            e.write_string(&ATTRIB_NAME, name.as_bytes());
+            e.write_signed_integer(&ATTRIB_SIZE, 1);
+            if noreturn {
+                e.write_bool(&ATTRIB_NORETURN, true);
+            }
+            entry.encode(&mut e).expect("entry addr encodes");
+            if let Some(p) = pieces {
+                self.encode_localdb(&mut e, name, p);
+                self.encode_prototype(&mut e, p);
+            }
+            e.close_element(&ELEM_FUNCTION);
+            // The mapping SymbolEntry: <addr size=1/> + empty <rangelist/>.
+            entry.encode_sized(&mut e, 1).expect("mapping addr encodes");
+            e.open_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_MAPSYM);
+            e.close_element(&kuna_ghidra::ids::ELEM_DOC);
+        }
+        doc
+    }
+
+    /// `<localdb lock main><scope><parent id=0/><rangelist/><symbollist>` with
+    /// one cat-0 `<mapsym><symbol>` per declared parameter (Java
+    /// `LocalSymbolMap.encodeLocalDb`).
+    fn encode_localdb(&self, e: &mut PackedEncode, fname: &str, pieces: &PrototypePieces) {
+        let ram = self
+            .manager
+            .get_default_code_space()
+            .expect("default code space")
+            .clone();
+        e.open_element(&ELEM_LOCALDB);
+        e.write_bool(&ATTRIB_LOCK, false);
+        e.write_space(&ATTRIB_MAIN, &ram);
+        e.open_element(&ELEM_SCOPE);
+        e.write_string(&ATTRIB_NAME, fname.as_bytes());
+        e.open_element(&ELEM_PARENT);
+        e.write_unsigned_integer(&ATTRIB_ID, 0);
+        e.close_element(&ELEM_PARENT);
+        e.open_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_RANGELIST);
+        e.open_element(&ELEM_SYMBOLLIST);
+        for (i, ct) in pieces.intypes.iter().enumerate() {
+            e.open_element(&ELEM_MAPSYM);
+            e.open_element(&ELEM_SYMBOL);
+            let pname = pieces
+                .innames
+                .get(i)
+                .cloned()
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("param_{}", i + 1));
+            e.write_string(&ATTRIB_NAME, pname.as_bytes());
+            e.write_bool(&ATTRIB_TYPELOCK, true);
+            e.write_bool(&ATTRIB_NAMELOCK, true);
+            e.write_signed_integer(&ATTRIB_CAT, 0);
+            e.write_unsigned_integer(&ATTRIB_INDEX, i as u64);
+            self.encode_wire_type(e, ct);
+            e.close_element(&ELEM_SYMBOL);
+            // Storage entry: a dynamic <hash> (the decoder needs no static
+            // storage for a parameter) + empty <rangelist/>.
+            e.open_element(&ELEM_HASH);
+            e.write_unsigned_integer(&ATTRIB_VAL, 1);
+            e.close_element(&ELEM_HASH);
+            e.open_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_MAPSYM);
+        }
+        e.close_element(&ELEM_SYMBOLLIST);
+        e.close_element(&ELEM_SCOPE);
+        e.close_element(&ELEM_LOCALDB);
+    }
+
+    /// `<prototype extrapop="unknown" model="default" …><returnsym>` (Java
+    /// `FunctionPrototype.encodePrototype`, params via `<localdb>`).
+    fn encode_prototype(&self, e: &mut PackedEncode, pieces: &PrototypePieces) {
+        e.open_element(&ELEM_PROTOTYPE);
+        e.write_string(&ATTRIB_EXTRAPOP, b"unknown");
+        e.write_string(&ATTRIB_MODEL, b"default");
+        if pieces.first_var_arg_slot >= 0 {
+            e.write_bool(&ATTRIB_DOTDOTDOT, true);
+        }
+        if pieces.intypes.is_empty() {
+            e.write_bool(&ATTRIB_VOIDLOCK, true);
+        }
+        e.open_element(&ELEM_RETURNSYM);
+        e.write_bool(&ATTRIB_TYPELOCK, true);
+        // Blank <addr/>: the decompiler's model assigns return storage.
+        e.open_element(&kuna_base::address::ELEM_ADDR);
+        e.close_element(&kuna_base::address::ELEM_ADDR);
+        match &pieces.outtype {
+            Some(ct) => self.encode_wire_type(e, ct),
+            None => {
+                e.open_element(&ELEM_VOID);
+                e.close_element(&ELEM_VOID);
+            }
+        }
+        e.close_element(&ELEM_RETURNSYM);
+        e.close_element(&ELEM_PROTOTYPE);
+    }
+
+    /// `<doc id=0><mapsym><symbol …><type…/></symbol><addr size/><rangelist/>`
+    /// — a committed data symbol (Java `DecompileCallback.encodeData` /
+    /// `HighCodeSymbol`).
+    fn symbol_doc(&self, start: &Address, name: &str, size: i32) -> Vec<u8> {
+        let mut doc = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut doc);
+            e.open_element(&kuna_ghidra::ids::ELEM_DOC);
+            e.write_unsigned_integer(&ATTRIB_ID, 0);
+            e.open_element(&ELEM_MAPSYM);
+            e.open_element(&ELEM_SYMBOL);
+            e.write_unsigned_integer(&ATTRIB_ID, start.get_offset() | 0x2_0000_0000);
+            e.write_string(&ATTRIB_NAME, name.as_bytes());
+            e.write_bool(&ATTRIB_TYPELOCK, true);
+            e.write_bool(&ATTRIB_NAMELOCK, true);
+            if self.in_readonly(start.get_offset()) {
+                e.write_bool(&ATTRIB_READONLY, true);
+            }
+            e.write_signed_integer(&ATTRIB_CAT, -1);
+            // The committed data symbols carry no recovered type: undefinedN
+            // (an unknown base of the symbol's byte size, the Ghidra shape).
+            e.open_element(&ELEM_TYPE);
+            e.write_string(&ATTRIB_NAME, b"");
+            e.write_string(&ATTRIB_METATYPE, b"unknown");
+            e.write_signed_integer(&ATTRIB_SIZE, size.clamp(1, 8) as i64);
+            e.close_element(&ELEM_TYPE);
+            e.close_element(&ELEM_SYMBOL);
+            start
+                .encode_sized(&mut e, size.max(1))
+                .expect("data addr encodes");
+            e.open_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_MAPSYM);
+            e.close_element(&kuna_ghidra::ids::ELEM_DOC);
+        }
+        doc
+    }
+
+    /// A one-byte `<hole [readonly] space first last/>` (Java
+    /// `DecompileCallback.encodeHole`'s single-address arm).
+    fn hole_doc(&self, addr: &Address) -> Vec<u8> {
+        let mut doc = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut doc);
+            e.open_element(&ELEM_HOLE);
+            if self.in_readonly(addr.get_offset()) {
+                e.write_bool(&ATTRIB_READONLY, true);
+            }
+            let spc = addr.get_space().expect("hole address has a space");
+            e.write_space(&kuna_base::marshal::ATTRIB_SPACE, spc);
+            e.write_unsigned_integer(&ATTRIB_FIRST, addr.get_offset());
+            e.write_unsigned_integer(&ATTRIB_LAST, addr.get_offset());
+            e.close_element(&ELEM_HOLE);
+        }
+        doc
+    }
+
+    fn in_readonly(&self, offset: u64) -> bool {
+        self.readonly_ranges
+            .iter()
+            .any(|(first, last)| offset >= *first && offset <= *last)
+    }
+
+    /// Encode a data-type the way Java's `encodeTypeRef`/`encodeType` does:
+    /// named types travel as `<typeref name id/>` (core types resolve locally
+    /// on the kuna side — same hash ids — and unknown named types trigger a
+    /// getDataType query answered by [`Self::answer_data_type`]); anonymous
+    /// pointers/arrays inline recursively; everything else inlines as a base.
+    fn encode_wire_type(&self, e: &mut PackedEncode, dt: &Rc<Datatype>) {
+        use type_metatype::*;
+        match dt.get_metatype() {
+            TYPE_VOID => {
+                e.open_element(&ELEM_VOID);
+                e.close_element(&ELEM_VOID);
+            }
+            TYPE_PTR => {
+                if let DatatypeKind::Pointer { ptrto, wordsize, .. } = &dt.kind {
+                    e.open_element(&ELEM_TYPE);
+                    e.write_string(&ATTRIB_NAME, b"");
+                    e.write_string(&ATTRIB_METATYPE, b"ptr");
+                    e.write_signed_integer(&ATTRIB_SIZE, dt.get_size() as i64);
+                    if *wordsize != 1 {
+                        e.write_unsigned_integer(
+                            &kuna_base::marshal::ATTRIB_WORDSIZE,
+                            *wordsize as u64,
+                        );
+                    }
+                    self.encode_wire_type(e, ptrto);
+                    e.close_element(&ELEM_TYPE);
+                } else {
+                    self.encode_base_inline(e, dt);
+                }
+            }
+            TYPE_ARRAY => {
+                if let DatatypeKind::Array { arrayof, arraysize } = &dt.kind {
+                    e.open_element(&ELEM_TYPE);
+                    e.write_string(&ATTRIB_NAME, b"");
+                    e.write_string(&ATTRIB_METATYPE, b"array");
+                    e.write_signed_integer(&ATTRIB_SIZE, dt.get_size() as i64);
+                    e.write_signed_integer(
+                        &kuna_decomp::dtype::ATTRIB_ARRAYSIZE,
+                        *arraysize as i64,
+                    );
+                    self.encode_wire_type(e, arrayof);
+                    e.close_element(&ELEM_TYPE);
+                } else {
+                    self.encode_base_inline(e, dt);
+                }
+            }
+            _ if !dt.get_name().is_empty() && dt.get_id() != 0 => {
+                e.open_element(&ELEM_TYPEREF);
+                e.write_string(&ATTRIB_NAME, dt.get_name().as_bytes());
+                e.write_unsigned_integer(&ATTRIB_ID, dt.get_id());
+                e.close_element(&ELEM_TYPEREF);
+            }
+            _ => self.encode_base_inline(e, dt),
+        }
+    }
+
+    /// An inline `<type>` for a base/unknown shape.
+    fn encode_base_inline(&self, e: &mut PackedEncode, dt: &Rc<Datatype>) {
+        let meta = kuna_decomp::dtype::metatype2string(dt.get_metatype())
+            .unwrap_or_else(|_| "unknown".to_string());
+        e.open_element(&ELEM_TYPE);
+        e.write_string(&ATTRIB_NAME, dt.get_name().as_bytes());
+        e.write_string(&ATTRIB_METATYPE, meta.as_bytes());
+        e.write_signed_integer(&ATTRIB_SIZE, dt.get_size().max(1) as i64);
+        if dt.get_id() != 0 && !dt.get_name().is_empty() {
+            e.write_unsigned_integer(&ATTRIB_ID, dt.get_id());
+        }
+        e.close_element(&ELEM_TYPE);
+    }
+
+    /// getDataType: look the (name, id) up in the oracle's own factory and
+    /// encode the full definition — the sim half of the
+    /// `TypeFactoryGhidra::findById` miss path.
+    fn answer_data_type(&mut self, dec: &mut PackedDecode) -> Vec<u8> {
+        let name =
+            String::from_utf8_lossy(&dec.read_string_id(&ATTRIB_NAME).expect("type name"))
+                .into_owned();
+        let _id = dec.read_signed_integer_id(&ATTRIB_ID).unwrap_or(0);
+        let found = self
+            .prog
+            .arch()
+            .types()
+            .find_by_name(&name)
+            .ok()
+            .flatten();
+        match found {
+            Some(dt) => {
+                let mut doc = Vec::new();
+                {
+                    let mut e = PackedEncode::new(&mut doc);
+                    self.encode_full_type(&mut e, &dt);
+                }
+                resp_string(&doc)
+            }
+            None => resp_empty(),
+        }
+    }
+
+    /// A full (non-typeref) `<type>` definition for a getDataType answer:
+    /// composites carry their fields; everything else the base shape.
+    fn encode_full_type(&self, e: &mut PackedEncode, dt: &Rc<Datatype>) {
+        use type_metatype::*;
+        match (&dt.kind, dt.get_metatype()) {
+            (DatatypeKind::Struct { field, .. }, TYPE_STRUCT)
+            | (DatatypeKind::Union { field }, _) => {
+                let meta = if dt.get_metatype() == TYPE_STRUCT {
+                    "struct"
+                } else {
+                    "union"
+                };
+                e.open_element(&ELEM_TYPE);
+                e.write_string(&ATTRIB_NAME, dt.get_name().as_bytes());
+                e.write_unsigned_integer(&ATTRIB_ID, dt.get_id());
+                e.write_string(&ATTRIB_METATYPE, meta.as_bytes());
+                e.write_signed_integer(&ATTRIB_SIZE, dt.get_size() as i64);
+                e.write_signed_integer(
+                    &kuna_decomp::dtype::ATTRIB_ALIGNMENT,
+                    dt.alignment.max(1) as i64,
+                );
+                for f in field {
+                    e.open_element(&ELEM_FIELD);
+                    e.write_string(&ATTRIB_NAME, f.name.as_bytes());
+                    e.write_signed_integer(&ATTRIB_OFFSET, f.offset as i64);
+                    e.write_signed_integer(&ATTRIB_ID, f.ident as i64);
+                    self.encode_wire_type(e, &f.field_type);
+                    e.close_element(&ELEM_FIELD);
+                }
+                e.close_element(&ELEM_TYPE);
+            }
+            _ => self.encode_base_inline(e, dt),
         }
     }
 
@@ -391,13 +795,34 @@ impl AnswerSource for SimOracle {
             }
             resp_string(&doc)
         } else if el == ELEM_COMMAND_GETTRACKEDREGISTERS.get_id() {
-            // Always written, possibly empty.  A Phase-3 sim can serve the real
-            // pspec tracked set via `encode_tracked` (kuna-sleigh/globalcontext.rs).
+            // Phase 3: the REAL tracked set for the address — the program
+            // context's values (pspec defaults) plus any test-injected
+            // `tracked_overrides` (a user 'Set Register Value'), exactly the
+            // DecompileCallback shape (always written, possibly empty).
+            let addr = Address::decode(&mut dec).expect("getTrackedRegisters <addr>");
+            let mut set = kuna_sleigh::globalcontext::TrackedSet::new();
+            self.prog
+                .arch()
+                .translate()
+                .with_context_db_dyn(&mut |db| {
+                    set = db.get_tracked_set(&addr).clone();
+                });
+            for over in &self.tracked_overrides {
+                match set.iter_mut().find(|t| t.loc == over.loc) {
+                    Some(t) => t.val = over.val,
+                    None => set.push(over.clone()),
+                }
+            }
             let mut doc = Vec::new();
             {
                 let mut e = PackedEncode::new(&mut doc);
-                e.open_element(&ELEM_TRACKED_POINTSET);
-                e.close_element(&ELEM_TRACKED_POINTSET);
+                if set.is_empty() {
+                    e.open_element(&ELEM_TRACKED_POINTSET);
+                    e.close_element(&ELEM_TRACKED_POINTSET);
+                } else {
+                    kuna_sleigh::globalcontext::encode_tracked(&mut e, &addr, &set)
+                        .expect("tracked set encodes");
+                }
             }
             resp_string(&doc)
         } else if el == ELEM_COMMAND_GETSTRINGDATA.get_id() {
@@ -407,21 +832,22 @@ impl AnswerSource for SimOracle {
         } else if el == ELEM_COMMAND_GETMAPPEDSYMBOLS.get_id()
             || el == ELEM_COMMAND_GETEXTERNALREF.get_id()
         {
-            // ===================== PHASE-3 SEAM =====================
-            // Answer EMPTY: the Phase-2 engine never issues these, and the
-            // pinned `getMappedSymbols == 0` query-traffic number documents
-            // that.  Phase 3 plugs the `<mapsym>` encoder in HERE (build
-            // `<doc><mapsym><function|symbol…><addr><rangelist>` from
-            // `self.prog.function_named_at` / `self.prog.global_data_symbols`
-            // + `self.label_overrides`), and the harness pins flip.
-            // ========================================================
-            resp_empty()
-        } else if el == ELEM_COMMAND_GETDATATYPE.get_id()
-            || el == ELEM_COMMAND_GETNAMESPACEPATH.get_id()
+            // Phase 3: real `<doc><mapsym>` / `<hole>` answers from the
+            // oracle's committed program facts (functions + locked prototypes
+            // + noreturn, data symbols, section mutability) — the DecompileCallback
+            // role.  `label_overrides` rides through `code_label`, which is what
+            // the flushNative cache-clearing test flips.
+            self.answer_mapped_symbols(&mut dec)
+        } else if el == ELEM_COMMAND_GETDATATYPE.get_id() {
+            // Phase 3: the TypeFactoryGhidra findById miss path — answer the
+            // full definition from the oracle's own factory.
+            self.answer_data_type(&mut dec)
+        } else if el == ELEM_COMMAND_GETNAMESPACEPATH.get_id()
             || el == ELEM_COMMAND_GETCPOOLREF.get_id()
         {
-            // PHASE-3 SEAM: needs the `<type>` encoder / namespace model /
-            // cpool records — empty is "not found", the lenient answer.
+            // Namespace scopes / cpool records: not modeled by the sim (the
+            // oracle commits everything into the global scope) — empty is the
+            // lenient "not found" answer.
             resp_empty()
         } else {
             // The four inject variants (241/242/243/252): the wire cspec's

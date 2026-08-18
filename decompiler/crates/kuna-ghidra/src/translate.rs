@@ -196,12 +196,12 @@ pub struct GhidraTranslate<R: Read, W: Write> {
     manager: Rc<AddrSpaceManager>,
     /// The shared query client (C++ `ArchitectureGhidra *glb`).
     client: SharedClient<R, W>,
-    /// C++ `mutable map<string,VarnodeData> nm2addr` — the name→storage
-    /// register cache (`RefCell` ports `mutable`).
-    nm2addr: RefCell<BTreeMap<String, VarnodeStorage>>,
-    /// C++ `mutable map<VarnodeData,string> addr2nm` — the storage→name
-    /// register cache.
-    addr2nm: RefCell<BTreeMap<VarnodeStorage, String>>,
+    /// The query-backed register resolver holding the C++ `mutable`
+    /// `nm2addr`/`addr2nm` caches — shared with the [`AddrSpaceManager`]
+    /// (Phase 3: `set_register_lookup`, mirroring
+    /// `Sleigh::install_register_lookup`) so manager-side register lookups
+    /// (`name=` decodes, the naming pass's is-register test) resolve too.
+    reglookup: Rc<GhidraRegisterLookup<R, W>>,
     /// The program load image (C++ `LoadImageGhidra`): every read of program
     /// bytes becomes a `getBytes` query.  Boxed behind `Rc<RefCell<…>>` to
     /// mirror `Sleigh::loader`, so [`EngineTranslate::loader_rc`] can hand out
@@ -217,6 +217,143 @@ pub struct GhidraTranslate<R: Read, W: Write> {
     /// needs a fetch-and-cache design resolving the
     /// `&TrackedSet`-from-`&self` borrow (spec §5 risks).
     context: RefCell<ContextInternal>,
+}
+
+/// The query-backed [`RegisterLookup`] installed on the ghidra-mode
+/// [`AddrSpaceManager`] (Phase 3).  The standalone Sleigh installs itself on
+/// the manager (`Sleigh::install_register_lookup`) so manager-side consumers —
+/// `VarnodeData::decode_from_attributes`' `name=` register path, and the
+/// naming pass's is-this-a-register test (`coreaction_cleanup`'s
+/// `manage().register_lookup()`) — can resolve registers; without one, every
+/// register-storage high misclassifies as global data, is skipped by local
+/// naming, and renders as a raw `EAX`/`RBX` token.  This adapter answers the
+/// same three lookups with getRegister/getRegisterName queries and the same
+/// `mutable` caches as `GhidraTranslate` (which delegates to it).
+///
+/// The manager holds this as `Rc<dyn RegisterLookup>` while this holds the
+/// manager back as a `Weak` (set once the manager `Rc` exists) — no cycle.
+pub struct GhidraRegisterLookup<R: Read, W: Write> {
+    client: SharedClient<R, W>,
+    manager: RefCell<std::rc::Weak<AddrSpaceManager>>,
+    nm2addr: RefCell<BTreeMap<String, VarnodeStorage>>,
+    addr2nm: RefCell<BTreeMap<VarnodeStorage, String>>,
+}
+
+impl<R: Read, W: Write> GhidraRegisterLookup<R, W> {
+    fn new(client: SharedClient<R, W>) -> Self {
+        GhidraRegisterLookup {
+            client,
+            manager: RefCell::new(std::rc::Weak::new()),
+            nm2addr: RefCell::new(BTreeMap::new()),
+            addr2nm: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    /// C++ `GhidraTranslate::cacheRegister`: record a resolved register both ways.
+    #[allow(clippy::mutable_key_type)] // AddrSpace interior mutability does not affect Ord
+    fn cache_register(&self, nm: &str, vndata: &VarnodeStorage) {
+        self.nm2addr
+            .borrow_mut()
+            .insert(nm.to_string(), vndata.clone());
+        self.addr2nm
+            .borrow_mut()
+            .insert(vndata.clone(), nm.to_string());
+    }
+}
+
+impl<R: Read, W: Write> RegisterLookup for GhidraRegisterLookup<R, W> {
+    /// C++ `GhidraTranslate::getRegister` (ghidra_translate.cc:45-70).
+    fn get_register(&self, nm: &str) -> KunaResult<VarnodeStorage> {
+        {
+            let cache = self.nm2addr.borrow();
+            if let Some(vndata) = cache.get(nm) {
+                return Ok(vndata.clone());
+            }
+        }
+        let manager = self
+            .manager
+            .borrow()
+            .upgrade()
+            .ok_or_else(|| KunaError::lowlevel("ghidra register lookup: manager gone"))?;
+        let mut decoder = PackedDecode::new(&manager);
+        let found = self
+            .client
+            .borrow_mut()
+            .get_register(nm, &mut decoder)
+            .map_err(wire_to_kuna)?;
+        if !found {
+            return Err(KunaError::lowlevel(format!("No register named {nm}")));
+        }
+        let (regaddr, regsize) = Address::decode_sized(&mut decoder)?;
+        let vndata = VarnodeStorage {
+            space: regaddr.get_space().cloned(),
+            offset: regaddr.get_offset(),
+            size: regsize as u32,
+        };
+        self.cache_register(nm, &vndata);
+        Ok(vndata)
+    }
+
+    /// C++ `GhidraTranslate::getRegisterName` (ghidra_translate.cc:72-87).
+    #[allow(clippy::mutable_key_type)] // see cache_register
+    fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
+        if base.get_type() != spacetype::IPTR_PROCESSOR {
+            return String::new();
+        }
+        let vndata = VarnodeStorage {
+            space: Some(Rc::clone(base)),
+            offset: off,
+            size: size as u32,
+        };
+        {
+            let cache = self.addr2nm.borrow();
+            if let Some(nm) = cache.get(&vndata) {
+                return nm.clone();
+            }
+        }
+        let bytes = match self.client.borrow_mut().get_register_name(&vndata) {
+            Ok(b) => b,
+            Err(_) => return String::new(),
+        };
+        if bytes.is_empty() {
+            return String::new();
+        }
+        let name = String::from_utf8_lossy(&bytes).into_owned();
+        // Cache the FULL register (the queried vndata may be a truncated piece).
+        let _ = self.get_register(&name);
+        name
+    }
+
+    /// C++ `GhidraTranslate::getExactRegisterName` (ghidra_translate.cc:89-106).
+    #[allow(clippy::mutable_key_type)] // see cache_register
+    fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
+        if base.get_type() != spacetype::IPTR_PROCESSOR {
+            return String::new();
+        }
+        let vndata = VarnodeStorage {
+            space: Some(Rc::clone(base)),
+            offset: off,
+            size: size as u32,
+        };
+        {
+            let cache = self.addr2nm.borrow();
+            if let Some(nm) = cache.get(&vndata) {
+                return nm.clone();
+            }
+        }
+        let bytes = match self.client.borrow_mut().get_register_name(&vndata) {
+            Ok(b) => b,
+            Err(_) => return String::new(),
+        };
+        if bytes.is_empty() {
+            return String::new();
+        }
+        let name = String::from_utf8_lossy(&bytes).into_owned();
+        match self.get_register(&name) {
+            Ok(full) if full.size == size as u32 => name,
+            _ => String::new(),
+        }
+    }
 }
 
 // `'static` on the stream types: the loader coerces `GhidraLoadImage<R,W>`
@@ -251,12 +388,23 @@ impl<R: Read + 'static, W: Write + 'static> GhidraTranslate<R, W> {
 
         let loader: Box<dyn LoadImage> = Box::new(GhidraLoadImage::new(Rc::clone(&client)));
 
+        // Phase 3: install the query-backed register resolver on the manager
+        // (the ghidra-mode mirror of `Sleigh::install_register_lookup`) BEFORE
+        // wrapping it in `Rc`.  The adapter's `Weak` back-pointer is wired
+        // LAZILY ([`Self::ensure_lookup_wired`]) because an outstanding `Weak`
+        // blocks the `Rc::get_mut` in [`EngineTranslate::manager_mut`], which
+        // engine init still calls (spec-decoded space insertion) — the same
+        // sole-owner-during-init invariant the plain `Rc` already relied on.
+        let reglookup = Rc::new(GhidraRegisterLookup::new(Rc::clone(&client)));
+        let mut manager = manager;
+        manager.set_register_lookup(Rc::clone(&reglookup) as Rc<dyn RegisterLookup>);
+        let manager = Rc::new(manager);
+
         Ok(GhidraTranslate {
             base,
-            manager: Rc::new(manager),
+            manager,
             client,
-            nm2addr: RefCell::new(BTreeMap::new()),
-            addr2nm: RefCell::new(BTreeMap::new()),
+            reglookup,
             loader: Rc::new(RefCell::new(loader)),
             context: RefCell::new(ContextInternal::new()),
         })
@@ -264,122 +412,33 @@ impl<R: Read + 'static, W: Write + 'static> GhidraTranslate<R, W> {
 }
 
 impl<R: Read, W: Write> GhidraTranslate<R, W> {
-    /// C++ `GhidraTranslate::cacheRegister` (ghidra_translate.cc): record a
-    /// resolved register in both directions.
-    #[allow(clippy::mutable_key_type)] // AddrSpace interior-mutable fields do not affect VarnodeStorage's Ord
-    fn cache_register(&self, nm: &str, vndata: &VarnodeStorage) {
-        self.nm2addr
-            .borrow_mut()
-            .insert(nm.to_string(), vndata.clone());
-        self.addr2nm
-            .borrow_mut()
-            .insert(vndata.clone(), nm.to_string());
+    /// Wire the register adapter's `Weak` manager back-pointer once init-time
+    /// `manager_mut` mutation is over (see [`Self::new`]).  Idempotent, cheap.
+    fn ensure_lookup_wired(&self) {
+        if self.reglookup.manager.borrow().upgrade().is_none() {
+            *self.reglookup.manager.borrow_mut() = Rc::downgrade(&self.manager);
+        }
     }
 }
 
 impl<R: Read, W: Write> RegisterLookup for GhidraTranslate<R, W> {
-    /// C++ `GhidraTranslate::getRegister` (ghidra_translate.cc:45-70): the
-    /// `nm2addr` cache, else a `getRegister` query decoded into a storage
-    /// triple and cached both ways.
+    /// C++ `GhidraTranslate::getRegister` — delegated to the shared
+    /// [`GhidraRegisterLookup`] (one cache, also installed on the manager).
     fn get_register(&self, nm: &str) -> KunaResult<VarnodeStorage> {
-        {
-            let cache = self.nm2addr.borrow();
-            if let Some(vndata) = cache.get(nm) {
-                return Ok(vndata.clone());
-            }
-        }
-        let mut decoder = PackedDecode::new(&self.manager);
-        let found = self
-            .client
-            .borrow_mut()
-            .get_register(nm, &mut decoder)
-            .map_err(wire_to_kuna)?;
-        if !found {
-            // C++ throws SleighError (a LowlevelError).
-            return Err(KunaError::lowlevel(format!("No register named {nm}")));
-        }
-        let (regaddr, regsize) = Address::decode_sized(&mut decoder)?;
-        let vndata = VarnodeStorage {
-            space: regaddr.get_space().cloned(),
-            offset: regaddr.get_offset(),
-            size: regsize as u32, // int4 -> uint4, as the VarnodeData member
-        };
-        self.cache_register(nm, &vndata);
-        Ok(vndata)
+        self.ensure_lookup_wired();
+        self.reglookup.get_register(nm)
     }
 
-    /// C++ `GhidraTranslate::getRegisterName` (ghidra_translate.cc:72-87): the
-    /// name of the register overlapping a processor-space location, else "".
-    /// The infallible signature swallows a query failure to "" (spec risks).
-    #[allow(clippy::mutable_key_type)] // see cache_register
+    /// C++ `GhidraTranslate::getRegisterName` — delegated.
     fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
-        if base.get_type() != spacetype::IPTR_PROCESSOR {
-            return String::new();
-        }
-        let vndata = VarnodeStorage {
-            space: Some(Rc::clone(base)),
-            offset: off,
-            size: size as u32,
-        };
-        {
-            let cache = self.addr2nm.borrow();
-            if let Some(nm) = cache.get(&vndata) {
-                return nm.clone();
-            }
-        }
-        let bytes = match self.client.borrow_mut().get_register_name(&vndata) {
-            Ok(b) => b,
-            Err(_) => return String::new(),
-        };
-        if bytes.is_empty() {
-            return String::new();
-        }
-        let name = String::from_utf8_lossy(&bytes).into_owned();
-        // The queried vndata may be a truncated piece; cache the FULL
-        // register (C++ comment).  Any failure is swallowed — the name is
-        // still valid.
-        let _ = self.get_register(&name);
-        name
+        self.ensure_lookup_wired();
+        self.reglookup.get_register_name(base, off, size)
     }
 
-    /// C++ `GhidraTranslate::getExactRegisterName`
-    /// (ghidra_translate.cc:89-106): the register name only if it matches the
-    /// location AND size exactly, else "".
-    #[allow(clippy::mutable_key_type)] // see cache_register
+    /// C++ `GhidraTranslate::getExactRegisterName` — delegated.
     fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
-        if base.get_type() != spacetype::IPTR_PROCESSOR {
-            return String::new();
-        }
-        let vndata = VarnodeStorage {
-            space: Some(Rc::clone(base)),
-            offset: off,
-            size: size as u32,
-        };
-        // C++ getExactRegisterName opens with `addr2nm.find(vndata)` and returns
-        // the cached name before any query.  A hit is
-        // keyed by a cached FULL register's exact vndata, so it already satisfies
-        // the exact-size requirement — no size re-check needed.  Mirrors the same
-        // short-circuit in `get_register_name`.
-        {
-            let cache = self.addr2nm.borrow();
-            if let Some(nm) = cache.get(&vndata) {
-                return nm.clone();
-            }
-        }
-        let bytes = match self.client.borrow_mut().get_register_name(&vndata) {
-            Ok(b) => b,
-            Err(_) => return String::new(),
-        };
-        if bytes.is_empty() {
-            return String::new();
-        }
-        let name = String::from_utf8_lossy(&bytes).into_owned();
-        // Exact match required: the resolved register's size must equal the
-        // requested size (C++ checks `reg.size == size`).
-        match self.get_register(&name) {
-            Ok(full) if full.size == size as u32 => name,
-            _ => String::new(),
-        }
+        self.ensure_lookup_wired();
+        self.reglookup.get_exact_register_name(base, off, size)
     }
 }
 
@@ -480,11 +539,20 @@ impl<R: Read, W: Write> EngineTranslate for GhidraTranslate<R, W> {
         &self.manager
     }
     fn manager_rc(&self) -> Rc<AddrSpaceManager> {
+        // The first shared clone marks the end of init-time mutation: wire the
+        // register adapter's back-pointer (see `ensure_lookup_wired`).
+        self.ensure_lookup_wired();
         Rc::clone(&self.manager)
     }
     fn manager_mut(&mut self) -> &mut AddrSpaceManager {
         // Mirrors Sleigh: mutable access is only taken during init, while the
         // engine is still the sole `Rc` owner (before any `glb` clones it).
+        // The register adapter's `Weak` (Phase 3) would block `Rc::get_mut`,
+        // so drop it first — it re-wires lazily on the next shared use
+        // (`ensure_lookup_wired`); a `Weak` upgrade can never race the
+        // mutation because the adapter only upgrades inside its own query
+        // methods, which init never runs concurrently with this borrow.
+        *self.reglookup.manager.borrow_mut() = std::rc::Weak::new();
         Rc::get_mut(&mut self.manager)
             .expect("ghidra engine address-space manager already shared (Rc not unique)")
     }

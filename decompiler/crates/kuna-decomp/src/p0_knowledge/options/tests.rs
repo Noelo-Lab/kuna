@@ -1133,3 +1133,31 @@ fn test_decode_unknown_option_in_list() {
     let e = db.decode(&mut dec, &mut g).unwrap_err();
     assert_eq!(e.explain(), "Unknown option");
 }
+
+#[test]
+fn test_decode_lenient_skips_unknown_and_applies_known() {
+    // (kuna, ghidra-mode) The lenient <optionslist> decode: unknown elements are
+    // skipped with a returned "Warning" line while every known option still
+    // applies — the documented setOptions divergence (docs/ghidra-integration.md
+    // paragraph 8; upstream fails the whole list and Java then fails the program
+    // open).
+    let xml = br#"<optionslist>
+        <maxinstruction>77777</maxinstruction>
+        <notarealoption>x</notarealoption>
+        <jumptablemax>512</jumptablemax>
+    </optionslist>"#;
+    let manager = AddrSpaceManager::new();
+    let mut registry = IdRegistry::with_base_ids();
+    register_option_elements(&mut registry);
+    let mut dec = XmlDecode::new(&manager, &registry);
+    dec.ingest_stream(xml).unwrap();
+    let db = OptionDatabase::new();
+    let mut g = RecordingContext::default();
+    let warnings = db.decode_lenient(&mut dec, &mut g).unwrap();
+    // Both known options applied despite the unknown element between them.
+    assert_eq!(g.max_instructions, 77777);
+    assert_eq!(g.max_jumptable_size, 512);
+    // Exactly one warning, phrased to pass Java's isErrorMessage "warning" test.
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].starts_with("Warning"), "{}", warnings[0]);
+}

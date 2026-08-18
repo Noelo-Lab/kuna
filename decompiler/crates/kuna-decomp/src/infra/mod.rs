@@ -6,6 +6,7 @@
 pub mod action;
 pub mod architecture;
 pub mod engine_translate;
+pub mod remote_provider;
 pub mod decompile_drive;
 pub mod capability;
 pub mod libdecomp;

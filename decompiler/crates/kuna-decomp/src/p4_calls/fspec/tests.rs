@@ -1978,17 +1978,17 @@ fn func_call_specs_fspec_registry_roundtrip() {
     // Named call spec: printed name is the name verbatim, regardless of angr.
     let mut fc = FuncCallSpecs::new(call, Address::new(Rc::clone(&ram), 0x2000));
     fc.set_funcdata(Address::new(Rc::clone(&ram), 0x2000), "my_func").unwrap();
-    assert_eq!(fc.fspec_printed_name(false), "my_func");
-    assert_eq!(fc.fspec_printed_name(true), "my_func");
+    assert_eq!(fc.fspec_printed_name(crate::database::KunaNameStyle::Func), "my_func");
+    assert_eq!(fc.fspec_printed_name(crate::database::KunaNameStyle::Angr), "my_func");
 
     // Unnamed: angr => sub_<addr>, non-angr => func_<addr>.
     let fc2 = FuncCallSpecs::new(call, Address::new(Rc::clone(&ram), 0x3000));
-    assert!(fc2.fspec_printed_name(true).starts_with("sub_"));
-    assert!(fc2.fspec_printed_name(false).starts_with("func_"));
+    assert!(fc2.fspec_printed_name(crate::database::KunaNameStyle::Angr).starts_with("sub_"));
+    assert!(fc2.fspec_printed_name(crate::database::KunaNameStyle::Func).starts_with("func_"));
 
     // Register and look up via the kuna-base FspecSpace registry.
     let handle: u64 = 0xCAFE;
-    fc.register_in_fspec_space(handle, false);
+    fc.register_in_fspec_space(handle, crate::database::KunaNameStyle::Func);
     let info = kuna_base::space::fspec_lookup(handle).unwrap();
     assert_eq!(info.printed_name, "my_func");
     assert_eq!(info.entry.get_offset(), 0x2000);

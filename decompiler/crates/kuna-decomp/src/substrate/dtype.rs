@@ -68,6 +68,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::marshal::Decoder;
 use kuna_base::space::AddrSpace;
 use kuna_base::types::{int4, int8, uint4, uint8};
 
@@ -4125,6 +4126,157 @@ impl Ord for TreeKey {
 
 /// Mutable interning state of a [`TypeFactoryImpl`] (the C++ `tree`, `nametree`,
 /// `typecache*`, `charcache`).
+// -- Wire type-vocabulary marshaling ids (upstream numbers, type.cc:29-74) --
+
+/// Marshaling element `<coretypes>` (C++ `ELEM_CORETYPES`, type.cc:48).
+pub const ELEM_CORETYPES: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("coretypes", 41);
+/// Marshaling element `<def>` — a typedef (C++ `ELEM_DEF`, type.cc:50).
+pub const ELEM_DEF: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("def", 43);
+/// Marshaling element `<typeref>` (C++ `ELEM_TYPEREF`, type.cc:70).
+pub const ELEM_TYPEREF: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("typeref", 63);
+/// Marshaling attribute "alignment" (C++ `ATTRIB_ALIGNMENT`, type.cc:29).
+pub const ATTRIB_ALIGNMENT: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("alignment", 47);
+/// Marshaling attribute "arraysize" (C++ `ATTRIB_ARRAYSIZE`, type.cc:30).
+pub const ATTRIB_ARRAYSIZE: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("arraysize", 48);
+/// Marshaling attribute "char" (C++ `ATTRIB_CHAR`, type.cc:31).
+pub const ATTRIB_CHAR: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("char", 49);
+/// Marshaling attribute "core" (C++ `ATTRIB_CORE`, type.cc:32).
+pub const ATTRIB_CORE: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("core", 50);
+/// Marshaling attribute "incomplete" (C++ `ATTRIB_INCOMPLETE`, type.cc:34).
+pub const ATTRIB_INCOMPLETE: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("incomplete", 52);
+/// Marshaling attribute "opaquestring" (C++ `ATTRIB_OPAQUESTRING`, type.cc:38).
+pub const ATTRIB_OPAQUESTRING: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("opaquestring", 56);
+/// Marshaling attribute "utf" (C++ `ATTRIB_UTF`, type.cc:41).
+pub const ATTRIB_UTF: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("utf", 59);
+/// Marshaling attribute "varlength" (C++ `ATTRIB_VARLENGTH`, type.cc:42).
+pub const ATTRIB_VARLENGTH: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("varlength", 60);
+
+/// Register the wire type-vocabulary ids (for XML-form documents; the packed
+/// wire form matches by number and needs no registry).
+pub fn register_type_wire_ids(reg: &mut kuna_base::marshal::IdRegistry) {
+    reg.register_element(&ELEM_CORETYPES);
+    reg.register_element(&ELEM_DEF);
+    reg.register_element(&ELEM_TYPEREF);
+    reg.register_attribute(&ATTRIB_ALIGNMENT);
+    reg.register_attribute(&ATTRIB_ARRAYSIZE);
+    reg.register_attribute(&ATTRIB_CHAR);
+    reg.register_attribute(&ATTRIB_CORE);
+    reg.register_attribute(&ATTRIB_INCOMPLETE);
+    reg.register_attribute(&ATTRIB_OPAQUESTRING);
+    reg.register_attribute(&ATTRIB_UTF);
+    reg.register_attribute(&ATTRIB_VARLENGTH);
+}
+
+/// The ghidra-mode remote type source (C++ `TypeFactoryGhidra`'s `glb`
+/// back-pointer): a [`TypeFactoryImpl::find_by_id_or_remote`] miss issues a
+/// getDataType query through this seam.  Implemented in `kuna-ghidra` over the
+/// shared wire client; `kuna-decomp` cannot name that crate (dependency
+/// direction), hence the trait.
+pub trait RemoteTypeFetch {
+    /// getDataType(name, id): ingest the packed `<type>` response into
+    /// `decoder`.  `Ok(false)` = the host does not know the type.
+    fn fetch_data_type(
+        &self,
+        name: &str,
+        id: u64,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool>;
+}
+
+/// The union of every wire type element's attributes, gathered by one scan
+/// (see [`TypeFactoryImpl::decode_wire_type_attribs`]).
+struct WireTypeAttribs {
+    name: String,
+    display: String,
+    id: uint8,
+    size: int4,
+    metatype: Option<type_metatype>,
+    core: bool,
+    varlength: bool,
+    alignment: int4,
+    opaquestring: bool,
+    char_flag: bool,
+    utf_flag: bool,
+    arraysize: int4,
+    wordsize: u64,
+}
+
+impl Default for WireTypeAttribs {
+    /// `size` starts at -1 (C++ `decodeBasic`): a `<type>` element carrying NO
+    /// size attribute is a decode error, never a 0-sized datatype (a 0-size
+    /// type reaching a later `<localdb>`/`<type>` encode is a hard Java-side
+    /// throw).
+    fn default() -> Self {
+        WireTypeAttribs {
+            name: String::new(),
+            display: String::new(),
+            id: 0,
+            size: -1,
+            metatype: None,
+            core: false,
+            varlength: false,
+            alignment: -1,
+            opaquestring: false,
+            char_flag: false,
+            utf_flag: false,
+            arraysize: 0,
+            wordsize: 0,
+        }
+    }
+}
+
+impl WireTypeAttribs {
+    /// The flag bits the decoded attributes contribute to the built type.
+    fn extra_flags(&self, forcecore: bool) -> uint4 {
+        let mut f: uint4 = 0;
+        if self.core || forcecore {
+            f |= flags::coretype;
+        }
+        if self.varlength {
+            f |= flags::variable_length;
+        }
+        if self.opaquestring {
+            f |= flags::opaque_string;
+        }
+        f
+    }
+
+    /// Apply the decoded name/display-name/id onto a built type.
+    fn apply_names(&self, dt: &mut Datatype) {
+        dt.name = self.name.clone();
+        dt.display_name = if self.display.is_empty() {
+            self.name.clone()
+        } else {
+            self.display.clone()
+        };
+        dt.id = self.id;
+    }
+}
+
+/// C++ `Datatype::encodeIntegerFormat` (type.cc): the `<def format=…>`
+/// attribute string to the 3-bit forced display format.
+fn wire_integer_format(s: &str) -> uint4 {
+    match s {
+        "hex" => 1,
+        "dec" => 2,
+        "oct" => 3,
+        "bin" => 4,
+        "char" => 5,
+        _ => 0,
+    }
+}
+
 struct FactoryStore {
     /// Datatypes within this factory, sorted by `compareDependency` (C++ `tree`).
     tree: BTreeSet<TreeKey>,
@@ -4230,6 +4382,10 @@ pub struct TypeFactoryImpl {
     /// init.  `getTypeCode(PrototypePieces)` needs it for
     /// `FuncProto::updateAllTypes` -> `ProtoModel::assignParameterStorage`.
     manager: RefCell<Option<Rc<kuna_base::space::AddrSpaceManager>>>,
+    /// (kuna, Phase 3) The ghidra-mode remote type source (C++
+    /// `TypeFactoryGhidra`'s query back-pointer); `None` on the standalone path,
+    /// where [`Self::find_by_id_or_remote`] degrades to the plain local lookup.
+    remote_types: RefCell<Option<Rc<dyn RemoteTypeFetch>>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -4263,6 +4419,7 @@ impl TypeFactoryImpl {
             store: RefCell::new(FactoryStore::new()),
             defaultfp: RefCell::new(None),
             manager: RefCell::new(None),
+            remote_types: RefCell::new(None),
         }
     }
 
@@ -4867,6 +5024,18 @@ impl TypeFactoryImpl {
         Ok(())
     }
 
+    /// C++ `TypeFactory::clearNoncore` (type.cc): remove every data-type that is
+    /// not a core type, keeping the core set (and the typecache/charcache, which
+    /// only ever hold core types).  The ghidra-mode `flushNative` eviction: every
+    /// getDataType-decoded type is dropped so the next decompile re-queries
+    /// against the host's possibly-changed type database.  Core types never
+    /// reference non-core types, so the surviving set is dependency-closed.
+    pub fn clear_noncore(&self) {
+        let mut store = self.store.borrow_mut();
+        store.tree.retain(|k| k.0.is_core_type());
+        store.nametree.retain(|dt| dt.is_core_type());
+    }
+
     /// Cache the most commonly accessed core data-types (C++
     /// `TypeFactory::cacheCoreTypes`, type.cc:3659-3707).  The core types must
     /// already be present in the tree.
@@ -4931,6 +5100,452 @@ impl TypeFactoryImpl {
             }
         }
         Ok(())
+    }
+
+    // -- Wire <type>/<typeref>/<coretypes> decode (type.cc:4694-5117) ---------
+    //
+    // The ghidra-mode type exchange (Phase 3): getDataType responses, the
+    // registerProgram <coretypes> document, and the type elements embedded in
+    // <mapsym> symbol answers all decode through here.  A faithful port of
+    // `TypeFactory::decodeType`/`decodeTypeNoRef`/`decodeCoreTypes` with two
+    // deliberate reductions, both documented at their arms: a `metatype="code"`
+    // element's embedded <prototype> is skipped (the signature of a
+    // function-DEFINITION type; callee signatures travel on the <mapsym>
+    // <prototype> instead, decoded by `remote_provider`), and the C++-only
+    // partial metatypes fall back to an unknown base of the right size.
+
+    /// Decode a data-type element — a `<typeref>` resolved against the container
+    /// (querying the remote host on a miss, `TypeFactoryGhidra::findById`) or a
+    /// full type element (C++ `TypeFactory::decodeType`, type.cc:4694-4723).
+    pub fn decode_type(&self, decoder: &mut dyn Decoder) -> KunaResult<Rc<Datatype>> {
+        if decoder.peek_element()? == ELEM_TYPEREF.get_id() {
+            let elem_id = decoder.open_element()?;
+            let mut newid: uint8 = 0;
+            let mut size: int4 = -1;
+            let mut name: Vec<u8> = Vec::new();
+            loop {
+                let attrib_id = decoder.get_next_attribute_id()?;
+                if attrib_id == 0 {
+                    break;
+                }
+                if attrib_id == kuna_base::marshal::ATTRIB_ID.get_id() {
+                    newid = decoder.read_unsigned_integer()?;
+                } else if attrib_id == kuna_base::marshal::ATTRIB_SIZE.get_id() {
+                    // A "size" attribute indicates a variable-length base.
+                    size = decoder.read_signed_integer()? as int4;
+                } else if attrib_id == kuna_base::marshal::ATTRIB_NAME.get_id() {
+                    name = decoder.read_string()?;
+                }
+            }
+            let newname = String::from_utf8_lossy(&name).into_owned();
+            if newname.is_empty() {
+                return Err(KunaError::decoder("<typeref> missing name"));
+            }
+            if newid == 0 {
+                newid = Datatype::hash_name(&newname);
+            }
+            let ct = self
+                .find_by_id_or_remote(&newname, newid, size)?
+                .ok_or_else(|| {
+                    KunaError::lowlevel(format!("Unable to resolve type: {newname}"))
+                })?;
+            decoder.close_element(elem_id)?;
+            return Ok(ct);
+        }
+        self.decode_type_no_ref(decoder, false)
+    }
+
+    /// [`find_by_id`](Self::find_by_id) with the ghidra-mode remote miss-hook
+    /// (C++ `TypeFactoryGhidra::findById`, typegrp_ghidra.cc:20-36): a local
+    /// miss issues a getDataType query through the installed
+    /// [`RemoteTypeFetch`] (with the original un-hashed id) and decodes the
+    /// `<type>` answer into the container.  An empty response — the host does
+    /// not know the type — is `None`, exactly the base-class miss.
+    fn find_by_id_or_remote(
+        &self,
+        n: &str,
+        id: uint8,
+        sz: int4,
+    ) -> KunaResult<Option<Rc<Datatype>>> {
+        if let Some(ct) = self.find_by_id(n, id, sz) {
+            return Ok(Some(ct));
+        }
+        let remote = match self.remote_types.borrow().clone() {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+        let manager = match self.manager.borrow().clone() {
+            Some(m) => m,
+            None => return Ok(None),
+        };
+        let mut dec = kuna_base::marshal::PackedDecode::new(&manager);
+        if !remote.fetch_data_type(n, id, &mut dec)? {
+            return Ok(None);
+        }
+        Ok(Some(self.decode_type(&mut dec)?))
+    }
+
+    /// Install (or clear) the ghidra-mode remote type source.
+    pub fn set_remote_type_fetch(&self, remote: Option<Rc<dyn RemoteTypeFetch>>) {
+        *self.remote_types.borrow_mut() = remote;
+    }
+
+    /// Decode the four-document `<coretypes>` spec sent at registerProgram
+    /// (C++ `TypeFactory::decodeCoreTypes`, type.cc:5107-5117): every child is
+    /// a full type element decoded with `forcecore`, then the caches are built.
+    /// Runs on a fresh factory (the ghidra-mode `buildCoreTypes` replacement),
+    /// so the upstream leading `clear()` is a no-op here.
+    pub fn decode_core_types(&self, decoder: &mut dyn Decoder) -> KunaResult<()> {
+        let elem_id = decoder.open_element_id(&ELEM_CORETYPES)?;
+        while decoder.peek_element()? != 0 {
+            self.decode_type_no_ref(decoder, true)?;
+        }
+        decoder.close_element(elem_id)?;
+        self.cache_core_types()
+    }
+
+    /// Decode a full type element, dispatching on the `metatype` attribute
+    /// (C++ `TypeFactory::decodeTypeNoRef`, type.cc:4976-5088).
+    fn decode_type_no_ref(
+        &self,
+        decoder: &mut dyn Decoder,
+        forcecore: bool,
+    ) -> KunaResult<Rc<Datatype>> {
+        use type_metatype::*;
+        let elem_id = decoder.open_element()?;
+        if elem_id == kuna_base::marshal::ELEM_VOID.get_id() {
+            let ct = self.get_type_void_impl()?;
+            decoder.close_element(elem_id)?;
+            return Ok(ct);
+        }
+        if elem_id == ELEM_DEF.get_id() {
+            let ct = self.decode_typedef(decoder)?;
+            decoder.close_element(elem_id)?;
+            return Ok(ct);
+        }
+        let b = Self::decode_wire_type_attribs(decoder, forcecore)?;
+        let meta = b.metatype.ok_or_else(|| {
+            KunaError::decoder("type element missing metatype attribute")
+        })?;
+        let ct = match meta {
+            TYPE_PTR => {
+                let ptrto = self.decode_type(decoder)?;
+                self.get_type_pointer(b.size, ptrto, b.wordsize.max(1) as uint4)?
+            }
+            TYPE_PTRREL => {
+                // Three children: ptrto, parent, <off> (type.cc:3024-3053).
+                let ptrto = self.decode_type(decoder)?;
+                let parent = self.decode_type(decoder)?;
+                let off_el = decoder.open_element_id(&kuna_base::marshal::ELEM_OFF)?;
+                let off = decoder
+                    .read_signed_integer_id(&kuna_base::marshal::ATTRIB_CONTENT)?
+                    as int4;
+                decoder.close_element(off_el)?;
+                self.get_type_pointer_rel_full(
+                    b.size,
+                    parent,
+                    ptrto,
+                    b.wordsize.max(1) as int4,
+                    off,
+                    &b.name,
+                )?
+            }
+            TYPE_ARRAY => {
+                let arrayof = self.decode_type(decoder)?;
+                if b.arraysize <= 0 {
+                    return Err(KunaError::lowlevel("Bad size for array"));
+                }
+                self.get_type_array(b.arraysize, arrayof)?
+            }
+            TYPE_ENUM_INT | TYPE_ENUM_UINT => {
+                // Children: <val name=… value=…> (TypeEnum::decode, type.cc:1662-1699).
+                let mut namemap = std::collections::BTreeMap::new();
+                while decoder.peek_element()? != 0 {
+                    let sub = decoder.open_element()?;
+                    let mut nm: Vec<u8> = Vec::new();
+                    let mut val: i64 = 0;
+                    loop {
+                        let aid = decoder.get_next_attribute_id()?;
+                        if aid == 0 {
+                            break;
+                        }
+                        if aid == kuna_base::marshal::ATTRIB_NAME.get_id() {
+                            nm = decoder.read_string()?;
+                        } else if aid == kuna_base::marshal::ATTRIB_VALUE.get_id() {
+                            val = decoder.read_signed_integer()?;
+                        }
+                    }
+                    let mask = kuna_base::address::calc_mask(b.size);
+                    namemap.insert(
+                        (val as u64) & mask,
+                        String::from_utf8_lossy(&nm).into_owned(),
+                    );
+                    decoder.close_element_skipping(sub)?;
+                }
+                let mut en = Datatype::new(b.size, meta);
+                en.metatype = if meta == TYPE_ENUM_INT { TYPE_INT } else { TYPE_UINT };
+                en.flags |= flags::enumtype | b.extra_flags(forcecore);
+                en.kind = DatatypeKind::Enum { namemap };
+                b.apply_names(&mut en);
+                self.find_add(en)?
+            }
+            TYPE_STRUCT => self.decode_composite(decoder, &b, forcecore, false)?,
+            TYPE_UNION => self.decode_composite(decoder, &b, forcecore, true)?,
+            TYPE_CODE => {
+                // decodeCode (type.cc:4941-4969).  An embedded <prototype> is the
+                // signature of a function-DEFINITION data-type; decoding it needs
+                // the (unported) FuncProto::decode, so it is SKIPPED here and the
+                // element yields the code type.  Callee/current-function
+                // signatures travel on the <mapsym> <prototype> (remote_provider),
+                // so nothing the Phase-3 pipeline consumes is lost.
+                while decoder.peek_element()? != 0 {
+                    let sub = decoder.open_element()?;
+                    decoder.close_element_skipping(sub)?;
+                }
+                if b.name.is_empty() {
+                    self.get_type_code()?
+                } else {
+                    // A named code type (the core "code" / a FunctionDefinition
+                    // shell), interned with the wire id.
+                    let mut tc = Datatype::new_with_align(b.size.max(1), 1, TYPE_CODE);
+                    tc.kind = DatatypeKind::Code { proto: None };
+                    tc.flags |= b.extra_flags(forcecore);
+                    b.apply_names(&mut tc);
+                    self.find_add(tc)?
+                }
+            }
+            TYPE_VOID => self.get_type_void_impl()?,
+            TYPE_SPACEBASE | TYPE_PARTIALUNION | TYPE_PARTIALSTRUCT | TYPE_PARTIALENUM => {
+                // Never sent by the Java side (C++-internal metatypes); consume
+                // any children and fall back to an unknown base of the size.
+                while decoder.peek_element()? != 0 {
+                    let sub = decoder.open_element()?;
+                    decoder.close_element_skipping(sub)?;
+                }
+                self.get_base(b.size.max(1), TYPE_UNKNOWN)?
+            }
+            // int/uint/float/bool/unknown: char/utf variants first, else TypeBase.
+            _ => {
+                if b.char_flag && b.size == 1 {
+                    let mut tc = Datatype::new(1, meta);
+                    tc.flags |= flags::chartype | b.extra_flags(forcecore);
+                    tc.submeta = if meta == TYPE_INT {
+                        sub_metatype::SUB_INT_CHAR
+                    } else {
+                        sub_metatype::SUB_UINT_CHAR
+                    };
+                    b.apply_names(&mut tc);
+                    self.find_add(tc)?
+                } else if b.utf_flag || b.char_flag {
+                    let mut tu = Datatype::new(b.size, meta);
+                    match b.size {
+                        2 => tu.flags |= flags::utf16,
+                        4 => tu.flags |= flags::utf32,
+                        1 => tu.flags |= flags::chartype,
+                        _ => {}
+                    }
+                    tu.flags |= b.extra_flags(forcecore);
+                    tu.submeta = if meta == TYPE_INT {
+                        sub_metatype::SUB_INT_UNICODE
+                    } else {
+                        sub_metatype::SUB_UINT_UNICODE
+                    };
+                    b.apply_names(&mut tu);
+                    self.find_add(tu)?
+                } else {
+                    let mut tb = Datatype::new(b.size, meta);
+                    tb.flags |= b.extra_flags(forcecore);
+                    b.apply_names(&mut tb);
+                    self.find_add(tb)?
+                }
+            }
+        };
+        decoder.close_element(elem_id)?;
+        Ok(ct)
+    }
+
+    /// The `<def>` typedef element (C++ `TypeFactory::decodeTypedef`,
+    /// type.cc:4802-4856), already opened by the caller.
+    fn decode_typedef(&self, decoder: &mut dyn Decoder) -> KunaResult<Rc<Datatype>> {
+        let mut id: uint8 = 0;
+        let mut name = String::new();
+        let mut format: uint4 = 0;
+        loop {
+            let aid = decoder.get_next_attribute_id()?;
+            if aid == 0 {
+                break;
+            }
+            if aid == kuna_base::marshal::ATTRIB_ID.get_id() {
+                id = decoder.read_unsigned_integer()?;
+            } else if aid == kuna_base::marshal::ATTRIB_NAME.get_id() {
+                name = String::from_utf8_lossy(&decoder.read_string()?).into_owned();
+            } else if aid == kuna_base::marshal::ATTRIB_FORMAT.get_id() {
+                let f = decoder.read_string()?;
+                format = wire_integer_format(&String::from_utf8_lossy(&f));
+            }
+        }
+        let ct = self.decode_type(decoder)?;
+        if name.is_empty() {
+            return Ok(ct);
+        }
+        self.get_typedef_impl(&ct, &name, id, format)
+    }
+
+    /// Decode a `<type metatype="struct|union">`'s fields, with the incomplete
+    /// stub interned FIRST so a self-referential composite (a struct holding a
+    /// pointer to itself) resolves against the stub instead of re-querying the
+    /// host forever (C++ `decodeStruct`/`decodeUnion`, type.cc:4875-4933).
+    fn decode_composite(
+        &self,
+        decoder: &mut dyn Decoder,
+        b: &WireTypeAttribs,
+        forcecore: bool,
+        is_union: bool,
+    ) -> KunaResult<Rc<Datatype>> {
+        let meta = if is_union {
+            type_metatype::TYPE_UNION
+        } else {
+            type_metatype::TYPE_STRUCT
+        };
+        let mut stub = Datatype::new_with_align(
+            b.size,
+            if b.alignment > 0 { b.alignment } else { -1 },
+            meta,
+        );
+        stub.flags |= flags::type_incomplete | b.extra_flags(forcecore);
+        stub.kind = if is_union {
+            DatatypeKind::Union { field: Vec::new() }
+        } else {
+            DatatypeKind::Struct {
+                field: Vec::new(),
+                bitfield: Vec::new(),
+            }
+        };
+        b.apply_names(&mut stub);
+        let stub = self.find_add(stub)?;
+        if !stub.is_incomplete() {
+            // A complete definition with this (name,id) already exists — the
+            // wire fields are redundant; consume them.
+            while decoder.peek_element()? != 0 {
+                let sub = decoder.open_element()?;
+                decoder.close_element_skipping(sub)?;
+            }
+            return Ok(stub);
+        }
+        let mut fd: Vec<TypeField> = Vec::new();
+        let mut bit: Vec<TypeBitField> = Vec::new();
+        while decoder.peek_element()? != 0 {
+            let sub = decoder.open_element()?;
+            let mut fname = String::new();
+            let mut foffset: int4 = 0;
+            let mut fid: int4 = int4::MIN;
+            let mut ffirst: int4 = 0;
+            let mut fsize: int4 = 0;
+            loop {
+                let aid = decoder.get_next_attribute_id()?;
+                if aid == 0 {
+                    break;
+                }
+                if aid == kuna_base::marshal::ATTRIB_NAME.get_id() {
+                    fname =
+                        String::from_utf8_lossy(&decoder.read_string()?).into_owned();
+                } else if aid == kuna_base::marshal::ATTRIB_OFFSET.get_id() {
+                    foffset = decoder.read_signed_integer()? as int4;
+                } else if aid == kuna_base::marshal::ATTRIB_ID.get_id() {
+                    fid = decoder.read_signed_integer()? as int4;
+                } else if aid == kuna_base::address::ATTRIB_FIRST.get_id() {
+                    ffirst = decoder.read_signed_integer()? as int4;
+                } else if aid == kuna_base::marshal::ATTRIB_SIZE.get_id() {
+                    fsize = decoder.read_signed_integer()? as int4;
+                }
+            }
+            let fct = self.decode_type(decoder)?;
+            if sub == crate::prettyprint::ids::ELEM_BITFIELD.get_id() {
+                // <bitfield name id offset size=numbits first=lsb> (type.cc:864-894).
+                let mut bf = TypeBitField::new(
+                    if fid == int4::MIN { foffset } else { fid },
+                    fsize,
+                    self.is_big_endian_impl(),
+                    fname,
+                    fct,
+                );
+                bf.byte_offset = foffset;
+                bf.least_sig_bit = ffirst;
+                bit.push(bf);
+            } else {
+                fd.push(TypeField::new(
+                    if fid == int4::MIN { foffset } else { fid },
+                    foffset,
+                    fname,
+                    fct,
+                ));
+            }
+            decoder.close_element_skipping(sub)?;
+        }
+        if is_union {
+            self.set_fields_union(&stub, fd, stub.size, stub.alignment, 0)
+        } else {
+            self.set_fields_struct(&stub, fd, bit, stub.size, stub.alignment, 0)
+        }
+    }
+
+    /// One attribute scan collecting the union of every wire type element's
+    /// attributes (C++ `Datatype::decodeBasic` + the per-subclass scans, made
+    /// order-independent by gathering everything up front).
+    fn decode_wire_type_attribs(
+        decoder: &mut dyn Decoder,
+        _forcecore: bool,
+    ) -> KunaResult<WireTypeAttribs> {
+        let mut b = WireTypeAttribs::default();
+        loop {
+            let aid = decoder.get_next_attribute_id()?;
+            if aid == 0 {
+                break;
+            }
+            if aid == kuna_base::marshal::ATTRIB_NAME.get_id() {
+                b.name = String::from_utf8_lossy(&decoder.read_string()?).into_owned();
+            } else if aid == crate::jumptable::ATTRIB_LABEL.get_id() {
+                b.display =
+                    String::from_utf8_lossy(&decoder.read_string()?).into_owned();
+            } else if aid == kuna_base::marshal::ATTRIB_ID.get_id() {
+                b.id = decoder.read_unsigned_integer()?;
+            } else if aid == kuna_base::marshal::ATTRIB_SIZE.get_id() {
+                b.size = decoder.read_signed_integer()? as int4;
+            } else if aid == kuna_base::marshal::ATTRIB_METATYPE.get_id() {
+                let m = decoder.read_string()?;
+                b.metatype = Some(string2metatype(&String::from_utf8_lossy(&m))?);
+            } else if aid == ATTRIB_CORE.get_id() {
+                b.core = decoder.read_bool()?;
+            } else if aid == ATTRIB_VARLENGTH.get_id() {
+                b.varlength = decoder.read_bool()?;
+            } else if aid == ATTRIB_ALIGNMENT.get_id() {
+                b.alignment = decoder.read_signed_integer()? as int4;
+            } else if aid == ATTRIB_OPAQUESTRING.get_id() {
+                b.opaquestring = decoder.read_bool()?;
+            } else if aid == ATTRIB_CHAR.get_id() {
+                b.char_flag = decoder.read_bool()?;
+            } else if aid == ATTRIB_UTF.get_id() {
+                b.utf_flag = decoder.read_bool()?;
+            } else if aid == ATTRIB_ARRAYSIZE.get_id() {
+                b.arraysize = decoder.read_signed_integer()? as int4;
+            } else if aid == kuna_base::marshal::ATTRIB_WORDSIZE.get_id() {
+                b.wordsize = decoder.read_unsigned_integer()?;
+            } else if aid == kuna_base::marshal::ATTRIB_SPACE.get_id() {
+                // Pointer address-space hint; consume (the kuna pointer build
+                // resolves spaces downstream).
+                let _ = decoder.read_space();
+            }
+        }
+        if b.size < 0 {
+            return Err(KunaError::decoder("Bad size for type"));
+        }
+        if b.id == 0 && !b.name.is_empty() {
+            b.id = Datatype::hash_name(&b.name);
+        }
+        if b.varlength {
+            b.id = Datatype::hash_size(b.id, b.size);
+        }
+        Ok(b)
     }
 
     // -- Dependency ordering (type.cc:3745-3773) ------------------------------
@@ -5160,6 +5775,27 @@ impl TypeFactoryImpl {
                  not run)",
             )
         })?;
+        self.make_type_code_proto_with_model(proto, model)
+    }
+
+    /// (kuna, Phase 3) `getTypeCode(PrototypePieces)` with an EXPLICIT
+    /// prototype model — the C++ `sig.model` when the declarator DID name one
+    /// (the ghidra-mode `<prototype model=…>`), so a locked non-default-model
+    /// callee (`__fastcall` on x86-32, …) gets storage assigned under the
+    /// host-declared convention instead of `defaultfp`.
+    pub fn get_type_code_proto_model(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+        model: Rc<crate::fspec::ProtoModel>,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.make_type_code_proto_with_model(proto, model)
+    }
+
+    fn make_type_code_proto_with_model(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+        model: Rc<crate::fspec::ProtoModel>,
+    ) -> KunaResult<Rc<Datatype>> {
         let manager_rc = self.manager.borrow().clone().ok_or_else(|| {
             KunaError::lowlevel(
                 "getTypeCode(PrototypePieces): no address-space manager (set_proto_context \
