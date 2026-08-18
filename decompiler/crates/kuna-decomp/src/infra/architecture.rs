@@ -2114,16 +2114,27 @@ impl Architecture {
     /// ghidra_process.cc:435-445): Java DELTA-encodes its option list — only
     /// values differing from the Java default constants travel — so an option
     /// previously sent as non-default must revert when the user sets it back
-    /// to default.  Restores the engine option defaults plus the printer's
-    /// option-set state (the surface the wire options mutate), landing every
-    /// setOptions on the same baseline a fresh registerProgram produces (the
-    /// respawn-replay equivalence Java assumes).  The caller re-applies the
-    /// DIV-77 ghidra-mode preset layer on top before decoding the list.
-    /// The action-database default reset stays a shared STUB(W5) with
-    /// [`Self::reset_defaults`].
+    /// to default.  Lands every setOptions on the same baseline a fresh
+    /// registerProgram produces (the respawn-replay equivalence Java
+    /// assumes); the caller re-applies the DIV-77 ghidra-mode preset layer on
+    /// top before decoding the list.
+    ///
+    /// Covered: the engine option defaults (`reset_defaults` →
+    /// `reset_defaults_internal`), the printer's context state (integer
+    /// format, comment indent + header/instruction flags, namespace strategy,
+    /// language — a fresh `PrintContext`), and the PrintC-proper option block
+    /// + emitter indent increment
+    /// (`PrintC::reset_wire_option_defaults`: nullprinting, inplaceops,
+    /// conventionprinting, nocastprinting, hideimpliedexts, the brace
+    /// formats, indentincrement).  NOT covered: the action-database
+    /// default-group reset (the shared STUB(W5) of [`Self::reset_defaults`] —
+    /// the `currentaction` option toggles accumulate for the session), and
+    /// `maxlinewidth`/`commentstyle`, which are recorded-no-op printer stubs
+    /// with no state to reset.
     pub fn reset_wire_defaults(&mut self) {
         self.reset_defaults();
         self.print.context = crate::printlanguage::PrintContext::new();
+        self.print.reset_wire_option_defaults();
     }
 
     // -----------------------------------------------------------------------

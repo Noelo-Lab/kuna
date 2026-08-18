@@ -1580,6 +1580,24 @@ impl PrintC {
         }
     }
     /// C++ `PrintC::setCommentStyle` (options.cc:570).
+    /// (kuna, Phase 3) Reset the PrintC-proper state the wire options mutate
+    /// to the construction defaults — the PrintC share of the upstream
+    /// `PrintLanguage::resetDefaults`/`resetDefaultsPrintC` chain the
+    /// ghidra-mode `setOptions` reset needs (`Architecture::
+    /// reset_wire_defaults`): the [`PrintCOptions`] block (nullprinting,
+    /// inplaceops, conventionprinting, nocastprinting, hideimpliedexts, the
+    /// four brace formats — plus the kuna rendering toggles, whose
+    /// construction defaults ARE the shipped defaults) and the emitter's
+    /// indent increment (Java default 2).  `max_line_size` and
+    /// `comment_style` are recorded-no-op stubs with no state to reset;
+    /// everything context-held (integer format, comment indent/flags,
+    /// namespace strategy, language) is reset by the caller's fresh
+    /// [`PrintContext`](crate::printlanguage::PrintContext).
+    pub fn reset_wire_option_defaults(&mut self) {
+        self.options = PrintCOptions::new();
+        self.emit.set_indent_increment(2);
+    }
+
     pub fn set_comment_style(&mut self, _style: &str) {
         // STUB(comment): the slash-star vs slash-slash comment delimiters live
         // with the comment item; recorded as a no-op so the option succeeds.

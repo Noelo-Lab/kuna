@@ -800,9 +800,11 @@ struct RemoteScopeState {
     callee_pieces: Vec<(int4, kuna_base::types::uintb, PrototypePieces)>,
     /// Function facts by (space_index, offset) for the flow-time seams.
     functions: std::collections::BTreeMap<(int4, u64), RemoteFunctionFacts>,
-    /// Host-declared prototype models for LOCKED callee signatures, keyed like
-    /// `callee_pieces` (only recorded when the wire model resolved to a
-    /// non-default registered model).
+    /// Host-declared prototype models for LOCKED callee signatures, keyed
+    /// like `callee_pieces`.  Recorded whenever the wire `<prototype model=…>`
+    /// resolved AT ALL — including the `defaultfp` fallback for an empty/
+    /// unregistered name — so the consumer's `unwrap_or(defaultfp)` is
+    /// equivalent either way.
     callee_models: std::collections::BTreeMap<(int4, u64), Rc<ProtoModel>>,
     /// Per-entry getTrackedRegisters answers (cached until flush; an empty
     /// answer caches too so an address is asked once per flush epoch).
@@ -860,6 +862,15 @@ pub struct RemoteScope {
     /// The locked post-spec property map (C++ `flagbaseDefault`,
     /// `lockDefaultProperties`): the rollback target for `clear`.
     flagbase_default: PartMap<Address, uint4>,
+    /// The PRISTINE (pre-any-wire-merge) tracked set per entry address — the
+    /// pspec-static layer captured the FIRST time the driver merges wire
+    /// context at an address.  Deliberately OUTSIDE the flush-cleared state:
+    /// it is session-stable ENGINE truth, and it is what lets a later epoch's
+    /// merge REVERT a value the host stopped reporting (upstream ContextGhidra
+    /// stores nothing and rebuilds from the wire per call; kuna's per-function
+    /// trackbase snapshot needs the explicit pristine layer to merge over).
+    pristine_tracked:
+        RefCell<std::collections::BTreeMap<(int4, u64), kuna_sleigh::globalcontext::TrackedSet>>,
     state: RefCell<RemoteScopeState>,
 }
 
@@ -896,6 +907,7 @@ impl RemoteScope {
             defaultfp,
             spacerange,
             flagbase_default: flagbase_default.clone(),
+            pristine_tracked: RefCell::new(std::collections::BTreeMap::new()),
             state: RefCell::new(RemoteScopeState {
                 holes: RangeList::default(),
                 answered: RangeList::default(),
@@ -994,14 +1006,28 @@ impl RemoteScope {
         }
     }
 
-    /// Negative-cache a failing address for this flush epoch and queue one
-    /// 16/17 warning line.
+    /// Negative-cache a failing SYMBOL query for this flush epoch (a hole in
+    /// the getMappedSymbols cache) and queue one 16/17 warning line.  Only the
+    /// symbol path may hole: a non-symbol failure must not suppress future
+    /// getMappedSymbols at the address (see [`Self::note_failure`]).
     fn cache_failure(&self, addr: &Address, what: &str) {
-        let mut st = self.state.borrow_mut();
-        if let Some(spc) = addr.get_space() {
-            st.holes
-                .insert_range(Rc::clone(spc), addr.get_offset(), addr.get_offset());
+        {
+            let mut st = self.state.borrow_mut();
+            if let Some(spc) = addr.get_space() {
+                st.holes
+                    .insert_range(Rc::clone(spc), addr.get_offset(), addr.get_offset());
+            }
         }
+        self.note_failure(addr, what);
+    }
+
+    /// Queue one 16/17 warning line WITHOUT touching the symbol negative
+    /// cache — the failure channel for the non-symbol queries (tracked
+    /// registers, external refs), whose own caches already bound re-asks:
+    /// `tracked_at` caches its (possibly empty) answer per address, and
+    /// `resolve_external_ref` fires at most once per decoded externref answer.
+    fn note_failure(&self, addr: &Address, what: &str) {
+        let mut st = self.state.borrow_mut();
         let mut msg = String::from("Warning: kuna ghidra-mode: ");
         msg.push_str(what);
         msg.push_str(" at ");
@@ -1028,14 +1054,14 @@ impl RemoteScope {
                     self.materialize(*rec);
                 }
                 Ok(_) => {}
-                Err(e) => self.cache_failure(
+                Err(e) => self.note_failure(
                     pointer,
                     &format!("getExternalRef answer failed to decode: {}", e.explain()),
                 ),
             },
             Ok(false) => {} // unresolvable external: keep the pointer symbol only
             Err(e) => {
-                self.cache_failure(pointer, &format!("getExternalRef failed: {}", e.explain()))
+                self.note_failure(pointer, &format!("getExternalRef failed: {}", e.explain()))
             }
         }
     }
@@ -1064,7 +1090,7 @@ impl RemoteScope {
                     Ok(())
                 })();
                 if let Err(e) = decoded {
-                    self.cache_failure(
+                    self.note_failure(
                         addr,
                         &format!(
                             "getTrackedRegisters answer failed to decode: {}",
@@ -1076,7 +1102,7 @@ impl RemoteScope {
             }
             Ok(false) => {}
             Err(e) => {
-                self.cache_failure(
+                self.note_failure(
                     addr,
                     &format!("getTrackedRegisters failed: {}", e.explain()),
                 );
@@ -1086,9 +1112,40 @@ impl RemoteScope {
         Some(set)
     }
 
+    /// The pristine (pre-merge) tracked set for an entry address: captured
+    /// from `current` on the FIRST call, returned verbatim afterwards — the
+    /// stable base every epoch's wire merge is applied over, so a value the
+    /// host STOPS reporting reverts after flushNative (see `pristine_tracked`).
+    pub fn pristine_tracked_for(
+        &self,
+        addr: &Address,
+        current: kuna_sleigh::globalcontext::TrackedSet,
+    ) -> kuna_sleigh::globalcontext::TrackedSet {
+        let Some(spc) = addr.get_space() else { return current };
+        let key = (spc.get_index(), addr.get_offset());
+        self.pristine_tracked
+            .borrow_mut()
+            .entry(key)
+            .or_insert(current)
+            .clone()
+    }
+
+    /// Whether a pristine tracked set was ever captured at `addr` (i.e. a wire
+    /// merge previously wrote the context DB there and a revert-write may be
+    /// needed even for an empty wire answer).
+    pub fn has_pristine_tracked(&self, addr: &Address) -> bool {
+        match addr.get_space() {
+            Some(spc) => self
+                .pristine_tracked
+                .borrow()
+                .contains_key(&(spc.get_index(), addr.get_offset())),
+            None => false,
+        }
+    }
+
     /// The host-declared prototype model of a LOCKED callee signature at
-    /// `entry` (query-through), when it resolved to a registered model — the
-    /// remote arm of the callee-model consumer in `ActionDefaultParams`.
+    /// `entry` (query-through), when it resolved — the remote arm of the
+    /// callee-model consumer in `ActionDefaultParams`.
     pub fn callee_model_at(&self, entry: &Address) -> Option<Rc<ProtoModel>> {
         self.ensure_queried(entry);
         let spc = entry.get_space()?;

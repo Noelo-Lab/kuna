@@ -668,18 +668,36 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                 // provider until flushNative.
                 if let Some(remote) = &remote {
                     if let Some(wire_set) = remote.tracked_at(&addr) {
-                        if !wire_set.is_empty() {
+                        // Write when the wire reports values OR a previous
+                        // epoch merged here (the revert case: the host STOPPED
+                        // reporting a value, so the pristine layer must be
+                        // written back — upstream stores nothing and rebuilds
+                        // per call; kuna's trackbase persists, hence the
+                        // explicit pristine base).
+                        if !wire_set.is_empty() || remote.has_pristine_tracked(&addr) {
                             let session =
                                 self.archlist[slot].as_mut().expect("bound session");
                             if let Some(arch) = session.architecture.as_mut() {
-                                let upper = Address::new(
-                                    std::rc::Rc::clone(
-                                        addr.get_space().expect("entry addr has a space"),
-                                    ),
-                                    addr.get_offset().wrapping_add(1),
+                                let manager = arch.translate().manager_rc();
+                                let spc = std::rc::Rc::clone(
+                                    addr.get_space().expect("entry addr has a space"),
                                 );
+                                // Open upper bound via the Range helper (an
+                                // entry at the very top of its space must not
+                                // wrap the bound to 0).
+                                let upper = kuna_base::address::Range::new(
+                                    spc,
+                                    addr.get_offset(),
+                                    addr.get_offset(),
+                                )
+                                .get_last_addr_open(&manager);
                                 arch.with_context_db_mut(|db| {
-                                    let mut merged = db.get_tracked_set(&addr).clone();
+                                    // Merge wire-over-PRISTINE (captured on the
+                                    // first merge at this address), never over
+                                    // the previously-merged set.
+                                    let current = db.get_tracked_set(&addr).clone();
+                                    let mut merged =
+                                        remote.pristine_tracked_for(&addr, current);
                                     for w in &wire_set {
                                         match merged.iter_mut().find(|t| t.loc == w.loc) {
                                             Some(t) => t.val = w.val,

@@ -642,31 +642,48 @@ fn run_session_with_override(
     override_addr: u64,
     override_name: &str,
 ) -> Option<(String, String)> {
-    struct OverrideAt {
+    let name = override_name.to_string();
+    run_flush_epoch_session(
+        binary,
+        target,
+        |_| {},
+        move |oracle| {
+            oracle.label_overrides.insert(override_addr, name.clone());
+        },
+    )
+}
+
+/// Drive registerProgram → decompileAt(target) → flushNative →
+/// decompileAt(target) → deregisterProgram and return the two flattened C
+/// texts.  `pre` mutates the oracle before the drive; `at_arm` runs (on every
+/// answered query, idempotently) once the FIRST decompile completed — i.e. the
+/// "host database changed between the two epochs" seam the flushNative
+/// cache-clearing tests exercise.  Arming by watching for the flushNative
+/// boundary is impossible from inside the AnswerSource, so the driver arms a
+/// shared flag after command #2 completes — race-free in the strictly
+/// synchronous mock.
+fn run_flush_epoch_session(
+    binary: &Path,
+    target: &str,
+    pre: impl FnOnce(&mut SimOracle),
+    at_arm: impl Fn(&mut SimOracle) + 'static,
+) -> Option<(String, String)> {
+    struct ArmMutate<F: Fn(&mut SimOracle)> {
         oracle: SimOracle,
-        /// Query count at/after which the override becomes active — armed by
-        /// watching for the flushNative boundary is impossible from inside the
-        /// AnswerSource, so the harness arms it by byte position instead: the
-        /// override activates when the FIRST decompile's response is complete,
-        /// which the driver signals by pre-arming after seeing the first
-        /// decompileAt finish.  Simpler and race-free in the strictly
-        /// synchronous mock: activate after `arm_after` total queries.
         armed: std::rc::Rc<std::cell::Cell<bool>>,
-        addr: u64,
-        name: String,
+        mutate: F,
     }
-    impl ghidra_sim::AnswerSource for OverrideAt {
+    impl<F: Fn(&mut SimOracle)> ghidra_sim::AnswerSource for ArmMutate<F> {
         fn respond(&mut self, doc: &[u8]) -> Vec<u8> {
             if self.armed.get() {
-                self.oracle
-                    .label_overrides
-                    .insert(self.addr, self.name.clone());
+                (self.mutate)(&mut self.oracle);
             }
             self.oracle.respond(doc)
         }
     }
 
-    let oracle = SimOracle::bootstrap(binary)?;
+    let mut oracle = SimOracle::bootstrap(binary)?;
+    pre(&mut oracle);
     let entry = oracle
         .prog
         .find_entry_by_name(target)
@@ -688,11 +705,10 @@ fn run_session_with_override(
         v
     };
     let armed = Rc::new(std::cell::Cell::new(false));
-    let source = OverrideAt {
+    let source = ArmMutate {
         oracle,
         armed: Rc::clone(&armed),
-        addr: override_addr,
-        name: override_name.to_string(),
+        mutate: at_arm,
     };
 
     let mut commands = Vec::new();
@@ -791,6 +807,58 @@ fn ghidra_sim_tracked_register_reaches_output() {
         base_run.docs[0].c_text, over_run.docs[0].c_text,
         "a host-side tracked RSI value did not change the output — the wire \
          tracked set is not reaching ActionConstbase"
+    );
+}
+
+/// The tracked-register REVERT contract (the wire merge is applied over the
+/// PRISTINE pspec layer, never over a previously-merged set): host serves a
+/// tracked `RSI` override, decompile; the host then STOPS reporting it (a
+/// user clearing 'Set Register Value'); after flushNative the re-decompile
+/// must match the never-overridden baseline — a stale merge would keep
+/// folding 0x1234 until deregisterProgram.
+#[test]
+fn ghidra_sim_tracked_override_reverts_after_flush() {
+    use kuna_base::space::RegisterLookup;
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let Some(base_run) = run_session(&binary, &["sub_3ad0"]) else {
+        return; // visible skip: specs not built
+    };
+    let baseline = base_run.docs[0].c_text.clone();
+    let Some((with_override, after_revert)) = run_flush_epoch_session(
+        &binary,
+        "sub_3ad0",
+        |oracle| {
+            let rsi = {
+                let sleigh = oracle
+                    .prog
+                    .arch()
+                    .translate()
+                    .as_sleigh()
+                    .expect("oracle engine is a Sleigh");
+                RegisterLookup::get_register(sleigh, "RSI").expect("RSI resolves")
+            };
+            oracle
+                .tracked_overrides
+                .push(kuna_sleigh::globalcontext::TrackedContext {
+                    loc: kuna_sleigh::translate::varnode_data_from_storage(&rsi),
+                    val: 0x1234,
+                });
+        },
+        |oracle| {
+            oracle.tracked_overrides.clear();
+        },
+    ) else {
+        return;
+    };
+    assert_ne!(
+        with_override, baseline,
+        "the tracked RSI override did not change the first decompile"
+    );
+    assert_eq!(
+        after_revert, baseline,
+        "the post-flush decompile did not revert to the pspec-pristine \
+         baseline after the host stopped reporting the tracked value — the \
+         wire merge leaked into the persistent trackbase"
     );
 }
 
