@@ -448,6 +448,14 @@ impl Funcdata {
     pub fn get_display_name(&self) -> &str {
         &self.display_name
     }
+    /// (kuna, Phase 3) Override the display name (the C++ `displayName` set by
+    /// `Funcdata::decode` when the host sent a template-simplified label): the
+    /// ghidra-mode decompileAt keeps the RAW `name` as the Java-side identity
+    /// (the `HighFunction.decode` name echo) while the printed signature uses
+    /// this display form.
+    pub fn set_display_name(&mut self, disp: &str) {
+        self.display_name = disp.to_string();
+    }
     /// Get the [`Override`](crate::overrides::Override) object for \b this function
     /// (C++ `getOverride`, `funcdata.hh:214`).
     pub fn get_override(&self) -> &crate::overrides::Override {

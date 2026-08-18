@@ -1253,6 +1253,18 @@ impl ArchContext {
     /// to copy the locked callee prototype into the call site.  Matched by
     /// `(space_index, offset)` — the ArchContext carries no `Rc<AddrSpace>` identities for
     /// the global scope, only the snapshotted indices.
+    /// (kuna, Phase 3) The host-declared prototype MODEL of a locked callee
+    /// signature (ghidra-mode `<prototype model=…>`), when the remote provider
+    /// resolved one — the model `ActionDefaultParams` seeds the locked pieces
+    /// under instead of `defaultfp`.  `None` on the standalone path (the CLI's
+    /// `parse line extern` pieces are model-less), keeping it byte-identical.
+    pub fn callee_proto_model(
+        &self,
+        addr: &Address,
+    ) -> Option<std::rc::Rc<crate::fspec::ProtoModel>> {
+        self.remote_scope.as_ref()?.callee_model_at(addr)
+    }
+
     pub fn callee_proto_pieces(&self, addr: &Address) -> Option<crate::fspec::PrototypePieces> {
         if let Some(remote) = &self.remote_scope {
             // (kuna, Phase 3) ghidra-mode: the locked callee signatures decoded

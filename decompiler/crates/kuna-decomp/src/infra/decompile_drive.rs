@@ -98,7 +98,9 @@ impl FlowEnvironment for ArchFlowEnv {
         // installed, fall through to the symbol table unchanged.
         if let Some(remote) = &arch.remote_scope {
             if let Some(facts) = remote.function_at(entry) {
-                return Some(facts.name);
+                // The DISPLAY form: callee tokens print the label when the host
+                // sent one (the raw name is the Java-side identity only).
+                return Some(facts.display_name);
             }
         }
         // C++ FlowInfo::queryCall -> getScopeLocal()->getParent()->queryFunction(entry):

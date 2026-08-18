@@ -4196,7 +4196,6 @@ pub trait RemoteTypeFetch {
 
 /// The union of every wire type element's attributes, gathered by one scan
 /// (see [`TypeFactoryImpl::decode_wire_type_attribs`]).
-#[derive(Default)]
 struct WireTypeAttribs {
     name: String,
     display: String,
@@ -4211,6 +4210,30 @@ struct WireTypeAttribs {
     utf_flag: bool,
     arraysize: int4,
     wordsize: u64,
+}
+
+impl Default for WireTypeAttribs {
+    /// `size` starts at -1 (C++ `decodeBasic`): a `<type>` element carrying NO
+    /// size attribute is a decode error, never a 0-sized datatype (a 0-size
+    /// type reaching a later `<localdb>`/`<type>` encode is a hard Java-side
+    /// throw).
+    fn default() -> Self {
+        WireTypeAttribs {
+            name: String::new(),
+            display: String::new(),
+            id: 0,
+            size: -1,
+            metatype: None,
+            core: false,
+            varlength: false,
+            alignment: -1,
+            opaquestring: false,
+            char_flag: false,
+            utf_flag: false,
+            arraysize: 0,
+            wordsize: 0,
+        }
+    }
 }
 
 impl WireTypeAttribs {
@@ -5752,6 +5775,27 @@ impl TypeFactoryImpl {
                  not run)",
             )
         })?;
+        self.make_type_code_proto_with_model(proto, model)
+    }
+
+    /// (kuna, Phase 3) `getTypeCode(PrototypePieces)` with an EXPLICIT
+    /// prototype model — the C++ `sig.model` when the declarator DID name one
+    /// (the ghidra-mode `<prototype model=…>`), so a locked non-default-model
+    /// callee (`__fastcall` on x86-32, …) gets storage assigned under the
+    /// host-declared convention instead of `defaultfp`.
+    pub fn get_type_code_proto_model(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+        model: Rc<crate::fspec::ProtoModel>,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.make_type_code_proto_with_model(proto, model)
+    }
+
+    fn make_type_code_proto_with_model(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+        model: Rc<crate::fspec::ProtoModel>,
+    ) -> KunaResult<Rc<Datatype>> {
         let manager_rc = self.manager.borrow().clone().ok_or_else(|| {
             KunaError::lowlevel(
                 "getTypeCode(PrototypePieces): no address-space manager (set_proto_context \

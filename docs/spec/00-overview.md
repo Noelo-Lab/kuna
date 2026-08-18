@@ -257,9 +257,33 @@ Four front-ends drive one engine assembly:
   ghidra mode too (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
   (decode_ghidra_tracked_sets)`), resolving register names through the
   query-backed translator, so `ActionConstbase` plants the direction seed.
-  `flushNative` clears it all in the upstream order
-  (`Architecture::flush_remote_caches`): symbol cache + property rollback,
-  non-core types (`TypeFactoryImpl::clear_noncore`), comments, decoded strings.
+  External references resolve through the upstream two-step
+  (`ScopeGhidra::resolveExternalRefFunction`): the `<externrefsymbol>` answer
+  keeps its resolve address, getExternalRef fires at the POINTER address, the
+  returned function materializes at its own entry, and the pointer symbol
+  types as pointer-to-code.  A function answer's RAW name and its `label` stay
+  SPLIT (the upstream `Funcdata` name/displayName pair): the raw name is the
+  Funcdata identity `HighFunction.decode`'s name echo compares against, the
+  label only ever prints (`Funcdata::set_display_name`).  The host's
+  per-address tracked registers arrive for real: decompileAt issues
+  getTrackedRegisters at the entry (`RemoteScope::tracked_at`, cached until
+  flush) and merges the answer OVER the pspec `<tracked_set>` defaults —
+  wire values win per register.  A wire/decoder failure inside a lazy query
+  negative-caches the address as a one-byte hole for the flush epoch and
+  surfaces ONE "Warning:"-prefixed 16/17 line (`RemoteScope::drain_warnings`)
+  instead of re-querying unboundedly.  setOptions follows the upstream
+  reset-then-apply contract (`Architecture::reset_wire_defaults` + the DIV-77
+  preset layer before every decode) because Java delta-encodes the list.
+  ghidra-mode also prints a `Kuna v…` plate comment (the release
+  `KUNA_VERSION` bake, `kuna_banner_text`) at the top of every function —
+  cache-only, HEADER-typed, rendered by the printer's plate arm
+  (`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+  (emit_comment_func_header)`), which also renders the host's PLATE comments;
+  the standalone pipeline never inserts HEADER comments, so that arm is inert
+  there.  `flushNative` clears it all in the upstream order
+  (`Architecture::flush_remote_caches`): symbol cache + property rollback +
+  the tracked cache, non-core types (`TypeFactoryImpl::clear_noncore`),
+  comments, decoded strings.
   `setOptions` decodes the `<optionslist>` for real through
   `decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (decode_lenient)`
   — every known option applies, unknown elements are skipped whole with a

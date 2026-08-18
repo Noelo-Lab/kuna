@@ -78,7 +78,18 @@ struct SessionRun {
 /// Bootstrap the oracle, drive the whole session, and split the output.
 /// Returns `None` when the `.sla` specs are not built (visible skip).
 fn run_session(binary: &Path, targets: &[&str]) -> Option<SessionRun> {
-    let oracle = SimOracle::bootstrap(binary)?;
+    run_session_with(binary, targets, |_| {})
+}
+
+/// [`run_session`] with a pre-drive oracle mutation hook (inject
+/// `tracked_overrides`/`label_overrides` before the wire lifecycle runs).
+fn run_session_with(
+    binary: &Path,
+    targets: &[&str],
+    mutate: impl FnOnce(&mut SimOracle),
+) -> Option<SessionRun> {
+    let mut oracle = SimOracle::bootstrap(binary)?;
+    mutate(&mut oracle);
 
     let addrs: Vec<Address> = targets
         .iter()
@@ -241,6 +252,14 @@ fn assert_structure(run: &SessionRun) {
             !parsed.c_text.trim().is_empty(),
             "target #{i}: flattened markup C is empty"
         );
+        // The ghidra-mode banner: a `Kuna v…` plate comment must open every
+        // decompiled function (the user-visible "kuna is the active core"
+        // marker; ghidra-mode only, so the CLI differential strips it).
+        assert!(
+            parsed.c_text.contains("Kuna v"),
+            "target #{i}: the ghidra-mode `Kuna v…` banner comment is missing\n{}",
+            parsed.c_text
+        );
     }
 
     // Query legality: every callback query is one of the 19 command elements,
@@ -300,6 +319,15 @@ fn resolvable_placeholders(oracle: &SimOracle, c: &str) -> usize {
 /// Total placeholder occurrences (distinct addresses across all four kinds).
 fn placeholder_total(c: &str) -> usize {
     placeholder_addrs(c).values().map(|s| s.len()).sum()
+}
+
+/// Drop the ghidra-mode `Kuna v…` banner line (ghidra-mode-only by design;
+/// the CLI ground truth has no banner).
+fn strip_banner(c: &str) -> String {
+    c.lines()
+        .filter(|l| !l.contains("Kuna v"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Rewrite the ghidra-mode naming conventions onto the CLI's so the diff
@@ -393,8 +421,8 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.25, 0.29, 0.34];
 // collapse this to ~1 while leaving every ratio-floor assertion green — this
 // pin is what catches it.  (sub_3320 shrank because the noreturn facts now
 // truncate the flow overrun that used to decode neighbouring functions into
-// it — defect g.)
-const PIN_FAILLOG_C_LINES: [usize; 3] = [282, 38, 91];
+// it — defect g; the +1 everywhere is the `Kuna v…` banner line.)
+const PIN_FAILLOG_C_LINES: [usize; 3] = [283, 39, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`): kuna
 // emits whole rendered declarators (`"unsigned long *"`) as single `<type>`
 // tokens, which scripts/exports receive as `unsigned_long__` — the type-
@@ -449,7 +477,12 @@ fn ghidra_sim_faillog_pins() {
     let mut ratios = Vec::new();
     for (i, parsed) in docs.iter().enumerate() {
         let cli_c = decompile_cli(&mut oracle.prog, &parsed.name.clone(), &addrs[i]);
-        ratios.push(line_diff_ratio(&style_normalize(&parsed.c_text), &cli_c));
+        // The banner is ghidra-mode-only by design: strip it before diffing
+        // against the (banner-less) CLI ground truth.
+        ratios.push(line_diff_ratio(
+            &style_normalize(&strip_banner(&parsed.c_text)),
+            &cli_c,
+        ));
     }
 
     let mapped = oracle
@@ -706,6 +739,59 @@ fn run_session_with_override(
         &manager,
     );
     Some((first.c_text, second.c_text))
+}
+
+/// Host-side tracked-register context reaches the engine (the wired
+/// ContextGhidra): a sim-served tracked value at the entry (a user 'Set
+/// Register Value') must change the decompiled output — `ActionConstbase`
+/// plants the constant from the WIRE answer, merged over the pspec defaults.
+/// The tracked register is `RSI`, a live-in on this function, so the planted
+/// constant visibly folds into the body (faillog has no string ops, so the
+/// pspec's own `DF` seed has nothing to change).  Also pins that
+/// getTrackedRegisters actually fires.
+#[test]
+fn ghidra_sim_tracked_register_reaches_output() {
+    use kuna_base::space::RegisterLookup;
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let target = &["sub_3ad0"];
+    let Some(base_run) = run_session(&binary, target) else {
+        return; // visible skip: specs not built
+    };
+    let tracked_base = base_run
+        .oracle
+        .log
+        .counts
+        .get(&kuna_ghidra::ids::ELEM_COMMAND_GETTRACKEDREGISTERS.get_id())
+        .copied()
+        .unwrap_or(0);
+    assert!(
+        tracked_base >= 1,
+        "getTrackedRegisters never fired — the ContextGhidra wiring is dead"
+    );
+    let Some(over_run) = run_session_with(&binary, target, |oracle| {
+        let rsi = {
+            let sleigh = oracle
+                .prog
+                .arch()
+                .translate()
+                .as_sleigh()
+                .expect("oracle engine is a Sleigh");
+            RegisterLookup::get_register(sleigh, "RSI").expect("RSI resolves")
+        };
+        oracle
+            .tracked_overrides
+            .push(kuna_sleigh::globalcontext::TrackedContext {
+                loc: kuna_sleigh::translate::varnode_data_from_storage(&rsi),
+                val: 0x1234,
+            });
+    }) else {
+        return;
+    };
+    assert_ne!(
+        base_run.docs[0].c_text, over_run.docs[0].c_text,
+        "a host-side tracked RSI value did not change the output — the wire \
+         tracked set is not reaching ActionConstbase"
+    );
 }
 
 // ===========================================================================

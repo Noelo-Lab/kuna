@@ -141,6 +141,11 @@ pub struct SimOracle {
     /// Read-only image ranges (READONLY|CODE sections) — the `<hole>`
     /// mutability source (the CLI paints the same const-ness from ELF flags).
     pub readonly_ranges: Vec<(u64, u64)>,
+    /// PHASE-3 SEAM (host context): tracked-register values the "Java side"
+    /// reports on TOP of the pspec defaults (a user 'Set Register Value'),
+    /// served by the getTrackedRegisters answer — lets a test prove a
+    /// host-side context fact changes the output.
+    pub tracked_overrides: Vec<kuna_sleigh::globalcontext::TrackedContext>,
 }
 
 impl SimOracle {
@@ -216,6 +221,7 @@ impl SimOracle {
             data_symbols,
             callee_pieces,
             readonly_ranges,
+            tracked_overrides: Vec::new(),
         })
     }
 
@@ -789,13 +795,34 @@ impl AnswerSource for SimOracle {
             }
             resp_string(&doc)
         } else if el == ELEM_COMMAND_GETTRACKEDREGISTERS.get_id() {
-            // Always written, possibly empty.  A Phase-3 sim can serve the real
-            // pspec tracked set via `encode_tracked` (kuna-sleigh/globalcontext.rs).
+            // Phase 3: the REAL tracked set for the address — the program
+            // context's values (pspec defaults) plus any test-injected
+            // `tracked_overrides` (a user 'Set Register Value'), exactly the
+            // DecompileCallback shape (always written, possibly empty).
+            let addr = Address::decode(&mut dec).expect("getTrackedRegisters <addr>");
+            let mut set = kuna_sleigh::globalcontext::TrackedSet::new();
+            self.prog
+                .arch()
+                .translate()
+                .with_context_db_dyn(&mut |db| {
+                    set = db.get_tracked_set(&addr).clone();
+                });
+            for over in &self.tracked_overrides {
+                match set.iter_mut().find(|t| t.loc == over.loc) {
+                    Some(t) => t.val = over.val,
+                    None => set.push(over.clone()),
+                }
+            }
             let mut doc = Vec::new();
             {
                 let mut e = PackedEncode::new(&mut doc);
-                e.open_element(&ELEM_TRACKED_POINTSET);
-                e.close_element(&ELEM_TRACKED_POINTSET);
+                if set.is_empty() {
+                    e.open_element(&ELEM_TRACKED_POINTSET);
+                    e.close_element(&ELEM_TRACKED_POINTSET);
+                } else {
+                    kuna_sleigh::globalcontext::encode_tracked(&mut e, &addr, &set)
+                        .expect("tracked set encodes");
+                }
             }
             resp_string(&doc)
         } else if el == ELEM_COMMAND_GETSTRINGDATA.get_id() {

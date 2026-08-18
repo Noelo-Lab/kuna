@@ -2109,6 +2109,23 @@ impl Architecture {
         // for printlang in printlist: printlang.reset_defaults();  -- STUB(W8)
     }
 
+    /// (kuna, Phase 3) The ghidra-mode `SetOptions` reset (the upstream
+    /// `ghidra->resetDefaults()` at the top of `SetOptions::rawAction`,
+    /// ghidra_process.cc:435-445): Java DELTA-encodes its option list — only
+    /// values differing from the Java default constants travel — so an option
+    /// previously sent as non-default must revert when the user sets it back
+    /// to default.  Restores the engine option defaults plus the printer's
+    /// option-set state (the surface the wire options mutate), landing every
+    /// setOptions on the same baseline a fresh registerProgram produces (the
+    /// respawn-replay equivalence Java assumes).  The caller re-applies the
+    /// DIV-77 ghidra-mode preset layer on top before decoding the list.
+    /// The action-database default reset stays a shared STUB(W5) with
+    /// [`Self::reset_defaults`].
+    pub fn reset_wire_defaults(&mut self) {
+        self.reset_defaults();
+        self.print.context = crate::printlanguage::PrintContext::new();
+    }
+
     // -----------------------------------------------------------------------
     // Address-space access (C++ Architecture is-a AddrSpaceManager)
     // -----------------------------------------------------------------------

@@ -131,6 +131,24 @@ impl<R: Read, W: Write> RemoteProviderFetch for GhidraRemoteFetch<R, W> {
             .map_err(wire_to_kuna)
     }
 
+    fn fetch_external_ref(&self, addr: &Address, decoder: &mut dyn Decoder) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_external_ref(addr, decoder)
+            .map_err(wire_to_kuna)
+    }
+
+    fn fetch_tracked_registers(
+        &self,
+        addr: &Address,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        self.client
+            .borrow_mut()
+            .get_tracked_registers(addr, decoder)
+            .map_err(wire_to_kuna)
+    }
+
     fn fetch_comments(
         &self,
         fad: &Address,

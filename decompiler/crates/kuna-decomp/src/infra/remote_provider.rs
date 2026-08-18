@@ -167,6 +167,16 @@ pub trait RemoteProviderFetch {
     ) -> KunaResult<bool>;
     /// getNamespacePath(id): the `<parent>` document for a scope id.
     fn fetch_namespace_path(&self, id: u64, decoder: &mut dyn Decoder) -> KunaResult<bool>;
+    /// getExternalRef(addr): the resolved `<doc><mapsym>` for an external
+    /// reference's POINTER address; `Ok(false)` = unresolvable.
+    fn fetch_external_ref(&self, addr: &Address, decoder: &mut dyn Decoder) -> KunaResult<bool>;
+    /// getTrackedRegisters(addr): the `<tracked_pointset>` for an address
+    /// (always written by the host, possibly empty).
+    fn fetch_tracked_registers(
+        &self,
+        addr: &Address,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool>;
     /// getComments(addr, flags): the `<commentdb>` for a function.
     fn fetch_comments(
         &self,
@@ -227,6 +237,9 @@ pub struct RemoteSymbolRecord {
     pub entries: Vec<RemoteEntry>,
     /// Present when the symbol is a function (`<function>`/`<functionshell>`).
     pub func: Option<RemoteFunction>,
+    /// `<externrefsymbol>`: the address the external reference resolves to
+    /// (the callee body); the mapping entries are the POINTER's storage.
+    pub extern_ref: Option<Address>,
 }
 
 /// A decoded `<function>` answer (C++ `FunctionSymbol::decode` →
@@ -408,7 +421,7 @@ pub fn decode_mapsym(
                 name = String::from_utf8_lossy(&decoder.read_string()?).into_owned();
             }
         }
-        let _refaddr = Address::decode(decoder)?;
+        let refaddr = Address::decode(decoder)?;
         decoder.close_element_skipping(sid)?;
         RemoteSymbolRecord {
             scope_id,
@@ -418,9 +431,21 @@ pub fn decode_mapsym(
             flags: varnode_flags::typelock | varnode_flags::readonly,
             category: -1,
             cat_index: 0,
-            dtype: None,
+            // C++ ExternRefSymbol::buildNameType: the pointer's type is
+            // pointer-to-code (glb->types->getTypePointer(...getTypeCode())).
+            dtype: types
+                .get_type_code()
+                .and_then(|code| {
+                    let sz = refaddr
+                        .get_space()
+                        .map(|s| s.get_addr_size() as i32)
+                        .unwrap_or(8);
+                    types.get_type_pointer(sz, code, 1)
+                })
+                .ok(),
             entries: Vec::new(),
             func: None,
+            extern_ref: Some(refaddr),
         }
     } else if sub == crate::funcdata_encode::ELEM_FUNCTION.get_id()
         || sub == ELEM_FUNCTIONSHELL.get_id()
@@ -438,6 +463,7 @@ pub fn decode_mapsym(
             dtype: None,
             entries: Vec::new(),
             func: Some(func),
+            extern_ref: None,
         }
     } else {
         return Err(KunaError::lowlevel("Unknown symbol type"));
@@ -482,6 +508,7 @@ fn decode_symbol_header(
         dtype: None,
         entries: Vec::new(),
         func: None,
+        extern_ref: None,
     };
     loop {
         let aid = decoder.get_next_attribute_id()?;
@@ -773,6 +800,16 @@ struct RemoteScopeState {
     callee_pieces: Vec<(int4, kuna_base::types::uintb, PrototypePieces)>,
     /// Function facts by (space_index, offset) for the flow-time seams.
     functions: std::collections::BTreeMap<(int4, u64), RemoteFunctionFacts>,
+    /// Host-declared prototype models for LOCKED callee signatures, keyed like
+    /// `callee_pieces` (only recorded when the wire model resolved to a
+    /// non-default registered model).
+    callee_models: std::collections::BTreeMap<(int4, u64), Rc<ProtoModel>>,
+    /// Per-entry getTrackedRegisters answers (cached until flush; an empty
+    /// answer caches too so an address is asked once per flush epoch).
+    tracked: std::collections::BTreeMap<(int4, u64), kuna_sleigh::globalcontext::TrackedSet>,
+    /// Wire/decoder failures to surface once on the 16/17 frame (drained by
+    /// the decompileAt driver; each begins with "Warning:").
+    pending_warnings: Vec<String>,
     /// Live property map: the locked default plus hole/symbol paints.
     flagbase: PartMap<Address, uint4>,
     /// Namespace-path cache by scope id.
@@ -785,8 +822,13 @@ struct RemoteScopeState {
 /// The flow-time function facts of a decoded FunctionSymbol.
 #[derive(Clone)]
 pub struct RemoteFunctionFacts {
-    /// The function's display name (namespace-qualified when the host said so).
+    /// The RAW `Function.getName()` — the identity Java's
+    /// `HighFunction.decode` name-echo compares against.  NEVER the label.
     pub name: String,
+    /// The display form (`label` when the host sent a template-simplified
+    /// name, else the raw name) — what callee tokens and the signature print
+    /// (the upstream `Funcdata` name/displayName split).
+    pub display_name: String,
     /// `Function.hasNoReturn()` (or the prototype's noreturn).
     pub no_return: bool,
     /// The locked prototype pieces, when the host signature was locked.
@@ -860,6 +902,9 @@ impl RemoteScope {
                 entries: Vec::new(),
                 callee_pieces: Vec::new(),
                 functions: std::collections::BTreeMap::new(),
+                callee_models: std::collections::BTreeMap::new(),
+                tracked: std::collections::BTreeMap::new(),
+                pending_warnings: Vec::new(),
                 flagbase: flagbase_default,
                 namespaces: std::collections::BTreeMap::new(),
                 snapshot,
@@ -887,6 +932,9 @@ impl RemoteScope {
         st.entries.clear();
         st.callee_pieces.clear();
         st.functions.clear();
+        st.callee_models.clear();
+        st.tracked.clear();
+        st.pending_warnings.clear();
         st.namespaces.clear();
         st.flagbase = self.flagbase_default.clone();
         st.dirty = true;
@@ -907,30 +955,148 @@ impl RemoteScope {
                 return; // already answered (positively or negatively)
             }
         }
-        // Fire the query.  Failures degrade to "no answer" (the upstream
-        // JavaError path surfaces a LowlevelError into the decompile; a
-        // provider read seam cannot, so the address simply stays unresolved).
+        // Fire the query.  A wire/JavaError failure is negative-cached as a
+        // one-byte hole for this flush epoch (an erroring address must not
+        // re-query unboundedly) and surfaced once as a 16/17 warning; an
+        // EMPTY response stays uncached (upstream parity — Java answered
+        // nothing, not even a hole).
         let mut dec = PackedDecode::new(&self.manager);
         let got = match self.fetch.fetch_mapped_symbols(addr, &mut dec) {
             Ok(g) => g,
-            Err(_) => false,
+            Err(e) => {
+                self.cache_failure(addr, &format!("getMappedSymbols failed: {}", e.explain()));
+                return;
+            }
         };
         if !got {
             return; // empty response: no symbol, not even a hole (upstream parity)
         }
         match decode_mapped_answer(&mut dec, &self.types) {
             Ok(RemoteMapAnswer::Hole { range, flags }) => self.record_hole(range, flags),
-            Ok(RemoteMapAnswer::Symbol(rec)) => self.materialize(*rec),
-            Err(_) => {
-                // A decode failure marks the byte answered so a malformed
-                // answer cannot re-query forever.
-                let mut st = self.state.borrow_mut();
-                if let Some(spc) = addr.get_space() {
-                    st.holes
-                        .insert_range(Rc::clone(spc), addr.get_offset(), addr.get_offset());
+            Ok(RemoteMapAnswer::Symbol(rec)) => {
+                let rec = *rec;
+                // An <externrefsymbol> resolves through a second query AT THE
+                // POINTER address (C++ ScopeGhidra::resolveExternalRefFunction,
+                // database_ghidra.cc:327-353): the answer is the resolved
+                // function (or a shell), materialized at ITS OWN entry so
+                // calls through the import slot pick up name/proto/noreturn.
+                if rec.extern_ref.is_some() {
+                    self.resolve_external_ref(addr);
                 }
+                self.materialize(rec);
+            }
+            Err(e) => {
+                self.cache_failure(
+                    addr,
+                    &format!("getMappedSymbols answer failed to decode: {}", e.explain()),
+                );
             }
         }
+    }
+
+    /// Negative-cache a failing address for this flush epoch and queue one
+    /// 16/17 warning line.
+    fn cache_failure(&self, addr: &Address, what: &str) {
+        let mut st = self.state.borrow_mut();
+        if let Some(spc) = addr.get_space() {
+            st.holes
+                .insert_range(Rc::clone(spc), addr.get_offset(), addr.get_offset());
+        }
+        let mut msg = String::from("Warning: kuna ghidra-mode: ");
+        msg.push_str(what);
+        msg.push_str(" at ");
+        let _ = addr.print_raw(&mut msg);
+        st.pending_warnings.push(msg);
+    }
+
+    /// Drain the queued provider warnings (the decompileAt driver ships them
+    /// on the 16/17 frame).
+    pub fn drain_warnings(&self) -> Vec<String> {
+        std::mem::take(&mut self.state.borrow_mut().pending_warnings)
+    }
+
+    /// The two-step external-reference resolution (C++
+    /// `ScopeGhidra::resolveExternalRefFunction`, database_ghidra.cc:327-353):
+    /// getExternalRef at the POINTER address; the `<doc><mapsym>` answer (a
+    /// full function or a functionshell) materializes at the function's own
+    /// entry.
+    fn resolve_external_ref(&self, pointer: &Address) {
+        let mut dec = PackedDecode::new(&self.manager);
+        match self.fetch.fetch_external_ref(pointer, &mut dec) {
+            Ok(true) => match decode_mapped_answer(&mut dec, &self.types) {
+                Ok(RemoteMapAnswer::Symbol(rec)) if rec.func.is_some() => {
+                    self.materialize(*rec);
+                }
+                Ok(_) => {}
+                Err(e) => self.cache_failure(
+                    pointer,
+                    &format!("getExternalRef answer failed to decode: {}", e.explain()),
+                ),
+            },
+            Ok(false) => {} // unresolvable external: keep the pointer symbol only
+            Err(e) => {
+                self.cache_failure(pointer, &format!("getExternalRef failed: {}", e.explain()))
+            }
+        }
+    }
+
+    /// The host's tracked-register set for one address (C++
+    /// `ContextGhidra::getTrackedSet` — a getTrackedRegisters query), cached
+    /// per address until flush.  `None` only for a space-less address; an
+    /// EMPTY host answer caches as an empty set.
+    pub fn tracked_at(
+        &self,
+        addr: &Address,
+    ) -> Option<kuna_sleigh::globalcontext::TrackedSet> {
+        let spc = addr.get_space()?;
+        let key = (spc.get_index(), addr.get_offset());
+        if let Some(set) = self.state.borrow().tracked.get(&key) {
+            return Some(set.clone());
+        }
+        let mut dec = PackedDecode::new(&self.manager);
+        let mut set = kuna_sleigh::globalcontext::TrackedSet::new();
+        match self.fetch.fetch_tracked_registers(addr, &mut dec) {
+            Ok(true) => {
+                let decoded = (|| -> KunaResult<()> {
+                    let el = dec.open_element()?;
+                    kuna_sleigh::globalcontext::decode_tracked(&mut dec, &mut set)?;
+                    dec.close_element(el)?;
+                    Ok(())
+                })();
+                if let Err(e) = decoded {
+                    self.cache_failure(
+                        addr,
+                        &format!(
+                            "getTrackedRegisters answer failed to decode: {}",
+                            e.explain()
+                        ),
+                    );
+                    set.clear();
+                }
+            }
+            Ok(false) => {}
+            Err(e) => {
+                self.cache_failure(
+                    addr,
+                    &format!("getTrackedRegisters failed: {}", e.explain()),
+                );
+            }
+        }
+        self.state.borrow_mut().tracked.insert(key, set.clone());
+        Some(set)
+    }
+
+    /// The host-declared prototype model of a LOCKED callee signature at
+    /// `entry` (query-through), when it resolved to a registered model — the
+    /// remote arm of the callee-model consumer in `ActionDefaultParams`.
+    pub fn callee_model_at(&self, entry: &Address) -> Option<Rc<ProtoModel>> {
+        self.ensure_queried(entry);
+        let spc = entry.get_space()?;
+        self.state
+            .borrow()
+            .callee_models
+            .get(&(spc.get_index(), entry.get_offset()))
+            .cloned()
     }
 
     fn record_hole(&self, range: Range, flags: uint4) {
@@ -984,6 +1150,10 @@ impl RemoteScope {
         if let Some(func) = &rec.func {
             func_no_return =
                 func.no_return || func.proto.as_ref().map(|p| p.no_return).unwrap_or(false);
+            // The upstream Funcdata name/displayName split: the RAW name is the
+            // Java-side identity (the HighFunction.decode echo); the label is
+            // only ever a display form.
+            let raw_name = func.name.clone();
             let fname = if func.display_name.is_empty() {
                 func.name.clone()
             } else {
@@ -996,12 +1166,23 @@ impl RemoteScope {
                     if let Some(p) = &func.proto {
                         if p.is_input_locked() {
                             let pc = p.to_pieces(&fname);
-                            // Park the locked signature as a TypeCode so
-                            // query_callee_proto resolves it (the `parse line
-                            // extern` shape); model resolution happens at the
-                            // consumer via the call-site evalfp.
-                            if let Ok(tc) = self.types.get_type_code_proto(&pc) {
+                            // Park the locked signature as a TypeCode carrying
+                            // the HOST-DECLARED prototype model, so storage
+                            // assignment for a non-default-model callee
+                            // (__fastcall on x86-32, ...) uses the right
+                            // convention (the `parse line extern` shape).
+                            let model = self.model_by_name(&p.model);
+                            let parked = match &model {
+                                Some(m) => self
+                                    .types
+                                    .get_type_code_proto_model(&pc, Rc::clone(m)),
+                                None => self.types.get_type_code_proto(&pc),
+                            };
+                            if let Ok(tc) = parked {
                                 symbol_type = Some(tc);
+                            }
+                            if let Some(m) = model {
+                                st.callee_models.insert(key, m);
                             }
                             st.callee_pieces.push((
                                 key.0,
@@ -1014,7 +1195,8 @@ impl RemoteScope {
                     st.functions.insert(
                         key,
                         RemoteFunctionFacts {
-                            name: fname,
+                            name: raw_name,
+                            display_name: fname,
                             no_return: func_no_return,
                             pieces,
                         },
@@ -1058,7 +1240,12 @@ impl RemoteScope {
             let props = rec.flags & (varnode_flags::readonly | varnode_flags::volatil);
             if props != 0 {
                 let a1 = Address::new(Rc::clone(spc), first);
-                let a2 = Address::new(Rc::clone(spc), last.wrapping_add(1));
+                // Open upper bound via the Range helper: a symbol ending at
+                // the very top of its space paints to the space end (an
+                // invalid/next-space open end) instead of wrapping to 0 and
+                // painting nothing.
+                let a2 = Range::new(Rc::clone(spc), first, last)
+                    .get_last_addr_open(&self.manager);
                 Self::paint_property(&mut st.flagbase, props, &a1, &a2);
             }
         }

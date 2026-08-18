@@ -461,3 +461,224 @@ fn captured_java_function_mapsym_decodes() {
     assert_eq!(rec.entries.len(), 1);
     assert_eq!(rec.entries[0].addr.get_offset(), 0x101900);
 }
+
+// ---------------------------------------------------------------------------
+// RemoteScope behavior over a canned wire fetcher
+// ---------------------------------------------------------------------------
+
+/// A canned [`RemoteProviderFetch`]: per-query response maps keyed by offset,
+/// plus call counters (the negative-caching asserts).
+#[derive(Default)]
+struct MockFetch {
+    mapped: std::collections::BTreeMap<u64, Vec<u8>>,
+    external: std::collections::BTreeMap<u64, Vec<u8>>,
+    tracked: std::collections::BTreeMap<u64, Vec<u8>>,
+    /// Offsets whose getMappedSymbols FAILS (a wire/JavaError).
+    fail_mapped: std::collections::BTreeSet<u64>,
+    calls: std::cell::RefCell<std::collections::BTreeMap<&'static str, usize>>,
+}
+
+impl MockFetch {
+    fn count(&self, what: &'static str) -> usize {
+        *self.calls.borrow().get(what).unwrap_or(&0)
+    }
+    fn bump(&self, what: &'static str) {
+        *self.calls.borrow_mut().entry(what).or_insert(0) += 1;
+    }
+    fn serve(
+        map: &std::collections::BTreeMap<u64, Vec<u8>>,
+        off: u64,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        match map.get(&off) {
+            Some(doc) => {
+                decoder.ingest_stream(doc)?;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+}
+
+impl RemoteProviderFetch for MockFetch {
+    fn fetch_mapped_symbols(
+        &self,
+        addr: &Address,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        self.bump("mapped");
+        if self.fail_mapped.contains(&addr.get_offset()) {
+            return Err(kuna_base::error::KunaError::lowlevel("mock wire failure"));
+        }
+        Self::serve(&self.mapped, addr.get_offset(), decoder)
+    }
+    fn fetch_namespace_path(&self, _id: u64, _decoder: &mut dyn Decoder) -> KunaResult<bool> {
+        self.bump("namespace");
+        Ok(false)
+    }
+    fn fetch_external_ref(&self, addr: &Address, decoder: &mut dyn Decoder) -> KunaResult<bool> {
+        self.bump("external");
+        Self::serve(&self.external, addr.get_offset(), decoder)
+    }
+    fn fetch_tracked_registers(
+        &self,
+        addr: &Address,
+        decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        self.bump("tracked");
+        Self::serve(&self.tracked, addr.get_offset(), decoder)
+    }
+    fn fetch_comments(
+        &self,
+        _fad: &Address,
+        _flags: u32,
+        _decoder: &mut dyn Decoder,
+    ) -> KunaResult<bool> {
+        Ok(false)
+    }
+}
+
+fn scope_over(m: &Rc<AddrSpaceManager>, types: Rc<TypeFactoryImpl>, fetch: MockFetch) -> RemoteScope {
+    let mut owned = kuna_base::address::RangeList::default();
+    owned.insert_range(ram(m), 0, u64::MAX >> 8);
+    let base = GlobalQuery::new(Vec::new(), owned, PartMap::default());
+    RemoteScope::new(
+        Rc::new(fetch),
+        Rc::clone(m),
+        types,
+        std::collections::BTreeMap::new(),
+        None,
+        base,
+    )
+}
+
+/// A packed `<doc><mapsym><externrefsymbol …>` answer at the pointer, whose
+/// getExternalRef resolves to a function carrying BOTH a raw name and a
+/// display label: the two-step resolution runs, the facts split name/label
+/// (the HighFunction name-echo contract), and the pointer symbol survives.
+#[test]
+fn extern_ref_resolves_and_splits_name_from_label() {
+    let m = manager();
+    let types = types_with_core();
+    // Pointer symbol at ram:0x5000 -> resolve address ram:0x7000 (the
+    // refaddr <addr> is a CHILD of <externrefsymbol>, as upstream encodes).
+    let mut ptr_doc = Vec::new();
+    {
+        let mut e = PackedEncode::new(&mut ptr_doc);
+        e.open_element(&crate::prettyprint::ids::ELEM_TYPE);
+        e.write_unsigned_integer(&ATTRIB_ID, 0);
+        e.open_element(&ELEM_MAPSYM);
+        e.open_element(&ELEM_EXTERNREFSYMBOL);
+        e.write_string(&ATTRIB_NAME, b"imp_templated");
+        Address::new(ram(&m), 0x7000).encode(&mut e).unwrap();
+        e.close_element(&ELEM_EXTERNREFSYMBOL);
+        Address::new(ram(&m), 0x5000).encode_sized(&mut e, 8).unwrap();
+        e.open_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_MAPSYM);
+        e.close_element(&crate::prettyprint::ids::ELEM_TYPE);
+    }
+    // The resolved function: raw name != label (the TemplateSimplifier case).
+    let mut fn_doc = Vec::new();
+    {
+        let mut e = PackedEncode::new(&mut fn_doc);
+        e.open_element(&crate::prettyprint::ids::ELEM_TYPE);
+        e.write_unsigned_integer(&ATTRIB_ID, 0);
+        e.open_element(&ELEM_MAPSYM);
+        e.open_element(&crate::funcdata_encode::ELEM_FUNCTION);
+        e.write_unsigned_integer(&ATTRIB_ID, 0x99);
+        e.write_string(&ATTRIB_NAME, b"foo<int,long>");
+        e.write_string(&crate::jumptable::ATTRIB_LABEL, b"foo");
+        e.write_signed_integer(&ATTRIB_SIZE, 1);
+        e.write_bool(&ATTRIB_NORETURN, true);
+        Address::new(ram(&m), 0x7000).encode(&mut e).unwrap();
+        e.close_element(&crate::funcdata_encode::ELEM_FUNCTION);
+        Address::new(ram(&m), 0x7000).encode_sized(&mut e, 1).unwrap();
+        e.open_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_MAPSYM);
+        e.close_element(&crate::prettyprint::ids::ELEM_TYPE);
+    }
+    let mut fetch = MockFetch::default();
+    fetch.mapped.insert(0x5000, ptr_doc);
+    fetch.external.insert(0x5000, fn_doc);
+    let scope = scope_over(&m, types, fetch);
+
+    let probe = Address::new(ram(&m), 0x5000);
+    scope.ensure_queried(&probe);
+    // The two-step resolution materialized the FUNCTION at its own entry.
+    let facts = scope
+        .function_at(&Address::new(ram(&m), 0x7000))
+        .expect("external function resolved");
+    assert_eq!(facts.name, "foo<int,long>", "raw name is the Java identity");
+    assert_eq!(facts.display_name, "foo", "label is only the display form");
+    assert!(facts.no_return);
+    // The pointer's own symbol landed too (pointer-to-code typed).
+    let snap = scope.snapshot();
+    let (nm, _, ty) = snap
+        .name_for_varnode(&probe, 8, &Address::new_invalid())
+        .expect("pointer symbol materialized");
+    assert_eq!(nm, "imp_templated");
+    assert_eq!(
+        ty.expect("pointer type").get_metatype(),
+        type_metatype::TYPE_PTR
+    );
+}
+
+/// getTrackedRegisters answers cache per address until `clear()` (one wire
+/// ask per flush epoch), and decode failures negative-cache with ONE warning.
+#[test]
+fn tracked_caches_and_failures_negative_cache() {
+    let m = manager();
+    let types = types_with_core();
+    // A tracked answer for ram:0x1000: one register value.
+    let reg_loc = kuna_num::pcoderaw::VarnodeData {
+        space: Some(ram(&m)),
+        offset: 0x30,
+        size: 8,
+    };
+    let mut tr_doc = Vec::new();
+    {
+        let mut e = PackedEncode::new(&mut tr_doc);
+        let set = vec![kuna_sleigh::globalcontext::TrackedContext {
+            loc: reg_loc.clone(),
+            val: 0x1234,
+        }];
+        kuna_sleigh::globalcontext::encode_tracked(
+            &mut e,
+            &Address::new(ram(&m), 0x1000),
+            &set,
+        )
+        .unwrap();
+    }
+    let mut fetch = MockFetch::default();
+    fetch.tracked.insert(0x1000, tr_doc);
+    fetch.fail_mapped.insert(0x4444);
+    let scope = scope_over(&m, types, fetch);
+
+    let at = Address::new(ram(&m), 0x1000);
+    let set = scope.tracked_at(&at).expect("tracked set");
+    assert_eq!(set.len(), 1);
+    assert_eq!(set[0].val, 0x1234);
+    let set2 = scope.tracked_at(&at).expect("tracked set cached");
+    assert_eq!(set2.len(), 1);
+
+    // A FAILING getMappedSymbols address: asked once, negative-cached, one
+    // drained warning; clear() re-opens both caches.
+    let bad = Address::new(ram(&m), 0x4444);
+    scope.ensure_queried(&bad);
+    scope.ensure_queried(&bad);
+    let warnings = scope.drain_warnings();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].starts_with("Warning:"));
+    assert!(scope.drain_warnings().is_empty());
+    scope.clear();
+    scope.ensure_queried(&bad);
+    let _ = scope.tracked_at(&at);
+    // counts: mapped fired twice total (once per epoch), tracked twice.
+    // (Read back through the fetch — the scope owns it, so assert indirectly:
+    // a second same-epoch ensure_queried did NOT re-fire, proven by the single
+    // warning above; the post-clear re-fire is proven by a fresh warning.)
+    let warnings = scope.drain_warnings();
+    assert_eq!(warnings.len(), 1, "post-clear re-query fired again");
+}

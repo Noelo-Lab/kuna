@@ -252,9 +252,30 @@ relocated the lazy model to the seams the kuna pipeline actually reads
 - **`CommentDatabaseGhidra`**: `RemoteScope::fill_comments` fills the comment
   database once per flush cycle from getComments, filtered by the printer's comment
   settings (empty filter ⇒ no query).
+- **External references** resolve through the upstream two-step
+  (`resolveExternalRefFunction`): an `<externrefsymbol>` answer keeps its resolve
+  address and fires getExternalRef at the POINTER address; the returned function
+  materializes at its own entry (name/prototype/noreturn), and the pointer symbol
+  itself types as pointer-to-code.
+- **Tracked registers**: the pspec `<tracked_set>` decodes as the static default,
+  and `ContextGhidra` is wired for real — decompileAt issues getTrackedRegisters
+  at the entry (cached until flushNative) and merges the host's values OVER the
+  pspec defaults, so per-address host context (MIPS `gp`, PPC TOC, a user 'Set
+  Register Value') reaches `ActionConstbase`.
+- **setOptions** follows the upstream reset-then-apply contract: Java
+  delta-encodes its option list, so every `setOptions` first restores the
+  registerProgram baseline (`Architecture::reset_wire_defaults` + the DIV-77
+  ghidra-mode preset layer) and then applies the deltas — a previously-sent
+  non-default option reverts when the user sets it back to default.
+- **The `Kuna v…` banner**: ghidra-mode prints a one-line plate comment
+  (`/* Kuna v<MAJOR.MINOR> */`, the release `KUNA_VERSION` bake) at the top of
+  every decompiled function so it is visible in the GUI that kuna is the active
+  core.  Cache-only (never written back to the host); standalone output has no
+  banner.
 - **flushNative** clears everything in the upstream order
-  (`Architecture::flush_remote_caches`): the lazy symbol cache + property rollback,
-  the non-core types, the comment database, the decoded strings.
+  (`Architecture::flush_remote_caches`): the lazy symbol cache + property rollback
+  + the per-address tracked-register cache, the non-core types, the comment
+  database, the decoded strings.
 
 ## 6. Response contracts that make the GUI work
 

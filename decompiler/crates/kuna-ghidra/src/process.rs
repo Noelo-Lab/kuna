@@ -611,29 +611,85 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                     .and_then(|s| s.architecture.as_ref())
                     .and_then(|a| a.remote_scope.clone());
                 let facts = remote.as_ref().and_then(|r| r.function_at(&addr));
-                let (name, pending_pieces) = match facts {
-                    Some(f) => (f.name, f.pieces),
+                // The RAW `Function.getName()` is the Funcdata identity (the
+                // HighFunction.decode name echo compares against it); the
+                // label, when the host sent one (TemplateSimplifier), is only
+                // the display form the printed signature uses.
+                let (name, display_name, pending_pieces) = match facts {
+                    Some(f) => (f.name, f.display_name, f.pieces),
                     None => {
                         let label = self.client.borrow_mut().get_code_label(&addr);
                         match label {
                             Ok(l) if !l.is_empty() => {
-                                (String::from_utf8_lossy(&l).into_owned(), None)
+                                let n = String::from_utf8_lossy(&l).into_owned();
+                                (n.clone(), n, None)
                             }
-                            _ => (format!("FUN_{:08x}", addr.get_offset()), None),
+                            _ => {
+                                let n = format!("FUN_{:08x}", addr.get_offset());
+                                (n.clone(), n, None)
+                            }
                         }
                     }
                 };
 
-                // (2b) Fill the per-function comment cache from the host
+                // (2b) The ghidra-mode banner (user-requested): a plate
+                // comment at the top of EVERY decompiled function so it is
+                // visible inside Ghidra that kuna is the active core.
+                // Cache-only (never written back to the host, never on the
+                // 16/17 frame); the version is baked at build time exactly
+                // like the kuna CLI's (`KUNA_VERSION` from the release build
+                // matrix, the workspace version on dev builds).  Then fill the
+                // per-function comment cache from the host
                 // (CommentDatabaseGhidra::fillCache semantics: once per flush
                 // cycle, filtered by the printer's comment settings; an empty
                 // filter issues no query).
-                if let Some(remote) = &remote {
+                {
                     let session = self.archlist[slot].as_mut().expect("bound session");
                     if let Some(arch) = session.architecture.as_mut() {
-                        let filter = arch.printer_comment_filter();
-                        let sink = &mut arch.commentdb;
-                        let _ = remote.fill_comments(&addr, filter, sink);
+                        arch.commentdb.add_comment_no_duplicate(
+                            kuna_decomp::comment::comment_type::HEADER,
+                            &addr,
+                            &addr,
+                            &kuna_banner_text(),
+                        );
+                        if let Some(remote) = &remote {
+                            let filter = arch.printer_comment_filter();
+                            let sink = &mut arch.commentdb;
+                            let _ = remote.fill_comments(&addr, filter, sink);
+                        }
+                    }
+                }
+
+                // (2c) Per-entry host context: getTrackedRegisters (the
+                // upstream ContextGhidra), merged OVER the pspec defaults —
+                // wire values win per register, pspec fills the gaps — so
+                // per-address host facts (MIPS gp, PPC TOC, a user 'Set
+                // Register Value') reach ActionConstbase.  Cached in the
+                // provider until flushNative.
+                if let Some(remote) = &remote {
+                    if let Some(wire_set) = remote.tracked_at(&addr) {
+                        if !wire_set.is_empty() {
+                            let session =
+                                self.archlist[slot].as_mut().expect("bound session");
+                            if let Some(arch) = session.architecture.as_mut() {
+                                let upper = Address::new(
+                                    std::rc::Rc::clone(
+                                        addr.get_space().expect("entry addr has a space"),
+                                    ),
+                                    addr.get_offset().wrapping_add(1),
+                                );
+                                arch.with_context_db_mut(|db| {
+                                    let mut merged = db.get_tracked_set(&addr).clone();
+                                    for w in &wire_set {
+                                        match merged.iter_mut().find(|t| t.loc == w.loc) {
+                                            Some(t) => t.val = w.val,
+                                            None => merged.push(w.clone()),
+                                        }
+                                    }
+                                    *db.create_set(&addr, &upper) = merged;
+                                });
+                            }
+                        }
                     }
                 }
 
@@ -674,16 +730,33 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         &[],
                         pending_pieces.as_ref(),
                     ) {
-                        Ok(fd) => build_decompile_at_doc(
-                            arch,
-                            &fd,
-                            send_syntax_tree,
-                            send_c_code,
-                            &current_action,
-                        ),
+                        Ok(mut fd) => {
+                            // The printed signature/tokens use the display
+                            // form; fd.encode's ATTRIB_NAME stays the RAW name
+                            // (the Java-side identity echo).
+                            if display_name != name {
+                                fd.set_display_name(&display_name);
+                            }
+                            build_decompile_at_doc(
+                                arch,
+                                &fd,
+                                send_syntax_tree,
+                                send_c_code,
+                                &current_action,
+                            )
+                        }
                         Err(e) => Err(e),
                     }
                 };
+
+                // Surface (once) any provider wire/decoder failures the lazy
+                // queries swallowed into negative caches — each line begins
+                // "Warning:" so DecompInterface.isErrorMessage stays non-fatal.
+                if let Some(remote) = &remote {
+                    for w in remote.drain_warnings() {
+                        self.print_message(cmd.slot, &w);
+                    }
+                }
 
                 match doc {
                     // C++ `isProcComplete` branch: the `<doc>` inside the 14/15
@@ -786,6 +859,15 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                     (cmd.optionslist.take(), self.archlist[slot].as_mut())
                 {
                     if let Some(arch) = session.architecture.as_mut() {
+                        // The upstream reset-then-apply contract
+                        // (ghidra_process.cc:435-445): Java delta-encodes the
+                        // list, so a previously-sent non-default option must
+                        // REVERT when the user sets it back to default.  Reset
+                        // to the registerProgram baseline (engine + printer
+                        // defaults, then the DIV-77 ghidra-mode preset layer),
+                        // then let the deltas land on it.
+                        arch.reset_wire_defaults();
+                        apply_ghidra_mode_defaults(arch);
                         let manager = arch.translate().manager_rc();
                         let mut decoder = PackedDecode::new(&manager);
                         let outcome = decoder
@@ -865,16 +947,7 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
         // fid, aif, ...) run over a real file in kuna-analysis and have no seam
         // here: their PRODUCTS are what the Phase-3 providers pull over the
         // wire instead.
-        arch.name_style_ghidra = true;
-        if let Some(overrides) = kuna_decomp::modes::mode_overrides("aggressive") {
-            for (name, value) in overrides {
-                if kuna_decomp::options::KUNA_OPTION_NAMES.contains(name) {
-                    // Engine-tier knob: apply.  Unknown/analysis-tier names have
-                    // no engine seam in ghidra mode and are skipped.
-                    let _ = arch.set_kuna_option(name, value);
-                }
-            }
-        }
+        apply_ghidra_mode_defaults(&mut arch);
         // Phase 3: install the lazy wire-backed providers (ScopeGhidra /
         // TypeFactoryGhidra) — after init (cspec <global> ranges + pspec
         // property paints are in, the lockDefaultProperties point), before the
@@ -946,6 +1019,36 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
         if let Some(slot) = slot {
             if let Some(session) = self.archlist[slot].as_mut() {
                 session.print_message(message);
+            }
+        }
+    }
+}
+
+/// The ghidra-mode banner comment (user-requested): rendered as the first
+/// plate line of every decompiled function so the GUI makes it obvious kuna
+/// is the active core.  The version bakes exactly like the kuna CLI's
+/// (`kuna-cli/src/main.rs`): `KUNA_VERSION` from the release build matrix
+/// (release.yml exports it job-wide), the workspace Cargo version on dev
+/// builds.
+pub fn kuna_banner_text() -> String {
+    format!(
+        "Kuna v{}",
+        option_env!("KUNA_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+    )
+}
+
+/// The DIV-77 ghidra-mode defaults layer (applied at registerProgram AND on
+/// every setOptions after `reset_wire_defaults` — the reset-then-apply
+/// contract): Ghidra-convention fallback naming plus the CLI `aggressive`
+/// ENGINE-TIER preset.  See the build_architecture doc comment for why.
+fn apply_ghidra_mode_defaults(arch: &mut Architecture) {
+    arch.name_style_ghidra = true;
+    if let Some(overrides) = kuna_decomp::modes::mode_overrides("aggressive") {
+        for (name, value) in overrides {
+            if kuna_decomp::options::KUNA_OPTION_NAMES.contains(name) {
+                // Engine-tier knob: apply.  Unknown/analysis-tier names have
+                // no engine seam in ghidra mode and are skipped.
+                let _ = arch.set_kuna_option(name, value);
             }
         }
     }

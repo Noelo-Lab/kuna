@@ -2244,7 +2244,36 @@ impl PrintC {
     fn emit_comment_func_header(&mut self, fd: &Funcdata, arch: &Architecture) {
         use crate::architecture::comment_type;
         let func_addr = fd.get_address();
-        // Collect the matching header comments first (the commentdb borrow is
+        let space = match func_addr.get_space() {
+            Some(s) => std::rc::Rc::clone(s),
+            None => return,
+        };
+        let off = func_addr.get_offset();
+        // (kuna, Phase 3) Plain HEADER (plate) comments render first — the C++
+        // emitCommentFuncHeader handles `Comment::header` through the same
+        // sorter.  These come from the ghidra-mode getComments fill (Java PLATE
+        // comments) and the ghidra-mode `Kuna v…` banner; the standalone
+        // pipeline never inserts HEADER-typed comments, so this arm is inert
+        // there.  Header comments are informational, never inline-slugged.
+        let plates: Vec<String> = arch
+            .commentdb
+            .comments()
+            .iter()
+            .filter(|c| {
+                c.tp == crate::comment::comment_type::HEADER && &c.func_addr == func_addr
+            })
+            .map(|c| c.text.clone())
+            .collect();
+        for text in plates {
+            self.emit.tag_line();
+            self.emit.tag_comment(
+                &format!("/* {text} */"),
+                SyntaxHighlight::CommentColor,
+                &space,
+                off,
+            );
+        }
+        // Collect the matching header WARNING comments (the commentdb borrow is
         // released before the `&mut self.emit` writes).
         let headers: Vec<String> = arch
             .commentdb
@@ -2255,11 +2284,6 @@ impl PrintC {
             })
             .map(|c| c.text.clone())
             .collect();
-        let space = match func_addr.get_space() {
-            Some(s) => std::rc::Rc::clone(s),
-            None => return,
-        };
-        let off = func_addr.get_offset();
         for text in headers {
             // (kuna warnstyle, DIV-39) Inline mode: header warnings collect as
             // slugs and flush at the end of the prototype line.
