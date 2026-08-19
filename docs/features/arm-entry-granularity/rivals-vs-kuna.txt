@@ -1,0 +1,157 @@
+arm-entry-granularity — the raw measured tables
+===============================================
+
+Method
+------
+Ground truth = every DW_TAG_subprogram with a non-zero DW_AT_low_pc in the
+`compiled/` binary (Thumb bit masked).  Recovered set = the function-entry
+addresses each decompiler reports for the `stripped/` binary decbench actually
+feeds them.  kuna's set is re-measured live on this build with
+
+    kuna functions <stripped> --json --option listing on \
+        --option funcstart_patterns on --option aif on
+
+which reproduces `kuna decompile-all --mode reliable`'s entry set exactly
+(betaflight O0: 5798 vs 5797, the one difference being the address-0 alias
+record).  The rival sets are read out of the stored decbench
+`decompiled/<tool>_<bin>.toml` per-function `address =` lines.
+
+Corpus: 8 ARM Cortex-M projects x 3 optimisation levels (crazyflie/firmware.elf
+dropped as a byte-identical duplicate of cf2.elf).
+
+
+1. Entry recall on the ARM corpus (addresses, all opt levels)
+------------------------------------------------------------
+    ground truth  36,360
+    kuna          33,326   91.7%
+    angr          34,295   95.3%   (of the 35,984 it was run on)
+    ghidra        29,530   81.2%
+    binja         29,364   80.8%
+    ida           17,632   76.1%   (of the 23,158 it was run on)
+
+kuna is second only to angr and ~4,000 entries ahead of Ghidra/Binary Ninja.
+This gap is a *tail*, not a deficit.
+
+
+2. The 2,941 missed addresses, by sub-class
+-------------------------------------------
+    pointer            1,671   56.8%   only a code-pointer word references it
+    tailcall             513   17.4%   only an unconditional B reaches it
+    called               297   10.1%   a direct BL reaches it, kuna still has no entry
+    fallthrough          194    6.6%   only fall-through from the previous instruction
+    unreferenced         146    5.0%   nothing in the image points at it
+    after-terminator     118    4.0%   no reference; previous instruction is terminal
+    condbranch             2    0.1%
+
+    by project: betaflight 942, crazyflie 663, cleanflight 457, libopencm3 443,
+                nuttx 185, chibios 167, riot-os 59, freertos 25
+
+
+3. Intersection with decbench's measured set
+--------------------------------------------
+A miss is *measured* when at least one non-LLM rival has decompiled: true for
+that name in the run's function_results.json.
+
+    measured        1,838
+    not measured    1,103
+
+    measured, by sub-class:  pointer 1,402 · tailcall 226 · called 146 ·
+                             fallthrough 43 · unreferenced 19 · after-terminator 2
+    measured, by project:    betaflight 779 · cleanflight 370 · crazyflie 310 ·
+                             libopencm3 136 · chibios 116 · nuttx 87 ·
+                             riot-os 36 · freertos 4
+
+This independently reproduces `docs/decbench/recall-measurement.md`'s
+per-project distribution (it reports libopencm3 136, nuttx 87, chibios 115,
+riot-os 33 against 136 / 87 / 116 / 36 here).
+
+
+4. Absorbed vs dropped  (the campaign's mechanism claim, tested)
+---------------------------------------------------------------
+For each miss, is the address inside the ground-truth body of the nearest lower
+kuna entry (absorbed), or past that function's end (dropped)?
+
+    dropped (past the containing function's end)   1,896
+    unknown extent (nearest kuna entry is a
+        kuna-invented sub_, no ground truth)       1,040
+    absorbed (strictly inside a kuna body)             3
+    no containing entry                                2
+
+    per sub-class (dropped / unknown):
+      pointer            1054 / 615
+      tailcall            479 /  34
+      called               90 / 207
+      fallthrough          92 / 102
+      unreferenced         80 /  63   (+3 absorbed)
+      after-terminator    101 /  17
+
+
+5. Ground-truth noise
+---------------------
+    address-based misses                                     2,941
+    name-based pool (what decbench counts)                   3,046
+    alias / ICF surplus (extra names on one low_pc)            105   3.4%
+    misses whose low_pc carries more than one DWARF name        105
+    misses no rival found either                               309
+
+
+6. Prologue shape of the missed entries
+---------------------------------------
+    canonical Thumb frame prologue at the missed low_pc   197   6.7%
+    no canonical prologue                               2,744  93.3%
+
+    tiny leaf functions (ground-truth size <= 8 bytes)    1,205  41%
+      of which pointer-referenced                           852
+
+
+7. Option ablation — does anything already shipped close it?
+------------------------------------------------------------
+baseline = listing + funcstart_patterns + aif (what decompile-all injects on ARM)
+
+O2/libopencm3/msc.elf           gt=63   base 51 | aggressive 51 | +addrtable 51 | +fast_funcdisc 51 | +eh_frame_full 51 | +operand_refs 51
+O2/libopencm3/usart-stdio.elf   gt=138  base 103 | aggressive 103 | +addrtable 103 | +fast_funcdisc 103 | +eh_frame_full 103 | +operand_refs 103
+O2/chibios/ch.elf               gt=323  base 273 | aggressive 273 | +addrtable 273 | +fast_funcdisc 273 | +eh_frame_full 273 | +operand_refs 273
+O2/nuttx/nuttx                  gt=691  base 611 | aggressive 611 | +addrtable 611 | +fast_funcdisc 611 | +eh_frame_full 611 | +operand_refs 611
+O2-noinline/riot-os/hello.elf   gt=151  base 128 | aggressive 128 | +addrtable 128 | +fast_funcdisc 128 | +eh_frame_full 128 | +operand_refs 128
+O2/crazyflie/cf2.elf            gt=1421 base 1293 | aggressive 1293 | +addrtable 1293 | +fast_funcdisc 1293 | +eh_frame_full 1293 | +operand_refs 1293
+
+Zero.  `--mode aggressive` is exactly the baseline on ARM (both resolve to
+listing+funcstart_patterns+aif), and addrtable / fast_funcdisc / eh_frame_full /
+operand_refs each add exactly 0 entries on every binary tried.  Removing
+funcstart_patterns instead costs 6-490 entries per binary, so the existing
+discovery is load-bearing and saturated.
+
+
+8. Scaffold experiment — what a relaxed predicate would recover
+--------------------------------------------------------------
+Env-gated scratch build (reverted; not in this diff).  Arms:
+  a = re-seed the recursive-descent walk with AIF's accepted gap starts
+  p = code-pointer targets with the gap-only + frame-prologue + >2-instruction
+      guards of `code_pointer_table_seeds` removed
+  t = unconditional-branch targets that open a block (previous instruction ends
+      the flow); T = the stricter variant, previous instruction must RETURN
+
+  binary                            gt    base     a      p      t     apt
+  O2/libopencm3/msc.elf             63      51    51     58     56      63
+  O2/libopencm3/usart-stdio.elf    138     103   103    107    112     116
+  O2/chibios/ch.elf                323     273   274    310    284     321
+  O2-noinline/chibios/ch.elf       654     539   540    580    610     651
+  O2/nuttx/nuttx                   691     611   612    664    630     684
+  O2-noinline/riot-os/hello.elf    151     128   128    130    144     146
+  O2/crazyflie/cf2.elf            1421    1293  1296   1387   1316    1412
+  O0/cleanflight/…F405.elf        2193    2056  2067   2169   2059    2183
+  O0/betaflight/…F405.elf         4168    3872  3894   4115   3881    4146
+  TOTAL                           9802    8926  8965   9520   9092    9722
+                                          91.1% 91.5%  97.1%  92.8%   99.2%
+
+Precision of the NEW entries (7 binaries, ground truth from symtab sizes):
+
+  arm   new    is ground truth   splits a real body   outside any DWARF body
+  p     560    348 (62%)         117 (21%)             95 (17%)
+  t     384    149 (39%)         213 (55%)             22 ( 6%)
+  tT    222    120 (54%)          84 (38%)             18 ( 8%)
+  ptT   778    468 (60%)         198 (25%)            112 (14%)
+
+The `a` arm is worth ~0.4pp on its own and is subsumed once p/t re-seed the walk.
+`p` is the high-value, tunable arm; `t` needs a real containment predicate before
+it is shippable.

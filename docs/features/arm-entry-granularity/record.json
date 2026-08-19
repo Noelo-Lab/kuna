@@ -1,0 +1,171 @@
+{
+  "slug": "arm-entry-granularity",
+  "opportunity": "decbench:cases-missing pool; ARM Cortex-M entry granularity, 2026 functions",
+  "test_name": "O2-nuttx-nuttx-devnull_read",
+  "binary": "/home/mahaloz/github/decbench/results/full_run/O2/nuttx/stripped/nuttx",
+  "selector": "0x8003aa0",
+  "func_addr": "0x8003aa0",
+  "angr_version": null,
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "phase": "P1",
+  "subphase": "function-entry-discovery",
+  "tier": "analysis-enablement",
+  "change_kind": "new-discovery-mechanism",
+  "source_decompiler": "angr",
+  "inspiration": "decbench:cases-missing pool; ARM Cortex-M entry granularity, 2026 functions",
+  "scope": "proposal",
+  "proposal": true,
+  "default_on": false,
+  "default_on_recommended": false,
+  "ablation_changed": null,
+  "parity": null,
+  "root_cause_class": "unported-discovery-mechanism + over-tight precision predicate",
+  "owning_file": "decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs",
+  "owning_function": "code_pointer_table_seeds",
+  "upstream_anchor": "OperandReferenceAnalyzer.java:508,614 (createFunctions on Subroutine References); ArmAnalyzer.java:847 (doArmThumbDisassembly); DataOperandReferenceAnalyzer.java:39 (explicitly NOT from data pointers)",
+  "spec_chapter": "docs/spec/01-partition-and-listing.md",
+  "decisions": [
+    "MECHANISM CORRECTION to docs/decbench/recall-measurement.md: the gap is NOT 'kuna emits a body for code containing the low_pc'. Measured over 2,941 missed addresses, 1,896 sit PAST the end of the nearest kuna function and exactly 3 are strictly inside a kuna body. The code is not decompiled at all. The 24-byte median distance measures proximity, not containment. Two witnesses verified against emitted C: nuttx O2 devnull_read/devnull_write (8 bytes, zero output) and libopencm3 O2 cdcacm _usbd_standard_request_device (kuna emits 0x80016f4 then jumps to 0x8001740).",
+    "FRAMING CORRECTION: kuna is second of five on entry recall over this corpus (kuna 33,326/36,360 = 91.7%; angr 95.3%; ghidra 81.2%; binja 80.8%; ida 76.1%). Ghidra finds only 1,859 of the 2,941 addresses kuna misses. 'Port the Ghidra analyzer' is the wrong frame; the tail is against angr.",
+    "SUB-CLASS BREAKDOWN (address-based, 2,941; decbench-measured in parentheses): pointer 1,671 (1,402) / tailcall 513 (226) / called 297 (146) / fallthrough 194 (43) / unreferenced 146 (19) / after-terminator 118 (2) / condbranch 2 (0). The measured total 1,838 independently reproduces the recall doc's per-project distribution (libopencm3 136 exact, nuttx 87 exact, chibios 116 vs 115, riot-os 36 vs 33).",
+    "OWNING PASS, pointer class (57%): aif/mod.rs::code_pointer_table_seeds ALREADY collects every one of these pointer words and then rejects the target on is_thumb_function_prologue and check_valid_subroutine's MIN_SUBROUTINE_INSNS=3. Evidence present, rejected. 93.3% of missed entries have no canonical Thumb frame prologue and 41% are <=8-byte leaves (<=4 instructions), so both predicates are structurally wrong for this population. The third guard (listing.is_undefined, 'never split a discovered function') turns out to reject almost nothing, since the targets are in holes, not bodies.",
+    "OWNING PASS, tailcall class (17%): listing/walk.rs treats every non-CALL flow target as a same-function successor, so an unconditional B to another function is intra-function flow. There is no tail-call notion in the walk.",
+    "OWNING GAP, called class (10%): NOT entry discovery. 273 of 297 have a direct BL from a caller kuna DID discover; the call site sits past an unresolved Thumb TBB/TBH table branch, which walk.rs deliberately gives no static successor. Worked example: betaflight O0 blackboxLogInflightAdjustmentEvent @0x8031688 has 46 direct BLs, all from applyStepAdjustment @0x80316b4 whose third instruction is `tbh [pc, r3, lsl #1]`. Sequenced as its own investigation (Listing-tier jump-table resolution).",
+    "GROUND-TRUTH NOISE is 3.4% of the name-based pool: 105 alias/ICF surplus names (__floatundidf/__aeabi_ul2d, __gtdf2/__gedf2) on addresses already counted once. A further 309 misses (10.5%) were recovered by NO rival. Total not-worth-chasing: 10-14%.",
+    "The recall doc's cited noise example is WRONG. cleanflight's NMI_Handler/SVC_Handler/DebugMon_Handler are at 0x803b060/0x803b062/0x803b064 - three DISTINCT two-byte `bx lr` functions, each with its own vector-table slot, all four rivals recover all three. They are ordinary pointer-class misses, not one `b .` loop with three names.",
+    "INCIDENTAL DEFECT 1: entry/mod.rs::cortexm_vector_table silently no-ops on the four biggest contributors. cleanflight/betaflight fail the SHF_EXECINSTR/exec-PT_LOAD gate AND the 0x20000000-0x3FFFFFFF stack-word range (both use 0x1000fff0 CCM RAM; betaflight's table is linked at 0x20000000 for runtime relocation); crazyflie and nuttx fail word[1]==e_entry because their reset vector legitimately differs from the ELF entry. Only chibios/riot-os/libopencm3 arm the oracle.",
+    "INCIDENTAL DEFECT 2: run_aif's accepted gap starts are committed as entries but never re-seed the walk (passes.rs:535), unlike Stages 2 and 3 which rebuild the Listing. Measured worth alone: +39 entries over 9 binaries (+0.4pp). Fold into the pointer PR rather than spending a PR.",
+    "OPTION SWEEP: --mode aggressive, addrtable, fast_funcdisc, eh_frame_full and operand_refs each recover EXACTLY ZERO additional entries on every binary tried (msc, usart-stdio, chibios ch, nuttx, riot-os, crazyflie cf2, cleanflight, betaflight). aggressive resolves to the same listing+funcstart_patterns+aif set decompile-all already injects on ARM. The earlier betaflight-only 'aggressive recovers zero of 277' finding replicates and generalises. This is a new-mechanism question, not a default-flip question.",
+    "SIZING (scratch env-gated build, reverted, not in this diff): relaxing the Stage-3 guards (arm p) plus a first-cut tail-call rule (arm t), both re-seeding the walk, takes 9 binaries from 8,926/9,802 (91.1%) to 9,722/9,802 (99.2%) - 91% of the residual gap. Precision of the new entries over 7 binaries: p 62% ground truth / 21% splits a real body; t 39% / 55%; strict-t 54% / 38%. The precision model IS the remaining work.",
+    "VERDICT: PROPOSAL, 4-PR sequence. (1) cortexmvectors - widen the vector-table signature, SMALL, independent. (2) ptrentry - pointer-referenced entries with table-run corroboration + terminating-routine validity replacing the length floor, LARGE, the prize. (3) tailcallentry - needs WalkState to track per-function claimed instruction sets before it is shippable. (4) Listing-tier TBB/TBH resolution - a separate gap. All default-OFF first.",
+    "NOT a contained fix. The dominant class is two predicates in one function, which is tempting, but relaxing them unrefined splits a real function 21% of the time. Shipping that would trade 1,400 recovered functions for several hundred wrongly-split ones on a benchmark that scores per ground-truth function and therefore cannot see the damage."
+  ],
+  "measured": {
+    "corpus": {
+      "method": "kuna functions <stripped> --json --option listing on --option funcstart_patterns on --option aif on (reproduces decompile-all --mode reliable's entry set: betaflight O0 5798 vs 5797). Ground truth = DW_TAG_subprogram DW_AT_low_pc != 0 from the compiled/ counterpart, Thumb bit masked. Rival sets from the stored decbench decompiled/<tool>_<bin>.toml address= lines. 8 ARM projects x 3 opt levels, crazyflie/firmware.elf dropped as a byte-identical duplicate of cf2.elf.",
+      "ground_truth_addresses": 36360,
+      "entry_recall": {
+        "kuna": 33326,
+        "angr": 34295,
+        "ghidra": 29530,
+        "binja": 29364,
+        "ida": 17632
+      },
+      "misses_total": 2941,
+      "misses_decbench_measured": 1838,
+      "misses_by_subclass": {
+        "pointer": 1671,
+        "tailcall": 513,
+        "called": 297,
+        "fallthrough": 194,
+        "unreferenced": 146,
+        "after_terminator": 118,
+        "condbranch": 2
+      },
+      "misses_by_subclass_measured": {
+        "pointer": 1402,
+        "tailcall": 226,
+        "called": 146,
+        "fallthrough": 43,
+        "unreferenced": 19,
+        "after_terminator": 2
+      },
+      "misses_by_project": {
+        "betaflight": 942,
+        "crazyflie": 663,
+        "cleanflight": 457,
+        "libopencm3": 443,
+        "nuttx": 185,
+        "chibios": 167,
+        "riot-os": 59,
+        "freertos": 25
+      },
+      "absorbed_vs_dropped": {
+        "dropped_past_containing_function_end": 1896,
+        "unknown_extent": 1040,
+        "absorbed_inside_a_kuna_body": 3,
+        "no_containing_entry": 2
+      },
+      "noise": {
+        "name_based_pool": 3046,
+        "alias_or_icf_surplus_names": 105,
+        "misses_no_rival_found": 309
+      },
+      "shape": {
+        "canonical_thumb_frame_prologue_at_low_pc": 197,
+        "no_canonical_prologue": 2744,
+        "size_le_8_bytes": 1205,
+        "size_le_8_bytes_pointer_referenced": 852
+      },
+      "distance_to_nearest_lower_kuna_entry": {
+        "median": 28,
+        "p25": 10,
+        "p75": 72,
+        "within_64B_pct": 73
+      }
+    },
+    "option_ablation": {
+      "note": "hits = DWARF low_pc addresses recovered; baseline = listing+funcstart_patterns+aif",
+      "binaries": [
+        "O2/libopencm3/msc.elf",
+        "O2/libopencm3/usart-stdio.elf",
+        "O2/chibios/ch.elf",
+        "O2/nuttx/nuttx",
+        "O2-noinline/riot-os/hello-world.elf",
+        "O2/crazyflie/cf2.elf"
+      ],
+      "delta_vs_baseline": {
+        "aggressive": 0,
+        "addrtable": 0,
+        "fast_funcdisc": 0,
+        "eh_frame_full": 0,
+        "operand_refs": 0
+      },
+      "funcstart_patterns_off_cost": "6 to 490 entries per binary (the existing discovery is load-bearing and saturated)"
+    },
+    "scaffold_experiment": {
+      "note": "env-gated scratch build, REVERTED; not in this diff. Arms: a = re-seed the walk with AIF gap starts; p = code-pointer targets with the gap-only/frame-prologue/>2-instruction guards removed; t = unconditional-branch targets opening a block; T = stricter variant requiring the previous instruction to RETURN.",
+      "binaries": 9,
+      "ground_truth": 9802,
+      "hits": {
+        "base": 8926,
+        "a": 8965,
+        "p": 9520,
+        "t": 9092,
+        "apt": 9722
+      },
+      "recall_pct": {
+        "base": 91.1,
+        "a": 91.5,
+        "p": 97.1,
+        "t": 92.8,
+        "apt": 99.2
+      },
+      "precision_7_binaries": {
+        "p": {"new": 560, "ground_truth": 348, "splits_a_real_body": 117, "outside_any_dwarf_body": 95},
+        "t": {"new": 384, "ground_truth": 149, "splits_a_real_body": 213, "outside_any_dwarf_body": 22},
+        "tT": {"new": 222, "ground_truth": 120, "splits_a_real_body": 84, "outside_any_dwarf_body": 18},
+        "ptT": {"new": 778, "ground_truth": 468, "splits_a_real_body": 198, "outside_any_dwarf_body": 112}
+      }
+    },
+    "cortexm_vector_table_detection": {
+      "detected": ["chibios", "riot-os", "libopencm3"],
+      "not_detected": ["cleanflight", "betaflight", "crazyflie", "nuttx", "freertos"],
+      "reasons": {
+        "cleanflight": "A-only .isr_vector section; stack word 0x1000fff0 outside the 0x20000000-0x3FFFFFFF window",
+        "betaflight": "A-only .isr_vector linked at 0x20000000 (RAM-relocated); same CCM stack word",
+        "crazyflie": "A-only section; reset word 0x08025239 != e_entry 0x080041c0",
+        "nuttx": "table at .text+0; word[1] 0x0800122f != e_entry 0x8000189",
+        "freertos": "-ffunction-sections, no single vector section presenting the signature"
+      }
+    }
+  },
+  "ged_before": null,
+  "ged_after": null,
+  "speed_off_median_s": null,
+  "speed_on_median_s": null,
+  "speed_delta_pct": null,
+  "speed_forced_off": false
+}
