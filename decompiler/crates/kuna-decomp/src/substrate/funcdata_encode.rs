@@ -134,7 +134,15 @@ impl Funcdata {
             if let Some(lm) = self.get_scope_local() {
                 lm.encode_with_wire_symbols(&wire_symbols, enc)?;
                 encodable = lm.encodable_symbol_ids();
-                encodable.extend(wire_symbols.iter().map(|w| w.id));
+                // Only the wire symbols the encode above actually WROTE (the
+                // `is_encodable` filter): a reference to a skipped one is the
+                // orphan-symref hard-throw the filter exists to avoid.  And
+                // when `has_no_code()` this whole block is skipped, so
+                // `encodable` stays EMPTY and every symref — wire ids included
+                // — is withheld: there is no `<localdb>` to resolve against.
+                encodable.extend(
+                    wire_symbols.iter().filter(|w| w.is_encodable()).map(|w| w.id),
+                );
             }
             self.kuna_wire_symbols = wire_symbols;
         }
@@ -252,7 +260,15 @@ impl Funcdata {
                 .and_then(|i| self.kuna_wire_symbols.get(*i))
                 .map(|w| w.id);
             let (local_symref, category) = match (attached, wire, self.get_scope_local()) {
-                (None, Some(id), _) => (Some(id), crate::database::symbol_category::NO_CATEGORY),
+                // The wire arm takes the SAME encodable gate as the attached
+                // one: an id that was filtered out of `<localdb>` (or a whole
+                // `<localdb>` that a `has_no_code()` function never emitted) is
+                // the "HighLocal is missing symbol" hard-throw, which discards
+                // the entire result.  Withholding it drops the class to
+                // `"other"`, which Java decodes happily.
+                (None, Some(id), _) if encodable_symbols.contains(&id) => {
+                    (Some(id), crate::database::symbol_category::NO_CATEGORY)
+                }
                 (Some(sid), _, Some(lm)) => {
                     let (id, cat) = lm.symbol_id_and_category(sid);
                     // Only reference a symbol the `<localdb>` actually
@@ -474,11 +490,20 @@ impl Funcdata {
                 .and_then(|h| h.kuna_name())
                 .expect("named checked above")
                 .to_string();
-            let hash = if covered {
+            // A 0-sized (void/undefined-empty) data-type takes the hashed shape
+            // too, whatever the coverage: Java's `MappedEntry.decode` throws
+            // "Invalid symbol 0-sized data-type" and discards the whole result,
+            // while `DynamicEntry.decode` has no size check at all.  (The
+            // `is_encodable` filter on the encode is the backstop if the hash
+            // also fails.)
+            let hash = if covered || dtype.get_size() < 1 {
                 // The collision budget is pinned at the UPSTREAM 8 on the wire
                 // path: Java computes its own hash for the same variable with a
                 // hardcoded `maxduplicates = 8` (`DynamicHash.java:440`), and a
                 // hash the two sides disagree on cannot round-trip a rename.
+                // Deliberately NOT kuna's `dynamichashmax` option: the wire
+                // value must match what Java recomputes, not what kuna's own
+                // analysis is configured for.
                 match crate::dynamic::dynamic_unique_hash(rep, 8, self) {
                     Ok((h, _)) if h != 0 => h,
                     _ => continue, // no unique hash: stay symbol-less

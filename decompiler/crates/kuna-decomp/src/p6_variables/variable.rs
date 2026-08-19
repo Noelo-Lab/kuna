@@ -390,6 +390,22 @@ pub struct HighVariable {
     /// would let the encode path perturb decompilation.  Nothing outside the
     /// encode/markup reads this one.
     kuna_link_symbol: Option<crate::database::SymbolId>,
+    /// (kuna, ghidra Phase 4) The local Symbol a `&symbol` REFERENCE high
+    /// points at — C++ `Varnode::setSymbolReference` →
+    /// `HighVariable::setSymbolReference(entry->getSymbol(), off)`
+    /// (`varnode.cc:465`, `variable.cc:283`), the identity half of the bind
+    /// `link_symbol_reference` already performs for the name/type/offset.
+    ///
+    /// Its high is the CONSTANT `PTRSUB` offset operand, not the variable's own
+    /// storage, so this is deliberately NOT [`Self::kuna_link_symbol`]: that
+    /// field feeds `<high symref>`, and such a high encodes `class="constant"`,
+    /// where Java's `HighConstant.decode` does nothing at all with a mapped
+    /// local symref.  Only the DECLARATION needs it: a stack array/struct
+    /// materialized solely through `&sym` (`char v1 [16]` used as `memcmp(v1,…)`)
+    /// is declared off this reference high, and its `<vardecl symref>` must
+    /// carry the `<localdb>` id or `ClangVariableDecl.decode` logs "Invalid
+    /// symbol reference" and leaves rename/retype dead on that line.
+    kuna_ref_symbol: Option<crate::database::SymbolId>,
 }
 
 impl HighVariable {
@@ -419,6 +435,7 @@ impl HighVariable {
             kuna_equate_symbol: None,
             kuna_global: false,
             kuna_link_symbol: None,
+            kuna_ref_symbol: None,
         }
     }
 
@@ -469,6 +486,20 @@ impl HighVariable {
     /// deliberately left symbol-less.
     pub fn kuna_link_symbol(&self) -> Option<crate::database::SymbolId> {
         self.kuna_link_symbol
+    }
+
+    /// (kuna, ghidra Phase 4) Record the local Symbol this `&symbol` reference
+    /// high points at — see [`Self::kuna_ref_symbol`].
+    pub fn set_kuna_ref_symbol(&mut self, sym: crate::database::SymbolId) {
+        self.kuna_ref_symbol = Some(sym);
+    }
+
+    /// (kuna, ghidra Phase 4) The local Symbol this `&symbol` reference high
+    /// points at, or `None` when the high is not such a reference (or the
+    /// reference resolved through the GLOBAL scope, whose ids are not
+    /// `LocalSymbolMap` ids).
+    pub fn kuna_ref_symbol(&self) -> Option<crate::database::SymbolId> {
+        self.kuna_ref_symbol
     }
 
     /// (kuna) Bind the mapped Symbol's data-type (for array/struct rendering).

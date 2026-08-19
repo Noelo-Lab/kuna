@@ -2719,14 +2719,19 @@ impl PrintC {
             // once per declaration per decompile AND leave declaration-token
             // rename/retype dead.  The create index survives only as the
             // fallback for a high the naming pass deliberately left
-            // symbol-less.  The representative's `varref` rides along too, so
-            // the declaration's name token resolves to a Varnode (and through
-            // it a HighVariable) exactly like a usage token — the standalone
-            // printer ignores both fields (EmitNoMarkup), so the rendered C is
-            // unchanged either way.
+            // symbol-less.
+            //
+            // NO `varref`: upstream's `emitVarDecl` pushes an explicitly null
+            // Varnode (`pushSymbol(sym,(Varnode *)0,(PcodeOp *)0)`,
+            // printc.cc:2629-2640), and the omission is load-bearing —
+            // `ClangVariableToken.getHighVariable` returns `inst.getHigh()`
+            // from INSIDE its `inst != null` block, so a declaration carrying a
+            // varref whose Varnode has no `<high>` yields a NULL HighVariable
+            // where the (unconditional) parent-declaration fallback would have
+            // supplied the symbol's own.
             let mut markup = MarkupRef::none();
             let decl_rep = decl_rep_varnode(fd, *high);
-            markup.varref = decl_rep
+            let decl_rep_index = decl_rep
                 .and_then(|vn| fd.vbank().get(vn))
                 .map(|v| v.get_create_index() as uintb);
             // The declaration may be keyed on a GROUP MEMBER high while the
@@ -2741,7 +2746,7 @@ impl PrintC {
                         .and_then(|v| v.get_high())
                         .and_then(|h| fd.kuna_high_symbol_wire_id(h))
                 })
-                .or(markup.varref);
+                .or(decl_rep_index);
             let (mut decl_type, mut array_count, comment) =
                 self.rendered_local_decl(fd, arch, *high);
             // (kuna) The Symbol-keyed collapse arbitrated a type disagreement between

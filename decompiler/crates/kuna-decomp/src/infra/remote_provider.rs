@@ -1387,14 +1387,26 @@ impl RemoteScope {
                             if !p.model.is_empty() {
                                 model_name = Some(p.model.clone());
                             }
+                            // SLOT BASIS: the storage overrides address the
+                            // slots of the prototype `to_pieces` builds, which
+                            // COMPACTS OUT any parameter with no decodable type
+                            // — so count in that same compacted basis, never
+                            // `rp.index`.  A host cat-0 parameter whose type
+                            // failed to decode would otherwise shift every
+                            // later `pieces` slot while these overrides stayed
+                            // absolute, and the resulting index/count disagreement
+                            // is exactly what Java's `checkFullCommit` reacts to
+                            // by force-rewriting the user's signature.
+                            let mut slot: int4 = 0;
                             for rp in &p.params {
-                                let (Some(dt), false) =
-                                    (rp.dtype.clone(), rp.storage.is_invalid())
-                                else {
+                                let Some(dt) = rp.dtype.clone() else { continue };
+                                let this_slot = slot;
+                                slot += 1;
+                                if rp.storage.is_invalid() {
                                     continue;
-                                };
+                                }
                                 param_storage.push((
-                                    rp.index as int4,
+                                    this_slot,
                                     rp.name.clone(),
                                     crate::fspec::ParameterPieces {
                                         addr: rp.storage.clone(),

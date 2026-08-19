@@ -488,11 +488,13 @@ const PIN_FAILLOG_MANGLED_TOKENS: [usize; 3] = [0, 0, 0];
 // `<localdb>` (the create-index fallback).  Phase 4 originally emitted the
 // fallback for EVERY declaration — Java logged "Invalid symbol reference" per
 // declaration and rename/retype was dead on declaration lines.  The review
-// round drives these to ~0; the single survivor on sub_3320 is a declaration
-// the printer keys on a group-member high whose covering Symbol the analysis
-// never bound (documented follow-up).  Pinned so the systemic case cannot
-// come back and the residue can only shrink.
-const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 1, 0];
+// round drove these to 0/1/0; carrying the Symbol identity through the
+// `&symbol` reference bind (C++ `Varnode::setSymbolReference`) closed the last
+// one on sub_3320 too, so every declaration in the corpus now resolves.  ZERO
+// is the contract, not a high-water mark: a new residue must be justified
+// against `ClangVariableDecl.decode` (a log line + a dead rename on that one
+// declaration, never a decode throw) before this pin moves up.
+const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // Whole-session query traffic: total getPcode asks (repeat decompiles re-ask
 // everything — no p-code cache, faithful to upstream GhidraTranslate) vs
 // distinct instruction addresses actually decoded.  Phase 3 REDUCED both
@@ -1229,11 +1231,33 @@ fn ghidra_sim_sort_grep_breadth() {
         assert_structure(&run);
         for (i, parsed) in run.docs.iter().enumerate() {
             let (reg_count, reg_names) = register_leaks(&parsed.c_text, &run.oracle.register_names);
+            let unresolved = ghidra_sim::vardecl_unresolved(parsed);
             eprintln!(
-                "{fixture} {}: registers={reg_count} {reg_names:?} unique={} placeholders={}",
+                "{fixture} {}: registers={reg_count} {reg_names:?} unique={} placeholders={} \
+                 vardecl_unresolved={unresolved} vardecls={}",
                 targets[i],
                 unique_leaks(&parsed.c_text),
                 placeholder_total(&parsed.c_text),
+                parsed.vardecl_symrefs.len(),
+            );
+            // The structural assertion above only demands that SOME declaration
+            // resolves; on breadth it must be ALL of them.  `assert_structure`'s
+            // wholesale check went red here (100% unresolved on sort/sub_6370)
+            // while the faillog fixture measured healthy, because a stack
+            // aggregate reached only through `&sym` is declared off the constant
+            // PTRSUB high, which carried no Symbol identity at all.  Pin the
+            // count at 0: a genuine residue must be recorded per target with the
+            // Java degradation spelled out (`ClangVariableDecl.decode` logs
+            // "Invalid symbol reference" and returns -- a dead rename on that one
+            // line, never a decode throw), not absorbed silently.
+            assert_eq!(
+                unresolved, 0,
+                "{fixture} {}: {unresolved} of {} <vardecl symref>s do not resolve \
+                 against <localdb> — declaration-line rename/retype is dead on \
+                 those lines\n{}",
+                targets[i],
+                parsed.vardecl_symrefs.len(),
+                parsed.c_text,
             );
         }
     }

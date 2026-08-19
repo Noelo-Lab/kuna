@@ -821,6 +821,9 @@ pub struct SyncOverlap {
 /// scan.  Produced by [`ScopeLocal::query_container_for_link`].
 #[derive(Debug, Clone)]
 pub struct LinkEntryInfo {
+    /// `entry->getSymbol()` — the containing Symbol's identity in THIS scope
+    /// (the id `<localdb>` encodes, via [`ScopeLocal::symbol_id_and_category`]).
+    pub symbol: crate::database::SymbolId,
     /// `entry->getSymbol()->getDisplayName()` (the name the high renders if the
     /// entry is reused — e.g. the recovered parameter `a`).
     pub display_name: String,
@@ -1242,8 +1245,9 @@ impl ScopeLocal {
     /// bind to the parameter names (`ptr`/`a`/`b`) instead of the raw registers.
     ///
     /// Idempotent: if a Symbol already overlaps the parameter's storage (a console
-    /// `map addr`, a seeded host local, a promoted local, or a prior call) it is
-    /// not re-created — but it IS categorized as this parameter slot (see below).
+    /// `map addr`, a seeded host local, or a prior call) it is not re-created; it
+    /// is categorized as this parameter slot only when its storage matches the
+    /// parameter's EXACTLY (see below).
     /// Returns the new `SymbolId`, or `None` when an existing symbol was reused.
     pub fn add_param_symbol(
         &mut self,
@@ -1260,24 +1264,41 @@ impl ScopeLocal {
         // entry; only create when none exists (the `entry == 0` arm of
         // `setInput`/`linkSymbol`).
         if let Some(eref) = self.db.find_overlap(self.scope, addr, ct.get_size()) {
-            // (kuna, ghidra Phase 4) The overlapping symbol IS this parameter's
-            // storage — e.g. a host local seeded at the same register.  C++
-            // `ProtoStoreSymbol::setInput` categorizes whatever symbol occupies
-            // the slot (`scope->setCategory(sym, function_parameter, i)`).
-            // Leaving it uncategorized would drop the parameter from the encoded
-            // cat-0 list, shrinking `<localdb>`'s parameter set below the
-            // database's — which makes Java's `checkFullCommit` force-rewrite
-            // the user's signature on the next rename.
-            let sym = self.db.entry(self.scope, eref).symbol;
-            if self.db.symbol(sym).get_category()
-                != crate::database::symbol_category::FUNCTION_PARAMETER
-            {
-                self.db.set_category(
-                    self.scope,
-                    sym,
-                    crate::database::symbol_category::FUNCTION_PARAMETER,
-                    i,
-                );
+            // (kuna, ghidra Phase 4) An EXACT-storage match is this parameter's
+            // own symbol under another guise — a host local seeded at the very
+            // same address and width, or a prior call's creation — so it carries
+            // the slot.  Upstream reaches the same state from the other end
+            // (`ProtoStoreSymbol::setInput`, fspec.cc:3150-3183): it looks the
+            // symbol up BY SLOT (`getCategorySymbol(function_parameter,i)`) and,
+            // when that symbol's `getFirstWholeMap()` entry disagrees on addr OR
+            // size, REMOVES it and adds a fresh one — it never promotes an
+            // unrelated overlapping local.  So the exactness test is the whole
+            // guard: an 8-byte local merely OVERLAPPING a 4-byte parameter must
+            // stay `no_category`, or (a) `<localdb>` would advertise the local's
+            // name/type/storage as cat-0 slot `i`, whose storage compare in
+            // Java's `checkFullCommit` fails and force-rewrites the user's
+            // signature, and (b) `HighFunctionDBUtil.getDatabaseParameter` keys
+            // the DB slot off `getCategoryIndex()`, so renaming that LOCAL in
+            // the GUI would rewrite DB parameter `i`.  This runs in the main
+            // loop (`ActionRestructureVarnode`), standalone included, and
+            // `clear_unlocked_category_negative` only clears `cat < 0` — a
+            // wrongly promoted symbol would be permanent.
+            let (entry_addr, entry_size) = {
+                let e = self.db.entry(self.scope, eref);
+                (e.get_addr().clone(), e.get_size())
+            };
+            if entry_addr == *addr && entry_size == ct.get_size() {
+                let sym = self.db.entry(self.scope, eref).symbol;
+                if self.db.symbol(sym).get_category()
+                    != crate::database::symbol_category::FUNCTION_PARAMETER
+                {
+                    self.db.set_category(
+                        self.scope,
+                        sym,
+                        crate::database::symbol_category::FUNCTION_PARAMETER,
+                        i,
+                    );
+                }
             }
             return Ok(None);
         }
@@ -1783,6 +1804,7 @@ impl ScopeLocal {
         let sym_off =
             (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
         Some(LinkEntryInfo {
+            symbol: sym,
             display_name: symbol.get_display_name().to_string(),
             sym_off,
             sym_type: symbol.dtype.clone(),
@@ -1821,6 +1843,14 @@ impl ScopeLocal {
     pub fn symbol_id_and_category(&self, sym: crate::database::SymbolId) -> (u64, int4) {
         let s = self.db.symbol(sym);
         (s.get_id(), s.get_category())
+    }
+
+    /// Whether [`Self::encode`] will actually emit this symbol — the O(1)
+    /// single-symbol form of [`Self::encodable_symbol_ids`], for the markup's
+    /// `<vardecl symref>` (which is computed per declaration on every
+    /// decompile, so it must not pay for building the whole id set).
+    pub fn symbol_is_encodable(&self, sym: crate::database::SymbolId) -> bool {
+        self.db.symbol_encodable(sym)
     }
 
     /// The symbol ids [`ScopeLocal::encode`] actually emits — the set a

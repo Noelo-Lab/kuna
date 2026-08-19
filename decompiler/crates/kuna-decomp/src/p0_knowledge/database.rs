@@ -4161,6 +4161,18 @@ pub struct WireSymbol {
 }
 
 impl WireSymbol {
+    /// The wire-symbol analogue of [`Database::symbol_is_encodable`]: a MAPPED
+    /// entry whose data-type has size 0 makes Java's `MappedEntry.decode` throw
+    /// "Invalid symbol 0-sized data-type" and DISCARD the whole decompile
+    /// result.  (`DynamicEntry.decode` has no such check, so a hashed symbol is
+    /// always encodable.)  `kuna_link_high_symbols` steers a 0-size high to the
+    /// hashed shape, so this is the same defensive backstop the scope symbols
+    /// have — and, like theirs, it also withholds the id from
+    /// `<high symref>`/`<vardecl symref>` so a skip cannot orphan a reference.
+    pub fn is_encodable(&self) -> bool {
+        self.hash != 0 || self.dtype.get_size() > 0
+    }
+
     /// Encode as a `<mapsym>` — the same shape `Symbol::encode` +
     /// `SymbolEntry::encode` produce for a scope symbol.
     fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
@@ -4341,6 +4353,13 @@ impl Database {
         out
     }
 
+    /// [`Database::symbol_is_encodable`] for one already-known symbol (the
+    /// markup's per-declaration `<vardecl symref>` check — see
+    /// [`ScopeLocal::symbol_is_encodable`](crate::varmap::ScopeLocal::symbol_is_encodable)).
+    pub fn symbol_encodable(&self, sym: SymbolId) -> bool {
+        Self::symbol_is_encodable(&self.symbols[sym])
+    }
+
     /// The per-symbol filter shared by [`Database::encode_scope`] and
     /// [`Database::encodable_symbol_ids`] so the two can never disagree.
     fn symbol_is_encodable(sym: &Symbol) -> bool {
@@ -4435,6 +4454,9 @@ impl Database {
             // not load-bearing to any Java consumer: LocalSymbolMap indexes by
             // id and sorts parameters by their cat index).
             for ws in wire_symbols {
+                if !ws.is_encodable() {
+                    continue;
+                }
                 ws.encode(encoder)?;
             }
             encoder.close_element(&ELEM_SYMBOLLIST);

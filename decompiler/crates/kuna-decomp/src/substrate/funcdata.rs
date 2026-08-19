@@ -1240,22 +1240,42 @@ impl Funcdata {
         &self,
         high: crate::context::HighVariableId,
     ) -> Option<uint8> {
+        // Every branch below returns only an id the `<localdb>` encode ACTUALLY
+        // WRITES: `encode_scope`'s defensive per-symbol skips (and the wire
+        // symbols' `is_encodable`) would otherwise leave the declaration
+        // pointing at a symbol that is not in the document — "Invalid symbol
+        // reference" in Java's log and a dead rename on that line, exactly what
+        // this attribute exists to prevent.  The caller falls back to the
+        // varnode create index, which is no worse.
+        //
         // A wire-only symbol first (the encode-time link pass synthesized it
         // for a high the analysis left symbol-less), then the real scope
         // symbol the naming pass / analysis bound.
         if let Some(idx) = self.kuna_wire_symbol_for_high.get(&high) {
             if let Some(w) = self.kuna_wire_symbols.get(*idx) {
-                return Some(w.id);
+                if w.is_encodable() {
+                    return Some(w.id);
+                }
             }
         }
         let h = self.high_bank.get(high)?;
+        // `kuna_ref_symbol` last of the recorded binds: it is the Symbol a
+        // `&symbol` REFERENCE high points at (C++ `setSymbolReference`), which a
+        // high that also owns storage would already have answered above.  It is
+        // the only bind a stack aggregate reached solely through `&sym` has —
+        // its entire high is the constant PTRSUB operand, so the addr-tied
+        // re-derivation below cannot see it.
         if let Some(sid) = h
             .kuna_link_symbol()
             .or_else(|| h.kuna_dynamic_symbol())
             .or_else(|| h.kuna_equate_symbol())
+            .or_else(|| h.kuna_ref_symbol())
         {
             let lm = self.localmap.as_ref()?;
-            return Some(lm.symbol_id_and_category(sid).0);
+            if lm.symbol_is_encodable(sid) {
+                return Some(lm.symbol_id_and_category(sid).0);
+            }
+            return None;
         }
         // A declaration can be keyed on a GROUP MEMBER high (the printer
         // collapses the several highs of one mapped Symbol into a single
@@ -1277,6 +1297,9 @@ impl Funcdata {
             if let Some((sid, _, _, _)) =
                 lm.container_symbol_link(v.get_addr(), &invalid)
             {
+                if !lm.symbol_is_encodable(sid) {
+                    continue;
+                }
                 return Some(lm.symbol_id_and_category(sid).0);
             }
         }
@@ -1324,6 +1347,22 @@ impl Funcdata {
     /// Runs at the top of the naming pass (upstream runs it at the top of
     /// `ActionNameVars::apply`); a no-op with no recommendations, so the
     /// standalone pipeline is structurally unaffected.
+    ///
+    /// PLACEMENT (a real divergence, guarded rather than reordered): upstream
+    /// runs this loop AFTER `linkSymbols`, so `vn->getHigh()->getSymbol()` is
+    /// already populated and its guards — `sym == 0`, `sym->getScope() != this`,
+    /// `!sym->isNameUndefined()` — are live, and it only ever RENAMES an
+    /// existing Symbol.  kuna's naming pass fuses linkSymbols with the `vN`
+    /// default assignment into one location-ordered walk, so there is no point
+    /// "after linking, before defaults" to run at; the loop therefore runs
+    /// first and CREATES a dynamic Symbol.  The per-high guard below is then
+    /// vacuous (no high is named yet), so the equivalent guard is applied
+    /// against the SCOPE instead: a hash that lands on storage the naming walk
+    /// would bind to a real Symbol — a cat-0 parameter, or any Symbol that
+    /// already has a defined name — is skipped, which is what upstream's
+    /// `sym != 0 && !isNameUndefined` pair achieves.  Without it a stale or
+    /// shape-shifted host hash could take a parameter's variable, and that
+    /// high's `<high symref>` would stop pointing at the parameter.
     pub fn kuna_apply_dynamic_recommendations(&mut self) {
         let recs: Vec<(String, Address, u64)> = match self.localmap.as_ref() {
             Some(lm) => lm
@@ -1363,6 +1402,28 @@ impl Funcdata {
                 .unwrap_or(true);
             if already {
                 continue;
+            }
+            // The scope-side stand-in for upstream's `sym == 0` /
+            // `!sym->isNameUndefined()` pair (see the placement note above):
+            // never take a Varnode whose storage the naming walk is going to
+            // bind to a real Symbol.
+            {
+                let usepoint = self.vn_use_point(vn);
+                let Some(v_addr) = self.vbank().get(vn).map(|v| v.get_addr().clone()) else {
+                    continue;
+                };
+                let blocked = self
+                    .localmap
+                    .as_ref()
+                    .and_then(|lm| lm.query_container_for_link(&v_addr, &usepoint))
+                    .map(|info| {
+                        info.category == crate::database::symbol_category::FUNCTION_PARAMETER
+                            || !info.is_name_undefined
+                    })
+                    .unwrap_or(false);
+                if blocked {
+                    continue;
+                }
             }
             let dtype = self.with_high_split(|hb, ctx| {
                 hb.get_mut(high).expect("dyn rec: stale high").get_type(ctx, None)
@@ -2261,6 +2322,12 @@ impl Funcdata {
         // `new HighVariable`s are freed); the W7 high bank is cleared here to
         // mirror that lifecycle.
         self.high_bank.clear();
+        // (kuna, ghidra Phase 4) The wire symbols are keyed by HighVariableId,
+        // so they MUST die with the arena that issued those ids — a restart
+        // would otherwise let a rebuilt high inherit another variable's symbol
+        // id and hand the GUI the wrong rename target.
+        self.kuna_wire_symbols.clear();
+        self.kuna_wire_symbol_for_high.clear();
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

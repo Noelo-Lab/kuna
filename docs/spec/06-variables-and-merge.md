@@ -463,15 +463,27 @@ list: C++ keeps `dynRecommend` and re-applies it through
 `DynamicHash::findVarnode` (varmap.cc:1557-1573).  kuna ports that too
 (`ScopeLocal::add_recommend_dynamic` /
 `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
-(Funcdata::kuna_apply_dynamic_recommendations)`, run at the top of the naming
-pass exactly as upstream runs it at the top of `ActionNameVars::apply`): the
-recorded hash resolves back to its Varnode, and when that Varnode's high is
-still unnamed it takes the recommended name AND a dynamic Symbol carrying the
-same hash — so the re-encoded `<localdb>` hands Java a `<mapsym
-type="dynamic">` it resolves to the very variable the user renamed.  The hash
-is computed with the upstream budget of 8 because Java hardcodes the same
-(`DynamicHash.java:440`) and a hash the two sides disagree on cannot
-round-trip.
+(Funcdata::kuna_apply_dynamic_recommendations)`): the recorded hash resolves
+back to its Varnode, and when that Varnode's high is still unnamed it takes the
+recommended name AND a dynamic Symbol carrying the same hash — so the
+re-encoded `<localdb>` hands Java a `<mapsym type="dynamic">` it resolves to
+the very variable the user renamed.  The hash is computed with the upstream
+budget of 8 because Java hardcodes the same (`DynamicHash.java:440`) and a hash
+the two sides disagree on cannot round-trip — deliberately NOT kuna's
+`dynamichashmax` option, whose value only has to satisfy kuna's own analysis.
+
+PLACEMENT is a real divergence.  Upstream runs the `dynRecommend` loop AFTER
+`linkSymbols`, so every high already carries `getSymbol()` and the loop merely
+RENAMES an existing Symbol under three guards (`sym == 0`, wrong scope,
+`!isNameUndefined`).  kuna's naming pass fuses linking with the `vN` default
+assignment into one location-ordered walk, leaving no "after linking, before
+defaults" point; the loop therefore runs FIRST and CREATES the dynamic Symbol.
+Because no high is named at that moment, the ported per-high guard is vacuous,
+so the equivalent guard is applied against the SCOPE instead: a hash landing on
+storage the walk is about to bind to a real Symbol — a `function_parameter`, or
+any Symbol that already has a defined name — is skipped.  Without it a stale or
+shape-shifted host hash could take a parameter's variable, and that high's
+`<high symref>` would stop pointing at the parameter.
 
 The lists' only producer today is ghidra-mode's host-`<localdb>` seeding (the
 GUI rename persistence loop, chapter [00](00-overview.md)); the standalone

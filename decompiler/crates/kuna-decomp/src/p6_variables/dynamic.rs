@@ -857,7 +857,12 @@ impl DynamicHash {
         if total != vnlist2.len() as uint4 {
             return None;
         }
-        Some(vnlist2[pos as usize])
+        // C++ indexes `vnlist2[pos]` bare: `total == vnlist2.size()` and a
+        // well-formed hash keeps `pos < total`.  The hash is HOST-supplied on
+        // the ghidra-mode path (a Java `DynamicEntry`), so a corrupt/hand-edited
+        // one could carry `pos >= total` and panic the whole process instead of
+        // failing the one lookup.
+        vnlist2.get(pos as usize).copied()
     }
 
     /// Given an address and hash, find the unique matching PcodeOp

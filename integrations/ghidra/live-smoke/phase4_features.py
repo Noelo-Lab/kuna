@@ -196,9 +196,17 @@ def main():
             finally:
                 program.endTransaction(tid0, True)
             before = {str(v.getName()) for v in func.getAllVariables()}
+            # Gate on the COMMIT having produced something, not on an arbitrary
+            # count: a function with a single local is a legitimate target and
+            # must not fail the rig.  With 0 committed variables the collateral
+            # check below is vacuous, which IS a failure of this rig's premise;
+            # with 1 it is weak, so say so and carry on.
             if not check("DB carries committed locals to detect collateral renames",
-                         len(before) >= 2, f"{len(before)} DB variables"):
+                         len(before) >= 1, f"{len(before)} DB variables"):
                 failures += 1
+            elif len(before) < 2:
+                log("NOTE: only 1 committed DB variable — the collateral-rename "
+                    "check cannot discriminate on this function")
             tid = program.startTransaction("phase4 rename")
             err = None
             try:
@@ -283,7 +291,6 @@ def main():
         # ---- 5: parameter rename (cat-0 + index + exact storage) -----------
         if params:
             p0 = params[0]
-            old_p = str(p0.getName())
             # An in-place rename is only meaningful if the decoded prototype
             # ALREADY agrees with the database — otherwise getDatabaseParameter
             # force-commits kuna's whole signature and the rename "lands"
@@ -315,7 +322,13 @@ def main():
                 f"db={[(p.getName(), str(p.getVariableStorage())) for p in db_params]}",
             ):
                 failures += 1
-            p0 = decoded[0] if decoded else p0
+            # Rename through the POST-COMMIT result (a GUI edit always acts on
+            # the HighSymbol of the result currently on screen), and take the
+            # "old name" from that same result — reading it from the pre-commit
+            # `params` would report a name the rename never targeted.
+            if decoded:
+                p0 = decoded[0]
+            old_p = str(p0.getName())
             tid = program.startTransaction("phase4 param rename")
             err = None
             try:

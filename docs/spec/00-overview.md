@@ -318,7 +318,17 @@ Four front-ends drive one engine assembly:
   ids the wire needs. First, the naming pass RECORDS the bind it actually made
   (`HighVariable::kuna_link_symbol`,
   `decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs`) when
-  a high resolves to a covering localmap entry. Second, an encode-time link
+  a high resolves to a covering localmap entry — and, for a `&symbol`
+  REFERENCE, the identity of the Symbol referred to
+  (`HighVariable::kuna_ref_symbol`, set by `Funcdata::link_symbol_reference`,
+  the port of C++ `Varnode::setSymbolReference` →
+  `HighVariable::setSymbolReference`). That second record is what a stack
+  aggregate reached ONLY through `&sym` — a `char v [16]` passed to `memcmp`,
+  whose entire HighVariable is the constant `PTRSUB` offset operand and which
+  therefore owns no storage to re-derive a Symbol from — is declared off; it is
+  read for the declaration only, because such a high encodes
+  `class="constant"`, where Java's `HighConstant.decode` does nothing with a
+  mapped local symref. Second, an encode-time link
   pass (`Funcdata::kuna_link_high_symbols`) gives every REMAINING named high a
   **wire-only symbol**
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (WireSymbol)`):
@@ -337,8 +347,15 @@ Four front-ends drive one engine assembly:
   the five-way `class` rule, `symref` + partial `offset`, the type reference,
   one instance `<addr ref>` per member) therefore points only at ids the
   just-encoded `<localdb>` resolves — a symbol the encode skipped defensively
-  is withheld from `symref` too (`Database::encodable_symbol_ids`), because an
-  orphan reference is the Java hard-throw the skip exists to avoid.  Globals echo the REAL host database id delivered by
+  is withheld from `symref` too (`Database::encodable_symbol_ids`, and
+  `WireSymbol::is_encodable` for the wire ones: a 0-sized data-type at MAPPED
+  storage is the `MappedEntry.decode` throw, so such a high takes the hashed
+  shape instead), because an orphan reference is the Java hard-throw the skip
+  exists to avoid.  The markup's `<vardecl symref>` passes the SAME filter and
+  falls back to the create index when it fails — an unresolvable declaration
+  reference is not a throw (`ClangVariableDecl.decode` logs and returns) but it
+  is a dead rename on that line, which is the whole point of the attribute.
+  Globals echo the REAL host database id delivered by
   getMappedSymbols (`GlobalEntry::symbol_id`,
   `decompiler/crates/kuna-decomp/src/substrate/context.rs`) and NEVER a
   fabricated one — an unknown id omits `symref` (Java warns and falls back to
@@ -389,9 +406,13 @@ Four front-ends drive one engine assembly:
   EXACT committed parameter storage ride along too
   (`Architecture::kuna_pending_proto_model`,
   `Funcdata::apply_locked_prototype_with_model`, and the decoded cat-0
-  storage threaded into `Funcdata::apply_mapped_params`): re-deriving either
-  from kuna's default model makes Java's `checkFullCommit` see a mismatch and
-  force-rewrite the user's signature on the next rename.
+  storage threaded into `Funcdata::apply_mapped_params`, whose slots are
+  counted in the SAME compacted basis `RemoteProto::to_pieces` builds).  The
+  storage echo is the load-bearing half: Java's `checkFullCommit` compares the
+  parameter COUNT, each `categoryIndex`, and each storage — never the model
+  name — so a kuna-rederived storage or a slot skew force-rewrites the user's
+  signature on the next rename.  The model rides along because the storage kuna
+  would otherwise derive comes from it, not because Java inspects it.
 
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error

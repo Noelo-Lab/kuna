@@ -569,6 +569,13 @@ pins now hold the Phase-3 level.
       renames (typelock=false) as `ScopeLocal::nameRecommend` records (the
       C++ mechanism; applied by the `ActionNameVars` port) — so a GUI
       rename/retype SURVIVES the event-driven re-decompile.
+- [x] Every `<vardecl symref>` in the corpus resolves against its own
+      `<localdb>` — `PIN_FAILLOG_VARDECL_UNRESOLVED = [0,0,0]`, plus a
+      per-target 0 on the sort/grep breadth fixtures, so declaration-line
+      rename/retype is live everywhere.  The last residue was a stack aggregate
+      reached only through `&sym`, whose whole HighVariable is the constant
+      `PTRSUB` operand: `link_symbol_reference` now records the referenced
+      Symbol's identity (C++ `Varnode::setSymbolReference`).
 - [x] Harness: the ghidra-sim decode now validates every Java hard-throw trap
       (r5 §3 — nonzero symbol ids, entry pairs, positional scope children,
       localdb/ast-before-highlist order, symref/repref resolution, prototype
@@ -583,9 +590,8 @@ pins now hold the Phase-3 level.
       (Java-side decode instead of `GhidraLoadImage` bytes).
 - [ ] `<override>` / child-`<scope>` statics (Java skips both); the C++
       `collectNameRecs` harvest (standalone symbols → recommendations).
-- [ ] One residual `<vardecl symref>` per corpus function can still fall back
-      to the create-index placeholder: a declaration the printer keys on a
-      group-member high whose covering Symbol the analysis never bound
-      (pinned at 0/1/0 by `PIN_FAILLOG_VARDECL_UNRESOLVED`, so it can only
-      shrink).  Java logs that one reference; rename works from the
-      variable's usage tokens meanwhile.
+- [ ] `kuna_apply_dynamic_recommendations` runs BEFORE the naming walk rather
+      than after linking (kuna fuses the two upstream stages into one pass), so
+      it creates a dynamic Symbol where upstream renames an existing one.  The
+      upstream guards are reproduced against the scope instead of the high —
+      see `docs/spec/06-variables-and-merge.md` §6.4.
