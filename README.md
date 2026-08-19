@@ -53,6 +53,7 @@ Now, when you decompile, you should see `/* Kuna v{version} */` in the decompila
 ![](./assets/kuna_ghidra.png)
 
 All native Ghidra features are not yet supported, so please report them when you find issues.
+To disable the Kuna backend, simply disable the plugin in `File -> Configure`.
 
 ## Project Goals
 
