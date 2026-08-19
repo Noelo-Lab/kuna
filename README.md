@@ -11,10 +11,11 @@ Learn more about this approach in this [post](https://noelo.org/blog/kuna-releas
 
 ## Install & Usage
 Kuna is distributed as a single Rust binary and can be run on most systems.
-You can download the latest release or [build it from source](#building-from-source).
+It can be used either on the [CLI](#cli-usage), the [web browser](#web-browser-usage), or in the [Ghidra GUI](#ghidra-gui-usage) (as the decompiler backend).
 
 ### CLI Usage
 If building from source, you can find the `kuna` binary in `decompiler/target/release/kuna`.
+Otherwise, you can find it in the latest [release](https://github.com/Noelo-Lab/kuna/releases) for your OS (Linux, Windows, MacOS supported). 
 
 ```bash
 kuna decompile ./a.out main
@@ -25,8 +26,8 @@ kuna decompile-project ./a.out
 kuna decompile ./a.out main --option compareform canonical
 ``` 
 
-LLM agents should utilize the `./docs/options.md` file, which will inform about the features which can be toggled in run-time associated with situations they may be helpful.
-If bugs are found during usage, please report them with an issue. 
+LLM agents should utilize the `./docs/options.md` file, which will inform them about the features which can be toggled in run-time associated with situations they may be helpful.
+If bugs are found during usage, please report them with an issue.
 
 ### Web Browser Usage
 Since Kuna is written in Rust, you can also use it in the web browser through WebAssembly.
@@ -39,10 +40,19 @@ The code for deploying your own site can be found in `./integrations/web`
 ### Ghidra GUI Usage
 Since Kuna is originally a Ghidra port, the output format has remained largely compatible with Ghidra proper.
 You can use the Kuna core as the Ghidra decompiler inside of the traditional Ghidra GUI.
-To do that, build the extension in `./integrations/ghidra`.
+You can either build the extension (`./integrations/ghidra`), or download the extension for the latest release.
 
-All features of Ghidra are not yet supported. 
+The extension will work on all platforms Kuna is supported on.
+To install and activate Kuna in Ghidra, do the following:
+1. Download it from the [releases](https://github.com/Noelo-Lab/kuna/releases/download/v1.157/kuna-v1.157-KunaDecompiler-ghidra_12.1.2.zip) , named `kuna-version-KunaDecompiler-ghidra....zip`.
+2. In Ghidra: File → Install Extensions… → + → select the zip → restart.
+3. In Ghidra: File → Configure → Miscellaneous → check KunaDecompilerPlugin.
 
+Now, when you decompile, you should see `/* Kuna v{version} */` in the decompilation.
+
+![](./assets/kuna_ghidra.png)
+
+All native Ghidra features are not yet supported, so please report them when you find issues.
 
 ## Project Goals
 
