@@ -373,6 +373,23 @@ pub struct HighVariable {
     /// global Symbol is rendered by name in the body but never carries a local
     /// declaration.  `false` == a local-scope (or unscoped) high (declarable).
     kuna_global: bool,
+    /// (kuna, ghidra Phase 4) The local-scope Symbol this high's NAME actually
+    /// resolved to — the bind decision `ActionNameVars` made, recorded at the
+    /// moment it made it (the C++ `high->getSymbol()` that `linkSymbol`'s
+    /// `handleSymbolConflict` arm establishes).  `None` means the naming pass
+    /// deliberately left the high symbol-less: either no Symbol covers its
+    /// storage, or the covering entry was a storage CONFLICT and the high was
+    /// routed to a fresh `vN` (upstream: `buildDynamicSymbol`).  The wire
+    /// encode reads it for `<high symref>` / `<vardecl symref>` and NEVER
+    /// re-derives a container binding itself — re-deriving would hand a
+    /// conflict-separated high the conflicting parameter's symbol id, so a
+    /// rename from that variable's token would rename the parameter.
+    ///
+    /// Deliberately a separate field from [`Self::kuna_dynamic_symbol`]: that
+    /// one is an analysis-time input the merge reads, and writing it here
+    /// would let the encode path perturb decompilation.  Nothing outside the
+    /// encode/markup reads this one.
+    kuna_link_symbol: Option<crate::database::SymbolId>,
 }
 
 impl HighVariable {
@@ -401,6 +418,7 @@ impl HighVariable {
             kuna_symbol_type: None,
             kuna_equate_symbol: None,
             kuna_global: false,
+            kuna_link_symbol: None,
         }
     }
 
@@ -438,6 +456,19 @@ impl HighVariable {
     /// (kuna LOSS-229) The dynamic-mapping Symbol id bound to this high, or `None`.
     pub fn kuna_dynamic_symbol(&self) -> Option<crate::database::SymbolId> {
         self.symbol
+    }
+
+    /// (kuna, ghidra Phase 4) Record the Symbol the naming pass bound this
+    /// high's name to — see [`Self::kuna_link_symbol`].
+    pub fn set_kuna_link_symbol(&mut self, sym: crate::database::SymbolId) {
+        self.kuna_link_symbol = Some(sym);
+    }
+
+    /// (kuna, ghidra Phase 4) The Symbol bound by the naming pass (or
+    /// materialized by the encode-time link pass), or `None` when the high was
+    /// deliberately left symbol-less.
+    pub fn kuna_link_symbol(&self) -> Option<crate::database::SymbolId> {
+        self.kuna_link_symbol
     }
 
     /// (kuna) Bind the mapped Symbol's data-type (for array/struct rendering).

@@ -818,6 +818,8 @@ pub fn decompile_func_full_with_override_dyn(
     // (ghidra-mode, Phase 4) Take the staged name recommendations UP FRONT so
     // an early flow failure can never leak them into a later drive.
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
+    let staged_dyn_recs = std::mem::take(&mut arch.kuna_pending_dyn_recs);
+    let staged_proto_model = arch.kuna_pending_proto_model.take();
     let result = (|| {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
@@ -872,7 +874,12 @@ pub fn decompile_func_full_with_override_dyn(
         // recovery SEED): after this the inputs/output are type-locked, so
         // ActionPrototypeTypes forces the typed Varnodes.
         if let Some(pieces) = pending_proto.or(recovered_proto.as_ref()) {
-            fd.apply_locked_prototype(pieces)?;
+            // (ghidra-mode, Phase 4) A host-declared model rides with the
+            // pieces so parameter storage is assigned under the SAME
+            // convention the database committed (see
+            // `Architecture::kuna_pending_proto_model`); `None` everywhere
+            // else keeps the architecture default.
+            fd.apply_locked_prototype_with_model(pieces, staged_proto_model.clone())?;
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
@@ -892,6 +899,9 @@ pub fn decompile_func_full_with_override_dyn(
         // entries); empty everywhere outside ghidra mode.
         if !staged_name_recs.is_empty() {
             fd.seed_name_recommendations(&staged_name_recs);
+        }
+        if !staged_dyn_recs.is_empty() {
+            fd.seed_dynamic_recommendations(&staged_dyn_recs);
         }
         // With the single-manager unification (LOSS-132) the universalAction passes
         // now reach the *real* lifted varnodes, so the pipeline genuinely executes

@@ -169,6 +169,10 @@ pub struct HostLocalVar {
     /// First-use code offset (the uselimit rangelist start); `None` = an
     /// address-tied (whole-function) local, served with an empty rangelist.
     pub first_use: Option<u64>,
+    /// A DYNAMIC (hash) entry instead of `<addr>` storage — what Java writes
+    /// for every `requiresDynamicStorage` variable (unique-space
+    /// representatives, `splitOutMergeGroup` products).  0 = mapped storage.
+    pub hash: u64,
     /// Served typelocked?  Java's `grabFromFunction` sends `typelock=false`
     /// for an `Undefined`-typed DB local — the shape a plain GUI RENAME
     /// produces (`updateDBVariable(name, null)`), which kuna must keep as a
@@ -467,6 +471,9 @@ impl SimOracle {
                 .unwrap_or_else(|| panic!("override space {}", l.space))
                 .clone();
             e.open_element(&ELEM_MAPSYM);
+            if l.hash != 0 {
+                e.write_string(&kuna_base::marshal::ATTRIB_TYPE, b"dynamic");
+            }
             e.open_element(&ELEM_SYMBOL);
             // A stable fake host-database id (never internal-range).
             e.write_unsigned_integer(&ATTRIB_ID, l.offset | 0x2_0000_0000);
@@ -482,11 +489,18 @@ impl SimOracle {
             e.write_signed_integer(&ATTRIB_SIZE, l.size);
             e.close_element(&kuna_decomp::prettyprint::ids::ELEM_TYPE);
             e.close_element(&ELEM_SYMBOL);
-            // Storage entry: <addr space offset size/> + the uselimit.
-            e.open_element(&kuna_base::address::ELEM_ADDR);
-            spc.encode_attributes_sized(e, l.offset, l.size as i32)
-                .expect("override storage encodes");
-            e.close_element(&kuna_base::address::ELEM_ADDR);
+            // Storage entry: a DYNAMIC <hash val> or <addr space offset size/>,
+            // then the uselimit.
+            if l.hash != 0 {
+                e.open_element(&ELEM_HASH);
+                e.write_unsigned_integer(&ATTRIB_VAL, l.hash);
+                e.close_element(&ELEM_HASH);
+            } else {
+                e.open_element(&kuna_base::address::ELEM_ADDR);
+                spc.encode_attributes_sized(e, l.offset, l.size as i32)
+                    .expect("override storage encodes");
+                e.close_element(&kuna_base::address::ELEM_ADDR);
+            }
             e.open_element(&ELEM_RANGELIST);
             if let Some(first) = l.first_use {
                 e.open_element(&kuna_base::address::ELEM_RANGE);

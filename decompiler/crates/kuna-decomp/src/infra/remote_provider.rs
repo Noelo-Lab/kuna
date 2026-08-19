@@ -206,10 +206,15 @@ pub enum RemoteMapAnswer {
 
 /// One mapped storage of a decoded symbol.
 pub struct RemoteEntry {
-    /// Starting address of the storage.
+    /// Starting address of the storage; invalid for a DYNAMIC (`<hash>`)
+    /// entry, whose identity is [`Self::hash`] plus the uselimit's first-use
+    /// address.
     pub addr: Address,
     /// Byte size of the storage.
     pub size: int4,
+    /// The data-flow hash of a DYNAMIC entry (C++ `DynamicEntry::hash`), 0 for
+    /// ordinary mapped storage.
+    pub hash: u64,
     /// Code-address ranges where the storage is in use (empty = address-tied).
     pub uselimit: RangeList,
 }
@@ -298,6 +303,13 @@ pub struct RemoteParam {
     pub dtype: Option<Rc<Datatype>>,
     /// The symbol's typelock bit.
     pub typelock: bool,
+    /// The parameter's EXACT committed storage (the cat-0 mapsym's `<addr>`).
+    /// Java's `checkFullCommit` compares kuna's echoed storage against the
+    /// database's; re-deriving it from a default model instead (the Phase-4
+    /// behavior before this) makes every rename of a nonstandard-convention
+    /// function force-commit a kuna-rederived signature over the user's.
+    /// Invalid when the host sent a dynamic/hash entry.
+    pub storage: Address,
 }
 
 /// One non-parameter local symbol delivered in the current function's
@@ -315,8 +327,16 @@ pub struct RemoteLocalVar {
     pub name: String,
     /// Symbol data-type.
     pub dtype: Rc<Datatype>,
-    /// Storage address of the first mapped entry.
+    /// Storage address of the first mapped entry — or, for a DYNAMIC
+    /// (`<hash>`) entry, the hash's first-use address (`DynamicEntry`'s
+    /// `getAddress()`), which is what `DynamicHash::findVarnode` keys on.
     pub addr: Address,
+    /// The data-flow hash of a DYNAMIC entry, or 0 for ordinary mapped
+    /// storage.  Java writes hash storage for every variable that
+    /// `requiresDynamicStorage` — unique-space representatives and
+    /// `splitOutMergeGroup` products — so this is not an exotic case but the
+    /// normal shape for renames of register/temporary variables.
+    pub hash: u64,
     /// The symbol's flag bits (namelock/typelock/readonly/volatile — the
     /// subset `decode_symbol_header` reads).
     pub flags: kuna_base::types::uint4,
@@ -499,19 +519,24 @@ pub fn decode_mapsym(
     // The SymbolEntry list: <hash val=…>|<addr…> then a <rangelist> each
     // (SymbolEntry::decode, database.cc:206-221).
     while decoder.peek_element()? != 0 {
-        let (addr, size) = if decoder.peek_element()? == ELEM_HASH.get_id() {
+        // A DYNAMIC entry carries the data-flow hash INSTEAD of an address
+        // (`DynamicEntry::decode`, database.cc:69-74); keeping it is what lets
+        // a rename of a unique-space / split-merge-group variable round-trip.
+        let (addr, size, hash) = if decoder.peek_element()? == ELEM_HASH.get_id() {
             let hid = decoder.open_element()?;
-            let _hash = decoder.read_unsigned_integer_id(&ATTRIB_VAL)?;
+            let hash = decoder.read_unsigned_integer_id(&ATTRIB_VAL)?;
             decoder.close_element(hid)?;
-            (Address::new_invalid(), 0)
+            (Address::new_invalid(), 0, hash)
         } else {
-            Address::decode_sized(decoder)?
+            let (a, sz) = Address::decode_sized(decoder)?;
+            (a, sz, 0)
         };
         let mut uselimit = RangeList::default();
         uselimit.decode(decoder)?;
         rec.entries.push(RemoteEntry {
             addr,
             size: size as int4,
+            hash,
             uselimit,
         });
     }
@@ -695,31 +720,60 @@ fn decode_localdb_params(
                         if (rec.flags & varnode_flags::typelock) == 0 {
                             *params_locked = false;
                         }
+                        let storage = rec
+                            .entries
+                            .iter()
+                            .find(|e| !e.addr.is_invalid())
+                            .map(|e| e.addr.clone())
+                            .unwrap_or_else(Address::new_invalid);
                         params.push(RemoteParam {
                             index: rec.cat_index,
                             name: rec.display_name,
                             dtype: rec.dtype,
                             typelock: (rec.flags & varnode_flags::typelock) != 0,
+                            storage,
                         });
                     } else if rec.category < 0 {
                         // A plain local committed to the host database: keep
-                        // its first mapped entry + first-use address so the
-                        // decompile can seed it (rename/retype persistence).
-                        let entry = rec.entries.iter().find(|e| !e.addr.is_invalid());
+                        // its first entry so the decompile can seed it
+                        // (rename/retype persistence).  BOTH storage classes
+                        // matter: a mapped `<addr>` entry (stack/register) and
+                        // a DYNAMIC `<hash>` entry — the latter is what Java
+                        // writes for every `requiresDynamicStorage` variable
+                        // (unique-space representatives, split merge groups),
+                        // so dropping it silently reverted those renames.
+                        let mapped = rec.entries.iter().find(|e| !e.addr.is_invalid());
+                        let dynamic = rec
+                            .entries
+                            .iter()
+                            .find(|e| e.addr.is_invalid() && e.hash != 0);
+                        let entry = mapped.or(dynamic);
                         if let (Some(e), Some(dt)) = (entry, rec.dtype.clone()) {
                             if dt.get_size() > 0 && !rec.display_name.is_empty() {
-                                let usepoint = e
+                                let first_use = e
                                     .uselimit
                                     .iter()
                                     .next()
                                     .map(|r| Address::new(r.get_space().clone(), r.get_first()))
                                     .unwrap_or_else(Address::new_invalid);
+                                let is_dynamic = e.addr.is_invalid();
                                 locals.push(RemoteLocalVar {
                                     name: rec.display_name,
                                     dtype: dt,
-                                    addr: e.addr.clone(),
+                                    // A dynamic entry has no storage address;
+                                    // its identity is (hash, first-use addr).
+                                    addr: if is_dynamic {
+                                        first_use.clone()
+                                    } else {
+                                        e.addr.clone()
+                                    },
+                                    hash: if is_dynamic { e.hash } else { 0 },
                                     flags: rec.flags,
-                                    usepoint,
+                                    usepoint: if is_dynamic {
+                                        Address::new_invalid()
+                                    } else {
+                                        first_use
+                                    },
                                 });
                             }
                         }
@@ -897,6 +951,15 @@ pub struct RemoteFunctionFacts {
     /// (see [`RemoteLocalVar`]) — seeded into the fresh `Funcdata`'s local
     /// scope so GUI renames/retypes survive the event-driven re-decompile.
     pub locals: Vec<RemoteLocalVar>,
+    /// The host's declared prototype MODEL name (`<prototype model=…>`) when
+    /// the signature is locked — the convention its committed parameter
+    /// storage was assigned under.
+    pub model: Option<String>,
+    /// The host's EXACT committed parameter storage, slot-ordered:
+    /// `(slot, name, pieces)` ready for `Funcdata::apply_mapped_params`.
+    /// Empty when the signature is unlocked (kuna then recovers parameters
+    /// itself) or when the host sent no storage.
+    pub param_storage: Vec<(int4, String, crate::fspec::ParameterPieces)>,
 }
 
 /// The ghidra-mode lazy symbol provider (see the module docs).  Installed on
@@ -1311,6 +1374,38 @@ impl RemoteScope {
                             pieces = Some(pc);
                         }
                     }
+                    // The host's committed parameter storage + convention,
+                    // carried verbatim so the echoed `<localdb>`/`<prototype>`
+                    // match the database (Java's `checkFullCommit`).  Only
+                    // meaningful for a locked signature — an unlocked one is
+                    // kuna's to recover.
+                    let mut param_storage: Vec<(int4, String, crate::fspec::ParameterPieces)> =
+                        Vec::new();
+                    let mut model_name: Option<String> = None;
+                    if let Some(p) = &func.proto {
+                        if p.is_input_locked() {
+                            if !p.model.is_empty() {
+                                model_name = Some(p.model.clone());
+                            }
+                            for rp in &p.params {
+                                let (Some(dt), false) =
+                                    (rp.dtype.clone(), rp.storage.is_invalid())
+                                else {
+                                    continue;
+                                };
+                                param_storage.push((
+                                    rp.index as int4,
+                                    rp.name.clone(),
+                                    crate::fspec::ParameterPieces {
+                                        addr: rp.storage.clone(),
+                                        type_: Some(dt),
+                                        flags: varnode_flags::typelock
+                                            | varnode_flags::namelock,
+                                    },
+                                ));
+                            }
+                        }
+                    }
                     st.functions.insert(
                         key,
                         RemoteFunctionFacts {
@@ -1319,6 +1414,8 @@ impl RemoteScope {
                             no_return: func_no_return,
                             pieces,
                             locals: func.locals.clone(),
+                            model: model_name,
+                            param_storage,
                         },
                     );
                 }

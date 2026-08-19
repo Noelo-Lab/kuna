@@ -484,6 +484,15 @@ const PIN_FAILLOG_C_LINES: [usize; 3] = [283, 39, 92];
 // Phase 4's EmitMarkup declarator-token split (word `<type>` tokens +
 // `<syntax>` separators) drives these to ZERO and must keep them there.
 const PIN_FAILLOG_MANGLED_TOKENS: [usize; 3] = [0, 0, 0];
+// `<vardecl symref>`s that do NOT resolve against the document's own
+// `<localdb>` (the create-index fallback).  Phase 4 originally emitted the
+// fallback for EVERY declaration — Java logged "Invalid symbol reference" per
+// declaration and rename/retype was dead on declaration lines.  The review
+// round drives these to ~0; the single survivor on sub_3320 is a declaration
+// the printer keys on a group-member high whose covering Symbol the analysis
+// never bound (documented follow-up).  Pinned so the systemic case cannot
+// come back and the residue can only shrink.
+const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 1, 0];
 // Whole-session query traffic: total getPcode asks (repeat decompiles re-ask
 // everything — no p-code cache, faithful to upstream GhidraTranslate) vs
 // distinct instruction addresses actually decoded.  Phase 3 REDUCED both
@@ -512,6 +521,7 @@ fn ghidra_sim_faillog_pins() {
     let mut ph_totals = Vec::new();
     let mut ph_resolvables = Vec::new();
     let mut mangled_counts = Vec::new();
+    let mut vardecl_unresolved_counts = Vec::new();
     let mut c_line_counts = Vec::new();
     for parsed in &run.docs {
         let c = &parsed.c_text;
@@ -522,6 +532,7 @@ fn ghidra_sim_faillog_pins() {
         ph_totals.push(placeholder_total(c));
         ph_resolvables.push(resolvable_placeholders(&run.oracle, c));
         mangled_counts.push(parsed.mangled_tokens);
+        vardecl_unresolved_counts.push(ghidra_sim::vardecl_unresolved(parsed));
         c_line_counts.push(normalized_lines(c).len());
     }
 
@@ -555,9 +566,9 @@ fn ghidra_sim_faillog_pins() {
     for (i, t) in FAILLOG_TARGETS.iter().enumerate() {
         summary.push_str(&format!(
             "{t}: registers={} {:?} unique={} placeholders={} resolvable={} mangled={} \
-             c_lines={} diff_ratio={:.3}\n",
+             vardecl_unresolved={} c_lines={} diff_ratio={:.3}\n",
             reg_counts[i], reg_names_seen[i], uniq_counts[i], ph_totals[i], ph_resolvables[i],
-            mangled_counts[i], c_line_counts[i], ratios[i]
+            mangled_counts[i], vardecl_unresolved_counts[i], c_line_counts[i], ratios[i]
         ));
     }
     summary.push_str(&format!(
@@ -590,6 +601,11 @@ fn ghidra_sim_faillog_pins() {
         assert_eq!(
             mangled_counts[i], PIN_FAILLOG_MANGLED_TOKENS[i],
             "{t}: getC()-mangled token count moved (PR-C drives this to 0)"
+        );
+        assert_eq!(
+            vardecl_unresolved_counts[i], PIN_FAILLOG_VARDECL_UNRESOLVED[i],
+            "{t}: unresolvable <vardecl symref> count moved — declaration-line \
+             rename/retype resolution changed"
         );
         assert!(
             ratios[i] >= PIN_FAILLOG_DIFF_FLOOR[i],
@@ -788,6 +804,7 @@ fn ghidra_sim_faillog_rename_persistence() {
                 size,
                 first_use,
                 typelock: false,
+                hash: 0,
             }],
         );
     }) else {
@@ -810,6 +827,103 @@ fn ghidra_sim_faillog_rename_persistence() {
             .any(|s| s.name == renamed),
         "the seeded local is missing from the re-encoded <localdb>"
     );
+}
+
+
+/// C2 (review round): a host-committed local whose only SymbolEntry is a
+/// DYNAMIC `<hash>` — the storage class Java writes for every
+/// `requiresDynamicStorage` variable (unique-space representatives,
+/// `splitOutMergeGroup` products) — must survive the re-decompile.  Before the
+/// fix the decoder dropped hash-entry locals outright, so a rename of such a
+/// variable silently reverted in front of the user.
+///
+/// Echo-back differential: take a hash kuna itself encoded for a wire symbol
+/// (the link pass hashes conflict-separated / uncovered variables with the
+/// upstream budget Java also uses), serve it back as a renamed dynamic local,
+/// and assert the name comes back in the C.
+#[test]
+fn ghidra_sim_faillog_dynamic_rename_persistence() {
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let Some(run1) = run_session(&binary, &["sub_3ad0"]) else {
+        return; // visible skip: specs not built
+    };
+    let parsed = &run1.docs[0];
+    // A wire symbol kuna encoded with a `<hash>` entry (type="dynamic").
+    let cand = parsed
+        .localdb
+        .as_ref()
+        .expect("<localdb> present")
+        .iter()
+        .find(|s| s.cat < 0 && s.hash != 0 && parsed.c_text.contains(s.name.as_str()));
+    let Some(cand) = cand else {
+        // No dynamic wire symbol on this target: nothing to assert (the
+        // shape is target-dependent; the decode-side unit test covers the
+        // wire contract unconditionally).
+        return;
+    };
+    let hash = cand.hash;
+    let first_use = cand.first_use;
+    let old_name = cand.name.clone();
+    let entry_off = run1.addrs[0].get_offset();
+    let renamed = "host_dyn_renamed";
+    let Some(run2) = run_session_with(&binary, &["sub_3ad0"], move |o| {
+        o.local_var_overrides.insert(
+            entry_off,
+            vec![ghidra_sim::oracle::HostLocalVar {
+                name: renamed.to_string(),
+                space: "ram".to_string(),
+                offset: first_use.unwrap_or(entry_off),
+                size: 8,
+                first_use,
+                typelock: false,
+                hash,
+            }],
+        );
+    }) else {
+        return;
+    };
+    assert!(
+        run2.docs[0].c_text.contains(renamed),
+        "a host rename of a DYNAMIC (hash-storage) local ({old_name} -> {renamed}) \
+         did not survive the re-decompile:\n{}",
+        run2.docs[0].c_text
+    );
+}
+
+/// C4 (review round): no `<high>` may borrow another variable's symbol id.
+/// The encode-time link pass must never re-derive a container binding — a high
+/// the naming pass deliberately separated from the parameter whose storage it
+/// overlaps would otherwise inherit the PARAMETER's id, and renaming that
+/// variable in the GUI would rename the parameter.
+///
+/// Invariant asserted on every decompiled function: each `<high symref>` is
+/// claimed by at most ONE high (bar the deliberate group sharing of a composite
+/// symbol, where the highs also share a `<localdb>` symbol whose type is
+/// composite), and every param-class high's symref is a cat-0 symbol.
+#[test]
+fn ghidra_sim_faillog_high_symrefs_are_not_shared_with_params() {
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let Some(run) = run_session(&binary, FAILLOG_TARGETS) else {
+        return; // visible skip: specs not built
+    };
+    for (i, parsed) in run.docs.iter().enumerate() {
+        let symbols = parsed.localdb.as_ref().expect("<localdb> present");
+        let param_ids: BTreeSet<u64> =
+            symbols.iter().filter(|s| s.cat == 0).map(|s| s.id).collect();
+        let highs = parsed.highlist.as_ref().expect("<highlist> present");
+        for h in highs {
+            let Some(sr) = h.symref else { continue };
+            if param_ids.contains(&sr) {
+                assert_eq!(
+                    h.class, "param",
+                    "target #{i}: a non-param <high class={}> references the \
+                     cat-0 parameter symbol {sr} — renaming that variable in the \
+                     GUI would rename the PARAMETER",
+                    h.class
+                );
+            }
+        }
+    }
 }
 
 /// flushNative + repeat-decompile stability: with unchanged host answers a

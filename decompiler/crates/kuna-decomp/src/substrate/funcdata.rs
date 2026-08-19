@@ -335,6 +335,16 @@ pub struct Funcdata {
     /// ([`Self::set_kuna_pipeline_failure`]) so the printer says the pipeline
     /// failed, and why, instead of blaming structuring (`PrintC::emit_function_document`).
     kuna_pipeline_failure: Option<String>,
+    /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
+    /// synthesized for named HighVariables the analysis deliberately left
+    /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
+    /// into `<localdb>` and referenced by `<high symref>` / `<vardecl symref>`
+    /// but never enter the analysis scope, so the wire encode cannot perturb
+    /// the emitted C.  Empty outside the ghidra-mode encode.
+    pub(crate) kuna_wire_symbols: Vec<crate::database::WireSymbol>,
+    /// Index into [`Self::kuna_wire_symbols`] per HighVariable.
+    pub(crate) kuna_wire_symbol_for_high:
+        std::collections::BTreeMap<crate::context::HighVariableId, usize>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -433,6 +443,8 @@ impl Funcdata {
             union_map: std::collections::BTreeMap::new(),
             pending_comments: Vec::new(),
             kuna_pipeline_failure: None,
+            kuna_wire_symbols: Vec::new(),
+            kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
         })
     }
 
@@ -629,8 +641,22 @@ impl Funcdata {
         &mut self,
         pieces: &crate::fspec::PrototypePieces,
     ) -> KunaResult<()> {
-        let defaultfp = match self.glb.default_fp() {
-            Some(m) => Rc::clone(m),
+        self.apply_locked_prototype_with_model(pieces, None)
+    }
+
+    /// [`Self::apply_locked_prototype`] with an explicit prototype MODEL (the
+    /// ghidra-mode path: the host's `<prototype model=…>` names the convention
+    /// its committed parameter storage was assigned under, so re-deriving
+    /// storage from kuna's default model would disagree with the database and
+    /// force Java's `checkFullCommit` to rewrite the user's signature).
+    /// `None` keeps the architecture default.
+    pub fn apply_locked_prototype_with_model(
+        &mut self,
+        pieces: &crate::fspec::PrototypePieces,
+        model: Option<Rc<crate::fspec::ProtoModel>>,
+    ) -> KunaResult<()> {
+        let defaultfp = match model.or_else(|| self.glb.default_fp().cloned()) {
+            Some(m) => m,
             None => return Ok(()),
         };
         let void_type =
@@ -1200,6 +1226,63 @@ impl Funcdata {
         }
     }
 
+    /// (kuna, ghidra Phase 4) The local-scope Symbol **id** a HighVariable's
+    /// name resolves to — the naming pass's recorded bind, an analysis-time
+    /// dynamic/equate symbol, or a symbol the encode-time link pass
+    /// materialized.  `None` when the high is deliberately symbol-less.
+    ///
+    /// This is what the markup's `<vardecl symref>` must carry: Java resolves
+    /// it through `LocalSymbolMap`, whose ids are exactly the ones
+    /// `<localdb>` encodes.  (Before Phase 4 the markup wrote a varnode
+    /// create index here — a placeholder that can never resolve, which left
+    /// rename/retype dead on declaration-line tokens.)
+    pub fn kuna_high_symbol_wire_id(
+        &self,
+        high: crate::context::HighVariableId,
+    ) -> Option<uint8> {
+        // A wire-only symbol first (the encode-time link pass synthesized it
+        // for a high the analysis left symbol-less), then the real scope
+        // symbol the naming pass / analysis bound.
+        if let Some(idx) = self.kuna_wire_symbol_for_high.get(&high) {
+            if let Some(w) = self.kuna_wire_symbols.get(*idx) {
+                return Some(w.id);
+            }
+        }
+        let h = self.high_bank.get(high)?;
+        if let Some(sid) = h
+            .kuna_link_symbol()
+            .or_else(|| h.kuna_dynamic_symbol())
+            .or_else(|| h.kuna_equate_symbol())
+        {
+            let lm = self.localmap.as_ref()?;
+            return Some(lm.symbol_id_and_category(sid).0);
+        }
+        // A declaration can be keyed on a GROUP MEMBER high (the printer
+        // collapses the several highs of one mapped Symbol into a single
+        // declaration) whose own symbol link lives on the sibling that carried
+        // the name.  Resolve the covering local Symbol through the high's
+        // addr-tied instances — the very query the declaration's name and type
+        // came from (`kuna_mapped_symbol_entry`).  A conflict-separated high
+        // never reaches here: the link pass already gave it a wire symbol of
+        // its own, which the branch above returns.
+        let lm = self.localmap.as_ref()?;
+        let invalid = Address::new_invalid();
+        let n = h.num_instances();
+        for i in 0..n {
+            let vn = h.get_instance(i);
+            let Some(v) = self.vbank.get(vn) else { continue };
+            if v.is_free() || !v.is_addr_tied() {
+                continue;
+            }
+            if let Some((sid, _, _, _)) =
+                lm.container_symbol_link(v.get_addr(), &invalid)
+            {
+                return Some(lm.symbol_id_and_category(sid).0);
+            }
+        }
+        None
+    }
+
     /// Seed name recommendations into the local scope (the ghidra-mode
     /// carrier for C++ `ScopeLocal::collectNameRecs` results: the host
     /// `<localdb>`'s namelocked-but-not-typelocked locals, i.e. GUI renames of
@@ -1210,6 +1293,94 @@ impl Funcdata {
         if let Some(lm) = self.localmap.as_mut() {
             for (name, addr, usepoint, size) in specs {
                 lm.add_recommend_name(addr.clone(), usepoint.clone(), *size, name);
+            }
+        }
+    }
+
+    /// Seed DYNAMIC name recommendations (the hash-storage half of the
+    /// ghidra-mode carrier — C++ `ScopeLocal::dynRecommend`).  `(name,
+    /// first-use address, hash)`: the Ghidra GUI writes hash storage for any
+    /// variable that `requiresDynamicStorage` (unique-space representatives,
+    /// `splitOutMergeGroup` products), so this is the channel a rename of such
+    /// a variable comes back through.  Applied by
+    /// [`Funcdata::kuna_apply_dynamic_recommendations`].
+    pub fn seed_dynamic_recommendations(&mut self, specs: &[(String, Address, u64)]) {
+        if let Some(lm) = self.localmap.as_mut() {
+            for (name, addr, hash) in specs {
+                lm.add_recommend_dynamic(addr.clone(), *hash, name);
+            }
+        }
+    }
+
+    /// Apply the dynamic name recommendations (C++
+    /// `ScopeLocal::recoverNameRecommendationsForSymbols`'s `dynRecommend`
+    /// loop, varmap.cc:1557-1573): resolve each recorded hash back to its
+    /// Varnode with `DynamicHash::findVarnode`, and — when that Varnode's
+    /// HighVariable is still unnamed — bind the recommended name AND a real
+    /// dynamic Symbol carrying the SAME hash, so the wire `<localdb>` echoes
+    /// a `<mapsym type="dynamic"><hash>` Java resolves to the very variable
+    /// the user renamed.
+    ///
+    /// Runs at the top of the naming pass (upstream runs it at the top of
+    /// `ActionNameVars::apply`); a no-op with no recommendations, so the
+    /// standalone pipeline is structurally unaffected.
+    pub fn kuna_apply_dynamic_recommendations(&mut self) {
+        let recs: Vec<(String, Address, u64)> = match self.localmap.as_ref() {
+            Some(lm) => lm
+                .dynamic_recommendations()
+                .iter()
+                .map(|r| (r.name.clone(), r.use_point.clone(), r.hash))
+                .collect(),
+            None => return,
+        };
+        if recs.is_empty() {
+            return;
+        }
+        for (name, addr, hash) in recs {
+            // Java computes the same hash with a hardcoded budget of 8
+            // (`DynamicHash.java:440`); use it so both sides agree.
+            let mut dh = crate::dynamic::DynamicHash::new();
+            let Some(vn) = dh.find_varnode(self, &addr, hash) else {
+                continue;
+            };
+
+            let Some(high) = self.vbank().get(vn).and_then(|v| v.get_high()) else {
+                continue;
+            };
+            if self.vbank().get(vn).map(|v| v.is_annotation()).unwrap_or(true) {
+                continue;
+            }
+            // C++ `!sym->isNameUndefined()` — never paint over a resolved name.
+            let already = self
+                .high_bank()
+                .get(high)
+                .map(|h| {
+                    h.kuna_name().is_some()
+                        || h.kuna_dynamic_symbol().is_some()
+                        || h.kuna_equate_symbol().is_some()
+                        || h.kuna_link_symbol().is_some()
+                })
+                .unwrap_or(true);
+            if already {
+                continue;
+            }
+            let dtype = self.with_high_split(|hb, ctx| {
+                hb.get_mut(high).expect("dyn rec: stale high").get_type(ctx, None)
+            });
+            let unique = self
+                .localmap
+                .as_ref()
+                .map(|lm| lm.make_local_name_unique(&name))
+                .unwrap_or_else(|| name.clone());
+            let sid = self
+                .localmap
+                .as_mut()
+                .and_then(|lm| lm.add_dynamic_symbol(&unique, dtype, &addr, hash).ok());
+            if let Some(h) = self.high_bank_mut().get_mut(high) {
+                h.set_kuna_name(unique);
+                if let Some(sid) = sid {
+                    h.set_kuna_link_symbol(sid);
+                }
             }
         }
     }
@@ -4093,6 +4264,88 @@ mod tests {
             .build_dynamic_symbol(c, 8, unk)
             .expect_err("must reject a type-locked varnode");
         assert!(err.explain().contains("locked varnode"));
+    }
+
+    /// (ghidra Phase 4, review round C2) The DYNAMIC name-recommendation
+    /// channel — upstream `ScopeLocal::dynRecommend` +
+    /// `recoverNameRecommendationsForSymbols`'s hash loop (varmap.cc:1557).
+    ///
+    /// This is the mechanism a GUI rename of a variable with hash storage
+    /// (anything `requiresDynamicStorage`: a unique-space representative, a
+    /// `splitOutMergeGroup` product) comes back through.  Seed a
+    /// recommendation keyed on the SAME hash `DynamicHash` computes for a
+    /// varnode, apply it, and the varnode's HighVariable must take the
+    /// recommended name AND acquire a dynamic Symbol carrying that hash — so
+    /// the re-encoded `<localdb>` hands Java a `<mapsym type="dynamic">` it
+    /// resolves to the very variable the user renamed.
+    #[test]
+    fn dynamic_name_recommendation_renames_the_hashed_variable() {
+        // A manager WITH a stack space so the Funcdata gets a real ScopeLocal
+        // (the recommendation lists live on it).
+        let mut m = build_manager();
+        let regspc = Rc::new(kuna_base::space::AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "register",
+            false,
+            8,
+            1,
+            5,
+            kuna_base::space::addrspace_flags::hasphysical,
+            1,
+            1,
+        ));
+        m.insert_space(Rc::clone(&regspc)).unwrap();
+        m.insert_space(Rc::new(kuna_base::space::SpacebaseSpace::new(
+            "stack", 6, 8, &regspc, 1, true, false,
+        )))
+        .unwrap();
+        let glb = Rc::new(ArchContext::new(m));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let entry = Address::new(ram, 0x1000);
+        let mut fd = Funcdata::new("func", "func", glb, entry, 0x10000000, 0x40).unwrap();
+        assert!(fd.get_scope_local().is_some(), "fixture must have a local scope");
+        let rs = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let root = fd.bblocks_root_pub();
+        let bl = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().set_start_block(root, bl);
+        // out = in + in, so `out` is a written varnode the hasher can key on.
+        let a = fd.new_varnode(4, &Address::new(Rc::clone(&rs), 0x100), None);
+        let a = fd.set_input_varnode(a).unwrap();
+        let op = fd.new_op(2, Address::new(Rc::clone(&rs), 0x1000));
+        fd.op_set_opcode(op, crate::context::TypeOp::new(OpCode::CPUI_INT_ADD, 0, "ADD"));
+        let out = fd.new_varnode_out(4, &Address::new(Rc::clone(&rs), 0x200), op).unwrap();
+        fd.op_set_input(op, a, 0).unwrap();
+        fd.op_set_input(op, a, 1).unwrap();
+        fd.op_insert(op, bl, None);
+        fd.structure_reset();
+        fd.set_high_level();
+
+        // The hash Java would compute for this variable (same algorithm, same
+        // hardcoded budget of 8 — DynamicHash.java:440).
+        let (hash, hash_addr) =
+            crate::dynamic::dynamic_unique_hash(out, 8, &mut fd).expect("hash");
+        assert_ne!(hash, 0, "the fixture varnode must hash uniquely");
+
+        fd.seed_dynamic_recommendations(&[("user_renamed".to_string(), hash_addr, hash)]);
+        fd.kuna_apply_dynamic_recommendations();
+
+        let high = fd.vbank().get(out).and_then(|v| v.get_high()).expect("high");
+        let h = fd.high_bank().get(high).expect("high present");
+        assert_eq!(
+            h.kuna_name(),
+            Some("user_renamed"),
+            "the dynamic recommendation did not name the hashed variable"
+        );
+        assert!(
+            h.kuna_link_symbol().is_some(),
+            "the recommendation must also bind a Symbol so the wire carries an id"
+        );
+        // A second apply is idempotent (the name is already resolved).
+        fd.kuna_apply_dynamic_recommendations();
+        assert_eq!(
+            fd.high_bank().get(high).unwrap().kuna_name(),
+            Some("user_renamed")
+        );
     }
 
     /// Adversarial (Convert B2): binding a dynamic SymbolEntry to a Varnode marks

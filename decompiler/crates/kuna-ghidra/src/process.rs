@@ -614,20 +614,31 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                 // HighFunction.decode name echo compares against it); the
                 // label, when the host sent one (TemplateSimplifier), is only
                 // the display form the printed signature uses.
-                let (name, display_name, pending_pieces, host_locals) = match facts {
-                    Some(f) => (f.name, f.display_name, f.pieces, f.locals),
+                let (
+                    name,
+                    display_name,
+                    pending_pieces,
+                    host_locals,
+                    host_model,
+                    host_param_storage,
+                ) = match facts {
+                    Some(f) => (
+                        f.name,
+                        f.display_name,
+                        f.pieces,
+                        f.locals,
+                        f.model,
+                        f.param_storage,
+                    ),
                     None => {
                         let label = self.client.borrow_mut().get_code_label(&addr);
-                        match label {
+                        let n = match label {
                             Ok(l) if !l.is_empty() => {
-                                let n = String::from_utf8_lossy(&l).into_owned();
-                                (n.clone(), n, None, Vec::new())
+                                String::from_utf8_lossy(&l).into_owned()
                             }
-                            _ => {
-                                let n = format!("FUN_{:08x}", addr.get_offset());
-                                (n.clone(), n, None, Vec::new())
-                            }
-                        }
+                            _ => format!("FUN_{:08x}", addr.get_offset()),
+                        };
+                        (n.clone(), n, None, Vec::new(), None, Vec::new())
                     }
                 };
 
@@ -781,10 +792,36 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         bool,
                     )> = Vec::new();
                     let mut name_recs: Vec<(String, Address, Address, i32)> = Vec::new();
+                    let mut dyn_recs: Vec<(String, Address, u64)> = Vec::new();
+                    let mut seed_dynamic: Vec<kuna_decomp::database::DynamicSymbolSpec> =
+                        Vec::new();
                     for l in &host_locals {
                         let typelocked = (l.flags
                             & kuna_decomp::varnode::varnode_flags::typelock)
                             != 0;
+                        // A DYNAMIC (hash) local addresses a VALUE, not a
+                        // storage location — the class Java writes for every
+                        // `requiresDynamicStorage` variable (unique-space
+                        // representatives, `splitOutMergeGroup` products).  It
+                        // travels through the dynamic channels: a rename as a
+                        // `dynRecommend`, a retype as a dynamic Symbol seed.
+                        if l.hash != 0 {
+                            if typelocked {
+                                seed_dynamic.push(kuna_decomp::database::DynamicSymbolSpec {
+                                    name: l.name.clone(),
+                                    dtype: std::rc::Rc::clone(&l.dtype),
+                                    addr: l.addr.clone(),
+                                    hash: l.hash,
+                                    category: -1,
+                                    dispflags: 0,
+                                    equate_value: None,
+                                    union_facet: None,
+                                });
+                            } else {
+                                dyn_recs.push((l.name.clone(), l.addr.clone(), l.hash));
+                            }
+                            continue;
+                        }
                         if !typelocked {
                             name_recs.push((
                                 l.name.clone(),
@@ -811,6 +848,14 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         }
                     }
                     arch.kuna_pending_name_recs = name_recs;
+                    arch.kuna_pending_dyn_recs = dyn_recs;
+                    // The host's declared convention: parameter storage must be
+                    // assigned under the SAME model the database committed, or
+                    // Java's checkFullCommit rewrites the user's signature on
+                    // the first rename.
+                    arch.kuna_pending_proto_model = host_model
+                        .as_deref()
+                        .and_then(|m| arch.get_model(m).cloned());
                     match kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
                         arch,
                         &name,
@@ -818,11 +863,13 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         0,
                         &seed_mapped,
                         &seed_usepoint,
-                        &[],
+                        &seed_dynamic,
                         pending_pieces.as_ref(),
                         &[],
                         &[],
-                        &[],
+                        // The host's EXACT committed parameter storage (empty
+                        // for an unlocked signature — kuna recovers those).
+                        &host_param_storage,
                     ) {
                         Ok(mut fd) => {
                             // The printed signature/tokens use the display
@@ -1211,10 +1258,18 @@ fn parse_arch_id(payload: &[u8]) -> i32 {
 /// appending the markup bytes then writing `</doc>` from a fresh encoder is
 /// byte-identical to C++ writing both to one `sout` — exactly the same splice.
 ///
-/// The markup is rendered BEFORE `fd.encode`: the encode runs the Phase-4
-/// symbol-link pass (`kuna_link_high_symbols`), and the printed C must be what
-/// the analysis produced, not what the link pass touched.  Both documents are
-/// spliced into the upstream order (`<function>` #1 first) regardless.
+/// The Phase-4 symbol-link pass (`kuna_link_high_symbols`) runs FIRST — before
+/// the markup is printed — because the markup's `<vardecl symref>` must carry
+/// the same LocalSymbolMap ids `<localdb>` encodes: Java resolves the
+/// declaration line's HighSymbol exclusively through that attribute, so a
+/// declaration printed before the symbols exist leaves rename/retype dead on
+/// declaration tokens (and logs "Invalid symbol reference" once per
+/// declaration per decompile).  The pass is idempotent and does not change the
+/// printed C — it only attaches Symbols to highs the naming pass already
+/// named, writing a field (`kuna_link_symbol`) nothing in the printer's text
+/// path reads; the harness asserts the C text is byte-identical across the
+/// reorder.  Both documents are then spliced in the upstream order
+/// (`<function>` #1 first).
 ///
 /// kuna divergence (documented): under action `paramid` the C++ ran the reduced
 /// `paramid` action set; kuna's `decompile_func_full` runs the full decompile,
@@ -1229,6 +1284,11 @@ fn build_decompile_at_doc(
     current_action: &str,
 ) -> KunaResult<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::new();
+    // The symbol-link pass, ahead of everything that reads its results (the
+    // markup's `<vardecl symref>` and the `<localdb>`/`<highlist>` encode).
+    if send_syntax_tree {
+        fd.kuna_link_high_symbols();
+    }
     {
         let mut enc = PackedEncode::new(&mut buf);
         enc.open_element(&ELEM_DOC);

@@ -183,7 +183,22 @@ def main():
             storage = target.getStorage()
             pcaddr = target.getPCAddress()
             new_name = "kuna_ren_probe"
+            # The collateral set must be non-trivial to mean anything: on a
+            # fresh analysis the DB has no committed locals, so ALSO commit the
+            # decoded locals first (HighFunctionDBUtil.commitLocalNamesToDatabase
+            # is what the GUI does on any local edit) — then a stray rename has
+            # something to collide with.
+            tid0 = program.startTransaction("phase4 commit locals")
+            try:
+                HighFunctionDBUtil.commitLocalNamesToDatabase(hf, SourceType.ANALYSIS)
+            except Exception:
+                log(traceback.format_exc())
+            finally:
+                program.endTransaction(tid0, True)
             before = {str(v.getName()) for v in func.getAllVariables()}
+            if not check("DB carries committed locals to detect collateral renames",
+                         len(before) >= 2, f"{len(before)} DB variables"):
+                failures += 1
             tid = program.startTransaction("phase4 rename")
             err = None
             try:
@@ -269,6 +284,38 @@ def main():
         if params:
             p0 = params[0]
             old_p = str(p0.getName())
+            # An in-place rename is only meaningful if the decoded prototype
+            # ALREADY agrees with the database — otherwise getDatabaseParameter
+            # force-commits kuna's whole signature and the rename "lands"
+            # regardless (the vacuous PASS this check used to be).  Commit the
+            # signature first, then assert storage+ordinal equality decoded-vs-DB
+            # BEFORE renaming.
+            tidp = program.startTransaction("phase4 commit params")
+            try:
+                HighFunctionDBUtil.commitParamsToDatabase(
+                    hf, True, HighFunctionDBUtil.ReturnCommitOption.NO_COMMIT,
+                    SourceType.ANALYSIS)
+            except Exception:
+                log(traceback.format_exc())
+            finally:
+                program.endTransaction(tidp, True)
+            res_p = ifc.decompileFunction(func, 120, monitor)
+            lsm_p = res_p.getHighFunction().getLocalSymbolMap()
+            decoded = [lsm_p.getParamSymbol(i) for i in range(lsm_p.getNumParams())]
+            db_params = list(func.getParameters())
+            storage_ok = len(decoded) == len(db_params) and all(
+                str(d.getStorage()) == str(db.getVariableStorage())
+                and d.getCategoryIndex() == i
+                for i, (d, db) in enumerate(zip(decoded, db_params))
+            )
+            if not check(
+                "encoded param storage/ordinals match the DB (no forced full commit)",
+                storage_ok,
+                f"decoded={[(s.getName(), str(s.getStorage()), s.getCategoryIndex()) for s in decoded]} "
+                f"db={[(p.getName(), str(p.getVariableStorage())) for p in db_params]}",
+            ):
+                failures += 1
+            p0 = decoded[0] if decoded else p0
             tid = program.startTransaction("phase4 param rename")
             err = None
             try:

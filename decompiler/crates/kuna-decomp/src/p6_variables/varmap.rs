@@ -922,6 +922,15 @@ pub struct ScopeLocal {
     /// makes a GUI rename of an untyped local persist).  kuna's ghidra-mode
     /// seeds these directly from the host `<localdb>` answer.
     name_recommend: Vec<NameRecommend>,
+    /// Dynamic-storage name recommendations (C++ `list<DynamicRecommend>
+    /// dynRecommend`, `varmap.hh:217`): the same identity carrier as
+    /// [`Self::name_recommend`] for a variable whose storage is a data-flow
+    /// HASH rather than an address — what the Ghidra GUI writes for any
+    /// variable that `requiresDynamicStorage` (a unique-space representative,
+    /// a `splitOutMergeGroup` product).  Applied through
+    /// `DynamicHash::find_varnode` (`recoverNameRecommendationsForSymbols`,
+    /// varmap.cc:1557-1573).
+    dyn_recommend: Vec<DynamicRecommend>,
 }
 
 impl ScopeLocal {
@@ -949,6 +958,7 @@ impl ScopeLocal {
             overlap_problems: false,
             type_recommend: Vec::new(),
             name_recommend: Vec::new(),
+            dyn_recommend: Vec::new(),
         })
     }
 
@@ -1077,6 +1087,18 @@ impl ScopeLocal {
         &self.name_recommend
     }
 
+    /// C++ `ScopeLocal::addRecommendDynamic` (`varmap.cc:1595`): record a
+    /// name recommendation for a DYNAMIC (hash-addressed) storage location.
+    pub fn add_recommend_dynamic(&mut self, use_point: Address, hash: u64, name: &str) {
+        self.dyn_recommend
+            .push(DynamicRecommend::new(use_point, hash, name.to_string(), 0));
+    }
+
+    /// The pending dynamic name recommendations (C++ `dynRecommend`).
+    pub fn dynamic_recommendations(&self) -> &[DynamicRecommend] {
+        &self.dyn_recommend
+    }
+
     /// The pending `(address, type)` recommendations (C++ `typeRecommend` list),
     /// consumed by [`Funcdata::apply_type_recommendations`] (which owns
     /// `findVarnodeInput`).
@@ -1105,13 +1127,29 @@ impl ScopeLocal {
     /// `encodeRecursive(encoder,false)` call site (`Funcdata::encode`) — a
     /// `ScopeLocal`'s private database has no child scopes to recurse into.
     pub fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        self.encode_with_wire_symbols(&[], encoder)
+    }
+
+    /// [`ScopeLocal::encode`] with WIRE-ONLY symbols appended to the
+    /// `<symbollist>` (see [`crate::database::WireSymbol`]).
+    pub fn encode_with_wire_symbols(
+        &self,
+        wire_symbols: &[crate::database::WireSymbol],
+        encoder: &mut dyn kuna_base::marshal::Encoder,
+    ) -> KunaResult<()> {
         use crate::remote_provider::{ATTRIB_LOCK, ATTRIB_MAIN, ELEM_LOCALDB};
         encoder.open_element(&ELEM_LOCALDB);
         encoder.write_space(&ATTRIB_MAIN, &self.space);
         encoder.write_bool(&ATTRIB_LOCK, self.range_locked);
-        self.db.encode_scope(self.scope, encoder)?;
+        self.db.encode_scope_with_wire_symbols(self.scope, wire_symbols, encoder)?;
         encoder.close_element(&ELEM_LOCALDB);
         Ok(())
+    }
+
+    /// Reserve a fresh internal-range symbol id without creating a Symbol —
+    /// the id source for [`crate::database::WireSymbol`]s.
+    pub fn reserve_internal_symbol_id(&mut self) -> u64 {
+        self.db.reserve_internal_symbol_id(self.scope)
     }
 
     /// C++ `ScopeInternal::assignDefaultNames(base)` (`database.cc:2880`) on this
@@ -1204,8 +1242,9 @@ impl ScopeLocal {
     /// bind to the parameter names (`ptr`/`a`/`b`) instead of the raw registers.
     ///
     /// Idempotent: if a Symbol already overlaps the parameter's storage (a console
-    /// `map addr`, a promoted local, or a prior call) it is left untouched and
-    /// `None` is returned.  Returns the new `SymbolId` otherwise.
+    /// `map addr`, a seeded host local, a promoted local, or a prior call) it is
+    /// not re-created — but it IS categorized as this parameter slot (see below).
+    /// Returns the new `SymbolId`, or `None` when an existing symbol was reused.
     pub fn add_param_symbol(
         &mut self,
         i: int4,
@@ -1220,7 +1259,26 @@ impl ScopeLocal {
         // C++ `linkSymbol`/`queryProperties` would find any existing overlapping
         // entry; only create when none exists (the `entry == 0` arm of
         // `setInput`/`linkSymbol`).
-        if self.db.find_overlap(self.scope, addr, ct.get_size()).is_some() {
+        if let Some(eref) = self.db.find_overlap(self.scope, addr, ct.get_size()) {
+            // (kuna, ghidra Phase 4) The overlapping symbol IS this parameter's
+            // storage — e.g. a host local seeded at the same register.  C++
+            // `ProtoStoreSymbol::setInput` categorizes whatever symbol occupies
+            // the slot (`scope->setCategory(sym, function_parameter, i)`).
+            // Leaving it uncategorized would drop the parameter from the encoded
+            // cat-0 list, shrinking `<localdb>`'s parameter set below the
+            // database's — which makes Java's `checkFullCommit` force-rewrite
+            // the user's signature on the next rename.
+            let sym = self.db.entry(self.scope, eref).symbol;
+            if self.db.symbol(sym).get_category()
+                != crate::database::symbol_category::FUNCTION_PARAMETER
+            {
+                self.db.set_category(
+                    self.scope,
+                    sym,
+                    crate::database::symbol_category::FUNCTION_PARAMETER,
+                    i,
+                );
+            }
             return Ok(None);
         }
         // C++ `ProtoStoreSymbol::setInput` (fspec.cc:3170-3171): the usepoint is
@@ -1763,6 +1821,13 @@ impl ScopeLocal {
     pub fn symbol_id_and_category(&self, sym: crate::database::SymbolId) -> (u64, int4) {
         let s = self.db.symbol(sym);
         (s.get_id(), s.get_category())
+    }
+
+    /// The symbol ids [`ScopeLocal::encode`] actually emits — the set a
+    /// `<high symref>` may reference (see
+    /// [`Database::encodable_symbol_ids`](crate::database::Database::encodable_symbol_ids)).
+    pub fn encodable_symbol_ids(&self) -> std::collections::BTreeSet<u64> {
+        self.db.encodable_symbol_ids(self.scope)
     }
 
     /// C++ `Funcdata::linkSymbol(nameRep)` (`funcdata_varnode.cc:1177`) for the

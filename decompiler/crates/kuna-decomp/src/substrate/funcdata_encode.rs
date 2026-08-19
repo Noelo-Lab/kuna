@@ -120,22 +120,27 @@ impl Funcdata {
         // The symbol-link pass must run BEFORE <localdb> so linked-in symbols
         // are part of the encoded scope (the ids <highlist> symrefs resolve
         // against — Java throws "HighLocal is missing symbol" otherwise).
-        let offsets = if savetree && self.is_high_on() {
-            self.kuna_link_high_symbols()
-        } else {
-            std::collections::BTreeMap::new()
-        };
+        // It is idempotent: the ghidra-mode driver runs it earlier still, so
+        // the printed markup's `<vardecl symref>` can carry the same real ids.
+        if savetree && self.is_high_on() {
+            self.kuna_link_high_symbols();
+        }
         // localmap->encodeRecursive(encoder,false): the <localdb> scope.  The
         // kuna ScopeLocal owns a private single-scope database — no child
         // scopes to recurse into.
+        let mut encodable: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
         if !self.has_no_code() {
+            let wire_symbols = std::mem::take(&mut self.kuna_wire_symbols);
             if let Some(lm) = self.get_scope_local() {
-                lm.encode(enc)?;
+                lm.encode_with_wire_symbols(&wire_symbols, enc)?;
+                encodable = lm.encodable_symbol_ids();
+                encodable.extend(wire_symbols.iter().map(|w| w.id));
             }
+            self.kuna_wire_symbols = wire_symbols;
         }
         if savetree {
             self.encode_tree(enc)?;
-            self.encode_high(enc, &offsets)?;
+            self.encode_high(enc, &encodable)?;
         }
         self.encode_jump_table(enc)?;
         // funcp.encode: "Must be saved after database" (funcdata.cc:758).  A
@@ -182,7 +187,7 @@ impl Funcdata {
     fn encode_high(
         &mut self,
         enc: &mut dyn Encoder,
-        offsets: &std::collections::BTreeMap<crate::context::HighVariableId, i32>,
+        encodable_symbols: &std::collections::BTreeSet<u64>,
     ) -> KunaResult<()> {
         use crate::variable::{ATTRIB_CLASS, ATTRIB_REPREF, ATTRIB_SYMREF, ELEM_HIGH};
         if !self.is_high_on() {
@@ -234,14 +239,30 @@ impl Funcdata {
             // SymbolId; globals resolve their REAL id through the global-scope
             // snapshot (ghidra-mode: the host DB id delivered with the mapped
             // symbol; 0 = unknown ⇒ symref is omitted, never fabricated).
-            let attached = self
-                .high_bank()
-                .get(high)
-                .and_then(|h| h.kuna_dynamic_symbol().or_else(|| h.kuna_equate_symbol()));
-            let (local_symref, category) = match (attached, self.get_scope_local()) {
-                (Some(sid), Some(lm)) => {
+            let attached = self.high_bank().get(high).and_then(|h| {
+                h.kuna_link_symbol()
+                    .or_else(|| h.kuna_dynamic_symbol())
+                    .or_else(|| h.kuna_equate_symbol())
+            });
+            // A wire-only symbol (the analysis left the high symbol-less) is
+            // referenced by its reserved id and is never a parameter.
+            let wire = self
+                .kuna_wire_symbol_for_high
+                .get(&high)
+                .and_then(|i| self.kuna_wire_symbols.get(*i))
+                .map(|w| w.id);
+            let (local_symref, category) = match (attached, wire, self.get_scope_local()) {
+                (None, Some(id), _) => (Some(id), crate::database::symbol_category::NO_CATEGORY),
+                (Some(sid), _, Some(lm)) => {
                     let (id, cat) = lm.symbol_id_and_category(sid);
-                    (Some(id), cat)
+                    // Only reference a symbol the `<localdb>` actually
+                    // encoded: an orphan `<high class=local|param symref>` is
+                    // a Java hard-throw that discards the entire result.
+                    if encodable_symbols.contains(&id) {
+                        (Some(id), cat)
+                    } else {
+                        (None, crate::database::symbol_category::NO_CATEGORY)
+                    }
                 }
                 _ => (None, crate::database::symbol_category::NO_CATEGORY),
             };
@@ -292,7 +313,15 @@ impl Funcdata {
                     _ => None,
                 }
             } else {
-                if let Some(&off) = offsets.get(&high) {
+                // C++ `HighVariable::symboloffset` — written only when >= 0
+                // (a PARTIAL symbol match).  The naming pass records it when
+                // it binds a high into a composite/parameter entry.
+                let off = self
+                    .high_bank()
+                    .get(high)
+                    .map(|h| h.get_symbol_offset())
+                    .unwrap_or(-1);
+                if off >= 0 {
                     symbol_offset = off as i64;
                 }
                 local_symref
@@ -339,14 +368,10 @@ impl Funcdata {
     /// `HighVariable::symboloffset`; the map carries only offsets >= 0).  The
     /// pass never touches `HighVariable::symbol_offset` (a printer input) — the
     /// encode is not allowed to perturb the rendered C.
-    pub(crate) fn kuna_link_high_symbols(
-        &mut self,
-    ) -> std::collections::BTreeMap<crate::context::HighVariableId, i32> {
+    pub fn kuna_link_high_symbols(&mut self) {
         use kuna_base::address::Address;
-        let mut offsets: std::collections::BTreeMap<crate::context::HighVariableId, i32> =
-            std::collections::BTreeMap::new();
         if !self.is_high_on() || self.get_scope_local().is_none() {
-            return offsets;
+            return;
         }
         let vns: Vec<VarnodeId> = self.vbank().iter_loc().collect();
         let mut seen: std::collections::BTreeSet<crate::context::HighVariableId> =
@@ -366,15 +391,24 @@ impl Funcdata {
             if !seen.insert(high) {
                 continue;
             }
-            // Symbol already attached during analysis (equate / dynamic).
+            // Symbol already attached — during analysis (equate / dynamic) or
+            // by the naming pass's recorded bind decision
+            // (`kuna_link_symbol`), which INCLUDES a previous run of this
+            // idempotent pass.
             let (has_symbol, named) = match self.high_bank().get(high) {
                 Some(h) => (
-                    h.kuna_dynamic_symbol().or_else(|| h.kuna_equate_symbol()).is_some(),
+                    h.kuna_dynamic_symbol()
+                        .or_else(|| h.kuna_equate_symbol())
+                        .or_else(|| h.kuna_link_symbol())
+                        .is_some(),
                     h.kuna_name().is_some(),
                 ),
                 None => continue,
             };
-            if has_symbol || !named {
+            // Idempotent: a previous run of this pass already gave the high a
+            // wire symbol (the ghidra driver runs it before the markup, the
+            // encode runs it again).
+            if has_symbol || !named || self.kuna_wire_symbol_for_high.contains_key(&high) {
                 continue;
             }
             let (rep, spacebase, implied, persist, constant, dtype) =
@@ -406,53 +440,76 @@ impl Funcdata {
                 continue;
             }
             let rep_addr = rep_vn.get_addr().clone();
-            let rep_size = rep_vn.get_size();
             let rep_addrtied = rep_vn.is_addr_tied();
             let usepoint = self.vn_use_point(rep);
-            // Find any entry overlapping the base address (linkSymbol's
-            // queryProperties → findContainer).
-            let found = self
+            // The naming pass left this high symbol-less.  There are exactly
+            // two reasons, and they need OPPOSITE treatment:
+            //
+            //  * no Symbol covers the storage at all — the C++ `linkSymbol`
+            //    `addSymbol("",...)` branch: a register/unique/stack temp the
+            //    naming pass named `vN`.  Give it a MAPPED wire symbol at that
+            //    storage.
+            //  * a Symbol DOES cover it but the naming pass rejected the bind
+            //    as a storage CONFLICT (the narrower addr-tied return over a
+            //    wider scalar parameter, the float8 lane over a float4 param —
+            //    `coreaction_cleanup.rs`'s conflict scan).  C++ answers with
+            //    `buildDynamicSymbol` — a data-flow-HASHED symbol of its own.
+            //    Re-deriving the container binding here would hand the high
+            //    the PARAMETER's symbol id, so a rename from this variable's
+            //    token would rename the parameter.  Never do that: hash it, or
+            //    (no unique hash) leave it symbol-less — it then encodes as
+            //    `<high class="other">` with no `symref`, which Java tolerates.
+            //
+            // Both produce a WIRE-ONLY symbol ([`WireSymbol`]): the analysis
+            // scope is never touched, so this pass cannot change the emitted C
+            // no matter when it runs (the ghidra driver runs it BEFORE the
+            // markup so `<vardecl symref>` can carry the real ids).
+            let covered = self
                 .get_scope_local()
-                .and_then(|lm| lm.container_symbol_link(&rep_addr, &usepoint));
-            match found {
-                Some((sid, entry_addr, entry_size, entry_off)) => {
-                    if entry_size != rep_size || entry_addr != rep_addr {
-                        // Partial match: the wire offset (HighVariable::setSymbol).
-                        let off = (rep_addr
-                            .get_offset()
-                            .wrapping_sub(entry_addr.get_offset())
-                            as i32)
-                            .wrapping_add(entry_off);
-                        offsets.insert(high, off);
-                    }
-                    if let Some(h) = self.high_bank_mut().get_mut(high) {
-                        h.set_kuna_dynamic_symbol(sid);
-                    }
+                .and_then(|lm| lm.container_symbol_link(&rep_addr, &usepoint))
+                .is_some();
+            let name = self
+                .high_bank()
+                .get(high)
+                .and_then(|h| h.kuna_name())
+                .expect("named checked above")
+                .to_string();
+            let hash = if covered {
+                // The collision budget is pinned at the UPSTREAM 8 on the wire
+                // path: Java computes its own hash for the same variable with a
+                // hardcoded `maxduplicates = 8` (`DynamicHash.java:440`), and a
+                // hash the two sides disagree on cannot round-trip a rename.
+                match crate::dynamic::dynamic_unique_hash(rep, 8, self) {
+                    Ok((h, _)) if h != 0 => h,
+                    _ => continue, // no unique hash: stay symbol-less
                 }
-                None => {
-                    // Create the local symbol (linkSymbol's addSymbol branch);
-                    // an addr-tied storage maps usepoint-free.
-                    let name = self
-                        .high_bank()
-                        .get(high)
-                        .and_then(|h| h.kuna_name())
-                        .expect("named checked above")
-                        .to_string();
-                    let create_usepoint =
-                        if rep_addrtied { Address::new_invalid() } else { usepoint };
-                    let res = self
-                        .get_scope_local_mut()
-                        .expect("scope checked above")
-                        .add_symbol(&name, dtype, &rep_addr, &create_usepoint);
-                    if let Ok(sid) = res {
-                        if let Some(h) = self.high_bank_mut().get_mut(high) {
-                            h.set_kuna_dynamic_symbol(sid);
-                        }
-                    }
-                }
-            }
+            } else {
+                0
+            };
+            let Some(id) = self
+                .get_scope_local_mut()
+                .map(|lm| lm.reserve_internal_symbol_id())
+            else {
+                continue;
+            };
+            let idx = self.kuna_wire_symbols.len();
+            self.kuna_wire_symbols.push(crate::database::WireSymbol {
+                id,
+                name,
+                dtype,
+                addr: if hash != 0 { Address::new_invalid() } else { rep_addr },
+                hash,
+                // A mapped addr-tied storage is valid function-wide (empty
+                // uselimit); everything else is scoped to its use point, which
+                // is also the address a DYNAMIC entry hashes at.
+                usepoint: if hash == 0 && rep_addrtied {
+                    Address::new_invalid()
+                } else {
+                    usepoint
+                },
+            });
+            self.kuna_wire_symbol_for_high.insert(high, idx);
         }
-        offsets
     }
 
     /// C++ `Funcdata::encodeTree(Encoder&)` (`funcdata.cc:686`).

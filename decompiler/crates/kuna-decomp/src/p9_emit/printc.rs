@@ -2706,17 +2706,42 @@ impl PrintC {
             // and Ghidra's `ClangVariableDecl.decode` does a REQUIRED read of `symref`:
             // an ABSENT attribute aborts the whole markup decode with "Attribute symref
             // is not present", so the Decompiler window shows nothing for any function
-            // that declares a local.  Phase 2 does not yet encode `<localdb>`
-            // (funcdata_encode.rs), so no HighSymbol reaches Java to resolve against —
-            // but the attribute must still be PRESENT (Java only *logs* an unresolvable
-            // ref, non-fatally, and still renders the declaration tokens).  Use the
-            // declaration representative Varnode's create index — the same id the
-            // `<ast>` and the token `varref` already carry — as the placeholder symref
-            // until the lazy scope encoding (Phase 3/4) supplies real symbol ids.
+            // that declares a local.
+            //
+            // (kuna, ghidra Phase 4) The id must be the LocalSymbolMap id the
+            // `<localdb>` encodes — Java resolves `symref` through that map
+            // (`ClangVariableDecl.decode` → `pfactory.getSymbol(symref)`), and
+            // right-click rename/retype ON THE DECLARATION LINE resolves the
+            // HighSymbol exclusively through it.  Phase 2 wrote the
+            // declaration representative's varnode create index here as a
+            // stand-in (no symbols existed yet); now that real symbols do, an
+            // unresolvable create index would log "Invalid symbol reference"
+            // once per declaration per decompile AND leave declaration-token
+            // rename/retype dead.  The create index survives only as the
+            // fallback for a high the naming pass deliberately left
+            // symbol-less.  The representative's `varref` rides along too, so
+            // the declaration's name token resolves to a Varnode (and through
+            // it a HighVariable) exactly like a usage token — the standalone
+            // printer ignores both fields (EmitNoMarkup), so the rendered C is
+            // unchanged either way.
             let mut markup = MarkupRef::none();
-            markup.symref = decl_rep_varnode(fd, *high)
+            let decl_rep = decl_rep_varnode(fd, *high);
+            markup.varref = decl_rep
                 .and_then(|vn| fd.vbank().get(vn))
                 .map(|v| v.get_create_index() as uintb);
+            // The declaration may be keyed on a GROUP MEMBER high while the
+            // name (and therefore the Symbol) resolved on the group's naming
+            // high — resolve through the declaration representative's own
+            // high as well before falling back.
+            markup.symref = fd
+                .kuna_high_symbol_wire_id(*high)
+                .or_else(|| {
+                    decl_rep
+                        .and_then(|vn| fd.vbank().get(vn))
+                        .and_then(|v| v.get_high())
+                        .and_then(|h| fd.kuna_high_symbol_wire_id(h))
+                })
+                .or(markup.varref);
             let (mut decl_type, mut array_count, comment) =
                 self.rendered_local_decl(fd, arch, *high);
             // (kuna) The Symbol-keyed collapse arbitrated a type disagreement between

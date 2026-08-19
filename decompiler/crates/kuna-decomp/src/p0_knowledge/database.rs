@@ -4126,6 +4126,77 @@ impl Database {
 // / HighSymbol.decodeMapSym.
 // ===========================================================================
 
+/// A WIRE-ONLY symbol: one the ghidra-mode `<localdb>` encodes so Java has a
+/// `HighSymbol` (and therefore a rename/retype target) for a variable, without
+/// the symbol ever entering the analysis scope.
+///
+/// The distinction is load-bearing.  kuna's naming pass leaves some named
+/// variables symbol-less on purpose — a register/unique temp with no covering
+/// entry, or a high the conflict scan deliberately separated from the
+/// parameter whose storage it overlaps.  Java still needs an id for them, but
+/// creating real `Symbol`s would feed the printer's own scope queries and
+/// change the emitted C, i.e. the wire encode would perturb decompilation.
+/// A `WireSymbol` carries exactly what `Symbol::encode` + `SymbolEntry::encode`
+/// would have written, and nothing else.
+#[derive(Debug, Clone)]
+pub struct WireSymbol {
+    /// The internal-range id (reserved via
+    /// [`Database::reserve_internal_symbol_id`], so it can never collide with
+    /// a real scope symbol's).
+    pub id: uint8,
+    /// Display name — the name the markup already printed for the variable.
+    pub name: String,
+    /// The variable's data-type.
+    pub dtype: Rc<Datatype>,
+    /// Storage address for a MAPPED symbol; invalid when `hash != 0`.
+    pub addr: Address,
+    /// Data-flow hash for a DYNAMIC symbol (0 = mapped storage).  This is the
+    /// `buildDynamicSymbol` shape: the variable is identified by its position
+    /// in the data flow, not by a storage location it shares with something
+    /// else.
+    pub hash: uint8,
+    /// First-use address: the `<rangelist>`'s single range (invalid = an
+    /// empty rangelist = address-tied / whole-function).
+    pub usepoint: Address,
+}
+
+impl WireSymbol {
+    /// Encode as a `<mapsym>` — the same shape `Symbol::encode` +
+    /// `SymbolEntry::encode` produce for a scope symbol.
+    fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use crate::remote_provider::{ATTRIB_CAT, ELEM_HASH, ELEM_MAPSYM};
+        use kuna_base::marshal::{ATTRIB_ID, ATTRIB_NAME, ATTRIB_TYPE, ATTRIB_VAL};
+        encoder.open_element(&ELEM_MAPSYM);
+        if self.hash != 0 {
+            encoder.write_string(&ATTRIB_TYPE, b"dynamic");
+        }
+        encoder.open_element(&kuna_base::marshal::ELEM_SYMBOL);
+        encoder.write_string(&ATTRIB_NAME, self.name.as_bytes());
+        encoder.write_unsigned_integer(&ATTRIB_ID, self.id);
+        encoder.write_signed_integer(&ATTRIB_CAT, -1);
+        self.dtype.encode_ref(encoder)?;
+        encoder.close_element(&kuna_base::marshal::ELEM_SYMBOL);
+        if self.hash != 0 {
+            encoder.open_element(&ELEM_HASH);
+            encoder.write_unsigned_integer(&ATTRIB_VAL, self.hash);
+            encoder.close_element(&ELEM_HASH);
+        } else {
+            self.addr.encode(encoder)?;
+        }
+        // The uselimit rangelist (REQUIRED; may be empty).
+        let mut uselimit = RangeList::default();
+        if !self.usepoint.is_invalid() {
+            if let Some(spc) = self.usepoint.get_space() {
+                let off = self.usepoint.get_offset();
+                uselimit.insert_range(Rc::clone(spc), off, off);
+            }
+        }
+        uselimit.encode(encoder);
+        encoder.close_element(&ELEM_MAPSYM);
+        Ok(())
+    }
+}
+
 impl SymbolEntry {
     /// Encode this entry as a (`<addr>` | `<hash>`) + uselimit `<rangelist>`
     /// pair (C++ `SymbolEntry::encode`, database.cc:187-199).  A piece entry
@@ -4239,9 +4310,68 @@ impl Database {
     /// `LocalSymbolMap.insertSymbol` dereferences `entryList[0]`, so an
     /// entry-less mapsym would NPE the whole decode.  Upstream never encodes
     /// one because every C++ Symbol acquires an entry at creation.
+    /// Reserve a fresh internal-range symbol id in `scope` WITHOUT creating a
+    /// Symbol (the id formula of [`Database::add_symbol_internal`],
+    /// database.cc:1818).  The ghidra-mode encode uses it for the wire-only
+    /// symbols of [`WireSymbol`]: a variable that needs an id Java can key a
+    /// rename on, but that must not enter the analysis scope — adding it there
+    /// would feed the printer's scope queries and change the emitted C.
+    pub fn reserve_internal_symbol_id(&mut self, scope: ScopeId) -> uint8 {
+        let unique_id = self.scopes[scope].unique_id;
+        let next = self.scopes[scope].next_unique_id;
+        self.scopes[scope].next_unique_id += 1;
+        SYMBOL_ID_BASE + ((unique_id & 0xffff) << 40) + next
+    }
+
+    /// Which symbol ids [`Database::encode_scope`] would actually emit — the
+    /// set a `<high symref>` may safely reference.  A symbol the encode skips
+    /// (see the defensive filters there) MUST NOT be referenced: Java's
+    /// `HighLocal.decode` hard-throws on an unresolvable local/param symref
+    /// and discards the whole decompile result, so the guard would create the
+    /// very crash it guards against.
+    pub fn encodable_symbol_ids(&self, scope: ScopeId) -> std::collections::BTreeSet<u64> {
+        let mut out = std::collections::BTreeSet::new();
+        let sc = &self.scopes[scope];
+        for (_, &sid) in sc.nametree.iter() {
+            let sym = &self.symbols[sid];
+            if Self::symbol_is_encodable(sym) {
+                out.insert(sym.symbol_id);
+            }
+        }
+        out
+    }
+
+    /// The per-symbol filter shared by [`Database::encode_scope`] and
+    /// [`Database::encodable_symbol_ids`] so the two can never disagree.
+    fn symbol_is_encodable(sym: &Symbol) -> bool {
+        if sym.mapentry.is_empty() {
+            return false; // no SymbolEntry — Java's insertSymbol NPEs
+        }
+        if sym.symbol_id == 0 {
+            return false; // "missing unique symbol id" hard-throw
+        }
+        match &sym.dtype {
+            // MappedEntry.decode throws on a 0-sized data-type.
+            Some(t) if t.get_size() > 0 => true,
+            _ => false,
+        }
+    }
+
     pub fn encode_scope(
         &self,
         scope: ScopeId,
+        encoder: &mut dyn kuna_base::marshal::Encoder,
+    ) -> KunaResult<()> {
+        self.encode_scope_with_wire_symbols(scope, &[], encoder)
+    }
+
+    /// [`Database::encode_scope`] plus a list of WIRE-ONLY symbols
+    /// ([`WireSymbol`]) appended to the same `<symbollist>` — variables the
+    /// analysis deliberately left symbol-less that Java still needs an id for.
+    pub fn encode_scope_with_wire_symbols(
+        &self,
+        scope: ScopeId,
+        wire_symbols: &[WireSymbol],
         encoder: &mut dyn kuna_base::marshal::Encoder,
     ) -> KunaResult<()> {
         use crate::remote_provider::{ELEM_MAPSYM, ELEM_PARENT, ELEM_SCOPE, ELEM_SYMBOLLIST};
@@ -4265,25 +4395,21 @@ impl Database {
             encoder.close_element(&ELEM_PARENT);
         }
         sc.rangetree.encode(encoder);
-        if !sc.nametree.is_empty() {
+        if !sc.nametree.is_empty() || !wire_symbols.is_empty() {
             encoder.open_element(&ELEM_SYMBOLLIST);
             for (_, &sid) in sc.nametree.iter() {
                 let sym = &self.symbols[sid];
-                if sym.mapentry.is_empty() {
-                    continue; // no SymbolEntry — Java would NPE (see doc).
-                }
                 // (kuna divergence, defensive) Java-side hard throws: a symbol
                 // with no id ("missing unique symbol id"), and a mapped entry
                 // whose data-type has size 0 (MappedEntry.decode).  Neither
                 // occurs through the kuna creation paths (add_symbol_internal
                 // always assigns an internal id; local symbols carry sized
                 // types) — but one bad symbol must not kill the whole result.
-                if sym.symbol_id == 0 {
+                // A skipped symbol is ALSO withheld from `<high symref>` (see
+                // `encodable_symbol_ids`), so the skip cannot orphan a
+                // reference and trip the throw it is guarding against.
+                if !Self::symbol_is_encodable(sym) {
                     continue;
-                }
-                match &sym.dtype {
-                    Some(t) if t.get_size() > 0 => {}
-                    _ => continue,
                 }
                 let mut symbol_type = 0;
                 let first = self.entry(scope, sym.mapentry[0]);
@@ -4304,6 +4430,12 @@ impl Database {
                     self.entry(scope, *eref).encode(encoder)?;
                 }
                 encoder.close_element(&ELEM_MAPSYM);
+            }
+            // The wire-only symbols, after the scope's own (nametree order is
+            // not load-bearing to any Java consumer: LocalSymbolMap indexes by
+            // id and sorts parameters by their cat index).
+            for ws in wire_symbols {
+                ws.encode(encoder)?;
             }
             encoder.close_element(&ELEM_SYMBOLLIST);
         }

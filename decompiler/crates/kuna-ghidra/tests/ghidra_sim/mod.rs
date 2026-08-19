@@ -77,6 +77,10 @@ pub const ELEM_VARIABLE_ID: u32 = 26;
 pub const ELEM_FIELD_ID: u32 = 49;
 /// `<type>` (type.cc vocabulary) → Java ClangTypeToken.
 pub const ELEM_TYPE_ID: u32 = 60;
+/// `<vardecl>` (prettyprint.rs) → Java ClangVariableDecl, whose `symref` MUST
+/// resolve in the decoded LocalSymbolMap or declaration-line rename/retype is
+/// dead (and Java logs "Invalid symbol reference" per declaration).
+pub const ELEM_VARDECL_ID: u32 = 25;
 /// `ClangToken.CONST_COLOR` (== `SyntaxHighlight::ConstColor`).
 pub const CONST_COLOR: u64 = 5;
 
@@ -176,10 +180,15 @@ pub struct SimSymbol {
     pub type_size: Option<i64>,
     /// The type child's `name` attribute.
     pub type_name: Option<String>,
+    /// The symbol's data-type body was `<void/>` — a 0-sized type, which
+    /// `MappedEntry.decode` rejects.
+    pub type_is_void: bool,
     /// The first mapped entry's storage `(space name, offset)`.
     pub entry_storage: Option<(String, u64)>,
     /// The first entry's uselimit start (`<range first>`), when non-empty.
     pub first_use: Option<u64>,
+    /// The `<hash val>` of a DYNAMIC entry (0 = mapped storage).
+    pub hash: u64,
 }
 
 /// One decoded `<high>` (what `HighFunction.decodeHigh` sees).
@@ -674,6 +683,15 @@ pub struct ParsedDoc {
     /// Whether the first `<function>` was present at all (a parammeasures-only
     /// paramid doc has none).
     pub has_function: bool,
+    /// Every `<vardecl symref>` in the markup — each SHOULD resolve against
+    /// the `<localdb>` ids (Java `ClangVariableDecl.decode` →
+    /// `pfactory.getSymbol(symref)`); an unresolvable one leaves
+    /// rename/retype dead on that declaration line and logs once per
+    /// decompile.
+    pub vardecl_symrefs: BTreeSet<u64>,
+    /// How many of them do NOT resolve (the create-index fallback) — pinned,
+    /// so the systemic case stays fixed and the residue can only shrink.
+    pub vardecl_symref_unresolved: usize,
 }
 
 /// Decode a `decompileAt` `<doc>` payload: an optional `<parammeasures>`, the
@@ -714,6 +732,7 @@ pub fn parse_decompile_doc(doc: &[u8], manager: &AddrSpaceManager) -> ParsedDoc 
             dec.close_element(mid).expect("close markup <function>");
             parsed.markup_oprefs = refs.get(&ATTRIB_OPREF_ID).cloned().unwrap_or_default();
             parsed.markup_varrefs = refs.get(&ATTRIB_VARREF_ID).cloned().unwrap_or_default();
+            parsed.vardecl_symrefs = refs.get(&ATTRIB_SYMREF_ID).cloned().unwrap_or_default();
             parsed.c_text = ctext;
             parsed.mangled_tokens = mangled;
         } else {
@@ -842,8 +861,10 @@ fn parse_mapsym(dec: &mut PackedDecode) -> SimSymbol {
         has_type: false,
         type_size: None,
         type_name: None,
+        type_is_void: false,
         entry_storage: None,
         first_use: None,
+        hash: 0,
     };
     let mut pending_entry_needs_rangelist = false;
     while dec.peek_element().expect("peek <mapsym> child") != 0 {
@@ -874,6 +895,9 @@ fn parse_mapsym(dec: &mut PackedDecode) -> SimSymbol {
                     || b == ELEM_VOID_ID
                 {
                     sym.has_type = true;
+                    if b == ELEM_VOID_ID {
+                        sym.type_is_void = true;
+                    }
                     if b == ELEM_TYPE_ID || b == ELEM_TYPEREF_ID {
                         loop {
                             let aid = dec.get_next_attribute_id().expect("type attr");
@@ -900,6 +924,11 @@ fn parse_mapsym(dec: &mut PackedDecode) -> SimSymbol {
             }
         } else if cid == ELEM_ADDR_ID || cid == ELEM_HASH_ID {
             sym.entries += 1;
+            if cid == ELEM_HASH_ID && sym.hash == 0 {
+                sym.hash = dec
+                    .read_unsigned_integer_id(&kuna_base::marshal::ATTRIB_VAL)
+                    .unwrap_or(0);
+            }
             if pending_entry_needs_rangelist {
                 sym.entries_have_rangelists = false; // previous entry had none
             }
@@ -1085,10 +1114,27 @@ fn parse_parammeasures(dec: &mut PackedDecode, parsed: &mut ParsedDoc) {
     parsed.parammeasures = Some(measures);
 }
 
+/// Count `<vardecl symref>`s that do NOT resolve against the document's own
+/// `<localdb>` ids (the create-index fallback for a declaration whose high the
+/// analysis left symbol-less).
+pub fn vardecl_unresolved(parsed: &ParsedDoc) -> usize {
+    let ids: BTreeSet<u64> = parsed
+        .localdb
+        .as_ref()
+        .map(|syms| syms.iter().map(|s| s.id).collect())
+        .unwrap_or_default();
+    parsed
+        .vardecl_symrefs
+        .iter()
+        .filter(|sr| !ids.contains(*sr))
+        .count()
+}
+
 /// The Phase-4 Java hard-throw traps (r5 §3), asserted the way the Java
 /// consumers would fail: one violation would discard the WHOLE decompile
 /// result in the GUI.
 pub fn assert_phase4_traps(parsed: &ParsedDoc, label: &str) {
+    let _ = &parsed.vardecl_symref_unresolved;
     // Child order: localdb before highlist, ast before highlist.
     let pos = |id: u32| parsed.function_child_ids.iter().position(|&c| c == id);
     if let Some(hpos) = pos(ELEM_HIGHLIST_ID) {
@@ -1129,6 +1175,14 @@ pub fn assert_phase4_traps(parsed: &ParsedDoc, label: &str) {
                 s.name
             );
             assert!(s.has_type, "{label}: <symbol {}> carries no data-type child", s.name);
+            // r5 §3 trap 4: `MappedEntry.decode` throws
+            // "Invalid symbol 0-sized data-type" — a `<void/>` body or an
+            // explicit size 0 is exactly that shape.
+            assert!(
+                s.type_size.map(|sz| sz > 0).unwrap_or(true) && !s.type_is_void,
+                "{label}: <symbol {}> has a 0-sized data-type (MappedEntry.decode throws)",
+                s.name
+            );
             if s.cat == 0 {
                 assert!(
                     s.index.is_some(),
@@ -1169,6 +1223,25 @@ pub fn assert_phase4_traps(parsed: &ParsedDoc, label: &str) {
                 );
             }
         }
+    }
+    // Every `<vardecl symref>` must resolve in the just-decoded `<localdb>`:
+    // an unresolvable one leaves declaration-line rename/retype dead and logs
+    // once per declaration per decompile.
+    if !parsed.vardecl_symrefs.is_empty() {
+        assert!(
+            !localdb_ids.is_empty(),
+            "{label}: declarations carry symrefs but the <localdb> has no symbols"
+        );
+        let resolved = parsed
+            .vardecl_symrefs
+            .iter()
+            .filter(|sr| localdb_ids.contains(*sr))
+            .count();
+        assert!(
+            resolved > 0,
+            "{label}: NO <vardecl symref> resolves against <localdb> — the \
+             declaration-line rename/retype contract is broken wholesale"
+        );
     }
     // Prototype: model + extrapop + returnsym(addr+type).
     if let Some(p) = &parsed.prototype {
@@ -1213,6 +1286,11 @@ fn flatten_markup(
         let aid = dec.get_next_attribute_id()?;
         if aid == 0 {
             break;
+        }
+        if aid == ATTRIB_SYMREF_ID && elem_id == ELEM_VARDECL_ID {
+            let v = dec.read_unsigned_integer()?;
+            refs.entry(ATTRIB_SYMREF_ID).or_default().insert(v);
+            continue;
         }
         if aid == ATTRIB_CONTENT.get_id() {
             content = Some(String::from_utf8_lossy(&dec.read_string()?).into_owned());

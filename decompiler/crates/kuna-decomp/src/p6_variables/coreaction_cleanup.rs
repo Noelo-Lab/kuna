@@ -2350,6 +2350,7 @@ fn kuna_default_local_name(
 /// defining-write address.
 fn recommended_name_for(
     data: &Funcdata,
+    high: crate::context::HighVariableId,
     name_rep: crate::context::VarnodeId,
     v_addr: &kuna_base::address::Address,
     v_size: i32,
@@ -2360,14 +2361,53 @@ fn recommended_name_for(
     if lm.name_recommendations().is_empty() {
         return None;
     }
+    // C++ `!sym->isNameUndefined()` guard (varmap.cc:1541): a recommendation
+    // never paints over a variable that already resolved to a real Symbol
+    // (a parameter, a locked/mapped local) — otherwise the markup token and
+    // the encoded `<localdb>`/`<prototype>` would disagree about the name.
+    if data
+        .high_bank()
+        .get(high)
+        .map(|h| {
+            h.kuna_dynamic_symbol().is_some()
+                || h.kuna_equate_symbol().is_some()
+                || h.kuna_link_symbol().is_some()
+        })
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    if lm.category_for_varnode(v_addr, v_size)
+        == Some(crate::database::symbol_category::FUNCTION_PARAMETER)
+    {
+        return None; // a cat-0 parameter's name comes from the prototype
+    }
     let param_usepoint = &data.get_address().clone() + -1;
-    let def_addr = data
-        .vbank()
-        .get(name_rep)
-        .filter(|v| v.is_written())
-        .and_then(|v| v.get_def())
-        .and_then(|op| data.obank().get(op))
-        .map(|o| o.get_addr().clone());
+    // Every def address across the high's INSTANCES, not just the name
+    // representative's: upstream's `findVarnodeWritten(size,addr,usepoint)`
+    // searches the whole function for a varnode of this storage written at
+    // the usepoint, then resolves `vn->getHigh()`.  A multi-instance high
+    // (one register written at several ops) records the rename at whichever
+    // instance the user clicked — usually NOT the representative.
+    let mut def_addrs: Vec<kuna_base::address::Address> = Vec::new();
+    let insts: Vec<crate::context::VarnodeId> = match data.high_bank().get(high) {
+        Some(h) => (0..h.num_instances()).map(|i| h.get_instance(i)).collect(),
+        None => vec![name_rep],
+    };
+    for ivn in insts {
+        let Some(v) = data.vbank().get(ivn) else { continue };
+        // Only instances at the recommendation's storage can match.
+        if v.get_size() != v_size || v.get_addr() != v_addr {
+            continue;
+        }
+        if !v.is_written() {
+            continue;
+        }
+        if let Some(a) = v.get_def().and_then(|op| data.obank().get(op)).map(|o| o.get_addr().clone())
+        {
+            def_addrs.push(a);
+        }
+    }
     for rec in lm.name_recommendations() {
         if rec.size != v_size || rec.addr != *v_addr {
             continue;
@@ -2377,7 +2417,7 @@ fn recommended_name_for(
         } else if rec.useaddr == param_usepoint {
             v_input
         } else {
-            def_addr.as_ref() == Some(&rec.useaddr)
+            def_addrs.iter().any(|a| *a == rec.useaddr)
         };
         if hit {
             return Some(rec.name.clone());
@@ -2425,6 +2465,15 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // (C++ `ProtoStoreSymbol::setInput` did this at recovery time; the kuna
     // `ProtoStoreInternal` does not, so it is done here before the walk).
     data.link_proto_params();
+
+    // C++ `ActionNameVars::apply` (coreaction.cc:3065) opens with
+    // `getScopeLocal()->recoverNameRecommendationsForSymbols()`.  Its
+    // hash-addressed half runs here, before any high is named, so a
+    // GUI-renamed dynamic-storage variable (unique-space temp, split merge
+    // group) keeps the user's name instead of consuming a fresh `vN`; the
+    // address-keyed half is applied per-high inside the walk
+    // (`recommended_name_for`).  Both are no-ops without recommendations.
+    data.kuna_apply_dynamic_recommendations();
 
     // C++ `ActionNameVars::apply` (coreaction.cc:3084) calls
     // `lookForFuncParamNames(data,namerec)` AFTER `linkSymbols` but BEFORE the
@@ -2537,10 +2586,15 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // `clearUnlockedCategory(-1)`) — wins over both the container bind and
         // the `vN` allocator for the variable at its recorded storage.  The
         // three matching arms mirror the C++: invalid usepoint = an
-        // address-tied whole; entry-1 = a function input; otherwise the
-        // defining-write address.  Empty outside ghidra mode.
+        // address-tied whole; entry-1 = a function input; otherwise ANY
+        // instance of this high written at that address (the C++
+        // `findVarnodeWritten(size,addr,usepoint)` searches the whole
+        // function, so a recommendation recorded at a NON-representative
+        // instance's def address must still match).  Empty outside ghidra
+        // mode.
         if let Some(rec_name) = recommended_name_for(
             data,
+            high,
             name_rep.unwrap(),
             &v_addr,
             v_size,
@@ -2704,11 +2758,25 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                     Some(t) => t,
                     None => (info.display_name, info.sym_off, info.sym_type),
                 };
+                // (kuna, ghidra Phase 4) Record WHICH Symbol this bind resolved
+                // to — the same `findContainer` query the name came from.  The
+                // wire encode reads this decision instead of re-deriving a
+                // container binding, so the conflict fall-through below (which
+                // deliberately leaves the high symbol-less) can never be
+                // mistaken for a bind: re-deriving there would hand the
+                // conflict-separated high the PARAMETER's symbol id.
+                let bound_sid = data
+                    .get_scope_local()
+                    .and_then(|lm| lm.container_symbol_link(&v_addr, &usepoint))
+                    .map(|(sid, _, _, _)| sid);
                 if let Some(h) = data.high_bank_mut().get_mut(high) {
                     h.set_kuna_name(sym_name);
                     h.set_symbol_offset(sym_off);
                     if let Some(t) = sym_type {
                         h.set_symbol_type(t);
+                    }
+                    if let Some(sid) = bound_sid {
+                        h.set_kuna_link_symbol(sid);
                     }
                 }
                 continue;
