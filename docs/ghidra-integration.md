@@ -581,7 +581,11 @@ pins now hold the Phase-3 level.
 - [ ] Overlay spaces (Java swaps in overlay codecs transparently —
       `DecompInterface.java:84-127,896-909`); `getStringData` charset fidelity
       (Java-side decode instead of `GhidraLoadImage` bytes).
-- [ ] `<hash>` dynamic-storage symbols for unique-space locals in the link
-      pass (rename of a unique-storage temp falls back to Java's
-      address-keyed `DynamicEntry.build` path meanwhile); `<override>` /
-      child-`<scope>` statics (Java skips both).
+- [ ] `<override>` / child-`<scope>` statics (Java skips both); the C++
+      `collectNameRecs` harvest (standalone symbols → recommendations).
+- [ ] One residual `<vardecl symref>` per corpus function can still fall back
+      to the create-index placeholder: a declaration the printer keys on a
+      group-member high whose covering Symbol the analysis never bound
+      (pinned at 0/1/0 by `PIN_FAILLOG_VARDECL_UNRESOLVED`, so it can only
+      shrink).  Java logs that one reference; rename works from the
+      variable's usage tokens meanwhile.

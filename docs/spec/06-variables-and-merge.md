@@ -458,11 +458,26 @@ applies it in the `ActionNameVars` port
 storage + size wins the recommended name — the use-address selects the arm
 (invalid = address-tied whole, `entry-1` = a function input, else the defining
 write's address) — before both the container bind and the `vN` allocator.
-The list's only producer today is ghidra-mode's host-`<localdb>` seeding (the
+A variable whose storage is a HASH rather than an address needs the parallel
+list: C++ keeps `dynRecommend` and re-applies it through
+`DynamicHash::findVarnode` (varmap.cc:1557-1573).  kuna ports that too
+(`ScopeLocal::add_recommend_dynamic` /
+`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::kuna_apply_dynamic_recommendations)`, run at the top of the naming
+pass exactly as upstream runs it at the top of `ActionNameVars::apply`): the
+recorded hash resolves back to its Varnode, and when that Varnode's high is
+still unnamed it takes the recommended name AND a dynamic Symbol carrying the
+same hash — so the re-encoded `<localdb>` hands Java a `<mapsym
+type="dynamic">` it resolves to the very variable the user renamed.  The hash
+is computed with the upstream budget of 8 because Java hardcodes the same
+(`DynamicHash.java:440`) and a hash the two sides disagree on cannot
+round-trip.
+
+The lists' only producer today is ghidra-mode's host-`<localdb>` seeding (the
 GUI rename persistence loop, chapter [00](00-overview.md)); the standalone
-pipeline never adds a record, so the pass is structurally inert there.  The
-C++ `collectNameRecs` harvest (standalone symbols → records) and the
-dynamic-hash record list remain unported follow-ups.
+pipeline never adds a record, so both passes are structurally inert there.
+The C++ `collectNameRecs` harvest (standalone symbols → records) remains an
+unported follow-up.
 
 **The scope wire encode.** The whole local scope marshals out for the
 ghidra-mode `decompileAt` response as the `<localdb>` element

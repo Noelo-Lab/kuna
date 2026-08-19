@@ -314,16 +314,31 @@ Four front-ends drive one engine assembly:
   database), and the `<scope>` opens positionally with `<parent>` +
   `<rangelist>` because `LocalSymbolMap.decodeScope` skips both blind.
   Because kuna's naming pass binds plain strings (`kuna_name`) instead of the
-  C++ `ActionNameVars::linkSymbols` Symbol objects, the encode runs an
-  encode-time link pass (`Funcdata::kuna_link_high_symbols`): a named,
-  non-persist, non-constant high resolves its name-representative storage to a
-  covering localmap entry (parameters from `link_proto_params`, restructured
-  stack locals) or materializes a fresh mapped Symbol there, and the SymbolId
-  lands on the high — so the `<highlist>` (`Funcdata::encode_high`, the
+  C++ `ActionNameVars::linkSymbols` Symbol objects, two mechanisms supply the
+  ids the wire needs. First, the naming pass RECORDS the bind it actually made
+  (`HighVariable::kuna_link_symbol`,
+  `decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs`) when
+  a high resolves to a covering localmap entry. Second, an encode-time link
+  pass (`Funcdata::kuna_link_high_symbols`) gives every REMAINING named high a
+  **wire-only symbol**
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (WireSymbol)`):
+  a mapped one at its storage when nothing covers it, or — when a Symbol does
+  cover the storage yet the naming pass declined the bind as a CONFLICT (the
+  narrower addr-tied return over a wider scalar parameter; the float8 lane over
+  a float4 param) — a data-flow-HASHED one, upstream's `buildDynamicSymbol`
+  answer. The encode never re-derives a container binding itself: doing so
+  would hand a conflict-separated high the parameter's id, and a rename from
+  that variable's token would rename the parameter. Wire symbols are encoded
+  into `<localdb>` and referenced by `<high symref>`, but never enter the
+  analysis scope — which is what lets the pass run BEFORE the markup is
+  printed (so `<vardecl symref>` carries the same ids) without changing a byte
+  of the emitted C. The `<highlist>` (`Funcdata::encode_high`, the
   `HighVariable::encode` port: `repref` = name-representative create-index,
   the five-way `class` rule, `symref` + partial `offset`, the type reference,
-  one instance `<addr ref>` per member) points at ids the just-encoded
-  `<localdb>` resolves.  Globals echo the REAL host database id delivered by
+  one instance `<addr ref>` per member) therefore points only at ids the
+  just-encoded `<localdb>` resolves — a symbol the encode skipped defensively
+  is withheld from `symref` too (`Database::encodable_symbol_ids`), because an
+  orphan reference is the Java hard-throw the skip exists to avoid.  Globals echo the REAL host database id delivered by
   getMappedSymbols (`GlobalEntry::symbol_id`,
   `decompiler/crates/kuna-decomp/src/substrate/context.rs`) and NEVER a
   fabricated one — an unknown id omits `symref` (Java warns and falls back to
@@ -350,17 +365,33 @@ Four front-ends drive one engine assembly:
   the function's `<localdb>` (Java `LocalSymbolMap.grabFromFunction`).  kuna
   decodes those non-parameter locals
   (`decompiler/crates/kuna-decomp/src/infra/remote_provider.rs
-  (RemoteLocalVar)`) and seeds them into the fresh `Funcdata`: a TYPELOCKED
-  local (a retype — Java sends `typelock=false` only for `Undefined` types)
-  seeds as a real mapped/usepoint symbol (`Funcdata::seed_mapped_symbols` /
-  `Funcdata::seed_usepoint_symbols`, surviving restructure's typelock-keep
-  rule), while a namelocked-but-NOT-typelocked local (a plain rename) — which
-  C++ itself never keeps as a Symbol — stages as a NAME RECOMMENDATION
-  (`Architecture::kuna_pending_name_recs` →
-  `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
-  (Funcdata::seed_name_recommendations)`), the
-  `ScopeLocal::nameRecommend` mechanism of chapter
-  [06](06-variables-and-merge.md) §6.4.
+  (RemoteLocalVar)`) and seeds them into the fresh `Funcdata` along FOUR
+  channels, chosen by the two bits Java sets — the storage class and the
+  typelock:
+  a mapped, TYPELOCKED local (a retype — Java sends `typelock=false` only for
+  `Undefined` types) seeds as a real mapped/usepoint symbol
+  (`Funcdata::seed_mapped_symbols` / `Funcdata::seed_usepoint_symbols`,
+  surviving restructure's typelock-keep rule); a mapped, namelocked-only local
+  (a plain rename) — which C++ itself never keeps as a Symbol — stages as a
+  NAME RECOMMENDATION (`Architecture::kuna_pending_name_recs` →
+  `Funcdata::seed_name_recommendations`), the `ScopeLocal::nameRecommend`
+  mechanism of chapter [06](06-variables-and-merge.md) §6.4; and the same two
+  cases in DYNAMIC (`<hash>`) storage — the class Java writes for every
+  variable that `requiresDynamicStorage`, i.e. unique-space representatives and
+  `splitOutMergeGroup` products — seed as a dynamic Symbol
+  (`Funcdata::seed_dynamic_symbols`) or a DYNAMIC name recommendation
+  (`Architecture::kuna_pending_dyn_recs` →
+  `Funcdata::seed_dynamic_recommendations`, applied through
+  `DynamicHash::find_varnode` by
+  `Funcdata::kuna_apply_dynamic_recommendations`).  Dropping the hash-storage
+  half would silently revert renames of exactly the register/temporary
+  variables users rename most.  The host's declared prototype MODEL and its
+  EXACT committed parameter storage ride along too
+  (`Architecture::kuna_pending_proto_model`,
+  `Funcdata::apply_locked_prototype_with_model`, and the decoded cat-0
+  storage threaded into `Funcdata::apply_mapped_params`): re-deriving either
+  from kuna's default model makes Java's `checkFullCommit` see a mismatch and
+  force-rewrite the user's signature on the next rename.
 
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error
