@@ -378,7 +378,7 @@ fn expected_uniqs(fd: &Funcdata) -> BTreeSet<u64> {
 
 /// Encode `fd`, round-trip, and assert the structure + the load-bearing
 /// invariant.  Returns the `Observed` for the aggregate coverage report.
-fn encode_and_verify(fd: &Funcdata) -> Observed {
+fn encode_and_verify(fd: &mut Funcdata) -> Observed {
     let mut bytes: Vec<u8> = Vec::new();
     {
         let mut enc = PackedEncode::new(&mut bytes);
@@ -441,8 +441,8 @@ fn corpus_functions_encode_and_roundtrip() {
             };
             let entry = Address::new(space, sym.offset);
             match decompile_func(base, &sym.name, entry, 0) {
-                Ok(fd) => {
-                    let obs = encode_and_verify(&fd);
+                Ok(mut fd) => {
+                    let obs = encode_and_verify(&mut fd);
                     verified += 1;
                     agg.saw_iop |= obs.saw_iop;
                     agg.saw_spaceid |= obs.saw_spaceid;

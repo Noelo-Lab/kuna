@@ -73,6 +73,8 @@ struct SessionRun {
     repeat_payload: Vec<u8>,
     /// Resolved target entry addresses (index-aligned with `docs`).
     addrs: Vec<Address>,
+    /// The response index of the first decompileAt (1 + the setAction count).
+    first_decompile: usize,
 }
 
 /// Bootstrap the oracle, drive the whole session, and split the output.
@@ -86,6 +88,19 @@ fn run_session(binary: &Path, targets: &[&str]) -> Option<SessionRun> {
 fn run_session_with(
     binary: &Path,
     targets: &[&str],
+    mutate: impl FnOnce(&mut SimOracle),
+) -> Option<SessionRun> {
+    run_session_config(binary, targets, &[("decompile", "c")], mutate)
+}
+
+/// [`run_session_with`] with an explicit setAction replay — the analyzer
+/// configurations replay several `(actionstring, printstring)` pairs
+/// (`DecompInterface.initializeProcess`), e.g. the switch analyzer's
+/// `("decompile","")+("","noc")+("","notree")+("","jumpload")`.
+fn run_session_config(
+    binary: &Path,
+    targets: &[&str],
+    actions: &[(&str, &str)],
     mutate: impl FnOnce(&mut SimOracle),
 ) -> Option<SessionRun> {
     let mut oracle = SimOracle::bootstrap(binary)?;
@@ -119,18 +134,20 @@ fn run_session_with(
         v
     };
 
-    // registerProgram, setAction, decompileAt × N, flushNative, decompileAt
-    // (target 0 again), deregisterProgram.
+    // registerProgram, setAction × A, decompileAt × N, flushNative,
+    // decompileAt (target 0 again), deregisterProgram.
     let mut commands = Vec::new();
     cmd_register_program(&mut commands, &pspec, &cspec, &tspec, coretypes);
-    cmd_set_action(&mut commands, "0", "decompile", "c");
+    for (action, printstring) in actions {
+        cmd_set_action(&mut commands, "0", action, printstring);
+    }
     for a in &addrs {
         cmd_decompile_at(&mut commands, "0", &packed_addr(a));
     }
     cmd_flush_native(&mut commands, "0");
     cmd_decompile_at(&mut commands, "0", &packed_addr(&addrs[0]));
     cmd_deregister_program(&mut commands, "0");
-    let n_commands = 2 + addrs.len() + 2 + 1;
+    let n_commands = 1 + actions.len() + addrs.len() + 2 + 1;
 
     let shared = Rc::new(RefCell::new(MockState::new(commands, oracle)));
     let reader = MockReader { shared: Rc::clone(&shared) };
@@ -168,8 +185,15 @@ fn run_session_with(
         reg.warnings
     );
     // setAction / flushNative / deregister accepted.
-    assert_eq!(trace.responses[1].payload.as_deref(), Some(b"t".as_slice()));
-    let flush_idx = 2 + addrs.len();
+    for i in 0..actions.len() {
+        assert_eq!(
+            trace.responses[1 + i].payload.as_deref(),
+            Some(b"t".as_slice()),
+            "setAction #{i} not accepted"
+        );
+    }
+    let first_decompile = 1 + actions.len();
+    let flush_idx = first_decompile + addrs.len();
     assert_eq!(
         trace.responses[flush_idx].payload.as_deref(),
         Some(b"0".as_slice()),
@@ -184,7 +208,7 @@ fn run_session_with(
     let mut docs = Vec::new();
     let mut payloads = Vec::new();
     for (i, a) in addrs.iter().enumerate() {
-        let resp = &trace.responses[2 + i];
+        let resp = &trace.responses[first_decompile + i];
         assert!(
             resp.warnings.trim().is_empty(),
             "decompileAt #{i} shipped a non-empty warnings frame (degradation): {}",
@@ -199,17 +223,20 @@ fn run_session_with(
         let parsed = parse_decompile_doc(&payload, &oracle.manager);
         // Name + entry-address echo — the HighFunction.decode hard-throw traps.
         // Compared against what the sim actually SERVED (`code_label` consults
-        // `label_overrides`), not the raw program lookup.
-        assert_eq!(
-            Some(parsed.name.as_str()),
-            oracle.code_label(a.get_offset()).as_deref(),
-            "decompileAt #{i}: <function name> must echo the getCodeLabel answer"
-        );
-        assert_eq!(
-            parsed.entry_offset,
-            Some(a.get_offset()),
-            "decompileAt #{i}: <function> base <addr> must echo the requested entry"
-        );
+        // `label_overrides`), not the raw program lookup.  (A
+        // parammeasures-only paramid doc carries no <function> to echo.)
+        if parsed.has_function {
+            assert_eq!(
+                Some(parsed.name.as_str()),
+                oracle.code_label(a.get_offset()).as_deref(),
+                "decompileAt #{i}: <function name> must echo the getCodeLabel answer"
+            );
+            assert_eq!(
+                parsed.entry_offset,
+                Some(a.get_offset()),
+                "decompileAt #{i}: <function> base <addr> must echo the requested entry"
+            );
+        }
         docs.push(parsed);
         payloads.push(payload);
     }
@@ -218,7 +245,7 @@ fn run_session_with(
         .clone()
         .expect("repeat decompileAt payload present");
 
-    Some(SessionRun { oracle, trace, docs, payloads, repeat_payload, addrs })
+    Some(SessionRun { oracle, trace, docs, payloads, repeat_payload, addrs, first_decompile })
 }
 
 /// The r5 wire/structure contract, per decompiled function.
@@ -260,6 +287,32 @@ fn assert_structure(run: &SessionRun) {
             "target #{i}: the ghidra-mode `Kuna v…` banner comment is missing\n{}",
             parsed.c_text
         );
+        // ---- Phase 4: the full-response children + the Java hard-throw traps.
+        ghidra_sim::assert_phase4_traps(parsed, &format!("target #{i}"));
+        let symbols = parsed
+            .localdb
+            .as_ref()
+            .unwrap_or_else(|| panic!("target #{i}: <localdb> missing"));
+        assert!(
+            !symbols.is_empty(),
+            "target #{i}: <localdb> carries no symbols (params/locals lost)"
+        );
+        let highs = parsed
+            .highlist
+            .as_ref()
+            .unwrap_or_else(|| panic!("target #{i}: <highlist> missing"));
+        assert!(
+            highs.iter().any(|h| h.class == "local" || h.class == "param"),
+            "target #{i}: no local/param <high> — rename/retype has no target"
+        );
+        let proto = parsed
+            .prototype
+            .as_ref()
+            .unwrap_or_else(|| panic!("target #{i}: <prototype> missing"));
+        assert!(
+            !proto.model.is_empty() && proto.has_extrapop && proto.returnsym_ok,
+            "target #{i}: <prototype> header incomplete"
+        );
     }
 
     // Query legality: every callback query is one of the 19 command elements,
@@ -269,7 +322,8 @@ fn assert_structure(run: &SessionRun) {
     let n = run.trace.responses.len();
     let flush_idx = n - 3; // … decompileAt×N, flushNative, decompileAt, deregister
     for (idx, resp) in run.trace.responses.iter().enumerate() {
-        let query_legal = idx == 0 || (idx >= 2 && idx != flush_idx && idx != n - 1);
+        let query_legal =
+            idx == 0 || (idx >= run.first_decompile && idx != flush_idx && idx != n - 1);
         if !query_legal {
             assert!(
                 resp.queries.is_empty(),
@@ -403,19 +457,19 @@ const PIN_FAILLOG_PLACEHOLDERS: [usize; 3] = [27, 4, 3];
 // …of which the loader KNOWS a real name — ZERO: every PLT import
 // (localtime, getopt_long, dcgettext, …) resolves through getMappedSymbols.
 const PIN_FAILLOG_RESOLVABLE: [usize; 3] = [0, 0, 0];
-// The normalized line-diff ratio vs the CLI path, per target (measured 0.170 /
-// 0.184 / 0.264 after style normalization — see `style_normalize`), banded
+// The normalized line-diff ratio vs the CLI path, per target (measured 0.050 /
+// 0.079 / 0.099 after style normalization — see `style_normalize`), banded
 // from BOTH sides a few points off the measurement: the floor so a further
 // improvement must flip the band downward deliberately, the ceiling so a
 // markup regression fails instead of saturating unnoticed.
 //
-// The residue is NOT symbol resolution any more: it is per-function analysis
-// skew (the ghidra path decompiles one function against wire-fed facts while
-// the CLI path runs after whole-binary analysis commits — jumptable label
-// choices, readonly-driven const folds) plus the getC() type-token mangling
-// PR-C removes.
-const PIN_FAILLOG_DIFF_FLOOR: [f64; 3] = [0.10, 0.15, 0.19];
-const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.25, 0.29, 0.34];
+// Phase 4 collapsed the Phase-3 band (0.170/0.184/0.264): the getC()
+// type-token mangling is gone (the EmitMarkup declarator-token split).  The
+// residue is per-function analysis skew — the ghidra path decompiles one
+// function against wire-fed facts while the CLI path runs after whole-binary
+// analysis commits (jumptable label choices, readonly-driven const folds).
+const PIN_FAILLOG_DIFF_FLOOR: [f64; 3] = [0.02, 0.04, 0.06];
+const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // Normalized non-empty line count of the flattened markup C, per target: the
 // structural size of what the GUI renders.  A `<break>`-token regression would
 // collapse this to ~1 while leaving every ratio-floor assertion green — this
@@ -423,14 +477,24 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.25, 0.29, 0.34];
 // truncate the flow overrun that used to decode neighbouring functions into
 // it — defect g; the +1 everywhere is the `Kuna v…` banner line.)
 const PIN_FAILLOG_C_LINES: [usize; 3] = [283, 39, 92];
-// Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`): kuna
-// emits whole rendered declarators (`"unsigned long *"`) as single `<type>`
-// tokens, which scripts/exports receive as `unsigned_long__` — the type-
-// spelling mangling of the live repro.  Phase 3 moved these UP (the
-// aggressive preset's `ctypes` spells multi-word C types everywhere, and the
-// resolved output simply renders more typed expressions); PR-C splits the
-// declarator into base-type + syntax tokens and drives these to 0.
-const PIN_FAILLOG_MANGLED_TOKENS: [usize; 3] = [57, 10, 24];
+// Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
+// Phase 3 measured 57/10/24 (whole rendered declarators like
+// `"unsigned long *"` as single `<type>` tokens, received by scripts/exports
+// as `unsigned_long__` — the type-spelling mangling of the live repro).
+// Phase 4's EmitMarkup declarator-token split (word `<type>` tokens +
+// `<syntax>` separators) drives these to ZERO and must keep them there.
+const PIN_FAILLOG_MANGLED_TOKENS: [usize; 3] = [0, 0, 0];
+// `<vardecl symref>`s that do NOT resolve against the document's own
+// `<localdb>` (the create-index fallback).  Phase 4 originally emitted the
+// fallback for EVERY declaration — Java logged "Invalid symbol reference" per
+// declaration and rename/retype was dead on declaration lines.  The review
+// round drove these to 0/1/0; carrying the Symbol identity through the
+// `&symbol` reference bind (C++ `Varnode::setSymbolReference`) closed the last
+// one on sub_3320 too, so every declaration in the corpus now resolves.  ZERO
+// is the contract, not a high-water mark: a new residue must be justified
+// against `ClangVariableDecl.decode` (a log line + a dead rename on that one
+// declaration, never a decode throw) before this pin moves up.
+const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // Whole-session query traffic: total getPcode asks (repeat decompiles re-ask
 // everything — no p-code cache, faithful to upstream GhidraTranslate) vs
 // distinct instruction addresses actually decoded.  Phase 3 REDUCED both
@@ -459,6 +523,7 @@ fn ghidra_sim_faillog_pins() {
     let mut ph_totals = Vec::new();
     let mut ph_resolvables = Vec::new();
     let mut mangled_counts = Vec::new();
+    let mut vardecl_unresolved_counts = Vec::new();
     let mut c_line_counts = Vec::new();
     for parsed in &run.docs {
         let c = &parsed.c_text;
@@ -469,6 +534,7 @@ fn ghidra_sim_faillog_pins() {
         ph_totals.push(placeholder_total(c));
         ph_resolvables.push(resolvable_placeholders(&run.oracle, c));
         mangled_counts.push(parsed.mangled_tokens);
+        vardecl_unresolved_counts.push(ghidra_sim::vardecl_unresolved(parsed));
         c_line_counts.push(normalized_lines(c).len());
     }
 
@@ -502,9 +568,9 @@ fn ghidra_sim_faillog_pins() {
     for (i, t) in FAILLOG_TARGETS.iter().enumerate() {
         summary.push_str(&format!(
             "{t}: registers={} {:?} unique={} placeholders={} resolvable={} mangled={} \
-             c_lines={} diff_ratio={:.3}\n",
+             vardecl_unresolved={} c_lines={} diff_ratio={:.3}\n",
             reg_counts[i], reg_names_seen[i], uniq_counts[i], ph_totals[i], ph_resolvables[i],
-            mangled_counts[i], c_line_counts[i], ratios[i]
+            mangled_counts[i], vardecl_unresolved_counts[i], c_line_counts[i], ratios[i]
         ));
     }
     summary.push_str(&format!(
@@ -537,6 +603,11 @@ fn ghidra_sim_faillog_pins() {
         assert_eq!(
             mangled_counts[i], PIN_FAILLOG_MANGLED_TOKENS[i],
             "{t}: getC()-mangled token count moved (PR-C drives this to 0)"
+        );
+        assert_eq!(
+            vardecl_unresolved_counts[i], PIN_FAILLOG_VARDECL_UNRESOLVED[i],
+            "{t}: unresolvable <vardecl symref> count moved — declaration-line \
+             rename/retype resolution changed"
         );
         assert!(
             ratios[i] >= PIN_FAILLOG_DIFF_FLOOR[i],
@@ -581,6 +652,280 @@ fn ghidra_sim_faillog_pins() {
         PIN_FAILLOG_DECODED_INSTS,
         "distinct decoded instruction count moved"
     );
+}
+
+/// The SWITCH-ANALYZER configuration (SwitchAnalysisDecompileConfigurer:
+/// `noc` + `jumpload` + `notree`, action `decompile`): the response must be a
+/// first-`<function>`-only doc — no markup, no `<ast>`, no `<highlist>` — that
+/// still carries `<localdb>`, `<prototype>`, and the `<jumptablelist>` with
+/// the recovered `<dest>` targets plus the jumpload-collected `<loadtable>`s
+/// (`DecompilerSwitchAnalysisCmd` consumes exactly this).
+#[test]
+fn ghidra_sim_faillog_switch_analyzer_shape() {
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    // sub_2620 (main) is the switch-heavy target.
+    let Some(run) = run_session_config(
+        &binary,
+        &["sub_2620"],
+        &[("decompile", ""), ("", "noc"), ("", "notree"), ("", "jumpload")],
+        |_| {},
+    ) else {
+        return; // visible skip: specs not built
+    };
+    let parsed = &run.docs[0];
+    ghidra_sim::assert_phase4_traps(parsed, "switch-analyzer");
+    assert!(!parsed.has_markup, "noc: the markup <function> must be absent");
+    assert!(
+        !parsed.function_child_ids.contains(&ghidra_sim::ELEM_AST_ID),
+        "notree: the <ast> must be absent"
+    );
+    assert!(
+        !parsed.function_child_ids.contains(&ghidra_sim::ELEM_HIGHLIST_ID),
+        "notree: the <highlist> must be absent"
+    );
+    assert!(parsed.localdb.is_some(), "the <localdb> still travels under notree");
+    assert!(parsed.prototype.is_some(), "the <prototype> still travels under notree");
+    assert!(
+        !parsed.jumptables.is_empty(),
+        "no <jumptablelist> — the switch analyzer gets nothing (children: {:?})",
+        parsed.function_child_ids
+    );
+    let (dests, loads) = parsed.jumptables[0];
+    assert!(dests >= 2, "a recovered switch needs >= 2 <dest> targets, got {dests}");
+    assert!(
+        loads >= 1,
+        "jumpload was toggled but no <loadtable> was collected — \
+         FlowInfo::record_jumploads is not reaching the recovery"
+    );
+}
+
+/// The PARAM-ID ANALYZER configuration (DecompilerParameterIdCmd /
+/// ConventionAnalysisDecompileConfigurer: `noc` + `notree` + `parammeasures`,
+/// action `paramid`): the response is a `<parammeasures>`-ONLY doc — no
+/// `<function>` at all — with the REQUIRED `<rank>` per measure.
+#[test]
+fn ghidra_sim_faillog_paramid_shape() {
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let Some(run) = run_session_config(
+        &binary,
+        &["sub_3320"],
+        &[("paramid", ""), ("", "noc"), ("", "notree"), ("", "parammeasures")],
+        |_| {},
+    ) else {
+        return; // visible skip: specs not built
+    };
+    let parsed = &run.docs[0];
+    ghidra_sim::assert_phase4_traps(parsed, "paramid");
+    assert!(
+        !parsed.has_function,
+        "paramid + parammeasures: the doc must contain ONLY <parammeasures> \
+         (ghidra_process.cc:318-321), children: {:?}",
+        parsed.function_child_ids
+    );
+    assert!(!parsed.has_markup, "paramid: no markup <function>");
+    let measures = parsed
+        .parammeasures
+        .as_ref()
+        .expect("the <parammeasures> document");
+    assert!(
+        !measures.is_empty(),
+        "paramid produced no measures — the param-ID analyzer gets nothing"
+    );
+    assert!(
+        measures.iter().any(|(is_input, _)| *is_input),
+        "paramid produced no <input> measures"
+    );
+}
+
+/// The byte size of an encoded localdb symbol: the `<type size>` when present
+/// (the full form), else the trailing digits of a core `<typeref name>`
+/// (`uint8` → 8; Java derives entry sizes from the type, so the harness does
+/// too).
+fn sim_symbol_size(s: &ghidra_sim::SimSymbol) -> Option<i64> {
+    if let Some(sz) = s.type_size {
+        if sz > 0 {
+            return Some(sz);
+        }
+    }
+    let name = s.type_name.as_deref()?;
+    let digits: String =
+        name.chars().rev().take_while(|c| c.is_ascii_digit()).collect::<Vec<_>>()
+            .into_iter().rev().collect();
+    if digits.is_empty() {
+        return matches!(name, "bool" | "char" | "byte").then_some(1);
+    }
+    digits.parse::<i64>().ok().filter(|v| *v > 0 && *v <= 16)
+}
+
+/// The RENAME-PERSISTENCE loop (the GUI keystone): a user rename is a DB write
+/// (`HighFunctionDBUtil.updateDBVariable`) followed by an event-driven
+/// re-decompile whose getMappedSymbols answer now carries the renamed local in
+/// the function's `<localdb>` (Java `LocalSymbolMap.grabFromFunction`).  kuna
+/// must SEED that local into the fresh Funcdata so the new name — not a fresh
+/// `vN` — renders.  Echo-back differential: run once, take a local kuna itself
+/// encoded (storage + first-use), serve it back RENAMED, assert the C shows
+/// the new name.
+#[test]
+fn ghidra_sim_faillog_rename_persistence() {
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let Some(run1) = run_session(&binary, &["sub_3ad0"]) else {
+        return; // visible skip: specs not built
+    };
+    let parsed = &run1.docs[0];
+    let cand = parsed
+        .localdb
+        .as_ref()
+        .expect("<localdb> present")
+        .iter()
+        .find(|s| {
+            s.cat < 0
+                && s.entry_storage.as_ref().is_some_and(|(spc, _)| spc != "unique")
+                && sim_symbol_size(s).is_some()
+                && parsed.c_text.contains(s.name.as_str())
+        })
+        .expect("a non-unique-storage local kuna named");
+    let (spc, off) = cand.entry_storage.clone().expect("mapped storage");
+    let size = sim_symbol_size(cand).expect("sized type");
+    let first_use = cand.first_use;
+    let old_name = cand.name.clone();
+    let entry_off = run1.addrs[0].get_offset();
+
+    // typelock=false: the exact shape a plain GUI rename produces (verified
+    // against a live Ghidra 12.1.2 DecompileDebug capture — `<symbol
+    // typelock="false" namelock="true" cat="-1"><typeref name="undefined8">`)
+    // — which kuna must carry as a NAME RECOMMENDATION, the C++
+    // `ScopeLocal::nameRecommend` path.
+    let renamed = "host_renamed_probe";
+    let Some(run2) = run_session_with(&binary, &["sub_3ad0"], move |o| {
+        o.local_var_overrides.insert(
+            entry_off,
+            vec![ghidra_sim::oracle::HostLocalVar {
+                name: renamed.to_string(),
+                space: spc,
+                offset: off,
+                size,
+                first_use,
+                typelock: false,
+                hash: 0,
+            }],
+        );
+    }) else {
+        return;
+    };
+    let parsed2 = &run2.docs[0];
+    assert!(
+        parsed2.c_text.contains(renamed),
+        "the host-committed rename ({old_name} -> {renamed}) did not survive \
+         the re-decompile:\n{}",
+        parsed2.c_text
+    );
+    // The re-encoded localdb carries the seeded symbol back to Java.
+    assert!(
+        parsed2
+            .localdb
+            .as_ref()
+            .expect("<localdb> present")
+            .iter()
+            .any(|s| s.name == renamed),
+        "the seeded local is missing from the re-encoded <localdb>"
+    );
+}
+
+
+/// C2 (review round): a host-committed local whose only SymbolEntry is a
+/// DYNAMIC `<hash>` — the storage class Java writes for every
+/// `requiresDynamicStorage` variable (unique-space representatives,
+/// `splitOutMergeGroup` products) — must survive the re-decompile.  Before the
+/// fix the decoder dropped hash-entry locals outright, so a rename of such a
+/// variable silently reverted in front of the user.
+///
+/// Echo-back differential: take a hash kuna itself encoded for a wire symbol
+/// (the link pass hashes conflict-separated / uncovered variables with the
+/// upstream budget Java also uses), serve it back as a renamed dynamic local,
+/// and assert the name comes back in the C.
+#[test]
+fn ghidra_sim_faillog_dynamic_rename_persistence() {
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let Some(run1) = run_session(&binary, &["sub_3ad0"]) else {
+        return; // visible skip: specs not built
+    };
+    let parsed = &run1.docs[0];
+    // A wire symbol kuna encoded with a `<hash>` entry (type="dynamic").
+    let cand = parsed
+        .localdb
+        .as_ref()
+        .expect("<localdb> present")
+        .iter()
+        .find(|s| s.cat < 0 && s.hash != 0 && parsed.c_text.contains(s.name.as_str()));
+    let Some(cand) = cand else {
+        // No dynamic wire symbol on this target: nothing to assert (the
+        // shape is target-dependent; the decode-side unit test covers the
+        // wire contract unconditionally).
+        return;
+    };
+    let hash = cand.hash;
+    let first_use = cand.first_use;
+    let old_name = cand.name.clone();
+    let entry_off = run1.addrs[0].get_offset();
+    let renamed = "host_dyn_renamed";
+    let Some(run2) = run_session_with(&binary, &["sub_3ad0"], move |o| {
+        o.local_var_overrides.insert(
+            entry_off,
+            vec![ghidra_sim::oracle::HostLocalVar {
+                name: renamed.to_string(),
+                space: "ram".to_string(),
+                offset: first_use.unwrap_or(entry_off),
+                size: 8,
+                first_use,
+                typelock: false,
+                hash,
+            }],
+        );
+    }) else {
+        return;
+    };
+    assert!(
+        run2.docs[0].c_text.contains(renamed),
+        "a host rename of a DYNAMIC (hash-storage) local ({old_name} -> {renamed}) \
+         did not survive the re-decompile:\n{}",
+        run2.docs[0].c_text
+    );
+}
+
+/// C4 (review round): no `<high>` may borrow another variable's symbol id.
+/// The encode-time link pass must never re-derive a container binding — a high
+/// the naming pass deliberately separated from the parameter whose storage it
+/// overlaps would otherwise inherit the PARAMETER's id, and renaming that
+/// variable in the GUI would rename the parameter.
+///
+/// Invariant asserted on every decompiled function: each `<high symref>` is
+/// claimed by at most ONE high (bar the deliberate group sharing of a composite
+/// symbol, where the highs also share a `<localdb>` symbol whose type is
+/// composite), and every param-class high's symref is a cat-0 symbol.
+#[test]
+fn ghidra_sim_faillog_high_symrefs_are_not_shared_with_params() {
+    let binary = repo_root().join("tests/bug-repro/faillog");
+    let Some(run) = run_session(&binary, FAILLOG_TARGETS) else {
+        return; // visible skip: specs not built
+    };
+    for (i, parsed) in run.docs.iter().enumerate() {
+        let symbols = parsed.localdb.as_ref().expect("<localdb> present");
+        let param_ids: BTreeSet<u64> =
+            symbols.iter().filter(|s| s.cat == 0).map(|s| s.id).collect();
+        let highs = parsed.highlist.as_ref().expect("<highlist> present");
+        for h in highs {
+            let Some(sr) = h.symref else { continue };
+            if param_ids.contains(&sr) {
+                assert_eq!(
+                    h.class, "param",
+                    "target #{i}: a non-param <high class={}> references the \
+                     cat-0 parameter symbol {sr} — renaming that variable in the \
+                     GUI would rename the PARAMETER",
+                    h.class
+                );
+            }
+        }
+    }
 }
 
 /// flushNative + repeat-decompile stability: with unchanged host answers a
@@ -886,11 +1231,33 @@ fn ghidra_sim_sort_grep_breadth() {
         assert_structure(&run);
         for (i, parsed) in run.docs.iter().enumerate() {
             let (reg_count, reg_names) = register_leaks(&parsed.c_text, &run.oracle.register_names);
+            let unresolved = ghidra_sim::vardecl_unresolved(parsed);
             eprintln!(
-                "{fixture} {}: registers={reg_count} {reg_names:?} unique={} placeholders={}",
+                "{fixture} {}: registers={reg_count} {reg_names:?} unique={} placeholders={} \
+                 vardecl_unresolved={unresolved} vardecls={}",
                 targets[i],
                 unique_leaks(&parsed.c_text),
                 placeholder_total(&parsed.c_text),
+                parsed.vardecl_symrefs.len(),
+            );
+            // The structural assertion above only demands that SOME declaration
+            // resolves; on breadth it must be ALL of them.  `assert_structure`'s
+            // wholesale check went red here (100% unresolved on sort/sub_6370)
+            // while the faillog fixture measured healthy, because a stack
+            // aggregate reached only through `&sym` is declared off the constant
+            // PTRSUB high, which carried no Symbol identity at all.  Pin the
+            // count at 0: a genuine residue must be recorded per target with the
+            // Java degradation spelled out (`ClangVariableDecl.decode` logs
+            // "Invalid symbol reference" and returns -- a dead rename on that one
+            // line, never a decode throw), not absorbed silently.
+            assert_eq!(
+                unresolved, 0,
+                "{fixture} {}: {unresolved} of {} <vardecl symref>s do not resolve \
+                 against <localdb> — declaration-line rename/retype is dead on \
+                 those lines\n{}",
+                targets[i],
+                parsed.vardecl_symrefs.len(),
+                parsed.c_text,
             );
         }
     }

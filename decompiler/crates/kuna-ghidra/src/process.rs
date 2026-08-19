@@ -55,7 +55,6 @@ use kuna_base::marshal::{Decoder, Encoder, PackedDecode, PackedEncode};
 use kuna_base::space::AddrSpaceManager;
 
 use kuna_decomp::architecture::Architecture;
-use kuna_decomp::decompile_drive::decompile_func_full;
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
 
@@ -615,20 +614,31 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                 // HighFunction.decode name echo compares against it); the
                 // label, when the host sent one (TemplateSimplifier), is only
                 // the display form the printed signature uses.
-                let (name, display_name, pending_pieces) = match facts {
-                    Some(f) => (f.name, f.display_name, f.pieces),
+                let (
+                    name,
+                    display_name,
+                    pending_pieces,
+                    host_locals,
+                    host_model,
+                    host_param_storage,
+                ) = match facts {
+                    Some(f) => (
+                        f.name,
+                        f.display_name,
+                        f.pieces,
+                        f.locals,
+                        f.model,
+                        f.param_storage,
+                    ),
                     None => {
                         let label = self.client.borrow_mut().get_code_label(&addr);
-                        match label {
+                        let n = match label {
                             Ok(l) if !l.is_empty() => {
-                                let n = String::from_utf8_lossy(&l).into_owned();
-                                (n.clone(), n, None)
+                                String::from_utf8_lossy(&l).into_owned()
                             }
-                            _ => {
-                                let n = format!("FUN_{:08x}", addr.get_offset());
-                                (n.clone(), n, None)
-                            }
-                        }
+                            _ => format!("FUN_{:08x}", addr.get_offset()),
+                        };
+                        (n.clone(), n, None, Vec::new(), None, Vec::new())
                     }
                 };
 
@@ -712,11 +722,12 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                 }
 
                 // Snapshot the render flags before taking `&mut Architecture`.
-                let (send_syntax_tree, send_c_code, current_action) = {
+                let (send_syntax_tree, send_c_code, send_param_measures, current_action) = {
                     let session = self.archlist[slot].as_ref().expect("bound session");
                     (
                         session.send_syntax_tree,
                         session.send_c_code,
+                        session.send_param_measures,
                         session.current_action.clone(),
                     )
                 };
@@ -734,19 +745,131 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         .architecture
                         .as_mut()
                         .expect("addr decoded ⇒ engine present");
+                    // Phase 4: the session's jumpload toggle reaches the
+                    // flow-following engine as the upstream flowoptions bit
+                    // (SetAction "jumpload" → `ghidra->flowoptions |=
+                    // FlowInfo::record_jumploads`, ghidra_process.cc:398-401).
+                    // Applied per-decompile so the setOptions reset-then-apply
+                    // baseline restore can never strand the toggle.
+                    if session.record_jumploads {
+                        arch.flowoptions |= kuna_decomp::flow::flow_flags::record_jumploads;
+                    } else {
+                        arch.flowoptions &= !kuna_decomp::flow::flow_flags::record_jumploads;
+                    }
                     // Phase 3: a LOCKED host signature (typelocked params /
                     // locked-void input) seeds the fresh Funcdata's prototype —
                     // the C++ queryFunction handing DecompileAt the decoded
                     // `<prototype>`+`<localdb>`.  An unlocked signature stays
                     // None and kuna recovers parameters itself (the CLI-path
                     // behavior for undeclared functions).
-                    match decompile_func_full(
+                    //
+                    // Phase 4: the host-committed LOCALS from the function's
+                    // `<localdb>` seed the fresh local scope through the same
+                    // per-function seeding path the console symbols use — the
+                    // upstream `Funcdata::decode` localmap restore.  This is
+                    // what makes a GUI rename/retype (a DB write followed by
+                    // an event-driven re-decompile) SURVIVE the re-decompile.
+                    // An entry with a first-use address seeds usepoint-scoped
+                    // (register locals); an empty uselimit seeds addr-tied
+                    // (stack locals).  A namelocked-but-NOT-typelocked local
+                    // (a GUI rename of an untyped variable) is NOT a symbol
+                    // seed — such symbols never survive restructure's
+                    // clearUnlockedCategory(-1) — it stages as a NAME
+                    // RECOMMENDATION, exactly the C++ ScopeLocal::nameRecommend
+                    // identity `recoverNameRecommendationsForSymbols` applies.
+                    let mut seed_mapped: Vec<(
+                        String,
+                        std::rc::Rc<kuna_decomp::dtype::Datatype>,
+                        Address,
+                        u32,
+                    )> = Vec::new();
+                    let mut seed_usepoint: Vec<(
+                        String,
+                        std::rc::Rc<kuna_decomp::dtype::Datatype>,
+                        Address,
+                        u32,
+                        Address,
+                        bool,
+                    )> = Vec::new();
+                    let mut name_recs: Vec<(String, Address, Address, i32)> = Vec::new();
+                    let mut dyn_recs: Vec<(String, Address, u64)> = Vec::new();
+                    let mut seed_dynamic: Vec<kuna_decomp::database::DynamicSymbolSpec> =
+                        Vec::new();
+                    for l in &host_locals {
+                        let typelocked = (l.flags
+                            & kuna_decomp::varnode::varnode_flags::typelock)
+                            != 0;
+                        // A DYNAMIC (hash) local addresses a VALUE, not a
+                        // storage location — the class Java writes for every
+                        // `requiresDynamicStorage` variable (unique-space
+                        // representatives, `splitOutMergeGroup` products).  It
+                        // travels through the dynamic channels: a rename as a
+                        // `dynRecommend`, a retype as a dynamic Symbol seed.
+                        if l.hash != 0 {
+                            if typelocked {
+                                seed_dynamic.push(kuna_decomp::database::DynamicSymbolSpec {
+                                    name: l.name.clone(),
+                                    dtype: std::rc::Rc::clone(&l.dtype),
+                                    addr: l.addr.clone(),
+                                    hash: l.hash,
+                                    category: -1,
+                                    dispflags: 0,
+                                    equate_value: None,
+                                    union_facet: None,
+                                });
+                            } else {
+                                dyn_recs.push((l.name.clone(), l.addr.clone(), l.hash));
+                            }
+                            continue;
+                        }
+                        if !typelocked {
+                            name_recs.push((
+                                l.name.clone(),
+                                l.addr.clone(),
+                                l.usepoint.clone(),
+                                l.dtype.get_size(),
+                            ));
+                        } else if l.usepoint.is_invalid() {
+                            seed_mapped.push((
+                                l.name.clone(),
+                                std::rc::Rc::clone(&l.dtype),
+                                l.addr.clone(),
+                                l.flags,
+                            ));
+                        } else {
+                            seed_usepoint.push((
+                                l.name.clone(),
+                                std::rc::Rc::clone(&l.dtype),
+                                l.addr.clone(),
+                                l.flags,
+                                l.usepoint.clone(),
+                                false,
+                            ));
+                        }
+                    }
+                    arch.kuna_pending_name_recs = name_recs;
+                    arch.kuna_pending_dyn_recs = dyn_recs;
+                    // The host's declared convention: parameter storage must be
+                    // assigned under the SAME model the database committed, or
+                    // Java's checkFullCommit rewrites the user's signature on
+                    // the first rename.
+                    arch.kuna_pending_proto_model = host_model
+                        .as_deref()
+                        .and_then(|m| arch.get_model(m).cloned());
+                    match kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
                         arch,
                         &name,
                         addr.clone(),
                         0,
-                        &[],
+                        &seed_mapped,
+                        &seed_usepoint,
+                        &seed_dynamic,
                         pending_pieces.as_ref(),
+                        &[],
+                        &[],
+                        // The host's EXACT committed parameter storage (empty
+                        // for an unlocked signature — kuna recovers those).
+                        &host_param_storage,
                     ) {
                         Ok(mut fd) => {
                             // The printed signature/tokens use the display
@@ -757,9 +880,10 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                             }
                             build_decompile_at_doc(
                                 arch,
-                                &fd,
+                                &mut fd,
                                 send_syntax_tree,
                                 send_c_code,
+                                send_param_measures,
                                 &current_action,
                             )
                         }
@@ -1110,15 +1234,18 @@ fn parse_arch_id(payload: &[u8]) -> i32 {
 }
 
 /// Assemble the decompileAt response document (C++ `DecompileAt::rawAction`
-/// isProcComplete branch, `decompiler/cpp/ghidra_process.cc:317-333`):
+/// isProcComplete branch, `decompiler/cpp/ghidra_process.cc:293-335`):
 ///
 /// ```text
-///   XmlEncode encoder(sout);        // kuna: PackedEncode over a buffer
 ///   encoder.openElement(ELEM_DOC);
-///   fd->encode(encoder,0,ghidra->getSendSyntaxTree());   // <function>/<ast>
-///   if (ghidra->getSendCCode() && (actionname == "decompile")) {
-///     ghidra->print->setOutputStream(&sout);
-///     ghidra->print->docFunction(fd);   // the Clang-markup <function>
+///   if (getSendParamMeasures() && actionname == "paramid")
+///     ParamIDAnalysis(fd,true).encode(encoder,true);      // the ONLY child
+///   else {
+///     if (getSendParamMeasures())
+///       ParamIDAnalysis(fd,false).encode(encoder,true);
+///     fd->encode(encoder,0,getSendSyntaxTree());          // <function>/<ast>
+///     if (getSendCCode() && actionname == "decompile")
+///       ghidra->print->docFunction(fd);                   // markup <function>
 ///   }
 ///   encoder.closeElement(ELEM_DOC);
 /// ```
@@ -1130,28 +1257,73 @@ fn parse_arch_id(payload: &[u8]) -> i32 {
 /// its 0x00-free bytes straight to the buffer with no open-element stack, so
 /// appending the markup bytes then writing `</doc>` from a fresh encoder is
 /// byte-identical to C++ writing both to one `sout` — exactly the same splice.
+///
+/// The Phase-4 symbol-link pass (`kuna_link_high_symbols`) runs FIRST — before
+/// the markup is printed — because the markup's `<vardecl symref>` must carry
+/// the same LocalSymbolMap ids `<localdb>` encodes: Java resolves the
+/// declaration line's HighSymbol exclusively through that attribute, so a
+/// declaration printed before the symbols exist leaves rename/retype dead on
+/// declaration tokens (and logs "Invalid symbol reference" once per
+/// declaration per decompile).  The pass is idempotent and does not change the
+/// printed C — it only attaches Symbols to highs the naming pass already
+/// named, writing a field (`kuna_link_symbol`) nothing in the printer's text
+/// path reads; the harness asserts the C text is byte-identical across the
+/// reorder.  Both documents are then spliced in the upstream order
+/// (`<function>` #1 first).
+///
+/// kuna divergence (documented): under action `paramid` the C++ ran the reduced
+/// `paramid` action set; kuna's `decompile_func_full` runs the full decompile,
+/// so the measured prototype is the fully-recovered one — a superset of what
+/// the reduced pipeline exposes.
 fn build_decompile_at_doc(
     arch: &mut Architecture,
-    fd: &Funcdata,
+    fd: &mut Funcdata,
     send_syntax_tree: bool,
     send_c_code: bool,
+    send_param_measures: bool,
     current_action: &str,
 ) -> KunaResult<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::new();
-    // <doc> open + fd.encode (the <function>/<ast> syntax tree).
+    // The symbol-link pass, ahead of everything that reads its results (the
+    // markup's `<vardecl symref>` and the `<localdb>`/`<highlist>` encode).
+    if send_syntax_tree {
+        fd.kuna_link_high_symbols();
+    }
     {
         let mut enc = PackedEncode::new(&mut buf);
         enc.open_element(&ELEM_DOC);
-        fd.encode(&mut enc, 0, send_syntax_tree)?;
     }
-    // The dual <function>: the Clang token-markup document.  `doc_function_markup`
-    // needs `&mut PrintC` + `&Architecture`; move the printer out (the
-    // `print_c` split-borrow precedent), render, put it back, splice the bytes.
-    if send_c_code && current_action == "decompile" {
-        let mut printer = arch.take_print();
-        let markup = printer.doc_function_markup(fd, arch);
-        arch.put_print(printer);
-        buf.extend_from_slice(&markup);
+    if send_param_measures && current_action == "paramid" {
+        // The parammeasures-only doc (DecompilerParameterIdCmd /
+        // ConventionAnalysisDecompileConfigurer).
+        let analysis = kuna_decomp::paramid::ParamIDAnalysis::new(fd, true)?;
+        let mut enc = PackedEncode::new(&mut buf);
+        analysis.encode(&mut enc, true)?;
+    } else {
+        if send_param_measures {
+            let analysis = kuna_decomp::paramid::ParamIDAnalysis::new(fd, false)?;
+            let mut enc = PackedEncode::new(&mut buf);
+            analysis.encode(&mut enc, true)?;
+        }
+        // The dual <function>: the Clang token-markup document, rendered first
+        // (see above), spliced after the syntax tree.  `doc_function_markup`
+        // needs `&mut PrintC` + `&Architecture`; move the printer out (the
+        // `print_c` split-borrow precedent), render, put it back.
+        let markup: Option<Vec<u8>> = if send_c_code && current_action == "decompile" {
+            let mut printer = arch.take_print();
+            let m = printer.doc_function_markup(fd, arch);
+            arch.put_print(printer);
+            Some(m)
+        } else {
+            None
+        };
+        {
+            let mut enc = PackedEncode::new(&mut buf);
+            fd.encode(&mut enc, 0, send_syntax_tree)?;
+        }
+        if let Some(m) = markup {
+            buf.extend_from_slice(&m);
+        }
     }
     {
         let mut enc = PackedEncode::new(&mut buf);

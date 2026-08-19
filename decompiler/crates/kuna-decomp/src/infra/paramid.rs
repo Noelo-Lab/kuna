@@ -16,25 +16,22 @@
 //! op's parent block `isLoopIn` (the same edge the C++ reads through
 //! `op->getParent()->isLoopIn(slot)`).
 //!
-//! # Stubs
+//! # Completeness
 //!
-//! * The `justproto` constructor path needs the recovered [`FuncProto`] from
-//!   `Funcdata::getFuncProto()` (`numParams`/`getParam`/`getOutput`).  In the
-//!   merged tree `Funcdata::funcp` is still the W3/W4 placeholder
-//!   (`crate::context::FuncProto`), not the real `fspec::FuncProto`, so the
-//!   prototype-driven measure collection cannot run yet — [`ParamIDAnalysis::new`]
-//!   returns a `STUB(W4)` error for `justproto = true`.  The non-prototype path
-//!   (input Varnodes outside the model, via `beginDef(input)`) is fully ported.
-//! * `ParamMeasure::encode` needs `Datatype::encodeRef` and the W8 marshal of the
-//!   `<rank>`/`<addr>` children; the address-space attribute encode exists, the
-//!   type-ref does not, so [`ParamMeasure::encode`] stubs out.  `savePretty` is fully
-//!   ported (it prints only the `VarnodeData` fields).
+//! Fully ported (Phase 4 unstubbed the marshal): both constructor paths — the
+//! `justproto` prototype walk over the real [`crate::fspec::FuncProto`] on
+//! `Funcdata::funcp` and the input-Varnode listing — plus
+//! [`ParamMeasure::encode`] / [`ParamIDAnalysis::encode`] over
+//! `Datatype::encode_ref`, producing the `<parammeasures>` document the
+//! `paramid` action answers (Java `HighParamID.decode`; the `<rank>` child is
+//! REQUIRED by `ParamMeasure.decode`, so `moredetail` should stay `true` on
+//! the wire path, matching both upstream ghidra_process call sites).
 
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::marshal::{AttributeId, ElementId};
+use kuna_base::error::KunaResult;
+use kuna_base::marshal::ElementId;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
@@ -364,18 +361,37 @@ impl ParamMeasure {
         s.push_str(&format!("  Rank: {}\n", self.rank));
     }
 
-    /// Encode the measure (C++ `ParamMeasure::encode`, paramid.cc:161-175).
-    ///
-    /// The C++ writes `<addr>` (the space attributes), then `vntype->encodeRef`,
-    /// then (if `moredetail`) the `<rank>` child.  The `vntype->encodeRef` is the
-    /// W8 type-marshal surface (`Datatype::encodeRef`), which is not yet ported,
-    /// so the whole encode stubs out.
-    pub fn encode(&self, _moredetail: bool) -> KunaResult<()> {
-        // The encode genuinely consumes `vntype` (the `<addr>` type-ref child).
-        let _has_type = self.vntype.is_some();
-        Err(KunaError::lowlevel(
-            "kuna rust port: ParamMeasure::encode needs Datatype::encodeRef (W8 type marshal)",
-        ))
+    /// Encode the measure under `tag` (C++ `ParamMeasure::encode`,
+    /// paramid.cc:161-175): the sized `<addr>`, the type reference, and — when
+    /// `moredetail` — the REQUIRED `<rank val>` child (both upstream
+    /// ghidra_process call sites pass `moredetail=true`; Java's
+    /// `ParamMeasure.decode` throws without it).
+    pub fn encode(
+        &self,
+        encoder: &mut dyn kuna_base::marshal::Encoder,
+        tag: &ElementId,
+        moredetail: bool,
+    ) -> KunaResult<()> {
+        encoder.open_element(tag);
+        encoder.open_element(&kuna_base::address::ELEM_ADDR);
+        if let Some(spc) = &self.vndata.space {
+            spc.encode_attributes_sized(encoder, self.vndata.offset, self.vndata.size as i32)?;
+        }
+        encoder.close_element(&kuna_base::address::ELEM_ADDR);
+        match &self.vntype {
+            Some(t) => t.encode_ref(encoder)?,
+            None => {
+                encoder.open_element(&kuna_base::marshal::ELEM_VOID);
+                encoder.close_element(&kuna_base::marshal::ELEM_VOID);
+            }
+        }
+        if moredetail {
+            encoder.open_element(&ELEM_RANK);
+            encoder.write_signed_integer(&kuna_base::marshal::ATTRIB_VAL, self.rank as i64);
+            encoder.close_element(&ELEM_RANK);
+        }
+        encoder.close_element(tag);
+        Ok(())
     }
 }
 
@@ -391,6 +407,12 @@ impl ParamMeasure {
 pub struct ParamIDAnalysis {
     /// The function's display name (cached for `savePretty`/`encode`).
     fdname: String,
+    /// The function's entry address (C++ `fd->getAddress()`, for `encode`).
+    fdaddr: Address,
+    /// The recovered prototype's model name (C++ `getFuncProto().getModelName()`).
+    model_name: String,
+    /// The recovered prototype's extrapop (C++ `getFuncProto().getExtraPop()`).
+    extrapop: i32,
     /// Measures for input locations (C++ `InputParamMeasures`).
     input_param_measures: Vec<ParamMeasure>,
     /// Measures for output locations (C++ `OutputParamMeasures`).
@@ -401,27 +423,70 @@ impl ParamIDAnalysis {
     /// Build the analysis for a function (C++ `ParamIDAnalysis::ParamIDAnalysis`,
     /// paramid.cc:186-235).
     ///
-    /// `justproto = true` restricts collection to the recovered prototype; that
-    /// path needs the real [`FuncProto`](crate::fspec::FuncProto) from
-    /// `Funcdata::getFuncProto`, which is still the W3/W4 placeholder in the
-    /// merged tree, so it stubs out.  `justproto = false` lists the input Varnodes
-    /// outside the model (the `beginDef(input)` range) and is fully ported.
+    /// `justproto = true` restricts collection to the recovered prototype
+    /// (`numParams`/`getParam(i)`/`getOutput` + `findVarnodeInput` + the
+    /// RETURN-op output scan); `justproto = false` lists the input Varnodes
+    /// outside the model (the `beginDef(input)` range).
     pub fn new(fd: &Funcdata, justproto: bool) -> KunaResult<ParamIDAnalysis> {
+        let proto = fd.get_func_proto();
+        // C++ always has a model + store by analysis end; hand-built fixtures
+        // may not — degrade to the "default" model spelling / no measures
+        // rather than panic.
+        let model_name =
+            if proto.has_model() { proto.get_model_name().to_string() } else { "default".into() };
         let mut analysis = ParamIDAnalysis {
             fdname: fd.get_name().to_string(),
+            fdaddr: fd.get_address().clone(),
+            model_name,
+            extrapop: proto.get_extra_pop(),
             input_param_measures: Vec::new(),
             output_param_measures: Vec::new(),
         };
         if justproto {
-            // const FuncProto &fproto( fd->getFuncProto() );
-            //   numParams()/getParam(i)/getOutput() + findVarnodeInput + the
-            //   RETURN-op output scan.  STUB(W4): Funcdata::funcp is still the
-            //   placeholder (crate::context::FuncProto), not fspec::FuncProto, so
-            //   the recovered prototype is unavailable here.
-            return Err(KunaError::lowlevel(
-                "kuna rust port: ParamIDAnalysis(justproto=true) needs the recovered \
-                 FuncProto from Funcdata::getFuncProto (W4 — funcp is still the placeholder)",
-            ));
+            // We only provide info on the recovered prototype.
+            let num = if proto.has_store() { proto.num_params() } else { 0 };
+            for i in 0..num {
+                let param = match proto.get_param(i) {
+                    Some(p) => p,
+                    None => continue,
+                };
+                let addr = param.get_address();
+                let size = param.get_size();
+                let ty = param.get_type().cloned();
+                let mut pm = ParamMeasure::new(&addr, size, ty, ParamIDIO::Input);
+                if let Some(vn) = fd.find_varnode_input(size, &addr) {
+                    pm.calculate_rank(fd, true, vn, None);
+                }
+                analysis.input_param_measures.push(pm);
+            }
+            if !proto.has_store() {
+                return Ok(analysis);
+            }
+            let outparam = proto.get_output();
+            let out_addr = outparam.get_address();
+            if !out_addr.is_invalid() {
+                // If we don't have a void type.
+                let mut pm = ParamMeasure::new(
+                    &out_addr,
+                    outparam.get_size(),
+                    outparam.get_type().cloned(),
+                    ParamIDIO::Output,
+                );
+                // For a RETURN op, input1 (if present) is the returned Varnode.
+                for rtn_op in fd.obank().iter_code(OpCode::CPUI_RETURN) {
+                    let o = match fd.obank().get(rtn_op) {
+                        Some(o) => o,
+                        None => continue,
+                    };
+                    if o.num_input() == 2 {
+                        if let Some(ovn) = o.get_in(1) {
+                            pm.calculate_rank(fd, true, ovn, Some(rtn_op));
+                            break;
+                        }
+                    }
+                }
+                analysis.output_param_measures.push(pm);
+            }
         } else {
             // Need to list input varnodes that are outside of the model.
             let inputs: Vec<VarnodeId> = fd.vbank().iter_def_flag(varnode_flags::input).collect();
@@ -474,19 +539,36 @@ impl ParamIDAnalysis {
         s.push('\n');
     }
 
-    /// Encode the analysis (C++ `ParamIDAnalysis::encode`, paramid.cc:237-262).
-    ///
-    /// Needs the recovered `FuncProto` (model/extrapop) and
-    /// `ParamMeasure::encode` (`Datatype::encodeRef`); both STUB.
-    pub fn encode(&self) -> KunaResult<()> {
-        // Reference the element ids so they stay live until the marshal surface
-        // (W4 FuncProto + W8 type-ref) is threaded.
-        let _ = (&ELEM_PARAMMEASURES, &ELEM_PROTO, &ELEM_RANK);
-        let _ = (&AttributeId::new("model", 13), &AttributeId::new("extrapop", 6));
-        Err(KunaError::lowlevel(
-            "kuna rust port: ParamIDAnalysis::encode needs FuncProto (model/extrapop, W4) \
-             + ParamMeasure::encode (Datatype::encodeRef, W8)",
-        ))
+    /// Encode the analysis as a `<parammeasures>` element (C++
+    /// `ParamIDAnalysis::encode`, paramid.cc:237-262): the function name +
+    /// entry address, the `<proto model extrapop>` child, then each
+    /// input/output measure.
+    pub fn encode(
+        &self,
+        encoder: &mut dyn kuna_base::marshal::Encoder,
+        moredetail: bool,
+    ) -> KunaResult<()> {
+        use kuna_base::marshal::{ATTRIB_MODEL, ATTRIB_NAME};
+        encoder.open_element(&ELEM_PARAMMEASURES);
+        encoder.write_string(&ATTRIB_NAME, self.fdname.as_bytes());
+        self.fdaddr.encode(encoder)?;
+        encoder.open_element(&ELEM_PROTO);
+        encoder.write_string(&ATTRIB_MODEL, self.model_name.as_bytes());
+        if self.extrapop == crate::fspec::EXTRAPOP_UNKNOWN {
+            encoder.write_string(&crate::remote_provider::ATTRIB_EXTRAPOP, b"unknown");
+        } else {
+            encoder
+                .write_signed_integer(&crate::remote_provider::ATTRIB_EXTRAPOP, self.extrapop as i64);
+        }
+        encoder.close_element(&ELEM_PROTO);
+        for pm in &self.input_param_measures {
+            pm.encode(encoder, &kuna_base::marshal::ELEM_INPUT, moredetail)?;
+        }
+        for pm in &self.output_param_measures {
+            pm.encode(encoder, &kuna_base::marshal::ELEM_OUTPUT, moredetail)?;
+        }
+        encoder.close_element(&ELEM_PARAMMEASURES);
+        Ok(())
     }
 }
 
@@ -645,10 +727,76 @@ mod tests {
         assert!(s.contains("Rank: 2"), "got: {s}");
     }
 
-    /// The justproto path stubs out (prototype unavailable in the merged tree).
+    /// The justproto path on a store-less fixture proto degrades to an empty
+    /// measure set (a real pipeline Funcdata always carries a store).
     #[test]
-    fn justproto_is_stub() {
+    fn justproto_storeless_yields_empty() {
         let fd = build_fd();
-        assert!(ParamIDAnalysis::new(&fd, true).is_err());
+        let analysis = ParamIDAnalysis::new(&fd, true).unwrap();
+        assert_eq!(analysis.num_input_measures(), 0);
+        assert_eq!(analysis.num_output_measures(), 0);
+    }
+
+    /// The encode emits `<parammeasures name><addr/><proto model extrapop/>` +
+    /// one measure per input, each with the REQUIRED `<rank val>` child
+    /// (paramid.cc:161-175 moredetail=true — the shape both upstream
+    /// ghidra_process call sites produce).
+    #[test]
+    fn encode_roundtrip_shape() {
+        use kuna_base::marshal::{Decoder, PackedDecode, PackedEncode};
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let bl = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().set_start_block(root, bl);
+        let a = fd.new_varnode(4, &Address::new(Rc::clone(&rs), 0x100), None);
+        let a = fd.set_input_varnode(a).unwrap();
+        let add = add_op(&mut fd, bl, OpCode::CPUI_INT_ADD, 2, Address::new(Rc::clone(&rs), 0x1000));
+        let _out = fd.new_varnode_out(4, &Address::new(Rc::clone(&rs), 0x200), add).unwrap();
+        fd.op_set_input(add, a, 0).unwrap();
+        fd.op_set_input(add, a, 1).unwrap();
+        fd.structure_reset();
+
+        let analysis = ParamIDAnalysis::new(&fd, false).unwrap();
+        assert_eq!(analysis.num_input_measures(), 1);
+        let mut bytes: Vec<u8> = Vec::new();
+        {
+            let mut enc = PackedEncode::new(&mut bytes);
+            analysis.encode(&mut enc, true).unwrap();
+        }
+        let mut dec = PackedDecode::new(fd.get_arch().manage());
+        dec.ingest_stream(&bytes).unwrap();
+        let pm = dec.open_element().unwrap();
+        assert_eq!(pm, ELEM_PARAMMEASURES.get_id());
+        let name = dec.read_string_id(&kuna_base::marshal::ATTRIB_NAME).unwrap();
+        assert_eq!(name, b"func");
+        // <addr/> child.
+        let ad = dec.open_element().unwrap();
+        assert_eq!(ad, kuna_base::address::ELEM_ADDR.get_id());
+        dec.close_element_skipping(ad).unwrap();
+        // <proto model extrapop/>.
+        let pr = dec.open_element().unwrap();
+        assert_eq!(pr, ELEM_PROTO.get_id());
+        dec.close_element_skipping(pr).unwrap();
+        // <input> with a <rank val> child.
+        let inp = dec.open_element().unwrap();
+        assert_eq!(inp, kuna_base::marshal::ELEM_INPUT.get_id());
+        let mut saw_rank = false;
+        loop {
+            let c = dec.peek_element().unwrap();
+            if c == 0 {
+                break;
+            }
+            let id = dec.open_element().unwrap();
+            if id == ELEM_RANK.get_id() {
+                let val = dec.read_signed_integer_id(&kuna_base::marshal::ATTRIB_VAL).unwrap();
+                assert_eq!(val, param_rank::DIRECTREAD as i64);
+                saw_rank = true;
+            }
+            dec.close_element_skipping(id).unwrap();
+        }
+        assert!(saw_rank, "<rank> child is REQUIRED (ParamMeasure.decode throws)");
+        dec.close_element(inp).unwrap();
+        dec.close_element(pm).unwrap();
     }
 }

@@ -128,8 +128,9 @@ pub mod ids {
     pub const ELEM_FIELD: ElementId = ElementId::new("field", 49);
     /// Marshaling element `<bitfield>` (type.cc:74, id 289, cross-file).
     pub const ELEM_BITFIELD: ElementId = ElementId::new("bitfield", 289);
-    /// Marshaling attribute "symref" (variable.cc:25, id 68, cross-file).
-    pub const ATTRIB_SYMREF: AttributeId = AttributeId::new("symref", 68);
+    /// Marshaling attribute "symref" (variable.cc:25, id 68), re-exported from
+    /// the `HighVariable::encode` port (same numeric id).
+    pub use crate::variable::ATTRIB_SYMREF;
 }
 
 /// An empty string (C++ `Emit::EMPTY_STRING`).
@@ -862,6 +863,45 @@ impl EmitMarkup {
         let mut enc = PackedEncode::new(&mut self.out);
         f(&mut enc);
     }
+
+    /// Write ONE `<type>` token (the pre-split body of `tag_type`; C++
+    /// `EmitMarkup::tagType`, prettyprint.cc).
+    fn tag_type_single(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
+        let tid = markup.type_id;
+        self.with_encoder(|e| {
+            e.open_element(&ids::ELEM_TYPE);
+            if hl != SyntaxHighlight::NoColor {
+                e.write_unsigned_integer(&ids::ATTRIB_COLOR, hl.value());
+            }
+            if let Some(id) = tid {
+                if id != 0 {
+                    e.write_unsigned_integer(&ids::ATTRIB_ID, id);
+                }
+            }
+            e.write_string(&ids::ATTRIB_CONTENT, name.as_bytes());
+            e.close_element(&ids::ELEM_TYPE);
+        });
+    }
+}
+
+/// Does a `<type>` token's text contain a template-depth-0 character outside
+/// the C identifier alphabet — i.e. would Java's `IllegalCharCppTransformer`
+/// rewrite it in `getC()`?  (`<…>` template payloads are accepted verbatim by
+/// the transformer, so they never force a split.)
+fn markup_type_token_needs_split(name: &str) -> bool {
+    let mut depth = 0i32;
+    for c in name.chars() {
+        match c {
+            '<' => depth += 1,
+            '>' => depth = (depth - 1).max(0),
+            _ => {
+                if depth == 0 && !(c.is_ascii_alphanumeric() || c == '_') {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 impl Emit for EmitMarkup {
@@ -1016,20 +1056,53 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_type(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
-        let tid = markup.type_id;
-        self.with_encoder(|e| {
-            e.open_element(&ids::ELEM_TYPE);
-            if hl != SyntaxHighlight::NoColor {
-                e.write_unsigned_integer(&ids::ATTRIB_COLOR, hl.value());
-            }
-            if let Some(id) = tid {
-                if id != 0 {
-                    e.write_unsigned_integer(&ids::ATTRIB_ID, id);
+        // (kuna, Phase 4) Declarator-token fidelity: kuna's declarator builder
+        // hands the WHOLE rendered front ("unsigned long *") to one tag_type
+        // call, where upstream pushes only the base type name as the <type>
+        // token and the stars/spaces as separate syntax tokens.  A multi-word
+        // single token per-token-breaks the GUI's type semantics and — worse —
+        // Java's getC() path (PrettyPrinter + IllegalCharCppTransformer)
+        // rewrites every non-identifier character in a type token to '_', so
+        // scripts/exports receive `unsigned_long__a1`.  Split here, at the
+        // markup emitter (the flattened byte stream is unchanged, and the
+        // EmitNoMarkup/EmitPrettyPrint standalone paths never enter this
+        // code): identifier words stay <type> tokens, separator runs become
+        // <syntax> tokens.  Template payloads (`<…>`) stay inside their word
+        // (the Java transformer accepts them verbatim).
+        if markup_type_token_needs_split(name) {
+            let mut chunk = String::new();
+            let mut syn = String::new();
+            let mut depth = 0i32;
+            for c in name.chars() {
+                let ident = c.is_ascii_alphanumeric() || c == '_';
+                if ident || c == '<' || c == '>' || depth > 0 {
+                    if c == '<' {
+                        depth += 1;
+                    } else if c == '>' {
+                        depth = (depth - 1).max(0);
+                    }
+                    if !syn.is_empty() {
+                        self.print(&syn, SyntaxHighlight::NoColor);
+                        syn.clear();
+                    }
+                    chunk.push(c);
+                } else {
+                    if !chunk.is_empty() {
+                        self.tag_type_single(&chunk, hl, markup);
+                        chunk.clear();
+                    }
+                    syn.push(c);
                 }
             }
-            e.write_string(&ids::ATTRIB_CONTENT, name.as_bytes());
-            e.close_element(&ids::ELEM_TYPE);
-        });
+            if !chunk.is_empty() {
+                self.tag_type_single(&chunk, hl, markup);
+            }
+            if !syn.is_empty() {
+                self.print(&syn, SyntaxHighlight::NoColor);
+            }
+            return;
+        }
+        self.tag_type_single(name, hl, markup);
     }
     fn tag_field(&mut self, name: &str, hl: SyntaxHighlight, off: int4, markup: &MarkupRef) {
         self.record_association(markup);

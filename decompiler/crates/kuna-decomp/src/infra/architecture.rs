@@ -709,6 +709,26 @@ pub struct Architecture {
     /// ([`ActionContext::deadline`](crate::action::ActionContext)).  Always
     /// `None` when no budget is set.
     pub kuna_fn_deadline: Option<std::time::Instant>,
+    /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
+    /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
+    /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
+    /// fresh `Funcdata`'s local scope.  The carrier for the host `<localdb>`'s
+    /// namelocked-but-not-typelocked locals (GUI renames of untyped
+    /// variables), which C++ keeps as `ScopeLocal::nameRecommend` entries
+    /// rather than Symbols.  Always empty outside ghidra mode, so the
+    /// standalone pipeline is structurally unaffected.
+    pub kuna_pending_name_recs: Vec<(String, Address, Address, int4)>,
+    /// (ghidra-mode, Phase 4) The DYNAMIC (hash-storage) half of the same
+    /// staging — `(name, first-use address, hash)`; see
+    /// [`Self::kuna_pending_name_recs`].  Always empty outside ghidra mode.
+    pub kuna_pending_dyn_recs: Vec<(String, Address, u64)>,
+    /// (ghidra-mode, Phase 4) The prototype MODEL the host declared for the
+    /// next decompiled function (`<prototype model=…>`), staged the same way.
+    /// The host assigned its committed parameter storage under this
+    /// convention, so re-deriving storage from kuna's default model would
+    /// disagree with the database and make Java's `checkFullCommit` rewrite
+    /// the user's signature on any rename.  `None` outside ghidra mode.
+    pub kuna_pending_proto_model: Option<Rc<crate::fspec::ProtoModel>>,
 
     // --- kuna analysis-pass gates (per-run `--option <id> on|off`) ----------
     // One boolean per `kuna_analysis::passes` pass id; the console's
@@ -1400,6 +1420,9 @@ impl Architecture {
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
+            kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
+            kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
+            kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
 
             // Analysis-pass gates: placeholder values -- `Architecture::new` calls
             // `reset_defaults_internal()` below, the SINGLE source of every

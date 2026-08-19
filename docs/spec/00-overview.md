@@ -295,6 +295,125 @@ Four front-ends drive one engine assembly:
   None of this touches the standalone path: no provider installed means every
   seam takes its frozen-snapshot branch, byte-identically.
 
+  (kuna) **The Phase-4 full response encode** makes the `decompileAt` answer
+  carry everything the native GUI features consume, in the upstream child
+  order (`Funcdata::encode`,
+  `decompiler/crates/kuna-decomp/src/substrate/funcdata_encode.rs`): the base
+  `<addr>`, the `<localdb>` symbol scope, the `<ast>` (savetree), the
+  `<highlist>` (savetree + high-level on), the `<jumptablelist>`, and the
+  `<prototype>`.  `<localdb>` is `ScopeLocal::encode`
+  (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs`) over the
+  function's private symbol database
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (Database::encode_scope, Symbol::encode_header, SymbolEntry::encode)`):
+  every `<symbol>` carries its NONZERO id (internal `SYMBOL_ID_BASE`-range for
+  kuna-invented symbols; Java's `HighSymbol.decodeHeader` throws on 0), every
+  `<mapsym>` at least one storage entry (`<addr>`/`<hash>` + its uselimit
+  `<rangelist>`), parameters their `cat=0` + slot `index` + exact storage (the
+  Java rename path re-commits the whole signature when these disagree with the
+  database), and the `<scope>` opens positionally with `<parent>` +
+  `<rangelist>` because `LocalSymbolMap.decodeScope` skips both blind.
+  Because kuna's naming pass binds plain strings (`kuna_name`) instead of the
+  C++ `ActionNameVars::linkSymbols` Symbol objects, two mechanisms supply the
+  ids the wire needs. First, the naming pass RECORDS the bind it actually made
+  (`HighVariable::kuna_link_symbol`,
+  `decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs`) when
+  a high resolves to a covering localmap entry — and, for a `&symbol`
+  REFERENCE, the identity of the Symbol referred to
+  (`HighVariable::kuna_ref_symbol`, set by `Funcdata::link_symbol_reference`,
+  the port of C++ `Varnode::setSymbolReference` →
+  `HighVariable::setSymbolReference`). That second record is what a stack
+  aggregate reached ONLY through `&sym` — a `char v [16]` passed to `memcmp`,
+  whose entire HighVariable is the constant `PTRSUB` offset operand and which
+  therefore owns no storage to re-derive a Symbol from — is declared off; it is
+  read for the declaration only, because such a high encodes
+  `class="constant"`, where Java's `HighConstant.decode` does nothing with a
+  mapped local symref. Second, an encode-time link
+  pass (`Funcdata::kuna_link_high_symbols`) gives every REMAINING named high a
+  **wire-only symbol**
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (WireSymbol)`):
+  a mapped one at its storage when nothing covers it, or — when a Symbol does
+  cover the storage yet the naming pass declined the bind as a CONFLICT (the
+  narrower addr-tied return over a wider scalar parameter; the float8 lane over
+  a float4 param) — a data-flow-HASHED one, upstream's `buildDynamicSymbol`
+  answer. The encode never re-derives a container binding itself: doing so
+  would hand a conflict-separated high the parameter's id, and a rename from
+  that variable's token would rename the parameter. Wire symbols are encoded
+  into `<localdb>` and referenced by `<high symref>`, but never enter the
+  analysis scope — which is what lets the pass run BEFORE the markup is
+  printed (so `<vardecl symref>` carries the same ids) without changing a byte
+  of the emitted C. The `<highlist>` (`Funcdata::encode_high`, the
+  `HighVariable::encode` port: `repref` = name-representative create-index,
+  the five-way `class` rule, `symref` + partial `offset`, the type reference,
+  one instance `<addr ref>` per member) therefore points only at ids the
+  just-encoded `<localdb>` resolves — a symbol the encode skipped defensively
+  is withheld from `symref` too (`Database::encodable_symbol_ids`, and
+  `WireSymbol::is_encodable` for the wire ones: a 0-sized data-type at MAPPED
+  storage is the `MappedEntry.decode` throw, so such a high takes the hashed
+  shape instead), because an orphan reference is the Java hard-throw the skip
+  exists to avoid.  The markup's `<vardecl symref>` passes the SAME filter and
+  falls back to the create index when it fails — an unresolvable declaration
+  reference is not a throw (`ClangVariableDecl.decode` logs and returns) but it
+  is a dead rename on that line, which is the whole point of the attribute.
+  Globals echo the REAL host database id delivered by
+  getMappedSymbols (`GlobalEntry::symbol_id`,
+  `decompiler/crates/kuna-decomp/src/substrate/context.rs`) and NEVER a
+  fabricated one — an unknown id omits `symref` (Java warns and falls back to
+  address-keyed rename) rather than silently renaming the wrong symbol.  Type
+  references marshal through the `Datatype::encode_ref` port (chapter
+  [05](05-types.md)); the prototype through `FuncProto::encode` (chapter
+  [04](04-calls-and-prototypes.md)).  The `<jumptablelist>` re-uses the ported
+  `JumpTable::encode` and is emitted INDEPENDENTLY of savetree — the switch
+  analyzer asks `noc`+`notree`+`jumpload` and consumes only this list; the
+  session's jumpload toggle reaches recovery as the upstream
+  `FlowInfo::record_jumploads` flowoptions bit, applied per-decompile in
+  `decompiler/crates/kuna-ghidra/src/process.rs` so the setOptions baseline
+  reset can never strand it.  Under action `paramid` with parammeasures on,
+  the doc contains ONLY `<parammeasures>`
+  (`decompiler/crates/kuna-decomp/src/infra/paramid.rs
+  (ParamIDAnalysis::encode)`, the `<rank>` child always on — Java throws
+  without it); otherwise an optional `<parammeasures>` precedes the function
+  pair.  The markup `<function>` is rendered BEFORE `fd.encode` runs (the
+  link pass must not perturb the printed C) and spliced after the syntax tree,
+  keeping the upstream document order.
+  The rename/retype PERSISTENCE loop closes the circle: a GUI edit is a DB
+  write (`HighFunctionDBUtil.updateDBVariable`) followed by an event-driven
+  re-decompile whose getMappedSymbols answer now carries the edited local in
+  the function's `<localdb>` (Java `LocalSymbolMap.grabFromFunction`).  kuna
+  decodes those non-parameter locals
+  (`decompiler/crates/kuna-decomp/src/infra/remote_provider.rs
+  (RemoteLocalVar)`) and seeds them into the fresh `Funcdata` along FOUR
+  channels, chosen by the two bits Java sets — the storage class and the
+  typelock:
+  a mapped, TYPELOCKED local (a retype — Java sends `typelock=false` only for
+  `Undefined` types) seeds as a real mapped/usepoint symbol
+  (`Funcdata::seed_mapped_symbols` / `Funcdata::seed_usepoint_symbols`,
+  surviving restructure's typelock-keep rule); a mapped, namelocked-only local
+  (a plain rename) — which C++ itself never keeps as a Symbol — stages as a
+  NAME RECOMMENDATION (`Architecture::kuna_pending_name_recs` →
+  `Funcdata::seed_name_recommendations`), the `ScopeLocal::nameRecommend`
+  mechanism of chapter [06](06-variables-and-merge.md) §6.4; and the same two
+  cases in DYNAMIC (`<hash>`) storage — the class Java writes for every
+  variable that `requiresDynamicStorage`, i.e. unique-space representatives and
+  `splitOutMergeGroup` products — seed as a dynamic Symbol
+  (`Funcdata::seed_dynamic_symbols`) or a DYNAMIC name recommendation
+  (`Architecture::kuna_pending_dyn_recs` →
+  `Funcdata::seed_dynamic_recommendations`, applied through
+  `DynamicHash::find_varnode` by
+  `Funcdata::kuna_apply_dynamic_recommendations`).  Dropping the hash-storage
+  half would silently revert renames of exactly the register/temporary
+  variables users rename most.  The host's declared prototype MODEL and its
+  EXACT committed parameter storage ride along too
+  (`Architecture::kuna_pending_proto_model`,
+  `Funcdata::apply_locked_prototype_with_model`, and the decoded cat-0
+  storage threaded into `Funcdata::apply_mapped_params`, whose slots are
+  counted in the SAME compacted basis `RemoteProto::to_pieces` builds).  The
+  storage echo is the load-bearing half: Java's `checkFullCommit` compares the
+  parameter COUNT, each `categoryIndex`, and each storage — never the model
+  name — so a kuna-rederived storage or a slot skew force-rewrites the user's
+  signature on the next rename.  The model rides along because the storage kuna
+  would otherwise derive comes from it, not because Java inspects it.
+
 (kuna) **Surfacing a failed function.** A per-function pipeline abort is
 *recoverable*: the drive catches the unwind and returns the reason as an error
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (panic_message)`

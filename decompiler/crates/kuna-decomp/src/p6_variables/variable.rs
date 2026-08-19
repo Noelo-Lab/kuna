@@ -54,6 +54,25 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::context::{HighVariableId, VarnodeId};
 
 // =============================================================================
+// Wire marshaling ids owned by variable.cc (upstream numbers, variable.cc:23-27;
+// DECOMPILER scope — written by numeric id, never registered on the SLEIGH
+// registry; see the note in `substrate/funcdata_encode.rs`).
+// =============================================================================
+
+/// Marshaling attribute "class" (C++ `ATTRIB_CLASS`, variable.cc:23, id 66).
+pub const ATTRIB_CLASS: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("class", 66);
+/// Marshaling attribute "repref" (C++ `ATTRIB_REPREF`, variable.cc:24, id 67).
+pub const ATTRIB_REPREF: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("repref", 67);
+/// Marshaling attribute "symref" (C++ `ATTRIB_SYMREF`, variable.cc:25, id 68).
+pub const ATTRIB_SYMREF: kuna_base::marshal::AttributeId =
+    kuna_base::marshal::AttributeId::new("symref", 68);
+/// Marshaling element `<high>` (C++ `ELEM_HIGH`, variable.cc:27, id 82).
+pub const ELEM_HIGH: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("high", 82);
+
+// =============================================================================
 // Arena keys for the VariableGroup / VariablePiece overlap model
 // =============================================================================
 
@@ -354,6 +373,39 @@ pub struct HighVariable {
     /// global Symbol is rendered by name in the body but never carries a local
     /// declaration.  `false` == a local-scope (or unscoped) high (declarable).
     kuna_global: bool,
+    /// (kuna, ghidra Phase 4) The local-scope Symbol this high's NAME actually
+    /// resolved to — the bind decision `ActionNameVars` made, recorded at the
+    /// moment it made it (the C++ `high->getSymbol()` that `linkSymbol`'s
+    /// `handleSymbolConflict` arm establishes).  `None` means the naming pass
+    /// deliberately left the high symbol-less: either no Symbol covers its
+    /// storage, or the covering entry was a storage CONFLICT and the high was
+    /// routed to a fresh `vN` (upstream: `buildDynamicSymbol`).  The wire
+    /// encode reads it for `<high symref>` / `<vardecl symref>` and NEVER
+    /// re-derives a container binding itself — re-deriving would hand a
+    /// conflict-separated high the conflicting parameter's symbol id, so a
+    /// rename from that variable's token would rename the parameter.
+    ///
+    /// Deliberately a separate field from [`Self::kuna_dynamic_symbol`]: that
+    /// one is an analysis-time input the merge reads, and writing it here
+    /// would let the encode path perturb decompilation.  Nothing outside the
+    /// encode/markup reads this one.
+    kuna_link_symbol: Option<crate::database::SymbolId>,
+    /// (kuna, ghidra Phase 4) The local Symbol a `&symbol` REFERENCE high
+    /// points at — C++ `Varnode::setSymbolReference` →
+    /// `HighVariable::setSymbolReference(entry->getSymbol(), off)`
+    /// (`varnode.cc:465`, `variable.cc:283`), the identity half of the bind
+    /// `link_symbol_reference` already performs for the name/type/offset.
+    ///
+    /// Its high is the CONSTANT `PTRSUB` offset operand, not the variable's own
+    /// storage, so this is deliberately NOT [`Self::kuna_link_symbol`]: that
+    /// field feeds `<high symref>`, and such a high encodes `class="constant"`,
+    /// where Java's `HighConstant.decode` does nothing at all with a mapped
+    /// local symref.  Only the DECLARATION needs it: a stack array/struct
+    /// materialized solely through `&sym` (`char v1 [16]` used as `memcmp(v1,…)`)
+    /// is declared off this reference high, and its `<vardecl symref>` must
+    /// carry the `<localdb>` id or `ClangVariableDecl.decode` logs "Invalid
+    /// symbol reference" and leaves rename/retype dead on that line.
+    kuna_ref_symbol: Option<crate::database::SymbolId>,
 }
 
 impl HighVariable {
@@ -382,6 +434,8 @@ impl HighVariable {
             kuna_symbol_type: None,
             kuna_equate_symbol: None,
             kuna_global: false,
+            kuna_link_symbol: None,
+            kuna_ref_symbol: None,
         }
     }
 
@@ -419,6 +473,33 @@ impl HighVariable {
     /// (kuna LOSS-229) The dynamic-mapping Symbol id bound to this high, or `None`.
     pub fn kuna_dynamic_symbol(&self) -> Option<crate::database::SymbolId> {
         self.symbol
+    }
+
+    /// (kuna, ghidra Phase 4) Record the Symbol the naming pass bound this
+    /// high's name to — see [`Self::kuna_link_symbol`].
+    pub fn set_kuna_link_symbol(&mut self, sym: crate::database::SymbolId) {
+        self.kuna_link_symbol = Some(sym);
+    }
+
+    /// (kuna, ghidra Phase 4) The Symbol bound by the naming pass (or
+    /// materialized by the encode-time link pass), or `None` when the high was
+    /// deliberately left symbol-less.
+    pub fn kuna_link_symbol(&self) -> Option<crate::database::SymbolId> {
+        self.kuna_link_symbol
+    }
+
+    /// (kuna, ghidra Phase 4) Record the local Symbol this `&symbol` reference
+    /// high points at — see [`Self::kuna_ref_symbol`].
+    pub fn set_kuna_ref_symbol(&mut self, sym: crate::database::SymbolId) {
+        self.kuna_ref_symbol = Some(sym);
+    }
+
+    /// (kuna, ghidra Phase 4) The local Symbol this `&symbol` reference high
+    /// points at, or `None` when the high is not such a reference (or the
+    /// reference resolved through the GLOBAL scope, whose ids are not
+    /// `LocalSymbolMap` ids).
+    pub fn kuna_ref_symbol(&self) -> Option<crate::database::SymbolId> {
+        self.kuna_ref_symbol
     }
 
     /// (kuna) Bind the mapped Symbol's data-type (for array/struct rendering).

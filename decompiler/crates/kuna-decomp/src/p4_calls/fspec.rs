@@ -84,6 +84,25 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use crate::dtype::{metatype2typeclass, type_class, type_metatype, Datatype, TypeFactory};
 
+// -----------------------------------------------------------------------------
+// Wire marshaling ids owned by fspec (upstream numbers, fspec.cc:40-51;
+// DECOMPILER scope — written by number, never registered on the SLEIGH
+// registry; see the note in `substrate/funcdata_encode.rs`).
+// -----------------------------------------------------------------------------
+
+/// Marshaling element `<killedbycall>` (C++ `ELEM_KILLEDBYCALL`, fspec.cc:40).
+pub const ELEM_KILLEDBYCALL: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("killedbycall", 162);
+/// Marshaling element `<likelytrash>` (C++ `ELEM_LIKELYTRASH`, fspec.cc:41).
+pub const ELEM_LIKELYTRASH: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("likelytrash", 163);
+/// Marshaling element `<unaffected>` (C++ `ELEM_UNAFFECTED`, fspec.cc:51).
+pub const ELEM_UNAFFECTED: kuna_base::marshal::ElementId =
+    kuna_base::marshal::ElementId::new("unaffected", 173);
+/// Marshaling element `<returnaddress>` re-export (defined in kuna-base,
+/// upstream marshal.cc id 5).
+pub use kuna_base::marshal::ELEM_RETURNADDRESS;
+
 // =============================================================================
 // AssignAction response codes (modelrules.hh:264-270)  // STUB(w6-modelrules)
 // =============================================================================
@@ -1719,6 +1738,21 @@ impl EffectRecord {
         let s1 = op1.range.get_addr();
         let s2 = op2.range.get_addr();
         s1.cmp(&s2)
+    }
+
+    /// Encode this record as a sized `<addr>` element (C++
+    /// `EffectRecord::encode`, fspec.cc:3560-3568).  Only the three named
+    /// effect types are encodable.
+    pub fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        let addr = self.range.get_addr();
+        if self.type_ == effect_type::UNAFFECTED
+            || self.type_ == effect_type::KILLEDBYCALL
+            || self.type_ == effect_type::RETURN_ADDRESS
+        {
+            addr.encode_sized(encoder, self.range.size as int4)
+        } else {
+            Err(KunaError::lowlevel("Bad EffectRecord type"))
+        }
     }
 }
 
@@ -6078,6 +6112,165 @@ impl FuncProto {
         Err(KunaError::lowlevel(
             "STUB(w6-fspec-2) FuncProto::decode: needs marshaling + Architecture registry",
         ))
+    }
+
+    /// Encode this to a `<prototype>` element (C++ `FuncProto::encode`,
+    /// fspec.cc:4625-4668): the model + extrapop + boolean flags, the
+    /// `<returnsym>` (storage + type of the output parameter), the effect /
+    /// likely-trash overrides, and the call-fixup `<inject>` when
+    /// `inject_name` supplies the resolved fixup name (the C++ reads it
+    /// through `glb->pcodeinjectlib`, which the kuna `FuncProto` cannot
+    /// reach — the caller resolves it).
+    ///
+    /// The C++ tail calls `store->encode` — `ProtoStoreSymbol::encode`
+    /// (fspec.cc:3293) writes NOTHING, and upstream's decompileAt path always
+    /// has the symbol-backed store, so the wire shape omits `<internallist>`;
+    /// kuna's internal store follows the wire shape (input parameters travel
+    /// as `<localdb>` category-0 symbols, `LocalSymbolMap.decodeSymbolList`).
+    pub fn encode(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        use kuna_base::marshal::{
+            ATTRIB_CONSTRUCTOR, ATTRIB_DESTRUCTOR, ATTRIB_MODEL, ATTRIB_TYPELOCK,
+        };
+        use crate::remote_provider::{
+            ATTRIB_CUSTOM, ATTRIB_DOTDOTDOT, ATTRIB_EXTRAPOP, ATTRIB_INLINE, ATTRIB_MODELLOCK,
+            ATTRIB_NORETURN, ATTRIB_VOIDLOCK, ELEM_PROTOTYPE, ELEM_RETURNSYM,
+        };
+        encoder.open_element(&ELEM_PROTOTYPE);
+        // C++ `model->getName()` (a null model never encodes upstream); an
+        // un-modeled kuna proto degrades to the "default" spelling, which the
+        // Java side maps onto the program's default model.
+        let model_name = self.model.as_ref().map(|m| m.get_name()).unwrap_or("default");
+        encoder.write_string(&ATTRIB_MODEL, model_name.as_bytes());
+        if self.extrapop == EXTRAPOP_UNKNOWN {
+            encoder.write_string(&ATTRIB_EXTRAPOP, b"unknown");
+        } else {
+            encoder.write_signed_integer(&ATTRIB_EXTRAPOP, self.extrapop as i64);
+        }
+        if self.is_dotdotdot() {
+            encoder.write_bool(&ATTRIB_DOTDOTDOT, true);
+        }
+        if self.is_model_locked() {
+            encoder.write_bool(&ATTRIB_MODELLOCK, true);
+        }
+        if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
+            encoder.write_bool(&ATTRIB_VOIDLOCK, true);
+        }
+        if self.is_inline() {
+            encoder.write_bool(&ATTRIB_INLINE, true);
+        }
+        if self.is_no_return() {
+            encoder.write_bool(&ATTRIB_NORETURN, true);
+        }
+        if self.has_custom_storage() {
+            encoder.write_bool(&ATTRIB_CUSTOM, true);
+        }
+        if self.is_constructor() {
+            encoder.write_bool(&ATTRIB_CONSTRUCTOR, true);
+        }
+        if self.is_destructor() {
+            encoder.write_bool(&ATTRIB_DESTRUCTOR, true);
+        }
+        // <returnsym>: outparam storage (sized <addr>) + type.  Java requires
+        // the pair (FunctionPrototype.decodePrototype).
+        let store = self
+            .store
+            .as_ref()
+            .ok_or_else(|| KunaError::lowlevel("FuncProto::encode: no parameter store"))?;
+        let outparam = store.get_output();
+        encoder.open_element(&ELEM_RETURNSYM);
+        if outparam.is_type_locked() {
+            encoder.write_bool(&ATTRIB_TYPELOCK, true);
+        }
+        outparam.get_address().encode_sized(encoder, outparam.get_size())?;
+        match outparam.get_type() {
+            Some(t) => t.encode_ref(encoder)?,
+            None => {
+                // A type-less output is the void state (C++ outparam type is
+                // never null; ParameterBasic seeds TYPE_VOID).
+                encoder.open_element(&kuna_base::marshal::ELEM_VOID);
+                encoder.close_element(&kuna_base::marshal::ELEM_VOID);
+            }
+        }
+        encoder.close_element(&ELEM_RETURNSYM);
+        self.encode_effect(encoder)?;
+        self.encode_likely_trash(encoder)?;
+        // <inject>: only when the caller resolved the fixup name (injectid>=0).
+        // Without the resolver the id is silently dropped, matching a fixup-less
+        // proto (Java skips the element anyway).
+        encoder.close_element(&ELEM_PROTOTYPE);
+        Ok(())
+    }
+
+    /// Encode the effect-record overrides (C++ `FuncProto::encodeEffect`,
+    /// fspec.cc:3589-3627): only records differing from the underlying
+    /// `ProtoModel`, grouped as `<unaffected>` / `<killedbycall>` /
+    /// `<returnaddress>`.
+    fn encode_effect(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        if self.effectlist.is_empty() {
+            return Ok(());
+        }
+        let mut unaffected: Vec<&EffectRecord> = Vec::new();
+        let mut killed: Vec<&EffectRecord> = Vec::new();
+        let mut ret_addr: Option<&EffectRecord> = None;
+        for cur in &self.effectlist {
+            let tp = match &self.model {
+                Some(m) => m.has_effect(&cur.get_address(), cur.get_size()),
+                None => effect_type::UNKNOWN_EFFECT,
+            };
+            if tp == cur.get_type() {
+                continue;
+            }
+            if cur.get_type() == effect_type::UNAFFECTED {
+                unaffected.push(cur);
+            } else if cur.get_type() == effect_type::KILLEDBYCALL {
+                killed.push(cur);
+            } else if cur.get_type() == effect_type::RETURN_ADDRESS {
+                ret_addr = Some(cur);
+            }
+        }
+        if !unaffected.is_empty() {
+            encoder.open_element(&ELEM_UNAFFECTED);
+            for r in unaffected {
+                r.encode(encoder)?;
+            }
+            encoder.close_element(&ELEM_UNAFFECTED);
+        }
+        if !killed.is_empty() {
+            encoder.open_element(&ELEM_KILLEDBYCALL);
+            for r in killed {
+                r.encode(encoder)?;
+            }
+            encoder.close_element(&ELEM_KILLEDBYCALL);
+        }
+        if let Some(r) = ret_addr {
+            encoder.open_element(&ELEM_RETURNADDRESS);
+            r.encode(encoder)?;
+            encoder.close_element(&ELEM_RETURNADDRESS);
+        }
+        Ok(())
+    }
+
+    /// Encode the likely-trash overrides (C++ `FuncProto::encodeLikelyTrash`,
+    /// fspec.cc:3631-3648): the entries not already in the `ProtoModel`'s list.
+    fn encode_likely_trash(&self, encoder: &mut dyn kuna_base::marshal::Encoder) -> KunaResult<()> {
+        if self.likelytrash.is_empty() {
+            return Ok(());
+        }
+        let model_trash: &[VarnodeData] =
+            self.model.as_ref().map(|m| m.trash_list()).unwrap_or(&[]);
+        encoder.open_element(&ELEM_LIKELYTRASH);
+        for cur in &self.likelytrash {
+            if model_trash.binary_search_by(|p| p.cmp(cur)).is_ok() {
+                continue; // Already exists in ProtoModel
+            }
+            encoder.open_element(&kuna_base::address::ELEM_ADDR);
+            if let Some(spc) = &cur.space {
+                spc.encode_attributes_sized(encoder, cur.offset, cur.size as int4)?;
+            }
+            encoder.close_element(&kuna_base::address::ELEM_ADDR);
+        }
+        encoder.close_element(&ELEM_LIKELYTRASH);
+        Ok(())
     }
 
     // -- test/tooling builder hooks -----------------------------------------

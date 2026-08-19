@@ -1247,6 +1247,7 @@ impl Funcdata {
             .get_scope_local()
             .and_then(|lm| lm.query_container_for_link(&addr, &sb_usepoint));
         let info_is_global = local_hit.is_none();
+        let local_sid = local_hit.as_ref().map(|i| i.symbol);
         let resolved: Option<(String, int4, Option<Rc<Datatype>>, bool)> = match local_hit {
             Some(i) => Some((i.display_name, i.sym_off, i.sym_type, i.is_name_undefined)),
             None => {
@@ -1295,6 +1296,18 @@ impl Funcdata {
             // A reference resolved through the global scope is not a local symbol;
             // mark it so the printer's local decl loop renders it by name only.
             h.set_kuna_global(info_is_global);
+            // C++ `Varnode::setSymbolReference` (varnode.cc:465) →
+            // `HighVariable::setSymbolReference(entry->getSymbol(), off)`: the
+            // SYMBOL IDENTITY travels with the name/offset/type this bind just
+            // copied.  kuna dropped it, which left the `<vardecl symref>` of a
+            // stack aggregate materialized only through `&sym` — its whole high
+            // is the constant PTRSUB operand, so no addr-tied instance exists to
+            // re-derive a container from — with no resolvable id.  Local scope
+            // only: a global reference's Symbol is not in the `LocalSymbolMap`
+            // the wire id must key into.
+            if let Some(sid) = local_sid {
+                h.set_kuna_ref_symbol(sid);
+            }
         }
         true
     }

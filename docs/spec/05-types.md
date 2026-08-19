@@ -151,6 +151,34 @@ vendored cspecs carry no `<data_organization>` element whatsoever — every
 PowerPC 32-bit one among them — so the fallbacks are the common case, not the
 exception.
 
+**The wire marshal.** Types cross the ghidra-mode wire in both directions.
+Inbound, registerProgram's `<coretypes>` and per-miss getDataType answers
+decode through `decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(decode_core_types, decode_type, find_by_id_or_remote)`. Outbound — the
+Phase-4 `decompileAt` response — every type reference marshals through the
+`Datatype::encodeRef` port (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(Datatype::encode_ref)`): a type with a nonzero id (and non-void metatype)
+travels as the compact `<typeref name id>` — a variable-length base emits the
+size-independent id (`Datatype::hash_size` is reversible, and both
+`get_unsized_id` and `has_same_variable_base` now complete through it) plus
+the instance size — and Java's `PcodeDataTypeManager.decodeDataType` resolves
+the (name,id) pair, which for wire-delivered types originally CAME from Java,
+so the echo is exact by construction. An id-less type (a derived
+pointer/array, an invented unknown) travels as the full `<type>` form
+(`Datatype::encode`): `encode_basic` writes name/unsized-id/size/metatype
+plus the alignment (composites), core/varlength/opaquestring flags and the
+display format, and each `DatatypeKind` arm reproduces its C++ subclass
+override — pointer/array descend ONE level by reference, struct interleaves
+`TypeField::encode`/`TypeBitField::encode` by byte offset, enum re-spells its
+metatype `enum_int`/`enum_uint` with one `<val>` child per name, a typedef
+collapses to `<def name id>` + the referent's reference, and `PointerRel`
+encodes its pointed-to type in FULL (the one place the C++ does) plus the
+parent by reference and the `<off>` child. The differential guard is the
+decode side itself: `wire_encode_roundtrips_through_decode_type` (same file's
+tests) asserts that whatever `encode_ref` emits, `decode_type` resolves back
+to the *identical interned `Rc`* — the same intern-equality contract §5.1's
+factory provides in-process.
+
 ## 5.2 Inference
 
 Type recovery is **off** for the entire first `fullloop` iteration — early

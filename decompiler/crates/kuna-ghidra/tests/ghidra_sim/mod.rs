@@ -77,8 +77,142 @@ pub const ELEM_VARIABLE_ID: u32 = 26;
 pub const ELEM_FIELD_ID: u32 = 49;
 /// `<type>` (type.cc vocabulary) → Java ClangTypeToken.
 pub const ELEM_TYPE_ID: u32 = 60;
+/// `<vardecl>` (prettyprint.rs) → Java ClangVariableDecl, whose `symref` MUST
+/// resolve in the decoded LocalSymbolMap or declaration-line rename/retype is
+/// dead (and Java logs "Invalid symbol reference" per declaration).
+pub const ELEM_VARDECL_ID: u32 = 25;
 /// `ClangToken.CONST_COLOR` (== `SyntaxHighlight::ConstColor`).
 pub const CONST_COLOR: u64 = 5;
+
+// --- Phase-4 first-`<function>` vocabulary (upstream numbers) --------------
+/// `<addr>` (address.rs).
+pub const ELEM_ADDR_ID: u32 = 11;
+/// `<localdb>` (database.cc vocabulary).
+pub const ELEM_LOCALDB_ID: u32 = 228;
+/// `<scope>`.
+pub const ELEM_SCOPE_ID: u32 = 80;
+/// `<parent>`.
+pub const ELEM_PARENT_ID: u32 = 77;
+/// `<rangelist>`.
+pub const ELEM_RANGELIST_ID: u32 = 13;
+/// `<symbollist>`.
+pub const ELEM_SYMBOLLIST_ID: u32 = 81;
+/// `<mapsym>`.
+pub const ELEM_MAPSYM_ID: u32 = 76;
+/// `<symbol>`.
+pub const ELEM_SYMBOL_ID: u32 = 6;
+/// `<equatesymbol>`.
+pub const ELEM_EQUATESYMBOL_ID: u32 = 69;
+/// `<hash>` (a dynamic SymbolEntry).
+pub const ELEM_HASH_ID: u32 = 73;
+/// `<highlist>` (funcdata.cc vocabulary).
+pub const ELEM_HIGHLIST_ID: u32 = 117;
+/// `<high>` (variable.cc vocabulary).
+pub const ELEM_HIGH_ID: u32 = 82;
+/// `<jumptablelist>`.
+pub const ELEM_JUMPTABLELIST_ID: u32 = 118;
+/// `<jumptable>`.
+pub const ELEM_JUMPTABLE_ID: u32 = 213;
+/// `<dest>` (one switch case target).
+pub const ELEM_DEST_ID: u32 = 212;
+/// `<loadtable>` (jumpload-collected memory reads).
+pub const ELEM_LOADTABLE_ID: u32 = 214;
+/// `<prototype>` (fspec.cc vocabulary).
+pub const ELEM_PROTOTYPE_ID: u32 = 169;
+/// `<returnsym>`.
+pub const ELEM_RETURNSYM_ID: u32 = 172;
+/// `<typeref>` (type.cc vocabulary).
+pub const ELEM_TYPEREF_ID: u32 = 63;
+/// `<def>` (a typedef).
+pub const ELEM_DEF_ID: u32 = 43;
+/// `<void>`.
+pub const ELEM_VOID_ID: u32 = 10;
+/// `<override>` (Java-skipped).
+pub const ELEM_OVERRIDE_ID: u32 = 223;
+/// `<parammeasures>` (paramid.cc vocabulary).
+pub const ELEM_PARAMMEASURES_ID: u32 = 106;
+/// `<rank>` — REQUIRED per measure (ParamMeasure.decode throws).
+pub const ELEM_RANK_ID: u32 = 108;
+/// `<input>` / `<output>` measure wrappers.
+pub const ELEM_INPUT_ID: u32 = 2;
+pub const ELEM_OUTPUT_ID: u32 = 4;
+/// symbol/scope `id` attribute.
+pub const ATTRIB_ID_ID: u32 = 9;
+/// symbol `cat` (signed; -1 none, 0 parameter).
+pub const ATTRIB_CAT_ID: u32 = 61;
+/// symbol `index` (the parameter slot).
+pub const ATTRIB_INDEX_ID: u32 = 10;
+/// high `class`.
+pub const ATTRIB_CLASS_ID: u32 = 66;
+/// high `repref`.
+pub const ATTRIB_REPREF_ID: u32 = 67;
+/// high/vardecl `symref`.
+pub const ATTRIB_SYMREF_ID: u32 = 68;
+/// prototype `model`.
+pub const ATTRIB_MODEL_ID: u32 = 13;
+/// prototype `extrapop`.
+pub const ATTRIB_EXTRAPOP_ID: u32 = 6;
+/// `Symbol::ID_BASE` — the internal symbol-id range marker (top byte 0x40).
+pub const SYMBOL_ID_BASE_TOP: u64 = 0x40;
+/// range `first` attribute (address.rs).
+pub const ATTRIB_FIRST_ID: u32 = 27;
+
+/// One decoded `<localdb>` `<mapsym>` (what `HighSymbol.decodeMapSym` sees).
+#[derive(Debug)]
+pub struct SimSymbol {
+    /// `<symbol id>` — MUST be nonzero (`HighSymbol.decodeHeader` throws).
+    pub id: u64,
+    /// `cat` (-1 none, 0 parameter).
+    pub cat: i64,
+    /// `index` when cat >= 0.
+    pub index: Option<u64>,
+    /// The symbol's name.
+    pub name: String,
+    /// Number of SymbolEntry pairs — MUST be >= 1 (`insertSymbol` NPEs on 0).
+    pub entries: usize,
+    /// Whether every entry carried its uselimit `<rangelist>`.
+    pub entries_have_rangelists: bool,
+    /// The `<symbol>` body carried a type child (`<type>`/`<typeref>`/`<def>`).
+    pub has_type: bool,
+    /// The type child's `size` attribute (Java derives the SymbolEntry size
+    /// from the data-type; the `<addr>` itself is unsized, database.cc:196).
+    /// A `<typeref>` carries no size unless variable-length — see `type_name`.
+    pub type_size: Option<i64>,
+    /// The type child's `name` attribute.
+    pub type_name: Option<String>,
+    /// The symbol's data-type body was `<void/>` — a 0-sized type, which
+    /// `MappedEntry.decode` rejects.
+    pub type_is_void: bool,
+    /// The first mapped entry's storage `(space name, offset)`.
+    pub entry_storage: Option<(String, u64)>,
+    /// The first entry's uselimit start (`<range first>`), when non-empty.
+    pub first_use: Option<u64>,
+    /// The `<hash val>` of a DYNAMIC entry (0 = mapped storage).
+    pub hash: u64,
+}
+
+/// One decoded `<high>` (what `HighFunction.decodeHigh` sees).
+#[derive(Debug)]
+pub struct SimHigh {
+    /// `class` — REQUIRED, one of other/global/constant/param/local.
+    pub class: String,
+    /// `repref` — must resolve in the `<ast>` (decodeInstances throws).
+    pub repref: Option<u64>,
+    /// `symref` — REQUIRED for local/param (HighLocal.decode throws).
+    pub symref: Option<u64>,
+}
+
+/// The decoded `<prototype>` header (what `FunctionPrototype.decodePrototype`
+/// requires).
+#[derive(Debug)]
+pub struct SimProto {
+    /// `model` attribute value.
+    pub model: String,
+    /// `extrapop` attribute present (int or "unknown").
+    pub has_extrapop: bool,
+    /// `<returnsym>` with an `<addr>` first child then a data-type child.
+    pub returnsym_ok: bool,
+}
 
 /// The 19 legal callback-query command element ids (ids.rs 239..=257).
 pub const QUERY_COMMAND_IDS: std::ops::RangeInclusive<u32> = 239..=257;
@@ -529,11 +663,42 @@ pub struct ParsedDoc {
     /// `unsigned_long__`).  Zero once the markup emitter splits declarators
     /// into base-type + syntax tokens (PR-C).
     pub mangled_tokens: usize,
+    // --- Phase-4 first-<function> children ---------------------------------
+    /// The `<function>` child element ids in stream order (the Java decode is
+    /// order-sensitive: localdb before highlist, ast before highlist).
+    pub function_child_ids: Vec<u32>,
+    /// `<localdb>` present, with the decoded `<mapsym>` symbols.
+    pub localdb: Option<Vec<SimSymbol>>,
+    /// The `<scope>`'s first two child element ids (POSITIONALLY parent +
+    /// rangelist — `LocalSymbolMap.decodeScope` skips them blind).
+    pub scope_prefix: Vec<u32>,
+    /// `<highlist>` present, with the decoded `<high>` headers.
+    pub highlist: Option<Vec<SimHigh>>,
+    /// `<prototype>` header when present.
+    pub prototype: Option<SimProto>,
+    /// Per `<jumptable>`: (dest count, loadtable count).
+    pub jumptables: Vec<(usize, usize)>,
+    /// `<parammeasures>` when present: per-measure (is_input, has_rank).
+    pub parammeasures: Option<Vec<(bool, bool)>>,
+    /// Whether the first `<function>` was present at all (a parammeasures-only
+    /// paramid doc has none).
+    pub has_function: bool,
+    /// Every `<vardecl symref>` in the markup — each SHOULD resolve against
+    /// the `<localdb>` ids (Java `ClangVariableDecl.decode` →
+    /// `pfactory.getSymbol(symref)`); an unresolvable one leaves
+    /// rename/retype dead on that declaration line and logs once per
+    /// decompile.
+    pub vardecl_symrefs: BTreeSet<u64>,
+    /// How many of them do NOT resolve (the create-index fallback) — pinned,
+    /// so the systemic case stays fixed and the residue can only shrink.
+    pub vardecl_symref_unresolved: usize,
 }
 
-/// Decode a `decompileAt` `<doc>` payload: the first `<function>`'s name/entry
-/// echo + `<ast>` refs, and the second (markup) `<function>` flattened to C
-/// with its opref/varref sets.
+/// Decode a `decompileAt` `<doc>` payload: an optional `<parammeasures>`, the
+/// first `<function>` (name/entry echo, `<ast>` refs, and the Phase-4
+/// `<localdb>`/`<highlist>`/`<prototype>`/`<jumptablelist>` children), and the
+/// second (markup) `<function>` flattened to C with its opref/varref sets —
+/// dispatching exactly like `DecompileResults.decodeStream`.
 pub fn parse_decompile_doc(doc: &[u8], manager: &AddrSpaceManager) -> ParsedDoc {
     let mut parsed = ParsedDoc::default();
     let mut dec = PackedDecode::new(manager);
@@ -541,16 +706,53 @@ pub fn parse_decompile_doc(doc: &[u8], manager: &AddrSpaceManager) -> ParsedDoc 
     let did = dec.open_element().expect("open <doc>");
     assert_eq!(did, ELEM_DOC.get_id(), "root is not <doc>");
 
-    // --- the first <function>: the Funcdata::encode <function>/<ast> ---
-    let fid = dec.open_element().expect("open <function>");
-    assert_eq!(fid, ELEM_FUNCTION_ID, "first child of <doc> is not <function>");
+    loop {
+        let c = dec.peek_element().expect("peek <doc> child");
+        if c == 0 {
+            break;
+        }
+        if c == ELEM_PARAMMEASURES_ID {
+            let pid = dec.open_element().expect("open <parammeasures>");
+            parse_parammeasures(&mut dec, &mut parsed);
+            dec.close_element(pid).expect("close <parammeasures>");
+        } else if c == ELEM_FUNCTION_ID && !parsed.has_function {
+            let fid = dec.open_element().expect("open <function>");
+            parsed.has_function = true;
+            parse_first_function(&mut dec, &mut parsed);
+            dec.close_element(fid).expect("close <function>");
+        } else if c == ELEM_FUNCTION_ID {
+            // --- the second <function>: the Clang token markup ---
+            parsed.has_markup = true;
+            let mid = dec.open_element().expect("open markup <function>");
+            let mut refs = BTreeMap::new();
+            let mut ctext = String::new();
+            let mut mangled = 0usize;
+            flatten_markup(&mut dec, mid, &mut ctext, &mut refs, &mut mangled)
+                .expect("flatten markup <function>");
+            dec.close_element(mid).expect("close markup <function>");
+            parsed.markup_oprefs = refs.get(&ATTRIB_OPREF_ID).cloned().unwrap_or_default();
+            parsed.markup_varrefs = refs.get(&ATTRIB_VARREF_ID).cloned().unwrap_or_default();
+            parsed.vardecl_symrefs = refs.get(&ATTRIB_SYMREF_ID).cloned().unwrap_or_default();
+            parsed.c_text = ctext;
+            parsed.mangled_tokens = mangled;
+        } else {
+            // Java: "Unknown decompiler tag" — the whole result is discarded.
+            panic!("unknown <doc> child element id {c}");
+        }
+    }
+    dec.close_element(did).expect("close <doc>");
+    parsed
+}
+
+/// The first `<function>`: name/entry + the child walk (opened by the caller).
+fn parse_first_function(dec: &mut PackedDecode, parsed: &mut ParsedDoc) {
     parsed.name = String::from_utf8_lossy(
         &dec.read_string_id(&ATTRIB_NAME).expect("<function name>"),
     )
     .into_owned();
     // The base address is the first child element.
     if dec.peek_element().expect("peek in <function>") == ELEM_ADDR.get_id() {
-        let addr = Address::decode(&mut dec).expect("<function> base <addr>");
+        let addr = Address::decode(dec).expect("<function> base <addr>");
         parsed.entry_offset = Some(addr.get_offset());
     }
     // Walk the remaining children selectively: inside `<ast>`, varnode
@@ -562,8 +764,9 @@ pub fn parse_decompile_doc(doc: &[u8], manager: &AddrSpaceManager) -> ParsedDoc 
             break;
         }
         let cid = dec.open_element().expect("open <function> child");
+        parsed.function_child_ids.push(cid);
         if cid == ELEM_AST_ID {
-            skip_attributes(&mut dec).expect("<ast> attributes");
+            skip_attributes(dec).expect("<ast> attributes");
             loop {
                 let a = dec.peek_element().expect("peek <ast> child");
                 if a == 0 {
@@ -572,44 +775,492 @@ pub fn parse_decompile_doc(doc: &[u8], manager: &AddrSpaceManager) -> ParsedDoc 
                 let aid = dec.open_element().expect("open <ast> child");
                 let mut got = BTreeMap::new();
                 if aid == ELEM_VARNODES_ID {
-                    walk(&mut dec, &[ATTRIB_REF_ID], &mut got).expect("walk <varnodes>");
+                    walk(dec, &[ATTRIB_REF_ID], &mut got).expect("walk <varnodes>");
                     parsed
                         .ast_var_refs
                         .extend(got.get(&ATTRIB_REF_ID).cloned().unwrap_or_default());
                 } else {
-                    walk(&mut dec, &[ATTRIB_UNIQ_ID], &mut got).expect("walk <ast> child");
+                    walk(dec, &[ATTRIB_UNIQ_ID], &mut got).expect("walk <ast> child");
                     parsed
                         .ast_op_times
                         .extend(got.get(&ATTRIB_UNIQ_ID).cloned().unwrap_or_default());
                 }
                 dec.close_element(aid).expect("close <ast> child");
             }
-        } else {
-            // Some other (future: localdb/prototype/…) child: skip through.
+        } else if cid == ELEM_LOCALDB_ID {
+            parse_localdb(dec, parsed);
+        } else if cid == ELEM_HIGHLIST_ID {
+            parse_highlist(dec, parsed);
+        } else if cid == ELEM_PROTOTYPE_ID {
+            parse_prototype(dec, parsed);
+        } else if cid == ELEM_JUMPTABLELIST_ID {
+            parse_jumptablelist(dec, parsed);
+        } else if cid == ELEM_OVERRIDE_ID || cid == ELEM_SCOPE_ID {
+            // Java skips both.
             let mut sink = BTreeMap::new();
-            walk(&mut dec, &[], &mut sink).expect("walk <function> child");
+            walk(dec, &[], &mut sink).expect("walk skipped <function> child");
+        } else {
+            // HighFunction.decode: "Unknown element in function" — hard throw.
+            panic!("unknown <function> child element id {cid}");
         }
         dec.close_element(cid).expect("close <function> child");
     }
-    dec.close_element(fid).expect("close <function>");
+}
 
-    // --- the second <function>: the Clang token markup ---
-    if dec.peek_element().expect("peek after <function>") == ELEM_FUNCTION_ID {
-        parsed.has_markup = true;
-        let mid = dec.open_element().expect("open markup <function>");
-        let mut refs = BTreeMap::new();
-        let mut c = String::new();
-        let mut mangled = 0usize;
-        flatten_markup(&mut dec, mid, &mut c, &mut refs, &mut mangled)
-            .expect("flatten markup <function>");
-        dec.close_element(mid).expect("close markup <function>");
-        parsed.markup_oprefs = refs.get(&ATTRIB_OPREF_ID).cloned().unwrap_or_default();
-        parsed.markup_varrefs = refs.get(&ATTRIB_VARREF_ID).cloned().unwrap_or_default();
-        parsed.c_text = c;
-        parsed.mangled_tokens = mangled;
+/// `<localdb>` (opened): `<scope>` whose first two children are positionally
+/// `<parent>` + `<rangelist>`, then `<symbollist>` of `<mapsym>`s.
+fn parse_localdb(dec: &mut PackedDecode, parsed: &mut ParsedDoc) {
+    skip_attributes(dec).expect("<localdb> attributes");
+    let mut symbols: Vec<SimSymbol> = Vec::new();
+    while dec.peek_element().expect("peek <localdb> child") != 0 {
+        let sid = dec.open_element().expect("open <localdb> child");
+        if sid != ELEM_SCOPE_ID {
+            let mut sink = BTreeMap::new();
+            walk(dec, &[], &mut sink).expect("walk non-scope localdb child");
+            dec.close_element(sid).expect("close non-scope localdb child");
+            continue;
+        }
+        skip_attributes(dec).expect("<scope> attributes");
+        // Record the first two child element ids (the blind positional skip).
+        let mut child_pos = 0usize;
+        while dec.peek_element().expect("peek <scope> child") != 0 {
+            let cid = dec.open_element().expect("open <scope> child");
+            if child_pos < 2 {
+                parsed.scope_prefix.push(cid);
+            }
+            child_pos += 1;
+            if cid == ELEM_SYMBOLLIST_ID {
+                while dec.peek_element().expect("peek <symbollist> child") != 0 {
+                    let ms = dec.open_element().expect("open <mapsym>");
+                    assert_eq!(ms, ELEM_MAPSYM_ID, "<symbollist> child is not <mapsym>");
+                    symbols.push(parse_mapsym(dec));
+                    dec.close_element(ms).expect("close <mapsym>");
+                }
+            } else {
+                let mut sink = BTreeMap::new();
+                walk(dec, &[], &mut sink).expect("walk <scope> child");
+            }
+            dec.close_element(cid).expect("close <scope> child");
+        }
+        dec.close_element(sid).expect("close <scope>");
     }
-    dec.close_element(did).expect("close <doc>");
+    parsed.localdb = Some(symbols);
+}
+
+/// One `<mapsym>` (opened): the `<symbol>`/`<equatesymbol>` header + the
+/// SymbolEntry pairs ((`<addr>`|`<hash>`) + `<rangelist>`).
+fn parse_mapsym(dec: &mut PackedDecode) -> SimSymbol {
+    skip_attributes(dec).expect("<mapsym> attributes");
+    let mut sym = SimSymbol {
+        id: 0,
+        cat: -1,
+        index: None,
+        name: String::new(),
+        entries: 0,
+        entries_have_rangelists: true,
+        has_type: false,
+        type_size: None,
+        type_name: None,
+        type_is_void: false,
+        entry_storage: None,
+        first_use: None,
+        hash: 0,
+    };
+    let mut pending_entry_needs_rangelist = false;
+    while dec.peek_element().expect("peek <mapsym> child") != 0 {
+        let cid = dec.open_element().expect("open <mapsym> child");
+        if cid == ELEM_SYMBOL_ID || cid == ELEM_EQUATESYMBOL_ID {
+            loop {
+                let aid = dec.get_next_attribute_id().expect("symbol attr");
+                if aid == 0 {
+                    break;
+                }
+                if aid == ATTRIB_ID_ID {
+                    sym.id = dec.read_unsigned_integer().expect("symbol id");
+                } else if aid == ATTRIB_CAT_ID {
+                    sym.cat = dec.read_signed_integer().expect("symbol cat");
+                } else if aid == ATTRIB_INDEX_ID {
+                    sym.index = Some(dec.read_unsigned_integer().expect("symbol index"));
+                } else if aid == ATTRIB_NAME.get_id() {
+                    sym.name = String::from_utf8_lossy(
+                        &dec.read_string().expect("symbol name"),
+                    )
+                    .into_owned();
+                }
+            }
+            // Body: the data-type child (plus <value> for an equate).
+            while dec.peek_element().expect("peek <symbol> child") != 0 {
+                let b = dec.open_element().expect("open <symbol> body child");
+                if b == ELEM_TYPE_ID || b == ELEM_TYPEREF_ID || b == ELEM_DEF_ID
+                    || b == ELEM_VOID_ID
+                {
+                    sym.has_type = true;
+                    if b == ELEM_VOID_ID {
+                        sym.type_is_void = true;
+                    }
+                    if b == ELEM_TYPE_ID || b == ELEM_TYPEREF_ID {
+                        loop {
+                            let aid = dec.get_next_attribute_id().expect("type attr");
+                            if aid == 0 {
+                                break;
+                            }
+                            if aid == kuna_base::marshal::ATTRIB_SIZE.get_id() {
+                                sym.type_size =
+                                    Some(dec.read_signed_integer().expect("type size"));
+                            } else if aid == ATTRIB_NAME.get_id() {
+                                sym.type_name = Some(
+                                    String::from_utf8_lossy(
+                                        &dec.read_string().expect("type name"),
+                                    )
+                                    .into_owned(),
+                                );
+                            }
+                        }
+                    }
+                }
+                let mut sink = BTreeMap::new();
+                walk(dec, &[], &mut sink).expect("walk <symbol> body child");
+                dec.close_element(b).expect("close <symbol> body child");
+            }
+        } else if cid == ELEM_ADDR_ID || cid == ELEM_HASH_ID {
+            sym.entries += 1;
+            if cid == ELEM_HASH_ID && sym.hash == 0 {
+                sym.hash = dec
+                    .read_unsigned_integer_id(&kuna_base::marshal::ATTRIB_VAL)
+                    .unwrap_or(0);
+            }
+            if pending_entry_needs_rangelist {
+                sym.entries_have_rangelists = false; // previous entry had none
+            }
+            pending_entry_needs_rangelist = true;
+            if cid == ELEM_ADDR_ID && sym.entry_storage.is_none() {
+                // Capture (space, offset) of the first mapped entry (the
+                // <addr> is unsized; the size comes from the type child).
+                let (mut spc, mut off) = (None, 0u64);
+                loop {
+                    let aid = dec.get_next_attribute_id().expect("entry attr");
+                    if aid == 0 {
+                        break;
+                    }
+                    if aid == kuna_base::marshal::ATTRIB_SPACE.get_id() {
+                        spc = dec.read_space().ok();
+                    } else if aid == kuna_base::marshal::ATTRIB_OFFSET.get_id() {
+                        off = dec.read_unsigned_integer().expect("entry offset");
+                    }
+                }
+                if let Some(s) = spc {
+                    sym.entry_storage = Some((s.get_name().to_string(), off));
+                }
+            }
+            let mut sink = BTreeMap::new();
+            walk(dec, &[], &mut sink).expect("walk entry");
+        } else if cid == ELEM_RANGELIST_ID {
+            pending_entry_needs_rangelist = false;
+            if sym.first_use.is_none() {
+                let mut got = BTreeMap::new();
+                walk(dec, &[ATTRIB_FIRST_ID], &mut got).expect("walk entry rangelist");
+                sym.first_use =
+                    got.get(&ATTRIB_FIRST_ID).and_then(|s| s.iter().next().copied());
+            } else {
+                let mut sink = BTreeMap::new();
+                walk(dec, &[], &mut sink).expect("walk entry rangelist");
+            }
+        } else {
+            let mut sink = BTreeMap::new();
+            walk(dec, &[], &mut sink).expect("walk unknown mapsym child");
+        }
+        dec.close_element(cid).expect("close <mapsym> child");
+    }
+    if pending_entry_needs_rangelist {
+        sym.entries_have_rangelists = false;
+    }
+    sym
+}
+
+/// `<highlist>` (opened): the `<high>` headers.
+fn parse_highlist(dec: &mut PackedDecode, parsed: &mut ParsedDoc) {
+    skip_attributes(dec).expect("<highlist> attributes");
+    let mut highs: Vec<SimHigh> = Vec::new();
+    while dec.peek_element().expect("peek <highlist> child") != 0 {
+        let hid = dec.open_element().expect("open <high>");
+        assert_eq!(hid, ELEM_HIGH_ID, "<highlist> child is not <high>");
+        let mut h = SimHigh { class: String::new(), repref: None, symref: None };
+        loop {
+            let aid = dec.get_next_attribute_id().expect("high attr");
+            if aid == 0 {
+                break;
+            }
+            if aid == ATTRIB_CLASS_ID {
+                h.class = String::from_utf8_lossy(&dec.read_string().expect("high class"))
+                    .into_owned();
+            } else if aid == ATTRIB_REPREF_ID {
+                h.repref = Some(dec.read_unsigned_integer().expect("high repref"));
+            } else if aid == ATTRIB_SYMREF_ID {
+                h.symref = Some(dec.read_unsigned_integer().expect("high symref"));
+            }
+        }
+        let mut sink = BTreeMap::new();
+        walk(dec, &[], &mut sink).expect("walk <high> children");
+        dec.close_element(hid).expect("close <high>");
+        highs.push(h);
+    }
+    parsed.highlist = Some(highs);
+}
+
+/// `<prototype>` (opened): the model/extrapop header + the `<returnsym>`.
+fn parse_prototype(dec: &mut PackedDecode, parsed: &mut ParsedDoc) {
+    let mut proto = SimProto { model: String::new(), has_extrapop: false, returnsym_ok: false };
+    loop {
+        let aid = dec.get_next_attribute_id().expect("prototype attr");
+        if aid == 0 {
+            break;
+        }
+        if aid == ATTRIB_MODEL_ID {
+            proto.model =
+                String::from_utf8_lossy(&dec.read_string().expect("prototype model")).into_owned();
+        } else if aid == ATTRIB_EXTRAPOP_ID {
+            proto.has_extrapop = true;
+        }
+    }
+    while dec.peek_element().expect("peek <prototype> child") != 0 {
+        let cid = dec.open_element().expect("open <prototype> child");
+        if cid == ELEM_RETURNSYM_ID {
+            // FunctionPrototype.decodePrototype: <addr> first child, then a
+            // data-type child.
+            skip_attributes(dec).expect("<returnsym> attributes");
+            let mut saw_addr = false;
+            let mut saw_type = false;
+            let mut first = true;
+            while dec.peek_element().expect("peek <returnsym> child") != 0 {
+                let b = dec.open_element().expect("open <returnsym> child");
+                if first {
+                    saw_addr = b == ELEM_ADDR_ID;
+                    first = false;
+                } else if b == ELEM_TYPE_ID
+                    || b == ELEM_TYPEREF_ID
+                    || b == ELEM_DEF_ID
+                    || b == ELEM_VOID_ID
+                {
+                    saw_type = true;
+                }
+                let mut sink = BTreeMap::new();
+                walk(dec, &[], &mut sink).expect("walk <returnsym> child");
+                dec.close_element(b).expect("close <returnsym> child");
+            }
+            proto.returnsym_ok = saw_addr && saw_type;
+        } else {
+            // Effect lists / likelytrash / inject / internallist: Java skips.
+            let mut sink = BTreeMap::new();
+            walk(dec, &[], &mut sink).expect("walk <prototype> child");
+        }
+        dec.close_element(cid).expect("close <prototype> child");
+    }
+    parsed.prototype = Some(proto);
+}
+
+/// `<jumptablelist>` (opened): per `<jumptable>` the dest/loadtable counts.
+fn parse_jumptablelist(dec: &mut PackedDecode, parsed: &mut ParsedDoc) {
+    skip_attributes(dec).expect("<jumptablelist> attributes");
+    while dec.peek_element().expect("peek <jumptablelist> child") != 0 {
+        let jid = dec.open_element().expect("open <jumptable>");
+        assert_eq!(jid, ELEM_JUMPTABLE_ID, "<jumptablelist> child is not <jumptable>");
+        skip_attributes(dec).expect("<jumptable> attributes");
+        let mut dests = 0usize;
+        let mut loads = 0usize;
+        while dec.peek_element().expect("peek <jumptable> child") != 0 {
+            let cid = dec.open_element().expect("open <jumptable> child");
+            if cid == ELEM_DEST_ID {
+                dests += 1;
+            } else if cid == ELEM_LOADTABLE_ID {
+                loads += 1;
+            }
+            let mut sink = BTreeMap::new();
+            walk(dec, &[], &mut sink).expect("walk <jumptable> child");
+            dec.close_element(cid).expect("close <jumptable> child");
+        }
+        parsed.jumptables.push((dests, loads));
+        dec.close_element(jid).expect("close <jumptable>");
+    }
+}
+
+/// `<parammeasures>` (opened): per input/output measure, whether the REQUIRED
+/// `<rank>` child is present.
+fn parse_parammeasures(dec: &mut PackedDecode, parsed: &mut ParsedDoc) {
+    skip_attributes(dec).expect("<parammeasures> attributes");
+    let mut measures: Vec<(bool, bool)> = Vec::new();
+    while dec.peek_element().expect("peek <parammeasures> child") != 0 {
+        let cid = dec.open_element().expect("open <parammeasures> child");
+        if cid == ELEM_INPUT_ID || cid == ELEM_OUTPUT_ID {
+            let is_input = cid == ELEM_INPUT_ID;
+            skip_attributes(dec).expect("measure attributes");
+            let mut has_rank = false;
+            while dec.peek_element().expect("peek measure child") != 0 {
+                let b = dec.open_element().expect("open measure child");
+                if b == ELEM_RANK_ID {
+                    has_rank = true;
+                }
+                let mut sink = BTreeMap::new();
+                walk(dec, &[], &mut sink).expect("walk measure child");
+                dec.close_element(b).expect("close measure child");
+            }
+            measures.push((is_input, has_rank));
+        } else {
+            // <addr> / <proto>.
+            let mut sink = BTreeMap::new();
+            walk(dec, &[], &mut sink).expect("walk <parammeasures> child");
+        }
+        dec.close_element(cid).expect("close <parammeasures> child");
+    }
+    parsed.parammeasures = Some(measures);
+}
+
+/// Count `<vardecl symref>`s that do NOT resolve against the document's own
+/// `<localdb>` ids (the create-index fallback for a declaration whose high the
+/// analysis left symbol-less).
+pub fn vardecl_unresolved(parsed: &ParsedDoc) -> usize {
+    let ids: BTreeSet<u64> = parsed
+        .localdb
+        .as_ref()
+        .map(|syms| syms.iter().map(|s| s.id).collect())
+        .unwrap_or_default();
     parsed
+        .vardecl_symrefs
+        .iter()
+        .filter(|sr| !ids.contains(*sr))
+        .count()
+}
+
+/// The Phase-4 Java hard-throw traps (r5 §3), asserted the way the Java
+/// consumers would fail: one violation would discard the WHOLE decompile
+/// result in the GUI.
+pub fn assert_phase4_traps(parsed: &ParsedDoc, label: &str) {
+    let _ = &parsed.vardecl_symref_unresolved;
+    // Child order: localdb before highlist, ast before highlist.
+    let pos = |id: u32| parsed.function_child_ids.iter().position(|&c| c == id);
+    if let Some(hpos) = pos(ELEM_HIGHLIST_ID) {
+        let lpos = pos(ELEM_LOCALDB_ID)
+            .unwrap_or_else(|| panic!("{label}: <highlist> present without <localdb>"));
+        assert!(lpos < hpos, "{label}: <localdb> must precede <highlist>");
+        let apos = pos(ELEM_AST_ID)
+            .unwrap_or_else(|| panic!("{label}: <highlist> present without <ast>"));
+        assert!(apos < hpos, "{label}: <ast> must precede <highlist>");
+    }
+    // The scope's first two children are positionally <parent> + <rangelist>.
+    if parsed.localdb.is_some() {
+        assert_eq!(
+            parsed.scope_prefix,
+            vec![ELEM_PARENT_ID, ELEM_RANGELIST_ID],
+            "{label}: <scope> must open with <parent> then <rangelist> \
+             (LocalSymbolMap.decodeScope skips both blind)"
+        );
+    }
+    // Symbols: nonzero ids, >=1 entry with rangelists, cat-0 carries an index,
+    // every symbol has a type child.
+    let mut localdb_ids: BTreeSet<u64> = BTreeSet::new();
+    if let Some(symbols) = &parsed.localdb {
+        for s in symbols {
+            assert_ne!(
+                s.id, 0,
+                "{label}: <symbol {}> id 0 — HighSymbol.decodeHeader throws",
+                s.name
+            );
+            assert!(
+                s.entries >= 1,
+                "{label}: <mapsym {}> has no SymbolEntry — insertSymbol NPEs",
+                s.name
+            );
+            assert!(
+                s.entries_have_rangelists,
+                "{label}: <mapsym {}> entry missing its uselimit <rangelist>",
+                s.name
+            );
+            assert!(s.has_type, "{label}: <symbol {}> carries no data-type child", s.name);
+            // r5 §3 trap 4: `MappedEntry.decode` throws
+            // "Invalid symbol 0-sized data-type" — a `<void/>` body or an
+            // explicit size 0 is exactly that shape.
+            assert!(
+                s.type_size.map(|sz| sz > 0).unwrap_or(true) && !s.type_is_void,
+                "{label}: <symbol {}> has a 0-sized data-type (MappedEntry.decode throws)",
+                s.name
+            );
+            if s.cat == 0 {
+                assert!(
+                    s.index.is_some(),
+                    "{label}: cat-0 <symbol {}> without an index — the param slot \
+                     sort (and the rename full-commit guard) needs it",
+                    s.name
+                );
+            }
+            localdb_ids.insert(s.id);
+        }
+    }
+    // Highs: legal class vocabulary; local/param symrefs resolve in the
+    // just-decoded localdb; reprefs resolve in the just-decoded ast.
+    if let Some(highs) = &parsed.highlist {
+        for h in highs {
+            assert!(
+                matches!(h.class.as_str(), "other" | "global" | "constant" | "param" | "local"),
+                "{label}: unknown <high> class '{}'",
+                h.class
+            );
+            let repref = h
+                .repref
+                .unwrap_or_else(|| panic!("{label}: <high> without repref"));
+            assert!(
+                parsed.ast_var_refs.contains(&repref),
+                "{label}: <high repref={repref}> not declared in <ast> varnodes \
+                 (decodeInstances throws)"
+            );
+            if h.class == "local" || h.class == "param" {
+                let symref = h.symref.unwrap_or_else(|| {
+                    panic!("{label}: <high class={}> without symref (HighLocal throws)", h.class)
+                });
+                assert!(
+                    localdb_ids.contains(&symref),
+                    "{label}: <high class={} symref={symref}> not present in <localdb> \
+                     — 'HighLocal is missing symbol'",
+                    h.class
+                );
+            }
+        }
+    }
+    // Every `<vardecl symref>` must resolve in the just-decoded `<localdb>`:
+    // an unresolvable one leaves declaration-line rename/retype dead and logs
+    // once per declaration per decompile.
+    if !parsed.vardecl_symrefs.is_empty() {
+        assert!(
+            !localdb_ids.is_empty(),
+            "{label}: declarations carry symrefs but the <localdb> has no symbols"
+        );
+        let resolved = parsed
+            .vardecl_symrefs
+            .iter()
+            .filter(|sr| localdb_ids.contains(*sr))
+            .count();
+        assert!(
+            resolved > 0,
+            "{label}: NO <vardecl symref> resolves against <localdb> — the \
+             declaration-line rename/retype contract is broken wholesale"
+        );
+    }
+    // Prototype: model + extrapop + returnsym(addr+type).
+    if let Some(p) = &parsed.prototype {
+        assert!(!p.model.is_empty(), "{label}: <prototype> without model");
+        assert!(p.has_extrapop, "{label}: <prototype> without extrapop");
+        assert!(
+            p.returnsym_ok,
+            "{label}: <returnsym> must carry <addr> first then a data-type child"
+        );
+    }
+    // Parammeasures: the <rank> child is REQUIRED per measure.
+    if let Some(measures) = &parsed.parammeasures {
+        for (i, (_is_input, has_rank)) in measures.iter().enumerate() {
+            assert!(
+                has_rank,
+                "{label}: parammeasures measure #{i} without <rank> (ParamMeasure.decode throws)"
+            );
+        }
+    }
 }
 
 /// Ordered flatten of the (already-opened) markup element: append every
@@ -635,6 +1286,11 @@ fn flatten_markup(
         let aid = dec.get_next_attribute_id()?;
         if aid == 0 {
             break;
+        }
+        if aid == ATTRIB_SYMREF_ID && elem_id == ELEM_VARDECL_ID {
+            let v = dec.read_unsigned_integer()?;
+            refs.entry(ATTRIB_SYMREF_ID).or_default().insert(v);
+            continue;
         }
         if aid == ATTRIB_CONTENT.get_id() {
             content = Some(String::from_utf8_lossy(&dec.read_string()?).into_owned());

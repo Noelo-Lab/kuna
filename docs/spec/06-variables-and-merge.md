@@ -443,6 +443,76 @@ stack pointer gets a `PTRSUB(sp, #0)` spliced in so the type system renders
 `&local` instead of the bare register (`funcdata_spacebase.rs
 (Funcdata::annotate_raw_stack_ptr)`).
 
+**Name recommendations.** A namelocked-but-NOT-typelocked local never
+survives restructure — `clearUnlockedCategory(-1)` removes every non-typelocked
+category-less symbol at the pass head — so its *name* survives separately: C++
+harvests such symbols into `ScopeLocal::nameRecommend` records and re-applies
+them at naming time (`recoverNameRecommendationsForSymbols`, varmap.cc:1050 —
+run at the top of `ActionNameVars::apply`).  The kuna port carries the record
+type (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(NameRecommend)`) with a list on the scope
+(`ScopeLocal::add_recommend_name`/`ScopeLocal::name_recommendations`) and
+applies it in the `ActionNameVars` port
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
+(recommended_name_for)`): a high whose name representative matches a record's
+storage + size wins the recommended name — the use-address selects the arm
+(invalid = address-tied whole, `entry-1` = a function input, else the defining
+write's address) — before both the container bind and the `vN` allocator.
+A variable whose storage is a HASH rather than an address needs the parallel
+list: C++ keeps `dynRecommend` and re-applies it through
+`DynamicHash::findVarnode` (varmap.cc:1557-1573).  kuna ports that too
+(`ScopeLocal::add_recommend_dynamic` /
+`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::kuna_apply_dynamic_recommendations)`): the recorded hash resolves
+back to its Varnode, and when that Varnode's high is still unnamed it takes the
+recommended name AND a dynamic Symbol carrying the same hash — so the
+re-encoded `<localdb>` hands Java a `<mapsym type="dynamic">` it resolves to
+the very variable the user renamed.  The hash is computed with the upstream
+budget of 8 because Java hardcodes the same (`DynamicHash.java:440`) and a hash
+the two sides disagree on cannot round-trip — deliberately NOT kuna's
+`dynamichashmax` option, whose value only has to satisfy kuna's own analysis.
+
+PLACEMENT is a real divergence.  Upstream runs the `dynRecommend` loop AFTER
+`linkSymbols`, so every high already carries `getSymbol()` and the loop merely
+RENAMES an existing Symbol under three guards (`sym == 0`, wrong scope,
+`!isNameUndefined`).  kuna's naming pass fuses linking with the `vN` default
+assignment into one location-ordered walk, leaving no "after linking, before
+defaults" point; the loop therefore runs FIRST and CREATES the dynamic Symbol.
+Because no high is named at that moment, the ported per-high guard is vacuous,
+so the equivalent guard is applied against the SCOPE instead: a hash landing on
+storage the walk is about to bind to a real Symbol — a `function_parameter`, or
+any Symbol that already has a defined name — is skipped.  Without it a stale or
+shape-shifted host hash could take a parameter's variable, and that high's
+`<high symref>` would stop pointing at the parameter.
+
+The lists' only producer today is ghidra-mode's host-`<localdb>` seeding (the
+GUI rename persistence loop, chapter [00](00-overview.md)); the standalone
+pipeline never adds a record, so both passes are structurally inert there.
+The C++ `collectNameRecs` harvest (standalone symbols → records) remains an
+unported follow-up.
+
+**The scope wire encode.** The whole local scope marshals out for the
+ghidra-mode `decompileAt` response as the `<localdb>` element
+(`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(ScopeLocal::encode)`, the varmap.cc:462 port): the `main=` stack space and
+`lock=` attributes, then the `<scope>` document
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+(Database::encode_scope)`) — the positional `<parent>` + `<rangelist>` pair
+(Java's `LocalSymbolMap.decodeScope` skips its first two scope children
+blind, so both are always written; the parentless private database writes its
+own id), then the `<symbollist>` of `<mapsym>`s in nametree order.  Each
+mapsym is `Symbol::encode` (header: name, the UNCONDITIONAL nonzero id, the
+lock/storage flag attributes, `cat` and — for a parameter — the slot `index`;
+body: the data-type reference) followed by its storage entries
+(`SymbolEntry::encode`: a `<hash>` for a dynamic entry, a plain `<addr>`
+otherwise, each with its uselimit `<rangelist>`; piece entries are skipped).
+Category-0 symbols with exact parameter storage are what the Java rename path
+compares against the database (`checkFullCommit`) — a mismatch would turn
+every rename into a whole-signature rewrite.  Symbols with no entry, no id,
+or a zero-sized type are skipped defensively (each is a Java-side hard throw
+that would discard the entire decompile result); none arises through the kuna
+creation paths.
+
 ## 6.3 Dynamic hashes
 
 A stack local is addressed by its offset, a register by its storage — but a
