@@ -17,5 +17,6 @@ pub mod kuna_dedupvardecls;
 pub mod kuna_truthycond;
 pub mod kuna_braceelide;
 pub mod kuna_warnstyle;
+pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;
