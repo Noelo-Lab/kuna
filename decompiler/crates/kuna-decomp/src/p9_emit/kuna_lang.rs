@@ -61,6 +61,13 @@ impl OutLang {
             OutLang::C => &LANG_C,
         }
     }
+
+    /// How this language spells a recovered type.
+    pub fn speller(self) -> &'static dyn crate::kuna_langtypes::TypeSpeller {
+        match self {
+            OutLang::C => &crate::kuna_langc::C_SPELLER,
+        }
+    }
 }
 
 /// What the emitter is **allowed** to produce in this language.

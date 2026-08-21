@@ -8027,102 +8027,23 @@ fn array_decl_parts(
     Some((type_name_for_decl(&base, rt), count))
 }
 
-/// The type name to render in a declaration (C++ `Datatype::getName`), with the
-/// Ghidra fallback for an unnamed type: a `TYPE_UNKNOWN` of size N (the W8
-/// un-inferred base, no real name) renders as `undefined<N>` (or `undefined` for
-/// size 1's anonymous form), and a `TYPE_VOID` renders as `void`.  The oracle's
-/// inferred names (e.g. `uint1`) need the W8 `ActionInferTypes`; this is the
-/// faithful unnamed-type rendering until then.
-/// Build the C-declarator front/back text bracketing an identifier for `ct`,
-/// transcribing the declarator algorithm of `PrintC::pushTypeStart` /
-/// `pushTypeEnd` (printc.cc:265/314) plus `buildTypeStack` (printc.cc:143).
+/// Build the declarator front/back text bracketing an identifier for `ct`.
 ///
-/// Returns `(front, back)` such that `<front><name><back>` is the full C
-/// declaration of an object named `name` of type `ct` — e.g.
-///   * `int8`              → `("int8", "")`             → `int8 a`
-///   * `twostruct *`       → `("twostruct *", "")`      → `twostruct *ptr`
-///   * `int4 (*)[1]`       → `("int4 (*", ")[1]")`      → `int4 (*a)[1]`
-///   * `char *`            → `("char *", "")`           → `char *pchar`
+/// Returns `(front, back)` such that `<front><name><back>` is the full
+/// declaration of an object named `name` of type `ct` -- e.g. in C
+///   * `int8`              -> `("int8", "")`             -> `int8 a`
+///   * `twostruct *`       -> `("twostruct *", "")`      -> `twostruct *ptr`
+///   * `int4 (*)[1]`       -> `("int4 (*", ")[1]")`      -> `int4 (*a)[1]`
 ///
-/// The stack is built base-up exactly as `buildTypeStack`; pointer modifiers go
-/// on the front (`*`), array/function modifiers on the tail (`[N]`/`(...)`), and
-/// a `*` front nested inside an array/function tail is parenthesised — the
-/// precedence the RPN `ptr_expr`/`array_expr` tokens encode.
+/// The C body -- the transcription of `PrintC::pushTypeStart`/`pushTypeEnd`
+/// (printc.cc:265/314) plus `buildTypeStack` (printc.cc:143) -- moved to
+/// `CSpeller::declarator` (`p9_emit/kuna_langc.rs`) when the output-language seam
+/// landed. A language whose types are pure prefixes returns an empty `back`.
 pub(crate) fn declarator_parts(
     ct: &std::rc::Rc<crate::dtype::Datatype>,
     rt: RealTypeCtx,
 ) -> (String, String) {
-    use crate::dtype::type_metatype;
-    // buildTypeStack: walk to the base (named) type, recording the modifier chain.
-    let mut stack: Vec<std::rc::Rc<crate::dtype::Datatype>> = Vec::new();
-    let mut cur = std::rc::Rc::clone(ct);
-    loop {
-        stack.push(std::rc::Rc::clone(&cur));
-        if !cur.get_name().is_empty() {
-            break; // base type
-        }
-        let next = match cur.get_metatype() {
-            type_metatype::TYPE_PTR => cur.get_ptr_to(),
-            type_metatype::TYPE_ARRAY => cur.get_array_base(),
-            _ => None, // other anonymous type: stop
-        };
-        match next {
-            Some(n) => cur = n,
-            None => break,
-        }
-    }
-    // The base type's display name (anonymous → `undefined<N>` / `void`).
-    let base = stack.last().expect("declarator: non-empty stack");
-    // (kuna) realtypes: relabel a residual TYPE_UNKNOWN base as a real C type by
-    // size.  Under a pointer modifier the same size table applies, so the pointee
-    // width survives into the declaration; only a residual size with no natural C
-    // type degrades to `void` there (the `*` chain is laid out by the walk below).
-    let under_pointer = stack[..stack.len() - 1]
-        .iter()
-        .any(|m| matches!(m.get_metatype(), type_metatype::TYPE_PTR));
-    let base_name = if let Some(n) = realtype_relabel(&rt, base, under_pointer) {
-        n.to_string()
-    } else if base.get_name().is_empty() {
-        match base.get_metatype() {
-            type_metatype::TYPE_VOID => "void".to_string(),
-            _ => format!("undefined{}", base.get_size()),
-        }
-    } else {
-        base.get_display_name().to_string()
-    };
-
-    // Walk the modifiers from base toward the outermost (stack[len-2]..stack[0]),
-    // accumulating front (`*`) and back (`[N]`) declarator pieces.  An array/
-    // function tail wraps any pending pointer front in parentheses.
-    let mut front = String::new();
-    let mut back = String::new();
-    let mut pending_ptr = false; // a `*` not yet absorbed by a tail
-    for ct_mod in stack.iter().rev().skip(1) {
-        match ct_mod.get_metatype() {
-            type_metatype::TYPE_PTR => {
-                front.push('*');
-                pending_ptr = true;
-            }
-            type_metatype::TYPE_ARRAY => {
-                let n = ct_mod.num_elements().unwrap_or_else(|| {
-                    let base = ct_mod.get_array_base().map(|b| b.get_size()).unwrap_or(1).max(1);
-                    ct_mod.get_size() / base
-                });
-                if pending_ptr {
-                    front.insert(0, '(');
-                    back = format!("){}", back);
-                    pending_ptr = false;
-                }
-                back = format!("{}[{}]", back, n);
-            }
-            _ => {}
-        }
-    }
-    // `<base> <front>` with a single separating space before any `*` modifiers
-    // (the `type_expr_space` token); a bare base type has no trailing space here
-    // (the caller adds the space before the identifier).
-    let front_full = if front.is_empty() { base_name } else { format!("{base_name} {front}") };
-    (front_full, back)
+    rt.speller().declarator(&rt, ct)
 }
 
 /// (kuna) The full C type string for `ct` with no identifier, rendered exactly as
@@ -8426,126 +8347,33 @@ fn render_type_definitions(
     out
 }
 
-/// The type-token text for a local declaration.  Mirrors C++ `pushTypeStart`
-/// (printc.cc:265): a named/base type prints its name; an *anonymous pointer*
-/// (e.g. `char *`) prints the full declarator front via `declarator_parts` so a
-/// `char *pchar` local is not flattened to `undefined8`.  The trailing `*` is
-/// kept on the type token — the emit loop suppresses the separating space before
-/// the identifier when the front ends in `*` (the C++ `ptr_expr` glues `*` to the
-/// identifier with no space).
+/// The type token to render in a declaration's type position.
+///
+/// The C body moved to `CSpeller::type_name` (`p9_emit/kuna_langc.rs`) when the
+/// output-language seam landed.
 fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>, rt: RealTypeCtx) -> String {
-    use crate::dtype::type_metatype;
-    // (kuna) realtypes: a scalar residual TYPE_UNKNOWN (the named `xunknownN` core
-    // type or an anonymous `undefined<N>`) becomes its real C type by size.
-    if let Some(n) = realtype_relabel(&rt, t, false) {
-        return n.to_string();
-    }
-    let name = t.get_name();
-    if !name.is_empty() {
-        return name.to_string();
-    }
-    match t.get_metatype() {
-        type_metatype::TYPE_VOID => "void".to_string(),
-        // An anonymous pointer renders as `<pointee> *` (recursively), exactly as
-        // `push_cast_type` does for a `(char *)` cast.  `declarator_parts` walks
-        // the modifier chain to the named base and lays out the `*` front.
-        type_metatype::TYPE_PTR => {
-            let (front, _back) = declarator_parts(t, rt);
-            front
-        }
-        _ => format!("undefined{}", t.get_size()),
-    }
+    rt.speller().type_name(&rt, t)
 }
 
-/// (kuna) The `realtypes` rendering context: the `Architecture::realtypes` gate
-/// plus the data-model fact that `long` is 8 bytes (so an 8-byte unknown reads
-/// `unsigned long` on LP64, `unsigned long long` on LLP64).  `Copy` so it threads
-/// cheaply through the declarator chokepoints.
-#[derive(Clone, Copy)]
-pub(crate) struct RealTypeCtx {
-    enabled: bool,
-    long_is_8: bool,
-    /// (kuna `ctypes`) Spell the NAMED core types (`int4`/`uint1`/`float8`/`code`)
-    /// as the target's own C type names too, not just the residual unknowns.
-    ctypes: bool,
-    /// (kuna `ctypes`) The target's declared C scalar widths, which is what makes
-    /// the spelling per-architecture rather than a guess.
-    model: crate::kuna_ctypes::CDataModel,
-}
+/// (kuna) The per-document type-rendering context.
+///
+/// An alias for [`crate::kuna_langtypes::SpellCtx`], which is where it moved when
+/// the output-language seam landed: it now also carries the output language, so
+/// the free-function declarator family reaches its speller with no new threading.
+pub(crate) type RealTypeCtx = crate::kuna_langtypes::SpellCtx;
 
 impl RealTypeCtx {
-    /// The disabled context — never relabels (preserves the upstream
-    /// `xunknownN`/`undefined<N>` rendering).
-    pub(crate) const OFF: RealTypeCtx = RealTypeCtx {
-        enabled: false,
-        long_is_8: true,
-        ctypes: false,
-        model: crate::kuna_ctypes::CDataModel::LP64,
-    };
-
-    /// Resolve the context from the live architecture: the `realtypes` /`ctypes`
-    /// gates and the target's decoded data organization.
+    /// Resolve the context from the live architecture: the `realtypes`/`ctypes`
+    /// gates, the target's decoded data organization, and the output language.
     fn from_arch(arch: &Architecture) -> RealTypeCtx {
         RealTypeCtx {
+            lang: crate::kuna_lang::OutLang::C,
             enabled: arch.realtypes,
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
         }
     }
-}
-
-/// (kuna) Real C name for a residual `TYPE_UNKNOWN` base, or `None` when the gate
-/// is off / the type is not unknown.  Conservative on sign (multi-byte unknowns
-/// are unsigned, since the real sign is genuinely unknown); a pointer-to-unknown
-/// base relabels through the same size table as a scalar, so the pointee keeps its
-/// width and `void` is only the residual fallback.
-fn realtype_relabel(
-    rt: &RealTypeCtx,
-    dt: &std::rc::Rc<crate::dtype::Datatype>,
-    under_pointer: bool,
-) -> Option<&'static str> {
-    if dt.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
-        if !rt.enabled {
-            return None;
-        }
-        return realtype_unknown_base(dt.get_size(), under_pointer, rt.long_is_8);
-    }
-    // (kuna `ctypes`) Every OTHER core type — the named `int4`/`uint1`/`float8`/
-    // `code` vocabulary — spells as the target's own C type.  Restricted to core
-    // types so a user-defined or DWARF-recovered type keeps the name it was
-    // declared with; that name is already C.
-    if !rt.ctypes || !dt.is_core_type() {
-        return None;
-    }
-    crate::kuna_ctypes::core_type_spelling(
-        &rt.model,
-        dt.get_metatype(),
-        dt.get_size(),
-        dt.is_char_print(),
-    )
-}
-
-/// (kuna) Size → standard-C name for an unknown value.  `None` for sizes with no
-/// natural single C type (3/5/6/7/10/16…), which keep the `undefined<N>` form;
-/// under a pointer those residual sizes fall back to `void` (the modifier walk
-/// adds the `*` chain), since `void *` is the only spelling that carries no width
-/// claim.  A pointee whose size *does* have a natural type keeps it, so the
-/// declaration agrees with the stride the index/cast expressions were built from.
-fn realtype_unknown_base(size: int4, under_pointer: bool, long_is_8: bool) -> Option<&'static str> {
-    Some(match size {
-        1 => "char",
-        2 => "unsigned short",
-        4 => "unsigned int",
-        8 => {
-            if long_is_8 {
-                "unsigned long"
-            } else {
-                "unsigned long long"
-            }
-        }
-        _ => return if under_pointer { Some("void") } else { None },
-    })
 }
 
 /// STUB A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
