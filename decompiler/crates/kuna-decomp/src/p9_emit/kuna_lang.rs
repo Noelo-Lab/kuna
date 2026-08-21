@@ -45,13 +45,26 @@ pub enum OutLang {
     /// The c-language back-end (`printc.cc`'s successor).
     #[default]
     C,
+    /// The rust-language back-end.
+    Rust,
 }
 
 impl OutLang {
+    /// Resolve from an `option setlanguage` name, or `None` when the name names
+    /// no back-end kuna can emit.
+    pub fn from_print_name(name: &str) -> Option<OutLang> {
+        match name {
+            "c-language" | "c" => Some(OutLang::C),
+            "rust-language" | "rust" => Some(OutLang::Rust),
+            _ => None,
+        }
+    }
+
     /// The `option setlanguage` name this language answers to.
     pub fn print_name(self) -> &'static str {
         match self {
             OutLang::C => "c-language",
+            OutLang::Rust => "rust-language",
         }
     }
 
@@ -59,6 +72,7 @@ impl OutLang {
     pub fn profile(self) -> &'static LangProfile {
         match self {
             OutLang::C => &LANG_C,
+            OutLang::Rust => &crate::kuna_langrust::LANG_RUST,
         }
     }
 
@@ -66,6 +80,7 @@ impl OutLang {
     pub fn speller(self) -> &'static dyn crate::kuna_langtypes::TypeSpeller {
         match self {
             OutLang::C => &crate::kuna_langc::C_SPELLER,
+            OutLang::Rust => &crate::kuna_rusttypes::RUST_SPELLER,
         }
     }
 }
