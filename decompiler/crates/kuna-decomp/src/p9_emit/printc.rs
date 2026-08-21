@@ -1333,6 +1333,11 @@ pub struct PrintC {
     /// types as real C types.  Refreshed at the top of [`doc_function_full`] from
     /// the live `arch`; `OFF` until then (so an out-of-band print never relabels).
     rt_ctx: RealTypeCtx,
+    /// (kuna outlang) The output language this document renders into.  Selects
+    /// the surface vocabulary and capability record every language-varying site
+    /// reads (`crate::kuna_lang`).  Refreshed per document alongside `rt_ctx`;
+    /// `OutLang::C` until then, so an out-of-band print is never non-C.
+    out_lang: crate::kuna_lang::OutLang,
     /// (kuna warnstyle, DIV-39) Warning slugs collected under `warn_inline` by
     /// [`emit_comment_group`](PrintC::emit_comment_group) /
     /// [`emit_comment_func_header`](PrintC::emit_comment_func_header), flushed
@@ -1364,8 +1369,19 @@ impl PrintC {
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             rt_ctx: RealTypeCtx::OFF,
+            out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
         }
+    }
+
+    /// The active output language's surface vocabulary and capability record.
+    ///
+    /// Every language-varying emit site reads through here rather than naming a
+    /// `keywords::`/`tokens::` constant directly, so a second language is a new
+    /// profile rather than a second emitter.
+    #[inline]
+    pub fn lang(&self) -> &'static crate::kuna_lang::LangProfile {
+        self.out_lang.profile()
     }
 
     /// The printer name (C++ `PrintLanguage::getName`, `"c-language"`).
@@ -3227,7 +3243,7 @@ impl PrintC {
         }
         self.emit.tag_line_indent(0);
         self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
-        self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
     }
 
     /// C++ `PrintC::emitAnyLabelStatement` (printc.cc:3354): find the entry basic
@@ -3557,7 +3573,7 @@ impl PrintC {
         );
 
         // ... then `if ` + the branch condition (only_branch).
-        self.emit.tag_op(keywords::KEYWORD_IF, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.tag_op(self.lang().kw_if, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
@@ -3592,7 +3608,7 @@ impl PrintC {
             self.emit.stop_indent(id);
             if size == 3 {
                 self.emit.tag_line();
-                self.emit.print(keywords::KEYWORD_ELSE, SyntaxHighlight::KeywordColor);
+                self.emit.print(self.lang().kw_else, SyntaxHighlight::KeywordColor);
                 let else_block = fd.sblocks_ref().block(blk).get_block(2);
                 let else_is_if = fd.sblocks_ref().block(else_block).get_type()
                     == crate::block::BlockType::If;
@@ -3604,11 +3620,11 @@ impl PrintC {
                 } else {
                     let id2 = self
                         .emit
-                        .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+                        .open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_ifelse));
                     let id3 = self.emit.begin_block(0);
                     self.emit_block(fd, arch, else_block);
                     self.emit.end_block(id3);
-                    self.emit.close_brace_indent(keywords::CLOSE_CURLY, id2);
+                    self.emit.close_brace_indent(self.lang().kw_close_curly, id2);
                 }
             }
         } else {
@@ -3616,19 +3632,19 @@ impl PrintC {
             self.context.set_mod(modifiers::NO_BRANCH);
             let id = self
                 .emit
-                .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+                .open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_ifelse));
             // (kuna warnstyle, DIV-39) condition-attached warnings land after
             // the `if (cond) {` header brace.
             self.flush_eol_warnings();
             let id1 = self.emit.begin_block(0);
             self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
             self.emit.end_block(id1);
-            self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
+            self.emit.close_brace_indent(self.lang().kw_close_curly, id);
 
             // Optional else.
             if size == 3 {
                 self.emit.tag_line();
-                self.emit.print(keywords::KEYWORD_ELSE, SyntaxHighlight::KeywordColor);
+                self.emit.print(self.lang().kw_else, SyntaxHighlight::KeywordColor);
                 let else_block = fd.sblocks_ref().block(blk).get_block(2);
                 let else_is_if = fd.sblocks_ref().block(else_block).get_type()
                     == crate::block::BlockType::If;
@@ -3642,11 +3658,11 @@ impl PrintC {
                 } else {
                     let id2 = self
                         .emit
-                        .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+                        .open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_ifelse));
                     let id3 = self.emit.begin_block(0);
                     self.emit_block(fd, arch, else_block);
                     self.emit.end_block(id3);
-                    self.emit.close_brace_indent(keywords::CLOSE_CURLY, id2);
+                    self.emit.close_brace_indent(self.lang().kw_close_curly, id2);
                 }
             }
         }
@@ -3656,7 +3672,7 @@ impl PrintC {
         // statements before its `if`, so it rendered `else { ... if`), close
         // that brace.
         if my_pending_indent >= 0 {
-            self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
+            self.emit.close_brace_indent(self.lang().kw_close_curly, my_pending_indent);
         }
     }
 
@@ -3852,13 +3868,13 @@ impl PrintC {
         self.emit_block(fd, arch, m.cond_block);
         self.context.pop_mod();
         self.emit.end_statement(sid);
-        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) condition-attached warnings land at the end of
         // the assignment line.
         self.flush_eol_warnings();
 
         if my_pending_indent >= 0 {
-            self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
+            self.emit.close_brace_indent(self.lang().kw_close_curly, my_pending_indent);
         }
         self.context.pop_mod();
     }
@@ -3942,14 +3958,14 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.op_push_ir(fd, arch, m.else_op, None);
         self.emit.end_statement(sid);
-        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) condition-attached warnings land at the end
         // of the ternary statement line.
         self.flush_eol_warnings();
 
         // Close the pending brace if it fired (the else-clause `{ ... }`).
         if my_pending_indent >= 0 {
-            self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
+            self.emit.close_brace_indent(self.lang().kw_close_curly, my_pending_indent);
         }
         self.context.pop_mod();
     }
@@ -3975,7 +3991,7 @@ impl PrintC {
         self.emit_block(fd, arch, switch_block);
         self.context.pop_mod();
         let brace_id =
-            self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_switch));
+            self.emit.open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_switch));
         // (kuna warnstyle, DIV-39) warnings pending from the switch block land
         // after the `switch (v) {` header brace.
         self.flush_eol_warnings();
@@ -4005,7 +4021,7 @@ impl PrintC {
             self.emit.stop_indent(id);
         }
         self.emit.tag_line();
-        self.emit.close_brace_indent(keywords::CLOSE_CURLY, brace_id);
+        self.emit.close_brace_indent(self.lang().kw_close_curly, brace_id);
         self.context.pop_mod();
     }
 
@@ -4026,12 +4042,12 @@ impl PrintC {
             };
             self.emit.tag_line();
             self.emit.tag_case_label(
-                keywords::KEYWORD_DEFAULT,
+                self.lang().kw_default,
                 SyntaxHighlight::KeywordColor,
                 &case_markup,
                 case.label,
             );
-            self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
+            self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
         } else {
             // case <label>: — one line per index targeting this case.
             let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
@@ -4053,7 +4069,7 @@ impl PrintC {
                     _ => case.label,
                 };
                 self.emit.tag_line();
-                self.emit.print(keywords::KEYWORD_CASE, SyntaxHighlight::KeywordColor);
+                self.emit.print(self.lang().kw_case, SyntaxHighlight::KeywordColor);
                 self.emit.spaces(1, 0);
                 let sz = self.switch_var_size(fd, blk);
                 // (kuna) Render the label signed when the recovered switch variable
@@ -4070,7 +4086,7 @@ impl PrintC {
                     }
                 }
                 self.recurse();
-                self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
+                self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
             }
         }
         let _ = arch;
@@ -4147,7 +4163,7 @@ impl PrintC {
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
         self.emit_comment_block_tree(fd, cond_block);
         self.emit.tag_line();
-        self.emit.tag_op(keywords::KEYWORD_FOR, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.tag_op(self.lang().kw_for, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
         let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
         self.context.push_mod();
@@ -4158,11 +4174,11 @@ impl PrintC {
             self.emit_expression_ir(fd, arch, op);
             self.emit.end_statement(id3);
         }
-        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the conditional statement (the condition block, comma-separated).
         self.emit_block(fd, arch, cond_block);
-        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the iterator statement.
         if let Some(op) = fd.sblocks_ref().block(blk).get_iterate_op() {
@@ -4173,7 +4189,7 @@ impl PrintC {
         self.context.pop_mod();
         self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
         let indent =
-            self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+            self.emit.open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_loop));
         // (kuna warnstyle, DIV-39) condition-attached warnings land after the
         // `for (...) {` header brace.
         self.flush_eol_warnings();
@@ -4181,7 +4197,7 @@ impl PrintC {
         let id2 = self.emit.begin_block(0);
         self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
         self.emit.end_block(id2);
-        self.emit.close_brace_indent(keywords::CLOSE_CURLY, indent);
+        self.emit.close_brace_indent(self.lang().kw_close_curly, indent);
         self.context.pop_mod();
     }
 
@@ -4205,19 +4221,19 @@ impl PrintC {
         if fd.sblocks_ref().block(blk).has_overflow_syntax() {
             // Renders: while( true ) { conditionbody...; break-on-branch }
             self.emit.tag_line();
-            self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+            self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
             let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.emit.spaces(1, 0);
-            self.emit.print(keywords::KEYWORD_TRUE, SyntaxHighlight::ConstColor);
+            self.emit.print(self.lang().kw_true, SyntaxHighlight::ConstColor);
             self.emit.spaces(1, 0);
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
-            indent = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+            indent = self.emit.open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_loop));
             self.context.push_mod();
             self.context.set_mod(modifiers::NO_BRANCH);
             self.emit_block(fd, arch, cond_block);
             self.context.pop_mod();
             self.emit.tag_line();
-            self.emit.tag_op(keywords::KEYWORD_IF, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+            self.emit.tag_op(self.lang().kw_if, SyntaxHighlight::KeywordColor, &MarkupRef::none());
             self.emit.spaces(1, 0);
             self.context.push_mod();
             self.context.set_mod(modifiers::ONLY_BRANCH);
@@ -4229,7 +4245,7 @@ impl PrintC {
             // Renders: while(condition) { ... }
             self.emit_comment_block_tree(fd, cond_block);
             self.emit.tag_line();
-            self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+            self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
             self.emit.spaces(1, 0);
             let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.context.push_mod();
@@ -4237,7 +4253,7 @@ impl PrintC {
             self.emit_block(fd, arch, cond_block);
             self.context.pop_mod();
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
-            indent = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+            indent = self.emit.open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_loop));
             // (kuna warnstyle, DIV-39) condition-attached warnings land after
             // the `while (cond) {` header brace.
             self.flush_eol_warnings();
@@ -4246,7 +4262,7 @@ impl PrintC {
         let id2 = self.emit.begin_block(0);
         self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
         self.emit.end_block(id2);
-        self.emit.close_brace_indent(keywords::CLOSE_CURLY, indent);
+        self.emit.close_brace_indent(self.lang().kw_close_curly, indent);
         self.context.pop_mod();
     }
 
@@ -4260,8 +4276,8 @@ impl PrintC {
         // above the `do` (suppressed inline via f_label_bumpup).
         self.emit_any_label_statement(fd, blk);
         self.emit.tag_line();
-        self.emit.print(keywords::KEYWORD_DO, SyntaxHighlight::KeywordColor);
-        let id = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        self.emit.print(self.lang().kw_do, SyntaxHighlight::KeywordColor);
+        let id = self.emit.open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_loop));
         let body = fd.sblocks_ref().block(blk).get_block(0);
         self.context.push_mod();
         let id2 = self.emit.begin_block(0);
@@ -4269,13 +4285,13 @@ impl PrintC {
         self.emit_block(fd, arch, body);
         self.emit.end_block(id2);
         self.context.pop_mod();
-        self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
+        self.emit.close_brace_indent(self.lang().kw_close_curly, id);
         self.emit.spaces(1, 0);
-        self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
         self.context.set_mod(modifiers::ONLY_BRANCH);
         self.emit_block(fd, arch, body);
-        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) body/condition warnings still pending land
         // at the end of the `} while (cond);` line.
         self.flush_eol_warnings();
@@ -4291,21 +4307,21 @@ impl PrintC {
         // above the `do` (suppressed inline via f_label_bumpup).
         self.emit_any_label_statement(fd, blk);
         self.emit.tag_line();
-        self.emit.print(keywords::KEYWORD_DO, SyntaxHighlight::KeywordColor);
-        let id = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        self.emit.print(self.lang().kw_do, SyntaxHighlight::KeywordColor);
+        let id = self.emit.open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_loop));
         let body = fd.sblocks_ref().block(blk).get_block(0);
         let id1 = self.emit.begin_block(0);
         self.emit_block(fd, arch, body);
         self.emit.end_block(id1);
-        self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
+        self.emit.close_brace_indent(self.lang().kw_close_curly, id);
         self.emit.spaces(1, 0);
-        self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         let id2 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
         self.emit.spaces(1, 0);
-        self.emit.print(keywords::KEYWORD_TRUE, SyntaxHighlight::ConstColor);
+        self.emit.print(self.lang().kw_true, SyntaxHighlight::ConstColor);
         self.emit.spaces(1, 0);
         self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id2);
-        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) pending body warnings land at the end of
         // the `} while ( true );` line.
         self.flush_eol_warnings();
@@ -4327,18 +4343,18 @@ impl PrintC {
         let id = self.emit.begin_statement(&MarkupRef::none());
         match gototype {
             x if x == block_flags::f_break_goto => {
-                self.emit.print(keywords::KEYWORD_BREAK, SyntaxHighlight::KeywordColor);
+                self.emit.print(self.lang().kw_break, SyntaxHighlight::KeywordColor);
             }
             x if x == block_flags::f_continue_goto => {
-                self.emit.print(keywords::KEYWORD_CONTINUE, SyntaxHighlight::KeywordColor);
+                self.emit.print(self.lang().kw_continue, SyntaxHighlight::KeywordColor);
             }
             _ => {
-                self.emit.print(keywords::KEYWORD_GOTO, SyntaxHighlight::KeywordColor);
+                self.emit.print(self.lang().kw_goto, SyntaxHighlight::KeywordColor);
                 self.emit.spaces(1, 0);
                 self.emit.print(&self.block_label_name(fd, target), SyntaxHighlight::NoColor);
             }
         }
-        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.end_statement(id);
     }
 
@@ -4398,7 +4414,7 @@ impl PrintC {
             }
             if separator {
                 if self.context.is_set(modifiers::COMMA_SEPARATE) {
-                    self.emit.print(keywords::COMMA, SyntaxHighlight::NoColor);
+                    self.emit.print(self.lang().kw_comma, SyntaxHighlight::NoColor);
                     self.emit.spaces(1, 0);
                 } else {
                     self.emit_comment_group(fd, Some(inst));
@@ -4438,7 +4454,7 @@ impl PrintC {
         self.emit_expression_ir(fd, arch, inst);
         self.emit.end_statement(id);
         if !self.context.is_set(modifiers::COMMA_SEPARATE) {
-            self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+            self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         }
     }
 
@@ -4672,7 +4688,7 @@ impl PrintC {
             // `emit_block_switch`; here only the `switch(in0)` expression prints.
             OpCode::CPUI_BRANCHIND => {
                 let kw_markup = self.op_markup(fd, op);
-                self.emit.tag_op(keywords::KEYWORD_SWITCH, SyntaxHighlight::KeywordColor, &kw_markup);
+                self.emit.tag_op(self.lang().kw_switch, SyntaxHighlight::KeywordColor, &kw_markup);
                 let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                     self.push_vn_ir(fd, arch, vn, op);
@@ -4682,7 +4698,7 @@ impl PrintC {
             // RETURN (printc.cc:774 opReturn, the plain-return case).
             OpCode::CPUI_RETURN => {
                 let kw_markup = self.op_markup(fd, op);
-                self.emit.tag_op(keywords::KEYWORD_RETURN, SyntaxHighlight::KeywordColor, &kw_markup);
+                self.emit.tag_op(self.lang().kw_return, SyntaxHighlight::KeywordColor, &kw_markup);
                 let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
                 if nin > 1 {
                     self.emit.spaces(1, 0);
@@ -7112,7 +7128,7 @@ impl PrintC {
         // funcname_color (matching the C++ Atom(typePointerRelToken,optoken,
         // funcname_color,op)).
         self.push_atom(&Atom::with_op(
-            keywords::TYPE_POINTER_REL_TOKEN.to_string(),
+            self.lang().kw_type_pointer_rel.to_string(),
             TagType::OpToken,
             crate::printlanguage::SyntaxHighlight::funcname_color,
             op_key(op),
@@ -8011,102 +8027,23 @@ fn array_decl_parts(
     Some((type_name_for_decl(&base, rt), count))
 }
 
-/// The type name to render in a declaration (C++ `Datatype::getName`), with the
-/// Ghidra fallback for an unnamed type: a `TYPE_UNKNOWN` of size N (the W8
-/// un-inferred base, no real name) renders as `undefined<N>` (or `undefined` for
-/// size 1's anonymous form), and a `TYPE_VOID` renders as `void`.  The oracle's
-/// inferred names (e.g. `uint1`) need the W8 `ActionInferTypes`; this is the
-/// faithful unnamed-type rendering until then.
-/// Build the C-declarator front/back text bracketing an identifier for `ct`,
-/// transcribing the declarator algorithm of `PrintC::pushTypeStart` /
-/// `pushTypeEnd` (printc.cc:265/314) plus `buildTypeStack` (printc.cc:143).
+/// Build the declarator front/back text bracketing an identifier for `ct`.
 ///
-/// Returns `(front, back)` such that `<front><name><back>` is the full C
-/// declaration of an object named `name` of type `ct` — e.g.
-///   * `int8`              → `("int8", "")`             → `int8 a`
-///   * `twostruct *`       → `("twostruct *", "")`      → `twostruct *ptr`
-///   * `int4 (*)[1]`       → `("int4 (*", ")[1]")`      → `int4 (*a)[1]`
-///   * `char *`            → `("char *", "")`           → `char *pchar`
+/// Returns `(front, back)` such that `<front><name><back>` is the full
+/// declaration of an object named `name` of type `ct` -- e.g. in C
+///   * `int8`              -> `("int8", "")`             -> `int8 a`
+///   * `twostruct *`       -> `("twostruct *", "")`      -> `twostruct *ptr`
+///   * `int4 (*)[1]`       -> `("int4 (*", ")[1]")`      -> `int4 (*a)[1]`
 ///
-/// The stack is built base-up exactly as `buildTypeStack`; pointer modifiers go
-/// on the front (`*`), array/function modifiers on the tail (`[N]`/`(...)`), and
-/// a `*` front nested inside an array/function tail is parenthesised — the
-/// precedence the RPN `ptr_expr`/`array_expr` tokens encode.
+/// The C body -- the transcription of `PrintC::pushTypeStart`/`pushTypeEnd`
+/// (printc.cc:265/314) plus `buildTypeStack` (printc.cc:143) -- moved to
+/// `CSpeller::declarator` (`p9_emit/kuna_langc.rs`) when the output-language seam
+/// landed. A language whose types are pure prefixes returns an empty `back`.
 pub(crate) fn declarator_parts(
     ct: &std::rc::Rc<crate::dtype::Datatype>,
     rt: RealTypeCtx,
 ) -> (String, String) {
-    use crate::dtype::type_metatype;
-    // buildTypeStack: walk to the base (named) type, recording the modifier chain.
-    let mut stack: Vec<std::rc::Rc<crate::dtype::Datatype>> = Vec::new();
-    let mut cur = std::rc::Rc::clone(ct);
-    loop {
-        stack.push(std::rc::Rc::clone(&cur));
-        if !cur.get_name().is_empty() {
-            break; // base type
-        }
-        let next = match cur.get_metatype() {
-            type_metatype::TYPE_PTR => cur.get_ptr_to(),
-            type_metatype::TYPE_ARRAY => cur.get_array_base(),
-            _ => None, // other anonymous type: stop
-        };
-        match next {
-            Some(n) => cur = n,
-            None => break,
-        }
-    }
-    // The base type's display name (anonymous → `undefined<N>` / `void`).
-    let base = stack.last().expect("declarator: non-empty stack");
-    // (kuna) realtypes: relabel a residual TYPE_UNKNOWN base as a real C type by
-    // size.  Under a pointer modifier the same size table applies, so the pointee
-    // width survives into the declaration; only a residual size with no natural C
-    // type degrades to `void` there (the `*` chain is laid out by the walk below).
-    let under_pointer = stack[..stack.len() - 1]
-        .iter()
-        .any(|m| matches!(m.get_metatype(), type_metatype::TYPE_PTR));
-    let base_name = if let Some(n) = realtype_relabel(&rt, base, under_pointer) {
-        n.to_string()
-    } else if base.get_name().is_empty() {
-        match base.get_metatype() {
-            type_metatype::TYPE_VOID => "void".to_string(),
-            _ => format!("undefined{}", base.get_size()),
-        }
-    } else {
-        base.get_display_name().to_string()
-    };
-
-    // Walk the modifiers from base toward the outermost (stack[len-2]..stack[0]),
-    // accumulating front (`*`) and back (`[N]`) declarator pieces.  An array/
-    // function tail wraps any pending pointer front in parentheses.
-    let mut front = String::new();
-    let mut back = String::new();
-    let mut pending_ptr = false; // a `*` not yet absorbed by a tail
-    for ct_mod in stack.iter().rev().skip(1) {
-        match ct_mod.get_metatype() {
-            type_metatype::TYPE_PTR => {
-                front.push('*');
-                pending_ptr = true;
-            }
-            type_metatype::TYPE_ARRAY => {
-                let n = ct_mod.num_elements().unwrap_or_else(|| {
-                    let base = ct_mod.get_array_base().map(|b| b.get_size()).unwrap_or(1).max(1);
-                    ct_mod.get_size() / base
-                });
-                if pending_ptr {
-                    front.insert(0, '(');
-                    back = format!("){}", back);
-                    pending_ptr = false;
-                }
-                back = format!("{}[{}]", back, n);
-            }
-            _ => {}
-        }
-    }
-    // `<base> <front>` with a single separating space before any `*` modifiers
-    // (the `type_expr_space` token); a bare base type has no trailing space here
-    // (the caller adds the space before the identifier).
-    let front_full = if front.is_empty() { base_name } else { format!("{base_name} {front}") };
-    (front_full, back)
+    rt.speller().declarator(&rt, ct)
 }
 
 /// (kuna) The full C type string for `ct` with no identifier, rendered exactly as
@@ -8410,126 +8347,33 @@ fn render_type_definitions(
     out
 }
 
-/// The type-token text for a local declaration.  Mirrors C++ `pushTypeStart`
-/// (printc.cc:265): a named/base type prints its name; an *anonymous pointer*
-/// (e.g. `char *`) prints the full declarator front via `declarator_parts` so a
-/// `char *pchar` local is not flattened to `undefined8`.  The trailing `*` is
-/// kept on the type token — the emit loop suppresses the separating space before
-/// the identifier when the front ends in `*` (the C++ `ptr_expr` glues `*` to the
-/// identifier with no space).
+/// The type token to render in a declaration's type position.
+///
+/// The C body moved to `CSpeller::type_name` (`p9_emit/kuna_langc.rs`) when the
+/// output-language seam landed.
 fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>, rt: RealTypeCtx) -> String {
-    use crate::dtype::type_metatype;
-    // (kuna) realtypes: a scalar residual TYPE_UNKNOWN (the named `xunknownN` core
-    // type or an anonymous `undefined<N>`) becomes its real C type by size.
-    if let Some(n) = realtype_relabel(&rt, t, false) {
-        return n.to_string();
-    }
-    let name = t.get_name();
-    if !name.is_empty() {
-        return name.to_string();
-    }
-    match t.get_metatype() {
-        type_metatype::TYPE_VOID => "void".to_string(),
-        // An anonymous pointer renders as `<pointee> *` (recursively), exactly as
-        // `push_cast_type` does for a `(char *)` cast.  `declarator_parts` walks
-        // the modifier chain to the named base and lays out the `*` front.
-        type_metatype::TYPE_PTR => {
-            let (front, _back) = declarator_parts(t, rt);
-            front
-        }
-        _ => format!("undefined{}", t.get_size()),
-    }
+    rt.speller().type_name(&rt, t)
 }
 
-/// (kuna) The `realtypes` rendering context: the `Architecture::realtypes` gate
-/// plus the data-model fact that `long` is 8 bytes (so an 8-byte unknown reads
-/// `unsigned long` on LP64, `unsigned long long` on LLP64).  `Copy` so it threads
-/// cheaply through the declarator chokepoints.
-#[derive(Clone, Copy)]
-pub(crate) struct RealTypeCtx {
-    enabled: bool,
-    long_is_8: bool,
-    /// (kuna `ctypes`) Spell the NAMED core types (`int4`/`uint1`/`float8`/`code`)
-    /// as the target's own C type names too, not just the residual unknowns.
-    ctypes: bool,
-    /// (kuna `ctypes`) The target's declared C scalar widths, which is what makes
-    /// the spelling per-architecture rather than a guess.
-    model: crate::kuna_ctypes::CDataModel,
-}
+/// (kuna) The per-document type-rendering context.
+///
+/// An alias for [`crate::kuna_langtypes::SpellCtx`], which is where it moved when
+/// the output-language seam landed: it now also carries the output language, so
+/// the free-function declarator family reaches its speller with no new threading.
+pub(crate) type RealTypeCtx = crate::kuna_langtypes::SpellCtx;
 
 impl RealTypeCtx {
-    /// The disabled context — never relabels (preserves the upstream
-    /// `xunknownN`/`undefined<N>` rendering).
-    pub(crate) const OFF: RealTypeCtx = RealTypeCtx {
-        enabled: false,
-        long_is_8: true,
-        ctypes: false,
-        model: crate::kuna_ctypes::CDataModel::LP64,
-    };
-
-    /// Resolve the context from the live architecture: the `realtypes` /`ctypes`
-    /// gates and the target's decoded data organization.
+    /// Resolve the context from the live architecture: the `realtypes`/`ctypes`
+    /// gates, the target's decoded data organization, and the output language.
     fn from_arch(arch: &Architecture) -> RealTypeCtx {
         RealTypeCtx {
+            lang: crate::kuna_lang::OutLang::C,
             enabled: arch.realtypes,
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
         }
     }
-}
-
-/// (kuna) Real C name for a residual `TYPE_UNKNOWN` base, or `None` when the gate
-/// is off / the type is not unknown.  Conservative on sign (multi-byte unknowns
-/// are unsigned, since the real sign is genuinely unknown); a pointer-to-unknown
-/// base relabels through the same size table as a scalar, so the pointee keeps its
-/// width and `void` is only the residual fallback.
-fn realtype_relabel(
-    rt: &RealTypeCtx,
-    dt: &std::rc::Rc<crate::dtype::Datatype>,
-    under_pointer: bool,
-) -> Option<&'static str> {
-    if dt.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
-        if !rt.enabled {
-            return None;
-        }
-        return realtype_unknown_base(dt.get_size(), under_pointer, rt.long_is_8);
-    }
-    // (kuna `ctypes`) Every OTHER core type — the named `int4`/`uint1`/`float8`/
-    // `code` vocabulary — spells as the target's own C type.  Restricted to core
-    // types so a user-defined or DWARF-recovered type keeps the name it was
-    // declared with; that name is already C.
-    if !rt.ctypes || !dt.is_core_type() {
-        return None;
-    }
-    crate::kuna_ctypes::core_type_spelling(
-        &rt.model,
-        dt.get_metatype(),
-        dt.get_size(),
-        dt.is_char_print(),
-    )
-}
-
-/// (kuna) Size → standard-C name for an unknown value.  `None` for sizes with no
-/// natural single C type (3/5/6/7/10/16…), which keep the `undefined<N>` form;
-/// under a pointer those residual sizes fall back to `void` (the modifier walk
-/// adds the `*` chain), since `void *` is the only spelling that carries no width
-/// claim.  A pointee whose size *does* have a natural type keeps it, so the
-/// declaration agrees with the stride the index/cast expressions were built from.
-fn realtype_unknown_base(size: int4, under_pointer: bool, long_is_8: bool) -> Option<&'static str> {
-    Some(match size {
-        1 => "char",
-        2 => "unsigned short",
-        4 => "unsigned int",
-        8 => {
-            if long_is_8 {
-                "unsigned long"
-            } else {
-                "unsigned long long"
-            }
-        }
-        _ => return if under_pointer { Some("void") } else { None },
-    })
 }
 
 /// STUB A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`

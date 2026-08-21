@@ -642,6 +642,56 @@ presentation.
 
 ## 9.6 Alternate languages
 
+**(kuna) The output-language plane.** The C++ tree kuna was ported from selected a
+back-end through a `PrintLanguageCapability` registry over a three-level hierarchy
+(`PrintLanguage` → `PrintC` → `PrintJava : public PrintC`); the port flattened
+that into one concrete `PrintC`. kuna re-erects the seam by **parameterizing** the
+single emitter rather than growing a second one: `PrintC` carries one `out_lang`
+field, and every language-varying site reads a `&'static` policy object through
+`printc.rs (PrintC::lang)` instead of naming a `keywords::`/`tokens::` constant.
+The RPN driver, the op emitters, `parentheses`, the cast plumbing, the comment
+sorter and the markup back-end are shared verbatim — there is no duplicated
+emitter, which is what keeps one implementation of "emit an `if`" as languages are
+added.
+
+Three artifacts make up the plane, all in
+`decompiler/crates/kuna-decomp/src/p9_emit/`:
+
+- **`kuna_lang.rs`** — `OutLang` (the selector), `LangProfile` (the surface
+  vocabulary: the keyword and punctuation spellings the emitters use, plus the
+  `OpToken`s whose *spelling* varies; the ~40 arithmetic/comparison/shift tokens
+  are identical in every language kuna targets and stay in `printc.rs (tokens)`),
+  and `LangCaps` — **what the emitter is allowed to produce**. `LangCaps` is what
+  lets a language that cannot express a construct never be handed one, instead of
+  the operator being asked to flip the kuna rendering defaults that would produce
+  it (`truthycond`'s implicit-bool condition, `braceelide`'s braceless body,
+  `condfold`'s comma operand, `nullprinting`'s `NULL`). Its load-bearing member is
+  `switch_captures_break`: a C `switch` captures a bare `break`, which is why
+  `p8_structure/kuna_loopbreak_recovery.rs` legitimately retags a
+  goto-to-switch-exit as `f_break_goto` (§8.3); a language whose switch does *not*
+  capture `break` must re-resolve that scope or emit a jump to the wrong place.
+- **`kuna_langtypes.rs`** — `TypeSpeller` and `SpellCtx`. Type *recovery* (P5) is
+  language-independent; only the spelling differs, and it lives in the printer for
+  the reason `kuna_ctypes.rs` records: `Datatype::hash_name` makes the registered
+  name determine the type id, so renaming the interned core types would break the
+  Ghidra wire protocol. `SpellCtx` is the former `RealTypeCtx` — `Copy`, already
+  threaded through every declarator chokepoint — now also carrying the language, so
+  the free-function declarator family reaches its speller with no new parameter.
+  `TypeSpeller::declarator` is documented as `<front><name><back>` rather than
+  promising a meaningful `back`, because the front/back split is a C-ism: C
+  declarators wrap the identifier (`int4 (*a)[1]`) where other languages' types are
+  pure prefixes.
+- **`kuna_langc.rs`** — `CSpeller`, the c-language policy object. It carries the
+  declarator algorithm transcribed from `pushTypeStart`/`pushTypeEnd`/
+  `buildTypeStack` and the `realtypes`/`ctypes` relabelling (DIV-5/DIV-6), moved
+  verbatim out of `printc.rs`, which keeps thin dispatchers.
+
+The invariant that makes the seam free: every `LANG_C` field **is** the constant
+it replaces, asserted field-by-field — and by pointer identity for the tokens,
+since `printlanguage.rs (parentheses)` decides parenthesization with `ptr::eq`.
+Reading the C profile therefore produces the identical token, so introducing the
+plane is a byte-identical rewrite and `docs/baseline.json` is never re-pinned.
+
 The Java back-end is deliberately not ported:
 `decompiler/crates/kuna-decomp/src/p9_emit/printjava.rs (PrintJava)` is a
 recorded LOSS whose constructor returns an error — upstream `PrintJava` is a
