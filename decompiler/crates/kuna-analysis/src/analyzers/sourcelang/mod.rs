@@ -403,9 +403,12 @@ fn symbols_indicate_rust(file: &object::File) -> bool {
 ///   trailing 16-hex-digit `17h…` hash component, which distinguishes it from a
 ///   plain C++ `_ZN…` symbol.
 pub fn is_rust_mangled(name: &str) -> bool {
-    // v0: leading `_R` (allow one extra platform underscore: `__R`).
-    let v0 = name.strip_prefix('_').unwrap_or(name);
-    if v0.starts_with('R') && v0.len() > 1 {
+    // v0: leading `_R` (allow one extra platform underscore: `__R`). The
+    // underscore is load-bearing: `strip_prefix('_').unwrap_or(name)` KEEPS the
+    // original name when there is none, which degrades the test to "starts with
+    // `R`" and claims every OpenSSL `RSA_new`/`RAND_bytes` importer is Rust.
+    let v0 = name.strip_prefix("__R").or_else(|| name.strip_prefix("_R"));
+    if v0.is_some_and(|rest| !rest.is_empty()) {
         return true;
     }
     // legacy: a `17h<16 hex>E` hash tail anywhere after a `_ZN` prefix.
@@ -678,6 +681,19 @@ mod tests {
         assert!(!is_rust_mangled("puts"));
         // a wrong-length hash tail is rejected
         assert!(!is_rust_mangled("_ZN4core5panic17hdeadE"));
+        // v0 requires the LEADING UNDERSCORE. Without it the prefix test
+        // degrades to "starts with `R`", and an ordinary C program that imports
+        // OpenSSL is claimed to be Rust -- which made `--language auto` render
+        // /usr/bin/ncat as Rust.
+        assert!(!is_rust_mangled("RAND_bytes"));
+        assert!(!is_rust_mangled("RSA_new"));
+        assert!(!is_rust_mangled("RAND_bytes@OPENSSL_3.0.0"));
+        assert!(!is_rust_mangled("Rmake"));
+        assert!(!is_rust_mangled("R"));
+        // the platform double underscore still counts
+        assert!(is_rust_mangled("__RNvCs1234_4core5panic"));
+        // a bare `_R` with nothing after it is not a symbol
+        assert!(!is_rust_mangled("_R"));
     }
 
     #[test]
