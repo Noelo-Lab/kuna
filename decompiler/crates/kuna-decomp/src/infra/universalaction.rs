@@ -672,6 +672,17 @@ pub fn universal_sched(
                 ))
             })),
             act!(Box::new(crate::kuna_stackguard::ActionStripStackGuard::new(false, "returnsplit"))),
+            // (kuna) SEFCOM Oxidizer `SecurityCheckRemover` (option `securitycheck`,
+            // DIV-82 default-ON): sever the CBRANCH edge to a diverging block whose
+            // only call is one of rustc's seven bounds/slice/divide-by-zero panic
+            // helpers, and collect the orphan.  Sits next to ActionStripStackGuard
+            // because it is the same edge-removal primitive pair on a different
+            // trigger; the repeating fullloop re-runs mainloop's dead-code and type
+            // passes over the reduced graph before P8 structures it.
+            act!(Box::new(crate::kuna_securitycheck::ActionRemoveSecurityCheck::new(
+                false,
+                "returnsplit"
+            ))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven

@@ -1018,6 +1018,12 @@ subphase = "edge-virtualization"
 note = "(kuna angr-port) strip the -fstack-protector canary epilogue so the shared-return goto is eliminated"
 
 [[surface]]
+surface = "option securitycheck"
+phase = "P7"
+subphase = "edge-virtualization"
+note = "(kuna oxidizer-port) strip rustc's bounds/slice/divide-by-zero panic branches so a checked access reads as a plain statement"
+
+[[surface]]
 surface = "option branchflip"
 phase = "P8"
 subphase = "readability-rewrites"
@@ -2491,6 +2497,25 @@ inspiration = "test_ite_region_converter_missing_break_statement; angr StackCana
 change_kind = "opt-in-tool"
 tier = "transform"
 symptoms = "stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue|shared-return goto forced by the canary check block|flip off to keep the real canary instructions for auditing the protector"
+
+[[settable]]
+option = "securitycheck"
+values = "on|off"
+default = "on"
+destructive = true
+phase = "P7"
+subphase = "edge-virtualization"
+strength = "HARD"
+rewind = "P7"
+issue = "oxidizer-SecurityCheckRemover"
+summary = "REMOVES CODE: strips rustc's bounds / slice / divide-by-zero panic branches from Rust output. Every checked slice index, string slice and non-constant `/`/`%` compiles to a conditional branch to a tiny diverging block that calls one of seven `core::panicking` / `core::slice::index` / `core::str` helpers; the branch doubles the CFG of ordinary Rust code and carries nothing a reader wants. The edge is severed and the orphaned handler collected, so the guarded access becomes a plain statement."
+use_when = "On by default (DIV-82): a Rust binary reads with half the branches and none of the `panic_bounds_check()` noise. Flip OFF to keep the real check instructions (auditing whether a particular access is actually bounds-checked, or reviewing a panic path). The trigger is the callee NAME, and all seven names are Rust-only, so the pass is structurally inert on a C binary -- it is byte-identical over the 675 datatests and over the C regression fixtures. It is marked destructive because it deletes real instructions, and there is one visible second-order effect: a length argument whose only reader was the removed compare becomes genuinely unused, so parameter recovery may trim it from the signature (the same trade `stackguard` makes with the canary slot). It cannot fire on a call whose callee name kuna did not recover: in a default (PIE, dynamically linked) Rust binary the helper is reached through an unrelocated GOT slot and has no name, so the pass is currently a no-op there."
+example = "option securitycheck off"
+source_decompiler = "angr"
+inspiration = "SEFCOM Oxidizer SecurityCheckRemover (angr/rust/optimization_passes/security_check_remover.py, with angr/rust/mixins/cfa_mixin.py match_call and cfg_transformation_mixin.py remove_block); FakeCrypt; rustc bounds-check lowering"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Rust output littered with `panic_bounds_check()` / `slice_error_fail()` / `panic_const_div_by_zero()` calls|every slice index guarded by an `if` whose arm only panics|Rust function CFG roughly twice the size of the source control flow|flip off to keep the real bounds-check instructions for auditing"
 
 [[settable]]
 option = "branchflip"

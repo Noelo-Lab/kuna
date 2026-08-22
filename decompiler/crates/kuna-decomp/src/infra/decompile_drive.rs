@@ -144,6 +144,21 @@ impl FlowEnvironment for ArchFlowEnv {
                 }
             }
         }
+        // (kuna `securitycheck`, DIV-82) The seven rustc security-check helpers are
+        // all declared `-> !` in libcore, so a call to one diverges by definition.
+        // kuna's address-keyed no-return discovery only proves that for the helper
+        // bodies it can walk, and the ones it misses leave a *returning* panic block
+        // that `ActionRemoveSecurityCheck`'s divergence guard then (correctly)
+        // declines to remove.  Asserting the fact from the name here is the same
+        // seam and the same shape as `noreturn_externmatch` above, on a list that
+        // exists nowhere but Rust — so it is inert on a C binary.
+        if arch.strip_security_check {
+            if let Some(name) = arch.symboltab.function_display_name_across_scopes(entry) {
+                if crate::kuna_securitycheck::is_security_check_name(&name) {
+                    return true;
+                }
+            }
+        }
         // (kuna) noreturn_extern: when the address-keyed flag is unset, fall back
         // to a name match against the known ELF no-return list.  This catches an
         // **undefined external** no-return (`__stack_chk_fail` in an ET_REL `.o`)

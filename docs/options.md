@@ -130,6 +130,10 @@ Three tiers:
 | stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue | [`stackguard`](#stackguard) |
 | shared-return goto forced by the canary check block | [`stackguard`](#stackguard) |
 | flip off to keep the real canary instructions for auditing the protector | [`stackguard`](#stackguard) |
+| Rust output littered with `panic_bounds_check()` / `slice_error_fail()` / `panic_const_div_by_zero()` calls | [`securitycheck`](#securitycheck) |
+| every slice index guarded by an `if` whose arm only panics | [`securitycheck`](#securitycheck) |
+| Rust function CFG roughly twice the size of the source control flow | [`securitycheck`](#securitycheck) |
+| flip off to keep the real bounds-check instructions for auditing | [`securitycheck`](#securitycheck) |
 | if (x == 0) guard with the common path in the else arm | [`branchflip`](#branchflip) |
 | negated condition where angr renders the positive complement first | [`branchflip`](#branchflip) |
 | if/else polarity inverted versus the source's reading order | [`branchflip`](#branchflip) |
@@ -661,6 +665,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-14): removes compiler-inserted stack-protector boilerplate and the shared-return goto it forces. Flip OFF to keep the real canary-check instructions in the output (e.g. to audit the protector itself, or if an unusual non-glibc `ptr+0x28` compare guarding a call is being matched). It is marked destructive because it deletes those real instructions, but it is byte-identical over the 675 datatests (the `Partial splitting` cases opt out via `option stackguard off`).
 - **Where / provenance:** P7/edge-virtualization · angr · opt-in-tool · angr-StackCanarySimplifier
 - **Example:** `option stackguard on`
+
+### `securitycheck` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** Rust output littered with `panic_bounds_check()` / `slice_error_fail()` / `panic_const_div_by_zero()` calls; every slice index guarded by an `if` whose arm only panics; Rust function CFG roughly twice the size of the source control flow; flip off to keep the real bounds-check instructions for auditing.
+- **What it does:** REMOVES CODE: strips rustc's bounds / slice / divide-by-zero panic branches from Rust output. Every checked slice index, string slice and non-constant `/`/`%` compiles to a conditional branch to a tiny diverging block that calls one of seven `core::panicking` / `core::slice::index` / `core::str` helpers; the branch doubles the CFG of ordinary Rust code and carries nothing a reader wants. The edge is severed and the orphaned handler collected, so the guarded access becomes a plain statement.
+- **When to flip:** On by default (DIV-82): a Rust binary reads with half the branches and none of the `panic_bounds_check()` noise. Flip OFF to keep the real check instructions (auditing whether a particular access is actually bounds-checked, or reviewing a panic path). The trigger is the callee NAME, and all seven names are Rust-only, so the pass is structurally inert on a C binary -- it is byte-identical over the 675 datatests and over the C regression fixtures. It is marked destructive because it deletes real instructions, and there is one visible second-order effect: a length argument whose only reader was the removed compare becomes genuinely unused, so parameter recovery may trim it from the signature (the same trade `stackguard` makes with the canary slot). It cannot fire on a call whose callee name kuna did not recover: in a default (PIE, dynamically linked) Rust binary the helper is reached through an unrelocated GOT slot and has no name, so the pass is currently a no-op there.
+- **Where / provenance:** P7/edge-virtualization · angr · opt-in-tool · oxidizer-SecurityCheckRemover
+- **Example:** `option securitycheck off`
 
 ### `branchflip` -- on | off, default `on`
 

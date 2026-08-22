@@ -1753,7 +1753,10 @@ mod tests {
         // and gh275-spillargtrial / caller-save spill tolerance in input-trial
         // scoring (option off drops the first atan2 call's second argument to
         // the `movapd [rsp+0x20],xmm1` spill, on recovers it)
-        assert_eq!(count, 209, "corpus file count drifted");
+        // and oxidizer-securitycheck / rustc bounds-check panic-branch stripping
+        // (option off = the `if (idx >= len) panic_bounds_check()` guard, on = the
+        // guarded load alone)
+        assert_eq!(count, 210, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

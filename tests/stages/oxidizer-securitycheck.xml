@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    SEFCOM Oxidizer `SecurityCheckRemover` (angr
+    angr/rust/optimization_passes/security_check_remover.py), ported as kuna
+    `option securitycheck` (P7 edge-virtualization, DIV-82, default ON).
+
+    rustc emits a check in front of every slice index, every string slice and
+    every non-constant `/` or `%`.  Each one lowers to a conditional branch to a
+    tiny block that loads the panic Location, calls one of seven Rust-only
+    helpers (`core::panicking::panic_bounds_check`,
+    `core::str::slice_error_fail`, `core::panicking::panic_const::*`,
+    `core::slice::index::slice_*_fail`) and diverges.  Those branches double the
+    CFG of ordinary Rust code and carry nothing a reader wants.
+
+    Stage model: S7 "edge-virtualization" sub-stage, the same sub-stage and the
+    same two block-graph primitives as `stackguard` (`Funcdata::removeBranch`
+    plus `removeUnreachableBlocks`), on a different trigger: the callee NAME.
+    All seven names are Rust-only, so the option is structurally inert on a C
+    binary, which is what lets it ship default ON with no compiler-detection
+    channel.  The option also asserts the divergence fact at the flow seam (the
+    seven helpers are all declared `-> !` in libcore), so a helper kuna's
+    address-keyed no-return discovery could not walk still produces a diverging
+    panic block for the P7 edge removal to collect.
+
+    The bytes are a hand-assembled x86-64 `fn pick(buf: &amp;[u32], idx: usize)`
+    bounds check, exactly as rustc lowers it:
+
+        100000  cmp  %rdx,%rsi          ; idx vs len
+        100003  jae  10000b             ; out of range -> panic
+        100005  mov  (%rdi,%rsi,4),%eax
+        100008  inc  %eax
+        10000a  ret
+        10000b  mov  %rsi,%rdi          ; arg0 = idx
+        10000e  mov  %rdx,%rsi          ; arg1 = len
+        100011  lea  0x1fe8(%rip),%rdx  ; arg2 = &amp;Location (0x102000)
+        100018  call 101000             ; core::panicking::panic_bounds_check
+        10001d  int3
+
+    P0 assertion: `option securitycheck on|off`.
+    Pass 1 (option securitycheck off): the bug - the guard and its
+      `panic_bounds_check` call are both emitted (assertions #1, #2).
+    Pass 2 (default, on): the fix - neither survives; the guarded load is a
+      plain statement (assertion #3), and the two assertions above stay at
+      exactly one occurrence each because the second pass contributes none.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4839d673068b04b7ffc0c34889f74889d6488d15e81f0000e8e30f0000cc
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pick"/>
+<symbol space="ram" offset="0x101000" name="core::panicking::panic_bounds_check"/>
+</binaryimage>
+<script>
+  <com>option securitycheck off</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option securitycheck on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="oxidizer-SecurityCheck #1: the panic helper call is emitted only with the option off" min="1" max="1">panic_bounds_check\(</stringmatch>
+<stringmatch name="oxidizer-SecurityCheck #2: the bounds guard is emitted only with the option off" min="1" max="1">if \(</stringmatch>
+<stringmatch name="oxidizer-SecurityCheck #3: the guarded load itself is untouched (emitted by both passes)" min="2" max="2">\(a0 \+ a1 \* 4\)</stringmatch>
+</decompilertest>
