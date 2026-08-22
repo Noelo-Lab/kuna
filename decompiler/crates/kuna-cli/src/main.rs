@@ -72,8 +72,8 @@ fn usage() {
     eprintln!(
         "usage: kuna <decompile|decompile-all|decompile-project|functions|test|catalog|modes|specs|fid> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--language c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
-         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
+         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
@@ -105,6 +105,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
     let mut raw = false;
     let mut regions = false;
     let mut options: Vec<(String, String)> = Vec::new();
+    let mut saw_language = false;
     let mut mode: Option<String> = None;
     let mut kasserts: Vec<String> = Vec::new();
     let mut decomp_dbg: Option<String> = None;
@@ -138,13 +139,14 @@ fn cmd_decompile(argv: &[String]) -> i32 {
             // in-process option applier in decompile-all) with no new plumbing.
             // Pushed in argv order, so a later `--option setlanguage` still wins.
             "--language" => match take_value(argv, &mut i, "--language") {
-                Some(value) => match kuna_decomp::kuna_lang::OutLang::from_print_name(&value) {
-                    Some(lang) => options.push(("setlanguage".into(), lang.print_name().into())),
-                    None => {
-                        eprintln!(
-                            "error: unknown output language {value:?} (expected one of: {})",
-                            kuna_decomp::kuna_lang::OutLang::names().join(", ")
-                        );
+                Some(value) => match decompile_all::parse_language_flag(&value) {
+                    Ok(Some(lang)) => {
+                        options.push(("setlanguage".into(), lang.into()));
+                        saw_language = true;
+                    }
+                    Ok(None) => saw_language = true,
+                    Err(msg) => {
+                        eprintln!("error: {msg}");
                         return 2;
                     }
                 },
@@ -195,6 +197,14 @@ fn cmd_decompile(argv: &[String]) -> i32 {
     };
     apply_engine(engine.as_deref());
     addr |= decompile::looks_like_addr(&target);
+
+    // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
+    // named no language. See `decompile_all::detected_output_language`.
+    if !saw_language && !options.iter().any(|(n, _)| n == "setlanguage") {
+        if let Some(lang) = decompile_all::detected_output_language(&binary) {
+            options.push(("setlanguage".into(), lang.into()));
+        }
+    }
 
     let explicit_fast_funcdisc = options.iter().any(|(name, _)| name == "fast_funcdisc");
     // Omitted mode is the size-driven `auto` policy. Preset overrides are

@@ -121,9 +121,15 @@ impl RustSpeller {
     }
 }
 
-/// Rust identifiers admit only `[A-Za-z0-9_]`; a recovered aggregate name can
-/// carry the C spelling of a template or an anonymous tag.
-fn sanitize(name: &str) -> String {
+/// Rust identifiers admit only `[A-Za-z0-9_]`.
+///
+/// A recovered name can carry a demangled path (`hello::main`), a template or
+/// generic argument list (`driftsort_main<T, U>`), or an anonymous tag. C emits
+/// those verbatim too and is equally not-C for it; the difference is that Rust
+/// output is parsed, so the same latent problem has to be fixed rather than
+/// tolerated. The original is not lost -- the prototype emitter records it in a
+/// comment above the function when the two differ.
+pub(crate) fn sanitize(name: &str) -> String {
     let mut out: String = name
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })

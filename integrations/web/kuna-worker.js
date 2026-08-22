@@ -6,6 +6,7 @@ let kuna = null;
 let binary = null;
 let fileName = 'binary';
 let mode = 'auto';
+let language = 'auto';
 
 function requireKuna() {
   if (!kuna) throw new Error('worker is not initialized');
@@ -39,11 +40,11 @@ async function dispatch(method, params) {
       };
     case 'list':
       return {
-        result: await requireKuna().list(requireBinary(), { mode }),
+        result: await requireKuna().list(requireBinary(), { mode, language }),
       };
     case 'decompile':
       return {
-        result: await requireKuna().decompile(requireBinary(), params.target, { mode }),
+        result: await requireKuna().decompile(requireBinary(), params.target, { mode, language }),
       };
     case 'project': {
       const name = safeName(params.displayName || fileName);

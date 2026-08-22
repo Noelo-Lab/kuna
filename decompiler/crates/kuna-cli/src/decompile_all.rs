@@ -100,7 +100,14 @@ pub fn run(argv: &[String]) -> i32 {
     match decompile_all(&args) {
         Ok(funcs) => {
             if args.json {
-                println!("{}", dumps_indent2(&result_json(&args.binary, &funcs)));
+                let language = args
+                    .options
+                    .iter()
+                    .rev()
+                    .find(|(n, _)| n == "setlanguage")
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("c-language");
+                println!("{}", dumps_indent2(&result_json(&args.binary, &funcs, language)));
             } else {
                 print!("{}", render_c(&funcs));
             }
@@ -525,6 +532,46 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
     env
 }
 
+/// (kuna outlang) The output language to use when the caller named none.
+///
+/// A Rust binary rendered as C is strictly worse than the same binary rendered
+/// as Rust: the types are wrong in a way a reader has to undo by hand. kuna
+/// already knows which it is -- `sourcelang::detect_compiler` is the port of
+/// Ghidra's `SourceLanguageAnalyzer`, and it reports `Rustc` from the `.comment`
+/// `rustc version` record, a `.rodata` signature, or a Rust-mangled symbol -- so
+/// the default follows the binary rather than making every user of a Rust binary
+/// remember a flag.
+///
+/// Detection is high-precision, not heuristic, and `--language c` always wins.
+/// Returns `None` when the file is not a Rust binary or cannot be parsed, which
+/// leaves the C default in place: this can only ever ADD a language, never take
+/// one away.
+pub fn detected_output_language(binary: &str) -> Option<&'static str> {
+    let bytes = std::fs::read(binary).ok()?;
+    let file = object::File::parse(&*bytes).ok()?;
+    match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
+        kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
+        _ => None,
+    }
+}
+
+/// Resolve a `--language` value, or `None` for the auto policy.
+///
+/// `auto` is the default and the only value that is not a language name.
+pub fn parse_language_flag(v: &str) -> Result<Option<&'static str>, String> {
+    if v.eq_ignore_ascii_case("auto") {
+        return Ok(None);
+    }
+    kuna_decomp::kuna_lang::OutLang::from_print_name(v)
+        .map(|l| Some(l.print_name()))
+        .ok_or_else(|| {
+            format!(
+                "unknown output language {v:?} (expected auto, or one of: {})",
+                kuna_decomp::kuna_lang::OutLang::names().join(", ")
+            )
+        })
+}
+
 /// Apply each `--option NAME VALUE` to the live architecture, mirroring the
 /// console `option` command (`IfcOption`): kuna stage-model options route to
 /// `set_kuna_option`, upstream options to the `OptionDatabase`.  Load-time gates
@@ -576,7 +623,7 @@ fn spec_roots(sleighpath: Option<&str>) -> Vec<String> {
 // --- output rendering --------------------------------------------------------
 
 /// Build the `decompile-all --json` document.
-fn result_json(binary: &str, funcs: &[FuncResult]) -> Json {
+fn result_json(binary: &str, funcs: &[FuncResult], language: &str) -> Json {
     let functions = Json::Array(
         funcs
             .iter()
@@ -606,6 +653,10 @@ fn result_json(binary: &str, funcs: &[FuncResult]) -> Json {
     );
     Json::Object(vec![
         ("binary".into(), Json::Str(binary.to_string())),
+        // (kuna outlang) The auto language policy resolves inside the engine, so
+        // the document has to say which language `code` is in -- otherwise a
+        // consumer cannot tell a Rust body from a C one without guessing.
+        ("language".into(), Json::Str(language.to_string())),
         ("count".into(), Json::Number(funcs.len().to_string())),
         ("functions".into(), functions),
     ])
@@ -706,7 +757,7 @@ mod provenance_json_tests {
             aliases: Vec::new(),
         };
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function]));
+        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language"));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -806,6 +857,7 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
+    let mut saw_language = false;
 
     let mut i = 0;
     while i < argv.len() {
@@ -843,13 +895,10 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
             // Pushed in argv order, so a later `--option setlanguage` still wins.
             "--language" => {
                 let v = take(argv, &mut i, "--language")?;
-                let lang = kuna_decomp::kuna_lang::OutLang::from_print_name(&v).ok_or_else(|| {
-                    format!(
-                        "unknown output language {v:?} (expected one of: {})",
-                        kuna_decomp::kuna_lang::OutLang::names().join(", ")
-                    )
-                })?;
-                options.push(("setlanguage".into(), lang.print_name().into()));
+                if let Some(lang) = parse_language_flag(&v)? {
+                    options.push(("setlanguage".into(), lang.into()));
+                }
+                saw_language = true;
             }
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
@@ -876,6 +925,20 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+
+    // (kuna outlang, DIV-80) The auto policy: with no `--language` and no
+    // explicit `--option setlanguage`, follow the binary. `decompile-project` is
+    // excluded -- its `.c`/`.h`/`.asm` export is C-shaped end to end and refuses
+    // any other language, so auto-selecting one there would turn a working
+    // export into an error.
+    if !saw_language
+        && cmd != "decompile-project"
+        && !options.iter().any(|(n, _)| n == "setlanguage")
+    {
+        if let Some(lang) = detected_output_language(&binary) {
+            options.push(("setlanguage".into(), lang.into()));
+        }
+    }
 
     let explicit_fast_funcdisc = options.iter().any(|(name, _)| name == "fast_funcdisc");
     // Omitted mode is the size-driven `auto` policy. Mode overrides are

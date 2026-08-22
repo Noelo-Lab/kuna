@@ -328,6 +328,9 @@ pub struct LangProfile {
     pub kw_type_pointer_rel: &'static str,
     /// The spelling of a null pointer constant (`option nullprinting`).
     pub null_literal: &'static str,
+    /// Recovered names are rewritten to the language's identifier charset before
+    /// they reach the page. `false` for C, which emits demangled paths verbatim.
+    pub sanitize_identifiers: bool,
 
     /// Map a token from the opcode table onto this language's spelling and
     /// precedence.
@@ -388,6 +391,7 @@ pub static LANG_C: LangProfile = LangProfile {
     kw_return: keywords::KEYWORD_RETURN,
     kw_type_pointer_rel: keywords::TYPE_POINTER_REL_TOKEN,
     null_literal: "NULL",
+    sanitize_identifiers: false,
 
     map_token: c_map_token,
     tok_typecast: &tokens::TYPECAST,

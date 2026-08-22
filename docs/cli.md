@@ -36,10 +36,16 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 
-**`--language c|rust`** selects the output language (`c` is the default and is
-what every gate asserts). It lowers to the upstream `option setlanguage`, so
+**`--language auto|c|rust`** selects the output language. **`auto` is the
+default and follows the binary**: a Rust binary renders as Rust, because kuna
+already detects one (`kuna-analysis`'s `sourcelang` pass, the port of Ghidra's
+`SourceLanguageAnalyzer`) and rendering it as C is worse in a way the reader has
+to undo by hand (DIV-80). Detection is high-precision, not heuristic; an
+unreadable file leaves C in place; and `--language c` always wins, so the policy
+can only ever add a language. It lowers to the upstream `option setlanguage`, so
 `--option setlanguage rust-language` is equivalent; an unknown name is an error
-rather than a silent fall back to C. The same recovered function is rendered
+rather than a silent fall back to C. `decompile-all --json` reports the resolved
+choice in a top-level `"language"` key. The same recovered function is rendered
 through a different profile — types, structuring and analysis are identical —
 producing `unsafe fn n(mut a0: i64) -> u32`, `let mut v: T;` declarations, Rust
 primitive spelling, `x as T` casts, `loop`/`while c {}`, and `match v { A | B =>
@@ -50,8 +56,10 @@ could not remove, a C switch fall-through — render as a comment plus a divergi
 `panic!("kuna: …")` so a lossy site is never mistaken for a translation; grep
 that marker to measure them, and `--option gotoreduce on --option taildup on
 --option ifelseflatten on` to reduce them. `--language` also works on
-`decompile-all`; `decompile-project` is C-only and errors, and the Ghidra
-front-end pins its markup document to C. See `docs/spec/09-emission.md` §9.6.
+`decompile-all`; `decompile-project` is C-only -- it never auto-selects, and errors on an
+explicit non-C language -- and the Ghidra front-end pins its markup document to
+C. The browser decompiler carries the same three choices in its **Language**
+control. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and

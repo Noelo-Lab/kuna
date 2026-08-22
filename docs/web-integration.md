@@ -98,6 +98,16 @@ reach a function, so an entry the inventory omits is a function the UI cannot op
 mode with no discovery overrides of its own; `aggressive` already turns all three on and
 `fast` turns all three off, so those two were consistent before and after.
 
+**Output language.** The **Language** control alongside **Mode** carries the same three
+choices the CLI does: `auto` (the default), `C`, and `Rust`. `auto` follows the binary —
+a Rust binary renders as Rust (DIV-80) — and, exactly like `auto` mode, it is resolved by
+the ENGINE rather than by JavaScript: `kuna-web.js` passes the literal `auto` through as
+`--language auto` and `kuna_wasm::resolve_language` decides. Nothing sniffs the binary in
+the browser, so the browser and the CLI cannot drift apart on the policy. `project` is
+excluded on both sides (its `.c`/`.h`/`.asm` export is C-shaped end to end), and the
+syntax highlighter picks its dialect from the returned text, since the caller asked for
+`auto` and only the engine knows what it resolved to.
+
 That makes the mode a *product* decision in the browser, not just a speed dial, so the
 page exposes it: a **Mode** control beside the file picker (`auto` — the default — plus
 `fast` / `reliable` / `aggressive`), whose value is passed to `kuna.load` and carried by
@@ -297,8 +307,9 @@ architectures**:
 1. **`test/parity.mjs`** — runs the wasm under `node:wasi` (the same WASI preview1 ABI the
    browser shim implements) and asserts its output is **byte-identical to the native
    `kuna_wasm`** across `list` + `decompile {…}` + a whole-binary `project` export for each
-   fixture (15 cases across ELF x86-64, ELF AArch64, and Mach-O x86-64). This proves the
-   port is faithful, not degraded.
+   fixture (20 cases across ELF x86-64, ELF AArch64, and Mach-O x86-64, one of them
+   `--language rust` so the second output language is proven to cross the boundary too).
+   This proves the port is faithful, not degraded.
 2. **`test/glue.mjs`** — imports the shipped `kuna-web.js` (which drives the vendored
    `@bjorn3` shim) and decompiles over HTTP against `dist/`, exercising the exact browser
    code path minus the DOM — and specifically the **robust lazy-spec mechanism**: it

@@ -41,6 +41,14 @@
           <option value="aggressive">aggressive</option>
         </select>
       </label>
+      <label class="tinybtn modepick" id="langlabel" title="Output language: auto follows the binary, so a Rust binary renders as Rust">
+        Language
+        <select id="lang">
+          <option value="auto" selected>auto</option>
+          <option value="c">C</option>
+          <option value="rust">Rust</option>
+        </select>
+      </label>
       <label class="tinybtn primary" id="pick" aria-disabled="true">
         Load binary <input type="file" id="file">
       </label>
@@ -101,7 +109,7 @@
     KunaWorkerCancelledError,
     KunaWorkerClient,
   } from '../kuna-worker-client.js';
-  import { highlightC, escapeHtml } from '../assets/js/highlight-c.js';
+  import { highlight, escapeHtml } from '../assets/js/highlight-c.js';
   import {
     headline,
     searchKey,
@@ -113,6 +121,7 @@
   const pickEl = document.getElementById('pick');
   const fileEl = document.getElementById('file');
   const modeEl = document.getElementById('mode');
+  const langEl = document.getElementById('lang');
   const listEl = document.getElementById('fnlist');
   const headEl = document.getElementById('fnhead');
   const codeEl = document.getElementById('code');
@@ -257,7 +266,7 @@
       const bytes = new Uint8Array(await f.arrayBuffer());
       if (!isCurrent(operation)) return;
       setStatus(`indexing ${f.name} (${bytes.length.toLocaleString()} bytes)…`);
-      result = await kuna.load(bytes, { fileName: f.name, mode: modeEl.value });
+      result = await kuna.load(bytes, { fileName: f.name, mode: modeEl.value, language: langEl.value });
     } catch (e) {
       if (!isCurrent(operation)) return;
       setStatus('function inventory failed: ' + e.message, 'err');
@@ -323,6 +332,12 @@
   // itself, not just how hard each body is worked: re-index the binary already
   // loaded rather than leave a sidebar that disagrees with the bodies below it.
   modeEl.addEventListener('change', () => {
+    if (loadedFile) indexBinary(loadedFile);
+  });
+
+  // The language changes only how a body is rendered, not which functions
+  // exist -- but the bodies are cached per function, so the cache has to go.
+  langEl.addEventListener('change', () => {
     if (loadedFile) indexBinary(loadedFile);
   });
 
@@ -447,7 +462,9 @@
       codeEl.textContent =
         `/* ${fn.name} @ ${fn.address_hex} — decompile error:\n   ${body.error} */`;
     } else {
-      codeEl.innerHTML = highlightC(body.code);
+      // The engine resolves `auto`, so the rendered body is the only reliable
+      // signal for which language came back.
+      codeEl.innerHTML = highlight(body.code);
     }
   }
 

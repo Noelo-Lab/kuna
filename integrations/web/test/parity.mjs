@@ -39,6 +39,11 @@ const FIXTURES = [
     fixture: join(here, 'fixtures/sample.elf'),
     arch: 'x86-64',
     cases: [['list'], ['decompile'], ['decompile', 'main'], ['decompile', 'sum_to'], ['decompile', 'add'],
+      // (kuna outlang) The output language is a rendering choice, not a property
+      // of the binary, so a C fixture rendered as Rust is a valid case -- and it
+      // is the one that proves the second language crosses the wasm boundary
+      // byte-identically, not just the first.
+      ['decompile', 'main', '--language', 'rust'],
       ['project', 'sample.elf', '--mode', 'fast']],
   },
   {
