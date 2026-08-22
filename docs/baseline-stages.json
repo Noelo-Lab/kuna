@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    484,
-    484
+    493,
+    493
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -375,6 +375,15 @@
     "data:orchain #6: option on (the default) folds the whole operand chain back into one short-circuit condition",
     "data:orchain #7: three of the four `return 1;` are the cascade's, one is the folded form's",
     "data:orchain #8: two of the three `return 0;` are the cascade's, one is the folded form's guarded return",
+    "data:outlang #1: pass 1 keeps the C switch statement",
+    "data:outlang #2: pass 1 keeps C case labels",
+    "data:outlang #3: pass 1 keeps the C default label",
+    "data:outlang #4: pass 2 emits the Rust function shell",
+    "data:outlang #5: pass 2 emits the allow attribute",
+    "data:outlang #6: pass 2 emits let-mut declarations",
+    "data:outlang #7: pass 2 spells types as Rust primitives",
+    "data:outlang #8: pass 2 emits a match with the synthesised wildcard arm",
+    "data:outlang #9: pass 2 emits a postfix as-cast",
     "data:outline #1: OFF is the bug - the inlined body is spliced into the caller (pass 1 only)",
     "data:outline #2: OFF - the body's own branch is present too (pass 1 only)",
     "data:outline #3: ON - the whole region becomes one call named after the region head (pass 2 only)",

@@ -72,8 +72,8 @@ fn usage() {
     eprintln!(
         "usage: kuna <decompile|decompile-all|decompile-project|functions|test|catalog|modes|specs|fid> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
-         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
+         kuna decompile <binary> <func> [--addr] [--slice ARCH] [--language c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language c|rust] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna decompile-project <binary> [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]...\n\
          kuna functions <binary> [--json] [--mode auto|reliable|aggressive|fast]\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
@@ -132,6 +132,24 @@ fn cmd_decompile(argv: &[String]) -> i32 {
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 i += 2;
             }
+            // (kuna outlang) `--language` is the first-class surface for the
+            // output language; it lowers to the upstream `setlanguage` option, so
+            // it reaches every downstream consumer (the console script here, the
+            // in-process option applier in decompile-all) with no new plumbing.
+            // Pushed in argv order, so a later `--option setlanguage` still wins.
+            "--language" => match take_value(argv, &mut i, "--language") {
+                Some(value) => match kuna_decomp::kuna_lang::OutLang::from_print_name(&value) {
+                    Some(lang) => options.push(("setlanguage".into(), lang.print_name().into())),
+                    None => {
+                        eprintln!(
+                            "error: unknown output language {value:?} (expected one of: {})",
+                            kuna_decomp::kuna_lang::OutLang::names().join(", ")
+                        );
+                        return 2;
+                    }
+                },
+                None => return 2,
+            },
             "--mode" => match take_value(argv, &mut i, "--mode") {
                 Some(value) => mode = Some(value),
                 None => return 2,

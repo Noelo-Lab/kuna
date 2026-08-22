@@ -25,6 +25,8 @@ object.workspace = true
 # The register<->global over-merge render gate (`tests/verify_global_regmerge.rs`)
 # asserts, via a word-boundary regex, that no raw register / `Unique<hex>` leaks.
 regex.workspace = true
+# The Rust-output syntax gate (`tests/verify_outlang_rust_syntax.rs`).
+syn.workspace = true
 
 [lints]
 workspace = true

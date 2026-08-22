@@ -45,13 +45,31 @@ pub enum OutLang {
     /// The c-language back-end (`printc.cc`'s successor).
     #[default]
     C,
+    /// The rust-language back-end.
+    Rust,
 }
 
 impl OutLang {
+    /// Resolve from an `option setlanguage` name, or `None` when the name names
+    /// no back-end kuna can emit.
+    pub fn from_print_name(name: &str) -> Option<OutLang> {
+        match name {
+            "c-language" | "c" => Some(OutLang::C),
+            "rust-language" | "rust" => Some(OutLang::Rust),
+            _ => None,
+        }
+    }
+
+    /// Every language kuna can emit, by `option setlanguage` name.
+    pub fn names() -> Vec<&'static str> {
+        [OutLang::C, OutLang::Rust].iter().map(|l| l.print_name()).collect()
+    }
+
     /// The `option setlanguage` name this language answers to.
     pub fn print_name(self) -> &'static str {
         match self {
             OutLang::C => "c-language",
+            OutLang::Rust => "rust-language",
         }
     }
 
@@ -59,6 +77,7 @@ impl OutLang {
     pub fn profile(self) -> &'static LangProfile {
         match self {
             OutLang::C => &LANG_C,
+            OutLang::Rust => &crate::kuna_langrust::LANG_RUST,
         }
     }
 
@@ -66,9 +85,164 @@ impl OutLang {
     pub fn speller(self) -> &'static dyn crate::kuna_langtypes::TypeSpeller {
         match self {
             OutLang::C => &crate::kuna_langc::C_SPELLER,
+            OutLang::Rust => &crate::kuna_rusttypes::RUST_SPELLER,
         }
     }
 }
+
+/// How the function signature is laid out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProtoForm {
+    /// `<ret> name(<params>)` -- C.
+    CPrefixReturn,
+    /// `unsafe fn name(<params>) -> <ret>` -- Rust.
+    RustFnArrow,
+}
+
+/// How a local declaration is laid out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeclForm {
+    /// `<type> name;` (array count after the name) -- C.
+    CTypeThenName,
+    /// `let mut name: <type>;` (array count inside the type) -- Rust.
+    RustLetColon,
+}
+
+/// How a multi-way branch is laid out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SwitchForm {
+    /// `switch (v) { case N: ... break; default: ... }` -- C.
+    CSwitch,
+    /// `match v { N | M => { ... } _ => {} }` -- Rust.
+    RustMatch,
+}
+
+/// How an unconditional loop is laid out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InfLoopForm {
+    /// `do { ... } while( true );` -- C.
+    CDoWhileTrue,
+    /// `loop { ... }` -- Rust.
+    RustLoop,
+}
+
+/// How a top-tested loop is laid out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WhileForm {
+    /// `while (c) { ... }`, and `while( true ) { ...; if (c) break; ... }` for the
+    /// overflow form -- C.
+    CParenWhile,
+    /// `while c { ... }`, and `loop { ...; if c { break; } ... }` for the overflow
+    /// form -- Rust.
+    RustBareWhile,
+}
+
+/// How a bottom-tested loop is laid out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DoWhileForm {
+    /// `do { ... } while (c);` -- C.
+    CDoWhile,
+    /// `loop { ...; if !(c) { break; } }` -- Rust.
+    RustLoopBreakIf,
+}
+
+/// How a counted loop is laid out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForLoopForm {
+    /// `for (init; cond; iter) { ... }` -- C.
+    CForHeader,
+    /// No header form: render as `while`. The `for` reroll is disabled upstream
+    /// (P6 `analyze_for_loops`) so the init/iterate ops stay where the CFG put
+    /// them -- moving them back at print time would let a `continue` skip the
+    /// increment.
+    DegradeToWhile,
+}
+
+/// How an unstructured jump is rendered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GotoForm {
+    /// `goto label;` -- C.
+    CGoto,
+    /// No form: a comment plus a diverging marker. See `LangCaps::goto`.
+    Unrepresentable,
+}
+
+/// How a jump target is labelled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LabelForm {
+    /// `label:` -- C.
+    CColon,
+    /// A comment: Rust has no statement labels, only loop labels.
+    CommentOnly,
+}
+
+/// How a field is reached through a pointer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemberForm {
+    /// `p->f` -- C.
+    CArrow,
+    /// `(*p).f` -- Rust raw pointers have no auto-deref.
+    RustDerefParen,
+}
+
+/// How a character constant is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CharForm {
+    /// `'a'`, `'\xff'`, `L'a'` -- C, where a char literal is an integer of the
+    /// declared width and `\x` admits any byte.
+    CQuoted,
+    /// `b'a'` -- Rust, where a `char` is a 4-byte Unicode scalar with a validity
+    /// invariant and `'\xff'` does not exist. Only a 1-byte value with a
+    /// printable-ASCII or standard-escape spelling takes this form; anything else
+    /// falls back to the integer, which is always exact.
+    RustByte,
+}
+
+/// How a string literal's body is escaped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StringEscape {
+    /// C's set, which includes `\a`, `\b`, `\v`, `\f` and an escaped `\'`.
+    CEscapes,
+    /// Rust's set. It has no `\a`/`\b`/`\v`/`\f` (those become `\xNN`), and a
+    /// single quote inside a double-quoted string must NOT be escaped -- `\'` is
+    /// only an escape in a character literal, so `"PCRE\'s"` does not tokenize.
+    RustEscapes,
+}
+
+/// How a conversion is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CastForm {
+    /// `(T)x` -- C.
+    PrefixParen,
+    /// `x as T` -- Rust.
+    PostfixAs,
+}
+
+/// The statement and expression *shapes* the emitters branch on.
+///
+/// Data, not a trait: every one of these is a plain choice with no behaviour, and
+/// a struct of enums keeps the whole language definition readable in one place.
+/// The emitter matches on the form; adding a language adds a variant, and the
+/// compiler enumerates every site that must answer for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LangForms {
+    pub proto: ProtoForm,
+    pub decl: DeclForm,
+    pub switch: SwitchForm,
+    pub inf_loop: InfLoopForm,
+    pub while_loop: WhileForm,
+    pub do_while: DoWhileForm,
+    pub for_loop: ForLoopForm,
+    pub goto: GotoForm,
+    pub label: LabelForm,
+    pub member: MemberForm,
+    pub cast: CastForm,
+    pub char_lit: CharForm,
+    pub string_escape: StringEscape,
+}
+
+/// Outer attributes emitted above a function, if the language wants any.
+pub type FnAttributes = &'static [&'static str];
 
 /// What the emitter is **allowed** to produce in this language.
 ///
@@ -111,6 +285,10 @@ pub struct LangCaps {
     pub brace_elision: bool,
     /// `p->f` is spelled as such (rather than requiring an explicit deref).
     pub arrow_member: bool,
+    /// An `if`/`while` condition is parenthesised.
+    pub paren_conditions: bool,
+    /// Integer literals carry `U`/`L`/`LL` type suffixes.
+    pub integer_suffixes: bool,
 }
 
 /// The per-language surface vocabulary.
@@ -148,16 +326,37 @@ pub struct LangProfile {
     pub kw_return: &'static str,
     /// The `TypePointerRel` display macro (C++ `typePointerRelToken`).
     pub kw_type_pointer_rel: &'static str,
+    /// The spelling of a null pointer constant (`option nullprinting`).
+    pub null_literal: &'static str,
 
-    pub tok_bitwise_not: &'static OpToken,
-    pub tok_boolean_and: &'static OpToken,
-    pub tok_boolean_or: &'static OpToken,
-    pub tok_boolean_xor: &'static OpToken,
-    pub tok_addressof: &'static OpToken,
-    pub tok_dereference: &'static OpToken,
+    /// Map a token from the opcode table onto this language's spelling and
+    /// precedence.
+    ///
+    /// Most of the ~46 operator tokens are the right token in every language
+    /// kuna targets, so a whole parallel table would be noise. The ones that are
+    /// not fall into two groups, and the second is the dangerous one:
+    ///
+    /// * **spelling** -- Rust writes bitwise complement `!`, not `~`.
+    /// * **precedence** -- C puts `& ^ |` BELOW `== !=`, Rust puts them ABOVE.
+    ///   The parenthesizer decides parens from precedence, so leaving C's numbers
+    ///   in place would emit `a | b == c` for `(a | b) == c`, which Rust reads as
+    ///   `a | (b == c)`. That is a silent wrong answer, not a syntax error, which
+    ///   is why the mapping is a language property rather than a spelling table.
+    ///
+    /// C's is the identity.
+    pub map_token: fn(&'static OpToken) -> &'static OpToken,
+    /// The conversion token, reached directly by the cast emitters.
     pub tok_typecast: &'static OpToken,
 
     pub caps: LangCaps,
+    pub forms: LangForms,
+    /// Outer attributes emitted above the function (Rust `#[allow(...)]`).
+    pub fn_attributes: FnAttributes,
+}
+
+/// C's token mapping: the identity, because `printc::tokens` IS the C table.
+fn c_map_token(tok: &'static OpToken) -> &'static OpToken {
+    tok
 }
 
 /// The c-language profile. Every field is the `keywords::`/`tokens::` constant
@@ -188,13 +387,9 @@ pub static LANG_C: LangProfile = LangProfile {
     kw_default: keywords::KEYWORD_DEFAULT,
     kw_return: keywords::KEYWORD_RETURN,
     kw_type_pointer_rel: keywords::TYPE_POINTER_REL_TOKEN,
+    null_literal: "NULL",
 
-    tok_bitwise_not: &tokens::BITWISE_NOT,
-    tok_boolean_and: &tokens::BOOLEAN_AND,
-    tok_boolean_or: &tokens::BOOLEAN_OR,
-    tok_boolean_xor: &tokens::BOOLEAN_XOR,
-    tok_addressof: &tokens::ADDRESSOF,
-    tok_dereference: &tokens::DEREFERENCE,
+    map_token: c_map_token,
     tok_typecast: &tokens::TYPECAST,
 
     caps: LangCaps {
@@ -212,7 +407,25 @@ pub static LANG_C: LangProfile = LangProfile {
         implicit_bool_conditions: true,
         brace_elision: true,
         arrow_member: true,
+        paren_conditions: true,
+        integer_suffixes: true,
     },
+    forms: LangForms {
+        proto: ProtoForm::CPrefixReturn,
+        decl: DeclForm::CTypeThenName,
+        switch: SwitchForm::CSwitch,
+        inf_loop: InfLoopForm::CDoWhileTrue,
+        while_loop: WhileForm::CParenWhile,
+        do_while: DoWhileForm::CDoWhile,
+        for_loop: ForLoopForm::CForHeader,
+        goto: GotoForm::CGoto,
+        label: LabelForm::CColon,
+        member: MemberForm::CArrow,
+        cast: CastForm::PrefixParen,
+        char_lit: CharForm::CQuoted,
+        string_escape: StringEscape::CEscapes,
+    },
+    fn_attributes: &[],
 };
 
 #[cfg(test)]

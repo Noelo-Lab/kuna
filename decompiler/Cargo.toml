@@ -35,6 +35,14 @@ object = { version = "0.39", default-features = false, features = ["read_core", 
 # (ECMAScript) has no Rust equivalent; the regex crate is the documented
 # substitution (LOSS-007).  Used by the harness crate only -- never the engine.
 regex = "1"
+# The Rust-output syntax gate (`kuna-console/tests/verify_outlang_rust_syntax.rs`)
+# parses the emitted `setlanguage rust-language` document. A parser fails on a
+# CATEGORY of defect (an unbalanced brace, a leaked `->`/`~`/`goto`/`do{}while`)
+# where a string assertion can only fail on a construct someone remembered to
+# assert -- which is exactly how the reference implementation this back-end is
+# modelled on ships Rust output that does not parse. Already in Cargo.lock as a
+# transitive dependency, so this adds a lock edge, not a crate. Dev-only.
+syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "clone-impls", "proc-macro"] }
 # Symbol demangling (kuna-analysis / `s1_demangle/`), the kuna analog of
 # Ghidra's `GnuDemanglerAnalyzer`.  Ghidra's GNU/Itanium demangler is NOT Java
 # logic: `GnuDemanglerNativeProcess` shells out to a native `demangle`

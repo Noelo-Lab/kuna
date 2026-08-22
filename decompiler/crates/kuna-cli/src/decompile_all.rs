@@ -836,6 +836,21 @@ pub(crate) fn parse_args(argv: &[String], cmd: &str) -> Result<Args, String> {
                 options.push((argv[i + 1].clone(), argv[i + 2].clone()));
                 i += 2;
             }
+            // (kuna outlang) `--language` is the first-class surface for the
+            // output language; it lowers to the upstream `setlanguage` option, so
+            // it reaches every downstream consumer (the console script here, the
+            // in-process option applier in decompile-all) with no new plumbing.
+            // Pushed in argv order, so a later `--option setlanguage` still wins.
+            "--language" => {
+                let v = take(argv, &mut i, "--language")?;
+                let lang = kuna_decomp::kuna_lang::OutLang::from_print_name(&v).ok_or_else(|| {
+                    format!(
+                        "unknown output language {v:?} (expected one of: {})",
+                        kuna_decomp::kuna_lang::OutLang::names().join(", ")
+                    )
+                })?;
+                options.push(("setlanguage".into(), lang.print_name().into()));
+            }
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),

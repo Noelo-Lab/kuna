@@ -1311,7 +1311,16 @@ fn build_decompile_at_doc(
         // `print_c` split-borrow precedent), render, put it back.
         let markup: Option<Vec<u8>> = if send_c_code && current_action == "decompile" {
             let mut printer = arch.take_print();
+            // (kuna outlang) This document is consumed by Ghidra's Clang token
+            // model, whose token classes are C's. A non-C output language here
+            // would put Rust text into C token slots -- a GUI regression, not a
+            // feature -- so the markup path is pinned to C regardless of any
+            // `setlanguage` the client forwarded. The plain-text `print C`
+            // surfaces are unaffected.
+            let requested = printer.get_name().to_string();
+            printer.set_name("c-language");
             let m = printer.doc_function_markup(fd, arch);
+            printer.set_name(&requested);
             arch.put_print(printer);
             Some(m)
         } else {
