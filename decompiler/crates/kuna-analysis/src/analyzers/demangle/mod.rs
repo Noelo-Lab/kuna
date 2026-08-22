@@ -153,9 +153,31 @@ fn is_gnu2_or_3_pattern(raw: &str) -> bool {
 /// Demangle `raw` to the **full** c++filt-like form (signature included), or
 /// `None` if `raw` is not a (recognized, demangleable) mangled symbol.
 ///
-/// Itanium C++ ([`cpp_demangle`]) is tried first, then Rust
-/// ([`rustc_demangle`], `{:#}` to drop the v0/legacy hash). A result that is
-/// empty or unchanged (`== raw`) means "not actually mangled" → `None`.
+/// Rust is tried first when the symbol carries a Rust marker, then Itanium C++
+/// ([`cpp_demangle`]), then Rust again for anything the marker test missed.
+/// A result that is empty or unchanged (`== raw`) means "not actually mangled"
+/// → `None`.
+///
+/// # Why the Rust-first arm exists
+///
+/// Rust's **legacy** scheme reuses the Itanium `_ZN…E` envelope, escaping the
+/// characters Itanium identifiers cannot hold (`$LT$` for `<`, `$C$` for `,`,
+/// `..` for `::`). A C++ demangler therefore *succeeds* on one — it sees a
+/// perfectly well-formed nested-name whose components happen to contain dollar
+/// signs — and returns the escapes verbatim:
+///
+/// ```text
+/// _ZN4core3ptr100drop_in_place$LT$std..io..error..ErrorData$LT$…$GT$$GT$17h07f6…E
+///   Itanium: core::ptr::drop_in_place$LT$std..io..error..ErrorData$LT$…$GT$$GT$
+///   Rust:    core::ptr::drop_in_place<std::io::error::ErrorData<…>>
+/// ```
+///
+/// Trying Itanium first therefore did not fall through to Rust — it produced a
+/// wrong answer confidently, and every Rust binary rendered its own names as
+/// escape soup. [`crate::sourcelang::is_rust_mangled`] identifies the two Rust
+/// schemes exactly (a `_R` prefix, or the legacy `17h<16 hex>E` hash tail), so
+/// the ordering is decided by a marker rather than by which crate answers first.
+/// A C symbol carries neither marker, so this arm is unreachable for one.
 pub fn demangle_raw(raw: &str) -> Option<String> {
     if skip(raw) {
         return None;
@@ -174,7 +196,15 @@ pub fn demangle_raw(raw: &str) -> Option<String> {
         return None;
     }
 
-    // Itanium C++ first.
+    // Rust first when the symbol says it is Rust (see the fn docs: a legacy Rust
+    // symbol is a well-formed Itanium name, so Itanium does not decline it).
+    if crate::sourcelang::is_rust_mangled(raw) {
+        if let Some(d) = demangle_rust(raw) {
+            return Some(d);
+        }
+    }
+
+    // Itanium C++.
     if let Ok(sym) = cpp_demangle::Symbol::new(raw) {
         if let Ok(d) = sym.demangle() {
             if !d.is_empty() && d != raw {
@@ -183,15 +213,109 @@ pub fn demangle_raw(raw: &str) -> Option<String> {
         }
     }
 
-    // Then Rust (legacy `_ZN..` and v0 `_R..`); `{:#}` drops the trailing hash.
-    if let Ok(d) = rustc_demangle::try_demangle(raw) {
-        let s = format!("{:#}", d);
-        if !s.is_empty() && s != raw {
-            return Some(s);
-        }
-    }
+    // Then Rust for anything the marker test missed.
+    demangle_rust(raw)
+}
 
-    None
+/// Rust legacy (`_ZN…`) and v0 (`_R…`); `{:#}` drops the trailing hash.
+fn demangle_rust(raw: &str) -> Option<String> {
+    let d = rustc_demangle::try_demangle(raw).ok()?;
+    let s = format!("{:#}", d);
+    (!s.is_empty() && s != raw).then_some(s)
+}
+
+/// Reduce a demangled **Rust** path to a plain `::`-separated one.
+///
+/// Rust demangles to text that is a *type expression*, not an identifier path:
+/// generic arguments (`drop_in_place<Vec<u8>>`) and trait-impl qualifiers
+/// (`<aes::Aes256 as crypto_common::KeyInit>::new`) are part of the name. Both
+/// have to go before the name can be a symbol, and they have to go *differently*:
+///
+/// * a generic argument list carries no path, so the whole `<…>` group is
+///   dropped (with a preceding `::` if the demangler emitted a turbofish);
+/// * a trait qualifier carries TWO paths, and dropping the group would leave a
+///   leading `::` — an empty scope component, which the symbol table rejects
+///   outright ("Non-global scope has empty name"). `<X as Y>` keeps the
+///   **type** `X`, so the method stays attached to the type that defines it;
+///   `<impl X as Y>` keeps the **trait** `Y`, matching the reference
+///   implementation (SEFCOM Oxidizer's `normalize`, `angr/rust/utils/demangler.py`).
+///
+/// Angle brackets nest, so this is a depth-tracking scan rather than a regex: an
+/// ` as ` separator only counts at depth 1 of the group being resolved.
+/// Iterated to a fixed point, because resolving one group can expose another.
+#[derive(Clone, Copy)]
+enum Sep {
+    /// `<Type as Trait>` -- a trait-qualified method.
+    As,
+    /// `<impl Trait for Type>` -- an inherent impl block.
+    For,
+}
+
+pub fn normalize_rust_name(name: &str) -> String {
+    let mut cur = name.to_string();
+    for _ in 0..16 {
+        let Some(open) = cur.find('<') else { break };
+        let bytes = cur.as_bytes();
+        let mut depth = 0usize;
+        let mut close = None;
+        let mut sep: Option<(usize, usize, Sep)> = None;
+        for (i, &b) in bytes.iter().enumerate().skip(open) {
+            match b {
+                b'<' => depth += 1,
+                b'>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(i);
+                        break;
+                    }
+                }
+                    _ => {}
+            }
+            // ` as ` (trait qualifier) or ` for ` (inherent impl) at depth 1
+            // separates the two paths the group carries.
+            if depth == 1 && sep.is_none() {
+                if cur[i..].starts_with(" as ") {
+                    sep = Some((i, 4, Sep::As));
+                } else if cur[i..].starts_with(" for ") {
+                    sep = Some((i, 5, Sep::For));
+                }
+            }
+        }
+        // An unbalanced `<` cannot be resolved; leave the rest alone.
+        let Some(close) = close else { break };
+        let inner = &cur[open + 1..close];
+        let replacement = match sep {
+            // `<X as Y>::m` keeps the TYPE, so the method stays attached to the
+            // type that defines it; `<impl X as Y>::m` keeps the trait, matching
+            // the reference implementation.
+            Some((a, w, Sep::As)) => {
+                let lhs = cur[open + 1..a].trim();
+                let rhs = cur[a + w..close].trim();
+                if lhs.starts_with("impl ") { rhs.to_string() } else { lhs.to_string() }
+            }
+            // `<impl Trait for Type>::m` keeps the TYPE, for the same reason.
+            Some((a, w, Sep::For)) => cur[a + w..close].trim().to_string(),
+            None => {
+                let _ = inner;
+                String::new()
+            }
+        };
+        // A generic list may be introduced by a turbofish; drop that too so the
+        // result does not end in a dangling `::`.
+        let mut start = open;
+        if replacement.is_empty() && cur[..open].ends_with("::") {
+            start = open - 2;
+        }
+        cur = format!("{}{}{}", &cur[..start], replacement, &cur[close + 1..]);
+    }
+    // Any empty component left behind (a group that resolved to nothing in the
+    // middle of a path) would be an empty scope.
+    let joined = cur
+        .split("::")
+        .filter(|c| !c.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("::");
+    joined
 }
 
 /// Demangle `raw` to the **qualified name only** (signature + template/bracket
@@ -226,10 +350,25 @@ pub fn demangle_name(raw: &str) -> Option<String> {
         return None;
     }
 
-    // Itanium C++ first, name-only options.  A legacy Rust `_ZN..` symbol is
-    // *also* valid Itanium, so cpp_demangle handles it but keeps the trailing
-    // `::h<hex>` mangling hash as a junk scope; strip it (the `{:#}` hash-drop a
-    // pure rustc_demangle path would give).
+    // Rust first when the symbol says it is Rust. A legacy Rust `_ZN..` symbol is
+    // *also* a well-formed Itanium name, so cpp_demangle does not decline it --
+    // it returns the Rust escapes verbatim (`$LT$` for `<`, `$C$` for `,`, `..`
+    // for `::`), which is a wrong answer rather than a missing one, and which
+    // `strip_bracket_groups` then cannot see because there are no real brackets
+    // to strip. See `demangle_raw`'s docs for the worked example.
+    if crate::sourcelang::is_rust_mangled(raw) {
+        if let Ok(d) = rustc_demangle::try_demangle(raw) {
+            // `normalize_rust_name`, not `strip_bracket_groups`: a trait-impl
+            // qualifier has to KEEP one of its two paths, and deleting the group
+            // would leave a leading `::` the symbol table rejects.
+            let reduced = strip_legacy_rust_hash(&normalize_rust_name(&format!("{:#}", d)));
+            if !reduced.is_empty() && reduced != raw {
+                return Some(reduced);
+            }
+        }
+    }
+
+    // Itanium C++, name-only options.
     if let Ok(sym) = cpp_demangle::Symbol::new(raw) {
         let opts = cpp_demangle::DemangleOptions::new()
             .no_params()
@@ -450,6 +589,28 @@ pub fn demangle_typeinfo_name(typeinfo_name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// The two group kinds a Rust demangling carries, and the reason they cannot
+    /// be handled the same way: a generic list is dropped, but a trait or impl
+    /// qualifier has to KEEP one of its two paths, or the result begins with `::`
+    /// and the symbol table rejects the empty scope.
+    #[test]
+    fn normalize_rust_name_resolves_generics_and_qualifiers() {
+        for (input, want) in [
+            ("core::ptr::drop_in_place<Vec<u8>>", "core::ptr::drop_in_place"),
+            ("<aes::autodetect::Aes256 as crypto_common::KeyInit>::new", "aes::autodetect::Aes256::new"),
+            ("<impl core::fmt::Debug for u8>::fmt", "u8::fmt"),
+            ("alloc::vec::Vec<T,A>::resize", "alloc::vec::Vec::resize"),
+            ("core::ptr::drop_in_place<core::result::Result<(),std::io::error::Error>>", "core::ptr::drop_in_place"),
+            ("<cbc::decrypt::Decryptor<C> as crypto_common::InnerIvInit>::inner_iv_init", "cbc::decrypt::Decryptor::inner_iv_init"),
+            ("plain::name", "plain::name"),
+            // A name that resolves to nothing in the middle must not leave an
+            // empty component behind.
+            ("a::<T>::b", "a::b"),
+        ] {
+            assert_eq!(super::normalize_rust_name(input), want, "input={input}");
+        }
+    }
+
     use super::*;
 
     #[test]

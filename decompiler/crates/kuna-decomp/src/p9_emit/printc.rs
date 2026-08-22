@@ -1987,7 +1987,7 @@ impl PrintC {
         // problem has to be fixed rather than tolerated. Off for C, so the corpus
         // cannot move.
         let ident = |p: &PrintC, n: &String| -> Option<String> {
-            let s = crate::kuna_rusttypes::sanitize(n);
+            let s = crate::kuna_rusttypes::sanitize_path(n);
             (p.lang().sanitize_identifiers && &s != n).then_some(s)
         };
         match atom.tag {
