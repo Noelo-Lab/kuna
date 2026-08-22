@@ -723,6 +723,15 @@ What differs, and why each is a language fact rather than a preference:
   not carry. A width Rust cannot name (3/5/6/7, x87's 10) spells `[u8; N]`, which
   is *more* faithful than C's `undefined3`: it names the storage exactly and does
   not claim to be a scalar.
+- **Recovered composite names** are spelled in *type* position rather than
+  flattened to an identifier. A composite carries whatever spelling the debug
+  info recorded — `Result<u8, u32>`, `Vec<u8, alloc::alloc::Global>`,
+  `(u8, u32)` — and every character in those is legal Rust type syntax, so the
+  identifier sanitiser would turn `Result<u8, u32>` into `Result_u8__u32_` and
+  discard the one thing the reader wanted. What falls outside the type grammar
+  (a DWARF `{closure#0}`, a codegen-unit suffix) still collapses to `_`, and a
+  name whose brackets do not balance falls back to the identifier sanitiser
+  whole, because a stray `<` would swallow the rest of the declaration.
 - **Names** are rendered as Rust *paths*, not flattened into identifiers. `::` is
   legal wherever a name is used — a call, a static — because that position takes a
   path; only a `fn` *definition* needs a bare identifier, so it takes the last
