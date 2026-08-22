@@ -1282,6 +1282,12 @@ subphase = "alias-facets"
 note = "(kuna GH-8500) hold a store-through-a-stack-pointer-alias across the deadcode race"
 
 [[surface]]
+surface = "option retinputhalf"
+phase = "P4"
+subphase = "output-prototype"
+note = "(kuna) keep a returned register half that carries a formal input parameter, instead of discarding it as uncomputed leftover (the dropped-half/dropped-argument defect)"
+
+[[surface]]
 surface = "option loweredswitch"
 phase = "P2"
 subphase = "switch-model"
@@ -1998,6 +2004,28 @@ change_kind = "correctness-fix"
 tier = "core"
 symptoms = "function aborts with 'Cannot properly adjust input varnodes'|overlapping stack parameters (mc68k link/unlk) kill the whole decompilation"
 live_field = "input_varnode_adjust"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "retinputhalf"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "output-prototype"
+strength = "HARD"
+rewind = "P4"
+issue = "kuna-returned-input-half"
+summary = "Keep a returned register half whose value is an input parameter the function PLACED there. The uncomputed-return repair drops a return-register half that traces back only to things the function never computed, to kill the callee-saved-restore phantom (`undefined16 main(...)` with a `v[8] = <uninitialized slot>` write). An input parameter is unwritten by definition, so a returned pair whose high half is a passthrough argument -- `P wide(unsigned long s, unsigned long x){ p.a=s+1; p.b=x; return p; }`, compiled to `mov %rsi,%rdx` -- lost the half AND the argument, recovering `unsigned long wide(long a0)` for a two-argument function. With this on an unwritten terminal is a real return value when it is input-parameter storage the model would pass an argument in AND it arrived from a DIFFERENT address than the return half it reaches, i.e. the function executed an instruction to put it there. A local frame slot is not parameter storage and an untouched return register is not a placement, so both the restore phantom and the GH-6990 SPARC pass-through are still dropped."
+use_when = "On by default: a value the function was handed and deliberately moved into the return register is a real return, and dropping it also deletes the parameter it came from, so the recovered signature loses an argument the disassembly plainly passes. Byte-identical (0/675) on the datatest corpus; 1 of 7307 functions changes across grep/sort/faillog/libselinux/betaflight and 31 of 1577 on a static-PIE Rust binary, every one recovering a return half or a parameter. Set off to restore the strict `unwritten means leftover` terminal rule."
+example = "option retinputhalf off"
+source_decompiler = "kuna"
+inspiration = "kuna wide/w2 witness (gcc -O1 x86-64 struct-pair return whose high half is a passthrough argument)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a parameter the disassembly plainly passes is missing from the recovered signature|a two-register struct return comes back as one register when the second half is just an argument|two near-identical functions recover different arities, one dropping an argument|the returned pair survives when the half is arithmetic but not when it is a plain copy of a parameter"
+live_field = "ret_input_half"
 live_true = "on"
 live_false = "off"
 

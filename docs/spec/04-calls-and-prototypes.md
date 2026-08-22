@@ -716,6 +716,49 @@ This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages
 gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
 blunt per-function instrument for a pair this rule judges genuine.
 
+#### (kuna) The half that is an input parameter (`retinputhalf`)
+
+The "unwritten means uncomputed" terminal is too coarse in one direction: a
+**formal input parameter is unwritten by definition**. A returned pair whose high
+half is a plain copy of an argument therefore looked exactly like the restore
+phantom, and lost the half — and then the argument, which had no reader left,
+disappeared from the recovered signature too. Two functions differing only in
+whether the second returned half is `x` or `x*3+7` came out with different
+arities: `unsigned long wide(long a0)` against `undefined16 w2(long a0,long a1)`,
+for the same two-argument source (`tests/stages/kuna-retinputhalf.xml`).
+
+`option retinputhalf` (default on, DIV-85) supplies the missing exception, on
+storage evidence the prototype model already holds. An unwritten terminal is a
+real return value when both of the following hold:
+
+* **it is parameter storage.** `FuncProto::possibleInputParam` answers for the
+  resolved model, and it is the same question input recovery itself asks — so the
+  argument registers and the stack region above the return address qualify, while
+  a *local frame slot*, the storage a callee-saved restore reads, does not. The
+  clobber shape never reaches the test at all: an INDIRECT creation is rejected
+  earlier in the walk.
+* **the function put it there.** Parameter storage alone is not enough, because on
+  most conventions an argument register is also a return register. The terminal's
+  address is compared with the storage of the return half the walk started from: a
+  *different* address means the function executed an instruction to move the
+  argument into the return register, while the *same* address means the register
+  was never touched and the caller's value is passing straight through — leftover,
+  which is precisely what the sibling rule exists to drop.
+
+A weaker version of the placement test was tried and rejected. It also rescued
+the pair when *every* half was an untouched incoming argument, on the theory that
+`double f(double x) { return x; }` on ARM returns its argument in the registers it
+arrived in; that recovered three betaflight soft-float helpers and simultaneously
+resurrected the GH-6990 SPARC symptom, because a *void* `main` that touches
+nothing leaves `o0:o1` passing through and SPARC passes arguments in those same
+registers. Nothing local to the pair separates the two, so the placement test is
+applied per half with no exception.
+
+The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
+`ActionInputPrototype`, so the proto's own parameter list is not fixated yet and
+the question goes to the model — the same fall-through
+`possible_input_param` takes when no locked parameters exist.
+
 ### The ABI seam (`kuna_langabi.rs`)
 
 **(kuna, output languages)** How a recovered calling convention *appears* is a

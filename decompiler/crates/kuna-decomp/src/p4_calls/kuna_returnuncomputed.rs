@@ -58,6 +58,12 @@
 //! A return trial whose value, at **every** live RETURN, traces back only to
 //! things the function did not compute is not a return value.
 //!
+//! An unwritten Varnode that is a **formal input parameter** is the one exception
+//! — the function was handed that value, so handing it back is a real return.
+//! That carve-out is `option retinputhalf` and lives in
+//! [`crate::kuna_retinputhalf`]; without it a returned pair whose high half is a
+//! passthrough argument loses the half *and* the argument.
+//!
 //! "Did not compute" is decided by a bounded walk back through the operations
 //! that only *move* a value — copies, phis, indirects, and piece/subpiece
 //! reshaping — stopping at the first operation that produces one. A terminal is
@@ -76,6 +82,7 @@
 //! the move-only set, so the walk stops there and reports computed. Only a half
 //! that is pure leftover — never written, or a callee's clobber — is dropped.
 
+use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
@@ -92,6 +99,19 @@ const MAX_DEPTH: u32 = 24;
 /// Walks back through move-only operations; see the module docs for the
 /// classification. Errs toward `true` (computed), which is the no-change answer.
 fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    computes_from(data, vn, depth, None)
+}
+
+/// The walk, carrying the input-parameter carve-out's **placement** test.
+///
+/// `placed_at` is the storage of the return half the walk started from, which
+/// turns the carve-out into "did the function PUT an argument here": a terminal at
+/// a different address was moved into the return register by an instruction the
+/// function executed, while a terminal at the same address is the caller's
+/// register passing straight through untouched -- leftover, and exactly what this
+/// module exists to drop. `None` drops the placement test and is the shape-only
+/// question the unit tests ask. See [`crate::kuna_retinputhalf`].
+fn computes_from(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&Address>) -> bool {
     if depth >= MAX_DEPTH {
         return true;
     }
@@ -101,8 +121,15 @@ fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
         return true;
     }
     // Never written: a function input, or a free Varnode standing for a location
-    // the function only ever reads (the callee-saved restore shape).
-    let Some(def) = v.get_def() else { return false };
+    // the function only ever reads (the callee-saved restore shape). An input
+    // parameter the function PLACED in the return register is a value it was
+    // handed and is handing back, which is a real return.
+    let Some(def) = v.get_def() else {
+        if placed_at.is_some_and(|a| a == v.get_addr()) {
+            return false;
+        }
+        return crate::kuna_retinputhalf::is_input_parameter(data, vn);
+    };
     let Some(op) = data.obank().get(def) else { return true };
     // The callee wrote something here; that is a fact about the callee.
     if op.code() == OpCode::CPUI_INDIRECT && op.is_indirect_creation() {
@@ -123,7 +150,7 @@ fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     if inputs.is_empty() {
         return true;
     }
-    inputs.into_iter().any(|i| computes_a_value(data, i, depth + 1))
+    inputs.into_iter().any(|i| computes_from(data, i, depth + 1, placed_at))
 }
 
 /// Repair a RETURN whose value is a return-recovery register **pair** with an
@@ -155,7 +182,12 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
             continue;
         }
         let (Some(hi), Some(lo)) = (piece.get_in(0), piece.get_in(1)) else { continue };
-        let (hi_real, lo_real) = (computes_a_value(data, hi, 0), computes_a_value(data, lo, 0));
+        let (hi_addr, lo_addr) = match (data.vbank().get(hi), data.vbank().get(lo)) {
+            (Some(h), Some(l)) => (h.get_addr().clone(), l.get_addr().clone()),
+            _ => continue,
+        };
+        let hi_real = computes_from(data, hi, 0, Some(&hi_addr));
+        let lo_real = computes_from(data, lo, 0, Some(&lo_addr));
         let keep = match (hi_real, lo_real) {
             // Both halves carry a value: a genuine wide return. Leave it alone.
             (true, true) => continue,

@@ -360,6 +360,10 @@ pub struct Architecture {
     /// (kuna GH-9218) Absorb overlapping input Varnodes above a justified
     /// container (C++ `input_varnode_adjust`).
     pub input_varnode_adjust: bool,
+    /// (kuna) `option retinputhalf`: keep a returned register half whose value is
+    /// a formal input parameter, instead of discarding it as uncomputed leftover.
+    /// Read by [`crate::kuna_retinputhalf`] through the `ArchContext` handle.
+    pub ret_input_half: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -1405,6 +1409,7 @@ impl Architecture {
             ov_less_simplify: false,
             fold_boolean_mask: false,
             input_varnode_adjust: false,
+            ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -1580,6 +1585,7 @@ impl Architecture {
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
+        self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -1770,6 +1776,7 @@ impl Architecture {
             "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
+            "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
             "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
             "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
@@ -2517,6 +2524,9 @@ impl Architecture {
         // (kuna GH-9218) carry the unjustified-input forward-absorb gate so
         // `ActionUnjustifiedParams` reaches it via `glb`.
         ctx.input_varnode_adjust = self.input_varnode_adjust;
+        // (kuna) carry the returned-input-half gate so `kuna_returnuncomputed`
+        // reaches `option retinputhalf` via `glb`.
+        ctx.ret_input_half = self.ret_input_half;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`

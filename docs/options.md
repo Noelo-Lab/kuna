@@ -335,6 +335,10 @@ Three tiers:
 | spurious = 0 copy materialized inside a loop block | [`condexeplace`](#condexeplace) |
 | function aborts with 'Cannot properly adjust input varnodes' | [`inputvarnodeadjust`](#inputvarnodeadjust) |
 | overlapping stack parameters (mc68k link/unlk) kill the whole decompilation | [`inputvarnodeadjust`](#inputvarnodeadjust) |
+| a parameter the disassembly plainly passes is missing from the recovered signature | [`retinputhalf`](#retinputhalf) |
+| a two-register struct return comes back as one register when the second half is just an argument | [`retinputhalf`](#retinputhalf) |
+| two near-identical functions recover different arities, one dropping an argument | [`retinputhalf`](#retinputhalf) |
+| the returned pair survives when the half is arithmetic but not when it is a plain copy of a parameter | [`retinputhalf`](#retinputhalf) |
 | an x86 Windows function renders as (void) though it takes arguments | [`evalcurrentproto`](#evalcurrentproto) |
 | a local carrying a // ecx or // edx storage comment is read before it is ever written | [`evalcurrentproto`](#evalcurrentproto) |
 | __fastcall/__thiscall arguments missing from the signature | [`evalcurrentproto`](#evalcurrentproto) |
@@ -1225,6 +1229,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** A frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk). On by default (DIV-3); flip off to preserve the upstream abort.
 - **Where / provenance:** P6/stack-frame-layout · ghidra-upstream · correctness-fix · GH-9218
 - **Example:** `option inputvarnodeadjust on`
+
+### `retinputhalf` -- on | off, default `on`
+
+- **Symptoms:** a parameter the disassembly plainly passes is missing from the recovered signature; a two-register struct return comes back as one register when the second half is just an argument; two near-identical functions recover different arities, one dropping an argument; the returned pair survives when the half is arithmetic but not when it is a plain copy of a parameter.
+- **What it does:** Keep a returned register half whose value is an input parameter the function PLACED there. The uncomputed-return repair drops a return-register half that traces back only to things the function never computed, to kill the callee-saved-restore phantom (`undefined16 main(...)` with a `v[8] = <uninitialized slot>` write). An input parameter is unwritten by definition, so a returned pair whose high half is a passthrough argument -- `P wide(unsigned long s, unsigned long x){ p.a=s+1; p.b=x; return p; }`, compiled to `mov %rsi,%rdx` -- lost the half AND the argument, recovering `unsigned long wide(long a0)` for a two-argument function. With this on an unwritten terminal is a real return value when it is input-parameter storage the model would pass an argument in AND it arrived from a DIFFERENT address than the return half it reaches, i.e. the function executed an instruction to put it there. A local frame slot is not parameter storage and an untouched return register is not a placement, so both the restore phantom and the GH-6990 SPARC pass-through are still dropped.
+- **When to flip:** On by default: a value the function was handed and deliberately moved into the return register is a real return, and dropping it also deletes the parameter it came from, so the recovered signature loses an argument the disassembly plainly passes. Byte-identical (0/675) on the datatest corpus; 1 of 7307 functions changes across grep/sort/faillog/libselinux/betaflight and 31 of 1577 on a static-PIE Rust binary, every one recovering a return half or a parameter. Set off to restore the strict `unwritten means leftover` terminal rule.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-returned-input-half
+- **Example:** `option retinputhalf off`
 
 ### `evalcurrentproto` -- on | off, default `on`
 

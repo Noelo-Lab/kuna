@@ -1760,7 +1760,10 @@ mod tests {
         // deleted in the pre-SSA window, so the drop glue AND the argument setup
         // that only fed it are both gone (option off = both calls plus both
         // argument constants come back)
-        assert_eq!(count, 211, "corpus file count drifted");
+        // and kuna-retinputhalf / a returned register half that is an input
+        // parameter the function moved there is kept, so the parameter stays in
+        // the signature (option off = the half AND the argument are dropped)
+        assert_eq!(count, 212, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
