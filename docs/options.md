@@ -32,6 +32,11 @@ Three tiers:
 | dead/garbage code after a call to a die()/fatal()/throw wrapper that never returns | [`funcboundflow`](#funcboundflow) |
 | two adjacent functions merged into one, the second also decompiled on its own | [`funcboundflow`](#funcboundflow) |
 | uninitialized reads in the tail after an unrecognized no-return call | [`funcboundflow`](#funcboundflow) |
+| core::ptr::drop_in_place(...) calls all over a decompiled rust function | [`cleanupcode`](#cleanupcode) |
+| drop glue and deallocation calls that are nowhere in the rust source | [`cleanupcode`](#cleanupcode) |
+| Drop::drop / __rust_dealloc / RawVecInner::deallocate noise at every scope exit | [`cleanupcode`](#cleanupcode) |
+| rust output is twice as long as the source because of automatic resource management | [`cleanupcode`](#cleanupcode) |
+| flip off to see when a rust value is actually dropped or freed | [`cleanupcode`](#cleanupcode) |
 | garbage code after a call to __stack_chk_fail or abort in a relocatable .o | [`noreturn_extern`](#noreturn_extern) |
 | function balloons by swallowing the next function after an extern no-return call | [`noreturn_extern`](#noreturn_extern) |
 | dead fall-through after exit or assert-fail in an object file | [`noreturn_extern`](#noreturn_extern) |
@@ -409,6 +414,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A function shows a garbage tail that is really the body of the FOLLOWING function (dead code after a call to a die()/throw/exit wrapper, uninitialized reads, a second unrelated function inlined after an error call). On by default; flip OFF to restore the upstream flow-into-the-next-function behavior.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · interp-bee-func-merge
 - **Example:** `option funcboundflow off`
+
+### `cleanupcode` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** core::ptr::drop_in_place(...) calls all over a decompiled rust function; drop glue and deallocation calls that are nowhere in the rust source; Drop::drop / __rust_dealloc / RawVecInner::deallocate noise at every scope exit; rust output is twice as long as the source because of automatic resource management; flip off to see when a rust value is actually dropped or freed.
+- **What it does:** REMOVES CODE: delete the Rust drop/deallocate call sites. Rust emits a drop-glue call at every scope exit and every `?` early return, so decompiled Rust is dominated by `core::ptr::drop_in_place<...>(v)` lines that appear nowhere in the source and carry no meaning for a reader. A direct CALL whose recovered callee name normalizes to one of `core::ptr::drop_in_place`, `core::ops::drop::Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc` or `__rustc::__rust_dealloc` is destroyed in the PRE-SSA window (the top of mainloop, gated on heritage pass 0), which is the point of the timing: the register/stack writes that existed only to set up the drop's arguments lose their last reader and are collected by the ordinary ActionDeadCode fixpoint, so the argument setup goes with the call instead of being left behind as unexplained assignments. Normalization reproduces the Oxidizer matcher: un-escape the legacy rustc `$LT$`/`$GT$`/`$u20$` mangling, then collapse the innermost angle-bracket group repeatedly - deleting a plain generic argument list and replacing a `<T as Trait>` qualified path with the TRAIT name - so `_$LT$alloc..vec..Vec$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$::drop` matches and `FakeCrypt::fileops::drop_ransom_note` does not. Oxidizer's `free`/`close`/`_close` entries are deliberately NOT carried: kuna's primary corpus is C binaries and deleting `free()` would be a catastrophically wrong answer. The remaining names cannot occur in a C program, which is what makes the pass structurally inert on a C binary and lets it default ON with no compiler-detection channel from the loader.
+- **When to flip:** On by default (DIV-81). A Rust binary whose functions are dominated by drop_in_place/dealloc glue that is not in the source. Flip OFF to keep every drop and deallocation call site - e.g. when auditing a use-after-free, reasoning about when a resource is actually released, or matching the binary instruction-for-instruction. Inert on any binary with no Rust drop symbols, so C/C++ output is byte-identical either way.
+- **Where / provenance:** P2/flow-classification · oxidizer · presentation-default · oxidizer-CleanupCodeRemover
+- **Example:** `option cleanupcode off`
 
 ### `noreturn_extern` -- on | off, default `on`
 

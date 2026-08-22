@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    496,
-    496
+    501,
+    501
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -19,6 +19,11 @@
     "data:CALLOVERLAP #4: full, guardCallOverlappingInput recovers the truncated XMM0 argument and tryOutputOverlapGuard the return value",
     "data:CALLOVERLAP #5: full, f regains its own parameter",
     "data:CALLOVERLAP #6: full, the epilogue adds 1.0 to the recovered call result, not to a stale pre-call read",
+    "data:CLEANUPCODE #1: the drop glue call is gone by default; only the cleanupcode-off pass shows it (exactly one occurrence across both passes)",
+    "data:CLEANUPCODE #2: the deallocation call is gone by default; the plain (non generic) name arm of the matcher",
+    "data:CLEANUPCODE #3: the drop's argument setup dies with the call (pre-SSA seam), so the constant is only in the cleanupcode-off pass",
+    "data:CLEANUPCODE #4: the deallocation's argument setup dies with the call too",
+    "data:CLEANUPCODE #5: the real call is untouched in BOTH passes, so the transform is surgical",
     "data:CNORM-BRACEELIDE #1: default renders the single-statement body braceless, indented (DIV-37)",
     "data:CNORM-BRACEELIDE #2: braceelide off restores the upstream braced body",
     "data:CNORM-INPLACE #1: default renders the self-add as += (DIV-35)",

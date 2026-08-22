@@ -320,6 +320,14 @@ pub struct Architecture {
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump`, default off).
     pub tail_call_jumps: bool,
+    /// (kuna `cleanupcode`) Delete the Rust drop/deallocate call sites (the
+    /// `core::ptr::drop_in_place` / `Drop::drop` / `RawVecInner::deallocate` /
+    /// `__rust_dealloc` family) from the pre-SSA op graph, so the drop glue and
+    /// the argument setup that only feeds it never reach the output
+    /// (`option cleanupcode`).  Structurally inert on a C binary — no C ELF
+    /// resolves a call to one of those names.  See
+    /// [`crate::p2_lift::kuna_cleanupcode`].
+    pub remove_cleanup_code: bool,
     /// (kuna `funcboundflow`) Bound fall-through at a known function entry: when a
     /// fall-through reaches the entry of another known function (the callee just
     /// executed being an unnamed static no-return the analysis could not prove
@@ -1370,6 +1378,7 @@ impl Architecture {
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
+            remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
             ov_less_simplify: false,
@@ -1543,6 +1552,7 @@ impl Architecture {
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
+        self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
@@ -1734,6 +1744,7 @@ impl Architecture {
             "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
             "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
+            "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
@@ -2505,6 +2516,7 @@ impl Architecture {
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
         ctx.outline_spec = self.outline_spec.clone(); // outline
+        ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten

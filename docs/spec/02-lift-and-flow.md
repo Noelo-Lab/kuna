@@ -642,3 +642,73 @@ path (the meld guarantees straight-line evaluation). Its one (kuna) extension
 is the pre-seeding hook (`seed_varnode_value`) that lets `switchsharedcase`
 inject the loop-carried table base — a register value that exists in no load
 image — before each path walk.
+
+## 2.6 Cleanup-call removal
+
+**(oxidizer) `option cleanupcode`, default on (DIV-81),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_cleanupcode.rs
+(ActionRemoveCleanupCode)`.** Rust's automatic resource management emits a
+drop-glue call at every scope exit and every `?` early return. None of those
+calls is in the source, none carries meaning for a reader, and on a real binary
+they are the single largest source of emitted lines in a Rust function — the
+showcase `FakeCrypt::fileops::encrypt_file` carries eight of them. This pass
+deletes them, following SEFCOM Oxidizer's `CleanupCodeRemover`.
+
+**What is deleted.** A *direct* CALL whose recovered callee display name
+normalizes to one of exactly five paths: `core::ptr::drop_in_place`,
+`core::ops::drop::Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`,
+`__rust_dealloc`, `__rustc::__rust_dealloc`. Oxidizer's list also carries
+`free`, `close` and `_close`; those are **deliberately not ported**, because
+kuna's primary corpus is C binaries and deleting `free()` from C output would
+be a catastrophically wrong answer. What remains cannot occur in a C program,
+which is what makes the pass *structurally inert* on a C binary — the reason it
+can default on without a compiler-detection channel from the loader to the
+engine (there is none).
+
+**Matching is normalize-then-compare-exactly, never `starts_with`.** kuna's
+demangler leaves a legacy-mangled Rust symbol with its generic arguments in
+escaped form, so the names that actually arrive look like
+`core::ptr::drop_in_place$LT$std..fs..File$GT$`,
+`alloc::raw_vec::RawVecInner$LT$A$GT$::deallocate` and
+`_$LT$alloc..vec..Vec$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$::drop`.
+`kuna_cleanupcode.rs (normalize_rust_name)` reproduces Oxidizer's
+`normalize(monopolize=True, use_trait_name=True)`: strip a trailing
+`::h<16 hex>` disambiguator, un-escape the `$LT$`/`$GT$`/`$C$`/`$uXX$`
+sequences and the `..` path separator, then repeatedly collapse the *innermost*
+angle-bracket group — deleting a plain generic argument list (with the `::` of a
+turbofish), and replacing a `<T as Trait>` qualified path with the **trait**
+name. The three examples above reduce to the first, third and second list
+entries. Innermost-first is what makes the ` as ` split safe: the inner groups
+of a nested qualified path are already gone when it runs.
+
+Normalization only ever shrinks a name and the comparison is exact, so nothing
+outside those five paths can be reached. `FakeCrypt::fileops::drop_ransom_note`
+is untouched (the reason a prefix test would be wrong), and so is
+`<T as crossbeam_epoch::atomic::Pointable>::drop`, which normalizes to a
+*different* trait's `drop`. Oxidizer's `smallvec::deallocate` is not carried:
+no available binary witnesses that path, and an unverifiable entry in a delete
+list is worse than a missing one.
+
+**The seam is pre-SSA, and that is the whole point.** The Action is registered
+at the top of `mainloop` (`infra/universalaction.rs (universal_sched)`) in the
+`deadcode` group and self-gates on `get_heritage_pass() == 0` — the same
+pre-SSA window `kuna_loweredswitch`'s install half and `kuna_outline` use, and
+the analogue of Oxidizer's `STAGE = BEFORE_VARIABLE_RECOVERY`. Before heritage
+there are no INDIRECT call-effect ops to unpick and no MULTIEQUAL to patch;
+CALL is not a control-transfer op, so no edge moves and the CFG is untouched.
+The payoff is dead code: the register and stack writes that existed only to set
+up the drop's arguments lose their last reader and are collected by the ordinary
+`ActionDeadCode` fixpoint, so the setup goes with the call instead of being left
+behind as unexplained assignments. Removing the call after SSA would keep all of
+it.
+
+Each victim is removed with the stock pair `Funcdata::delete_call_specs` then
+`Funcdata::op_destroy` — what `Funcdata::block_remove_internal` already does for
+a CALL inside a deleted block. A call whose output Varnode still has a reader is
+skipped rather than destroyed (a cleanup routine returns `()`, so in practice
+none does); declining is always safe, freeing a read Varnode is not.
+
+This *removes code with real side effects* — the drop really did release the
+resource — which is why the option is marked destructive. Turn it off to audit
+when a value is actually dropped or freed; with it off the rendering is
+byte-identical to a build without the pass.

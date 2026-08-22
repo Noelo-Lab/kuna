@@ -1,0 +1,56 @@
+<decompilertest>
+<!--
+    cleanupcode: delete the Rust drop/deallocate call sites (a port of the idea in
+    SEFCOM Oxidizer's CleanupCodeRemover, whose STAGE is BEFORE_VARIABLE_RECOVERY).
+    Rust emits a drop-glue call at every scope exit and every `?` early return, so
+    decompiled Rust is dominated by `core::ptr::drop_in_place(...)` lines that appear
+    nowhere in the source.  Stage model: S2, a classification of a direct CALL by the
+    callee's identity (the family `funcboundflow` / `noreturn_extern` sit in).
+
+    Layout (linked flat, x86-64 SysV):
+      caller        @ 0x100040 : v = real_work(); DROP(0x11223344); DEALLOC(0x55667788);
+                                 return a0 + v;
+      real_work     @ 0x100070 : return 0x42;                      // a REAL call, kept
+      drop_in_place @ 0x100080 : ret                               // generic-suffixed name
+      __rust_dealloc@ 0x100090 : ret                               // plain name
+
+    The two `mov edi, <const>` argument setups feed nothing but the cleanup calls, so
+    they are the load-bearing part of the test: the pass runs in the PRE-SSA window, so
+    once the CALL is destroyed those writes lose their last reader and the ordinary
+    ActionDeadCode fixpoint collects them.  A removal done after SSA would leave both
+    constants behind as unexplained assignments.
+
+    Pass 1 (default, cleanupcode on): the whole function collapses to
+    `return a0 + real_work();`.
+    Pass 2 (option cleanupcode off, the pre-feature rendering): both cleanup calls and
+    both argument constants are back, and the call result spills to a named temporary.
+
+    Asserts #1 to #4 each pin a line to EXACTLY ONE occurrence across the two print C
+    passes: present in the cleanupcode-off pass, absent in the default pass.  Assert #5
+    pins `real_work` to BOTH passes, so the transform is surgical: it deletes the two
+    listed callees and nothing else.  Note the callee is matched on its NORMALIZED path
+    (generic arguments stripped), which is why the escaped
+    `$LT$alloc..string..String$GT$` suffix does not defeat the match.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100040" readonly="true">5389fbe82800000001c3bf44332211e82c000000bf88776655e83200000089d85bc366662e0f1f8400000000000f1f00b842000000c3662e0f1f840000000000c366662e0f1f8400000000000f1f4000c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="caller"/>
+<symbol space="ram" offset="0x100070" name="real_work"/>
+<symbol space="ram" offset="0x100080" name="core::ptr::drop_in_place$LT$alloc..string..String$GT$"/>
+<symbol space="ram" offset="0x100090" name="__rust_dealloc"/>
+</binaryimage>
+<script>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option cleanupcode off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CLEANUPCODE #1: the drop glue call is gone by default; only the cleanupcode-off pass shows it (exactly one occurrence across both passes)" min="1" max="1">drop_in_place</stringmatch>
+<stringmatch name="CLEANUPCODE #2: the deallocation call is gone by default; the plain (non generic) name arm of the matcher" min="1" max="1">__rust_dealloc</stringmatch>
+<stringmatch name="CLEANUPCODE #3: the drop's argument setup dies with the call (pre-SSA seam), so the constant is only in the cleanupcode-off pass" min="1" max="1">0x11223344</stringmatch>
+<stringmatch name="CLEANUPCODE #4: the deallocation's argument setup dies with the call too" min="1" max="1">0x55667788</stringmatch>
+<stringmatch name="CLEANUPCODE #5: the real call is untouched in BOTH passes, so the transform is surgical" min="2" max="2">real_work</stringmatch>
+</decompilertest>

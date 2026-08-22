@@ -44,7 +44,7 @@ fn surface_count_is_102() {
 }
 
 #[test]
-fn settable_count_is_112() {
+fn settable_count_is_113() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -77,12 +77,13 @@ fn settable_count_is_112() {
     // +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
     // +1 for `spillargtrial` (P4 caller-save spill tolerance in input-trial scoring, GH-275).
     // +1 for `securitycheck` (P7 rustc panic-branch stripping, DIV-82).
-    assert_eq!(kuna_num_settables(), 112);
-    assert_eq!(SETTABLE_TABLE.len(), 112);
+    // +1 for `cleanupcode` (P2 Rust drop/deallocate call removal, DIV-81).
+    assert_eq!(kuna_num_settables(), 113);
+    assert_eq!(SETTABLE_TABLE.len(), 113);
 }
 
 #[test]
-fn tier_counts_are_24_core_49_transform_39_analysis() {
+fn tier_counts_are_24_core_50_transform_39_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -128,10 +129,11 @@ fn tier_counts_are_24_core_49_transform_39_analysis() {
     // transform 47 -> 48: +1 for `spillargtrial` (P4 caller-save spill tolerance, GH-275)
     // -- transform, not core: it INSERTS a call argument, and is right on the spill/reload
     // shape and wrong on an ordinary frame store, which is the transform tier's definition.
-    // transform 48 -> 49: +1 for `securitycheck` (P7 rustc panic-branch stripping,
+    // transform 48 -> 50: +1 for `securitycheck` (P7 rustc panic-branch stripping,
     // DIV-82) -- transform, like its `stackguard` sibling: it deletes real
-    // instructions on a name trigger.
-    assert_eq!((core, transform, analysis), (24, 49, 39));
+    // instructions on a name trigger -- and +1 for `cleanupcode` (P2 Rust
+    // drop/deallocate call removal, DIV-81).
+    assert_eq!((core, transform, analysis), (24, 50, 39));
 }
 
 #[test]
@@ -321,7 +323,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_34_suppressed_for_76() {
+fn option_values_live_value_present_for_35_suppressed_for_77() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -514,7 +516,8 @@ fn option_values_live_value_present_for_34_suppressed_for_76() {
     // 31 -> 32: +1 for `msvcftol` (live_field = msvc_ftol).
     // 32 -> 33: +1 for `ctypes` (live_field = ctypes).
     // 33 -> 34: +1 for `loadguardrange` (live_field = load_guard_range).
-    assert_eq!(with_live, 34);
+    // 34 -> 35: +1 for `cleanupcode` (live_field = remove_cleanup_code).
+    assert_eq!(with_live, 35);
 }
 
 #[test]
@@ -623,7 +626,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
     // aifstrict's P1 row and spillargtrial's P4 row sit mid-table, so they do not
     // move the tail).
-    assert_eq!(json.matches("},\n").count(), 111);
+    assert_eq!(json.matches("},\n").count(), 112);
 }
 
 #[test]
