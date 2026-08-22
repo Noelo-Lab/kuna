@@ -320,15 +320,15 @@ impl PrintC {
         }
 
         let idp = self.emit.begin_func_proto();
-        // A C-variadic parameter is only legal on an `unsafe extern "C" fn`;
-        // rustc rejects it on a plain `unsafe fn` (a semantic rule, so a
-        // token-level parser accepts the shorter form and rustc does not).
-        let kw = if fd.get_func_proto().is_dotdotdot() {
-            "unsafe extern \"C\" fn"
-        } else {
-            "unsafe fn"
-        };
-        self.emit.print(kw, SyntaxHighlight::KeywordColor);
+        // Which `extern` the signature declares is the ABI seam's one decision
+        // (`p4_calls/kuna_langabi.rs`); for Rust it is forced by the grammar --
+        // a C-variadic is only legal on an `unsafe extern "C" fn`.
+        let model = fd.get_func_proto().get_model_name().to_string();
+        let ext = self
+            .lang_abi()
+            .extern_marker(&model, fd.get_func_proto().is_dotdotdot())
+            .unwrap_or("");
+        self.emit.print(&format!("unsafe {ext}fn"), SyntaxHighlight::KeywordColor);
         self.emit.spaces(1, 0);
         let id1g = self.emit.open_group();
         self.emit.tag_func_name(&display, SyntaxHighlight::FuncnameColor, markup);

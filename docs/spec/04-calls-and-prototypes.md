@@ -715,3 +715,47 @@ function's output storage still agrees across every RETURN.
 This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages/
 gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
 blunt per-function instrument for a pair this rule judges genuine.
+
+### The ABI seam (`kuna_langabi.rs`)
+
+**(kuna, output languages)** How a recovered calling convention *appears* is a
+property of the output language, so it is a seam rather than a constant:
+`p4_calls/kuna_langabi.rs` defines `LangAbi`, reached through
+`OutLang::abi()`, with one method — the `extern "..."` marker a function's
+signature must declare.
+
+The axis is thin on purpose. The other two output-language axes are thick
+because they have to be (every statement has a shape, every value has a type);
+this one is thin because **`extern "Rust"` is unspecified**, and for the scalar
+arguments a decompiler actually recovers it is System-V-shaped — the same
+convention the cspec already describes. A `build_param_list("rust")` strategy
+would encode a guess as an engine fact, which is precisely what `fspec.rs`'s
+strategy allowlist (`""`/`"standard"`/`"register"`, error otherwise) exists to
+prevent. Rust's genuinely distinct ABI surface — a niche-optimized
+`Option<&T>` that is a nullable pointer, a `Result<T, E>` tagged across
+`rax:rdx`, a slice passed as a `(ptr, len)` register pair — is an **enum and
+discriminant inference** problem belonging to chapter [05](05-types.md), not a
+convention problem belonging here. Modelling it as a convention would be
+modelling the wrong thing.
+
+The one decision the seam does own is load-bearing rather than decorative: Rust
+declares `extern "C"` exactly when the recovered prototype is variadic, because
+a C-variadic parameter is only legal on an `unsafe extern "C" fn` and rustc
+rejects it anywhere else. Every other function declares nothing, which means
+`extern "Rust"` — the default, and unspellable. That is the honest answer rather
+than a conservative one: marking every recovered function `extern "C"` would
+assert a convention the recovery cannot support, and a Rust binary's own
+functions are exactly the ones that are *not* `extern "C"`. C declares no
+`extern` at all; its convention, when shown, is the `option conventionprinting`
+keyword (`__cdecl`), a different token in a different position.
+
+Nothing in this phase's recovery changes: the seam is consulted by the P9
+prototype emitter (chapter [09](09-emission.md) §9.6), and no pass here reads it.
+A third language is what would make it thicker — Go's ABI genuinely differs
+(a register ABI since 1.17, multi-value returns, a two-word interface and slice
+representation), and would add a preferred prototype model consulted where
+`ActionPrototypeTypes` picks one, plus a multi-return form consulted where the
+`RETURN` op is emitted. Neither is added ahead of a consumer: the `ArchContext`
+that P4 action reads carries only `defaultfp`/`evalfp_current` and no named-model
+registry, so a `preferred_model` hook today would be plumbing in service of a
+function that returns `None` for both languages kuna emits.

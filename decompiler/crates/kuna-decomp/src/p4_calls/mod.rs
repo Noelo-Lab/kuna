@@ -12,3 +12,4 @@ pub mod kuna_dfunaffected;
 pub mod kuna_returnpair;
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
+pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering
