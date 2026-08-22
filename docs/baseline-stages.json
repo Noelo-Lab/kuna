@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    501,
-    501
+    506,
+    506
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -257,6 +257,11 @@
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
     "data:REALTYPES #4: no xunknown placeholder remains",
     "data:REALTYPES #5: no undefined placeholder remains",
+    "data:RETINPUTHALF #1: by default the returned RDX half that is a passthrough argument is kept, and the argument stays in the signature",
+    "data:RETINPUTHALF #2: the passthrough half is written from the second argument",
+    "data:RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)",
+    "data:RETINPUTHALF #4: w2, whose high half is arithmetic on the same argument, is identical in both passes (the rule only ever spoke about unwritten terminals)",
+    "data:RETINPUTHALF #5: nothing ever recovers a one-argument w2",
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",

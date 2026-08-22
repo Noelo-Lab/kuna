@@ -1,0 +1,63 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: a returned register half that is a formal input parameter is dropped as
+    "uncomputed" leftover, and the parameter it came from disappears with it.
+
+    Stage / sub-stage: P4 call and prototype model, output-prototype.
+    P0 assertion:      option retinputhalf on|off  (default on).
+
+    Source (gcc -O1 -fcf-protection=none, x86-64 SysV, bytes verbatim below):
+
+        typedef struct { unsigned long a, b; } P;
+        P wide(unsigned long s, unsigned long x){ P p; p.a=s+1; p.b=x;     return p; }
+        P w2  (unsigned long s, unsigned long x){ P p; p.a=s+1; p.b=x*3+7; return p; }
+
+        wide:  mov %rsi,%rdx ; lea 0x1(%rdi),%rax ; ret
+        w2:    lea 0x1(%rdi),%rax ; lea 0x7(%rsi,%rsi,2),%rdx ; ret
+
+    Both return the SysV RAX:RDX pair. They differ only in what the RDX half
+    holds: a plain copy of the second argument, versus arithmetic on it.
+
+    The bug (pass 2, option off): kuna_returnuncomputed rejects a return half
+    whose move-only chain ends at an UNWRITTEN Varnode, which is how it kills the
+    callee-saved-restore phantom. A formal input parameter is unwritten by
+    definition, so `wide` loses the RDX half; the argument that fed it then has no
+    reader left and vanishes from the signature too, recovering a ONE-argument
+    function where the machine code plainly reads RSI. `w2` is unaffected, because
+    arithmetic stops the walk.
+
+    The fix (pass 1, default): an unwritten terminal is leftover only when it is
+    NOT storage the prototype model would pass an argument in. RSI is; the local
+    frame slot a callee-saved restore reads is not, so the phantom this rule
+    exists to kill stays killed (pinned by
+    kuna-console/tests/verify_return_uncomputed.rs).
+-->
+<bytechunk space="ram" offset="0x10f9" readonly="true">
+4889f2488d4701c3488d4701488d547607c3
+</bytechunk>
+<symbol space="ram" offset="0x10f9" name="wide"/>
+<symbol space="ram" offset="0x1101" name="w2"/>
+</binaryimage>
+<script>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option retinputhalf off</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETINPUTHALF #1: by default the returned RDX half that is a passthrough argument is kept, and the argument stays in the signature" min="1" max="1">undefined16 wide\(int8 a0,unsigned long a1\)</stringmatch>
+<stringmatch name="RETINPUTHALF #2: the passthrough half is written from the second argument" min="1" max="1">v1\[8\] = a1;</stringmatch>
+<stringmatch name="RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)" min="1" max="1">unsigned long wide\(int8 a0\)</stringmatch>
+<stringmatch name="RETINPUTHALF #4: w2, whose high half is arithmetic on the same argument, is identical in both passes (the rule only ever spoke about unwritten terminals)" min="2" max="2">undefined16 w2\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="RETINPUTHALF #5: nothing ever recovers a one-argument w2" min="0" max="0">w2\(int8 a0\)</stringmatch>
+</decompilertest>

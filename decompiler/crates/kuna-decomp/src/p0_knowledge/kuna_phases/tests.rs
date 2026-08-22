@@ -25,7 +25,7 @@ fn subphase_count_is_43() {
 }
 
 #[test]
-fn surface_count_is_102() {
+fn surface_count_is_104() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -39,12 +39,14 @@ fn surface_count_is_102() {
     // +1 for the `option funcboundflow` surface row (kuna cross-function-merge fix).
     // +1 for the `option securitycheck` surface row (kuna rustc panic-branch
     // stripping, DIV-82) -- the P7 edge-virtualization sibling of `stackguard`.
-    assert_eq!(kuna_num_surfaces(), 103);
-    assert_eq!(SURFACE_TABLE.len(), 103);
+    // +1 for the `option retinputhalf` surface row (kuna P4 output-prototype:
+    // keep a returned register half that is a placed input parameter).
+    assert_eq!(kuna_num_surfaces(), 104);
+    assert_eq!(SURFACE_TABLE.len(), 104);
 }
 
 #[test]
-fn settable_count_is_114() {
+fn settable_count_is_115() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -79,12 +81,13 @@ fn settable_count_is_114() {
     // +1 for `securitycheck` (P7 rustc panic-branch stripping, DIV-82).
     // +1 for `cleanupcode` (P2 Rust drop/deallocate call removal, DIV-81).
     // +1 for `dynrelocs` (P1 linked-image dynamic-relocation application, DIV-84).
-    assert_eq!(kuna_num_settables(), 114);
-    assert_eq!(SETTABLE_TABLE.len(), 114);
+    // +1 for `retinputhalf` (P4 returned input-parameter half retention, DIV-85).
+    assert_eq!(kuna_num_settables(), 115);
+    assert_eq!(SETTABLE_TABLE.len(), 115);
 }
 
 #[test]
-fn tier_counts_are_24_core_50_transform_40_analysis() {
+fn tier_counts_are_25_core_50_transform_40_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -135,7 +138,11 @@ fn tier_counts_are_24_core_50_transform_40_analysis() {
     // instructions on a name trigger -- and +1 for `cleanupcode` (P2 Rust
     // drop/deallocate call removal, DIV-81).
     // analysis 39 -> 40: +1 for `dynrelocs` (P1 linked-image dynamic relocations, DIV-84).
-    assert_eq!((core, transform, analysis), (24, 50, 40));
+    // core 24 -> 25: +1 for `retinputhalf` (P4 returned input-parameter half
+    // retention, DIV-85) -- core, not transform: it narrows a classification the
+    // engine already makes, and never rewrites anything the narrowing does not
+    // reach.
+    assert_eq!((core, transform, analysis), (25, 50, 40));
 }
 
 #[test]
@@ -325,7 +332,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_35_suppressed_for_77() {
+fn option_values_live_value_present_for_36_suppressed_for_77() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -523,7 +530,8 @@ fn option_values_live_value_present_for_35_suppressed_for_77() {
     // 32 -> 33: +1 for `ctypes` (live_field = ctypes).
     // 33 -> 34: +1 for `loadguardrange` (live_field = load_guard_range).
     // 34 -> 35: +1 for `cleanupcode` (live_field = remove_cleanup_code).
-    assert_eq!(with_live, 35);
+    // 35 -> 36: +1 for `retinputhalf` (live_field = ret_input_half).
+    assert_eq!(with_live, 36);
 }
 
 #[test]
@@ -630,9 +638,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
-    // aifstrict's P1 row, spillargtrial's P4 row and dynrelocs' P1 row sit
-    // mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 113);
+    // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
+    // retinputhalf's P4 row sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 114);
 }
 
 #[test]
