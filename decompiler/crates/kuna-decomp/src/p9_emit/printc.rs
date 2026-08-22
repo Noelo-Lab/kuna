@@ -1975,13 +1975,26 @@ impl PrintC {
         // atom's `Varnode *`/`PcodeOp *` for `varref`/`opref`).  `none()` (no
         // lookup) on the plain-text path, so the datatest bytes are unchanged.
         let markup = self.markup_for_atom(atom);
+        // (kuna outlang) A recovered name can be a demangled path (`hello::main`)
+        // or carry generic arguments (`driftsort_main<T>`). C emits those verbatim
+        // and is equally not-C for it; Rust output is parsed, so the same latent
+        // problem has to be fixed rather than tolerated. Off for C, so the corpus
+        // cannot move.
+        let ident = |p: &PrintC, n: &String| -> Option<String> {
+            let s = crate::kuna_rusttypes::sanitize(n);
+            (p.lang().sanitize_identifiers && &s != n).then_some(s)
+        };
         match atom.tag {
             TagType::Syntax => self.emit.print(&atom.name, to_emit_hl(atom.highlight)),
             TagType::VarToken => {
-                self.emit.tag_variable(&atom.name, to_emit_hl(atom.highlight), &markup)
+                let n = ident(self, &atom.name);
+                let n = n.as_ref().unwrap_or(&atom.name);
+                self.emit.tag_variable(n, to_emit_hl(atom.highlight), &markup)
             }
             TagType::FuncToken => {
-                self.emit.tag_func_name(&atom.name, to_emit_hl(atom.highlight), &markup)
+                let n = ident(self, &atom.name);
+                let n = n.as_ref().unwrap_or(&atom.name);
+                self.emit.tag_func_name(n, to_emit_hl(atom.highlight), &markup)
             }
             TagType::OpToken => self.emit.tag_op(&atom.name, to_emit_hl(atom.highlight), &markup),
             TagType::TypeToken => {
@@ -5405,7 +5418,8 @@ impl PrintC {
         if out_def.as_ref().map(|t| t.is_pointer_to_array()).unwrap_or(false)
             && self.check_address_of_cast(fd, op)
         {
-            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            let tok = self.lang_token(&tokens::ADDRESSOF);
+            self.push_op(tok, Some(op_key(op)));
             if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                 self.push_vn_ir(fd, arch, vn, op);
             }
@@ -6480,7 +6494,8 @@ impl PrintC {
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else if self.options.array_notation() {
             // (kuna) S9 pointer-notation sub-stage: EMIT &base[index].
-            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            let tok = self.lang_token(&tokens::ADDRESSOF);
+            self.push_op(tok, Some(op_key(op)));
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else {
             self.push_op(&tokens::BINARY_PLUS, Some(op_key(op)));
@@ -7439,7 +7454,8 @@ impl PrintC {
         };
         if !valueon {
             // EMIT  &name  (printc.cc:1091)
-            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            let tok = self.lang_token(&tokens::ADDRESSOF);
+            self.push_op(tok, Some(op_key(op)));
         }
         self.push_atom(&Atom::with_op(
             name,
@@ -7586,7 +7602,8 @@ impl PrintC {
             );
             if !valueon {
                 // Printing an ampersand.
-                self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                let tok = self.lang_token(&tokens::ADDRESSOF);
+            self.push_op(tok, Some(op_key(op)));
                 if flex {
                     // EMIT  &( ).name
                     self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
@@ -7764,7 +7781,8 @@ impl PrintC {
 
             if !valueon {
                 // EMIT  &name  (printc.cc:1095)
-                self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                let tok = self.lang_token(&tokens::ADDRESSOF);
+            self.push_op(tok, Some(op_key(op)));
             } else if arrayvalue {
                 // EMIT  name  with a trailing subscript (printc.cc:1099)
                 self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));

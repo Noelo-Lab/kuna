@@ -123,6 +123,10 @@ node integrations/web/test/worker.mjs
 node integrations/web/test/fnfilter.mjs
 ```
 
+- **`auto-mode.mjs`** pins the argv the glue builds: both `--mode auto` and `--language
+  auto` pass through as the literal `auto`, so the byte-size mode policy and the
+  output-language policy are resolved by the engine and the browser cannot drift from the
+  CLI on either.
 - **`parity.mjs`** proves the decompiler *runs* under a WASI runtime and matches native
   byte-for-byte across `list` + several `decompile` cases + a whole-binary `project` export,
   and checks the automatic mode immediately below and at both size boundaries.

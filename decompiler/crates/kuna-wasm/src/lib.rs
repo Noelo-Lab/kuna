@@ -59,16 +59,35 @@ pub fn run(binary: &str, spec_root: &str, cmd: &str, arg: Option<&str>) -> Resul
     run_with_mode(binary, spec_root, cmd, arg, None)
 }
 
-/// Run the front-end with an optional explicit mode.
-///
-/// `None` and `Some("auto")` select `aggressive` below 500 KiB, `reliable`
-/// from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and above.
+/// Run the front-end with an explicit mode, no output language (the `auto`
+/// policy applies).
 pub fn run_with_mode(
     binary: &str,
     spec_root: &str,
     cmd: &str,
     arg: Option<&str>,
     requested_mode: Option<&str>,
+) -> Result<String, String> {
+    run_with(binary, spec_root, cmd, arg, requested_mode, None)
+}
+
+/// Run the front-end with an optional explicit mode and output language.
+///
+/// For the mode, `None` and `Some("auto")` select `aggressive` below 500 KiB,
+/// `reliable` from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and
+/// above.
+///
+/// (kuna outlang) For the language, `None` and `Some("auto")` follow the binary:
+/// a Rust binary renders as Rust. `project` is excluded from that policy -- its
+/// `.c`/`.h`/`.asm` export is C-shaped end to end -- so an explicit non-C
+/// language is an error there rather than a broken export.
+pub fn run_with(
+    binary: &str,
+    spec_root: &str,
+    cmd: &str,
+    arg: Option<&str>,
+    requested_mode: Option<&str>,
+    requested_language: Option<&str>,
 ) -> Result<String, String> {
     let command = match cmd {
         "list" => Cmd::List,
@@ -107,7 +126,8 @@ pub fn run_with_mode(
         0
     };
     let mode = resolve_mode(requested_mode, binary_size)?;
-    let mut prog = load_program(binary, spec_root, mode, want_fast_funcdisc)?;
+    let language = resolve_language(binary, requested_language, &command)?;
+    let mut prog = load_program(binary, spec_root, mode, want_fast_funcdisc, language)?;
     if let Some(seconds) = command_fn_budget_seconds(&command, mode) {
         prog.arch_mut().kuna_fn_budget = Some(std::time::Duration::from_secs(seconds));
     }
@@ -231,11 +251,58 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
 /// missing-function bug, not a saved analysis. `kuna functions` makes the
 /// opposite trade — cheap enumeration — because a native caller can always ask
 /// `decompile-all` for the full set (DIV-53, `docs/web-integration.md` §2).
+/// The output language for this run: an explicit name, or the auto policy.
+///
+/// The auto policy follows the binary through `sourcelang::detect_compiler`, the
+/// port of Ghidra's `SourceLanguageAnalyzer`. Detection is high-precision (a
+/// `.comment` `rustc version` record, a `.rodata` signature, or a Rust-mangled
+/// symbol), and a failure to parse the file leaves the C default in place -- the
+/// policy can only ever ADD a language, never take one away.
+fn resolve_language(
+    binary: &str,
+    requested: Option<&str>,
+    command: &Cmd,
+) -> Result<Option<&'static str>, String> {
+    let explicit = match requested {
+        None | Some("auto") | Some("") => None,
+        Some(name) => Some(
+            kuna_decomp::kuna_lang::OutLang::from_print_name(name)
+                .ok_or_else(|| {
+                    format!(
+                        "unknown output language {name:?} (expected auto, or one of: {})",
+                        kuna_decomp::kuna_lang::OutLang::names().join(", ")
+                    )
+                })?
+                .print_name(),
+        ),
+    };
+    if matches!(command, Cmd::Project(_)) {
+        return match explicit {
+            Some(name) if name != "c-language" => Err(format!(
+                "project export is C-only in this release (got {name}); use `decompile`"
+            )),
+            // Never auto-select for the project export: it would turn a working
+            // export into an error on every Rust binary.
+            _ => Ok(None),
+        };
+    }
+    if explicit.is_some() {
+        return Ok(explicit);
+    }
+    let Ok(bytes) = std::fs::read(binary) else { return Ok(None) };
+    let Ok(file) = object::File::parse(&*bytes) else { return Ok(None) };
+    Ok(match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
+        kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
+        _ => None,
+    })
+}
+
 fn load_program(
     binary: &str,
     spec_root: &str,
     mode: &str,
     want_fast_funcdisc: bool,
+    language: Option<&str>,
 ) -> Result<ConsoleProgram, String> {
     let overrides = kuna_decomp::modes::mode_overrides(mode)
         .ok_or_else(|| format!("unknown mode {mode:?}"))?;
@@ -278,6 +345,11 @@ fn load_program(
         prog.arch_mut()
             .set_kuna_option("listing", "on")
             .map_err(|e| format!("option listing: {}", e.explain()))?;
+    }
+    if let Some(name) = language {
+        prog.arch_mut()
+            .set_print_language_checked(name)
+            .map_err(|e| e.explain().to_string())?;
     }
 
     use object::Object;

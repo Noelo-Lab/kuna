@@ -34,6 +34,9 @@ kuna-decomp.workspace = true
 # mirroring `kuna decompile-all` exactly. No new crate enters the dependency
 # graph.
 object.workspace = true
+# (kuna outlang) `sourcelang::detect_compiler` backs the auto language policy:
+# a Rust binary renders as Rust unless the caller names a language.
+kuna-analysis.workspace = true
 
 [lints]
 workspace = true

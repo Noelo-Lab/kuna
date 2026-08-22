@@ -98,6 +98,7 @@ export class KunaWorkerClient {
       bytes: session.bytes,
       fileName: session.fileName,
       mode: session.mode,
+      language: session.language,
     });
     this.checkGeneration(generation);
     if (this.session !== session) {
@@ -107,12 +108,12 @@ export class KunaWorkerClient {
     this.workerSession = session;
   }
 
-  async load(binaryBytes, { fileName = 'binary', mode = 'auto' } = {}) {
+  async load(binaryBytes, { fileName = 'binary', mode = 'auto', language = 'auto' } = {}) {
     const generation = this.generation;
     const bytes = binaryBytes instanceof Uint8Array
       ? binaryBytes
       : new Uint8Array(binaryBytes);
-    const session = { bytes, fileName, mode };
+    const session = { bytes, fileName, mode, language };
     this.session = session;
     this.workerSession = null;
     await this.setWorkerSession(generation);

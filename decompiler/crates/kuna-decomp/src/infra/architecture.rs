@@ -3293,6 +3293,23 @@ impl Architecture {
         &mut self.print
     }
 
+    /// (kuna outlang) Select the output language by name, rejecting one no
+    /// back-end claims.
+    ///
+    /// The `ArchOptionContext::set_print_language` sibling is infallible because
+    /// it mirrors the upstream setter; this is the surface a front-end should
+    /// use, so a typo is an error rather than a silent fall back to C.
+    pub fn set_print_language_checked(&mut self, name: &str) -> KunaResult<()> {
+        let lang = crate::kuna_lang::OutLang::from_print_name(name).ok_or_else(|| {
+            KunaError::parse(format!(
+                "unknown output language {name:?} (expected one of: {})",
+                crate::kuna_lang::OutLang::names().join(", ")
+            ))
+        })?;
+        self.print.set_name(lang.print_name());
+        Ok(())
+    }
+
     /// Move the printer out of `self` (replacing it with a fresh default), so a
     /// caller can drive `PrintC::doc_function_full(fd, &self)` — which needs an
     /// immutable borrow of the rest of the architecture (register-name lookup)

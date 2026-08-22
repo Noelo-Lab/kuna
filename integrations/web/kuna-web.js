@@ -42,11 +42,19 @@ export function formatName(bytes) {
   return 'binary';
 }
 
-/** Build one kuna_wasm command, delegating the byte-size policy to Rust. */
-export function wasmCommandArgs(command, arg, mode = 'auto') {
+/**
+ * Build one kuna_wasm command, delegating the byte-size policy to Rust.
+ *
+ * `language` is the output language: 'auto' (the default) follows the binary, so
+ * a Rust binary renders as Rust. The engine owns that policy too -- passing
+ * 'auto' through rather than resolving it here keeps the browser and the CLI on
+ * one implementation.
+ */
+export function wasmCommandArgs(command, arg, mode = 'auto', language = 'auto') {
   const argv = ['/work/input.bin', '/specs', command];
   if (arg) argv.push(arg);
   argv.push('--mode', mode);
+  argv.push('--language', language);
   return argv;
 }
 
@@ -214,16 +222,19 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
     /** Format label for the status line (ELF / PE / Mach-O / binary). */
     formatName,
     /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex}]}`. */
-    async list(binaryBytes, { mode = 'auto' } = {}) {
-      return parseOrThrow(await invoke(binaryBytes, wasmCommandArgs('list', undefined, mode)), 'list');
+    async list(binaryBytes, { mode = 'auto', language = 'auto' } = {}) {
+      return parseOrThrow(
+        await invoke(binaryBytes, wasmCommandArgs('list', undefined, mode, language)),
+        'list',
+      );
     },
     /**
      * Decompile. With no `target`, decompiles ALL functions; otherwise a single
      * function by name or `0x`-address. Returns the `decompile-all --json` shape.
      */
-    async decompile(binaryBytes, target, { mode = 'auto' } = {}) {
+    async decompile(binaryBytes, target, { mode = 'auto', language = 'auto' } = {}) {
       return parseOrThrow(
-        await invoke(binaryBytes, wasmCommandArgs('decompile', target, mode)),
+        await invoke(binaryBytes, wasmCommandArgs('decompile', target, mode, language)),
         'decompile',
       );
     },
@@ -234,6 +245,7 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
      * "README.md"}}`.
      */
     async project(binaryBytes, displayName, { mode = 'auto' } = {}) {
+      // The project export is C-only; no language is threaded here on purpose.
       return parseOrThrow(
         await invoke(binaryBytes, wasmCommandArgs('project', displayName, mode)),
         'project',

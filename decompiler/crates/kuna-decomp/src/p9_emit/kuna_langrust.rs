@@ -22,20 +22,35 @@
 //! rendered naively inside a `match` arm inside a loop, breaks the *loop*. The
 //! capability is what turns that from a latent miscompile into a gate.
 //!
-//! # Token precedences
+//! # Token precedences, and the one that is a correctness bug
 //!
-//! Rust's `& ^ | && ||` ladder has the same relative order as C's, so the
-//! inherited table is already correct — with one exception. Ghidra's
-//! `BOOLEAN_XOR` is the invented C spelling `^^` at precedence 20 (between `&&`
-//! and `||`); Rust spells logical xor `^`, which binds at the *bitwise* tier.
-//! Emitting `^` while keeping precedence 20 would make the parenthesizer omit
-//! parentheses Rust needs, so the Rust token carries precedence 30.
+//! Most of the ~46 operator tokens are the right token in every language kuna
+//! targets, so `rust_map_token` remaps only the eleven that are not. Two of
+//! those are spelling (`~` becomes `!`, `&x` becomes `&mut x`); the rest are
+//! **rank**, and rank is where a wrong table is dangerous rather than ugly.
+//!
+//! C ranks `& ^ |` BELOW `== !=`. Rust ranks them ABOVE. The parenthesizer
+//! decides parentheses from precedence alone, so keeping C's numbers emits
+//! `a | b == c` for `(a | b) == c` — which Rust reads as `a | (b == c)`. That is
+//! a silent wrong answer, not a syntax error, and no amount of testing the
+//! *spelling* would find it.
+//!
+//! Rust also puts every comparison at one non-associative level where C ranks
+//! the relational operators above equality. Flattening them is what makes
+//! `(a < b) != 0` parenthesise instead of emitting the chained comparison
+//! `a < b != 0`, which does not parse. Because those become kuna-owned statics,
+//! they carry their own `negate` links (`OpToken::negate`, the C++ field the port
+//! left unset because a Rust static cannot reference itself — it can reference
+//! its sibling), so `!(a < b)` still folds to `a >= b`.
+//!
+//! Ghidra's `BOOLEAN_XOR` is the invented C spelling `^^` at precedence 20,
+//! between `&&` and `||`. Rust has one `^` for both logical and bitwise xor, so
+//! the Rust token is `^` at the bitwise tier.
 
 use crate::kuna_lang::{
     CastForm, CharForm, DeclForm, DoWhileForm, ForLoopForm, GotoForm, InfLoopForm, LabelForm, LangCaps,
     LangForms, LangProfile, MemberForm, ProtoForm, StringEscape, SwitchForm, WhileForm,
 };
-use crate::printc::tokens;
 use crate::printlanguage::{OpToken, TokenType};
 
 /// The Rust operator tokens whose spelling or precedence differs from C.
@@ -99,6 +114,22 @@ pub mod rust_tokens {
     /// one and sits at the same tier -- not at Ghidra's invented `^^` tier (20).
     pub static BOOLEAN_XOR: OpToken = bin("^", 43, true, None);
 
+    /// Rust has no bare address-of: `&x` is a shared borrow, and a decompiled
+    /// address is a raw pointer. `&mut x` is the honest analogue and coerces to
+    /// `*mut T`, which is how the type speller spells every recovered pointer.
+    pub static ADDRESSOF_MUT: OpToken = OpToken {
+        print1: "&mut ",
+        print2: "",
+        stage: 1,
+        precedence: 62,
+        associative: false,
+        token_type: TokenType::UnaryPrefix,
+        spacing: 0,
+        bump: 0,
+        negate: None,
+        paren_before_angle: false,
+    };
+
     /// `expr as T` — postfix-typed rather than C's prefix `(T)expr`. Binds
     /// tighter than the multiplicative operators (54) and looser than unary (62).
     pub static TYPECAST_AS: OpToken = OpToken {
@@ -130,6 +161,7 @@ fn rust_map_token(tok: &'static OpToken) -> &'static OpToken {
         (&c::LESS_EQUAL, &rust_tokens::LESS_EQUAL),
         (&c::GREATER_THAN, &rust_tokens::GREATER_THAN),
         (&c::GREATER_EQUAL, &rust_tokens::GREATER_EQUAL),
+        (&c::ADDRESSOF, &rust_tokens::ADDRESSOF_MUT),
         (&c::TYPECAST, &rust_tokens::TYPECAST_AS),
     ] {
         if std::ptr::eq(tok, from) {
@@ -176,6 +208,7 @@ pub static LANG_RUST: LangProfile = LangProfile {
     // construct; it renders the same in any output.
     kw_type_pointer_rel: "ADJ",
     null_literal: "core::ptr::null_mut()",
+    sanitize_identifiers: true,
 
     map_token: rust_map_token,
     tok_typecast: &rust_tokens::TYPECAST_AS,
@@ -269,6 +302,15 @@ impl PrintC {
             "()".to_string()
         };
 
+        // The recovered name is often a demangled Rust path, which is not an
+        // identifier. Rewrite it and keep the original above, so the mapping back
+        // to the symbol is never lost.
+        let ident = crate::kuna_rusttypes::sanitize(&display);
+        if ident != display {
+            self.emit.tag_line();
+            self.emit.print(&format!("// {display}"), SyntaxHighlight::CommentColor);
+        }
+        let display = ident;
         for attr in self.lang().fn_attributes {
             self.emit.tag_line();
             self.emit.print(attr, SyntaxHighlight::CommentColor);

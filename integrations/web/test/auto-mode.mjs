@@ -6,25 +6,35 @@ function assertArgs(actual, expected, label) {
   }
 }
 
+// Both policies are the ENGINE's: the glue passes `auto` through rather than
+// resolving a byte-size threshold or sniffing the binary in JavaScript, so the
+// browser and the CLI cannot drift apart on either one.
 assertArgs(
   wasmCommandArgs('list'),
-  ['/work/input.bin', '/specs', 'list', '--mode', 'auto'],
-  'list auto mode',
+  ['/work/input.bin', '/specs', 'list', '--mode', 'auto', '--language', 'auto'],
+  'list auto mode + auto language',
 );
 assertArgs(
   wasmCommandArgs('decompile', 'main'),
-  ['/work/input.bin', '/specs', 'decompile', 'main', '--mode', 'auto'],
-  'decompile auto mode',
+  ['/work/input.bin', '/specs', 'decompile', 'main', '--mode', 'auto', '--language', 'auto'],
+  'decompile auto mode + auto language',
 );
 assertArgs(
   wasmCommandArgs('project', 'sample.elf'),
-  ['/work/input.bin', '/specs', 'project', 'sample.elf', '--mode', 'auto'],
-  'project auto mode',
+  ['/work/input.bin', '/specs', 'project', 'sample.elf', '--mode', 'auto', '--language', 'auto'],
+  'project auto mode + auto language',
 );
 assertArgs(
   wasmCommandArgs('decompile', 'main', 'fast'),
-  ['/work/input.bin', '/specs', 'decompile', 'main', '--mode', 'fast'],
+  ['/work/input.bin', '/specs', 'decompile', 'main', '--mode', 'fast', '--language', 'auto'],
   'explicit mode override',
 );
+assertArgs(
+  wasmCommandArgs('decompile', 'main', 'auto', 'rust'),
+  ['/work/input.bin', '/specs', 'decompile', 'main', '--mode', 'auto', '--language', 'rust'],
+  'explicit language override',
+);
 
-console.log('AUTO MODE GLUE OK — list/decompile/project pass an explicit WASM mode');
+console.log(
+  'AUTO MODE GLUE OK — list/decompile/project pass an explicit WASM mode and output language',
+);
