@@ -81,6 +81,14 @@ impl OutLang {
         }
     }
 
+    /// How this language renders a recovered calling convention.
+    pub fn abi(self) -> &'static dyn crate::kuna_langabi::LangAbi {
+        match self {
+            OutLang::C => &crate::kuna_langabi::C_ABI,
+            OutLang::Rust => &crate::kuna_langabi::RUST_ABI,
+        }
+    }
+
     /// How this language spells a recovered type.
     pub fn speller(self) -> &'static dyn crate::kuna_langtypes::TypeSpeller {
         match self {

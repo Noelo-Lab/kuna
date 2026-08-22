@@ -681,6 +681,12 @@ Three artifacts make up the plane, all in
   promising a meaningful `back`, because the front/back split is a C-ism: C
   declarators wrap the identifier (`int4 (*a)[1]`) where other languages' types are
   pure prefixes.
+- **`p4_calls/kuna_langabi.rs`** — `LangAbi`, the ABI seam. It owns one decision,
+  consulted by the Rust prototype emitter: which `extern` a signature declares.
+  Rust declares `extern "C"` exactly when the prototype is variadic (rustc admits
+  a C-variadic on nothing else) and otherwise nothing, which means the
+  unspellable default `extern "Rust"`. Chapter [04](04-calls-and-prototypes.md)
+  explains why the axis is thin and what a third language would add.
 - **`kuna_langc.rs`** — `CSpeller`, the c-language policy object. It carries the
   declarator algorithm transcribed from `pushTypeStart`/`pushTypeEnd`/
   `buildTypeStack` and the `realtypes`/`ctypes` relabelling (DIV-5/DIV-6), moved

@@ -1423,6 +1423,12 @@ impl PrintC {
         }
     }
 
+    /// How the active output language renders a recovered calling convention.
+    #[inline]
+    pub fn lang_abi(&self) -> &'static dyn crate::kuna_langabi::LangAbi {
+        self.out_lang.abi()
+    }
+
     /// The active output language's surface vocabulary and capability record.
     ///
     /// Every language-varying emit site reads through here rather than naming a
