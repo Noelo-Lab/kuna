@@ -397,6 +397,19 @@ fn symbols_indicate_rust(file: &object::File) -> bool {
         .any(is_rust_mangled)
 }
 
+/// Detect the source language straight from an image's bytes.
+///
+/// The byte-level entry point for callers that hold the image but not a parsed
+/// [`object::File`] -- the console's `load file`, which records the verdict on
+/// the `Architecture` so per-function engine rules (`option rustabi auto`) can
+/// test it. An unparseable image reports [`Compiler::Unknown`].
+pub fn detect_compiler_bytes(bytes: &[u8]) -> Compiler {
+    match object::File::parse(bytes) {
+        Ok(file) => detect_compiler(&file, bytes),
+        Err(_) => Compiler::Unknown,
+    }
+}
+
 /// `true` if `name` is a Rust-mangled symbol name. Recognizes:
 /// - **v0**: `_R...` (or `__R...` with a platform leading underscore).
 /// - **legacy**: `_ZN...17h<hex16>E` — the Itanium-`_ZN` form rustc emits with a

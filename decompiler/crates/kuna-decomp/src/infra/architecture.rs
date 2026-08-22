@@ -364,6 +364,17 @@ pub struct Architecture {
     /// a formal input parameter, instead of discarding it as uncomputed leftover.
     /// Read by [`crate::kuna_retinputhalf`] through the `ArchContext` handle.
     pub ret_input_half: bool,
+    /// (kuna) `option rustabi`: how hard to try to keep a rustc two-register
+    /// (`ScalarPair`) return intact -- 0 off, 1 auto (only on a detected rustc
+    /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
+    /// `ArchContext` handle.
+    pub rust_abi: u8,
+    /// (kuna) Did the loader's source-language detection report rustc for the
+    /// image being decompiled?  A FACT, not an option: written once at `load
+    /// file` from `kuna_analysis::sourcelang::detect_compiler`, and the thing
+    /// `option rustabi auto` tests.  The XML `<binaryimage>` bootstrap never runs
+    /// the analyzer tier, so it stays false there.
+    pub source_is_rust: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -735,6 +746,16 @@ pub struct Architecture {
     /// ([`ActionContext::deadline`](crate::action::ActionContext)).  Always
     /// `None` when no budget is set.
     pub kuna_fn_deadline: Option<std::time::Instant>,
+    /// (kuna `rustabi`) Per-image cache of the callee-body probe
+    /// ([`crate::kuna_rustabi::probe_callee_return_writes`]), keyed by the
+    /// callee's `(space index, entry offset)`.  Each distinct function body is
+    /// decoded at most once for the whole run, which is what keeps the probe off
+    /// the critical path of a whole-binary `decompile-all`.  Stays empty unless
+    /// `option rustabi` is live.
+    pub kuna_callee_write_cache: std::collections::HashMap<
+        (int4, uintb),
+        std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
+    >,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
     /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
@@ -1422,6 +1443,8 @@ impl Architecture {
             fold_boolean_mask: false,
             input_varnode_adjust: false,
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
+            rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
+            source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -1474,6 +1497,7 @@ impl Architecture {
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
+            kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
@@ -1599,6 +1623,7 @@ impl Architecture {
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
+        self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -1791,6 +1816,11 @@ impl Architecture {
             "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
+            "rustabi" => {
+                let (mode, msg) = crate::kuna_rustabi::parse_rust_abi_mode(p1)?;
+                self.rust_abi = mode.as_u8();
+                Ok(msg)
+            }
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
             "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
             "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
@@ -2553,6 +2583,10 @@ impl Architecture {
         // (kuna) carry the returned-input-half gate so `kuna_returnuncomputed`
         // reaches `option retinputhalf` via `glb`.
         ctx.ret_input_half = self.ret_input_half;
+        // (kuna) carry the Rust return-ABI gate and the detected source language
+        // so `kuna_rustabi` reaches both via `glb`.
+        ctx.rust_abi = self.rust_abi;
+        ctx.source_is_rust = self.source_is_rust;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`

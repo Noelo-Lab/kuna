@@ -438,11 +438,18 @@ pub fn build_output_from_trials(
         }
         let _ = data.op_set_output(op, finaloutvn);
     } else {
-        // The two-piece concat / preexisting-whole case (fspec.cc:5813-5853) needs
-        // `constructJoinAddress` (the JOIN-space register-name lookup off
-        // `getArch()->translate`), which the merged ArchHandle does not carry onto
-        // the IR; the default models on the recovery path return a single output
-        // register, so this branch is not reached on the live datatest path.
+        // (kuna `rustabi`) The two-piece concat (fspec.cc:5813-5853). The blocker
+        // the stub below records is stale -- `constructJoinAddress` IS reachable
+        // off the merged handle, and the sibling
+        // `ActionReturnRecovery::build_return_output` calls it -- but completing
+        // the branch changes which calls have an output, so it ships gated. When
+        // it fires the CALL gains the join-space pair the model asked for and both
+        // halves become SUBPIECEs of it, instead of staying INDIRECT creations
+        // that render as locals the function never assigns.
+        let entry = fc.get_entry_address().clone();
+        if crate::kuna_rustabi::build_call_output_pair(op, data, &finalvn, Some(&entry)) {
+            return;
+        }
         // STUB(W4 translate-on-handle): leave the trials in place rather than
         // fabricate a malformed concat (mirrors the same stub in
         // ActionReturnRecovery::build_return_output).

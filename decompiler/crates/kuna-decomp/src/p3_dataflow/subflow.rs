@@ -553,6 +553,16 @@ impl SubvariableFlow {
         if data.get_func_proto().is_output_locked() {
             return Ok(false);
         }
+        // (kuna `rustabi`) Refuse to narrow a RETURN that carries a recovered
+        // two-register pair whose low half is a variant discriminant. Truncating
+        // to the discriminant's logical width is not a narrower rendering of the
+        // same value -- it deletes the other register, which is where a Rust
+        // `Result`/`Option` keeps its payload.
+        if let Some(vn) = self.rv(rvn).vn {
+            if crate::kuna_rustabi::holds_scalar_pair(data, vn) {
+                return Ok(false);
+            }
+        }
         if !self.aggressive {
             // If there's something outside the mask being consumed, don't truncate.
             let vn = self.rv(rvn).vn.expect("try_return_pull: rvn vn");

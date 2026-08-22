@@ -759,6 +759,133 @@ The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
 the question goes to the model — the same fall-through
 `possible_input_param` takes when no locked parameters exist.
 
+#### (kuna, rustc) The two-register `ScalarPair` return (`rustabi`)
+
+rustc returns a `Result`, an `Option`, a slice or a fat pointer whose layout it
+classifies as **`ScalarPair`** in *two* registers — the variant discriminant in
+the first return register, the payload in the second. On x86-64 that is
+`RAX:RDX`, and the total size does not predict the choice: `Result<u32,u32>` is
+8 bytes and is a pair, while `Result<Box<u64>,u32>` is 16 bytes and goes through
+memory. The discriminator is the variant layout, which no compiler-spec rule
+can express.
+
+It does not have to. The storage rustc picks is exactly what the x86-64 cspec's
+`<join_dual_class/>` output rule already describes, so kuna **already recovers
+the pair**: both trials go active, the rule matches, and
+`ActionReturnRecovery::build_return_output` builds the `join`-space
+concatenation. Two later seams then throw it away, and both are invisible to a C
+corpus, because a C function whose *first* returned register holds a one-bit
+value is rare and a Rust `Result` is nothing else.
+
+* **On the producer**, subvariable flow narrows a RETURN to the logical width of
+  the value it is tracing (§03, `SubvariableFlow::tryReturnPull`). rustc
+  materializes a two-variant discriminant as `xor %eax,%eax; setb %al`, so `RAX`
+  is a *one-bit* logical value — and truncating the RETURN to it does not narrow
+  the returned value, it deletes the other register. `Result<u32,u32>` recovers
+  as `bool prod(uint4)` with no payload at all.
+* **On the consumer**, `FuncCallSpecs::buildOutputFromTrials` handles one used
+  output trial and returns early on two or more. A call whose model asked for a
+  register pair therefore gets **no output at all**; the INDIRECT creations that
+  stood for "the callee wrote something here" survive, and every read of the
+  payload register after the call renders as a local the function never assigns
+  — the phantom `int4 v3; // edx` that a `Result` guard tests.
+
+`option rustabi off|auto|always`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs`) acts at both
+seams. It does **not** answer them with one classification, because they are not
+looking at the same thing, and a shared verdict would be a claim about evidence
+that only one of them has.
+
+**The producer's classification.** Here the concatenation's halves are values
+*this* function computed, so their shape answers the question — taken from the
+**observed register writes** rather than from a size. `classify_return_pair`
+looks at the concatenation the ABI already built and reports:
+
+* **`ScalarPair`** when the least-significant half is *discriminant-shaped* — a
+  value whose known non-zero bits fit in a byte. That covers both forms rustc
+  emits for the same source: the branchy `mov $0`/`mov $1` tag and the
+  branchless `setCC`, which is the common one at `-C opt-level=2`. Asking about
+  known bits rather than about "a constant per path" is what makes the
+  recognition survive the optimizer's branchless lowering.
+* **`Memory`** when that half traces back, through move-only operations, to the
+  function's own incoming pointer argument — the sret epilogue, where the first
+  return register carries the hidden result pointer and is not a tag. A veto,
+  not an action: the pair must not form.
+* **`Scalar`** otherwise, which is today's answer unchanged.
+
+That verdict is what `holds_scalar_pair` reports to `tryReturnPull` before it
+narrows, and it looks *through* the reshaping the rule pool applies to the
+concatenation: `RuleConcatZext` rewrites `PIECE(ZEXT(V), W)` as
+`ZEXT(PIECE(V, W))` as soon as the payload register is written 32-bit
+(`lea 0x7(%rdi),%edx`), which is the overwhelmingly common rustc case, so
+matching only a bare PIECE would miss it.
+
+**The consumer's classification, and what it cannot prove.** At a call there are
+no callee values in the IR at all: both halves are INDIRECT creations standing
+for "the callee may have written this", so their shape says nothing and
+`classify_return_pair` has nothing to read. `classify_call_output_pair` is a
+different predicate over the three pieces of evidence a call site actually has:
+
+1. **The prototype model** — the `join_dual_class` output rule already matched a
+   justified, consecutive, first-in-class register pair, which is what put two
+   *used* trials here rather than one.
+2. **The caller's reads** — both halves are read out of the call, they are
+   distinct non-overlapping registers, and the payload half has a descendant.
+3. **The callee's body** — `probe_callee_return_writes` decodes the resolved
+   direct callee, bounded, following fall-through and resolved machine branches
+   until every path reaches a `RETURN`, and records the processor-space writes it
+   observes. A nested call, an unresolved indirect branch, an undecodable
+   instruction or the instruction budget makes the summary *incomplete*, which
+   proves nothing. On a complete summary that never touches the payload
+   register, the caller's read is a clobber and the pair is **vetoed**.
+
+Evidence 3 is the only one that looks at the callee and it is one-sided: it can
+refute a pair, never confirm one. So `ScalarPair` at the consumer means *no
+counter-example*, not *the callee returns a pair* — that positive fact is not
+derivable here. A recovered prototype is never written back to the symbol table,
+so a caller has no recovered callee signature to consult, and what remains after
+the veto is exactly the evidence upstream Ghidra ships this branch on unguarded.
+The honest reading of the consumer half is: **complete the stubbed multi-trial
+branch, and refuse it where the callee refutes it.**
+
+The probe is the reason `Funcdata` carries a per-callee write summary at all. The
+per-function `ArchContext` the pipeline runs against carries the load image but
+no translator, so the callee's instructions cannot be read at the seam itself;
+the driver takes the probe once the flow build has produced the call specs, and
+caches it on the `Architecture` so each distinct callee body is decoded once per
+run rather than once per caller. Nothing is probed unless the rule is live.
+
+When the classification says `ScalarPair`, `build_call_output_pair` completes the
+stubbed multi-trial branch: the CALL gains the `join`-space output covering both
+registers and each half becomes a `SUBPIECE` of it, inserted after the call, with
+the INDIRECT creations destroyed. The stub's recorded blocker — no
+`constructJoinAddress` on the merged arch handle — was stale; the sibling
+`build_return_output` calls it today.
+
+Keeping the pair alive does not disable the phantom-killer above it. The
+uncomputed-half repair still runs, later, on the pair this rule preserves, so a
+half that is genuine leftover is still dropped — by the rule that can tell,
+instead of by a width heuristic that cannot.
+
+The gate is three-valued because the language fact and the forcing switch are
+different questions. `auto` acts only on an image the loader's source-language
+detection reported as rustc-produced (`Compiler::Rustc`, recorded on the
+`Architecture` at `load file` and copied into the per-function snapshot per 00
+§0.5); the XML `<binaryimage>` bootstrap never runs the analyzer tier, so `auto`
+is inert on the datatest corpus **by construction**, not by luck. `always` drops
+the language test, which is what `tests/stages/kuna-rustabi.xml` needs — a
+`<bytechunk>` carries no `.comment` record to detect. The shipped default is
+`off`: the pair this keeps alive is rendered as a raw fixed-size container until
+a later pass gives it an enum type, so the option buys information at the cost of
+polish, and that trade is the operator's to make.
+
+What this deliberately does **not** do: it does not name anything `Result` or
+`Option`, does not synthesize a union, struct or enum type, and does not touch
+emission. Its entire deliverable is that the payload exists as a variable and is
+connected to its producer. Spelling that value as a Rust enum is a chapter
+[05](05-types.md) decision that cannot be made until the value survives to be
+spelled.
+
 ### The ABI seam (`kuna_langabi.rs`)
 
 **(kuna, output languages)** How a recovered calling convention *appears* is a
@@ -779,7 +906,12 @@ prevent. Rust's genuinely distinct ABI surface — a niche-optimized
 `rax:rdx`, a slice passed as a `(ptr, len)` register pair — is an **enum and
 discriminant inference** problem belonging to chapter [05](05-types.md), not a
 convention problem belonging here. Modelling it as a convention would be
-modelling the wrong thing.
+modelling the wrong thing. Measurement has since sharpened where the `rax:rdx`
+half of that sits: the *storage* is not a Rust-specific convention at all (the
+cspec's `join_dual_class` rule already describes it and kuna already recovers
+it), so what P4 owns is keeping the recovered pair alive and connecting it at
+the call — `option rustabi`, §4.2 — while naming and typing the value stays a
+chapter 05 problem.
 
 The one decision the seam does own is load-bearing rather than decorative: Rust
 declares `extern "C"` exactly when the recovered prototype is variadic, because

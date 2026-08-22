@@ -25,7 +25,7 @@ fn subphase_count_is_43() {
 }
 
 #[test]
-fn surface_count_is_104() {
+fn surface_count_is_105() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -41,12 +41,14 @@ fn surface_count_is_104() {
     // stripping, DIV-82) -- the P7 edge-virtualization sibling of `stackguard`.
     // +1 for the `option retinputhalf` surface row (kuna P4 output-prototype:
     // keep a returned register half that is a placed input parameter).
-    assert_eq!(kuna_num_surfaces(), 104);
-    assert_eq!(SURFACE_TABLE.len(), 104);
+    // +1 for the `option rustabi` surface row (kuna P4 output-prototype: keep the
+    // two-register rustc ScalarPair return and connect it at the call).
+    assert_eq!(kuna_num_surfaces(), 105);
+    assert_eq!(SURFACE_TABLE.len(), 105);
 }
 
 #[test]
-fn settable_count_is_116() {
+fn settable_count_is_117() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -83,12 +85,13 @@ fn settable_count_is_116() {
     // +1 for `dynrelocs` (P1 linked-image dynamic-relocation application, DIV-84).
     // +1 for `retinputhalf` (P4 returned input-parameter half retention, DIV-85).
     // +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
-    assert_eq!(kuna_num_settables(), 116);
-    assert_eq!(SETTABLE_TABLE.len(), 116);
+    // +1 for `rustabi` (P4 rustc two-register ScalarPair return recovery).
+    assert_eq!(kuna_num_settables(), 117);
+    assert_eq!(SETTABLE_TABLE.len(), 117);
 }
 
 #[test]
-fn tier_counts_are_25_core_50_transform_41_analysis() {
+fn tier_counts_are_26_core_50_transform_41_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -144,7 +147,10 @@ fn tier_counts_are_25_core_50_transform_41_analysis() {
     // engine already makes, and never rewrites anything the narrowing does not
     // reach.
     // analysis 40 -> 41: +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
-    assert_eq!((core, transform, analysis), (25, 50, 41));
+    // core 25 -> 26: +1 for `rustabi` (P4 rustc ScalarPair return) -- core, not
+    // transform: it keeps a value the engine already recovered instead of
+    // introducing a new rewrite.
+    assert_eq!((core, transform, analysis), (26, 50, 41));
 }
 
 #[test]
@@ -522,6 +528,7 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
                             | "paramcopyhoist"
                             | "guardarm"
                             | "loopcondhoist"
+                            | "rustabi"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -646,9 +653,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
     // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
-    // retinputhalf's P4 and dwarfstructs' P1 rows sit mid-table, so they do not
-    // move the tail).
-    assert_eq!(json.matches("},\n").count(), 115);
+    // retinputhalf's P4, dwarfstructs' P1 and rustabi's P4 rows sit mid-table, so
+    // they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 116);
 }
 
 #[test]

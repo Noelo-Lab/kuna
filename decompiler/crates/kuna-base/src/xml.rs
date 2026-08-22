@@ -1763,7 +1763,7 @@ mod tests {
         // and kuna-retinputhalf / a returned register half that is an input
         // parameter the function moved there is kept, so the parameter stays in
         // the signature (option off = the half AND the argument are dropped)
-        assert_eq!(count, 212, "corpus file count drifted");
+        assert_eq!(count, 213, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

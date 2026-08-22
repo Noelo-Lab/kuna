@@ -345,6 +345,16 @@ pub struct Funcdata {
     /// Index into [`Self::kuna_wire_symbols`] per HighVariable.
     pub(crate) kuna_wire_symbol_for_high:
         std::collections::BTreeMap<crate::context::HighVariableId, usize>,
+    /// (kuna `rustabi`) Per direct-call-target evidence about the registers the
+    /// callee is *proven* not to write, keyed by `(space index, entry offset)`.
+    /// Seeded by the driver after the flow build — the only place the disassembly
+    /// engine is still reachable — and read at the call-output seam
+    /// ([`crate::kuna_rustabi::classify_call_output_pair`]).  Empty unless
+    /// `option rustabi` is live for this function.
+    kuna_callee_ret_writes: std::collections::HashMap<
+        (int4, kuna_base::types::uintb),
+        std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
+    >,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -445,6 +455,7 @@ impl Funcdata {
             kuna_pipeline_failure: None,
             kuna_wire_symbols: Vec::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
+            kuna_callee_ret_writes: std::collections::HashMap::new(),
         })
     }
 
@@ -577,6 +588,27 @@ impl Funcdata {
     /// (kuna) Why the decompile pipeline aborted for this function, if it did.
     pub fn kuna_pipeline_failure(&self) -> Option<&str> {
         self.kuna_pipeline_failure.as_deref()
+    }
+
+    /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the
+    /// registers it writes.
+    pub fn kuna_set_callee_ret_writes(
+        &mut self,
+        entry: &Address,
+        writes: std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
+    ) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_callee_ret_writes.insert((sp.get_index(), entry.get_offset()), writes);
+        }
+    }
+
+    /// (kuna `rustabi`) The recorded probe of `entry`'s body, if one was taken.
+    pub fn kuna_callee_ret_writes(
+        &self,
+        entry: &Address,
+    ) -> Option<&crate::kuna_rustabi::CalleeReturnWrites> {
+        let sp = entry.get_space()?;
+        self.kuna_callee_ret_writes.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
     }
 
     /// Get the entry point address (C++ `getAddress`).

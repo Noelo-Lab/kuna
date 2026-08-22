@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    506,
-    506
+    516,
+    516
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -262,6 +262,16 @@
     "data:RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)",
     "data:RETINPUTHALF #4: w2, whose high half is arithmetic on the same argument, is identical in both passes (the rule only ever spoke about unwritten terminals)",
     "data:RETINPUTHALF #5: nothing ever recovers a one-argument w2",
+    "data:RUSTABI #10: and its call keeps no output in either pass",
+    "data:RUSTABI #1: by default the producer collapses to the one-bit discriminant and the EDX payload is deleted",
+    "data:RUSTABI #2: by default the consumer reads the payload register as a local nothing assigns",
+    "data:RUSTABI #3: by default the call to prod has no output at all",
+    "data:RUSTABI #4: with the option on the producer returns the whole pair",
+    "data:RUSTABI #5: with the option on the payload half is written at the second register's offset",
+    "data:RUSTABI #6: with the option on the call has an output and the payload is connected to it",
+    "data:RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air",
+    "data:RUSTABI #8: with the option on the discriminant guard reads the same call result",
+    "data:RUSTABI #9: a callee proven never to write the second return register is not paired -- the reader is unchanged in BOTH passes",
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",

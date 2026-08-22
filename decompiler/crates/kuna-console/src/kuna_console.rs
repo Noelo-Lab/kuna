@@ -182,6 +182,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         }
         "inputvarnodeadjust" => on_off(conf.input_varnode_adjust),
         "retinputhalf" => on_off(conf.ret_input_half),
+        // (kuna `rustabi`) Three-valued, so it reports its own token.
+        "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
         "condexeplace" => on_off(conf.condexe_block_placement),
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),

@@ -1449,6 +1449,16 @@ pub fn bootstrap_from_object(
     // addresses. See `ConsoleProgram::loader_data_objects`.
     let loader_data_objects = loader.data_symbols();
 
+    // (kuna `rustabi`) Record the loader's source-language verdict on the
+    // Architecture. Unlike the analyzer facts below this is not a pass output but
+    // a one-bit property of the image, and it has to reach the ENGINE (the
+    // per-function rules in `kuna_rustabi`) rather than the Listing, so it is
+    // written straight onto the arch here at load, upstream of every `option`
+    // command. The XML `<binaryimage>` bootstrap never reaches this line, which is
+    // why `option rustabi auto` is inert on the datatest corpus by construction.
+    let source_is_rust = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes).is_rust();
+    sleigh.base_mut().unwrap().source_is_rust = source_is_rust;
+
     // Hand the loader to the engine (the C++ `loader` back-pointer the decode
     // reads on load_fill).
     sleigh.base_mut().unwrap().set_loader(Box::new(loader));
