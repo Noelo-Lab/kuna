@@ -37,12 +37,14 @@ fn surface_count_is_102() {
     // +1 for the `option braceelide` surface row (kuna C-surface normalization, DIV-37),
     // +1 for the `option warnstyle` surface row (kuna C-surface normalization, DIV-38).
     // +1 for the `option funcboundflow` surface row (kuna cross-function-merge fix).
-    assert_eq!(kuna_num_surfaces(), 102);
-    assert_eq!(SURFACE_TABLE.len(), 102);
+    // +1 for the `option securitycheck` surface row (kuna rustc panic-branch
+    // stripping, DIV-82) -- the P7 edge-virtualization sibling of `stackguard`.
+    assert_eq!(kuna_num_surfaces(), 103);
+    assert_eq!(SURFACE_TABLE.len(), 103);
 }
 
 #[test]
-fn settable_count_is_110() {
+fn settable_count_is_112() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -74,12 +76,13 @@ fn settable_count_is_110() {
     // +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79, GH-289).
     // +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
     // +1 for `spillargtrial` (P4 caller-save spill tolerance in input-trial scoring, GH-275).
-    assert_eq!(kuna_num_settables(), 111);
-    assert_eq!(SETTABLE_TABLE.len(), 111);
+    // +1 for `securitycheck` (P7 rustc panic-branch stripping, DIV-82).
+    assert_eq!(kuna_num_settables(), 112);
+    assert_eq!(SETTABLE_TABLE.len(), 112);
 }
 
 #[test]
-fn tier_counts_are_24_core_47_transform_39_analysis() {
+fn tier_counts_are_24_core_49_transform_39_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -125,7 +128,10 @@ fn tier_counts_are_24_core_47_transform_39_analysis() {
     // transform 47 -> 48: +1 for `spillargtrial` (P4 caller-save spill tolerance, GH-275)
     // -- transform, not core: it INSERTS a call argument, and is right on the spill/reload
     // shape and wrong on an ordinary frame store, which is the transform tier's definition.
-    assert_eq!((core, transform, analysis), (24, 48, 39));
+    // transform 48 -> 49: +1 for `securitycheck` (P7 rustc panic-branch stripping,
+    // DIV-82) -- transform, like its `stackguard` sibling: it deletes real
+    // instructions on a name trigger.
+    assert_eq!((core, transform, analysis), (24, 49, 39));
 }
 
 #[test]
@@ -466,6 +472,7 @@ fn option_values_live_value_present_for_34_suppressed_for_76() {
                             | "regionedgeorder"
                             | "condfold"
                             | "stackguard"
+                            | "securitycheck"
                             | "branchflip"
                             | "namestyle"
                             | "foldcallret"
@@ -616,7 +623,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
     // aifstrict's P1 row and spillargtrial's P4 row sit mid-table, so they do not
     // move the tail).
-    assert_eq!(json.matches("},\n").count(), 110);
+    assert_eq!(json.matches("},\n").count(), 111);
 }
 
 #[test]

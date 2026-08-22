@@ -830,6 +830,10 @@ pub struct ArchContext {
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
     pub strip_stack_guard: bool,
+    /// (kuna) strip rustc's bounds / slice / divide-by-zero panic branches
+    /// (option `securitycheck`, DIV-82 default-on).  Read by
+    /// [`crate::kuna_securitycheck`]'s `ActionRemoveSecurityCheck`.
+    pub strip_security_check: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_branchflip`]'s `ActionBranchFlip`.
@@ -1092,6 +1096,7 @@ impl ArchContext {
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
+            strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,

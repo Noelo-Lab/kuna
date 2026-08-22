@@ -301,6 +301,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchreturn",
     "foldcallret",
     "stackguard",
+    "securitycheck",
     "branchflip",
     "loopbreak_recovery",
     "namestyle",

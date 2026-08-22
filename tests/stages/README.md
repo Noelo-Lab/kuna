@@ -132,6 +132,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-cnorm-braceelide.xml` | single-statement if bodies drop their braces (statement indented) (DIV-38) | `option braceelide on\|off` (new kuna settable, P9 `brace-form`) |
 | `kuna-cnorm-warnstyle.xml` | warnings render as terse `// slug` end-of-line comments (DIV-39) | `option warnstyle inline\|banner` (new kuna settable, P9 `warning-style`) |
 | `kuna-outlang-rust.xml` | the same recovered function rendered as Rust: `unsafe fn` shell, `let mut n: T` declarations, Rust primitive spelling, postfix `as` casts, `match` with a synthesised `_` arm | `option setlanguage c-language\|rust-language` (upstream option, newly live) |
+| `oxidizer-securitycheck.xml` | SEFCOM Oxidizer `SecurityCheckRemover`: rustc emits a diverging `panic_bounds_check` branch in front of every checked slice index, string slice and non-constant `/`/`%` (DIV-82) | `option securitycheck on\|off` (new kuna settable, P7 `edge-virtualization`) |
 
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`

@@ -17,12 +17,13 @@ the identifier builds a private copy of the CFG and never mutates p-code,
 `bblocks`, or any P0 state. It is also *unscheduled* — no node of the pass
 tree (00-overview §0.6) runs it; it is computed on demand by its consumers
 (the console/CLI surfaces of §7.4 and the chapter-08 region structurer). The
-folder's one scheduled pass is the stack-guard transform of §7.3, which the
-schedule places in fullloop's tail. Option defaults and flip guidance for
+folder's two scheduled passes are the stack-guard transform of §7.3 and the
+rustc security-check transform of §7.4, which the schedule places back to back
+in fullloop's tail. Option defaults and flip guidance for
 every option named below live in the generated catalog
 ([docs/options.md](../options.md)); the registry rows are in
 `decompiler/crates/kuna-decomp/phases.toml` and the default divergences are
-DIV-12/DIV-14 in `docs/history.md`.
+DIV-12/DIV-14/DIV-82 in `docs/history.md`.
 
 ## 7.1 The region graph (angr)
 
@@ -293,7 +294,94 @@ wrong is asymmetric by design: a missed canary just leaves the check in the
 output (the upstream rendering), while a false match would delete live code —
 hence the both-operands-derive rule and the handler-call gate.
 
-## 7.4 Observability (kuna)
+## 7.4 kuna passes at the region tier: securitycheck (angr)
+
+The folder's second scheduled, output-changing pass:
+`decompiler/crates/kuna-decomp/src/p7_regions/kuna_securitycheck.rs
+(ActionRemoveSecurityCheck)`, the port of SEFCOM Oxidizer's
+`SecurityCheckRemover` (`option securitycheck`,
+[docs/options.md](../options.md); registry row P7/`edge-virtualization`,
+`source_decompiler = "angr"`). It is scheduled in the same `returnsplit` group
+as §7.3, immediately after `ActionStripStackGuard`
+(`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
+(universal_sched)`), because it is the same operation on a different trigger:
+sever one CFG edge, collect the orphaned diverging handler, and let the
+repeating fullloop re-derive dataflow, types and structure from the reduced
+graph.
+
+**The shape it removes.** rustc emits a check in front of every slice index,
+every string slice and every non-constant `/` or `%`. Each one lowers to a
+conditional branch to a small block that loads the panic `Location`, calls one
+of seven helpers that are declared `-> !` in libcore, and diverges. Ghidra has
+no notion of them, so the check renders verbatim: a guard plus a
+`panic_bounds_check()` call in front of every array access. Those branches
+roughly double the CFG of ordinary Rust code and carry no information a reader
+wants — Oxidizer reports their removal as the single biggest CFG-size win of
+its pass set.
+
+**What it matches.** Unlike §7.3, detection here is by callee **name**, which
+is both what the reference implementation does and what keeps the pass inert
+outside Rust. `kuna_securitycheck.rs (SECURITY_CHECK_FUNCTIONS)` holds the
+seven paths — `core::panicking::panic_bounds_check`,
+`core::str::slice_error_fail`,
+`core::panicking::panic_const::panic_const_div_by_zero` and its `rem` twin,
+and `core::slice::index::slice_{start_index_len,end_index_len,index_order}_fail`.
+The recovered name is whatever the demangler produced, so
+`kuna_securitycheck.rs (is_security_check_name)` compares the path PREFIX
+before the first `<` (a generic-argument list such as
+`slice_start_index_len_fail<usize>` is not part of the path) with a legacy
+`::h<16 hex>` component trimmed, and accepts either the full path or a
+trailing `::`-component suffix of it — down to the bare leaf, which is the
+shape kuna's x86-64 ELF symbol path actually produces. A suffix match is
+whole-component only, so the sibling `core::str::slice_error_fail_rt` is a
+different leaf and never matches. None of the seven names exists in a C
+program, which is why the option is structurally inert on a C binary and can
+ship default-on with no compiler-detection channel between the loader and the
+engine.
+
+**The safety envelope.** A branch removal changes the CFG the structurer sees,
+so `kuna_securitycheck.rs (ActionRemoveSecurityCheck::apply)` only fires when
+the failure arm can carry nothing else: the guard is a CBRANCH in a basic
+block with exactly two out-edges; the arm is a **basic** block that
+**diverges** (`size_out() == 0`), which is the load-bearing condition — a
+block with no out-edges contributes nothing to the enclosing function's
+returns, so deleting it cannot invent or destroy a return value; and the arm
+contains **exactly one** call, whose callee is one of the seven
+(`kuna_securitycheck.rs (block_is_security_check_handler)`). A second call in
+the arm — the shape produced when two panic blocks merge because one helper
+was not proven no-return — rejects it. Either out-edge may be the panic arm,
+since rustc emits both branch polarities; the arm is identified by what it
+contains, never by the branch sense. A block that is also reachable another
+way is never orphaned: the edit severs only this edge, and
+`remove_unreachable_blocks` collects the block only when no predecessor
+remains. One check per apply; the fullloop re-invokes and the pass self-gates.
+
+**The divergence fact.** The `size_out() == 0` guard only fires for a helper
+kuna already knows never returns, and its address-keyed no-return discovery
+walks only the helper bodies it can reach. The same option therefore asserts
+the fact from the name at the flow seam
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
+(ArchFlowEnv::query_call_no_return)`) — the same seam, the same shape and the
+same one-list discipline as `noreturn_externmatch`, on a list that exists
+nowhere but Rust. Without it roughly half the checks in a Rust binary survive
+as *returning* panic blocks the P7 guard correctly declines to remove.
+
+**Why tier=transform, destructive, default-on.** Like §7.3 it deletes real
+instructions the binary executes (`REMOVES CODE`, `destructive = true`).
+Default **on** since DIV-82 (`docs/history.md`; live flag
+`strip_security_check` set in
+`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(reset_defaults_internal)` and carried to the per-function ArchContext).
+Because the trigger is a Rust-only name it changes nothing on the C corpus:
+0/675 datatest assertions and zero differing `code` fields over the whole-binary
+render of the C regression fixtures, so no baseline re-pin and no per-test
+opt-out was needed. The one visible second-order effect is on the recovered
+prototype: a length argument whose only reader was the removed compare becomes
+genuinely unused, and parameter recovery may then trim it — the same trade the
+`stackguard` option makes with the canary slot, and the reason the option
+exists. `tests/stages/oxidizer-securitycheck.xml` pins both directions.
+
+## 7.5 Observability (kuna)
 
 Three console commands expose the region tree
 (`decompiler/crates/kuna-console/src/kuna_console.rs (IfcKunaRegionTree,
