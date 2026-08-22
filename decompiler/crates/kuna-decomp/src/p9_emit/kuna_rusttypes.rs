@@ -121,6 +121,35 @@ impl RustSpeller {
     }
 }
 
+/// A recovered name as a Rust **path expression**: `a::b::c`, each component an
+/// identifier.
+///
+/// `::` is legal wherever a name is *used* — a call, a static — because that
+/// position takes a path, not an identifier. Only a *definition* needs a bare
+/// identifier, which is what [`path_tail`] is for. Rewriting `::` to `__`
+/// everywhere (which is what a naive identifier sanitizer does) throws away the
+/// module structure for nothing and produces
+/// `alloc__vec__Vec__resize` where `alloc::vec::Vec::resize` is both valid and
+/// what a Rust reader expects.
+pub(crate) fn sanitize_path(name: &str) -> String {
+    let out = name
+        .split("::")
+        .map(sanitize)
+        .filter(|c| !c.is_empty())
+        .collect::<Vec<_>>()
+        .join("::");
+    if out.is_empty() { sanitize(name) } else { out }
+}
+
+/// The last component of a path — the identifier a `fn` definition can carry.
+///
+/// The full path is not lost: the prototype emitter prints it in a comment
+/// directly above the function.
+pub(crate) fn path_tail(name: &str) -> String {
+    let tail = name.rsplit("::").find(|c| !c.trim().is_empty()).unwrap_or(name);
+    sanitize(tail)
+}
+
 /// Rust identifiers admit only `[A-Za-z0-9_]`.
 ///
 /// A recovered name can carry a demangled path (`hello::main`), a template or

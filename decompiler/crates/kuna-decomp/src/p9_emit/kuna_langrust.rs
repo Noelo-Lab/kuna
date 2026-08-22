@@ -49,14 +49,64 @@
 
 use crate::kuna_lang::{
     CastForm, CharForm, DeclForm, DoWhileForm, ForLoopForm, GotoForm, InfLoopForm, LabelForm, LangCaps,
-    LangForms, LangProfile, MemberForm, ProtoForm, StringEscape, SwitchForm, WhileForm,
+    LangForms, LangProfile, MemberForm, Prec, PrecLadder, ProtoForm, StringEscape, SwitchForm,
+    WhileForm,
 };
+
+/// Rust's precedence ladder, loosest first.
+///
+/// Three differences from C's, and the first two are the ones that bite:
+///
+/// * `& ^ |` sit ABOVE the comparisons, where C puts them below. This is not a
+///   spelling difference — it changes what `a | b == c` MEANS — so it is the
+///   reason ranks are derived from a declared order here rather than written
+///   token by token.
+/// * every comparison shares one non-associative tier, where C ranks the
+///   relational operators above equality.
+/// * `as` has a tier of its own between the multiplicative operators and the
+///   unary ones; C's cast is prefix and sits with the unary operators.
+///
+/// `LogXor` joins `BitXor` because Rust has one `^` for both.
+pub const RUST_LADDER: PrecLadder = PrecLadder(&[
+    // Ranks a language does not MOVE keep the ported C table's number, because
+    // the tokens at those tiers are not remapped and the parenthesizer compares
+    // both halves on one scale. Only the four tiers Rust relocates get new
+    // numbers, chosen to sit strictly between the fixed points that bracket them
+    // -- LogAnd (22) below, Shift (46) above -- and Cast between Multiplicative
+    // (54) and Unary (62).
+    (Prec::Comma, 2),
+    (Prec::Assign, 14),
+    (Prec::LogOr, 18),
+    (Prec::LogAnd, 22),
+    (Prec::Equality, 26),
+    (Prec::Relational, 26),
+    (Prec::BitOr, 30),
+    (Prec::BitXor, 34),
+    (Prec::LogXor, 34),
+    (Prec::BitAnd, 38),
+    (Prec::Shift, 46),
+    (Prec::Additive, 50),
+    (Prec::Multiplicative, 54),
+    (Prec::Cast, 58),
+    (Prec::Unary, 62),
+    (Prec::Postfix, 66),
+    (Prec::Scope, 70),
+]);
 use crate::printlanguage::{OpToken, TokenType};
 
 /// The Rust operator tokens whose spelling or precedence differs from C.
 /// Everything else is inherited from `printc::tokens` unchanged.
 pub mod rust_tokens {
-    use super::{OpToken, TokenType};
+    use super::{OpToken, Prec, TokenType, RUST_LADDER};
+    use kuna_base::types::int4;
+
+    /// This token's rank, DERIVED from `RUST_LADDER`'s order rather than written
+    /// out. A literal here would be a second statement of the ladder, and the
+    /// two could disagree -- which is exactly how `a | b == c` came to be
+    /// emitted for `(a | b) == c`.
+    const fn rank(p: Prec) -> int4 {
+        RUST_LADDER.const_rank(p)
+    }
 
     /// One binary token, spelled and ranked for Rust.
     const fn bin(
@@ -82,26 +132,33 @@ pub mod rust_tokens {
     // Rust ranks `& ^ |` ABOVE the comparisons; C ranks them below. These sit
     // between the shifts (46) and the comparison tier (38), preserving their
     // order relative to each other.
-    pub static BITWISE_AND: OpToken = bin("&", 44, true, None);
-    pub static BITWISE_XOR: OpToken = bin("^", 43, true, None);
-    pub static BITWISE_OR: OpToken = bin("|", 42, true, None);
+    pub static BITWISE_AND: OpToken = bin("&", rank(Prec::BitAnd), true, None);
+    pub static BITWISE_XOR: OpToken = bin("^", rank(Prec::BitXor), true, None);
+    pub static BITWISE_OR: OpToken = bin("|", rank(Prec::BitOr), true, None);
 
     // Rust puts every comparison at ONE non-associative level, where C ranks the
     // relational operators (42) above equality (38). Flattening them to 38 is
     // what makes `(a < b) != 0` parenthesise instead of emitting the chained
     // comparison `a < b != 0`, which does not parse. The `negate` links are the
     // pairs `token_negate` resolves by pointer identity for C.
-    pub static LESS_THAN: OpToken = bin("<", 38, false, Some(&GREATER_EQUAL));
-    pub static LESS_EQUAL: OpToken = bin("<=", 38, false, Some(&GREATER_THAN));
-    pub static GREATER_THAN: OpToken = bin(">", 38, false, Some(&LESS_EQUAL));
-    pub static GREATER_EQUAL: OpToken = bin(">=", 38, false, Some(&LESS_THAN));
+    pub static LESS_THAN: OpToken = bin("<", rank(Prec::Relational), false, Some(&GREATER_EQUAL));
+    pub static LESS_EQUAL: OpToken =
+        bin("<=", rank(Prec::Relational), false, Some(&GREATER_THAN));
+    pub static GREATER_THAN: OpToken =
+        bin(">", rank(Prec::Relational), false, Some(&LESS_EQUAL));
+    pub static GREATER_EQUAL: OpToken =
+        bin(">=", rank(Prec::Relational), false, Some(&LESS_THAN));
+    // Equality shares the relational tier in Rust, so it is remapped too --
+    // otherwise `(a == b) < c` would keep C's ordering and lose its parentheses.
+    pub static EQUAL: OpToken = bin("==", rank(Prec::Equality), false, Some(&NOT_EQUAL));
+    pub static NOT_EQUAL: OpToken = bin("!=", rank(Prec::Equality), false, Some(&EQUAL));
 
     /// Rust spells bitwise complement `!`, not `~`; same prefix-unary tier.
     pub static BITWISE_NOT: OpToken = OpToken {
         print1: "!",
         print2: "",
         stage: 1,
-        precedence: 62,
+        precedence: rank(Prec::Unary),
         associative: false,
         token_type: TokenType::UnaryPrefix,
         spacing: 0,
@@ -112,7 +169,7 @@ pub mod rust_tokens {
 
     /// Rust spells logical xor `^`, which is the same operator as the bitwise
     /// one and sits at the same tier -- not at Ghidra's invented `^^` tier (20).
-    pub static BOOLEAN_XOR: OpToken = bin("^", 43, true, None);
+    pub static BOOLEAN_XOR: OpToken = bin("^", rank(Prec::LogXor), true, None);
 
     /// Rust has no bare address-of: `&x` is a shared borrow, and a decompiled
     /// address is a raw pointer. `&mut x` is the honest analogue and coerces to
@@ -121,7 +178,7 @@ pub mod rust_tokens {
         print1: "&mut ",
         print2: "",
         stage: 1,
-        precedence: 62,
+        precedence: rank(Prec::Unary),
         associative: false,
         token_type: TokenType::UnaryPrefix,
         spacing: 0,
@@ -136,7 +193,7 @@ pub mod rust_tokens {
         print1: " as ",
         print2: "",
         stage: 2,
-        precedence: 58,
+        precedence: rank(Prec::Cast),
         associative: false,
         token_type: TokenType::Binary,
         spacing: 0,
@@ -161,6 +218,8 @@ fn rust_map_token(tok: &'static OpToken) -> &'static OpToken {
         (&c::LESS_EQUAL, &rust_tokens::LESS_EQUAL),
         (&c::GREATER_THAN, &rust_tokens::GREATER_THAN),
         (&c::GREATER_EQUAL, &rust_tokens::GREATER_EQUAL),
+        (&c::EQUAL, &rust_tokens::EQUAL),
+        (&c::NOT_EQUAL, &rust_tokens::NOT_EQUAL),
         (&c::ADDRESSOF, &rust_tokens::ADDRESSOF_MUT),
         (&c::TYPECAST, &rust_tokens::TYPECAST_AS),
     ] {
@@ -305,7 +364,7 @@ impl PrintC {
         // The recovered name is often a demangled Rust path, which is not an
         // identifier. Rewrite it and keep the original above, so the mapping back
         // to the symbol is never lost.
-        let ident = crate::kuna_rusttypes::sanitize(&display);
+        let ident = crate::kuna_rusttypes::path_tail(&display);
         if ident != display {
             self.emit.tag_line();
             self.emit.print(&format!("// {display}"), SyntaxHighlight::CommentColor);

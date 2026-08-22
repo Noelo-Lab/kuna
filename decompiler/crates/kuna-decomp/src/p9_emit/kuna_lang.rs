@@ -33,6 +33,8 @@
 //! migration is a provably byte-identical rewrite and `docs/baseline.json` is
 //! never re-pinned.
 
+use kuna_base::types::int4;
+
 use crate::printc::{keywords, tokens};
 use crate::printlanguage::OpToken;
 
@@ -97,6 +99,134 @@ impl OutLang {
         }
     }
 }
+
+/// A tier in an operator-precedence ladder.
+///
+/// The vocabulary is shared; the ORDER is per-language, which is the whole point
+/// — C and Rust disagree about where the bitwise operators sit relative to
+/// equality, and that disagreement is a silent wrong answer rather than a syntax
+/// error when it is got wrong (see [`crate::kuna_langrust`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Prec {
+    Comma,
+    Assign,
+    LogOr,
+    /// Ghidra's invented C `^^`. Rust has no separate tier for it — its `^` is
+    /// the bitwise operator — so a Rust ladder places it with [`Prec::BitXor`].
+    LogXor,
+    LogAnd,
+    BitOr,
+    BitXor,
+    BitAnd,
+    Equality,
+    /// `< <= > >=`. C ranks these above [`Prec::Equality`]; Rust puts both in one
+    /// non-associative tier.
+    Relational,
+    Shift,
+    Additive,
+    Multiplicative,
+    /// Rust's `as`. C has no such tier — its cast is prefix and sits at
+    /// [`Prec::Unary`] — so this appears only in a Rust ladder.
+    Cast,
+    Unary,
+    Postfix,
+    Scope,
+}
+
+/// A language's precedence ladder: `(tier, rank)` pairs, loosest first.
+///
+/// The rank is explicit rather than positional, because a language remaps only
+/// the tokens whose tier it MOVES — every other token keeps the ported C table's
+/// number. Positional ranks would put the two groups on different scales, and
+/// the parenthesizer compares them directly, so the ladder has to speak the same
+/// numbers the table does. `ladder_is_consistent_with` asserts exactly that: a
+/// tier a language does not move must keep its C rank, or the two halves of the
+/// table disagree.
+///
+/// Declaring the order and the numbers together, in one place, is what makes an
+/// out-of-step operator a test failure rather than a silent wrong answer.
+pub struct PrecLadder(pub &'static [(Prec, int4)]);
+
+impl PrecLadder {
+    /// The rank of `p`, or `None` if this language has no such tier.
+    pub fn rank(&self, p: Prec) -> Option<int4> {
+        self.0.iter().find(|(t, _)| *t == p).map(|(_, r)| *r)
+    }
+
+    /// [`PrecLadder::rank`] in a const context, so a token table DERIVES its
+    /// numbers from the ladder instead of restating them. `-1` for a tier this
+    /// language does not rank -- not a valid precedence, so it fails loudly.
+    pub const fn const_rank(&self, p: Prec) -> int4 {
+        let mut i = 0;
+        while i < self.0.len() {
+            if self.0[i].0 as u8 == p as u8 {
+                return self.0[i].1;
+            }
+            i += 1;
+        }
+        -1
+    }
+
+    /// The ladder in declared order, for tests.
+    pub fn tiers(&self) -> impl Iterator<Item = (Prec, int4)> + '_ {
+        self.0.iter().copied()
+    }
+}
+
+/// The ladder tier a token from the ported C table belongs to.
+///
+/// Read off the token's own precedence, which is bijective with the tier for
+/// every value in that table -- except `TYPECAST`, whose C rank it shares with
+/// the unary operators but whose Rust spelling (`as`) has a tier of its own.
+/// That one is resolved by pointer identity.
+pub fn prec_of(tok: &'static OpToken) -> Option<Prec> {
+    if std::ptr::eq(tok, &tokens::TYPECAST) {
+        return Some(Prec::Cast);
+    }
+    Some(match tok.precedence {
+        2 => Prec::Comma,
+        14 => Prec::Assign,
+        18 => Prec::LogOr,
+        20 => Prec::LogXor,
+        22 => Prec::LogAnd,
+        26 => Prec::BitOr,
+        30 => Prec::BitXor,
+        34 => Prec::BitAnd,
+        38 => Prec::Equality,
+        42 => Prec::Relational,
+        46 => Prec::Shift,
+        50 => Prec::Additive,
+        54 => Prec::Multiplicative,
+        62 => Prec::Unary,
+        66 => Prec::Postfix,
+        70 => Prec::Scope,
+        _ => return None,
+    })
+}
+
+/// C's ladder, transcribed from the ported `printc::tokens` table. Asserted
+/// against that table token-by-token in this module's tests, so it is a
+/// restatement of the C precedences rather than a second opinion about them.
+pub const C_LADDER: PrecLadder = PrecLadder(&[
+    (Prec::Comma, 2),
+    (Prec::Assign, 14),
+    (Prec::LogOr, 18),
+    (Prec::LogXor, 20),
+    (Prec::LogAnd, 22),
+    (Prec::BitOr, 26),
+    (Prec::BitXor, 30),
+    (Prec::BitAnd, 34),
+    (Prec::Equality, 38),
+    (Prec::Relational, 42),
+    (Prec::Shift, 46),
+    (Prec::Additive, 50),
+    (Prec::Multiplicative, 54),
+    // C's cast is prefix and shares the unary tier.
+    (Prec::Cast, 62),
+    (Prec::Unary, 62),
+    (Prec::Postfix, 66),
+    (Prec::Scope, 70),
+]);
 
 /// How the function signature is laid out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

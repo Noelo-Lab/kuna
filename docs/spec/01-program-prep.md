@@ -488,8 +488,34 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   (demangle_name)`, the `GnuDemanglerAnalyzer` analog) is not a registered pass but
   a loader hook: applied to every funcsym name after `@VERSION` stripping, before
   install. Upstream shells out to libiberty; kuna substitutes the `cpp_demangle`
-  (Itanium), `rustc_demangle`, and `msvc_demangler` (`?…` names) crates. The hard
-  contract is **name-only** reduction: kuna's scope splitter nests on every `::`,
+  (Itanium), `rustc_demangle`, and `msvc_demangler` (`?…` names) crates.
+
+  **(kuna, DIV-83) Which crate is asked first is decided by a marker, not by
+  which one answers.** Rust's *legacy* scheme reuses the Itanium `_ZN…E`
+  envelope, escaping the characters an Itanium identifier cannot hold (`$LT$`
+  for `<`, `$C$` for `,`, `$u20$` for a space, `..` for `::`). A C++ demangler
+  therefore does not decline such a symbol — it sees a well-formed nested-name
+  whose components happen to contain dollar signs, and returns the escapes
+  verbatim. Asking Itanium first did not fall through to Rust; it produced a
+  wrong answer confidently, and every Rust binary rendered its own call graph as
+  escape soup (`core::ptr::drop_in_place$LT$…$GT$` where `nm -C` gives
+  `core::ptr::drop_in_place<…>`). `sourcelang::is_rust_mangled` identifies both
+  Rust schemes exactly — a `_R` prefix, or the legacy `17h<16 hex>E` hash tail —
+  so a symbol carrying either goes to `rustc_demangle` first. A C symbol carries
+  neither, so the arm is unreachable for one.
+
+  A Rust demangling is a *type expression*, not a path: it carries generic
+  arguments (`drop_in_place<Vec<u8>>`) and trait qualifiers
+  (`<aes::Aes256 as crypto_common::KeyInit>::new`). `normalize_rust_name`
+  resolves both, and they cannot be resolved the same way — a generic list
+  carries no path and is dropped, but a qualifier carries **two** paths and
+  dropping it would leave a leading `::`, an empty scope component the symbol
+  table rejects outright. `<X as Y>` keeps the type `X` (so the method stays
+  attached to the type that defines it), `<impl X as Y>` keeps the trait `Y`,
+  and `<impl Trait for Type>` keeps `Type`. Angle brackets nest, so this is a
+  depth-tracking scan iterated to a fixed point rather than a pattern match.
+
+  The hard contract is **name-only** reduction: kuna's scope splitter nests on every `::`,
   so signature tails and template argument groups must be stripped or they become
   junk scopes. **Operator names are exempt from that stripping**: `operator[]`,
   `operator()`, `operator<<`, `operator->` and their siblings are spelled with the

@@ -723,6 +723,25 @@ What differs, and why each is a language fact rather than a preference:
   not carry. A width Rust cannot name (3/5/6/7, x87's 10) spells `[u8; N]`, which
   is *more* faithful than C's `undefined3`: it names the storage exactly and does
   not claim to be a scalar.
+- **Names** are rendered as Rust *paths*, not flattened into identifiers. `::` is
+  legal wherever a name is used — a call, a static — because that position takes a
+  path; only a `fn` *definition* needs a bare identifier, so it takes the last
+  component and the full path goes in a comment directly above. Flattening `::` to
+  `__` everywhere (what a naive identifier sanitiser does) discards the module
+  structure for nothing and produces `alloc__vec__Vec__resize` where
+  `alloc::vec::Vec::resize` is both valid and what a reader expects.
+- **Operator precedence** comes from a declared ladder, not from per-token
+  numbers: `LangProfile`'s `PrecLadder` names each tier once, in order, with its
+  rank. A language remaps only the tokens whose tier it MOVES — everything else
+  keeps the ported C table's number — so the ladder must speak the same numbers
+  the table does, and a test asserts that any tier a language leaves in place
+  keeps C's rank exactly. Rust moves four: `& ^ |` sit ABOVE the comparisons where
+  C puts them below, every comparison shares one non-associative tier where C
+  ranks relational above equality, and `as` gets a tier of its own between the
+  multiplicative and unary operators. The first of those is why the ladder is
+  declared rather than hand-numbered — it changes what `a | b == c` *means*, so
+  getting it wrong is a silent wrong answer rather than a syntax error, and
+  hand-numbering eleven tokens is precisely how that happened once already.
 - **Casts** `x as T`, which inverts the operand order relative to C's `(T)x`;
   every cast site brackets its operand with `push_cast_open`/`push_cast_close`
   instead of emitting the type inline. The `as` token additionally sets

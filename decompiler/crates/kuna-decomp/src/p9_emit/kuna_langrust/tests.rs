@@ -62,6 +62,7 @@ fn rust_spells_bitwise_not_as_bang() {
     assert_eq!(tokens::BITWISE_NOT.print1, "~");
     assert_eq!(map(&tokens::BITWISE_NOT).print1, "!");
     // Same prefix-unary tier, so nothing else in the table shifts.
+    // Unary is a tier Rust does not move, so it keeps C's rank.
     assert_eq!(map(&tokens::BITWISE_NOT).precedence, tokens::BITWISE_NOT.precedence);
     assert_eq!(map(&tokens::BITWISE_NOT).token_type, tokens::BITWISE_NOT.token_type);
 }
@@ -72,6 +73,9 @@ fn rust_spells_bitwise_not_as_bang() {
 #[test]
 fn rust_ranks_the_bitwise_operators_above_equality() {
     let map = OutLang::Rust.profile().map_token;
+    // Both sides of each comparison are RUST ranks: equality is itself remapped,
+    // so comparing against C's number would be comparing two scales.
+    let rust_eq = map(&tokens::EQUAL).precedence;
     for c_tok in [&tokens::BITWISE_AND, &tokens::BITWISE_XOR, &tokens::BITWISE_OR] {
         assert!(
             c_tok.precedence < tokens::EQUAL.precedence,
@@ -79,7 +83,7 @@ fn rust_ranks_the_bitwise_operators_above_equality() {
             c_tok.print1
         );
         assert!(
-            map(c_tok).precedence > tokens::EQUAL.precedence,
+            map(c_tok).precedence > rust_eq,
             "Rust must rank `{}` above equality",
             c_tok.print1
         );
@@ -99,13 +103,15 @@ fn rust_ranks_the_bitwise_operators_above_equality() {
 fn rust_flattens_the_comparison_tier() {
     let map = OutLang::Rust.profile().map_token;
     assert!(tokens::LESS_THAN.precedence > tokens::EQUAL.precedence, "C ranks them apart");
+    let rust_eq = map(&tokens::EQUAL).precedence;
     for c_tok in [
         &tokens::LESS_THAN,
         &tokens::LESS_EQUAL,
         &tokens::GREATER_THAN,
         &tokens::GREATER_EQUAL,
+        &tokens::NOT_EQUAL,
     ] {
-        assert_eq!(map(c_tok).precedence, tokens::EQUAL.precedence);
+        assert_eq!(map(c_tok).precedence, rust_eq, "`{}` shares the one tier", c_tok.print1);
         assert!(!map(c_tok).associative, "Rust comparisons do not chain");
         assert_eq!(map(c_tok).print1, c_tok.print1);
     }
@@ -143,6 +149,8 @@ fn rust_boolean_xor_is_the_bitwise_operator() {
 fn rust_cast_sits_between_unary_and_multiplicative() {
     let p = OutLang::Rust.profile();
     assert_eq!(p.tok_typecast.print1, " as ");
+    // Both bounds are tiers Rust leaves where C put them, so C's numbers are
+    // the right comparison here.
     assert!(p.tok_typecast.precedence < tokens::DEREFERENCE.precedence);
     assert!(p.tok_typecast.precedence > tokens::MULTIPLY.precedence);
 }

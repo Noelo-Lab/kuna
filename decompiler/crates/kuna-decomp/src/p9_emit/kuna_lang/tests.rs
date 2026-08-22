@@ -140,3 +140,102 @@ fn c_caps_describe_c() {
     assert!(!c.labeled_loop_break);
     assert!(!c.labeled_block_break);
 }
+
+/// The C ladder must BE the ported C table, not a second opinion about it: every
+/// token's precedence has to equal the rank the ladder gives its tier. If this
+/// fails, `prec_of` misreads the table and any language ladder built on those
+/// tier names is building on sand.
+#[test]
+fn c_ladder_reproduces_the_ported_token_table() {
+    for tok in all_c_tokens() {
+        let tier = prec_of(tok).unwrap_or_else(|| {
+            panic!("no tier for `{}` (precedence {})", tok.print1, tok.precedence)
+        });
+        let rank = C_LADDER.rank(tier).unwrap_or_else(|| panic!("C ladder does not rank {tier:?}"));
+        assert_eq!(
+            rank, tok.precedence,
+            "`{}` is {tier:?}; the ladder ranks that {rank}, the table says {}",
+            tok.print1, tok.precedence
+        );
+    }
+}
+
+/// A ladder is declared loosest-first and must be non-decreasing in that order,
+/// and must rank every tier it names exactly once (two tiers may SHARE a rank --
+/// Rust's equality and relational operators do -- but a tier may not appear
+/// twice with different ranks).
+#[test]
+fn ladders_are_ordered_and_unambiguous() {
+    for (name, ladder) in [("C", &C_LADDER), ("Rust", &crate::kuna_langrust::RUST_LADDER)] {
+        let mut seen: Vec<Prec> = Vec::new();
+        let mut last = int4::MIN;
+        for (tier, rank) in ladder.tiers() {
+            assert!(rank >= last, "{name}: {tier:?} at {rank} follows {last}; ladder must not go backwards");
+            last = rank;
+            assert!(!seen.contains(&tier), "{name}: tier {tier:?} ranked twice");
+            seen.push(tier);
+        }
+    }
+}
+
+/// The property that keeps the two halves of a language's table on one scale: a
+/// language remaps only the tokens whose tier it MOVES, so every tier it leaves
+/// where C put it must keep C's rank exactly. Otherwise a remapped token and an
+/// un-remapped one are compared on different scales, which is a silent
+/// mis-parenthesisation.
+#[test]
+fn a_tier_a_language_does_not_move_keeps_its_c_rank() {
+    let rust = &crate::kuna_langrust::RUST_LADDER;
+    // The four tiers Rust genuinely relocates, plus Cast which it gives a tier
+    // of its own. Everything else must match C.
+    let moved = [Prec::Equality, Prec::Relational, Prec::BitOr, Prec::BitXor, Prec::BitAnd, Prec::LogXor, Prec::Cast];
+    for (tier, rank) in rust.tiers() {
+        if moved.contains(&tier) {
+            continue;
+        }
+        assert_eq!(
+            Some(rank),
+            C_LADDER.rank(tier),
+            "Rust leaves {tier:?} where C put it, so it must keep C's rank"
+        );
+    }
+}
+
+/// Every token in the ported C table, for the ladder-faithfulness walk.
+fn all_c_tokens() -> Vec<&'static crate::printlanguage::OpToken> {
+    vec![
+        &tokens::SCOPE,
+        &tokens::OBJECT_MEMBER,
+        &tokens::POINTER_MEMBER,
+        &tokens::SUBSCRIPT,
+        &tokens::FUNCTION_CALL,
+        &tokens::BITWISE_NOT,
+        &tokens::BOOLEAN_NOT,
+        &tokens::UNARY_MINUS,
+        &tokens::UNARY_PLUS,
+        &tokens::ADDRESSOF,
+        &tokens::DEREFERENCE,
+        &tokens::MULTIPLY,
+        &tokens::DIVIDE,
+        &tokens::MODULO,
+        &tokens::BINARY_PLUS,
+        &tokens::BINARY_MINUS,
+        &tokens::SHIFT_LEFT,
+        &tokens::SHIFT_RIGHT,
+        &tokens::SHIFT_SRIGHT,
+        &tokens::LESS_THAN,
+        &tokens::LESS_EQUAL,
+        &tokens::GREATER_THAN,
+        &tokens::GREATER_EQUAL,
+        &tokens::EQUAL,
+        &tokens::NOT_EQUAL,
+        &tokens::BITWISE_AND,
+        &tokens::BITWISE_XOR,
+        &tokens::BITWISE_OR,
+        &tokens::BOOLEAN_AND,
+        &tokens::BOOLEAN_XOR,
+        &tokens::BOOLEAN_OR,
+        &tokens::ASSIGNMENT,
+        &tokens::COMMA,
+    ]
+}
