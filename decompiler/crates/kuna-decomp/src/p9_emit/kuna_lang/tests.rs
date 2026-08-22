@@ -36,21 +36,81 @@ fn profile_matches_legacy_constants() {
     assert_eq!(p.kw_default, keywords::KEYWORD_DEFAULT);
     assert_eq!(p.kw_return, keywords::KEYWORD_RETURN);
     assert_eq!(p.kw_type_pointer_rel, keywords::TYPE_POINTER_REL_TOKEN);
+    assert_eq!(p.null_literal, "NULL");
+}
+
+/// The C forms are the ones `printc.rs` had before the plane existed; a wrong
+/// value here would silently reroute the C path to an emitter written for
+/// another language.
+#[test]
+fn c_forms_are_the_c_forms() {
+    let f = OutLang::C.profile().forms;
+    assert_eq!(f.proto, ProtoForm::CPrefixReturn);
+    assert_eq!(f.decl, DeclForm::CTypeThenName);
+    assert_eq!(f.switch, SwitchForm::CSwitch);
+    assert_eq!(f.inf_loop, InfLoopForm::CDoWhileTrue);
+    assert_eq!(f.while_loop, WhileForm::CParenWhile);
+    assert_eq!(f.do_while, DoWhileForm::CDoWhile);
+    assert_eq!(f.for_loop, ForLoopForm::CForHeader);
+    assert_eq!(f.goto, GotoForm::CGoto);
+    assert_eq!(f.label, LabelForm::CColon);
+    assert_eq!(f.member, MemberForm::CArrow);
+    assert_eq!(f.cast, CastForm::PrefixParen);
+    assert_eq!(f.char_lit, CharForm::CQuoted);
+    assert_eq!(f.string_escape, StringEscape::CEscapes);
+    assert!(OutLang::C.profile().fn_attributes.is_empty());
+}
+
+/// `paren_before_angle` is a Rust-only rule; a C token that set it would start
+/// parenthesising comparisons and change the corpus.
+#[test]
+fn no_c_token_forces_parens() {
+    for tok in [
+        &tokens::BITWISE_NOT,
+        &tokens::BOOLEAN_AND,
+        &tokens::BOOLEAN_OR,
+        &tokens::BOOLEAN_XOR,
+        &tokens::ADDRESSOF,
+        &tokens::DEREFERENCE,
+        &tokens::TYPECAST,
+        &tokens::LESS_THAN,
+        &tokens::SHIFT_LEFT,
+    ] {
+        assert!(!tok.paren_before_angle, "C token `{}` must not force parens", tok.print1);
+    }
 }
 
 /// `printlanguage::parentheses` decides parenthesization by `std::ptr::eq` on the
-/// token, so a profile that merely *spells* a token the same is not enough — the
-/// C profile must hand back the very same static.
+/// token, so a mapping that merely *spells* a token the same is not enough — the
+/// C mapping must hand back the very same static, for every token in the table.
 #[test]
-fn profile_tokens_are_the_legacy_statics() {
-    let p = OutLang::C.profile();
-    assert!(std::ptr::eq(p.tok_bitwise_not, &tokens::BITWISE_NOT));
-    assert!(std::ptr::eq(p.tok_boolean_and, &tokens::BOOLEAN_AND));
-    assert!(std::ptr::eq(p.tok_boolean_or, &tokens::BOOLEAN_OR));
-    assert!(std::ptr::eq(p.tok_boolean_xor, &tokens::BOOLEAN_XOR));
-    assert!(std::ptr::eq(p.tok_addressof, &tokens::ADDRESSOF));
-    assert!(std::ptr::eq(p.tok_dereference, &tokens::DEREFERENCE));
-    assert!(std::ptr::eq(p.tok_typecast, &tokens::TYPECAST));
+fn c_token_mapping_is_the_identity() {
+    let map = OutLang::C.profile().map_token;
+    for tok in [
+        &tokens::BITWISE_NOT,
+        &tokens::BOOLEAN_AND,
+        &tokens::BOOLEAN_OR,
+        &tokens::BOOLEAN_XOR,
+        &tokens::BITWISE_AND,
+        &tokens::BITWISE_XOR,
+        &tokens::BITWISE_OR,
+        &tokens::LESS_THAN,
+        &tokens::LESS_EQUAL,
+        &tokens::GREATER_THAN,
+        &tokens::GREATER_EQUAL,
+        &tokens::EQUAL,
+        &tokens::NOT_EQUAL,
+        &tokens::ADDRESSOF,
+        &tokens::DEREFERENCE,
+        &tokens::TYPECAST,
+        &tokens::MULTIPLY,
+        &tokens::BINARY_PLUS,
+        &tokens::SHIFT_LEFT,
+        &tokens::ASSIGNMENT,
+    ] {
+        assert!(std::ptr::eq(map(tok), tok), "C must not remap `{}`", tok.print1);
+    }
+    assert!(std::ptr::eq(OutLang::C.profile().tok_typecast, &tokens::TYPECAST));
 }
 
 #[test]
@@ -75,6 +135,8 @@ fn c_caps_describe_c() {
     assert!(c.implicit_bool_conditions);
     assert!(c.brace_elision);
     assert!(c.arrow_member);
+    assert!(c.paren_conditions);
+    assert!(c.integer_suffixes);
     assert!(!c.labeled_loop_break);
     assert!(!c.labeled_block_break);
 }

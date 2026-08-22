@@ -138,6 +138,19 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<(), String> {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
+    // (kuna outlang) The project export is C-shaped end to end: a `.c`/`.h`
+    // split, a `#include`-bearing recompile prelude, and one C prototype per
+    // function. Emitting a non-C body into that skeleton would produce artifacts
+    // that are neither valid C nor a usable module, so this surface refuses
+    // rather than half-honouring the request. `decompile` and `decompile-all`
+    // carry the other languages.
+    if prog.arch().print().get_name() != "c-language" {
+        return Err(format!(
+            "project export is C-only in this release (got {}); use `kuna decompile` or \
+             `kuna decompile-all --json` for other output languages",
+            prog.arch().print().get_name()
+        ));
+    }
     let targets = resolve_targets(&prog, args)?;
     if targets.is_empty() {
         return Err(format!("no functions selected/discovered in {}", args.binary));

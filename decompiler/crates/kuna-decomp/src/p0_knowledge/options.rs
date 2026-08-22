@@ -912,6 +912,18 @@ pub trait ArchOptionContext {
     /// Whether the active printer is the C language (`glb->print->getName() ==
     /// "c-language"`, options.cc:441/456/471).  // STUB(W8)
     fn print_is_c_language(&self) -> bool;
+    /// Whether the active print language is one kuna can actually emit.
+    ///
+    /// (kuna outlang) The display options below used to gate on
+    /// `print_is_c_language`, which was the same question while C was the only
+    /// back-end. It no longer is: brace format, in-place operators, cast
+    /// printing and the rest are meaningful in every language kuna emits, and
+    /// gating them on "is C" would silently turn them into no-ops the moment a
+    /// second language was selected. The default body preserves the old
+    /// behaviour for the stub contexts in the tests.
+    fn print_lang_known(&self) -> bool {
+        self.print_is_c_language()
+    }
     /// `PrintC::setNULLPrinting(val)` (options.cc:444).  // STUB(W8)
     fn set_null_printing(&mut self, val: bool);
     /// `PrintC::setInplaceOps(val)` (options.cc:459).  // STUB(W8)
@@ -1259,8 +1271,8 @@ impl ArchOption for OptionNullPrinting {
         _p3: &str,
     ) -> KunaResult<String> {
         let val = on_or_off(p1)?;
-        if !glb.print_is_c_language() {
-            return Ok("Only c-language accepts the null printing option".to_string());
+        if !glb.print_lang_known() {
+            return Ok("Only a known output language accepts the null printing option".to_string());
         }
         glb.set_null_printing(val);
         let prop = if val { "on" } else { "off" };
@@ -1284,8 +1296,8 @@ impl ArchOption for OptionInPlaceOps {
         _p3: &str,
     ) -> KunaResult<String> {
         let val = on_or_off(p1)?;
-        if !glb.print_is_c_language() {
-            return Ok("Can only set inplace operators for C language".to_string());
+        if !glb.print_lang_known() {
+            return Ok("Can only set inplace operators for a known output language".to_string());
         }
         glb.set_inplace_ops(val);
         let prop = if val { "on" } else { "off" };
@@ -1309,8 +1321,8 @@ impl ArchOption for OptionConventionPrinting {
         _p3: &str,
     ) -> KunaResult<String> {
         let val = on_or_off(p1)?;
-        if !glb.print_is_c_language() {
-            return Ok("Can only set convention printing for C language".to_string());
+        if !glb.print_lang_known() {
+            return Ok("Can only set convention printing for a known output language".to_string());
         }
         glb.set_convention_printing(val);
         let prop = if val { "on" } else { "off" };
@@ -1335,8 +1347,8 @@ impl ArchOption for OptionNoCastPrinting {
     ) -> KunaResult<String> {
         let val = on_or_off(p1)?;
         // dynamic_cast<PrintC*> == 0 => not C language.
-        if !glb.print_is_c_language() {
-            return Ok("Can only set no cast printing for C language".to_string());
+        if !glb.print_lang_known() {
+            return Ok("Can only set no cast printing for a known output language".to_string());
         }
         glb.set_no_cast_printing(val);
         let prop = if val { "on" } else { "off" };
@@ -1361,8 +1373,8 @@ impl ArchOption for OptionHideExtensions {
         _p3: &str,
     ) -> KunaResult<String> {
         let val = on_or_off(p1)?;
-        if !glb.print_is_c_language() {
-            return Ok("Can only toggle extension hiding for C language".to_string());
+        if !glb.print_lang_known() {
+            return Ok("Can only toggle extension hiding for a known output language".to_string());
         }
         glb.set_hide_implied_exts(val);
         let prop = if val { "on" } else { "off" };
@@ -1556,8 +1568,8 @@ impl ArchOption for OptionBraceFormat {
         p2: &str,
         _p3: &str,
     ) -> KunaResult<String> {
-        if !glb.print_is_c_language() {
-            return Ok("Can only set brace formatting for C language".to_string());
+        if !glb.print_lang_known() {
+            return Ok("Can only set brace formatting for a known output language".to_string());
         }
         let style = match p2 {
             "same" => BraceStyle::SameLine,
@@ -1817,8 +1829,16 @@ impl ArchOption for OptionSetLanguage {
         _p2: &str,
         _p3: &str,
     ) -> KunaResult<String> {
-        glb.set_print_language(p1);
-        Ok(format!("Decompiler produces {p1}"))
+        // (kuna outlang) C++ `Architecture::setPrintLanguage` throws
+        // `LowlevelError("Unknown print language: ...")` on a name no capability
+        // claims; kuna owns a fixed set, so the check is a table lookup. Without
+        // it a typo would silently keep emitting C under a name that says
+        // otherwise.
+        let Some(lang) = crate::kuna_lang::OutLang::from_print_name(p1) else {
+            return Err(KunaError::parse(format!("Unknown print language: {p1}")));
+        };
+        glb.set_print_language(lang.print_name());
+        Ok(format!("Decompiler produces {}", lang.print_name()))
     }
 }
 

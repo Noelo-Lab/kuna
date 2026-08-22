@@ -2519,7 +2519,16 @@ impl Architecture {
         // (kuna) carry the whiledo->for reroll gate (C++ `glb->analyze_for_loops`)
         // so `ActionStructureTransform` reaches it for
         // `Funcdata::finalize_forloop_transform`.
-        ctx.analyze_for_loops = self.analyze_for_loops;
+        // (kuna outlang) A language with no C-style `for` header must not have the
+        // reroll run at all. `finalize_forloop_transform` physically MOVES the
+        // initializer and increment ops into the header's slots and suppresses
+        // them from the body; rendering that as a `while` would drop them, and
+        // moving them back at print time would let a `continue` skip the
+        // increment. With the gate off they stay where the CFG put them, which is
+        // already the `while` shape. `caps.c_for` is true for C, so the C path is
+        // unchanged.
+        ctx.analyze_for_loops =
+            self.analyze_for_loops && self.print.out_lang().profile().caps.c_for;
         // Carry the `nanignore all` flag (C++ `glb->nan_ignore_all`) so
         // `RuleIgnoreNan` reaches it via `glb`.
         ctx.nan_ignore_all = self.nan_ignore_all;
@@ -5103,6 +5112,9 @@ impl ArchOptionContext for Architecture {
     // --- printer (wired to the owned PrintC) -------------------------------
     fn print_is_c_language(&self) -> bool {
         self.print.get_name() == "c-language"
+    }
+    fn print_lang_known(&self) -> bool {
+        crate::kuna_lang::OutLang::from_print_name(self.print.get_name()).is_some()
     }
     fn set_null_printing(&mut self, val: bool) {
         self.print.set_null_printing(val);

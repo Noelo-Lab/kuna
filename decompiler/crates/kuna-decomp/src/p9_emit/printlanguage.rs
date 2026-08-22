@@ -133,6 +133,15 @@ pub struct OpToken {
     /// The token representing the negation of this token (C++ `negate`).
     /// `None` if the operator has no complement.
     pub negate: Option<&'static OpToken>,
+    /// (kuna outlang) The operator's result must be parenthesised when it is an
+    /// operand of a `<`/`>`-family operator, because the language would otherwise
+    /// re-parse the boundary. Rust's `as` is the case this exists for: in
+    /// `x as i32 < 5` the `i32 <` opens generic arguments and the expression does
+    /// not parse. Precedence cannot express it -- `as` genuinely binds tighter
+    /// than `<`, so no ordering of the table both parenthesises here and leaves
+    /// `(a + b) as T` correct. `false` for every C token, so the C path is
+    /// untouched.
+    pub paren_before_angle: bool,
 }
 
 /// Context-sensitive modifiers to how tokens get emitted (C++
@@ -643,6 +652,13 @@ impl PrintContext {
 pub fn parentheses(top: &ReversePolish, op2: &OpToken, prev_token: Option<&OpToken>) -> bool {
     let top_token = top.tok;
     let stage = top.visited;
+    // (kuna outlang) See `OpToken::paren_before_angle`.
+    if op2.paren_before_angle
+        && top_token.token_type == TokenType::Binary
+        && (top_token.print1.starts_with('<') || top_token.print1.starts_with('>'))
+    {
+        return true;
+    }
     match top_token.token_type {
         TokenType::Space | TokenType::Binary => {
             if top_token.precedence > op2.precedence {

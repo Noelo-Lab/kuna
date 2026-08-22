@@ -692,6 +692,90 @@ since `printlanguage.rs (parentheses)` decides parenthesization with `ptr::eq`.
 Reading the C profile therefore produces the identical token, so introducing the
 plane is a byte-identical rewrite and `docs/baseline.json` is never re-pinned.
 
+**(kuna) The rust-language back-end.** `option setlanguage rust-language` selects
+it (`p0_knowledge/options.rs (OptionSetLanguage)`, the upstream selector, which
+now rejects a name no back-end claims rather than silently keeping C). The
+recovered function is not re-analysed: the same `Funcdata`, the same types, the
+same structured block tree render through a different profile. Three files carry
+it: `p9_emit/kuna_langrust.rs` (the profile, the capability record, the three
+`OpToken`s whose spelling or precedence differs, and the emitters for the shapes
+that are not C's), `p9_emit/kuna_rusttypes.rs` (the speller), and the
+`LangForms` matches in `printc.rs` that choose between them.
+
+What differs, and why each is a language fact rather than a preference:
+
+- **Signature** `unsafe fn n(mut a0: T) -> R`. `unsafe` because a decompiled body
+  dereferences raw pointers, and an `unsafe fn`'s body carries them with no inner
+  block; `mut` on every parameter because a decompiled body assigns to its
+  parameter slots and the recovery does not distinguish the ones that do. A unit
+  return is omitted rather than spelled `-> ()`.
+- **Declarations** `let mut n: T;`, with an array count folded *into* the type
+  (`[T; N]`) rather than trailing the identifier.
+- **Types** `i8`..`i128` / `u8`..`u128` / `f32` / `f64` / `bool` / `*mut T` /
+  `[T; N]` / `()`. A recovered text byte spells `u8`, never `char` — a Rust `char`
+  is a 4-byte Unicode scalar with a validity invariant that a decompiled byte does
+  not carry. A width Rust cannot name (3/5/6/7, x87's 10) spells `[u8; N]`, which
+  is *more* faithful than C's `undefined3`: it names the storage exactly and does
+  not claim to be a scalar.
+- **Casts** `x as T`, which inverts the operand order relative to C's `(T)x`;
+  every cast site brackets its operand with `push_cast_open`/`push_cast_close`
+  instead of emitting the type inline. The `as` token additionally sets
+  `OpToken::paren_before_angle`, because `x as i32 < 5` parses `i32 <` as the
+  start of generic arguments and precedence alone cannot express that.
+- **Loops** `loop { }` for the infinite form, `while c { }` with no parenthesised
+  condition, and `loop { body; if !(c) { break; } }` for the bottom-tested one.
+  A condition carrying statements — what C renders as a comma expression — becomes
+  Rust's block expression `while { stmt; c } { }`. The C `for` header is not
+  reached at all: `analyze_for_loops` is gated on `LangCaps::c_for` at the
+  `ArchContext` copy, because the reroll physically MOVES the initializer and
+  increment and rendering that as a `while` would drop them, while moving them
+  back at print time would let a `continue` skip the increment.
+- **Multi-way branches** `match v { A | B => { … } _ => {} }`. Arms do not fall
+  out, so C's explicit `break;` is dropped; a `match` on an integer must be
+  exhaustive, so a `_` arm is synthesised when the recovered switch had no
+  `default`; and a wildcard must come last, so the default arm is hoisted (safe,
+  because the remaining patterns are disjoint integer literals). Multi-label arms
+  are free — `emit_switch_case` already enumerates one `case N:` per jump-table
+  index for a shared block, and the same list joins with ` | `. Note the ordinary
+  `case A: case B: body` shape is ONE recovered case with two indices, not a
+  fall-through chain.
+- **Selection expressions** the `iteregion` recovery renders `dest = if c { A }
+  else { B };`. Rust's `if`/`else` is an expression, so this is a *better* form
+  than C's `?:`, not a lost one — the passes stay on.
+- **Literals** no `U`/`L`/`LL` suffixes (Rust infers the literal type, and naming
+  a width here would assert one this site does not know); `b'a'` for a 1-byte
+  character constant with a printable spelling and the integer otherwise, since
+  Rust has no `'\xff'`; and a string body escaped with Rust's set, which has no
+  `\a`/`\b`/`\v`/`\f` and in which a single quote must be BARE — `"PCRE\'s"`
+  does not tokenize.
+- **Three kuna rendering defaults are suppressed by capability, not by asking an
+  operator to flip them**: `truthycond` (DIV-37) would emit `if x` on a `u32`,
+  `braceelide` (DIV-38) would emit a braceless body, and `nullprinting` (DIV-35)
+  would emit `NULL` (Rust spells it `core::ptr::null_mut()`). `condfold`'s comma
+  operand has no Rust form either and is refused the same way.
+- **What Rust cannot express** is marked, never silently emitted. The structurer
+  manufactures `goto`s as its escape hatch and Rust has no form for one that is
+  neither a `break` nor a `continue`; those render as a comment plus a **diverging**
+  `panic!("kuna: unstructured goto to <label>")`. Diverging so the document still
+  type-checks in any position, loud so a reader cannot mistake it for a
+  translation, and greppable because that count over a whole-binary render IS the
+  quality number for this back-end — exactly what `gotoreduce`, `taildup`,
+  `ifelseflatten` and `crossjumprevert` reduce. A genuine switch fall-through gets
+  the same treatment: resolving it needs the next arm's body duplicated, which is
+  a block-graph edit and not a printing decision.
+
+The contract is **`syn::parse_file` validity, not `rustc` compilation**, and
+`kuna-console/tests/verify_outlang_rust_syntax.rs` enforces exactly that by
+parsing the emitted document. Decompiled output calls functions that have no
+definition, `CARRY4(a, b)` has no Rust spelling, and `[u8; 3]` does not do
+arithmetic; making the output compile is a separate and much larger project.
+
+Two surfaces refuse the language rather than half-honouring it. `kuna-ghidra`
+pins its Clang token-markup document to C (`process.rs`), because that document
+is consumed by Ghidra's C token model and Rust text in C token slots is a GUI
+regression. `kuna decompile-project` errors, because its `.c`/`.h`/`.asm` export
+is C-shaped end to end.
+
 The Java back-end is deliberately not ported:
 `decompiler/crates/kuna-decomp/src/p9_emit/printjava.rs (PrintJava)` is a
 recorded LOSS whose constructor returns an error — upstream `PrintJava` is a

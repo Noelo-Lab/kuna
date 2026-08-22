@@ -28,12 +28,30 @@ kuna decompile ./a.out main
 kuna decompile ./stripped.bin 0x401040 --addr
 kuna decompile ./a.out main --option compareform canonical
 kuna decompile ./sparc.elf main --option returnpair single
+kuna decompile ./a.out main --language rust
 ```
 
 Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`, so
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+
+**`--language c|rust`** selects the output language (`c` is the default and is
+what every gate asserts). It lowers to the upstream `option setlanguage`, so
+`--option setlanguage rust-language` is equivalent; an unknown name is an error
+rather than a silent fall back to C. The same recovered function is rendered
+through a different profile — types, structuring and analysis are identical —
+producing `unsafe fn n(mut a0: i64) -> u32`, `let mut v: T;` declarations, Rust
+primitive spelling, `x as T` casts, `loop`/`while c {}`, and `match v { A | B =>
+{ … } _ => {} }`. The contract is `syn::parse_file` validity, not `rustc`
+compilation: the output calls functions that have no definition and does no type
+checking. Constructs Rust cannot express — an unstructured `goto` the structurer
+could not remove, a C switch fall-through — render as a comment plus a diverging
+`panic!("kuna: …")` so a lossy site is never mistaken for a translation; grep
+that marker to measure them, and `--option gotoreduce on --option taildup on
+--option ifelseflatten on` to reduce them. `--language` also works on
+`decompile-all`; `decompile-project` is C-only and errors, and the Ghidra
+front-end pins its markup document to C. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and

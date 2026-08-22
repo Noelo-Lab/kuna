@@ -132,6 +132,7 @@ const fn op_token(
         spacing,
         bump,
         negate: None,
+        paren_before_angle: false,
     }
 }
 
@@ -265,6 +266,13 @@ pub mod tokens {
 /// `negate` stays null).
 pub fn token_negate(tok: &'static OpToken) -> Option<&'static OpToken> {
     use tokens::*;
+    // (kuna outlang) A language whose comparison tokens are its own statics
+    // carries the pairing on the token (`OpToken::negate`, the C++ field the port
+    // left unset because Rust statics cannot self-reference -- they CAN reference
+    // each other). The C table below is unreachable for those.
+    if let Some(n) = tok.negate {
+        return Some(n);
+    }
     if std::ptr::eq(tok, &LESS_THAN) {
         Some(&GREATER_EQUAL)
     } else if std::ptr::eq(tok, &LESS_EQUAL) {
@@ -710,6 +718,34 @@ pub fn print_unicode(s: &mut String, onechar: int4) {
     }
 }
 
+/// The Rust spelling of one codepoint inside a double-quoted string body.
+///
+/// (kuna outlang) Rust's escape set is a strict subset of C's in the ways that
+/// matter here: it has no `\a`/`\b`/`\v`/`\f`, so those become `\xNN`; and a
+/// single quote inside a `"..."` must be BARE, because `\'` is only an escape in
+/// a character literal and `"PCRE\'s"` does not tokenize. Everything else --
+/// `\0`, `\t`, `\n`, `\r`, `\\`, `\"`, printable ASCII, and any valid scalar
+/// value emitted as UTF-8 -- spells identically in both languages.
+pub fn print_unicode_rust(s: &mut String, onechar: int4) {
+    if unicode_needs_escape(onechar) {
+        match onechar {
+            0 => s.push_str("\\0"),
+            9 => s.push_str("\\t"),
+            10 => s.push_str("\\n"),
+            13 => s.push_str("\\r"),
+            92 => s.push_str("\\\\"),
+            0x22 => s.push_str("\\\""),
+            // A bare `'` -- escaping it is what breaks the tokenizer.
+            0x27 => s.push('\''),
+            _ => print_char_hex_escape(s, onechar),
+        }
+        return;
+    }
+    if let Some(c) = char::from_u32(onechar as u32) {
+        s.push(c);
+    }
+}
+
 /// The string body of C++ `PrintC::push_integer` (printc.cc:1407-1434) — the
 /// byte-for-byte token characters for an integer constant, given the
 /// already-resolved sign decision and display format.
@@ -770,6 +806,19 @@ pub fn format_integer_token(
         t.push_str(size_suffix);
     }
     t
+}
+
+/// Whether `val` at `sz` bytes has a Rust byte-literal spelling.
+///
+/// Rust byte literals are one byte, and `format_integer_token`'s escape set
+/// (`print_unicode`) emits `\n`/`\t`/`\r`/`\0`/`\\`/`\'` plus printable ASCII --
+/// all of which a `b'...'` accepts. Anything wider, or a byte outside that set,
+/// has no byte-literal form and is rendered as the integer instead.
+fn rust_byte_literal_spellable(val: uintb, sz: int4) -> bool {
+    if sz != 1 {
+        return false;
+    }
+    matches!(val, 0x20..=0x7e) || matches!(val, 0 | 0x09 | 0x0a | 0x0d)
 }
 
 /// The `print_negsign`/`val`/`display_fmt` resolution C++ `push_integer`
@@ -1250,7 +1299,7 @@ impl Emit for PrintEmit {
 /// `prettyprint::BraceStyle` the [`Emit`] driver consumes.  Both are the same
 /// 3-variant `same_line`/`next_line`/`skip_line` enum (printc.hh:252-255 vs
 /// emit.hh); the conversion is the identity mapping.
-fn to_emit_brace(style: BraceStyle) -> EmitBraceStyle {
+pub(crate) fn to_emit_brace(style: BraceStyle) -> EmitBraceStyle {
     match style {
         BraceStyle::SameLine => EmitBraceStyle::SameLine,
         BraceStyle::NextLine => EmitBraceStyle::NextLine,
@@ -1303,7 +1352,7 @@ pub struct PrintC {
     /// swaps in the packed clang [`EmitMarkup`] for the ghidra-mode `decompileAt`
     /// `<function>` document.  A concrete enum (not `Box<dyn Emit>`), so the
     /// ~260 `self.emit.<method>()` sites stay static (see [`PrintEmit`]).
-    emit: PrintEmit,
+    pub(crate) emit: PrintEmit,
     /// (kuna) Scoped raw pointer to the [`Funcdata`] currently being emitted,
     /// live ONLY for the duration of [`emit_function_document`](PrintC::emit_function_document).
     /// Lets the fd-free RPN leaf emitters ([`emit_atom`](PrintC::emit_atom) /
@@ -1332,19 +1381,19 @@ pub struct PrintC {
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
     /// types as real C types.  Refreshed at the top of [`doc_function_full`] from
     /// the live `arch`; `OFF` until then (so an out-of-band print never relabels).
-    rt_ctx: RealTypeCtx,
+    pub(crate) rt_ctx: RealTypeCtx,
     /// (kuna outlang) The output language this document renders into.  Selects
     /// the surface vocabulary and capability record every language-varying site
     /// reads (`crate::kuna_lang`).  Refreshed per document alongside `rt_ctx`;
     /// `OutLang::C` until then, so an out-of-band print is never non-C.
-    out_lang: crate::kuna_lang::OutLang,
+    pub(crate) out_lang: crate::kuna_lang::OutLang,
     /// (kuna warnstyle, DIV-39) Warning slugs collected under `warn_inline` by
     /// [`emit_comment_group`](PrintC::emit_comment_group) /
     /// [`emit_comment_func_header`](PrintC::emit_comment_func_header), flushed
     /// as one `// slug, slug` end-of-line comment by
     /// [`flush_eol_warnings`](PrintC::flush_eol_warnings) at the owning line's
     /// last token (statement `;`, `if (cond) {` header, prototype, ...).
-    eol_warns: Vec<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>,
+    pub(crate) eol_warns: Vec<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>,
 }
 
 impl Default for PrintC {
@@ -1392,8 +1441,20 @@ impl PrintC {
     /// Set the active print language name (C++ `setPrintLanguage` swaps which
     /// `PrintLanguage` is current; here the single owned printer records the
     /// requested name so `print_is_c_language` reflects it).
+    ///
+    /// (kuna outlang) The name is the single source of truth for the output
+    /// language: it also resolves `out_lang`, so a name kuna owns switches the
+    /// emitter and a name it does not leaves the C emitter in place -- an unknown
+    /// language never silently renders as something else.
     pub fn set_name(&mut self, name: &str) {
         self.name = name.to_string();
+        self.out_lang =
+            crate::kuna_lang::OutLang::from_print_name(name).unwrap_or(crate::kuna_lang::OutLang::C);
+    }
+
+    /// The active output language.
+    pub fn out_lang(&self) -> crate::kuna_lang::OutLang {
+        self.out_lang
     }
 
     /// `print C flat` toggle (C++ `PrintLanguage::setFlat`).
@@ -2079,7 +2140,7 @@ impl PrintC {
         self.emit.set_output_stream();
         // Same per-function realtypes context resolution as
         // `emit_function_document` — the type-name chokepoints read `rt_ctx`.
-        self.rt_ctx = RealTypeCtx::from_arch(arch);
+        self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
         let markup = MarkupRef::none();
         self.emit_prototype_declaration(fd, arch, &markup);
         self.emit.print(";", SyntaxHighlight::NoColor);
@@ -2117,7 +2178,7 @@ impl PrintC {
     /// ([`compose_type_body`] etc.) for unit-testability.
     pub fn doc_type_definitions(&mut self, arch: &Architecture) -> String {
         let deporder = arch.types_impl().dependent_order();
-        render_type_definitions(&deporder, RealTypeCtx::from_arch(arch))
+        render_type_definitions(&deporder, RealTypeCtx::from_arch(arch, self.out_lang))
     }
 
     /// The shared body-emission sequence of C++ `PrintC::docFunction`
@@ -2141,7 +2202,7 @@ impl PrintC {
         // (kuna) Resolve the `realtypes` rendering context once per function from
         // the live architecture (the gate + the `long`-is-8 data-model fact); every
         // type-name chokepoint below reads `self.rt_ctx`.
-        self.rt_ctx = RealTypeCtx::from_arch(arch);
+        self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
         // commsorter.setupFunctionList(...) (C++ printc.cc:2799): place this
         // function's comments into their basic blocks so the body emitters can
         // pick them up in order.
@@ -2222,6 +2283,22 @@ impl PrintC {
     /// token sequence standalone — the `.h`-prototype == `.c`-definition-line
     /// contract of `kuna decompile-project`.
     fn emit_prototype_declaration(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        markup: &MarkupRef,
+    ) {
+        match self.lang().forms.proto {
+            crate::kuna_lang::ProtoForm::CPrefixReturn => {
+                self.emit_prototype_declaration_c(fd, arch, markup)
+            }
+            crate::kuna_lang::ProtoForm::RustFnArrow => {
+                self.emit_prototype_declaration_rust(fd, arch, markup)
+            }
+        }
+    }
+
+    fn emit_prototype_declaration_c(
         &mut self,
         fd: &Funcdata,
         arch: &Architecture,
@@ -2790,23 +2867,33 @@ impl PrintC {
             }
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
-            self.emit.tag_type(&decl_type, SyntaxHighlight::TypeColor, &markup);
-            // C++ `ptr_expr` glues the `*` directly to the identifier (no space);
-            // every other base type gets the single `type_expr_space`.  A pointer
-            // declarator front already ends in `*`, so suppress the separator.
-            if !decl_type.ends_with('*') {
-                self.emit.spaces(1, 0);
-            }
-            self.emit.tag_variable(name, SyntaxHighlight::VarColor, &markup);
-            if let Some((_, count)) = &array_count {
-                // ` [count]` (C++ `emitArrayDecl`: a space then the bracketed count).
-                self.emit.spaces(1, 0);
-                self.emit.print("[", SyntaxHighlight::NoColor);
-                self.emit.print(&format!("{count}"), SyntaxHighlight::ConstColor);
-                self.emit.print("]", SyntaxHighlight::NoColor);
+            match self.lang().forms.decl {
+                crate::kuna_lang::DeclForm::CTypeThenName => {
+                    self.emit.tag_type(&decl_type, SyntaxHighlight::TypeColor, &markup);
+                    // C++ `ptr_expr` glues the `*` directly to the identifier (no
+                    // space); every other base type gets the single
+                    // `type_expr_space`.  A pointer declarator front already ends
+                    // in `*`, so suppress the separator.
+                    if !decl_type.ends_with('*') {
+                        self.emit.spaces(1, 0);
+                    }
+                    self.emit.tag_variable(name, SyntaxHighlight::VarColor, &markup);
+                    if let Some((_, count)) = &array_count {
+                        // ` [count]` (C++ `emitArrayDecl`: a space then the
+                        // bracketed count).
+                        self.emit.spaces(1, 0);
+                        self.emit.print("[", SyntaxHighlight::NoColor);
+                        self.emit.print(&format!("{count}"), SyntaxHighlight::ConstColor);
+                        self.emit.print("]", SyntaxHighlight::NoColor);
+                    }
+                }
+                crate::kuna_lang::DeclForm::RustLetColon => {
+                    let count = array_count.as_ref().map(|(_, c)| *c);
+                    self.emit_var_decl_rust(name, &decl_type, count, &markup);
+                }
             }
             self.emit.end_var_decl(id);
-            self.emit.print(";", SyntaxHighlight::NoColor);
+            self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
             // (kuna) the storage comment (`// eax` / `// stack - 0xNN`) is the
             // angr-style local annotation; the ghidra naming scheme (`option
             // namestyle ghidra`, `name_style_angr = false`) emits no storage
@@ -3111,7 +3198,7 @@ impl PrintC {
 
     /// Dispatch one structured block to its emitter (C++ the virtual
     /// `FlowBlock::emit(PrintLanguage*)` -> `PrintC::emitBlock*`).
-    fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+    pub(crate) fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::block::BlockType;
         match fd.sblocks_ref().block(blk).get_type() {
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
@@ -3211,7 +3298,7 @@ impl PrintC {
     /// ([`kuna_label_name`](crate::database::kuna_label_name)).  Falls back to the
     /// reverse-post `LAB_<index>` form only when the block has no resolvable entry
     /// address, keeping a `goto`/target pair always consistent.
-    fn block_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
+    pub(crate) fn block_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
         let addr = fd.sblock_entry_addr(bl);
         if addr.is_invalid() {
             let idx = fd.sblocks_ref().block(bl).get_index();
@@ -3229,6 +3316,13 @@ impl PrintC {
     /// goto.  The label name is the block's entry-address-based `label_<addr>`
     /// ([`block_label_name`]) so a `goto`/target pair render the same name.
     fn emit_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
+        match self.lang().forms.label {
+            crate::kuna_lang::LabelForm::CColon => self.emit_label_statement_c(fd, bl),
+            crate::kuna_lang::LabelForm::CommentOnly => self.emit_label_statement_rust(fd, bl),
+        }
+    }
+
+    fn emit_label_statement_c(&mut self, fd: &Funcdata, bl: BlockId) {
         use crate::block::BlockType;
         if self.context.is_set(modifiers::ONLY_BRANCH) {
             return;
@@ -3252,7 +3346,7 @@ impl PrintC {
     /// enclosing loop emitter prints it above the loop head instead (so a
     /// loop-head label never lands inside the loop condition).  The block does not
     /// have to be a basic block; `get_front_leaf` finds the entry `t_copy` leaf.
-    fn emit_any_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
+    pub(crate) fn emit_any_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
         // Label printed by someone else.
         if fd.sblocks_ref().block(bl).is_label_bump_up() {
             return;
@@ -3346,7 +3440,7 @@ impl PrintC {
     /// the `if (cond)` header (brace / goto / elided forms), the loop header
     /// brace, the ternary statement, and the function prototype.  No-op when
     /// nothing was collected.
-    fn flush_eol_warnings(&mut self) {
+    pub(crate) fn flush_eol_warnings(&mut self) {
         if self.eol_warns.is_empty() {
             return;
         }
@@ -3387,7 +3481,7 @@ impl PrintC {
     /// node `bl`.  Used where statements from several basic blocks land on one
     /// line (the `if (cond)` header) and a normal in-line comment would otherwise
     /// print mid-line — here it forces the pending `else if` brace.
-    fn emit_comment_block_tree(&mut self, fd: &Funcdata, bl: BlockId) {
+    pub(crate) fn emit_comment_block_tree(&mut self, fd: &Funcdata, bl: BlockId) {
         use crate::block::BlockType;
         match fd.sblocks_ref().block(bl).get_type() {
             // BlockCopy: descend to the underlying bblocks BlockBasic.
@@ -3584,11 +3678,24 @@ impl PrintC {
         // instead of a braced body.
         let goto_target = fd.sblocks_ref().block(blk).get_if_goto_target();
         if let Some(target) = goto_target {
-            self.emit.spaces(1, 0);
-            self.emit_goto_statement(fd, cond_block, target, fd.sblocks_ref().block(blk).get_if_goto_type());
-            // (kuna warnstyle, DIV-39) condition-attached warnings land at the
-            // end of the one-line `if (cond) goto L;` form.
-            self.flush_eol_warnings();
+            let gototype = fd.sblocks_ref().block(blk).get_if_goto_type();
+            // (kuna outlang) C's one-line `if (cond) goto L;` needs no braces; a
+            // language that requires block braces gets `if cond { goto-form }`.
+            if self.lang().caps.brace_elision {
+                self.emit.spaces(1, 0);
+                self.emit_goto_statement(fd, cond_block, target, gototype);
+                // (kuna warnstyle, DIV-39) condition-attached warnings land at the
+                // end of the one-line `if (cond) goto L;` form.
+                self.flush_eol_warnings();
+            } else {
+                let id = self
+                    .emit
+                    .open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_ifelse));
+                self.flush_eol_warnings();
+                self.emit.tag_line();
+                self.emit_goto_statement(fd, cond_block, target, gototype);
+                self.emit.close_brace_indent(self.lang().kw_close_curly, id);
+            }
         } else if self.if_body_elides(fd, fd.sblocks_ref().block(blk).get_block(1)) {
             // (kuna braceelide, DIV-38) A single-statement then-body drops its
             // braces: the statement prints on the next line at one extra indent
@@ -3684,9 +3791,12 @@ impl PrintC {
     /// skipped, exactly mirroring its filter), and no comment positioned in the
     /// block (a comment renders as its own line).  Copy-leaf-only also rules
     /// out a nested `if` body, so eliding can never capture a dangling else.
-    fn if_body_elides(&mut self, fd: &Funcdata, body: BlockId) -> bool {
+    pub(crate) fn if_body_elides(&mut self, fd: &Funcdata, body: BlockId) -> bool {
         use crate::block::BlockType;
-        if !self.options.brace_elide {
+        // (kuna outlang) braceelide (DIV-38) drops the braces from a
+        // single-statement body; a language that requires block braces must
+        // never take that path, whatever the option says.
+        if !self.options.brace_elide || !self.lang().caps.brace_elision {
             return false;
         }
         if fd.sblocks_ref().block(body).get_type() != BlockType::Copy {
@@ -3942,21 +4052,45 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.emit.tag_op(tokens::ASSIGNMENT.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
+        // (kuna outlang) C spells the选 selection `cond ? A : B`; a language
+        // without a ternary spells it `if cond { A } else { B }` -- which in Rust
+        // is an EXPRESSION, so the `iteregion` recovery is not lost here, it is
+        // rendered in the more natural form. Only the punctuation differs: the
+        // condition and both arms are the same three emissions either way.
+        let ternary = self.lang().caps.ternary;
+        if !ternary {
+            self.emit.tag_op(self.lang().kw_if, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+            self.emit.spaces(1, 0);
+        }
         // ` ( cond ) ` — the normal ONLY_BRANCH CBRANCH render (boolean-flip aware).
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
         self.emit_block(fd, arch, m.cond_block);
         self.context.pop_mod();
-        // ` ? A `
+        // ` ? A ` / ` { A }`
         self.emit.spaces(1, 0);
-        self.emit.tag_op("?", SyntaxHighlight::NoColor, &MarkupRef::none());
+        self.emit.tag_op(if ternary { "?" } else { "{" }, SyntaxHighlight::NoColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
         self.op_push_ir(fd, arch, m.true_op, None);
-        // ` : B `
+        if !ternary {
+            // The arm has to be fully drained before the `}` token, which is
+            // emitted directly rather than through the RPN stack.
+            self.recurse();
+        }
+        // ` : B ` / ` } else { B }`
         self.emit.spaces(1, 0);
-        self.emit.tag_op(":", SyntaxHighlight::NoColor, &MarkupRef::none());
+        self.emit.tag_op(
+            if ternary { ":" } else { "} else {" },
+            SyntaxHighlight::NoColor,
+            &MarkupRef::none(),
+        );
         self.emit.spaces(1, 0);
         self.op_push_ir(fd, arch, m.else_op, None);
+        if !ternary {
+            self.recurse();
+            self.emit.spaces(1, 0);
+            self.emit.print("}", SyntaxHighlight::NoColor);
+        }
         self.emit.end_statement(sid);
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) condition-attached warnings land at the end
@@ -3974,6 +4108,13 @@ impl PrintC {
     /// statements before the switch, the `switch(v)` header, then the braced body
     /// of `case N:` / `default:` arms.
     fn emit_block_switch(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        match self.lang().forms.switch {
+            crate::kuna_lang::SwitchForm::CSwitch => self.emit_block_switch_c(fd, arch, blk),
+            crate::kuna_lang::SwitchForm::RustMatch => self.emit_block_match_rust(fd, arch, blk),
+        }
+    }
+
+    fn emit_block_switch_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         // getSwitchBlock() == getBlock(0) (the switch component).
         let switch_block = fd.sblocks_ref().block(blk).get_block(0);
 
@@ -4027,7 +4168,7 @@ impl PrintC {
 
     /// C++ `PrintC::emitSwitchCase` (printc.cc:3278): emit the `case N:` /
     /// `default:` label(s) for one case arm.
-    fn emit_switch_case(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, casenum: usize) {
+    pub(crate) fn emit_switch_case(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, casenum: usize) {
         let case = fd.sblocks_ref().block(blk).switch_caseblocks()[casenum].clone();
         // The case block's first op — used only for markup tagging.
         let firstop = self.case_first_op(fd, case.block);
@@ -4094,20 +4235,20 @@ impl PrintC {
 
     /// First op of a case block (C++ `FlowBlock::firstOp` → front-leaf basic
     /// block's first op), used only for case-label markup tagging.
-    fn case_first_op(&self, fd: &Funcdata, caseblk: BlockId) -> Option<OpId> {
+    pub(crate) fn case_first_op(&self, fd: &Funcdata, caseblk: BlockId) -> Option<OpId> {
         let front = fd.sblocks_ref().get_front_leaf(caseblk)?;
         let bb = fd.sblocks_ref().sub_block(front, 0)?;
         fd.bb_op_head(bb)
     }
 
     /// Any op tag in a case block (fallback for markup when the block is empty).
-    fn any_op(&self, fd: &Funcdata, caseblk: BlockId) -> Option<OpId> {
+    pub(crate) fn any_op(&self, fd: &Funcdata, caseblk: BlockId) -> Option<OpId> {
         self.case_first_op(fd, caseblk)
     }
 
     /// The byte-size of the switch variable (C++ `getSwitchType()` size), used to
     /// format the case-label constant.  Resolved from the BRANCHIND's `in0`.
-    fn switch_var_size(&self, fd: &Funcdata, blk: BlockId) -> int4 {
+    pub(crate) fn switch_var_size(&self, fd: &Funcdata, blk: BlockId) -> int4 {
         let jt_index = match fd.sblocks_ref().block(blk).switch_jt_index() {
             Some(j) => j,
             None => return 4,
@@ -4206,6 +4347,15 @@ impl PrintC {
     /// `iterateOp` (recorded by the for-loop reroll), it is emitted as a `for`
     /// loop ([`emit_for_loop`]); otherwise the plain `while` form is emitted.
     fn emit_block_while_do(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        match self.lang().forms.while_loop {
+            crate::kuna_lang::WhileForm::CParenWhile => self.emit_block_while_do_c(fd, arch, blk),
+            crate::kuna_lang::WhileForm::RustBareWhile => {
+                self.emit_block_while_do_rust(fd, arch, blk)
+            }
+        }
+    }
+
+    fn emit_block_while_do_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         if fd.sblocks_ref().block(blk).get_iterate_op().is_some() {
             self.emit_for_loop(fd, arch, blk);
             return;
@@ -4269,6 +4419,15 @@ impl PrintC {
     /// C++ `PrintC::emitBlockDoWhile` (printc.cc:3217): the bottom-tested loop.
     /// `do { block0-body } while (block0-branch);`.
     fn emit_block_do_while(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        match self.lang().forms.do_while {
+            crate::kuna_lang::DoWhileForm::CDoWhile => self.emit_block_do_while_c(fd, arch, blk),
+            crate::kuna_lang::DoWhileForm::RustLoopBreakIf => {
+                self.emit_block_do_while_rust(fd, arch, blk)
+            }
+        }
+    }
+
+    fn emit_block_do_while_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         // dowhile block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
@@ -4301,6 +4460,15 @@ impl PrintC {
     /// C++ `PrintC::emitBlockInfLoop` (printc.cc:3246): the infinite loop.
     /// `do { block0-body } while( true );`.
     fn emit_block_inf_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        match self.lang().forms.inf_loop {
+            crate::kuna_lang::InfLoopForm::CDoWhileTrue => {
+                self.emit_block_inf_loop_c(fd, arch, blk)
+            }
+            crate::kuna_lang::InfLoopForm::RustLoop => self.emit_block_inf_loop_rust(fd, arch, blk),
+        }
+    }
+
+    fn emit_block_inf_loop_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
         // emitAnyLabelStatement(bl) (printc.cc:3236): hoist the loop-head label
@@ -4332,7 +4500,7 @@ impl PrintC {
     /// `continue` statement for an unstructured branch.  The destination label is
     /// the target block's reverse-post index (`LAB_<index>` — full address-based
     /// label naming is the label/naming layer).
-    fn emit_goto_statement(
+    pub(crate) fn emit_goto_statement(
         &mut self,
         fd: &Funcdata,
         _src: BlockId,
@@ -4348,11 +4516,16 @@ impl PrintC {
             x if x == block_flags::f_continue_goto => {
                 self.emit.print(self.lang().kw_continue, SyntaxHighlight::KeywordColor);
             }
-            _ => {
-                self.emit.print(self.lang().kw_goto, SyntaxHighlight::KeywordColor);
-                self.emit.spaces(1, 0);
-                self.emit.print(&self.block_label_name(fd, target), SyntaxHighlight::NoColor);
-            }
+            _ => match self.lang().forms.goto {
+                crate::kuna_lang::GotoForm::CGoto => {
+                    self.emit.print(self.lang().kw_goto, SyntaxHighlight::KeywordColor);
+                    self.emit.spaces(1, 0);
+                    self.emit.print(&self.block_label_name(fd, target), SyntaxHighlight::NoColor);
+                }
+                crate::kuna_lang::GotoForm::Unrepresentable => {
+                    self.emit_unrepresentable_goto(fd, target);
+                }
+            },
         }
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.end_statement(id);
@@ -4641,7 +4814,11 @@ impl PrintC {
             // In the non-flat path opCbranch only emits the `( condition )`; the
             // `if` keyword is printed by emit_block_if.  yesparen = !comma_separate.
             OpCode::CPUI_CBRANCH => {
-                let yesparen = !self.context.is_set(modifiers::COMMA_SEPARATE);
+                // (kuna outlang) A language without parenthesised conditions
+                // (`if c {` rather than `if (c)`) suppresses the paren; the
+                // grouping token still opens so line breaking is unchanged.
+                let yesparen = !self.context.is_set(modifiers::COMMA_SEPARATE)
+                    && self.lang().caps.paren_conditions;
                 let mut booleanflip = fd.obank().get(op).map(|o| o.is_boolean_flip()).unwrap_or(false);
                 let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
                 let id = if yesparen {
@@ -4689,11 +4866,22 @@ impl PrintC {
             OpCode::CPUI_BRANCHIND => {
                 let kw_markup = self.op_markup(fd, op);
                 self.emit.tag_op(self.lang().kw_switch, SyntaxHighlight::KeywordColor, &kw_markup);
-                let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+                // (kuna outlang) `switch (v)` in C, `match v` in Rust.
+                let paren = self.lang().caps.paren_conditions;
+                let id = if paren {
+                    self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0)
+                } else {
+                    self.emit.spaces(1, 0);
+                    self.emit.open_group()
+                };
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                     self.push_vn_ir(fd, arch, vn, op);
                 }
-                self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
+                if paren {
+                    self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
+                } else {
+                    self.emit.close_group(id);
+                }
             }
             // RETURN (printc.cc:774 opReturn, the plain-return case).
             OpCode::CPUI_RETURN => {
@@ -4759,8 +4947,14 @@ impl PrintC {
             _ => {
                 // Table-driven binary / unary / functional forms.
                 match op_emit_kind(opc) {
-                    OpEmitKind::Binary(tok) => self.op_binary_ir(fd, arch, tok, op),
-                    OpEmitKind::Unary(tok) => self.op_unary_ir(fd, arch, tok, op),
+                    OpEmitKind::Binary(tok) => {
+                        let tok = self.lang_token(tok);
+                        self.op_binary_ir(fd, arch, tok, op)
+                    }
+                    OpEmitKind::Unary(tok) => {
+                        let tok = self.lang_token(tok);
+                        self.op_unary_ir(fd, arch, tok, op)
+                    }
                     // opTypeCast (printc.cc:468): the C cast-notation `(type)operand`
                     // form.  CPUI_CAST / CPUI_FLOAT_FLOAT2FLOAT / CPUI_FLOAT_TRUNC
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
@@ -4796,7 +4990,9 @@ impl PrintC {
             && (tok.print1 == "==" || tok.print1 == "!=")
         {
             self.context.unset_mod(modifiers::CONDITION_CONTEXT);
-            if self.options.truthy_cond {
+            // (kuna outlang) truthycond (DIV-37) renders `x != 0` as `x`, which is
+            // not a condition in a language without implicit bool conversion.
+            if self.options.truthy_cond && self.lang().caps.implicit_bool_conditions {
                 if let Some(other) = self.truthy_other_operand(fd, op) {
                     if tok.print1 == "==" {
                         self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
@@ -5157,17 +5353,23 @@ impl PrintC {
         let vn0 = absorb_zext(fd, op)
             .and_then(|zext| fd.obank().get(zext).and_then(|o| o.get_in(0)))
             .or(in0);
-        if !self.options.nocasts {
-            self.push_op(&tokens::TYPECAST, Some(op_key(op)));
-            let outvn = fd.obank().get(op).and_then(|o| o.get_out());
-            if let Some(out) = outvn {
-                if let Some(v) = fd.vbank().get(out) {
-                    self.push_cast_type(v.get_type_def_facing());
-                }
-            }
+        let cast_ty = if self.options.nocasts {
+            None
+        } else {
+            fd.obank()
+                .get(op)
+                .and_then(|o| o.get_out())
+                .and_then(|out| fd.vbank().get(out))
+                .map(|v| v.get_type_def_facing().clone())
+        };
+        if let Some(ct) = &cast_ty {
+            self.push_cast_open(ct, op);
         }
         if let Some(vn) = vn0 {
             self.push_vn_ir(fd, arch, vn, op);
+        }
+        if let Some(ct) = &cast_ty {
+            self.push_cast_close(ct);
         }
     }
 
@@ -5209,17 +5411,23 @@ impl PrintC {
             }
             return;
         }
-        if !self.options.nocasts {
-            self.push_op(&tokens::TYPECAST, Some(op_key(op)));
-            let outvn = fd.obank().get(op).and_then(|o| o.get_out());
-            if let Some(out) = outvn {
-                if let Some(v) = fd.vbank().get(out) {
-                    self.push_cast_type(v.get_type_def_facing());
-                }
-            }
+        let cast_ty = if self.options.nocasts {
+            None
+        } else {
+            fd.obank()
+                .get(op)
+                .and_then(|o| o.get_out())
+                .and_then(|out| fd.vbank().get(out))
+                .map(|v| v.get_type_def_facing().clone())
+        };
+        if let Some(ct) = &cast_ty {
+            self.push_cast_open(ct, op);
         }
         if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, vn, op);
+        }
+        if let Some(ct) = &cast_ty {
+            self.push_cast_close(ct);
         }
     }
 
@@ -5638,6 +5846,58 @@ impl PrintC {
     /// `buildTypeStack` declarator algorithm (pointer/array casts) is the next
     /// layer; this renders the base-type front of [`declarator_parts`], which
     /// is the only form the int→float cast produces (a scalar `floatN`).
+    /// Open a conversion around an operand that is about to be pushed.
+    ///
+    /// (kuna outlang) C brackets the operand -- `(T)x`, a `Presurround` token
+    /// whose type is pushed BEFORE the operand. Rust suffixes it -- `x as T`, a
+    /// binary token whose type is the RIGHT operand and so must be pushed
+    /// AFTER. Every cast site therefore brackets its operand push with
+    /// `push_cast_open` / `push_cast_close` rather than emitting the type inline.
+    /// Map a token from the opcode table onto the active language's spelling and
+    /// precedence (`LangProfile::map_token`).
+    fn lang_token(&self, tok: &'static OpToken) -> &'static OpToken {
+        (self.lang().map_token)(tok)
+    }
+
+    /// Push the operator for a field reached THROUGH a pointer.
+    ///
+    /// (kuna outlang) C has a dedicated token for it (`p->f`). Rust raw pointers
+    /// have no auto-deref, so the same access is `(*p).f` -- the member token
+    /// over an explicit dereference of the operand that follows. The
+    /// parenthesizer supplies the parens on its own: `*` binds looser than `.`,
+    /// so the deref lands in a group.
+    fn push_member_through_pointer(&mut self, key: Option<usize>) {
+        match self.lang().forms.member {
+            crate::kuna_lang::MemberForm::CArrow => {
+                self.push_op(&tokens::POINTER_MEMBER, key);
+            }
+            crate::kuna_lang::MemberForm::RustDerefParen => {
+                self.push_op(&tokens::OBJECT_MEMBER, key);
+                self.push_op(&tokens::DEREFERENCE, key);
+            }
+        }
+    }
+
+    fn push_cast_open(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>, op: OpId) {
+        match self.lang().forms.cast {
+            crate::kuna_lang::CastForm::PrefixParen => {
+                self.push_op(&tokens::TYPECAST, Some(op_key(op)));
+                self.push_cast_type(ct);
+            }
+            crate::kuna_lang::CastForm::PostfixAs => {
+                let tok = self.lang().tok_typecast;
+                self.push_op(tok, Some(op_key(op)));
+            }
+        }
+    }
+
+    /// Close a conversion opened by [`push_cast_open`], after the operand.
+    fn push_cast_close(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>) {
+        if self.lang().forms.cast == crate::kuna_lang::CastForm::PostfixAs {
+            self.push_cast_type(ct);
+        }
+    }
+
     fn push_cast_type(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>) {
         let (front, back) = declarator_parts(ct, self.rt_ctx);
         let mut name = front;
@@ -6065,7 +6325,7 @@ impl PrintC {
                 m |= modifiers::PRINT_LOAD_VALUE;
                 self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
             } else {
-                self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+                self.push_member_through_pointer(Some(op_key(op)));
             }
             if let Some(sp) = expr.struct_ptr {
                 self.push_vn_ir_m(fd, arch, sp, load_op, m);
@@ -6108,7 +6368,7 @@ impl PrintC {
             m |= modifiers::PRINT_STORE_VALUE;
             self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(insert_op)));
         } else {
-            self.push_op(&tokens::POINTER_MEMBER, Some(op_key(insert_op)));
+            self.push_member_through_pointer(Some(op_key(insert_op)));
         }
         // C++ pushes the LHS (structPtr.field) then the RHS (insert value); the
         // direct RPN engine renders in push order, so push the pointer + bitfield
@@ -6447,13 +6707,15 @@ impl PrintC {
             return false;
         }
 
-        // A leading `(cast)` over the whole member access.
-        if let Some(fc) = &finalcast {
-            if !self.options.nocasts {
-                self.push_op(&tokens::TYPECAST, Some(op_key(op)));
-                self.push_cast_type(fc);
+        // A leading `(cast)` over the whole member access (Rust: a trailing
+        // `as T`, closed at the single exit below).
+        let final_cast_open = match (&finalcast, self.options.nocasts) {
+            (Some(fc), false) => {
+                self.push_cast_open(fc, op);
+                Some(fc.clone())
             }
-        }
+            _ => None,
+        };
 
         // Push the member ops in REVERSE stack order (C++ printc.cc:2124-2126:
         // `for(i=stack.size()-1;i>=0;--i) pushOp(stack[i].token,op)`).  The
@@ -6536,6 +6798,9 @@ impl PrintC {
                     }
                 }
             }
+        }
+        if let Some(fc) = &final_cast_open {
+            self.push_cast_close(fc);
         }
         true
     }
@@ -6786,7 +7051,7 @@ impl PrintC {
                 if self.options.null && off == 0 {
                     // option_NULL set (OFF by kuna default): emit the NULL token.
                     self.push_atom(&Atom::with_op_vn(
-                        "NULL".to_string(),
+                        self.lang().null_literal.to_string(),
                         TagType::VarToken,
                         crate::printlanguage::SyntaxHighlight::var_color,
                         op_key(op),
@@ -6795,8 +7060,7 @@ impl PrintC {
                     return;
                 }
                 if !self.options.nocasts {
-                    self.push_op(&tokens::TYPECAST, Some(op_key(op)));
-                    self.push_cast_type(&ct);
+                    self.push_cast_open(&ct, op);
                 }
                 self.context.push_mod();
                 if !self.context.is_set(modifiers::FORCE_DEC) {
@@ -6804,6 +7068,9 @@ impl PrintC {
                 }
                 self.push_constant_ir_fmt_sign(off, sz, op, display_format::NONE, false);
                 self.context.pop_mod();
+                if !self.options.nocasts {
+                    self.push_cast_close(&ct);
+                }
                 return;
             }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
@@ -6831,11 +7098,18 @@ impl PrintC {
             // `CastStrategy::markExplicitUnsigned`/`markExplicitLongSize` during
             // ActionSetCasts; without threading them here the `(val & 1U)` /
             // `<long>L` literals lose their suffix.
-            let (force_unsigned, force_sized) = fd
-                .vbank()
-                .get(vn)
-                .map(|v| (v.is_unsigned_print(), v.is_long_print()))
-                .unwrap_or((false, false));
+            // (kuna outlang) The `U`/`L`/`LL` suffixes are C's way of pinning a
+            // literal's type in an expression. A language that infers the literal
+            // type has no spelling for them, and inventing one (Rust `u32`) would
+            // assert a width this site does not know. Suppressed, not translated.
+            let (force_unsigned, force_sized) = if self.lang().caps.integer_suffixes {
+                fd.vbank()
+                    .get(vn)
+                    .map(|v| (v.is_unsigned_print(), v.is_long_print()))
+                    .unwrap_or((false, false))
+            } else {
+                (false, false)
+            };
             // C++ `sizeSuffix` (printc.cc:2412-2415): "LL" when long and int are
             // the same width, otherwise "L".
             let size_suffix = if force_sized {
@@ -7322,7 +7596,7 @@ impl PrintC {
                     self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
                 } else {
                     // EMIT  &( )->name
-                    self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+                    self.push_member_through_pointer(Some(op_key(op)));
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
@@ -7342,7 +7616,7 @@ impl PrintC {
                     self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
                 } else {
                     // EMIT  ( )->name
-                    self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+                    self.push_member_through_pointer(Some(op_key(op)));
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
@@ -7652,7 +7926,8 @@ impl PrintC {
             }
             // printc.cc:1744-1745 — `if (rep.complement) pushOp(&bitwise_not,op);`
             if rep.complement {
-                self.push_op(&tokens::BITWISE_NOT, Some(op_key(op)));
+                let tok = self.lang_token(&tokens::BITWISE_NOT);
+                self.push_op(tok, Some(op_key(op)));
             }
             // printc.cc:1746-1747 — `for(i=size-1;i>0;--i) pushOp(&enum_cat,op);`
             // one `|` op per gap between the matched names.
@@ -7685,7 +7960,7 @@ impl PrintC {
         }
     }
 
-    fn push_constant_ir(&mut self, val: uintb, sz: int4, op: OpId) {
+    pub(crate) fn push_constant_ir(&mut self, val: uintb, sz: int4, op: OpId) {
         self.push_constant_ir_fmt(val, sz, op, display_format::NONE);
     }
 
@@ -7709,7 +7984,7 @@ impl PrintC {
     /// signed convert/equate constant renders `-512` / `-0xbb8` / `-0333` /
     /// `-0b...` rather than its full unsigned bit pattern.  `force_char` short-
     /// circuits the sign (printc.cc:1381), preserving the `L\'a\'` char convert.
-    fn push_constant_ir_fmt_sign(
+    pub(crate) fn push_constant_ir_fmt_sign(
         &mut self,
         val: uintb,
         sz: int4,
@@ -7752,6 +8027,19 @@ impl PrintC {
         // `doEmitWideCharPrefix()` (always true for PrintC) AND `sz > 1`.  The
         // earlier port passed `false` here, dropping the `L` from a size>1
         // force_char constant (e.g. the convert `L'a'` equate on a size-4 char).
+        // (kuna outlang) A language whose character type is not an integer of the
+        // declared width cannot spell every FORCE_CHAR constant. Rust's `char` is
+        // a 4-byte Unicode scalar with a validity invariant and has no `'\xff'`;
+        // its byte literal `b'a'` covers the 1-byte printable cases and the rest
+        // fall back to the integer, which is always exact.
+        let display_fmt = if display_fmt == display_format::FORCE_CHAR
+            && self.lang().forms.char_lit == crate::kuna_lang::CharForm::RustByte
+            && !rust_byte_literal_spellable(val, sz)
+        {
+            if force_hex || !force_dec { display_format::FORCE_HEX } else { display_format::FORCE_DEC }
+        } else {
+            display_fmt
+        };
         let tok = format_integer_token(
             print_negsign,
             val,
@@ -7762,6 +8050,13 @@ impl PrintC {
             true, // doEmitWideCharPrefix() — PrintC
             size_suffix,
         );
+        let tok = if display_fmt == display_format::FORCE_CHAR
+            && self.lang().forms.char_lit == crate::kuna_lang::CharForm::RustByte
+        {
+            format!("b{tok}")
+        } else {
+            tok
+        };
         self.push_atom(&Atom::with_op(
             tok,
             TagType::Syntax,
@@ -7945,7 +8240,10 @@ impl PrintC {
             if codepoint == 0 || codepoint == -1 {
                 break;
             }
-            print_unicode(s, codepoint);
+            match self.lang().forms.string_escape {
+                crate::kuna_lang::StringEscape::CEscapes => print_unicode(s, codepoint),
+                crate::kuna_lang::StringEscape::RustEscapes => print_unicode_rust(s, codepoint),
+            }
             i += skip;
         }
         if is_trunc {
@@ -8046,19 +8344,25 @@ pub(crate) fn declarator_parts(
     rt.speller().declarator(&rt, ct)
 }
 
-/// (kuna) The full C type string for `ct` with no identifier, rendered exactly as
-/// the decompiler would print it — e.g. `int`, `char *`, `undefined8`, `int [16]`.
+/// (kuna) The full type string for `ct` with no identifier, rendered exactly as
+/// the decompiler would print it — e.g. `int`, `char *`, `undefined8`, `int [16]`
+/// in C; `i32`, `*mut u8`, `u64`, `[i32; 16]` in Rust.
 ///
 /// A public wrapper over [`declarator_parts`] for out-of-crate consumers (the
 /// `kuna decompile-all --json` variable extractor → decbench's `type_match`
 /// metric).  It resolves the live `realtypes` context off the architecture so the
 /// spelling matches `print_c`'s body, and concatenates the declarator
 /// `front`/`back` around an empty identifier (`<front><back>`).
+///
+/// The name is historical: it follows the ACTIVE output language, which is read
+/// off the architecture's printer.  Callers reach it while the printer is in
+/// place; a caller that reaches it mid-emission (with the printer loaned out by
+/// `take_print`) sees the default C language, which is the safe fallback.
 pub fn type_to_c_string(
     arch: &Architecture,
     ct: &std::rc::Rc<crate::dtype::Datatype>,
 ) -> String {
-    let (front, back) = declarator_parts(ct, RealTypeCtx::from_arch(arch));
+    let (front, back) = declarator_parts(ct, RealTypeCtx::from_arch(arch, arch.print().out_lang()));
     format!("{front}{back}")
 }
 
@@ -8364,10 +8668,15 @@ pub(crate) type RealTypeCtx = crate::kuna_langtypes::SpellCtx;
 
 impl RealTypeCtx {
     /// Resolve the context from the live architecture: the `realtypes`/`ctypes`
-    /// gates, the target's decoded data organization, and the output language.
-    fn from_arch(arch: &Architecture) -> RealTypeCtx {
+    /// gates and the target's decoded data organization.
+    ///
+    /// `lang` is passed rather than read off `arch` because the printer is loaned
+    /// out of the architecture for the duration of emission (`take_print`), so
+    /// the architecture's copy is a placeholder while this runs. The printer owns
+    /// the selection.
+    fn from_arch(arch: &Architecture, lang: crate::kuna_lang::OutLang) -> RealTypeCtx {
         RealTypeCtx {
-            lang: crate::kuna_lang::OutLang::C,
+            lang,
             enabled: arch.realtypes,
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,

@@ -506,7 +506,7 @@ fn test_nullprinting_lang_gate() {
     let mut g = RecordingContext::default(); // is_c_language=false
     assert_eq!(
         apply_named(&mut g, "nullprinting", "on", "", "").unwrap(),
-        "Only c-language accepts the null printing option"
+        "Only a known output language accepts the null printing option"
     );
     assert!(g.log.is_empty());
     // C printer: applies.
@@ -523,11 +523,11 @@ fn test_inplaceops_and_convention_gates() {
     let mut g = RecordingContext::default();
     assert_eq!(
         apply_named(&mut g, "inplaceops", "on", "", "").unwrap(),
-        "Can only set inplace operators for C language"
+        "Can only set inplace operators for a known output language"
     );
     assert_eq!(
         apply_named(&mut g, "conventionprinting", "on", "", "").unwrap(),
-        "Can only set convention printing for C language"
+        "Can only set convention printing for a known output language"
     );
     let mut g = RecordingContext::c_lang();
     assert_eq!(
@@ -545,7 +545,7 @@ fn test_nocastprinting_gate() {
     let mut g = RecordingContext::default();
     assert_eq!(
         apply_named(&mut g, "nocastprinting", "on", "", "").unwrap(),
-        "Can only set no cast printing for C language"
+        "Can only set no cast printing for a known output language"
     );
     let mut g = RecordingContext::c_lang();
     assert_eq!(
@@ -563,7 +563,7 @@ fn test_hideextensions_gate() {
     let mut g = RecordingContext::default();
     assert_eq!(
         opt.apply(&mut g, "on", "", "").unwrap(),
-        "Can only toggle extension hiding for C language"
+        "Can only toggle extension hiding for a known output language"
     );
     let mut g = RecordingContext::c_lang();
     assert_eq!(
@@ -697,7 +697,7 @@ fn test_braceformat() {
     let mut g = RecordingContext::default();
     assert_eq!(
         apply_named(&mut g, "braceformat", "function", "same", "").unwrap(),
-        "Can only set brace formatting for C language"
+        "Can only set brace formatting for a known output language"
     );
 }
 
