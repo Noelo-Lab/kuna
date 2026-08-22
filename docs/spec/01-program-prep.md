@@ -605,6 +605,17 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   so a symbol carrying either goes to `rustc_demangle` first. A C symbol carries
   neither, so the arm is unreachable for one.
 
+  The v0 arm requires the **leading underscore**, and that requirement is
+  load-bearing rather than cosmetic. A prefix test written as
+  `strip_prefix('_').unwrap_or(name)` keeps the *original* name when there is no
+  underscore to strip, which quietly reduces "begins with `_R`" to "begins with
+  `R`" -- and since one matching symbol is enough to classify the whole image,
+  any C program importing OpenSSL's `RAND_bytes` or `RSA_new` was reported as
+  `Compiler::Rustc`. That misclassification is invisible to both parity corpora,
+  whose fixtures are `<bytechunk>` images with no symbol table at all, and it
+  reaches the reader through the `--language auto` policy of DIV-80: an ordinary
+  C binary rendered as `unsafe fn`.
+
   A Rust demangling is a *type expression*, not a path: it carries generic
   arguments (`drop_in_place<Vec<u8>>`) and trait qualifiers
   (`<aes::Aes256 as crypto_common::KeyInit>::new`). `normalize_rust_name`
