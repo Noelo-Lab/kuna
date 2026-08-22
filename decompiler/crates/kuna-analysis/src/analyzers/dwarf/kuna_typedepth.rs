@@ -49,7 +49,7 @@
 //! [`TypeWalk::Depth`] is the pre-fix budget, kept so `--option typedepth off`
 //! reproduces the old mapping exactly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Re-entry count at which a DIE offset is refused — upstream's `case 3`.
 const MAX_REENTRY: u32 = 3;
@@ -64,7 +64,18 @@ const MAX_NESTING: u32 = 64;
 const MAX_TYPE_DEPTH: u32 = 3;
 
 /// The recursion guard threaded through [`super::build_datatype`].
-pub(super) enum TypeWalk {
+///
+/// [`Guard`] is the guard proper; `active` is the (kuna `dwarfstructs`) set of
+/// aggregate names whose field population is on the current path, so a
+/// self-referential member resolves to the interned shell instead of re-entering
+/// the populate — see [`super::kuna_dwarfstructs`].
+pub(super) struct TypeWalk {
+    guard: Guard,
+    active: BTreeSet<String>,
+}
+
+/// The recursion-guard arms proper.
+pub(super) enum Guard {
     /// `--option typedepth off`: the flat hop budget, every hop counted.
     Depth { depth: u32 },
     /// Default: upstream's per-offset re-entry counter plus a stack backstop.
@@ -81,25 +92,38 @@ impl TypeWalk {
     /// A walk with the gate supplied explicitly (the unit tests, which must not
     /// depend on process environment).
     pub(super) fn with_gate(full_depth: bool) -> Self {
-        if full_depth {
-            TypeWalk::Cycle { counts: BTreeMap::new(), nesting: 0 }
+        let guard = if full_depth {
+            Guard::Cycle { counts: BTreeMap::new(), nesting: 0 }
         } else {
-            TypeWalk::Depth { depth: 0 }
-        }
+            Guard::Depth { depth: 0 }
+        };
+        TypeWalk { guard, active: BTreeSet::new() }
+    }
+
+    /// (kuna `dwarfstructs`) Claim `name` for field population on this path.
+    /// `false` => the aggregate is already being populated by an outer frame, so
+    /// the caller must hand back the interned shell rather than recurse.
+    pub(super) fn begin_aggregate(&mut self, name: &str) -> bool {
+        self.active.insert(name.to_string())
+    }
+
+    /// (kuna `dwarfstructs`) Release a name claimed by [`Self::begin_aggregate`].
+    pub(super) fn end_aggregate(&mut self, name: &str) {
+        self.active.remove(name);
     }
 
     /// Begin resolving the DIE at `off`; `false` => refuse (cycle, or a bound
     /// hit), and the caller yields `void` for this piece of the type.
     pub(super) fn enter(&mut self, off: usize) -> bool {
-        match self {
-            TypeWalk::Depth { depth } => {
+        match &mut self.guard {
+            Guard::Depth { depth } => {
                 if *depth >= MAX_TYPE_DEPTH {
                     return false;
                 }
                 *depth += 1;
                 true
             }
-            TypeWalk::Cycle { counts, nesting } => {
+            Guard::Cycle { counts, nesting } => {
                 if *nesting >= MAX_NESTING {
                     return false;
                 }
@@ -116,9 +140,9 @@ impl TypeWalk {
 
     /// Finish the DIE at `off` (pairs with an [`Self::enter`] that returned true).
     pub(super) fn leave(&mut self, off: usize) {
-        match self {
-            TypeWalk::Depth { depth } => *depth = depth.saturating_sub(1),
-            TypeWalk::Cycle { counts, nesting } => {
+        match &mut self.guard {
+            Guard::Depth { depth } => *depth = depth.saturating_sub(1),
+            Guard::Cycle { counts, nesting } => {
                 if let Some(seen) = counts.get_mut(&off) {
                     *seen = seen.saturating_sub(1);
                 }
@@ -134,7 +158,7 @@ impl TypeWalk {
     /// name onto it, and full-depth resolution reaches many more of those (a
     /// local `mbstate_t` would otherwise intern as the shared `anon_struct`).
     pub(super) fn collapse_qualifiers(&self) -> bool {
-        matches!(self, TypeWalk::Cycle { .. })
+        matches!(self.guard, Guard::Cycle { .. })
     }
 }
 
@@ -174,6 +198,20 @@ mod tests {
             assert!(w.enter(off));
         }
         assert!(!w.enter(9999), "nesting bound must refuse beyond MAX_NESTING");
+    }
+
+    /// (kuna `dwarfstructs`) The aggregate-in-progress claim is exact and
+    /// path-local: the same name cannot be claimed twice, and releasing it makes
+    /// it claimable again (a struct reached a second time on a SIBLING branch
+    /// must still be populatable).
+    #[test]
+    fn aggregate_claim_is_path_local() {
+        let mut w = TypeWalk::with_gate(true);
+        assert!(w.begin_aggregate("node"));
+        assert!(!w.begin_aggregate("node"), "a re-entrant claim must be refused");
+        assert!(w.begin_aggregate("other"), "a different name is unaffected");
+        w.end_aggregate("node");
+        assert!(w.begin_aggregate("node"), "released names are claimable again");
     }
 
     /// The gate-off arm is the pre-fix budget: three hops, whatever they are.

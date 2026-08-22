@@ -536,6 +536,7 @@ variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
 | `KUNA_RELOCREBASE` | `relocrebase` | relocatable-object analysis-fact rebase, `decompiler/crates/kuna-analysis/src/loader/kuna_relocrebase.rs (rebased_view)` |
 | `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
 | `KUNA_TYPEDEPTH` | `typedepth` | DWARF full-depth type resolution, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs (TYPEDEPTH_ENV)` |
+| `KUNA_DWARFSTRUCTS` | `dwarfstructs` | DWARF aggregate-layout import (`DW_AT_byte_size` + `DW_TAG_member` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfstructs.rs (DWARFSTRUCTS_ENV)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection, `decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)` |
 

@@ -496,9 +496,56 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   not just the global one. The producing pass runs at `load file`, upstream of the
   `option` commands, so its C++ facts are stashed apart from the always-on ones and
   the gate is applied where they are committed; with `cppproto off` the DWARF
-  recovery is the name-only walk, byte for byte. Struct/class **fields** are still
-  not populated — a class remains a named opaque, so `this->balance` prints as an
-  offset — which is the next increment, not this one.
+  recovery is the name-only walk, byte for byte. (Struct/class **fields** are the
+  sibling `dwarfstructs` increment below; before it, a class stayed a named opaque
+  and `this->balance` printed as an offset.)
+- **Aggregate layout** (`dwarfstructs`, default-on,
+  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfstructs.rs`) is
+  what turns a recovered aggregate from a *name* into a *type*. The mapper used to
+  resolve every `DW_TAG_structure_type`/`union_type`/`class_type` to
+  `get_type_struct(name)` — a named, empty, **zero-size** shell — and never read
+  `DW_AT_byte_size` or walked a single `DW_TAG_member`. That is enough for
+  `struct foo *p` to render, and the shortfall was filed as a fields gap; it is
+  worse than that, because a zero width is not a conservative answer. The
+  x86-64 parameter-storage model reads the size, so a struct passed **by value**
+  had no width to classify and its slot degraded to the raw register it arrives
+  in (`int take_struct(unsigned long,int)` for `take_struct(P8,int)`), and an
+  8-byte struct **return** — a register return on this ABI — was classified as a
+  hidden-return-buffer call: a *phantom* `rethidden` parameter appeared in front of
+  the real ones and the body then did arithmetic on it. This arm reads
+  `DW_AT_byte_size`, walks the `DW_TAG_member` children, places each at its
+  `DW_AT_data_member_location` **verbatim**, and recurses each member's
+  `DW_AT_type` through the same DIE switch; bitfields come off `DW_AT_bit_size`
+  with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
+  `byte_size` + `bit_offset` spelling. Offsets are installed through a raw
+  field-setting entry point rather than the C packing rules, because the layout is
+  the compiler's own answer for the target ABI and re-deriving it would silently
+  disagree with the bytes the decompiler reads.
+
+  Two hazards come with populating fields, and both are handled in the naming.
+  The type factory interns by `(name, hash(name))` and refuses a second, different
+  definition of a name it already holds; while every aggregate was a sizeless
+  shell that was invisible, because two shells compare equal. It goes live the
+  moment fields exist — and it is not exotic: `rustc -g` names every enum payload
+  struct **bare** (`Some`, `Ok`, `Err`), and a five-function Rust witness carries
+  four distinct `Some` DIEs of sizes 16, 24, 16 and 12. Aggregates are therefore
+  interned under their **parent-qualified** name (the namespace/class ancestry walk
+  the C++ arm already had) and, when that name is still held by an aggregate of a
+  different size, under a size-suffixed variant; a name held by a non-aggregate is
+  stepped over the same way. The second hazard is self-reference: a
+  `struct node { struct node *next; }` reaches its own DIE while its fields are
+  being built, so the shell is interned **before** the members are walked and the
+  inner resolution finds it by name, with the walk guard refusing a re-entrant
+  population. LOSS: because an interned type is immutable in kuna, completing one
+  mints a new handle, so the pointer the inner frame captured still refers to the
+  pre-completion shell — the name renders but the chain is one level shorter.
+  LOSS: `DW_TAG_variant_part`/`DW_TAG_variant`/`DW_AT_discr`, the Rust tagged-enum
+  encoding, are deliberately not read, so a Rust enum recovers its width and no
+  fields. Same load-time shape as `typedepth` below: the layout is installed inside
+  `load file`, so the live gate is the process env var
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfstructs.rs`) that the
+  CLI exports before the load, and `dwarfstructs off` is the name-only mapping byte
+  for byte.
 - **Full-depth DWARF types** (`typedepth`, default-on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
   type mapper's recursion guard, and it exists because the DIE walk can be handed a

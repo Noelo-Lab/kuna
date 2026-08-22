@@ -245,9 +245,9 @@ pub(crate) fn load_program(
     // Load-time loader gates are read by `bootstrap_from_object` itself, so they
     // must be exported BEFORE it runs (the same gates `kuna decompile` threads to
     // the subprocess env). Keep the restoration guard alive through runtime
-    // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase` and
-    // `typedepth` update their env bridges again inside `set_kuna_option` and must
-    // not leak into a later load.
+    // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase`,
+    // `typedepth` and `dwarfstructs` update their env bridges again inside
+    // `set_kuna_option` and must not leak into a later load.
     let _loadtime_env = apply_loadtime_env(&args.options, args.slice.as_deref());
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
@@ -428,6 +428,7 @@ fn is_loadtime_gate(name: &str) -> bool {
             | "dynrelocs"
             | "macho-arm64e"
             | "typedepth"
+            | "dwarfstructs"
             | "ifuncfpret"
     )
 }
@@ -531,6 +532,16 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
             "off" | "0" | "false"
         );
         env.set(kuna_decomp::kuna_typedepth::TYPEDEPTH_ENV, if on { "on" } else { "off" });
+    }
+    if let Some(value) = last_option_value(options, "dwarfstructs") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_dwarfstructs::DWARFSTRUCTS_ENV,
+            if on { "on" } else { "off" },
+        );
     }
     if let Some(value) = last_option_value(options, "macho-arm64e") {
         if matches!(

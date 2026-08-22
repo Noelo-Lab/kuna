@@ -220,6 +220,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         // like the analysis-pass gates, so the live flag is authoritative.
         "datasyms" => on_off(conf.analysis_datasyms),
         "typedepth" => on_off(conf.analysis_typedepth),
+        "dwarfstructs" => on_off(conf.analysis_dwarfstructs),
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.
         "cppsig" => conf.analysis_cppsig.as_str(),

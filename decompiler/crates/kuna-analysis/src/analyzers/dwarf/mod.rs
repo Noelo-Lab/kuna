@@ -69,9 +69,14 @@
 //! - We skip `DW_TAG_label`, `DW_TAG_call_site`, inlined-subroutine, lexical-block
 //!   comments, and source-info/plate comments — all listing cosmetics with zero
 //!   decompiler-output payoff (the same scope as the strings/demangle losses).
-//! - Type recovery is name/signature-level: a `DW_TAG_structure_type` maps to a
-//!   *named opaque* struct (enough to render `struct foo *`), not a per-field
-//!   layout reconstruction.
+//! - **Aggregate layout is now imported** (`dwarfstructs`, [`kuna_dwarfstructs`]):
+//!   a `DW_TAG_structure_type`/`union_type`/`class_type` carries its
+//!   `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
+//!   bitfields included) onto the interned type. With the gate OFF it maps to a
+//!   *named opaque* struct (enough to render `struct foo *`) exactly as before.
+//!   LOSS either way: `DW_TAG_variant_part`/`DW_TAG_variant`/`DW_AT_discr` — the
+//!   Rust tagged-enum encoding — are not read, so a Rust enum recovers its width
+//!   but no fields.
 //!
 //! ## PIE / load-bias limitation
 //!
@@ -115,6 +120,11 @@ mod kuna_cppproto;
 /// cycle counter in place of a fixed hop budget. See [`kuna_typedepth`].
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
+
+/// (kuna `dwarfstructs`) The aggregate-LAYOUT arm — `DW_AT_byte_size` plus the
+/// `DW_TAG_member` children, installed on the interned struct/union instead of
+/// leaving it a zero-size shell. See [`kuna_dwarfstructs`].
+mod kuna_dwarfstructs;
 
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
 type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
@@ -194,8 +204,24 @@ struct DieSnap {
     low_pc: Option<u64>,
     /// `DW_AT_type` reference (the offset of the referenced type DIE in this unit).
     type_ref: Option<usize>,
-    /// `DW_AT_byte_size` (base_type/pointer/struct sizing).
+    /// `DW_AT_byte_size` (base_type/pointer/struct sizing; on a `DW_TAG_member`
+    /// it is the DWARF 2/3 bitfield CONTAINER width).
     byte_size: Option<u64>,
+    /// (kuna `dwarfstructs`) `DW_AT_data_member_location` — a `DW_TAG_member`'s
+    /// byte offset within its aggregate, taken verbatim. `None` for a member with
+    /// no location (a C++ `static` data member, which is not part of the layout).
+    data_member_location: Option<i64>,
+    /// (kuna `dwarfstructs`) `DW_AT_bit_size` — a bitfield member's width in bits.
+    bit_size: Option<u64>,
+    /// (kuna `dwarfstructs`) `DW_AT_bit_offset` — the DWARF 2/3 bitfield spelling:
+    /// bits from the MOST significant bit of the container named by
+    /// `DW_AT_byte_size`.
+    bit_offset: Option<u64>,
+    /// (kuna `dwarfstructs`) `DW_AT_data_bit_offset` — the DWARF 4/5 bitfield
+    /// spelling: bits from the start of the aggregate.
+    data_bit_offset: Option<u64>,
+    /// (kuna `dwarfstructs`) `DW_AT_alignment`, when the producer states it.
+    alignment: Option<u64>,
     /// `DW_AT_encoding` (`DW_ATE_*`) for `DW_TAG_base_type`.
     encoding: Option<gimli::DwAte>,
     /// `DW_AT_count`/`DW_AT_upper_bound` (array subrange length).
@@ -243,6 +269,11 @@ impl DieSnap {
             low_pc: None,
             type_ref: None,
             byte_size: None,
+            data_member_location: None,
+            bit_size: None,
+            bit_offset: None,
+            data_bit_offset: None,
+            alignment: None,
             encoding: None,
             array_count: None,
             const_value: None,
@@ -324,6 +355,26 @@ fn snapshot_unit(
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_byte_size) {
             snap.byte_size = v.udata_value();
+        }
+        // (kuna `dwarfstructs`) The aggregate-layout attributes. gcc spells a
+        // member's offset as a plain constant; a `DW_AT_data_member_location` that
+        // is a location EXPRESSION (the C++ virtual-base form) has no udata value
+        // and reads as `None`, which skips that member rather than misplacing it.
+        if let Some(v) = entry.attr_value(gimli::DW_AT_data_member_location) {
+            snap.data_member_location =
+                v.sdata_value().or_else(|| v.udata_value().map(|u| u as i64));
+        }
+        if let Some(v) = entry.attr_value(gimli::DW_AT_bit_size) {
+            snap.bit_size = v.udata_value();
+        }
+        if let Some(v) = entry.attr_value(gimli::DW_AT_bit_offset) {
+            snap.bit_offset = v.udata_value();
+        }
+        if let Some(v) = entry.attr_value(gimli::DW_AT_data_bit_offset) {
+            snap.data_bit_offset = v.udata_value();
+        }
+        if let Some(v) = entry.attr_value(gimli::DW_AT_alignment) {
+            snap.alignment = v.udata_value();
         }
         if let Some(gimli::AttributeValue::Encoding(e)) = entry.attr_value(gimli::DW_AT_encoding) {
             snap.encoding = Some(e);
@@ -555,14 +606,13 @@ fn build_datatype_at(
         // Ghidra's importer maps both through the same `makeDataTypeForStruct`
         // arm. Without it every `Foo *this` degraded to `void *`.
         gimli::DW_TAG_structure_type => {
-            // A named opaque struct is enough for a pointer-to-struct to render.
-            intern_aggregate(types, die, alias, "anon_struct", walk, false)
+            intern_aggregate(types, die, dies, alias, "anon_struct", walk, word_size, cpp, false)
         }
         gimli::DW_TAG_class_type if cpp => {
-            intern_aggregate(types, die, alias, "anon_class", walk, false)
+            intern_aggregate(types, die, dies, alias, "anon_class", walk, word_size, cpp, false)
         }
         gimli::DW_TAG_union_type => {
-            intern_aggregate(types, die, alias, "anon_union", walk, true)
+            intern_aggregate(types, die, dies, alias, "anon_union", walk, word_size, cpp, true)
         }
         gimli::DW_TAG_enumeration_type => {
             let size = die.byte_size.map(|b| b as i32).unwrap_or(4).max(1);
@@ -577,9 +627,11 @@ fn build_datatype_at(
     }
 }
 
-/// Intern the opaque aggregate for `die` under [`aggregate_name`], falling back
-/// to the anonymous `fallback` name when the BORROWED typedef name is not a name
-/// the type factory can hold an aggregate under.
+/// Intern the aggregate for `die`: its `DW_AT_byte_size` + `DW_TAG_member`
+/// layout under `--option dwarfstructs on` ([`kuna_dwarfstructs`]), else the
+/// pre-`dwarfstructs` NAMED OPAQUE below — interned under [`aggregate_name`] and
+/// falling back to the anonymous `fallback` name when the BORROWED typedef name
+/// is not a name the type factory can hold an aggregate under.
 ///
 /// The alias is a name from another namespace, and it can already be taken: kuna
 /// registers a core type called `code`, and zlib's `inftrees.h` typedefs an
@@ -589,14 +641,23 @@ fn build_datatype_at(
 /// to remove. Only an aggregate that had no name of its own falls back: a
 /// genuinely named type keeps the pre-existing behavior (no new name is asserted
 /// on kuna's behalf).
+#[allow(clippy::too_many_arguments)]
 fn intern_aggregate(
     types: &dyn TypeFactory,
     die: &DieSnap,
+    dies: &BTreeMap<usize, DieSnap>,
     alias: Option<&str>,
     fallback: &str,
-    walk: &TypeWalk,
+    walk: &mut TypeWalk,
+    word_size: uint4,
+    cpp: bool,
     union: bool,
 ) -> Option<Rc<Datatype>> {
+    if kuna_dwarfstructs::enabled() {
+        return kuna_dwarfstructs::intern_aggregate(
+            types, die, dies, alias, fallback, walk, word_size, cpp, union,
+        );
+    }
     let want =
         if union { type_metatype::TYPE_UNION } else { type_metatype::TYPE_STRUCT };
     let intern = |n: &str| {

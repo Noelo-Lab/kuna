@@ -246,6 +246,12 @@ Three tiers:
 | a typedef'd struct pointer degrades to void * | [`typedepth`](#typedepth) |
 | a global array of string pointers is marked one byte wide | [`typedepth`](#typedepth) |
 | deep pointer chains (char ***) truncate to void ** | [`typedepth`](#typedepth) |
+| a struct passed by value degrades to an integer parameter despite -g debug info | [`dwarfstructs`](#dwarfstructs) |
+| a small struct return grows a phantom rethidden parameter that the body does arithmetic on | [`dwarfstructs`](#dwarfstructs) |
+| struct fields render as casts and offsets instead of p->field | [`dwarfstructs`](#dwarfstructs) |
+| a bitfield member renders as a shift-and-mask of the whole word | [`dwarfstructs`](#dwarfstructs) |
+| a union parameter loses its member names | [`dwarfstructs`](#dwarfstructs) |
+| a dwarf-recovered struct or union has size 0 | [`dwarfstructs`](#dwarfstructs) |
 | c++ member functions on a stripped binary decompile with a0/a1 parameters | [`cppsig`](#cppsig) |
 | this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig) |
 | a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig) |
@@ -953,6 +959,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) types a -g binary's locals/globals/parameters from the debug info: char **authors, const size_t *pn, mbstate_t *ps instead of void *. Flip off to restore the pre-fix three-hop budget (deep-enough DWARF types truncate to void).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-typedepth
 - **Example:** `option typedepth off`
+
+### `dwarfstructs` -- on | off, default `on`
+
+- **Symptoms:** a struct passed by value degrades to an integer parameter despite -g debug info; a small struct return grows a phantom rethidden parameter that the body does arithmetic on; struct fields render as casts and offsets instead of p->field; a bitfield member renders as a shift-and-mask of the whole word; a union parameter loses its member names; a dwarf-recovered struct or union has size 0.
+- **What it does:** Import a DWARF aggregate's LAYOUT: the DW_AT_byte_size of a DW_TAG_structure_type/union_type/class_type plus its DW_TAG_member children, each placed at its DW_AT_data_member_location verbatim (bitfields via DW_AT_bit_size with either the DWARF 4/5 DW_AT_data_bit_offset or the DWARF 2/3 byte_size+bit_offset spelling), with every member type recursed through the same DIE mapper. The mapper previously interned every aggregate as a named, EMPTY, zero-size shell, which is enough for a pointer-to-struct to render and nothing else: a zero width is not a conservative answer, it is one the ABI classifier acts on, so a by-value aggregate parameter degraded to a raw integer and an 8-byte struct return was misclassified as a hidden-return-buffer call that grew a phantom rethidden parameter the body then did arithmetic on. Aggregates are interned under their parent-qualified name, and under a size-suffixed name if that is still held by a different-sized aggregate, because populating fields makes the factory's name collision live (rustc names every enum payload struct bare: Some, Ok, Err). DW_TAG_variant_part/DW_TAG_variant/DW_AT_discr are deliberately NOT read, so a Rust enum recovers its width and no fields.
+- **When to flip:** On (default) gives a -g binary its real aggregates: take_struct(P8 p,int k) returning p.a + p.b instead of take_struct(unsigned long,int) shifting a register, P8 ret_struct(uint x) instead of a phantom-sret P8 ret_struct(P8 rethidden,uint x), n->inner.a and b->lo instead of casts and shifts. Flip off to restore the name-only mapping (every aggregate becomes a zero-size named opaque again).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarfstructs
+- **Example:** `option dwarfstructs off`
 
 ### `cppsig` -- off | proven | inferred, default `proven`
 

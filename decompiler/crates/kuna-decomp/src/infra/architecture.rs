@@ -946,6 +946,18 @@ pub struct Architecture {
     /// upstream of `option`); this bool exists only for catalog visibility and
     /// the `phase catalog` live `current` field.
     pub analysis_typedepth: bool,
+    /// (kuna) Gate DWARF aggregate-LAYOUT import (`dwarfstructs`); default
+    /// **on**. A `DW_TAG_structure_type`/`union_type`/`class_type` carries its
+    /// `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
+    /// bitfields included) onto the interned type instead of becoming a named,
+    /// EMPTY, zero-size shell — so a by-value struct parameter keeps its type, an
+    /// 8-byte struct return stops being misclassified as a hidden-return-buffer
+    /// call, and a field access renders as `n->inner.a` instead of
+    /// `*(int *)((long)n + 4)`. NOTE: the mapper reads this through the
+    /// [`crate::kuna_dwarfstructs`] **env var** (the types are baked at
+    /// `load file`, upstream of `option`); this bool exists only for catalog
+    /// visibility and the `phase catalog` live `current` field.
+    pub analysis_dwarfstructs: bool,
     /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
     /// [`CppSigMode::Proven`]. Commits the prototypes read off a MANGLED SYMBOL —
     /// the class type for `this` plus the declared parameter types — which is the
@@ -1494,6 +1506,7 @@ impl Architecture {
             analysis_dwarf_lines: false,
             analysis_cppproto: false,
             analysis_typedepth: false,
+            analysis_dwarfstructs: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             analysis_callfixup: false,
             analysis_addrtable: false,
@@ -1671,6 +1684,7 @@ impl Architecture {
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_typedepth = true; // (kuna) DIV: full-depth DWARF type resolution default-ON (the depth budget truncated ordinary C declarations to void; real-ELF DWARF path only, so every parity gate is byte-identical)
+        self.analysis_dwarfstructs = true; // (kuna) DIV: DWARF aggregate-layout import default-ON (a zero-size aggregate is not conservative -- the ABI classifier acts on it; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
@@ -2067,6 +2081,18 @@ impl Architecture {
                 crate::kuna_typedepth::set_typedepth_env(val);
                 Ok(format!(
                     "Full-depth DWARF type resolution turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            // (kuna) Load-time gate, same env bridge as `typedepth` above: the
+            // aggregate layout is installed on the interned type at `load file`,
+            // upstream of this `option`.
+            "dwarfstructs" => {
+                let val = on_or_off(p1)?;
+                self.analysis_dwarfstructs = val;
+                crate::kuna_dwarfstructs::set_dwarfstructs_env(val);
+                Ok(format!(
+                    "DWARF aggregate-layout import turned {}",
                     if val { "on" } else { "off" }
                 ))
             }

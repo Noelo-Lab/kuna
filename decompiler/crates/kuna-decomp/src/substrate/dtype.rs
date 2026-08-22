@@ -4051,6 +4051,41 @@ pub trait TypeFactory {
     ) -> KunaResult<Rc<Datatype>> {
         Err(KunaError::lowlevel("TypeFactory::assignRawFields not supported by this factory"))
     }
+    /// (kuna `dwarfstructs`) Install fields on an incomplete struct with the
+    /// layout supplied VERBATIM: each field's own offset, the total size and the
+    /// alignment, instead of re-deriving them with the C packing rules
+    /// ([`Self::assign_raw_fields_struct`]).
+    ///
+    /// This is the recovered-layout entry point, the structural analog of
+    /// [`Self::get_type_enum_sized`]. A DWARF `DW_AT_data_member_location` /
+    /// `DW_AT_byte_size` pair is the compiler's own answer for the target ABI,
+    /// and re-packing it would silently disagree with the bytes the decompiler
+    /// reads (`assign_raw_fields_struct` skips a field whose offset is already
+    /// set, so with every offset known it would also size the structure at 0).
+    /// `extra_flags` carries `has_bitfields` for a struct with a bitfield.
+    fn set_fields_struct_raw(
+        &self,
+        _ct: &Rc<Datatype>,
+        _fd: Vec<TypeField>,
+        _bit: Vec<TypeBitField>,
+        _size: int4,
+        _align: int4,
+        _extra_flags: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::setFields(raw struct) not supported by this factory"))
+    }
+    /// (kuna `dwarfstructs`) The union arm of [`Self::set_fields_struct_raw`]:
+    /// every field sits at offset 0, so only the total size and alignment are
+    /// supplied by the caller.
+    fn set_fields_union_raw(
+        &self,
+        _ct: &Rc<Datatype>,
+        _fd: Vec<TypeField>,
+        _size: int4,
+        _align: int4,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::setFields(raw union) not supported by this factory"))
+    }
     /// Install enum value/name map on an interned enum (C++ `setEnumValues`).
     fn set_enum_values(
         &self,
@@ -7037,6 +7072,26 @@ impl TypeFactory for TypeFactoryImpl {
         fd: Vec<TypeField>,
     ) -> KunaResult<Rc<Datatype>> {
         self.assign_raw_fields_union_impl(ct, fd)
+    }
+    fn set_fields_struct_raw(
+        &self,
+        ct: &Rc<Datatype>,
+        fd: Vec<TypeField>,
+        bit: Vec<TypeBitField>,
+        size: int4,
+        align: int4,
+        extra_flags: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.set_fields_struct(ct, fd, bit, size, align, extra_flags)
+    }
+    fn set_fields_union_raw(
+        &self,
+        ct: &Rc<Datatype>,
+        fd: Vec<TypeField>,
+        size: int4,
+        align: int4,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.set_fields_union(ct, fd, size, align, 0)
     }
     fn set_enum_values(
         &self,
