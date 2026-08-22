@@ -517,7 +517,13 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   `DW_AT_data_member_location` **verbatim**, and recurses each member's
   `DW_AT_type` through the same DIE switch; bitfields come off `DW_AT_bit_size`
   with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
-  `byte_size` + `bit_offset` spelling. Offsets are installed through a raw
+  `byte_size` + `bit_offset` spelling, each placed in the smallest byte span that
+  covers it — the geometry the compiler's own access agrees with, and the one the
+  printer's `.`-versus-`->` test reads. A "bitfield" occupying whole aligned bytes
+  of a natural width is not one and goes in as a plain field of that width, which
+  is exact on a little-endian target and keeps a known
+  `BitFieldPullTransform` divergence (three bitfields sharing one extraction
+  chain) out of reach. Offsets are installed through a raw
   field-setting entry point rather than the C packing rules, because the layout is
   the compiler's own answer for the target ABI and re-deriving it would silently
   disagree with the bytes the decompiler reads.

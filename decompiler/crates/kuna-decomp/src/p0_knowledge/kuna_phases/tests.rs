@@ -46,7 +46,7 @@ fn surface_count_is_104() {
 }
 
 #[test]
-fn settable_count_is_115() {
+fn settable_count_is_116() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -83,8 +83,8 @@ fn settable_count_is_115() {
     // +1 for `dynrelocs` (P1 linked-image dynamic-relocation application, DIV-84).
     // +1 for `retinputhalf` (P4 returned input-parameter half retention, DIV-85).
     // +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
-    assert_eq!(kuna_num_settables(), 115);
-    assert_eq!(SETTABLE_TABLE.len(), 115);
+    assert_eq!(kuna_num_settables(), 116);
+    assert_eq!(SETTABLE_TABLE.len(), 116);
 }
 
 #[test]
@@ -648,7 +648,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
     // retinputhalf's P4 and dwarfstructs' P1 rows sit mid-table, so they do not
     // move the tail).
-    assert_eq!(json.matches("},\n").count(), 114);
+    assert_eq!(json.matches("},\n").count(), 115);
 }
 
 #[test]

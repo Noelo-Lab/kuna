@@ -179,6 +179,25 @@ fn union_members_resolve() {
     );
 }
 
+/// A union keeps EVERY member, not just its first: all of them sit at offset 0,
+/// so any offset-keyed deduplication silently collapses `u->f` and `u->c[2]` into
+/// reads of `u->i`. (That is a bug this file caught before it shipped.)
+#[test]
+fn union_keeps_every_member_not_just_the_first() {
+    let funcs = ["union_second", "union_third"];
+    let (Some(off), Some(on)) = (decompile(&funcs, false), decompile(&funcs, true)) else {
+        return;
+    };
+    assert!(
+        off.contains("*(float4 *)u") && off.contains("*(char *)((int8)u + 2)"),
+        "gate off should reproduce the raw reads, got:\n{off}"
+    );
+    assert!(
+        on.contains("u->f") && on.contains("u->c[2]"),
+        "the second and third union members must both resolve, got:\n{on}"
+    );
+}
+
 /// A struct whose member is itself a struct resolves both levels.
 #[test]
 fn nested_struct_members_resolve() {

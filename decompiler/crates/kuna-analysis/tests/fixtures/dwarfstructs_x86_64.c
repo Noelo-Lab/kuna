@@ -30,6 +30,11 @@ NI int   take_struct(P8 p, int k)      { return p.a + p.b + k; }
 NI P8    ret_struct(unsigned int x)    { P8 s; s.a = x + 1; s.b = x * 7; return s; }
 NI Big24 ret_big(long q)               { Big24 b; b.x = q; b.y = q * 2; b.z = q * 3; return b; }
 NI int   take_union(U4 u)              { return u.i + u.c[1]; }
+/* Three readers of the SAME union through a pointer: a union's members all sit
+ * at offset 0, so any offset-keyed deduplication collapses it to its first
+ * member and `u->f` / `u->c[2]` silently become reads of `u->i`. */
+NI float union_second(U4 *u)           { return u->f; }
+NI char  union_third(U4 *u)            { return u->c[2]; }
 NI long  take_nest(Nest *n)            { return n->tag + n->inner.a + n->inner.b + n->tail; }
 NI unsigned int take_bits(struct Bits *b) { return b->lo + b->mid + b->hi; }
 NI int   walk_list(struct Node *n)     { int t = 0; while (n) { t += n->val; n = n->next; } return t; }
@@ -51,6 +56,7 @@ int main(int argc, char **argv)
   printf("%d %ld %d %ld %u %d %d %d %d\n",
          take_struct(p, 1), (long)ret_struct(argc).b, take_union(u),
          take_nest(&nn), take_bits(&bb), walk_list(&n1),
-         read_same_small(&sm), read_same_big(big), (int)strlen(argv[0]));
+         read_same_small(&sm), read_same_big(big),
+         (int)strlen(argv[0]) + (int)union_second(&u) + union_third(&u));
   return 0;
 }

@@ -35,6 +35,17 @@
 //! rules; with every offset already known it would also size the structure at
 //! 0, because its running cursor only advances over the fields it places).
 //!
+//! ## Bitfields
+//!
+//! A member with `DW_AT_bit_size` is placed from its absolute bit position —
+//! `DW_AT_data_bit_offset` (DWARF 4/5) or `DW_AT_data_member_location` +
+//! `DW_AT_byte_size` + `DW_AT_bit_offset` (DWARF 2/3) — into the SMALLEST byte
+//! span that covers it, which is the geometry the compiler's own access agrees
+//! with (see [`group_bitfields`]). A member that occupies whole aligned bytes of a
+//! natural width is not a bitfield at all and is emitted as a plain field
+//! ([`byte_exact_bitfield`]) — exact on little-endian, and the containment for a
+//! `BitFieldPullTransform` divergence documented there.
+//!
 //! ## Two hazards this module exists to contain
 //!
 //! **Name collision.** The type factory interns by `(name, id = hash(name))` and
@@ -115,7 +126,7 @@ pub(super) fn intern_aggregate(
     let want = if union { type_metatype::TYPE_UNION } else { type_metatype::TYPE_STRUCT };
     let size = aggregate_size(die);
     let base = qualified_name(die, dies, alias, fallback, size);
-    let name = resolve_name(types, &base, size, want)?;
+    let name = resolve_name(types, &base, size, fallback, want)?;
 
     // An aggregate already under this name is either a complete definition from
     // an earlier compilation unit or the shell an enclosing frame just interned
@@ -240,18 +251,22 @@ fn qualified_name(
 /// `base` is tried first. If it is held by a non-aggregate, or by an aggregate of
 /// a DIFFERENT size, the size-suffixed `base_<size>` is tried next (and then
 /// numbered), so two same-named, different-sized aggregates in one binary both
-/// survive instead of the second silently inheriting the first's layout. `None`
-/// when every candidate is taken — the caller then leaves the type unbuilt, which
-/// is the pre-`dwarfstructs` outcome for a contested name.
+/// survive instead of the second silently inheriting the first's layout. A DIE
+/// with no width has no suffix to mint, so it gets one retry under the anonymous
+/// `fallback` — the pre-`dwarfstructs` behavior for a contested borrowed name.
+/// `None` when every candidate is taken; the caller then leaves the type unbuilt,
+/// which is likewise the pre-`dwarfstructs` outcome.
 fn resolve_name(
     types: &dyn TypeFactory,
     base: &str,
     size: Option<int4>,
+    fallback: &str,
     want: type_metatype,
 ) -> Option<String> {
     for attempt in 0..MAX_NAME_ATTEMPTS {
         let name = match (attempt, size) {
             (0, _) => base.to_string(),
+            (1, None) if base != fallback => fallback.to_string(),
             (_, None) => return None,
             (1, Some(s)) => format!("{base}_{s}"),
             (n, Some(s)) => format!("{base}_{s}_{n}"),
@@ -279,10 +294,18 @@ fn resolve_name(
 /// Walk the `DW_TAG_member` children into kuna fields.
 ///
 /// A member is SKIPPED (never fatal) when it has no name, no buildable type, a
-/// zero-width or `void` type, or an offset that would put it outside the
-/// aggregate — one exotic member costs its own field, not the whole layout.
-/// Bitfields go to the second list; `DW_TAG_variant_part`/`DW_TAG_variant`
-/// children are not members and are not read.
+/// zero-width or `void` type, or a negative offset — one exotic member costs its
+/// own field, not the whole layout. Bitfield members go to the second list (or
+/// back to the first when they are byte-exact);
+/// `DW_TAG_variant_part`/`DW_TAG_variant` children are not members and are not
+/// read. LOSS: an ANONYMOUS member (a C11 anonymous struct/union inside a struct)
+/// carries no `DW_AT_name` and is skipped rather than flattened into the parent.
+///
+/// Struct fields are sorted by offset (`collect_bit_fields` and
+/// `has_bit_fields_in_range` binary-search both lists, and the wire encoder
+/// interleaves them by offset) and deduplicated on it. UNION fields keep
+/// declaration order and are NOT deduplicated: every union member sits at offset
+/// 0, so deduplicating on the offset would collapse a union to its first member.
 fn collect_members(
     die: &DieSnap,
     dies: &BTreeMap<usize, DieSnap>,
@@ -293,7 +316,7 @@ fn collect_members(
     union: bool,
 ) -> (Vec<TypeField>, Vec<TypeBitField>) {
     let mut fields: Vec<TypeField> = Vec::new();
-    let mut bits: Vec<TypeBitField> = Vec::new();
+    let mut raw_bits: Vec<(i64, int4, String, Rc<Datatype>)> = Vec::new();
     let big_endian = types.is_big_endian();
     for &coff in &die.children {
         let Some(m) = dies.get(&coff) else { continue };
@@ -308,67 +331,147 @@ fn collect_members(
         if ty.get_metatype() == type_metatype::TYPE_VOID || ty.get_size() <= 0 {
             continue;
         }
-        if let Some(bf) = bitfield_geometry(m, big_endian) {
-            let mut b = TypeBitField::new(bf.byte_offset, bf.num_bits, big_endian, m.name.clone(), ty);
-            b.byte_offset = bf.byte_offset;
-            b.byte_size = bf.byte_size;
-            b.least_sig_bit = bf.least_sig_bit;
-            bits.push(b);
+        if let Some((abs_start, num_bits)) = bitfield_bits(m, big_endian) {
+            raw_bits.push((abs_start, num_bits, m.name.clone(), ty));
             continue;
         }
-        let off = if union { 0 } else { m.data_member_location.unwrap_or(0) };
+        if union {
+            fields.push(TypeField::new(fields.len() as int4, 0, m.name.clone(), ty));
+            continue;
+        }
+        let off = m.data_member_location.unwrap_or(0);
         if off < 0 || off > int4::MAX as i64 {
             continue;
         }
         fields.push(TypeField::new(off as int4, off as int4, m.name.clone(), ty));
     }
-    // `collect_bit_fields` / `has_bit_fields_in_range` binary-search both lists,
-    // and the wire encoder interleaves them by offset: both must be sorted.
-    fields.sort_by_key(|f| (f.offset, f.field_type.get_size()));
-    fields.dedup_by_key(|f| f.offset);
+    // A "bitfield" that is byte-aligned AND a whole number of natural-width bytes
+    // is not one: on a little-endian target `unsigned c:16` at bit 16 of a 4-byte
+    // unit IS the two bytes at +2. Emitting it as a plain field of that width is
+    // exact, and it keeps it out of the bitfield extraction machinery -- see
+    // [`byte_exact_bitfield`].
+    // A union has no bitfield list to install into (`TypeUnion::setFields` takes
+    // fields only), so a union's true bitfields are a documented LOSS; its
+    // byte-exact ones still land as ordinary members at offset 0.
+    let mut true_bits: Vec<(i64, int4, String, Rc<Datatype>)> = Vec::new();
+    for (abs_start, num_bits, name, ty) in raw_bits {
+        match byte_exact_bitfield(abs_start, num_bits, big_endian, types, &ty) {
+            Some((off, plain)) => {
+                let off = if union { 0 } else { off };
+                fields.push(TypeField::new(off, off, name, plain));
+            }
+            None if union => {}
+            None => true_bits.push((abs_start, num_bits, name, ty)),
+        }
+    }
+    if !union {
+        fields.sort_by_key(|f| (f.offset, f.field_type.get_size()));
+        fields.dedup_by_key(|f| f.offset);
+    }
+    let mut bits = group_bitfields(true_bits, big_endian);
     bits.sort_by_key(|b| (b.byte_offset + b.byte_size, b.least_sig_bit));
     (fields, bits)
 }
 
-/// The bit geometry of one bitfield member, in kuna's container frame.
-struct BitGeom {
-    byte_offset: int4,
-    byte_size: int4,
-    least_sig_bit: int4,
-    num_bits: int4,
-}
-
-/// Read a `DW_TAG_member`'s bitfield geometry, or `None` for a plain member.
+/// The absolute bit position and width of one bitfield member, or `None` for a
+/// plain member.
 ///
 /// Two DWARF spellings are handled. DWARF 4/5 (what gcc and clang emit today)
 /// gives `DW_AT_data_bit_offset` — the bit distance from the START of the
-/// aggregate — and the container is taken as exactly the bytes the field spans.
-/// DWARF 2/3 gives `DW_AT_data_member_location` + `DW_AT_byte_size` (the
-/// container) + `DW_AT_bit_offset` (bits from the container's MOST significant
-/// bit), which converts to a least-significant-bit position by subtraction.
+/// aggregate — directly. DWARF 2/3 gives `DW_AT_data_member_location` plus a
+/// container `DW_AT_byte_size` and `DW_AT_bit_offset` (bits from the container's
+/// MOST significant bit), which converts by subtraction.
 ///
 /// LOSS: for a BIG-endian target only the DWARF 2/3 spelling is grounded; a
 /// big-endian producer emitting `DW_AT_data_bit_offset` yields `None` and the
 /// member is skipped rather than laid out on a guess.
-fn bitfield_geometry(m: &DieSnap, big_endian: bool) -> Option<BitGeom> {
+fn bitfield_bits(m: &DieSnap, big_endian: bool) -> Option<(i64, int4)> {
     let num_bits = m.bit_size.filter(|&b| b > 0 && b <= 64)? as int4;
     if let Some(dbo) = m.data_bit_offset {
         if big_endian {
             return None;
         }
-        let byte_offset = (dbo / 8) as int4;
-        let least_sig_bit = (dbo % 8) as int4;
-        let byte_size = (least_sig_bit + num_bits + 7) / 8;
-        return Some(BitGeom { byte_offset, byte_size, least_sig_bit, num_bits });
+        return Some((dbo as i64, num_bits));
     }
-    let byte_size = m.byte_size.filter(|&b| b > 0 && b <= 16)? as int4;
+    let container = m.byte_size.filter(|&b| b > 0 && b <= 16)? as int4;
     let bit_offset = m.bit_offset? as int4;
-    let byte_offset = m.data_member_location.filter(|&o| o >= 0)? as int4;
-    let least_sig_bit = byte_size * 8 - bit_offset - num_bits;
-    if least_sig_bit < 0 {
+    let byte_offset = m.data_member_location.filter(|&o| o >= 0)?;
+    let within = container * 8 - bit_offset - num_bits;
+    if within < 0 {
         return None;
     }
-    Some(BitGeom { byte_offset, byte_size, least_sig_bit, num_bits })
+    Some((byte_offset * 8 + within as i64, num_bits))
+}
+
+/// A bitfield that occupies whole, aligned bytes of a natural width, as a plain
+/// field: `(struct byte offset, resized member type)`. `None` for a real bitfield.
+///
+/// This is exact on a little-endian target -- `unsigned c:16` declared at bit 16
+/// of a 4-byte storage unit names precisely the two bytes at struct offset +2 --
+/// and it is also CONTAINMENT. `BitFieldPullTransform` (`p5_types/bitfield/pull.rs`)
+/// diverges when several pulls share one extraction chain: the second record's
+/// `op_destroy_recursive` walks a `mod_op` whose operands the first record's walk
+/// already unset, and `Funcdata::op_destroy_recursive` asserts on the cleared
+/// slot ("null input (C++ UB)"). `struct { int head; unsigned f1:4, f2:12, f3:16; }`
+/// with all three read reproduces it, and it is NOT specific to this pass -- the
+/// wire `<bitfield>` decode builds the same shapes. Tolerating the cleared slot
+/// only converts the assertion into a non-terminating rule pool, so the fix
+/// belongs in that transform and is left to it; taking the byte-exact members out
+/// of the bitfield list keeps the shapes this pass produces inside what the
+/// transform handles.
+///
+/// Big-endian is excluded: the byte order of the sub-unit is the whole question
+/// there, and a wrong answer would be silent.
+fn byte_exact_bitfield(
+    abs_start: i64,
+    num_bits: int4,
+    big_endian: bool,
+    types: &dyn TypeFactory,
+    ty: &Rc<Datatype>,
+) -> Option<(int4, Rc<Datatype>)> {
+    if big_endian || abs_start % 8 != 0 || num_bits % 8 != 0 {
+        return None;
+    }
+    let bytes = num_bits / 8;
+    if !matches!(bytes, 1 | 2 | 4 | 8) {
+        return None;
+    }
+    let off = int4::try_from(abs_start / 8).ok()?;
+    let plain = if ty.get_size() == bytes {
+        Rc::clone(ty)
+    } else {
+        types.resize_integer(Rc::clone(ty), bytes).ok()?
+    };
+    (plain.get_size() == bytes).then_some((off, plain))
+}
+
+/// Fold the bitfield members into kuna's container frame: each one gets the
+/// SMALLEST byte span that covers it, and its least-significant bit is its
+/// position within that span.
+///
+/// The span is per member rather than per storage unit on purpose. The printer's
+/// `checkBitFieldMember` (`p9_emit/printc.rs`) decides `.` versus `->` by looking
+/// for a `PTRSUB` under the access when `byte_offset != 0`, and the compiler emits
+/// that `PTRSUB` at the offset of the bytes it actually loads. A whole-storage-unit
+/// container reports `byte_offset == 0` for a member the compiler reaches at +3,
+/// the `PTRSUB` is then not skipped, and the access renders `p.b` on a pointer --
+/// invalid C. The minimal span is what the access geometry agrees with.
+fn group_bitfields(
+    raw: Vec<(i64, int4, String, Rc<Datatype>)>,
+    big_endian: bool,
+) -> Vec<TypeBitField> {
+    let mut out: Vec<TypeBitField> = Vec::new();
+    for (abs_start, num_bits, name, ty) in raw {
+        let byte_offset = (abs_start / 8) as int4;
+        let least_sig_bit = (abs_start % 8) as int4;
+        let byte_size = (least_sig_bit + num_bits + 7) / 8;
+        let mut b = TypeBitField::new(byte_offset, num_bits, big_endian, name, ty);
+        b.byte_offset = byte_offset;
+        b.byte_size = byte_size;
+        b.least_sig_bit = least_sig_bit;
+        out.push(b);
+    }
+    out
 }
 
 /// The aggregate's alignment: `DW_AT_alignment` when the producer states it,
