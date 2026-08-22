@@ -36,6 +36,7 @@ use std::sync::Mutex;
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
+use kuna_decomp::kuna_dwarfstructs::DWARFSTRUCTS_ENV;
 use kuna_decomp::kuna_typedepth::TYPEDEPTH_ENV;
 
 /// Serializes the env-var flip + bootstrap across the concurrently-run tests.
@@ -58,8 +59,17 @@ fn decompile(funcs: &[&str], typedepth: bool) -> Option<String> {
         .to_string();
 
     std::env::set_var(TYPEDEPTH_ENV, if typedepth { "on" } else { "off" });
+    // Pin the sibling `dwarfstructs` gate OFF so this file keeps measuring the
+    // one axis it is about. That arm renames the anonymous fallback after the
+    // shape it describes (`anon_struct_8_2`) and interns a name-colliding
+    // aggregate under a size-suffixed name with its fields (`code_4 *base`, whose
+    // members then resolve) instead of the shared anonymous fallback asserted
+    // below — both strict improvements on what these assertions pin, and both
+    // covered by `verify_dwarfstructs.rs`.
+    std::env::set_var(DWARFSTRUCTS_ENV, "off");
     let prog = bootstrap_from_object(&path, "", &spec_roots);
     std::env::remove_var(TYPEDEPTH_ENV);
+    std::env::remove_var(DWARFSTRUCTS_ENV);
     let mut prog = match prog {
         Ok(p) => p,
         Err(e) => {

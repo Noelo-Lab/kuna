@@ -18,6 +18,8 @@ pub mod kuna_ifuncfpret;
 pub mod kuna_relocrebase;
 // (kuna) Linked-image dynamic-relocation application option gate (load-time, env-bridged).
 pub mod kuna_dynrelocs;
+// (kuna) DWARF aggregate-layout import option gate (load-time, env-bridged).
+pub mod kuna_dwarfstructs;
 // (kuna) DWARF full-depth type-resolution option gate (load-time, env-bridged).
 pub mod kuna_typedepth;
 // (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the

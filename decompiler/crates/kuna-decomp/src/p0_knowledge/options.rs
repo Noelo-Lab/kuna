@@ -412,6 +412,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (`kuna_typedepth::TYPEDEPTH_ENV`) that the CLI exports before the load;
     // this registration keeps the option catalog-visible. Default-ON.
     "typedepth",
+    // (kuna) DWARF aggregate-LAYOUT import: an aggregate DIE carries its
+    // `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
+    // bitfields included) onto the interned type instead of becoming a named,
+    // EMPTY, zero-size shell. Same load-time shape as `typedepth`: the layout is
+    // installed at `load file`, upstream of the `option` commands, so the live
+    // gate is an env var (`kuna_dwarfstructs::DWARFSTRUCTS_ENV`) that the CLI
+    // exports before the load; this registration keeps the option
+    // catalog-visible. Default-ON.
+    "dwarfstructs",
     "callfixup",
     "addrtable",
     "operand_refs",

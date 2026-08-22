@@ -46,7 +46,7 @@ fn surface_count_is_104() {
 }
 
 #[test]
-fn settable_count_is_115() {
+fn settable_count_is_116() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -82,12 +82,13 @@ fn settable_count_is_115() {
     // +1 for `cleanupcode` (P2 Rust drop/deallocate call removal, DIV-81).
     // +1 for `dynrelocs` (P1 linked-image dynamic-relocation application, DIV-84).
     // +1 for `retinputhalf` (P4 returned input-parameter half retention, DIV-85).
-    assert_eq!(kuna_num_settables(), 115);
-    assert_eq!(SETTABLE_TABLE.len(), 115);
+    // +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
+    assert_eq!(kuna_num_settables(), 116);
+    assert_eq!(SETTABLE_TABLE.len(), 116);
 }
 
 #[test]
-fn tier_counts_are_25_core_50_transform_40_analysis() {
+fn tier_counts_are_25_core_50_transform_41_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -142,7 +143,8 @@ fn tier_counts_are_25_core_50_transform_40_analysis() {
     // retention, DIV-85) -- core, not transform: it narrows a classification the
     // engine already makes, and never rewrites anything the narrowing does not
     // reach.
-    assert_eq!((core, transform, analysis), (25, 50, 40));
+    // analysis 40 -> 41: +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
+    assert_eq!((core, transform, analysis), (25, 50, 41));
 }
 
 #[test]
@@ -467,6 +469,11 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
         // read at the analysis COMMIT boundary (console-side via kuna_live_value),
         // like the analysis-pass gates above. Default-off, ELF-only.
         "itaniumrtti",
+        // (kuna) DWARF aggregate-layout import — a LOAD-time gate read from the
+        // `KUNA_DWARFSTRUCTS` env var (the layout is installed on the interned type
+        // inside `load file`), so like `typedepth` above it has no codegen
+        // live_value. Default-on.
+        "dwarfstructs",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -639,8 +646,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
     // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
-    // retinputhalf's P4 row sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 114);
+    // retinputhalf's P4 and dwarfstructs' P1 rows sit mid-table, so they do not
+    // move the tail).
+    assert_eq!(json.matches("},\n").count(), 115);
 }
 
 #[test]
