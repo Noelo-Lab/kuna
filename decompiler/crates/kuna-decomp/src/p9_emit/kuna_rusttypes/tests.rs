@@ -118,11 +118,14 @@ fn code_is_an_opaque_pointer() {
     assert_eq!(spell(&base(1, type_metatype::TYPE_CODE)), "*const ()");
 }
 
-/// A recovered aggregate name can carry C spellings Rust identifiers forbid.
+/// A recovered aggregate name is spelled in *type* position, so a generic
+/// argument list survives; only what Rust's type grammar cannot accept collapses.
 #[test]
-fn aggregate_names_are_sanitized() {
+fn aggregate_names_are_spelled_as_types() {
     let s = named(8, type_metatype::TYPE_STRUCT, "std::pair<int,int>");
-    assert_eq!(spell(&s), "std__pair_int_int_");
+    assert_eq!(spell(&s), "std::pair<int,int>");
+    let closure = named(8, type_metatype::TYPE_STRUCT, "{closure#0}");
+    assert_eq!(spell(&closure), "_closure_0_");
     let leading_digit = named(4, type_metatype::TYPE_STRUCT, "2big");
     assert_eq!(spell(&leading_digit), "_2big");
 }
@@ -152,4 +155,34 @@ fn rust_ignores_the_realtypes_gates() {
         RUST_SPELLER.declarator(&off, &t).0,
         RUST_SPELLER.declarator(&on, &t).0
     );
+}
+
+/// Type position is not identifier position: a recovered generic keeps the
+/// spelling the debug info recorded, because every character in it is legal
+/// Rust *type* syntax.
+#[test]
+fn type_path_keeps_rust_generic_syntax() {
+    for (raw, want) in [
+        ("Result<u8, u32>", "Result<u8, u32>"),
+        ("Vec<u8, alloc::alloc::Global>", "Vec<u8, alloc::alloc::Global>"),
+        ("(u8, u32)", "(u8, u32)"),
+        ("[u8; 4]", "[u8; 4]"),
+        ("&mut Box<dyn Error + 'static>", "&mut Box<dyn Error + 'static>"),
+        ("fn(u8) -> u32", "fn(u8) -> u32"),
+        ("core::option::Option<&str>", "core::option::Option<&str>"),
+    ] {
+        assert_eq!(super::type_path(raw), want, "raw: {raw}");
+    }
+}
+
+/// Anything outside the type grammar still collapses, and an unbalanced bracket
+/// falls back to the identifier sanitizer whole -- a stray `<` would otherwise
+/// swallow the rest of the declaration.
+#[test]
+fn type_path_rejects_what_rust_cannot_parse() {
+    assert_eq!(super::type_path("{closure#0}"), "_closure_0_");
+    assert_eq!(super::type_path("std.9778ba8b-cgu.0"), "std_9778ba8b_cgu_0");
+    assert_eq!(super::type_path("Result<u8"), super::sanitize("Result<u8"));
+    assert_eq!(super::type_path("a>b"), super::sanitize("a>b"));
+    assert_eq!(super::type_path("4tuple<u8>"), "_4tuple<u8>");
 }

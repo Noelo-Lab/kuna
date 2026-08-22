@@ -113,7 +113,7 @@ impl RustSpeller {
                     if name.is_empty() {
                         self.anonymous(ct)
                     } else {
-                        sanitize(ct.get_display_name())
+                        type_path(ct.get_display_name())
                     }
                 }
             },
@@ -148,6 +148,53 @@ pub(crate) fn sanitize_path(name: &str) -> String {
 pub(crate) fn path_tail(name: &str) -> String {
     let tail = name.rsplit("::").find(|c| !c.trim().is_empty()).unwrap_or(name);
     sanitize(tail)
+}
+
+/// A recovered **type** name, spelled as Rust rather than flattened to an
+/// identifier.
+///
+/// A recovered composite carries the source spelling the debug info recorded --
+/// `Result<u8, u32>`, `Vec<u8, alloc::alloc::Global>`, `(u8, u32)`. Every
+/// character in those is legal in Rust *type* position, so running them through
+/// the identifier sanitizer turns `Result<u8, u32>` into `Result_u8__u32_` and
+/// throws away the one thing a reader wanted. Type position is not identifier
+/// position, and this is the spelling for it.
+///
+/// Anything outside the type grammar (a DWARF `{closure#0}`, a codegen-unit
+/// suffix) still collapses to `_`, and a name whose brackets do not balance
+/// falls back to [`sanitize`] whole -- an unbalanced `<` would swallow the rest
+/// of the declaration.
+pub(crate) fn type_path(name: &str) -> String {
+    let keep = |c: char| {
+        c.is_ascii_alphanumeric()
+            || matches!(c, '_' | '<' | '>' | ',' | ':' | '&' | '[' | ']' | ';' | '*' | '(' | ')' | '\'' | '+' | ' ')
+    };
+    let (mut out, mut angle, mut square, mut round) = (String::new(), 0i32, 0i32, 0i32);
+    let mut it = name.chars().peekable();
+    while let Some(c) = it.next() {
+        if c == '-' && it.peek() == Some(&'>') {
+            it.next();
+            out.push_str("->");
+            continue;
+        }
+        match c {
+            '<' => angle += 1,
+            '>' => angle -= 1,
+            '[' => square += 1,
+            ']' => square -= 1,
+            '(' => round += 1,
+            ')' => round -= 1,
+            _ => {}
+        }
+        out.push(if keep(c) { c } else { '_' });
+    }
+    if angle != 0 || square != 0 || round != 0 {
+        return sanitize(name);
+    }
+    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    out
 }
 
 /// Rust identifiers admit only `[A-Za-z0-9_]`.
