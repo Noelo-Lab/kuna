@@ -521,7 +521,7 @@ console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.
 
-(kuna) **Load-time env bridges.** Four loader gates are consumed *inside* the
+(kuna) **Load-time env bridges.** Seven loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option
 surface alone cannot deliver them; each is bridged through a process environment
 variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
@@ -532,6 +532,10 @@ variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
 |---|---|---|
 | `KUNA_RELOC_OBJECTS` | `relocobjects` | relocatable-object (`ET_REL` `.o`, COFF `.obj`) layout + relocation resolution in the loader, `decompiler/crates/kuna-analysis/src/loadimage_object.rs (RELOC_OBJECTS_ENV)` |
 | `KUNA_I386_PIE_PLT` | `i386_pie_plt` | i386 PIE PLT-stub decode, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_i386_pie_plt.rs (I386_PIE_PLT_ENV)` |
+| `KUNA_DYNRELOCS` | `dynrelocs` | linked-image dynamic-relocation application + the `PT_GNU_RELRO` constant slots, `decompiler/crates/kuna-analysis/src/loader/kuna_dynrelocs.rs (resolve)` |
+| `KUNA_RELOCREBASE` | `relocrebase` | relocatable-object analysis-fact rebase, `decompiler/crates/kuna-analysis/src/loader/kuna_relocrebase.rs (rebased_view)` |
+| `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
+| `KUNA_TYPEDEPTH` | `typedepth` | DWARF full-depth type resolution, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs (TYPEDEPTH_ENV)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection, `decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)` |
 

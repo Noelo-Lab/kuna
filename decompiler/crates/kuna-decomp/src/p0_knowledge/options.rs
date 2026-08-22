@@ -369,6 +369,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // read via the `kuna_relocrebase` env var (the analyzer tier runs inside
     // `load file`). Default-ON (DIV-79).
     "relocrebase",
+    // (kuna) Linked-image dynamic-relocation application (DIV-84): a load-time
+    // gate read via the `kuna_dynrelocs` env var (the relocations are applied
+    // inside `ObjectLoadImage::from_bytes`). Default-ON.
+    "dynrelocs",
     "mips_isa",
     "dwarf",
     // (kuna) ELF data-symbol (`STT_OBJECT`) naming — the data half of the

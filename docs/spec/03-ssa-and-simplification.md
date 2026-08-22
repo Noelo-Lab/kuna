@@ -705,7 +705,11 @@ and flagcompare among them); `ActionVarnodeProps` applies storage-derived
 properties — after the first heritage pass it releases the `autolivehold`
 pins (except on values still LOADed through a constant/read-only pointer),
 replaces *read-only* storage with its image constant when
-`readonlypropagate` is set, expands *volatile* access into its user-op form,
+`readonlypropagate` is set — or, with that program-wide switch off, when the
+varnode lies in one of the loader's `dynrelocs` ranges, the `PT_GNU_RELRO`-frozen
+dynamic-relocation slots whose value the linker itself computed (§1.2), which is
+what turns a call through a relocated GOT slot back into a named call — expands
+*volatile* access into its user-op form,
 and folds to zero any varnode whose consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).

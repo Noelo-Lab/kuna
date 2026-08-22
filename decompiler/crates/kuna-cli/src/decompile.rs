@@ -323,6 +323,19 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 if on { "on" } else { "off" },
             );
         }
+        // (kuna, DIV-84) Load-time `dynrelocs` gate: the dynamic relocations are
+        // applied while the loader snapshots the image, so an `--option dynrelocs
+        // off` must reach the subprocess as an env var set up front.
+        if let Some(value) = last_option_value(&args.options, "dynrelocs") {
+            let on = !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false"
+            );
+            cmd.env(
+                kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV,
+                if on { "on" } else { "off" },
+            );
+        }
         // (kuna) Load-time `typedepth` gate: the DWARF type mapper runs inside
         // `load file`, so an `--option typedepth off` must reach it via the env
         // var (`kuna_typedepth::TYPEDEPTH_ENV`) set on the subprocess up front.
