@@ -193,6 +193,12 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
     if file.format() != object::BinaryFormat::Elf {
         return out;
     }
+    // A pre-link object is the `relocobjects` layout path's business; it applies
+    // its own relocations against a synthetic layout, and the tables here name a
+    // different address space.
+    if file.kind() == object::ObjectKind::Relocatable {
+        return out;
+    }
     let Some((r_relative, r_glob_dat, r_jump_slot)) = reloc_triple(file.architecture()) else {
         return out;
     };

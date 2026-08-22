@@ -2,6 +2,11 @@
 //! handled architecture, so the `RELATIVE` / `GLOB_DAT` / `JUMP_SLOT` triple, the
 //! defined-vs-undefined symbol split, the `REL` implicit addend and the
 //! `PT_GNU_RELRO` intersection are all proven without a checked-in binary.
+//!
+//! The env GATE itself is NOT tested here: `KUNA_DYNRELOCS` is process-global and
+//! cargo runs these in parallel threads, so flipping it mid-suite perturbs every
+//! other test in this binary. Its two arms live in their own integration target,
+//! `tests/verify_dynrelocs_gate.rs`, exactly as `relocrebase`'s do.
 
 use super::*;
 
@@ -282,17 +287,6 @@ fn i386_rel_table_reads_the_implicit_addend_from_the_slot() {
         ]
     );
     assert_eq!(r.const_ranges, vec![(GOT_VMA, GOT_VMA + 3), (GOT_VMA + 4, GOT_VMA + 7)]);
-}
-
-/// The gate is the env var: `off` restores the pre-fix behaviour exactly.
-#[test]
-fn env_gate_off_yields_nothing() {
-    let bytes = image64(62, 8, 6, 7);
-    std::env::set_var(kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV, "off");
-    let off = run(&bytes);
-    std::env::remove_var(kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV);
-    assert!(off.writes.is_empty() && off.const_ranges.is_empty());
-    assert!(!run(&bytes).writes.is_empty(), "default-on with the env unset");
 }
 
 /// An architecture kuna has no triple for produces nothing rather than guessing.
