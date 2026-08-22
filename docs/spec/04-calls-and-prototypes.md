@@ -791,10 +791,15 @@ value is rare and a Rust `Result` is nothing else.
   — the phantom `int4 v3; // edx` that a `Result` guard tests.
 
 `option rustabi off|auto|always`
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs`) answers both with
-one classification, taken from the **observed register writes** rather than from
-a size. `classify_return_pair` looks at the concatenation the ABI already built
-and reports:
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs`) acts at both
+seams. It does **not** answer them with one classification, because they are not
+looking at the same thing, and a shared verdict would be a claim about evidence
+that only one of them has.
+
+**The producer's classification.** Here the concatenation's halves are values
+*this* function computed, so their shape answers the question — taken from the
+**observed register writes** rather than from a size. `classify_return_pair`
+looks at the concatenation the ABI already built and reports:
 
 * **`ScalarPair`** when the least-significant half is *discriminant-shaped* — a
   value whose known non-zero bits fit in a byte. That covers both forms rustc
@@ -808,16 +813,53 @@ and reports:
   not an action: the pair must not form.
 * **`Scalar`** otherwise, which is today's answer unchanged.
 
-The verdict is consulted at the two seams. `holds_scalar_pair` is the predicate
-`tryReturnPull` checks before narrowing, and it looks *through* the reshaping the
-rule pool applies to the concatenation: `RuleConcatZext` rewrites
-`PIECE(ZEXT(V), W)` as `ZEXT(PIECE(V, W))` as soon as the payload register is
-written 32-bit (`lea 0x7(%rdi),%edx`), which is the overwhelmingly common rustc
-case, so matching only a bare PIECE would miss it. `build_call_output_pair`
-completes the stubbed multi-trial branch: the CALL gains the `join`-space output
-covering both registers and each half becomes a `SUBPIECE` of it, inserted after
-the call, with the INDIRECT creations destroyed. The stub's recorded blocker —
-no `constructJoinAddress` on the merged arch handle — was stale; the sibling
+That verdict is what `holds_scalar_pair` reports to `tryReturnPull` before it
+narrows, and it looks *through* the reshaping the rule pool applies to the
+concatenation: `RuleConcatZext` rewrites `PIECE(ZEXT(V), W)` as
+`ZEXT(PIECE(V, W))` as soon as the payload register is written 32-bit
+(`lea 0x7(%rdi),%edx`), which is the overwhelmingly common rustc case, so
+matching only a bare PIECE would miss it.
+
+**The consumer's classification, and what it cannot prove.** At a call there are
+no callee values in the IR at all: both halves are INDIRECT creations standing
+for "the callee may have written this", so their shape says nothing and
+`classify_return_pair` has nothing to read. `classify_call_output_pair` is a
+different predicate over the three pieces of evidence a call site actually has:
+
+1. **The prototype model** — the `join_dual_class` output rule already matched a
+   justified, consecutive, first-in-class register pair, which is what put two
+   *used* trials here rather than one.
+2. **The caller's reads** — both halves are read out of the call, they are
+   distinct non-overlapping registers, and the payload half has a descendant.
+3. **The callee's body** — `probe_callee_return_writes` decodes the resolved
+   direct callee, bounded, following fall-through and resolved machine branches
+   until every path reaches a `RETURN`, and records the processor-space writes it
+   observes. A nested call, an unresolved indirect branch, an undecodable
+   instruction or the instruction budget makes the summary *incomplete*, which
+   proves nothing. On a complete summary that never touches the payload
+   register, the caller's read is a clobber and the pair is **vetoed**.
+
+Evidence 3 is the only one that looks at the callee and it is one-sided: it can
+refute a pair, never confirm one. So `ScalarPair` at the consumer means *no
+counter-example*, not *the callee returns a pair* — that positive fact is not
+derivable here. A recovered prototype is never written back to the symbol table,
+so a caller has no recovered callee signature to consult, and what remains after
+the veto is exactly the evidence upstream Ghidra ships this branch on unguarded.
+The honest reading of the consumer half is: **complete the stubbed multi-trial
+branch, and refuse it where the callee refutes it.**
+
+The probe is the reason `Funcdata` carries a per-callee write summary at all. The
+per-function `ArchContext` the pipeline runs against carries the load image but
+no translator, so the callee's instructions cannot be read at the seam itself;
+the driver takes the probe once the flow build has produced the call specs, and
+caches it on the `Architecture` so each distinct callee body is decoded once per
+run rather than once per caller. Nothing is probed unless the rule is live.
+
+When the classification says `ScalarPair`, `build_call_output_pair` completes the
+stubbed multi-trial branch: the CALL gains the `join`-space output covering both
+registers and each half becomes a `SUBPIECE` of it, inserted after the call, with
+the INDIRECT creations destroyed. The stub's recorded blocker — no
+`constructJoinAddress` on the merged arch handle — was stale; the sibling
 `build_return_output` calls it today.
 
 Keeping the pair alive does not disable the phantom-killer above it. The

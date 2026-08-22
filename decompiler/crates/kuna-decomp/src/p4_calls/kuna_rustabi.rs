@@ -58,16 +58,20 @@
 //! on the merged arch handle -- is stale: the sibling
 //! `ActionReturnRecovery::buildReturnOutput` calls it today.
 //!
-//! # The classification
+//! # Two seams, two classifications -- and what each one can prove
 //!
-//! Both seams need the same question answered: *is this register pair one
-//! logical value?* Asked of the observed writes at the return sites, never of a
-//! size -- rustc's choice is a function of the variant layout, and size does not
-//! predict it (`Result<u32,u32>` is 8 bytes and a pair; `Result<Box<u64>,u32>` is
-//! 16 bytes and is returned through memory).
+//! The two seams ask the same *question* -- is this register pair one logical
+//! value? -- but they are not looking at the same thing, so they cannot share an
+//! answer. Saying they do would be a false claim about the evidence.
 //!
-//! [`classify_return_pair`] reads the concatenation the ABI already built and
-//! reports one of three verdicts:
+//! ## The producer: [`classify_return_pair`]
+//!
+//! Here the concatenation's halves are values *this* function computed, so their
+//! shape answers the question. Asked of the observed writes at the return sites,
+//! never of a size -- rustc's choice is a function of the variant layout, and
+//! size does not predict it (`Result<u32,u32>` is 8 bytes and a pair;
+//! `Result<Box<u64>,u32>` is 16 bytes and is returned through memory). Three
+//! verdicts:
 //!
 //! * **`ScalarPair`** -- the least-significant half is *discriminant-shaped*: its
 //!   value at the RETURN is confined to a byte (a small constant, a `setCC`, a
@@ -82,6 +86,40 @@
 //!   `rdi`), where `RAX` carries the hidden return pointer and is not a
 //!   discriminant. A veto, not an action: the pair must not form.
 //! * **`Scalar`** -- anything else. Today's answer, unchanged.
+//!
+//! ## The consumer: [`classify_call_output_pair`]
+//!
+//! At a call there are **no callee values in the IR at all**. Both halves are
+//! INDIRECT creations standing for "the callee may have written this", so their
+//! shape says nothing and `classify_return_pair` has nothing to read. Running it
+//! here would be reading the caller's tea leaves and calling it a classification.
+//!
+//! What the seam has instead is three pieces of real evidence, and
+//! [`classify_call_output_pair`] is the whole list:
+//!
+//! 1. **The prototype model.** The `join_dual_class` output rule already matched
+//!    a justified, consecutive, first-in-class register pair -- that is what put
+//!    two used trials here rather than one.
+//! 2. **The caller's reads.** Both halves are read out of the call (an unread
+//!    trial is not active), they are distinct non-overlapping registers, and the
+//!    payload half has a descendant.
+//! 3. **The callee's body.** [`probe_callee_return_writes`] decodes the direct
+//!    callee, bounded, and reports the processor-space writes it can *prove*. If
+//!    that proof covers every path to a `RETURN` and never touches the payload
+//!    register, the caller's read is a clobber and **the pair is vetoed**.
+//!
+//! The third is the only one that looks at the callee, and it is one-sided: it
+//! can refute a pair, never confirm one. A callee containing any call, indirect
+//! branch, undecodable byte, or more instructions than the budget yields no
+//! proof, and the seam falls back on 1 and 2.
+//!
+//! **So `ScalarPair` at the consumer means "no counter-example", not "the callee
+//! returns a pair".** That positive fact is not derivable at this point in the
+//! pipeline: the recovered prototype of a local callee is never written back to
+//! the symbol table, so a caller has no recovered callee signature to consult,
+//! and the residual evidence is the same evidence upstream Ghidra ships this
+//! branch on unguarded. The honest reading of the consumer half is *complete the
+//! stubbed multi-trial branch, and refuse it where the callee refutes it*.
 //!
 //! # What this does NOT do
 //!
@@ -100,6 +138,8 @@
 //! untouched by construction, not by luck. `always` drops the language test and
 //! is what the stage testcase uses, since a `<bytechunk>` carries no
 //! `.comment`.
+
+use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
@@ -321,23 +361,341 @@ fn pair_pieces(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(VarnodeId,
     }
 }
 
+// =============================================================================
+// The consumer seam: what a CALL site can and cannot establish
+// =============================================================================
+
+/// The register writes a bounded decode of one callee body proves.
+///
+/// Completeness is the load-bearing property: it says the walk
+/// reached a `RETURN` on every path it followed, inside the instruction budget,
+/// without meeting anything that could write an arbitrary register (a nested
+/// call, an unresolved indirect branch, an undecodable byte). Only then does an
+/// *absent* write mean the callee never performs it; otherwise the summary
+/// proves nothing and every query answers "may write".
+#[derive(Clone, Debug, Default)]
+pub struct CalleeReturnWrites {
+    /// Processor-space ranges the decoded body writes, as `(space index,
+    /// offset, size)`.
+    writes: Vec<(int4, u64, int4)>,
+    /// Space indices the decoded body STOREs into. A STORE's address is a
+    /// runtime value, so it stands for "any location in that space" -- which
+    /// matters only on a processor that puts its registers behind an indexed
+    /// register file, and is free to record either way.
+    store_spaces: Vec<int4>,
+    /// Did the walk cover every path to a `RETURN` with nothing unresolved?
+    complete: bool,
+}
+
+impl CalleeReturnWrites {
+    /// Does this summary *prove* the callee never writes any byte of
+    /// `[addr, addr+size)`?
+    ///
+    /// Answers `false` for every incomplete summary, so a callee the probe
+    /// could not fully cover never vetoes anything.
+    pub fn proves_untouched(&self, addr: &Address, size: int4) -> bool {
+        if !self.complete {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        let (idx, off, end) = (sp.get_index(), addr.get_offset(), addr.get_offset() + size as u64);
+        if self.store_spaces.contains(&idx) {
+            return false;
+        }
+        !self
+            .writes
+            .iter()
+            .any(|&(widx, woff, wsz)| widx == idx && woff < end && off < woff + wsz as u64)
+    }
+
+    /// Did the walk complete? (Diagnostics and tests.)
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+}
+
+/// How many machine instructions the callee probe decodes before giving up.
+///
+/// The walk exists to recognize a *leaf* callee that provably leaves a return
+/// register alone; anything longer than this is a function whose answer would be
+/// "may write" almost surely, and the bound is what keeps the probe off the
+/// critical path.
+const MAX_PROBE_INSTRUCTIONS: u32 = 192;
+
+/// How many write records one summary keeps before it declares itself
+/// incomplete. A body that writes this many distinct locations is not the leaf
+/// shape the probe is looking for.
+const MAX_PROBE_WRITES: usize = 512;
+
+/// Recording sink for [`probe_callee_return_writes`] (the probe's `PcodeEmit`).
+#[derive(Default)]
+struct ProbeEmit {
+    writes: Vec<(int4, u64, int4)>,
+    store_spaces: Vec<int4>,
+    targets: Vec<Address>,
+    ends_flow: bool,
+    unresolved: bool,
+}
+
+impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
+    fn dump(
+        &mut self,
+        _addr: &Address,
+        opc: OpCode,
+        outvar: Option<&kuna_num::pcoderaw::VarnodeData>,
+        vars: &[kuna_num::pcoderaw::VarnodeData],
+    ) {
+        if let Some(o) = outvar {
+            if let Some(sp) = &o.space {
+                if sp.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR {
+                    self.writes.push((sp.get_index(), o.offset, o.size as int4));
+                }
+            }
+        }
+        match opc {
+            // Anything that transfers control to code the walk is not reading
+            // can write any register at all.
+            OpCode::CPUI_CALL
+            | OpCode::CPUI_CALLIND
+            | OpCode::CPUI_CALLOTHER
+            | OpCode::CPUI_BRANCHIND => self.unresolved = true,
+            OpCode::CPUI_RETURN => self.ends_flow = true,
+            // The `<spaceid>` operand's offset IS the space-manager index
+            // (`Varnode::getSpaceFromConst`).
+            OpCode::CPUI_STORE => {
+                if let Some(v) = vars.first() {
+                    self.store_spaces.push(v.offset as int4);
+                }
+            }
+            OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
+                match vars.first().and_then(|v| v.space.as_ref()) {
+                    // A p-code-relative branch stays inside this instruction.
+                    // The walk reads every op of the instruction regardless, so
+                    // ignoring it over-approximates the writes -- the safe
+                    // direction -- and must NOT end the machine-level flow.
+                    Some(sp) if sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT => {}
+                    Some(sp) => {
+                        self.targets.push(Address::new(Rc::clone(sp), vars[0].offset));
+                        if opc == OpCode::CPUI_BRANCH {
+                            self.ends_flow = true;
+                        }
+                    }
+                    None => self.unresolved = true,
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Decode a callee body and report the processor-space writes it is *proven* to
+/// make (C++ has no analogue; this is the evidence the call-output seam needs
+/// and the IR at that seam cannot supply).
+///
+/// The walk starts at `entry`, follows fall-through and resolved machine branch
+/// targets, and stops a path at a `RETURN`. It declares itself **incomplete**
+/// -- proving nothing -- on a nested call, an unresolved indirect branch, an
+/// undecodable instruction, or the instruction budget, because past any of those
+/// the callee could write any register.
+pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+) -> CalleeReturnWrites {
+    let mut res =
+        CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: true };
+    let Some(entry_space) = entry.get_space() else {
+        res.complete = false;
+        return res;
+    };
+    if entry_space.get_type() != kuna_base::space::spacetype::IPTR_PROCESSOR {
+        res.complete = false;
+        return res;
+    }
+    let mut seen: std::collections::HashSet<(int4, u64)> = std::collections::HashSet::new();
+    let mut todo: Vec<Address> = vec![entry.clone()];
+    let mut budget = MAX_PROBE_INSTRUCTIONS;
+    while let Some(at) = todo.pop() {
+        let Some(sp) = at.get_space() else {
+            res.complete = false;
+            break;
+        };
+        if !seen.insert((sp.get_index(), at.get_offset())) {
+            continue;
+        }
+        if budget == 0 || res.writes.len() > MAX_PROBE_WRITES {
+            res.complete = false;
+            break;
+        }
+        budget -= 1;
+        let mut emit = ProbeEmit::default();
+        let len = match tr.one_instruction(&mut emit, &at) {
+            Ok(n) if n > 0 => n,
+            _ => {
+                res.complete = false;
+                break;
+            }
+        };
+        res.writes.append(&mut emit.writes);
+        for sp in emit.store_spaces.drain(..) {
+            if !res.store_spaces.contains(&sp) {
+                res.store_spaces.push(sp);
+            }
+        }
+        if emit.unresolved {
+            res.complete = false;
+            break;
+        }
+        todo.append(&mut emit.targets);
+        if !emit.ends_flow {
+            todo.push(&at + len as i64);
+        }
+    }
+    if !res.complete {
+        res.writes.clear();
+        res.store_spaces.clear();
+    }
+    res
+}
+
+/// What a CALL site can conclude about a two-register call output.
+///
+/// This is the consumer seam's classifier, and it is deliberately *not*
+/// [`classify_return_pair`]: the two seams see different things. At the producer
+/// the concatenation's halves are values the function computed, so their shape
+/// answers the question. At a call there are no callee values in the IR at all
+/// -- both halves are INDIRECT creations standing for "the callee may have
+/// written this" -- so the shape of the halves says nothing, and the evidence
+/// has to come from the prototype model, from the caller's reads, and from the
+/// callee body itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallPairRepr {
+    /// The model's output rule matched a justified two-register pair, the caller
+    /// reads both halves out of the call, and nothing known about the callee
+    /// contradicts it.
+    ScalarPair,
+    /// A bounded decode of the callee proves it never writes the payload half,
+    /// so the caller's read of that register is a clobber, not a return value.
+    CalleeScalar,
+    /// Not a plain two-register call output; keep today's answer.
+    Scalar,
+}
+
+/// Classify the CALL output the model's `join_dual_class` rule asked for.
+///
+/// `finalvn` are the used output trials in trial order, least-significant first.
+/// `callee_entry` is the direct-call target when the flow build resolved one.
+///
+/// **What this can prove, and what it cannot.** The vetoes below are the whole
+/// list, and they are one-sided: `ScalarPair` is the *absence* of a
+/// counter-example, not a positive finding that the callee returns a pair. That
+/// positive finding is not available at this seam — see the pass's module
+/// header.
+pub fn classify_call_output_pair(
+    data: &Funcdata,
+    finalvn: &[VarnodeId],
+    callee_entry: Option<&Address>,
+) -> CallPairRepr {
+    if finalvn.len() != 2 {
+        return CallPairRepr::Scalar;
+    }
+    let (Some((lo_addr, lo_size)), Some((hi_addr, hi_size))) =
+        (register_piece(data, finalvn[0]), register_piece(data, finalvn[1]))
+    else {
+        return CallPairRepr::Scalar;
+    };
+    // Two halves of one value are two DIFFERENT, non-overlapping registers.
+    let same_space = match (lo_addr.get_space(), hi_addr.get_space()) {
+        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+        _ => false,
+    };
+    if same_space
+        && lo_addr.get_offset() < hi_addr.get_offset() + hi_size as u64
+        && hi_addr.get_offset() < lo_addr.get_offset() + lo_size as u64
+    {
+        return CallPairRepr::Scalar;
+    }
+    // The payload half has to be read; a pair nothing consumes is not worth
+    // forming and its INDIRECT creation would simply be replaced by a dead one.
+    if data.vbank().get(finalvn[1]).map(|v| v.num_descend()).unwrap_or(0) == 0 {
+        return CallPairRepr::Scalar;
+    }
+    // The one piece of callee evidence this seam can obtain: a bounded decode of
+    // the callee body that proves the payload register is never written.
+    if let Some(entry) = callee_entry {
+        if let Some(w) = data.kuna_callee_ret_writes(entry) {
+            if w.proves_untouched(&hi_addr, hi_size) {
+                return CallPairRepr::CalleeScalar;
+            }
+        }
+    }
+    CallPairRepr::ScalarPair
+}
+
+/// Take the callee-body probe for every direct call in `data`, before the action
+/// pipeline reaches the call-output seam that needs it.
+///
+/// Called from the driver, which is the last point where the disassembly engine
+/// is still reachable: the per-function `ArchContext` handle the pipeline runs
+/// against carries the load image but no translator, so the probe cannot be
+/// taken lazily at the seam itself. Results are cached on the `Architecture`, so
+/// each distinct callee body is decoded once per run rather than once per
+/// caller. A no-op unless the rule is live for this image.
+pub fn seed_callee_return_writes(
+    arch: &mut crate::architecture::Architecture,
+    data: &mut Funcdata,
+) {
+    let mode = RustAbiMode::from_u8(arch.rust_abi);
+    let on = match mode {
+        RustAbiMode::Off => false,
+        RustAbiMode::Auto => arch.source_is_rust,
+        RustAbiMode::Always => true,
+    };
+    if !on {
+        return;
+    }
+    let mut entries: Vec<Address> = Vec::new();
+    for i in 0..data.num_calls() {
+        let e = data.get_call_specs(i).get_entry_address().clone();
+        if e.is_invalid() {
+            continue;
+        }
+        entries.push(e);
+    }
+    for e in entries {
+        let Some(sp) = e.get_space() else { continue };
+        let key = (sp.get_index(), e.get_offset());
+        if !arch.kuna_callee_write_cache.contains_key(&key) {
+            let probed = probe_callee_return_writes(arch.translate(), &e);
+            arch.kuna_callee_write_cache.insert(key, Rc::new(probed));
+        }
+        if let Some(w) = arch.kuna_callee_write_cache.get(&key) {
+            data.kuna_set_callee_ret_writes(&e, Rc::clone(w));
+        }
+    }
+}
+
 /// Build the call's two-piece output the model asked for (C++
 /// `FuncCallSpecs::buildOutputFromTrials`, the `numTrials > 1` arm kuna shipped
 /// as a stub).
 ///
 /// `finalvn` are the trial Varnodes in trial order -- least-significant first --
 /// each currently the output of an INDIRECT creation sitting just before the
-/// CALL. On success the CALL gains a `join`-space output covering both
-/// registers, each half becomes a SUBPIECE of it inserted after the CALL, and
-/// the INDIRECT creations are destroyed. Returns `false` (changing nothing) when
-/// the gate is off, the shape is not a plain register pair, or the join address
-/// cannot be constructed.
+/// CALL; `callee_entry` is the direct-call target the flow build resolved, when
+/// there is one. The verdict comes from [`classify_call_output_pair`]. On
+/// `ScalarPair` the CALL gains a `join`-space output covering both registers,
+/// each half becomes a SUBPIECE of it inserted after the CALL, and the INDIRECT
+/// creations are destroyed. Returns `false` (changing nothing) when the gate is
+/// off, the classification declines, or the join address cannot be constructed.
 pub fn build_call_output_pair(
     callop: OpId,
     data: &mut Funcdata,
     finalvn: &[VarnodeId],
+    callee_entry: Option<&Address>,
 ) -> bool {
-    if !live(data) || finalvn.len() != 2 {
+    if !live(data) {
+        return false;
+    }
+    if classify_call_output_pair(data, finalvn, callee_entry) != CallPairRepr::ScalarPair {
         return false;
     }
     let (lo, hi) = (finalvn[0], finalvn[1]);

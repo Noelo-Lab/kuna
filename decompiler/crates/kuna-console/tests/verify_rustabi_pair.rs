@@ -20,8 +20,11 @@
 //! kuna already recovers the `RAX:RDX` pair the ABI asks for; the producer loses
 //! it to a subvariable-flow truncation driven by the one-bit discriminant, and
 //! the consumer loses it to the un-ported multi-trial branch of
-//! `buildOutputFromTrials`. Both are the same classification, and this pins both
-//! ends of it.
+//! `buildOutputFromTrials`. The two seams are answered by two DIFFERENT
+//! classifications (a call site has no callee values to read), and this pins
+//! both ends of both — including the call seam's callee veto, whose whole point
+//! is that nothing on the caller's side can tell a real `ScalarPair` consumer
+//! from a caller that merely reads a clobbered register.
 //!
 //! `auto` is what the fixture exercises, not `always`: the fixture is a real
 //! rustc binary carrying the `.comment` record the source-language detection
@@ -145,6 +148,52 @@ fn the_consumer_reads_the_payload_out_of_the_call() {
     assert!(
         phantoms.is_empty(),
         "no local may be read without ever being assigned; phantoms {phantoms:?} in:\n{code}",
+    );
+}
+
+/// The call seam's callee veto. `rust_clobber_pair_x86_64` is the same
+/// caller-side shape as `cons` above — two used output trials, a byte-tested
+/// first register, a twice-read second one — over a callee that provably never
+/// writes the second register (`movq %rdi,%rax; addq $7,%rax; ret`). Since the
+/// two are indistinguishable at the call site, the veto has to come from the
+/// callee's body, and the reader must render identically with the option on.
+#[test]
+fn a_callee_proven_not_to_write_the_payload_is_not_paired() {
+    let Some(off) = decompile("rust_clobber_pair_x86_64", "pair_shaped_reader", &[]) else {
+        return;
+    };
+    let Some(on) = decompile(
+        "rust_clobber_pair_x86_64",
+        "pair_shaped_reader",
+        &["option rustabi auto"],
+    ) else {
+        return;
+    };
+    let body = |s: &str| s[s.find("Decompiling").unwrap_or(0)..].to_string();
+    assert_eq!(
+        body(&off),
+        body(&on),
+        "a callee the probe proves never writes the payload register must not be paired",
+    );
+    assert!(
+        on.contains("scalar_callee();"),
+        "the call must keep no output; got:\n{on}",
+    );
+}
+
+/// The control for the test above, and the reason it is evidence rather than a
+/// coincidence: the SAME option, on the SAME caller-side shape, over a callee
+/// that DOES write the payload register, still pairs. The callee body is the
+/// only thing that differs.
+#[test]
+fn the_veto_is_the_callee_body_and_nothing_else() {
+    let Some(paired) = decompile("rust_scalarpair_x86_64", "cons", &["option rustabi auto"])
+    else {
+        return;
+    };
+    assert!(
+        paired.contains("= prod()"),
+        "the positive control must still pair; got:\n{paired}",
     );
 }
 

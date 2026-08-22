@@ -446,7 +446,8 @@ pub fn build_output_from_trials(
         // it fires the CALL gains the join-space pair the model asked for and both
         // halves become SUBPIECEs of it, instead of staying INDIRECT creations
         // that render as locals the function never assigns.
-        if crate::kuna_rustabi::build_call_output_pair(op, data, &finalvn) {
+        let entry = fc.get_entry_address().clone();
+        if crate::kuna_rustabi::build_call_output_pair(op, data, &finalvn, Some(&entry)) {
             return;
         }
         // STUB(W4 translate-on-handle): leave the trials in place rather than

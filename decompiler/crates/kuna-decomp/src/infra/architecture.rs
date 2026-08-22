@@ -746,6 +746,16 @@ pub struct Architecture {
     /// ([`ActionContext::deadline`](crate::action::ActionContext)).  Always
     /// `None` when no budget is set.
     pub kuna_fn_deadline: Option<std::time::Instant>,
+    /// (kuna `rustabi`) Per-image cache of the callee-body probe
+    /// ([`crate::kuna_rustabi::probe_callee_return_writes`]), keyed by the
+    /// callee's `(space index, entry offset)`.  Each distinct function body is
+    /// decoded at most once for the whole run, which is what keeps the probe off
+    /// the critical path of a whole-binary `decompile-all`.  Stays empty unless
+    /// `option rustabi` is live.
+    pub kuna_callee_write_cache: std::collections::HashMap<
+        (int4, uintb),
+        std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
+    >,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
     /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
@@ -1487,6 +1497,7 @@ impl Architecture {
             preserve_thumb_funcptr: false,
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
+            kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive

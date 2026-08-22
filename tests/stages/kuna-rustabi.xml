@@ -40,13 +40,34 @@
     gains the join-space output the model asked for, with each half a SUBPIECE of
     it. `always` rather than `auto` because a bytechunk carries no `.comment`
     record for the source-language detection to read.
+
+    The NEGATIVE half (scalar_callee / pair_shaped_reader, hand-written asm from
+    tests fixture rust_clobber_pair_x86_64, verbatim below):
+
+        scalar_callee:       movq %rdi,%rax ; addq $7,%rax ; ret
+        pair_shaped_reader:  call scalar_callee ; lea 1(%rdx),%rcx
+                             lea 100(%rdx),%rsi ; testb $1,%al
+                             cmoveq %rsi,%rcx ; movq %rcx,%rax ; ret
+
+    Byte for byte the caller-side shape of `cons` above - two used output trials,
+    a byte-tested first register, a twice-read second one - but the callee
+    PROVABLY never writes RDX. Nothing at the call site separates the two, so the
+    call seam decodes the callee (`probe_callee_return_writes`) and refuses the
+    pair. The reader must therefore render IDENTICALLY in both passes.
 -->
 <bytechunk space="ram" offset="0x201270" readonly="true">
 8d0c3f8d570731c083ff0b0f92c00f43d1c3cccccccccccccccccccccccccccc
 50e8daffffff8d72018d4a64a8010f44ce89c859c3
 </bytechunk>
+<bytechunk space="ram" offset="0x201240" readonly="true">
+4889f84883c007c30f1f840000000000
+50e8eaffffff488d4a01488d7264a801
+480f44ce4889c859c3
+</bytechunk>
 <symbol space="ram" offset="0x201270" name="prod"/>
 <symbol space="ram" offset="0x201290" name="cons"/>
+<symbol space="ram" offset="0x201240" name="scalar_callee"/>
+<symbol space="ram" offset="0x201250" name="pair_shaped_reader"/>
 </binaryimage>
 <script>
   <com>lo fu prod</com>
@@ -55,11 +76,17 @@
   <com>lo fu cons</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu pair_shaped_reader</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option rustabi always</com>
   <com>lo fu prod</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu cons</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pair_shaped_reader</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -72,4 +99,6 @@
 <stringmatch name="RUSTABI #6: with the option on the call has an output and the payload is connected to it" min="1" max="1">v2 = prod\(\);</stringmatch>
 <stringmatch name="RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air" min="2" max="2">SUB124\(v2,8\)</stringmatch>
 <stringmatch name="RUSTABI #8: with the option on the discriminant guard reads the same call result" min="1" max="1">SUB128\(v2,0\) &amp; 1</stringmatch>
+<stringmatch name="RUSTABI #9: a callee proven never to write the second return register is not paired -- the reader is unchanged in BOTH passes" min="2" max="2">int8 v3; // rdx</stringmatch>
+<stringmatch name="RUSTABI #10: and its call keeps no output in either pass" min="2" max="2">^  scalar_callee\(\);$</stringmatch>
 </decompilertest>
