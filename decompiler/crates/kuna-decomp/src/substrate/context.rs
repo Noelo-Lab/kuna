@@ -622,6 +622,13 @@ pub struct ArchContext {
     /// parameter, instead of dropping it as uncomputed leftover
     /// (`option retinputhalf`); read by [`crate::kuna_retinputhalf`].
     pub ret_input_half: bool,
+    /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
+    /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
+    pub rust_abi: u8,
+    /// (kuna) The loader's source-language verdict for this image (rustc or not);
+    /// what `option rustabi auto` tests.  Copied from the engine `Architecture`
+    /// in `build_arch_handle`.
+    pub source_is_rust: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -1068,6 +1075,10 @@ impl ArchContext {
             // (kuna) `option retinputhalf` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             ret_input_half: true,
+            // (kuna) `option rustabi` default-off; the real value is copied from
+            // the engine Architecture in `build_arch_handle`.
+            rust_abi: 0,
+            source_is_rust: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.

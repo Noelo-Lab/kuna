@@ -759,6 +759,91 @@ The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
 the question goes to the model — the same fall-through
 `possible_input_param` takes when no locked parameters exist.
 
+#### (kuna, rustc) The two-register `ScalarPair` return (`rustabi`)
+
+rustc returns a `Result`, an `Option`, a slice or a fat pointer whose layout it
+classifies as **`ScalarPair`** in *two* registers — the variant discriminant in
+the first return register, the payload in the second. On x86-64 that is
+`RAX:RDX`, and the total size does not predict the choice: `Result<u32,u32>` is
+8 bytes and is a pair, while `Result<Box<u64>,u32>` is 16 bytes and goes through
+memory. The discriminator is the variant layout, which no compiler-spec rule
+can express.
+
+It does not have to. The storage rustc picks is exactly what the x86-64 cspec's
+`<join_dual_class/>` output rule already describes, so kuna **already recovers
+the pair**: both trials go active, the rule matches, and
+`ActionReturnRecovery::build_return_output` builds the `join`-space
+concatenation. Two later seams then throw it away, and both are invisible to a C
+corpus, because a C function whose *first* returned register holds a one-bit
+value is rare and a Rust `Result` is nothing else.
+
+* **On the producer**, subvariable flow narrows a RETURN to the logical width of
+  the value it is tracing (§03, `SubvariableFlow::tryReturnPull`). rustc
+  materializes a two-variant discriminant as `xor %eax,%eax; setb %al`, so `RAX`
+  is a *one-bit* logical value — and truncating the RETURN to it does not narrow
+  the returned value, it deletes the other register. `Result<u32,u32>` recovers
+  as `bool prod(uint4)` with no payload at all.
+* **On the consumer**, `FuncCallSpecs::buildOutputFromTrials` handles one used
+  output trial and returns early on two or more. A call whose model asked for a
+  register pair therefore gets **no output at all**; the INDIRECT creations that
+  stood for "the callee wrote something here" survive, and every read of the
+  payload register after the call renders as a local the function never assigns
+  — the phantom `int4 v3; // edx` that a `Result` guard tests.
+
+`option rustabi off|auto|always`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs`) answers both with
+one classification, taken from the **observed register writes** rather than from
+a size. `classify_return_pair` looks at the concatenation the ABI already built
+and reports:
+
+* **`ScalarPair`** when the least-significant half is *discriminant-shaped* — a
+  value whose known non-zero bits fit in a byte. That covers both forms rustc
+  emits for the same source: the branchy `mov $0`/`mov $1` tag and the
+  branchless `setCC`, which is the common one at `-C opt-level=2`. Asking about
+  known bits rather than about "a constant per path" is what makes the
+  recognition survive the optimizer's branchless lowering.
+* **`Memory`** when that half traces back, through move-only operations, to the
+  function's own incoming pointer argument — the sret epilogue, where the first
+  return register carries the hidden result pointer and is not a tag. A veto,
+  not an action: the pair must not form.
+* **`Scalar`** otherwise, which is today's answer unchanged.
+
+The verdict is consulted at the two seams. `holds_scalar_pair` is the predicate
+`tryReturnPull` checks before narrowing, and it looks *through* the reshaping the
+rule pool applies to the concatenation: `RuleConcatZext` rewrites
+`PIECE(ZEXT(V), W)` as `ZEXT(PIECE(V, W))` as soon as the payload register is
+written 32-bit (`lea 0x7(%rdi),%edx`), which is the overwhelmingly common rustc
+case, so matching only a bare PIECE would miss it. `build_call_output_pair`
+completes the stubbed multi-trial branch: the CALL gains the `join`-space output
+covering both registers and each half becomes a `SUBPIECE` of it, inserted after
+the call, with the INDIRECT creations destroyed. The stub's recorded blocker —
+no `constructJoinAddress` on the merged arch handle — was stale; the sibling
+`build_return_output` calls it today.
+
+Keeping the pair alive does not disable the phantom-killer above it. The
+uncomputed-half repair still runs, later, on the pair this rule preserves, so a
+half that is genuine leftover is still dropped — by the rule that can tell,
+instead of by a width heuristic that cannot.
+
+The gate is three-valued because the language fact and the forcing switch are
+different questions. `auto` acts only on an image the loader's source-language
+detection reported as rustc-produced (`Compiler::Rustc`, recorded on the
+`Architecture` at `load file` and copied into the per-function snapshot per 00
+§0.5); the XML `<binaryimage>` bootstrap never runs the analyzer tier, so `auto`
+is inert on the datatest corpus **by construction**, not by luck. `always` drops
+the language test, which is what `tests/stages/kuna-rustabi.xml` needs — a
+`<bytechunk>` carries no `.comment` record to detect. The shipped default is
+`off`: the pair this keeps alive is rendered as a raw fixed-size container until
+a later pass gives it an enum type, so the option buys information at the cost of
+polish, and that trade is the operator's to make.
+
+What this deliberately does **not** do: it does not name anything `Result` or
+`Option`, does not synthesize a union, struct or enum type, and does not touch
+emission. Its entire deliverable is that the payload exists as a variable and is
+connected to its producer. Spelling that value as a Rust enum is a chapter
+[05](05-types.md) decision that cannot be made until the value survives to be
+spelled.
+
 ### The ABI seam (`kuna_langabi.rs`)
 
 **(kuna, output languages)** How a recovered calling convention *appears* is a
@@ -779,7 +864,12 @@ prevent. Rust's genuinely distinct ABI surface — a niche-optimized
 `rax:rdx`, a slice passed as a `(ptr, len)` register pair — is an **enum and
 discriminant inference** problem belonging to chapter [05](05-types.md), not a
 convention problem belonging here. Modelling it as a convention would be
-modelling the wrong thing.
+modelling the wrong thing. Measurement has since sharpened where the `rax:rdx`
+half of that sits: the *storage* is not a Rust-specific convention at all (the
+cspec's `join_dual_class` rule already describes it and kuna already recovers
+it), so what P4 owns is keeping the recovered pair alive and connecting it at
+the call — `option rustabi`, §4.2 — while naming and typing the value stays a
+chapter 05 problem.
 
 The one decision the seam does own is load-bearing rather than decorative: Rust
 declares `extern "C"` exactly when the recovered prototype is variadic, because

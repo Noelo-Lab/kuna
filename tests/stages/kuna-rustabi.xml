@@ -1,0 +1,75 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: a rustc ScalarPair return (Result/Option) loses its payload twice - the
+    producer's second return register is deleted, and at the call site the payload
+    register is a local the function never assigns.
+
+    Stage / sub-stage: P4 call and prototype model, output-prototype.
+    P0 assertion:      option rustabi off|auto|always  (default off).
+
+    Source (rustc 1.x, -C opt-level=2 -C panic=abort -C relocation-model=static,
+    x86-64, bytes verbatim below; both functions are #[inline(never)]):
+
+        pub extern "Rust" fn prod(x: u32) -> Result<u32, u32> {
+            if x > 10 { Ok(x * 2) } else { Err(x + 7) }
+        }
+        pub extern "C" fn cons(x: u32) -> u32 {
+            match prod(x) { Ok(v) => v + 1, Err(e) => e + 100 }
+        }
+
+        prod:  lea (%rdi,%rdi,1),%ecx ; lea 0x7(%rdi),%edx ; xor %eax,%eax
+               cmp $0xb,%edi ; setb %al ; cmovae %ecx,%edx ; ret
+        cons:  push %rax ; call prod ; lea 0x1(%rdx),%esi ; lea 0x64(%rdx),%ecx
+               test $0x1,%al ; cmove %esi,%ecx ; mov %ecx,%eax ; pop %rcx ; ret
+
+    rustc returns the Result in the EAX:EDX pair - EAX the variant discriminant,
+    EDX the payload - which is the storage the x86-64 cspec's join_dual_class
+    output rule already describes, and kuna already recovers.
+
+    The bug (pass 1, the default): the discriminant is materialized as
+    `xor %eax,%eax; setb %al`, so RAX is a ONE-BIT logical value. Subvariable flow
+    truncates the RETURN to that width, deleting the other register with it, and
+    `prod` recovers as `bool prod(uint4)` with no payload at all. At the call site
+    the second half of the recovered pair falls into the un-ported multi-trial
+    branch of buildOutputFromTrials, so the CALL gets NO output and both registers
+    render as locals nothing ever assigns - `v3 // edx` read twice, never written.
+
+    The fix (pass 2, option rustabi always): the concatenation is recognized as a
+    discriminant/payload pair from the observed writes and kept, and the call
+    gains the join-space output the model asked for, with each half a SUBPIECE of
+    it. `always` rather than `auto` because a bytechunk carries no `.comment`
+    record for the source-language detection to read.
+-->
+<bytechunk space="ram" offset="0x201270" readonly="true">
+8d0c3f8d570731c083ff0b0f92c00f43d1c3cccccccccccccccccccccccccccc
+50e8daffffff8d72018d4a64a8010f44ce89c859c3
+</bytechunk>
+<symbol space="ram" offset="0x201270" name="prod"/>
+<symbol space="ram" offset="0x201290" name="cons"/>
+</binaryimage>
+<script>
+  <com>lo fu prod</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cons</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustabi always</com>
+  <com>lo fu prod</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cons</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RUSTABI #1: by default the producer collapses to the one-bit discriminant and the EDX payload is deleted" min="1" max="1">bool prod\(uint4 a0\)</stringmatch>
+<stringmatch name="RUSTABI #2: by default the consumer reads the payload register as a local nothing assigns" min="1" max="1">int4 v3; // edx</stringmatch>
+<stringmatch name="RUSTABI #3: by default the call to prod has no output at all" min="1" max="1">^  prod\(\);$</stringmatch>
+<stringmatch name="RUSTABI #4: with the option on the producer returns the whole pair" min="1" max="1">undefined16 prod\(uint4 a0\)</stringmatch>
+<stringmatch name="RUSTABI #5: with the option on the payload half is written at the second register's offset" min="1" max="1">v2\[8\] = v1;</stringmatch>
+<stringmatch name="RUSTABI #6: with the option on the call has an output and the payload is connected to it" min="1" max="1">v2 = prod\(\);</stringmatch>
+<stringmatch name="RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air" min="2" max="2">SUB124\(v2,8\)</stringmatch>
+<stringmatch name="RUSTABI #8: with the option on the discriminant guard reads the same call result" min="1" max="1">SUB128\(v2,0\) &amp; 1</stringmatch>
+</decompilertest>
