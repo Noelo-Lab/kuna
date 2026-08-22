@@ -748,6 +748,12 @@ pub struct ArchContext {
     /// parity), `9` = `wide`.
     /// (kuna) `outline` region spec (empty = off), option `outline`.
     pub outline_spec: String,
+    /// (kuna) `option cleanupcode`: delete the Rust drop/deallocate call sites
+    /// (`core::ptr::drop_in_place`, `<T as core::ops::drop::Drop>::drop`,
+    /// `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) from the
+    /// pre-SSA op graph.  Read by
+    /// [`ActionRemoveCleanupCode`](crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode).
+    pub remove_cleanup_code: bool,
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
@@ -1078,6 +1084,7 @@ impl ArchContext {
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
+            remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)

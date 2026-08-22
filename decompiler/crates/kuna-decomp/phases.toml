@@ -1650,6 +1650,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "cleanupcode"
+values = "on|off"
+default = "on"
+destructive = true
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "oxidizer-CleanupCodeRemover"
+summary = "REMOVES CODE: delete the Rust drop/deallocate call sites. Rust emits a drop-glue call at every scope exit and every `?` early return, so decompiled Rust is dominated by `core::ptr::drop_in_place<...>(v)` lines that appear nowhere in the source and carry no meaning for a reader. A direct CALL whose recovered callee name normalizes to one of `core::ptr::drop_in_place`, `core::ops::drop::Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc` or `__rustc::__rust_dealloc` is destroyed in the PRE-SSA window (the top of mainloop, gated on heritage pass 0), which is the point of the timing: the register/stack writes that existed only to set up the drop's arguments lose their last reader and are collected by the ordinary ActionDeadCode fixpoint, so the argument setup goes with the call instead of being left behind as unexplained assignments. Normalization reproduces the Oxidizer matcher: un-escape the legacy rustc `$LT$`/`$GT$`/`$u20$` mangling, then collapse the innermost angle-bracket group repeatedly - deleting a plain generic argument list and replacing a `<T as Trait>` qualified path with the TRAIT name - so `_$LT$alloc..vec..Vec$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$::drop` matches and `FakeCrypt::fileops::drop_ransom_note` does not. Oxidizer's `free`/`close`/`_close` entries are deliberately NOT carried: kuna's primary corpus is C binaries and deleting `free()` would be a catastrophically wrong answer. The remaining names cannot occur in a C program, which is what makes the pass structurally inert on a C binary and lets it default ON with no compiler-detection channel from the loader."
+use_when = "On by default (DIV-81). A Rust binary whose functions are dominated by drop_in_place/dealloc glue that is not in the source. Flip OFF to keep every drop and deallocation call site - e.g. when auditing a use-after-free, reasoning about when a resource is actually released, or matching the binary instruction-for-instruction. Inert on any binary with no Rust drop symbols, so C/C++ output is byte-identical either way."
+example = "option cleanupcode off"
+source_decompiler = "oxidizer"
+inspiration = "SEFCOM Oxidizer CleanupCodeRemover (angr/rust/optimization_passes/cleanup_code_remover.py), STAGE = BEFORE_VARIABLE_RECOVERY; FakeCrypt::fileops::encrypt_file"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "core::ptr::drop_in_place(...) calls all over a decompiled rust function|drop glue and deallocation calls that are nowhere in the rust source|Drop::drop / __rust_dealloc / RawVecInner::deallocate noise at every scope exit|rust output is twice as long as the source because of automatic resource management|flip off to see when a rust value is actually dropped or freed"
+live_field = "remove_cleanup_code"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "noreturn_extern"
 values = "on|off"
 default = "on"

@@ -196,15 +196,17 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // and `iteboolean`, right after `iteregion` (short-circuit 0/1 select ->
     // boolean assignment, DIV-51); and `paramcopyhoist`, option-gated default-off,
     // LAST of all (P6 parameter copy-shadow entry-block anchor -- it runs after the
-    // structured tree is final so no structuring decision can be perturbed).)
+    // structured tree is final so no structuring decision can be perturbed);
+    // and `cleanupcode`, option-gated default-ON, at the TOP of mainloop (S2 Rust
+    // drop/deallocate call removal in the pre-SSA window, DIV-81).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 273,
-        "full universal tree must render 252 C++ leaves + 14 kuna leaves (branchflip + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck) + 7 container headers"
+        nonblank, 274,
+        "full universal tree must render 252 C++ leaves + 15 kuna leaves (branchflip + cleanupcode + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note

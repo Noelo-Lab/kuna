@@ -1756,7 +1756,11 @@ mod tests {
         // and oxidizer-securitycheck / rustc bounds-check panic-branch stripping
         // (option off = the `if (idx >= len) panic_bounds_check()` guard, on = the
         // guarded load alone)
-        assert_eq!(count, 210, "corpus file count drifted");
+        // and oxidizer-cleanupcode / the Rust drop/deallocate call sites are
+        // deleted in the pre-SSA window, so the drop glue AND the argument setup
+        // that only fed it are both gone (option off = both calls plus both
+        // argument constants come back)
+        assert_eq!(count, 211, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

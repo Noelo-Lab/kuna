@@ -600,6 +600,16 @@ pub fn universal_sched(
         name: "mainloop",
         children: vec![
             act!(ActionUnreachable::boxed("base")),
+            // (kuna) cleanupcode (option `cleanupcode`, default-ON, DIV-81): delete
+            // the Rust drop/deallocate call sites (SEFCOM Oxidizer's
+            // CleanupCodeRemover, whose STAGE is BEFORE_VARIABLE_RECOVERY).  Runs at
+            // the very top of mainloop, self-gated on `get_heritage_pass() == 0`:
+            // the pre-SSA window has no INDIRECT call effects to unpick and no
+            // MULTIEQUAL to patch, and deleting the CALL there is what lets the
+            // ordinary ActionDeadCode fixpoint collect the argument setup that only
+            // fed the drop.  Before `outline`, so a region whose only call was drop
+            // glue becomes outline-eligible.  Inert on a non-Rust binary.
+            act!(crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode::boxed("deadcode")),
             // (kuna) outline (option `outline`, default-OFF - destructive, and inert
             // with no region supplied).  Excise a SUPPLIED single-entry region and
             // emit a call to a synthesized pseudofunction in its place.
