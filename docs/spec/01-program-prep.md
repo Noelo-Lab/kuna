@@ -73,7 +73,8 @@ Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are
 bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
-`KUNA_RELOCREBASE` (`relocrebase`), `KUNA_MACHO_ARM64E` (`macho-arm64e`),
+`KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
+`KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
@@ -261,6 +262,53 @@ funcsym stream:
   `DT_MIPS_GOTSYM`) and marks the external GOT slots constant, so with
   read-only propagation the `lw $t9, off($gp); jalr $t9` sequence folds to the
   named import (the bootstrap turns `readonlypropagate` on for MIPS only).
+- **Linked-image dynamic relocations** (kuna, `dynrelocs`, default-on,
+  env-bridged): the loader maps the `PT_LOAD` bytes the *linker* wrote, which is
+  not the image a process runs. Every slot filled by a dynamic relocation —
+  `R_*_RELATIVE`, `R_*_GLOB_DAT`, `R_*_JUMP_SLOT` — is left at zero for the
+  run-time loader to complete, and in a PIE (which is the default link mode of
+  every current toolchain) that is the whole `.got` plus every relocated function
+  pointer in `.data.rel.ro`. A call through such a slot therefore reads a null
+  target and can never resolve, which is the `(*dat_<addr>)(...)` rendering of a
+  callee that is a *named function in the very same image*. Zero is not an
+  ambiguity to be judged; it is a byte the run-time image never holds.
+  `decompiler/crates/kuna-analysis/src/loader/kuna_dynrelocs.rs (resolve)` walks
+  `.rela.dyn`/`.rel.dyn`/`.rela.plt` and computes the value the dynamic loader
+  would store: for `RELATIVE` the image's load bias plus the addend (kuna maps a
+  linked image at the vaddrs it declares, so the bias is zero and the value is the
+  addend); for `GLOB_DAT`/`JUMP_SLOT` the symbol's address, **and only when that
+  symbol is defined in this same image**. An undefined one is an import — its
+  value lives in another object, there is nothing to write, and the PLT/import
+  naming above already covers the call — so it is skipped and that path is
+  untouched, lazy-binding stub contents included. A `REL` table (32-bit ELF)
+  carries no addend field, so the in-place word is read back as the addend, the
+  same in-place convention `relocobjects` uses. Architectures are named by their
+  relocation triple: x86-64, AArch64, i386 and ARM; a machine with no entry
+  produces nothing rather than guessing at a number that means something else
+  there.
+
+  Applying the relocation is only half of it. `.got` is `SHF_WRITE`, so nothing
+  downstream would trust a value read out of it, and the constant fold of
+  read-only storage is gated program-wide by `option readonly`
+  (`readonlypropagate`, default off — turning it on would fold every `.rodata`
+  read in the program, a far larger change than this one). The narrow warrant is
+  `PT_GNU_RELRO`: the linker's own statement that the segment is `mprotect`ed
+  read-only once startup relocation finishes. So the written slots that RELRO
+  covers are reported twice — through `getReadonly` (which paints
+  `Varnode::readonly` as for any read-only section) and separately as
+  `ObjectLoadImage::dynreloc_const_ranges`, carried to
+  `Architecture::dynreloc_const` and into every per-function handle, where
+  `ActionVarnodeProps` folds a read-only varnode inside one of those ranges even
+  with global propagation off (§3.4). The halves are useless apart: relocating
+  without the constancy leaves the load unfolded, and declaring constancy without
+  relocating would fold the call target to zero. Slots outside RELRO — a
+  `RELATIVE` pointer in ordinary `.data` — are still filled in, because that IS
+  the value at process start, but are never declared constant, because the
+  program may legitimately overwrite them.
+
+  This is a different path from `relocobjects`/`relocrebase` above, which own the
+  *pre-link* `ET_REL` object; a relocatable object's relocations are applied by
+  the layout pass and this walk does not run for it.
 - **i386-PIE stubs** (angr, `i386_pie_plt`, default-on, env-bridged): a PIE i386
   PLT entry is GOT-relative (`jmp *disp(%ebx)`, bytes `FF A3 <disp32>`), so naming
   it needs the GOT base `%ebx` holds at run time; `elf_plt.rs (i386_got_base)`

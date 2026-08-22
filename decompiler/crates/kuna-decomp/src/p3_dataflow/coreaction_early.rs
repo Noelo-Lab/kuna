@@ -558,7 +558,19 @@ impl Action for ActionVarnodeProps {
                     }
                 }
             } else if has_action_property {
-                if cachereadonly && is_read_only {
+                // (kuna `dynrelocs`) `cachereadonly` is the program-wide `option
+                // readonly`. A PT_GNU_RELRO-frozen dynamic-relocation slot folds
+                // regardless: its value was computed by the linker and the range
+                // is mprotected read-only before main, so the fold is a fact, not
+                // a policy. The range list is empty on every non-ELF path.
+                let dynreloc_fold = is_read_only
+                    && !cachereadonly
+                    && !data.get_arch().dynreloc_const.is_empty()
+                    && data
+                        .vbank()
+                        .get(vn)
+                        .is_some_and(|v| data.get_arch().dynreloc_const_contains(v.get_offset()));
+                if (cachereadonly || dynreloc_fold) && is_read_only {
                     if data.fillin_read_only(vn).unwrap_or(false) {
                         self.base.count += 1;
                     }

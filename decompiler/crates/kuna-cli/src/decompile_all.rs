@@ -425,6 +425,7 @@ fn is_loadtime_gate(name: &str) -> bool {
         "relocobjects"
             | "i386_pie_plt"
             | "relocrebase"
+            | "dynrelocs"
             | "macho-arm64e"
             | "typedepth"
             | "ifuncfpret"
@@ -501,6 +502,18 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
         );
         env.set(
             kuna_decomp::kuna_relocrebase::RELOCREBASE_ENV,
+            if on { "on" } else { "off" },
+        );
+    }
+    // (kuna, DIV-84) Same timing for the linked-image dynamic relocations: they
+    // are applied inside the loader's own snapshot of the image bytes.
+    if let Some(value) = last_option_value(options, "dynrelocs") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV,
             if on { "on" } else { "off" },
         );
     }

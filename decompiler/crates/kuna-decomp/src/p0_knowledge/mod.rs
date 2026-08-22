@@ -16,6 +16,8 @@ pub mod kuna_i386_pie_plt;
 pub mod kuna_ifuncfpret;
 // (kuna) Relocatable-object analysis-fact rebase option gate (load-time, env-bridged).
 pub mod kuna_relocrebase;
+// (kuna) Linked-image dynamic-relocation application option gate (load-time, env-bridged).
+pub mod kuna_dynrelocs;
 // (kuna) DWARF full-depth type-resolution option gate (load-time, env-bridged).
 pub mod kuna_typedepth;
 // (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the

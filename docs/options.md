@@ -220,6 +220,9 @@ Three tiers:
 | functions and decompile-all disagree on how many functions a relocatable object has | [`relocrebase`](#relocrebase) |
 | a -g .o names one function at address 0 and leaves the rest sub_<addr> | [`relocrebase`](#relocrebase) |
 | string literals and dwarf-named globals in a .o never attach to the loaded image | [`relocrebase`](#relocrebase) |
+| a call in a pie binary renders as (*dat_<addr>)(...) with no name although the callee is a named function in the same image | [`dynrelocs`](#dynrelocs) |
+| a got slot reads back as 0 in the decompiled output | [`dynrelocs`](#dynrelocs) |
+| reading a relocated function-pointer table in a pie binary yields all zeroes | [`dynrelocs`](#dynrelocs) |
 | a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
 | an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
 | xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
@@ -882,6 +885,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) makes kuna functions and kuna decompile-all agree on a .o/.obj, and attaches that object's DWARF names, string literals and named globals to the loaded image. Flip off to restore the pre-fix behavior -- phantom sub_<section-offset> entries beside every real function, one DWARF function at address 0, and no string/data attachment.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-289
 - **Example:** `option relocrebase off`
+
+### `dynrelocs` -- on | off, default `on`
+
+- **Symptoms:** a call in a pie binary renders as (*dat_<addr>)(...) with no name although the callee is a named function in the same image; a got slot reads back as 0 in the decompiled output; reading a relocated function-pointer table in a pie binary yields all zeroes.
+- **What it does:** Apply a LINKED image's dynamic relocations (.rela.dyn / .rel.dyn / .rela.plt) when the loader snapshots it, and mark the slots PT_GNU_RELRO freezes as constant. kuna maps the PT_LOAD bytes the linker wrote, but a PIE (ET_DYN) or dynamically linked ET_EXEC leaves every R_*_RELATIVE / GLOB_DAT / JUMP_SLOT slot at 0 for the run-time loader, so the whole .got reads back null and a call through a function pointer the linker itself resolved renders (*dat_<addr>)(...). This fills the slots in (RELATIVE = load bias + addend; GLOB_DAT/JUMP_SLOT only when the symbol is DEFINED in this same image, so imports and the PLT naming path are untouched) and reports the written slots that PT_GNU_RELRO covers as constant, which is what lets the engine fold the load and resolve the call to its name. x86-64, AArch64, i386 and ARM; both RELA and REL (in-place addend) tables. Distinct from relocobjects/relocrebase, which own the pre-link ET_REL .o path. Loader-tier: read via the kuna_dynrelocs env var (the image bytes are snapshotted at load file).
+- **When to flip:** On (default) names calls made through a relocated GOT slot in any PIE, and gives the relocated value to anything that reads that memory; an unrelocated slot holds 0, which the run-time image never holds, so this is a correctness fix rather than a judgement call. Flip off to restore the pre-fix bytes exactly - every GOT slot back to 0 and every such call back to (*dat_<addr>)(...).
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-dynrelocs
+- **Example:** `option dynrelocs off`
 
 ### `ifuncfpret` -- on | off, default `off`
 

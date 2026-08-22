@@ -263,6 +263,14 @@ pub struct Architecture {
     pub aggressive_ext_trim: bool,
     /// Treat readonly values as constants (C++ `readonlypropagate`).
     pub readonlypropagate: bool,
+    /// (kuna `dynrelocs`) `[start, stop]` (inclusive) offsets whose read-only
+    /// contents fold even with [`Self::readonlypropagate`] off — the loader's
+    /// `PT_GNU_RELRO`-frozen dynamic-relocation slots
+    /// (`ObjectLoadImage::dynreloc_const_ranges`). Installed by the ELF bootstrap
+    /// right after the read-only ranges it already collects, and carried into
+    /// every per-function handle by `build_arch_handle`. Empty on every other
+    /// path, so it is inert for the XML datatest oracle.
+    pub dynreloc_const: Rc<Vec<(u64, u64)>>,
     /// Infer pointers from likely-address constants (C++ `infer_pointers`).
     pub infer_pointers: bool,
     /// How many bits of alignment a function ptr has (C++ `funcptr_align`).
@@ -888,6 +896,18 @@ pub struct Architecture {
     /// file`, upstream of `option`); this bool exists only for catalog visibility
     /// and the `phase catalog` live `current` field.
     pub analysis_relocrebase: bool,
+    /// (kuna) Gate the linked-image dynamic-relocation pass (`dynrelocs`);
+    /// default **on** (DIV-84). A PIE / dynamically linked ELF leaves every
+    /// `R_*_RELATIVE`/`GLOB_DAT`/`JUMP_SLOT` slot at 0 for the run-time loader, so
+    /// kuna's mapped image reads a null function pointer and a call through the
+    /// GOT renders `(*dat_<addr>)(…)`. When on,
+    /// `kuna-analysis::loader::kuna_dynrelocs` fills those slots in and reports
+    /// the `PT_GNU_RELRO`-frozen ones as constant so the call resolves to its
+    /// name. Read through the [`crate::kuna_dynrelocs`] **env var** (the image
+    /// bytes are snapshotted at `load file`, upstream of `option`); this bool
+    /// exists only for catalog visibility and the `phase catalog` live `current`
+    /// field.
+    pub analysis_dynrelocs: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -1358,6 +1378,7 @@ impl Architecture {
             max_jumptable_size: 0,
             aggressive_ext_trim: false,
             readonlypropagate: false,
+            dynreloc_const: Rc::new(Vec::new()),
             infer_pointers: false,
             funcptr_align: 0,
             flowoptions: 0,
@@ -1461,6 +1482,7 @@ impl Architecture {
             analysis_i386_pie_plt: false,
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
             analysis_relocrebase: false,
+            analysis_dynrelocs: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_datasyms: false,
@@ -1637,6 +1659,7 @@ impl Architecture {
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
+        self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
@@ -2004,6 +2027,15 @@ impl Architecture {
                 crate::kuna_relocrebase::set_relocrebase_env(val);
                 Ok(format!(
                     "relocatable-object analysis rebase turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            "dynrelocs" => {
+                let val = on_or_off(p1)?;
+                self.analysis_dynrelocs = val;
+                crate::kuna_dynrelocs::set_dynrelocs_env(val);
+                Ok(format!(
+                    "linked-image dynamic-relocation application turned {}",
                     if val { "on" } else { "off" }
                 ))
             }
@@ -2596,6 +2628,10 @@ impl Architecture {
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
         // `Funcdata::fillinReadOnly` (the readonly-RAM-global constant fold).
         ctx.readonlypropagate = self.readonlypropagate;
+        // (kuna `dynrelocs`) Carry the PT_GNU_RELRO-frozen dynamic-relocation
+        // slots so `ActionVarnodeProps` folds those loads with global read-only
+        // propagation still off. `Rc` clone: the list is built once at load.
+        ctx.dynreloc_const = Rc::clone(&self.dynreloc_const);
         // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
         // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.
         ctx.split_datatype_config = self.split_datatype_config;

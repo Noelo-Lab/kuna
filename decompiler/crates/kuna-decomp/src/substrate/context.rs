@@ -951,6 +951,16 @@ pub struct ArchContext {
     /// [`Funcdata::fillin_read_only`](crate::funcdata::Funcdata::fillin_read_only).
     /// `false` by default (C++ `Architecture::resetDefaults`).
     pub readonlypropagate: bool,
+    /// (kuna `dynrelocs`) `[start, stop]` (inclusive) offsets whose read-only
+    /// contents are foldable even with [`Self::readonlypropagate`] off: the
+    /// dynamic-relocation slots the loader filled in that `PT_GNU_RELRO` freezes.
+    /// The value is the linker's, the memory is `mprotect`ed read-only before
+    /// `main`, and folding it is what turns a call through a GOT slot back into a
+    /// named call — but `option readonly` is a program-wide switch, so these
+    /// ranges carry the exception. Sorted ascending, disjoint, and EMPTY for
+    /// every hand-built fixture and every XML `<binaryimage>` load, which is why
+    /// the datatest parity oracle cannot see this field.
+    pub dynreloc_const: Rc<Vec<(u64, u64)>>,
     /// Whether the volatile read/write userops display \e functionally (C++
     /// `VolatileReadOp`/`VolatileWriteOp` ctor `functional` flag — the `<volatile
     /// format="functional">` spec attribute).  Drives the `setHoldOutput` branch
@@ -1132,6 +1142,9 @@ impl ArchContext {
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
             readonlypropagate: false,
+            // (kuna) No dynamic-relocation const slots until a real ELF load
+            // installs them (see `Architecture::dynreloc_const`).
+            dynreloc_const: Rc::new(Vec::new()),
             // Default volatile ops are non-functional (`getDisplay() != 0`), so the
             // volatile-read op's output is held; matches the unconfigured glb.
             volatile_display_functional: false,
@@ -1214,6 +1227,20 @@ impl ArchContext {
     /// `Funcdata::fillinReadOnly`.
     pub fn readonly_propagate(&self) -> bool {
         self.readonlypropagate
+    }
+
+    /// (kuna `dynrelocs`) Whether `offset` lies in a dynamic-relocation slot that
+    /// `PT_GNU_RELRO` freezes, so a read-only varnode there may be folded to its
+    /// relocated value even with global read-only propagation off. Binary search
+    /// over the sorted, disjoint [`Self::dynreloc_const`]; a plain `false` when
+    /// that list is empty, which is every non-ELF path.
+    pub fn dynreloc_const_contains(&self, offset: u64) -> bool {
+        let r = &self.dynreloc_const;
+        match r.binary_search_by(|(lo, _)| lo.cmp(&offset)) {
+            Ok(_) => true,
+            Err(0) => false,
+            Err(i) => offset <= r[i - 1].1,
+        }
     }
 
     /// Whether the volatile-read op's output must be held (C++

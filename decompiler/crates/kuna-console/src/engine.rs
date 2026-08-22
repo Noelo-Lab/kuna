@@ -1433,6 +1433,14 @@ pub fn bootstrap_from_object(
         sleigh.base().unwrap().translate(),
     );
 
+    // (kuna `dynrelocs`) The PT_GNU_RELRO-frozen dynamic-relocation slots, read
+    // off the same loader while it is still in hand. `readonly_ranges` above
+    // already covers them (the loader reports them through `get_readonly`), which
+    // paints `Varnode::readonly`; this second list is what lets
+    // `ActionVarnodeProps` FOLD those particular reads without the program-wide
+    // `option readonly`. Empty for a non-ELF, an `ET_REL` object, or the gate off.
+    let dynreloc_const: Vec<(u64, u64)> = loader.dynreloc_const_ranges().to_vec();
+
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let symbols = read_loader_symbols_generic(&loader);
     // The data half of the same symbol tables (`STT_OBJECT`), read here for the
@@ -1480,6 +1488,14 @@ pub fn bootstrap_from_object(
             first,
             last_open,
         );
+    }
+
+    // (kuna `dynrelocs`) ... and hand the foldable subset of them to the engine.
+    // Sorted so `GlobalContainer::dynreloc_const_contains` can binary-search.
+    {
+        let mut ranges = dynreloc_const;
+        ranges.sort_unstable();
+        prog.arch_mut().dynreloc_const = std::rc::Rc::new(ranges);
     }
 
     // NB: the analysis-pass facts are committed later, gated, in

@@ -44,7 +44,7 @@ fn surface_count_is_102() {
 }
 
 #[test]
-fn settable_count_is_113() {
+fn settable_count_is_114() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -78,12 +78,13 @@ fn settable_count_is_113() {
     // +1 for `spillargtrial` (P4 caller-save spill tolerance in input-trial scoring, GH-275).
     // +1 for `securitycheck` (P7 rustc panic-branch stripping, DIV-82).
     // +1 for `cleanupcode` (P2 Rust drop/deallocate call removal, DIV-81).
-    assert_eq!(kuna_num_settables(), 113);
-    assert_eq!(SETTABLE_TABLE.len(), 113);
+    // +1 for `dynrelocs` (P1 linked-image dynamic-relocation application, DIV-84).
+    assert_eq!(kuna_num_settables(), 114);
+    assert_eq!(SETTABLE_TABLE.len(), 114);
 }
 
 #[test]
-fn tier_counts_are_24_core_50_transform_39_analysis() {
+fn tier_counts_are_24_core_50_transform_40_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -133,7 +134,8 @@ fn tier_counts_are_24_core_50_transform_39_analysis() {
     // DIV-82) -- transform, like its `stackguard` sibling: it deletes real
     // instructions on a name trigger -- and +1 for `cleanupcode` (P2 Rust
     // drop/deallocate call removal, DIV-81).
-    assert_eq!((core, transform, analysis), (24, 50, 39));
+    // analysis 39 -> 40: +1 for `dynrelocs` (P1 linked-image dynamic relocations, DIV-84).
+    assert_eq!((core, transform, analysis), (24, 50, 40));
 }
 
 #[test]
@@ -335,12 +337,16 @@ fn option_values_live_value_present_for_35_suppressed_for_77() {
     // +1 for `noreturn_externmatch`, field-backed via `noreturn_extern_match`, DIV-13); the
     // live_value returns the current value for them and None for
     // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
-    // 18 analysis/loader-tier gates (which have no `live_field` — their live state
+    // 19 analysis/loader-tier gates (which have no `live_field` — their live state
     // is read console-side via the hand-written `kuna_live_value` / an env gate,
     // not the codegen `live_value`; +1 for `funcstart_patterns`, the full
     // byte-pattern function-start pass). `relocobjects` (DIV-8) gates the loader,
     // not a printer/engine flag, so it too has no codegen live reader.
     const PASS_GATES: &[&str] = &[
+        // (kuna) Linked-image dynamic-relocation application (DIV-84): a load-time
+        // gate read via the `kuna_dynrelocs` env var (the relocations are applied
+        // while the loader snapshots the image), like `relocrebase`.
+        "dynrelocs",
         "noreturn_known",
         "libproto",
         // (kuna) The measured libc signature extension — an analysis-pass gate with
@@ -624,9 +630,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
-    // aifstrict's P1 row and spillargtrial's P4 row sit mid-table, so they do not
-    // move the tail).
-    assert_eq!(json.matches("},\n").count(), 112);
+    // aifstrict's P1 row, spillargtrial's P4 row and dynrelocs' P1 row sit
+    // mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 113);
 }
 
 #[test]

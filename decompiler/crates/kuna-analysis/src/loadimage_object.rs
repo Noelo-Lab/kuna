@@ -194,6 +194,16 @@ pub struct ObjectLoadImage {
     /// so a `lw $t9, off($gp); jalr $t9` indirect call resolves to the import name.
     /// Empty off-MIPS.  See [`crate::loader::elf_plt::mips_got_const_ranges`].
     const_ranges: Vec<(u64, u64)>,
+    /// (kuna `dynrelocs`) `[start, stop]` (inclusive) byte ranges of the dynamic
+    /// relocation slots this loader filled in that `PT_GNU_RELRO` freezes — the
+    /// GOT entries whose relocated value the engine may fold to a constant, which
+    /// is what turns `(*dat_e0dc8)(…)` back into a named call. Reported through
+    /// `get_readonly` (so the varnodes carry `Varnode::readonly`) *and* through
+    /// [`ObjectLoadImage::dynreloc_const_ranges`] (so the fold is enabled for
+    /// exactly these ranges without turning on global read-only propagation).
+    /// Empty for a non-ELF, an `ET_REL` object, or `--option dynrelocs off`.
+    /// See [`crate::loader::kuna_dynrelocs`].
+    dynreloc_const: Vec<(u64, u64)>,
     /// The address space the file bytes map to (C++ `spaceid`, null until
     /// `attachToSpace`).
     spaceid: Option<Rc<AddrSpace>>,
@@ -243,6 +253,37 @@ fn collect_data_sym<'a>(
     if seen.insert(addr) {
         out.push(DataSym { addr, name, size });
     }
+}
+
+/// (kuna `dynrelocs`) Store `value` into the `width`-byte slot at `vma`, in the
+/// image's own byte order (`le`), if a loaded segment actually backs it.
+///
+/// Returns whether the write landed: a slot in a `.bss`-style RAM tail past the
+/// segment's file extent has no bytes to patch and is skipped rather than
+/// synthesized, so the loader's zero-fill contract is untouched.
+fn patch_segments(segments: &mut [Segment], vma: u64, value: u64, width: usize, le: bool) -> bool {
+    for seg in segments.iter_mut() {
+        if vma < seg.vma {
+            continue;
+        }
+        let off = (vma - seg.vma) as usize;
+        let Some(end) = off.checked_add(width) else {
+            continue;
+        };
+        if end > seg.data.len() {
+            continue;
+        }
+        let raw = value.to_le_bytes();
+        if le {
+            seg.data[off..end].copy_from_slice(&raw[..width]);
+        } else {
+            for (i, b) in raw[..width].iter().rev().enumerate() {
+                seg.data[off + i] = *b;
+            }
+        }
+        return true;
+    }
+    false
 }
 
 impl ObjectLoadImage {
@@ -430,6 +471,22 @@ impl ObjectLoadImage {
         // Through the boundary: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
         let const_ranges = fmt.const_ranges(&file, bytes);
 
+        // (kuna `dynrelocs`) A linked image's `PT_LOAD` bytes are the LINKER's,
+        // not the run-time loader's: every slot a dynamic relocation fills reads
+        // back as 0. Fill them in here, on the owned segment copies, before
+        // anything reads them; the RELRO-frozen subset that actually landed is
+        // carried separately so the engine can fold those loads.
+        let le_image = file.is_little_endian();
+        let dynrelocs = crate::loader::kuna_dynrelocs::resolve(&file, bytes);
+        let mut applied: HashSet<u64> = HashSet::new();
+        for w in &dynrelocs.writes {
+            if patch_segments(&mut segments, w.vma, w.value, w.width as usize, le_image) {
+                applied.insert(w.vma);
+            }
+        }
+        let dynreloc_const: Vec<(u64, u64)> =
+            dynrelocs.const_ranges.into_iter().filter(|(lo, _)| applied.contains(lo)).collect();
+
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
             archtype,
@@ -439,6 +496,7 @@ impl ObjectLoadImage {
             funcsyms,
             datasyms,
             const_ranges,
+            dynreloc_const,
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64), // ~((uintb)0)
@@ -515,6 +573,9 @@ impl ObjectLoadImage {
             // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
             datasyms: Vec::new(),
             const_ranges: Vec::new(),
+            // (kuna `dynrelocs`) linked-image only: a relocatable object's
+            // relocations are already applied by the layout pass.
+            dynreloc_const: Vec::new(),
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64),
@@ -550,6 +611,21 @@ impl ObjectLoadImage {
     /// `kuna_sleigh::loadimage::section_flags::*`.
     pub fn section_snapshot(&self) -> Vec<(u64, u64, u32)> {
         self.sections.iter().map(|s| (s.vma, s.size, s.flags)).collect()
+    }
+
+    /// (kuna `dynrelocs`) The `[start, stop]` (inclusive) ranges of the dynamic
+    /// relocation slots this loader filled in that `PT_GNU_RELRO` freezes.
+    ///
+    /// `get_readonly` already reports them, which paints `Varnode::readonly` — but
+    /// the constant FOLD of a read-only global is gated globally by `option
+    /// readonly` (`Architecture::readonlypropagate`, default off, and turning it on
+    /// would fold every `.rodata` read in the program). These ranges are the
+    /// narrow exception: values the LINKER computed, in memory the loader
+    /// `mprotect`s read-only before `main`. The engine carries them on
+    /// `Architecture::dynreloc_const` and `ActionVarnodeProps` folds a read-only
+    /// varnode inside one even when global propagation is off.
+    pub fn dynreloc_const_ranges(&self) -> &[(u64, u64)] {
+        &self.dynreloc_const
     }
 
     /// The loader's function symbols as `(load_vma, name)` pairs — the SAME list
@@ -786,6 +862,11 @@ impl LoadImage for ObjectLoadImage {
         for &(start, stop) in &self.const_ranges {
             list.insert_range(Rc::clone(space), start, stop);
         }
+        // (kuna) The dynamic-relocation slots `PT_GNU_RELRO` freezes: read-only in
+        // the run-time image, so their relocated contents are trustworthy.
+        for &(start, stop) in &self.dynreloc_const {
+            list.insert_range(Rc::clone(space), start, stop);
+        }
         for sec in &self.sections {
             if sec.flags & section_flags::READONLY != 0 {
                 if sec.size == 0 {
@@ -819,6 +900,10 @@ impl LoadImage for ObjectLoadImage {
             s.addr = s.addr.wadd(badjust);
         }
         for r in &mut self.const_ranges {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
+        }
+        for r in &mut self.dynreloc_const {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
@@ -1366,6 +1451,39 @@ mod tests {
         // `@VERSION` suffix leaks through.
         assert!(!syms.contains_key(&0), "no function should be registered at 0x0");
         assert!(syms.values().all(|n| !n.contains('@')), "no @VERSION in names");
+    }
+
+    /// (kuna `dynrelocs`) A real PIE: the three `R_X86_64_RELATIVE` slots are
+    /// filled in with `B + A`, the five `GLOB_DAT` / nine `JUMP_SLOT` entries all
+    /// name *undefined* imports and must be left alone, and only the two RELATIVE
+    /// slots that `PT_GNU_RELRO` (`0x3d78 + 0x288`) covers are reported constant —
+    /// `0x4008` sits in writable `.data` past the RELRO end and must not be.
+    #[test]
+    fn pie_dynamic_relocations_are_applied_and_relro_slots_are_constant() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let path = format!("{}/tests/fixtures/cet_pie_x86_64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).expect("fixture");
+        let mut img = ObjectLoadImage::from_bytes(&path, &bytes).expect("load PIE");
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        img.attach_to_space(Rc::clone(&ram));
+
+        let read_u64 = |img: &mut ObjectLoadImage, vma: u64| -> u64 {
+            let mut buf = [0u8; 8];
+            img.load_fill(&mut buf, &Address::new(Rc::clone(&ram), vma)).expect("mapped");
+            u64::from_le_bytes(buf)
+        };
+        assert_eq!(read_u64(&mut img, 0x3d78), 0x1240, ".init_array RELATIVE slot");
+        assert_eq!(read_u64(&mut img, 0x3d80), 0x1200, ".fini_array RELATIVE slot");
+        assert_eq!(read_u64(&mut img, 0x4008), 0x4008, ".data RELATIVE slot");
+        // The undefined GLOB_DAT / JUMP_SLOT imports keep the linker's bytes.
+        assert_eq!(read_u64(&mut img, 0x3fd8), 0, "__libc_start_main GLOB_DAT untouched");
+
+        assert_eq!(
+            img.dynreloc_const_ranges(),
+            &[(0x3d78u64, 0x3d7fu64), (0x3d80, 0x3d87)],
+            "only the RELRO-covered slots are constant"
+        );
     }
 
     #[test]
