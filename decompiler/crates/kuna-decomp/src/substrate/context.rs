@@ -625,6 +625,10 @@ pub struct ArchContext {
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
+    /// (kuna) `option rustadt` (0 off / 1 auto / 2 always): type the recovered
+    /// two-register return as a tagged two-variant aggregate; read by
+    /// [`crate::kuna_rustadt`].
+    pub rust_adt: u8,
     /// (kuna) The loader's source-language verdict for this image (rustc or not);
     /// what `option rustabi auto` tests.  Copied from the engine `Architecture`
     /// in `build_arch_handle`.
@@ -1078,6 +1082,9 @@ impl ArchContext {
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
+            // (kuna) `option rustadt` default-off; the real value is copied from
+            // the engine Architecture in `build_arch_handle`.
+            rust_adt: 0,
             source_is_rust: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,

@@ -1763,7 +1763,10 @@ mod tests {
         // and kuna-retinputhalf / a returned register half that is an input
         // parameter the function moved there is kept, so the parameter stays in
         // the signature (option off = the half AND the argument are dropped)
-        assert_eq!(count, 213, "corpus file count drifted");
+        // and kuna-rustadt / the two-register tagged return gets a synthesized
+        // struct-of-tag-and-variant-union type and its constructors (option off =
+        // an anonymous 16-byte container and byte-offset writes)
+        assert_eq!(count, 214, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

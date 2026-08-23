@@ -745,6 +745,15 @@ pub fn universal_sched(
             act!(ActionMappedLocalSync::boxed("localrecovery")),
             act!(ActionStartCleanUp::boxed("cleanup")),
             SchedNode::Pool { flags: REPEAT, name: "cleanup", rules: cleanup_rules },
+            // (kuna `rustadt`, default-OFF) Type the recovered two-register return
+            // as a tagged two-variant aggregate. Placed exactly here for two
+            // reasons: the main loop and the cleanup pool have finished, so the
+            // concatenation the return-recovery built has its final shape and the
+            // payload half has its inferred type; and the merge phase
+            // (`ActionAssignHigh`) has NOT run, so the locked struct is what the
+            // HighVariable is built from and what `ActionOutputPrototype` reads
+            // back out as the recovered return type.
+            act!(crate::p5_types::kuna_rustadt::ActionRustAdt::boxed("typerecovery")),
             act!(ActionPreferComplement::boxed("blockrecovery", true)),
             act!(ActionStructureTransform::boxed("blockrecovery", true)),
             act!(ActionNormalizeBranches::boxed("normalizebranches")),
@@ -776,6 +785,11 @@ pub fn universal_sched(
             act!(ActionMapGlobals::boxed("fixateglobals")),
             act!(ActionDynamicSymbols::boxed("dynamic")),
             act!(ActionNameVars::boxed("merge")),
+            // (kuna `rustadt`) Pin the variant facet from the dominating guard
+            // BEFORE the cast plane would score it. Here, not in the main loop:
+            // the resolution cache is keyed by `PcodeOp::getTime()`, so it has to
+            // be seeded on the final op graph.
+            act!(crate::p5_types::kuna_rustadt::ActionRustAdtFacet::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,

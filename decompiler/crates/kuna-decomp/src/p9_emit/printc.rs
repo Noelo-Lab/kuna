@@ -4910,7 +4910,9 @@ impl PrintC {
                 if nin > 1 {
                     self.emit.spaces(1, 0);
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
-                        self.push_vn_ir(fd, arch, vn, op);
+                        if !self.op_return_variant_ctor_ir(fd, arch, op, vn) {
+                            self.push_vn_ir(fd, arch, vn, op);
+                        }
                     }
                 }
             }
@@ -5203,6 +5205,49 @@ impl PrintC {
     /// `(numInput-1)`-deep comma chain, then the operands.  The function name is
     /// the opcode's operator name (the full type/userop name resolution is the
     /// next layer).
+    /// (kuna `rustadt`) Render a `return` whose value is a recovered tagged
+    /// two-variant aggregate as the VARIANT CONSTRUCTOR the guard selected --
+    /// `return Variant1(x);` in place of `return (RustEnum2_…)(ZEXT416(x) << 0x40);`.
+    ///
+    /// Only where the returned value is a single expression: a return site whose
+    /// join Varnode is written piece by piece already renders the construction
+    /// explicitly (`v.tag = 1; v.payload.Variant1.f0 = x; return v;`), and
+    /// re-spelling it as a call would duplicate the payload. Returns `false` to
+    /// leave the ordinary rendering in place.
+    fn op_return_variant_ctor_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        vn: VarnodeId,
+    ) -> bool {
+        let Some((name, payload)) = fd.kuna_rustadt_ctor(op) else { return false };
+        if fd.vbank().get(vn).map(|v| v.is_explicit()).unwrap_or(true) {
+            return false;
+        }
+        let payload = payload.filter(|p| fd.vbank().get(*p).is_some());
+        let name = name.to_string();
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::FuncToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        match payload {
+            Some(p) => self.push_vn_ir(fd, arch, p, op),
+            // A path on which the function writes no payload at all is the unit
+            // variant (`None`, `Ok(())`): print the constructor with no argument
+            // rather than the leftover register the caller happened to leave.
+            None => self.push_atom(&Atom::syntax(
+                "",
+                TagType::BlankToken,
+                crate::printlanguage::SyntaxHighlight::no_color,
+            )),
+        }
+        true
+    }
+
     fn op_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let opc = fd.obank().get(op).expect("op_func_ir: stale op").code();
         let name = func_operator_name(fd, op, opc);

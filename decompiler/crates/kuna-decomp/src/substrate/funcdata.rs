@@ -355,6 +355,13 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `rustadt`) The variant constructor to render at a RETURN: the member
+    /// name the guard selected on that path, and the Varnode carrying the payload
+    /// -- `None` where the function writes no payload on that path, which renders
+    /// as the argument-less `Variant0()`. Written by [`crate::kuna_rustadt`]; read
+    /// by the printer's RETURN arm. Empty unless `option rustadt` recovered a
+    /// tagged two-variant return here.
+    kuna_rustadt_ctor: std::collections::BTreeMap<OpId, (String, Option<VarnodeId>)>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -456,6 +463,7 @@ impl Funcdata {
             kuna_wire_symbols: Vec::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
+            kuna_rustadt_ctor: std::collections::BTreeMap::new(),
         })
     }
 
@@ -609,6 +617,21 @@ impl Funcdata {
     ) -> Option<&crate::kuna_rustabi::CalleeReturnWrites> {
         let sp = entry.get_space()?;
         self.kuna_callee_ret_writes.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `rustadt`) Record the variant constructor to render at `op`.
+    pub fn kuna_set_rustadt_ctor(&mut self, op: OpId, name: String, payload: Option<VarnodeId>) {
+        self.kuna_rustadt_ctor.insert(op, (name, payload));
+    }
+
+    /// (kuna `rustadt`) The variant constructor recorded for `op`, if any.
+    pub fn kuna_rustadt_ctor(&self, op: OpId) -> Option<(&str, Option<VarnodeId>)> {
+        self.kuna_rustadt_ctor.get(&op).map(|(n, v)| (n.as_str(), *v))
+    }
+
+    /// (kuna `rustadt`) Drop every recorded variant constructor.
+    pub fn kuna_clear_rustadt_ctors(&mut self) {
+        self.kuna_rustadt_ctor.clear();
     }
 
     /// Get the entry point address (C++ `getAddress`).

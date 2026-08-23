@@ -1,0 +1,87 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: the two-register value a rustc Result/Option is returned in survives
+    (see kuna-rustabi.xml) but has no NAME and no SHAPE. It renders as a raw
+    16-byte container, the tag and the payload are byte offsets into it, and
+    which variant a return site builds is nowhere in the output.
+
+    Stage / sub-stage: P5 types, aggregate-union.
+    P0 assertion:      option rustadt off|auto|always  (default off).
+
+    Source (rustc, -C opt-level=2, x86-64, bytes verbatim below; #[inline(never)]):
+
+        pub fn branchy(x: u32, y: u32) -> Result&lt;u32, u32&gt; {
+            if x &lt; 11 { return Ok(x.wrapping_add(y).wrapping_mul(3)); }
+            if y &gt; 100 { return Ok(y - 1); }
+            Err(x ^ y)
+        }
+
+        branchy: mov %esi,%edx ; cmp $0xb,%edi ; jae L1 ; add %edi,%edx
+                 lea (%rdx,%rdx,2),%edx ; xor %eax,%eax ; ret
+             L1: cmp $0x64,%edx ; jbe L2 ; dec %edx ; xor %eax,%eax ; ret
+             L2: xor %edi,%edx ; mov $0x1,%eax ; ret
+
+    Three RETURNs, the tag a literal 0 on two of them and 1 on the third: the
+    two-variant tagged case.
+
+    The bug (pass 1, the default): the return type is `undefined16`, the two Ok
+    paths render as a shift that buries the payload in the top half
+    (`ZEXT416(...) &lt;&lt; 0x40`), and the Err path writes byte offsets into an
+    anonymous char array. Nothing says there are two variants, which one a path
+    builds, or where the payload lives.
+
+    The fix (pass 2, option rustadt always): a struct of a tag plus a union of
+    two payload structs is synthesized and installed as the recovered return
+    type, each return site's union facet is pinned from the guard that fixed its
+    tag (never from ScoreUnionFields, which cannot see control flow and ties on
+    two same-width members), and a site whose value is one expression renders as
+    the variant constructor. `always` rather than `auto` because a bytechunk
+    carries no `.comment` record for the source-language detection to read.
+
+    The NEGATIVE half (samevariant, hand-assembled, verbatim below):
+
+        samevariant: mov %esi,%edx ; cmp $0xb,%edi ; jae L ; add %edi,%edx
+                     xor %eax,%eax ; ret
+                  L: dec %edx ; xor %eax,%eax ; ret
+
+    The same two-register return shape with the same discriminant-shaped low
+    half, but ONE tag value across both paths. One tag is not two variants, so
+    the pass refuses and the function must render IDENTICALLY in both passes.
+-->
+<bytechunk space="ram" offset="0x201200" readonly="true">
+89f283ff0b730801fa8d145231c0c383fa647605ffca31c0c331fab801000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x201240" readonly="true">
+89f283ff0b730501fa31c0c3ffca31c0c3
+</bytechunk>
+<symbol space="ram" offset="0x201200" name="branchy"/>
+<symbol space="ram" offset="0x201240" name="samevariant"/>
+</binaryimage>
+<script>
+  <com>lo fu branchy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu samevariant</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustadt always</com>
+  <com>lo fu branchy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu samevariant</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RUSTADT #1: by default the tagged return is an anonymous 16-byte container" min="1" max="1">undefined16 branchy\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="RUSTADT #2: by default a variant-0 path buries its payload in a shift" min="1" max="1">return ZEXT416\(\(a1 \+ a0\) \* 3\) &lt;&lt; 0x40;</stringmatch>
+<stringmatch name="RUSTADT #3: by default the tag is a byte offset into a char array" min="1" max="1">v1\[0\] = 1;</stringmatch>
+<stringmatch name="RUSTADT #4: with the option on the recovered return type names the layout" min="1" max="1">RustEnum2_16_8_0_1_uint4_uint4 branchy\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="RUSTADT #5: with the option on a single-expression return site renders as its variant constructor" min="1" max="1">return Variant0\(\(a1 \+ a0\) \* 3\);</stringmatch>
+<stringmatch name="RUSTADT #6: and so does the second variant-0 path" min="1" max="1">return Variant0\(a1 - 1\);</stringmatch>
+<stringmatch name="RUSTADT #7: with the option on the payload write names the variant the guard selected, not a byte range" min="1" max="1">v1\.payload\.Variant1\.f0 = a1 \^ a0;</stringmatch>
+<stringmatch name="RUSTADT #8: with the option on the tag is a named field" min="1" max="1">v1\.tag = 1;</stringmatch>
+<stringmatch name="RUSTADT #9: one tag value is not two variants, so the negative renders identically in BOTH passes" min="2" max="2">undefined16 samevariant\(</stringmatch>
+<stringmatch name="RUSTADT #10: and no variant type is ever synthesized for it" min="0" max="0">RustEnum2_16_8_0_0</stringmatch>
+</decompilertest>

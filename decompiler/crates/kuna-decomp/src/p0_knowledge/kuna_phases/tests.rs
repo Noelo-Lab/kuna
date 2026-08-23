@@ -25,7 +25,7 @@ fn subphase_count_is_43() {
 }
 
 #[test]
-fn surface_count_is_105() {
+fn surface_count_is_106() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
     // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
@@ -43,12 +43,14 @@ fn surface_count_is_105() {
     // keep a returned register half that is a placed input parameter).
     // +1 for the `option rustabi` surface row (kuna P4 output-prototype: keep the
     // two-register rustc ScalarPair return and connect it at the call).
-    assert_eq!(kuna_num_surfaces(), 105);
-    assert_eq!(SURFACE_TABLE.len(), 105);
+    // +1 for the `option rustadt` surface row (kuna P5 aggregate-union: synthesize
+    // the tagged two-variant type and pin its facet from the guard).
+    assert_eq!(kuna_num_surfaces(), 106);
+    assert_eq!(SURFACE_TABLE.len(), 106);
 }
 
 #[test]
-fn settable_count_is_117() {
+fn settable_count_is_118() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -86,12 +88,13 @@ fn settable_count_is_117() {
     // +1 for `retinputhalf` (P4 returned input-parameter half retention, DIV-85).
     // +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
     // +1 for `rustabi` (P4 rustc two-register ScalarPair return recovery).
-    assert_eq!(kuna_num_settables(), 117);
-    assert_eq!(SETTABLE_TABLE.len(), 117);
+    // +1 for `rustadt` (P5 rustc tagged two-variant return typing).
+    assert_eq!(kuna_num_settables(), 118);
+    assert_eq!(SETTABLE_TABLE.len(), 118);
 }
 
 #[test]
-fn tier_counts_are_26_core_50_transform_41_analysis() {
+fn tier_counts_are_27_core_50_transform_41_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -150,7 +153,10 @@ fn tier_counts_are_26_core_50_transform_41_analysis() {
     // core 25 -> 26: +1 for `rustabi` (P4 rustc ScalarPair return) -- core, not
     // transform: it keeps a value the engine already recovered instead of
     // introducing a new rewrite.
-    assert_eq!((core, transform, analysis), (26, 50, 41));
+    // core 26 -> 27: +1 for `rustadt` (P5 rustc tagged two-variant return typing)
+    // -- core, not transform: it NAMES storage the engine already recovered and
+    // rewrites no p-code at all.
+    assert_eq!((core, transform, analysis), (27, 50, 41));
 }
 
 #[test]
@@ -529,6 +535,7 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
                             | "guardarm"
                             | "loopcondhoist"
                             | "rustabi"
+                            | "rustadt"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -653,9 +660,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
     // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
-    // retinputhalf's P4, dwarfstructs' P1 and rustabi's P4 rows sit mid-table, so
-    // they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 116);
+    // retinputhalf's P4, dwarfstructs' P1, rustabi's P4 and rustadt's P5 rows sit
+    // mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 117);
 }
 
 #[test]

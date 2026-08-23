@@ -262,6 +262,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "inputvarnodeadjust",
     "retinputhalf",
     "rustabi",
+    "rustadt",
     "condexeplace",
     "sparcstructret",
     "arraystride",

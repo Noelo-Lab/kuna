@@ -369,6 +369,11 @@ pub struct Architecture {
     /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
     /// `ArchContext` handle.
     pub rust_abi: u8,
+    /// (kuna) `option rustadt`: how hard to try to type the two-register return
+    /// as a tagged two-variant aggregate -- 0 off, 1 auto (only on a detected
+    /// rustc image), 2 always.  Read by [`crate::kuna_rustadt`] through the
+    /// `ArchContext` handle.
+    pub rust_adt: u8,
     /// (kuna) Did the loader's source-language detection report rustc for the
     /// image being decompiled?  A FACT, not an option: written once at `load
     /// file` from `kuna_analysis::sourcelang::detect_compiler`, and the thing
@@ -1444,6 +1449,7 @@ impl Architecture {
             input_varnode_adjust: false,
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
+            rust_adt: 0,        // (kuna) option rustadt; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
@@ -1624,6 +1630,7 @@ impl Architecture {
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
+        self.rust_adt = 0; // (kuna) option rustadt default off: the synthesized variant type is opt-in this round
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -1819,6 +1826,11 @@ impl Architecture {
             "rustabi" => {
                 let (mode, msg) = crate::kuna_rustabi::parse_rust_abi_mode(p1)?;
                 self.rust_abi = mode.as_u8();
+                Ok(msg)
+            }
+            "rustadt" => {
+                let (mode, msg) = crate::kuna_rustadt::parse_rust_adt_mode(p1)?;
+                self.rust_adt = mode.as_u8();
                 Ok(msg)
             }
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
@@ -2586,6 +2598,9 @@ impl Architecture {
         // (kuna) carry the Rust return-ABI gate and the detected source language
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;
+        // (kuna) carry the tagged-variant typing gate so `kuna_rustadt` reaches
+        // `option rustadt` via `glb`.
+        ctx.rust_adt = self.rust_adt;
         ctx.source_is_rust = self.source_is_rust;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

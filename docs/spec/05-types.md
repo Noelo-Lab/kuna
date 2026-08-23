@@ -467,6 +467,15 @@ per-edge, one early bad pick does not poison other accesses, and the
 themselves are deliberately latent (no option) — matching upstream, where they
 are compile-time.
 
+There is one class of union where scoring is not merely heuristic but
+*structurally* unable to answer: a union whose members are the payload overlays
+of a tagged variant type. Which member is live is decided by the discriminant,
+which is control-flow information, and the members of a two-variant payload are
+routinely the same width and the same metatype — so the trials tie and the
+winner is an artifact of trial order rather than of the program. §5.7 is the
+kuna pass that answers those edges from the guard instead, seeding both caches
+step (1) and step (2) read before the scorer is ever built.
+
 ## 5.5 Double precision
 
 Compilers split a 2N-byte value into two N-byte registers; the IR then shows
@@ -596,3 +605,126 @@ drives them (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (Heritage::heritage)`) is a documented stub — inert for every architecture
 without split records, which is the entire current test surface, so no live
 output depends on it yet.
+
+## 5.7 (kuna, rustc) The tagged two-variant return
+
+[`rustadt`](../options.md)**, default off.**
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_rustadt.rs`.
+
+**What it is for.** Chapter 4 §4.2 ([`rustabi`](../options.md)) keeps the
+two-register value a rustc `ScalarPair` return is carried in — a discriminant in
+the first return register, a payload in the second — and stops there
+deliberately: the payload *exists* as data flow, spelled as a raw
+`undefined16`/`[u8; 16]` container. This pass gives that container a type. A
+Rust `Result`/`Option` returned this way is a tagged aggregate, and kuna's type
+model already has the exact shape: a `TYPE_STRUCT` of a tag followed by a
+`TYPE_UNION` of one payload struct per variant. Union fields are forced to
+offset 0 (`Datatype::assign_union_field_offsets`, §5.1), which *is* a variant
+overlay, so this is the existing model used as intended rather than a new
+metatype. No `type_metatype` variant is added, and none is needed: the wire
+vocabulary (`metatype2string`) and the `sub_metatype` propagation order stay
+exactly as they are.
+
+**What is recognized, and what is refused.** `kuna_rustadt.rs (analyze)` reads
+the function's `RETURN` ops and every condition below is a refusal:
+
+* at least two live `RETURN`s, each returning a `join`-space Varnode of the same
+  geometry, whose `JoinRecord` has exactly **two** pieces (the least-significant
+  piece is the tag half, and its width is the payload's byte offset);
+* the tag — the low `payload_off` bytes of the returned value — is a **constant
+  on every path**, read by `kuna_rustadt.rs (const_low)`, which evaluates only
+  the forms the rule pool actually leaves behind (a `PIECE` concatenation, a
+  zero-extension, a `SUBPIECE` at offset 0, the `ZEXT(payload) << 8·off` shape a
+  zero tag folds into, and a `MULTIEQUAL` all of whose inputs agree) and answers
+  "not a constant" for anything else;
+* **exactly two** distinct tag values across those paths.
+
+The "constant on every path" condition is the load-bearing one and it is
+deliberately all-or-nothing. A site whose tag is computed has no knowable
+variant, and a partially classified union hands the remaining edges back to
+`ScoreUnionFields` — the thing this pass exists to keep out — so one unreadable
+path refuses the whole function. Two consequences follow, and both are real
+losses: the **branchless** rustc shape (`xor %eax,%eax; setb %al`, one `RETURN`,
+the tag a flag rather than a constant) is out of scope, as is any function with
+three or more variants. Niche-encoded enums (`Option<&T>` is bit-for-bit a
+nullable pointer, with no tag at all) are out of scope in principle, not just in
+this implementation.
+
+**The type.** `kuna_rustadt.rs (synthesize)` builds
+`struct { uint<off> tag; union { Variant0; Variant1 } payload; }` sized to the
+returned value exactly, with each variant a struct carrying the payload
+Varnode's own recovered type at offset 0 plus a named `_pad` filling the rest of
+the register. Fields go in through the raw seam
+(`dtype.rs (TypeFactory::set_fields_struct_raw / set_fields_union_raw)`, the
+`dwarfstructs` addition of chapter 1) because the offsets are the ABI's, not the
+C packing rules'. Names are **structural and stable** —
+`RustEnum2_<size>_<payload offset>_<tag0>_<tag1>_<t0>_<t1>` — because
+`Datatype::hash_name` makes the registered name the type id: two functions
+returning the same layout share one interned type, and a name already held by a
+different shape is stepped over with a numeric suffix
+(`kuna_rustadt.rs (resolve_name)`, the same policy as the DWARF aggregate
+importer) rather than fought, since the factory refuses to redefine a name it
+holds.
+
+**The variant names are neutral, and that is a decision.** The members are
+`Variant0`/`Variant1`, never `Ok`/`Err` or `Some`/`None`. Tagged `Result` is
+`Ok = 0`, `Err = 1`; tagged `Option` is `None = 0`, `Some = 1` — opposite
+polarity, identical code generation, and nothing in the recovered shape
+separates them. A guessed name is a coin flip that *reads* as a finding, and it
+would be wrong on roughly half the population; the five functions this pass
+recovers on the measurement binary are all `Option`, so `Ok`/`Err` would have
+been wrong on every member of every one. Upgrading to real names requires
+corroboration from outside the shape — a DWARF `DW_TAG_variant_part`, a
+demangled `drop_in_place<core::option::Option<…>>` naming the same layout, an
+adjacent `core::result::unwrap_failed` callee — and no such channel is
+implemented, so the pass ships neutral.
+
+**Installation and scheduling.** `kuna_rustadt.rs (ActionRustAdt)` runs once,
+between the `cleanup` rule pool and `ActionAssignHigh` in `universal_sched`.
+That slot is the whole design: earlier and the concatenation has not reached its
+final shape (`analyze` reads `PIECE(ZEXT(SUBPIECE(…)))` and refuses) and the
+payload half has no inferred type yet; later and the merge phase has already
+built the HighVariables, which is what `ActionOutputPrototype` (chapter 4 §4.6)
+reads the recovered return type back out of. The type is installed with
+`Varnode::update_type_locked(ty, lock = true, override = true)` on each return
+value, so it survives the remaining passes and becomes the function's recovered
+output type.
+
+**The facet comes from the guard.** `kuna_rustadt.rs (ActionRustAdtFacet)` runs
+immediately before `ActionSetCasts` — on the final op graph, because the
+resolution cache is keyed by `PcodeOp::getTime()`. It computes, for every basic
+block, the set of variants reachable from it
+(`kuna_rustadt.rs (variant_regions)`: a backward fixpoint over the block graph,
+where a block whose successors it cannot resolve is poisoned rather than
+guessed), and for a block that can reach exactly one variant it pins that
+variant on every op in the block — into the op-keyed cache the printer's
+field-path descent reads directly, and into the slot-free address-keyed cache
+`resolve_in_flow` consults before it would build a scorer (§5.4, step 2). A
+block that can still reach both variants is left alone. The resolutions are
+locked, so nothing downstream overrides them.
+
+**Constructors at the return sites.** With the type installed, a return site
+that writes the join Varnode piece by piece already renders the construction
+explicitly (`v.payload.Variant1.f0 = x; v.tag = 1; return v;`). A site whose
+value is a single expression would otherwise render as an opaque cast
+(`return (RustEnum2_…)(ZEXT416(x) << 0x40);`), so the printer renders it as the
+variant constructor the guard selected instead —
+`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(PrintC::op_return_variant_ctor_ir)`, driven by the per-`RETURN` record
+`Funcdata::kuna_rustadt_ctor`. A path on which the function writes **no**
+payload at all — the unit variant, `None` or `Ok(())` — renders as
+`Variant0()` with no argument rather than naming the leftover register the
+caller happened to leave there. The two forms therefore coexist in one function;
+unifying them would mean rewriting the piecewise sites after the merge phase,
+which is not a rewrite this pass is willing to make.
+
+**Failure mode.** Every refusal above leaves the pre-pass rendering exactly in
+place — a `undefined16`/`[u8; 16]` return, which is what `rustabi` alone
+produces. The residual risk when the pass *does* fire is a shape that is a
+two-register return with a constant discriminant-shaped low half but is not a
+Rust variant type: a C function returning `struct { long tag; long x; }` with a
+literal tag on each path would be recognized and typed, and the recovered type
+would be a correct description of its layout under a name that suggests a
+provenance it does not have. That is why `auto` gates on the loader's
+source-language verdict, and why `always` exists only to force the rule on a
+corpus with no `.comment` record.

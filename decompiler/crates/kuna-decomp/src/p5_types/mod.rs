@@ -16,3 +16,4 @@ pub mod constseq;
 pub mod prefersplit;
 pub mod coreaction_infertypes;
 pub mod kuna_memsetsequence;
+pub mod kuna_rustadt; // (kuna) the rustc tagged two-variant return: synthesize the type, resolve the facet

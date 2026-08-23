@@ -184,6 +184,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "retinputhalf" => on_off(conf.ret_input_half),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
+        // (kuna `rustadt`) Three-valued, so it reports its own token.
+        "rustadt" => kuna_decomp::kuna_rustadt::RustAdtMode::from_u8(conf.rust_adt).as_str(),
         "condexeplace" => on_off(conf.condexe_block_placement),
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),

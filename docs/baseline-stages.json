@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    516,
-    516
+    526,
+    526
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -272,6 +272,16 @@
     "data:RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air",
     "data:RUSTABI #8: with the option on the discriminant guard reads the same call result",
     "data:RUSTABI #9: a callee proven never to write the second return register is not paired -- the reader is unchanged in BOTH passes",
+    "data:RUSTADT #10: and no variant type is ever synthesized for it",
+    "data:RUSTADT #1: by default the tagged return is an anonymous 16-byte container",
+    "data:RUSTADT #2: by default a variant-0 path buries its payload in a shift",
+    "data:RUSTADT #3: by default the tag is a byte offset into a char array",
+    "data:RUSTADT #4: with the option on the recovered return type names the layout",
+    "data:RUSTADT #5: with the option on a single-expression return site renders as its variant constructor",
+    "data:RUSTADT #6: and so does the second variant-0 path",
+    "data:RUSTADT #7: with the option on the payload write names the variant the guard selected, not a byte range",
+    "data:RUSTADT #8: with the option on the tag is a named field",
+    "data:RUSTADT #9: one tag value is not two variants, so the negative renders identically in BOTH passes",
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
