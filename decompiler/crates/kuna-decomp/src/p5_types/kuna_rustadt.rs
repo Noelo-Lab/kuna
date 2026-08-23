@@ -208,8 +208,7 @@ impl ReturnSite {
     /// happens to contain would present the caller's garbage as a returned value.
     pub fn written_payload(&self, data: &Funcdata) -> Option<VarnodeId> {
         let p = self.payload?;
-        let v = data.vbank().get(p)?;
-        if v.is_constant() || v.get_def().is_some() {
+        if is_computed(data, p, 0) {
             Some(p)
         } else {
             None
@@ -383,24 +382,19 @@ fn const_low(data: &Funcdata, vn: VarnodeId, nbytes: int4, depth: u32) -> Option
 
 /// The Varnode whose value occupies exactly bytes `[off, off+sz)` of `vn`, when
 /// one exists.
+///
+/// A zero-extension is looked through, because it carries no information: rustc
+/// widens a narrow payload to fill its register and the payload's logical width
+/// is the operand's.
 fn piece_at(data: &Funcdata, vn: VarnodeId, off: int4, sz: int4, depth: u32) -> Option<VarnodeId> {
     if depth >= MAX_DEPTH || sz <= 0 || off < 0 {
         return None;
     }
     let v = data.vbank().get(vn)?;
-    // An exact cover IS the value: stop here rather than tracing through a COPY
-    // to its source, so the answer names the storage the return site wrote. The
-    // one thing looked through is a zero-extension, which carries no information
-    // -- rustc widens a narrow payload to fill the register, and the payload's
-    // logical width is the operand's.
-    if off == 0 && sz == v.get_size() {
-        if let Some(inner) = zext_operand(data, vn) {
-            return piece_at(data, inner, 0, data.vbank().get(inner)?.get_size(), depth + 1)
-                .or(Some(vn));
-        }
-        return Some(vn);
-    }
-    let Some(def) = v.get_def() else { return None };
+    let exact = off == 0 && sz == v.get_size();
+    let Some(def) = v.get_def() else {
+        return if exact { Some(vn) } else { None };
+    };
     let op = data.obank().get(def)?;
     match op.code() {
         OpCode::CPUI_COPY => piece_at(data, op.get_in(0)?, off, sz, depth + 1),
@@ -420,6 +414,8 @@ fn piece_at(data: &Funcdata, vn: VarnodeId, off: int4, sz: int4, depth: u32) -> 
             let insz = data.vbank().get(in0)?.get_size();
             if off + sz <= insz {
                 piece_at(data, in0, off, sz, depth + 1)
+            } else if exact {
+                piece_at(data, in0, 0, insz, depth + 1)
             } else {
                 None
             }
@@ -435,23 +431,48 @@ fn piece_at(data: &Funcdata, vn: VarnodeId, off: int4, sz: int4, depth: u32) -> 
             }
             piece_at(data, op.get_in(0)?, off - shb, sz, depth + 1)
         }
-        _ => None,
+        _ => {
+            if exact {
+                Some(vn)
+            } else {
+                None
+            }
+        }
     }
 }
 
-/// The strictly narrower operand of a zero-extension defining `vn`, if that is
-/// what defines it.
-fn zext_operand(data: &Funcdata, vn: VarnodeId) -> Option<VarnodeId> {
-    let v = data.vbank().get(vn)?;
-    let op = data.obank().get(v.get_def()?)?;
-    if op.code() != OpCode::CPUI_INT_ZEXT {
-        return None;
+/// Did this function COMPUTE `vn`, or is it whatever the caller left behind?
+///
+/// The unit-variant test. A `None`/`Ok(())` path leaves the payload register
+/// alone, so the value sitting in it is the caller's, and naming it in a
+/// constructor would present the caller's garbage as a returned value. Move-only
+/// operations are looked through, because moving leftover around does not make it
+/// a value; anything else -- arithmetic, a load, a constant -- is a computation.
+/// The two terminals that say "leftover" are the same two
+/// [`crate::kuna_returnuncomputed`] drops: a Varnode this function never wrote,
+/// and a callee's INDIRECT creation.
+fn is_computed(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    if depth >= MAX_DEPTH {
+        return false;
     }
-    let in0 = op.get_in(0)?;
-    if data.vbank().get(in0)?.get_size() < v.get_size() {
-        Some(in0)
-    } else {
-        None
+    let Some(v) = data.vbank().get(vn) else { return false };
+    if v.is_constant() {
+        return true;
+    }
+    let Some(def) = v.get_def() else { return false };
+    let Some(op) = data.obank().get(def) else { return false };
+    match op.code() {
+        OpCode::CPUI_INDIRECT if op.is_indirect_creation() => false,
+        OpCode::CPUI_COPY
+        | OpCode::CPUI_INDIRECT
+        | OpCode::CPUI_MULTIEQUAL
+        | OpCode::CPUI_PIECE
+        | OpCode::CPUI_SUBPIECE
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_INT_SEXT => (0..op.num_input())
+            .filter_map(|i| op.get_in(i))
+            .any(|i| is_computed(data, i, depth + 1)),
+        _ => true,
     }
 }
 

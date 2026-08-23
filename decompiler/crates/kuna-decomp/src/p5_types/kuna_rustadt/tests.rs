@@ -108,13 +108,18 @@ fn new_block(fd: &mut Funcdata) -> BlockId {
     fd.bblocks_mut().new_block_basic(root)
 }
 
-/// `hi = COPY(free ram value)` in `bl`, `hi_size` bytes wide at `ram:off`.
+/// A payload the function COMPUTES: `hi = free + 1`, `hi_size` bytes wide at
+/// `ram:0x40+off`. Arithmetic rather than a COPY on purpose -- a payload that is
+/// only a move of something the function never wrote is the unit variant, and
+/// [`ReturnSite::written_payload`] is supposed to say so.
 fn payload_value(fd: &mut Funcdata, bl: BlockId, off: u64, hi_size: int4, at: u64) -> VarnodeId {
     let ram = space(fd, "ram");
     let src = fd.new_varnode(hi_size, &Address::new(Rc::clone(&ram), 0x200 + off), None);
-    let op = fd.new_op(1, Address::new(Rc::clone(&ram), at));
-    set_opcode(fd, op, OpCode::CPUI_COPY);
+    let one = fd.new_constant(hi_size, 1);
+    let op = fd.new_op(2, Address::new(Rc::clone(&ram), at));
+    set_opcode(fd, op, OpCode::CPUI_INT_ADD);
     let _ = fd.op_set_input(op, src, 0);
+    let _ = fd.op_set_input(op, one, 1);
     let out = fd
         .new_varnode_out(hi_size, &Address::new(ram, 0x40 + off), op)
         .expect("payload varnode");
@@ -416,6 +421,7 @@ fn a_fully_shifted_out_tag_reads_as_zero() {
     assert_eq!(const_low(&fd, out, 8, 0), Some(0));
     assert_eq!(const_low(&fd, out, 9, 0), None, "a shift shorter than the request proves nothing");
     assert_eq!(const_low(&fd, narrow, 4, 0), None, "a computed value is not a constant");
+    assert!(is_computed(&fd, narrow, 0), "the function computed it");
     assert_eq!(const_low(&fd, out, 0, 0), None, "a zero-width request is refused");
 }
 
