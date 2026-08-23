@@ -235,41 +235,43 @@
 0229              pull_absorb
 0230              insert_absorb
 
-0231                  prefercomplement
-0232                  structuretransform
-0233        !         assignhigh
-0234        !         mergerequired
-0235        !         markexplicit
-0236        !         markimplied
-0237        !         mergemultientry
-0238        !         mergecopy
-0239        !         dominantcopy
-0240        !         dynamicsymbols
-0241        !         markindirectonly
-0242        !         mergeadjacent
-0243        !         mergetype
-0244        !         hideshadow
-0245        !         copymarker
-0246                  latedonothing
-0247                  blockstructure
-0248                  prefercomplement
-0249                  structuretransform
-0250                  branchflip
-0251                  presentcompareform
-0252        !         outputprototype
-0253        !         inputprototype
-0254        !         mapglobals
-0255        !         dynamicsymbols
-0256        !         namevars
-0257        !         setcasts
-0258                  finalstructure
-0259                  gotoreduce
-0260                  taildup
-0261                  ifelseflatten
-0262                  crossjumprevert
-0263                  dedupitetail
-0264                  iteregion
-0265                  iteboolean
-0266                  paramcopyhoist
-0267        !         prototypewarnings
-0268                  stop
+0231        !         rustadt
+0232                  prefercomplement
+0233                  structuretransform
+0234        !         assignhigh
+0235        !         mergerequired
+0236        !         markexplicit
+0237        !         markimplied
+0238        !         mergemultientry
+0239        !         mergecopy
+0240        !         dominantcopy
+0241        !         dynamicsymbols
+0242        !         markindirectonly
+0243        !         mergeadjacent
+0244        !         mergetype
+0245        !         hideshadow
+0246        !         copymarker
+0247                  latedonothing
+0248                  blockstructure
+0249                  prefercomplement
+0250                  structuretransform
+0251                  branchflip
+0252                  presentcompareform
+0253        !         outputprototype
+0254        !         inputprototype
+0255        !         mapglobals
+0256        !         dynamicsymbols
+0257        !         namevars
+0258        !         rustadtfacet
+0259        !         setcasts
+0260                  finalstructure
+0261                  gotoreduce
+0262                  taildup
+0263                  ifelseflatten
+0264                  crossjumprevert
+0265                  dedupitetail
+0266                  iteregion
+0267                  iteboolean
+0268                  paramcopyhoist
+0269        !         prototypewarnings
+0270                  stop

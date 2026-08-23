@@ -435,13 +435,7 @@ fn piece_at(data: &Funcdata, vn: VarnodeId, off: int4, sz: int4, depth: u32) -> 
             }
             piece_at(data, op.get_in(0)?, off - shb, sz, depth + 1)
         }
-        _ => {
-            if off == 0 && sz == v.get_size() {
-                Some(vn)
-            } else {
-                None
-            }
-        }
+        _ => None,
     }
 }
 
@@ -782,37 +776,36 @@ const VARIANT_UNKNOWN: u8 = 0x80;
 /// today's behavior, whereas a wrongly pinned one is a confident lie.
 fn variant_regions(data: &Funcdata, shape: &AdtShape) -> Vec<(crate::context::BlockId, int4)> {
     let mut blocks: Vec<crate::context::BlockId> = Vec::new();
+    let mut index: std::collections::BTreeMap<crate::context::BlockId, usize> =
+        std::collections::BTreeMap::new();
     for op in data.obank().iter_alive() {
         if let Some(bl) = data.obank().get(op).and_then(|o| o.get_parent()) {
-            if !blocks.contains(&bl) {
+            index.entry(bl).or_insert_with(|| {
                 blocks.push(bl);
-            }
+                blocks.len() - 1
+            });
         }
     }
     let mut mask: Vec<u8> = vec![0; blocks.len()];
-    let index = |b: crate::context::BlockId, bs: &[crate::context::BlockId]| -> Option<usize> {
-        bs.iter().position(|x| *x == b)
-    };
     for s in &shape.sites {
         let Some(k) = shape.variant_of(s.tag) else { continue };
         let Some(bl) = data.obank().get(s.op).and_then(|o| o.get_parent()) else { continue };
-        if let Some(i) = index(bl, &blocks) {
+        if let Some(&i) = index.get(&bl) {
             mask[i] |= 1u8 << k;
         }
     }
     for _ in 0..=blocks.len() {
         let mut changed = false;
         for (i, &b) in blocks.iter().enumerate() {
-            let blk = data.bblocks_ref().block(b);
-            let nout = blk.size_out();
+            let nout = data.bblocks_ref().block(b).size_out();
             let mut add = 0u8;
             if nout == 0 && mask[i] == 0 {
                 add |= VARIANT_UNKNOWN;
             }
             for j in 0..nout {
                 let out = data.bblocks_ref().block(b).get_out(j);
-                match index(out, &blocks) {
-                    Some(oi) if mask[oi] != 0 => add |= mask[oi],
+                match index.get(&out) {
+                    Some(&oi) if mask[oi] != 0 => add |= mask[oi],
                     _ => add |= VARIANT_UNKNOWN,
                 }
             }
