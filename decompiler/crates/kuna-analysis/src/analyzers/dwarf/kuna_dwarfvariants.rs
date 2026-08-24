@@ -70,13 +70,28 @@
 //! would have to sit at an offset a variant already owns. The geometry still
 //! reaches the side table, marked [`VariantLayout::niche`].
 //!
+//! ## What the union model cannot say
+//!
+//! A union member selects itself by offset, not by the tag, so when two variants
+//! both place a field at the SAME offset it is the existing union-field scorer —
+//! not the discriminant — that decides which facet name an access renders with.
+//! In a niche `enum Tree { Leaf(i64), Node(Box<Tree>, Box<Tree>) }` the `Leaf`
+//! payload and the `Node` right child are both at offset 8, and following the
+//! right child renders `(*t).Leaf.__0` where the source means `Node.__1`
+//! (measured on a std-linked witness). The bytes are right and the offsets and
+//! names installed are exactly what DWARF states; the variant LABEL on such an
+//! access can be the wrong one. Picking the facet from the tag is what
+//! [`VariantLayout`] is recorded for, and is not attempted here.
+//!
 //! ## Name collisions
 //!
 //! `Datatype::hash_name` makes the registered name the type id, and rustc names
-//! variant payload structs BARE. Measured on one ordinary `rustc -g` binary (162
-//! variant parts): **69 DIEs named `Some`** across **8 distinct byte sizes**
-//! (0/4/8/16/24/32/48/64), 69 named `None`, 35 each named `Ok` and `Err`. So
-//! every name minted here is derived from the enclosing enum's own
+//! variant payload structs BARE. Measured on one ordinary std-linked
+//! `rustc 1.90 -C debuginfo=2` binary (65 variant parts): **30 DIEs named
+//! `Some`** across **5 distinct byte sizes** (0/4/8/16/24), 30 named `None`, and
+//! 18 each named `Ok` and `Err` across 7 sizes. Even the tiny `#![no_std]`
+//! fixture committed beside this module carries `Some` at two different widths.
+//! So every name minted here is derived from the enclosing enum's own
 //! PARENT-QUALIFIED name (`core::result::Result<u32, u32>::Ok`), and a name still
 //! held by something of a different shape is stepped over by
 //! [`super::kuna_dwarfstructs::resolve_name`], the policy `dwarfstructs`
@@ -84,9 +99,14 @@
 //!
 //! ## Deliberate refusals
 //!
-//! Every one of these leaves the DIE to the ordinary `dwarfstructs` path (a named
-//! aggregate with its `DW_AT_byte_size` and no fields) rather than installing a
-//! layout that is partly guessed:
+//! Every one of these ends at the same place — a named aggregate with the enum's
+//! `DW_AT_byte_size` and no fields, which is exactly what
+//! [`super::kuna_dwarfstructs`] produces for the same DIE (a variant-part struct
+//! has no `DW_TAG_member` children for its member walk to find) — rather than a
+//! layout that is partly guessed.
+//!
+//! Refused BEFORE anything is interned, so the DIE simply falls through to
+//! `dwarfstructs`:
 //!
 //! * no `DW_AT_discr` (a single-variant enum, `core::convert::Infallible`);
 //! * a `DW_TAG_variant` with anything other than exactly one named member;
@@ -98,9 +118,19 @@
 //!   `DW_TAG_enumeration_type` for those);
 //! * a discriminant whose type is not integer-shaped, or is zero-width, or would
 //!   extend past the enum's `DW_AT_byte_size`;
+//! * a zero-width or absent `DW_AT_byte_size`, and a `DW_AT_declaration` DIE.
+//!
+//! Refused AFTER the shell is interned — it has to exist before the members are
+//! walked, so a recursive payload has something to point at. These do NOT return
+//! `None`: that would leave a ZERO-SIZE incomplete type under the enum's own
+//! name, the very defect this arm exists to remove. They funnel into one place
+//! and [`seal_shell`] completes the shell at the enum's own width:
+//!
 //! * any member that would extend past the enum's `DW_AT_byte_size`;
 //! * every facet's fields being unbuildable, which would leave a zero-member
-//!   union describing nothing.
+//!   union describing nothing;
+//! * the overlay union's name being unmintable, or the factory refusing any of
+//!   the three completions.
 //!
 //! The caller adds one more: the arm runs only when
 //! [`super::kuna_dwarfstructs::enabled`] is also true, because it EXTENDS that
@@ -181,10 +211,11 @@ pub(super) fn variant_part<'a>(
 /// `DW_TAG_variant_part`. The second is a NESTED variant part: DWARF 5 admits it
 /// and it would mean the payload's own fields are discriminant-selected, which
 /// this module's single-level overlay cannot describe. It is a precaution rather
-/// than an observed shape — rustc 1.90 emitted **zero** nested variant parts
-/// across the 25 variant parts in the three witnesses measured for this change
-/// (including a 4-variant niche-filling enum and an enum whose variant payload is
-/// another enum, which nests the TYPE but not the variant part).
+/// than an observed shape — rustc 1.90 emitted **0 nested variant parts across
+/// the 75** in the two witnesses scanned for this change (the 10 in the
+/// committed `#![no_std]` fixture and the 65 in a std-linked binary, which
+/// includes an enum whose variant payload is another enum — that nests the TYPE
+/// but not the variant part).
 ///
 /// A member with no name, no buildable type, or a negative offset is SKIPPED, the
 /// same policy `dwarfstructs`'s member walk uses: one exotic member costs its own
@@ -287,8 +318,9 @@ pub(super) fn read_variant_part(
 ///
 /// `None` means REFUSED — the DIE is left to [`super::kuna_dwarfstructs`] and the
 /// pre-`dwarfvariants` behaviour, which is a named aggregate with its byte size
-/// and no fields. `Some` is the completed struct-of-tag-and-union, with the
-/// geometry recorded on the factory's side table.
+/// and no fields. `Some` is the completed type — a struct of tag plus overlay
+/// union, or the overlay union alone for a niche — with the geometry recorded on
+/// the factory's side table.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn intern_variant_aggregate(
     types: &dyn TypeFactory,
@@ -356,22 +388,69 @@ pub(super) fn intern_variant_aggregate(
     let built =
         build_facets(types, dies, &raw, &name, size, payload_offset, tag_size, walk, word_size, cpp);
     walk.end_aggregate(&name);
-    let (union_fields, facets) = built?;
 
+    // From here on the name is ALREADY interned, so a refusal must not return
+    // `None`: that would leave a zero-size incomplete type under the enum's own
+    // name -- the exact defect this arm exists to remove, and the way the sibling
+    // `dwarfstructs` import silently degraded a type to `void`. Every remaining
+    // refusal funnels into one `None` and is SEALED at the enum's
+    // `DW_AT_byte_size` with no fields, which is precisely the answer
+    // `dwarfstructs` gives the same DIE.
+    let done = built.and_then(|(union_fields, facets)| {
+        install_layout(
+            types,
+            die,
+            &shell,
+            &raw,
+            &name,
+            size,
+            payload_offset,
+            tag_size,
+            tag_type,
+            niche,
+            union_fields,
+            facets,
+        )
+    });
+    Some(done.unwrap_or_else(|| seal_shell(types, die, shell, size, niche)))
+}
+
+/// Install the recovered layout on the already-interned `shell` and record its
+/// geometry on the factory's side table.
+///
+/// Split out of [`intern_variant_aggregate`] so that every refusal reachable
+/// after the shell exists lands on a single `None`, which the caller turns into
+/// [`seal_shell`] rather than a zero-size type under the enum's own name.
+#[allow(clippy::too_many_arguments)]
+fn install_layout(
+    types: &dyn TypeFactory,
+    die: &DieSnap,
+    shell: &Rc<Datatype>,
+    raw: &RawVariantPart,
+    name: &str,
+    size: int4,
+    payload_offset: int4,
+    tag_size: int4,
+    tag_type: Rc<Datatype>,
+    niche: bool,
+    union_fields: Vec<TypeField>,
+    facets: Vec<VariantFacet>,
+) -> Option<Rc<Datatype>> {
+    let payload_size = size - payload_offset;
     let mut layout = VariantLayout {
-        type_name: name.clone(),
+        type_name: name.to_string(),
         size,
         tag_offset: raw.tag_offset,
         tag_size,
         payload_offset,
         niche,
-        union_type: name.clone(),
+        union_type: name.to_string(),
         variants: facets,
     };
 
     if niche {
         let align = facet_alignment(die.alignment, size, &union_fields);
-        let done = types.set_fields_union_raw(&shell, union_fields, size, align).ok()?;
+        let done = types.set_fields_union_raw(shell, union_fields, size, align).ok()?;
         types.kuna_record_variant_layout(layout);
         return Some(done);
     }
@@ -381,7 +460,7 @@ pub(super) fn intern_variant_aggregate(
         types,
         &format!("{name}::payload"),
         Some(payload_size),
-        &name,
+        name,
         type_metatype::TYPE_UNION,
     )?;
     let (ushell, ucomplete) = open_shell(types, &uname, true)?;
@@ -399,9 +478,30 @@ pub(super) fn intern_variant_aggregate(
     ];
     fields.sort_by_key(|f| f.offset);
     let align = aggregate_alignment(die, size, &fields, &[]);
-    let done = types.set_fields_struct_raw(&shell, fields, Vec::new(), size, align, 0).ok()?;
+    let done = types.set_fields_struct_raw(shell, fields, Vec::new(), size, align, 0).ok()?;
     types.kuna_record_variant_layout(layout);
     Some(done)
+}
+
+/// Complete an interned-but-unpopulated shell at the enum's `DW_AT_byte_size`
+/// with no fields — the answer [`super::kuna_dwarfstructs`] gives the same DIE
+/// (a variant-part struct has no `DW_TAG_member` children for its member walk to
+/// find). Never `None`: if the factory refuses the completion, the opaque shell
+/// is still returned, because an opaque named aggregate beats `void`.
+fn seal_shell(
+    types: &dyn TypeFactory,
+    die: &DieSnap,
+    shell: Rc<Datatype>,
+    size: int4,
+    niche: bool,
+) -> Rc<Datatype> {
+    let align = aggregate_alignment(die, size, &[], &[]);
+    let sealed = if niche {
+        types.set_fields_union_raw(&shell, Vec::new(), size, align)
+    } else {
+        types.set_fields_struct_raw(&shell, Vec::new(), Vec::new(), size, align, 0)
+    };
+    sealed.unwrap_or(shell)
 }
 
 /// Build one payload struct per variant and the union members that name them.
@@ -460,11 +560,13 @@ fn build_facets(
         // A FIELDLESS variant (`None`, `Nil`, a unit variant) overlays nothing,
         // so it gets no union facet: an empty struct of the overlay's width is
         // indistinguishable to `ScoreUnionFields` from the facet that does carry
-        // the payload, and it wins the tie by declaration order -- a niche
-        // `Option<&T>` then renders its `Some` pointer as `.None`, measured. The
-        // variant is not lost: its name and its discriminant value are recorded
-        // on the side table, which is where a `match` renderer reads them, and
-        // there is no payload for a field path to reach anyway.
+        // the payload, and it wins the tie by declaration order. Ablating this
+        // exclusion, a std-linked `rustc -g` witness writes an `Option<i64>`
+        // payload as `v13.payload.None = ...` and reads drop glue as
+        // `(*a0).dropfn.drop.None` (2 functions of 612, measured). The variant is
+        // not lost: its name and its discriminant value are recorded on the side
+        // table, which is where a `match` renderer reads them, and there is no
+        // payload for a field path to reach anyway.
         let payload_type = if ffields.is_empty() {
             String::new()
         } else {

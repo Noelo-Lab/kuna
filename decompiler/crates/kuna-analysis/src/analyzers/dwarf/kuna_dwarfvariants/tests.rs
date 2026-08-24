@@ -76,6 +76,14 @@ impl Tree {
         self.add(parent, d)
     }
 
+    /// A named `DW_TAG_union_type` of `size` bytes.
+    fn union(&mut self, parent: Option<usize>, name: &str, size: u64) -> usize {
+        let mut d = DieSnap::new(gimli::DW_TAG_union_type, 1);
+        d.name = name.into();
+        d.byte_size = Some(size);
+        self.add(parent, d)
+    }
+
     /// A `DW_TAG_member` at `off` of type `ty`.
     fn member(&mut self, parent: usize, name: &str, ty: usize, off: i64) -> usize {
         let mut d = DieSnap::new(gimli::DW_TAG_member, 1);
@@ -680,25 +688,6 @@ fn refuses_non_integer_discriminant() {
     assert!(intern(&types, &t, e).is_none());
 }
 
-/// A member that would run past the enum's own `DW_AT_byte_size` -- a corrupt or
-/// hostile file -- is refused rather than laid out over the end of the type.
-#[test]
-fn refuses_member_past_the_end() {
-    let types = factory();
-    let mut t = Tree::new();
-    let u32t = t.uint(4);
-    let u64t = t.uint(8);
-    let e = t.strukt(None, "Overrun", 8);
-    let vp = t.variant_part(e, u32t, 0);
-    let a = t.strukt(Some(e), "A", 8);
-    t.member(a, "__0", u64t, 4); // 4 + 8 > 8
-    let b = t.strukt(Some(e), "B", 8);
-    t.member(b, "__0", u32t, 4);
-    t.variant(vp, Some(0), "A", a);
-    t.variant(vp, Some(1), "B", b);
-    assert!(intern(&types, &t, e).is_none());
-}
-
 /// A zero-width or absent `DW_AT_byte_size` gives nothing to lay the overlay out
 /// in.
 #[test]
@@ -746,10 +735,235 @@ fn refuses_when_every_facet_field_is_unbuildable() {
     t.variant(vp, Some(0), "A", a);
     t.variant(vp, Some(1), "B", b);
     // The read still succeeds -- the fields are there in DWARF -- and the BUILD
-    // is what refuses.
+    // is what refuses. The refusal comes AFTER the shell was interned, so what
+    // comes back is the shell SEALED at the enum's own width with no fields (the
+    // `dwarfstructs` answer), never a zero-size incomplete type.
     assert!(read_variant_part(&t.dies[&e], &t.dies).is_some());
-    assert!(intern(&types, &t, e).is_none());
-    assert!(types.kuna_variant_layout("AllVoid").is_none());
+    let built = intern(&types, &t, e).expect("the sealed shell is the answer");
+    assert_eq!(built.get_size(), 8, "sealed at DW_AT_byte_size, not 0");
+    assert!(fields(&built).is_empty());
+    assert!(!built.is_incomplete());
+    assert!(types.kuna_variant_layout("AllVoid").is_none(), "no layout is claimed");
+}
+
+/// The same seal for a member that would run PAST the enum's byte size: the
+/// layout is refused, the name still carries the width the ABI needs.
+#[test]
+fn a_member_past_the_end_seals_instead_of_leaving_a_zero_size_shell() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let u64t = t.uint(8);
+    let e = t.strukt(None, "Overrun2", 8);
+    let vp = t.variant_part(e, u32t, 0);
+    let a = t.strukt(Some(e), "A", 8);
+    t.member(a, "__0", u64t, 4); // 4 + 8 > 8
+    let b = t.strukt(Some(e), "B", 8);
+    t.member(b, "__0", u32t, 4);
+    t.variant(vp, Some(0), "A", a);
+    t.variant(vp, Some(1), "B", b);
+    let built = intern(&types, &t, e).expect("the sealed shell is the answer");
+    assert_eq!(built.get_size(), 8);
+    assert!(fields(&built).is_empty());
+    assert!(types.kuna_variant_layout("Overrun2").is_none());
+}
+
+/// FIVE variants, three of them carrying payloads: nothing in the walk is capped
+/// at two or three, and each facet keeps its own name and discriminant.
+#[test]
+fn builds_five_variants() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let u64t = t.uint(8);
+    let e = t.strukt(None, "Five", 16);
+    let vp = t.variant_part(e, u32t, 0);
+    let a = t.strukt(Some(e), "A", 16);
+    t.member(a, "__0", u32t, 4);
+    let b = t.strukt(Some(e), "B", 16);
+    t.member(b, "__0", u64t, 8);
+    let c = t.strukt(Some(e), "C", 16);
+    t.member(c, "__0", u32t, 8);
+    let d = t.strukt(Some(e), "D", 16);
+    let f = t.strukt(Some(e), "F", 16);
+    t.variant(vp, Some(0), "A", a);
+    t.variant(vp, Some(1), "B", b);
+    t.variant(vp, Some(2), "C", c);
+    t.variant(vp, Some(3), "D", d);
+    t.variant(vp, Some(4), "F", f);
+
+    let built = intern(&types, &t, e).expect("Five must build");
+    let payload = built.get_field(1).unwrap().field_type.clone();
+    assert_eq!(
+        fields(&payload).iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+        vec!["A", "B", "C"],
+        "the two fieldless variants overlay nothing"
+    );
+    let l = types.kuna_variant_layout("Five").unwrap();
+    assert_eq!(l.variants.len(), 5, "all five reach the side table");
+    for (v, n) in [(0u64, "A"), (1, "B"), (2, "C"), (3, "D"), (4, "F")] {
+        assert_eq!(l.facet_for_discr(v).unwrap().name, n);
+    }
+    assert!(l.facet_for_discr(5).is_none(), "no default variant here");
+    assert!(l.facet_named("D").unwrap().payload_type.is_empty());
+}
+
+/// One GENERIC enum instantiated at two different types. rustc gives the two
+/// instantiations distinct enum names but names both payload structs the bare
+/// `Some`, so the facet names are the collision risk -- and parent qualification
+/// is what keeps them apart.
+#[test]
+fn a_generic_enum_at_two_instantiations_keeps_both() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let u64t = t.uint(8);
+
+    let small = t.strukt(None, "Option<u32>", 8);
+    let vps = t.variant_part(small, u32t, 0);
+    let ns = t.strukt(Some(small), "None", 8);
+    let ss = t.strukt(Some(small), "Some", 8);
+    t.member(ss, "__0", u32t, 4);
+    t.variant(vps, Some(0), "None", ns);
+    t.variant(vps, Some(1), "Some", ss);
+
+    let big = t.strukt(None, "Option<u64>", 16);
+    let vpb = t.variant_part(big, u32t, 0);
+    let nb = t.strukt(Some(big), "None", 16);
+    let sb = t.strukt(Some(big), "Some", 16);
+    t.member(sb, "__0", u64t, 8);
+    t.variant(vpb, Some(0), "None", nb);
+    t.variant(vpb, Some(1), "Some", sb);
+
+    let a = intern(&types, &t, small).expect("Option<u32> must build");
+    let b = intern(&types, &t, big).expect("Option<u64> must build");
+    assert_eq!((a.get_name(), a.get_size()), ("Option<u32>", 8));
+    assert_eq!((b.get_name(), b.get_size()), ("Option<u64>", 16));
+
+    let fa = a.get_field(1).unwrap().field_type.get_field(0).unwrap().field_type.clone();
+    let fb = b.get_field(1).unwrap().field_type.get_field(0).unwrap().field_type.clone();
+    assert_eq!(fa.get_name(), "Option<u32>::Some");
+    assert_eq!(fb.get_name(), "Option<u64>::Some");
+    assert_eq!(fields(&fa), vec![("__0".to_string(), 0, 4)]);
+    assert_eq!(fields(&fb), vec![("__0".to_string(), 0, 8)]);
+    assert_eq!(types.kuna_variant_layouts().len(), 2);
+}
+
+/// A niche `Option<Box<T>>` is the same shape as `Option<&T>` -- the null pointer
+/// IS the discriminant -- and must recover as the overlay alone, with `Some` the
+/// DEFAULT variant that every non-null value selects.
+#[test]
+fn builds_niche_option_box() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u64t = t.uint(8);
+    let boxed = t.ptr(u64t);
+    let e = t.strukt(None, "Option<Box<u64>>", 8);
+    let vp = t.variant_part(e, u64t, 0);
+    let none = t.strukt(Some(e), "None", 8);
+    let some = t.strukt(Some(e), "Some", 8);
+    t.member(some, "__0", boxed, 0);
+    t.variant(vp, Some(0), "None", none);
+    t.variant(vp, None, "Some", some);
+
+    let built = intern(&types, &t, e).expect("niche Option<Box> must build");
+    assert_eq!(built.get_metatype(), type_metatype::TYPE_UNION);
+    assert_eq!(fields(&built), vec![("Some".to_string(), 0, 8)]);
+    let l = types.kuna_variant_layout("Option<Box<u64>>").unwrap();
+    assert!(l.niche);
+    assert_eq!(l.facet_named("Some").unwrap().discr, None, "Some is the default variant");
+    assert_eq!(l.facet_for_discr(0).unwrap().name, "None");
+    assert_eq!(l.facet_for_discr(0x4000).unwrap().name, "Some");
+}
+
+/// A C `union` carries `DW_TAG_member` children and NO `DW_TAG_variant_part`, so
+/// it never reaches this arm's layout at all. (`mod.rs` also refuses to enter the
+/// arm for a union DIE, because the tagged encoding is a struct shape; this is
+/// the belt to that braces.)
+#[test]
+fn refuses_a_c_union() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let u64t = t.uint(8);
+    let u = t.union(None, "value", 8);
+    t.member(u, "i", u32t, 0);
+    t.member(u, "l", u64t, 0);
+    assert!(variant_part(&t.dies[&u], &t.dies).is_none());
+    assert!(read_variant_part(&t.dies[&u], &t.dies).is_none());
+    assert!(intern(&types, &t, u).is_none());
+    assert!(types.kuna_variant_layouts().is_empty());
+}
+
+/// A C++ `std::variant` is a tagged representation too, but libstdc++ spells it
+/// as ordinary members (`_M_u`, `_M_index`) -- there is no `DW_AT_discr` saying
+/// which one is the tag, so this arm must not claim it. `dwarfstructs` keeps
+/// giving it its real members.
+#[test]
+fn refuses_a_cpp_std_variant() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u8t = t.uint(1);
+    let u64t = t.uint(8);
+    let v = t.strukt(None, "std::variant<int, long>", 16);
+    t.member(v, "_M_u", u64t, 0);
+    t.member(v, "_M_index", u8t, 8);
+    assert!(variant_part(&t.dies[&v], &t.dies).is_none());
+    assert!(intern(&types, &t, v).is_none());
+    assert!(types.kuna_variant_layouts().is_empty());
+}
+
+/// A plain `gcc -g` struct -- members, no variant part -- is refused at the very
+/// first step and left entirely to `dwarfstructs`. Asserted through
+/// `intern_variant_aggregate` (not only `variant_part`) because that is the
+/// entry point `mod.rs` actually calls.
+#[test]
+fn refuses_a_plain_gcc_struct() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let s = t.strukt(None, "point", 8);
+    t.member(s, "x", u32t, 0);
+    t.member(s, "y", u32t, 4);
+    assert!(intern(&types, &t, s).is_none());
+    assert!(types.find_by_name("point").unwrap().is_none(), "nothing was interned");
+    assert!(types.kuna_variant_layouts().is_empty());
+}
+
+/// The last post-intern refusal: every candidate name for the overlay union is
+/// held by something that is not a union, so the payload union cannot be minted.
+/// The shell is already in the factory under the enum's own name, so the answer
+/// is the SEALED shell -- the enum's `DW_AT_byte_size` with no fields, exactly
+/// what `dwarfstructs` gives -- and never a zero-size type that would degrade to
+/// `void` downstream.
+#[test]
+fn seals_when_the_overlay_union_name_is_exhausted() {
+    let types = factory();
+    let mut t = Tree::new();
+    let e = result_u32(&mut t);
+    // `resolve_name` tries base, base_<size>, base_<size>_2, base_<size>_3
+    // (MAX_NAME_ATTEMPTS = 4); the payload overlay is 4 bytes wide.
+    for n in [
+        "Result<u32, u32>::payload",
+        "Result<u32, u32>::payload_4",
+        "Result<u32, u32>::payload_4_2",
+        "Result<u32, u32>::payload_4_3",
+    ] {
+        let s = types.get_type_struct(n).expect("blocker interns");
+        types
+            .set_fields_struct_raw(&s, Vec::new(), Vec::new(), 4, 1, 0)
+            .expect("blocker completes");
+    }
+
+    let built = intern(&types, &t, e).expect("the sealed shell is the answer");
+    assert_eq!(built.get_name(), "Result<u32, u32>");
+    assert_eq!(built.get_size(), 8, "sealed at DW_AT_byte_size, not 0");
+    assert!(!built.is_incomplete(), "a zero-size incomplete type is the defect");
+    assert!(fields(&built).is_empty());
+    assert!(
+        types.kuna_variant_layout("Result<u32, u32>").is_none(),
+        "no layout may be claimed for a shape that was not installed"
+    );
 }
 
 /// The gate is the module's own env var, and it is what `mod.rs` consults before

@@ -590,16 +590,19 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   Every name minted — the facets and the overlay union — is derived from the
   enum's own parent-qualified name and goes through the same collision policy
   `dwarfstructs` established, because rustc names payload structs bare and the
-  collision is not hypothetical: one ordinary `rustc -g` binary with 162 variant
-  parts carries **69 DIEs named `Some` across 8 distinct byte sizes**
-  (0/4/8/16/24/32/48/64), 69 named `None`, and 35 each named `Ok` and `Err`.
+  collision is not hypothetical: one ordinary std-linked `rustc 1.90
+  -C debuginfo=2` binary with 65 variant parts carries **30 DIEs named `Some`
+  across 5 distinct byte sizes** (0/4/8/16/24), 30 named `None`, and 18 each
+  named `Ok` and `Err` across 7 sizes.
 
   Two shapes get specific treatment. A **fieldless** variant (`None`, `Nil`, a
   unit variant) overlays nothing and gets **no union member**: an empty struct of
   the overlay's width is indistinguishable to the union-field scorer from the
-  facet that does carry the payload, and it wins the tie by declaration order, so
-  a niche `Option<&T>` rendered its `Some` pointer as `.None` (measured, then
-  fixed this way). The variant is not lost — its name and its discriminant value
+  facet that does carry the payload, and it wins the tie by declaration order.
+  Ablating the exclusion, a std-linked `rustc -g` witness writes an `Option<i64>`
+  payload as `v13.payload.None = ...` and reads drop glue as
+  `(*a0).dropfn.drop.None` — 2 functions of 612, measured, which is what fixed it
+  this way. The variant is not lost — its name and its discriminant value
   are on the side table, which is where a `match` renderer reads them, and there
   is no payload for a field path to reach. A **niche-encoded** enum, where a
   `DW_TAG_variant` carries no `DW_AT_discr_value` at all (it is the default
@@ -619,26 +622,50 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   cannot perturb emitted C. It exists so a later pass can render `match` /
   `if let` / `Ok(v)` from the compiler's own answer.
 
-  Every guard REFUSES rather than guesses, and a refusal leaves the DIE to the
-  `dwarfstructs` path above (a named aggregate with its byte size and no fields):
-  no `DW_AT_discr`; a variant with anything other than exactly one named member;
-  two variants with no `DW_AT_discr_value`, or with the same one, or with the same
-  name; a payload struct carrying its own `DW_TAG_variant_part` (a nested variant
-  part, which the single-level overlay cannot describe — rustc 1.90 emitted none
-  across the 25 variant parts measured for this change); no variant with any field
-  at all (a C-like enum, which rustc emits as a `DW_TAG_enumeration_type`
-  instead); a discriminant whose type is not integer-shaped; and any member that
-  would extend past the enum's own `DW_AT_byte_size`; and every facet's fields
-  being unbuildable, which would leave a zero-member union describing nothing.
-  Same load-time env-var gate as `dwarfstructs`, and gated on `dwarfstructs`
-  itself as well — this arm extends that one, so `dwarfstructs off` stays exactly
-  the pre-DIV-86 name-only mapping its own row promises.
+  Every guard REFUSES rather than guesses, and every refusal ends at the same
+  answer the `dwarfstructs` path above gives — a named aggregate with the enum's
+  byte size and no fields — but by two different routes. Refused BEFORE anything
+  is interned, so the DIE simply falls through: no `DW_AT_discr`; a variant with
+  anything other than exactly one named member; two variants with no
+  `DW_AT_discr_value`, or with the same one, or with the same name; a payload
+  struct carrying its own `DW_TAG_variant_part` (a nested variant part, which the
+  single-level overlay cannot describe — rustc 1.90 emitted none across the 75
+  variant parts in the two witnesses measured for this change); no variant with
+  any field at all (a C-like enum, which rustc emits as a
+  `DW_TAG_enumeration_type` instead); a discriminant whose type is not
+  integer-shaped, zero-width, or wider than the enum; a zero-width or absent
+  `DW_AT_byte_size`; and a `DW_AT_declaration` DIE.
+
+  Refused AFTER the shell is interned — it has to exist before the members are
+  walked so a recursive payload has something to point at — the answer cannot be
+  "leave it to `dwarfstructs`", because a zero-size incomplete type is already
+  sitting in the factory under the enum's own name, and downstream that degrades
+  to `void`. Those refusals instead SEAL that shell at the enum's
+  `DW_AT_byte_size` with no fields, which is byte for byte the `dwarfstructs`
+  answer: a member that would extend past the enum; every facet's fields being
+  unbuildable, which would leave a zero-member union describing nothing; and the
+  overlay union's name being unmintable or any of the three completions being
+  refused by the factory. Same load-time env-var gate as `dwarfstructs`, and
+  gated on `dwarfstructs` itself as well — this arm extends that one, so
+  `dwarfstructs off` stays exactly the pre-DIV-86 name-only mapping its own row
+  promises.
 
   **The limitation is the channel.** This needs full debug info
   (`-C debuginfo=2`, cargo `debug = true`). Where a binary's DWARF carries no type
   DIEs the arm is not degraded, it is inert: it recovers nothing and attempts no
   fallback, because the only available fallback is the shape inference above. A C
   program has no variant part at all, so the arm never fires on one.
+
+  **The second limitation is the union model.** Representing a variant overlay as
+  a union means that when two variants both place a field at the SAME offset,
+  which facet name an access renders with is decided by the existing union-field
+  scorer, not by the discriminant. In a niche `enum Tree { Leaf(i64),
+  Node(Box<Tree>, Box<Tree>) }` the `Leaf` payload and the `Node` right child both
+  live at offset 8, and following the right child renders as `(*t).Leaf.__0`
+  where the source means `Node.__1` — the bytes are right, the variant label on
+  that one access is not. The offsets and names installed are exactly what DWARF
+  states; picking the facet from the tag is what the side table is recorded for,
+  and is not attempted here.
 - **Full-depth DWARF types** (`typedepth`, default-on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
   type mapper's recursion guard, and it exists because the DIE walk can be handed a
