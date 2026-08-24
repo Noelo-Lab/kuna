@@ -170,6 +170,9 @@ _LOADTIME_GATE_ENV = {
     # installed on the interned type inside `load file`, so `option dwarfstructs
     # off` alone is too late.
     "dwarfstructs": "KUNA_DWARFSTRUCTS",
+    # (kuna `dwarfvariants`) The DWARF variant-part (discriminated-union) import;
+    # same load-time seam as `dwarfstructs`.
+    "dwarfvariants": "KUNA_DWARFVARIANTS",
 }
 
 # The distinction that decides membership above, because it is easy to get wrong:

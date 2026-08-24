@@ -86,12 +86,13 @@ fn settable_count_is_117() {
     // +1 for `retinputhalf` (P4 returned input-parameter half retention, DIV-85).
     // +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
     // +1 for `rustabi` (P4 rustc two-register ScalarPair return recovery).
-    assert_eq!(kuna_num_settables(), 117);
-    assert_eq!(SETTABLE_TABLE.len(), 117);
+    // +1 for `dwarfvariants` (P1 DWARF variant-part import, DIV-87).
+    assert_eq!(kuna_num_settables(), 118);
+    assert_eq!(SETTABLE_TABLE.len(), 118);
 }
 
 #[test]
-fn tier_counts_are_26_core_50_transform_41_analysis() {
+fn tier_counts_are_26_core_50_transform_42_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -150,7 +151,9 @@ fn tier_counts_are_26_core_50_transform_41_analysis() {
     // core 25 -> 26: +1 for `rustabi` (P4 rustc ScalarPair return) -- core, not
     // transform: it keeps a value the engine already recovered instead of
     // introducing a new rewrite.
-    assert_eq!((core, transform, analysis), (26, 50, 41));
+    // analysis 41 -> 42: +1 for `dwarfvariants` (P1 DWARF variant-part import,
+    // DIV-87).
+    assert_eq!((core, transform, analysis), (26, 50, 42));
 }
 
 #[test]
@@ -480,6 +483,11 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
         // inside `load file`), so like `typedepth` above it has no codegen
         // live_value. Default-on.
         "dwarfstructs",
+        // (kuna) DWARF variant-part import -- a LOAD-time gate read from the
+        // `KUNA_DWARFVARIANTS` env var (the overlay is installed on the interned
+        // type inside `load file`), the same seam as `dwarfstructs` above.
+        // Default-on.
+        "dwarfvariants",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -653,9 +661,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
     // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
-    // retinputhalf's P4, dwarfstructs' P1 and rustabi's P4 rows sit mid-table, so
-    // they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 116);
+    // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1 and rustabi's P4 rows
+    // sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 117);
 }
 
 #[test]

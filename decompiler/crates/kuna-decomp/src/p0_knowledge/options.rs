@@ -422,6 +422,19 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // exports before the load; this registration keeps the option
     // catalog-visible. Default-ON.
     "dwarfstructs",
+    // (kuna) DWARF variant-part import: a `DW_TAG_structure_type` carrying a
+    // `DW_TAG_variant_part` -- a Rust tagged enum -- recovers its `DW_AT_discr`
+    // discriminant member, each `DW_TAG_variant`'s `DW_AT_discr_value`, and each
+    // variant's payload struct, instead of the field-less shell `dwarfstructs`
+    // leaves it (a Rust enum carries no `DW_TAG_member` of its own). A variant
+    // NAME (`Some`, `Ok`) reaches the emitted type only where exactly one variant
+    // claims those bytes; where two do -- every `Result` -- the payload is spelled
+    // by offset, because a union member selects itself by offset and the
+    // discriminant is never consulted. Same load-time shape as `dwarfstructs`: the
+    // live gate is an env var (`kuna_dwarfvariants::DWARFVARIANTS_ENV`) that the
+    // CLI exports before the load; this registration keeps the option
+    // catalog-visible. Default-ON.
+    "dwarfvariants",
     "callfixup",
     "addrtable",
     "operand_refs",

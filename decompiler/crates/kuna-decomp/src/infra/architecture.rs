@@ -979,6 +979,16 @@ pub struct Architecture {
     /// `load file`, upstream of `option`); this bool exists only for catalog
     /// visibility and the `phase catalog` live `current` field.
     pub analysis_dwarfstructs: bool,
+    /// (kuna) Gate DWARF variant-part import (`dwarfvariants`); default **on**.
+    /// A `DW_TAG_structure_type` carrying a `DW_TAG_variant_part` (a Rust
+    /// tagged enum) recovers its discriminant member, its per-variant
+    /// `DW_AT_discr_value` and each variant's named payload, instead of the
+    /// field-less shell `dwarfstructs` leaves behind (a Rust enum has no
+    /// `DW_TAG_member` of its own). NOTE: the mapper reads this through the
+    /// [`crate::kuna_dwarfvariants`] **env var** (the types are baked at
+    /// `load file`, upstream of `option`); this bool exists only for catalog
+    /// visibility and the `phase catalog` live `current` field.
+    pub analysis_dwarfvariants: bool,
     /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
     /// [`CppSigMode::Proven`]. Commits the prototypes read off a MANGLED SYMBOL —
     /// the class type for `this` plus the declared parameter types — which is the
@@ -1531,6 +1541,7 @@ impl Architecture {
             analysis_cppproto: false,
             analysis_typedepth: false,
             analysis_dwarfstructs: false,
+            analysis_dwarfvariants: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             analysis_callfixup: false,
             analysis_addrtable: false,
@@ -1710,6 +1721,7 @@ impl Architecture {
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_typedepth = true; // (kuna) DIV: full-depth DWARF type resolution default-ON (the depth budget truncated ordinary C declarations to void; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_dwarfstructs = true; // (kuna) DIV: DWARF aggregate-layout import default-ON (a zero-size aggregate is not conservative -- the ABI classifier acts on it; real-ELF DWARF path only, so every parity gate is byte-identical)
+        self.analysis_dwarfvariants = true; // (kuna) DIV-87: DWARF variant-part import default-ON (the compiler states the discriminant; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
@@ -2123,6 +2135,18 @@ impl Architecture {
                 crate::kuna_dwarfstructs::set_dwarfstructs_env(val);
                 Ok(format!(
                     "DWARF aggregate-layout import turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            // (kuna) Load-time gate, same env bridge as `dwarfstructs` above: the
+            // variant overlay is installed on the interned type at `load file`,
+            // upstream of this `option`.
+            "dwarfvariants" => {
+                let val = on_or_off(p1)?;
+                self.analysis_dwarfvariants = val;
+                crate::kuna_dwarfvariants::set_dwarfvariants_env(val);
+                Ok(format!(
+                    "DWARF variant-part import turned {}",
                     if val { "on" } else { "off" }
                 ))
             }

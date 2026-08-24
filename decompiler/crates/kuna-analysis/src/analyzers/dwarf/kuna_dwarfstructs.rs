@@ -73,12 +73,16 @@
 //! model the wire `decode_composite` path lives with), so `n->next->val` chains
 //! one level less than `n->val`. The name still renders.
 //!
-//! ## Out of scope, deliberately
+//! ## Out of scope for THIS module
 //!
 //! `DW_TAG_variant_part` / `DW_TAG_variant` / `DW_AT_discr` — the Rust
-//! tagged-enum encoding — are NOT read. A Rust enum therefore gets its correct
-//! `DW_AT_byte_size` (which is most of the ABI benefit) and no fields, exactly as
-//! any aggregate whose members this pass cannot ground.
+//! tagged-enum encoding — are not read here: with the member walk alone a Rust
+//! enum gets its correct `DW_AT_byte_size` and no fields, exactly as any
+//! aggregate whose members this pass cannot ground. The sibling
+//! [`super::kuna_dwarfvariants`] arm (`option dwarfvariants`) reads them, runs
+//! FIRST, and falls through to this module whenever it refuses; four of this
+//! module's helpers ([`aggregate_size`], [`qualified_name`], [`resolve_name`],
+//! [`aggregate_alignment`]) are shared with it rather than restated.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -181,7 +185,7 @@ pub(super) fn intern_aggregate(
 /// `DW_AT_byte_size` as a kuna type size. `None` for a DIE with no width (a
 /// forward declaration, or a producer that omitted it); a zero or absurd width is
 /// refused rather than installed.
-fn aggregate_size(die: &DieSnap) -> Option<int4> {
+pub(super) fn aggregate_size(die: &DieSnap) -> Option<int4> {
     let bs = die.byte_size?;
     if bs == 0 || bs > int4::MAX as u64 {
         return None;
@@ -196,7 +200,7 @@ fn aggregate_size(die: &DieSnap) -> Option<int4> {
 /// The qualification is what keeps Rust's bare variant names (`Some`, `Ok`)
 /// apart; the shaped fallback is what keeps unrelated ANONYMOUS aggregates apart,
 /// which mattered far less when every one of them was an empty shell.
-fn qualified_name(
+pub(super) fn qualified_name(
     die: &DieSnap,
     dies: &BTreeMap<usize, DieSnap>,
     alias: Option<&str>,
@@ -256,7 +260,7 @@ fn qualified_name(
 /// `fallback` — the pre-`dwarfstructs` behavior for a contested borrowed name.
 /// `None` when every candidate is taken; the caller then leaves the type unbuilt,
 /// which is likewise the pre-`dwarfstructs` outcome.
-fn resolve_name(
+pub(super) fn resolve_name(
     types: &dyn TypeFactory,
     base: &str,
     size: Option<int4>,
@@ -478,7 +482,7 @@ fn group_bitfields(
 /// else the widest member alignment, clamped so it never exceeds the aggregate
 /// itself (`calc_align_size` would otherwise pad a recovered type past the width
 /// DWARF just gave us).
-fn aggregate_alignment(
+pub(super) fn aggregate_alignment(
     die: &DieSnap,
     size: int4,
     fields: &[TypeField],
