@@ -63,7 +63,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -4108,6 +4108,30 @@ pub trait TypeFactory {
     fn destroy_type(&self, _ct: &Rc<Datatype>) -> KunaResult<()> {
         Err(KunaError::lowlevel("TypeFactory::destroyType not supported by this factory"))
     }
+
+    /// (kuna `dwarfvariants`) Record the recovered geometry of a DWARF
+    /// `DW_TAG_variant_part` under [`crate::kuna_dwarfvariants::VariantLayout::type_name`].
+    ///
+    /// A SIDE TABLE, in the `kuna_wire_symbols` sense: nothing in the analysis
+    /// reads it, no `Datatype` points at it, and it is not encoded onto the
+    /// Ghidra wire, so filling it cannot perturb emitted C. A later pass reads it
+    /// to render `match` / `if let` / `Ok(v)` from the compiler's own answer
+    /// instead of re-deriving the discriminant from codegen shape. Defaulted to a
+    /// no-op: only the concrete container keeps the table.
+    fn kuna_record_variant_layout(&self, _layout: crate::kuna_dwarfvariants::VariantLayout) {}
+
+    /// (kuna `dwarfvariants`) The layout recorded for the interned type `name`.
+    fn kuna_variant_layout(
+        &self,
+        _name: &str,
+    ) -> Option<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
+        None
+    }
+
+    /// (kuna `dwarfvariants`) Every recorded layout, in interned-name order.
+    fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
+        Vec::new()
+    }
 }
 
 // =============================================================================
@@ -4739,6 +4763,10 @@ pub struct TypeFactoryImpl {
     /// `TypeFactoryGhidra`'s query back-pointer); `None` on the standalone path,
     /// where [`Self::find_by_id_or_remote`] degrades to the plain local lookup.
     remote_types: RefCell<Option<Rc<dyn RemoteTypeFetch>>>,
+    /// (kuna `dwarfvariants`) Recovered `DW_TAG_variant_part` geometry, keyed by
+    /// the interned type name.  Read by nothing in the analysis -- see
+    /// [`TypeFactory::kuna_record_variant_layout`].
+    variant_layouts: RefCell<BTreeMap<String, Rc<crate::kuna_dwarfvariants::VariantLayout>>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -4773,6 +4801,7 @@ impl TypeFactoryImpl {
             defaultfp: RefCell::new(None),
             manager: RefCell::new(None),
             remote_types: RefCell::new(None),
+            variant_layouts: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -7111,6 +7140,20 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn destroy_type(&self, ct: &Rc<Datatype>) -> KunaResult<()> {
         self.destroy_type_impl(ct)
+    }
+    fn kuna_record_variant_layout(&self, layout: crate::kuna_dwarfvariants::VariantLayout) {
+        self.variant_layouts
+            .borrow_mut()
+            .insert(layout.type_name.clone(), Rc::new(layout));
+    }
+    fn kuna_variant_layout(
+        &self,
+        name: &str,
+    ) -> Option<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
+        self.variant_layouts.borrow().get(name).map(Rc::clone)
+    }
+    fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
+        self.variant_layouts.borrow().values().map(Rc::clone).collect()
     }
 }
 

@@ -543,6 +543,16 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
             if on { "on" } else { "off" },
         );
     }
+    if let Some(value) = last_option_value(options, "dwarfvariants") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV,
+            if on { "on" } else { "off" },
+        );
+    }
     if let Some(value) = last_option_value(options, "macho-arm64e") {
         if matches!(
             value.trim().to_ascii_lowercase().as_str(),

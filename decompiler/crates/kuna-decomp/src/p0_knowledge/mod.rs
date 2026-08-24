@@ -20,6 +20,9 @@ pub mod kuna_relocrebase;
 pub mod kuna_dynrelocs;
 // (kuna) DWARF aggregate-layout import option gate (load-time, env-bridged).
 pub mod kuna_dwarfstructs;
+// (kuna) DWARF variant-part (discriminated-union) import option gate
+// (load-time, env-bridged) plus the recovered-layout side table.
+pub mod kuna_dwarfvariants;
 // (kuna) DWARF full-depth type-resolution option gate (load-time, env-bridged).
 pub mod kuna_typedepth;
 // (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the

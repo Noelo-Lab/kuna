@@ -252,6 +252,12 @@ Three tiers:
 | a bitfield member renders as a shift-and-mask of the whole word | [`dwarfstructs`](#dwarfstructs) |
 | a union parameter loses its member names | [`dwarfstructs`](#dwarfstructs) |
 | a dwarf-recovered struct or union has size 0 | [`dwarfstructs`](#dwarfstructs) |
+| a rust enum return grows a phantom rethidden parameter despite -g debug info | [`dwarfvariants`](#dwarfvariants) |
+| a dwarf-recovered rust enum has a byte size but no fields | [`dwarfvariants`](#dwarfvariants) |
+| Result or Option renders as an opaque container with byte offsets | [`dwarfvariants`](#dwarfvariants) |
+| a tagged-union discriminant renders as an unnamed integer at offset 0 | [`dwarfvariants`](#dwarfvariants) |
+| a variant payload renders as a cast-and-offset instead of a named field | [`dwarfvariants`](#dwarfvariants) |
+| which variant a rust enum return builds is nowhere in the output | [`dwarfvariants`](#dwarfvariants) |
 | c++ member functions on a stripped binary decompile with a0/a1 parameters | [`cppsig`](#cppsig) |
 | this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig) |
 | a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig) |
@@ -972,6 +978,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) gives a -g binary its real aggregates: take_struct(P8 p,int k) returning p.a + p.b instead of take_struct(unsigned long,int) shifting a register, P8 ret_struct(uint x) instead of a phantom-sret P8 ret_struct(P8 rethidden,uint x), n->inner.a and b->lo instead of casts and shifts. Flip off to restore the name-only mapping (every aggregate becomes a zero-size named opaque again).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarfstructs
 - **Example:** `option dwarfstructs off`
+
+### `dwarfvariants` -- on | off, default `on`
+
+- **Symptoms:** a rust enum return grows a phantom rethidden parameter despite -g debug info; a dwarf-recovered rust enum has a byte size but no fields; Result or Option renders as an opaque container with byte offsets; a tagged-union discriminant renders as an unnamed integer at offset 0; a variant payload renders as a cast-and-offset instead of a named field; which variant a rust enum return builds is nowhere in the output.
+- **What it does:** Import a DWARF DW_TAG_variant_part: the DW_AT_discr discriminant member (its offset, width and type), every DW_TAG_variant's DW_AT_discr_value, and each variant's named payload member (Ok, Err, Some, None, Cons). A Rust tagged enum carries NO DW_TAG_member of its own -- its whole layout lives under the variant part -- so dwarfstructs recovered its DW_AT_byte_size and zero fields, and a field-less aggregate is still misclassified by the ABI (an 8-byte Result return came out as a phantom-sret Result *ret_result(Result *rethidden,uint4 x), with the real parameter shifted a slot right). The recovered type is a struct of the tag plus a union of one payload struct per variant, forced to a single overlay offset, and the variant names and discriminant values come from the COMPILER, not from codegen shape -- shape does not distinguish a Result from a repr(C) struct, a (u64,u64) tuple or a fat pointer. A DW_TAG_variant with no DW_AT_discr_value is the DEFAULT (niche) variant and is kept as such; when the discriminant bytes overlap the payload there is no byte range that is only the tag, so the recovered type is the overlay union alone, with no enclosing struct and no tag field. A fieldless variant (None, Nil) overlays nothing and gets no union member -- an empty struct of the overlay width ties with the real facet in ScoreUnionFields and wins on declaration order, which printed a niche Option's Some pointer as .None -- but keeps its name and discriminant value on the side table. The geometry is also recorded in a side table on the TypeFactory that nothing in the analysis reads, for a later match/if-let/Ok(v) renderer. Needs FULL debug info (-C debuginfo=2 / cargo debug = true): a Rust binary whose DWARF carries no type DIEs gains nothing.
+- **When to flip:** On (default) gives a -g Rust binary its enums: Result<u32, u32> ret_result(uint4 x) instead of a phantom-sret pointer to a field-less shell, and r->tag = 0 / (r->payload).A.__0 = x instead of *(uint4 *)rethidden = 0 / *(uint4 *)&rethidden->field_0x4 = x. Flip off to restore the dwarfstructs mapping (a tagged enum keeps its width and gets no fields). Extends dwarfstructs and is gated on it too, so dwarfstructs off suppresses this arm as well. Inert on any binary without full debug info, and on C (a C aggregate has no variant part).
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarfvariants
+- **Example:** `option dwarfvariants off`
 
 ### `cppsig` -- off | proven | inferred, default `proven`
 

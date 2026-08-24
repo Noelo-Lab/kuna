@@ -74,9 +74,14 @@
 //!   `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
 //!   bitfields included) onto the interned type. With the gate OFF it maps to a
 //!   *named opaque* struct (enough to render `struct foo *`) exactly as before.
-//!   LOSS either way: `DW_TAG_variant_part`/`DW_TAG_variant`/`DW_AT_discr` — the
-//!   Rust tagged-enum encoding — are not read, so a Rust enum recovers its width
-//!   but no fields.
+//! - **Discriminated unions are now imported too** (`dwarfvariants`,
+//!   [`kuna_dwarfvariants`]): a `DW_TAG_structure_type` carrying a
+//!   `DW_TAG_variant_part` — a Rust tagged enum, which has no `DW_TAG_member` of
+//!   its own — recovers its `DW_AT_discr` discriminant, each `DW_TAG_variant`'s
+//!   `DW_AT_discr_value`, and each variant's NAMED payload. The arm EXTENDS
+//!   `dwarfstructs` and is gated on it as well as on its own flag; with either
+//!   off a Rust enum recovers its width and no fields. Needs FULL debug info
+//!   (`-C debuginfo=2`): a binary whose DWARF carries no type DIEs gains nothing.
 //!
 //! ## PIE / load-bias limitation
 //!
@@ -125,6 +130,11 @@ use kuna_typedepth::TypeWalk;
 /// `DW_TAG_member` children, installed on the interned struct/union instead of
 /// leaving it a zero-size shell. See [`kuna_dwarfstructs`].
 mod kuna_dwarfstructs;
+
+/// (kuna `dwarfvariants`) The DISCRIMINATED-UNION arm — `DW_TAG_variant_part` /
+/// `DW_AT_discr` / `DW_TAG_variant`, i.e. the layout a Rust tagged enum keeps
+/// there instead of in `DW_TAG_member` children. See [`kuna_dwarfvariants`].
+mod kuna_dwarfvariants;
 
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
 type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
@@ -222,6 +232,13 @@ struct DieSnap {
     data_bit_offset: Option<u64>,
     /// (kuna `dwarfstructs`) `DW_AT_alignment`, when the producer states it.
     alignment: Option<u64>,
+    /// (kuna `dwarfvariants`) `DW_AT_discr` on a `DW_TAG_variant_part` — the
+    /// unit offset of the `DW_TAG_member` that IS the discriminant.
+    discr_ref: Option<usize>,
+    /// (kuna `dwarfvariants`) `DW_AT_discr_value` on a `DW_TAG_variant` — the
+    /// discriminant value that selects it. `None` on a variant that carries none
+    /// marks the DEFAULT (niche / untagged) variant, which is a fact, not a gap.
+    discr_value: Option<i64>,
     /// `DW_AT_encoding` (`DW_ATE_*`) for `DW_TAG_base_type`.
     encoding: Option<gimli::DwAte>,
     /// `DW_AT_count`/`DW_AT_upper_bound` (array subrange length).
@@ -274,6 +291,8 @@ impl DieSnap {
             bit_offset: None,
             data_bit_offset: None,
             alignment: None,
+            discr_ref: None,
+            discr_value: None,
             encoding: None,
             array_count: None,
             const_value: None,
@@ -375,6 +394,16 @@ fn snapshot_unit(
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_alignment) {
             snap.alignment = v.udata_value();
+        }
+        // (kuna `dwarfvariants`) The discriminated-union attributes. `DW_AT_discr`
+        // is a reference to the artificial tag member; `DW_AT_discr_value` is a
+        // constant whose signedness follows the discriminant type, so it is read
+        // signed-first exactly like `DW_AT_const_value` above.
+        if let Some(gimli::AttributeValue::UnitRef(o)) = entry.attr_value(gimli::DW_AT_discr) {
+            snap.discr_ref = Some(o.0);
+        }
+        if let Some(v) = entry.attr_value(gimli::DW_AT_discr_value) {
+            snap.discr_value = v.sdata_value().or_else(|| v.udata_value().map(|u| u as i64));
         }
         if let Some(gimli::AttributeValue::Encoding(e)) = entry.attr_value(gimli::DW_AT_encoding) {
             snap.encoding = Some(e);
@@ -653,6 +682,20 @@ fn intern_aggregate(
     cpp: bool,
     union: bool,
 ) -> Option<Rc<Datatype>> {
+    // (kuna `dwarfvariants`) A `DW_TAG_variant_part` child means the aggregate is
+    // a discriminated union, whose layout the member walk below cannot see (there
+    // are no `DW_TAG_member` children to walk). `None` here means the arm REFUSED
+    // this DIE -- it fell short of one of its guards -- and the ordinary paths
+    // still get their turn. It is an EXTENSION of `dwarfstructs` and requires it:
+    // with the aggregate-layout gate off, `dwarfstructs off` stays exactly the
+    // pre-DIV-86 name-only mapping, which is what its own catalog row promises.
+    if !union && kuna_dwarfstructs::enabled() && kuna_dwarfvariants::enabled() {
+        if let Some(t) = kuna_dwarfvariants::intern_variant_aggregate(
+            types, die, dies, alias, fallback, walk, word_size, cpp,
+        ) {
+            return Some(t);
+        }
+    }
     if kuna_dwarfstructs::enabled() {
         return kuna_dwarfstructs::intern_aggregate(
             types, die, dies, alias, fallback, walk, word_size, cpp, union,

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    516,
-    516
+    526,
+    526
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -53,6 +53,16 @@
     "data:CTYPES #4: on, LP64 spells an 8-byte unsigned `unsigned long`, not `unsigned long long`",
     "data:CTYPES #5: on, the 4-byte parameter is `unsigned int`",
     "data:CTYPES #6: off, that parameter carries the core-type name",
+    "data:DWARFVARIANTS #10: no variant name is ever synthesized",
+    "data:DWARFVARIANTS #1: off, a field-less enum return is misclassified as a hidden-return buffer",
+    "data:DWARFVARIANTS #2: on, the recovered layout gives the classifier a width and the source signature comes back",
+    "data:DWARFVARIANTS #3: off, the discriminant is a raw byte offset",
+    "data:DWARFVARIANTS #4: on, the discriminant is the named tag field DW_AT_discr pointed at",
+    "data:DWARFVARIANTS #5: off, a variant payload is a raw byte offset",
+    "data:DWARFVARIANTS #6: on, variant A's payload carries the SOURCE variant name, not a synthesized one",
+    "data:DWARFVARIANTS #7: on, and so does variant B, so three variants are not two",
+    "data:DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes",
+    "data:DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees",
     "data:EVALCURRENTPROTO #1: off, the __stdcall default model sees only the stack argument",
     "data:EVALCURRENTPROTO #2: off, the ECX argument survives as an undefined local",
     "data:EVALCURRENTPROTO #3: default, the spec's merged model resolves to __fastcall and recovers all three arguments",

@@ -359,6 +359,18 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 if on { "on" } else { "off" },
             );
         }
+        // (kuna) Load-time `dwarfvariants` gate: the variant overlay is installed
+        // on the interned type inside `load file`, same as `dwarfstructs` above.
+        if let Some(value) = last_option_value(&args.options, "dwarfvariants") {
+            let on = !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false"
+            );
+            cmd.env(
+                kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV,
+                if on { "on" } else { "off" },
+            );
+        }
         let output = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
