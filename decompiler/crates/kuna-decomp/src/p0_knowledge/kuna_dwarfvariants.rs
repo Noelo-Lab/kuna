@@ -24,6 +24,20 @@
 //! and shape does not distinguish a `Result` from a `#[repr(C)]` struct, a
 //! `(u64,u64)` tuple or a `&'static str` fat pointer.
 //!
+//! ## What is NOT recovered: which variant an access belongs to
+//!
+//! The recovered type overlays the variants as a **union**, and a union member
+//! selects itself by OFFSET — the discriminant is never consulted. In a tagged
+//! enum every payload variant starts immediately after the tag, so `Ok` and
+//! `Err` sit at the same offset and the field the union scorer picks is not
+//! evidence of anything. A variant name is therefore printed only where exactly
+//! one variant claims the bytes being accessed (`Option<T>`, whose only
+//! payload-carrying variant is `Some`); where two or more claim them, the
+//! installed member name is an offset-derived `field_0x…` and nothing in the
+//! emitted C names a variant. See [`VariantFacet::label`]. Choosing the facet
+//! from the discriminant needs a dominating-guard analysis and belongs to a
+//! `match` renderer, which is what the side table below exists for.
+//!
 //! ## The side table
 //!
 //! The recovered geometry is recorded in [`VariantLayout`], keyed by the interned
@@ -71,11 +85,21 @@ pub struct VariantFacet {
     /// DEFAULT variant — the one DWARF gives no value, selected by every
     /// discriminant the other variants did not claim (Rust's niche encoding).
     pub discr: Option<u64>,
+    /// The union-member spelling actually INSTALLED on the recovered type, which
+    /// is [`Self::name`] only when no other variant claims a byte this one
+    /// claims. Where two variants overlay the same bytes — every `Result<T,E>`,
+    /// and any enum with two or more payload-carrying variants — the union member
+    /// selects itself by offset and the discriminant is never consulted, so a
+    /// variant name on such an access would be a coin flip; the label is then an
+    /// offset-derived `field_0x…` and no emitted field path claims a variant.
+    /// **Empty for a FIELDLESS variant**, which gets no union member at all.
+    pub label: String,
     /// The interned name of the payload struct built for this facet, i.e. the
-    /// union member that names it. **Empty for a FIELDLESS variant** (`None`,
-    /// `Nil`, a unit variant), which overlays nothing and therefore gets no union
-    /// member — see the importer's note on `ScoreUnionFields`. Its name and its
-    /// discriminant value still live here, which is what a `match` renderer needs.
+    /// type of the union member [`Self::label`] names. **Empty for a FIELDLESS
+    /// variant** (`None`, `Nil`, a unit variant), which overlays nothing and
+    /// therefore gets no union member — see the importer's note on
+    /// `ScoreUnionFields`. Its name and its discriminant value still live here,
+    /// which is what a `match` renderer needs.
     pub payload_type: String,
     /// The variant's fields as `(name, offset within the ENUM)` — absolute, not
     /// relative to the payload struct, so a consumer never has to re-add
@@ -131,6 +155,14 @@ impl VariantLayout {
     pub fn facet_named(&self, name: &str) -> Option<&VariantFacet> {
         self.variants.iter().find(|v| v.name == name)
     }
+
+    /// Whether any emitted field path can name a variant of this enum, i.e.
+    /// whether at least one payload-carrying variant kept its source name. False
+    /// for every enum with two or more variants overlaying the same bytes — the
+    /// suppression rule in [`VariantFacet::label`].
+    pub fn names_any_variant(&self) -> bool {
+        self.variants.iter().any(|v| !v.label.is_empty() && v.label == v.name)
+    }
 }
 
 #[cfg(test)]
@@ -171,12 +203,14 @@ mod tests {
                 VariantFacet {
                     name: "None".into(),
                     discr: Some(0),
-                    payload_type: "Option<&u32>::None".into(),
+                    label: String::new(),
+                    payload_type: String::new(),
                     fields: vec![],
                 },
                 VariantFacet {
                     name: "Some".into(),
                     discr: None,
+                    label: "Some".into(),
                     payload_type: "Option<&u32>::Some".into(),
                     fields: vec![("__0".into(), 0)],
                 },
@@ -194,6 +228,35 @@ mod tests {
         assert_eq!(l.facet_for_discr(0xdeadbeef).unwrap().name, "Some");
         assert_eq!(l.facet_named("Some").unwrap().fields, vec![("__0".to_string(), 0)]);
         assert!(l.facet_named("Err").is_none());
+    }
+
+    /// A single payload-carrying variant keeps its name; two that overlay the
+    /// same bytes do not, and `names_any_variant` is what says which happened.
+    #[test]
+    fn names_any_variant_tracks_the_suppression() {
+        let l = layout();
+        assert!(l.names_any_variant(), "`Some` is the only payload variant here");
+
+        let mut r = layout();
+        r.type_name = "Result<u64, u64>".into();
+        r.variants[0] = VariantFacet {
+            name: "Ok".into(),
+            discr: Some(0),
+            label: "field_0x8".into(),
+            payload_type: "Result<u64, u64>::field_0x8".into(),
+            fields: vec![("__0".into(), 8)],
+        };
+        r.variants[1] = VariantFacet {
+            name: "Err".into(),
+            discr: Some(1),
+            label: "field_0x8".into(),
+            payload_type: "Result<u64, u64>::field_0x8".into(),
+            fields: vec![("__0".into(), 8)],
+        };
+        assert!(!r.names_any_variant(), "two variants at one offset name neither");
+        // The SOURCE names are still on the table -- suppression is a rendering
+        // decision, not a loss of what DWARF said.
+        assert_eq!(r.facet_for_discr(1).unwrap().name, "Err");
     }
 
     /// With no default variant an unclaimed value selects nothing -- the lookup

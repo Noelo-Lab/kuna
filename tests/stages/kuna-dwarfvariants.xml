@@ -41,6 +41,16 @@
     from the same image. No C aggregate carries a variant part, so it must render
     IDENTICALLY in both passes; `ret_plain` is the same for a FIELDLESS enum,
     which rustc emits as a `DW_TAG_enumeration_type` that this pass never sees.
+
+    Passes 3 and 4 load the second fixture, `dwarfvariants_overlay_x86_64`, and
+    cover the NAMING RULE rather than the shapes. A union member selects itself by
+    OFFSET and the discriminant is never consulted, so where two variants claim
+    one byte range the facet the union scorer picks is not evidence of anything.
+    `Result` is that case: `Ok.__0` and `Err.__0` are both at offset 8, always.
+    So `put_res` must write the payload through the offset spelling and name
+    NEITHER variant, while `put_opt`, whose `Option` has exactly one
+    payload-carrying variant, must still name `Some`. Both keep the recovered
+    `tag` field, and `r16` keeps the signature the import bought.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -80,6 +90,29 @@ c3
   <com>load function ret_plain</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option dwarfvariants off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_overlay_x86_64</com>
+  <com>read symbols</com>
+  <com>load function put_res</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put_opt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dwarfvariants on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_overlay_x86_64</com>
+  <com>read symbols</com>
+  <com>load function put_res</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put_opt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function r16</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="DWARFVARIANTS #1: off, a field-less enum return is misclassified as a hidden-return buffer" min="1" max="1">ret_result\(core::result::Result&lt;u32, u32&gt; \*rethidden,uint4 x\)</stringmatch>
@@ -92,4 +125,10 @@ c3
 <stringmatch name="DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes" min="2" max="2">fx::Pair ret_pair\(uint4 x\)</stringmatch>
 <stringmatch name="DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees" min="2" max="2">Plain ret_plain\(uint4 x\)</stringmatch>
 <stringmatch name="DWARFVARIANTS #10: no variant name is ever synthesized" min="0" max="0">Variant0</stringmatch>
+<stringmatch name="DWARFVARIANTS #11: off, an overlaying Result payload is a raw byte offset" min="2" max="2">\*\(uint8 \*\)&amp;dst-&gt;field_0x8 =</stringmatch>
+<stringmatch name="DWARFVARIANTS #12: on, the overlaying Result keeps its recovered tag field" min="1" max="1">dst-&gt;tag = \(uint8\)\(x &lt; 0xb\);</stringmatch>
+<stringmatch name="DWARFVARIANTS #13: on, and its payload is spelled by OFFSET because Ok and Err both claim it" min="1" max="1">\(dst-&gt;payload\)\.field_0x8\.__0 =</stringmatch>
+<stringmatch name="DWARFVARIANTS #14: neither variant of the overlaying Result is ever named" min="0" max="0">\.(Ok|Err)\b</stringmatch>
+<stringmatch name="DWARFVARIANTS #15: on, an Option has exactly one payload-carrying variant, so Some is FORCED and survives" min="1" max="1">\(dst-&gt;payload\)\.Some\.__0 =</stringmatch>
+<stringmatch name="DWARFVARIANTS #16: the suppression does not give back the phantom sret: the source signature still comes out" min="1" max="1">core::result::Result&lt;u64, u64&gt; r16\(uint4 x\)</stringmatch>
 </decompilertest>

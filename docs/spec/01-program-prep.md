@@ -573,13 +573,17 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   offset 0 is equally a `#[repr(C)] struct {kind, val}`, a `(u64,u64)` tuple, a
   bitmask pair, or a `&'static str` fat pointer whose "discriminant" would be a
   `.rodata` address. `DW_AT_discr` and `DW_AT_discr_value` are the compiler
-  stating both answers, so the names installed are the source's.
+  stating both answers, so no name installed here is an inference — though a name
+  DWARF states is still only installed where the union model can select it
+  unambiguously, which is the second limitation at the end of this bullet.
 
   The recovered type is a struct of the discriminant plus a **union** of one
   payload struct per variant. A union's members all sit at offset 0, which is
   exactly a variant overlay, so this uses the existing type model rather than
-  adding a `type_metatype` (that enum is matched at 1634 sites in this workspace,
-  mostly non-exhaustively, so a new variant would compile clean and behave wrong;
+  adding a `type_metatype` (that enum is matched at ~1,700 sites in this
+  workspace — `grep -ro 'type_metatype::' --include=*.rs decompiler/crates | wc -l`
+  reports 1678 — mostly non-exhaustively, so a new variant would compile clean and
+  behave wrong;
   `sub_metatype` is a contiguous propagation sort key; and `metatype2string`
   writes a fixed vocabulary onto the Ghidra wire). The overlay
   begins at the lowest offset any variant places a field at, and each facet's
@@ -590,10 +594,15 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   Every name minted — the facets and the overlay union — is derived from the
   enum's own parent-qualified name and goes through the same collision policy
   `dwarfstructs` established, because rustc names payload structs bare and the
-  collision is not hypothetical: one ordinary std-linked `rustc 1.90
-  -C debuginfo=2` binary with 65 variant parts carries **30 DIEs named `Some`
-  across 5 distinct byte sizes** (0/4/8/16/24), 30 named `None`, and 18 each
-  named `Ok` and `Err` across 7 sizes.
+  collision is not hypothetical: the committed `dwarfvariants_x86_64` fixture
+  alone carries **3 structure DIEs named `Some` at two different widths** (8 and
+  16), and a std-linked `rustc 1.90 -C debuginfo=2` witness with 152 variant parts
+  carries 61 named `Some` across 8 byte sizes (0/8/12/16/24/32/48/64), 61 `None`,
+  and 31 each `Ok`/`Err` across 7. A suppressed facet, whose name is derived from
+  its offset rather than from the variant, can collide inside a single enum
+  (`Tree::field_0x8` for both `Leaf` and `Node`); identical layouts then share one
+  interned struct and differing ones are given a numeric suffix, because the ABI
+  classifier common-refines the union's members.
 
   Two shapes get specific treatment. A **fieldless** variant (`None`, `Nil`, a
   unit variant) overlays nothing and gets **no union member**: an empty struct of
@@ -656,16 +665,46 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   fallback, because the only available fallback is the shape inference above. A C
   program has no variant part at all, so the arm never fires on one.
 
-  **The second limitation is the union model.** Representing a variant overlay as
-  a union means that when two variants both place a field at the SAME offset,
-  which facet name an access renders with is decided by the existing union-field
-  scorer, not by the discriminant. In a niche `enum Tree { Leaf(i64),
-  Node(Box<Tree>, Box<Tree>) }` the `Leaf` payload and the `Node` right child both
-  live at offset 8, and following the right child renders as `(*t).Leaf.__0`
-  where the source means `Node.__1` — the bytes are right, the variant label on
-  that one access is not. The offsets and names installed are exactly what DWARF
-  states; picking the facet from the tag is what the side table is recorded for,
-  and is not attempted here.
+  **The second limitation is the union model, and it decides what may be named.**
+  Representing a variant overlay as a union means a member selects itself by
+  OFFSET; the discriminant is never consulted. For a tagged enum that is not a
+  corner case but the definition of the encoding: every payload variant begins
+  immediately after the tag, so `Ok` and `Err` are at the same offset, always, and
+  the facet the union-field scorer picks is not evidence of anything. Measured, on
+  a `Result<u64,u64>` witness the label was not merely uncertain but consistently
+  false — `Ok` was printed on both arms of the producing `if`/`else` and on the
+  consumer's `Err(e) => e + 100`, and `Err` appeared nowhere in the binary.
+
+  So a variant name is installed **only where it is forced**, and the rule is
+  applied per byte range rather than per variant:
+
+  - a facet keeps its `DW_TAG_variant` name only when no other variant claims a
+    byte it claims. `Option<T>` has exactly one payload-carrying variant, so
+    `Some` survives; `Result<T,E>` has two over one range, so both are spelled
+    `field_0x<offset>` — the same offset rendering `dwarfvariants off` produces,
+    which is what a reader gets when the answer is unknown. Both the union member
+    and the facet's own interned type name are suppressed, because a cast in the
+    emitted C prints the type name and suppressing only one of the two would still
+    leak the variant. Two suppressed facets that describe the same bytes share one
+    interned struct; two that differ get distinct ones, because the ABI classifier
+    common-refines the union's members and merging two shapes would change how the
+    enum is passed.
+  - a field inside a facet keeps its DWARF name only when every other variant
+    either claims none of its bytes or names exactly that range the same way.
+    rustc names tuple payloads `__0`/`__1`, so `Result`'s two `__0`s agree and the
+    name claims nothing about which variant is live; `enum Multi { P{a,b}, Q(u64) }`
+    keeps `P.a` (nothing else claims [4,8)) and spells the word at 8 by offset,
+    because `P.b` and `Q.__0` disagree there.
+
+  The rule is deliberately conservative at facet granularity: an access WIDTH can
+  sometimes single out a variant that the byte range alone cannot (an 8-byte store
+  at offset 8 of `Multi` can only be `Q`), but a union member name is fixed when
+  the type is built, not per access, so those labels go too. What is given up is
+  the label, never the layout — offsets, widths, member types and the enum's own
+  size are exactly what DWARF states either way, and every variant's source name
+  and `DW_AT_discr_value` remain on the side table. Picking the facet from the tag
+  needs a dominating-guard analysis; that is what the side table is recorded for,
+  and it is not attempted here.
 - **Full-depth DWARF types** (`typedepth`, default-on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
   type mapper's recursion guard, and it exists because the DIE walk can be handed a

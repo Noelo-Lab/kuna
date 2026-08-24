@@ -22,9 +22,10 @@
 //! `(u64,u64)` tuple, a bitmask pair, and a `&'static str` fat pointer (whose
 //! "discriminant" would be a `.rodata` address and whose "payload" would be the
 //! length). DWARF states the answer: `DW_AT_discr` names the tag member, and each
-//! `DW_TAG_variant`'s `DW_AT_discr_value` names the value that selects it. So the
-//! names this module writes — `Ok`, `Err`, `Some`, `None` — are the compiler's,
-//! not an inference.
+//! `DW_TAG_variant`'s `DW_AT_discr_value` names the value that selects it. So no
+//! name this module writes is an inference — every one of them is the source's.
+//! Whether a given name may be WRITTEN AT ALL is a separate question, answered
+//! under "What the union model cannot say" below.
 //!
 //! ## The honest limitation
 //!
@@ -39,20 +40,26 @@
 //!   struct <Enum> {                       // DW_AT_byte_size of the enum
 //!       <tagtype> tag;                    // at DW_AT_discr's data_member_location
 //!       union <Enum>::payload {           // at the lowest offset any variant uses
-//!           struct <Enum>::Ok  { ... };   // one facet per DW_TAG_variant,
-//!           struct <Enum>::Err { ... };   // named by its DW_TAG_member
-//!       } payload;
+//!           struct <Enum>::Some { ... };  // one facet per payload-carrying
+//!       } payload;                        // DW_TAG_variant
 //!   };
 //! ```
 //!
 //! …and, for the niche shape below, the union alone under the enum's own name.
 //!
+//! A facet is named after its `DW_TAG_variant` only when no OTHER variant claims
+//! a byte it claims — see "What the union model cannot say" below. `Option<u32>`
+//! is the shape above; `Result<u32,u32>`, whose two variants overlay each other,
+//! gets one facet per variant named `field_0x4` instead of `Ok` / `Err`.
+//!
 //! Union members all sit at offset 0 (`TypeUnion::setFields`), which IS a variant
 //! overlay, so this uses the existing type model rather than adding a
-//! `type_metatype`: `type_metatype::` is matched at 1634 sites in this workspace
-//! (counted, mostly non-exhaustively, so a new variant would compile clean and
-//! behave wrong), `sub_metatype` is a contiguous `0..23` propagation sort key,
-//! and `metatype2string` writes a fixed vocabulary onto the Ghidra wire.
+//! `type_metatype`: the enum is matched at ~1,700 sites in this workspace
+//! (`grep -ro 'type_metatype::' --include=*.rs decompiler/crates | wc -l` reports
+//! 1678 on this branch), mostly non-exhaustively, so a new variant would compile
+//! clean and behave wrong; `sub_metatype` is a contiguous `0..23` propagation
+//! sort key, and `metatype2string` writes a fixed vocabulary onto the Ghidra
+//! wire.
 //!
 //! Facet fields are **re-based** to the payload overlay: DWARF gives a variant's
 //! payload struct the width of the WHOLE enum with its members at their absolute
@@ -70,32 +77,55 @@
 //! would have to sit at an offset a variant already owns. The geometry still
 //! reaches the side table, marked [`VariantLayout::niche`].
 //!
-//! ## What the union model cannot say
+//! ## What the union model cannot say, and what is therefore not printed
 //!
-//! A union member selects itself by offset, not by the tag, so when two variants
-//! both place a field at the SAME offset it is the existing union-field scorer —
-//! not the discriminant — that decides which facet name an access renders with.
-//! In a niche `enum Tree { Leaf(i64), Node(Box<Tree>, Box<Tree>) }` the `Leaf`
-//! payload and the `Node` right child are both at offset 8, and following the
-//! right child renders `(*t).Leaf.__0` where the source means `Node.__1`
-//! (measured on a std-linked witness). The bytes are right and the offsets and
-//! names installed are exactly what DWARF states; the variant LABEL on such an
-//! access can be the wrong one. Picking the facet from the tag is what
-//! [`VariantLayout`] is recorded for, and is not attempted here.
+//! A union member selects itself by OFFSET, not by the tag, so where two
+//! variants claim the same bytes it is the union-field scorer — not the
+//! discriminant — that decides which facet an access resolves to. For a tagged
+//! enum that is not a corner case, it is the definition: every payload variant
+//! begins immediately after the tag, so `Ok` and `Err` are at the SAME offset,
+//! always, and the facet the scorer picks is not evidence of anything. Left
+//! alone this prints actively false code — a `Result<u64,u64>` witness rendered
+//! `Ok` on both arms of an if/else and `Err` nowhere in the whole binary, and a
+//! consumer's `Err(e) => e + 100` came out `(long)v2.payload.Ok + 100`.
+//!
+//! So a variant name is installed only where it is FORCED:
+//!
+//! * [`label_for`] — the union member keeps the variant's name only when no
+//!   other variant claims a byte this one claims. `Option<T>` has exactly one
+//!   payload-carrying variant, so `Some` is unambiguous and survives; every
+//!   `Result<T,E>`, and any enum with two payload variants overlaying each
+//!   other, is spelled `field_0x<offset>` instead — the same offset-based
+//!   rendering `dwarfvariants off` produces, which is what a reader gets when
+//!   the answer is unknown.
+//! * [`field_name_survives`] — a field inside a facet keeps its DWARF name only
+//!   when every other variant either claims none of its bytes or names exactly
+//!   that range the same way. rustc names tuple payloads `__0`/`__1`, so
+//!   `Result`'s two `__0`s agree and the name claims nothing about which variant
+//!   is live; a struct variant's `b` against a tuple variant's `__0` over the
+//!   same word does not, and becomes `field_0x<offset>`.
+//!
+//! What is LOST is the label, not the layout: offsets, widths, member types and
+//! the enum's own size are exactly what DWARF states either way, and every
+//! variant's source name and `DW_AT_discr_value` are on [`VariantLayout`].
+//! Picking the facet from the tag needs a dominating-guard analysis — that is
+//! what the side table is recorded for, and it is not attempted here.
 //!
 //! ## Name collisions
 //!
 //! `Datatype::hash_name` makes the registered name the type id, and rustc names
-//! variant payload structs BARE. Measured on one ordinary std-linked
-//! `rustc 1.90 -C debuginfo=2` binary (65 variant parts): **30 DIEs named
-//! `Some`** across **5 distinct byte sizes** (0/4/8/16/24), 30 named `None`, and
-//! 18 each named `Ok` and `Err` across 7 sizes. Even the tiny `#![no_std]`
-//! fixture committed beside this module carries `Some` at two different widths.
-//! So every name minted here is derived from the enclosing enum's own
-//! PARENT-QUALIFIED name (`core::result::Result<u32, u32>::Ok`), and a name still
-//! held by something of a different shape is stepped over by
+//! variant payload structs BARE. Reproducible from this repo alone: the
+//! committed `dwarfvariants_x86_64` fixture already carries **3 structure DIEs
+//! named `Some`** at **two different widths** (8 and 16) and 2 each named `Ok`
+//! and `Err` at two widths (1 and 8). On a std-linked `rustc 1.90
+//! -C debuginfo=2` witness with 152 variant parts the same scan reports 61 DIEs
+//! named `Some` across 8 byte sizes (0/8/12/16/24/32/48/64), 61 `None`, and 31
+//! each `Ok`/`Err` across 7. So every name minted here is derived from the
+//! enclosing enum's own PARENT-QUALIFIED name
+//! (`core::result::Result<u32, u32>::Ok`), and a name still held by something of
+//! a different shape is stepped over by
 //! [`super::kuna_dwarfstructs::resolve_name`], the policy `dwarfstructs`
-//! established.
+//! established, or by [`open_facet`] for a suppressed facet.
 //!
 //! ## Deliberate refusals
 //!
@@ -129,8 +159,8 @@
 //! * any member that would extend past the enum's `DW_AT_byte_size`;
 //! * every facet's fields being unbuildable, which would leave a zero-member
 //!   union describing nothing;
-//! * the overlay union's name being unmintable, or the factory refusing any of
-//!   the three completions.
+//! * the overlay union's name, or a facet's, being unmintable, or the factory
+//!   refusing any of the three completions.
 //!
 //! The caller adds one more: the arm runs only when
 //! [`super::kuna_dwarfstructs::enabled`] is also true, because it EXTENDS that
@@ -504,6 +534,117 @@ fn seal_shell(
     sealed.unwrap_or(shell)
 }
 
+/// One variant's payload after its member types are built, before any facet type
+/// is interned. `claims` is the variant's named byte ranges as
+/// `(source name, offset within the ENUM, width)`, which is what the naming rule
+/// in [`label_for`] and [`field_name_survives`] is decided on.
+struct BuiltFacet {
+    name: String,
+    discr: Option<i64>,
+    alignment: Option<u64>,
+    fields: Vec<TypeField>,
+    claims: Vec<(String, int4, int4)>,
+}
+
+/// Whether byte ranges `[ao, ao+asz)` and `[bo, bo+bsz)` share a byte.
+fn ranges_overlap(ao: int4, asz: int4, bo: int4, bsz: int4) -> bool {
+    ao < bo + bsz && bo < ao + asz
+}
+
+/// The union-member spelling for facet `i`: the variant's own name only when NO
+/// other variant claims a byte this one also claims, and an offset-derived
+/// `field_0x…` otherwise.
+///
+/// This is the whole naming rule. A union member selects itself by OFFSET, and
+/// the discriminant is not consulted, so a variant name printed on an access
+/// into a byte range two variants both claim is a coin flip — see the module
+/// header. Where exactly one variant claims the range there is nothing to flip:
+/// no other variant has anything meaningful there.
+fn label_for(i: usize, built: &[BuiltFacet]) -> String {
+    let me = &built[i];
+    let contested = built.iter().enumerate().any(|(j, other)| {
+        j != i
+            && me.claims.iter().any(|(_, ao, asz)| {
+                other.claims.iter().any(|(_, bo, bsz)| ranges_overlap(*ao, *asz, *bo, *bsz))
+            })
+    });
+    if contested {
+        format!("field_0x{:x}", me.claims.iter().map(|c| c.1).min().unwrap_or(0))
+    } else {
+        me.name.clone()
+    }
+}
+
+/// Whether facet `i`'s field at `[off, off+width)` may keep its DWARF name: only
+/// when every other variant either claims none of those bytes or names exactly
+/// that range with exactly that spelling.
+///
+/// Two variants of the same tagged enum usually agree (rustc names every tuple
+/// payload `__0`, `__1`, …), and where they agree the name claims nothing about
+/// WHICH variant is live, so it is kept. Where they disagree — a struct variant's
+/// `b` against a tuple variant's `__0` over the same word — the offset spelling
+/// is used instead.
+fn field_name_survives(i: usize, off: int4, width: int4, name: &str, built: &[BuiltFacet]) -> bool {
+    built.iter().enumerate().all(|(j, other)| {
+        j == i
+            || other.claims.iter().all(|(on, oo, ow)| {
+                !ranges_overlap(off, width, *oo, *ow)
+                    || (*oo == off && *ow == width && on == name)
+            })
+    })
+}
+
+/// Whether an already-complete interned struct has exactly `fields`
+/// (offset, name, width), i.e. is the same facet rather than a name collision.
+fn same_layout(t: &Rc<Datatype>, fields: &[TypeField]) -> bool {
+    if t.num_depend() != fields.len() as int4 {
+        return false;
+    }
+    fields.iter().enumerate().all(|(i, f)| match t.get_field(i as int4) {
+        Some(g) => {
+            g.offset == f.offset
+                && g.name == f.name
+                && g.field_type.get_size() == f.field_type.get_size()
+        }
+        None => false,
+    })
+}
+
+/// Intern the payload struct for one facet under `base`, stepping over a
+/// same-named complete type whose layout is a DIFFERENT one.
+///
+/// The step-over matters because a suppressed facet's name is derived from its
+/// offset, so two variants of the same enum can want the same one
+/// (`Tree::field_0x8` for both `Leaf` and `Node`). Where the layouts match, the
+/// single interned struct is shared, which is correct — the two facets describe
+/// the same bytes. Where they differ they must not be merged: the ABI classifier
+/// common-refines the union's members, so collapsing two shapes into one would
+/// change how the enum is passed.
+fn open_facet(
+    types: &dyn TypeFactory,
+    base: &str,
+    fallback: &str,
+    fields: Vec<TypeField>,
+    size: int4,
+    align: int4,
+) -> Option<(Rc<Datatype>, String)> {
+    for attempt in 0..8 {
+        let cand = if attempt == 0 { base.to_string() } else { format!("{base}_{attempt}") };
+        let fname =
+            resolve_name(types, &cand, Some(size), fallback, type_metatype::TYPE_STRUCT)?;
+        let (fshell, fcomplete) = open_shell(types, &fname, false)?;
+        if fcomplete {
+            if same_layout(&fshell, &fields) {
+                return Some((fshell, fname));
+            }
+            continue;
+        }
+        let done = types.set_fields_struct_raw(&fshell, fields, Vec::new(), size, align, 0).ok()?;
+        return Some((done, fname));
+    }
+    None
+}
+
 /// Build one payload struct per variant and the union members that name them.
 ///
 /// Split out of [`intern_variant_aggregate`] so the `begin_aggregate` claim is
@@ -514,6 +655,10 @@ fn seal_shell(
 /// at offset 0 and cannot be placed beside a `tag` field there. In the niche
 /// shape the overlay IS the whole type, so `payload_offset` is 0 and the offsets
 /// go in verbatim.
+///
+/// The member types are built for EVERY variant first, because the naming rule
+/// ([`label_for`], [`field_name_survives`]) needs the widths of all of them
+/// before any name can be decided.
 #[allow(clippy::too_many_arguments)]
 fn build_facets(
     types: &dyn TypeFactory,
@@ -532,11 +677,10 @@ fn build_facets(
     // printer looks a constant up: the Varnode carries the truncated value.
     let tag_mask: u64 = if tag_size >= 8 { u64::MAX } else { (1u64 << (tag_size * 8)) - 1 };
 
-    let mut union_fields: Vec<TypeField> = Vec::new();
-    let mut facets: Vec<VariantFacet> = Vec::new();
+    let mut built: Vec<BuiltFacet> = Vec::new();
     for v in &raw.variants {
-        let mut ffields: Vec<TypeField> = Vec::new();
-        let mut recorded: Vec<(String, int4)> = Vec::new();
+        let mut fields: Vec<TypeField> = Vec::new();
+        let mut claims: Vec<(String, int4, int4)> = Vec::new();
         for (fname, foff, ftype) in &v.fields {
             let Some(fty) = super::build_datatype(*ftype, dies, types, word_size, walk, cpp)
             else {
@@ -548,15 +692,27 @@ fn build_facets(
             if *foff + fty.get_size() > size || *foff < payload_offset {
                 return None;
             }
+            let width = fty.get_size();
             let rebased = foff - payload_offset;
-            ffields.push(TypeField::new(rebased, rebased, fname.clone(), fty));
-            recorded.push((fname.clone(), *foff));
+            fields.push(TypeField::new(rebased, rebased, fname.clone(), fty));
+            claims.push((fname.clone(), *foff, width));
         }
-        ffields.sort_by_key(|f| (f.offset, f.field_type.get_size()));
-        ffields.dedup_by_key(|f| f.offset);
-        recorded.sort_by_key(|f| f.1);
-        recorded.dedup_by_key(|f| f.1);
+        fields.sort_by_key(|f| (f.offset, f.field_type.get_size()));
+        fields.dedup_by_key(|f| f.offset);
+        claims.sort_by_key(|c| (c.1, c.2));
+        claims.dedup_by_key(|c| c.1);
+        built.push(BuiltFacet {
+            name: v.name.clone(),
+            discr: v.discr,
+            alignment: v.alignment,
+            fields,
+            claims,
+        });
+    }
 
+    let mut union_fields: Vec<TypeField> = Vec::new();
+    let mut facets: Vec<VariantFacet> = Vec::new();
+    for i in 0..built.len() {
         // A FIELDLESS variant (`None`, `Nil`, a unit variant) overlays nothing,
         // so it gets no union facet: an empty struct of the overlay's width is
         // indistinguishable to `ScoreUnionFields` from the facet that does carry
@@ -567,38 +723,47 @@ fn build_facets(
         // not lost: its name and its discriminant value are recorded on the side
         // table, which is where a `match` renderer reads them, and there is no
         // payload for a field path to reach anyway.
-        let payload_type = if ffields.is_empty() {
-            String::new()
+        let (payload_type, label) = if built[i].fields.is_empty() {
+            (String::new(), String::new())
         } else {
-            let fname = resolve_name(
+            let label = label_for(i, &built);
+            let renamed: Vec<TypeField> = built[i]
+                .fields
+                .iter()
+                .map(|f| {
+                    let abs = f.offset + payload_offset;
+                    let width = f.field_type.get_size();
+                    let fname = if field_name_survives(i, abs, width, &f.name, &built) {
+                        f.name.clone()
+                    } else {
+                        format!("field_0x{abs:x}")
+                    };
+                    TypeField::new(f.offset, f.ident, fname, Rc::clone(&f.field_type))
+                })
+                .collect();
+            let falign = facet_alignment(built[i].alignment, payload_size, &renamed);
+            let (facet, fname) = open_facet(
                 types,
-                &format!("{name}::{}", v.name),
-                Some(payload_size),
+                &format!("{name}::{label}"),
                 name,
-                type_metatype::TYPE_STRUCT,
+                renamed,
+                payload_size,
+                falign,
             )?;
-            let (fshell, fcomplete) = open_shell(types, &fname, false)?;
-            let facet = if fcomplete {
-                fshell
-            } else {
-                let falign = facet_alignment(v.alignment, payload_size, &ffields);
-                types
-                    .set_fields_struct_raw(&fshell, ffields, Vec::new(), payload_size, falign, 0)
-                    .ok()?
-            };
             union_fields.push(TypeField::new(
                 union_fields.len() as int4,
                 0,
-                v.name.clone(),
+                label.clone(),
                 facet,
             ));
-            fname
+            (fname, label)
         };
         facets.push(VariantFacet {
-            name: v.name.clone(),
-            discr: v.discr.map(|d| (d as u64) & tag_mask),
+            name: built[i].name.clone(),
+            discr: built[i].discr.map(|d| (d as u64) & tag_mask),
+            label,
             payload_type,
-            fields: recorded,
+            fields: built[i].claims.iter().map(|(n, o, _)| (n.clone(), *o)).collect(),
         });
     }
 

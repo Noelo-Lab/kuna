@@ -12,6 +12,17 @@
 //! transcribed from `readelf --debug-dump=info` of the committed
 //! `dwarfvariants_x86_64` fixture and pinned end to end by
 //! `kuna-console/tests/verify_dwarfvariants.rs`.
+//!
+//! The NAMING rule (which variant names may reach the emitted type at all) has
+//! its refusals here too, not only its keeps: `result_overlays_so_neither_variant_is_named`,
+//! `tree_style_overlay_names_no_variant_but_keeps_the_uncontested_field`,
+//! `default_variant_is_suppressed_when_it_overlays_another`,
+//! `builds_multi_field_variant` and `builds_five_variants` are the refusals;
+//! `option_keeps_its_only_payload_variant_name`,
+//! `disjoint_payload_variants_keep_both_names` and
+//! `agreeing_field_names_survive_even_when_the_facet_does_not` are the keeps; and
+//! `seals_when_every_suppressed_facet_name_is_taken` is the post-intern refusal
+//! the offset-derived facet name introduces.
 
 use super::*;
 use kuna_decomp::dtype::TypeFactoryImpl;
@@ -362,10 +373,14 @@ fn fields(t: &Rc<Datatype>) -> Vec<(String, int4, int4)> {
         .collect()
 }
 
-/// `Result<u32,u32>` becomes `struct { u32 tag @0; union payload @4 }` with the
-/// union's facets named `Ok` and `Err` -- the compiler's names, not `Variant0`.
+/// `Result<u32,u32>` becomes `struct { u32 tag @0; union payload @4 }` — and the
+/// union's facets are NOT named `Ok` and `Err`. Both variants place a field at
+/// offset 4, the union member selects itself by offset, and nothing consults the
+/// discriminant, so either name would be a coin flip. The offset spelling goes in
+/// instead. The shared `__0` survives: both variants spell that range the same
+/// way, so it claims nothing about which one is live.
 #[test]
-fn builds_result_struct_of_tag_and_union() {
+fn result_overlays_so_neither_variant_is_named() {
     let types = factory();
     let mut t = Tree::new();
     let e = result_u32(&mut t);
@@ -384,14 +399,33 @@ fn builds_result_struct_of_tag_and_union() {
     let payload = built.get_field(1).unwrap().field_type.clone();
     assert_eq!(payload.get_metatype(), type_metatype::TYPE_UNION);
     let uf = fields(&payload);
-    assert_eq!(uf.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), vec!["Ok", "Err"]);
+    assert_eq!(
+        uf.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+        vec!["field_0x4", "field_0x4"],
+        "two variants at one offset name neither: {uf:?}"
+    );
     assert!(uf.iter().all(|x| x.1 == 0), "a union facet is an overlay at 0: {uf:?}");
 
     // The facet's own field is re-based off the payload offset: DWARF put `__0`
     // at enum offset 4, the overlay starts at 4, so inside the facet it is 0.
     let ok = payload.get_field(0).unwrap().field_type.clone();
     assert_eq!(fields(&ok), vec![("__0".to_string(), 0, 4)]);
-    assert_eq!(ok.get_name(), "Result<u32, u32>::Ok");
+    assert_eq!(ok.get_name(), "Result<u32, u32>::field_0x4");
+    // The two facets describe the same bytes, so they share one interned struct.
+    let err = payload.get_field(1).unwrap().field_type.clone();
+    assert_eq!(err.get_name(), "Result<u32, u32>::field_0x4");
+
+    // Nothing named `Ok` or `Err` was minted at all -- a cast in the emitted C
+    // prints the FACET TYPE's name, so suppressing only the member name would
+    // still leak the variant.
+    for n in ["Result<u32, u32>::Ok", "Result<u32, u32>::Err"] {
+        assert!(types.find_by_name(n).unwrap().is_none(), "{n} must not exist");
+    }
+    // The source names are not lost -- they are on the side table.
+    let l = types.kuna_variant_layout("Result<u32, u32>").unwrap();
+    assert_eq!(l.facet_for_discr(0).unwrap().name, "Ok");
+    assert_eq!(l.facet_for_discr(0).unwrap().label, "field_0x4");
+    assert!(!l.names_any_variant());
 }
 
 /// The side table records what the type cannot: which value selects which
@@ -535,7 +569,11 @@ fn builds_three_variants() {
     assert_eq!(fields(&bt), vec![("__0".to_string(), 4, 8)]);
 }
 
-/// A variant with MULTIPLE fields keeps both, at their re-based offsets.
+/// A variant with MULTIPLE fields keeps both, at their re-based offsets — and
+/// the naming rule is applied PER FIELD, not per variant: `P.a` at [4,8) is the
+/// only thing any variant puts there, so it keeps its name, while `P.b` and
+/// `Q.__0` collide over offset 8 under different spellings and both become the
+/// offset form.
 #[test]
 fn builds_multi_field_variant() {
     let types = factory();
@@ -554,13 +592,26 @@ fn builds_multi_field_variant() {
 
     let built = intern(&types, &t, e).expect("Multi must build");
     let payload = built.get_field(1).unwrap().field_type.clone();
+    assert_eq!(
+        fields(&payload).iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+        vec!["field_0x4", "field_0x8"],
+        "P and Q share offset 8, so neither is named"
+    );
     let pt = payload.get_field(0).unwrap().field_type.clone();
-    assert_eq!(fields(&pt), vec![("a".to_string(), 0, 4), ("b".to_string(), 4, 4)]);
+    assert_eq!(
+        fields(&pt),
+        vec![("a".to_string(), 0, 4), ("field_0x8".to_string(), 4, 4)],
+        "`a` is P's alone; `b` collides with Q's `__0`"
+    );
     let l = types.kuna_variant_layout("Multi").unwrap();
+    // The side table keeps the SOURCE names and offsets regardless of the label.
     assert_eq!(
         l.facet_named("P").unwrap().fields,
         vec![("a".to_string(), 4), ("b".to_string(), 8)]
     );
+    assert_eq!(l.facet_named("P").unwrap().label, "field_0x4");
+    assert_eq!(l.facet_named("Q").unwrap().label, "field_0x8");
+    assert!(!l.names_any_variant());
 }
 
 /// `enum List { Cons(u32, *const List), Nil }` -- a payload that points back at
@@ -769,7 +820,10 @@ fn a_member_past_the_end_seals_instead_of_leaving_a_zero_size_shell() {
 }
 
 /// FIVE variants, three of them carrying payloads: nothing in the walk is capped
-/// at two or three, and each facet keeps its own name and discriminant.
+/// at two or three. `A` owns [4,8) alone and keeps its name; `B` (u64 at 8) and
+/// `C` (u32 at 8) collide, so both are spelled by offset — and because their
+/// layouts DIFFER they must not be merged into one interned facet, or the ABI
+/// classifier's common refinement of the union would lose a shape.
 #[test]
 fn builds_five_variants() {
     let types = factory();
@@ -796,9 +850,19 @@ fn builds_five_variants() {
     let payload = built.get_field(1).unwrap().field_type.clone();
     assert_eq!(
         fields(&payload).iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
-        vec!["A", "B", "C"],
-        "the two fieldless variants overlay nothing"
+        vec!["A", "field_0x8", "field_0x8"],
+        "the two fieldless variants overlay nothing; B and C collide at 8"
     );
+    // Different shapes at the same offset get DISTINCT interned facets.
+    let bt = payload.get_field(1).unwrap().field_type.clone();
+    let ct = payload.get_field(2).unwrap().field_type.clone();
+    assert_eq!(bt.get_name(), "Five::field_0x8");
+    assert_eq!(ct.get_name(), "Five::field_0x8_1");
+    // Both are called `__0`, but over DIFFERENT extents ([8,16) vs [8,12)), so
+    // the spellings do not agree and the offset form wins in both.
+    assert_eq!(fields(&bt), vec![("field_0x8".to_string(), 4, 8)]);
+    assert_eq!(fields(&ct), vec![("field_0x8".to_string(), 4, 4)]);
+
     let l = types.kuna_variant_layout("Five").unwrap();
     assert_eq!(l.variants.len(), 5, "all five reach the side table");
     for (v, n) in [(0u64, "A"), (1, "B"), (2, "C"), (3, "D"), (4, "F")] {
@@ -806,6 +870,8 @@ fn builds_five_variants() {
     }
     assert!(l.facet_for_discr(5).is_none(), "no default variant here");
     assert!(l.facet_named("D").unwrap().payload_type.is_empty());
+    assert_eq!(l.facet_named("A").unwrap().label, "A");
+    assert!(l.names_any_variant(), "`A` owns its bytes outright");
 }
 
 /// One GENERIC enum instantiated at two different types. rustc gives the two
@@ -977,4 +1043,201 @@ fn gate_defaults_on_and_honours_off() {
     kuna_decomp::kuna_dwarfvariants::set_dwarfvariants_env(true);
     assert!(enabled());
     std::env::remove_var(kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV);
+}
+
+// ---------------------------------------------------------------------------
+// The naming rule -- both halves, and both answers
+// ---------------------------------------------------------------------------
+
+/// The KEPT half, stated on its own: `Option<T>` has exactly ONE
+/// payload-carrying variant, so no other variant claims the payload's bytes and
+/// `Some` is forced. This is the case the suppression must not take away.
+#[test]
+fn option_keeps_its_only_payload_variant_name() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let e = t.strukt(None, "Option<u32>", 8);
+    let vp = t.variant_part(e, u32t, 0);
+    let none = t.strukt(Some(e), "None", 8);
+    let some = t.strukt(Some(e), "Some", 8);
+    t.member(some, "__0", u32t, 4);
+    t.variant(vp, Some(0), "None", none);
+    t.variant(vp, Some(1), "Some", some);
+
+    let built = intern(&types, &t, e).expect("Option must build");
+    let payload = built.get_field(1).unwrap().field_type.clone();
+    assert_eq!(fields(&payload).iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), vec!["Some"]);
+    let somet = payload.get_field(0).unwrap().field_type.clone();
+    assert_eq!(somet.get_name(), "Option<u32>::Some", "the facet TYPE keeps it too");
+    let l = types.kuna_variant_layout("Option<u32>").unwrap();
+    assert_eq!(l.facet_named("Some").unwrap().label, "Some");
+    assert!(l.names_any_variant());
+}
+
+/// A niche `enum Tree { Leaf(i64), Node(Box<Tree>, Box<Tree>) }` — the shape the
+/// PR that introduced this module documented as a corner case and this test
+/// pins as the rule. `Leaf.__0` and `Node.__0` are both at offset 8, so neither
+/// facet is named; `Node.__1` at offset 16 is claimed by nobody else, so IT
+/// keeps its name. No path into the type spells `Leaf` or `Node`.
+#[test]
+fn tree_style_overlay_names_no_variant_but_keeps_the_uncontested_field() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u64t = t.uint(8);
+    let e = t.strukt(None, "Tree", 24);
+    let boxed = t.ptr(e);
+    let vp = t.variant_part(e, u64t, 0);
+    let leaf = t.strukt(Some(e), "Leaf", 24);
+    t.member(leaf, "__0", u64t, 8);
+    let node = t.strukt(Some(e), "Node", 24);
+    t.member(node, "__0", boxed, 8);
+    t.member(node, "__1", boxed, 16);
+    t.variant(vp, Some(0), "Leaf", leaf);
+    t.variant(vp, Some(1), "Node", node);
+
+    let built = intern(&types, &t, e).expect("Tree must build");
+    let payload = built.get_field(1).unwrap().field_type.clone();
+    assert_eq!(
+        fields(&payload).iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+        vec!["field_0x8", "field_0x8"]
+    );
+    let leaft = payload.get_field(0).unwrap().field_type.clone();
+    let nodet = payload.get_field(1).unwrap().field_type.clone();
+    assert_eq!(leaft.get_name(), "Tree::field_0x8");
+    assert_eq!(nodet.get_name(), "Tree::field_0x8_1", "different shapes stay apart");
+    assert_eq!(fields(&leaft), vec![("__0".to_string(), 0, 8)]);
+    assert_eq!(
+        fields(&nodet),
+        vec![("__0".to_string(), 0, 8), ("__1".to_string(), 8, 8)],
+        "`__1` at offset 16 is Node's alone, so it keeps its name"
+    );
+    for n in ["Tree::Leaf", "Tree::Node"] {
+        assert!(types.find_by_name(n).unwrap().is_none(), "{n} must not exist");
+    }
+    let l = types.kuna_variant_layout("Tree").unwrap();
+    assert!(!l.names_any_variant());
+    assert_eq!(l.facet_for_discr(1).unwrap().name, "Node", "the source name survives here");
+}
+
+/// The DEFAULT (niche) variant is not a special case for the rule: with two
+/// payload-carrying variants overlaying one another, the one DWARF gave no
+/// `DW_AT_discr_value` is suppressed exactly like the other.
+#[test]
+fn default_variant_is_suppressed_when_it_overlays_another() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u64t = t.uint(8);
+    let ptr = t.ptr(u64t);
+    let e = t.strukt(None, "Either", 16);
+    let vp = t.variant_part(e, u64t, 0);
+    let a = t.strukt(Some(e), "Ptr", 16);
+    t.member(a, "__0", ptr, 8);
+    let b = t.strukt(Some(e), "Num", 16);
+    t.member(b, "__0", u64t, 8);
+    t.variant(vp, Some(0), "Num", b);
+    t.variant(vp, None, "Ptr", a);
+
+    let built = intern(&types, &t, e).expect("Either must build");
+    let payload = built.get_field(1).unwrap().field_type.clone();
+    assert!(
+        fields(&payload).iter().all(|f| f.0 == "field_0x8"),
+        "the default variant is named no more freely than the tagged one: {:?}",
+        fields(&payload)
+    );
+    let l = types.kuna_variant_layout("Either").unwrap();
+    assert_eq!(l.facet_for_discr(0xdead).unwrap().name, "Ptr", "still the default on the table");
+    assert!(!l.names_any_variant());
+}
+
+/// Two payload variants that do NOT overlap keep both names, and the emitted
+/// path is then forced by the offset: only `A` has a field in [4,8) and only `B`
+/// has one in [8,16), so neither label can be the wrong one.
+#[test]
+fn disjoint_payload_variants_keep_both_names() {
+    let types = factory();
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let u64t = t.uint(8);
+    let e = t.strukt(None, "Split", 16);
+    let vp = t.variant_part(e, u32t, 0);
+    let a = t.strukt(Some(e), "A", 16);
+    t.member(a, "__0", u32t, 4);
+    let b = t.strukt(Some(e), "B", 16);
+    t.member(b, "__0", u64t, 8);
+    t.variant(vp, Some(0), "A", a);
+    t.variant(vp, Some(1), "B", b);
+
+    let built = intern(&types, &t, e).expect("Split must build");
+    let payload = built.get_field(1).unwrap().field_type.clone();
+    assert_eq!(
+        fields(&payload).iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+        vec!["A", "B"]
+    );
+    let l = types.kuna_variant_layout("Split").unwrap();
+    assert_eq!(l.facet_named("A").unwrap().label, "A");
+    assert_eq!(l.facet_named("B").unwrap().label, "B");
+    assert!(l.names_any_variant());
+}
+
+/// A field two variants place at the SAME extent under the SAME spelling keeps
+/// that spelling — rustc names every tuple payload `__0`, so `Result`'s two
+/// `__0`s agree and the name claims nothing about which variant is live. The
+/// facet around it is still suppressed.
+#[test]
+fn agreeing_field_names_survive_even_when_the_facet_does_not() {
+    let types = factory();
+    let mut t = Tree::new();
+    let e = result_u32(&mut t);
+    intern(&types, &t, e).expect("Result must build");
+    let facet = types
+        .find_by_name("Result<u32, u32>::field_0x4")
+        .unwrap()
+        .expect("the suppressed facet is interned under the offset name");
+    assert_eq!(fields(&facet), vec![("__0".to_string(), 0, 4)]);
+}
+
+/// The suppressed-facet name is derived from an OFFSET, so two variants of one
+/// enum can want the same one and `open_facet` steps over a same-named complete
+/// type whose layout differs. When every candidate it will try is taken by a
+/// different shape it gives up — and because the enum's shell is already interned
+/// by then, the answer must be the SEALED shell (byte size, no fields), never a
+/// zero-size type that degrades to `void`.
+#[test]
+fn seals_when_every_suppressed_facet_name_is_taken() {
+    let types = factory();
+    let mut t = Tree::new();
+    let e = result_u32(&mut t);
+    // The facet wants `Result<u32, u32>::field_0x4` (payload width 4) and will
+    // try `_1` .. `_7` after it. Hold every one with a COMPLETE 4-byte struct of
+    // a different shape, so `same_layout` rejects each.
+    for n in 0..8 {
+        let name = if n == 0 {
+            "Result<u32, u32>::field_0x4".to_string()
+        } else {
+            format!("Result<u32, u32>::field_0x4_{n}")
+        };
+        let s = types.get_type_struct(&name).expect("blocker interns");
+        let u32t = types.get_base(4, type_metatype::TYPE_UINT).expect("u32");
+        types
+            .set_fields_struct_raw(
+                &s,
+                vec![TypeField::new(0, 0, "zz".to_string(), u32t)],
+                Vec::new(),
+                4,
+                4,
+                0,
+            )
+            .expect("blocker completes");
+    }
+
+    let built = intern(&types, &t, e).expect("the sealed shell is the answer");
+    assert_eq!(built.get_name(), "Result<u32, u32>");
+    assert_eq!(built.get_size(), 8, "sealed at DW_AT_byte_size, not 0");
+    assert!(!built.is_incomplete(), "a zero-size incomplete type is the defect");
+    assert!(fields(&built).is_empty());
+    assert!(
+        types.kuna_variant_layout("Result<u32, u32>").is_none(),
+        "no layout may be claimed for a shape that was not installed"
+    );
 }

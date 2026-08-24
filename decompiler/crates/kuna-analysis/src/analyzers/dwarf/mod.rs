@@ -78,7 +78,12 @@
 //!   [`kuna_dwarfvariants`]): a `DW_TAG_structure_type` carrying a
 //!   `DW_TAG_variant_part` — a Rust tagged enum, which has no `DW_TAG_member` of
 //!   its own — recovers its `DW_AT_discr` discriminant, each `DW_TAG_variant`'s
-//!   `DW_AT_discr_value`, and each variant's NAMED payload. The arm EXTENDS
+//!   `DW_AT_discr_value`, and each variant's payload. LOSS: the overlay is a
+//!   UNION, whose members select themselves by offset with no reference to the
+//!   discriminant, so a variant NAME is installed only where exactly one variant
+//!   claims those bytes (`Option`'s `Some`); where two do — every `Result` — the
+//!   payload is spelled `field_0x<offset>`, the same rendering the gate off
+//!   gives. The arm EXTENDS
 //!   `dwarfstructs` and is gated on it as well as on its own flag; with either
 //!   off a Rust enum recovers its width and no fields. Needs FULL debug info
 //!   (`-C debuginfo=2`): a binary whose DWARF carries no type DIEs gains nothing.

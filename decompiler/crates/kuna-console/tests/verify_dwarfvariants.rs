@@ -9,12 +9,25 @@
 //! out of, and a 16-byte one wrote its variants as `*(uint *)&r->field_0x4`.
 //!
 //! Each test runs the SAME function twice — `dwarfvariants off` must reproduce
-//! the bug, the default must reproduce the fix — over the committed
-//! `dwarfvariants_x86_64` fixture (`rustc 1.90.0 -C debuginfo=2 -C opt-level=1`,
-//! source vendored beside it). `dwarfstructs` is pinned ON in both arms so what
-//! is being measured is the variant part alone and not its sibling. (This arm
-//! EXTENDS `dwarfstructs` and is gated on it as well;
-//! `dwarfstructs_off_suppresses_the_variant_arm_too` is the test for that.)
+//! the bug, the default must reproduce the fix — over one of two committed
+//! fixtures (`rustc 1.90.0 -C debuginfo=2 -C opt-level=1`, sources vendored
+//! beside them): `dwarfvariants_x86_64` for the SHAPES the importer has to read,
+//! and `dwarfvariants_overlay_x86_64` for what it is allowed to NAME.
+//! `dwarfstructs` is pinned ON in both arms so what is being measured is the
+//! variant part alone and not its sibling. (This arm EXTENDS `dwarfstructs` and
+//! is gated on it as well; `dwarfstructs_off_suppresses_the_variant_arm_too` is
+//! the test for that.)
+//!
+//! ## The naming rule has a test for the REFUSAL, not only for the happy path
+//!
+//! A union member selects itself by offset and the discriminant is never
+//! consulted, so a variant name is printed only where exactly one variant claims
+//! the bytes. `an_overlaying_result_names_neither_variant` and
+//! `reading_an_overlaying_result_names_neither_variant` are the refusals;
+//! `an_option_still_names_its_only_payload_variant` and
+//! `uncontested_variant_payloads_are_named_by_the_source_variant` are the keeps;
+//! `suppression_does_not_give_back_the_phantom_sret` pins that the TYPE is
+//! untouched by the decision.
 //!
 //! ## Why this file and not a datatest
 //!
@@ -57,12 +70,18 @@ fn repo_root() -> PathBuf {
 /// on either way), decompile each of `funcs` and return the concatenated C.
 /// `None` => specs-less skip.
 fn decompile(funcs: &[&str], variants: bool) -> Option<String> {
+    decompile_in("dwarfvariants_x86_64", funcs, variants)
+}
+
+/// As [`decompile`], over an arbitrary committed fixture.
+fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> Option<String> {
     let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let path = root
-        .join("decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_x86_64")
+        .join("decompiler/crates/kuna-analysis/tests/fixtures")
+        .join(fixture)
         .to_str()?
         .to_string();
 
@@ -111,6 +130,14 @@ fn ab(func: &str) -> Option<(String, String)> {
     Some((off, on))
 }
 
+/// As [`ab`], over the `dwarfvariants_overlay_x86_64` fixture — the one built
+/// for the NAMING rule rather than for the shapes.
+fn ab_overlay(func: &str) -> Option<(String, String)> {
+    let off = decompile_in("dwarfvariants_overlay_x86_64", &[func], false)?;
+    let on = decompile_in("dwarfvariants_overlay_x86_64", &[func], true)?;
+    Some((off, on))
+}
+
 /// An 8-byte `Result<u32,u32>` return: a field-less aggregate is classified as a
 /// hidden-return buffer, so the prototype grows a phantom `rethidden` first
 /// parameter AND the real one shifts a slot right (the body then reads `x` out of
@@ -147,11 +174,12 @@ fn the_discriminant_is_a_named_field() {
     );
 }
 
-/// The union facet is named by the SOURCE variant name, which is the whole point
-/// of reading DWARF instead of inferring from codegen: `A`/`B` here, `Ok`/`Err`
-/// or `Some`/`None` elsewhere, never `Variant0`.
+/// The union facet is named by the SOURCE variant name where that name is
+/// FORCED: `Three`'s `A` owns [4,8) and `B` owns [8,16), no other variant claims
+/// either range, so an access there can only be that variant's. Never
+/// `Variant0`, and never a variant that merely won a union-scorer tie.
 #[test]
-fn variant_payloads_are_named_by_the_source_variant() {
+fn uncontested_variant_payloads_are_named_by_the_source_variant() {
     let Some((_off, on)) = ab("ret_three") else { return };
     assert!(
         on.contains("(rethidden->payload).A.__0 = x;"),
@@ -164,17 +192,28 @@ fn variant_payloads_are_named_by_the_source_variant() {
     assert!(!on.contains("Variant0"), "no synthesized variant name:\n{on}");
 }
 
-/// A variant with TWO fields keeps both, each under its own source name.
+/// A variant with TWO fields keeps every field, and the naming rule is applied
+/// PER FIELD: `Multi`'s `P.a` at [4,8) is claimed by nothing else and keeps its
+/// name, while `P.b` and `Q.__0` both claim offset 8 under different spellings,
+/// so that word is written through the offset form and NEITHER facet is named.
 #[test]
-fn a_multi_field_variant_keeps_every_field() {
+fn a_multi_field_variant_keeps_every_field_and_names_only_what_it_may() {
     let Some((off, on)) = ab("ret_multi") else { return };
     assert!(
         off.contains("*(uint4 *)&rethidden->field_0x8 = x + 1;"),
         "gate off should write byte offsets, got:\n{off}"
     );
     assert!(
-        on.contains("(rethidden->payload).P.a = x;") && on.contains("(rethidden->payload).P.b = x + 1;"),
-        "both fields of variant P should be named, got:\n{on}"
+        on.contains("(rethidden->payload).field_0x4.a = x;"),
+        "`a` is P's alone, so it keeps its name, got:\n{on}"
+    );
+    assert!(
+        on.contains("(rethidden->payload).field_0x4.field_0x8 = x + 1;"),
+        "`b` collides with Q's `__0`, so the word is spelled by offset, got:\n{on}"
+    );
+    assert!(
+        !on.contains(".P.") && !on.contains(".Q."),
+        "neither variant may be named where they overlay each other, got:\n{on}"
     );
 }
 
@@ -326,4 +365,123 @@ fn the_layout_side_table_is_recorded() {
         assert!(t.facet_named("C").unwrap().payload_type.is_empty());
         assert_eq!(t.facet_named("B").unwrap().fields, vec![("__0".to_string(), 8)]);
     }
+}
+
+// ---------------------------------------------------------------------------
+// The naming rule, end to end (`dwarfvariants_overlay_x86_64`)
+// ---------------------------------------------------------------------------
+
+/// **The refusal.** `Result<u64,u64>` puts `Ok.__0` and `Err.__0` at the SAME
+/// offset, so the union member the scorer picks is not evidence of anything.
+/// Before the suppression this fixture printed `Ok` ten times and `Err` never —
+/// including on the `Err` arm. Neither name may appear anywhere in the emitted
+/// body now; the payload is written through the offset spelling instead, which
+/// is what `dwarfvariants off` writes and is therefore known-good.
+#[test]
+fn an_overlaying_result_names_neither_variant() {
+    let Some((off, on)) = ab_overlay("put_res") else { return };
+    assert!(
+        off.contains("*(uint8 *)&dst->field_0x8 ="),
+        "gate off should write a byte offset, got:\n{off}"
+    );
+    assert!(
+        on.contains("dst->tag ="),
+        "the discriminant is still recovered as a named field, got:\n{on}"
+    );
+    assert!(
+        on.contains("(dst->payload).field_0x8.__0 ="),
+        "the payload should be spelled by offset, got:\n{on}"
+    );
+    for bad in ["Ok", "Err"] {
+        assert!(
+            !on.contains(bad),
+            "`{bad}` is a coin flip on this type and must not be printed, got:\n{on}"
+        );
+    }
+}
+
+/// The consumer side of the same type: an `Err(e) => e + 100` arm used to render
+/// as `(long)v2.payload.Ok + 100`. Reading the payload must not name a variant
+/// either — the type is unchanged, only the label is gone.
+#[test]
+fn reading_an_overlaying_result_names_neither_variant() {
+    let Some((_off, on)) = ab_overlay("use16") else { return };
+    assert!(on.contains("+ 100"), "the Err arm is still in the body, got:\n{on}");
+    for bad in ["Ok", "Err"] {
+        assert!(!on.contains(bad), "`{bad}` must not be printed, got:\n{on}");
+    }
+    assert!(on.contains("payload.field_0x8"), "the offset spelling is used, got:\n{on}");
+}
+
+/// **The kept half.** `Option<u64>` has exactly ONE payload-carrying variant, so
+/// `Some` is forced and must survive the suppression — this is what stops the
+/// rule from degenerating into "never name anything".
+#[test]
+fn an_option_still_names_its_only_payload_variant() {
+    let Some((off, on)) = ab_overlay("put_opt") else { return };
+    assert!(
+        off.contains("*(uint8 *)&dst->field_0x8 ="),
+        "gate off should write a byte offset, got:\n{off}"
+    );
+    assert!(
+        on.contains("(dst->payload).Some.__0 ="),
+        "`Some` is the only claimant of those bytes and must be named, got:\n{on}"
+    );
+}
+
+/// The recovered TYPE is not what the suppression changes: `r16`'s 16-byte
+/// `Result<u64,u64>` still loses its phantom `rethidden` and still returns the
+/// source's type by value. Only the field path moved.
+#[test]
+fn suppression_does_not_give_back_the_phantom_sret() {
+    let Some((off, on)) = ab_overlay("r16") else { return };
+    assert!(
+        off.contains("r16(core::result::Result<u64, u64> *rethidden,uint4 x)"),
+        "gate off should reproduce the phantom sret, got:\n{off}"
+    );
+    assert!(
+        on.contains("core::result::Result<u64, u64> r16(uint4 x)"),
+        "gate on should still recover the source signature, got:\n{on}"
+    );
+    assert!(!on.contains("rethidden"), "no phantom parameter survives:\n{on}");
+}
+
+/// The side table still carries the compiler's own variant names and
+/// discriminant values for the suppressed type — the labels are a RENDERING
+/// decision, and `names_any_variant` is the flag that records which way it went.
+#[test]
+fn the_side_table_keeps_the_names_the_type_does_not() {
+    let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
+    let root = repo_root();
+    let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
+    let path = root
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_overlay_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    std::env::set_var(DWARFSTRUCTS_ENV, "on");
+    std::env::set_var(DWARFVARIANTS_ENV, "on");
+    let prog = bootstrap_from_object(&path, "", &spec_roots);
+    std::env::remove_var(DWARFVARIANTS_ENV);
+    std::env::remove_var(DWARFSTRUCTS_ENV);
+    let Ok(prog) = prog else {
+        eprintln!("verify_dwarfvariants: skipping (no `.sla`)");
+        return;
+    };
+    let types = prog.arch().types();
+
+    let r = types
+        .kuna_variant_layout("core::result::Result<u64, u64>")
+        .expect("Result<u64,u64> layout recorded");
+    assert_eq!(r.facet_for_discr(0).unwrap().name, "Ok");
+    assert_eq!(r.facet_for_discr(1).unwrap().name, "Err");
+    assert_eq!(r.facet_named("Ok").unwrap().label, "field_0x8");
+    assert_eq!(r.facet_named("Err").unwrap().label, "field_0x8");
+    assert!(!r.names_any_variant(), "nothing in the emitted type names a variant");
+
+    let o = types
+        .kuna_variant_layout("core::option::Option<u64>")
+        .expect("Option<u64> layout recorded");
+    assert_eq!(o.facet_named("Some").unwrap().label, "Some");
+    assert!(o.names_any_variant());
 }
