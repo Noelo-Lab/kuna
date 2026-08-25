@@ -430,6 +430,7 @@ fn is_loadtime_gate(name: &str) -> bool {
             | "typedepth"
             | "dwarfstructs"
             | "ifuncfpret"
+            | "symbolnamerepair"
     )
 }
 
@@ -515,6 +516,20 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
         );
         env.set(
             kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV,
+            if on { "on" } else { "off" },
+        );
+    }
+    // (kuna) The symbol table is installed inside `load file`, so the gate must be
+    // exported before `bootstrap_from_object` -- turning it off after the fact
+    // would arrive long after the load it was meant to fail. Default-on: only an
+    // off-token disables it.
+    if let Some(value) = last_option_value(options, "symbolnamerepair") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_symbolnamerepair::SYMBOLNAMEREPAIR_ENV,
             if on { "on" } else { "off" },
         );
     }

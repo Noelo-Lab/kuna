@@ -3810,6 +3810,13 @@ impl Database {
                 return Err(KunaError::lowlevel("Scope name hashes not allowed"));
             }
             let scopename = fullname[mark..endmark].to_string();
+            // (kuna) An empty component would be rejected by attach_scope, and
+            // that error aborts the whole architecture build rather than one
+            // symbol -- see `kuna_symbolnamerepair`.
+            if crate::kuna_symbolnamerepair::skip_scope_component(&scopename) {
+                mark = endmark + delim.len();
+                continue;
+            }
             let name_id = Scope::hash_scope_name(self.scopes[start].unique_id, &scopename);
             start = self.find_create_scope(name_id, &scopename, Some(start), num_spaces)?;
             mark = endmark + delim.len();

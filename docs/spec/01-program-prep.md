@@ -791,7 +791,28 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   in `libstdc++` shared the name `std::operator`, which is now split into its real
   `std::operator<<` (33) and `std::operator>>` (32). A `<` followed by an
   identifier character is left to the generic path, where it opens a template
-  argument list rather than spelling the operator.
+  argument list rather than spelling the operator. **Anonymous namespaces are the
+  second exemption**, and the one whose absence was fatal rather than merely lossy:
+  Itanium renders `_GLOBAL__N_…` as the parenthesized `(anonymous namespace)` and
+  MSVC as the backtick-quoted `` `anonymous namespace' ``, so the reduction used to
+  delete the Itanium spelling whole and leave an **empty** component —
+  `leveldb::(anonymous namespace)::HandleDumpCommand` reduced to
+  `leveldb::::HandleDumpCommand`. The scope splitter rejects an empty component
+  (§0.4), and because the symbol table is installed inside `load file` that
+  rejection aborts the entire architecture build, so a binary carrying one such
+  symbol produced no output from any command. An anonymous namespace is the
+  ordinary way C++ gives a definition internal linkage, which put a large share of
+  real unstripped C++ binaries — a MinGW malware DLL with 1184 such libstdc++
+  symbols, and `libleveldb` — outside what kuna could load at all. Both spellings
+  now become the identifier `anonymous_namespace`, matching what
+  `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs
+  (sanitize_class_name)` already gives the same construct, so one toolchain's
+  anonymous namespace is spelled like another's and the component survives as a
+  real scope. Two translation units that each define `helper` in an anonymous
+  namespace still collide on one name — the Itanium mangling is identical for both,
+  so no demangler can separate them — and their distinct addresses are what every
+  resolver keys on. `demangle_raw` keeps the faithful c++filt text it is asked for,
+  unrewritten.
 - **Demangled C++ signatures** (`cppsig`, `off|proven|inferred`, default `proven`;
   `decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_cppsig.rs`, the
   `DemangledFunction.applyTo` / "Apply Function Signatures" analog) is the

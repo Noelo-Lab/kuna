@@ -342,7 +342,7 @@ pub fn demangle_name(raw: &str) -> Option<String> {
     // name-only form could still carry `<...>`).
     if raw.starts_with('?') {
         if let Ok(d) = msvc_demangler::demangle(raw, msvc_demangler::DemangleFlags::NAME_ONLY) {
-            let reduced = strip_bracket_groups(&d);
+            let reduced = strip_bracket_groups(&name_anonymous_namespaces(&d));
             if !reduced.is_empty() && reduced != raw {
                 return Some(reduced);
             }
@@ -374,22 +374,71 @@ pub fn demangle_name(raw: &str) -> Option<String> {
             .no_params()
             .no_return_type();
         if let Ok(d) = sym.demangle_with_options(&opts) {
-            let reduced = strip_legacy_rust_hash(&strip_bracket_groups(&d));
+            let reduced = strip_legacy_rust_hash(&strip_bracket_groups(&name_anonymous_namespaces(&d)));
             if !reduced.is_empty() && reduced != raw {
                 return Some(reduced);
             }
         }
     }
 
-    // Then Rust (`{:#}` already drops the hash; the extra strip is defensive).
+    // Then Rust (`{:#}` already drops the hash; the extra strip is defensive, and
+    // so is the anonymous-namespace rewrite -- no Rust rendering spells one, but a
+    // legacy `_ZN..` symbol reaches the Itanium arm above first either way).
     if let Ok(d) = rustc_demangle::try_demangle(raw) {
-        let reduced = strip_legacy_rust_hash(&strip_bracket_groups(&format!("{:#}", d)));
+        let reduced = strip_legacy_rust_hash(&strip_bracket_groups(&name_anonymous_namespaces(
+            &format!("{:#}", d),
+        )));
         if !reduced.is_empty() && reduced != raw {
             return Some(reduced);
         }
     }
 
     None
+}
+
+/// The identifier kuna nests an **anonymous namespace** under, matching the
+/// spelling `analyzers/rtti/kuna_itaniumrtti.rs::sanitize_class_name` already
+/// gives the same construct (`(anonymous namespace)::Hidden` ->
+/// `anonymous_namespace::Hidden`).
+const ANONYMOUS_NAMESPACE: &str = "anonymous_namespace";
+
+/// The two spellings a demangler renders an anonymous namespace with: Itanium
+/// (`_GLOBAL__N_…`, gcc/clang/MinGW) parenthesizes it, MSVC (`?A0x…@`)
+/// backtick-quotes it.
+const ANONYMOUS_NAMESPACE_SPELLINGS: [&str; 2] =
+    ["(anonymous namespace)", "`anonymous namespace'"];
+
+/// Rewrite every anonymous-namespace spelling in a demangled name to the
+/// [`ANONYMOUS_NAMESPACE`] identifier.
+///
+/// An anonymous namespace is a genuine **name component** —
+/// `leveldb::(anonymous namespace)::HandleDumpCommand` is three of them — but
+/// neither spelling is an identifier, and both break the name-only contract in
+/// their own way:
+///
+/// - The Itanium spelling is a parenthesized group, so [`strip_bracket_groups`]
+///   deletes it whole and leaves an **empty** component
+///   (`leveldb::::HandleDumpCommand`). `Database::find_create_scope_from_symbol_name`
+///   splits on every `::` and rejects the empty piece outright — a
+///   `Non-global scope has empty name` `LowlevelError` that escapes
+///   `bootstrap_from_object` and aborts the load of the **entire binary**, so a
+///   single such symbol makes every command (`decompile`, `decompile-all`,
+///   `functions`, `decompile-project`) fail on it. An anonymous namespace is the
+///   ordinary way C++ gives a definition internal linkage, so this took out a
+///   large share of real unstripped C++ binaries.
+/// - The MSVC spelling survives stripping (backticks are not a bracket group),
+///   but reaches emitted C as a scope name carrying a space and two backticks.
+///
+/// Applied to the name-only form only; [`demangle_raw`] keeps the faithful
+/// c++filt/`cl.exe` text it is asked for.
+fn name_anonymous_namespaces(name: &str) -> String {
+    let mut out = name.to_string();
+    for spelling in ANONYMOUS_NAMESPACE_SPELLINGS {
+        if out.contains(spelling) {
+            out = out.replace(spelling, ANONYMOUS_NAMESPACE);
+        }
+    }
+    out
 }
 
 /// The C++ operator names spelled with bracket characters, longest first so a
@@ -711,6 +760,120 @@ mod tests {
         assert!(!n.contains('>'), "no template-arg leakage: {n}");
         assert!(!n.contains('('), "no signature leakage: {n}");
         assert!(!n.contains(')'), "no signature leakage: {n}");
+    }
+
+    /// An anonymous namespace survives the name-only reduction as an
+    /// identifier component. Before this, `strip_bracket_groups` deleted the
+    /// whole `(anonymous namespace)` group and left an EMPTY `::` component,
+    /// which `Database::find_create_scope_from_symbol_name` rejects with
+    /// `Non-global scope has empty name` — aborting the load of the entire
+    /// binary, for every command.
+    #[test]
+    fn anonymous_namespace_is_named_not_deleted() {
+        // Nested under a real namespace (leveldb, and the MinGW libstdc++ shim
+        // that took out a whole malware DLL).
+        assert_eq!(
+            demangle_name("_ZN7leveldb12_GLOBAL__N_117HandleDumpCommandEiPPc"),
+            Some("leveldb::anonymous_namespace::HandleDumpCommand".to_string())
+        );
+        assert_eq!(
+            demangle_name("_ZNKSt13__facet_shims12_GLOBAL__N_112collate_shimIcE10do_compareEPKcS4_S4_S4_"),
+            Some("std::__facet_shims::anonymous_namespace::collate_shim::do_compare".to_string())
+        );
+        // At the top level the group was the FIRST component, so the reduction
+        // used to yield a leading `::`.
+        assert_eq!(
+            demangle_name("_ZN12_GLOBAL__N_122get_locale_cache_mutexEv"),
+            Some("anonymous_namespace::get_locale_cache_mutex".to_string())
+        );
+        // A function-local static inside one (`_ZZ..E..`).
+        assert_eq!(
+            demangle_name("_ZZN12_GLOBAL__N_122get_locale_cache_mutexEvE18locale_cache_mutex"),
+            Some("anonymous_namespace::get_locale_cache_mutex::locale_cache_mutex".to_string())
+        );
+        // No component is empty and no bracket text leaks, for any of them.
+        for raw in [
+            "_ZN7leveldb12_GLOBAL__N_117HandleDumpCommandEiPPc",
+            "_ZN12_GLOBAL__N_14PoolIiE5allocEi",
+            "_ZN12_GLOBAL__N_1L16get_locale_mutexEv",
+        ] {
+            let n = demangle_name(raw).expect("demangles");
+            assert!(!n.split("::").any(|c| c.is_empty()), "empty component: {n}");
+            assert!(!n.contains('('), "bracket leakage: {n}");
+            assert!(!n.contains(')'), "bracket leakage: {n}");
+        }
+        // The full c++filt form is NOT rewritten — it is asked for verbatim.
+        assert_eq!(
+            demangle_raw("_ZN7leveldb12_GLOBAL__N_117HandleDumpCommandEiPPc"),
+            Some("leveldb::(anonymous namespace)::HandleDumpCommand(int, char**)".to_string())
+        );
+    }
+
+    /// The three symbols `g++` really emits for the checked-in
+    /// `anon_namespace_x86_64` fixture — a top-level anonymous namespace, one
+    /// nested inside a named namespace, and a class defined inside that one.
+    #[test]
+    fn anonymous_namespace_fixture_symbols() {
+        assert_eq!(
+            demangle_name("_ZN12_GLOBAL__N_110top_helperEi"),
+            Some("anonymous_namespace::top_helper".to_string())
+        );
+        assert_eq!(
+            demangle_name("_ZN5outer12_GLOBAL__N_113nested_helperEi"),
+            Some("outer::anonymous_namespace::nested_helper".to_string())
+        );
+        assert_eq!(
+            demangle_name("_ZN5outer12_GLOBAL__N_16Widget4emitEi"),
+            Some("outer::anonymous_namespace::Widget::emit".to_string())
+        );
+    }
+
+    /// Two translation units that each define `helper` in an anonymous namespace
+    /// demangle to the SAME name, and that is intended, not a defect to fix: the
+    /// Itanium mangling itself is identical for both (`_ZN12_GLOBAL__N_16helperEv`
+    /// either way), so no demangler can separate them. The name-only contract
+    /// already collides this way on templates (`Vec<int>` and `Vec<double>` both
+    /// reduce to `Vec`), and the addresses stay distinct, which is what every
+    /// resolver keys on.
+    #[test]
+    fn anonymous_namespace_collides_across_units_by_design() {
+        // The collision is upstream of any demangler: `helper` in an anonymous
+        // namespace mangles to this one string in EVERY translation unit, so the
+        // one name below is what all of them reduce to.
+        assert_eq!(
+            demangle_name("_ZN12_GLOBAL__N_16helperEv"),
+            Some("anonymous_namespace::helper".to_string())
+        );
+        // What must NOT collide is two anonymous namespaces with different
+        // parents -- the rewrite names the component, it does not flatten the
+        // path, so these stay two distinct scopes.
+        assert_ne!(
+            demangle_name("_ZN12_GLOBAL__N_16helperEv"),
+            demangle_name("_ZN5outer12_GLOBAL__N_16helperEv")
+        );
+        assert_eq!(
+            demangle_name("_ZN5outer12_GLOBAL__N_16helperEv"),
+            Some("outer::anonymous_namespace::helper".to_string())
+        );
+        // A name that already spells the identifier round-trips unchanged, so a
+        // second pass over a rewritten name is a no-op.
+        assert_eq!(name_anonymous_namespaces("anonymous_namespace::f"), "anonymous_namespace::f");
+        assert_eq!(
+            name_anonymous_namespaces("(anonymous namespace)::f"),
+            "anonymous_namespace::f"
+        );
+    }
+
+    /// MSVC spells the same construct with backticks, which no bracket-group
+    /// strip touches: it survived, but as a scope name carrying a space and two
+    /// backticks. It collapses to the same identifier the Itanium form does, so
+    /// one binary's anonymous namespace is spelled like another's.
+    #[test]
+    fn msvc_anonymous_namespace_is_the_same_identifier() {
+        assert_eq!(
+            demangle_name("?foo@Bar@?A0x12345678@@QEAAXXZ"),
+            Some("anonymous_namespace::Bar::foo".to_string())
+        );
     }
 
     #[test]
