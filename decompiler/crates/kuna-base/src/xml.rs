@@ -1763,7 +1763,9 @@ mod tests {
         // and kuna-retinputhalf / a returned register half that is an input
         // parameter the function moved there is kept, so the parameter stays in
         // the signature (option off = the half AND the argument are dropped)
-        assert_eq!(count, 214, "corpus file count drifted");
+        // and kuna-symbolnamerepair / C++ anonymous namespaces survive the
+        // name-only demangling (the load used to fail outright)
+        assert_eq!(count, 215, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

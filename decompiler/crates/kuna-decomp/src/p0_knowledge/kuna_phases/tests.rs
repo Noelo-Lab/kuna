@@ -87,8 +87,9 @@ fn settable_count_is_117() {
     // +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
     // +1 for `rustabi` (P4 rustc two-register ScalarPair return recovery).
     // +1 for `dwarfvariants` (P1 DWARF variant-part import, DIV-87).
-    assert_eq!(kuna_num_settables(), 118);
-    assert_eq!(SETTABLE_TABLE.len(), 118);
+    // +1 for `symbolnamerepair` (P1 degenerate-symbol-name repair, DIV-88).
+    assert_eq!(kuna_num_settables(), 119);
+    assert_eq!(SETTABLE_TABLE.len(), 119);
 }
 
 #[test]
@@ -153,7 +154,9 @@ fn tier_counts_are_26_core_50_transform_42_analysis() {
     // introducing a new rewrite.
     // analysis 41 -> 42: +1 for `dwarfvariants` (P1 DWARF variant-part import,
     // DIV-87).
-    assert_eq!((core, transform, analysis), (26, 50, 42));
+    // analysis 42 -> 43: +1 for `symbolnamerepair` (P1 degenerate-symbol-name
+    // repair, DIV-88).
+    assert_eq!((core, transform, analysis), (26, 50, 43));
 }
 
 #[test]
@@ -459,6 +462,10 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
         // via the `kuna_relocrebase` env var (the analyzer tier runs inside `load
         // file`), like `i386_pie_plt`. Default-ON (DIV-79).
         "relocrebase",
+        // (kuna) Degenerate-symbol-name repair: a load-time gate read via the
+        // `kuna_symbolnamerepair` env var (the symbol table is installed inside
+        // `load file`), like `relocrebase`. Default-ON.
+        "symbolnamerepair",
         // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
@@ -661,9 +668,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
     // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
     // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
-    // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1 and rustabi's P4 rows
-    // sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 117);
+    // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4 and
+    // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 118);
 }
 
 #[test]

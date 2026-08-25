@@ -223,6 +223,10 @@ Three tiers:
 | a call in a pie binary renders as (*dat_<addr>)(...) with no name although the callee is a named function in the same image | [`dynrelocs`](#dynrelocs) |
 | a got slot reads back as 0 in the decompiled output | [`dynrelocs`](#dynrelocs) |
 | reading a relocated function-pointer table in a pie binary yields all zeroes | [`dynrelocs`](#dynrelocs) |
+| could not build an architecture for <binary>: Non-global scope has empty name | [`symbolnamerepair`](#symbolnamerepair) |
+| an unstripped C++ binary fails to load entirely while a stripped copy of it loads fine | [`symbolnamerepair`](#symbolnamerepair) |
+| kuna functions, decompile-all and decompile-project all fail on the same binary with the same scope error | [`symbolnamerepair`](#symbolnamerepair) |
+| a binary loads in ghidra or ida but kuna refuses it at load with a symbol-scope error | [`symbolnamerepair`](#symbolnamerepair) |
 | a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
 | an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
 | xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
@@ -914,6 +918,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) names calls made through a relocated GOT slot in any PIE, and gives the relocated value to anything that reads that memory; an unrelocated slot holds 0, which the run-time image never holds, so this is a correctness fix rather than a judgement call. Flip off to restore the pre-fix bytes exactly - every GOT slot back to 0 and every such call back to (*dat_<addr>)(...).
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-dynrelocs
 - **Example:** `option dynrelocs off`
+
+### `symbolnamerepair` -- on | off, default `on`
+
+- **Symptoms:** could not build an architecture for <binary>: Non-global scope has empty name; an unstripped C++ binary fails to load entirely while a stripped copy of it loads fine; kuna functions, decompile-all and decompile-project all fail on the same binary with the same scope error; a binary loads in ghidra or ida but kuna refuses it at load with a symbol-scope error.
+- **What it does:** Keep one degenerate qualified symbol name from aborting the load of an entire binary. Database::find_create_scope_from_symbol_name splits a loader symbol name on every :: and nests one Scope per component; an EMPTY component (a::::b, ::b) is rejected by attach_scope with 'Non-global scope has empty name'. The symbol table is installed inside load file, so that error escapes bootstrap_from_object rather than costing one symbol -- every command (decompile, decompile-all, functions, decompile-project) then answers 'could not build an architecture' and emits nothing. A symbol name is attacker-controlled data that no header check validates, so a hostile binary can buy a total denial of analysis for a few .strtab bytes. On, the empty component is skipped and the symbol keeps the rest of its scope path. Loader-tier: read via the kuna_symbolnamerepair env var (the symbol install runs inside load file, upstream of every option command).
+- **When to flip:** Leave on. Flip off when you are investigating a binary's symbol table itself and want the degenerate name to fail loudly with the scope error rather than being repaired silently.
+- **Where / provenance:** P1/environment-binding · kuna · correctness-fix · kuna-symbolnamerepair
+- **Example:** `option symbolnamerepair off`
 
 ### `ifuncfpret` -- on | off, default `off`
 

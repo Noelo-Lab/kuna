@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    532,
-    532
+    538,
+    538
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -291,6 +291,12 @@
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
+    "data:SYMBOLNAMEREPAIR #1: a top-level anonymous namespace is a named scope, not a leading empty one",
+    "data:SYMBOLNAMEREPAIR #2: an anonymous namespace nested in a named one keeps both components",
+    "data:SYMBOLNAMEREPAIR #3: a class inside an anonymous namespace nests one level deeper again",
+    "data:SYMBOLNAMEREPAIR #4: the same scope path renders at a CALL site, not just on the declaration",
+    "data:SYMBOLNAMEREPAIR #5: no empty scope component survives anywhere in the output",
+    "data:SYMBOLNAMEREPAIR #6: the three bodies decompiled (the load did not fail)",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",

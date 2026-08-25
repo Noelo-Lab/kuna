@@ -933,6 +933,16 @@ pub struct Architecture {
     /// exists only for catalog visibility and the `phase catalog` live `current`
     /// field.
     pub analysis_dynrelocs: bool,
+    /// (kuna) Gate degenerate-symbol-name repair (`symbolnamerepair`); default
+    /// **on**. An empty `::` component in a loader symbol name is rejected by
+    /// `Database::attach_scope`, and because the symbol table is installed inside
+    /// `load file` that error aborts the ENTIRE architecture build — one symbol
+    /// name, and every command on that binary produces nothing. On, the empty
+    /// component is skipped and the symbol keeps the rest of its scope path.
+    /// Read through the [`crate::kuna_symbolnamerepair`] **env var** (the symbol
+    /// install runs inside `load file`, upstream of `option`); this bool exists
+    /// only for catalog visibility and the `phase catalog` live `current` field.
+    pub analysis_symbolnamerepair: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -1534,6 +1544,7 @@ impl Architecture {
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
             analysis_relocrebase: false,
             analysis_dynrelocs: false,
+            analysis_symbolnamerepair: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_datasyms: false,
@@ -1715,6 +1726,7 @@ impl Architecture {
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
+        self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
@@ -2099,6 +2111,18 @@ impl Architecture {
                 crate::kuna_dynrelocs::set_dynrelocs_env(val);
                 Ok(format!(
                     "linked-image dynamic-relocation application turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            // (kuna) Load-time gate: the symbol table is installed inside `load
+            // file`, so bridge to the env var it reads (the CLI sets it on the
+            // subprocess too).
+            "symbolnamerepair" => {
+                let val = on_or_off(p1)?;
+                self.analysis_symbolnamerepair = val;
+                crate::kuna_symbolnamerepair::set_symbolnamerepair_env(val);
+                Ok(format!(
+                    "degenerate-symbol-name repair turned {}",
                     if val { "on" } else { "off" }
                 ))
             }

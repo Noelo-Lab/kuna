@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    C++ anonymous namespaces survive the name-only demangling (and the
+    `symbolnamerepair` backstop behind them).
+
+    Itanium mangles an anonymous namespace as `_GLOBAL__N_...` and the demangler
+    renders it `(anonymous namespace)`. The name-only reduction strips every
+    balanced bracket group, so it used to delete that component WHOLE and leave
+    an empty `::` piece: `outer::(anonymous namespace)::nested_helper` became
+    `outer::::nested_helper`. The scope splitter
+    (`Database::find_create_scope_from_symbol_name`) nests one Scope per `::`
+    component and `attach_scope` rejects an empty one; because the symbol table
+    is installed inside `load file`, that error escaped the architecture build
+    entirely, so EVERY command on such a binary answered `could not build an
+    architecture ... Non-global scope has empty name` and emitted nothing.
+
+    An anonymous namespace is the ordinary way C++ gives a definition internal
+    linkage, so this was most unstripped C++, not an exotic input.
+
+    The XML wrapper only supplies the harness architecture; the script clears it
+    and loads a real x86-64 C++ ELF fixture built by g++ -O1, whose source
+    (`anon_namespace_x86_64.cpp`) carries the three shapes that mattered: an
+    anonymous namespace nested inside a named one, a class defined inside that
+    one, and a top-level anonymous namespace (the leading-`::` case).
+
+    This is the DEFAULT/fixed arm only, and deliberately so. The paired broken
+    arm cannot be a second pass here: the bug is a LOAD failure, and `option`
+    requires a live image, so the gate that restores it (`symbolnamerepair off`)
+    has to be set before `load file` through its env bridge, which no script
+    command can do. The regression signal is still loud rather than silent: a failed `load
+    file` makes every later command error the script out, the file applies 0
+    assertions, and the baseline comparison reports REGRESSED. The option's own
+    two-pass on/off coverage lives in the Rust gate
+    `decompiler/crates/kuna-console/tests/verify_symbolnamerepair.rs`, which can
+    set the env var around each load.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/anon_namespace_x86_64</com>
+  <com>read symbols</com>
+  <com>load function anonymous_namespace::top_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function outer::anonymous_namespace::nested_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function outer::anonymous_namespace::Widget::emit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYMBOLNAMEREPAIR #1: a top-level anonymous namespace is a named scope, not a leading empty one" min="1" max="1">int4 anonymous_namespace::top_helper\(int4 a0\)</stringmatch>
+<stringmatch name="SYMBOLNAMEREPAIR #2: an anonymous namespace nested in a named one keeps both components" min="1" max="1">int4 outer::anonymous_namespace::nested_helper\(int4 a0\)</stringmatch>
+<stringmatch name="SYMBOLNAMEREPAIR #3: a class inside an anonymous namespace nests one level deeper again" min="1" max="1">void outer::anonymous_namespace::Widget::emit\(</stringmatch>
+<stringmatch name="SYMBOLNAMEREPAIR #4: the same scope path renders at a CALL site, not just on the declaration" min="1" max="1">outer::anonymous_namespace::nested_helper\(a1\);</stringmatch>
+<stringmatch name="SYMBOLNAMEREPAIR #5: no empty scope component survives anywhere in the output" min="0" max="0">::::</stringmatch>
+<stringmatch name="SYMBOLNAMEREPAIR #6: the three bodies decompiled (the load did not fail)" min="1" max="1">return a0 \+ 1;</stringmatch>
+</decompilertest>

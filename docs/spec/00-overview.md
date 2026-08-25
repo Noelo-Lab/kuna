@@ -605,6 +605,25 @@ and an agent writes:
   volatile paint). Populated by the loader-symbol read and the analysis commit
   (§0.1); queried by name, address, containment, or property, walking the scope
   chain exactly as the upstream `stack*` helpers do.
+  A qualified symbol name is nested by splitting it on every `::`
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (find_create_scope_from_symbol_name)`), one Scope per component, and an **empty**
+  component — `a::::b`, `::b` — cannot name a Scope: `attach_scope` rejects it.
+  That rejection is raised while the loader symbols are being installed, i.e.
+  inside the architecture build, so it does not cost one symbol — it escapes the
+  build, and every command answers `could not build an architecture` and emits
+  nothing. Symbol-name bytes are attacker-controlled data that no header check
+  validates, which makes that a denial-of-analysis primitive a hostile binary can
+  buy for a few `.strtab` bytes. `symbolnamerepair` (on|off, default on;
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamerepair.rs`) skips
+  the degenerate component instead, so the symbol keeps the rest of its scope path
+  and the load survives; only the empty component is treated as degenerate, since
+  every other string names a Scope perfectly well however strange it looks. Off
+  restores the hard error, which is what someone investigating a binary's symbol
+  table itself wants to see. Like the other gates consumed inside `load file`
+  (`relocrebase`, `i386_pie_plt`, `typedepth`) it is read through a process
+  environment variable rather than an `Architecture` flag, because `option` is
+  applied downstream of the load it would have to govern.
 - **The Override store** (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
   (Override)`): per-function commands that override pipeline decisions — flow
   reclassification, direct-call redirects, prototype replacement, multistage
