@@ -292,6 +292,15 @@ fallback retry to the arch default when the preferred model has no vendored spec
 the section-flag translation, import resolution (§1.3), and extra constant ranges
 (the MIPS GOT). Two format specifics live above the trait:
 
+An explicit target changes only language selection: the parsed container still
+owns section mapping, image base, symbols, and imports. The target is rejected
+when its SLEIGH id declares a different width or endianness from the container.
+This separation lets a recognized container remain loadable when `object` reports
+its architecture as unknown. In particular, PE/COFF machine `0x01c2`
+(`IMAGE_FILE_MACHINE_THUMB`) is treated as little-endian ARM32 for language
+selection and supplies whole-image Thumb context; its sections and PE image base
+still come from the container parser.
+
 - **Relocatable objects** (angr, `relocobjects`, default-on) — a pre-link object
   does not say where its bytes live, and each format fails that differently. An
   ELF `.o` has no program headers, so the faithful loader maps zero bytes and
@@ -645,6 +654,18 @@ so the S3 constant-base action emits `COPY #entry -> t9` at the entry block and 
 prologue's `addu gp,gp,t9` folds to a real `$gp`. Both are doubly guarded: the pass
 gates on its architecture, and the commit swallows an unregistered-variable /
 unknown-register error, so a paint on the wrong language is a faithful no-op.
+
+The file front-ends also accept `--isa auto|arm|thumb`. An explicit ARM/Thumb
+choice paints `TMode` across mapped CODE sections before decoding; `auto` uses
+the marker facts above, Cortex-M evidence, and Thumb-specific PE/COFF machine
+values. The generic PE ARM machine is not a whole-image A32 hint because such an
+image may mix ARM and Thumb. ARM entry selectors fold the pointer-mode bit and
+decode at the even byte address. For an unmarked entry whose default-mode C body
+is empty or only `return;`, the console probes at most 16 alternate-mode
+instructions. If the default has no bounded machine return but the alternate
+does, the run fails with an explicit-ISA diagnostic instead of reporting a
+successful empty function. Any committed context evidence disables this probe,
+so genuine A32 returns and mixed-image marker regions are never auto-switched.
 
 ## 1.4 Metadata analyzers
 
@@ -1477,16 +1498,12 @@ either. Ghidra additionally routes an image whose load-config CHPE metadata
 pointer is set to its ARM parser regardless of `Machine`; kuna parses no load
 config, so an ARM64EC image that declares itself `AMD64` still reads at 12.
 
-Two known follow-ups sit on the ARM form. The `BeginAddress` low bit is a Thumb
-marker and the walk currently masks it off to get the address, so on an ARMNT or
-Thumb-2 image the recovered entries carry no decode mode and are decoded as A32 —
-still strictly better than reading the table at the wrong stride, but wrong for
-Thumb. Painting `TMode=1` at a Thumb-marked `BeginAddress` belongs beside the
-Cortex-M whole-image paint, in `ContextPainter::new`
-(`decompiler/crates/kuna-analysis/src/listing/context.rs`) for the walk and in the
-`EntryDiscoveryPass` commit path for the committed facts, which is where
-`cortexm_thumb_paints` already lands. The second is the CHPE routing above. There
-is no ARMNT PE in the corpus to measure either against.
+The object bootstrap paints executable sections as Thumb for THUMB and ARMNT
+machine values, and retains that context through the analysis commit. Per-entry
+mode evidence for a generic ARM header remains a follow-up: the `BeginAddress`
+low bit is masked off by the directory walk without producing a context paint.
+Such a header permits mixed ARM/Thumb code, so its machine value cannot supply a
+whole-image default. CHPE routing also remains a follow-up.
 
 **The widened vector-table signature** (`cortexmvectors`, default-off; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_cortexmvectors.rs`)

@@ -111,6 +111,24 @@ fn decompile_without_function_is_no_function_selected() {
 }
 
 #[test]
+fn non_arm_isa_preflight_does_not_invoke_renderer() {
+    let calls = std::cell::Cell::new(0);
+    let rendered = render_for_arm_isa_preflight(false, || {
+        calls.set(calls.get() + 1);
+        "rendered"
+    });
+    assert!(rendered.is_none());
+    assert_eq!(calls.get(), 0);
+
+    let rendered = render_for_arm_isa_preflight(true, || {
+        calls.set(calls.get() + 1);
+        "rendered"
+    });
+    assert_eq!(rendered, Some("rendered"));
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
 fn option_without_image_is_no_load_image_present() {
     let out = run_all(&["option readonly on", "quit"]);
     assert!(out.contains("Execution error: No load image present"), "out: {out:?}");

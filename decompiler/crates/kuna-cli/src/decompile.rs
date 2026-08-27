@@ -22,7 +22,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use kuna_console::engine::EntrySelector;
+use kuna_console::engine::{ArmIsa, EntrySelector, ARM_ISA_ENV};
 
 use crate::decompile_all::{self, Args as AllArgs, DriverDefaults};
 use crate::paths;
@@ -53,6 +53,8 @@ pub struct DecompileArgs {
     /// ⇒ the deterministic default (x86-64 → arm64 → first present). Exported as
     /// `KUNA_MACHO_SLICE` onto the subprocess (read at the dispatch slice peel).
     pub slice: Option<String>,
+    /// Explicit ARM instruction-set state for every mapped code section.
+    pub isa: Option<ArmIsa>,
 }
 
 /// Whether an `--option` value selects the "on" state (the `on_or_off` token set
@@ -738,6 +740,14 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
 
         let mut cmd = Command::new(&bin_path);
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
+        match args.isa {
+            Some(isa) => {
+                cmd.env(ARM_ISA_ENV, isa.as_str());
+            }
+            None => {
+                cmd.env_remove(ARM_ISA_ENV);
+            }
+        }
         if let Some(v) = reloc_env {
             cmd.env(kuna_decomp::options::RELOC_OBJECTS_ENV, v);
         }
@@ -1092,6 +1102,7 @@ pub fn main(argv: &[String]) -> i32 {
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
     let mut slice: Option<String> = None;
+    let mut isa: Option<ArmIsa> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -1102,6 +1113,20 @@ pub fn main(argv: &[String]) -> i32 {
             "--raw" => raw = true,
             "--regions" => regions = true,
             "--slice" => slice = take_value(argv, &mut i, "--slice"),
+            "--isa" => match take_value(argv, &mut i, "--isa") {
+                Some(value) => match ArmIsa::parse(&value) {
+                    Ok(value) => {
+                        isa = value;
+                        forwarded.push("--isa".into());
+                        forwarded.push(isa.map_or("auto", ArmIsa::as_str).into());
+                    }
+                    Err(error) => {
+                        eprintln!("error: {error}");
+                        return 2;
+                    }
+                },
+                None => return 2,
+            },
             "--target" => {
                 bfd_target = take_value(argv, &mut i, "--target");
             }
@@ -1293,6 +1318,7 @@ pub fn main(argv: &[String]) -> i32 {
         decomp_dbg,
         sleighpath,
         slice,
+        isa,
     })
 }
 

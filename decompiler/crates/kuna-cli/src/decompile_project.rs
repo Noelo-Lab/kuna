@@ -4,7 +4,8 @@
 //!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
 //!                          [--addr 0xVMA].. [--max-fn-seconds N]
 //!                          [--mode auto|reliable|aggressive|fast] [--option N V]..
-//!                          [--slice ARCH] [--target T] [--sleighpath D]
+//!                          [--isa auto|arm|thumb] [--slice ARCH] [--target T]
+//!                          [--sleighpath D]
 //! ```
 //!
 //! Loads + analyzes the binary once (the `decompile-all` in-process path, with
@@ -97,7 +98,7 @@ fn usage() {
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
          \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
-         \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile a whole binary in one in-process load and write a project folder\n\
          (default `<binary-filename>.kuna/` next to the binary; -o DIR overrides):\n\

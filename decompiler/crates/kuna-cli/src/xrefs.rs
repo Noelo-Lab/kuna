@@ -3,7 +3,7 @@
 //! ```text
 //!   kuna xrefs <binary> --to <name|0xaddr>   [--json] [--kind k,k..] [--mode MODE]
 //!   kuna xrefs <binary> --from <name|0xaddr> [--json] [--kind k,k..] [--mode MODE]
-//!              [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]
+//!              [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]
 //! ```
 //!
 //! `--to` answers *what references this?* — every call site, branch, and data
@@ -65,6 +65,7 @@ struct XrefArgs {
     slice: Option<String>,
     target: Option<String>,
     sleighpath: Option<String>,
+    isa: Option<kuna_console::engine::ArmIsa>,
 }
 
 /// A resolved query target: an address, plus the best name the program has for it.
@@ -197,6 +198,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         slice: args.slice.clone(),
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
+        isa: args.isa,
     };
     let prog = load_program(&load, DriverDefaults::Query)?;
 
@@ -555,6 +557,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
+    let mut isa = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -584,6 +587,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
                 i += 2;
             }
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
+            "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
@@ -616,6 +620,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
         slice,
         target,
         sleighpath,
+        isa,
     })
 }
 
@@ -643,7 +648,7 @@ fn usage() {
     eprintln!(
         "usage: kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] \\\n\
          \x20                  [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast] \\\n\
-         \x20                  [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                  [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          --to    everything that references the target (call sites, branches, data references).\n\
          \x20       An import is one callable under two addresses -- a forwarding veneer and the\n\

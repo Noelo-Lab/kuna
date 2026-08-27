@@ -3,7 +3,7 @@
 //! ```text
 //!   kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--as VIEW]
 //!                    [--count N] [--bytes N] [--json] [--mode MODE]
-//!                    [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]
+//!                    [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]
 //!   kuna read <binary> <name|0xaddr|0xstart-0xend> ...   # the same, --as data
 //! ```
 //!
@@ -152,6 +152,7 @@ pub(crate) struct DisArgs {
     pub(crate) slice: Option<String>,
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
+    pub(crate) isa: Option<kuna_console::engine::ArmIsa>,
 }
 
 /// Where the walk starts, where it stops, and what the program calls the start.
@@ -296,6 +297,7 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
         slice: args.slice.clone(),
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
+        isa: args.isa,
     };
     let prog = load_program(&load, DriverDefaults::Inventory)?;
 
@@ -1023,6 +1025,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
+    let mut isa = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -1046,6 +1049,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
                 let v = take(argv, &mut i, "--define-function")?;
                 func_decls.extend(crate::funcdecl::parse_flag(&v)?);
             }
+            "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
@@ -1079,6 +1083,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
         slice,
         target,
         sleighpath,
+        isa,
     })
 }
 
@@ -1113,7 +1118,7 @@ fn usage() {
          \x20                    [--as code|data|auto] [--count N] [--bytes N] [--json] \\\n\
          \x20                    [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                    [--define-function S[-E][=N]|@FILE].. \\\n\
-         \x20                    [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                    [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          The target is a function name, an address (--addr for a bare hex one), or an\n\
          explicit range (0x1000-0x1040 / 0x1000..0x1040) for bytes no function owns.\n\

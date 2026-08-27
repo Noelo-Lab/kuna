@@ -475,6 +475,24 @@ Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
 explicitly spelling `--option fast_funcdisc on` opts an address run back into
 that analysis.
 
+`--target <SLEIGH-language-id>` selects the decoder while a recognized object
+container continues to own its section mappings and image base. The target must
+match the container's address width and endianness; a conflict is an error. This
+also permits a valid PE/COFF image whose machine value is newer than the object
+parser's architecture table to load under an explicit language. PE/COFF machine
+`0x01c2` is recognized directly as little-endian ARM32.
+
+`--isa auto|arm|thumb` is available on `decompile`, `decompile-all`,
+`decompile-project`, `decompile-graph`, `functions`, `disassemble`/`read`,
+`strings`, and `xrefs`. It controls ARM32's per-address `TMode`
+context, which a language id alone cannot select. `auto` is the default: kuna
+uses ELF mapping/FUNC markers, Cortex-M metadata, and Thumb-specific PE/COFF
+machine values, preserving mixed ARM/Thumb images instead of applying an
+image-wide guess. Odd ARM function pointers are normalized to their even byte
+address. With no mode evidence, a trivial default decode is not accepted when
+the alternate mode reaches a bounded machine return; the command asks for an
+explicit `--isa` choice.
+
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:
 
@@ -1282,8 +1300,8 @@ The project-export face of the same in-process core
 `kuna_console::project` module — the decompile loop + artifact builders also behind the
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
-`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--slice`/`--target`/
-`--sleighpath`; no `--json`. Omitted mode is the same size-based `auto` policy
+`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--isa`/`--slice`/
+`--target`/`--sleighpath`; no `--json`. Omitted mode is the same size-based `auto` policy
 as the other file front-ends. In particular, a project input at least 2 MiB
 automatically suppresses the exhaustive Listing consumers, prologue scan, and
 AIF gap walk through the `fast` preset, while substituting rooted direct-call

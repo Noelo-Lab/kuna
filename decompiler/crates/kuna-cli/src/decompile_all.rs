@@ -5,9 +5,9 @@
 //!   kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \
 //!                       [--no-vars] [--max-fn-seconds N] [--mode MODE] \
 //!                       [--option N V].. [TRIAGE] \
-//!                       [--slice ARCH] [--target T] [--sleighpath D]
+//!                       [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]
 //!   kuna functions <binary> [--json] [--summary] [TRIAGE] [--mode MODE] \
-//!                  [--slice ARCH] [--target T] [--sleighpath D]
+//!                  [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]
 //!
 //!   TRIAGE := [--filter REGEX] [--min-size N] [--max-size N]
 //!             [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N]
@@ -82,14 +82,12 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
-use std::rc::Rc;
 
 // The call-graph edges `--reachable-from` walks are `kuna xrefs`' own edges.
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
-use kuna_base::address::Address;
 use kuna_console::engine::{
-    bootstrap_from_object, ConsoleProgram, EntryLookupError, EntrySelector, FunctionEntry,
-    ObjectLocation,
+    bootstrap_from_object_with_isa, ArmIsa, ConsoleProgram, EntryLookupError, EntrySelector,
+    FunctionEntry, ObjectLocation,
 };
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
@@ -145,6 +143,7 @@ pub(crate) struct Args {
     pub(crate) slice: Option<String>,
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
+    pub(crate) isa: Option<ArmIsa>,
 }
 
 // --- triage: narrowing a whole-binary run before it runs ---------------------
@@ -1139,7 +1138,7 @@ pub(crate) fn load_program(
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
-    let mut prog = bootstrap_from_object(&binary, target, &spec_roots)
+    let mut prog = bootstrap_from_object_with_isa(&binary, target, &spec_roots, args.isa)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
     for (name, value) in driver_default_options(
@@ -2034,6 +2033,7 @@ pub(crate) fn parse_args_with_filters(
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
+    let mut isa: Option<ArmIsa> = None;
     let mut saw_language = false;
 
     let mut i = 0;
@@ -2119,6 +2119,7 @@ pub(crate) fn parse_args_with_filters(
             }
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
+            "--isa" => isa = ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--target" => target = Some(take(argv, &mut i, "--target")?),
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
             "-h" | "--help" => {
@@ -2200,6 +2201,7 @@ pub(crate) fn parse_args_with_filters(
             slice,
             target,
             sleighpath,
+            isa,
         },
         filters,
     ))
@@ -2242,7 +2244,7 @@ fn usage_decompile_all() {
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
          \x20                   [--summary] [--define-function S[-E][=N]|@FILE].. \\\n\
-         \x20                   [--option N V].. [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Decompile every CODE-backed function in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
@@ -2275,7 +2277,7 @@ fn usage_functions() {
          \x20               [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20               [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
          \x20               [--define-function S[-E][=N]|@FILE].. \\\n\
-         \x20               [--mode auto|reliable|aggressive|fast] [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,total,functions:[{{name,address,address_hex,aliases,size}}]}}).\n\
@@ -2537,6 +2539,28 @@ mod mode_tests {
                 .collect();
             assert_eq!(listing, vec!["off", "on"], "{cmd} precedence");
         }
+        std::fs::remove_file(path).expect("remove auto-mode fixture");
+    }
+
+    #[test]
+    fn shared_surfaces_parse_arm_isa_override() {
+        let path = sparse_binary(1);
+        let binary = path.to_string_lossy().into_owned();
+        for cmd in ["decompile-all", "decompile-project", "decompile-graph", "functions"] {
+            let args = parse_args(
+                &[binary.clone(), "--isa".into(), "thumb".into()],
+                cmd,
+            )
+            .unwrap();
+            assert_eq!(args.isa, Some(ArmIsa::Thumb), "{cmd}");
+        }
+        let error = parse_args(
+            &[binary, "--isa".into(), "mixed".into()],
+            "functions",
+        )
+        .err()
+        .expect("invalid ISA must fail");
+        assert!(error.contains("expected auto, arm, or thumb"));
         std::fs::remove_file(path).expect("remove auto-mode fixture");
     }
 

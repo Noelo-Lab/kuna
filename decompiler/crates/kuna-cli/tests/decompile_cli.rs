@@ -54,6 +54,7 @@ fn stub_decomp_dbg(tag: &str, c_body: &str, transcript: &str, stderr_text: &str)
     let script = format!(
         "#!/bin/sh\n\
          out=\n\
+         if [ \"${{KUNA_EXPECT_ARM_ISA+x}}\" = x ] && [ \"$KUNA_ARM_ISA\" != \"$KUNA_EXPECT_ARM_ISA\" ]; then exit 9; fi\n\
          while IFS= read -r line; do\n\
          \x20 case \"$line\" in\n\
          \x20   'openfile write '*) out=${{line#openfile write }} ;;\n\
@@ -138,6 +139,31 @@ fn clean_run_still_exits_zero() {
     assert_eq!(code, Some(0), "a healthy function stays a success\n{stderr}");
     assert!(stdout.contains("void main(void)"), "got: {stdout}");
     assert!(!stderr.contains("error:"), "no error is reported, got: {stderr}");
+}
+
+#[test]
+fn arm_isa_override_reaches_single_function_engine() {
+    let stub = stub_decomp_dbg(
+        "isa",
+        "unsigned int main(void)\n{\n  return 7;\n}",
+        "[decomp]> decompile\nDecompiling main\nDecompilation complete\n[decomp]> print C",
+        "",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env("KUNA_EXPECT_ARM_ISA", "thumb")
+        .args([
+            "decompile",
+            &fauxware(),
+            "main",
+            "--isa",
+            "thumb",
+            "--decomp-dbg",
+            stub.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run kuna decompile with --isa thumb");
+    let _ = std::fs::remove_file(&stub);
+    assert!(out.status.success(), "--isa did not reach decomp_dbg");
 }
 
 /// An empty `print C` keeps the pre-existing "no C output" error (that path is

@@ -365,19 +365,40 @@ impl ObjectLoadImage {
 
     /// Open from an in-memory image (the testable core of [`Self::open`]).
     pub fn from_bytes(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
-        Self::from_bytes_with_diagnostics(filename, bytes, true)
+        Self::from_bytes_with_diagnostics(filename, bytes, true, None)
+    }
+
+    /// Open an object while letting an explicit SLEIGH language select the
+    /// decoder. The recognized container still supplies all image mappings.
+    pub fn from_bytes_with_target(
+        filename: &str,
+        bytes: &[u8],
+        target: &str,
+    ) -> KunaResult<ObjectLoadImage> {
+        Self::from_bytes_with_diagnostics(filename, bytes, true, Some(target))
     }
 
     /// Reconstruct a load image for an internal analysis consumer without
     /// repeating diagnostics already emitted by the primary load.
     pub fn from_bytes_silent(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
-        Self::from_bytes_with_diagnostics(filename, bytes, false)
+        Self::from_bytes_with_diagnostics(filename, bytes, false, None)
+    }
+
+    /// Silent counterpart of [`Self::from_bytes_with_target`] for an internal
+    /// analysis-side reconstruction of the primary load.
+    pub fn from_bytes_silent_with_target(
+        filename: &str,
+        bytes: &[u8],
+        target: &str,
+    ) -> KunaResult<ObjectLoadImage> {
+        Self::from_bytes_with_diagnostics(filename, bytes, false, Some(target))
     }
 
     fn from_bytes_with_diagnostics(
         filename: &str,
         bytes: &[u8],
         emit_diagnostics: bool,
+        target: Option<&str>,
     ) -> KunaResult<ObjectLoadImage> {
         // Parse the object file.
         let file = object::File::parse(bytes).map_err(|e| {
@@ -394,12 +415,24 @@ impl ObjectLoadImage {
         // here), so no behavior changes.
         let fmt = crate::loader::format::detect(&file)?;
 
-        let archtype = language_id_for(&file, fmt.as_ref(), bytes, filename)?;
+        let target = target.filter(|target| !target.trim().is_empty());
+        let effective_arch = effective_architecture(&file, bytes);
+        let archtype = language_id_for(
+            &file,
+            fmt.as_ref(),
+            bytes,
+            filename,
+            effective_arch,
+            target,
+        )?;
         // (kuna §2.2) The default-model fallback id: the same arch/endian stem
         // with the model dropped to the per-arch default. If the format's chosen
         // model (e.g. PE's `:windows`) isn't vendored for this arch, the engine
         // retries with this before erroring.
-        let fallback_archtype = fallback_language_id(&file, &archtype);
+        let fallback_archtype = target
+            .is_none()
+            .then(|| fallback_language_id(&file, effective_arch, &archtype))
+            .flatten();
 
         // (kuna) Relocatable-object (`.o` / `.obj`) path: a pre-link object does
         // not say where its bytes live.  An ELF `ET_REL` has no `PT_LOAD` program
@@ -419,6 +452,7 @@ impl ObjectLoadImage {
                 &file,
                 fmt.as_ref(),
                 archtype,
+                fallback_archtype,
                 emit_diagnostics,
             );
         }
@@ -634,6 +668,7 @@ impl ObjectLoadImage {
         file: &object::File,
         fmt: &dyn crate::loader::format::ObjectFormat,
         archtype: Vec<u8>,
+        fallback_archtype: Option<Vec<u8>>,
         emit_diagnostics: bool,
     ) -> KunaResult<ObjectLoadImage> {
         use crate::loader::reloc_object;
@@ -690,10 +725,6 @@ impl ObjectLoadImage {
                 funcsyms.push(FuncSym { addr, name });
             }
         }
-
-        // (kuna §2.2) Same default-model fallback id as the linked path: the
-        // arch/endian stem with the model dropped to the per-arch default.
-        let fallback_archtype = fallback_language_id(file, &archtype);
 
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
@@ -1105,10 +1136,15 @@ fn language_id_for(
     fmt: &dyn crate::loader::format::ObjectFormat,
     bytes: &[u8],
     filename: &str,
+    arch: Architecture,
+    target: Option<&str>,
 ) -> KunaResult<Vec<u8>> {
+    if let Some(target) = target {
+        validate_target_container(file, target, filename)?;
+        return Ok(target.as_bytes().to_vec());
+    }
     let little = file.is_little_endian();
     let endian = if little { "LE" } else { "BE" };
-    let arch = file.architecture();
     // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
     // Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) selects the Apple-Silicon SLEIGH
     // spec (`AARCH64:LE:64:AppleSilicon`) instead of the generic v8A. This is the
@@ -1145,14 +1181,96 @@ fn language_id_for(
 /// PE's `:windows`) is not vendored for this arch, falling back to the arch
 /// default beats erroring out — wrong calling-convention details still yield a
 /// decompile.
-fn fallback_language_id(file: &object::File, primary: &[u8]) -> Option<Vec<u8>> {
+fn fallback_language_id(
+    file: &object::File,
+    arch: Architecture,
+    primary: &[u8],
+) -> Option<Vec<u8>> {
     let endian = if file.is_little_endian() { "LE" } else { "BE" };
-    let fallback = compose_language_id(file.architecture(), endian, None)?;
+    let fallback = compose_language_id(arch, endian, None)?;
     if fallback.as_bytes() == primary {
         None
     } else {
         Some(fallback.into_bytes())
     }
+}
+
+const IMAGE_FILE_MACHINE_THUMB: u16 = 0x01c2;
+const IMAGE_FILE_MACHINE_ARMNT: u16 = 0x01c4;
+
+/// Architecture used for language selection when the neutral parser does not
+/// recognize a container's machine value. PE/COFF machine `0x01c2` is the
+/// documented 32-bit little-endian Thumb/ARM code value.
+pub fn effective_architecture(file: &object::File, bytes: &[u8]) -> Architecture {
+    let parsed = file.architecture();
+    if parsed != Architecture::Unknown {
+        return parsed;
+    }
+    let machine = container_machine(file, bytes);
+    if machine == Some(IMAGE_FILE_MACHINE_THUMB) {
+        Architecture::Arm
+    } else {
+        parsed
+    }
+}
+
+/// Container-level ARM decode-mode evidence. The PE/COFF machine values for
+/// THUMB and ARMNT describe Thumb instruction streams. The older ARM value can
+/// describe mixed ARM/Thumb images, so it is deliberately not a whole-image
+/// hint. Other formats and machines provide no whole-image hint.
+pub fn arm_isa_hint(file: &object::File, bytes: &[u8]) -> Option<bool> {
+    match container_machine(file, bytes)? {
+        IMAGE_FILE_MACHINE_THUMB | IMAGE_FILE_MACHINE_ARMNT => Some(true),
+        _ => None,
+    }
+}
+
+fn container_machine(file: &object::File, bytes: &[u8]) -> Option<u16> {
+    match file.format() {
+        object::BinaryFormat::Pe => pe_machine(bytes),
+        object::BinaryFormat::Coff => bytes
+            .get(..2)
+            .map(|raw| u16::from_le_bytes([raw[0], raw[1]])),
+        _ => None,
+    }
+}
+
+fn pe_machine(bytes: &[u8]) -> Option<u16> {
+    let pe_offset = u32::from_le_bytes(bytes.get(0x3c..0x40)?.try_into().ok()?) as usize;
+    if bytes.get(pe_offset..pe_offset.checked_add(4)?)? != b"PE\0\0" {
+        return None;
+    }
+    let machine = bytes.get(pe_offset.checked_add(4)?..pe_offset.checked_add(6)?)?;
+    Some(u16::from_le_bytes([machine[0], machine[1]]))
+}
+
+fn validate_target_container(
+    file: &object::File,
+    target: &str,
+    filename: &str,
+) -> KunaResult<()> {
+    let mut fields = target.split(':');
+    let _processor = fields.next();
+    let target_endian = fields.next();
+    let target_bits = fields.next();
+
+    if let Some(endian) = target_endian.filter(|value| matches!(*value, "LE" | "BE")) {
+        let container = if file.is_little_endian() { "LE" } else { "BE" };
+        if endian != container {
+            return Err(KunaError::lowlevel(format!(
+                "File: {filename} : target {target:?} is {endian}-endian but the container is {container}-endian"
+            )));
+        }
+    }
+    if let Some(bits) = target_bits.and_then(|value| value.parse::<u8>().ok()) {
+        let container = if file.is_64() { 64 } else { 32 };
+        if bits != container {
+            return Err(KunaError::lowlevel(format!(
+                "File: {filename} : target {target:?} is {bits}-bit but the container is {container}-bit"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Compose the SLEIGH language id from the format-neutral `arch` + `endian`
@@ -1559,6 +1677,54 @@ mod tests {
     fn non_elf_is_rejected() {
         let err = ObjectLoadImage::from_bytes("x", b"not an object file").unwrap_err();
         assert!(matches!(err, KunaError::Lowlevel { .. }));
+    }
+
+    #[test]
+    fn thumb_machine_pe_maps_with_explicit_language() {
+        let path = format!(
+            "{}/tests/fixtures/armv4t_thumb_pe.exe",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("read synthetic ARM PE fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse synthetic ARM PE");
+        assert_eq!(file.architecture(), Architecture::Unknown);
+        assert_eq!(effective_architecture(&file, &bytes), Architecture::Arm);
+        assert_eq!(arm_isa_hint(&file, &bytes), Some(true));
+
+        let mut image = ObjectLoadImage::from_bytes_with_target(
+            &path,
+            &bytes,
+            "ARM:LE:32:v4t:default",
+        )
+        .expect("explicit language must not discard PE mappings");
+        assert_eq!(image.get_arch_type(), b"ARM:LE:32:v4t:default");
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        image.attach_to_space(Rc::clone(&ram));
+        assert_eq!(
+            image.load(4, &Address::new(ram, 0x401000)).unwrap(),
+            [0x07, 0x20, 0x70, 0x47]
+        );
+    }
+
+    #[test]
+    fn explicit_target_rejects_pe_width_and_endian_conflicts() {
+        let path = format!(
+            "{}/tests/fixtures/armv4t_thumb_pe.exe",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("read synthetic ARM PE fixture");
+        for (target, fragment) in [
+            ("ARM:BE:32:v4t:default", "BE-endian"),
+            ("avr8:LE:16:default", "16-bit"),
+            ("AARCH64:LE:64:v8A:default", "64-bit"),
+        ] {
+            let error = ObjectLoadImage::from_bytes_with_target(&path, &bytes, target)
+                .expect_err("incompatible target must fail")
+                .explain()
+                .to_string();
+            assert!(error.contains(fragment), "unexpected diagnostic: {error}");
+        }
     }
 
     // ---- Real-ELF PLT/GOT import-name resolution (elf_plt) -----------------

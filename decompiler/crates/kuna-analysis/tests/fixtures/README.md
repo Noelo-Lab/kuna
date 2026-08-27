@@ -14,6 +14,7 @@ real ELF parser.
 
 | File | What | Exercises |
 |---|---|---|
+| `armv4t_thumb_pe.exe` | project-authored ARMv4T Thumb PE32 image from `armv4t_thumb_pe.s` | PE machine `0x01c2` architecture recovery, odd Thumb entry normalization, container-derived `TMode=1`, explicit `--target` compatibility checks, and ARM/Thumb CLI override behavior |
 | `et_rel_status_arm.o` | project-authored ARM32 **ET_REL** object from `et_rel_status_arm.s` | architecture-specific `R_ARM_CALL`/data relocation application and return recovery when a status value is both returned on the normal path and passed to an explicit no-return call on a terminal guard-failure path; `status_caller` consumes the recovered result |
 | `et_rel_status_aarch64.o` | project-authored AArch64 **ET_REL** object from `et_rel_status_aarch64.s` | `R_AARCH64_CALL26`, page/low-12 relocation application, and the same status-return/no-return-path recovery shape on the 64-bit ABI; `status_caller` consumes the recovered result |
 | `entry_selectors_x86_64.o` | synthetic x86-64 **ET_REL** object produced from `entry_selectors_{a,b}_x86_64.s` | relocatable-object entry selection: two local `STT_FUNC` definitions share the name `duplicate_local` and raw offset zero but live in distinct `.text.selector_a` / `.text.selector_b` sections, so name and bare-offset selection must report both candidates while a section-qualified selector is exact |
@@ -92,6 +93,14 @@ ARM/AArch64/PowerPC64 and generic-width matrix, REL/RELA addends, both byte
 orders, local and external targets, interworking, bounds/range/alignment errors,
 missing TOCs, malformed encodings, and bounded diagnostic aggregation; no
 proprietary object is part of the regression suite.
+`armv4t_thumb_pe.exe` is project-authored synthetic assembly under the same
+license. Regenerate it with `clang --target=thumbv4t-windows-msvc -c
+armv4t_thumb_pe.s -o armv4t_thumb_pe.obj`, then `lld-link /machine:arm
+/entry:entry /subsystem:native /nodefaultlib /timestamp:0
+/out:armv4t_thumb_pe.exe armv4t_thumb_pe.obj`, and finally change the PE COFF
+Machine field from ARMNT (`0x01c4`) to THUMB (`0x01c2`); the intermediate object
+is not retained. The four instruction bytes are independently authored and the
+fixture contains no vendor input.
 `cpp_noreturn_x86_64`: `g++ -O0 -no-pie -fno-pic -o cpp_noreturn_x86_64
 cpp_noreturn_x86_64.cpp` (source vendored alongside) — a `fail()` that tail-calls
 `std::terminate()` plus a `throw` (→ `__cxa_throw`); both are mangled no-return

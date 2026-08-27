@@ -47,6 +47,14 @@ fn arm_thumb() -> String {
         .to_string()
 }
 
+fn arm_thumb_pe() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/armv4t_thumb_pe.exe")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// A larger **ARM 32-bit** ELF fixture with functions the prologue-`<patternpairs>`
 /// matcher genuinely finds and the entry oracles do not (`0x3e0`, `0x410`,
 /// `0x3c520`) — the fixture the DIV-20 `funcstart_patterns` assertion needs.
@@ -753,6 +761,56 @@ fn decompile_all_addr_tolerates_the_arm_thumb_bit() {
         stdout.contains("\"address_hex\": \"0x1357\""),
         "an odd x86-64 address is a REAL entry and must not be Thumb-masked:\n{stdout}"
     );
+}
+
+#[test]
+fn arm_thumb_pe_functions_and_address_decompile() {
+    let binary = arm_thumb_pe();
+    let sp = specs();
+    let target = "ARM:LE:32:v4t:default";
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "functions",
+        &binary,
+        "--json",
+        "--sleighpath",
+        &sp,
+    ]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("ARM PE CLI: skipping (no ARM `.sla`)");
+            return;
+        }
+        panic!("kuna functions failed on synthetic ARM PE: {stderr}");
+    }
+    assert!(
+        stdout.contains("\"address_hex\": \"0x401000\""),
+        "odd Thumb entry was not normalized:\n{stdout}"
+    );
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &binary,
+        "--addr",
+        "0x401001",
+        "--target",
+        target,
+        "--sleighpath",
+        &sp,
+    ]);
+    assert!(ok, "automatic PE Thumb mode failed: {stderr}");
+    assert!(stdout.contains("return 7;"), "wrong ARM/Thumb decode:\n{stdout}");
+
+    let (_stdout, stderr, ok) = run_kuna(&[
+        "functions",
+        &binary,
+        "--target",
+        "ARM:BE:32:v4t:default",
+        "--sleighpath",
+        &sp,
+    ]);
+    assert!(!ok, "endianness-conflicting target must fail");
+    assert!(stderr.contains("BE-endian") && stderr.contains("LE-endian"));
 }
 
 /// The past-pathological function of the stripped-ELF hang repro now

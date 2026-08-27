@@ -3,7 +3,7 @@
 //! ```text
 //!   kuna strings <binary> [--json] [--min-length N] [--filter REGEX]
 //!                         [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]
-//!                         [--mode MODE] [--option N V].. [--slice ARCH] [--target T]
+//!                         [--mode MODE] [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T]
 //!                         [--sleighpath D]
 //! ```
 //!
@@ -55,6 +55,7 @@ pub(crate) struct StringsArgs {
     slice: Option<String>,
     target: Option<String>,
     sleighpath: Option<String>,
+    isa: Option<kuna_console::engine::ArmIsa>,
 }
 
 /// A row, ready to render: the recovered literal plus who reaches it.
@@ -175,6 +176,7 @@ fn attribute(
         slice: args.slice.clone(),
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
+        isa: args.isa,
     };
     let prog = load_program(&load, DriverDefaults::Inventory)?;
     // The inventory, read ONCE. `ConsoleProgram::find_entry_at` rebuilds and
@@ -379,6 +381,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
+    let mut isa = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -413,6 +416,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
                 i += 2;
             }
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
+            "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
@@ -456,6 +460,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
         slice,
         target,
         sleighpath,
+        isa,
     })
 }
 
@@ -473,7 +478,7 @@ fn usage() {
         "usage: kuna strings <binary> [--json] [--min-length N] [--filter REGEX] \\\n\
          \x20                    [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs] \\\n\
          \x20                    [--mode auto|reliable|aggressive|fast] [--option N V].. \\\n\
-         \x20                    [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                    [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          Lists the string literals the analyzer tier already detects, each with the\n\
          functions that reference it.  Defaults: ascii, minimum length 5 (the\n\
