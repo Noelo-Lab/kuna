@@ -943,6 +943,17 @@ pub struct Architecture {
     /// install runs inside `load file`, upstream of `option`); this bool exists
     /// only for catalog visibility and the `phase catalog` live `current` field.
     pub analysis_symbolnamerepair: bool,
+    /// (kuna) How much of a raw symbol name's byte content is rewritten at the
+    /// mint (`symbolnamechars`); default [`NameChars::Safe`]. A name's bytes
+    /// otherwise reach emitted C verbatim, where a `*/`, a newline or a `//`
+    /// restructures the document and an invalid UTF-8 byte collapses two
+    /// distinct symbols onto one `String`. Read through the
+    /// [`crate::kuna_symbolnamechars`] **env var** (names are minted inside
+    /// `load file`, upstream of `option`); this field exists only for catalog
+    /// visibility and the `phase catalog` live `current` field.
+    ///
+    /// [`NameChars::Safe`]: crate::kuna_symbolnamechars::NameChars::Safe
+    pub analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -1576,6 +1587,7 @@ impl Architecture {
             analysis_relocrebase: false,
             analysis_dynrelocs: false,
             analysis_symbolnamerepair: false,
+            analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_datasyms: false,
@@ -1760,6 +1772,7 @@ impl Architecture {
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
+        self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
@@ -2162,6 +2175,19 @@ impl Architecture {
                     "degenerate-symbol-name repair turned {}",
                     if val { "on" } else { "off" }
                 ))
+            }
+            // (kuna) Load-time gate: symbol names are minted inside `load file`,
+            // so bridge the choice to the env var the loader reads (the CLI sets
+            // it on the subprocess too).
+            "symbolnamechars" => {
+                let mode = crate::kuna_symbolnamechars::NameChars::parse(p1).ok_or_else(|| {
+                    KunaError::lowlevel(format!(
+                        "symbolnamechars must be off|safe|ident, got `{p1}`"
+                    ))
+                })?;
+                self.analysis_symbolnamechars = mode;
+                crate::kuna_symbolnamechars::set_symbolnamechars_env(mode);
+                Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
             }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),

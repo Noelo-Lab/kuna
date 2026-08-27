@@ -91,8 +91,9 @@ fn settable_count_is_117() {
     // +1 for `noreturn_discstrict` (P1 discovered-no-return positive-evidence-only
     // tally, DIV-92, GH-312).
     // +1 for `aifcorroborate` (P1 AIF accept corroboration test, GH-313).
-    assert_eq!(kuna_num_settables(), 121);
-    assert_eq!(SETTABLE_TABLE.len(), 121);
+    // +1 for `symbolnamechars` (P1 symbol-name character sanitizing, DIV-94).
+    assert_eq!(kuna_num_settables(), 122);
+    assert_eq!(SETTABLE_TABLE.len(), 122);
 }
 
 #[test]
@@ -162,10 +163,12 @@ fn tier_counts_are_26_core_50_transform_42_analysis() {
     // analysis 43 -> 44: +1 for `aifcorroborate` (P1 AIF accept corroboration test,
     // GH-313) -- analysis, like its `aifstrict` sibling: it shapes which entries the
     // discovery tier emits, and rewrites nothing.
+    // analysis 44 -> 45: +1 for `symbolnamechars` (P1 symbol-name character
+    // sanitizing, DIV-94).
     // transform 50 -> 51: +1 for `noreturn_discstrict` (P1 discovered-no-return
     // positive-evidence-only tally, DIV-92) -- transform, not analysis: it changes
     // which callees are marked no-return, so it changes emitted C at every caller.
-    assert_eq!((core, transform, analysis), (26, 51, 44));
+    assert_eq!((core, transform, analysis), (26, 51, 45));
 }
 
 #[test]
@@ -483,6 +486,10 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
         // `kuna_symbolnamerepair` env var (the symbol table is installed inside
         // `load file`), like `relocrebase`. Default-ON.
         "symbolnamerepair",
+        // (kuna, GH-340) Symbol-name character sanitizing: a load-time gate read
+        // via the `kuna_symbolnamechars` env var (names are minted inside `load
+        // file`), like `symbolnamerepair`. Three-valued, default `safe`.
+        "symbolnamechars",
         // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
@@ -691,7 +698,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4,
     // symbolnamerepair's P1 and aifcorroborate's P1 rows sit mid-table, so they do
     // not move the tail).
-    assert_eq!(json.matches("},\n").count(), 120);
+    // symbolnamerepair's P1 and symbolnamechars' P1 rows sit mid-table, so they
+    // do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 121);
 }
 
 #[test]

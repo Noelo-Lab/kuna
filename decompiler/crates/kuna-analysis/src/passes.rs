@@ -10,6 +10,7 @@
 //! `docs/missing-analyses.md`.
 
 use kuna_decomp::architecture::Architecture;
+use kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode;
 use kuna_sleigh::translate::Translate;
 
 use crate::loadimage_object::ObjectLoadImage;
@@ -741,6 +742,7 @@ pub fn run_listing_consumers(
         fast_out.entries.dedup();
         out.push(("fast_funcdisc", fast_out));
     }
+    sanitize_all_names(&mut out);
     out
 }
 
@@ -781,6 +783,7 @@ pub fn run_operand_refs(
     if let Some(view) = &view {
         crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
     }
+    out.sanitize_names(symbolnamechars_mode());
     out
 }
 
@@ -850,6 +853,7 @@ pub fn run_default_analyses(
     if let Some(view) = &view {
         crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
     }
+    out.sanitize_names(symbolnamechars_mode());
     out
 }
 
@@ -889,7 +893,7 @@ pub fn run_default_analyses_per_pass(
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
     let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
     let format = file.format();
-    passes_for(compiler, format)
+    let mut split: Vec<(&'static str, AnalysisOutput)> = passes_for(compiler, format)
         .iter()
         .map(|pass| {
             let mut out = pass.run(&ctx);
@@ -898,7 +902,26 @@ pub fn run_default_analyses_per_pass(
             }
             (pass.id(), out)
         })
-        .collect()
+        .collect();
+    sanitize_all_names(&mut split);
+    split
+}
+
+/// (kuna `symbolnamechars`, GH-340) Sanitize every recovered NAME in a per-pass
+/// split, reading the gate once for the whole batch.
+///
+/// A pass's name is binary-supplied just like a `.symtab` one -- a DWARF
+/// `DW_AT_name`, a Go `pclntab` entry, a PDB public symbol -- and reaches emitted
+/// C through the same printer, so it is sanitized at the same mint rather than
+/// downstream. See [`AnalysisOutput::sanitize_names`].
+fn sanitize_all_names(split: &mut [(&'static str, AnalysisOutput)]) {
+    let mode = symbolnamechars_mode();
+    if mode == kuna_decomp::kuna_symbolnamechars::NameChars::Off {
+        return;
+    }
+    for (_, out) in split.iter_mut() {
+        out.sanitize_names(mode);
+    }
 }
 
 #[cfg(test)]

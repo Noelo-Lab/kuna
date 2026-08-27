@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A symbol name's raw bytes must not restructure the C document they are
+    printed into, and two distinct names must not collapse onto one string.
+
+    Nothing between the ELF .strtab and emitted C validates a symbol name.
+    The name is carried verbatim into the `// Function:` header, the .h
+    prototype, the definition, every call site and the .asm label, so:
+
+      a*/b   closes the header comment early and the `@ 0x401020` after it
+             becomes code;
+      a//b   comments out the rest of the line, taking the parameter list
+             and the `;` with it;
+      a\n b  (a REAL 0x0a byte) splits every one of those five renderings
+             across two lines;
+      a\x80b two DIFFERENT symbols at two DIFFERENT addresses, which
+      a\x81b String::from_utf8_lossy maps to the same U+FFFD string, so the
+             export carries two identical definitions and two identical
+             prototypes (a C redefinition, and no way for a reader to tell
+             which call went where).
+
+    `symbolnamechars` (off|safe|ident, default safe) sanitizes at the MINT,
+    which is the loader's symbol walk, not the printer: `kuna decompile NAME`
+    and the console's `load function` key on the string in the symbol
+    table, so a printer-side fix would make the name in the .c one you
+    can no longer hand back to the CLI. Under `safe` each offending byte
+    becomes its `_xHH` hex escape, which is injective, and that is what
+    keeps `a\x80b` and `a\x81b` two names rather than one.
+
+    The XML wrapper only supplies the harness architecture; the script clears
+    it and loads a real x86-64 ELF fixture whose .symtab carries all five
+    function names plus a data symbol (`d*/x`) in the same shape, built
+    reproducibly from checked-in assembly plus a checked-in .strtab patch
+    script (GNU as will not emit a raw 0x0a or 0x80 inside a symbol name).
+
+    This is the DEFAULT arm only, and deliberately so. `symbolnamechars` is a
+    loader-tier gate: the names are minted inside `load file`, and `option`
+    requires a live image, so no script command can set the mode before the
+    load it has to affect. A regression is still loud rather than silent:
+    every assertion below pins the sanitized spelling, and the raw one coming
+    back fails them. The option's own three-way off/safe/ident coverage lives
+    in the Rust gate
+    decompiler/crates/kuna-console/tests/verify_symbolnamechars.rs, which can
+    set the env var around each load. This is the same limit
+    tests/stages/kuna-symbolnamerepair.xml documents for the same reason.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/hostile_symname_x86_64</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a_x2a_x2fb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a_x0ab</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a_x80b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a_x81b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYMBOLNAMECHARS #1: a comment-closing */ in a name cannot close the header comment" min="1" max="1">unsigned long a_x2a_x2fb\(void\)</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #2: a real newline byte no longer splits the declaration in two" min="1" max="1">unsigned long a_x0ab\(void\)</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #3: the 0x80 name keeps its own spelling" min="1" max="1">unsigned long a_x80b\(void\)</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #4: the 0x81 name is a DIFFERENT one, not the same lossy string" min="1" max="1">unsigned long a_x81b\(void\)</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #5: the sanitized names render at CALL sites too, not just on declarations" min="1" max="1">  a_x2f_x2fb\(\);</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #6: the data half of the same symbol walk is sanitized with it" min="1" max="1">return d_x2a_x2fx;</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #7: no comment delimiter survives inside any emitted name" min="0" max="0">a\*/b</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #8: nor the line-comment spelling" min="0" max="0">a//b</stringmatch>
+<stringmatch name="SYMBOLNAMECHARS #9: the five bodies decompiled, so the load did not fail" min="1" max="1">return 5;</stringmatch>
+</decompilertest>

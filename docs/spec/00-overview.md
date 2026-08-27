@@ -675,6 +675,18 @@ and an agent writes:
   (`relocrebase`, `i386_pie_plt`, `typedepth`) it is read through a process
   environment variable rather than an `Architecture` flag, because `option` is
   applied downstream of the load it would have to govern.
+  The scope path is not the only thing a name's bytes reach: the same string is
+  printed into emitted C, and nothing on the way validates it.
+  `symbolnamechars` (off|safe|ident, default safe;
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamechars.rs`) is the
+  character half of the same problem, and it sanitizes at the mint rather than at
+  the printer for a reason that is about the control surface: `kuna decompile
+  <name>`, the console's `load function` and the DB scope path all key on the
+  string the symbol table holds, so a printer-side rewrite would put a name in
+  the `.c` that cannot be handed back. Chapter 01 §1.1 states the byte-level
+  behavior; here it only matters that the name in `prog.symbols`, in `kuna
+  functions`, in the `.c`/`.h`/`.asm` export and in the Scope chain is ONE
+  string, and that it is decided before the symbol reaches this database.
 - **The Override store** (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
   (Override)`): per-function commands that override pipeline decisions — flow
   reclassification, direct-call redirects, prototype replacement, multistage

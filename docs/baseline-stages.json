@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    539,
-    539
+    548,
+    548
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -292,6 +292,15 @@
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
+    "data:SYMBOLNAMECHARS #1: a comment-closing */ in a name cannot close the header comment",
+    "data:SYMBOLNAMECHARS #2: a real newline byte no longer splits the declaration in two",
+    "data:SYMBOLNAMECHARS #3: the 0x80 name keeps its own spelling",
+    "data:SYMBOLNAMECHARS #4: the 0x81 name is a DIFFERENT one, not the same lossy string",
+    "data:SYMBOLNAMECHARS #5: the sanitized names render at CALL sites too, not just on declarations",
+    "data:SYMBOLNAMECHARS #6: the data half of the same symbol walk is sanitized with it",
+    "data:SYMBOLNAMECHARS #7: no comment delimiter survives inside any emitted name",
+    "data:SYMBOLNAMECHARS #8: nor the line-comment spelling",
+    "data:SYMBOLNAMECHARS #9: the five bodies decompiled, so the load did not fail",
     "data:SYMBOLNAMEREPAIR #1: a top-level anonymous namespace is a named scope, not a leading empty one",
     "data:SYMBOLNAMEREPAIR #2: an anonymous namespace nested in a named one keeps both components",
     "data:SYMBOLNAMEREPAIR #3: a class inside an anonymous namespace nests one level deeper again",

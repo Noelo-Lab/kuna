@@ -13,6 +13,7 @@
 //! `loader`/`analyzers/*` modules implementing [`AnalysisPass`].
 
 use kuna_decomp::architecture::Architecture;
+use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name, NameChars};
 
 use crate::listing::Listing;
 use crate::loadimage_object::ObjectLoadImage;
@@ -395,6 +396,47 @@ pub struct AnalysisOutput {
     /// gate is three-valued (`off|proven|inferred`), so the commit boundary picks
     /// which tiers to apply. See [`CppSigFacts`].
     pub cpp_sig: CppSigFacts,
+}
+
+impl AnalysisOutput {
+    /// (kuna `symbolnamechars`, GH-340) Apply the symbol-name character
+    /// sanitizer to every NAME this output carries, at the mint.
+    ///
+    /// The loader's own `.symtab`/`.dynsym`/PLT walks sanitize inside
+    /// [`crate::loadimage_object`]; this is the same treatment for the second
+    /// channel a name arrives through — a DWARF `DW_AT_name`, a Go `pclntab`
+    /// entry, a PDB public symbol, an RTTI class label — all of which are
+    /// equally binary-supplied and reach emitted C through the same printer.
+    ///
+    /// Only names are touched. A `CommentFact`'s text is not a name and is left
+    /// alone deliberately: it is emitted inside a `/* … */` by the printer, and
+    /// escaping THAT belongs with the printer's comment emission, not with a
+    /// symbol-name gate.
+    pub fn sanitize_names(&mut self, mode: NameChars) {
+        if mode == NameChars::Off {
+            return;
+        }
+        let fix = |s: &mut String| {
+            if let std::borrow::Cow::Owned(v) = sanitize_symbol_name(s, mode) {
+                *s = v;
+            }
+        };
+        let fix_proto = |p: &mut kuna_decomp::fspec::PrototypePieces| {
+            fix(&mut p.name);
+            p.innames.iter_mut().for_each(fix);
+        };
+        self.symbols.iter_mut().for_each(|s| fix(&mut s.name));
+        self.data_objects.iter_mut().for_each(|d| fix(&mut d.name));
+        self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
+        self.locals.iter_mut().for_each(|l| fix(&mut l.name));
+        self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
+        self.prototypes.iter_mut().for_each(fix_proto);
+        self.cpp_dwarf.symbols.iter_mut().for_each(|s| fix(&mut s.name));
+        self.cpp_dwarf.locals.iter_mut().for_each(|l| fix(&mut l.name));
+        self.cpp_dwarf.prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.cpp_sig.proven.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.cpp_sig.inferred.iter_mut().for_each(|(_, p)| fix_proto(p));
+    }
 }
 
 /// (kuna `cppsig`) Prototypes read off a C++ mangled symbol, in two certainty

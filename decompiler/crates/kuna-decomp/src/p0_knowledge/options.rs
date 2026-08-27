@@ -379,6 +379,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `kuna_symbolnamerepair` env var (the symbol table is installed inside
     // `load file`). Default-ON.
     "symbolnamerepair",
+    // (kuna) Symbol-name character sanitizing (`off|safe|ident`): a load-time
+    // gate read via the `kuna_symbolnamechars` env var (names are minted inside
+    // `load file`). Default `safe`.
+    "symbolnamechars",
     "mips_isa",
     "dwarf",
     // (kuna) ELF data-symbol (`STT_OBJECT`) naming — the data half of the

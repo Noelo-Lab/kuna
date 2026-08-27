@@ -8420,6 +8420,37 @@ fn sanitize_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(s)
 }
 
+/// (kuna, GH-340) Make `raw` safe to interpolate into a `/* … */` comment.
+///
+/// The `/* renamed from "<raw>" */` note prints the type name a binary actually
+/// carried, and that string is unvalidated binary data: a `*/` in it closes the
+/// comment early and turns the rest of the line into code, and a newline splits
+/// the comment across two lines. Both re-open, in a different construct, exactly
+/// the hole [`sanitize_type_name`] was written to close — so the note escapes
+/// what it quotes. Every ASCII control byte becomes a space and both comment
+/// delimiters lose their second character to `_`; nothing else is touched, so a
+/// name that could never break a comment prints verbatim.
+fn comment_safe(raw: &str) -> std::borrow::Cow<'_, str> {
+    let breaks = |w: &[u8]| matches!(w, [b'*', b'/'] | [b'/', b'*']);
+    let bytes = raw.as_bytes();
+    let clean = !bytes.iter().any(|b| b.is_ascii_control())
+        && !bytes.windows(2).any(breaks);
+    if clean {
+        return std::borrow::Cow::Borrowed(raw);
+    }
+    let mut out = String::with_capacity(raw.len());
+    for (i, c) in raw.char_indices() {
+        if c.is_ascii_control() {
+            out.push(' ');
+        } else if i > 0 && breaks(&bytes[i - 1..i + 1]) {
+            out.push('_');
+        } else {
+            out.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// (kuna) One member declaration `<front><name><back>` via the C-declarator
 /// builder [`declarator_parts`] — the same front/name spacing rule the emit
 /// loop uses (`a `*` front glues to the identifier with no space).
@@ -8614,7 +8645,7 @@ fn render_type_definitions(
         let kw = if matches!(&ct.kind, DatatypeKind::Union { .. }) { "union" } else { "struct" };
         out.push_str(&format!("typedef {kw} {name} {name};"));
         if name != raw {
-            out.push_str(&format!(" /* renamed from \"{raw}\" */"));
+            out.push_str(&format!(" /* renamed from \"{}\" */", comment_safe(raw)));
         }
         if !complete_names.contains(name.as_ref()) {
             out.push_str(" /* opaque */");
@@ -8643,7 +8674,7 @@ fn render_type_definitions(
                 continue;
             }
             if name != raw {
-                out.push_str(&format!("/* renamed from \"{raw}\" */\n"));
+                out.push_str(&format!("/* renamed from \"{}\" */\n", comment_safe(raw)));
             }
             out.push_str(&compose_typedef_line(base, &name, rt));
             out.push('\n');
@@ -8656,7 +8687,7 @@ fn render_type_definitions(
                 continue;
             }
             if name != raw {
-                out.push_str(&format!("/* renamed from \"{raw}\" */\n"));
+                out.push_str(&format!("/* renamed from \"{}\" */\n", comment_safe(raw)));
             }
             out.push_str(&compose_type_body(ct, &name, rt));
             out.push('\n');
@@ -8666,7 +8697,7 @@ fn render_type_definitions(
                 continue;
             }
             if name != raw {
-                out.push_str(&format!("/* renamed from \"{raw}\" */\n"));
+                out.push_str(&format!("/* renamed from \"{}\" */\n", comment_safe(raw)));
             }
             out.push_str(&compose_enum_body(ct, &name));
             out.push('\n');

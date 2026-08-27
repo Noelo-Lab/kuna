@@ -1768,7 +1768,11 @@ mod tests {
         // and kuna-noreturn-discstrict / the discovered-no-return tally counts
         // only positive evidence, so a decode gap can no longer forge a no-return
         // verdict (wiring-only on the XML path -- the Listing is real-ELF only)
-        assert_eq!(count, 216, "corpus file count drifted");
+        // and kuna-symbolnamechars / a symbol name's raw bytes no longer
+        // restructure the C document they are printed into (option off = a `*/`
+        // closes the header comment, a newline splits the declaration, and two
+        // non-UTF-8 names collapse onto one)
+        assert_eq!(count, 217, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
