@@ -1511,14 +1511,41 @@ Name-based: free, exact, and useless on stripped custom wrappers.
 `decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/mod.rs`, the
 `FindNoReturnFunctionsAnalyzer` evidence tally; Listing-gated, default-on per
 DIV-22 as in Ghidra): a callee is concluded no-return when at least **3** of its
-call sites (`EVIDENCE_THRESHOLD`) show no valid fall-through — the byte after the
-call is not a decoded instruction start, is data, or is another function's entry —
-plus a bounded fixpoint promotion for a caller whose body contains a terminal call
-to an already-concluded callee and no RETURN anywhere. The threshold buys
-robustness to disassembly noise at the price of blindness to rarely-called
-functions; and the predicate has a structural blind spot: a no-return call followed
-by alignment **NOP padding** reads as a valid fall-through and contributes no
-evidence at all.
+call sites (`EVIDENCE_THRESHOLD`) show no valid fall-through, plus a bounded
+fixpoint promotion for a caller whose body contains a terminal call to an
+already-concluded callee and no RETURN anywhere. The threshold buys robustness to
+disassembly noise at the price of blindness to rarely-called functions; and the
+predicate has a structural blind spot: a no-return call followed by alignment **NOP
+padding** reads as a valid fall-through and contributes no evidence at all.
+
+What counts as "no valid fall-through" is itself a decision, exposed as
+`noreturn_discstrict` (default-ON, DIV-92;
+`decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/kuna_discstrict.rs`).
+A call with no fall-through address at all — a tail jump lowered to a call — is
+evidence under either setting: that is a property of the call instruction. What
+differs is how its *successor* is read. On the default only **positive** evidence
+counts: the successor is data (outside every executable range, so the compiler
+emitted nothing there to fall into), or the successor is another function's entry
+(the compiler left the caller no tail at all). With the option off a third arm is
+restored ahead of those two — the successor is not a decoded instruction start.
+
+That third arm is a statement about kuna, not about the program. The Listing walk
+(§1.7) pushes **every** call's fall-through onto its per-function instruction
+worklist unconditionally, and that worklist drains before the function is left, so
+a call's successor is always attempted; it fails to become an instruction start in
+exactly three ways — `decode_one` returned an error, the decode was zero-length, or
+the address is outside every executable range. The Listing records no decode
+outcome (a failed decode and an unvisited byte are the same `Undefined` code unit),
+so the arm is precisely a decode-failure detector: three bytes kuna cannot decode
+are enough to conclude that a function whose body is `mov $7,%eax ; ret` never
+returns, after which the flow layer deletes the live tail of every one of its
+callers (GH-312). Dropping the arm is also what makes the data arm reachable for
+the first time — `is_data` implies `!is_instruction_start`, so under the legacy
+order the arm above consumed every site it would have caught. Measured over the 660
+stripped x86-64 binaries and 110 stripped non-x86-64 binaries of the decbench
+corpus on which the Listing is built, the two tallies conclude the *same* 581
+callees no-return: the arm's entire marginal output there is decode-failure votes
+that never reach the threshold on their own.
 
 **Propagation fixpoint** (angr; `noreturn_propagate`,
 `decompiler/crates/kuna-analysis/src/analyzers/noreturn_propagate/mod.rs

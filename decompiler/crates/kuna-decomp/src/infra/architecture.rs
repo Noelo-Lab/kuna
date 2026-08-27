@@ -1054,6 +1054,17 @@ pub struct Architecture {
     /// the Listing (`--option listing on` builds it); a no-op when the Listing is
     /// absent. Default-off ⇒ every parity gate is byte-identical.
     pub analysis_noreturn_disc: bool,
+    /// (kuna, GH-312) Narrow `noreturn_disc`'s no-fall-through predicate to the
+    /// arms that observe the program; default **on** (DIV-92). The legacy tally
+    /// counts "the byte after the call is not a decoded instruction start" as a
+    /// vote for the callee being no-return, but the Listing walk always attempts a
+    /// call's successor, so that arm fires exactly when kuna's decoder failed —
+    /// three spec gaps forge the verdict and DELETE live code at every caller.
+    /// When on, only the terminal arm (no fall-through at all) and the two
+    /// positive arms (the successor is data / another function's entry) count.
+    /// Reads the Listing (`--option listing on` builds it); a no-op when the
+    /// Listing is absent, so every parity gate is byte-identical.
+    pub analysis_noreturn_discstrict: bool,
     /// (kuna) Gate the structural no-return **propagation** consumer
     /// (`noreturn_propagate`), the second Listing/xref consumer; default **off**.
     /// The kuna analog of angr's CFGFast call-graph no-return propagation: seed
@@ -1561,6 +1572,7 @@ impl Architecture {
             analysis_listing: false,
             analysis_fast_funcdisc: false,
             analysis_noreturn_disc: false,
+            analysis_noreturn_discstrict: false,
             analysis_noreturn_propagate: false,
             analysis_noreturn_error: false,
             analysis_noreturn_reach: false,
@@ -1747,6 +1759,7 @@ impl Architecture {
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
+        self.analysis_noreturn_discstrict = true; // (kuna, GH-312) DIV-92 default-on: drop noreturn_disc's decode-failure evidence arm, keeping the terminal arm + the two positive arms. RESTORES CODE (a forged no-return verdict no longer deletes the caller's tail). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore the legacy three-arm tally with `option noreturn_discstrict off`
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_error = true; // (kuna) DIV-16 default-on: REMOVES CODE (conclude error(nonzero,...) wrappers no-return, dropping the dead fall-through at every caller). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_error off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
@@ -2191,6 +2204,12 @@ impl Architecture {
             }
             "noreturn_disc" => {
                 on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
+            }
+            "noreturn_discstrict" => {
+                on_off!(
+                    analysis_noreturn_discstrict,
+                    "Discovered-no-return positive-evidence-only tally"
+                )
             }
             "noreturn_propagate" => {
                 on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
