@@ -1177,6 +1177,26 @@ pub struct Architecture {
     /// it, which is where every one of those numbers was measured) and GH-299 stays
     /// open. Inert without `aif`, so every parity gate is byte-identical.
     pub analysis_aifstrict: bool,
+    /// (kuna, GH-313) Gate the AIF accept corroboration test (`aifcorroborate`);
+    /// default **off**, and in NO preset. Upstream rejects a gap candidate on TWO
+    /// fingerprint tests — `startCount < 4`, and then
+    /// `numInstr <= 2 || (!addsInfo && startCount < 50)` — and kuna ported only the
+    /// first plus the `numInstr` half of the second. So a self-contained routine
+    /// that calls nothing, jumps nowhere known and merely reaches a `ret` is
+    /// accepted on four discovered functions sharing its two-mnemonic prologue.
+    /// With this on, an accept must EITHER add information (a call, or a jump into
+    /// already-discovered code — computed upstream's way, not from the looser
+    /// `adds_info` the validity gate uses) OR match a prologue that 50 discovered
+    /// functions share; a refused candidate still consumes its body so the cursor
+    /// cannot fall back into it. Applied only at the gap-walk accept; the raw
+    /// Thumb-prologue, code-pointer-table and pointer-validation users of the same
+    /// predicate carry their own corroboration. **Measured out for the default
+    /// path**: over 110 stripped non-x86-64 binaries ON TOP OF `aifstrict` it cuts
+    /// mid-body entries 6,728 → 4,653 but costs 850 of 44,957 recovered functions,
+    /// raises recall on zero of the 110, and takes 84 / 141 real functions off the
+    /// two u-boot A32 images DIV-20 exists for. Inert without `aif`, so every parity
+    /// gate is byte-identical.
+    pub analysis_aifcorroborate: bool,
     /// (kuna) Gate tail-call function-entry recovery (`tailcallentry`); default
     /// **off**. The recursive-descent Listing walk treats every non-CALL flow
     /// target as a same-function successor, so a routine reached only by a tail
@@ -1582,6 +1602,7 @@ impl Architecture {
             analysis_itaniumrtti: false,
             analysis_aif: false,
             analysis_aifstrict: false,
+            analysis_aifcorroborate: false,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
             analysis_objc: false,
@@ -1770,6 +1791,9 @@ impl Architecture {
         // (kuna, GH-299) AIF gap-cursor aligned slide — default-OFF (it REMOVES
         // entries), carried by the `aggressive` preset.
         self.analysis_aifstrict = false;
+        // (kuna, GH-313) AIF corroboration test — default-OFF (it REMOVES entries),
+        // carried by the `aggressive` preset.
+        self.analysis_aifcorroborate = false;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
@@ -2230,6 +2254,9 @@ impl Architecture {
             }
             "aifstrict" => {
                 on_off!(analysis_aifstrict, "AIF gap-cursor aligned slide (GH-299)")
+            }
+            "aifcorroborate" => {
+                on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
             }
             "tailcallentry" => {
                 on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")

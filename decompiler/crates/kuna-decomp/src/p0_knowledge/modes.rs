@@ -349,8 +349,15 @@ mod tests {
         /// recovers a tail call to them -- it does NOT yet fix the `xmm0`-return the
         /// feature exists for (that needs the Ghidra-divergent Stage B), so it is an
         /// explicit opt-in until the chain is complete rather than a rendering default.
+        /// `aifcorroborate` (GH-313) is upstream's second AIF fingerprint test, and it
+        /// was MEASURED OUT of the preset rather than left unevaluated: over the same
+        /// 110 stripped non-x86-64 binaries `aifstrict` was measured on, it cuts
+        /// mid-body entries 6,728 -> 4,653 but costs 850 of 44,957 recovered
+        /// functions, raises recall on zero of the 110 images, and takes 84 / 141 real
+        /// functions off the two u-boot A32 images DIV-20 exists for.
         const EXCLUDED_ON_PURPOSE: &[&str] =
-            &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret"];
+            &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
+              "aifcorroborate"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

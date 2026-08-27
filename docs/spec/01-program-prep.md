@@ -1299,6 +1299,38 @@ approximation swallows whole unexplored regions rather than one body's interior.
 is the `fdeinterior` question (§1.5) asked of an image that has no unwind extents to
 answer it with, and the answer needs real per-instruction walk ownership.
 
+(kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
+dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count
+alone, and again after the validity walk, where a routine that adds no information
+must match a prologue shared by fifty discovered functions rather than four. kuna
+ported the first refusal and the "no two-instruction routines" half of the second,
+so a self-contained routine that calls nothing, jumps nowhere known, and merely
+reaches a return is accepted on a two-mnemonic coincidence. `aifcorroborate`
+(default-off, **in no preset**;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifcorroborate.rs`) restores
+it: an accept must either add information — a call, or a jump into already-discovered
+code — or match a prologue that fifty discovered functions share. The corroborating
+fact is recomputed the upstream way rather than reusing the flag the
+valid-subroutine gate already carries, because that one also counts a plain
+fall-through out of the hole into decoded code, which is the *signature* of a
+mid-body phantom rather than evidence against one. And a refused candidate still
+consumes its body: the gap cursor advances past an accepted routine but only one byte
+past a rejected one, so an accept-side refusal that released the cursor would hand it
+back to the interior of the same hole, replacing one bad entry with a worse one.
+
+The option ships opt-in because it was **measured out of the default path**, not
+because it is unevaluated. Over the same corpus `aifstrict` was measured on it cuts
+roughly a third of the remaining mid-body entries but costs about half a real
+function for each one removed, raises recall on none of the images, and takes real
+functions off the A32 targets AIF's remaining justification rests on — which is the
+finding, not the failure: upstream's guard assumes a function worth finding calls
+something the analyzer already knows, and on bare-metal firmware the functions only
+AIF can find are precisely the leaf helpers that call nothing. The per-image numbers
+are in the option's catalog row, and the instrument that produced them is
+`scripts/decbench/entrysweep.py` (§ the decbench loop), which scores kuna's function
+entries for a stripped image against its unstripped twin's symbol table — the
+discovery-tier measurement the GED loop cannot make.
+
 `operand_refs` (default-off, matching
 upstream's ELF-off default) shares the deferred slot for the same
 decoder-availability reason but does its own linear decode rather than reading the
