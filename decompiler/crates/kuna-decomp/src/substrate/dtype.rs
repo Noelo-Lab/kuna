@@ -6063,7 +6063,18 @@ impl TypeFactoryImpl {
 
     /// Get one of the "base" datatypes, going through the cache first (C++
     /// `TypeFactory::getBase(s,m)`, type.cc:4112-4141).
+    ///
+    /// A NEGATIVE size is rejected here rather than carried further. The C++ tests
+    /// only `s < 9` and indexes `typecache[s]`, which in Rust is a bounds-checked
+    /// panic that aborts the process; and letting a negative fall through to
+    /// `Datatype::new` is not safe either, because `find_add` computes an alignment
+    /// from `size as uint4` and can overflow. Sizes reach here from
+    /// attacker-controlled image bytes (a symbol's declared extent), so this is an
+    /// ordinary error, not an invariant. GH-339.
     fn get_base_impl(&self, s: int4, m: type_metatype) -> KunaResult<Rc<Datatype>> {
+        if s < 0 {
+            return Err(KunaError::lowlevel(format!("getBase: negative data-type size {s}")));
+        }
         let float_idx = type_metatype::TYPE_FLOAT.as_i32();
         if s < 9 {
             if m.as_i32() >= float_idx {
@@ -6113,8 +6124,12 @@ impl TypeFactoryImpl {
 
     /// Return a cached core character data-type of the given size, else error
     /// (C++ `TypeFactory::getTypeChar(int4)`, type.cc:4159-4168).
+    ///
+    /// The lower bound is the same hardening as `get_base_impl`: the C++ `s < 5`
+    /// alone indexes `charcache[s]` with a negative size, which is a process abort
+    /// in Rust. A negative size now takes the unsupported-size error below.
     fn get_type_char_sized(&self, s: int4) -> KunaResult<Rc<Datatype>> {
-        if s < 5 {
+        if (0..5).contains(&s) {
             if let Some(res) = self.store.borrow().charcache[s as usize].clone() {
                 return Ok(res);
             }
@@ -8001,6 +8016,29 @@ mod tests {
         f.set_default_alignment_map();
         f.set_max_basetype_size(8);
         f
+    }
+
+    /// A negative requested size is an error, never a panic (GH-339). Both cache
+    /// lookups index a fixed-length array by the size, so before the lower bound a
+    /// negative `int4` — reachable from an image's declared symbol extent — took
+    /// the whole process down instead of costing one symbol.
+    #[test]
+    fn factory_negative_size_is_an_error_not_a_panic() {
+        use type_metatype::*;
+        let f = factory();
+        f.set_core_type("undefined", 1, TYPE_UNKNOWN, false).unwrap();
+        f.set_core_type("char", 1, TYPE_INT, true).unwrap();
+        f.cache_core_types().unwrap();
+
+        // The two sign-bit patterns a 32-bit-truncated `st_size` produces.
+        for s in [-1i32, -16, i32::MIN] {
+            assert!(f.get_base(s, TYPE_UNKNOWN).is_err(), "getBase({s}) must be an error");
+            assert!(f.get_base_no_char(s, TYPE_INT).is_err(), "getBaseNoChar({s}) must be an error");
+            assert!(f.get_type_char(s).is_err(), "getTypeChar({s}) must be an error");
+        }
+        // The valid domain is untouched.
+        assert!(f.get_base(4, TYPE_UNKNOWN).is_ok());
+        assert!(f.get_type_char(1).is_ok());
     }
 
     /// `findAdd` interns by structural identity: two structurally-identical
