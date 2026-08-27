@@ -8,8 +8,8 @@
 //! ```text
 //! undefined16 main(uint4 a0,void *a1)
 //!   char v5 [16];
-//!   v5[0] = v16 ^ 1;   // the real result
-//!   v5[8] = v31;       // an uninitialized stack slot
+//!   v5._0_8_ = v16 ^ 1;   // the real result
+//!   v5._8_8_ = v31;       // an uninitialized stack slot
 //!   return v5;
 //! ```
 //!
@@ -107,8 +107,11 @@ fn fmt_main_without_a_prototype_returns_one_register() {
         !code.contains("[16]"),
         "the phantom 16-byte return buffer must be gone; got:\n{code}",
     );
+    // Both spellings: an 8-byte write at offset 8 of the container renders
+    // `._8_8_` since arraysubfield, and `[8]` before it -- neither may appear,
+    // or this arm silently stops testing anything.
     assert!(
-        !code.contains("[8] ="),
+        !code.contains("[8] =") && !code.contains("._8_8_ ="),
         "nothing should write the phantom high half; got:\n{code}",
     );
 }
@@ -124,8 +127,11 @@ fn a_computed_struct_pair_return_is_kept() {
         code.contains("undefined16"),
         "a genuine 16-byte struct return must survive the repair; got:\n{code}",
     );
+    // Each half is an 8-byte write into the `undefined1[16]` container, so it
+    // renders as the sized sub-field, not a size-blind element subscript
+    // (arraysubfield; `v1[8] = ...` claimed a one-byte store).
     assert!(
-        code.contains("[8] =") && code.contains("[0] ="),
+        code.contains("._8_8_ =") && code.contains("._0_8_ ="),
         "both halves of a real pair are written; got:\n{code}",
     );
 }

@@ -84,13 +84,21 @@ cc1cfaffe961ffffff0f1f8000000000660f6f05c8600200c644242000488d6c
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="returncopysplit #1: fix -- no per-element store into the read-only literal in either pass" min="0" max="0">s_92e50\[[0-9a-fx]+\] = </stringmatch>
+<!-- #1/#5/#6 pins re-recorded for the arraysubfield fix: a partial access
+     into a plain array symbol that spans more than one element now renders the sized
+     `._<off>_<size>_` sub-field instead of a size-blind `[index]` subscript, so the
+     two whole-half reads of the literal in pass 2 became `s_92e50._0_8_` /
+     `s_92e50._8_8_`.  #1 widens to cover both spellings so the no-store-into-.rodata
+     property still holds under either; #6 counts references in both spellings, so its
+     count is unchanged.  #3/#4 (the per-byte reads) are genuine in-element accesses
+     and are untouched, which is the point of the fix. -->
+<stringmatch name="returncopysplit #1: fix -- no per-element store into the read-only literal in either pass" min="0" max="0">s_92e50(\[[0-9a-fx]+\]|\._[0-9a-fx]+_[0-9]+_) = </stringmatch>
 <stringmatch name="returncopysplit #2: fix -- no raw SUB81 truncation of the literal survives" min="0" max="0">SUB81\(s_92e50</stringmatch>
 <stringmatch name="returncopysplit #3: the real copy site still reads the literal's low half per byte" min="1" max="1">v2\[7\] = s_92e50\[7\];</stringmatch>
 <!-- #4 pin re-recorded for GH-183: stackguard now also removes get_hz's entry-side
      canary init, so the fs_offset/canary-slot locals are gone and the high-half
      destination renumbers v6->v5. The split-copy property under test is unchanged. -->
 <stringmatch name="returncopysplit #4: the real copy site still reads the literal's high half per byte" min="1" max="1">v5\[7\] = s_92e50\[0xf\];</stringmatch>
-<stringmatch name="returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering" min="1" max="1">v2\[0\] = \(char\[8\]\)s_92e50\[0\];</stringmatch>
-<stringmatch name="returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)" min="18" max="18">s_92e50\[</stringmatch>
+<stringmatch name="returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering" min="1" max="1">v2\[0\] = \(char\[8\]\)s_92e50\._0_8_;</stringmatch>
+<stringmatch name="returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)" min="18" max="18">s_92e50(\[|\._)</stringmatch>
 </decompilertest>

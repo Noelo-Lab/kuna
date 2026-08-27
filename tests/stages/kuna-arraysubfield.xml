@@ -1,0 +1,80 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    arraysubfield: a partial access into a plain array-typed symbol must
+    report the size it actually touches.
+
+    P9 emission.  `PrintC::pushSymbolDetail` routes a Varnode that covers only part
+    of its mapped Symbol through `pushPartialSymbol`, whose type walk descends
+    struct/union/array members uniformly and, when no member describes the access,
+    emits the artificial `._[off]_[size]_` field.  kuna's port routed STRUCT and
+    UNION into that walk but split plain ARRAY off into a dedicated `name[index]`
+    branch that computes `index = symboloff / elementAlignSize` WITHOUT consulting
+    the access size.  So an 8-byte read at offset 0 of a `char[16]` rendered
+    `g[0]`, a one-byte element, and an 8-byte read at offset 8 rendered `g[8]`,
+    the ninth byte.  Both claim a size the program does not use.
+
+    Fix: route plain TYPE_ARRAY through the partial-symbol walk too.  The walk's
+    own ARRAY arm carries the upstream `TypeArray::getSubEntry` guard
+    (newoff + size fits inside one element), so a genuine in-element access still
+    renders its subscript and only a span across elements falls to the artificial
+    field.  Correctness fix, no option: it restores upstream's own rendering, so it
+    is a Convergences row in docs/history.md, not a divergence.
+
+    Source (gcc -O2 -no-pie, x86-64):
+
+        char g[16];
+        unsigned long lo8(void)  { unsigned long v; memcpy(v, g, 8);     return v; }
+        unsigned long hi8(void)  { unsigned long v; memcpy(v, g + 8, 8); return v; }
+        char          elem(void) { return g[3]; }
+        unsigned __int128 shift64(unsigned long x) { return (unsigned __int128)x LSH 64; }
+
+    Bytes verbatim from that build: lo8@0x401130, hi8@0x401140, elem@0x401150,
+    shift64@0x401160, g@0x404040 (.bss, 16 zero bytes so the RIP-relative loads
+    have readable backing).  `map address` plants the typelocked char[16] the
+    strings/data analysis plants on a real image.
+
+    lo8/hi8 pin the repair on a global array; elem pins that a one-byte access at
+    offset 3 KEEPS its `g[3]` subscript; shift64 is the reported reproducer
+    (interp-bee `eval_result_noun` @ 0xa3e0), a 16-byte register-pair return whose
+    two 8-byte halves are written into an `undefined1[16]` container.  The
+    shift line of shift64 is upstream-faithful and is NOT fixed here: the function
+    is still not compilable C.  This test is about the access size, assertion #7
+    pins the part that survives.
+-->
+<bytechunk space="ram" offset="0x401130">
+f30f1efa488b05052f0000c30f1f4000f30f1efa488b05fd2e0000c30f1f4000
+f30f1efa0fb605e82e0000c30f1f4000f30f1efa4889fa31c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x404040">
+00000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x401130" name="lo8"/>
+<symbol space="ram" offset="0x401140" name="hi8"/>
+<symbol space="ram" offset="0x401150" name="elem"/>
+<symbol space="ram" offset="0x401160" name="shift64"/>
+</binaryimage>
+<script>
+  <com>map address r0x404040 char g[16]</com>
+  <com>lo fu lo8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hi8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu elem</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu shift64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0" min="1" max="1">g\._0_8_</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #2: an 8-byte read at offset 8 is a sized sub-field, not the ninth byte" min="1" max="1">g\._8_8_</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #3: the bug: no size-blind element subscript survives on either wide read" min="0" max="0">g\[(0|8)\]</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #4: a genuine one-byte in-element access KEEPS its subscript" min="1" max="1">g\[3\]</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #5: the reported reproducer writes the low half of the 16-byte return container at its real width" min="1" max="1">v1\._0_8_ = a0;</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #6: and the high half likewise" min="1" max="1">v1\._8_8_ = 0;</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #7: honest about what is NOT fixed: the whole-container shift is upstream-faithful and still not valid C" min="1" max="1">return v1 &lt;&lt; 0x40;</stringmatch>
+</decompilertest>

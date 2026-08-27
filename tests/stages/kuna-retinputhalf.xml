@@ -56,7 +56,10 @@
   <com>quit</com>
 </script>
 <stringmatch name="RETINPUTHALF #1: by default the returned RDX half that is a passthrough argument is kept, and the argument stays in the signature" min="1" max="1">undefined16 wide\(int8 a0,unsigned long a1\)</stringmatch>
-<stringmatch name="RETINPUTHALF #2: the passthrough half is written from the second argument" min="1" max="1">v1\[8\] = a1;</stringmatch>
+<!-- #2 pin re-recorded for the arraysubfield fix: the 8-byte write into the
+     `undefined1[16]` return container renders as the sized sub-field `v1._8_8_`, not
+     the size-blind `v1[8]` subscript that claimed a one-byte store. -->
+<stringmatch name="RETINPUTHALF #2: the passthrough half is written from the second argument" min="1" max="1">v1\._8_8_ = a1;</stringmatch>
 <stringmatch name="RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)" min="1" max="1">unsigned long wide\(int8 a0\)</stringmatch>
 <stringmatch name="RETINPUTHALF #4: w2, whose high half is arithmetic on the same argument, is identical in both passes (the rule only ever spoke about unwritten terminals)" min="2" max="2">undefined16 w2\(int8 a0,int8 a1\)</stringmatch>
 <stringmatch name="RETINPUTHALF #5: nothing ever recovers a one-argument w2" min="0" max="0">w2\(int8 a0\)</stringmatch>
