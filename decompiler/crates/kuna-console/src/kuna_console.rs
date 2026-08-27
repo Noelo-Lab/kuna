@@ -77,6 +77,7 @@ use kuna_decomp::kuna_phases::{
     kuna_num_subphases, kuna_num_surfaces, kuna_subphase_by_index, kuna_surface_by_index,
     lookup_group, lookup_settable, lookup_subphase, lookup_surface, KunaPhase, KunaStrength,
 };
+use std::borrow::Cow;
 use std::cell::RefCell;
 
 /// The named pipeline variants built by `ActionDatabase::buildDefaultGroups`
@@ -152,10 +153,19 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 /// `kunaLiveValue` `""` path that suppresses the `current` field. Every other
 /// option reads a flag/string that [`Architecture`] does expose, so the
 /// `current` field is joined for them, matching C++.
-pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str> {
+pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static, str>> {
     // C++ returns "" for an unknown option (suppressing the current field).
     let on_off = |b: bool| if b { "on" } else { "off" };
-    Some(match option {
+    // (kuna `symbolnamebound`) The one VALUED live reader whose value is not a
+    // fixed token, so it owns its string; every other arm borrows and the
+    // emitted catalog bytes are unchanged.
+    if option == "symbolnamebound" {
+        return Some(match conf.analysis_symbolnamebound {
+            None => Cow::Borrowed("off"),
+            Some(n) => Cow::Owned(n.to_string()),
+        });
+    }
+    Some(Cow::Borrowed(match option {
         "compareform" => {
             if conf.present_lessequal {
                 "original"
@@ -241,7 +251,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "macho-arm64e" => on_off(conf.macho_arm64e),
         // No current field (C++ returns "").
         _ => return None,
-    })
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -533,6 +543,7 @@ impl IfaceCommandAction for IfcKunaPhaseCatalog {
                 )));
             }
             let live = conf.and_then(|c| kuna_live_value(c.arch(), &option));
+            let live = live.as_deref();
             // lookup_settable just succeeded, so this is Some.
             emit_catalog_json_one(&option, live).unwrap_or_default()
         } else {

@@ -1241,6 +1241,14 @@ impl Database {
         &self.scopes[id]
     }
 
+    /// (kuna) How many `Scope`s this database holds. Each is ~1.5 KB resident,
+    /// so this is the number the `symbolnamebound` gate exists to bound; the
+    /// `verify_symbolnamebound` test measures the bound through it rather than
+    /// through a flaky wall clock.
+    pub fn num_scopes(&self) -> usize {
+        self.scopes.len()
+    }
+
     /// Mutably borrow a scope by id.
     pub fn scope_mut(&mut self, id: ScopeId) -> &mut Scope {
         &mut self.scopes[id]
@@ -3763,6 +3771,11 @@ impl Database {
         delim: &str,
         start: Option<ScopeId>,
     ) -> (Option<ScopeId>, String) {
+        // (kuna) The READ half of the `symbolnamebound` seam. It must apply the
+        // SAME rewrite as the create path below: a symbol installed under a
+        // folded scope path would otherwise be unfindable by the name the binary
+        // spells, and every call to it would render `sub_<addr>`.
+        let fullname = &*crate::kuna_symbolnamebound::bound_scope_path(fullname, delim);
         let mut start = start.or(self.globalscope);
         let mut mark = 0usize;
         loop {
@@ -3799,6 +3812,12 @@ impl Database {
         start: Option<ScopeId>,
         num_spaces: int4,
     ) -> KunaResult<(ScopeId, String)> {
+        // (kuna) The CREATE half of the `symbolnamebound` seam: one Scope per
+        // `::` component at ~1.5 KB each makes an unbounded name a ~498x
+        // input-to-RSS amplifier on attacker-controlled `.strtab` bytes. Shared
+        // verbatim with `resolve_scope_from_symbol_name` above so the two
+        // round-trip -- see `kuna_symbolnamebound`.
+        let fullname = &*crate::kuna_symbolnamebound::bound_scope_path(fullname, delim);
         let mut start = start.or(self.globalscope).expect("a global scope exists");
         let mut mark = 0usize;
         loop {

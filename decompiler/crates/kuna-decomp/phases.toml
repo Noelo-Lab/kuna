@@ -3074,6 +3074,25 @@ tier = "analysis"
 symptoms = "a function name in the emitted c contains a newline and splits the declaration across two lines|the // Function: header comment ends early and the address becomes code|decompile-project emits two functions with the same name and the .h has a duplicate prototype|a symbol name renders with a U+FFFD replacement character|kuna decompile <name> cannot address a function that kuna functions printed|the exported .c does not compile because a function name contains */ or //"
 
 [[settable]]
+option = "symbolnamebound"
+values = "<n>|off"
+default = "256"
+destructive = false
+phase = "P1"
+subphase = "environment-binding"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-symbolnamebound"
+summary = "Cap how many Scopes one qualified symbol name may nest, so an attacker-controlled name cannot exhaust the process. Database::find_create_scope_from_symbol_name splits a loader symbol name on every :: and nests one Scope per component with no bound on the count, the per-component length or the total; a Scope costs ~1.5 KB resident (RangeList, three BTreeMaps, two Strings and a maptable sized to the address-space count), and the interning key includes the parent, so a repeated component name still allocates a fresh Scope at every level. That makes a name a ~498x input-to-RSS amplifier: measured on kuna functions, a .symtab carrying one function named ('a::' * N) + 'z' costs 52,932 KB at N=0, 79,288 KB at N=20,000 and 345,132 KB at N=200,000, i.e. 291,724 KB for 600,001 bytes of .strtab. decompile-all is worse -- quadratic in depth -- so 60 KB of .strtab already buys a 20-second stall. The value is the scope-component ceiling; a name over it keeps the first n-1 components and folds the rest into one synthetic component carrying a deterministic FNV-1a 64 hash of the exact dropped bytes, so distinct names stay distinct and the base name is never rewritten. Per-component (1024 B) and total scope-path (4096 B) length ceilings ride along; the base name is exempt from both, so a long FLAT name such as a Go generic instantiation is untouched. off restores the historical unbounded behavior. SCOPE OF THE FIX: this caps what ONE name costs, not what a symbol TABLE costs -- the amplifier is per-Scope, and 3,000 distinct 64-component names (1.9 MB of ELF) still cost 343 MB with the gate on, because none exceeds the ceiling. It closes the reported primitive and the quadratic decompile-all blowup that rode on it; a cap on the total Scope population is a larger, separate change. Loader-tier: read via the kuna_symbolnamebound env var (the symbol install runs inside load file, upstream of every option command)."
+use_when = "Leave at 256. The deepest :: nesting measured over 1,683,515 demangled names (repo fixtures, 14 large C++ objects, 9 rustc binaries including a 153 MB librustc_driver, and the 60 largest ELF objects under /usr/lib/x86_64-linux-gnu and /usr/bin) is 21, and the deepest over a rustc binary DWARF names is 79 -- the DWARF path does not strip template arguments, so every :: inside <> counts -- so nothing real reaches it. Raise it for a genuinely deeper generated binary, and note that folding changes the name you must type for load function / kuna decompile <name> (the folded spelling is what the listing renders, and both the create and the resolve path apply the same fold, so either spelling resolves). Set off to reproduce a report against the historical unbounded behavior."
+example = "option symbolnamebound 512"
+source_decompiler = "kuna"
+inspiration = "GH-338: 600 KB of .strtab in one deeply nested symbol name turned into 292 MB of RSS, a denial-of-analysis primitive that costs an attacker a few bytes and survives every header check the loader applies, because a name is not parsed until it is split. The default is set from measurement rather than from the DWARF walks' own MAX_SCOPE_DEPTH = 32: the deepest real name found anywhere is 79 (a templated addr2line DWARF name in a rustc binary), and 32 or 64 would have folded two real names on that binary."
+change_kind = "correctness-fix"
+tier = "analysis"
+symptoms = "kuna functions or decompile-all uses hundreds of megabytes of rss on a small binary|kuna stalls for tens of seconds or is oom-killed loading a binary whose symbol table is a few hundred kilobytes|a stripped copy of a binary loads instantly while the unstripped copy hangs|memory grows roughly 1.5 kb per :: in a symbol name"
+
+[[settable]]
 option = "ifuncfpret"
 values = "on|off"
 default = "off"

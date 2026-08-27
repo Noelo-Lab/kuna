@@ -92,8 +92,9 @@ fn settable_count_is_117() {
     // tally, DIV-92, GH-312).
     // +1 for `aifcorroborate` (P1 AIF accept corroboration test, GH-313).
     // +1 for `symbolnamechars` (P1 symbol-name character sanitizing, DIV-94).
-    assert_eq!(kuna_num_settables(), 122);
-    assert_eq!(SETTABLE_TABLE.len(), 122);
+    assert_eq!(kuna_num_settables(), 123);
+    assert_eq!(SETTABLE_TABLE.len(), 123);
+    // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
 }
 
 #[test]
@@ -168,7 +169,9 @@ fn tier_counts_are_26_core_50_transform_42_analysis() {
     // transform 50 -> 51: +1 for `noreturn_discstrict` (P1 discovered-no-return
     // positive-evidence-only tally, DIV-92) -- transform, not analysis: it changes
     // which callees are marked no-return, so it changes emitted C at every caller.
-    assert_eq!((core, transform, analysis), (26, 51, 45));
+    // analysis 43 -> 44: +1 for `symbolnamebound` (P1 symbol-name scope resource
+    // bound, DIV-95, GH-338).
+    assert_eq!((core, transform, analysis), (26, 51, 46));
 }
 
 #[test]
@@ -490,6 +493,11 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
         // via the `kuna_symbolnamechars` env var (names are minted inside `load
         // file`), like `symbolnamerepair`. Three-valued, default `safe`.
         "symbolnamechars",
+        // (kuna, GH-338) Symbol-name scope resource bound: the same load-time
+        // seam, read via the `kuna_symbolnamebound` env var. VALUED (the scope
+        // ceiling is a number), so its live `current` is read console-side via
+        // kuna_live_value. Default 32.
+        "symbolnamebound",
         // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
@@ -700,7 +708,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // not move the tail).
     // symbolnamerepair's P1 and symbolnamechars' P1 rows sit mid-table, so they
     // do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 121);
+    assert_eq!(json.matches("},\n").count(), 122);
+    // symbolnamerepair's P1 and symbolnamebound's P1 rows sit mid-table, so they
+    // do not move the tail).
 }
 
 #[test]

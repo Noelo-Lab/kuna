@@ -898,7 +898,12 @@ decomp_command!(
     /// <name>`), following its flow if it has code.
     IfcFuncload,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let funcname = s.read_token();
+        // (kuna `symbolnamebound`) Canonicalize what the user typed to the
+        // spelling the symbol table and the listing use, so a name the binary
+        // spells past the scope bound both RESOLVES and renders as one name.
+        // Idempotent, and a no-op for every real name.
+        let funcname =
+            kuna_decomp::kuna_symbolnamebound::bound_scope_path(&s.read_token(), "::").into_owned();
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No image loaded"));

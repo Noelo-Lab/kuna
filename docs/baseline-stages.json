@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    548,
-    548
+    554,
+    554
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -292,6 +292,12 @@
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
+    "data:SYMBOLNAMEBOUND #1: the scope path keeps 255 components verbatim and folds the rest into one",
+    "data:SYMBOLNAMEBOUND #2: the CALL resolves to the same folded name rather than sub_addr, so the resolve path applies the identical bound",
+    "data:SYMBOLNAMEBOUND #3: the binary's ORIGINAL 1000-component name still addresses the function",
+    "data:SYMBOLNAMEBOUND #4: the fold hash is deterministic, a written-out FNV-1a 64 over the dropped bytes and never a per-process DefaultHasher",
+    "data:SYMBOLNAMEBOUND #5: no dropped scope component survives anywhere in the output",
+    "data:SYMBOLNAMEBOUND #6: the bodies decompiled, so the load did not fail and the bound cost no analysis",
     "data:SYMBOLNAMECHARS #1: a comment-closing */ in a name cannot close the header comment",
     "data:SYMBOLNAMECHARS #2: a real newline byte no longer splits the declaration in two",
     "data:SYMBOLNAMECHARS #3: the 0x80 name keeps its own spelling",

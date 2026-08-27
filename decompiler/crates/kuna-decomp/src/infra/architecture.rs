@@ -954,6 +954,15 @@ pub struct Architecture {
     ///
     /// [`NameChars::Safe`]: crate::kuna_symbolnamechars::NameChars::Safe
     pub analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars,
+    /// (kuna) The scope-component ceiling one qualified symbol name may nest
+    /// (`symbolnamebound`); default `Some(256)`, `None` for the historical
+    /// unbounded behavior. `Database::find_create_scope_from_symbol_name` nests
+    /// one ~1.5 KB `Scope` per `::` component, so an unbounded name is a ~498x
+    /// input-to-RSS amplifier on attacker-controlled `.strtab` bytes (GH-338).
+    /// Read through the [`crate::kuna_symbolnamebound`] **env var** (the symbol
+    /// install runs inside `load file`, upstream of `option`); this field exists
+    /// only for catalog visibility and the `phase catalog` live `current` field.
+    pub analysis_symbolnamebound: Option<usize>,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -1588,6 +1597,7 @@ impl Architecture {
             analysis_dynrelocs: false,
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
+            analysis_symbolnamebound: None,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_datasyms: false,
@@ -1773,6 +1783,7 @@ impl Architecture {
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
+        self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
@@ -2188,6 +2199,14 @@ impl Architecture {
                 self.analysis_symbolnamechars = mode;
                 crate::kuna_symbolnamechars::set_symbolnamechars_env(mode);
                 Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
+            }
+            // (kuna) Load-time gate on the same seam, and VALUED: the scope
+            // ceiling is a number, so `on_or_off` does not apply.
+            "symbolnamebound" => {
+                let (bound, msg) = crate::kuna_symbolnamebound::parse_symbolnamebound(p1)?;
+                self.analysis_symbolnamebound = bound;
+                crate::kuna_symbolnamebound::set_symbolnamebound_env(bound);
+                Ok(msg)
             }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),

@@ -439,6 +439,7 @@ fn is_loadtime_gate(name: &str) -> bool {
             | "ifuncfpret"
             | "symbolnamerepair"
             | "symbolnamechars"
+            | "symbolnamebound"
     )
 }
 
@@ -551,6 +552,12 @@ fn apply_loadtime_env(options: &[(String, String)], slice: Option<&str>) -> Load
             kuna_decomp::kuna_symbolnamechars::SYMBOLNAMECHARS_ENV,
             mode.as_str(),
         );
+    }
+    // (kuna) The scope ceiling is spent while the symbol table is installed
+    // inside `load file`, so it must be exported before `bootstrap_from_object`.
+    // Valued: the token goes through verbatim.
+    if let Some(value) = last_option_value(options, "symbolnamebound") {
+        env.set(kuna_decomp::kuna_symbolnamebound::SYMBOLNAMEBOUND_ENV, value.trim());
     }
     if let Some(value) = last_option_value(options, "ifuncfpret") {
         // default-off, opt-in: only an on-token enables it.

@@ -458,6 +458,14 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 mode.as_str(),
             );
         }
+        // (kuna) Load-time `symbolnamebound` gate, same seam: the Scopes are
+        // nested while the symbol table is installed inside `load file`, so the
+        // ceiling has to be on the subprocess before it starts. Valued, so the
+        // token is forwarded verbatim (an unparseable one falls back to the
+        // default rather than failing the load).
+        if let Some(value) = last_option_value(&args.options, "symbolnamebound") {
+            cmd.env(kuna_decomp::kuna_symbolnamebound::SYMBOLNAMEBOUND_ENV, value.trim());
+        }
         // (kuna) Load-time `typedepth` gate: the DWARF type mapper runs inside
         // `load file`, so an `--option typedepth off` must reach it via the env
         // var (`kuna_typedepth::TYPEDEPTH_ENV`) set on the subprocess up front.

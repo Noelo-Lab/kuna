@@ -687,6 +687,55 @@ and an agent writes:
   behavior; here it only matters that the name in `prog.symbols`, in `kuna
   functions`, in the `.c`/`.h`/`.asm` export and in the Scope chain is ONE
   string, and that it is decided before the symbol reaches this database.
+  The same split is also a **resource** seam, and a second gate bounds it.
+  Nothing limited how many components a name could have, and a `Scope` is not
+  cheap — a range list, three ordered maps, two strings and a per-address-space
+  map table, about 1.5 KB resident — so one name bought one `Scope` per `::`
+  without limit, and the interning key includes the parent, so even a repeated
+  component name allocated a fresh `Scope` at every level. That made a symbol
+  name a roughly 498-fold input-to-RSS amplifier: 600 KB of `.strtab` in a single
+  name cost 292 MB, and the whole-binary path is quadratic in depth on top of
+  that, so tens of kilobytes already bought a stall of tens of seconds.
+  `symbolnamebound` (`<n>|off`, default 256;
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamebound.rs`) caps
+  the scope-component count, and with it each component's length and the whole
+  scope path's length. A name over a limit is **folded**, not truncated: the
+  dropped run of components collapses into one synthetic component carrying a
+  hash of the exact bytes it replaced, so two names that differed only inside the
+  folded region still differ, and two symbols that share a scope path but differ
+  in their base name still share the folded scope. The base name is never
+  rewritten — it nests no `Scope`, so it was never the amplifier. The hash is
+  written out in the module rather than taken from the standard library's default
+  hasher, whose per-process seed would make the folded spelling differ between
+  runs and turn every golden comparison into noise. The fold is applied
+  identically on the **read** path
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (resolve_scope_from_symbol_name)`) and at the loader's own name list, and it is
+  idempotent, so a symbol installed under a folded path is addressable by the name
+  the binary spells *and* by the name the listing renders, and one spelling
+  reaches every surface. The defaults are set from measurement, not from taste:
+  over 1,683,515 demangled names — the repo fixtures, fourteen large C++ objects,
+  nine rustc-built binaries, and the sixty largest system objects — the deepest
+  `::` nesting is 21 (a Rust name; C++ never exceeds 6), and over the DWARF names
+  of a rustc binary it is 79, because the DWARF path does not strip template
+  arguments and every `::` inside `<…>` counts. The longest scope component is
+  exactly 256 bytes, which is where rustc's own mangler truncates, and the longest
+  name of all, 1,780 bytes, carries no `::` at all and so is not a scope path in
+  the first place. The ceilings sit at 256, 1024 and 4096, three to four times
+  above each, and the fold is therefore unreachable in practice; `off` restores
+  the unbounded behavior exactly, for reproducing a report.
+  The bound caps what **one name** costs, not what a symbol **table** costs.
+  The amplifier is per-`Scope`, so the same `.strtab` bytes spent on many
+  moderately deep names buy the same memory — 3,000 distinct 64-component names,
+  1.9 MB of ELF, cost 343 MB with the gate on or off, since none of them reaches
+  the ceiling and none of their scopes can be shared. Closing that needs a cap on
+  the total `Scope` population, or a cheaper `Scope`; what this gate closes is
+  the reported primitive, one name turning 600 KB of `.strtab` into 292 MB, and
+  the quadratic whole-binary blowup that rode on it. Same loader-tier env
+  bridge as `symbolnamerepair`, and deliberately a
+  separate gate from it: turning the repair off is a debugging affordance for
+  someone inspecting a symbol table, and that must not also remove a resource
+  bound.
 - **The Override store** (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
   (Override)`): per-function commands that override pipeline decisions — flow
   reclassification, direct-call redirects, prototype replacement, multistage
