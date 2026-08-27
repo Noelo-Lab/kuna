@@ -91,6 +91,18 @@ Every driver therefore emits option lines strictly between `load file` and
 `read symbols` (`decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`,
 `decompiler/crates/kuna-cli/src/decompile.rs (build_script)`).
 
+The commit is also not transactional. Its arms mutate the architecture in place
+and in order, so an arm that fails leaves the earlier ones applied and abandons
+every later one — library and DWARF prototypes, processor-context paints,
+tracked register values, call-fixups, stack locals, source-line comments — and
+the drained stash makes it unretryable. A partial commit is therefore a *failed*
+load, not a degraded one, and every surface says so and stops: the in-process
+drivers propagate the error as `read symbols (analysis commit) failed: <reason>`,
+and the subprocess driver recovers the same reason from the console transcript
+and reports it identically (§0.2). Nothing about a partially-committed program is
+visible in the C it would render, which is what makes reporting it — rather than
+printing that C — the contract.
+
 **Parity isolation.** The XML `<binaryimage>` bootstrap the datatests use
 (`decompiler/crates/kuna-console/src/engine.rs (bootstrap_program)`) never runs
 the analysis tier: nothing is stashed, so the gated commit is structurally a
@@ -124,6 +136,20 @@ Four front-ends drive one engine assembly:
   explicit `load addr <vma> <name>` still wins over both. Before DIV-59 the address
   form skipped the lookup entirely, so an addressed function on an **unstripped**
   binary printed a `sub_<addr>` header that the by-name form printed correctly.
+  Because the engine runs in another process, this surface holds no error object:
+  it recovers what failed from the transcript
+  (`decompiler/crates/kuna-cli/src/decompile.rs (check_errors)`), and does so to
+  the same wording the in-process surfaces produce, so one failure reads the same
+  from all four commands (DIV-90). A failed `load file` prints the escaped error
+  and then `Could not create architecture`, so the reason is the line before the
+  trigger; the generic `(unsupported/!recognized binary)` wording is only the
+  fallback for a transcript that carried no reason at all. A failed analysis
+  commit is an `Execution error:` the console prints while **keeping the session
+  alive**, so `print C` still renders C and the command's exit code is the only
+  thing left to distinguish a program whose debug facts were dropped from a
+  binary that never had any: each console diagnostic is attributed to the command
+  echo above it, and one belonging to `read symbols` is reported with the
+  in-process surfaces' message and exit code rather than the C.
 - (kuna) **`kuna decompile-all` / `kuna functions`**
   (`decompiler/crates/kuna-cli/src/decompile_all.rs (run, decompile_all)`) — the
   whole-binary, machine-readable surface: load and analyze **once** in-process
@@ -631,8 +657,13 @@ and an agent writes:
   component — `a::::b`, `::b` — cannot name a Scope: `attach_scope` rejects it.
   That rejection is raised while the loader symbols are being installed, i.e.
   inside the architecture build, so it does not cost one symbol — it escapes the
-  build, and every command answers `could not build an architecture` and emits
-  nothing. Symbol-name bytes are attacker-controlled data that no header check
+  build, and every command answers `could not build an architecture for <binary>:
+  Non-global scope has empty name` and emits nothing. (Answering with the reason
+  attached is what DIV-90 gave the subprocess surface, which until then replaced
+  it with a fixed string — so this symptom, which `docs/options.md` publishes as
+  the trigger for flipping `symbolnamerepair`, was unmatchable from the surface an
+  agent is most likely driving.) Symbol-name bytes are attacker-controlled data
+  that no header check
   validates, which makes that a denial-of-analysis primitive a hostile binary can
   buy for a few `.strtab` bytes. `symbolnamerepair` (on|off, default on;
   `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamerepair.rs`) skips
