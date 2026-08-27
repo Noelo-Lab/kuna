@@ -160,10 +160,15 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // default, so preset membership is how it reaches the default path.
     ("aifstrict", "on"),
     // (kuna, DIV-93) The four-step ARM entry-discovery sequence (#248 / #255 /
-    // #259 / #278). All four are ARM-gated, so they are no-ops off ARM -- proven
-    // rather than assumed: over 90 x86-64 decbench twins and the 12 i386 PE
-    // images inside the ARM corpus the entry sets are IDENTICAL, and emitted C
-    // over 8 x86-64 binaries is byte-identical. They COMPOSE, so preset
+    // #259 / #278). `cortexmvectors`, `ptrentry` and `tailcallentry` carry an
+    // explicit `object::Architecture::Arm` early return; `poolentry` has no arch
+    // gate but is ARM-only IN EFFECT, because it keys on PC-relative literal
+    // pools, which x86-64 (RIP-relative loads target .rodata, not .text
+    // interstices) and i386 (no PC-relative addressing) do not produce. Either
+    // way the no-op is proven rather than assumed: over 90 x86-64 decbench twins
+    // and the 12 i386 PE images inside the ARM corpus the entry sets are
+    // IDENTICAL, and emitted C over 8 x86-64 binaries is byte-identical. They
+    // COMPOSE, so preset
     // membership was one joint evaluation, measured over the 110 stripped
     // non-x86-64 decbench twins (50,724 symbol-table function starts):
     // recall 44,957 -> 47,330 (88.63% -> 93.31%, +2,373) while mid-body false

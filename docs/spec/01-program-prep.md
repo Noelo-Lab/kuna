@@ -1476,7 +1476,9 @@ the 2,402 added entries are real function starts, no ground-truth entry is lost,
 improves recall and precision at the same time rather than trading one for the other.
 Off ARM the flip is a measured no-op, not merely an intended one: entry sets are
 identical over 90 x86-64 twins and the 12 i386 PE images inside the ARM corpus, and
-emitted C is byte-identical over 8 x86-64 binaries. The cost is real work for real
+emitted C is byte-identical over 8 x86-64 binaries. Three of the four enforce that
+with an explicit architecture early-return; `poolentry` instead keys on PC-relative
+literal pools, which no non-ARM target in the corpus produces. The cost is real work for real
 output — discovery-only `kuna functions` runs about 6% longer on a Cortex-M image
 because it discovers and reports more functions — and is amortized away end to end,
 where the extra bodies dominate the extra discovery.
