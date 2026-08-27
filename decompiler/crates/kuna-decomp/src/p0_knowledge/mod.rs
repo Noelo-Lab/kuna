@@ -29,6 +29,9 @@ pub mod kuna_typedepth;
 pub mod kuna_symbolnamerepair;
 // (kuna) Symbol-name character sanitizer + option gate (load-time, env-bridged).
 pub mod kuna_symbolnamechars;
+// (kuna) Symbol-name scope-path resource bound (load-time, env-bridged): the
+// ceiling on how many Scopes one qualified symbol name may nest.
+pub mod kuna_symbolnamebound;
 // (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the
 // current function's own unknown prototype (register-parameter recovery).
 pub mod kuna_evalcurrentproto;

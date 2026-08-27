@@ -22,6 +22,7 @@
 //! string-matches it against the C++ binary's captured output.
 
 use core::fmt;
+use std::borrow::Cow;
 
 /// (kuna) The stages of the kuna stage model (`docs/phases.md`).
 ///
@@ -483,13 +484,18 @@ pub fn emit_settable_json(out: &mut String, st: &KunaSettable, live: Option<&str
 /// no-program-loaded form, which is what `tests/catalog_bytecompat.rs` pins).
 /// The output is the exact bytes the console writes (including the trailing
 /// newline after each row and the final `]\n`).
-pub fn emit_catalog_json(live: impl Fn(&str) -> Option<&'static str>) -> String {
+///
+/// (kuna) The closure yields a [`Cow`] rather than a `&'static str` because a
+/// VALUED option's live value need not come from a fixed token set —
+/// `symbolnamebound` reports a number. Every fixed-token arm still borrows, so
+/// the emitted bytes are unchanged.
+pub fn emit_catalog_json(live: impl Fn(&str) -> Option<Cow<'static, str>>) -> String {
     let mut out = String::new();
     out.push_str("[\n");
     let n = kuna_num_settables();
     for i in 0..n {
         let st = kuna_settable_by_index(i);
-        emit_settable_json(&mut out, st, live(st.option));
+        emit_settable_json(&mut out, st, live(st.option).as_deref());
         if i + 1 < n {
             out.push(',');
         }

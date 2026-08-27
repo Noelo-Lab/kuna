@@ -221,6 +221,11 @@ impl ConsoleProgram {
     /// hook): scan the binaryimage symbols read at load.  `None` if no symbol of
     /// that name exists.
     pub fn lookup_symbol(&self, name: &str) -> Option<Address> {
+        // (kuna `symbolnamebound`) `self.symbols` carries the bounded spelling,
+        // so bound the query too: `load function <name>` must accept both the
+        // binary's ORIGINAL name and the one the listing renders. Idempotent, and
+        // a no-op for every real name.
+        let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
         self.symbols.iter().find(|s| s.name == name).map(|s| s.addr.clone())
     }
 
@@ -341,6 +346,11 @@ impl ConsoleProgram {
     /// for.  Shared by both front-ends so the two `resolve_targets` copies cannot
     /// drift apart on it.
     pub fn find_entry_by_name(&self, want: &str) -> Option<FunctionEntry> {
+        // (kuna `symbolnamebound`) The enumeration reports the bounded spelling,
+        // so bound the query too -- a caller holding the binary's ORIGINAL name
+        // must still resolve. Idempotent, so the bounded spelling resolves as
+        // well, and a no-op for every real name.
+        let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
         self.function_entries_canonical()
             .into_iter()
             .find(|e| e.name == want || e.aliases.iter().any(|a| a == want))
@@ -703,6 +713,10 @@ impl ConsoleProgram {
     /// path can find a function the user mapped by hand.  Replaces any prior entry
     /// of the same name.
     pub fn register_symbol(&mut self, name: &str, addr: Address) {
+        // (kuna `symbolnamebound`) Same bound as the loader stream above, so an
+        // analysis-discovered or hand-mapped name agrees with the scope path the
+        // symbol table nests it under.
+        let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
         self.symbols.retain(|s| s.name != name);
         self.symbols.push(ProgramSymbol { name: name.to_string(), addr });
     }
@@ -2274,6 +2288,13 @@ fn read_loader_symbols_generic(loader: &dyn LoadImage) -> Vec<ProgramSymbol> {
             break;
         }
         let name = String::from_utf8_lossy(&record.name).into_owned();
+        // (kuna `symbolnamebound`) Bound the loader's own name list to the same
+        // scope path the symbol table will nest it under, so ONE spelling
+        // reaches every surface -- `functions`, the `// Function:` header, the
+        // emitted declaration and the call site. A no-op (borrowed, unallocated)
+        // for every real name.
+        let name =
+            kuna_decomp::kuna_symbolnamebound::bound_scope_path(&name, "::").into_owned();
         out.push(ProgramSymbol { name, addr: record.address });
     }
     out

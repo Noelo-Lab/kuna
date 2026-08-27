@@ -1772,7 +1772,10 @@ mod tests {
         // restructure the C document they are printed into (option off = a `*/`
         // closes the header comment, a newline splits the declaration, and two
         // non-UTF-8 names collapse onto one)
-        assert_eq!(count, 217, "corpus file count drifted");
+        // and kuna-symbolnamebound / a 200-component qualified symbol name folds
+        // to the bounded scope path instead of nesting one ~1.5 KB Scope per
+        // component (GH-338), and still resolves by either spelling
+        assert_eq!(count, 218, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
