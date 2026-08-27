@@ -104,7 +104,7 @@ defects are in what the metric cannot see. Round 2 confirms it and sharpens it.
 - **The ARM recall sequence is where the raw function count moves.** Steps 1 (#248), 2
   (#255) and 3 (#259) are merged, as is the unplanned step 5 `poolentry` (#278); only step 4
   (TBB/TBH) is not started, and it needs re-scoping since its estimate predates all four.
-  All four shipped default-OFF and were inert on the default path until **DIV-90** put them
+  All four shipped default-OFF and were inert on the default path until **DIV-93** put them
   in the `aggressive` preset, which is what finally moved the measured number: entry recall
   88.63% → 93.31% over the 110 non-x86-64 twins, with mid-body false entries falling. The
   original sequence table and the three predictions the proposal got wrong live as a comment
