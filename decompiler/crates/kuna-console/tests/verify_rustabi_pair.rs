@@ -110,8 +110,11 @@ fn the_producer_keeps_the_whole_pair() {
         !code.contains("bool prod"),
         "the return must no longer be the discriminant alone; got:\n{code}",
     );
+    // The 4-byte EDX payload write into the `undefined1[16]` container renders
+    // as the sized sub-field (arraysubfield); the one-byte discriminant write in
+    // the same function keeps its `v2[0]` element subscript.
     assert!(
-        code.contains("[8] ="),
+        code.contains("._8_4_ ="),
         "the payload half must be written at the second register's offset; got:\n{code}",
     );
 }

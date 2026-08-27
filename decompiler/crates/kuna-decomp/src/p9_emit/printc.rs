@@ -6697,9 +6697,12 @@ impl PrintC {
                 // member rather than discarding the resolved prefix (C++ reaches the
                 // `!succeeded` branch here too).  Leaving `succeeded == false`.
             }
-            // NOTE: a top-level ARRAY is fully handled by the `TYPE_ARRAY` arm above
-            // (it never reaches this point), so the only leaf landing here with an
-            // empty stack and `allow_cast == false` is a SCALAR.  C++ `pushPartialSymbol`
+            // NOTE: two leaves land here with an empty stack.  A SCALAR whose
+            // truncation is not a SUBPIECE cast, and an ARRAY whose access spans
+            // more than one element (`TypeArray::getSubEntry` returns null): an
+            // 8-byte write into `undefined1[16]` has no subscript that describes
+            // it, so it renders `v1._0_8_` — the size the subscript could not
+            // carry.  C++ `pushPartialSymbol`
             // (printc.cc:2106-2117) takes the `!succeeded` artificial-field branch for a
             // scalar truncation that is not a SUBPIECE cast — the LOSS-245 store LHS
             // `local._2_2_ = big(...)` (an int2 write at offset 2 of the tied int8
@@ -7182,25 +7185,23 @@ impl PrintC {
                     // composite-cover access through `pushPartialSymbol`, whose walk
                     // descends array/struct/union members uniformly.  The rust leaf
                     // render handled STRUCT/UNION here but split ARRAY off into a
-                    // dedicated `name[index]` branch below — which stops at the
-                    // subscript and never descends into a union *element*.  For an
-                    // array whose element needs union resolution (e.g.
-                    // `simpunion arr[10]`, the `arr[3].ffield` access), route the
-                    // ARRAY through the partial walk too so the cached union field
-                    // resolves to `.ffield`; the walk's ARRAY arm emits the same
-                    // `[index]` subscript, then its UNION arm appends the member.
-                    // `push_partial_symbol_ir` returns `false` (falling through to
-                    // the bare `name[index]` branch) for a plain (non-resolving)
-                    // array, so this is byte-inert for the pointer/array corpus.
-                    let array_elem_needs_resolution = mt
-                        == crate::dtype::type_metatype::TYPE_ARRAY
-                        && st
-                            .get_array_base()
-                            .map(|e| e.needs_resolution())
-                            .unwrap_or(false);
+                    // dedicated `name[index]` branch below, which computes
+                    // `index = symboloff / elementAlignSize` WITHOUT consulting the
+                    // access size — so an 8-byte write at offset 0 of an
+                    // `undefined1[16]` rendered `v1[0] = a0`, claiming a one-byte
+                    // store.  The walk's own ARRAY arm has the upstream
+                    // `TypeArray::getSubEntry` guard (`noff + sz <= elsize`) and
+                    // falls to the artificial `._<off>_<size>_` member when the
+                    // access spans elements, so routing a plain ARRAY through it
+                    // too both keeps `arr[3]` for a genuine in-element access and
+                    // repairs the size-losing ones to `v1._0_8_`.  It also lets an
+                    // array whose element needs union resolution (`simpunion
+                    // arr[10]`, the `arr[3].ffield` access) descend past the
+                    // subscript into the cached union field.  A whole-symbol cover
+                    // still returns `false` and falls through to the branch below.
                     if mt == crate::dtype::type_metatype::TYPE_STRUCT
                         || mt == crate::dtype::type_metatype::TYPE_UNION
-                        || array_elem_needs_resolution
+                        || mt == crate::dtype::type_metatype::TYPE_ARRAY
                     {
                         // C++ `pushSymbolDetail`: `isRead` is true when `op` reads
                         // `vn` (the input slot); false when `vn` is the output (the

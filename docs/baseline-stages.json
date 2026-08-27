@@ -1,9 +1,16 @@
 {
   "data_footer": [
-    554,
-    554
+    562,
+    562
   ],
   "passing": [
+    "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
+    "data:ARRAYSUBFIELD #2: an 8-byte read at offset 8 is a sized sub-field, not the ninth byte",
+    "data:ARRAYSUBFIELD #3: the bug: no size-blind element subscript survives on either wide read",
+    "data:ARRAYSUBFIELD #4: a genuine one-byte in-element access KEEPS its subscript",
+    "data:ARRAYSUBFIELD #5: the reported reproducer writes the low half of the 16-byte return container at its real width",
+    "data:ARRAYSUBFIELD #6: and the high half likewise",
+    "data:ARRAYSUBFIELD #7: honest about what is NOT fixed: the whole-container shift is upstream-faithful and still not valid C",
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
@@ -280,6 +287,7 @@
     "data:RETINPUTHALF #4: w2, whose high half is arithmetic on the same argument, is identical in both passes (the rule only ever spoke about unwritten terminals)",
     "data:RETINPUTHALF #5: nothing ever recovers a one-argument w2",
     "data:RUSTABI #10: and its call keeps no output in either pass",
+    "data:RUSTABI #11: the one-byte discriminant write is a genuine element access and keeps its subscript",
     "data:RUSTABI #1: by default the producer collapses to the one-bit discriminant and the EDX payload is deleted",
     "data:RUSTABI #2: by default the consumer reads the payload register as a local nothing assigns",
     "data:RUSTABI #3: by default the call to prod has no output at all",

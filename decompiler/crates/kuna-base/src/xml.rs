@@ -1775,7 +1775,10 @@ mod tests {
         // and kuna-symbolnamebound / a 200-component qualified symbol name folds
         // to the bounded scope path instead of nesting one ~1.5 KB Scope per
         // component (GH-338), and still resolves by either spelling
-        assert_eq!(count, 218, "corpus file count drifted");
+        // and kuna-arraysubfield / a partial access into an array symbol reports
+        // the size it touches, so an 8-byte write into a char[16] is `._0_8_`
+        // and a genuine one-byte element access keeps its `[3]` subscript
+        assert_eq!(count, 219, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

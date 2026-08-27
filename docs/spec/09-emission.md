@@ -281,6 +281,37 @@ walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
 
+**Which symbols enter the partial walk.** Upstream routes *every* partial cover
+of a mapped Symbol through that walk — the walk itself decides, per type, what
+token describes the access — and kuna does the same: STRUCT, UNION and ARRAY
+symbols all enter it. The array case is the one worth stating, because an array
+is the only composite whose member token can be chosen without looking at the
+access size, and doing so is wrong. The walk's ARRAY arm applies upstream's
+`TypeArray::getSubEntry` test — the access maps to element `off /
+elementAlignSize` **only if** what remains of it after that division still fits
+inside one element — so a one-byte read at offset 3 of a `char[16]` renders
+`g[3]`, while an eight-byte read at offset 0 of the same symbol does not
+describe any element and falls to the artificial member `g._0_8_`. That
+distinction is not cosmetic: rendering the eight-byte access as `g[0]` names a
+single `char`, so the emitted statement claims a width the program does not
+use, and a reader (or a consumer diffing against a source build) cannot tell a
+byte store from a word store. The rule is therefore that an array subscript is
+emitted only where the subscript is the *whole* truth about the access, and the
+sized `._<off>_<size>_` member carries every access that spans elements. The
+same walk keeps descending afterwards, so an array of unions resolves past the
+subscript into the cached field (`arr[3].ffield`).
+
+This is what makes the 16-byte register-pair return legible. P5's type factory
+has no integer primitive wider than `max_basetype_size`, so a
+`CONCAT88`-shaped return value is typed `undefined1[16]` (upstream behavior,
+§5), and P6 merges the two halves the callee writes into that one local. The
+halves are then eight-byte writes into a byte array — exactly the access the
+subscript cannot describe — and they render `v1._0_8_` / `v1._8_8_`. What this
+does **not** fix is the whole-container operand: `return v1 << 0x40;` shifts an
+array, which is upstream-faithful and still not compilable C. Recovering that
+needs either a scalar wide-integer type or a mid-end fold of the
+`CONCAT88(0,x) << 64` idiom; neither is done here.
+
 **Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
 the storage the leaf falls through to the upstream `pushUnnamedLocation`
 naming, `printc.rs (kuna_unnamed_location_name)`: the register name covering

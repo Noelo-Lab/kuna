@@ -95,7 +95,12 @@
 <stringmatch name="RUSTABI #2: by default the consumer reads the payload register as a local nothing assigns" min="1" max="1">int4 v3; // edx</stringmatch>
 <stringmatch name="RUSTABI #3: by default the call to prod has no output at all" min="1" max="1">^  prod\(\);$</stringmatch>
 <stringmatch name="RUSTABI #4: with the option on the producer returns the whole pair" min="1" max="1">undefined16 prod\(uint4 a0\)</stringmatch>
-<stringmatch name="RUSTABI #5: with the option on the payload half is written at the second register's offset" min="1" max="1">v2\[8\] = v1;</stringmatch>
+<!-- #5 pin re-recorded for the arraysubfield fix: the 4-byte EDX payload write
+     into the `undefined1[16]` container renders as the sized sub-field `v2._8_4_`.  The
+     one-byte discriminant write in the same function stays a subscript, a genuine
+     in-element access, which is exactly the discrimination the fix makes (#11). -->
+<stringmatch name="RUSTABI #5: with the option on the payload half is written at the second register's offset" min="1" max="1">v2\._8_4_ = v1;</stringmatch>
+<stringmatch name="RUSTABI #11: the one-byte discriminant write is a genuine element access and keeps its subscript" min="1" max="1">v2\[0\] = a0 &lt; 0xb;</stringmatch>
 <stringmatch name="RUSTABI #6: with the option on the call has an output and the payload is connected to it" min="1" max="1">v2 = prod\(\);</stringmatch>
 <stringmatch name="RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air" min="2" max="2">SUB124\(v2,8\)</stringmatch>
 <stringmatch name="RUSTABI #8: with the option on the discriminant guard reads the same call result" min="1" max="1">SUB128\(v2,0\) &amp; 1</stringmatch>
