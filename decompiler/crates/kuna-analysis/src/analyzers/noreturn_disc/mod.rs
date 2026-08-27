@@ -55,11 +55,16 @@
 //!   threshold a callee is left alone (a custom wrapper called only once or twice
 //!   is not concluded no-return — the heuristic needs corroboration).
 //! - The "no-valid-fall-through" predicate is the Listing-faithful subset Ghidra's
-//!   `checkForNoReturn` reduces to at this tier: the fall-through VMA is not a
-//!   decoded instruction start (`!is_instruction_start`), or it landed in data
-//!   (`is_data`), or it is another *function's* entry (`function_at(fall) && fall
-//!   != callee`). Computed/indirect calls contribute no evidence (no static
-//!   callee). A call whose callee is already modeled no-return (Known) or
+//!   `checkForNoReturn` reduces to at this tier: the fall-through VMA landed in
+//!   data (`is_data` — outside every executable range), or it is another
+//!   *function's* entry (`function_at(fall) && fall != callee`). Under
+//!   `--option noreturn_discstrict off` a third arm is restored ahead of those
+//!   two: the fall-through VMA is not a decoded instruction start
+//!   (`!is_instruction_start`). That arm is a decode-failure detector (GH-312) —
+//!   the walk always attempts a call's successor, so it fires on kuna's own spec
+//!   gaps and forges the verdict for a callee that plainly returns; see
+//!   [`kuna_discstrict`]. Computed/indirect calls contribute no evidence (no
+//!   static callee). A call whose callee is already modeled no-return (Known) or
 //!   call-fixup'd is skipped (no double-marking).
 //! - The fixpoint is bounded (2 sweeps suffice for the typical wrapper-of-wrapper
 //!   depth; more sweeps converge with no new facts). It never *removes* a fact.
@@ -68,6 +73,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::listing::{Listing, RefKind};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};
+
+pub mod kuna_discstrict;
 
 /// Ghidra's `FindNoReturnFunctionsAnalyzer` evidence threshold: a callee is
 /// concluded no-return once at least this many of its call sites show no valid
@@ -97,7 +104,7 @@ impl AnalysisPass for NoReturnDiscoveredPass {
         let Some(listing) = ctx.listing else {
             return out;
         };
-        for fact in discover_noreturn(listing) {
+        for fact in discover_noreturn(listing, ctx.arch.analysis_noreturn_discstrict) {
             out.noreturn.push(fact);
         }
         out
@@ -112,7 +119,18 @@ impl AnalysisPass for NoReturnDiscoveredPass {
 /// entry of *another* function (the compiler placed the next function immediately
 /// after the dead call). A call instruction with no recorded fall-through VMA
 /// (terminal — e.g. a tail-call lowered to a jump) is itself evidence.
-fn call_site_has_no_fallthrough(listing: &Listing, call_vma: u64, callee: u64) -> bool {
+///
+/// With `strict` (`noreturn_discstrict`, GH-312) the bare "not a decoded
+/// instruction start" arm is dropped: the Listing walk always attempts a call's
+/// successor, so that arm is a decode-failure detector and votes a callee
+/// no-return on kuna's own spec gaps. Only the terminal arm and the two positive
+/// arms survive — see [`kuna_discstrict`].
+fn call_site_has_no_fallthrough(
+    listing: &Listing,
+    call_vma: u64,
+    callee: u64,
+    strict: bool,
+) -> bool {
     let Some(insn) = listing.instruction_at(call_vma) else {
         // The call site is not a decoded instruction; no evidence we can read.
         return false;
@@ -121,6 +139,9 @@ fn call_site_has_no_fallthrough(listing: &Listing, call_vma: u64, callee: u64) -
         // A call with no fall-through at all (a lowered tail jump) is evidence.
         return true;
     };
+    if strict {
+        return kuna_discstrict::successor_is_positive_evidence(listing, fall, callee);
+    }
     // The strongest signal: the byte after the call is not a valid instruction
     // (it fell off the decoded run / into data).
     if !listing.is_instruction_start(fall) {
@@ -140,12 +161,12 @@ fn call_site_has_no_fallthrough(listing: &Listing, call_vma: u64, callee: u64) -
 
 /// Count the call sites of `callee` that show no valid fall-through (the evidence
 /// tally over `refs_to(callee)` Call edges — Ghidra's `getNoReturnIndices`).
-fn no_fallthrough_evidence(listing: &Listing, callee: u64) -> usize {
+fn no_fallthrough_evidence(listing: &Listing, callee: u64, strict: bool) -> usize {
     listing
         .refs_to(callee)
         .iter()
         .filter(|r| r.kind == RefKind::Call)
-        .filter(|r| call_site_has_no_fallthrough(listing, r.from, callee))
+        .filter(|r| call_site_has_no_fallthrough(listing, r.from, callee, strict))
         .count()
 }
 
@@ -179,7 +200,12 @@ fn skip_callee(listing: &Listing, callee: u64, terminal: &BTreeSet<u64>) -> bool
 /// (the call-site evidence rule still applies to it independently). This is the
 /// cheap, Listing-faithful form of Ghidra's worklist feedback (a newly no-return
 /// function re-flags its tail-calling callers).
-fn last_act_is_terminal_call(listing: &Listing, entry: u64, terminal: &BTreeSet<u64>) -> bool {
+fn last_act_is_terminal_call(
+    listing: &Listing,
+    entry: u64,
+    terminal: &BTreeSet<u64>,
+    strict: bool,
+) -> bool {
     let next = listing.next_function_after(entry).map(|f| f.entry);
     let mut has_terminal_call = false;
     for (&vma, insn) in listing.instructions_in_range(entry, next) {
@@ -194,7 +220,7 @@ fn last_act_is_terminal_call(listing: &Listing, entry: u64, terminal: &BTreeSet<
         // no valid fall-through (the call is a terminal flow of this function).
         for &callee in &insn.flows {
             if terminal.contains(&callee)
-                && call_site_has_no_fallthrough(listing, vma, callee)
+                && call_site_has_no_fallthrough(listing, vma, callee, strict)
             {
                 has_terminal_call = true;
             }
@@ -217,7 +243,7 @@ fn last_act_is_terminal_call(listing: &Listing, entry: u64, terminal: &BTreeSet<
 /// The result is keyed by entry VMA (a `BTreeMap` so the emitted facts are
 /// address-ordered and deduped). The `terminal` set seeds with the Known-list
 /// no-return functions so a tail-call to (e.g.) `exit` already counts.
-fn discover_noreturn(listing: &Listing) -> Vec<NoReturnFact> {
+fn discover_noreturn(listing: &Listing, strict: bool) -> Vec<NoReturnFact> {
     let mut discovered: BTreeMap<u64, NoReturnFact> = BTreeMap::new();
     // The "already no-return" anchor set: the Known-seeded functions plus
     // everything discovered so far. A call to one of these is a no-fall-through
@@ -247,8 +273,8 @@ fn discover_noreturn(listing: &Listing) -> Vec<NoReturnFact> {
                 continue;
             }
             // Rule 1: direct call-site evidence. Rule 2: terminal-call promotion.
-            let concluded = no_fallthrough_evidence(listing, entry) >= EVIDENCE_THRESHOLD
-                || last_act_is_terminal_call(listing, entry, &terminal);
+            let concluded = no_fallthrough_evidence(listing, entry, strict) >= EVIDENCE_THRESHOLD
+                || last_act_is_terminal_call(listing, entry, &terminal, strict);
             if concluded {
                 let name = listing
                     .function_at(entry)

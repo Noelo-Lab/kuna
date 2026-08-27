@@ -945,6 +945,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "listing" => arch.analysis_listing,
         "fast_funcdisc" => arch.analysis_fast_funcdisc,
         "noreturn_disc" => arch.analysis_noreturn_disc,
+        // (kuna, GH-312) The positive-evidence-only tally has no fact stream of its
+        // own — it shapes which callees `noreturn_disc` concludes, which the arm
+        // above already gates. Registered here so the fail-open `_ => true` never
+        // silently re-enables a pass id that does not exist.
+        "noreturn_discstrict" => arch.analysis_noreturn_discstrict,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
         "fid" => arch.analysis_fid,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose

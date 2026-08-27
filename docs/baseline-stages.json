@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    538,
-    538
+    539,
+    539
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -224,6 +224,7 @@
     "data:KUNA-CONSOLE #7: phase status reports the active pipeline variant",
     "data:KUNA-CONSOLE #8: phase status reports kuna sub-phase option defaults (DIV-2: original)",
     "data:KUNA-LISTING #1: option listing on parses and round-trips, and is inert: the source form x <= 8 renders identically in both passes (default-off + flag-on parity)",
+    "data:KUNA-NORETURN-DISCSTRICT #1: option noreturn_discstrict off/on parses and round-trips, and is inert on the XML path (no Listing built): the source form x <= 8 renders identically in all three passes (default-on + flag-off + flag-on parity)",
     "data:KUNA-PIPELINE #1: pipeline list names the variants with decompile current",
     "data:KUNA-PIPELINE #2: reduced normalize variant produces no structuring",
     "data:KUNA-QUALITY #1: full pipeline reports the single if-goto edge (before and after the sub-query)",

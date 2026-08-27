@@ -1765,7 +1765,10 @@ mod tests {
         // the signature (option off = the half AND the argument are dropped)
         // and kuna-symbolnamerepair / C++ anonymous namespaces survive the
         // name-only demangling (the load used to fail outright)
-        assert_eq!(count, 215, "corpus file count drifted");
+        // and kuna-noreturn-discstrict / the discovered-no-return tally counts
+        // only positive evidence, so a decode gap can no longer forge a no-return
+        // verdict (wiring-only on the XML path -- the Listing is real-ELF only)
+        assert_eq!(count, 216, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

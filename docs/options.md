@@ -155,6 +155,10 @@ Three tiers:
 | heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
 | dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
 | caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
+| live code after a call disappears and the callee is annotated // no-return | [`noreturn_discstrict`](#noreturn_discstrict) |
+| a plainly-returning function is reported no-return | [`noreturn_discstrict`](#noreturn_discstrict) |
+| caller collapses to void f(); // no-return where it should return a value | [`noreturn_discstrict`](#noreturn_discstrict) |
+| dead code removed after a call on an architecture with decoder gaps (Thumb/MIPS16/PPC VLE) | [`noreturn_discstrict`](#noreturn_discstrict) |
 | unreachable code after a call to an exit/fatal wrapper | [`noreturn_propagate`](#noreturn_propagate) |
 | function truncated after calling a cold wrapper | [`noreturn_propagate`](#noreturn_propagate) |
 | spurious while(true) around a call that never returns | [`noreturn_propagate`](#noreturn_propagate) |
@@ -754,6 +758,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-22), but a no-op unless the Listing is built (option listing on) — with the Listing off there is zero behavior change. With listing on it marks heavily-called custom/tail-calling no-return wrappers — that the static name lists do not know — no-return by the >=3-call-site evidence tally, eliminating the post-call dead code on a real-ELF target. Flip OFF (with listing on) to keep the post-call fall-through code.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-noreturn-disc
 - **Example:** `option listing on --option noreturn_disc on`
+
+### `noreturn_discstrict` -- on | off, default `on`
+
+- **Symptoms:** live code after a call disappears and the callee is annotated // no-return; a plainly-returning function is reported no-return; caller collapses to void f(); // no-return where it should return a value; dead code removed after a call on an architecture with decoder gaps (Thumb/MIPS16/PPC VLE).
+- **What it does:** RESTORES CODE: narrow noreturn_disc's evidence tally to the arms that observe the program, so a decoder gap can no longer forge a no-return verdict. The legacy predicate votes a call site as no-return evidence when the byte after the call is not a decoded instruction start — but the Listing walk pushes every call's fall-through onto its worklist unconditionally, so that arm fires exactly when decode_one returned an error (or the successor is out of every executable range). It is a decode-failure detector, not a fact about the callee: three undecodable bytes are enough to conclude a plainly-returning function never returns, and the engine then DELETES the live tail of every caller (GH-312). When on, only the terminal arm (a call with no fall-through at all — a tail jump lowered to a call) and the two POSITIVE arms survive: the successor is data (outside every executable range, so the compiler emitted nothing to fall into) or the successor is another function's entry (the compiler left the caller no tail). Dropping the bare arm also makes the data arm live for the first time — is_data implies !is_instruction_start, so the legacy order made it unreachable. Requires the Listing (option listing on) — a no-op when the Listing is absent. On by default (DIV-92), so every parity gate is byte-identical (real-ELF Listing path only).
+- **When to flip:** On by default (DIV-92), but a no-op unless the Listing is built (option listing on) — with the Listing off there is zero behavior change. Flip OFF to restore the legacy three-arm tally, which also counts a call whose successor failed to decode. Turning it off is worth trying only on a target where a KNOWN no-return wrapper is being treated as returning AND its call sites are followed by bytes kuna cannot decode; the cost is that any decoder spec gap after three calls to the same callee deletes those callers' tails. On a target whose ISA kuna decodes imperfectly (Thumb, MIPS16, PPC VLE) leave it on.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-analysis-noreturn-discstrict
+- **Example:** `option listing on --option noreturn_discstrict off`
 
 ### `noreturn_propagate` -- on | off, default `on`
 

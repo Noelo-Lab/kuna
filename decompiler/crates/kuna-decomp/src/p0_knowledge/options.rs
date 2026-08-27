@@ -461,6 +461,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `FindNoReturnFunctionsAnalyzer`.  Default-off (a heuristic that can be wrong;
     // also requires `--option listing on` to build the Listing it reads).
     "noreturn_disc",
+    // (kuna, GH-312) The positive-evidence-only tally for `noreturn_disc`: the
+    // legacy predicate counts "the successor is not a decoded instruction start"
+    // as a vote for the callee being no-return, but the Listing walk always
+    // attempts a call's successor, so that arm fires exactly on a kuna decode
+    // failure — three spec gaps forge the verdict and DELETE live code at every
+    // caller.  When on, only the terminal arm and the two positive arms (the
+    // successor is data / another function's entry) count.  Default-ON (DIV-92);
+    // requires the Listing, so every parity gate is byte-identical.
+    "noreturn_discstrict",
     // (kuna) Structural no-return propagation consumer: the kuna analog of angr's
     // CFGFast call-graph no-return propagation.  Seeds from the Known no-return set
     // and concludes a function no-return when its last real instruction (skipping

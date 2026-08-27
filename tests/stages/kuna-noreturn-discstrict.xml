@@ -1,0 +1,63 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-312: the positive-evidence-only tally for the discovered-no-return
+    consumer (`option noreturn_discstrict on|off`, default-ON, DIV-92).
+
+    `noreturn_disc` concludes a callee never returns once at least 3 of its call
+    sites "have no valid fall-through". One of the three arms implementing that
+    test is `!is_instruction_start(fall)` - and the Listing walk pushes every
+    call's fall-through onto its worklist unconditionally, so a call's successor
+    is ALWAYS attempted. That arm therefore fires exactly when kuna's own decoder
+    failed at the successor, which is a fact about kuna, not about the callee.
+    Three undecodable bytes are enough to forge the verdict for a function whose
+    body is `mov $7,%eax ; ret`, and the engine then DELETES the live tail of
+    every caller. `noreturn_discstrict` keeps the terminal arm (a call with no
+    fall-through at all) and the two POSITIVE arms (the successor is data / is
+    another function's entry) and drops the bare one.
+
+    Like the whole no-return family (`noreturn_disc` / `noreturn_propagate` /
+    `noreturn_error`, docs/history/listing-tier-design.md), this reads the
+    program-wide Listing, which is built ONLY on the real-ELF bootstrap path and
+    never on this XML `<binaryimage>` datatest path. So on the XML path the flag
+    is INERT (there is no Listing to consume), and a two-pass off=bug/on=fix
+    datatest is not constructible here. The end-to-end behavior - three
+    undecodable bytes no longer deleting a caller's `return retseven() + 3` - is
+    proven by the cross-crate gate
+    `decompiler/crates/kuna-console/tests/verify_noreturn_discstrict.rs` against a
+    real x86-64 fixture (`noreturn_discstrict_x86_64`), the same split
+    `noreturn_error` uses (ghangr-noreturn-error.xml + verify_noreturn_error.rs).
+
+    This datatest proves the P0 assertion is WIRED:
+      * `option noreturn_discstrict off` PARSES and round-trips (an unknown option
+        would make the console error and the second decompile would differ / not
+        run), and
+      * flipping it changes NOTHING about the rendered C on the XML path
+        (default-inert parity): the same output appears under the default
+        pipeline AND with `noreturn_discstrict off`.
+
+    Reuses the GH-558 bytes as a small, deterministic loadable function.
+
+    Source:           int gh558(int x) { if (x LE 8) return 1; return 0; }
+    Compiled (as):    cmp $8,%edi ; jg +6 ; mov $1,%eax ; ret ; xor %eax,%eax ; ret
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="gh558"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 gh558(int4 x);</com>
+  <com>lo fu gh558</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_discstrict off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_discstrict on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-NORETURN-DISCSTRICT #1: option noreturn_discstrict off/on parses and round-trips, and is inert on the XML path (no Listing built): the source form x &lt;= 8 renders identically in all three passes (default-on + flag-off + flag-on parity)" min="3" max="3">if \(x &lt;= 8\)</stringmatch>
+</decompilertest>

@@ -88,8 +88,10 @@ fn settable_count_is_117() {
     // +1 for `rustabi` (P4 rustc two-register ScalarPair return recovery).
     // +1 for `dwarfvariants` (P1 DWARF variant-part import, DIV-87).
     // +1 for `symbolnamerepair` (P1 degenerate-symbol-name repair, DIV-88).
-    assert_eq!(kuna_num_settables(), 119);
-    assert_eq!(SETTABLE_TABLE.len(), 119);
+    // +1 for `noreturn_discstrict` (P1 discovered-no-return positive-evidence-only
+    // tally, DIV-92, GH-312).
+    assert_eq!(kuna_num_settables(), 120);
+    assert_eq!(SETTABLE_TABLE.len(), 120);
 }
 
 #[test]
@@ -156,7 +158,10 @@ fn tier_counts_are_26_core_50_transform_42_analysis() {
     // DIV-87).
     // analysis 42 -> 43: +1 for `symbolnamerepair` (P1 degenerate-symbol-name
     // repair, DIV-88).
-    assert_eq!((core, transform, analysis), (26, 50, 43));
+    // transform 50 -> 51: +1 for `noreturn_discstrict` (P1 discovered-no-return
+    // positive-evidence-only tally, DIV-92) -- transform, not analysis: it changes
+    // which callees are marked no-return, so it changes emitted C at every caller.
+    assert_eq!((core, transform, analysis), (26, 51, 43));
 }
 
 #[test]
@@ -412,6 +417,10 @@ fn option_values_live_value_present_for_36_suppressed_for_77() {
         "listing",
         "fast_funcdisc",
         "noreturn_disc",
+        // (kuna, GH-312) The positive-evidence-only tally for `noreturn_disc` -- a
+        // sub-rule gate with no codegen live reader (read console-side via
+        // kuna_live_value), like the analysis gates around it. Default-ON (DIV-92).
+        "noreturn_discstrict",
         "noreturn_propagate",
         // (kuna, decbench F2) The error(nonzero,…)-conditional recognizer — a
         // sub-rule gate of noreturn_propagate with no codegen live reader (read
@@ -670,7 +679,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4 and
     // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 118);
+    // noreturn_discstrict's P1 row is mid-table too, so it only bumps the count.
+    assert_eq!(json.matches("},\n").count(), 119);
 }
 
 #[test]
